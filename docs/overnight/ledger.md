@@ -413,7 +413,9 @@ suite load (18 s) and passes alone in 3.5 s. Suite is now 1,417 files; this will
 ### 2026-08-30 · ✅ SHIPPED (migration `20260831045517` + a one-off VACUUM) — the fmv-backfill sentinel alert was never about its SQL: five `sales` partitions had stale stats and visibility maps, and one had NEVER been vacuumed or analyzed
 
 **Alert actioned:** 🟠 `fmv-backfill · failure_rate` — 5/9 runs failed over 2 days, `fmv_backfill_candidates: canceling
-statement due to statement timeout`. ⛔ **No `pipeline_alert_suppression` row exists for this pipeline** (checked first,
+statement due to statement timeout`.
+
+⚠ **SCOPE CORRECTION (added 09:5xZ, same pass):** this fix did NOT stop an ongoing failure streak. Every failure was on 08-30 (last 13:21Z) and **four clean runs — 17:39Z, 20:03Z, 22:41Z, 00:53Z — preceded any change I made at ~04:45Z**; `failure_rate` is a TRAILING 2-DAY window that was ageing out on its own. What is verified is the COST: the one post-fix production run (06:57:33Z, id 1301840) took **11.5 s** against 20.5–35.2 s for those four pre-fix successes, and the mechanism is independently confirmed by EXPLAIN (heap fetches 590,412 → 0, real row counts restored). The fragility that made it tip over 60 s is genuinely gone; the alert clearing is not evidence for that, and should not be cited as if it were. ⛔ **No `pipeline_alert_suppression` row exists for this pipeline** (checked first,
 per the standing rule) — a genuine finding, not a known-benign one.
 
 **What was actually wrong.** `fmv_backfill_candidates()` declares `SET statement_timeout = '60s'` and was tipping over
@@ -514,6 +516,8 @@ editions/hour**. So each cycle drains ~468 editions against ~354 arriving — **
 holding the budget — raising the duty cycle is a freshness-vs-instance-load trade for Trevor, not a night-pass
 edit. **Falsifier if revisited:** read `rwfd_state.last_cutoff` twice against **`now()` from the DB**, never a
 container clock, and compare the advance to the gap between calls.
+
+🚨 **CORRECTED 2026-08-31 09:5xZ — the +7.66 min/run figure above is NOT a rate, and the method this entry recommends is wrong.** The 08:58–09:4xZ cloud pass measured the same drain across **23 runs**: **1.128× real time** overall (1.297× over the first 114 min — which does independently reproduce the ~1.3× conclusion, so the VERDICT here stands). But the cutoff is `MIN(computed_at)` over undrained residue, so it climbs a **staircase** — flat treads (+1.06 s across 1,034 s, backlog rising 1:1) then hour-scale jumps. My window contained exactly ONE run; a later pass's contrary '+0.51 s, raise a decision' window also contained exactly one. ⛔ **Two `last_cutoff` reads are not an instrument below ~20 runs** — use the backlog trend over hours and record a `(now, cutoff)` pair per pass. The duty-cycle finding (15 s per ~300 s) is unaffected.
 
 ### 2026-08-30 · ✅ SHIPPED (migration `20260831004852`, applied + committed) — the 193 KB error bodies are now stopped at the door: a BEFORE INSERT trigger truncates `pipeline_runs.error` at 8,000 chars, because the writer fix could NOT be a code handoff after all
 
