@@ -1573,8 +1573,13 @@ const PINS = [
   {
     fn: "refresh_mv_pack_ev_latest",
     test: "supabase/tests/mv_refresh_wrappers.sql",
+    // Re-pointed 2026-08-30: 20260830222057 replaced the one-liner body with a
+    // watermark gate that SKIPS the refresh when pack_ev_history has not
+    // advanced. Only the live check (`npm run db:pins:check`) saw the drift —
+    // the SQL test re-creates the function from its own embedded copy, so it
+    // stayed green against text that no longer ran anywhere.
     migration:
-      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+      "supabase/migrations/20260830222057_audit_20260830_mv_pack_ev_latest_refresh_watermark_gate.sql",
   },
   {
     fn: "refresh_allday_pack_realized",

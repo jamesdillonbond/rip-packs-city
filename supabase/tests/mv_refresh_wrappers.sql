@@ -43,7 +43,9 @@
 --
 -- The function DDL below is VERBATIM from the committed snapshot migration
 -- (supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-16.
+-- pulled from live prod via pg_get_functiondef on 2026-08-16 — EXCEPT
+-- refresh_mv_pack_ev_latest, which 20260830222057 replaced with a watermark
+-- gate and which is pinned to THAT migration instead (see §1c).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -81,6 +83,30 @@ CREATE UNIQUE INDEX mv_topshot_pack_rip_values_uq ON public.mv_topshot_pack_rip_
 CREATE UNIQUE INDEX mv_topshot_edition_median_180d_uq ON public.mv_topshot_edition_median_180d (n);
 CREATE UNIQUE INDEX mv_topshot_set_play_catalog_uq ON public.mv_topshot_set_play_catalog (n);
 
+-- ⚠ FIXTURES FOR THE WATERMARK GATE (added 2026-08-30 with migration
+-- 20260830222057). `refresh_mv_pack_ev_latest` is no longer a one-liner: it
+-- reads a watermark from `pack_ev_history` and a state row, and SKIPS the
+-- refresh when nothing new has landed. Both objects are schema-qualified
+-- `public.` inside the function body, so they must exist under those exact
+-- names here or the wrapper errors out before it can be tested at all.
+--
+-- `pack_ev_history` carries one row so `max(snapshotted_at)` is NON-NULL — the
+-- production shape. An empty table would make v_hist_max NULL, which fail-opens
+-- and would refresh unconditionally, quietly turning every gate assertion below
+-- into a test of the empty-table path instead of the real one.
+CREATE TABLE public.pack_ev_history (snapshotted_at timestamptz);
+INSERT INTO public.pack_ev_history VALUES ('2026-08-30T00:00:00Z');
+
+-- Shape copied from the migration, including the single-row PK/CHECK.
+CREATE TABLE public.mv_pack_ev_latest_refresh_state (
+  id boolean PRIMARY KEY DEFAULT true CHECK (id),
+  last_seen_snapshot timestamptz,
+  refreshed_at timestamptz,
+  refreshed_count bigint NOT NULL DEFAULT 0,
+  skipped_count bigint NOT NULL DEFAULT 0
+);
+INSERT INTO public.mv_pack_ev_latest_refresh_state (id) VALUES (true);
+
 -- >>> BEGIN verbatim refresh_sets_summary (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.refresh_sets_summary()
  RETURNS void
@@ -97,14 +123,29 @@ $function$;
 
 -- >>> BEGIN verbatim refresh_mv_pack_ev_latest (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.refresh_mv_pack_ev_latest()
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
- SET statement_timeout TO '120s'
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '120s'
 AS $function$
+DECLARE
+  v_hist_max timestamptz;
+  v_seen timestamptz;
 BEGIN
+  -- ~1 ms via idx_pack_ev_history_snapshotted_at_desc
+  SELECT max(snapshotted_at) INTO v_hist_max FROM public.pack_ev_history;
+  SELECT last_seen_snapshot INTO v_seen FROM public.mv_pack_ev_latest_refresh_state WHERE id;
+  IF v_hist_max IS NOT NULL AND v_seen IS NOT NULL AND v_hist_max <= v_seen THEN
+    -- Nothing new since the last refresh: snapshots land hourly, this job runs
+    -- every 30 minutes, so ~half of all ticks take this branch.
+    UPDATE public.mv_pack_ev_latest_refresh_state SET skipped_count = skipped_count + 1 WHERE id;
+    RETURN;
+  END IF;
   REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_pack_ev_latest;
+  UPDATE public.mv_pack_ev_latest_refresh_state
+     SET last_seen_snapshot = v_hist_max, refreshed_at = now(), refreshed_count = refreshed_count + 1
+   WHERE id;
 END;
 $function$;
 -- <<< END verbatim refresh_mv_pack_ev_latest <<<
@@ -228,6 +269,13 @@ SELECT _assert_eq(
 );
 
 UPDATE public.__mv_src SET n = 3 WHERE n <> -1;
+-- ⚠ FORCE THE REFRESH BRANCH. Since 20260830222057 this wrapper is gated on a
+-- watermark and will SKIP when nothing new has landed — and a skipping wrapper
+-- moves no view, so this assertion (and §2's index probe) would be asserting
+-- nothing while still reading as coverage. The gate only skips when BOTH sides
+-- are non-NULL, so a NULL watermark is the minimal fail-open seed; it needs no
+-- pack_ev_history fixture and does not weaken either assertion.
+UPDATE public.mv_pack_ev_latest_refresh_state SET last_seen_snapshot = NULL;
 SELECT public.refresh_mv_pack_ev_latest();
 SELECT _assert_eq(
   (SELECT n::text FROM public.mv_pack_ev_latest), '3',
@@ -315,6 +363,66 @@ SELECT _assert_eq(
   '...and it is mv_topshot_misattrib_candidates that moved'
 );
 
+-- ── 1c. The watermark GATE's own contract (migration 20260830222057) ───────
+-- ⚠ WHY THIS EXISTS. §1 above only proves the wrapper still refreshes when the
+-- gate is open, and it is seeded open on purpose — so on its own it would pass
+-- just as happily against the pre-gate one-liner. Nothing would then pin the
+-- gate itself, and a revert of 20260830222057 would go green through every
+-- assertion in this file. The gate's contract is that a second call with no new
+-- snapshot SKIPS, and a SKIP is only observable as "the view did NOT move".
+--
+-- ⚠ The skip must be asserted against a BUMPED source. Calling twice against an
+-- unchanged source leaves the view equal either way, so that version of this
+-- test passes whether the gate works or not.
+
+UPDATE public.__mv_src SET n = 31 WHERE n <> -1;
+UPDATE public.mv_pack_ev_latest_refresh_state
+   SET last_seen_snapshot = NULL, refreshed_count = 0, skipped_count = 0;
+SELECT public.refresh_mv_pack_ev_latest();
+SELECT _assert_eq(
+  (SELECT n::text FROM public.mv_pack_ev_latest), '31',
+  'gate OPEN (NULL watermark fail-opens): the wrapper refreshes'
+);
+SELECT _assert_eq(
+  (SELECT refreshed_count::text || '/' || skipped_count::text
+     FROM public.mv_pack_ev_latest_refresh_state), '1/0',
+  '...and it books the call as a REFRESH, not a skip'
+);
+SELECT _assert_eq(
+  (SELECT (last_seen_snapshot = (SELECT max(snapshotted_at) FROM public.pack_ev_history))::text
+     FROM public.mv_pack_ev_latest_refresh_state), 'true',
+  '...and it adopts the history watermark it just refreshed through'
+);
+
+-- The gate is now CLOSED: same watermark, so the next call must skip even though
+-- the source moved. If the gate were reverted the view would follow to 32 here.
+UPDATE public.__mv_src SET n = 32 WHERE n <> -1;
+SELECT public.refresh_mv_pack_ev_latest();
+SELECT _assert_eq(
+  (SELECT n::text FROM public.mv_pack_ev_latest), '31',
+  'gate CLOSED (no new snapshot): the view must NOT move — a revert of the gate fails HERE'
+);
+SELECT _assert_eq(
+  (SELECT refreshed_count::text || '/' || skipped_count::text
+     FROM public.mv_pack_ev_latest_refresh_state), '1/1',
+  '...and the skip is counted, so a silent no-op is distinguishable from a refresh'
+);
+
+-- ...and a genuinely NEW snapshot re-opens it. Without this arm, a gate wedged
+-- permanently shut — the failure mode that silently freezes the public pack-EV
+-- surface — would pass every assertion above.
+INSERT INTO public.pack_ev_history VALUES ('2026-08-30T01:00:00Z');
+SELECT public.refresh_mv_pack_ev_latest();
+SELECT _assert_eq(
+  (SELECT n::text FROM public.mv_pack_ev_latest), '32',
+  'a NEW snapshot re-opens the gate — it throttles, it does not wedge'
+);
+SELECT _assert_eq(
+  (SELECT refreshed_count::text || '/' || skipped_count::text
+     FROM public.mv_pack_ev_latest_refresh_state), '2/1',
+  '...booked as a second refresh'
+);
+
 -- ── 1b. CONCURRENTLY is present in EVERY wrapper but the one exception ─────
 -- ⚠ Dropping CONCURRENTLY changes nothing OBSERVABLE in a single session — the
 -- refresh still works, it just takes an ACCESS EXCLUSIVE lock and blocks every
@@ -352,6 +460,13 @@ SELECT _assert_eq(
 -- mentioned by it, and can be dropped by a migration touching a different
 -- object — after which this cron fails at runtime, forever, with an error that
 -- names the view rather than the index. Proven rather than asserted in prose.
+-- ⚠ RE-OPEN THE GATE FIRST. §1c deliberately leaves it CLOSED. A skipping
+-- wrapper never reaches the REFRESH, so it cannot raise 55000 — this probe
+-- would then be asserting that a function which does nothing does nothing, and
+-- the CONCURRENTLY/unique-index coupling this whole file exists to prove would
+-- be silently untested while still reading as covered.
+UPDATE public.mv_pack_ev_latest_refresh_state SET last_seen_snapshot = NULL;
+
 DROP INDEX public.mv_pack_ev_latest_uq;
 
 DO $probe$
