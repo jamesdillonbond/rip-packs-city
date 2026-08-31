@@ -1,5 +1,26 @@
 # atlas-proxy
 
+> ⛔⛔ **DEPLOYED 2026-08-31 — AND THE PROBE BELOW FAILED. THIS LANE IS DEAD. DO NOT RE-RUN THIS PLAY.**
+> The worker is live at `https://atlas-proxy.tdillonbond.workers.dev` and healthy on its own terms
+> (`GET` → `200 atlas-proxy ok`, unauthenticated `POST` → `401`). **Every authenticated `POST` to Atlas
+> returns `403` with a Cloudflare `Just a moment…` interstitial — 46 of 46**, measured against a **6/6
+> direct-curl positive control fired in the same loop iteration with the same bodies and headers**, so
+> egress is the only variable. Per the decision rule further down, that means: **Cloudflare egress is
+> NOT Atlas-WAF-allowed. Do NOT wire the runner.**
+>
+> ⭐ **The header-shaped explanation was tested and falsified** — a temporary probe build tried four
+> outbound header sets (browser UA, `curl/8.7.1`, no-UA/no-`Origin`, curl-no-`Origin`) and **all four
+> 403’d**. The block is egress-shaped. The temporary build was reverted; the deployed artifact is this
+> directory’s `index.js`.
+>
+> ⚠ **An egress allow-list is PER-PROVIDER.** `pg_net` from Supabase reaches Atlas at ~90%; Cloudflare
+> reaches it at 0% — same WAF, same day, same request bytes. Supabase working raised no real prior here.
+>
+> ⚠ **`ATLAS_PROXY_URL` is deliberately still set NOWHERE**, so the ingest stays on the direct-curl path
+> and this worker is inert. It is left deployed only as a standing one-curl re-test if Atlas’s WAF
+> posture ever changes; `npx wrangler delete` here removes it. Full measurement:
+> [`docs/overnight/inbox/2026-08-31T1521Z-…`](../../docs/overnight/inbox/2026-08-31T1521Z-atlas-proxy-is-DEPLOYED-and-MEASURED-DEAD-cloudflare-egress-is-atlas-waf-blocked.md).
+
 Cloudflare Worker pass-through to Dapper's Atlas marketplace service, so the
 `topshot-active-listings-ingest` pipeline can reach Atlas from an IP that isn't
 WAF-blocked (the GitHub Actions runner IP is — `egress_blocked`, ~83% fail).

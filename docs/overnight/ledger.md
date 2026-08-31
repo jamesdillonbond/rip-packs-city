@@ -10,6 +10,55 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · ⛔ `atlas-proxy` DEPLOYED — and the lane it exists to open is MEASURED DEAD (Cloudflare egress is Atlas-WAF-blocked, 46/46)
+
+**Shipped a production state change with no repo code change: a Cloudflare Worker deploy.** `workers/atlas-proxy`
+is live at `https://atlas-proxy.tdillonbond.workers.dev` (wrangler 4.84.0 on Trevor's box, version
+`9435469c-1ecc-49b5-87e4-cbc2c833d1de`), with `PROXY_SECRET` set from `TS_PROXY_SECRET` (piped, never echoed).
+This is the operator action known-issues **#20** has been blocked on since 2026-08-09.
+
+**The probe it gates on FAILED, and that is the result.** The worker is healthy on its own terms — `GET` → `200
+atlas-proxy ok`, unauthenticated `POST` → `401` — but **every authenticated `POST` to Atlas returns `403` with a
+Cloudflare `Just a moment…` interstitial: 46 of 46**, against a **6/6 direct-curl positive control fired in the
+same loop iteration with the same bodies and the same headers**, so egress is the only variable. The control
+returned real rows (ed 6125 `serial=1 cents=40000`, 1131 `serial=8 cents=99900`). Per the README's own decision
+rule, that means **Cloudflare egress is NOT Atlas-WAF-allowed. Do not wire the runner.**
+
+⭐ **The cheap alternative explanation was tested and FALSIFIED before condemning the lane.** The 1610Z filing's
+mechanism (*"Atlas allows curl"*) implies the browser UA might be the trigger, so a temporary probe build tried
+four outbound header sets — browser-UA, `curl/8.7.1`, no-UA/no-`Origin`, curl-no-`Origin` — and **all four 403'd,
+5/5 each**. The block is **egress-shaped, not header-shaped**. The temporary build was reverted and the committed
+`index.js` redeployed; `git status` on `workers/atlas-proxy/` is clean, so **the deployed artifact is `main`'s
+source** (md5 `2fc30eec22f51c3a11395cfec98c8d35`).
+
+⛔ **This REFUTES 1610Z's raised prior, and the durable lesson is that an egress allow-list is PER-PROVIDER.**
+That filing reasoned *"Atlas evidently does not blanket-block datacentre IPs, since Supabase's works"* — and
+hedged *"not proof — different provider, different WAF verdict"*. **The hedge was the correct half.** Supabase's
+libcurl egress passes ~90%; Cloudflare's passes 0% — same WAF, same day, same request bytes.
+
+⚠ **Nothing production changed and nothing was at risk.** `ATLAS_PROXY_URL` is set NOWHERE — full-tree grep on
+both variable names, including `.github/workflows/`, every `.ps1`/`.mjs` and all three `.env` files — so
+`scripts/ingest-topshot-active-listings.mjs:69` keeps the ingest byte-identically on the direct-curl path and the
+deployed worker is inert. The residential feeder is unaffected and returned live rows during this very run.
+
+⚠ **What this does NOT resolve, stated so it is not lost with the item:** the board's only working feeder is still
+a scheduled task on Trevor's personal desktop that runs only while he is logged on. #20 existed to give that an
+always-on second lane. **That need is unchanged — only this candidate is eliminated;** the surviving candidate is
+`pg_net` from the database, whose cost objection on a saturated IO-bound instance is untouched.
+
+**Also filed this turn (no code, register only):** known-issues **#55** — the 2-hourly autonomous pass Routine was
+created without `requires_local_device`, so it runs cloud-only and **cannot push**; the binding is immutable, a
+replacement task exists, and approving its card **in the desktop app on `laptop-e3bdp9vs`** is a Trevor-only click.
+⚠ The originating handoff points at `claude/needs-trevor-2026-08-31-step-by-step.md`, which **was never pushed** —
+absent from the worktree and from all-branch history — so #55 is the durable copy. CLAUDE.md's needs-Trevor bullet
+now carries #55 in place of the closed `atlas-proxy`.
+
+**Revert:** `npx wrangler delete` in `workers/atlas-proxy` removes the deployed worker and its secret. **No repo
+revert is needed — no code changed**; this commit is documentation only. Left deployed deliberately as a standing
+one-curl re-test if Atlas's WAF posture ever changes (the command is in the filing's §5).
+
+**Filing:** [inbox 2026-08-31T1521Z](inbox/2026-08-31T1521Z-atlas-proxy-is-DEPLOYED-and-MEASURED-DEAD-cloudflare-egress-is-atlas-waf-blocked.md).
+
 ### 2026-08-31 · 🧹 SESSION CLOSE — two filings closed, known-issues #25 corrected to ACTIVE, handoff written
 
 **Closing the overnight pass.** Tree clean, in sync with `origin/main`, CI green, nothing uncommitted.
