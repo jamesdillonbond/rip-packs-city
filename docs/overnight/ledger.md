@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · 📏 MEASURED, nothing shipped — tonight's pack-EV watermark gate skips 11.8% of ticks, not the ~50% it was sized for, because `count(DISTINCT hour)` saturates at 24
+
+⚠ **A correction to tonight's `20260830222057` entry, filed as a NEW entry rather than an edit to it** — that
+session's entry is its own record, and rewriting another session's ledger text is this repo's recorded clobber class.
+
+The migration sized its gate on *"snapshots land HOURLY (23 distinct hours in the last 24h) … so ~half of all
+refreshes recompute an identical view"*. 🚨 **The evidence reproduces exactly (23) and cannot support the
+conclusion: `count(DISTINCT date_trunc('hour', …))` over 24 h is bounded at 24, so it can only ever show a rate is
+AT MOST one-per-hour — never that it IS one-per-hour.** Measured properly on the same table: **1,407 distinct
+snapshots / 7 d = 201 per day = 8.38/hour, median gap 5.6 min, p90 13.1 min**, and the decisive one —
+**96.7% of inter-snapshot gaps are SHORTER than the job's own 30-minute tick interval** (~4.2 new snapshots per
+window), so the watermark has essentially always advanced and the skip branch is near-unreachable. **The gate's
+own counters agree without any reconstruction: `refreshed_count` 15 / `skipped_count` 2 = 11.8%.**
+
+⛔ **NOT a revert, and this is the load-bearing half of the finding.** The gate costs a ~1 ms index probe, is
+fail-open in both directions, its append-only soundness boundary is unchanged, and at 11.8% it still avoids a real
+`REFRESH … CONCURRENTLY` about one tick in eight. **The defect is in the CLAIM, not the code** — and the claim is
+what the next session reads when deciding whether pack-EV refresh cost is already handled. ⚠ **It is not:
+~88% of ticks still do the full refresh**, against a migration that opened by naming this job the largest consumer
+in its class (810 calls / 70,017 ms mean / 68.6 GB shared reads).
+
+⚠ **Three things I deliberately did NOT conclude.** Post-gate the job reads 14 runs / 0 failed / avg 13.5 s
+against a 7-day pre-gate 335 runs / 21 failed (6.3%) / avg 76.8 s — a 5.7×, **not attributed to the gate**:
+(1) an 11.8% skip rate cannot arithmetically produce it; (2) the entire post window is the quiet overnight band
+and the pre window is 7 days carrying known saturation spells — *"a DB A/B must be WARM-vs-WARM"* and *"a rate
+POOLED ACROSS A FIX"* at the same time; (3) **the same migration also VACUUMed `pack_ev_history` and set
+autovacuum reloptions** (probe 2,517 → 146 ms by its own measurement), so two arms landed in one commit and
+neither is separable from the other here. ⭐ The skip-rate finding needs no window matching at all — it reads the
+gate's own counters and its own input distribution — which is exactly why it stands while the runtime claim does not.
+
+⛔ **Do NOT widen the gate to chase the missing 38%** — that trades freshness on a user-facing pack-EV surface for a
+saving that was never the binding cost. ⛔ **And do not raise a migration just to fix the stale "~half of all ticks"
+comment still sitting in the function body**: every `apply_migration` costs a ~10–20 s burst of user-facing
+`PGRST002` 500s and would force a third re-point of the `refresh_mv_pack_ev_latest` pin. Ride it along with the next
+migration that touches this function for a real reason.
+
+⭐ **Transferable: when the question is a RATE, measure the GAP DISTRIBUTION, not bucket occupancy. A derived
+cadence at or near the bucket count means the instrument is SATURATED and the true rate is unknown and higher.**
+
+Filing: [inbox 2026-08-31T0525Z](inbox/2026-08-31T0525Z-the-pack-ev-watermark-gate-skips-12pct-not-50pct-because-distinct-hours-saturates.md).
+**Revert:** n/a — measurement + docs only, no code and no DB state changed.
+
 ### 2026-08-30 · ✅ SHIPPED — the `refresh_mv_pack_ev_latest` pin is repointed, and the fix that would have looked correct was measured to silently kill the invariant the file exists to prove
 
 Closes the [2350Z filing](inbox/2026-08-30T2350Z-the-pack-ev-pin-is-stale-and-the-obvious-fix-silently-guts-the-concurrently-invariant.md),
