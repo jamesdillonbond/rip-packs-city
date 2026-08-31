@@ -1,7 +1,9 @@
 # 📏 Five `postgres`-owned cron jobs are clipped at the **DB-default 120 s** purely because their command lacks the two-statement `SET statement_timeout` prefix — 18 sibling jobs already have it
 
 **Filed:** 2026-08-31 ~07:25 PT (14:25Z) · **By:** Claude Code, Trevor's box, overnight pass
-**Class:** timeout-model / configuration gap · **Status:** MEASURED with a controlled comparison. ⛔ **NOT applied — see §5.**
+**Class:** timeout-model / configuration gap · **Status:** ⚠ **PARTLY CORRECTED — read the SELF-CORRECTION at the foot BEFORE acting.** ⛔ Not applied.
+
+> ⛔ **TWO CORRECTIONS, both found by grepping my own memory store 20 minutes too late.** (1) **This is a REDISCOVERY** — the mechanism, the fix pattern and jobid 259 by name are in `postgres-timeout-model` and were shipped 2026-08-10 (migration `20260810040308`, 8 jobs); **7 of those 8 still carry the prefix today.** (2) 🚨 **The recommendation is WRONG for jobid 259, the one §3 calls "the sharpest": it is a PROCEDURE (`prokind='p'`, `CALL …`), and the prefix CANNOT be applied to it** — pg_cron wraps a multi-statement command in one transaction and this procedure COMMITs internally, raising `2D000`. Its missing prefix is **correct and deliberate**. The four FUNCTION cases (261, 78, 11, 87) stand.
 
 ---
 
@@ -98,3 +100,52 @@ function.** Three places declare a timeout here and only one of them binds on th
 `cron.job.command` first, and treat a function's `SET statement_timeout` as documentation until proven
 otherwise. A job whose successes stop dead just under a round number is being clipped, and `max(success
 duration)` is the cheapest way to see it.
+
+---
+
+## ⛔ SELF-CORRECTION — 2026-08-31 ~07:45 PT (14:45Z), ~20 minutes after filing
+
+**Two things are wrong above, and I found both by doing what I should have done BEFORE filing: grepping
+my own memory store.** [[grep-the-memory-store-before-publishing-a-measurement]] is a rule I hold and did
+not follow.
+
+### 1. ⛔ This is a REDISCOVERY, not a discovery
+
+The mechanism, the fix pattern, and even **jobid 259 by name** are already recorded in
+`postgres-timeout-model` and were **shipped on 2026-08-10** as
+`supabase/migrations/20260810040308_audit_20260809_cron_statement_timeout_prefix_for_inert_proconfig_jobs`,
+which prefixed **8 jobs** (4, 5, 36, 49, 50, 54, 199, 259) with both positive controls already proven.
+📏 **Checked today: 7 of those 8 still carry the prefix and are working.** So the pattern is live,
+understood, and not news. What survives from §1–§3 is only the *current* list of jobs still exposed.
+
+### 2. 🚨 THE RECOMMENDATION IS WRONG FOR jobid 259 — the one I called "the sharpest"
+
+**`259` is a PROCEDURE, not a function**: `prokind = 'p'`, and its command is
+`CALL public.reconcile_all_saved_wallet_stats(10, 40, 360);`.
+
+⛔ **The `SET statement_timeout = 'N'; …` prefix CANNOT be applied to it.** pg_cron wraps a
+multi-statement command in ONE transaction, and this procedure `COMMIT`s internally — which raises
+**`2D000 invalid transaction termination`**. That is recorded in the same memory:
+*"the prefix trick works only for `SELECT fn()` jobs."* **259's lack of a prefix is therefore CORRECT and
+deliberate, not the oversight I presented it as** — it is the one job of the 8 that could not take the fix.
+
+⚠ **And a COMMIT does not re-arm the timer either**, so 259 cannot buy budget that way: the whole `CALL`
+is one top-level statement under one budget no matter how many times it commits.
+
+👉 **259's actual lever is its ARGUMENTS, not its ceiling.** It is a *bounded* procedure — `(10, 40, 360)` —
+so the way to fit it inside 120 s is to do less per call, not to ask for more time. That is a different
+change with a different risk profile (it slows reconciliation throughput rather than spending IO), and it
+is not the one-liner §5 implied.
+
+### What still stands
+
+**Four of the five are functions invoked with `SELECT` and the prefix genuinely applies to them:**
+**261** (already addressed from the other side this pass), **78** `backfill_pinnacle_acquisitions`,
+**11** `refresh_insights_new_collectors`, **87** `refresh_challenge_costs` — all `prokind = 'f'`.
+§5's ordering still governs: **find out whether it CAN complete before tuning anything**, then the
+one-liner, then watch `wasted_s`.
+
+⭐ **The transferable lesson is now sharper than the one §5 ended with: before applying the prefix, check
+`prokind`.** A `CALL` to a committing procedure looks exactly like a `SELECT` to a function in
+`cron.job.command`, and the fix that helps one **errors** on the other — so the check is one column, and
+skipping it turns a working job into a broken one.

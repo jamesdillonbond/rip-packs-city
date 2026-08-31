@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · ⛔ CORRECTION to my own 1425Z filing 20 minutes later — it is a REDISCOVERY, and its headline recommendation is WRONG for the one job it called "the sharpest"
+
+**Both errors were one `grep` of my own memory store away, and I ran that grep only after publishing.**
+[[grep-the-memory-store-before-publishing-a-measurement]] is a rule I hold; I did not follow it.
+
+**1. REDISCOVERY, not discovery.** The inert-`proconfig` mechanism, the two-statement prefix fix, and
+**jobid 259 by name** are all in `postgres-timeout-model`, and the fix **shipped 2026-08-10** as
+`20260810040308_audit_20260809_cron_statement_timeout_prefix_for_inert_proconfig_jobs` across **8 jobs**
+(4, 5, 36, 49, 50, 54, 199, 259) with both positive controls already proven. 📏 **Checked today: 7 of the
+8 still carry the prefix and work.** So the pattern is live and understood. What survives from my filing
+is only the CURRENT list of still-exposed jobs — useful, but not the discovery I framed it as.
+
+**2. 🚨 The recommendation is WRONG for jobid 259 — the case I singled out as sharpest (max ok 118.3 s,
+53 kills on the wall).** `259` is a **PROCEDURE**: `prokind = 'p'`, command
+`CALL public.reconcile_all_saved_wallet_stats(10, 40, 360);`. ⛔ **The prefix CANNOT be applied to it.**
+pg_cron wraps a multi-statement command in ONE transaction and this procedure `COMMIT`s internally,
+raising **`2D000 invalid transaction termination`** — recorded in the same memory as *"the prefix trick
+works only for `SELECT fn()` jobs."* **So 259's missing prefix is CORRECT and deliberate: it is the one
+job of the 8 that could not take the 08-10 fix**, and a `COMMIT` does not re-arm the timer either, so it
+cannot buy budget that way at all. 👉 **259's real lever is its ARGUMENTS** — `(10, 40, 360)`, a bounded
+procedure: do less per call rather than ask for more time. Different change, different risk, not a one-liner.
+
+✅ **What stands:** the controlled comparison (235/236 with the prefix have **124 successes above 120 s**;
+261 without it has **0 of 259**, max 119.5 s, kills at 120.1 s), the three timeout facts, and **four** of
+the five cases — **261, 78, 11, 87 — all `prokind = 'f'`, invoked with `SELECT`**, where the prefix
+genuinely applies and #42's ordering still governs.
+
+⭐ **The sharper transferable, which replaces the one my filing ended on: check `prokind` BEFORE applying
+the prefix.** A `CALL` to a committing procedure is indistinguishable from a `SELECT` to a function by
+eye in `cron.job.command` — and the fix that helps one **errors** on the other, turning a working job
+into a broken one. It is one column to check.
+
+⚠ **Process note, since this is the second time tonight the same shape caught me:** both this and the
+0700Z sentinel retraction came from diagnosing a mechanism from its BEHAVIOUR without first reading the
+record that already described it — memory in this case, known-issues #25 in that one. **The repo's own
+"a filed FINDING is a hypothesis" applies to findings I file, and the cheap check is to grep the record
+BEFORE publishing, not after.**
+
+Corrections applied to the filing (status block + a §-level self-correction at the foot) and to its
+INDEX entry; the original text is left standing so the error stays legible.
+**Revert:** n/a — docs only.
+
 ### 2026-08-31 · 📏 MEASURED, nothing applied — five `postgres` cron jobs are clipped at the DB-default 120 s purely because their command lacks the `SET statement_timeout` prefix, and 18 siblings already have it
 
 **A controlled comparison fell out of the jobid 261 work: same role, same scheduler, ONE variable — the
