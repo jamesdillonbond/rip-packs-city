@@ -10,6 +10,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (docs) — the roadmap said the accuracy-gate precompute "still publishes canonical-only". It does not, and following that sentence mislabels the headline gate metric by ~16 points
+
+Live gate metric read tonight from `rpc_trust_health_precompute` (3.7 h old, **no 999 sentinels**):
+**Top Shot 38.5 · All Day 23.5 · Candy 60.0 · Golazos 0.2 · UFC 0.0**, plus Pinnacle 43.6 on its own basis.
+
+🚨 **While reading it I found the doc's basis note is stale.** `roadmap-status.md` carried
+*"the `rpc_thp_leg_fmv_coverage` precompute still publishes canonical-only until its re-point ships"*. **The re-point
+HAS shipped.** From live `prosrc`, not inference: the leg's `elig` CTE is now a bare
+`SELECT l.collection_id, l.edition_id, l.computed_at, l.confidence FROM latest l` — **no filter at all**, a vestigial
+pass-through where the canonical restriction used to sit — so the denominator is every latest-per-`(collection_id,
+edition_id)` row in `fmv_snapshots`, i.e. **ALL ROWS**, which is Trevor's 08-28 gate basis.
+
+⚠ **Why this earned a correction rather than a quiet tidy-up: the sentence is not merely out of date, it inverts a
+LABEL on the project's single headline metric.** Anyone following it would publish 38.5 as "canonical" — and canonical
+was **55.0** against all-rows **39.2** the same day, so the mislabel is **~16 points** on the number the roadmap uses
+to decide whether the accuracy gate is met.
+
+⭐ **Two independent lines agree**, which is why I did not stop at reading the source: the body carries no canonical
+predicate, **and** the published value tracks the all-rows series (39.2 on 08-27 → 39.9 on 08-29 → 38.5 live) rather
+than the canonical one (55.0). ⓘ **Stated as source-derived, and deliberately NOT independently recomputed** — that
+recomputation IS jobid 325, which costs 411 s and has hit the 600 s ceiling, so running it to confirm a documentation
+label would spend real IO on the binding constraint to learn nothing the source does not already say.
+
+⚠ **Second finding in the same read: `pinnacle_fmv_high_med_share_pct` is NOT written by that leg at all.**
+`rpc_thp_leg_pinnacle_fmv_share` writes it from a **different table, key and column** — `pinnacle_fmv_history`,
+`DISTINCT ON (render_id)`, `fmv_confidence` — which is correct for Pinnacle's data model (`render_id` is its true key)
+but means **43.6 is on a different basis and must never be folded into an estate-wide average.** That is exactly what
+the roadmap's "Pinnacle remains in neither total" was protecting, and it now says so explicitly rather than leaving a
+reader to discover it from two different `computed_at` stamps.
+
+⭐ **Transferable: a doc line that says an instrument is PENDING a change is the kind that rots silently** — the change
+ships elsewhere, nothing points back, and the note keeps mislabelling the output. **Re-derive an instrument's basis
+from its `prosrc` before quoting its number, not from the prose that describes it.**
+
+**Revert:** `git revert <this sha>` — docs only; no code, no DB, no prod state.
+
 ### 2026-08-30 · 📏 MEASURED + EQUIVALENCE-PROVEN, ⛔ NOT SHIPPED — `mv_pack_ev_latest` touches 304,034 buffers to produce 1,855 rows, and a control caught my own headline being cold-vs-warm
 
 **The new triage instrument's first real lead, found the hour it was committed.**
