@@ -1164,9 +1164,25 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     }
 
     if (fetched.length === 0) {
+      // ⚠ fetched.length === 0 has TWO causes and they are not the same health state:
+      //   (a) nothing to do -- no targets, or every node legitimately returned no
+      //       listing. Honest idle: ok = true.
+      //   (b) every fetch FAILED -- the upstream is down and this tick learned
+      //       nothing. Reporting ok:true here is the "green pipeline blind to its
+      //       own work" defect: 1,216 of 1,333 ticks logged ok:true with zero rows
+      //       over 33 h of the 2026-08-28 public-api.nbatopshot.com 530 outage,
+      //       every one carrying gql_errors == nodes_processed, and no cadence or
+      //       failure-rate arm could see it (inbox 2026-08-30T0230Z).
+      // Only (b) flips the flag, so a genuinely idle tick is still green.
+      const allFetchesFailed =
+        counters.nodes_processed > 0 && counters.gql_errors >= counters.nodes_processed
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: targetRows.length, rowsWritten: 0,
-        rowsSkipped: targetRows.length, ok: true,
+        rowsSkipped: targetRows.length,
+        ok: !allFetchesFailed,
+        error: allFetchesFailed
+          ? `all_gql_fetches_failed: ${counters.gql_errors}/${counters.nodes_processed} nodes`
+          : null,
         extra: {
           counters,
           errors_sample: [...errorsSample, ...retryEvents],
