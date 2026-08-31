@@ -1170,8 +1170,13 @@ const PINS = [
     // than publishing a negative ETA.
     fn: "refresh_unmapped_backlog_growth",
     test: "supabase/tests/refresh_unmapped_backlog_growth.sql",
+    // Re-pointed 2026-08-31: 20260831132548 added an `OFFSET 0` optimization fence to
+    // the tx CTE. Without it the planner index-scans unmapped_sales_dedup_idx for a
+    // presorted transaction_hash and heap-fetches ~105k rows in index order — 102,791
+    // buffers against a 9,296-page table. Fenced: 9,296 buffers. Equivalence proven
+    // both directions before ship.
     migration:
-      "supabase/migrations/20260810030734_audit_20260809_unmapped_backlog_growth_precompute_cache.sql",
+      "supabase/migrations/20260831133323_audit_20260831_unmapped_backlog_growth_fence_comment_correct_function_level_numbers.sql",
   },
   {
     // pg_cron `25 9 * * *`. One of only TWO scheduled SECDEF functions that

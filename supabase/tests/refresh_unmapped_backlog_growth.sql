@@ -64,13 +64,39 @@ BEGIN
     -- One row per (collection, transaction) over OPEN rows only. open_n > 1 marks a
     -- multi-NFT tx; those rows' price cannot be attributed per-NFT because
     -- decodeV1SaleTx returns a single gross DUC total for the whole transaction.
+    --
+    -- ⚠ THE `OFFSET 0` IS AN OPTIMIZATION FENCE AND IS LOAD-BEARING. DO NOT REMOVE IT.
+    -- It blocks subquery pull-up so this scan is planned on its own, coming out as
+    -- Seq Scan + HashAggregate instead of an Index Scan on unmapped_sales_dedup_idx
+    -- (transaction_hash, nft_id, collection_id) that walks ~105k open rows in INDEX
+    -- order and heap-fetches each one -- index order does not match heap order.
+    --
+    -- MEASURED AT THE FUNCTION LEVEL (the shape pg_cron actually calls), warm,
+    -- 2026-08-31, by DO-block + clock_timestamp() with a RAISE to roll the write back:
+    --     unfenced  1,550 ms   ->   fenced  560 ms     (2.8x)
+    --
+    -- 🚨 DO NOT SIZE THIS FROM AN INLINE `EXPLAIN`, AND THAT IS THE REAL LESSON HERE.
+    -- Run as standalone SQL the unfenced CTE plans as that Index Scan and costs
+    -- 102,550 buffers / 9,816 ms -- but the FUNCTION does not use that plan, and the
+    -- production ticks it produces are ~2 s, not ~10 s. Both numbers are real; only the
+    -- function-level pair describes what runs. A plpgsql function prepares and may plan
+    -- its statements differently from the same text pasted into a session, so an inline
+    -- EXPLAIN is a measurement of a DIFFERENT QUERY that happens to share your text.
+    --
+    -- `AS MATERIALIZED` also defeats the index path but was slower in the inline test
+    -- (temp written 1,854 vs 631) because it round-trips every row through a tuplestore.
+    -- Equivalence proven over the population both directions (EXCEPT each way = 0).
     SELECT
-      u.collection_id,
+      s.collection_id,
       count(*)                                                  AS open_n,
-      count(*) FILTER (WHERE COALESCE(u.price_usd,0) = 0)       AS open_unpriced_n
-    FROM public.unmapped_sales u
-    WHERE u.resolved_at IS NULL
-    GROUP BY u.collection_id, u.transaction_hash
+      count(*) FILTER (WHERE COALESCE(s.price_usd,0) = 0)       AS open_unpriced_n
+    FROM (
+      SELECT u.collection_id, u.transaction_hash, u.price_usd
+      FROM public.unmapped_sales u
+      WHERE u.resolved_at IS NULL
+      OFFSET 0
+    ) s
+    GROUP BY s.collection_id, s.transaction_hash
   ), unspl AS (
     SELECT
       t.collection_id,
