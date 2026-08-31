@@ -10,6 +10,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration `20260831004414`, applied + committed) — refresh-error-triage was timing out on the storm's own 193 KB error bodies; classification now reads the head, proven equivalent on all 459 live signatures
+
+**Prod change:** `refresh_error_triage()` classifies `LEFT(error, 1500)` instead of the full error (both legs; sample_error
+already stored `LEFT(...,500)`, so stored output is unchanged). File md5-minus-newline == DB stored md5: `8f8bb9f4…`.
+
+**The trend:** fails rose 0 → 3 → 4 → 7 over 08-27..08-30, all "canceling statement due to statement timeout" (PostgREST
+8 s). The dead-host storm writes the FULL Cloudflare 530 page into `pipeline_runs.error` — **max/p95 length 192,873
+chars** (offers-sweep, badge jobs, ingest) — and the triage ran `classify_pipeline_error`'s ~30-regex ladder over every
+full body: 4,643 ms / ~92k detoast buffers for 1,867 failure rows, growing with the storm. Grouping to the 459 distinct
+`(pipeline, error)` pairs first was measured and barely helped (4.4 s) — the cost is detoast + regex over the huge
+values themselves, not the call count.
+
+**Proof of equivalence before shipping:** `classify(full) IS NOT DISTINCT FROM classify(LEFT 1500)` for ALL 459 distinct
+pairs in the live window — zero divergence (every discriminating pattern lives in the app-written head; the 530
+signature is in the first 50 chars). After: **163 ms / 2.4k buffers** (LEFT gets slice-detoast). Live run post-apply:
+98 signature groups upserted from 1,867 failures, sub-second.
+
+**Deliberately NOT done here (writer-side, route code — needs a code handoff):** the pipelines storing 193 KB HTML
+bodies into `pipeline_runs.error` at all. That is TOAST bloat plus a re-read tax on every consumer of the column; the
+right fix is truncation at the writer, and it belongs to the route-code track.
+
+**Also this pass (checkpoint ran early, all five green):** jobid 73's 23:03Z 115.6 s duration was a one-off (three
+ticks since at 5.2–5.5 s; gate counters 6 refreshed / 2 skipped, watermark advancing); saturation 2 active / 0 waiting;
+jobs 409–414 armed, `cron_heavy` rolconfig exactly `statement_timeout=600s`, zero invalid indexes; CI/Smoke/Ops green on
+`e778770`; and the "all seven wallet-backfill pipelines went silent at 23:12Z" scare is **idle-by-design** — the
+multicollection orchestrator is driven by seed-wallet-refresh's 6-hour sweep, whose wave ran 22:55–23:12Z (all ticks ok)
+and completed at exactly 23:12:26Z. Known-issues #52 body now records sub-item (a) closed (`c577328`).
+
+**Falsifier:** refresh-error-triage fails should drop to ~0/day while the storm continues; a new timeout means a
+pattern this analysis did not see — re-measure, do not raise the truncation blindly.
+**Revert:** in the migration header (the only delta is the two `LEFT(...,1500)` wrappers).
+
 ### 2026-08-30 · ✅ SHIPPED (migration `20260831001448`, applied + committed) — get_acquisition_stats drops from 3.2 s to 24 ms: the cost was a count(*) that read 90 MB of scattered heap, not the three redundant scans
 
 **Prod changes:** partial index `idx_wmc_locked_count` on `wallet_moments_cache (wallet_address, collection_id) WHERE is_locked`
