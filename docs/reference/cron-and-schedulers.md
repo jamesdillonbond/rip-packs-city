@@ -158,6 +158,16 @@ another). It is reporting the pooled and recent windows **side by side** and cla
 called fixed), **`SILENT`** (⛔ zero recent RUNS — not recovered, not anything; a job that stopped running
 looks identical to a job that was fixed and wants the opposite response), and `UNSCHEDULED`.
 
+⚠ **RUN BOTH ARMS.** Arm 1 (per-job waste) is **structurally blind to `job startup timeout`**, twice over:
+its cost is **missing work, not burned time** (the worker never launched, so the body never ran and
+NOTHING reaches `pipeline_runs` — both silence detectors are blind to it), and it is a **fleet property,
+not a job property**. Measured 2026-08-31: **260 startup timeouts in 72 h across 50 distinct jobs
+(86.7/day)** but only ~6,744 s total, so per job it is ~45 s/day and sorts near the bottom of arm 1 every
+time. **Arm 2 groups by UTC HOUR instead**, which is where the signal lives: run counts are FLAT
+(507–585/hour) while startup timeouts swing **0 → 65**, so it is concurrency at particular hours, not load
+volume — hours **9 / 13 / 18 / 14 / 8** carried **65 / 55 / 54 / 45 / 26** (12.2% of all runs at hour 9),
+and hours 0–7 and 20–23 carried ~0. Cause and the ⛔ do-not-restagger-blind rules are in the section below.
+
 **First run, 2026-08-31 05:4xZ** (14 d pooled / 48 h recent): it put **jobid 211 in RECOVERED** with 21,019 s
 of pooled waste correctly marked historical, found **jobid 256 `rpc-thin-sale-ask-disclosure-refresh`
 UNSCHEDULED** (so #42's "600 s burned daily" no longer applies), and put **jobids 4 and 325 in UNPROVEN**

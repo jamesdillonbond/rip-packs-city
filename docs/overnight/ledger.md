@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED — arm 2 for the cron triage, because the instrument I shipped four hours earlier is structurally blind to the fleet's MOST COMMON failure; plus production verified 94/94 by rendered DOM
+
+**Found by using my own instrument and asking what it is silent about.** Arm 1 ranks per job by seconds
+burned. `job startup timeout` — pg_cron failing to launch a background worker at all — is invisible to that
+ranking **twice over**:
+
+1. ⭐ **Its cost is MISSING WORK, not burned time.** The function body never runs, so **nothing reaches
+   `pipeline_runs`** and both `detect_stalled_pipelines()` and the cron-silent checks are structurally blind
+   to it. A tick that burns 600 s and a tick that never happened are not comparable — and only one of them is
+   visible downstream — yet a seconds ranking says the 600 s one matters ~20× more.
+2. ⭐ **It is a FLEET property, not a job property.** Measured: **260 startup timeouts in 72 h across 50
+   distinct jobs = 86.7/day**, but only ~6,744 s total ⇒ **~45 s/day per job**, which sorts near the bottom of
+   arm 1 every single time. **The signal exists only when you stop grouping by jobid.**
+
+**Arm 2 groups by UTC HOUR**, which is where it lives. Run counts are **FLAT** (507–585/hour) while startup
+timeouts swing **0 → 65**, so this is concurrency at particular hours, **not load volume**: hours
+**9 · 13 · 18 · 14 · 8** carry **65 · 55 · 54 · 45 · 26** (12.2% of all runs at hour 9) and hours 0–7 / 20–23
+carry ~0. ⓘ Cause is already diagnosed and NOT re-derived — `max_worker_processes = 6` against
+`cron.max_running_jobs = 32`; ⛔ the lever is reducing OVERLAP, never raising the worker pool (compute-tier
+linked, needs a restart, and CLAUDE.md forbids buying out). ⛔ The file carries the two recorded refutations
+so nobody re-staggers blind: the `:13` stagger was refuted for moving a job onto an OCCUPIED slot, and the
+jobid-211 move was executed and reverted — **verify the DESTINATION against live `cron.job`, not against the
+filing that motivated the move**, and read the follow-up ASYMMETRICALLY (silence is weak evidence; one
+startup timeout falsifies it outright).
+
+⭐ **The transferable part is the method, not the arm:** *ask what a passing instrument is structurally
+SILENT about, and check whether its GROUPING is what hides the answer.* A per-entity ranking dissolves any
+failure whose cost is spread thinly across many entities — the count is large and every row is small.
+
+📏 **Also verified tonight, and it found nothing wrong, which is the point of saying so:** a full
+rendered-DOM probe of PRODUCTION from this box (the only machine that can — Playwright + Chromium against
+live) — **94/94 pass**: `smoke.spec.ts` 78 incl. `hydration-clock` (the React #418 detector), plus
+`entity-smoke` 8 and `mobile-layout` 8. ⚠ One outlier chased rather than waved through: `/insights/pack-sniper`
+took **31.1 s** cold, which is well past the 8 s `BOARD_LIVE_TIMEOUT_MS`, so per CLAUDE.md's ISR rule I
+checked whether a cold pass had baked a degraded render. It had not — verified the way that file's own
+comment prescribes, by **grepping the SERVED body** (never by loading it in a browser): **86 `/pack/dist/`
+row links, 0 degraded markers**, `x-vercel-cache: STALE`. The board is genuinely healthy and crawlable.
+
+**Revert:** `git revert <this sha>` — docs + one analysis SQL file; no code, no DB, no prod state.
+
 ### 2026-08-30 · 📏 MEASURED, nothing shipped — jobid 71 is NOT retirable (sole feeder for 89 of 598 packs), its working set is FROZEN, and the blocker on its fix was re-read and HOLDS
 
 The triage instrument's #2 `LIVE` entry, **1,806 wasted s/day**. Its name — `rpc-backfill-historical-pack-ev` —

@@ -171,3 +171,55 @@ ORDER BY
   END,
   c.wasted_recent_s DESC,
   c.wasted_pooled_s DESC;
+
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- ARM 2 — `job startup timeout`, which ARM 1 IS STRUCTURALLY BLIND TO
+-- ══════════════════════════════════════════════════════════════════════════════
+--
+-- ⚠ RUN THIS TOO. Arm 1 ranks per job by seconds burned, and that dissolves this
+-- failure mode twice over:
+--
+--   1. **Its cost is MISSING WORK, not burned time.** pg_cron could not launch a
+--      background worker, so the function body NEVER RAN — nothing reaches
+--      `pipeline_runs`, and both `detect_stalled_pipelines()` and the cron-silent
+--      checks are structurally blind to it. A tick that burns 600 s and a tick
+--      that never happened are not comparable, and only one of them is visible
+--      downstream. Ranking by seconds says the 600 s one matters ~20× more.
+--   2. **It is a FLEET property, not a job property.** Measured 2026-08-31:
+--      **260 startup timeouts in 72 h across 50 distinct jobs — 86.7/day** — but
+--      only ~6,744 s total, so per job it is ~45 s/day and sorts near the bottom
+--      of arm 1 every time. **The signal exists only when you stop grouping by
+--      jobid**, which is precisely what arm 1 does.
+--
+-- ⭐ CAUSE, already diagnosed — do not re-derive it: `max_worker_processes = 6`
+-- against `cron.max_running_jobs = 32`. pg_cron runs each job as a background
+-- worker from that pool of 6, shared with parallel-query workers and the logical
+-- replication launcher. More overlap than slots ⇒ `job startup timeout`.
+-- ⛔ **The lever is NOT raising `max_worker_processes`** — it is compute-tier
+-- linked, needs a restart, and CLAUDE.md forbids buying the way out.
+-- **The lever is reducing OVERLAP.** Full case: docs/reference/cron-and-schedulers.md.
+--
+-- ⚠ READ THE HOUR COLUMN, NOT THE TOTAL. Run counts are FLAT across the day
+-- (507–585/hour measured 2026-08-31) while startup timeouts swing 0 → 65, so this
+-- is concurrency at particular hours, NOT load volume. 2026-08-31 sample: hours
+-- 9/13/18/14/8 carried 65/55/54/45/26 and hours 0–7 and 20–23 carried ~0.
+--
+-- ⛔ BEFORE PROPOSING A RE-STAGGER, read the two recorded refutations in
+-- cron-and-schedulers.md: a `:13` stagger was REFUTED for moving a job onto an
+-- occupied slot, and a jobid-211 slot move was executed and reverted. **Verify the
+-- DESTINATION slot is empty against live `cron.job`, not against the filing that
+-- motivated the move** — and read the check ASYMMETRICALLY afterwards: silence is
+-- weak evidence, but ONE `job startup timeout` falsifies the re-stagger outright.
+
+SELECT
+  extract(hour FROM d.start_time)::int                                   AS utc_hour,
+  count(*) FILTER (WHERE d.return_message ILIKE '%startup timeout%')     AS startup_timeouts,
+  count(DISTINCT d.jobid) FILTER (WHERE d.return_message ILIKE '%startup timeout%') AS distinct_jobs,
+  count(*)                                                               AS all_runs,
+  round(100.0 * count(*) FILTER (WHERE d.return_message ILIKE '%startup timeout%')
+        / NULLIF(count(*), 0), 2)                                        AS pct_of_runs
+FROM cron.job_run_details d
+WHERE d.start_time > now() - interval '72 hours'
+GROUP BY 1
+ORDER BY startup_timeouts DESC;
