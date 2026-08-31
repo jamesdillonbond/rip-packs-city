@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration `20260831045517` + a one-off VACUUM) — the fmv-backfill sentinel alert was never about its SQL: five `sales` partitions had stale stats and visibility maps, and one had NEVER been vacuumed or analyzed
+
+**Alert actioned:** 🟠 `fmv-backfill · failure_rate` — 5/9 runs failed over 2 days, `fmv_backfill_candidates: canceling
+statement due to statement timeout`. ⛔ **No `pipeline_alert_suppression` row exists for this pipeline** (checked first,
+per the standing rule) — a genuine finding, not a known-benign one.
+
+**What was actually wrong.** `fmv_backfill_candidates()` declares `SET statement_timeout = '60s'` and was tipping over
+it (60.2 / 60.6 / 71.8 s). The tell was in the SUCCESSES, not the failures: every successful run also cost **20–68 s**
+and returned `stage: caught_up`, **0 rows** — the queue is permanently drained, so the `LIMIT 100` can never
+short-circuit and each run pays full price to prove a negative. Reading the plan named two causes, neither in the
+function:
+- **`sales_2023` had NEVER been vacuumed OR analyzed** — `last_vacuum`, `last_autovacuum`, `last_analyze` all NULL
+  against 89,369 updates — and `n_live_tup` read **0** for sales_2021/2022/2023. With no statistics the planner
+  estimated **`rows=1`** out of a 2.85M-row anti-join and picked a hash plan that spilled to disk (`Batches: 8`,
+  26.5k temp blocks).
+- **Stale visibility maps** turned every "Index Only Scan" into random heap I/O: **590,412 heap fetches** in a single
+  run (2023: 265,287 · 2024: 206,237 · 2025: 49,041 · 2026: 47,642 · 2020: 21,557). `sales_2022`, already frozen,
+  did **0** — the built-in control that proves the mechanism rather than assuming it.
+
+**Fix, in the right order.** A one-off `VACUUM (ANALYZE)` across sales_2020..2026 (out-of-band; VACUUM cannot run in a
+migration transaction) took heap fetches to **0** and the **unmodified** production query from 20–70 s to **8.3 s**;
+called through its real entry point, `fmv_backfill_candidates(100)` now returns in **6.4 s** — roughly **9× headroom**
+under the 60 s cap. The migration then makes it durable: sales_2020..2024 get the SAME autovacuum reloptions
+sales_2025/2026/2027 already carry (`vacuum_scale_factor=0.05`, `analyze_scale_factor=0.02`). The default 0.2 needs
+~250k dead tuples on a 1.25M-row partition; sales_2023 had reached 89k, which is exactly why autovacuum never came.
+File md5-minus-newline == DB stored md5: `3fcbe525…`.
+
+⛔ **A rewrite was written, measured, and DELIBERATELY NOT SHIPPED.** A DISTINCT-first / nested-loop-anti-join form
+measured **9.0 s against the original's 8.3 s** — no improvement. An earlier reading had it at 4.2 s, which looked
+like a 2× win and was a **warm-cache artifact taken before the vacuum**; shipping on it would have put churn in a hot
+path for a gain that does not exist. Both shapes must walk the same 2.43M index entries. This is the third time this
+week the honest answer was "fix the instrument, not the query".
+
+⚠ **Carry-forward:** storage parameters do NOT propagate from a partitioned parent, so whoever creates `sales_2028`
+must set these reloptions on it or it silently rejoins the default class. `sales_2027` already has insert-side
+settings but no vacuum/analyze scale factors — it is empty today, so this is a note, not a defect.
+
+**Falsifier:** `last_autovacuum` for sales_2020..2024 should stop being NULL, and Heap Fetches should stay near 0. If
+fmv-backfill timeouts return *with* heap fetches still at 0, the cause is something else — re-measure; do not raise
+the 60 s timeout to hide it.
+**Revert:** `ALTER TABLE public.sales_20NN RESET (autovacuum_vacuum_scale_factor, autovacuum_analyze_scale_factor);` for 2020..2024.
+
 ### 2026-08-30 · ✅ SHIPPED (one cron job, self-cleaning) + 📏 MEASURED — the reindex wave could not satisfy its own exit criterion, and the night's #1 live DB consumer turns out to be healthy-by-design
 
 **The wave was booked one index short.** `run_wmc_reindex_verify()` gates on **four** indexes at ≥60% leaf
