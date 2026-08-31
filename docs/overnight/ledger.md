@@ -10,6 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED (migration `20260831004852`, applied + committed) — the 193 KB error bodies are now stopped at the door: a BEFORE INSERT trigger truncates `pipeline_runs.error` at 8,000 chars, because the writer fix could NOT be a code handoff after all
+
+Supersedes the previous entry's "writer-side fix needs a code handoff" line: `log_pipeline_run` is not the only writer —
+grep found **~10 routes inserting into `pipeline_runs` DIRECTLY via PostgREST**, including the storm writers `ingest`
+and `offers-sweep` — so no single function change covers the fleet, but a `BEFORE INSERT` trigger does, and that is
+DB-side and shippable tonight. `tg_pipeline_runs_truncate_error` keeps the first 8,000 chars (p50 error is 53 chars;
+real stack traces are low-KB) and appends `…[error truncated at insert: original N chars]` so truncation is never
+silent. Positive control ran live: a synthetic 20,000-char insert stored 8,051 chars with the marker, probe row
+deleted. File md5-minus-newline == DB stored md5: `39f42ca1…`. Consumers unaffected: triage classifies
+`LEFT(...,1500)`, `sample_error` stores `LEFT(...,500)`, equality-grouping stays deterministic.
+
+**Falsifier:** any new `pipeline_runs` row with `length(error) > 8100` means a writer path the trigger does not cover
+(only UPDATEs could do it — no writer updates error today).
+**Revert:** `DROP TRIGGER trg_pipeline_runs_truncate_error ON pipeline_runs; DROP FUNCTION tg_pipeline_runs_truncate_error();`
+
 ### 2026-08-30 · ✅ SHIPPED to main, ⛔ DELIBERATELY NOT DEPLOYED — `compute-topshot-pack-ev` stops reporting `ok:true` through a total upstream failure
 
 **Repo only. No prod change: the function is NOT redeployed, and it is currently PAUSED.**
