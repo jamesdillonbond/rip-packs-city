@@ -10,6 +10,57 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · 📏 MEASURED, nothing applied — five `postgres` cron jobs are clipped at the DB-default 120 s purely because their command lacks the `SET statement_timeout` prefix, and 18 siblings already have it
+
+**A controlled comparison fell out of the jobid 261 work: same role, same scheduler, ONE variable — the
+shape of `cron.job.command`.**
+
+| jobid | command | successes | **> 120 s** | max ok | failures |
+|---|---|---:|---:|---:|---|
+| 235 | `SET statement_timeout='600s'; REFRESH …` | 62 | **26** | 598.0 s | 15, **min 600.0 s** |
+| 236 | `SET statement_timeout='600s'; REFRESH …` | 159 | **98** | 606.7 s | 9 |
+| 261 | `SELECT public.refresh_…()` — no SET | 259 | **0** | **119.5 s** | 66, killed at 120.1 s |
+
+**124 successes above 120 s where the prefix exists; zero in 259 where it does not.** 235's failures
+bottoming out at exactly **600.0 s** is the positive control that the `SET` bound, rather than the job
+simply being fast.
+
+⭐ **Three facts, which SHARPEN the recorded timeout model rather than contradicting it.** (1) The
+command's two-statement `SET` **is** effective — it is a separate top-level statement on the same
+session. (2) **A function's own `SET statement_timeout` is INERT on the pg_cron path**, exactly as
+CLAUDE.md says: `refresh_unmapped_backlog_growth` declares **90 s** and its kills land at **120.1 s** —
+if the declaration bound anything the kills would be at 90. (3) Without a prefix a job inherits the
+**DATABASE** default `statement_timeout=120000` (`pg_settings.source='configuration file'`), not the
+role's — `postgres` carries none.
+
+📏 **Fleet shape:** `cron_heavy` 47 prefix-less (**not exposed** — that role has 600 s in `rolconfig`),
+`postgres` **36 prefix-less** (exposed) vs 18 that already carry the prefix.
+**Five clean cases** — successes never reaching 120 s AND kills in the 119–126 s band:
+**259 `rpc-reconcile-saved-wallet-stats` (max ok 118.3 s, 53 kills)** is the sharpest, then 261
+(addressed from the other side this pass), 78 (119.4 s, 18), 11 (113.7 s, 5), 87 (105.1 s, 5).
+
+⚠ **NOT established, and excluded rather than counted:** that all 13 prefix-less jobs with 120 s-band
+kills are clipped. **302 (max ok 370.3 s) and 231 (252.1 s) exceed 120 s with no prefix** — queue wait
+explains it (duration runs from `start_time`), but I did not separate the two, so they are out. Nor is
+it established that any of the five would *complete* with more budget: a clipped tail says the work does
+not fit in 120 s, not that it fits in 600.
+
+⛔ **Nothing applied, deliberately — raising a ceiling is the exact lever #42 warns about**
+(*"raising a budget can cut failures while raising waste, and only `wasted_s` tells them apart"*): a
+120 s kill becomes a 600 s kill on the instance's binding constraint. 👉 **Per job, in #42's own order:
+(1) find out whether it CAN complete, (2) only then the one-line `cron.alter_job` prefix, (3) watch
+`wasted_s`, not the failure count.** ⛔ **Do not sweep all 36** — most are nowhere near 120 s and the
+prefix would be a no-op that adds a statement.
+
+⭐ **Transferable: the ceiling a pg_cron job actually gets is decided by the COMMAND, not the FUNCTION.**
+Three places declare a timeout here and only one binds on this path — so read `cron.job.command` first,
+and treat a function's declared timeout as documentation until proven otherwise. **A job whose successes
+stop dead just under a round number is being clipped, and `max(success duration)` is the cheapest way to
+see it.**
+
+Filing: [inbox 2026-08-31T1425Z](inbox/2026-08-31T1425Z-five-postgres-cron-jobs-are-clipped-at-the-db-default-120s-because-their-command-lacks-the-SET-prefix.md).
+**Revert:** n/a — measurement + docs only.
+
 ### 2026-08-31 · 🔧 RECOVERED, not mine — `idx_wmc_metadata_fillable` was applied to PRODUCTION at 11:11Z with no committed file and no record anywhere; `Migration parity` was red until this
 
 ⚠ **Not my change. Recorded here because the session that made it could not push, and prod had a new
