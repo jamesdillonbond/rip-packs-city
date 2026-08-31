@@ -12,6 +12,7 @@ import {
   driftExitCode,
   partitionByDeploySafety,
   GATE_KEY_DEPLOY_BLOCKED,
+  DEPLOY_DEFERRED,
 } from "@/scripts/check-edge-fn-drift.mjs"
 import {
   pickEntrypoint,
@@ -623,14 +624,48 @@ describe("edge-fn drift detector — the run's exit code", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe("edge-fn drift: redeploy advice must exclude the gate-key-blocked functions", () => {
   it("separates the blocked ones from the safe ones", () => {
-    const { safe, mustNotDeploy } = partitionByDeploySafety([
+    // ⚠ INVERTED 2026-08-31, not deleted. This previously asserted
+    // `safe == ["compute-topshot-pack-ev", "sales-serial-backfill"]`, which
+    // encoded advice the ledger contradicts: that function was shipped to main
+    // and DELIBERATELY not deployed (its pipeline is paused and suppressed to
+    // 2026-09-13), so calling it "safe to redeploy" told a reader to do the one
+    // thing the decision says not to do yet. The assertion now pins the
+    // three-way split. See DEPLOY_DEFERRED's header for why it is not simply a
+    // second blocked list.
+    const { safe, mustNotDeploy, deferred } = partitionByDeploySafety([
       "compute-topshot-pack-ev",
       "ingest-pinnacle-mints",
       "sales-serial-backfill",
       "compute-golazos-pack-ev",
     ])
     expect(mustNotDeploy).toEqual(["ingest-pinnacle-mints", "compute-golazos-pack-ev"])
-    expect(safe).toEqual(["compute-topshot-pack-ev", "sales-serial-backfill"])
+    expect(deferred).toEqual(["compute-topshot-pack-ev"])
+    expect(safe).toEqual(["sales-serial-backfill"])
+  })
+
+  it("keeps DEFERRED and BLOCKED as different states — they have different remedies", () => {
+    // ⛔ Collapsing these loses the thing that matters: a BLOCKED function needs
+    // an OPERATOR to set a secret; a DEFERRED one needs a CONDITION to be met.
+    // A guard that only checked "is it excluded from safe" would pass on a
+    // version that merged them.
+    for (const slug of DEPLOY_DEFERRED.keys()) {
+      expect(
+        GATE_KEY_DEPLOY_BLOCKED.has(slug),
+        `${slug} is in BOTH lists — decide which state it is in`,
+      ).toBe(false)
+    }
+  })
+
+  it("every DEFERRED entry states the condition that CLEARS it", () => {
+    // Not vacuous at population zero (a `for` over an empty map passes, which is
+    // correct — an empty deferral list is a valid state). The property is that a
+    // slug cannot be parked here without saying what would un-park it, which is
+    // what stops this becoming an unexplained permanent exception list.
+    for (const [slug, reason] of DEPLOY_DEFERRED) {
+      expect(typeof reason, `${slug} has no reason`).toBe("string")
+      expect(reason.length, `${slug}'s reason is too short to be a reason`).toBeGreaterThan(40)
+      expect(reason, `${slug} does not say what clears the deferral`).toMatch(/CLEARS WHEN:/)
+    }
   })
 
   it("contains the two blocked functions that are ACTUALLY in the live drift list", () => {
@@ -655,9 +690,20 @@ describe("edge-fn drift: redeploy advice must exclude the gate-key-blocked funct
   })
 
   it("is order-preserving and total — every input lands in exactly one bucket", () => {
-    const input = ["a", "ingest-pinnacle-mints", "b", "backfill-pack-opens-api", "c"]
-    const { safe, mustNotDeploy } = partitionByDeploySafety(input)
-    expect([...safe, ...mustNotDeploy].sort()).toEqual([...input].sort())
+    // ⚠ Totality is now THREE-way. A drifted slug that fell out of all buckets
+    // would vanish from the advice while still counting toward the drift total —
+    // present in the number, absent from the instruction.
+    const input = [
+      "a",
+      "ingest-pinnacle-mints",
+      "b",
+      "compute-topshot-pack-ev",
+      "backfill-pack-opens-api",
+      "c",
+    ]
+    const { safe, mustNotDeploy, deferred } = partitionByDeploySafety(input)
+    expect([...safe, ...mustNotDeploy, ...deferred].sort()).toEqual([...input].sort())
     expect(safe).toEqual(["a", "b", "c"])
+    expect(deferred).toEqual(["compute-topshot-pack-ev"])
   })
 })

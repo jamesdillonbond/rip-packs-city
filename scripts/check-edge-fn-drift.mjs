@@ -215,12 +215,53 @@ export const GATE_KEY_DEPLOY_BLOCKED = new Set([
   'backfill-allday-pack-supply',
 ])
 
-/** Split drifted slugs into those safe to redeploy and those that would 403. */
-export function partitionByDeploySafety(slugs, blocked = GATE_KEY_DEPLOY_BLOCKED) {
+/**
+ * DEFERRED BY DECISION — drifted on purpose, for a reason that is NOT "the gate
+ * would fail closed". A THIRD state, added 2026-08-31 because the partition was
+ * binary and the report therefore told a reader that a deliberately-undeployed
+ * function was "SAFE to redeploy".
+ *
+ * ⚠ THIS IS NOT A SECOND BLOCKED LIST, and collapsing the two would lose the
+ * distinction that matters: a GATE_KEY_DEPLOY_BLOCKED function must not be
+ * deployed until an operator sets a SECRET; one of these must not be deployed
+ * YET, and the value is the condition that clears it. Different remedy,
+ * different owner, different timeline.
+ *
+ * ⛔ It deliberately does NOT change the exit code. Drift is still drift and the
+ * check still exits 1 — suppressing the exit is how a detector goes green while
+ * the drift stands, which is the failure this whole file exists to prevent.
+ * This changes the ADVICE only.
+ *
+ * ⚠ DATED SAMPLE, like the list above. Each entry must carry the condition that
+ * clears it, so a reader can tell whether it is still true rather than trusting
+ * that someone re-checked. Re-derive before acting.
+ */
+export const DEPLOY_DEFERRED = new Map([
+  [
+    'compute-topshot-pack-ev',
+    'the pipeline is PAUSED and alert-suppressed to 2026-09-13 (dead upstream host public-api.nbatopshot.com, 530/1033), so the honesty fix has no ticks to correct — deploying buys nothing today. CLEARS WHEN: this pipeline TICKS AGAIN — check `SELECT max(started_at) FROM pipeline_runs WHERE pipeline = \'compute-topshot-pack-ev\'`, not whether "Top Shot is back". ⚠ Those differ: measured 2026-08-31 09:5xZ, Top Shot FMV freshness had RECOVERED (topshot_fmv_stale_hours 0.2) while the legacy host still returned 530 residentially and this pipeline had 0 ticks in 24h — FMV is sales-driven and recovered without it. Deploy WITH the un-pause; the honest ok:false flag is then exactly what tells you the restored pipeline works. Ledger 2026-08-30 + inbox 2026-08-31T0610Z.',
+  ],
+])
+
+/**
+ * Split drifted slugs three ways: safe to redeploy, deferred by decision, and
+ * those that would 403. Order-preserving and TOTAL — every input lands in
+ * exactly one bucket, so nothing can fall out of the report silently.
+ */
+export function partitionByDeploySafety(
+  slugs,
+  blocked = GATE_KEY_DEPLOY_BLOCKED,
+  deferred = DEPLOY_DEFERRED,
+) {
   const safe = []
   const mustNotDeploy = []
-  for (const s of slugs) (blocked.has(s) ? mustNotDeploy : safe).push(s)
-  return { safe, mustNotDeploy }
+  const deferredSlugs = []
+  for (const s of slugs) {
+    if (blocked.has(s)) mustNotDeploy.push(s)
+    else if (deferred.has(s)) deferredSlugs.push(s)
+    else safe.push(s)
+  }
+  return { safe, mustNotDeploy, deferred: deferredSlugs }
 }
 
 /**
@@ -605,18 +646,27 @@ async function main() {
     console.log(
       drifted.length
         ? (() => {
-            const { safe, mustNotDeploy } = partitionByDeploySafety(drifted)
+            const { safe, mustNotDeploy, deferred } = partitionByDeploySafety(drifted)
             const head = `DRIFT: ${drifted.length} function(s).`
             const safeLine = safe.length
               ? ` ${safe.length} SAFE to redeploy — deploy each with deno.json in the files list AND import_map_path; omitting the map turns a stale function into a hard-down one.`
               : ` 0 of them are safe to redeploy.`
+            // A function deferred BY DECISION is not "safe to redeploy" — it is
+            // drifted on purpose. Naming the condition that clears it is the
+            // point: without it this reads as an unexplained exception and the
+            // next session either deploys it or re-derives the reasoning.
+            const deferredLine = deferred.length
+              ? ` ⏸ DEFERRED BY DECISION ${deferred.length}: ${deferred
+                  .map((s) => `${s} — ${DEPLOY_DEFERRED.get(s)}`)
+                  .join(' | ')}`
+              : ``
             // Never let this read as blanket clearance. Naming the blocked ones
             // inline IS the fix: the list is what stops someone working the
             // report top-to-bottom straight into an outage.
             const blockedLine = mustNotDeploy.length
               ? ` ⛔ DO NOT REDEPLOY ${mustNotDeploy.length}: ${mustNotDeploy.join(', ')} — their *_GATE_KEY secrets are UNSET, so deploying makes the gate fail CLOSED and 403 every tick (the 2026-08-11 outage mechanism). They are drifted BECAUSE they were never redeployed, which is correct until an operator sets the secrets.`
               : ``
-            return head + safeLine + blockedLine
+            return head + safeLine + deferredLine + blockedLine
           })()
         : tier2Ran
           ? "clean: every deployed function matches repo source."
