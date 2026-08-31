@@ -10,6 +10,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · 🔧 RECOVERED, not mine — `idx_wmc_metadata_fillable` was applied to PRODUCTION at 11:11Z with no committed file and no record anywhere; `Migration parity` was red until this
+
+⚠ **Not my change. Recorded here because the session that made it could not push, and prod had a new
+index on a 2,506,620-row table with no revert path anyone else could see.**
+
+`Migration parity` went red on **`[MISSING] 20260831111157 audit_20260831_wmc_metadata_fillable_partial_index`**
+— MISSING, not UNTRACKED, so there was no file on disk to `git add` either. ⭐ **And it was in NO ledger
+entry and NO inbox filing** (`grep` = 0 in both): the only surviving description of a live production
+change was inside the fileless migration's own header. **That is the exact gap the parity gate exists
+to catch, catching it.**
+
+**Recovered byte-exactly from prod**, following that script's own recipe rather than retyping from a
+description: `SELECT array_to_string(statements, E'\n'), md5(...) FROM supabase_migrations.schema_migrations`
+→ written to `supabase/migrations/20260831111157_audit_20260831_wmc_metadata_fillable_partial_index.sql`
+→ **md5 `346faa4993f54fc74e066db74af3f449`, length 4,664 — file and prod IDENTICAL.** ⓘ The md5 check is
+the point: it is what distinguishes a recovery from a plausible re-transcription.
+
+**What the recovered migration says it did** (its own measurements, not re-verified by me — ⚠ read them
+as that session's claims): `backfill_wmc_metadata_from_editions` was the instance's #1 exec-time consumer
+at 511.9 s per 2 h, spending it rejecting rows already fetched from the heap, because the join index
+`idx_wmc_coll_ek_serial_cover` (202 MB) carries none of the five NULL-filter columns. A fourth partial
+NULL index of an existing house family (`idx_wmc_fmv_null`, `idx_wmc_fmv_conf_null`,
+`idx_wmc_image_url_null`) — 2,400 kB, 224,646 of 2,506,620 rows (9.0%) qualifying. Claimed **52× fewer
+buffers (23,908 → 459)**, and it explicitly declines the 437× wall-clock number as warm-vs-cold. Built
+`CONCURRENTLY` via the documented one-off pg_cron recipe (jobid 425, 35.9 s, unscheduled after,
+`indisvalid=true`, zero invalid indexes).
+⚠ **It carries its own bigger unfixed finding, preserved here so it is not lost with the file:**
+`wmc-fmv-populate` ran **1,991 times in 24 h and only 65 runs (3.3%) updated any row** (6,846 rows) while
+~145,988 rows are fillable on Top Shot alone, and **three of seven collections updated ZERO rows across
+~850 runs.** Filed, not fixed, and not characterised.
+
+**Revert (from the file):** `DROP INDEX CONCURRENTLY public.idx_wmc_metadata_fillable;`
+👉 **Its stated exit condition is a 24 h `pg_stat_statements` diff** against the `audit_20260830_pgss_snap`
+row at 2026-08-31 11:11:22Z, joined on `(userid, dbid, toplevel, queryid)` — never queryid alone — with
+the falsifier that an unchanged mean means the cost is in the UPDATE's index maintenance, not the scan.
+
 ### 2026-08-31 · ✅ SHIPPED (migrations `20260831132548` + `20260831133323`) — an `OFFSET 0` fence on `refresh_unmapped_backlog_growth`, and a correction of my own sizing in the same pass
 
 **Found with the triage instrument built earlier tonight**, on a job outside the pack-EV lane. jobid 261
