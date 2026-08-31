@@ -10,6 +10,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · ✅ SHIPPED — the `refresh_mv_pack_ev_latest` pin is repointed, and the fix that would have looked correct was measured to silently kill the invariant the file exists to prove
+
+Closes the [2350Z filing](inbox/2026-08-30T2350Z-the-pack-ev-pin-is-stale-and-the-obvious-fix-silently-guts-the-concurrently-invariant.md),
+which deliberately left this for whoever came next: `20260830222057` replaced `refresh_mv_pack_ev_latest`'s one-liner
+body with a watermark gate, so `npm run db:pins:check` read **189 pins, 188 clean, 1 STALE** and
+`.github/workflows/db-pin-staleness.yml` (daily 07:20Z, exit 1 on any stale pin) was going to red on its next honoured run.
+
+⭐ **The filing's trap was real, and it is now MEASURED rather than argued.** `supabase/tests/mv_refresh_wrappers.sql`
+exists to prove two invariants that live outside the function — the `CONCURRENTLY`/unique-index coupling (proven by
+dropping the index and showing the refresh break) and "each wrapper moves the view its name implies" — and **both need
+the REFRESH to actually execute.** With the gate in place and the state row at its steady value the wrapper takes the
+skip branch, so the obvious one-line fix (update the verbatim block, repoint the pin) would have left the index probe
+asserting that a function which does nothing does nothing. **A control proved it:** in an isolated `zz_mvgate_probe`
+schema on live, a body-equivalent copy with the watermark seeded returned SQLSTATE **55000** on the dropped index, and
+the same probe with the watermark left set returned **`no error`**. Without the seed the invariant is dead and the file
+still reads as covering it — [[a-test-can-pin-the-defect-it-was-named-to-prevent]].
+
+**Shipped, one commit:** verbatim block replaced with the gated body (byte-identical to the migration); `pack_ev_history`
++ `mv_pack_ev_latest_refresh_state` fixtures added (the function schema-qualifies both as `public.`, so they must exist
+under those exact names or the wrapper errors before it can be tested); `UPDATE ... SET last_seen_snapshot = NULL`
+fail-open seeds before the section-1 assertion and before the section-2 index probe; pin repointed to `20260830222057`.
+Plus a **new section 1c** pinning the gate's OWN contract — without it the filing's own note stands, that a revert of the
+gate would pass every test in the file. It asserts a bumped source does NOT move the view while the gate is closed (a
+skip is only observable as absence of movement), that the skip is counted, and that a new snapshot **re-opens** the gate
+— that last arm is what separates "throttles" from "wedged shut", the failure mode that would silently freeze the public
+pack-EV surface.
+
+📏 **Verified:** `zz_mvgate_probe` 9/9 including the control, then `DROP SCHEMA ... CASCADE` (0 leftover) · drift guard
+197/197 · `npm run db:pins:check` now **189 pins, 189 clean, 0 needing attention** · full suite 15,619 passed / 0
+assertion failures. ⚠ **NOT run end-to-end here — this box has neither `psql` nor `docker`, so the `DB invariants (SQL)`
+CI job is the first real execution of the file.** That is the honest falsifier and it fails LOUDLY rather than silently:
+if the seed does not take, the index probe gets `no error` and reds.
+
+⚠ **Flake noted, not fixed:** `__tests__/api-allday-listings-indexer.test.ts` timed out its 10 s `beforeAll` under full
+suite load (18 s) and passes alone in 3.5 s. Suite is now 1,417 files; this will recur.
+
+**Revert:** `git revert <this sha>` (repo-only — no DB or prod state changed).
+
 ### 2026-08-30 · ✅ SHIPPED (migration `20260831045517` + a one-off VACUUM) — the fmv-backfill sentinel alert was never about its SQL: five `sales` partitions had stale stats and visibility maps, and one had NEVER been vacuumed or analyzed
 
 **Alert actioned:** 🟠 `fmv-backfill · failure_rate` — 5/9 runs failed over 2 days, `fmv_backfill_candidates: canceling

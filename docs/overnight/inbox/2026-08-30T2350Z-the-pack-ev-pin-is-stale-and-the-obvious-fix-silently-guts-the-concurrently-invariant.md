@@ -1,7 +1,7 @@
 # ⚠ `refresh_mv_pack_ev_latest`'s pin went stale with tonight's watermark gate — and the OBVIOUS fix silently removes the `CONCURRENTLY` invariant for that function
 
 **Filed:** 2026-08-30 16:50 PT (23:50Z) · **By:** Claude (Claude Code, Trevor's box), interactive
-**Class:** pinned-function drift · **Status:** NOT FIXED HERE, deliberately — see §4. The fix is fully specified in §3; nobody needs to re-derive it.
+**Class:** pinned-function drift · **Status:** ✅ **RESOLVED 2026-08-30 ~22:15 PT** by the Claude Code overnight pass — see the resolution appended at the end. (Originally filed NOT FIXED HERE, deliberately — see §4.)
 
 ## 1. The condition
 
@@ -102,3 +102,47 @@ keeps recording.
 Otherwise the night pass or Trevor. ⚠ Whoever takes it: the migration file is already committed, so
 this is the MILD variant of the drift class (pin points at an older snapshot) — **not** the severe
 one (a function redefined via MCP with no committed migration at all).
+
+---
+
+## ✅ RESOLVED — 2026-08-30 ~22:15 PT, Claude Code (Trevor's box, overnight pass)
+
+Taken because the cloud session named in §4 has closed. All three specified changes landed, plus the
+§3 "consider also" arm, in one commit.
+
+**§2's trap was not just avoided — it was MEASURED.** The filing argued the invariant would go dead;
+a control now shows it. In an isolated `zz_mvgate_probe` schema on live (dropped after, 0 leftover),
+a body-equivalent copy of the function was driven through the file's own sequence:
+
+| probe | got | want |
+|---|---|---|
+| gate open (NULL watermark), view moves | 31 | 31 |
+| ...booked as a refresh | 1/0 | 1/0 |
+| ...watermark adopted | true | true |
+| gate closed, bumped source must NOT move the view | 31 | 31 |
+| ...skip counted | 1/1 | 1/1 |
+| new snapshot re-opens the gate | 32 | 32 |
+| ...booked as a second refresh | 2/1 | 2/1 |
+| **index probe WITH the seed** | **55000** | 55000 |
+| 🚨 **CONTROL — index probe WITHOUT the seed** | **`no error`** | `no error` |
+
+That last row is the finding: seeded, dropping the unique index raises 55000 as it always did;
+unseeded, it raises **nothing at all**. The one-line fix would have left this file's central
+assertion passing vacuously.
+
+**Also landed (the §3 "consider" arm), because without it the filing's own point stands — a revert of
+the gate would pass every test here.** New §1c pins the gate's contract: a bumped source must NOT move
+the view while the gate is closed, the skip is counted, and a *new* snapshot **re-opens** it. That
+third arm is deliberate: the first two alone are equally satisfied by a gate wedged permanently shut,
+which is the failure mode that would silently freeze the public pack-EV surface.
+
+**Falsifier status — stated, not fudged.** The filing asks for the drop-index probe to be re-run after
+the change. It was, against the body-equivalent copy (table above), *and* with its negative control.
+It was **not** run through `scripts/run-db-tests.sh` on the real file: this box has neither `psql` nor
+`docker`. The `DB invariants (SQL)` CI job is the first end-to-end execution — and it is an honest
+falsifier, because an ineffective seed makes the probe return `no error` and reds the job rather than
+passing quietly.
+
+Local: drift guard 197/197 · `npm run db:pins:check` **189 pins, 189 clean, 0 needing attention**
+(was 188/1 stale) · full suite 15,619 passed, 0 assertion failures. The 07:20Z
+`db-pin-staleness.yml` red is averted.
