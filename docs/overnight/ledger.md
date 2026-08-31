@@ -10,6 +10,108 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · ✅ SHIPPED (eight partial indexes, built CONCURRENTLY, migration stamped) + 🚨 A "NEEDS TREVOR" RAISED FIVE HOURS AGO IS REFUTED BY ITS OWN FALSIFIER — a correctness repoint on 07-05 quietly orphaned the index behind `get_serial_backfill_targets`, and the drift sweep is winning after all
+
+> ⚠ **SCOPE OF THE NO-PUSH BLOCKER.** This was a cloud pass; no `mcp__remote-devices__*` tools were present, so
+> there was no desktop bridge and nothing on Trevor's computer was reachable. The cloud git proxy refuses to inject a
+> credential for this repo. **This blocker is specific to that cloud session** — Trevor's machine and Claude Code push
+> normally via the PAT in `remote.origin.pushurl`. **Commit the files below as usual.**
+> ⓘ **Committed 2026-08-31 13:2xZ by the device-bridged session** (migration `20260831093302` + `20260831030424`
+> recovered md5-verified from prod in `cb8c809`; this entry, both inbox filings and `metrics-latest.json` here).
+
+**Read at:** `origin/main` `a1e0fd0a` (cloned 08:58Z). DB `now()` 09:0x–09:3xZ.
+
+---
+
+**🚨 The 07:1xZ filing "the drift sweep's cutoff advanced half a second in six minutes" is REFUTED — by the falsifier
+it wrote itself, run over a 19× longer window.** That filing measured `rwfd_state.last_cutoff` twice, 347 s apart,
+saw **+0.51 s**, called it *0.15 % of real time* and raised a decision for Trevor. Its own window contained
+**exactly one run** (`refresh_wmc_fmv_drift_active` at 07:03:25Z). The 08-30 entry's contrary reading (**+7.66 min**)
+also contained exactly one run. **Neither was a rate; they were two samples from opposite tails of the same
+distribution.**
+
+📏 **Measured against DB `now()` across 23 runs:**
+
+| DB `now()` | `rwfd_state.last_cutoff` | backlog |
+|---|---|---:|
+| 07:06:57.327Z (the 07:1xZ filing's second read) | 03:28:12.381 | 218.14 min |
+| 09:01:13.543Z | 05:56:26.574 | 184.78 min |
+| 09:04:31.518Z | 05:56:27.170 | 188.07 min |
+| 09:18:27.627Z | 05:56:27.635 | 202.00 min |
+
+⭐ **07:06:57 → 09:18:27: 8,895.25 s of cutoff advance against 7,890.30 s of wall clock = 1.128× real time**, and over
+the first 114 min of that span **1.297×** — which is the 08-30 entry's *"net positive, ~1.3×"*, independently
+reproduced. **The sweep is winning.** Output over the same window: **23 runs, 11 of them wrote rows, 2,370 rows total**
+— not the *"2 of the last 12 ticks"* the 07:1xZ filing reported.
+
+⭐⭐ **The mechanism, which neither prior filing had:** the cutoff is `MIN(computed_at)` over the undrained residue, so
+it advances as a **STAIRCASE, not a ramp** — long treads where one straggler pins it (measured: **+1.06 s in 1,034 s**
+across 09:01→09:18, and backlog *rising* 1:1 with the clock through it) punctuated by jumps of hours when the residue
+clears. ⛔ **Consequently: two `last_cutoff` reads are not an instrument at any spacing below ~20 runs.** Both prior
+filings, including the one that produced the 1.3× figure now confirmed, used n=1. **The instrument that does work is
+the BACKLOG TREND over hours** — record the pair, never the delta.
+
+⛔ **Therefore no change is proposed and no decision is owed.** The 07:1xZ filing's option 3 (a bounded upper edge per
+run, `computed_at > v_cutoff AND <= v_cutoff + N`) remains the right *optimisation* — it would flatten the staircase
+into a constant advance and make the cost predictable — but it is not a fix for a defect, because the measured system
+is draining faster than the arrivals. **Falsifier for this entry:** four readings ≥ 30 min apart whose backlog trend
+is flat or rising over ≥ 4 h.
+**Revert:** n/a — measurement only; nothing was changed.
+
+---
+
+**✅ SHIPPED — `get_serial_backfill_targets` reads 854 MB per call to return one row, because a correctness fix on
+2026-07-05 orphaned BOTH partial indexes that used to serve it.**
+
+⭐ **The mechanism is the interesting part.** `audit_20260705_serial_recovery_null_sentinel` widened the recovery
+predicate from `serial_number = 0` to `(serial_number IS NULL OR serial_number = 0)` — **correct, and it kept the
+drain honest.** But the partial indexes on each `sales` partition are shaped for the two halves *separately*:
+`idx_sales_<yr>_null_serial` is `(sold_at) WHERE serial_number IS NULL AND nft_id IS NOT NULL`, and
+`sales_<yr>_collection_id_idx` is `(collection_id) WHERE serial_number = 0`. **Neither predicate is implied by the
+OR**, so since 07-05 the planner has had no usable index and has read the whole heap of all eight partitions on every
+call. **Nobody noticed because the repoint was verified on ROWS RETURNED** — that entry proudly records *"3,296 TS +
+≥5,000 AllDay recoverable targets"* — **and never on buffers.**
+
+📏 **EXPLAIN (ANALYZE, BUFFERS) THROUGH THE FUNCTION** (item 13's rule, not the body with literals),
+`get_serial_backfill_targets(NULL, 500, 0)` at 09:0xZ: **`shared hit=12,237 read=109,371` (854 MB), 6,656 ms, for
+`rows=1`.** Only **1,929 rows in the entire table** satisfy the predicate (1,917 of them Top Shot + All Day) against
+**1.29 GB of heap** across `sales_2020..sales_2027` — a ~150 KB index standing in for a full-heap scan. pgss diffed
+against `audit_20260830_pgss_snap` 05:06:44Z on `(userid, dbid, toplevel, queryid)`: **4 calls, 412,490 blocks read,
+103,123 blocks/call — the highest per-call disk reader on the board in that window.**
+
+**Shipped:** eight per-partition partial indexes on `(sold_at) WHERE ((serial_number IS NULL OR serial_number = 0) AND
+nft_id IS NOT NULL)`, built **CONCURRENTLY** 09:1x–09:3xZ by one-off postgres-owned pg_cron jobs (jobids 417–424,
+`tmp-idxbuild-sales-<yr>-serial-targets`, unscheduled after), then stamped as a no-op migration. ⚠ **No
+statement_timeout window was opened** — every partition built inside the 120 s cluster default, so there was no
+`ALTER ROLE` to leak. ⚠ **Nothing is ATTACHed to the partitioned parent on purpose:** a query against `public.sales`
+expands to the partitions and uses each child's own indexes, so ATTACH would buy nothing and would take ACCESS
+EXCLUSIVE on the parent.
+
+⚠ **What this does NOT fix, said plainly: the treadmill.** The 09:0xZ call found **one** actionable row against 1,917
+qualifying, because the `sales_serial_backfill_failures` 24 h cooldown holds the rest. Those rows re-enter every 24 h,
+fail again, and go back on cooldown — over a set **this ledger already recorded as unrecoverable from this path**
+(2026-07-05: *"9,675 AllDay NOT recoverable … needs the deployed `sales-serial-backfill` edge fn triggered with a real
+`INGEST_SECRET_TOKEN` — operator/CC action"*). Last six runs wrote **0/1/2/4/3/0 rows = ~10 sales in 12 h** for
+~19 GB/day of reads. **This index makes the treadmill cheap; only an operator can stop it.**
+
+**Exit (24 h):** blocks/call falls from ~103,000 toward <1,000 and the mean from ~6 s toward <100 ms, in a pgss diff
+against a fresh `audit_20260830_pgss_snap` row.
+**Falsifier:** blocks/call unchanged ⇒ the planner is not matching the OR predicate to the index (check by EXPLAIN
+*through the function*), and the fix is instead to split the body into two `UNION ALL` branches that each match one of
+the pre-existing partials.
+**Revert:** `DROP INDEX CONCURRENTLY public.idx_sales_<yr>_serial_backfill_targets;` for 2020…2027.
+
+---
+
+⚠ **The saturation instrument is session-driven and it has started missing.** `audit_20260830_pgss_snap` is described
+in the 08-30 entry as *"2-hourly snapshots"*, and the 08-30 security entry already recorded that **`cron.job` schedules
+nothing for it** — the 2-hourly cadence is an *assumption* that the autonomous pass runs every 2 h and snapshots each
+time. **It has now failed twice:** 01:02:49Z → 05:06:44Z (4 h, no 03:0x row) and 05:06:44Z → 09:05:42Z (4 h, because
+the 07:1xZ pass diffed against the 05:06 row without taking one). A diff against a 4-hour-old baseline is a 4-hour
+window silently labelled a 2-hour one. **A snapshot was taken this pass at 09:05:42Z (4,961 rows).** 👉 Scheduling it
+is a one-line pg_cron job, but the table is `audit_`-named and the 08-30 entry says *"prefer dropping the table once
+its owner is done"* — **naming and lifecycle are the owner's call, so it is queued, not shipped.**
+
 ### 2026-08-31 · ⛔ RETRACTION of my own 0700Z filing — the sentinel's Detector Health arm is working AS DESIGNED, and the real defect is an alarm whose CLEARING CONDITION is outside the estate
 
 **Correcting the entry I wrote hours ago on this same page.** I diagnosed the arm from its BEHAVIOUR
