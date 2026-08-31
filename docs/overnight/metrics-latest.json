@@ -1,63 +1,46 @@
 {
-  "run": "nightly-20260830T0804Z-cloud-NOPUSH",
-  "captured_at_utc": "2026-08-30T08:06Z",
-  "captured_at_pt": "2026-08-30T01:06 PT",
-  "mode": "GENUINE OVERNIGHT (real local ~01:06 PT, inside 00:00-06:00; DB now() 08:02:58Z == shell 08:02:49Z, no skew; max sale 07:56Z + max fmv 07:57Z bound real time from below) + NO-PUSH (mount has NO remote.origin.pushurl; git push --dry-run -> 'could not read Username'). DB migrations + artifact repairs were shippable; NOTHING was clearly-safe to ship, so nothing shipped. Code/deploys queued for operator.",
+  "run": "nightly-20260831T0803Z-cloud-NOPUSH",
+  "captured_at_utc": "2026-08-31T08:10Z",
+  "captured_at_pt": "2026-08-31T01:09 PT",
+  "mode": "GENUINE OVERNIGHT (real local ~01:09 PT, inside 00:00-06:00; DB now() 08:03:05Z == shell 08:02:54Z, no skew; max sale 07:56Z + max fmv 07:56Z bound real time from below) + NO-PUSH (mount pushurl harvest dead: git push --dry-run -> could not read Username). DB migrations + artifact repairs were shippable; NOTHING was clearly-safe AND net-new to ship, so nothing shipped. Code/deploys queued for operator.",
   "genuine_overnight": true,
   "push_available": false,
-  "shipped_to_prod_state": "NOTHING SHIPPED. Quiet honest night. No new low-risk DB/artifact lever; all actionable work routes to operator/code and is already queued.",
+  "shipped_to_prod_state": "NOTHING SHIPPED. Quiet honest night. Top Shot outage self-recovered; concurrent Claude Code sessions already shipped ~15 DB/perf fixes in the prior 24h (all holding); no net-new low-risk DB/artifact lever remained; all residual actionable work is code/push (queued) or pack-EV (off-limits).",
+  "origin_main_tip_at_run": "a1e0fd0a (2026-08-30 23:03 PT, docs)",
   "security": {
     "invariants": "clean ([])",
     "anon_write_holes": "clean ([])",
     "rls_off_base_tables": "clean ([])",
     "secdef_anon_violations": "clean ([])"
   },
-  "rpc_ops_snapshot": "HEALTHY — returns all 11 keys (prior sentinel_fmv_confidence_rows filter-pushdown fix, migrations 20260829202655/_202944, is HOLDING; no timeout, no revert).",
+  "rpc_ops_snapshot": "HEALTHY — returns all keys; no timeout.",
   "post_ship_watch": {
-    "sentinel_fmv_confidence_rows_pushdown": "PASS. rpc_ops_snapshot() completes and returns fmv_by_collection + all keys. No regression. No revert.",
-    "offers_sweep_upstream_breaker_shipped_tonight_by_claude_code": "PASS. Alternating fail(530)->skip(extra.skipped=upstream_outage) every other tick since ~05:22Z; halves wasted calls into the dead Top Shot host. Half-open by construction, working as designed.",
-    "collection_moments_perf + og_card_bounds + edge_fn_4xx_arm (code ships)": "No new 5xx error class in Vercel prod runtime logs (12h): top paths are IPFS-media gateway misses + backfill routes, all pre-existing background noise. Cannot revert (NO-PUSH); no regression observed."
+    "fmv-backfill_vacuum_fix_93591e81_0458Z": "PASS. Pooled 5/10 fail (50%) straddles the fix; post-05:00Z runs 0/1 fail, latest 06:57Z ok=true empty error. Rate is the fix ABSENCE, not a live regression. No revert.",
+    "price-snapshots": "PASS. Pooled 3/9 (33%) straddles the same window; post-fix 0/1 fail, latest 06:57Z ok=true. No revert.",
+    "reindex_wave_plus_get_acquisition_stats_plus_refresh_error_triage_plus_pipeline_runs_error_trunc_trigger": "PASS. DB size 14412->13441 MB (reindex ~237MB + vacuums). rpc_ops_snapshot healthy, no new stalled pipelines, security clean. No regression attributable.",
+    "rls_on_mv_pack_ev_latest_refresh_state_54fa7685": "PASS (holding now). rls_off_base_tables=[]; durable recreation-proofing is code/push (queued)."
   },
-  "trust_health_breaches": ["unmapped_resolution_backlog_max = 295 (breach_at 100) — KNOWN structural nfl_all_day residual (47,264 actionable, ~716d to clear, do NOT raise breach_at). Not new, not autonomously actionable."],
-  "stalled_pipelines": [
-    "weekly-db-maintenance silent 2772m (info) — documented pg_cron `job startup timeout` class (jobid 198, DAILY 11:46 UTC), one lost daily tick reads as a 48h gap; not broken.",
-    "backfill-pack-rip-metadata silent 132m vs 120m arm (info) — last run 05:53Z, missed ~2 hourly ticks; external caller (cron-job.org/GHA), not DB. Powers wallet pack history; no live surface. Monitor."
-  ],
-  "pipeline_alerts_medium": [
-    "topshot-deal-floor-serials 30.2% fail — Top Shot GraphQL 530 (legacy-endpoint outage).",
-    "wallet-username-resolver 47.1% fail — statement timeout (partly outage upstream leg, partly OFFSET paging; keyset fix queued).",
-    "populate-pinnacle-wmc-fmv 25.9% fail — upstream request timeout.",
-    "topshot-active-listings-ingest 36.8% fail — egress_blocked."
-  ],
   "topshot_legacy_endpoint_outage": {
-    "state": "ONGOING ~38h+ (public-api.nbatopshot.com 530/1033, first 08-28 ~21:28Z; 614 failures over 2 days; decommissioning-shaped). Studio endpoint HEALTHY (asks path unaffected).",
-    "mitigation_status": "pack-pool-backfill PAUSED (jobid 16, last run 02:18Z). offers-sweep now has durable upstream-breaker (shipped tonight by Claude Code) — skips every other tick. topshot-moments-hydrator STOPPED hammering (0 runs since 03:42Z). compute-topshot-pack-ev still ok:true through 33h of 0 rows (silent-failure; ok:false logging queued).",
-    "user_facing_effect": "FMV editions aging LEGACY-endpoint -> STALE. HIGH+MED: TS 7609->6983 (-626), AllDay 1505->1279 (-226) vs 08-29. 100% attributable to the outage. Durable fix = Studio-endpoint client migration = CODE+PUSH = operator/Claude Code (queued)."
+    "state": "RECOVERED. topshot_fmv_stale_hours=0.1 (was aging), allday_fmv_stale_hours=0.1. The ~38h+ 530/1033 outage that dominated 08-29/08-30 has cleared on the legacy path (per 08-31 0610Z daytime filing, confirmed here by staleness metrics).",
+    "fmv_recovery": "HIGH+MED nba_top_shot 6983->8001 (HIGH 2186 + MED 5815); nfl_all_day 1279->1627 (HIGH 145 + MED 1482). 100% attributable to the recovery."
   },
-  "db_size_mb": 14412,
-  "editions_by_collection": {"nba_top_shot": 19913, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125},
-  "total_editions": 27321,
-  "fmv_high_plus_medium_by_collection": {
-    "nba_top_shot": 6983,
-    "nfl_all_day": 1279,
-    "laliga_golazos": 1,
-    "ufc_strike": 0,
-    "disney_pinnacle": "own table",
-    "note": "HIGH+MED declining, tracks the ~38h Top Shot legacy-endpoint outage aging editions into STALE. Root cause upstream; not fixable in DB."
-  },
-  "sentinel_ts_uuid_editions_48h": 0,
-  "vercel": "Production healthy. 12h 5xx = low background noise (IPFS-media gateway misses, backfill routes during outage). No new error class from recent code ships.",
-  "sentry": "STILL DARK (org error quota exhausted since 08-18; operator/billing). 0 is a dark reporter, not a clean bill. Not re-probed this run (standing operator blocker).",
-  "artifacts": "11 present; none flagged broken/stale; none broken by tonight's restorative DB state; fresh-on-open. No repair needed.",
-  "inbox": "327 files (append-only by design — REFUTED 2026-08-24, enforced by __tests__/inbox-is-append-only-since-the-rule.test.ts; NOT archived). 4 freshest (2026-08-30 0014Z/0130Z/0230Z/0311Z) all already RESOLVED or handed off by tonight's earlier interactive Claude Code session.",
-  "queued_for_operator": [
-    "topshot-moments-hydrator durable upstream-breaker (mirror offers-sweep) — code/handoff.",
-    "compute-topshot-pack-ev: log ok:false when gql_errors==nodes_processed && ev_rows_written==0 (33h silent-failure) — edge-fn code.",
-    "Top Shot pack-EV revival from Studio asks (pool fixed at drop; depletion NULL until on-chain leg) — Trevor product + IO (R46) decision.",
-    "Top Shot legacy-endpoint -> Studio client migration (lib/chains/flow/topshot*.ts) — code+push.",
-    "snapshot-institutional-wallets OFFSET->keyset (edge-fn/R21).",
-    "8 truncated + 5 duplicate setless `sets` rows (R58 refuted; they 404 by construction, no user surface) — cosmetic data cleanup, no change warranted.",
-    "Standing operator blockers: cloud-Cowork git push creds, Sentry dark since 08-18, atlas-proxy, sports-proxy ESPN 403, #22 stale public branch e4tib3."
+  "trust_health_breaches": ["unmapped_resolution_backlog_max = 265 (breach_at 100) — KNOWN structural nfl_all_day residual (47,233 actionable, ~531d to clear; 57,532 multi-NFT txs frozen by design). Was 295 (08-30) -> 275 -> 265; trending down. Not new, not autonomously actionable; do NOT raise breach_at."],
+  "stalled_pipelines": "[] clean (last night had 2 info-level; both cleared).",
+  "pipeline_alerts": [
+    "fmv-backfill 50% (5/10) HIGH — statement timeout, POOLED across tonight 04:58Z vacuum fix; post-fix green.",
+    "populate-pinnacle-wmc-fmv 26.8% medium — upstream request timeout (chronic).",
+    "price-snapshots 33.3% medium — POOLED across vacuum fix; post-fix green.",
+    "topshot-active-listings-ingest 35.3% medium — egress_blocked (chronic, R21 rotation-blocked)."
   ],
-  "ledger_write_note": "NO-PUSH: metrics + handoff + ledger entry + session note written to the MOUNT (uncommitted; Trevor/Claude Code commits). Ledger re-read from disk immediately before splicing at first ^### heading."
+  "pipeline_sentinel_state": "LIVE CRITICAL by design — edge-fn-drift arm correctly red (12x streak; 6 of 25 drifted fns must NOT redeploy, gate keys unset). Masks any NEW critical. Mechanism fix = read edge-fn-drift-report.json artifact instead of the badge = GHA workflow change = CODE/PUSH = queued. Filed 08-30 (ledger + inbox 0700Z).",
+  "db_size_mb": 13441,
+  "editions_by_collection": {"nba_top_shot": 19923, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125},
+  "total_editions": 27331,
+  "fmv_high_plus_medium_by_collection": {"nba_top_shot": 8001, "nfl_all_day": 1627, "laliga_golazos": 2, "ufc_strike": 0, "disney_pinnacle": "own table"},
+  "sentinel_ts_uuid_editions_48h": 0,
+  "vercel": "Production READY (c3241997). Two docs-only tips above it (8f3eef04, a1e0fd0a) CANCELED — expected. 14h runtime errors = known background families (url.parse DEP0169 x240, 60s route timeouts x182, entity/pack-detail read timeouts, 4 residual TS 530). No new error class.",
+  "sentry": "STILL DARK (org error quota exhausted since 08-18; operator/billing). Not re-probed.",
+  "artifacts": "11 present; none flagged broken/stale; rpc_ops_snapshot (backs rpc-live-health) verified working. Fresh-on-open; no repair needed.",
+  "inbox": "338 mount / 337 clone (append-only by design; NOT archived). Freshest 08-31 items all diagnosis-only or code/pack-EV, already filed/handed off.",
+  "ledger_write_note": "NO-PUSH: metrics + handoff + ledger entry written to the CLONE and mirrored to the MOUNT (uncommitted). Ledger re-read from disk before splicing at first ^### heading; baseline 1392 -> 1393."
 }

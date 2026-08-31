@@ -10,6 +10,76 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · ⛔ CORRECTION + ✅ SHIPPED — the Top Shot host did NOT recover (4/4 probes 530, with a positive control), and the drift report's "SAFE to redeploy" advice gains a third state
+
+⚠ **Correcting the entry immediately below this one, as a NEW entry rather than an edit to it** — that
+pass's record is its own, and rewriting another session's ledger text is this repo's clobber class.
+Also committing that pass's artifacts on its behalf (it ran NO-PUSH):
+`docs/handoff-2026-08-31-overnight-pass.md` + `metrics-latest.json`, with the same correction appended in-file.
+
+🚨 **REFUTED: "Top Shot legacy-endpoint outage RECOVERED."** Measured from this box's **residential**
+egress — the arm that *does* work for the Atlas ingest, so this is not the `egress_blocked` class:
+
+| probe | result |
+|---|---|
+| `POST public-api.nbatopshot.com/graphql` ×4 | **530 · 530 · 530 · 530** |
+| positive control `GET rippackscity.com/api/health` | **200** |
+
+⭐ **The readings were real; the ATTRIBUTION was not.** `topshot_fmv_stale_hours` 0.1 and the HIGH+MED
+rebound (6983→8001) are both true — but *"100% attributable to the recovery"* attributes them to a
+recovery that did not happen. **FMV is sales-driven and Top Shot sales are on-chain** (`max(sold_at)`
+16 min old), so that path never depended on the dead host. CLAUDE.md's *"a plausible mechanism is not a
+measurement"*, with the host one request away. ⭐⭐ **The cleanest single disproof needed no probe at all:
+`topshot-fmv-populate` is ITSELF still in the paused cohort** — a metric cannot have recovered *because*
+a pipeline returned when that pipeline is still switched off.
+
+⚠ **Why it could not be left standing: 7 pipelines are suppressed to 2026-09-13 on this host** —
+`compute-topshot-pack-ev`, `topshot-badge-catalog`, `topshot-badge-set-backfill`,
+`topshot-deal-floor-serials`, `topshot-fmv-populate`, `topshot-moments-hydrator`,
+`topshot-pack-pool-backfill`. **All seven suppressions remain CORRECT**, and a session reading
+"recovered" would un-pause them into a 530 host. ⭐ **Two sessions, same data, opposite confidence:** the
+[0610Z daytime-monitor filing](inbox/2026-08-31T0610Z-daytime-monitor-topshot-legacy-endpoint-freshness-recovered-reassess-queued-studio-migration-and-packev-unpause.md)
+saw the identical signals, explicitly refused to conclude, and asked for exactly this probe — **the one
+that named its uncertainty was right.** Answer appended to that filing; its deciding question
+("recovered, or sourced elsewhere?") is now settled as **sourced elsewhere**, so the Studio-client
+migration stays open and still sized against a dead host.
+
+✅ **SHIPPED alongside it — `scripts/check-edge-fn-drift.mjs` gains a `DEPLOY_DEFERRED` bucket.** The
+drift report partitioned drifted functions two ways (safe / gate-key-blocked) and therefore told readers
+that **`compute-topshot-pack-ev` was "SAFE to redeploy"** — the one function tonight's own ledger records
+as *shipped to main, DELIBERATELY not deployed*. ⚠ **Not a second blocked list:** a blocked function needs
+an OPERATOR to set a secret; a deferred one needs a CONDITION to be met — different remedy, different
+owner, pinned by a test that fails if the two are merged. ⛔ **It deliberately does NOT change the exit
+code** — drift is still drift and the check still exits 1; suppressing the exit is how a detector goes
+green while the drift stands. This changes the ADVICE only.
+
+⭐ **And the measurement immediately sharpened the entry it created.** Its first clearing condition was
+*"a Top Shot source is restored"* — which **today would read as SATISFIED** (Atlas is feeding FMV) while
+the pipeline sits at 0 ticks in 24 h. It is now a one-query check:
+`SELECT max(started_at) FROM pipeline_runs WHERE pipeline = 'compute-topshot-pack-ev'`. **Writing the
+clearing condition down is what exposed that it was ambiguous** — a test now requires every entry to
+carry a `CLEARS WHEN:` clause for exactly that reason.
+
+📏 **Verified:** drift-checker tests **45/45** (was 43) · **mutation-tested** — deleting the new
+partition branch kills 2 tests, so the guard is not vacuous, and the file was restored md5-identical ·
+`node --check` clean · `tsc --noEmit` exit 0 · inbox INDEX guard 5/5 after adding the monitor's filing
+(both counts bumped, 336→337). ⓘ The nightly pass independently reached the SAME sentinel mechanism fix
+filed at 0700Z — key the arm on whether `edge-fn-drift-report.json` was produced, not on the GH
+conclusion — which is convergence from two directions, not one session's opinion.
+
+**Revert:** `git revert <this sha>` — repo-only (one script, one test, docs). No DB, no prod, no deploy.
+
+### 2026-08-31 · ✅ QUIET HONEST NIGHT (NO-PUSH) — nothing shipped; Top Shot outage self-recovered, all prior-24h ships holding, no net-new safe lever
+
+**Genuine overnight (01:09 PT, no clock skew) + NO-PUSH** (mount pushurl harvest dead — `git push --dry-run` = "could not read Username"). DB migrations + artifact repairs were shippable; **nothing shipped** because no net-new, clearly-safe, non-off-limits DB/artifact lever remained. `origin/main` a1e0fd0a at start and end (no push landed mid-run).
+
+- **Top Shot legacy-endpoint outage RECOVERED** — `topshot_fmv_stale_hours` back to 0.1, `allday_fmv_stale_hours` 0.1. **FMV HIGH+MED recovered: nba_top_shot 6983→8001, nfl_all_day 1279→1627.** The ~38h+ outage that dominated 08-29/08-30 has cleared; no DB action was required or possible.
+- **DB size 14412→13441 MB** (−971 MB) from the reindex wave + sales-partition vacuums. Security all clean ([]). Stalled pipelines [] (2 info-level cleared). One BREACH: `unmapped_resolution_backlog_max=265` — the known structural nfl_all_day residual, trending down 295→275→265, not autonomously actionable.
+- **Post-ship watch (all PASS, no reverts):** the prior 24h shipped ~15 DB/perf fixes, all by interactive Claude Code sessions. fmv-backfill 50% + price-snapshots 33% alert rates are POOLED across tonight's 04:58Z vacuum fix (93591e81) — post-fix runs green (latest 06:57Z ok=true). reindex/get_acquisition_stats/refresh_error_triage/pipeline_runs.error-trunc-trigger all holding. RLS on mv_pack_ev_latest_refresh_state holding (rls_off_base_tables=[]).
+- **Pipeline Sentinel still LIVE CRITICAL by design** (edge-fn-drift arm correctly red; masks new criticals). Mechanism fix = key the arm on "did edge-fn-drift-report.json get produced?" not the GH failure conclusion — GHA workflow change, queued (do NOT raise crit_at / drop from WATCHED).
+- **Queued for operator (code/push or pack-EV off-limits):** sentinel report-vs-badge fix; Top Shot→Studio/Atlas client migration; compute-topshot-pack-ev un-pause + honesty deploy (abe02f4c); mv_pack_ev_latest DISTINCT-ON rewrite (918c92b5); moments-hydrator/offers-sweep breaker mirror; keyset paging; refresh-state durable RLS recreation-proofing. Standing blockers: cloud git-push creds, Sentry dark since 08-18, atlas-proxy, ESPN 403, #22 e4tib3.
+- **Revert:** n/a — nothing shipped. Handoff: [docs/handoff-2026-08-31-overnight-pass.md](../handoff-2026-08-31-overnight-pass.md).
+
 ### 2026-08-30 · 🚨 FOUND, NOT FIXED — the fleet's top-level alarm went permanently CRITICAL tonight because a detector that is WORKING is red, and GitHub reports "found something" and "could not run" identically
 
 ⚠ **Live condition: `Pipeline Sentinel` is red right now and will mask any NEW critical until this is resolved.**
