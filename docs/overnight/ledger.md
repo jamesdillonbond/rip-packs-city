@@ -10,6 +10,54 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-30 · 📏 MEASURED, nothing shipped — jobid 71 is NOT retirable (sole feeder for 89 of 598 packs), its working set is FROZEN, and the blocker on its fix was re-read and HOLDS
+
+The triage instrument's #2 `LIVE` entry, **1,806 wasted s/day**. Its name — `rpc-backfill-historical-pack-ev` —
+invites retirement, and this repo's rule is to **retire by measured yield, not by name**. So it was measured.
+
+⛔ **First, the name is wrong.** `cron.job.command` calls `backfill_topshot_historical_pack_ev(15)`, whose candidate
+set carries `NOT EXISTS (… snapshotted_at > now() - interval '12 hours' AND edition_count > 0)`. That makes it a
+**recurring 12-hourly refresher with no cursor and no terminal state** — not a draining backfill.
+
+🚨 **The finding, and it is a "do not do this": retiring it would take 89 Top Shot packs (14.9%) DARK on a public +EV
+surface.** Coverage over 8 d, attributed by **MECHANISM** (`price_source IS NULL`) rather than by schedule minute —
+the Atlas filing records that attributing this exact cluster by minute was already wrong once:
+population **598** · jobid 217 covers **509** · jobid 71 covers **97** · any writer **598** ·
+**covered ONLY by jobid 71 = 89.** The two jobs nearly partition the population (509 + 89 = 598).
+
+⭐ **Its working set is FROZEN, and only a SET DIFF shows it.** Daily distinct dists read **89·89·92·92·97·92·92·92** —
+a stable count is equally consistent with cycling a fixed set and with rotating the population, which is this file's
+own recorded ambiguity. Day-over-day overlap is **92 of 92**: it refreshes the SAME ~92 packs twice daily, correctly
+executing its 12-hour contract on its own partition.
+
+⛔ **A hypothesis of mine, tested and dropped:** the `LIMIT 15` carries **no `ORDER BY`** (physical order — the
+`limit-before-join-starves-a-backfill` shape), so rejected candidates should wedge the head forever. **Refuted by
+OUTCOME: 593 of 598 packs have succeeded at some point, only 5 never once.** Measuring the outcome table killed my own
+control-flow reasoning. ✅ **And an independent corroboration of the 08-16 filing 14 days on:** it found 388 candidates
+/ 5 without an ask; tonight **475 / 7 (1.5%)**. ⚠ Two snapshots of a quantity that oscillates on a 12-hour cycle are
+**not** a trend — 388 → 475 is not growth.
+
+⚠ **NAMED AS NOT ESTABLISHED, rather than left implied:** ~475 candidates are eligible at any moment and only ~92
+distinct ones ever insert, so the rest are **computed and then rejected** by the two insert conditions the 08-16 filing
+never tested (`ok=true`, and the survivor cap `gross_ev <= 3*sec_ask`) — each still paying the full ~1.05M-buffer
+`compute_pack_ev_per_edition_weighted` cost. **That is almost certainly where the 1,806 s/day goes; it is NOT proven,
+and I deliberately did not measure it** — the measurement requires calling that function across the candidate set and
+would itself be a large IO event on the binding constraint. ⓘ The 08-16 filing tested **one of three** insert
+conditions and concluded "not the mechanism": sound for the one it tested, **under-determined for the other two**.
+
+🔑 **The blocker on the real fix was RE-READ, not inherited — and it HOLDS.** Two docs look contradictory and are
+answering different questions: `focus.md`'s *"the pinned one is the measured one … it can ship alone (migration +
+pin `.sql` + repoint the PINS migration name)"* is about the **pin coupling**, and that work is routine — it is the
+same three-artifact operation performed tonight on `refresh_mv_pack_ev_latest`. CLAUDE.md's *"blocked on a DECISION …
+Trevor's call"* is the **off-limits lane**, which the 08-16 filing states outright. ⭐ **Both are correct, and the
+lesson is that routine pin work does not convert an off-limits lane into a shippable one.** What is new is a price tag
+on the delay: **1,806 wasted s/day on the binding constraint, for a job that cannot be retired.** ⛔ The two cheap
+levers stay wrong for the recorded reasons — lowering `p_limit` cuts coverage on a queue already behind, and pack-EV
+publishes a public **+EV buy signal**, so making it staler is a product change wearing an optimization costume.
+
+Filing: [inbox 2026-08-31T0620Z](inbox/2026-08-31T0620Z-jobid71-is-not-retirable-it-is-the-sole-feeder-for-89-packs-and-its-working-set-is-frozen.md).
+**Revert:** n/a — measurement + docs only.
+
 ### 2026-08-30 · ✅ SHIPPED (docs) — the roadmap said the accuracy-gate precompute "still publishes canonical-only". It does not, and following that sentence mislabels the headline gate metric by ~16 points
 
 Live gate metric read tonight from `rpc_trust_health_precompute` (3.7 h old, **no 999 sentinels**):
