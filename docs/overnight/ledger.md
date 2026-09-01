@@ -71,6 +71,22 @@ success - Verify parity is actually clean now
 
 `get_lock_check_batch` is now the #5 consumer: **21,261 blocks · 16.5 s per call, ~97 calls/day ≈ 17 GB/day**. The cost is the priority leg, not the base leg — the `hot` CTE resolves to **584 wallets** and the second `CROSS JOIN LATERAL` branch runs one lateral per hot wallet **per collection**: 584 × 7 ≈ **4,088 index probes**, materialising up to ~29k rows per collection to return 50. ⛔ The inner `LIMIT p_limit` is load-bearing (one hot wallet may legitimately supply all output rows), so this needs a shape change, not a limit tweak — and it is `LANGUAGE sql`, so it is planned param-blind. Full analysis is attached to the object itself via `COMMENT ON FUNCTION`. Deliberately not rushed at the end of a long pass.
 
+#### 6. ⛔ CORRECTION — `sales-serial-backfill` is NOT blocked on `INGEST_SECRET_TOKEN`, and I said twice that it was
+
+I carried "the cure is the deployed edge fn triggered with a real `INGEST_SECRET_TOKEN`" forward from an earlier session and put it in two needs-Trevor docs as **the one genuinely operator-blocked item**, without re-deriving it. Measured tonight, last 24 h:
+
+| | |
+|---|---|
+| runs | 12 |
+| rows written | 6 |
+| AllDay failures by reason | **`onchain_nil`: 1,164 · `no_holder`: 19** |
+| auth / 403 / gate failures | **0** |
+
+`onchain_nil` is the chain returning nothing for that NFT — the deep-history / spork-floor class — and `no_holder` is nobody currently holding it. **Neither is an auth failure**, so setting the token would not change the outcome. The item has been removed from the needs-Trevor list rather than handed over again.
+
+⚠ This is the third premise to fail on contact in one pass (Golazos pack EV, the sniper index filter, and now this) — and unlike the first two, **this one was mine to catch and I propagated it twice first**. The rule already in memory covers it and clearly needs to bind harder: *a queued item's premise is a claim, not a given — re-derive it before acting on it OR before handing it to someone else.* Relaying is acting.
+
+
 ### 2026-09-01 · ✅ SHIPPED (parity) — recovered the fileless AllDay-dist rehydrate; the 08-31/09-01 drain ships all confirmed holding over the post-ship window
 
 Push-enabled desktop pass (device-VM `.rpc-git-cred`), genuine overnight (DB now 08:02Z = 01:0x PT). Health GREEN. 1 parity commit, 0 production-behaviour changes.
