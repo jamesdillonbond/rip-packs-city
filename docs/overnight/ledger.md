@@ -10,6 +10,123 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · ✅ DRAINED the two 09-01 cloud handoffs + both daytime monitors — 9 stranded migrations committed, 3 queued code fixes shipped (one of them NOT as queued, because the queued remedy would have corrupted 4 editions), 2 monitor candidates closed as self-healed
+
+**Session:** Claude Code interactive, Trevor's Windows box, ~20:45–21:1x PT. Zone read with
+`Get-Date -Format "yyyy-MM-dd HH:mm zzz"` → `2026-08-31 20:48 -07:00` before stamping. Push-capable.
+
+**🧹 COMMITTED — the 9 fileless migrations, recovered not retyped.** `check-migration-parity.mjs` exited
+1 with 9 `[MISSING]`, exactly the set the 0300Z handoff named. `recover-fileless-migrations.mjs --window 3`
+wrote all 9 byte-exact from prod, all md5-verified by the script; the parity check then flipped them
+`[MISSING] → [UNTRACKED]`, which is the signature of "file present, not yet committed". Cross-checked the
+one the handoff gave a digest for: `20260901030456…` md5 **`40591e25ae398d59fa061fa6dee3fce6`**, matching
+prod, and the recovered file carries **no trailing newline** (4,970 bytes), so the plain and stripped
+digests coincide. **Revert:** these are commits of ALREADY-APPLIED prod state — reverting the files does
+not touch the DB, and each migration carries its own DB revert line.
+
+**✅ SHIPPED — `enrich-ufc-wallet` now reads FMV through `get_fmv_snapshot_for_editions`**
+(`supabase/functions/enrich-ufc-wallet/index.ts`), the caller half of migration `20260901030456`. Verified
+the RPC through the function before wiring it: all 518 UFC editions in one call = **381 rows, 381 distinct
+editions, 0 null fmv, 0 null confidence** — one row per edition, so the old "first row wins" dedup loop is
+correctly gone. ⚠ **Chunk is 900, not unbounded.** PostgREST's `db-max-rows=1000` applies to RPC results
+too; at ≤900 ids the function cannot return 1,000 rows, so a partial read that would look exactly like
+"these editions have no FMV" is unreachable by construction. UFC is 518 today ⇒ a single call.
+🚨 **And a live honesty defect went out with it, in the same lines.** The old read destructured only
+`data`, ignoring `error`. `fmvByExt` feeds `fmv_usd` on **every** `wallet_moments_cache` row upserted
+below, so a failed FMV read wrote `fmv_usd: null` over the wallet's whole cached set — **a failed read
+acting as a DELETE**, the sub-class CLAUDE.md calls the worst ("a page that loads state and writes it
+back"). It now throws, which surfaces as a 500 and leaves the cached values it could not refresh
+untouched. `runScript` in the same file already throws, so this is the file's own convention.
+**Revert:** `git revert` the code commit; the DB function is inert without a caller.
+
+**✅ SHIPPED — `app/api/cache-refresh/route.ts` batches the `lock_checked_at` stamps.** The ten single-row
+UPDATEs per batch became at most two, grouped by the value written. The per-call cost the 0300Z pass
+measured (**7,689 buffers per single-row update, 1,268,710 over 165 calls in one 40-minute window**) is a
+repeated SCAN, not index maintenance: the filter was `(wallet_address, moment_id)` with **no
+`collection_id`**, so it could not use the `(wallet_address, collection_id, moment_id)` unique index as a
+full match. ⚠ Comment records what batching does NOT fix — every index on `lock_checked_at` still makes
+each stamp a non-HOT update (`20260809010000_…allday_lock_picker_skipscan.sql`). Also fixed a small
+fabricated green: `lockedBackfillCount` incremented **before** the write, so it counted rows as locked
+even when the UPDATE that was to record it failed. It now counts what was written and logs failures.
+
+**⛔ SHIPPED, BUT NOT AS QUEUED — fmv-recalc Steps 5c/5d/5e got a LATERAL, NOT `edition_fmv_current`, and
+the difference is 4 corrupted editions.** Both cloud handoffs queued *"replace the `latest` CTE with a read
+of `public.edition_fmv_current`"*. The **cost** half is real and was acted on. The **remedy** half is not
+safe, and one query says so: the two sources agree on membership **perfectly** (27,170 = 27,170, zero drift
+in both directions — which is what makes the trap convincing) but disagree on `confidence` for **41**
+editions, and for **4** of those `edition_fmv_current` reads `NO_DATA` while the true latest snapshot does
+not. Those 4 would have been admitted to the backfill and had a real snapshot **overwritten with an
+ASK_ONLY × 0.90 haircut**, in a step whose stated contract is that it must never steal an edition that
+heals via Step 5b. ⭐ **Third independent time `edition_fmv_current` has been measured non-substitutable**
+(08-24 filing: lost 71% of rows; 08-26 filing: "NOT a drop-in") — it is a lagging materialisation, and it
+keeps passing the cheap check (counts) while failing the real one (per-row values).
+📏 **What shipped instead**, warm-vs-warm `EXPLAIN (ANALYZE, BUFFERS)` on Step 5c: `DISTINCT ON` CTE
+**98,172 buffers / 452 ms** → LATERAL `LIMIT 1` **75,975 / 159 ms**. ⚠ **A third variant was FALSIFIED and
+is recorded so nobody re-tries it:** hoisting the predicate into `COALESCE((SELECT … LIMIT 1),'NO_DATA')`
+to let the selective sales anti-join filter first costs **120,508 buffers** — the planner keeps it as a
+per-row SubPlan and loses the hash join, i.e. **worse than the thing being replaced**.
+✅ **EQUIVALENCE PROVEN, AND DELIBERATELY NOT VACUOUSLY.** The obvious test — old-vs-new for Step 5c,
+`EXCEPT` both ways — returns `0 = 0, 0/0`, because this path legitimately returns zero rows, which is the
+very fact that made it worth optimising; `P(pass | the rewrite is broken)` there is ~1. So the substitution
+was compared over the full population it operates on, in **one MVCC snapshot**: all editions **27,170 rows
+/ 4,508 in the `NO_DATA` predicate class**, and Top-Shot-scoped (the 5e shape) **19,762 / 5,032
+`STALE`+`NO_DATA`** — `EXCEPT` **0/0 in both directions on both**. `fmv_snapshots.confidence` is `NOT NULL`,
+but the LATERAL still selects `edition_id` so the `IS NULL` arm is preserved term-for-term rather than
+relying on that.
+⛔ **Step 6's `latest` is deliberately UNTOUCHED** — it *drives* the query (every edition with a >24 h-old
+snapshot), so a per-edition LATERAL would be ~26k descents replacing one ordered merge walk. Different
+shape; not a mechanical repeat.
+👉 **Next lever there is a VACUUM, not SQL:** the shipped plan shows `fmv_snapshots_2026` at **`Heap
+Fetches: 10,880`** of 12,148 probes — the covering index the 0219Z pass built to avoid heap fetches is
+being defeated by a stale visibility map — and **24,296 buffers (32% of the query) probe
+`fmv_snapshots_2027`, a ZERO-row partition**, unprunable because the partition key is `computed_at` and
+this predicate is on `edition_id`.
+**Revert:** `git revert` the code commit — no DB object changed.
+
+**⭐ CORRECTION RECORDED — item 13 credits FOUR functions with the plpgsql + `force_custom_plan` remedy;
+`pg_proc` says TWO.** Re-read from the catalog myself rather than taking the handoff's word:
+`get_wallet_moments_with_fmv` and `get_wallet_total_fmv` carry it; **`get_fmv_for_editions`,
+`get_pack_realized_ev_row` and `get_acquisition_stats` are still `LANGUAGE sql` with no `plan_cache_mode`**.
+Not a lost ship — `20260830030332` is a LATERAL rewrite and `20260830032541` a predicate pushdown, and
+#13's quoted post-ship numbers for those two measure *those* fixes. ⛔ **Correct action was NO ACTION and
+that is what was taken.** Written into **known-issues #52** (the register item that governs the class)
+rather than only into the per-run `metrics-latest.json`, because a correction living in a run artifact is
+overwritten by the next run.
+
+**⚠ NEW GOTCHA WRITTEN UP — an instrument that returns GOOD NEWS in the wrong shape.**
+`public.get_trust_health()` does not exist; the board is the view `public.v_rpc_trust_health`
+`(metric, value, breach_at, status, catches)`, and the 0300Z pass's filter on a non-existent `is_breach`
+returned **`[]` — a false all-clear over two real breaches**, because the missing key is NULL and the
+filter drops every row. Correct predicate `upper(status) <> 'OK'` (values are case-mixed). Filed in
+`tooling-gotchas.md` beside its sibling (`check_secdef_anon_execute_violations()` reading `count(*) = 1`
+when clean), with the cost note: **~280k–350k buffers per SELECT — read the board once per pass.**
+
+**✅ BOTH DAYTIME MONITORS CLOSED — the candidate self-healed and one hypothesis is REFUTED.** Both the
+2111Z and 0012Z filings raised `topshot_impossible_parallel_serials` = **10** (breach_at 3). The live arm
+reads **0 / `ok`**, and `rpc_trust_health_precompute` stamps that **0 at 2026-09-01 00:48:00Z** — **36
+minutes after the 00:06Z reading of 10**, on the next per-parallel circ backfill tick. Known self-healing
+`::`-cataloging class; **no action taken and none owed**, and the `circ_floor_raise` / hand-edited
+circulation floor lever was correctly not used (sanctioned-interactive-only per the 07-10 note).
+⛔ **The 0012Z filing's stated hypothesis is FALSIFIED:** it proposed the circ backfill might be blocked by
+the `public-api.nbatopshot.com` 530 outage, and that the arm would keep drifting up until Atlas landed or a
+`circ_floor_raise` wave shipped. **The host is still 530 (sixth consecutive pass, positive control 200 in
+the same second) and the arm reconciled anyway** — so that backfill does not depend on it. That hypothesis
+was the kind that would have justified a write against source data; it was flagged as a hypothesis, which
+is what made it cheap to kill. Both filings **annotated in place with ✅ RESOLVED sections, not archived**,
+per the standing `inbox/` append-only rule.
+
+**Filings:** `inbox/2026-09-01T0400Z-edition-fmv-current-is-not-substitutable-in-fmv-recalc-and-the-lateral-is.md`
+(new) and `inbox/2026-09-01T0300Z-item-13-names-four-functions-as-fixed-and-the-catalog-says-two.md`
+(the cloud pass's, committed with a ✅ CONFIRMED-AND-ACTIONED section). `inbox/INDEX.md` gained a
+`## 2026-09-01` section and the 08-31 monitor entry; **counts recomputed with `npm run inbox:index:fix`,
+not hand-edited** (341 → 345 header, 08-31 section 9 → 10).
+
+⚠ **METHOD NOTE — the pipe-exit-code trap bit again and was caught.** `npm test 2>&1 | tail -40` printed
+`[exited with code 0]` over a run whose own summary said **`Test Files 1 failed | Tests 2 failed`** (the
+two inbox-index assertions, both since repaired and re-run green). CLAUDE.md already warns that a pipe
+reports the LAST command's status; this is a fresh instance, from reading the harness's exit line rather
+than the tool's own summary. **Read vitest's summary line, not the pipeline's status.**
+
 ### 2026-08-31 · 🧹 RECOVERED — a second fileless migration (`apply_fmv_thin_sales_guard`) plus its stale pin, both found by re-running the guards at archive time rather than trusting the earlier close
 
 **Caught only because I re-ran the checks instead of assuming the session-close state held.** `npm run

@@ -1,69 +1,97 @@
 {
-  "run": "nightly-20260831T0858Z-cloud-CAN-SHIP-DB-NOPUSH",
-  "captured_at_utc": "2026-08-31T09:35Z",
-  "captured_at_pt": "2026-08-31T02:35 PT",
-  "mode": "GENUINE OVERNIGHT (DB now() 08:58:48Z == container 08:58:31Z, no skew; real local 01:58 PT at start). NO DESKTOP BRIDGE (no mcp__remote-devices__* tools present) => cloud-only, cannot push. DB migrations WERE shippable and ONE SHIPPED.",
+  "run": "nightly-20260901T0300Z-cloud-CAN-SHIP-DB-NOPUSH",
+  "captured_at_utc": "2026-09-01T03:20Z",
+  "captured_at_pt": "2026-08-31T20:20 PT",
+  "mode": "GENUINE OVERNIGHT (DB now() 02:58:50Z == container 02:58:31Z, ~19s, no skew; real local 19:58 PT at start). NO DESKTOP BRIDGE (no mcp__remote-devices__* tools present) => cloud-only, cannot push. DB migrations WERE shippable and ONE SHIPPED.",
   "genuine_overnight": true,
   "push_available": false,
-  "read_at": "origin/main a1e0fd0a4cbe96ea878daed97760b8d761136c08, cloned 08:58Z, re-fetched 09:35Z — unchanged, the concurrent Claude Code session did not commit during this pass.",
-  "shipped_to_prod_state": "SHIPPED: eight per-partition partial indexes on public.sales_<yr> (sold_at) WHERE ((serial_number IS NULL OR serial_number = 0) AND nft_id IS NOT NULL), built CONCURRENTLY 09:16-09:30Z by one-off postgres pg_cron jobs 417-424 (all unscheduled), stamped as migration 20260831093302. get_serial_backfill_targets: 121,608 buffers (109,371 disk) / 6,656 ms -> 10,340 buffers (0 disk) / 21.3 ms.",
+  "push_test": "git push --dry-run origin HEAD:refs/heads/main -> HTTP 403, 'jamesdillonbond/rip-packs-city is not in this session's authorized repository set'. Operator-only, not self-grantable.",
+  "fired_by": "trig_01AZzLzkTPp5xbSjK1EFmeCw (58 */2 * * *) — the SUPERSEDED DUPLICATE task, whose prompt asserts it is device-bound. Falsified on five consecutive firings across both tasks.",
+  "read_at": "origin/main 7c63fa326cc2f38c2d6a89d332429cc2415ca599 (2026-08-31 08:39:47 -0700), cloned 02:58Z.",
+  "shipped_to_prod_state": "SHIPPED: migration 20260901030456 audit_20260901_get_fmv_snapshot_for_editions_lateral_with_confidence_and_sales_count. New RPC public.get_fmv_snapshot_for_editions(uuid, uuid[]) -> (edition_id, fmv_usd, confidence, sales_count_30d). DB half of the enrich-ufc-wallet FMV-preload fix. All 518 UFC editions in ONE call = 4,195 buffers / 196 ms / 381 rows, vs ~556,371 buffers for three PostgREST slices (~140x). Equivalence proven three ways.",
   "security": {
     "invariants": "clean",
-    "secdef_anon_violations": "clean — check_secdef_anon_execute_violations() returned the VALUE [] (not the count 1, which it always returns)",
-    "invalid_indexes_on_sales": "0 (checked after the build wave)",
-    "tmp_cron_jobs_left": "0 (tmp-idx% = 0; cron.job total 103, same as before the wave)"
+    "secdef_anon_violations": "clean — check_secdef_anon_execute_violations() returned the VALUE [] (not the count 1, which it always returns), re-read AFTER the ship",
+    "new_function_acl": "service_role + postgres EXECUTE only; has_function_privilege false for anon AND authenticated; not SECURITY DEFINER.",
+    "tmp_cron_jobs_left": "0 (tmp-idx% = 0; cron.job total 102)"
   },
   "health_verdict": "GREEN",
   "stalled_pipelines": [],
   "pipeline_alerts": {
-    "count": 5,
-    "down_from": "8 at 2026-08-30 16:5xZ, 7 at 07:0xZ",
-    "trailing_windows_over_already_green_pipelines": [
-      "fmv-backfill 5/10 (50%) — EVERY failure is <= 08-30 13:21Z; all five runs since 17:39Z ok. The 93591e8 vacuum/autovacuum fix on sales_2020..2024 holds. Ages out.",
-      "price-snapshots 3/9 (33%) — every failure <= 08-30 13:24Z; all five runs since 17:39Z ok, 1.3-2.4 s. Ages out.",
-      "populate-pinnacle-wmc-fmv 15/56 (27%) — last failure 08-30 15:03Z; 34 ok since, newest 08-31 08:09Z. Item 16 exit already met. Ages out."
-    ],
-    "known": [
-      "topshot-active-listings-ingest 6/17 egress_blocked — the concurrent session's board-ingest move fixes it (item 19).",
-      "unmapped-sales-nfl_all_day info — 47,231 actionable, ~519d to clear. Structural; do NOT raise the threshold."
+    "count": 2,
+    "rows": [
+      "fmv-backfill 5/13 (38.5%) failure_rate — TRAILING 2-DAY WINDOW; every failure <= 2026-08-30 13:21Z, ages out. DO NOT fix again.",
+      "unmapped-sales-nfl_all_day info — 47,204 actionable of 104,692, ~524.5d to clear. Structural; do NOT raise the threshold."
     ]
   },
-  "trust_health_breaches": [
-    "public_board_slow_count = 1 (breach_at 1) — candy_scarcity_board 4,890 ms at the 06:28Z sweep, the ONLY board over the bar of 45. STRONGLY IMPROVING: same board read 390,435 / 269,085 ms on 08-28, 55,075 on 08-29, 46,555 on 08-30 11:28Z, and its worst 08-31 reading is 4,890. Contention-bound (item 2's falsifier), not a regression.",
-    "unmapped_resolution_backlog_max = 265 (breach_at 100) — down from 275 (08-30) and 295 (08-29). Structural nfl_all_day residual."
+  "trust_health": {
+    "arms": 38,
+    "breaches": 2,
+    "rows": [
+      "public_board_slow_count = 1 (breach_at 1) — down from 6 at 0219Z.",
+      "unmapped_resolution_backlog_max = 228 (breach_at 100) — trend 265 -> 255 -> 228. Do NOT raise breach_at."
+    ],
+    "trust_precompute_max_age_hours": 5.2,
+    "INSTRUMENT_GOTCHA": "public.get_trust_health() DOES NOT EXIST. The board is the VIEW public.v_rpc_trust_health with columns (metric, value, breach_at, status, catches). Filtering on a non-existent is_breach column returns [] — a FALSE ALL-CLEAR over two real breaches. Use `upper(status) <> 'OK'`; values are case-mixed (ok / BREACH). It also costs ~280k-350k buffers per SELECT — read it ONCE per pass. Now written up in docs/reference/tooling-gotchas.md."
+  },
+  "cron_fleet_12h": { "succeeded": 1985, "failed": 0, "other_status": 0, "jobs": 102 },
+  "vercel_prod_180min": {
+    "denominator": 3051,
+    "by_status": { "200": 1854, "202": 1144, "307": 31, "204": 8, "401": 4, "404": 4, "502": 4, "304": 2 },
+    "500": 0, "504": 0,
+    "502_detail": "4 distinct /api/public/ipfs-media/<cid>, one hit each — known upstream IPFS-gateway class. The 01:00Z pass's 103x502 / 4x500 reading has failed to reproduce in two consecutive 180-minute windows."
+  },
+  "dead_host_probe_thread_11": {
+    "probes": ["530", "530"],
+    "positive_control": "rest-mainnet.onflow.org/v1/blocks?height=sealed -> 200, same shell, same second",
+    "at": "2026-09-01T02:59Z",
+    "verdict": "EXIT NOT MET (needs non-5xx twice). Nothing re-enabled. Sixth consecutive pass recording 530."
+  },
+  "corrections_made_this_pass": [
+    "Item 13 credits FOUR functions with the plpgsql + plan_cache_mode=force_custom_plan remedy; pg_proc says TWO (get_wallet_moments_with_fmv, get_wallet_total_fmv). get_fmv_for_editions and get_pack_realized_ev_row are still LANGUAGE sql — NOT a lost ship: 20260830030332 is a LATERAL rewrite and 20260830032541 a predicate pushdown. CORRECT ACTION IS NO ACTION.",
+    "v_rpc_trust_health has no is_breach column — a filter on one reads a false all-clear."
   ],
-  "trust_precompute_age_h": 0.27,
-  "cron_fleet_12h": {"succeeded": 2035, "failed": 1, "job_startup_timeout": 0,
-    "the_one_failure": "jobid 410 08-31 04:03Z 'job canceled' — the reindex budget-CLOSE job unscheduling a pattern that matches its own row. Work committed (cron_heavy rolconfig is exactly statement_timeout=600s). Cosmetic; ledger e9f1d76 already documents it. Independently re-verified this pass from the catalog."},
-  "pg_stat_activity_at_read": {"active": 2, "DataFileRead": 1, "note": "no saturation at read time"},
-  "vercel_production_12h": {"200": 29615, "202": 2725, "500": 1, "502": 78, "504": 3,
-    "500_path": "/api/wallet-search x1", "denominator": "~34,500 requests",
-    "note": "1 x 500 in 12 h. The 502s are the moment-art / ipfs-media class the 07:1xZ pass filed and handed to Trevor — route code, not shippable from here."},
-  "sentry": "search_issues returned zero unresolved in 12 h. ⚠ TREAT AS DARK, NOT CLEAN: the standing record (metrics-latest 08-30) says the org error quota has been exhausted since 08-18. A zero from a dark reporter is not a clean bill.",
-  "post_ship_watch": {
-    "item_13_LANGUAGE_sql_param_blind_wave": "PASS where there was traffic. pgss diffed against audit_20260830_pgss_snap 05:06:44Z on (userid,dbid,toplevel,queryid): get_fmv_for_editions 105 calls, 17.8 ms mean, 26 reads/call (it was the #1 PostgREST consumer); get_pack_realized_ev_row 61 calls, 283 ms, 246 reads/call (was 667,780 buffers pre-ship). ⚠ get_wallet_moments_with_fmv and get_wallet_total_fmv had ZERO calls in this 4 h overnight window — absence of traffic, not absence of cost; re-read in a daytime window.",
-    "item_52a_get_acquisition_stats": "PASS. 10 calls, 1,646 ms mean, 3,442 reads/call, against the 3.1 s / 16k buffers the open-threads list records as 'measured and not shipped' — the concurrent session shipped it as 20260831001448 and it is working.",
-    "item_14_wmc_reindex_second_wave": "CLOSED, re-verified from the system catalog (not from the previous handoff): wmc-reindex-verify 04:06Z ok=true; 0 invalid indexes on wallet_moments_cache; 0 *_ccnew relations; 0 tmp-reindex-wmc-% cron jobs; pg_roles.rolconfig for cron_heavy = exactly {statement_timeout=600s} — the budget was closed, not left raised."
-  },
-  "refuted_this_pass": {
-    "the_0710Z_drift_sweep_filing": "REFUTED by its own falsifier over a 19x longer window. 07:06:57Z cutoff 03:28:12.381 (backlog 218.14 min) -> 09:18:27Z cutoff 05:56:27.635 (backlog 202.00 min): 8,895.25 s of advance against 7,890.30 s of wall clock = 1.128x real time (1.297x over the first 114 min, which independently reproduces the 08-30 entry's ~1.3x). 23 runs, 11 wrote rows, 2,370 rows. The 07:1xZ window contained EXACTLY ONE run (07:03:25Z) and the 08-30 window exactly one too — neither was a rate.",
-    "mechanism": "last_cutoff = MIN(computed_at) over undrained residue, so it advances as a STAIRCASE: measured +1.06 s across 1,034 s (09:01->09:18) with backlog rising 1:1 through the tread, punctuated by hour-scale jumps. Two last_cutoff reads are not an instrument below ~20 runs. Use the BACKLOG TREND over hours."
-  },
-  "migration_parity_derived_at_0935Z": {
-    "against": "origin/main a1e0fd0 (git ls-tree, NOT the working tree)",
-    "register_rows_since_20260801": 437,
-    "fileless_by_NAME": 2,
-    "fileless_by_NAME_list": ["20260831030424 audit_20260831_pause_wallet_username_resolver_cadence_arm (applied by the 03:0xZ cloud pass; already staged in the Project, still uncommitted)", "20260831093302 audit_20260831_sales_serial_backfill_targets_partial_index_the_0705_or_repoint_orphaned_both_partials (THIS PASS)"],
-    "fileless_by_VERSION": 109,
-    "finding": "⚠ 107 of those 109 are VERSION-STAMP MISMATCHES, not missing files — every one has a file of the same NAME on origin/main under a different 14-digit stamp. Open-threads item 6 records this class as having TWO instances; it has 107. Checking by version alone reports 109 open drift items when 2 files are actually missing.",
-    "md5_parity": "20260831093302 statement md5 = b8760005bc662c3531c34f14c0e7ca30 = md5 of the file staged in the Project. Byte-exact.",
-    "RESOLVED_2026-08-31T13:2xZ": "Both fileless migrations were recovered byte-exact from prod with scripts/recover-fileless-migrations.mjs and committed by the device-bridged session in cb8c809; check-migration-parity now exits 0."
-  },
-  "instrument_gap": "audit_20260830_pgss_snap is described as '2-hourly' but cron.job schedules NOTHING for it — the cadence is an assumption that the autonomous pass snapshots every run. It has now missed twice: 01:02:49Z -> 05:06:44Z and 05:06:44Z -> 09:05:42Z (both 4 h). A snapshot was taken this pass at 09:05:42Z (4,961 rows). Scheduling it is one pg_cron line but the table is audit_-named and the 08-30 entry says 'prefer dropping the table once its owner is done' — QUEUED for the owner, not shipped.",
   "needs_trevor": [
-    "STILL OPEN from 07:1xZ — moment art: /api/public/ipfs-media/[cid] cache-MISS is 90% 502 on our own UPSTREAM_TIMEOUT_MS=8000 abort. Route code; a cloud pass cannot push it.",
-    "NEW — the sales-serial-backfill TREADMILL. The index shipped tonight makes each call cheap, but the calls are still resolving ~10 sales per 12 h because sales_serial_backfill_failures holds 1,916 of 1,917 qualifying rows on a 24 h cooldown that they re-enter and re-fail forever. The 2026-07-05 ledger entry already named the cure: the deployed sales-serial-backfill edge fn triggered with a real INGEST_SECRET_TOKEN — operator action.",
-    "QUEUED — schedule the pgss snapshot (naming + lifecycle is the owner's call).",
-    "QUEUED — item 6's version-stamp remedy ('rename the file to the recorded version') is a 107-file chore, not a 2-file one. Recommend instead: make check-migration-parity authoritative BY NAME and record stamp drift as expected."
-  ]
+    "Retire the duplicate scheduled task trig_01AZzLzkTPp5xbSjK1EFmeCw (58 */2 * * *) — delete_trigger and update_trigger{enabled:false} both return 'MCP tool call requires approval' in a scheduled run. Closed to every autonomous pass.",
+    "Both tasks are UNBOUND despite the v2 prompt's claim; a binding cannot be added after creation. Check on laptop-e3bdp9vs that the scheduling card actually offers a device binding before creating a v3.",
+    "Scheduling the pgss snapshot (naming + lifecycle are his call) — thread #15.",
+    "The 08-24 board-watchdog de-escalation re-open (thread #4)."
+  ],
+
+  "drained_by_claude_code": {
+    "at_pt": "2026-08-31 ~20:45-21:1x PT",
+    "at_utc": "2026-09-01T03:45Z-04:1xZ",
+    "session": "Claude Code interactive, Trevor's Windows box, PUSH-CAPABLE",
+    "migrations_committed": {
+      "count": 9,
+      "method": "check-migration-parity.mjs (exit 1, 9 MISSING) -> recover-fileless-migrations.mjs --window 3 (all 9 written byte-exact from prod, script-verified md5) -> parity flipped MISSING -> UNTRACKED -> committed. NOT retyped from any handoff.",
+      "cross_check": "20260901030456 md5 40591e25ae398d59fa061fa6dee3fce6 matches prod; file has NO trailing newline (4,970 bytes) so plain and stripped digests coincide."
+    },
+    "queued_for_claude_code_status": {
+      "enrich-ufc-wallet RPC swap": "SHIPPED. Chunked at 900 (not one unbounded call) because PostgREST db-max-rows=1000 applies to RPC results; UFC's 518 is still a single call. ALSO fixed a live honesty defect in the same lines: the read ignored `error`, and fmvByExt feeds fmv_usd on every wallet_moments_cache upsert, so a failed read blanked the wallet's whole cached FMV — a failed read acting as a DELETE. It now throws.",
+      "cache-refresh lock_checked_at batching": "SHIPPED. Ten single-row UPDATEs per batch -> at most two, grouped by value. Also fixed lockedBackfillCount incrementing BEFORE the write.",
+      "fmv-recalc Steps 5c/5d/5e": "SHIPPED, BUT NOT AS QUEUED. See rejected_queued_remedy below.",
+      "commit the 9 stranded migrations": "DONE"
+    },
+    "rejected_queued_remedy": {
+      "what_was_queued": "Replace the `latest` DISTINCT ON CTE in fmv-recalc Steps 5c/5d/5e with a read of public.edition_fmv_current.",
+      "why_rejected": "MEASURED UNSAFE. Membership agrees perfectly (27,170 = 27,170, zero drift both directions) but `confidence` disagrees for 41 editions, and for 4 of those edition_fmv_current reads NO_DATA while the true latest snapshot does not. Those 4 would be admitted to the backfill and have a real snapshot OVERWRITTEN with an ASK_ONLY x0.90 haircut. Third independent time edition_fmv_current has been measured non-substitutable (08-24: lost 71% of rows; 08-26: 'NOT a drop-in').",
+      "shipped_instead": "Per-edition LATERAL + LIMIT 1 against fmv_snapshots directly — same source, cannot drift.",
+      "cost_warm_vs_warm_step_5c": { "old_distinct_on": "98,172 buffers / 452 ms", "new_lateral": "75,975 buffers / 159 ms", "falsified_third_variant": "COALESCE((SELECT ... LIMIT 1),'NO_DATA') = 120,508 buffers — WORSE than the original; planner keeps it as a per-row SubPlan. Do not re-try." },
+      "equivalence": "Proven NON-VACUOUSLY. The obvious Step-5c EXCEPT test returns 0=0/0-0 because this path legitimately returns zero rows, so P(pass | broken) ~= 1. Compared over the full population instead, in ONE MVCC snapshot: all editions 27,170 rows / 4,508 in the NO_DATA predicate class, and Top-Shot-scoped (5e shape) 19,762 / 5,032 STALE+NO_DATA — EXCEPT 0/0 both directions on both.",
+      "deliberately_untouched": "Step 6's `latest` DRIVES its query (every edition with a >24h-old snapshot), so a LATERAL would be ~26k descents replacing one ordered merge walk. Not a mechanical repeat.",
+      "next_lever_there": "A VACUUM, not SQL. Shipped plan shows fmv_snapshots_2026 Heap Fetches 10,880 of 12,148 probes (stale visibility map defeating the 0219Z covering index), and 24,296 buffers (32% of the query) probing fmv_snapshots_2027, a ZERO-row partition, unprunable because the partition key is computed_at and the predicate is on edition_id."
+    },
+    "daytime_monitors_closed": {
+      "filings": ["2026-08-31T2111Z-daytime-monitor.md", "2026-09-01T0012Z-daytime-monitor.md"],
+      "candidate": "topshot_impossible_parallel_serials = 10 (breach_at 3) in both",
+      "resolution": "SELF-HEALED, no action taken or owed. Live arm reads 0 / ok, and rpc_trust_health_precompute stamps that 0 at 2026-09-01 00:48:00Z — 36 minutes after the 00:06Z reading of 10, on the next per-parallel circ backfill tick. The circ_floor_raise / hand-edited floor lever was correctly NOT used.",
+      "hypothesis_refuted": "The 0012Z filing proposed the circ backfill might be blocked by the public-api.nbatopshot.com 530 outage and that the arm would keep drifting up. The host is STILL 530 (sixth consecutive pass, positive control 200 same second) and the arm reconciled anyway — that backfill does not depend on it. Flagged as a hypothesis, which is what made it cheap to kill.",
+      "handling": "Both annotated in place with RESOLVED sections, NOT archived, per the standing inbox append-only rule."
+    },
+    "correction_relocated": "The item-13 correction is now in docs/reference/known-issues.md #52 — the register item that governs the class — because a correction living only in this per-run artifact is overwritten by the next run. Independently re-verified from pg_proc before recording.",
+    "gotcha_written_up": "docs/reference/tooling-gotchas.md — 'An instrument that returns GOOD NEWS in the wrong shape', covering v_rpc_trust_health's missing is_breach, the check_secdef_anon_execute_violations() count(*)=1 sibling, and the ~280k-350k buffers/SELECT cost.",
+    "verification": "npx tsc --noEmit clean. Full npm test run. inbox INDEX.md counts recomputed with `npm run inbox:index:fix` (341 -> 345 header, 08-31 section 9 -> 10), not hand-edited. Ledger guards after splice: headings +1, find-swallowed-ledger-headings.awk = 3, find-future-dated-ledger-headings.mjs = 0, no BOM.",
+    "method_note": "The pipe-exit-code trap bit and was caught: `npm test 2>&1 | tail -40` printed '[exited with code 0]' over a run whose own summary said 'Test Files 1 failed | Tests 2 failed'. Read vitest's summary line, not the pipeline's status."
+  }
 }

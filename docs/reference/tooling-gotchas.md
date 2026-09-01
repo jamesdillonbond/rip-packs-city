@@ -753,3 +753,51 @@ contains conflict markers, so `grep -c '^### '` over it counts both sides.
 ⚠ **The future-date arm earned its keep again on 2026-08-29**: I stamped `### 2026-08-30` from a
 `date -u` reading while PT was still 08-29, and the guard caught it before the commit. The web sandbox
 is **PDT**, so `date -u` is genuinely tomorrow after 17:00 PT — read `TZ=America/Los_Angeles date`.
+
+## 🚨 An instrument that returns GOOD NEWS in the wrong shape — the trust board has no `is_breach`, and asking for one reads CLEAN (2026-08-31)
+
+**Two members of this family are now confirmed, and they fail the same way: you ask the instrument a
+question it does not understand, and it answers "all clear" instead of "I don't know".**
+
+### 1. `v_rpc_trust_health` has NO `is_breach` column
+
+`public.get_trust_health()` **does not exist.** The trust board is the VIEW
+`public.v_rpc_trust_health`, whose columns are exactly `(metric, value, breach_at, status, catches)`.
+
+A 2026-09-01 cloud pass filtered it on `(to_jsonb(t)->>'is_breach')::boolean` and got **`[]` — a
+false all-clear over two real BREACH rows** — because the missing key evaluates to `NULL` and the
+filter silently drops every row.
+
+```sql
+-- ⛔ WRONG: reads [] no matter how many arms are breaching
+select * from public.v_rpc_trust_health where (to_jsonb(t)->>'is_breach')::boolean;
+
+-- ✅ RIGHT: values are CASE-MIXED ('ok' lower, 'BREACH' upper)
+select metric, value, breach_at, status
+from public.v_rpc_trust_health
+where upper(status) <> 'OK';          -- or: status is distinct from 'ok'
+```
+
+### 2. `check_secdef_anon_execute_violations()` returns `count(*) = 1` when CLEAN
+
+Already in `database.md` under the mixed-return-shape rule, and it belongs here beside its sibling:
+a jsonb-array health function returns ONE ROW containing an EMPTY ARRAY when clean, so `count(*)`
+reads **1** and looks like one violation — or, read the other way round, a `count(*) = 1` test passes
+on a clean estate and on a one-violation estate alike. **Read the array LENGTH, or the VALUE.**
+
+### The general rule
+
+⚠ **Before trusting a filter over a health view, confirm the COLUMN EXISTS** — `information_schema.columns`,
+or select the row set unfiltered once and look at it. A predicate over a non-existent key is not a
+narrower question, it is an *unanswerable* one, and both SQL and JSON answer it with silence that
+reads as good news. This is the same failure class as CLAUDE.md's "a failed read must not render as
+an answer", but on the OPERATOR's side of the glass rather than the user's.
+
+### ⓘ And that read is NOT free — budget it
+
+`v_rpc_trust_health` costs **~280,000–350,000 buffers per SELECT** (measured three times in one pass's
+own pgss diff: 352,591 / 336,813 / 279,358). A single wasted read — such as the `is_breach` one above
+— costs ~350k buffers on its own, and three reads across two passes came to ~969,000.
+**Read the board ONCE per pass and reuse the row set.** ⚠ It also CAN time out at 60 s; CLAUDE.md
+already prefers the sentinel's `Trust Health` check to any arm count quoted in
+[trust-board-and-safety.md](trust-board-and-safety.md).
