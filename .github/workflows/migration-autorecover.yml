@@ -1,0 +1,249 @@
+name: Migration auto-recover
+
+# Closes the fileless-migration gap WITHOUT a human in the loop.
+#
+# WHY THIS EXISTS
+# ---------------
+# `migration-parity.yml` (ENFORCING since 2026-08-20) DETECTS production running
+# SQL the repo cannot describe. It has never been able to FIX it. The fix has
+# always been a person or an agent noticing the red run and hand-running
+# `db:migrations:recover` from a session that happens to have git — which is
+# exactly the thing the failing sessions do not have.
+#
+# Measured 2026-08-31: FOUR migrations reached prod with no committed file in a
+# single day (20260831030424, 20260831093302, idx_wmc_metadata_fillable,
+# 20260831151141), each recovered by hand, by three different sessions. That is
+# not four accidents. Both 2-hourly autonomous passes run cloud-only
+# (`derived_state.folders_state = FOLDERS_STATE_NONE` on both, re-read
+# 2026-09-01T04:0xZ), and a scheduled task's device binding is IMMUTABLE — it
+# cannot be added to an existing task, only carried by a replacement that a human
+# approves on one specific machine. So "get the task bound" is a real fix but it
+# is a fix with a person on its critical path, and it has already silently failed
+# once (a replacement task was created, the card was updated, and the folders
+# still did not attach).
+#
+# This job removes the person from the critical path. Recovery is mechanical and
+# already byte-safe: `recover-fileless-migrations.mjs` reads the statements out of
+# `supabase_migrations.schema_migrations` and md5-verifies every byte it writes
+# against `md5(array_to_string(statements, E'\n'))` as prod computes it. It never
+# transcribes. If the md5 disagrees it refuses. There is nothing in that loop that
+# needs judgement, so there is no reason it needs a human.
+#
+# ⚠ WHAT THIS DOES **NOT** DO, AND WHY THAT IS THE POINT
+# It does not make an unpushable session pushable, and it is not a reason to stop
+# fixing that. It is CONTAINMENT: it bounds the window in which production has an
+# uncommitted revert path to ~8 hours instead of "until someone looks". Read it
+# the same way as migration-parity's own posture note.
+#
+# ── THE GATE BEFORE THE COMMIT IS THE LOAD-BEARING PART ──────────────────────
+# Auto-committing to main trades one failure (prod ahead of repo) for a worse one
+# (main is red) unless the recovered files are checked FIRST. Two ways a
+# byte-perfect recovered file legitimately reds main:
+#
+#   1. `-- anon-exec:` — every migration since the 20260817 cutoff that creates a
+#      function in `public` must state its anon-execute decision, or
+#      `migration-new-function-states-its-anon-exec-decision` fails. A session
+#      that forgot the comment produces a file that is byte-correct AND red.
+#   2. Pin drift — re-pinning a drift-guarded function is a THREE-file change
+#      (pin + migration + the guard's registration row). A recovered migration
+#      brings back only the middle one.
+#
+# Neither is recoverable by this job: both need an amendment to the STORED
+# statements or a repo edit that is a judgement call. So both are checked before
+# anything is committed, and a failure leaves the tree uncommitted and annotates
+# loudly. A red run here means "a human must look", which is precisely the state
+# migration-parity was already reporting — no ground is lost.
+#
+# ── SCHEDULING ───────────────────────────────────────────────────────────────
+# 15 minutes BEFORE each migration-parity slot (07:40 / 15:50 / 23:50 UTC), so
+# parity is an INDEPENDENT verifier of this job rather than a duplicate of it:
+# parity re-reads prod with a different script and its own name-matching, and goes
+# red if this job did not actually close the gap. A guard that shares the bug
+# agrees with it; these two do not share a code path beyond the name convention.
+#
+# OPERATOR NOTE: needs NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY repo
+# secrets (already present — migration-parity.yml and db-pin-staleness.yml use
+# them). Without them it soft-skips green, same posture as parity.
+#
+# REVERT: delete this file. Nothing else depends on it; migration-parity keeps
+# reporting exactly as it did before.
+
+on:
+  schedule:
+    - cron: '25 7 * * *'
+    - cron: '35 15 * * *'
+    - cron: '35 23 * * *'
+  workflow_dispatch:
+    inputs:
+      window_days:
+        description: 'Look-back window in days (default 3, matching migration-parity)'
+        required: false
+        default: '3'
+      dry_run:
+        description: 'Write nothing and commit nothing — just report what would be recovered'
+        required: false
+        default: 'false'
+
+# One at a time. Two slots can never race a push against each other, and a
+# manual dispatch never races a scheduled run.
+concurrency:
+  group: migration-autorecover
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  autorecover:
+    name: Recover fileless migrations and commit them
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+
+      - name: Recover any migration applied to prod with no committed file
+        id: recover
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          WINDOW: ${{ github.event.inputs.window_days || '3' }}
+          DRY: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          set -uo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured — skipping auto-recovery."
+            echo "recovered=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ARGS="--window $WINDOW"
+          [ "$DRY" = "true" ] && ARGS="$ARGS --dry-run"
+          RC=0
+          # shellcheck disable=SC2086
+          npm run db:migrations:recover -- $ARGS 2>&1 | tee recover.log || RC=$?
+          if [ "$RC" -eq 1 ]; then
+            echo "::error::A recovered file does not match the md5 prod computes over the same statements. NOTHING was committed — a byte-inexact record is worse than a missing one. See the job log."
+            exit 1
+          fi
+          if [ "$RC" -ne 0 ]; then
+            echo "::error::db:migrations:recover could not RUN (config or query error). A check that cannot answer is not a pass."
+            exit "$RC"
+          fi
+          # Count only NEW, UNTRACKED migration files. The script never modifies an
+          # existing file, so anything else appearing here is a bug in this job, not
+          # a recovery — the assertion below is what catches that.
+          COUNT=$(git ls-files --others --exclude-standard -- supabase/migrations | wc -l | tr -d ' ')
+          echo "recovered=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Untracked migration files after recovery: $COUNT"
+
+      - name: Assert the working tree contains ONLY new migration files
+        if: steps.recover.outputs.recovered != '0'
+        run: |
+          set -euo pipefail
+          # ⚠ Never `git add -A` in this repo — concurrent sessions leave unrelated
+          # files in the tree and a broad add buries someone else's work under this
+          # job's attribution. Everything below is scoped to supabase/migrations.
+          if ! git diff --quiet; then
+            echo "::error::Tracked files were MODIFIED during recovery. The recovery script only ever writes new files, so this is a defect in this workflow, not a recovery. Committing nothing."
+            git --no-pager diff --stat
+            exit 1
+          fi
+          STRAY=$(git ls-files --others --exclude-standard | grep -v '^supabase/migrations/' || true)
+          if [ -n "$STRAY" ]; then
+            echo "::error::Untracked files appeared outside supabase/migrations/. Committing nothing."
+            echo "$STRAY"
+            exit 1
+          fi
+          BADNAME=$(git ls-files --others --exclude-standard -- supabase/migrations \
+                    | grep -vE '^supabase/migrations/[0-9]{14}_[A-Za-z0-9_.-]+\.sql$' || true)
+          if [ -n "$BADNAME" ]; then
+            echo "::error::A recovered path does not look like a migration. Committing nothing."
+            echo "$BADNAME"
+            exit 1
+          fi
+          N=${{ steps.recover.outputs.recovered }}
+          # A 3-day window legitimately produces a handful. Twenty-five in one window
+          # means something structural (a whole blocked session's output, or a widened
+          # window) and deserves a person, not an unattended commit.
+          if [ "$N" -gt 25 ]; then
+            echo "::error::$N fileless migrations in the window — too many to commit unattended. Run 'npm run db:migrations:recover' by hand and look at what happened."
+            exit 1
+          fi
+
+      - name: Gate — the recovered files must not red main
+        if: steps.recover.outputs.recovered != '0' && github.event.inputs.dry_run != 'true'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -uo pipefail
+          FAIL=0
+          # 1. anon-exec decision. A byte-correct file whose author forgot the marker
+          #    is still red on main. The fix is an amendment to the STORED statements
+          #    (comment line only, executed DDL untouched) — a judgement call, not
+          #    something this job may make.
+          if ! npx vitest run __tests__/migration-new-function-states-its-anon-exec-decision.test.ts 2>&1 | tee anonexec.log; then
+            echo "::error::A recovered migration creates a function in public without an '-- anon-exec:' line. NOT committed. Fix: amend the stored schema_migrations.statements with the comment line only (executed DDL untouched), then re-run this workflow."
+            FAIL=1
+          fi
+          # 2. Pin drift. Re-pinning a drift-guarded function is a three-file change;
+          #    a recovered migration is only the middle file.
+          if ! npm run db:pins:check 2>&1 | tee pins.log; then
+            echo "::error::A recovered migration leaves a drift-guarded function's pin stale. NOT committed — re-pinning is a three-file change (pin + migration + the guard's registration row) and needs a person."
+            FAIL=1
+          fi
+          exit "$FAIL"
+
+      - name: Commit and push
+        if: steps.recover.outputs.recovered != '0' && github.event.inputs.dry_run != 'true'
+        run: |
+          set -euo pipefail
+          git config user.name  'rpc-migration-autorecover[bot]'
+          git config user.email 'rpc-migration-autorecover@users.noreply.github.com'
+          git add supabase/migrations
+          N=${{ steps.recover.outputs.recovered }}
+          # ⚠ Built with printf into a file, NOT an inline heredoc: every `run:` body
+          # here is indented, and an indented heredoc terminator does not terminate.
+          {
+            printf 'fix(migrations): recover %s fileless migration(s) from prod, md5-verified\n\n' "$N"
+            printf 'Applied to production via apply_migration by a session that could not\n'
+            printf 'push, so the repo could not describe production and the revert path\n'
+            printf 'existed only in that session transcript. Recovered byte-exactly from\n'
+            printf 'supabase_migrations.schema_migrations and md5-verified against the md5\n'
+            printf 'prod computes over the same statements — not transcribed.\n\n'
+            git diff --cached --name-only | sed 's#^supabase/migrations/#  - #'
+            printf '\nGated before commit on the anon-exec decision guard and db:pins:check.\n'
+            printf 'Automated by .github/workflows/migration-autorecover.yml\n'
+          } > /tmp/autorecover-msg.txt
+          git commit -q -F /tmp/autorecover-msg.txt
+          # Another session may have pushed while this ran. Rebase onto whatever
+          # landed and retry once — this commit only ADDS files, so it can only
+          # conflict with a hand-recovery of the same migration, in which case the
+          # rebase drops ours and there is nothing left to push.
+          for attempt in 1 2; do
+            git pull --rebase --quiet origin "${GITHUB_REF_NAME}" || true
+            if git push --quiet origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "Pushed on attempt $attempt."
+              exit 0
+            fi
+            echo "Push rejected on attempt $attempt; refetching."
+            git fetch --quiet origin
+          done
+          echo "::error::Could not push the recovered migrations after two attempts. They are still fileless in the repo — run 'npm run db:migrations:recover' by hand."
+          exit 1
+
+      - name: Verify parity is actually clean now
+        if: steps.recover.outputs.recovered != '0' && github.event.inputs.dry_run != 'true'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -uo pipefail
+          # The claim this job makes is "prod is described by the repo again".
+          # Verify the FIX, not the diagnosis: re-run the independent checker.
+          npm run db:migrations:check
