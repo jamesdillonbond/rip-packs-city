@@ -10,6 +10,82 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · ✅ POST-SHIP CONFIRMED (0 → 200 editions on the first tick) + 🚨 a SECOND zero-yield instrument found by the same sweep — `sales-counterparty-backfill` has walked past Flow's spork wall, and the wall answers **HTTP 200**
+
+**Session:** Claude Code interactive, Trevor's box, ~21:5x–22:3x PT. Follows the two entries below.
+
+**✅ THE HISTORICAL-FALLBACK FIX IS CONFIRMED IN PRODUCTION, on its first run after deploy.**
+`fmv-recalc` at **05:15:47Z** on `dpl_5iXHLxq7YrUweRfpB9sgGFyrJSQ7`:
+*"Historical fallback: 200 editions with sales but no snapshot"* → *"Historical fallback complete: 200
+editions covered"*, `historicalFallback=200`, and `pipeline_runs.extra` now carries
+`historical_fallback: 200` with `historical_fallback_error: null`. **0 on the previous 350 runs → 200 on
+the first run of the new build**, and the whole route got *faster* (42.1 s vs 53–100 s before), because
+the step now completes instead of burning its budget into a timeout. Step 5e's LATERAL also floored
+**6** `::` editions on the same run. **EXIT met immediately; the FALSIFIER (still 0 a day later) is
+already refuted.**
+
+**✅ SHIPPED — the instrument gap closed for the whole FAMILY, not just the instance that failed.** Six
+steps in `fmv-recalc` report a count into `extra` and swallow their candidate-query error into a
+`console.warn`: `backfill`, `historical_fallback`, `ask_offers_fallback`, `parallel_ask_floor`,
+`allday_ask_fallback`, `stale_touch`. Only one was failing; **the ambiguity is identical in all six**.
+Each now carries a nullable `<step>_error` sibling, set from both the query-error branch and the catch.
+⭐ **Two gaps beyond the pairing:** the `backfill` step destructured **only `data`** — supabase-js
+RETURNS errors, so a failed read resolved `{data: null, error}`, `?? []` made it an empty list, and it
+reported `backfill: 0` **with no log line at all** (the banned `??` shape, in a pipeline rather than a
+UI). And **`parallel_ask_floor` had no count key in `extra` whatsoever** while demonstrably working in
+production. A ban-style note now sits on the payload: do not add a step count without its `_error`
+sibling. ⚠ Every scripted edit asserted its occurrence count was exactly 1 before replacing, and used
+literal `split/join` rather than `String.replace` ($-expansion). Suite green 1,417/15,624; tsc clean.
+
+**🚨 NEW FINDING, from sweeping for PERMANENTLY-ZERO instruments** (the generalisation of the above:
+*which `extra` counters are 0 on 100% of runs?*). **`sales-counterparty-backfill`: `applied` and
+`recovered` are 0 on ALL 288 runs in 24 h**, at ~115 s each — **~9.2 hours of runtime a day for zero
+output.** It is **not stuck**: `cursor_sold_at` advances every tick (05:00Z `2023-10-04T21:13` → 05:05Z
+`20:11` → 05:10Z `19:22`). It is walking backwards through 2023 converting nothing.
+⛔ **Not the documented throttle wave** — the memory records misses swinging *1–98%* and recovering
+*40–90/tick*. **0 of 288 is a different phenomenon.**
+
+**⭐ THE CAUSE IS THE `failed read served as HTTP 200` CLASS, ON AN UPSTREAM.** Flow REST does not 404
+for pruned history — it returns **200 with an empty body**: `execution: "Pending"`, `status: ""`, **zero
+events**. A worker checking `res.ok` sees success, finds no `Withdraw`, records an ordinary miss and
+advances. **An unreachable era is indistinguishable from a transient throttle miss.**
+📏 **Positive control, same endpoint, minutes apart:** a 2026-09-01 hash → `execution: "Success"`,
+`status: "Sealed"`, **23 events**, `Withdraw` present. The 2023-10-05 hash → `Pending`, `""`, **0
+events**. Both **HTTP 200**.
+
+**📏 The wall, bracketed by probe:** 2023-10-05 EMPTY · **2023-11-01 EMPTY** · **2023-11-20 DECODABLE** ·
+2023-12-10 · 2023-12-28 · 2024-01-15 · 2024-06-15 · 2024-12-15 · 2025-03-15 · 2025-06-15 · 2025-09-15 ·
+2026-01-15 · 2026-09-01 all decodable. **Accessible history starts at a spork boundary in mid-November
+2023, and the cursor is already below it.**
+
+⛔ **This CORRECTS a recorded claim.** `sales-counterparty-backfill-second-pass` says Flow REST *"returns
+200 back to 2024-12-31 (**no spork wall at this endpoint**)"*. **There is a wall** — it is merely
+invisible to a status-code check. The July probe was right about 2024-12-31 and drew the wrong *general*
+conclusion from it. ⭐ **A probe that reads only HTTP status can never find this boundary, however far
+back it walks.** Memory corrected in place.
+
+**📏 Sizing — null-seller `sales` rows carrying a tx hash (2,426,906 total, oldest 2020-07-28):**
+**433,108 (17.8%) above the floor** — recoverable, already walked past, i.e. the genuine throttle misses ·
+61,835 in the uncertain band · **1,931,963 (79.6%) below the floor — permanently undecodable via Flow
+REST.** At 120/tick the worker needs ~**16,100 more ticks (~56 days)** to reach 2020 and will recover
+**zero** doing it.
+
+⛔ **NOTHING APPLIED — this needs a decision and a `wrangler deploy`, neither safe unattended.** Options:
+(1) **bound the walk at the spork floor** (the real fix; worker code, and ⚠ **CF Workers do NOT
+auto-deploy from `main`** — `grep` the source for an expected marker first, wrangler ships stale files);
+(2) the documented second-pass reset for the recoverable 433k; (3) the already-queued Dune
+`flow.cadence_events` supersession (~167 credits — ⚠ Dune bills DATAPOINTS).
+🚨 **ORDERING TRAP: (2) WITHOUT (1) REPRODUCES THIS EXACT STATE** — the reset restarts the newest-first
+walk, re-attempts the 433k, then crosses the same wall and resumes the zero-yield grind. Roughly a
+fortnight of useful work followed by an unbounded pointless one. Do (1) first, or do (2) knowing that.
+
+⭐ **Transferable, and it generalises past this worker: a cursored backfill needs a FLOOR, not just a
+cursor.** A newest-first walk terminates only by running out of data, so without a lower bound it walks
+off the edge of what its upstream can serve and keeps going. And **when an upstream signals "I cannot
+serve this" with a 200, `res.ok` is not a liveness check** — discriminate on the BODY
+(`execution !== "Success"`, or zero events), which would have made this self-reporting from day one.
+**Filing:** `inbox/2026-09-01T0600Z-sales-counterparty-backfill-has-walked-past-the-flow-spork-wall-and-the-wall-answers-200.md`.
+
 ### 2026-08-31 · 🚨 fmv-recalc's historical-sales fallback has been failing on 100% of runs and reporting `historicalFallback=0` — found by verifying my OWN change, not by looking for it
 
 **Session:** Claude Code interactive, Trevor's box, ~21:2x–21:5x PT. Follows the drain entry below.
