@@ -133,7 +133,7 @@ jobs:
           [ "$DRY" = "true" ] && ARGS="$ARGS --dry-run"
           RC=0
           # shellcheck disable=SC2086
-          npm run db:migrations:recover -- $ARGS 2>&1 | tee recover.log || RC=$?
+          npm run db:migrations:recover -- $ARGS 2>&1 | tee "$RUNNER_TEMP/recover.log" || RC=$?
           if [ "$RC" -eq 1 ]; then
             echo "::error::A recovered file does not match the md5 prod computes over the same statements. NOTHING was committed — a byte-inexact record is worse than a missing one. See the job log."
             exit 1
@@ -161,6 +161,14 @@ jobs:
             git --no-pager diff --stat
             exit 1
           fi
+          # ⚠ THIS GUARD CAUGHT ITS OWN WORKFLOW ON 2026-09-01, TWICE (12:37Z and 18:47Z scheduled
+          # runs). Every `| tee <name>.log` in this file originally wrote into the REPO ROOT, so on
+          # the first run that actually recovered something the guard correctly reported
+          # "Untracked files appeared outside supabase/migrations/" and refused to commit — the logs
+          # were the strays. The dry-run dispatch had passed only because this whole step is skipped
+          # when recovered=0, so the branch had never executed. Logs now go to $RUNNER_TEMP.
+          # ⛔ Do NOT relax this guard to allow *.log; keep the working tree clean instead. The guard
+          # behaved exactly as designed — it failed safe, committed nothing, and said why.
           STRAY=$(git ls-files --others --exclude-standard | grep -v '^supabase/migrations/' || true)
           if [ -n "$STRAY" ]; then
             echo "::error::Untracked files appeared outside supabase/migrations/. Committing nothing."
@@ -195,13 +203,13 @@ jobs:
           #    is still red on main. The fix is an amendment to the STORED statements
           #    (comment line only, executed DDL untouched) — a judgement call, not
           #    something this job may make.
-          if ! npx vitest run __tests__/migration-new-function-states-its-anon-exec-decision.test.ts 2>&1 | tee anonexec.log; then
+          if ! npx vitest run __tests__/migration-new-function-states-its-anon-exec-decision.test.ts 2>&1 | tee "$RUNNER_TEMP/anonexec.log"; then
             echo "::error::A recovered migration creates a function in public without an '-- anon-exec:' line. NOT committed. Fix: amend the stored schema_migrations.statements with the comment line only (executed DDL untouched), then re-run this workflow."
             FAIL=1
           fi
           # 2. Pin drift. Re-pinning a drift-guarded function is a three-file change;
           #    a recovered migration is only the middle file.
-          if ! npm run db:pins:check 2>&1 | tee pins.log; then
+          if ! npm run db:pins:check 2>&1 | tee "$RUNNER_TEMP/pins.log"; then
             echo "::error::A recovered migration leaves a drift-guarded function's pin stale. NOT committed — re-pinning is a three-file change (pin + migration + the guard's registration row) and needs a person."
             FAIL=1
           fi
