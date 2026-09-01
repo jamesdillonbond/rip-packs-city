@@ -1,0 +1,39 @@
+-- audit_20260831 — records the exit condition for idx_fmv_snapshots_edition_high_med
+-- ON THE INDEX ITSELF, taken from the post-fix measurement rather than a
+-- hoped-for order of magnitude. (An exit threshold guessed before the fix is how
+-- a working fix files itself as a failure 24 h later — see the 08-31
+-- serial-backfill index, which asked for <1,000 blocks/call when its own EXPLAIN
+-- already showed 10,340.)
+--
+-- POST-FIX, measured 2026-08-31 immediately after the build, same warm state,
+-- same instrument as the baseline:
+--   Nested Loop Anti Join node:        230,083 ->  60,208 buffers  (3.82x)
+--     and it is now an INDEX ONLY SCAN — Heap Fetches 438, not 19,923
+--   INSERT-leg body (collection 95f28a17): 261,493 ->  87,749 buffers  (2.98x)
+--                                            15,296 ->  13,543 ms
+--   THROUGH THE FUNCTION (BEGIN / EXPLAIN ANALYZE / ROLLBACK):
+--                                        543,576 -> 193,539 buffers  (2.81x)
+--                                         46,690 ->  28,566 ms       (1.63x)
+--   `Rows Removed by Join Filter` UNCHANGED at 1,030,559 — the anti-join is still
+--   the pre-filter that halves the CPU-bound OR join, which is exactly why the
+--   join order was left alone.
+--   Index size: 3,664 kB on the 2026 partition (btree deduplication over ~18
+--   duplicate edition_id entries per key), 8 kB on 2025/2027. Negligible write
+--   amplification for a table this hot.
+--
+-- SIZE OF THE PRIZE: pg_stat_statements lifetime for the PostgREST caller of
+-- fmv_from_cached_listings (queryid -1935951592145683615) at the time of the fix:
+-- 1,907 calls, 12,062 ms and 228,362 buffers per call, 23,002 s total.
+--
+-- EXIT CONDITION — the next pass must check this on a pgss DIFF, never the raw
+-- leaderboard, over >= 4 calls of queryid -1935951592145683615:
+--     PASS if <= 150,000 blocks per call
+--     FALSIFIED if >= 250,000 blocks per call
+-- The 38-minute window straddling the fix measured 298,747 blocks/call over 4
+-- calls; that window measures neither state and must not be quoted as a result.
+-- FALSIFIED means the real, parameterized plan is not choosing this index, in
+-- which case it is dead weight on a hot insert path and must be dropped:
+--     DROP INDEX IF EXISTS public.idx_fmv_snapshots_edition_high_med;
+
+COMMENT ON INDEX public.idx_fmv_snapshots_edition_high_med IS
+  'audit_20260831: answers fmv_from_cached_listings'' NOT EXISTS(confidence IN (HIGH,MEDIUM)) probe as an index-only scan. Anti-join node 230,083 -> 60,208 buffers; through the function 543,576 -> 193,539 buffers / 46.7 s -> 28.6 s. EXIT: pgss diff for queryid -1935951592145683615 <= 150,000 blocks/call over >= 4 calls; FALSIFIED at >= 250,000 -> DROP INDEX public.idx_fmv_snapshots_edition_high_med. Join order deliberately unchanged: hoisting the cached_listings join above this anti-join cut buffers 22.6x but DOUBLED the normalize_name join filter (1,030,559 -> 2,071,058 rows) and made the leg slower, 15.3 s -> 32.8 s.';

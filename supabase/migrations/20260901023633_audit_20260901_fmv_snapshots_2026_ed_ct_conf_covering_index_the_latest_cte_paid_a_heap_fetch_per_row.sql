@@ -1,0 +1,85 @@
+-- audit_20260901: the `WITH latest AS (SELECT DISTINCT ON (edition_id) edition_id,
+-- confidence FROM fmv_snapshots ORDER BY edition_id, computed_at DESC)` CTE that
+-- app/api/fmv-recalc/route.ts sends through public.query_sql paid ONE HEAP FETCH
+-- PER ROW over the whole 1.36 M-row partitioned history, on every call.
+--
+-- HOW IT WAS FOUND, and the correction it carries.
+-- The last four passes ranked pg_stat_statements queryid -2504733205258152844
+-- ("WITH pgrst_source AS (... public.query_sql(query := ...))") as the instance's
+-- #1 consumer and attributed it to *the pass's own MCP execute_sql channel* --
+-- i.e. wrote it off as self-inflicted measurement noise.
+-- ⛔ THAT ATTRIBUTION IS WRONG. public.query_sql is a shared raw-SQL escape hatch:
+-- the Cowork MCP uses it AND so does app/api/fmv-recalc/route.ts, three times per
+-- run (Steps 5c / 5d / 5e). auto_explain is loaded on this instance with
+-- log_min_duration = 10000, so the >10 s executions are already in postgres_logs
+-- and can be attributed by payload. Measured over 24 h to 2026-09-01 02:45Z,
+-- counting ONLY runs slow enough to be logged (so these are lower bounds):
+--   Step 5c  edition_offers ASK fallback   119 runs  1,843 s  max 28.6 s
+--   Step 5d  All Day floor-ask fallback      5 runs     95 s  max 25.1 s
+--   Step 5e  TS per-parallel ask floor       3 runs     43 s  max 15.9 s
+-- ~33 minutes of DB time a day, in a path that returns ZERO rows (it is a
+-- caught-up safety net, the same shape as fmv-backfill: it pays a full scan to
+-- prove a negative).
+--
+-- MEASURED 2026-09-01 02:31Z, EXPLAIN (ANALYZE, BUFFERS) on the Step-5c payload
+-- taken VERBATIM from the auto_explain log line (not retyped from a description):
+--   Merge Append -> Index Scan using fmv_snapshots_2026_edition_id_computed_at_idx
+--     rows=1,363,917  Buffers: shared hit=1,309,261 read=6
+--   whole statement: shared hit=1,345,108 read=89   2,022 ms   rows=0
+-- `confidence` is not in that index, so the DISTINCT ON drove a heap fetch for
+-- every one of the 1.36 M rows to read a 4-byte enum it then discards for all but
+-- 27,170 of them.
+--
+-- WHAT WAS DONE LIVE (this file records it; on prod the statement below is a
+-- no-op): fmv_snapshots_2026_edition_id_computed_at_conf_idx was built
+-- CONCURRENTLY at 2026-09-01 02:34:00Z by a one-off postgres-owned pg_cron job
+-- (jobid 426, jobname `tmp-idxbuild-fmvsnap-2026-ed-ct-conf`, unscheduled at
+-- 02:35Z; cron.job back to 102 rows, 0 tmp-idx% jobs left, 0 invalid indexes).
+-- cron_heavy cannot create indexes (CREATE INDEX needs the table owner), which is
+-- why it ran as postgres. It is the existing (edition_id, computed_at DESC) key
+-- with `confidence` added as an INCLUDE payload -- a strict superset of
+-- fmv_snapshots_2026_edition_id_computed_at_idx. 65 MB.
+-- ⚠ Only the 2026 partition is indexed, on purpose: _2025 and _2027 are empty
+-- 48 kB stubs whose index scans cost 1 buffer each, and ATTACHing to the
+-- partitioned parent would take ACCESS EXCLUSIVE on it for nothing.
+--
+-- VERIFIED LIVE 02:36Z, same EXPLAIN, same payload, same session, 5 minutes after
+-- the pre-fix reading and in the same warm state:
+--   Merge Append -> Index ONLY Scan using ..._ed_ct_conf_idx  Heap Fetches: 73,658
+--   whole statement: shared hit=92,570 read=1,567  1,441 ms  rows=0
+-- ⚠ The A/B that matters is TOTAL BUFFERS TOUCHED -- 1,345,197 -> 94,137, a 14.3x
+-- drop -- because that is a plan change (Index Scan -> Index Only Scan) and cannot
+-- be a cache effect. The 1.4x wall-clock figure is NOT the claim.
+--
+-- EXIT CONDITION, from the post-fix measurement just taken and not from a hoped-for
+-- order of magnitude: on the next pass the same EXPLAIN of the Step-5c payload
+-- should read < 150,000 total buffers (94,137 measured, with headroom for
+-- visibility-map decay raising Heap Fetches between autovacuums). If it reads
+-- > 400,000, the Index Only Scan has been lost -- check `Heap Fetches` and
+-- last_autovacuum on fmv_snapshots_2026 BEFORE touching any SQL.
+-- FALSIFIER: if pg_stat_user_indexes.idx_scan on
+-- fmv_snapshots_2026_edition_id_computed_at_conf_idx is still 0 on the next pass,
+-- the planner is not taking it and this index is dead weight -- drop it.
+--
+-- ⛔ THIS IS A MITIGATION, NOT THE FIX. The real fix is route code and is NOT
+-- shippable from a cloud session: public.edition_fmv_current is a 13 MB TABLE that
+-- already holds latest-FMV-per-edition WITH a `confidence` column, refreshed
+-- incrementally by watermark (20260823181157) and last refreshed 2026-09-01
+-- 01:59Z. All three `latest` CTEs in app/api/fmv-recalc/route.ts (lines ~1380,
+-- ~1477, ~1573) should read it instead of re-deriving DISTINCT ON over the whole
+-- history. That is a one-relation swap per site and it is queued in the handoff.
+--
+-- QUEUED, NOT DONE: fmv_snapshots_2026_edition_id_computed_at_idx (64 MB) is now a
+-- strict subset of the new index and is a drop candidate. It carries 305 M scans,
+-- so it is NOT dropped in the same pass that created its replacement. Exit: once a
+-- later pass sees idx_scan climbing on ..._ed_ct_conf_idx and flat on the old one,
+-- DROP INDEX CONCURRENTLY the old one.
+--
+-- REVERT: DROP INDEX CONCURRENTLY public.fmv_snapshots_2026_edition_id_computed_at_conf_idx;
+--         (nothing else changed; no function, view, grant, cron job or row was touched.)
+-- anon-exec: none (no function created or replaced).
+
+CREATE INDEX IF NOT EXISTS fmv_snapshots_2026_edition_id_computed_at_conf_idx
+  ON public.fmv_snapshots_2026
+  USING btree (edition_id, computed_at DESC)
+  INCLUDE (confidence);
