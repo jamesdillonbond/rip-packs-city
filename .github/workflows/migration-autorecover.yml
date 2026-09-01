@@ -55,11 +55,19 @@ name: Migration auto-recover
 # migration-parity was already reporting — no ground is lost.
 #
 # ── SCHEDULING ───────────────────────────────────────────────────────────────
-# 15 minutes BEFORE each migration-parity slot (07:40 / 15:50 / 23:50 UTC), so
+# Nominally 15 minutes BEFORE each migration-parity slot (07:40 / 15:50 / 23:50 UTC), so
 # parity is an INDEPENDENT verifier of this job rather than a duplicate of it:
 # parity re-reads prod with a different script and its own name-matching, and goes
 # red if this job did not actually close the gap. A guard that shares the bug
 # agrees with it; these two do not share a code path beyond the name convention.
+#
+# ⚠ "BEFORE" IS BEST-EFFORT, NOT A GUARANTEE, and nothing here depends on it. GitHub Actions
+# schedules drift by tens of minutes under load: migration-parity's own last three scheduled runs
+# started at 02:05, 21:06 and 15:20 UTC against nominal 23:50 / 15:50 / 07:40 slots. So this job may
+# well run AFTER parity in a given cycle. The consequence is only that parity reds for that one
+# cycle and goes green on its next run once this job has committed — parity is a notification, not a
+# merge gate. The INDEPENDENCE of the two checks, which is the property that matters, holds
+# regardless of order.
 #
 # OPERATOR NOTE: needs NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY repo
 # secrets (already present — migration-parity.yml and db-pin-staleness.yml use
