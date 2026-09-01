@@ -10,6 +10,95 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · 🚨 fmv-recalc's historical-sales fallback has been failing on 100% of runs and reporting `historicalFallback=0` — found by verifying my OWN change, not by looking for it
+
+**Session:** Claude Code interactive, Trevor's box, ~21:2x–21:5x PT. Follows the drain entry below.
+
+**How it surfaced, which is the transferable part.** I had just deployed the Step 5c/5d/5e LATERAL
+rewrite and went to confirm it *ran in production* rather than trusting `ok: true`. `pipeline_runs`
+cannot show that — the route calls through `query_sql` and pgss `track='top'` hides nested statements —
+so I read the Vercel runtime logs. ✅ **My change was fine, and got a positive control rather than an
+absence:** the 04:48Z run logged *"parallel ASK floor: 3 STALE/NO_DATA :: editions with a live ask"* →
+*"3 :: editions floored"* — the rewritten Step 5e returning rows and writing them, which is far stronger
+evidence than the zero-row equivalence test could give. ⭐ **But the same log lines carried a defect that
+had nothing to do with me**, and I would not have found it by any other route.
+
+**🚨 THE FINDING.** Every fmv-recalc run logs:
+`[FMV-RECALC] Historical fallback query error: canceling statement due to statement timeout`, alongside
+a constant `Editions missing FMV snapshots: 171`. From `pipeline_runs.extra`, `historical_fallback > 0`
+on **0 of 350 runs** across 08-29 (43), 08-30 (129), 08-31 (148) and 09-01 (30) — **the entire retention
+window. It has never once succeeded where anyone can see.**
+
+**⭐ Why it survived: the failure is INDISTINGUISHABLE FROM SUCCESS on every instrument anyone reads.**
+`ok` = **true** (the other steps succeeded) · `rows_written` healthy (499/1394, from the main sweep) ·
+`extra.historical_fallback` = **0**, which reads *"nothing to do"* rather than *"could not run"* · the
+summary line repeats the same ambiguous 0 · and the only trace is a `console.warn`, with **Sentry dark
+since 08-18 (#34)**. This is the platform's top defect class with the audience changed — not a user told
+"0 moments", but an OPERATOR told a step found nothing when it never completed. ⭐ **`rows_written = 0`
+is already on record as a null instrument; `extra.<step> = 0` is the SAME null instrument one level
+down, and it had no error field beside it to disambiguate.**
+
+**📏 The cost of the silence:** **8,571** editions qualify for the step; **4,277** of them have paid
+sales and are therefore actually convertible here. **The step has covered 0 of them in four days.**
+They carry either a pre-`1.7.x` snapshot or a `NO_DATA` one — the population this step exists to
+re-price into honest low-confidence labels.
+
+⛔ **CORRECTION to my own first reading, made before shipping:** I initially bracketed the constant
+`Editions missing FMV snapshots: 171` with this finding, because the two lines sit adjacent in every log
+entry. **Checked instead of assumed: all 171 have ZERO paid sales** (`with_paid_sales 0`), so this step
+could never have covered them — *not before this change and not after* — since the original `JOIN sales`
+excluded them exactly as the new `EXISTS (sales)` does. They are Step 5's domain (the
+`badge_editions.low_ask` proxy) or genuinely unpriceable. **Two numbers on adjacent log lines are not a
+relationship**; keeping it would have inflated the finding and sent the next reader hunting for the 171
+inside a step that structurally cannot reach them.
+
+**Why it could never finish.** `LIMIT 1000` sat **after** the `GROUP BY`, so the planner merge-joined
+ALL editions against **4,853,937** sales rows and aggregated **25,595** groups before the limit could
+discard anything, with a `DISTINCT ON` over **1,369,480** snapshot rows alongside. Textbook *"a LIMIT
+bounds a query's OUTPUT, not its COST"*.
+
+**✅ SHIPPED — candidate-first, and cut ITEMS per tick.** Per-edition LATERAL for the latest snapshot
+(predicate preserved term-for-term), bound THAT to a small batch, then join sales and aggregate:
+original **TIMES OUT (>30 s), 0 rows, every run** · candidate-first `LIMIT 1000` **29,904 ms /
+265,372 buffers** (on the 30 s wall, rejected) · **candidate-first `LIMIT 200` → 6,981 ms / 75,418
+buffers**, shipped. ~5 ticks/hour ⇒ ~1,000 editions/hour, so the 4,277 backlog clears in ~4 h.
+
+⚠ **THE `EXISTS (sales)` PLACEMENT IS LOAD-BEARING — outside the candidate CTE it would STARVE.**
+**4,294 of the 8,571 qualifying editions have no paid sales and can never be converted by this step.**
+Allowed into a bounded unordered `LIMIT` they would occupy the head forever, be re-picked every tick,
+and the convertible editions would never be reached — the recorded
+`limit-before-join-starves-a-backfill` shape, where the tick gets fast and still converts zero.
+Converted editions leave on their own: every insert branch stamps `algo_version = ALGO_VERSION` and a
+confidence of `ASK_ONLY`/`SALES_ONLY`/`STALE`/`LOW`, **never `NO_DATA`**, so they fail the predicate
+next tick. Checked in the code, not assumed.
+
+✅ **EQUIVALENCE PROVEN NON-VACUOUSLY** — both forms unbounded over a hash-bucket sample
+(`abs(hashtext(id::text)) % 40 = 0`), comparing the **full aggregate output** (avg, min, count,
+latest_sold_at, prev_confidence) and not merely the id set: **96 rows = 96 rows, `EXCEPT` 0/0 both
+directions.**
+
+✅ **AND THE INSTRUMENT THAT WOULD HAVE CAUGHT IT.** `extra.historical_fallback_error` — null when the
+step ran, the error string when it did not — plus `historicalFallbackFAILED="…"` on the summary line.
+**A count of 0 with no error field beside it cannot separate "nothing to do" from "never ran", and that
+ambiguity is the entire reason this survived 350 runs.**
+
+**Output sampled BEFORE shipping rather than assumed:** 200 candidate rows, median avg **$28.45**, min
+$0.48, max $6,213.58, **none over $10k**, 71 of 200 on the ASK_ONLY branch; 199 of 200 are the
+pre-`1.7.x` cohort, 1 was `NO_DATA`. Labels written are all honest low-confidence ones, so this cannot
+inflate the HIGH/MEDIUM accuracy metric.
+
+**EXIT:** within ~6 h `extra.historical_fallback` non-zero on most ticks and the qualifying population
+falling from 4,277 toward 0. **FALSIFIER:** still 0 a day from now ⇒ either the query still fails (and
+`historical_fallback_error` now says so outright) or the candidate set is starving, which shows as the
+same edition ids re-picked every tick. **REVERT:** `git revert` the code commit — no DB object changed;
+snapshots already written remain as history and are repriced by the normal sweep.
+**Filing:** `inbox/2026-09-01T0530Z-fmv-recalc-historical-fallback-has-been-failing-on-100pct-of-runs-and-reporting-zero.md`.
+
+⭐ **The durable lesson, and it is a method one: verifying your OWN change is where you find other
+people's defects.** The check that found this was not an audit — it was "did the thing I just shipped
+actually execute?", asked of the one instrument that could answer it (runtime logs, because pgss cannot
+see through `query_sql`). Trusting `ok: true` would have missed both halves.
+
 ### 2026-08-31 · ⚡ SHIPPED — the instance's #1 consumer now drives from the 26 allow-listed wallets (30,993 → 15,973 blocks/call), the pgss instrument is finally scheduled, and CI now recovers fileless migrations without a human
 
 **Trevor asked me to decide the eight queued decisions myself and to verify the v2 scheduled task's folder binding. Both done; two of the eight had FALSE premises and one produced a much bigger finding than the question it was attached to.**
