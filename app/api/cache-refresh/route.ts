@@ -618,18 +618,45 @@ export async function GET(req: NextRequest) {
 
         await mapWithConcurrency(batches, 5, async function(batch) {
           const results = await Promise.all(batch.map(function(id) { return fetchMomentGql(id) }))
+          // Group the batch by the value being written so it costs at most TWO
+          // statements instead of one per moment. Each single-row UPDATE here
+          // filtered on (wallet_address, moment_id) with no collection_id, so it
+          // could not use the (wallet_address, collection_id, moment_id) unique
+          // index as a full match and re-scanned the wallet's rows every time:
+          // 7,689 buffers per single-row update, 1,268,710 buffers over 165 calls
+          // in one 40-minute window (pg_stat_statements, 2026-09-01).
+          // ⚠ What batching removes is the repeated scan, NOT the per-row index
+          // maintenance: every index on lock_checked_at makes this a non-HOT
+          // update (20260809010000_audit_20260809_allday_lock_picker_skipscan.sql).
+          const lockedIds: string[] = []
+          const unlockedIds: string[] = []
           for (let j = 0; j < batch.length; j++) {
             const gqlData = results[j]
             // GQL miss → leave the row stale + unstamped so a later view retries it,
             // rather than stamping an unverified value.
             if (gqlData == null) continue
-            const locked = gqlData.isLocked === true
-            if (locked) lockedBackfillCount++
-            await supabase
+            if (gqlData.isLocked === true) lockedIds.push(batch[j])
+            else unlockedIds.push(batch[j])
+          }
+          const lockGroups = [
+            { locked: true, ids: lockedIds },
+            { locked: false, ids: unlockedIds },
+          ]
+          for (const g of lockGroups) {
+            if (g.ids.length === 0) continue
+            const { error: lockErr } = await supabase
               .from("wallet_moments_cache")
-              .update({ is_locked: locked, lock_checked_at: nowIso })
+              .update({ is_locked: g.locked, lock_checked_at: nowIso })
               .eq("wallet_address", wallet)
-              .eq("moment_id", batch[j])
+              .in("moment_id", g.ids)
+            // Count what was WRITTEN, not what was intended. Incrementing before
+            // the update (as this did) reported rows as locked even when the
+            // write that was supposed to record it never landed.
+            if (lockErr) {
+              console.error("[cache-refresh] is_locked backfill: update failed for " + g.ids.length + " moment(s): " + lockErr.message)
+              continue
+            }
+            if (g.locked) lockedBackfillCount += g.ids.length
           }
         })
 

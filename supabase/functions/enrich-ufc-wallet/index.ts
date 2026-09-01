@@ -170,17 +170,41 @@ Deno.serve(async (req: Request) => {
   const internalEditionIds = [...new Set(editionIdMap.values())];
   if (internalEditionIds.length > 0) {
     const fmvByInternal = new Map<string, { fmv_usd: number | null; confidence: string | null; sales_count_30d: number | null }>();
-    for (let i = 0; i < internalEditionIds.length; i += 200) {
-      const slice = internalEditionIds.slice(i, i + 200);
-      const { data: snaps } = await supabase
-        .from("fmv_snapshots")
-        .select("edition_id, fmv_usd, confidence, sales_count_30d, computed_at")
-        .in("edition_id", slice)
-        .order("computed_at", { ascending: false });
+    // Read through get_fmv_snapshot_for_editions (migration 20260901030456)
+    // rather than PostgREST. The old form selected from fmv_snapshots with
+    // .in(edition_id, <200 ids>).order(computed_at desc), and the planner
+    // served that by WALKING the computed_at ordering index toward PostgREST's
+    // 1000-row cap that a 200-edition slice can never reach: ~185k buffers and
+    // ~29.4s per call against the 30s service_role cap (measured 2026-09-01).
+    // The RPC puts LIMIT 1 INSIDE a LATERAL, so it can only ever do one index
+    // descent per edition — the ordering-index walk is structurally
+    // unreachable, not merely out-costed. All 518 UFC editions in one call
+    // measured 4,195 buffers / 196ms.
+    //
+    // ⚠ FMV_CHUNK stays under PostgREST's db-max-rows=1000, which applies to
+    // RPC results too. The function returns at most one row per edition, so
+    // <=900 ids can never be silently truncated into a partial read that would
+    // look exactly like "these editions have no FMV". UFC is 518 editions
+    // today, so this is a single call.
+    const FMV_CHUNK = 900;
+    for (let i = 0; i < internalEditionIds.length; i += FMV_CHUNK) {
+      const slice = internalEditionIds.slice(i, i + FMV_CHUNK);
+      const { data: snaps, error: fmvErr } = await supabase.rpc("get_fmv_snapshot_for_editions", {
+        p_collection_id: UFC_COLLECTION_ID,
+        p_edition_ids: slice,
+      });
+      // A failed FMV read must NOT render as an answer. fmvByExt feeds
+      // `fmv_usd` on every wallet_moments_cache row upserted below, so
+      // swallowing the error (as this read did until 2026-08-31) writes
+      // fmv_usd: null over every cached FMV for the wallet — a failed read
+      // acting as a DELETE. Throw instead: the caller sees a 500 and the
+      // cached values it could not refresh survive untouched.
+      if (fmvErr) {
+        throw new Error(`get_fmv_snapshot_for_editions failed (${slice.length} ids): ${fmvErr.message}`);
+      }
       for (const s of (snaps ?? []) as Array<Record<string, unknown>>) {
-        const eid = s.edition_id as string;
-        if (fmvByInternal.has(eid)) continue;
-        fmvByInternal.set(eid, {
+        // One row per edition by construction, so no first-row-wins dedup.
+        fmvByInternal.set(s.edition_id as string, {
           fmv_usd: s.fmv_usd != null ? Number(s.fmv_usd) : null,
           confidence: (s.confidence as string | null) ?? null,
           sales_count_30d: s.sales_count_30d != null ? Number(s.sales_count_30d) : null,

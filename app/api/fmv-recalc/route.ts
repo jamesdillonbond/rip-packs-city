@@ -1371,22 +1371,53 @@ export async function POST(req: NextRequest) {
     // guards against the $5M garbage asks present in edition_offers. Collection-
     // agnostic; in practice only Top Shot has populated low_ask (All Day's
     // edition_offers carries the bid side, highest_offer, not low_ask).
+    //
+    // ── LATEST-SNAPSHOT LOOKUP (Steps 5c / 5d / 5e), 2026-08-31 ──────────────
+    // These three steps each used `WITH latest AS (SELECT DISTINCT ON (edition_id)
+    // ... FROM fmv_snapshots ORDER BY edition_id, computed_at DESC)`, which walks
+    // the WHOLE snapshot history (1,368,098 rows) to materialise 27,170, purely to
+    // answer "does this edition have a snapshot, and is it NO_DATA?" for a handful
+    // of candidates. Replaced with a per-edition LATERAL + LIMIT 1.
+    // Measured warm-vs-warm on Step 5c (EXPLAIN ANALYZE BUFFERS, 2026-08-31):
+    //   DISTINCT ON CTE : 98,172 buffers / 452 ms
+    //   LATERAL LIMIT 1 : 75,975 buffers / 159 ms
+    // Equivalence proven, NOT argued: over all 27,170 editions carrying a snapshot
+    // (4,508 of them in the NO_DATA class this predicate selects on), the two forms
+    // are EXCEPT-identical in both directions. The Step 5c EXCEPT alone would have
+    // been VACUOUS — both forms return zero rows here — so the comparison was run
+    // against the full edition population instead.
+    //
+    // ⛔ DO NOT "simplify" this to a read of public.edition_fmv_current. That swap
+    // was the queued suggestion and it is NOT SAFE, measured 2026-08-31: the two
+    // sources agree on membership (27,170 = 27,170, zero drift both ways) but
+    // disagree on `confidence` for 41 editions, and for 4 of those
+    // edition_fmv_current reads NO_DATA while the true latest snapshot does not.
+    // Those 4 would be admitted here and have a real snapshot OVERWRITTEN with an
+    // ASK_ONLY x0.90 haircut. This is the third time edition_fmv_current has been
+    // found non-substitutable (see the 2026-08-24 and 2026-08-26 inbox filings).
+    // The LATERAL reads fmv_snapshots directly, so it cannot drift at all.
+    //
+    // ⚠ Also falsified: hoisting the predicate into a COALESCE(...) = 'NO_DATA'
+    // correlated subquery, to let the sales anti-join filter first. The planner
+    // keeps it as a per-row SubPlan and it costs MORE (120,508 buffers). Measured,
+    // not assumed — do not re-try it.
     let askOffersBackfillCount = 0
     try {
       const { data: askOnlyRows, error: askOnlyErr } = await supabaseAdmin
         .rpc("query_sql", {
           query: `
-            WITH latest AS (
-              SELECT DISTINCT ON (edition_id) edition_id, confidence
-              FROM fmv_snapshots
-              ORDER BY edition_id, computed_at DESC
-            )
             SELECT e.id AS edition_id, e.collection_id, eo.low_ask
             FROM editions e
             JOIN edition_offers eo
               ON eo.external_id = e.external_id
              AND eo.collection_id = e.collection_id
-            LEFT JOIN latest l ON l.edition_id = e.id
+            LEFT JOIN LATERAL (
+              SELECT fs.edition_id, fs.confidence
+              FROM fmv_snapshots fs
+              WHERE fs.edition_id = e.id
+              ORDER BY fs.computed_at DESC
+              LIMIT 1
+            ) l ON true
             WHERE (l.edition_id IS NULL OR l.confidence = 'NO_DATA')
               AND eo.low_ask > 0
               AND eo.low_ask <= 10000
@@ -1473,16 +1504,17 @@ export async function POST(req: NextRequest) {
       const { data: parAskRows, error: parAskErr } = await supabaseAdmin
         .rpc("query_sql", {
           query: `
-            WITH latest AS (
-              SELECT DISTINCT ON (edition_id) edition_id, confidence
-              FROM fmv_snapshots
-              WHERE collection_id = '${TOPSHOT_COLLECTION_ID}'
-              ORDER BY edition_id, computed_at DESC
-            )
             SELECT e.id AS edition_id, e.collection_id, ta.low_ask
             FROM editions e
             JOIN topshot_parallel_asks ta ON ta.external_id = e.external_id
-            LEFT JOIN latest l ON l.edition_id = e.id
+            LEFT JOIN LATERAL (
+              SELECT fs.edition_id, fs.confidence
+              FROM fmv_snapshots fs
+              WHERE fs.edition_id = e.id
+                AND fs.collection_id = '${TOPSHOT_COLLECTION_ID}'
+              ORDER BY fs.computed_at DESC
+              LIMIT 1
+            ) l ON true
             WHERE e.collection_id = '${TOPSHOT_COLLECTION_ID}'
               AND e.external_id ~ '::'
               AND (l.edition_id IS NULL OR l.confidence IN ('STALE','NO_DATA'))
@@ -1569,15 +1601,16 @@ export async function POST(req: NextRequest) {
       const { data: adAskRows, error: adAskErr } = await supabaseAdmin
         .rpc("query_sql", {
           query: `
-            WITH latest AS (
-              SELECT DISTINCT ON (edition_id) edition_id, confidence
-              FROM fmv_snapshots
-              ORDER BY edition_id, computed_at DESC
-            )
             SELECT e.id AS edition_id, e.collection_id, af.floor_ask
             FROM editions e
             JOIN allday_edition_floor_ask af ON af.edition_id = e.id
-            LEFT JOIN latest l ON l.edition_id = e.id
+            LEFT JOIN LATERAL (
+              SELECT fs.edition_id, fs.confidence
+              FROM fmv_snapshots fs
+              WHERE fs.edition_id = e.id
+              ORDER BY fs.computed_at DESC
+              LIMIT 1
+            ) l ON true
             WHERE (l.edition_id IS NULL OR l.confidence = 'NO_DATA')
               AND af.floor_ask > 0
               AND af.floor_ask <= 10000
