@@ -10,6 +10,67 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · ⚡ SHIPPED — the top-consumer drain: three of the instance's four biggest reads cut, and the CI auto-recovery verified end-to-end against the real API
+
+Continuation of the entry below. All numbers from `ops_pgss_delta`, which this session scheduled.
+
+#### 1. `refresh_wmc_fmv_drift_active` — CONFIRMED over 11 production calls, not 1
+
+The previous entry booked this on **n=1** and said so. Re-measured against the **post-change** 04:05Z baseline (the 2h40m window straddled the change — the deploy-straddling trap, avoided by picking a baseline after it):
+
+| | pre-change | post-change |
+|---|---|---|
+| calls | 35 | **11** |
+| blocks/call | 30,993 | **16,550** |
+| ms/call | 16,169 | **11,672** |
+
+**1.87× fewer blocks — and 1.39× FASTER, which contradicts my own warning.** I predicted wall-clock might regress because the new shape pays CPU for 650 index descents. It did not; the I/O saving dominated. The prediction was wrong in the safe direction, and the exit condition ("well below 30,993") is met.
+
+#### 2. `get_allday_unresolved_pulls` — the most expensive query PER CALL on the instance
+
+`129,112 buffers + 21,892 temp read / 21,988 temp written, 9,451 ms` to return 300 rows, ~45×/day ≈ **45 GB/day**.
+
+⛔ **I nearly rebuilt an index that was already tried and reverted.** `docs/overnight/inbox/2026-08-13T1730Z-…` and migration `20260813173127` record that `(collection_id, block_height DESC)` flipped the plan to an ordered walk — Limit cost 237,181 → 579, a "409× win" that blew a 50 s statement_timeout against the seq scan's 11.2 s. I re-derived the density check before touching anything (**148,170 rips sit at or above the 300th returned row's block**), which refuted it independently. **The 08-13 verdict stands and is now restated inside the function body so nobody tries it a third time.**
+
+⭐ **What HAS changed since 08-13 is the whole point.** The 08-13 correction found `ORDER BY block_height DESC` is load-bearing because it makes this a FORWARD resolver, and warned that without it the job would "grab 300 permanently-unresolvable historical rows every tick, forever." **That is now happening anyway** — not because the ordering was dropped, but because the frontier got cleared:
+
+- unresolved pulls with a rip **above** the 300th returned block: **0**
+- unresolved pulls in total: **1,173,781**, all at or below block 137,389,992 — i.e. below the 137,390,146 spork floor, the deep history that needs the un-deployed hydrator.
+
+⚠ **The ordering is still load-bearing and is KEPT.** 581 of the 622 rows resolved in the last 10 days sit above that residue window — new arrivals this DESC ordering surfaces first. Removing the `ORDER BY`, or disabling jobid 22, would stop that. Neither was done.
+
+**The fix is the window.** AllDay rips in the last 30d/90d/180d/all = **864 / 2,130 / 26,710 / 2,816,273**, and resolution is fast when it happens: **545 of 622** rows resolved in 10 days had their rip sealed within **7 days** of resolution. Measured, same query, same 0 rows out:
+
+| window | buffers | temp | ms |
+|---|---|---|---|
+| none (as written) | 129,112 | 21,988 written | 9,451 |
+| 180 days | 104,910 | — | 1,667 |
+| **90 days (shipped)** | **8,022** | — | **19** |
+| 30 days | 3,216 | — | 12 |
+
+Verified **through the function** (it is `LANGUAGE sql`, so the body with literals is not what runs): **8,850 buffers, 23 ms**. 30d was rejected despite being cheaper again — one month is too little headroom before unworked arrivals age out of the window, which would be silent data loss.
+
+⚠ **Behaviour change, stated plainly:** on a tick with no forward work this returns **0 rows** instead of 300 residue rows. Correct, but the caller is an ungitted edge fn that writes no `pipeline_runs` row, so its reaction to an empty queue **cannot be observed from here**. Accepted deliberately. **Falsifier in the migration: if forward resolution stops (baseline 622 rows / 10 days), revert** — it is one statement.
+
+#### 3. The smoke suite full-scanned `fmv_snapshots` 48× a day to verify a trigger
+
+`analytics_smoke_run()` is the #4 consumer: ~70,019 blocks and ~30 s per call, 48 calls/day (`13,43`) ≈ **26 GB/day for a smoke test**. **41% of that is one check** whose own comment says the invariant is "structurally enforced by trigger" — and which verifies that by seq-scanning **1,368,392 rows for 28,862 buffers / 1,496 ms**, every 30 minutes, to find 0 drift. A guard costing more than the thing it guards.
+
+Now clock-gated: the **08:13Z** tick runs the byte-identical full sweep; every other tick runs the same predicate bounded to `computed_at > now() - 2h`, riding the existing index at **310 buffers / 12.8 ms — 93× cheaper**. At a 30-minute cadence a 2-hour window covers every write 4×, so a trigger regression is still caught within one tick. **~10.6 GB/day → ~0.25 GB/day.**
+
+⚠ **A clock gate, not just a window, and that is deliberate:** `computed_at` is BUSINESS time and also the partition key, and there is no insert-time column — so a backfill writing old `computed_at` would never enter a bounded window. A window-only fix would silently stop covering the case most likely to introduce drift.
+
+⭐ **How it was edited matters as much as the edit.** The body is 21 KB / 62 FROM clauses; retyping it into a migration is the transcription this repo forbids, and a typo inside a smoke suite **blinds the monitor rather than failing loudly**. So the migration reads `pg_get_functiondef()`, asserts the anchor appears **exactly once**, replaces it, and `EXECUTE`s the result — signature, LANGUAGE, SECURITY DEFINER, search_path and ACL carried over by construction, everything outside the anchor preserved bit-for-bit. Revert = the same DO block with the two literals swapped; both are in the file.
+
+#### 4. The CI auto-recovery is verified against the real API, not assumed
+
+`migration-autorecover.yml` was dispatched with `dry_run=true` and **completed green**. Two things checked that a green badge does not prove:
+
+- **It really ran.** The job log shows `node scripts/recover-fileless-migrations.mjs --window 3 --dry-run` → `No fileless migrations in the last 3d.` It did **not** soft-skip on missing secrets, which would have looked identical from outside — the "a check that cannot answer is not a pass" case.
+- **It can actually push.** The repo's `default_workflow_permissions` is **`read`**, which would have made the commit step fail at the worst possible moment. The run's own setup log shows the explicit `permissions:` block escalated correctly: **`GITHUB_TOKEN Permissions → Contents: write`**, and `main` is unprotected (`404 Branch not protected`).
+
+⚠ Still untested: the commit-and-push branch itself, which only runs when there is something to recover. It fails loudly if it breaks and commits nothing.
+
 ### 2026-08-31 · ✅ POST-SHIP CONFIRMED (0 → 200 editions on the first tick) + 🚨 a SECOND zero-yield instrument found by the same sweep — `sales-counterparty-backfill` has walked past Flow's spork wall, and the wall answers **HTTP 200**
 
 **Session:** Claude Code interactive, Trevor's box, ~21:5x–22:3x PT. Follows the two entries below.
