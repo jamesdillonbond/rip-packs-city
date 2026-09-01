@@ -71,6 +71,26 @@ Now clock-gated: the **08:13Z** tick runs the byte-identical full sweep; every o
 
 ⚠ Still untested: the commit-and-push branch itself, which only runs when there is something to recover. It fails loudly if it breaks and commits nothing.
 
+#### 5. ⭐ POST-SHIP, CONFIRMED BY THE REAL SCHEDULED CALLERS (added 2026-08-31 ~22:45 PT)
+
+All three measured against a clean 05:21:48Z baseline taken *after* every change, so no window straddles a deploy:
+
+| | pre-change | post-change (real caller) | |
+|---|---|---|---|
+| `get_allday_unresolved_pulls` (jobid 22, 05:39 tick) | 128,335 blocks · 9,739 ms | **2,048 blocks · 859 ms** | **63× fewer blocks** |
+| `analytics_smoke_run` (cron 05:43 tick) | 70,019 blocks · 29,942 ms | **38,143 blocks · 25,652 ms** | **1.84×** |
+| `refresh_wmc_fmv_drift_active` (3 calls) | 30,993 blocks · 16,169 ms | **9,670 blocks · 6,363 ms** | **3.2×** |
+
+The AllDay result beat the 8,850 I measured by hand, and the smoke result beat my predicted ~41,000. `drift_active` post-change measures **9,670–16,550** blocks/call across two windows (n=3 and n=11) depending on how much work a tick finds; an idle tick now costs **54 blocks / 41 ms**.
+
+**Independent correctness check, not just cost:** the smoke suite's own record shows the drift check went **573 ms → 15 ms** and still reports `severity: ok`, with `ok=true` and `fail_count` unchanged for the whole run.
+
+Arithmetic on the daily saving, at the observed call rates (291 / 45 / 48 calls per day, 8 KB per block):
+`291 × ~18,000 + 45 × 126,287 + 48 × 31,876 ≈ 12.4M blocks/day ≈ **~100 GB/day** of disk reads removed` from an IOPS-throttled instance.
+
+⚠ **A CORRECTION TO MY OWN MIGRATION'S INSTRUCTIONS.** The smoke migration's falsifier says to confirm which branch ran by reading `scope` from `pipeline_runs.extra`. **That does not work** — the route stores only `{name, severity, ms}` per check and drops `detail`, so `scope` is not observable there. Use the check's **`ms`** instead: ~15 ms is the bounded branch, ~500–1,500 ms is the daily full sweep. The 08:13Z run should be the slow one.
+
+
 ### 2026-08-31 · ✅ POST-SHIP CONFIRMED (0 → 200 editions on the first tick) + 🚨 a SECOND zero-yield instrument found by the same sweep — `sales-counterparty-backfill` has walked past Flow's spork wall, and the wall answers **HTTP 200**
 
 **Session:** Claude Code interactive, Trevor's box, ~21:5x–22:3x PT. Follows the two entries below.
