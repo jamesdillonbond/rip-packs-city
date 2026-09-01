@@ -52,6 +52,25 @@ plpgsql's `RETURN QUERY` is **strict** about result types where `LANGUAGE sql` i
 
 ⛔ **Not built in this pass** — it is a large index build on `wallet_moments_cache` and belongs in the **quiet band (02:00–04:00Z)** per the REINDEX-is-concurrency-not-size finding. Build `CONCURRENTLY` via the one-off pg_cron recipe, then **re-measure on buffers** before believing it. The whole analysis, including "do not re-derive the plpgsql idea", is attached to the object itself via `COMMENT ON FUNCTION`.
 
+⭐ **BOOKED FOR THE QUIET BAND, NOT CLAIMED.** One-off pg_cron job **`oneoff-wmc-lock-wallet-coll-cover`** (jobid 433, `10 2 * * *`, owned by `postgres` — `cron_heavy` cannot CREATE INDEX) will build it CONCURRENTLY at **02:10Z**:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_wmc_lock_wallet_coll_cover
+  ON public.wallet_moments_cache (wallet_address, collection_id, lock_checked_at NULLS FIRST)
+  INCLUDE (moment_id, edition_key);
+```
+
+⭐ **The estimate is not speculative — the flawed control is valid evidence for THIS question.** `SELECT count(*)` was a bad control for plan shape, but it is a direct measurement of what the same 584 probes cost as an **Index Only Scan**: **2,945 buffers vs 13,523**. With `INCLUDE`, `moment_id` and `edition_key` live in the index, so the index-only variant can actually return them. Expect somewhat above 2,945 (wider tuples), far below 13,523.
+
+⚠ **The costs, stated up front:** `lock_checked_at` is a KEY column that this very pipeline updates, so wider tuples mean more index churn on a live write path; and Index Only Scans need visibility-map coverage on an UPDATE-heavy table (the control still showed `Heap Fetches: 525`).
+
+**NEXT PASS OWES THREE THINGS:**
+1. **Verify `indisvalid`** — a CONCURRENTLY build that fails leaves an INVALID index that silently does nothing.
+2. **Re-measure on BUFFERS** via `ops_pgss_delta` — exit condition ~15,700 → ~3,000 blocks/call. ⛔ Falsifier: if it stays near 15,700, the planner is not choosing it or the VM coverage is too poor — **drop the index rather than keep 100 MB that earns nothing.**
+3. ⚠ **`SELECT cron.unschedule('oneoff-wmc-lock-wallet-coll-cover');`** — it is a DAILY job and `IF NOT EXISTS` makes every subsequent run a no-op, but leaving it is litter.
+
+Only after (2) passes, consider dropping the now-redundant `idx_wmc_lock_wallet_coll` (67 MB) — its key columns are a strict prefix of the new one. ⛔ Do NOT drop it in the same step; the narrow/wide lesson from the `fmv_snapshots` pair earlier today is that the narrow index is sometimes preferred precisely because it is cheaper to scan.
+
 ### 2026-09-01 · 🔎 FLAGGED (weekly data-quality sweep) — TS pack-EV secondary-market staleness; all other checks clean
 
 Read-only weekly sweep. Nothing shipped that changes prod/DB — output is `docs/overnight/data-quality-sweep-2026-09-01.md` + a CC handoff (`docs/handoff-2026-09-01-topshot-pack-ev-secondary-staleness.md`) + this flag. **No revert path needed** (additive docs only; no `main` behaviour or DB state changed).
