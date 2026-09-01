@@ -1233,6 +1233,14 @@ export async function POST(req: NextRequest) {
     // At ~5 ticks/hour that is ~1,000 editions/hour, so the 4,277 backlog clears in
     // roughly 4 hours and then the step idles at whatever arrives.
     //
+    // ✅ CONFIRMED IN PRODUCTION on the first tick after deploy (2026-09-01 05:15:47Z):
+    // "Historical fallback complete: 200 editions covered", extra.historical_fallback
+    // = 200 with historical_fallback_error = null, against 0 on each of the previous
+    // 350 runs. The whole route also got FASTER — 42.1 s vs 53–100 s before — because
+    // the step now completes instead of burning its budget into a timeout. If you are
+    // reading this because the number is 0 again, read `historical_fallback_error`
+    // first: it now tells you whether the step failed or simply had nothing to do.
+    //
     // ⚠ The `EXISTS (sales)` is INSIDE the candidate CTE on purpose, and moving it
     // out would starve this backfill. 4,294 of the 8,571 qualifying editions have
     // NO paid sales and can never be converted by this step; if they could enter
