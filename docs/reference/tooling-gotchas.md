@@ -785,6 +785,28 @@ a jsonb-array health function returns ONE ROW containing an EMPTY ARRAY when cle
 reads **1** and looks like one violation — or, read the other way round, a `count(*) = 1` test passes
 on a clean estate and on a one-violation estate alike. **Read the array LENGTH, or the VALUE.**
 
+### 3. `detect_stalled_pipelines()` is the SAME shape — confirmed live 2026-08-31, an hour after this section was written
+
+⚠ **Recorded because the author of this section walked straight into it.** A closing health sweep ran
+`(select count(*) from public.detect_stalled_pipelines()) as stalled_rows` and got **1**, which reads
+exactly like *one stalled pipeline* on a page of otherwise-green numbers. Reading the **VALUE** gives
+`[]` — the estate is clean and `count(*) = 1` is the CLEAN answer.
+
+```sql
+-- ⛔ WRONG: reads 1 when clean AND 1 when there is one stalled pipeline
+select count(*) from public.detect_stalled_pipelines();
+
+-- ✅ RIGHT
+select jsonb_array_length(public.detect_stalled_pipelines());   -- 0 when clean
+select * from public.detect_stalled_pipelines();                -- read the VALUE
+```
+
+👉 **So the roster is at least three** (`check_secdef_anon_execute_violations`,
+`detect_stalled_pipelines`, and the `v_rpc_trust_health` filter above). **Treat `count(*)` over ANY
+`check_*` / `detect_*` function as unsafe until you have checked its return type** — the safe habits
+are `jsonb_array_length(...)` for the jsonb-array ones and reading the row set for the SETOF ones.
+Knowing the rule is not protection: it has to be applied at the moment the query is written.
+
 ### The general rule
 
 ⚠ **Before trusting a filter over a health view, confirm the COLUMN EXISTS** — `information_schema.columns`,
