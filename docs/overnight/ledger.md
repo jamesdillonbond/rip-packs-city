@@ -10,6 +10,67 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ VERIFIED — 14h of post-ship data confirms ~125 GB/day removed, and the auto-recovery loop is proven end-to-end (after it caught its own bug)
+
+#### 1. All three cuts hold over 7h25m with real n
+
+Measured with `ops_pgss_delta('6 hours')`, a window that starts well after every change:
+
+| | pre-change | post-change | n | |
+|---|---|---|---|---|
+| `refresh_wmc_fmv_drift_active` | 30,993 blocks · 16,169 ms | **4,188 · 3,465 ms** | 89 calls | **7.4×** |
+| `get_allday_unresolved_pulls` | 128,335 · 9,739 ms | **2,043 · 1,477 ms** | 15 calls | **62.8×** |
+| `analytics_smoke_run` | 70,019 · 29,942 ms | **37,842 · 23,456 ms** | 14 calls | **1.85×** |
+
+`drift_active` came in *better* than every earlier reading (4,188 vs 9,670–16,550) now that a full day's mix of ticks is in the sample. At the observed rates: `288 × 26,805 + 48 × 126,292 + 45 × 32,177 ≈ 15.2M blocks/day ≈ **~125 GB/day**` of disk reads removed.
+
+⭐ **Both fixed functions have dropped out of the top-8 consumers entirely.** The new #1 is `query_sql` — 476 calls, 2,505,232 blocks in 7h25m. That is **the autonomous passes' own introspection channel**: our measurement is now the single biggest reader of the database, which is the honest sign that the real workload got much cheaper.
+
+#### 2. The 08:13Z smoke failure was NOT my clock gate — the control says so
+
+The 08:13Z run (the one my change routes to the daily full sweep) came back `duration_ms 60,299`, `checks: []`, `error: "inconclusive (db saturated): canceling statement due to statement timeout"` — the whole 62-check suite lost, not just the drift check. I went looking for my own fault. It is not:
+
+- **08-30 had 22 inconclusive runs including 08:13, before this change existed.**
+- On **09-01 the 01:13Z and 13:13Z runs were also inconclusive** — and those took the CHEAP branch.
+- Suite-wide inconclusive rate by day: **72.7% (08-29) → 46.8% (08-30) → 2.1% (08-31) → 7.5% (09-01)**.
+
+So this is the long-standing saturation class, and it is collapsing as the optimisation work lands. ⚠ **But it does mean once-daily full-history coverage is only as reliable as one slot** — 09-01 got no full sweep. Recorded as a known limit in `COMMENT ON FUNCTION analytics_smoke_run()`; the right fix is to make the full check exact-and-cheap rather than to move the slot, and that is still open.
+
+#### 3. ⚠ `migration-autorecover` caught its own bug — in exactly the branch I flagged as untested
+
+Both scheduled runs that actually had something to recover **failed**: `Untracked files appeared outside supabase/migrations/. Committing nothing.` The strays were the workflow's **own** `| tee recover.log` / `pins.log` / `anonexec.log`, written into the repo root. The dry-run dispatch had passed only because that whole step is gated on `recovered != 0`, so the branch had never executed.
+
+**The guard behaved exactly as designed** — refused to commit, said precisely why, left prod and the repo untouched. The cost was two delayed cycles, not a bad commit. Logs now go to `$RUNNER_TEMP`, and the guard carries a comment saying it caught its own workflow so nobody later "fixes" it by allowing `*.log` through.
+
+⭐ **Then proven end-to-end, with a real migration rather than a contrived one.** `apply_migration` leaves a migration fileless by construction, so applying a genuinely useful COMMENT-only migration (`20260901195748`, recording the `get_lock_check_batch` fan-out and the smoke clock-gate design on the objects themselves) created exactly the condition the workflow exists to clear. Dispatched with `dry_run=false`:
+
+```
+success - Recover any migration applied to prod with no committed file
+success - Assert the working tree contains ONLY new migration files
+success - Gate — the recovered files must not red main
+success - Commit and push
+success - Verify parity is actually clean now
+```
+
+`94da798 | rpc-migration-autorecover[bot] | fix(migrations): recover 1 fileless migration(s) from prod, md5-verified`. Parity clean, 189/189 pins clean. **The containment loop is no longer theoretical.**
+
+#### 4. ⛔ A negative result worth not re-deriving: the "duplicate" fmv_snapshots indexes are not duplicates
+
+`fmv_snapshots_2026` appears to carry 161 MB of redundant index — two narrow/wide pairs with identical leading key columns:
+
+| | scans | size |
+|---|---|---|
+| `..._collection_id_edition_id_computed_at_idx` | 31.3M | 95 MB |
+| `..._coll_ed_ct_fmv_conf_idx` (same keys + INCLUDE) | 5.4M | 121 MB |
+| `..._edition_id_computed_at_idx` | **305M** | 66 MB |
+| `..._edition_id_computed_at_conf_idx` (+INCLUDE) | 12.9M | 65 MB |
+
+**Do not drop either side.** They are a narrow/wide pair serving different shapes: the wide ones earn their INCLUDE (the `coll_ed_ct_fmv_conf` index shows 1.08B tuples read against only 45.7M fetched — index-only scans), and the narrow ones are chosen precisely because they are cheaper to scan, carrying the hottest read path in the database (305M scans). Dropping the narrow one pushes 305M scans onto a wider index; dropping the wide one costs heap fetches. Checked before proposing, and refuted.
+
+#### 5. Next target, measured and left un-shipped on purpose
+
+`get_lock_check_batch` is now the #5 consumer: **21,261 blocks · 16.5 s per call, ~97 calls/day ≈ 17 GB/day**. The cost is the priority leg, not the base leg — the `hot` CTE resolves to **584 wallets** and the second `CROSS JOIN LATERAL` branch runs one lateral per hot wallet **per collection**: 584 × 7 ≈ **4,088 index probes**, materialising up to ~29k rows per collection to return 50. ⛔ The inner `LIMIT p_limit` is load-bearing (one hot wallet may legitimately supply all output rows), so this needs a shape change, not a limit tweak — and it is `LANGUAGE sql`, so it is planned param-blind. Full analysis is attached to the object itself via `COMMENT ON FUNCTION`. Deliberately not rushed at the end of a long pass.
+
 ### 2026-09-01 · ✅ SHIPPED (parity) — recovered the fileless AllDay-dist rehydrate; the 08-31/09-01 drain ships all confirmed holding over the post-ship window
 
 Push-enabled desktop pass (device-VM `.rpc-git-cred`), genuine overnight (DB now 08:02Z = 01:0x PT). Health GREEN. 1 parity commit, 0 production-behaviour changes.
