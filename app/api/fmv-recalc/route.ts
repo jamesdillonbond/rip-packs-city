@@ -1100,6 +1100,9 @@ export async function POST(req: NextRequest) {
     // Query editions that have no fmv_snapshots row at all and use badge_editions
     // low_ask as a proxy to insert LOW confidence snapshots.
     let backfillCount = 0
+    // Null when the step ran; the error string when its candidate query failed.
+    // Without this a count of 0 cannot be told apart from a step that never ran.
+    let backfillError: string | null = null
 
     try {
       // Log how many editions are still missing FMV
@@ -1117,7 +1120,7 @@ export async function POST(req: NextRequest) {
       const missingEditions = (missingCount as { cnt: number }[] | null)?.[0]?.cnt ?? "unknown"
       console.log(`[FMV-RECALC] Editions missing FMV snapshots: ${missingEditions}`)
 
-      const { data: uncoveredEditions } = await supabaseAdmin
+      const { data: uncoveredEditions, error: uncoveredErr } = await supabaseAdmin
         .rpc("query_sql", {
           query: `
             SELECT e.id AS edition_id, e.collection_id, be.low_ask
@@ -1134,6 +1137,11 @@ export async function POST(req: NextRequest) {
           `,
         })
 
+      // This read ignored `error` entirely until 2026-08-31 — supabase-js RETURNS
+      // errors rather than throwing, so a failed candidate read resolved to
+      // `{data: null, error}`, `?? []` turned it into an empty list, and the step
+      // reported `backfill: 0` with not even a console.warn behind it.
+      if (uncoveredErr) backfillError = uncoveredErr.message
       const rows = (uncoveredEditions as { edition_id: string; collection_id: string; low_ask: number }[] | null) ?? []
 
       if (rows.length > 0) {
@@ -1185,7 +1193,8 @@ export async function POST(req: NextRequest) {
         console.log(`[FMV-RECALC] Backfill complete: ${backfillCount} editions covered`)
       }
     } catch (err) {
-      console.warn("[FMV-RECALC] Backfill pass error:", err instanceof Error ? err.message : err)
+      backfillError = err instanceof Error ? err.message : String(err)
+      console.warn("[FMV-RECALC] Backfill pass error:", backfillError)
     }
 
     // ── Step 5b: Historical sales fallback ───────────────────────────────────
@@ -1449,6 +1458,9 @@ export async function POST(req: NextRequest) {
     // keeps it as a per-row SubPlan and it costs MORE (120,508 buffers). Measured,
     // not assumed — do not re-try it.
     let askOffersBackfillCount = 0
+    // Null when the step ran; the error string when its candidate query failed.
+    // Without this a count of 0 cannot be told apart from a step that never ran.
+    let askOffersError: string | null = null
     try {
       const { data: askOnlyRows, error: askOnlyErr } = await supabaseAdmin
         .rpc("query_sql", {
@@ -1479,6 +1491,7 @@ export async function POST(req: NextRequest) {
         })
 
       if (askOnlyErr) {
+        askOffersError = askOnlyErr.message
         console.warn("[FMV-RECALC] edition_offers ASK fallback query error:", askOnlyErr.message)
       } else {
         const rows = (askOnlyRows as { edition_id: string; collection_id: string; low_ask: number | string }[] | null) ?? []
@@ -1532,7 +1545,8 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (err) {
-      console.warn("[FMV-RECALC] edition_offers ASK fallback error:", err instanceof Error ? err.message : err)
+      askOffersError = err instanceof Error ? err.message : String(err)
+      console.warn("[FMV-RECALC] edition_offers ASK fallback error:", askOffersError)
     }
 
     // ── Step 5e: Top Shot per-parallel ASK floor (STALE/NO_DATA :: editions) ──
@@ -1547,6 +1561,9 @@ export async function POST(req: NextRequest) {
     // reading STALE / NO_DATA / no-snapshot — an edition with a fresh sales label
     // (HIGH/MEDIUM/LOW/SALES_ONLY) is strictly better and is never stolen.
     let parallelAskBackfillCount = 0
+    // Null when the step ran; the error string when its candidate query failed.
+    // Without this a count of 0 cannot be told apart from a step that never ran.
+    let parallelAskError: string | null = null
     try {
       const { data: parAskRows, error: parAskErr } = await supabaseAdmin
         .rpc("query_sql", {
@@ -1573,6 +1590,7 @@ export async function POST(req: NextRequest) {
         })
 
       if (parAskErr) {
+        parallelAskError = parAskErr.message
         console.warn("[FMV-RECALC] parallel ASK floor query error:", parAskErr.message)
       } else {
         const rows = (parAskRows as { edition_id: string; collection_id: string; low_ask: number | string }[] | null) ?? []
@@ -1626,7 +1644,8 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (err) {
-      console.warn("[FMV-RECALC] parallel ASK floor error:", err instanceof Error ? err.message : err)
+      parallelAskError = err instanceof Error ? err.message : String(err)
+      console.warn("[FMV-RECALC] parallel ASK floor error:", parallelAskError)
     }
 
     // ── Step 5d: All Day floor-ask ASK fallback (zero-sales NO_DATA tail) ─────
@@ -1644,6 +1663,9 @@ export async function POST(req: NextRequest) {
     // Step 5b (strictly better), so we never steal it here. ASK_ONLY is exempt
     // from both stale guards, so there is no re-clobber churn.
     let allDayAskBackfillCount = 0
+    // Null when the step ran; the error string when its candidate query failed.
+    // Without this a count of 0 cannot be told apart from a step that never ran.
+    let allDayAskError: string | null = null
     try {
       const { data: adAskRows, error: adAskErr } = await supabaseAdmin
         .rpc("query_sql", {
@@ -1672,6 +1694,7 @@ export async function POST(req: NextRequest) {
         })
 
       if (adAskErr) {
+        allDayAskError = adAskErr.message
         console.warn("[FMV-RECALC] All Day ASK fallback query error:", adAskErr.message)
       } else {
         const rows = (adAskRows as { edition_id: string; collection_id: string; floor_ask: number | string }[] | null) ?? []
@@ -1725,7 +1748,8 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (err) {
-      console.warn("[FMV-RECALC] All Day ASK fallback error:", err instanceof Error ? err.message : err)
+      allDayAskError = err instanceof Error ? err.message : String(err)
+      console.warn("[FMV-RECALC] All Day ASK fallback error:", allDayAskError)
     }
 
     // ── Step 6: Stale freshness touch (force_stale=true) ──────────────────────
@@ -1750,6 +1774,9 @@ export async function POST(req: NextRequest) {
     // population for which the idempotency premise actually holds. This is
     // collection-agnostic, so it covers Top Shot AND All Day in one shared fix.
     let staleTouchCount = 0
+    // Null when the step ran; the error string when its candidate query failed.
+    // Without this a count of 0 cannot be told apart from a step that never ran.
+    let staleTouchError: string | null = null
     if (forceStale) {
       try {
         const { data: staleRows, error: staleErr } = await supabaseAdmin
@@ -1813,6 +1840,7 @@ export async function POST(req: NextRequest) {
           })
 
         if (staleErr) {
+          staleTouchError = staleErr.message
           console.warn("[FMV-RECALC] Stale freshness query error:", staleErr.message)
         } else {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1872,7 +1900,8 @@ export async function POST(req: NextRequest) {
           }
         }
       } catch (err) {
-        console.warn("[FMV-RECALC] Stale touch error:", err instanceof Error ? err.message : err)
+        staleTouchError = err instanceof Error ? err.message : String(err)
+        console.warn("[FMV-RECALC] Stale touch error:", staleTouchError)
       }
     }
 
@@ -2086,16 +2115,29 @@ export async function POST(req: NextRequest) {
           blended: blendedCount,
           ask_proxy: askProxyCount,
           wash_trade_filtered: washTradeEditionCount,
+          // ⚠ EVERY per-step count below is paired with an `*_error` key, and the
+          // pairing is the point. A count of 0 on its own is ambiguous — nothing
+          // to do, or the step never ran — and that ambiguity hid a 100%-failing
+          // historical fallback for at least 350 consecutive runs (2026-08-31):
+          // `ok` was true, `rows_written` was healthy from the other steps, and
+          // the only trace was a console.warn nobody reads. Same class as the
+          // 2026-08-03 pagination-state gap noted above. Null = the step ran.
+          // ⛔ Do NOT add a new step count here without its `_error` sibling.
           backfill: backfillCount,
+          backfill_error: backfillError,
           historical_fallback: historicalBackfillCount,
-          // A count of 0 is ambiguous on its own — nothing to do, or the step
-          // failed. This key is what separates them, and its absence for months
-          // is why a 100%-failing step read as a healthy one. Null when the step
-          // ran; the error string when it did not.
           historical_fallback_error: historicalFallbackError,
           ask_offers_fallback: askOffersBackfillCount,
+          ask_offers_fallback_error: askOffersError,
+          // parallel_ask_floor had NO count key at all until 2026-08-31 — the step
+          // floors :: editions in production (3 on the 04:48Z run) and reported
+          // nothing at all to pipeline_runs.
+          parallel_ask_floor: parallelAskBackfillCount,
+          parallel_ask_floor_error: parallelAskError,
           allday_ask_fallback: allDayAskBackfillCount,
+          allday_ask_fallback_error: allDayAskError,
           stale_touch: staleTouchCount,
+          stale_touch_error: staleTouchError,
           haircut_rows: haircutRowsTotal,
           haircut_collections_run: haircutCollectionsRun,
           thin_sales_caps: thinSalesCaps,
