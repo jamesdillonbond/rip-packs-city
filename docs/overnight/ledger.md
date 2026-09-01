@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ⛔ SHIPPED AND REVERTED IN ONE PASS — I measured `get_lock_check_batch` wrong, and the control was the thing that lied
+
+**Net production change: none.** Recording it in full because the error is reusable and the real finding survives.
+
+#### The claim I shipped
+
+`get_lock_check_batch` is the **#5 consumer** — ~21,261 blocks/call, ~97 calls/day (~17 GB/day). Its `WHERE (p_collection_slug IS NULL OR c.slug = p_collection_slug)` sits *after* a `CROSS JOIN LATERAL`, and `LANGUAGE sql` functions are planned generically, so I concluded the lateral was running for all **7** collections when the production caller (`app/api/cron/lock-check-batch/route.ts`) only ever passes `nba_top_shot` or `disney_pinnacle`. I measured "the same body with a literal" at **3,204** buffers against the function's **15,711**, called it **4.9× from plan shape alone**, and shipped plpgsql + `plan_cache_mode=force_custom_plan`.
+
+#### It measured nothing
+
+| | buffers |
+|---|---:|
+| `LANGUAGE sql` (generic plan) | 15,711 |
+| plpgsql + `force_custom_plan` | **15,736** |
+
+Identical within noise. Wall-clock looked 2.6× better (8,808 → 3,446 ms) — **warm cache**, the trap already written down twice here.
+
+#### ⛔⛔ Where the bogus 4.9× came from — a NEW trap
+
+My "literal" control was `SELECT count(*) FROM cand` — only the first CTE, wrapped in an aggregate. **`count(*)` needs no column values, so the planner switched the hot-wallet probe from an Index Scan to an Index ONLY Scan and stopped touching the heap entirely:**
+
+| | scan chosen | buffers |
+|---|---|---:|
+| `count(*)` control | **Index Only Scan**, `Heap Fetches: 525` | **2,945** |
+| the real query | **Index Scan**, heap fetch per row | **13,523** |
+
+`idx_wmc_lock_wallet_coll` is `(wallet_address, collection_id, lock_checked_at)` with **no payload**, so the real query must visit the heap for each of ~11,978 candidate rows to read `moment_id` and `edition_key`. **My control silently deleted the dominant cost and I attributed the difference to plan shape.** Re-run properly, the **full** body with a literal is **13,805** buffers — 12% below the function, not 4.9×.
+
+👉 **The rule, now in memory as [[a-control-must-project-the-same-columns]]:** an aggregate wrapper can change the SCAN TYPE. A control must project the SAME COLUMNS and run the SAME pipeline as the real query, and a scan-type difference between control and subject invalidates the control outright.
+
+#### Why reverted rather than kept as harmless
+
+plpgsql's `RETURN QUERY` is **strict** about result types where `LANGUAGE sql` is not — `collections.slug` is `varchar(50)` against `RETURNS TABLE ... text` — which forced a `::text` cast the original never needed. A real behavioural surface for a benefit that does not exist. Same call as the **2026-08-31 `fmv_backfill_candidates`** rewrite that "looked 2× faster" and was deliberately not shipped once re-measured in the same cache state.
+
+⭐ Worth noting: the first apply of the plpgsql version was **rolled back by its own behavioural post-state**, which ran the function and caught the `42804` varchar/text mismatch. A catalog-only post-state would have passed it. That is the second time in this pass that running the function in the post-state caught something `pg_proc` could not see.
+
+#### What survives — the real target, un-shipped on purpose
+
+**13,523 of the ~15,700 buffers are heap fetches in the priority leg**: 584 hot wallets × one lateral probe each, ~21 rows per probe, every row a heap visit. **The fix is an index, not a plan hint** — extend `idx_wmc_lock_wallet_coll` with `INCLUDE (moment_id, edition_key)` so the probes become Index Only Scans. Estimated **~15,700 → ~3,000 buffers (~10 GB/day)** for roughly **+40–60 MB** on a 67 MB index over an UPDATE-heavy table.
+
+⛔ **Not built in this pass** — it is a large index build on `wallet_moments_cache` and belongs in the **quiet band (02:00–04:00Z)** per the REINDEX-is-concurrency-not-size finding. Build `CONCURRENTLY` via the one-off pg_cron recipe, then **re-measure on buffers** before believing it. The whole analysis, including "do not re-derive the plpgsql idea", is attached to the object itself via `COMMENT ON FUNCTION`.
+
 ### 2026-09-01 · 🔎 FLAGGED (weekly data-quality sweep) — TS pack-EV secondary-market staleness; all other checks clean
 
 Read-only weekly sweep. Nothing shipped that changes prod/DB — output is `docs/overnight/data-quality-sweep-2026-09-01.md` + a CC handoff (`docs/handoff-2026-09-01-topshot-pack-ev-secondary-staleness.md`) + this flag. **No revert path needed** (additive docs only; no `main` behaviour or DB state changed).
