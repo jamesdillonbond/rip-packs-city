@@ -1195,46 +1195,92 @@ export async function POST(req: NextRequest) {
     // confidence FMV from whatever historical sales exist so these editions
     // show up in wallet valuations instead of silently reading as "no FMV".
     let historicalBackfillCount = 0
+    // Non-null when the candidate query itself failed. Load-bearing for honesty:
+    // without it a 100%-failing step and a step with nothing to do BOTH report
+    // `historicalFallback=0`, which is exactly how this went unnoticed (see below).
+    let historicalFallbackError: string | null = null
+
+    // ⚠ REWRITTEN 2026-08-31 — this step had been failing on 100% of runs.
+    // Every fmv-recalc tick in the whole pipeline_runs retention window (350 runs
+    // over 4 days) logged "Historical fallback query error: canceling statement
+    // due to statement timeout", and every one of them still reported
+    // `historicalFallback=0`, `ok: true`, with `rows_written` looking healthy from
+    // the OTHER steps. The failure was visible only in a console.warn nobody reads.
+    // Measured cost of admitting it: 8,571 editions qualify, 4,277 of them have
+    // paid sales and were getting no historical FMV at all.
+    //
+    // The old shape could not finish. `LIMIT 1000` sat AFTER the GROUP BY, so the
+    // planner merge-joined ALL editions against 4,853,937 sales rows and aggregated
+    // 25,595 groups before the limit could discard any of it — a textbook case of
+    // "a LIMIT bounds a query's OUTPUT, not its COST".
+    //
+    // Now: pick the candidate editions FIRST (cheap per-edition LATERAL for the
+    // latest snapshot, same predicate term-for-term), bound THAT to a small batch,
+    // and only then join sales and aggregate.
+    //   old shape        : TIMES OUT (>30s), 0 rows, every run
+    //   candidate-first, LIMIT 1000 : 29,904 ms / 265,372 buffers — on the 30s wall
+    //   candidate-first, LIMIT 200  :  6,981 ms /  75,418 buffers  ← shipped
+    // Cutting ITEMS per tick rather than rows per item, per the standing rule.
+    // At ~5 ticks/hour that is ~1,000 editions/hour, so the 4,277 backlog clears in
+    // roughly 4 hours and then the step idles at whatever arrives.
+    //
+    // ⚠ The `EXISTS (sales)` is INSIDE the candidate CTE on purpose, and moving it
+    // out would starve this backfill. 4,294 of the 8,571 qualifying editions have
+    // NO paid sales and can never be converted by this step; if they could enter
+    // the bounded candidate set they would occupy the head of an unordered LIMIT
+    // forever and the same dead rows would be re-picked every tick while the
+    // convertible ones were never reached. Editions that ARE converted stop
+    // qualifying (the insert below always stamps algo_version = ALGO_VERSION and a
+    // confidence of ASK_ONLY/SALES_ONLY/STALE/LOW — never NO_DATA), so the head
+    // advances on its own.
+    const HIST_CANDIDATE_LIMIT = 200
 
     try {
       const { data: histRows, error: histErr } = await supabaseAdmin
         .rpc("query_sql", {
           query: `
-            WITH latest_algo AS (
-              SELECT DISTINCT ON (edition_id) edition_id, algo_version, confidence
-              FROM fmv_snapshots
-              ORDER BY edition_id, computed_at DESC
+            WITH cand AS (
+              SELECT e.id, e.collection_id, e.external_id, la.confidence::text AS prev_confidence
+              FROM editions e
+              LEFT JOIN LATERAL (
+                SELECT fs.edition_id, fs.algo_version, fs.confidence
+                FROM fmv_snapshots fs
+                WHERE fs.edition_id = e.id
+                ORDER BY fs.computed_at DESC
+                LIMIT 1
+              ) la ON true
+              -- Admit editions with no snapshot, or a non-1.7.x snapshot, OR a 1.7.x
+              -- snapshot that is currently NO_DATA (the F5 / corrected-D3 recovery):
+              -- editions that have sales but were stamped NO_DATA by an earlier
+              -- empty-window pass and then frozen out by the "skip 1.7.x" guard.
+              -- Scoped to confidence='NO_DATA' ONLY — a broader relax would re-admit
+              -- (and risk re-clobbering) good 1.7.x HIGH/MEDIUM rows, the 2026-05-30
+              -- Step 6 self-perpetuating-cycle class.
+              WHERE (la.edition_id IS NULL OR la.algo_version NOT LIKE '1.7.%' OR la.confidence = 'NO_DATA')
+                AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
+                AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
+                AND EXISTS (SELECT 1 FROM sales s WHERE s.edition_id = e.id AND s.price_usd > 0)
+              LIMIT ${HIST_CANDIDATE_LIMIT}
             )
             SELECT
-              e.id AS edition_id,
-              e.collection_id,
+              c.id AS edition_id,
+              c.collection_id,
               AVG(s.price_usd)::numeric AS avg_price,
               MIN(s.price_usd)::numeric AS min_price,
               COUNT(s.id) AS sales_count,
               MAX(s.sold_at) AS latest_sold_at,
-              MAX(la.confidence::text) AS prev_confidence,
+              MAX(c.prev_confidence) AS prev_confidence,
               MAX(be.low_ask) FILTER (WHERE be.low_ask > 0 AND be.low_ask <= 10000) AS low_ask
-            FROM editions e
-            JOIN sales s ON s.edition_id = e.id
-            LEFT JOIN latest_algo la ON la.edition_id = e.id
-            LEFT JOIN badge_editions be ON be.external_id = e.external_id AND be.collection_id = e.collection_id
-            -- Admit editions with no snapshot, or a non-1.7.x snapshot, OR a 1.7.x
-            -- snapshot that is currently NO_DATA (the F5 / corrected-D3 recovery):
-            -- ~38 editions that have sales but were stamped NO_DATA by an earlier
-            -- empty-window pass and then frozen out by the "skip 1.7.x" guard.
-            -- Scoped to confidence='NO_DATA' ONLY — a broader relax would re-admit
-            -- (and risk re-clobbering) good 1.7.x HIGH/MEDIUM rows, the 2026-05-30
-            -- Step 6 self-perpetuating-cycle class.
-            WHERE (la.edition_id IS NULL OR la.algo_version NOT LIKE '1.7.%' OR la.confidence = 'NO_DATA')
-              AND s.price_usd > 0
-              AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
-              AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
-            GROUP BY e.id, e.collection_id
-            LIMIT 1000
+            FROM cand c
+            JOIN sales s ON s.edition_id = c.id
+            LEFT JOIN badge_editions be ON be.external_id = c.external_id AND be.collection_id = c.collection_id
+            WHERE s.price_usd > 0
+            GROUP BY c.id, c.collection_id
           `,
         })
 
       if (histErr) {
+        historicalFallbackError = histErr.message
         console.warn("[FMV-RECALC] Historical fallback query error:", histErr.message)
       } else {
         const rows = (histRows as Array<{
@@ -1350,7 +1396,8 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (err) {
-      console.warn("[FMV-RECALC] Historical fallback error:", err instanceof Error ? err.message : err)
+      historicalFallbackError = err instanceof Error ? err.message : String(err)
+      console.warn("[FMV-RECALC] Historical fallback error:", historicalFallbackError)
     }
 
     // ── Step 5c: edition_offers ASK fallback (zero-sales NO_DATA tail) ────────
@@ -2009,7 +2056,7 @@ export async function POST(req: NextRequest) {
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} askOffersFallback=${askOffersBackfillCount} allDayAskFallback=${allDayAskBackfillCount} staleTouch=${staleTouchCount} haircut=${haircutRowsTotal} thinSalesCaps=${thinSalesCaps?.total_caps_applied ?? 0} disconnectedAskClamp=${clampRows} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount}${historicalFallbackError ? ` historicalFallbackFAILED="${historicalFallbackError}"` : ""} askOffersFallback=${askOffersBackfillCount} allDayAskFallback=${allDayAskBackfillCount} staleTouch=${staleTouchCount} haircut=${haircutRowsTotal} thinSalesCaps=${thinSalesCaps?.total_caps_applied ?? 0} disconnectedAskClamp=${clampRows} hasMore=${hasMore} duration=${duration}ms`
     )
 
     // Surface the run + cap counts in pipeline_runs.extra so /admin
@@ -2041,6 +2088,11 @@ export async function POST(req: NextRequest) {
           wash_trade_filtered: washTradeEditionCount,
           backfill: backfillCount,
           historical_fallback: historicalBackfillCount,
+          // A count of 0 is ambiguous on its own — nothing to do, or the step
+          // failed. This key is what separates them, and its absence for months
+          // is why a 100%-failing step read as a healthy one. Null when the step
+          // ran; the error string when it did not.
+          historical_fallback_error: historicalFallbackError,
           ask_offers_fallback: askOffersBackfillCount,
           allday_ask_fallback: allDayAskBackfillCount,
           stale_touch: staleTouchCount,
