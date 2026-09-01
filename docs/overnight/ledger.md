@@ -10,6 +10,66 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-08-31 · ⚡ SHIPPED — the instance's #1 consumer now drives from the 26 allow-listed wallets (30,993 → 15,973 blocks/call), the pgss instrument is finally scheduled, and CI now recovers fileless migrations without a human
+
+**Trevor asked me to decide the eight queued decisions myself and to verify the v2 scheduled task's folder binding. Both done; two of the eight had FALSE premises and one produced a much bigger finding than the question it was attached to.**
+
+#### The binding is still NOT attached — and that is now much less load-bearing
+
+`derived_state.folders_state = FOLDERS_STATE_NONE` on **both** tasks, re-read from the API at 04:0xZ. Trevor's edit did land the other two fields (`model = claude-opus-5`, and v2 now carries `permission_mode = bypassPermissions`, which closes the concern I raised about a replacement stalling on prompts v1 sailed through) — but the folder itself never attached. Proof independent of the API: the v2 run that fired at **02:18:44Z** wrote `metrics-latest-20260901T0219Z-cloud-**NOPUSH**.json`.
+
+**So I stopped waiting for the card.** `.github/workflows/migration-autorecover.yml` now runs `db:migrations:recover` 3×/day, 15 min BEFORE each migration-parity slot, and commits what it recovers. Parity stays an INDEPENDENT verifier — different script, its own name-matching — and goes red if this job did not actually close the gap. The gate before the commit is the load-bearing part: a byte-perfect recovered file still reds main two known ways (a missing `-- anon-exec:` line past the 20260817 cutoff, and a stale pin on a drift-guarded function), and neither is fixable without judgement, so both are checked first and a failure commits nothing and annotates. It also refuses if any tracked file was modified, if anything appeared outside `supabase/migrations/`, or if more than 25 files show up.
+
+**Measured need: THIRTEEN fileless migrations in ~36 h** — four on 08-31 recovered by hand by three different sessions, and **nine more overnight**, which I recovered and committed in `fa5150b`. Recovery was always the mop; the leak is a task binding that cannot be added after creation.
+
+Revert: delete the workflow file. Nothing depends on it.
+
+#### `refresh_wmc_fmv_drift_active` — the whole instance's largest consumer, roughly halved
+
+Found with the newly-scheduled delta instrument: **1,084,765 shared_blks_read over 35 calls in a 2h53m window = 30,993 blocks (~242 MB) per call**, every ~5 minutes. ~8.5 GB of disk reads every three hours from one function, on an IOPS-throttled instance.
+
+**The cost was never the UPDATE — it was the rows fetched in order to reject them.** The loop led with `(collection_id, edition_key)`, which returns every holder of an edition across a 2.5M-row table, and applied the wallet restriction afterwards on heap-fetched rows. But only **26 wallets are active** and they own **202,881 of 2,506,331 rows (8.1%)**. One measured chunk: 9,625 rows read, 9,613 removed by the join filter, **0 updated**.
+
+Now it drives from the wallets — 26×25 = 650 exact probes on `idx_wmc_wallet_coll_ek_fmv (wallet_address, collection_id, edition_key) INCLUDE (fmv_usd)`, 175 MB, built CONCURRENTLY out of band as postgres. Query buffers **7,077 → 3,349**.
+
+⚠ **`OFFSET 0` is load-bearing and is not style.** Three shapes were measured and the first two were both flattened straight back into the original hash join on the old index:
+
+| shape | wmc buffers | index used |
+|---|---|---|
+| as written (hash join on wallets) | 6,711 | old |
+| `CROSS JOIN LATERAL`, no fence | 6,711 | old — flattened |
+| `wallet_address = ANY(ARRAY[26 literals])` | 6,711 | old — post-index Filter |
+| `CROSS JOIN LATERAL` + `OFFSET 0` | **2,983** | **new, Index Only Scan** |
+
+The planner will not choose it on its own: it estimates `rows=39` per edition where the actual is 304–385. Remove the fence and the regression is silent — same rows out, 2.25× the I/O.
+
+**Post-ship, first production call: 15,973 blocks/call vs 30,993 (1.94×), at an unchanged ~15.4 s** — same wall-clock budget, half the I/O, which is exactly the intended trade. ⚠ **n=1**; two reads are not a rate. The next pass should confirm over ≥20 calls with `ops_pgss_delta('2 hours')` and judge on **blocks/call, never wall-clock** — warm, the new shape is *slower* (65 ms vs 24 ms) because it pays CPU for 650 descents.
+
+⚠ **A hypothesis I held and measured FALSE**, recorded so nobody re-runs it: I expected most *changed* editions to be held by nobody in the allow list, and had designed a cached intersect table. **5,581 of 6,206 changed editions (90%) ARE held.** That machinery would have removed 10% of the work and added a cache to keep fresh. Dropped before it was built.
+
+Revert: `CREATE OR REPLACE` with the pre-2026-09-01 body (only the LOOP's first CTE chain differs), then optionally `DROP INDEX CONCURRENTLY public.idx_wmc_wallet_coll_ek_fmv`.
+
+#### The saturation instrument is scheduled, bounded, and now has a reader that cannot lie about its own window
+
+`audit_20260830_pgss_snap` was **session-driven with no `cron.job` row** — 26 snapshots in 37 h with gaps up to 4 h, so a pass computing a "2-hour window" could silently be computing a four-hour one. That is the measured cause of the top consumer being misattributed for four consecutive passes.
+
+Shipped: `ops_pgss_snapshot()` on `5 */2 * * *` with 4-day retention (~4.9k rows/snapshot, ~80 MB steady state), and `ops_pgss_delta()`, which picks the newest baseline **at or before** the requested look-back, **returns `baseline_age`** so a 2 h request can never silently be a 3 h one, and flags `counter_reset` instead of emitting a bogus negative delta. **It earned its keep on the first call: a "2 hour" request came back with `baseline_age` 02:52:46.** The table keeps its `audit_` name (renaming would break in-flight sessions and task prompts) but now carries a `COMMENT` saying it is a scheduled instrument and must not be dropped by an `audit_`-prefix cleanup.
+
+⚠ **The first version of this shipped broken and I caught it minutes later.** Both functions carry `SET search_path TO 'public'`, and `pg_stat_statements` lives in the `extensions` schema — the first live call failed `42P01`. The ad-hoc query that designed them worked only because an interactive session's search_path includes `extensions`: **the probe ran in a wider environment than the thing it was a probe for.** The scheduled job would have failed identically at 05:05Z, and **nothing on this instance alerts on `cron.job_run_details`**, so the instrument would have read "scheduled" while taking zero snapshots — the exact failure it exists to end. Fixed by schema-qualifying rather than widening search_path, and its post-state now **RUNS both functions** instead of reading the catalog, because the defect was invisible to `pg_proc`.
+
+Revert: `SELECT cron.unschedule('rpc-pgss-snapshot');` then drop both `ops_pgss_*` functions.
+
+#### The eight decisions — decided, with two premises refuted
+
+1. **Golazos pack EV — ✅ NO ACTION, the premise was false.** The question was "seed `pack_drop_pool` or retire the function/cron (jobid 44)?" on the basis that the pool has zero Golazos rows. It has **1,958**, and `compute-golazos-pack-ev` is healthy: last run 00:37Z, `ok=true`, `ev_rows_written: 39`, `editions_resolved: 241`, `editions_with_fmv: 241`. `pack_ev_latest` holds **211 Golazos rows, all fresh inside 2 days, 98.8% FMV coverage — the second-best coverage in the estate** behind NFL All Day. Retiring it would have deleted a working, accurate, user-facing surface.
+2. **`idx_badge_editions_sniper` — ✅ NO CHANGE, and do NOT add the filter.** Excluding `flow_retired` would drop **1,243 of 5,974** live-ask editions (21%) from a deals surface. `flow_retired` means *minting has ended*, not that the moment cannot be bought — retired editions are frequently the more collectible ones. The index's own predicate is `parallel_id = 0`, so "filter parallel_id" was never coherent either. And the coverage gap is not worth solving as a cost problem: `badge_editions` is 15,296 rows with ~1 MB of indexes and this index has **30 lifetime scans**.
+3. **Wallet-backfill "stalled" arms — ✅ ACCEPT THE NOISE; do NOT re-derive `max_silent_minutes`.** Measured over 7 days: p95 gap **0–1 min**, mean 2–3 min, max gap **472 min**, and all seven lanes idle *simultaneously*. `max_gap / p95` ≈ **472**, far past the ~100 tell for burst-shaped lanes. `burst-lanes-invert-gap-based-silence-detectors` already records three detector generations dying on exactly this shape; 420 → 500 would be the fourth, and would make a genuine 8-hour death invisible while the false alarms continued at 501. Suppression is also wrong here — it would blind the failure_rate arm on seven live ingest lanes. The real fix is a burst-level arm ("was there a burst in the last 8 h?"), which is a deliberate change to the alerting function, not a threshold nudge.
+4. **Board-watchdog de-escalation — ✅ DO NOT RE-OPEN, and my own alarm about it was wrong.** I noticed the sweep population fall **45 → 44** on 08-31 and started to file it as a silent coverage regression. It is not: `topshot_pack_reality_top_ev` was deliberately deactivated 2026-08-30 with a measured note — a top +EV board can honestly hold zero rows, the writer (jobid 217) is healthy, and the note names its re-activation trigger. Checked before filing. One genuine residual, recorded not actioned: the **2026-08-29 18:51Z sweep covered only 38 of 45 boards** with a 209 s slowest probe — a soft-budget truncation, covered by the next of four daily cycles.
+5. **Wallet FMV freshness vs instance load — ✅ DECIDED: NOT more aggressive.** It was framed as under-fed ("duty-cycle-limited, trails during a sweep"). It is not under-fed; it was **the single largest disk-read consumer on the instance**. Making it more aggressive would have degraded every user-facing page. Instead the work got ~2× cheaper at the same cadence (above), which is the same freshness for half the I/O.
+6. **Is `fmv-backfill` worth its cost? — ✅ KEEP, unchanged.** 14 runs / 7 days, **0 rows written**, avg 38 s, and in the 2h53m pgss window its candidate query cost **1,025 blocks over 2 calls**. It is nowhere near the top consumers now that the index and stats work landed. Retiring a safety net that costs ~9 minutes a week to prove the queue is drained trades real (if rare) failure detection for negligible savings. The 5 failures in the window all predate the fix — trailing 2-day window, as recorded.
+7. **`audit_20260830_pgss_snap` lifecycle — ✅ SCHEDULED AND BOUNDED** (above). Not dropped; it is now the instrument, not scratch.
+8. **`sales-serial-backfill` treadmill — ✅ NO CHANGE; still the one genuinely operator-blocked item.** 37 runs / 37 ok / 34 rows in 7 days, and cheap since the index (7,297 blocks/call). The ceiling is `INGEST_SECRET_TOKEN`, not the SQL. Honest-but-idle until Trevor sets it.
+
 ### 2026-08-31 · ✅ DRAINED the two 09-01 cloud handoffs + both daytime monitors — 9 stranded migrations committed, 3 queued code fixes shipped (one of them NOT as queued, because the queued remedy would have corrupted 4 editions), 2 monitor candidates closed as self-healed
 
 **Session:** Claude Code interactive, Trevor's Windows box, ~20:45–21:1x PT. Zone read with

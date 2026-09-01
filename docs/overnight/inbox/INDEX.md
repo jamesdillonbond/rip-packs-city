@@ -1,4 +1,4 @@
-# Inbox index — 345 live filings
+# Inbox index — 346 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,11 @@ failure it documents.
 
 ---
 
-## 2026-09-01 — 3 filings
+## 2026-09-01 — 4 filings
+
+- [⚡ **The instance's top consumer fetched 9,613 rows to reject them — and the planner would not take the fix without a fence**](2026-09-01T0410Z-the-instances-top-consumer-fetched-9613-rows-to-reject-them-and-the-planner-would-not-take-the-fix-without-a-fence.md) — *(Cloud pass, device-linked. SHIPPED and measured post-ship.)* `refresh_wmc_fmv_drift_active` was the **number one consumer of the whole instance** — **30,993 blocks (~242 MB) per call**, every ~5 min, ~8.5 GB of disk reads every three hours. The cost was never the UPDATE: the loop led with `(collection_id, edition_key)`, returning **every holder across a 2.5M-row table**, then filtered to the **26** active wallets afterwards on heap-fetched rows — one chunk read 9,625 rows, removed 9,613, updated **0**, while those wallets own only **8.1%** of the table. ⭐ **The new index alone was NOT the fix**: three shapes were measured and two were flattened straight back onto the old index (plain lateral; `= ANY(ARRAY[26 literals])` as a post-index filter). **`OFFSET 0` is the load-bearing fence** — remove it and the regression is silent, same rows out, 2.25× the I/O. ⚠ **A hypothesis I held was measured FALSE and dropped before it was built**: 5,581 of 6,206 changed editions (90%) ARE held, so the intersect-cache idea bought 10%. Result: buffers **7,077 → 3,349**; first production call **15,973 vs 30,993 blocks** at unchanged ~15.4 s. ⛔ **n=1 — confirm over ≥20 calls with `ops_pgss_delta`, and judge on blocks/call, NEVER wall-clock** (warm, the new shape is *slower*: 65 ms vs 24 ms).
+
+---
 
 - [⛔ The queued `edition_fmv_current` swap in fmv-recalc would have corrupted 4 editions — the LATERAL is the fix, and it is proven equivalent](2026-09-01T0400Z-edition-fmv-current-is-not-substitutable-in-fmv-recalc-and-the-lateral-is.md)
 - [item 13 names four functions as carrying the `plan_cache_mode` fix; the catalog says two](2026-09-01T0300Z-item-13-names-four-functions-as-fixed-and-the-catalog-says-two.md)
