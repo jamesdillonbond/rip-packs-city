@@ -1,97 +1,59 @@
 {
-  "run": "nightly-20260901T0300Z-cloud-CAN-SHIP-DB-NOPUSH",
-  "captured_at_utc": "2026-09-01T03:20Z",
-  "captured_at_pt": "2026-08-31T20:20 PT",
-  "mode": "GENUINE OVERNIGHT (DB now() 02:58:50Z == container 02:58:31Z, ~19s, no skew; real local 19:58 PT at start). NO DESKTOP BRIDGE (no mcp__remote-devices__* tools present) => cloud-only, cannot push. DB migrations WERE shippable and ONE SHIPPED.",
+  "run": "nightly-20260901T0800Z-desktop-PUSH-ENABLED",
+  "captured_at_utc": "2026-09-01T08:05Z",
+  "captured_at_pt": "2026-09-01T01:05 PT",
+  "mode": "GENUINE OVERNIGHT (DB now() 08:02:42Z, app rows 07:56Z, no skew; real local 01:0x PT). PUSH-ENABLED via device-VM .rpc-git-cred (git push --dry-run == 'Everything up-to-date' at start). Prior 0300Z cloud pass + Claude Code interactive had already drained all 09-01 inbox items; near-every live lever is hot (<48h) or operator-blocked.",
   "genuine_overnight": true,
-  "push_available": false,
-  "push_test": "git push --dry-run origin HEAD:refs/heads/main -> HTTP 403, 'jamesdillonbond/rip-packs-city is not in this session's authorized repository set'. Operator-only, not self-grantable.",
-  "fired_by": "trig_01AZzLzkTPp5xbSjK1EFmeCw (58 */2 * * *) — the SUPERSEDED DUPLICATE task, whose prompt asserts it is device-bound. Falsified on five consecutive firings across both tasks.",
-  "read_at": "origin/main 7c63fa326cc2f38c2d6a89d332429cc2415ca599 (2026-08-31 08:39:47 -0700), cloned 02:58Z.",
-  "shipped_to_prod_state": "SHIPPED: migration 20260901030456 audit_20260901_get_fmv_snapshot_for_editions_lateral_with_confidence_and_sales_count. New RPC public.get_fmv_snapshot_for_editions(uuid, uuid[]) -> (edition_id, fmv_usd, confidence, sales_count_30d). DB half of the enrich-ufc-wallet FMV-preload fix. All 518 UFC editions in ONE call = 4,195 buffers / 196 ms / 381 rows, vs ~556,371 buffers for three PostgREST slices (~140x). Equivalence proven three ways.",
+  "push_available": true,
+  "read_at": "origin/main 8d99f051c2a5c27df384192fc82c160765e1f596 (2026-09-01 05:54:15Z), static through the pass.",
+  "shipped_to_prod_state": "1 parity commit e376ccae — recovered the fileless migration 20260901071258 (allday-dist rehydrate, applied to prod 07:12Z by a prior session, never committed). Byte-exact, md5 33e0d434b37f61eac5fe50c57a41f4ad == prod. No production behaviour changed (DB object already existed). 0 production-behaviour ships.",
   "security": {
-    "invariants": "clean",
-    "secdef_anon_violations": "clean — check_secdef_anon_execute_violations() returned the VALUE [] (not the count 1, which it always returns), re-read AFTER the ship",
-    "new_function_acl": "service_role + postgres EXECUTE only; has_function_privilege false for anon AND authenticated; not SECURITY DEFINER.",
-    "tmp_cron_jobs_left": "0 (tmp-idx% = 0; cron.job total 102)"
+    "invariants": "clean []",
+    "anon_write_holes": "clean []",
+    "rls_off_base_tables": "clean []",
+    "secdef_anon_violations": "clean []"
   },
   "health_verdict": "GREEN",
-  "stalled_pipelines": [],
+  "db_size_mb": 14114,
+  "sentinel_ts_uuid_editions_48h": 0,
+  "stalled_pipelines": ["allday-pack-opens-backfill (known EarlyDrop ~94%-unlogged false-positive; do NOT suppress/raise)"],
   "pipeline_alerts": {
-    "count": 2,
+    "count": 4,
     "rows": [
-      "fmv-backfill 5/13 (38.5%) failure_rate — TRAILING 2-DAY WINDOW; every failure <= 2026-08-30 13:21Z, ages out. DO NOT fix again.",
-      "unmapped-sales-nfl_all_day info — 47,204 actionable of 104,692, ~524.5d to clear. Structural; do NOT raise the threshold."
+      "allday-pack-opens-backfill cron_silent 110min — EarlyDrop false-positive, KNOWN, do not fix.",
+      "fmv-backfill 5/15 (33.3%) failure_rate — trailing 2-day window; NO new failures (count held at 5, denom 13->15); ages out. DO NOT fix again.",
+      "golazos_sales resolving_editions info — structural.",
+      "unmapped-sales-nfl_all_day info — 47,212 actionable of 104,687; ~605d to clear; structural, do NOT raise threshold."
     ]
   },
   "trust_health": {
     "arms": 38,
     "breaches": 2,
     "rows": [
-      "public_board_slow_count = 1 (breach_at 1) — down from 6 at 0219Z.",
-      "unmapped_resolution_backlog_max = 228 (breach_at 100) — trend 265 -> 255 -> 228. Do NOT raise breach_at."
+      "public_board_slow_count = 1 (breach_at 1) — planner-pruned instrument; Vercel 5xx shows only known IPFS-gateway class + a few no-crash board 504s at daytime-band onset (~0.1%).",
+      "unmapped_resolution_backlog_max = 225 (breach_at 100) — structural, declining 265->255->228->225. Do NOT raise breach_at."
     ],
-    "trust_precompute_max_age_hours": 5.2,
-    "INSTRUMENT_GOTCHA": "public.get_trust_health() DOES NOT EXIST. The board is the VIEW public.v_rpc_trust_health with columns (metric, value, breach_at, status, catches). Filtering on a non-existent is_breach column returns [] — a FALSE ALL-CLEAR over two real breaches. Use `upper(status) <> 'OK'`; values are case-mixed (ok / BREACH). It also costs ~280k-350k buffers per SELECT — read it ONCE per pass. Now written up in docs/reference/tooling-gotchas.md."
+    "trust_precompute_max_age_hours": 5.29,
+    "topshot_fmv_pct_stale_30d": 31.7
   },
-  "cron_fleet_12h": { "succeeded": 1985, "failed": 0, "other_status": 0, "jobs": 102 },
-  "vercel_prod_180min": {
-    "denominator": 3051,
-    "by_status": { "200": 1854, "202": 1144, "307": 31, "204": 8, "401": 4, "404": 4, "502": 4, "304": 2 },
-    "500": 0, "504": 0,
-    "502_detail": "4 distinct /api/public/ipfs-media/<cid>, one hit each — known upstream IPFS-gateway class. The 01:00Z pass's 103x502 / 4x500 reading has failed to reproduce in two consecutive 180-minute windows."
+  "vercel_prod_3h_5xx": {
+    "note": "Dominated by known external IPFS-gateway class (/api/public/ipfs-media/<cid>, 1 each). Non-IPFS: packs/summary x3, sniper-feed x1, collection-stats x1, liquidity-distribution x1 — no error-level logs (transient 504s at daytime-IO-band onset), ~0.1% of ~3000 req.",
+    "500_crashes": 0
   },
-  "dead_host_probe_thread_11": {
-    "probes": ["530", "530"],
-    "positive_control": "rest-mainnet.onflow.org/v1/blocks?height=sealed -> 200, same shell, same second",
-    "at": "2026-09-01T02:59Z",
-    "verdict": "EXIT NOT MET (needs non-5xx twice). Nothing re-enabled. Sixth consecutive pass recording 530."
+  "editions_by_collection": { "candy_mlb": 125, "ufc_strike": 518, "nfl_all_day": 6190, "nba_top_shot": 19933, "laliga_golazos": 575 },
+  "fmv_by_collection_topshot": { "HIGH": 2194, "MEDIUM": 5846, "LOW": 4769, "STALE": 1640, "NO_DATA": 3388, "ASK_ONLY": 1897, "SALES_ONLY": 28 },
+  "post_ship_watch_prev_24_48h": {
+    "verdict": "ALL HOLDING — no regressions, nothing auto-reverted",
+    "refresh_wmc_fmv_drift_active": "4,246 blocks/call over 33 calls vs 30,993 pre-ship (>=20-call confirmation the 0410Z note required; exit met)",
+    "get_allday_unresolved_pulls": "1,622 blocks/call over 6 calls vs 129,112 buffers pre-ship",
+    "refresh_mv_pack_ev_latest": "11,209 blocks/call over 7 calls, stable",
+    "fmv-recalc": "all runs ok, no errors over 6h",
+    "security": "clean post-ship"
   },
-  "corrections_made_this_pass": [
-    "Item 13 credits FOUR functions with the plpgsql + plan_cache_mode=force_custom_plan remedy; pg_proc says TWO (get_wallet_moments_with_fmv, get_wallet_total_fmv). get_fmv_for_editions and get_pack_realized_ev_row are still LANGUAGE sql — NOT a lost ship: 20260830030332 is a LATERAL rewrite and 20260830032541 a predicate pushdown. CORRECT ACTION IS NO ACTION.",
-    "v_rpc_trust_health has no is_breach column — a filter on one reads a false all-clear."
-  ],
   "needs_trevor": [
-    "Retire the duplicate scheduled task trig_01AZzLzkTPp5xbSjK1EFmeCw (58 */2 * * *) — delete_trigger and update_trigger{enabled:false} both return 'MCP tool call requires approval' in a scheduled run. Closed to every autonomous pass.",
-    "Both tasks are UNBOUND despite the v2 prompt's claim; a binding cannot be added after creation. Check on laptop-e3bdp9vs that the scheduling card actually offers a device binding before creating a v3.",
-    "Scheduling the pgss snapshot (naming + lifecycle are his call) — thread #15.",
-    "The 08-24 board-watchdog de-escalation re-open (thread #4)."
-  ],
-
-  "drained_by_claude_code": {
-    "at_pt": "2026-08-31 ~20:45-21:1x PT",
-    "at_utc": "2026-09-01T03:45Z-04:1xZ",
-    "session": "Claude Code interactive, Trevor's Windows box, PUSH-CAPABLE",
-    "migrations_committed": {
-      "count": 9,
-      "method": "check-migration-parity.mjs (exit 1, 9 MISSING) -> recover-fileless-migrations.mjs --window 3 (all 9 written byte-exact from prod, script-verified md5) -> parity flipped MISSING -> UNTRACKED -> committed. NOT retyped from any handoff.",
-      "cross_check": "20260901030456 md5 40591e25ae398d59fa061fa6dee3fce6 matches prod; file has NO trailing newline (4,970 bytes) so plain and stripped digests coincide."
-    },
-    "queued_for_claude_code_status": {
-      "enrich-ufc-wallet RPC swap": "SHIPPED. Chunked at 900 (not one unbounded call) because PostgREST db-max-rows=1000 applies to RPC results; UFC's 518 is still a single call. ALSO fixed a live honesty defect in the same lines: the read ignored `error`, and fmvByExt feeds fmv_usd on every wallet_moments_cache upsert, so a failed read blanked the wallet's whole cached FMV — a failed read acting as a DELETE. It now throws.",
-      "cache-refresh lock_checked_at batching": "SHIPPED. Ten single-row UPDATEs per batch -> at most two, grouped by value. Also fixed lockedBackfillCount incrementing BEFORE the write.",
-      "fmv-recalc Steps 5c/5d/5e": "SHIPPED, BUT NOT AS QUEUED. See rejected_queued_remedy below.",
-      "commit the 9 stranded migrations": "DONE"
-    },
-    "rejected_queued_remedy": {
-      "what_was_queued": "Replace the `latest` DISTINCT ON CTE in fmv-recalc Steps 5c/5d/5e with a read of public.edition_fmv_current.",
-      "why_rejected": "MEASURED UNSAFE. Membership agrees perfectly (27,170 = 27,170, zero drift both directions) but `confidence` disagrees for 41 editions, and for 4 of those edition_fmv_current reads NO_DATA while the true latest snapshot does not. Those 4 would be admitted to the backfill and have a real snapshot OVERWRITTEN with an ASK_ONLY x0.90 haircut. Third independent time edition_fmv_current has been measured non-substitutable (08-24: lost 71% of rows; 08-26: 'NOT a drop-in').",
-      "shipped_instead": "Per-edition LATERAL + LIMIT 1 against fmv_snapshots directly — same source, cannot drift.",
-      "cost_warm_vs_warm_step_5c": { "old_distinct_on": "98,172 buffers / 452 ms", "new_lateral": "75,975 buffers / 159 ms", "falsified_third_variant": "COALESCE((SELECT ... LIMIT 1),'NO_DATA') = 120,508 buffers — WORSE than the original; planner keeps it as a per-row SubPlan. Do not re-try." },
-      "equivalence": "Proven NON-VACUOUSLY. The obvious Step-5c EXCEPT test returns 0=0/0-0 because this path legitimately returns zero rows, so P(pass | broken) ~= 1. Compared over the full population instead, in ONE MVCC snapshot: all editions 27,170 rows / 4,508 in the NO_DATA predicate class, and Top-Shot-scoped (5e shape) 19,762 / 5,032 STALE+NO_DATA — EXCEPT 0/0 both directions on both.",
-      "deliberately_untouched": "Step 6's `latest` DRIVES its query (every edition with a >24h-old snapshot), so a LATERAL would be ~26k descents replacing one ordered merge walk. Not a mechanical repeat.",
-      "next_lever_there": "A VACUUM, not SQL. Shipped plan shows fmv_snapshots_2026 Heap Fetches 10,880 of 12,148 probes (stale visibility map defeating the 0219Z covering index), and 24,296 buffers (32% of the query) probing fmv_snapshots_2027, a ZERO-row partition, unprunable because the partition key is computed_at and the predicate is on edition_id."
-    },
-    "daytime_monitors_closed": {
-      "filings": ["2026-08-31T2111Z-daytime-monitor.md", "2026-09-01T0012Z-daytime-monitor.md"],
-      "candidate": "topshot_impossible_parallel_serials = 10 (breach_at 3) in both",
-      "resolution": "SELF-HEALED, no action taken or owed. Live arm reads 0 / ok, and rpc_trust_health_precompute stamps that 0 at 2026-09-01 00:48:00Z — 36 minutes after the 00:06Z reading of 10, on the next per-parallel circ backfill tick. The circ_floor_raise / hand-edited floor lever was correctly NOT used.",
-      "hypothesis_refuted": "The 0012Z filing proposed the circ backfill might be blocked by the public-api.nbatopshot.com 530 outage and that the arm would keep drifting up. The host is STILL 530 (sixth consecutive pass, positive control 200 same second) and the arm reconciled anyway — that backfill does not depend on it. Flagged as a hypothesis, which is what made it cheap to kill.",
-      "handling": "Both annotated in place with RESOLVED sections, NOT archived, per the standing inbox append-only rule."
-    },
-    "correction_relocated": "The item-13 correction is now in docs/reference/known-issues.md #52 — the register item that governs the class — because a correction living only in this per-run artifact is overwritten by the next run. Independently re-verified from pg_proc before recording.",
-    "gotcha_written_up": "docs/reference/tooling-gotchas.md — 'An instrument that returns GOOD NEWS in the wrong shape', covering v_rpc_trust_health's missing is_breach, the check_secdef_anon_execute_violations() count(*)=1 sibling, and the ~280k-350k buffers/SELECT cost.",
-    "verification": "npx tsc --noEmit clean. Full npm test run. inbox INDEX.md counts recomputed with `npm run inbox:index:fix` (341 -> 345 header, 08-31 section 9 -> 10), not hand-edited. Ledger guards after splice: headings +1, find-swallowed-ledger-headings.awk = 3, find-future-dated-ledger-headings.mjs = 0, no BOM.",
-    "method_note": "The pipe-exit-code trap bit and was caught: `npm test 2>&1 | tail -40` printed '[exited with code 0]' over a run whose own summary said 'Test Files 1 failed | Tests 2 failed'. Read vitest's summary line, not the pipeline's status."
-  }
+    "Retire duplicate scheduled task trig_01AZzLzkTPp5xbSjK1EFmeCw (58 */2 * * *) — delete/update_trigger need MCP approval, closed to autonomous runs.",
+    "Both scheduled tasks UNBOUND (no device binding, cannot add post-creation) — verify a v3 card offers a binding before creating it.",
+    "INGEST_SECRET_TOKEN gates sales-counterparty-backfill / sales-serial-backfill treadmills (run clean, recover ~nothing).",
+    "Studio-client Top Shot migration still open, route-code (rpc-handoff), sized against dead public-api.nbatopshot.com (still 530, positive control 200 same second)."
+  ]
 }

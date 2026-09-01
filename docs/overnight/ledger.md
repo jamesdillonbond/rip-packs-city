@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED (parity) — recovered the fileless AllDay-dist rehydrate; the 08-31/09-01 drain ships all confirmed holding over the post-ship window
+
+Push-enabled desktop pass (device-VM `.rpc-git-cred`), genuine overnight (DB now 08:02Z = 01:0x PT). Health GREEN. 1 parity commit, 0 production-behaviour changes.
+
+**Recovered** `20260901071258_..._allday_dist_opened_rehydrate_the_175_dists...` — applied to prod at 07:12Z by a prior session, never committed, so `check-migration-parity` was red by NAME and prod was ahead of the repo. Byte-exact via `recover-fileless-migrations.mjs --window 1`, md5 `33e0d434b37f61eac5fe50c57a41f4ad` = prod. Commit `e376ccae`. **Revert:** `git revert e376ccae` (file record only; DB + prod `schema_migrations` row unaffected). Does not count against the 4-item production cap — the DB object already existed.
+
+**Post-ship watch — previous 24-48h ships, all HOLDING** (via `ops_pgss_delta('3 hours')`, baseline age 3h after the change points):
+- `refresh_wmc_fmv_drift_active` (OFFSET-0 fence + 26-wallet index): **4,246 blocks/call over 33 calls** vs 30,993 pre-ship — the >=20-call confirmation the 0410Z note explicitly required. Exit met with margin.
+- `get_allday_unresolved_pulls` (90-day window): **1,622 blocks/call over 6 calls** vs 129,112 buffers pre-ship.
+- `refresh_mv_pack_ev_latest` (rewrite): 11,209 blocks/call, stable. `fmv-recalc` (historical fallback + LATERAL): all runs ok, no errors 6h.
+- Security invariants / anon-write / RLS / secdef-anon: all clean post-ship.
+
+**Health:** GREEN. Two breaches, both known and not regressions — `public_board_slow_count=1` (planner-pruned instrument; Vercel 5xx shows only known IPFS-gateway + a few no-crash board 504s at daytime-band onset) and `unmapped_resolution_backlog_max=225` (structural, declining 265->255->228->225; do NOT raise breach_at). Pipeline alerts all known (allday EarlyDrop false-positive, fmv-backfill aging-out with no new fails).
+
+**Nothing else shipped:** remaining levers are hot (<48h) or operator-blocked (INGEST_SECRET_TOKEN treadmills; atlas-proxy measured dead; duplicate-task retirement needs MCP approval; Studio-client migration is route code -> handoff). Full log: docs/handoff-2026-09-01-nightly-0800Z-quiet-parity.md
+
 ### 2026-08-31 · ⚡ SHIPPED — the top-consumer drain: three of the instance's four biggest reads cut, and the CI auto-recovery verified end-to-end against the real API
 
 Continuation of the entry below. All numbers from `ops_pgss_delta`, which this session scheduled.
