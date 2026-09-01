@@ -35,6 +35,16 @@ name: Migration auto-recover
 # uncommitted revert path to ~8 hours instead of "until someone looks". Read it
 # the same way as migration-parity's own posture note.
 #
+# ⛔⛔ CI WILL NEVER CHECK WHAT THIS JOB COMMITS — THE GATE BELOW IS THE ONLY VALIDATION.
+# GitHub does not trigger workflows for pushes made with GITHUB_TOKEN (its recursion guard).
+# MEASURED 2026-09-01 with a control, not assumed:
+#     bot commit 94da798 (this workflow) ......... workflow_runs=0  check_runs=0
+#     human commit ed605d5 (same branch, ~1h) .... workflow_runs=3  check_runs=14
+# So a recovered migration that WOULD have red-ed main lands silently green. Every guard in the
+# "Gate" step is therefore load-bearing rather than belt-and-braces, and if a THIRD way for a
+# byte-perfect recovered file to break main is ever discovered, it must be added to that step —
+# nothing downstream will catch it.
+#
 # ── THE GATE BEFORE THE COMMIT IS THE LOAD-BEARING PART ──────────────────────
 # Auto-committing to main trades one failure (prod ahead of repo) for a worse one
 # (main is red) unless the recovered files are checked FIRST. Two ways a
