@@ -1,0 +1,26 @@
+# RPC Weekly Data-Quality Sweep — 2026-09-01 (PT)
+
+**Status: HEALTHY — one item to watch.** Read-only sweep. Nothing shipped except this digest + a CC handoff note + a ledger flag (all additive docs). No FMV/pricing/ingest/auth/SQL touched. All alert-grade checks clean; the one thing that moved is TS pack-EV secondary-market staleness (check 7), flagged for investigation below — not confirmed alert-grade.
+
+## This week (headline per check)
+
+1. **FMV sanity** — `v_fmv_sanity_flags` = **0 rows**. No edition diverges from its set's sales-median. Clean (same as last week).
+2. **Offer reconciliation** — `v_offer_sanity_flags` = **1,200 rows** (was 1,091), largest `gap_usd` **$3,454** (was $2,000; the new top is Tracy McGrady — Heroes of the Game: Diamond, chain $3,666 vs GQL $212). **100% `has_sub_serial=true`** — entirely the known structural case where the GQL edition-offers aggregate collapses subedition/serial offers. Modest growth, same class, not a regression.
+3. **Integrity** — (a) editions with no `fmv_snapshot`: TS **171** (unchanged), AllDay/Golazos/UFC **0**, Pinnacle N/A (render-keyed). (b) wmc contract (full count): TS **92**, AllDay **59**, UFC **4** — all ~0-class; Pinnacle **57,570** is structural (Pinnacle is triple-keyed on character/set/variant, its editions aren't keyed by `edition_key`), not a drain regression. (c) 7d sales with null `edition_id`: **0 of 15,553**. Clean.
+4. **unmapped_sales backlog** — AllDay **104,656** unresolved (down 382 from 105,038 — historical residual, still draining, not growth); UFC **1,070** (static); Golazos **13** (was 9). Benign.
+5. **Sentinel** — TS malformed `external_id` in 48h = **20** (ok<250). Clean.
+6. **FMV freshness + coverage** — all five collections computed **within ~3 min** of the sweep (fresher than last week, when UFC/Pinnacle were 17–18h into their daily cadence). Coverage (`edition_fmv_current`): TS **HIGH 2,187 / MED 5,869** (HIGH flat vs 2,197 last week, far above the ~400 alarm), AllDay HIGH 158 / MED 1,452, candy_mlb HIGH 12 / MED 66, Golazos ~0, UFC **0/0** (consistent — no recent UFC sales inputs). Healthy.
+7. **Pack-EV staleness** — rows with `snapshotted_at` >3d: TS **1,059 / 1,210**, AllDay **483 / 3,128**, Golazos **0 / 211**, Pinnacle **0 / 91**. Of the TS stale rows, **654 are flagged `secondary_available`** (1 `primary_available`), and **22 of those are `is_positive_ev`**; oldest snapshot is **88 days**. Last week only ~2 stale TS packs were "available." See Flags — this is the week's one watch item.
+8. **Offer-indexer liveness** — 24h ok-rate: `topshot-offers-indexer` **100%** (71/71), `allday-offers-indexer` **100%** (72/72), both ran within minutes. `offers`: **161,018 total / 25,783 open** (open flat vs 25,851 last week — healthy accrual). Clean.
+9. **Schema-truth drift** — `pinnacle_fmv_snapshots` **absent** / `pinnacle_fmv_history` **present** (correct). Every table CLAUDE.md names in its schema block exists. Enums match: `chain_type` {flow,ethereum,polygon,solana,flow_evm}, `fmv_confidence` {HIGH,MEDIUM,LOW,ASK_ONLY,SALES_ONLY,STALE,NO_DATA}, `tier_type` {ULTIMATE,LEGENDARY,RARE,UNCOMMON,FANDOM,COMMON,CHAMPION,CHALLENGER,CONTENDER} (UNCOMMON/CHAMPION present as last week — not new drift). **RLS: 0 of 382 public base tables RLS-off** (table count grew 367→382; RLS-off still 0). No dropped/renamed table that CLAUDE.md names.
+
+## Flags
+
+- **Watch (medium, investigate — NOT confirmed alert-grade): TS pack-EV secondary-market staleness.** 654 TS packs are flagged `secondary_available` while carrying a pack-EV snapshot >3 days old (up to 88 days); 22 are `is_positive_ev`. This jumped from ~2 last week. Two possibilities, both worth confirming before any action: (a) a real regression where the TS pack-EV recompute only covers primary-distribution packs and lets secondary-market packs age out; or (b) a frozen-flag artifact — `secondary_available` is itself only as fresh as the row's snapshot, so an 88-day-old row marked available is almost certainly delisted now, i.e. the count is stale-availability, not live-availability. The user-facing risk exists **only if** a public surface (pack sniper / +EV board) renders secondary-available packs without filtering on snapshot freshness. Handoff written: `docs/handoff-2026-09-01-topshot-pack-ev-secondary-staleness.md`.
+- Everything else nothing-flagged: FMV sanity, sales mapping, sentinel, indexers, RLS, and schema all clean.
+
+## Suggested actions
+
+- **Nightly pass / Claude Code — investigate the pack-EV secondary-staleness (medium):** confirm whether any public surface renders `secondary_available` packs, and if so whether it gates on `snapshotted_at` freshness; and whether `refresh_mv_pack_ev_latest` / `compute-topshot-pack-ev` is scoped to primary distributions only. See the handoff for the exact queries. READ-ONLY here by design — no recompute or surface change made.
+- **Offer `edition_offers` GREATEST-raise (recommend, do not self-apply):** the offer-sanity set is stable and 100% sub-serial — the durable-fix case. When the offer crons have accrued, raise `edition_offers` via a GREATEST-based update (never clobber down). Flagged only, not written.
+- No FMV/pricing/ingest change warranted this week.

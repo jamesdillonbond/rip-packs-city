@@ -10,6 +10,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · 🔎 FLAGGED (weekly data-quality sweep) — TS pack-EV secondary-market staleness; all other checks clean
+
+Read-only weekly sweep. Nothing shipped that changes prod/DB — output is `docs/overnight/data-quality-sweep-2026-09-01.md` + a CC handoff (`docs/handoff-2026-09-01-topshot-pack-ev-secondary-staleness.md`) + this flag. **No revert path needed** (additive docs only; no `main` behaviour or DB state changed).
+
+**One watch item:** `pack_ev_latest` TS shows **654 stale (`snapshotted_at` >3d) rows flagged `secondary_available`** (22 `is_positive_ev`, oldest 88d), up from ~2 last week. Unconfirmed whether it's a recompute-scope regression or a frozen-`secondary_available`-flag artifact — handoff has the two hypotheses + read-only investigation steps. **Do NOT** patch FMV/pricing/ingest or clear flags from the sweep; confirm hypothesis first. Everything else clean: FMV sanity 0, sales-mapping 0/15,553, offer flags 1,200 (100% sub-serial, known class), unmapped_sales draining, indexers 100%/24h, RLS 0-off/382, schema-truth no drift.
+
 ### 2026-09-01 · ✅ VERIFIED — 14h of post-ship data confirms ~125 GB/day removed, and the auto-recovery loop is proven end-to-end (after it caught its own bug)
 
 #### 1. All three cuts hold over 7h25m with real n
