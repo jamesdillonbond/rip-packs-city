@@ -14,9 +14,11 @@ import {
 } from "@/lib/pinnacle/pinnacleFlowty"
 
 interface FmvRow {
+  render_id: string
   legacy_edition_key: string | null
   fmv_usd: number
   fmv_confidence: string
+  fmv_sales_count_30d: number | null
 }
 
 async function loadFmvMap(): Promise<Map<string, { fmv: number; confidence: string }>> {
@@ -26,25 +28,80 @@ async function loadFmvMap(): Promise<Map<string, { fmv: number; confidence: stri
   // legacy key we keep the representative render (most-liquid, then highest FMV),
   // matching the Wave 2 collapse. (This Flowty leg is dormant since the 2026-05-13
   // shutdown, but we keep it off the legacy table for consistency.)
-  const { data, error } = await (supabaseAdmin as any)
-    .from("pinnacle_catalog")
-    .select("legacy_edition_key, fmv_usd, fmv_confidence, fmv_sales_count_30d")
-    .not("fmv_usd", "is", null)
-    .order("fmv_sales_count_30d", { ascending: false, nullsFirst: false })
-    .order("fmv_usd", { ascending: false, nullsFirst: false })
+  // 🚨 THIS READ WAS CAPPED AND THE MISSES WERE INVISIBLE. It was unbounded, and
+  // PostgREST caps every read at 1,000 rows with no error and no short page.
+  // Measured live 2026-09-02: **2,470 rows carry an fmv_usd**, and the first
+  // 1,000 under the old ordering cover only **290 of the 416 distinct
+  // legacy_edition_keys — 69.7%**. A map miss is not cosmetic here:
+  // flowtyNftToSniperDeals DROPS the listing (`if (!fmvData || fmvData.fmv <= 0)
+  // return []`), so ~30% of Pinnacle editions could never appear on the sniper
+  // board however they were priced, and the board looked honestly quiet.
+  //
+  // Paged by KEYSET on render_id, which is unique (2,600 of 2,600 verified live).
+  // ⚠ The representative row per key is now chosen by an EXPLICIT comparison
+  // rather than by first-wins over a global sort. That is not a refactor for its
+  // own sake: the old `ORDER BY fmv_sales_count_30d DESC, fmv_usd DESC` has no
+  // unique tiebreak, so which render represented a key could differ between two
+  // identical requests — and under paging, first-wins over a page order that is
+  // not the ranking order is simply wrong.
+  const best = new Map<string, FmvRow>()
+  const PAGE = 1000
+  const MAX_PAGES = 100
+  let cursor = ""
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let q = (supabaseAdmin as any)
+      .from("pinnacle_catalog")
+      .select("render_id, legacy_edition_key, fmv_usd, fmv_confidence, fmv_sales_count_30d")
+      .not("fmv_usd", "is", null)
+      .order("render_id", { ascending: true })
+      .limit(PAGE)
+    if (cursor) q = q.gt("render_id", cursor)
+    const { data, error } = await q
 
-  if (error || !data) {
-    console.warn("[pinnacle-sniper] FMV fetch error:", error?.message)
-    return new Map()
+    if (error || !data) {
+      // ⚠ A partial map DROPS LISTINGS, so this is not a cosmetic degradation.
+      // Reported with the page index and the rows kept so a truncated map is
+      // distinguishable in the logs from a genuinely small catalog.
+      console.warn(
+        `[pinnacle-sniper] FMV fetch error @page ${page} (kept ${best.size} keys):`,
+        error?.message,
+      )
+      break
+    }
+    const rows = data as FmvRow[]
+    for (const row of rows) {
+      const key = row.legacy_edition_key
+      if (!key) continue
+      const prev = best.get(key)
+      if (!prev || moreRepresentative(row, prev)) best.set(key, row)
+    }
+    if (rows.length < PAGE) break
+    const next = rows[rows.length - 1]?.render_id
+    // No cursor means no progress — stop rather than re-read page 0 forever.
+    if (!next || next === cursor) break
+    cursor = next
   }
 
   const map = new Map<string, { fmv: number; confidence: string }>()
-  for (const row of data as FmvRow[]) {
-    if (row.legacy_edition_key && !map.has(row.legacy_edition_key)) {
-      map.set(row.legacy_edition_key, { fmv: row.fmv_usd, confidence: row.fmv_confidence })
-    }
+  for (const [key, row] of best) {
+    map.set(key, { fmv: row.fmv_usd, confidence: row.fmv_confidence })
   }
   return map
+}
+
+/**
+ * Which of two catalog renders represents its legacy edition key: most liquid
+ * first, then highest FMV, then the lowest render_id so the answer is stable
+ * across requests. The old code expressed the first two as a global ORDER BY
+ * plus first-wins, which needs the read to be complete AND totally ordered —
+ * neither held.
+ */
+function moreRepresentative(candidate: FmvRow, incumbent: FmvRow): boolean {
+  const cSales = candidate.fmv_sales_count_30d ?? -1
+  const iSales = incumbent.fmv_sales_count_30d ?? -1
+  if (cSales !== iSales) return cSales > iSales
+  if (candidate.fmv_usd !== incumbent.fmv_usd) return candidate.fmv_usd > incumbent.fmv_usd
+  return candidate.render_id < incumbent.render_id
 }
 
 export interface PinnacleSniperOpts {

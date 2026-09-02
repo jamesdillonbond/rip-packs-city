@@ -7,16 +7,41 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
-const state: { query: { data: any; error: any }; nfts: any[] } = {
+const state: {
+  query: { data: any; error: any }
+  /** Sequential catalog pages, one consumed per read — drives the keyset loop. */
+  pages: Array<{ data: any; error: any }> | null
+  /** Every cursor the loop passed to .gt("render_id", …), in order. */
+  cursors: Array<string | undefined>
+  nfts: any[]
+  /** The fmvMap that actually reached the deal builder. */
+  seenFmv: Map<string, { fmv: number; confidence: string }> | null
+} = {
   query: { data: [], error: null },
+  pages: null,
+  cursors: [],
   nfts: [],
+  seenFmv: null,
 }
 
 vi.mock("@/lib/supabase", () => {
   const build = () => {
     const b: any = {}
     for (const m of ["select", "not", "order", "eq", "in", "limit", "is"]) b[m] = () => b
-    b.then = (resolve: any) => resolve(state.query)
+    // Keyset paging calls .gt("render_id", cursor); record it and let the chain
+    // continue, so a test can assert the cursor ADVANCED rather than merely that
+    // more than one read happened.
+    b.gt = (_col: string, v: string) => {
+      state.cursors.push(v)
+      return b
+    }
+    b.then = (resolve: any) => {
+      if (state.pages) {
+        const i = state.cursors.length // 0 on the first read (no .gt yet)
+        return resolve(state.pages[Math.min(i, state.pages.length - 1)])
+      }
+      return resolve(state.query)
+    }
     return b
   }
   const client: any = { from: () => build() }
@@ -27,7 +52,10 @@ vi.mock("@/lib/pinnacle/pinnacleFlowty", () => ({
   // Only the offset-0 page returns NFTs; the other 3 pages are empty. Each NFT
   // carries a `__deals` payload that our flowtyNftToSniperDeals mock returns.
   fetchFlowtyPinnacleListings: vi.fn(async (o: any) => (o.offset === 0 ? state.nfts : [])),
-  flowtyNftToSniperDeals: (nft: any) => nft.__deals ?? [],
+  flowtyNftToSniperDeals: (nft: any, fmv: any) => {
+    state.seenFmv = fmv
+    return nft.__deals ?? []
+  },
 }))
 
 import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle"
@@ -71,6 +99,9 @@ function nft(id: string, deals: any[]) {
 
 beforeEach(() => {
   state.query = { data: [], error: null }
+  state.pages = null
+  state.cursors = []
+  state.seenFmv = null
   state.nfts = []
   vi.clearAllMocks()
 })
@@ -211,5 +242,120 @@ describe("computePinnacleSniperFeed", () => {
       discount: 42,
       dealRating: 42,
     })
+  })
+})
+
+describe("loadFmvMap — the catalog read pages past PostgREST's 1000-row cap", () => {
+  // 🚨 MEASURED, NOT HYPOTHETICAL. This read was unbounded, and PostgREST caps
+  // every read at 1,000 rows with no error and no short page. Live 2026-09-02:
+  // **2,470 catalog rows carry an fmv_usd**, and the first 1,000 under the old
+  // ordering covered only **290 of the 416 distinct legacy_edition_keys (69.7%)**.
+  //
+  // The miss is not cosmetic: flowtyNftToSniperDeals DROPS a listing whose key
+  // is absent from the map, so ~30% of Pinnacle editions could never reach the
+  // sniper board — and the board read as honestly quiet, because nothing errored.
+  // The Pinnacle leg is live (flowtyCount 42 on production the same day), so
+  // this was not a dormant path.
+
+  const PAGE = 1000
+  const row = (renderId: string, key: string, over: Record<string, unknown> = {}) => ({
+    render_id: renderId,
+    legacy_edition_key: key,
+    fmv_usd: 100,
+    fmv_confidence: "HIGH",
+    fmv_sales_count_30d: 1,
+    ...over,
+  })
+  /** A full page of rows for keys nothing asks about, so only page 2 can answer. */
+  const fillerPage = () =>
+    Array.from({ length: PAGE }, (_, i) => row(`r${String(i).padStart(5, "0")}`, `filler:${i}`))
+
+  it("a key that only exists on the SECOND page reaches the map", async () => {
+    state.pages = [
+      { data: fillerPage(), error: null },
+      { data: [row("z0001", "WDAS-OEV1-HERC:Standard:1", { fmv_usd: 42 })], error: null },
+    ]
+    state.nfts = [{ id: "n1", __deals: [] }]
+    const res = await computePinnacleSniperFeed()
+    expect(state.seenFmv?.get("WDAS-OEV1-HERC:Standard:1")).toEqual({ fmv: 42, confidence: "HIGH" })
+    expect(res.fmvCoverage).toBe(PAGE + 1)
+  })
+
+  it("the cursor ADVANCES — a second read that repeats page 1 is not paging", async () => {
+    state.pages = [
+      { data: fillerPage(), error: null },
+      { data: [row("z0001", "late:key")], error: null },
+    ]
+    state.nfts = [{ id: "n1", __deals: [] }]
+    await computePinnacleSniperFeed()
+    // The last render_id of page 1, not "" and not page 1's first row.
+    expect(state.cursors).toEqual([`r${String(PAGE - 1).padStart(5, "0")}`])
+  })
+
+  it("NO-CHANGE CONTROL: a SHORT first page stops after one read", async () => {
+    state.pages = [
+      { data: [row("a1", "only:key")], error: null },
+      // Consumed only if the loop wrongly asks for a second page.
+      { data: [row("a2", "should:not:appear")], error: null },
+    ]
+    state.nfts = [{ id: "n1", __deals: [] }]
+    const res = await computePinnacleSniperFeed()
+    expect(state.cursors).toEqual([])
+    expect(res.fmvCoverage).toBe(1)
+    expect(state.seenFmv?.has("should:not:appear")).toBe(false)
+  })
+
+  it("keeps the MOST LIQUID render per key, whichever page it lands on", async () => {
+    // The representative choice used to ride on a global ORDER BY plus
+    // first-wins, which needs the read to be complete. Under paging that is
+    // simply wrong — the better row can arrive after the worse one.
+    state.pages = [
+      { data: [...fillerPage().slice(0, PAGE - 1), row("y9999", "k:1", { fmv_usd: 10, fmv_sales_count_30d: 1 })], error: null },
+      { data: [row("z0001", "k:1", { fmv_usd: 99, fmv_sales_count_30d: 50 })], error: null },
+    ]
+    state.nfts = [{ id: "n1", __deals: [] }]
+    await computePinnacleSniperFeed()
+    expect(state.seenFmv?.get("k:1")).toEqual({ fmv: 99, confidence: "HIGH" })
+  })
+
+  it("does NOT let a later, LESS liquid render displace the better one", async () => {
+    // The mirror direction — last-wins would be just as wrong as first-wins.
+    state.pages = [
+      { data: [...fillerPage().slice(0, PAGE - 1), row("y9999", "k:1", { fmv_usd: 99, fmv_sales_count_30d: 50 })], error: null },
+      { data: [row("z0001", "k:1", { fmv_usd: 10, fmv_sales_count_30d: 1 })], error: null },
+    ]
+    state.nfts = [{ id: "n1", __deals: [] }]
+    await computePinnacleSniperFeed()
+    expect(state.seenFmv?.get("k:1")).toEqual({ fmv: 99, confidence: "HIGH" })
+  })
+
+  it("breaks ties on render_id so two identical requests agree", async () => {
+    // The old ordering had no unique tiebreak, so which render represented a
+    // key could differ between two identical requests.
+    state.pages = [
+      {
+        data: [
+          row("b2", "k:1", { fmv_usd: 50, fmv_sales_count_30d: 5, fmv_confidence: "LOW" }),
+          row("b1", "k:1", { fmv_usd: 50, fmv_sales_count_30d: 5, fmv_confidence: "HIGH" }),
+        ],
+        error: null,
+      },
+    ]
+    state.nfts = [{ id: "n1", __deals: [] }]
+    await computePinnacleSniperFeed()
+    expect(state.seenFmv?.get("k:1")).toEqual({ fmv: 50, confidence: "HIGH" })
+  })
+
+  it("a page read that ERRORS mid-walk keeps the keys it already has", async () => {
+    // A partial map DROPS listings, so losing the whole map to one bad page
+    // would be strictly worse than keeping what was read.
+    state.pages = [
+      { data: [...fillerPage().slice(0, PAGE - 1), row("y9999", "kept:key", { fmv_usd: 7 })], error: null },
+      { data: null, error: { message: "canceling statement due to statement timeout" } },
+    ]
+    state.nfts = [{ id: "n1", __deals: [] }]
+    const res = await computePinnacleSniperFeed()
+    expect(state.seenFmv?.get("kept:key")).toEqual({ fmv: 7, confidence: "HIGH" })
+    expect(res.fmvCoverage).toBe(PAGE)
   })
 })
