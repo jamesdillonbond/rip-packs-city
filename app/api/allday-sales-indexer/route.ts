@@ -665,11 +665,18 @@ export async function POST(req: NextRequest) {
         if (lrids.length > 0) {
           for (let i = 0; i < lrids.length; i += 500) {
             const batch = lrids.slice(i, i + 500)
-            const { data } = await (supabaseAdmin as any)
+            // ⚠ A FAILED READ IS NOT AN EMPTY CACHE. Every V1 sale would lose its
+            // cached price and fall to the tx-decode path — capped at
+            // V1_TX_DECODE_MAX — and the remainder would be parked as
+            // price-uncertain. Recoverable, but it burns the decode budget and
+            // floods `unmapped_sales` for a reason nobody can see. The outer
+            // catch holds the cursor, so the range is simply re-scanned.
+            const { data, error } = await (supabaseAdmin as any)
               .from("cached_listings_v2")
               .select("listing_resource_id, price_usd, seller_address")
               .eq("collection_id", ALLDAY_COLLECTION_ID)
               .in("listing_resource_id", batch)
+            if (error) throw new Error(`cached_listings_v2 lookup: ${error.message}`)
             for (const row of data ?? []) {
               // Multiple source rows could collide on listing_resource_id;
               // first-non-null-price wins (direct listings carry real prices,
@@ -780,11 +787,12 @@ export async function POST(req: NextRequest) {
       if (uniqueNftIds.length > 0) {
         for (let i = 0; i < uniqueNftIds.length; i += 500) {
           const batch = uniqueNftIds.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
+          const { data, error } = await (supabaseAdmin as any)
             .from("wallet_moments_cache")
             .select("moment_id, edition_key, serial_number")
             .eq("collection_id", ALLDAY_COLLECTION_ID)
             .in("moment_id", batch)
+          if (error) throw new Error(`wallet_moments_cache lookup: ${error.message}`)
           for (const row of data ?? []) {
             if (row.edition_key) nftToEditionKey.set(row.moment_id, row.edition_key)
             const serial = Number(row.serial_number)
@@ -809,11 +817,18 @@ export async function POST(req: NextRequest) {
       if (missingSerialIds.length > 0) {
         for (let i = 0; i < missingSerialIds.length; i += 500) {
           const batch = missingSerialIds.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
+          // 🚨 THE CONSEQUENTIAL ONE. This is the LAST serial source before the
+          // sale row is written, and a sale written with a NULL serial is not
+          // self-healing — the comment above records 1,325 AllDay sales that
+          // landed that way while 1,321 of them had a positive serial available
+          // right here. A failed read would reproduce that at tick scale, and
+          // permanently.
+          const { data, error } = await (supabaseAdmin as any)
             .from("nft_edition_map")
             .select("nft_id, serial_number")
             .eq("collection_id", ALLDAY_COLLECTION_ID)
             .in("nft_id", batch)
+          if (error) throw new Error(`nft_edition_map serial lookup: ${error.message}`)
           for (const row of data ?? []) {
             const serial = Number(row.serial_number)
             if (Number.isFinite(serial) && serial > 0) nftToSerial.set(row.nft_id, serial)
@@ -904,11 +919,16 @@ export async function POST(req: NextRequest) {
       if (editionKeys.length > 0) {
         for (let i = 0; i < editionKeys.length; i += 500) {
           const batch = editionKeys.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
+          // An unread editions table is not "these editions do not exist":
+          // `missingExternalIds` below would then be EVERY key, and the route
+          // would run a full on-chain hydration pass and upsert editions that
+          // were already there.
+          const { data, error } = await (supabaseAdmin as any)
             .from("editions")
             .select("id, external_id")
             .eq("collection_id", ALLDAY_COLLECTION_ID)
             .in("external_id", batch)
+          if (error) throw new Error(`edition_key lookup: ${error.message}`)
           for (const row of data ?? []) editionKeyToId.set(row.external_id, row.id)
         }
       }

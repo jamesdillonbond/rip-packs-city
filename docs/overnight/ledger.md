@@ -10,6 +10,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — `allday-sales-indexer`'s four reads, including the one that writes a PERMANENT NULL serial
+
+**Files:** `app/api/allday-sales-indexer/route.ts` + its deep test; ratchet baseline **51 → 47**.
+No DB change.
+
+Same class, fifth and sixth sales route. Four reads, three landing places:
+
+- 🚨 **`nft_edition_map` (the serial lookup) is the consequential one.** It is the **LAST serial source
+  before the sale row is written**, and a sale written with a NULL serial **does not self-heal** — the
+  route's own comment records **1,325 AllDay sales that landed that way while 1,321 of them had a
+  positive serial available right there.** A failed read reproduces that at tick scale, permanently.
+- **`wallet_moments_cache`** → every sale unresolvable ⇒ the capped Cadence fallback is spent and the
+  rest floods `unmapped_sales`.
+- **`cached_listings_v2`** → every V1 sale loses its cached price ⇒ the capped tx-decode budget is
+  spent and the rest is parked as price-uncertain.
+- **`editions`** → `missingExternalIds` becomes EVERY key ⇒ a full on-chain hydration pass upserting
+  editions that were already there.
+
+All four now throw into the outer catch, which does not advance the cursor — the range is re-scanned
+next tick. **One cycle, nothing lost.**
+
+⚠ **The enclosing `try` was checked, not assumed.** This route has seven nested `try`s; a throw caught
+by an inner one would have been a silent drop rather than a held cursor. All four reads sit directly
+under the outer `try` whose catch sets `ok=false` and never touches `event_cursor`.
+
+⚠ Test pins the ABSENCE of the cursor write and of any `sales` write; mutation-checked.
+
+**Verified:** full suite **1420 files / 15,687 tests green**; `tsc --noEmit` clean; eslint ratchet
+**717 = baseline**. ✅ Post-deploy health on every route touched tonight — **9 consecutive runs, 0
+failures**, including `topshot-offers-indexer` 15 offers written and `allday-unmapped-resolver` 179 rows.
+
+**Revert:** `git revert` the code commit; the ratchet baseline goes back to 51 with it.
+
 ### 2026-09-02 · ✅ SHIPPED — a smoke check reported a 30 ms latency miss as `HTTP 401`, and I read it as an auth failure before reading the code
 
 **Files:** `app/api/smoke-test/route.ts` + `__tests__/api-smoke-test-probes.test.ts`. No DB change.

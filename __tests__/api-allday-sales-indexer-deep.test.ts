@@ -306,6 +306,43 @@ describe("allday-sales-indexer — V2 Dapper primary path", () => {
     expect(spy.rpcCalls.some((c) => c.name === "promote_unmapped_sales")).toBe(true)
   })
 
+
+  // 🚨 A FAILED READ IS NOT AN EMPTY TABLE, and on this route the serial lookup
+  // is the one that leaves a PERMANENT mark: `nft_edition_map` is the last
+  // serial source before the sale row is written, and a sale written with a
+  // NULL serial does not self-heal (the route's own comment records 1,325 that
+  // landed that way while 1,321 had a serial available right there). The
+  // resolution reads have the softer version of the same problem — every sale
+  // parked as unresolvable, the Cadence budget spent, `unmapped_sales` flooded.
+  // Asserted as the ABSENCE of the cursor advance and of any sale write.
+  it("a failed wallet_moments_cache read holds the cursor and writes no sales", async () => {
+    const txf = "d".repeat(64)
+    fetchMock = installFetchMock([
+      ...flowRestStubs({
+        v2Dapper: [
+          eventBlock({ height: 1100, txId: txf, eventType: V2_DAPPER_TYPE, payload: v2DapperSalePayload("556", "9.00000000") }),
+        ],
+      }),
+    ])
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      wallet_moments_cache: { data: null, error: { message: "wmc read boom" } },
+      editions: { data: [], error: null },
+      sales: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // ⛔ THE LOAD-BEARING ASSERTIONS.
+    expect(spy.writes.event_cursor ?? []).toHaveLength(0)
+    expect(spy.writes.sales ?? []).toHaveLength(0)
+
+    const log = terminalLog(spy.rpcCalls, "allday-sales-indexer")
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("wallet_moments_cache lookup")
+  })
+
   it("filters non-AllDay nftTypes and V1 cancellations out of the sale set", async () => {
     const tx1 = "d".repeat(64)
     fetchMock = installFetchMock([
