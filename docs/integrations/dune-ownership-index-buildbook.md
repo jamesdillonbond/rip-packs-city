@@ -2,7 +2,7 @@
 
 **✅ SHIPPED & LIVE 2026-07-06.** The Dune ownership pipeline is fully wired and the two MVs
 are built. This doc is the finisher for the TopShot ownership-index feature scaffolded in
-[docs/handoff-2026-06-26-ownership-index.md](../handoff-2026-06-26-ownership-index.md).
+[docs/handoff-2026-06-26-ownership-index.md](../archive/handoffs/handoff-2026-06-26-ownership-index.md).
 Remaining: the two **frontends** (Top Collectors panel + Set Completers board) and the
 steady-state **freshness** follow-up (see bottom).
 

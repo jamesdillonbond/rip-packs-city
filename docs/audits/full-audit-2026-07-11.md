@@ -1,6 +1,6 @@
 # Full platform audit — 2026-07-11 (evening, Cowork interactive)
 
-Trevor-directed full health check + audit: backend, DB, schedulers, 385-page live sweep, Chrome visual QA, native-site parity (v2.nbatopshot.com / dapper.market / app.nflallday.com / disneypinnacle.com / ufcstrike.com), packs deep-dive, FMV/EV parity review. Companion docs: [roadmap-2026-07-11](../strategy/roadmap-2026-07-11.md), [handoff-2026-07-11-audit-followups](../handoff-2026-07-11-audit-followups.md).
+Trevor-directed full health check + audit: backend, DB, schedulers, 385-page live sweep, Chrome visual QA, native-site parity (v2.nbatopshot.com / dapper.market / app.nflallday.com / disneypinnacle.com / ufcstrike.com), packs deep-dive, FMV/EV parity review. Companion docs: [roadmap-2026-07-11](../strategy/roadmap-2026-07-11.md), [handoff-2026-07-11-audit-followups](../archive/handoffs/handoff-2026-07-11-audit-followups.md).
 
 **Session constraint:** the Cowork Linux sandbox was down all session (host disk full) — no git/shell. All DB work shipped via Supabase MCP; code-side fixes are packaged in the follow-ups handoff instead of being committed directly. Page sweep ran through Chrome (same-origin fetch batches), not curl.
 

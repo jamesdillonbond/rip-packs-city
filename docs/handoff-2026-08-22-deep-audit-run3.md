@@ -245,7 +245,7 @@ R31 (~70 titles lost the brand suffix — fix is a `title.template` re-declarati
 
 **New P1s:** the 9-pipeline `*-sales-history-backfill` family is throttled off by its own breaker and logs `ok:true` (125/190 ticks skipped in 48h; 8 of 9 wrote zero rows) so it is invisible to every failure instrument · **29 of 67 deployed edge functions have no committed source, 21 of them `verify_jwt:false`**, and both credential guards derive their file set from `supabase/functions/**` · `/insights/candy-mlb` SPREAD publishes a failed read as "No offers or asks yet" under its own PARTIAL-DATA banner · cross-collection mats **132.3 h** stale under a "REBUILT DAILY" label (night 4) · large entity pages intermittently return an unbranded Next.js 500.
 
-**Revert:** nothing to revert — read-only pass, docs only. Register rewritten: [docs/audits/deep-audit-register.md](../audits/deep-audit-register.md). Full report: [docs/audits/deep-audit-2026-08-22.md](../audits/deep-audit-2026-08-22.md). Handoff: [docs/handoff-2026-08-22-deep-audit-run3.md](../handoff-2026-08-22-deep-audit-run3.md).
+**Revert:** nothing to revert — read-only pass, docs only. Register rewritten: [docs/audits/deep-audit-register.md](audits/deep-audit-register.md). Full report: [docs/audits/deep-audit-2026-08-22.md](audits/deep-audit-2026-08-22.md). Handoff: [docs/handoff-2026-08-22-deep-audit-run3.md](handoff-2026-08-22-deep-audit-run3.md).
 ```
 
 ---

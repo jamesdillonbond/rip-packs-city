@@ -123,6 +123,21 @@ are unshippable under NO-PUSH.
    > trailing `## Drained <date> — <what shipped>` section that a pass writes when it acts on a filing.
    > Then archiving becomes mechanical and safe instead of a judgement call nobody can make from a date.
    > Until that exists, this stays Trevor's.
+   >
+   > ⭐ **INDEPENDENTLY CONFIRMED ~15:40 PT by a second push-capable session, which adds the COST
+   > side of the argument — the damage is not hypothetical, and most of it is already permanent.**
+   > Of 366 filings, **273 are dated on/after the 08-17 rule** and are already banned from `archive/`
+   > by `inbox-is-append-only-since-the-rule`. 🚨 **The other 93 are UNGUARDED — which is precisely
+   > where an execution of this item would have succeeded.** **52 of those 93 are cited by exact path
+   > from outside `inbox/`**, including **4 immutable `supabase/migrations/*.sql`** and **2 live
+   > routes** (`app/api/smoke-test`, `app/api/admin/drain-conflated-subeditions`).
+   > ⛔ **Pre-rule archiving has ALREADY rotted 5 full-path citations, and 4 of the 5 are
+   > UNREPAIRABLE** — they sit in `docs/sessions/2026-08.md`, `ledger-archive-2026-H2.md` and an
+   > immutable migration, all frozen history that must not be rewritten. The 5th was in the live
+   > ledger and is now fixed. ⚠ **Also corrected the OTHER emitter this item came from:**
+   > `metrics-latest.json` `needs_trevor[5]` carried the same instruction. The 08-24 refutation was
+   > written in place on its `inbox_archiving_note` key and **the instruction returned under a NEW
+   > key** — correcting a VALUE does not stop the generator that re-emits it.
 
 ## Failed / blocked / reverted
 

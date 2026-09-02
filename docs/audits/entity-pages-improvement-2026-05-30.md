@@ -2,7 +2,7 @@
 
 Scope: the six per-entity detail surfaces — **Player, Set, Edition (of moment), Pack, Team, Series** — across the five published collections. Goal (Trevor): thumbnails/videos on every page, complete relevant info, and SEO depth (these are high-intent, high-volume, indexable pages).
 
-Companion handoff (the code half of this work): [docs/handoff-2026-05-30-entity-pages.md](../handoff-2026-05-30-entity-pages.md).
+Companion handoff (the code half of this work): [docs/handoff-2026-05-30-entity-pages.md](../archive/handoffs/handoff-2026-05-30-entity-pages.md).
 
 ---
 

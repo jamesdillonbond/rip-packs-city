@@ -2,7 +2,7 @@
 
 Claude Code, interactive, 2026-08-13 ~13:30 PT (20:30Z). **Read-only. No code, DB or prod change.**
 
-Follow-on to the 08-13 headline re-measure ([roadmap §3.1](../strategy/roadmap-2026-08-03.md), ledger
+Follow-on to the 08-13 headline re-measure ([roadmap §3.1](../../strategy/roadmap-2026-08-03.md), ledger
 same date), which left Golazos as the clear laggard at **0.9%** HIGH/MEDIUM.
 
 ---
