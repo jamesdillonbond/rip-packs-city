@@ -10,6 +10,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ⛔ THIRD sizing correction, and this one refutes my own PROBE METHOD: "has a Withdraw event" is necessary, not sufficient
+
+**Migration `audit_20260902_sales_counterparty_comment_corrected_topshot_marketplace_converts_zero_of_480`**
+(file `20260902053232_…`). **COMMENT-only; the function body is unchanged and the post-state asserts
+that.** Five hours of production refuted a number I published two entries down.
+
+I wrote *"the realistic prize is ≈ 42,569"*, derived from an 8-per-source probe asking **does this
+transaction contain a `TopShot|AllDay|UFC_NFT` Withdraw event**. ⭐ **That is NECESSARY but NOT
+SUFFICIENT** — the worker must also attribute that Withdraw to the moment on the row. Measured on what
+the pipeline actually WROTE since the floor shipped:
+
+| source | outcome |
+|---|---|
+| `nba_top_shot` / `onchain` | **91 recovered** |
+| `nfl_all_day` / `onchain_dapper_v2` | **18 recovered** |
+| `ufc_strike` / `onchain` | **7 recovered** |
+| `nba_top_shot` / `topshot_marketplace` | **0 of 480**, four consecutive ticks, ~95 s each |
+
+**1 of 8 sampled `topshot_marketplace` txs HAD a Withdraw event. None of 480 converted.**
+⭐ **The live conversion beat the probe proxy — and the proxy was mine.** *Size a backlog by what the
+pipeline WRITES, not by what its inputs look like.* That is the third time tonight the same discipline
+has caught the same author.
+
+**Corrected sizing above the floor:** 450,987 REACHABLE · 408,309 studio-history listing rows (excluded)
+· of the 42,562 left, `topshot_marketplace` 4,959 converts at **0** · **realistic ≈ 37,603**, dominated
+by `nba_top_shot` `onchain` (36,872), which does convert.
+
+⛔ **`topshot_marketplace` is deliberately NOT excluded.** 4,959 rows is ~41 ticks — about 3.4 hours —
+and it is **bounded and self-limiting**, unlike the 408,309 that were not.
+👉 **Exclude a population for being permanently undecodable AND large.** Poor conversion alone is a cost
+you pay once; an unbounded one is a treadmill. Shipping a second exclusion here would be churn.
+
+**REVERT:** restore the previous COMMENT. Nothing else — no body, table, index, schedule or grant.
+
 ### 2026-09-01 · 📏 `/api/collection-stats` runs the SAME 19,942-probe FMV scan twice per request — measured, filed, deliberately NOT shipped
 
 **Filing `2026-09-02T0545Z-collection-stats-runs-the-same-19942-probe-fmv-scan-twice-per-request.md`.**
