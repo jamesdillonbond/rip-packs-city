@@ -68,13 +68,37 @@ function gatedFiles() {
 
 const LINK_RE = /\[([^\]]{1,120})\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 
+/**
+ * Blank fenced code blocks and inline code spans, preserving line structure.
+ *
+ * ⚠ WHY, and why this NARROWS the guard rather than weakening it. A markdown
+ * link inside backticks is not a pointer: markdown does not render it, so no
+ * reader can follow it and nothing can rot. But plenty of code CONTAINS the byte
+ * sequence `](` — a Postgres regex `'[?&](key|token|secret)='` is the one that
+ * reddened `main` on 2026-09-02, matched as a link to the target
+ * "key|token|secret". The guard was reporting a broken pointer in a line of
+ * prose that has no pointer in it.
+ *
+ * ⚠ The load-bearing claim is that a REAL pointer is never written inside a code
+ * span — it would not be clickable, which is the entire point of a pointer. So
+ * this cannot hide a rotted link; the fixtures below pin both directions (a
+ * dead link inside backticks is ignored, a dead link OUTSIDE them on the same
+ * line still fails).
+ */
+function stripCode(md) {
+  const blanks = (s) => s.replace(/[^\n]/g, " ");
+  return md
+    .replace(/^```[\s\S]*?^```/gm, blanks)
+    .replace(/`+[^`\n]*`+/g, blanks);
+}
+
 const files = gatedFiles();
 const violations = [];
 let linksChecked = 0;
 
 for (const file of files) {
   const base = dirname(file);
-  const src = readFileSync(file, "utf8");
+  const src = stripCode(readFileSync(file, "utf8"));
   for (const m of src.matchAll(LINK_RE)) {
     const raw = m[2].trim();
     // Anchors, external schemes and bare fragments are not filesystem targets.

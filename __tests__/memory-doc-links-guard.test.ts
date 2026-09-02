@@ -92,6 +92,47 @@ describe("memory-doc link guard — must not red on correct code", () => {
     expect(run(dir).code).toBe(0)
   })
 
+  // ⚠ CODE SPANS ARE NOT POINTERS, and treating them as such reddened `main` on
+  // 2026-09-02. A line of prose in tooling-gotchas.md quoting a Postgres regex —
+  // `count(*) FILTER (WHERE command ~ '[?&](key|token|secret)=')` — contains the
+  // byte sequence `](`, so the link regex read it as a pointer to the file
+  // "key|token|secret" and the guard failed a doc that has no pointer in it.
+  //
+  // The claim being pinned is NARROW: markdown does not render a link inside
+  // backticks, so a real pointer is never written there. Both directions are
+  // asserted, because ignoring code spans is only safe if a dead link OUTSIDE
+  // them on the same line is still caught.
+  it("ignores a link-shaped fragment inside an inline code span", () => {
+    const dir = fixture({
+      "a.md":
+        "the probe is `count(*) FILTER (WHERE command ~ '[?&](key|token|secret)=')` " +
+        "and the detail is in [b](b.md)\n",
+      "b.md": "hi\n",
+    })
+    expect(run(dir).code).toBe(0)
+  })
+
+  it("ignores link-shaped text inside a fenced code block", () => {
+    const dir = fixture({
+      "a.md": "```sql\nSELECT 1 WHERE x ~ '[?&](nope.md)'\n```\n\nsee [b](b.md)\n",
+      "b.md": "hi\n",
+    })
+    expect(run(dir).code).toBe(0)
+  })
+
+  it("STILL FAILS on a dead pointer outside the backticks on the same line", () => {
+    // The positive control for the two above: stripping code spans must not be a
+    // way to stop detecting anything.
+    const dir = fixture({
+      "a.md": "`[x](in-code.md)` but also [really gone](does-not-exist.md)\n",
+    })
+    const { code, out } = run(dir)
+    expect(code).toBe(1)
+    expect(out).toContain("does-not-exist.md")
+    // …and the one inside the backticks is NOT reported, or the strip did nothing.
+    expect(out).not.toContain("in-code.md")
+  })
+
   it("resolves a link that carries a #fragment", () => {
     const dir = fixture({
       "a.md": "[b, at a heading](b.md#some-heading)\n",
