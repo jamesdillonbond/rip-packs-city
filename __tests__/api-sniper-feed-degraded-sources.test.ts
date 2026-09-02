@@ -33,7 +33,10 @@ const st = vi.hoisted(() => ({
   throwOn: new Set<string>(),
 }))
 const rpc = vi.hoisted(() =>
-  vi.fn(async (_name: string, _params?: any): Promise<any> => ({ data: [], error: null })),
+  // The signature has to accept the route's (name, params) call — cases below
+  // override it with mockImplementation. Typed via the generic rather than named
+  // parameters so the unused ones do not read as dead bindings.
+  vi.fn<(name: string, params?: unknown) => Promise<any>>(async () => ({ data: [], error: null })),
 )
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {

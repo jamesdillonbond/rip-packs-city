@@ -45,9 +45,9 @@ export async function GET(req: NextRequest) {
   // Paged by keyset on `id` (the PK). Ordering for the PAGE WALK and ordering for
   // the REPORT are different jobs: the walk needs a unique key, the report wants
   // newest-first, so the sort is re-applied in memory once every page is in.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the rest of
-  // this route reads rows as `any` (the client is `any` too); typing them here
-  // only would push the change well past the read this commit is fixing.
+  // Typed `any[]` deliberately: the rest of this route reads rows as `any` (the
+  // client is `any` too), so typing them here only would push the change well
+  // past the read this commit is fixing.
   const rows: any[] = [];
   {
     const PAGE = 1000;

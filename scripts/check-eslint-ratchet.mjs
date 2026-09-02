@@ -43,7 +43,7 @@
  *   node scripts/check-eslint-ratchet.mjs --report eslint-report.json --write  # re-baseline
  */
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs"
+import { readFileSync, writeFileSync, existsSync, statSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 
 export const BASELINE_PATH = "eslint-ratchet.json"
@@ -96,6 +96,33 @@ export function ratchetExitCode({ ok, ran }) {
   return ok ? 0 : 1
 }
 
+/**
+ * The freshest linted file that is NEWER than the report, or null.
+ *
+ * 🚨 THE FAILURE THIS EXISTS FOR. The checks above catch a report that is
+ * MISSING, unparseable or EMPTY. None of them catches the one that actually
+ * happened: a report that is complete, parseable, and describes a DIFFERENT
+ * TREE. `npm run lint:ratchet` used to invoke the comparison alone against a
+ * fixed /tmp path, so a report left by an earlier run was read as a measurement
+ * of the current one — it printed "717 = baseline" across four consecutive
+ * pushes while CI, which regenerates the report first, saw 719 and failed every
+ * one of them. A green local instrument and a red CI job, from the same script.
+ *
+ * A reading taken before its subject changed is not a reading.
+ *
+ * `slackMs` exists because checkout steps and some filesystems stamp coarse
+ * mtimes; it is a tolerance, not a grace period for real edits.
+ */
+export function findStaleness({ reportMtimeMs, linted, slackMs = 1000 }) {
+  let worst = null
+  for (const { path, mtimeMs } of linted ?? []) {
+    const laterByMs = mtimeMs - reportMtimeMs
+    if (laterByMs <= slackMs) continue
+    if (!worst || laterByMs > worst.laterByMs) worst = { path, laterByMs }
+  }
+  return worst
+}
+
 function arg(name) {
   const i = process.argv.indexOf(name)
   return i === -1 ? null : process.argv[i + 1]
@@ -116,6 +143,31 @@ async function main() {
   }
   if (!Array.isArray(report) || report.length === 0) {
     console.error(`::error::${reportPath} lists no files. eslint did not run; refusing to report an all-clear.`)
+    process.exit(2)
+  }
+
+  // 🚨 STALENESS. The two checks above catch a report that is MISSING, unparseable
+  // or empty. They do not catch the failure that actually happened: a report that
+  // is complete, parseable and describes a DIFFERENT TREE. `npm run lint:ratchet`
+  // used to invoke this script alone against a fixed /tmp path, so a report left
+  // behind by an earlier run was read as a measurement of the current one — it
+  // reported "717 = baseline" four times across four pushes while CI, which
+  // regenerates the report first, saw 719 and failed every one of them.
+  //
+  // A reading taken before its subject changed is not a reading. If any file the
+  // report claims to have linted is newer than the report itself, this run
+  // measured the past.
+  const stale = findStaleness({
+    reportMtimeMs: statSync(reportPath).mtimeMs,
+    linted: report.map((f) => f?.filePath).filter((p) => typeof p === "string" && existsSync(p))
+      .map((p) => ({ path: p, mtimeMs: statSync(p).mtimeMs })),
+  })
+  if (stale) {
+    console.error(
+      `::error::${reportPath} is STALE — ${stale.path} was modified ${Math.round(stale.laterByMs / 1000)}s ` +
+        `after the report was written. Regenerate it (npx eslint . --format json -o ${reportPath}) before ` +
+        `comparing; this run would have measured a tree that no longer exists.`,
+    )
     process.exit(2)
   }
 

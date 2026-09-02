@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "lint:ratchet": "node scripts/check-eslint-ratchet.mjs --report /tmp/eslint-report.json",
+    "lint:ratchet": "npx eslint . --format json -o /tmp/eslint-report.json || true; node scripts/check-eslint-ratchet.mjs --report /tmp/eslint-report.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

@@ -1763,3 +1763,56 @@ grow"* to *"there are none"*, so `BASELINE` becomes `0` and the per-route pins b
 which is the one thing a ban cannot see. A rename, a move, or a landing expression edited out of a
 file all read as success to a ban at zero.
 
+
+## 🚨 `npm run lint:ratchet` read a STALE report for a whole day (2026-09-02) — four red pushes
+
+`main`'s CI was red on four consecutive code commits and the local gates said green every time. One
+job failed, always the same one: **ESLint ratchet**, `@typescript-eslint/no-unused-vars grew
+353 -> 355`. Everything else — tsc, all three coverage gates, DB invariants, Cadence, edge functions,
+the ledger and register guards — passed on all four.
+
+### The instrument, not the lint
+
+CI's ratchet job is **two** lines:
+
+```yaml
+npx eslint . --format json -o /tmp/eslint-report.json || true
+node scripts/check-eslint-ratchet.mjs --report /tmp/eslint-report.json
+```
+
+`npm run lint:ratchet` was **only the second**. It reads whatever JSON sits at that fixed `/tmp` path,
+so it read a report generated hours earlier — before any of the day's work existed — and printed
+`2889 files, 717 violations (baseline 717)` on every check while CI regenerated the report and saw
+`2893 files, 719`. ⭐ **A green local instrument and a red CI job, out of the same script.**
+
+⚠ **The file count was in the output the whole time (2889 vs 2893) and I read past it.** When two
+runs of "the same" check disagree, the DENOMINATOR is where the disagreement shows first.
+
+### ⭐ "Did the instrument produce output?" ≠ "did the instrument measure THIS?"
+
+The script already refused a report that was MISSING, unparseable, or EMPTY — three ways of measuring
+*nothing*, each with its own exit code, all of them carefully thought through. It had **no defence
+against a report that is complete, parseable, and describes a DIFFERENT TREE.** This repo's own
+measurement rule — *a reading taken while its subject changed is not a reading* — was being applied
+to database A/Bs the same afternoon and not to the toolchain.
+
+**Generalise it: any check that consumes an artifact it did not produce can be handed a stale one.**
+Look for the shape — a fixed path, a `--report`/`--input` flag, a build output compared against a
+baseline — and ask what proves the artifact describes the tree in front of you.
+
+### The fix, in three parts
+
+1. **The npm script generates the report itself**, so local and CI cannot diverge. This is the part
+   that actually removes the class.
+2. **`findStaleness()`** (exported from `scripts/check-eslint-ratchet.mjs`, unit-tested): if any file
+   the report claims to have linted is newer than the report, exit 2 and name the worst offender.
+   A 1 s slack absorbs coarse checkout mtimes. Proven to fire — `touch` one route and it refuses.
+3. A test pins that **CI's own job still generates before comparing**, because a guard's blast radius
+   is fixed by what RUNS it: if that line is ever dropped, the runner-local file goes stale too.
+
+### ⚠ And the guard's own test header carried a false claim
+
+It read *"This repo does not run eslint in CI and ci.yml says so."* Raw eslint is not a gate — but the
+**ratchet job is blocking and it runs eslint**. That sentence is part of why the local number looked
+authoritative. Corrected in place. **A comment that mis-describes what runs a guard is a defect in
+the guard.**

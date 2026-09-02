@@ -10,6 +10,55 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · 🚨 RED MAIN, MINE, FOUR COMMITS — `npm run lint:ratchet` never ran eslint, and read a STALE report all day
+
+**`main`'s CI was red on every code commit I pushed today** (`24aed0c69`, `cbef9d016`, `1b8f36065`,
+`bd7ab8dad`), and I did not notice until I went looking. Last green before mine: `6d3763bd6`. Now
+fixed and green-verified.
+
+**One job failed, the same one every time — ESLint ratchet:**
+`@typescript-eslint/no-unused-vars grew 353 -> 355`, from two unused mock parameters in
+`__tests__/api-sniper-feed-degraded-sources.test.ts`. Everything else — tsc, all three coverage
+gates, DB invariants, Cadence, edge functions, the ledger and register guards — passed on all four.
+
+🚨 **THE ROOT CAUSE IS AN INSTRUMENT, NOT THE LINT.** CI's ratchet job is TWO lines:
+
+```
+npx eslint . --format json -o /tmp/eslint-report.json || true
+node scripts/check-eslint-ratchet.mjs --report /tmp/eslint-report.json
+```
+
+`npm run lint:ratchet` was **only the second line.** It reads whatever JSON sits at that fixed `/tmp`
+path — so it read a report generated hours earlier, before any of today's work existed, and printed
+**"2889 files, 717 violations (baseline 717)"** every time I checked. CI regenerated the report and
+saw **2893 files, 719**. ⭐ **A green local instrument and a red CI job, out of the same script.** The
+file-count difference (2889 vs 2893) was visible in the output all day and I read past it.
+
+⚠ **The script's existing defences could not catch it, and the reason generalises.** It already
+refuses a report that is MISSING, unparseable, or EMPTY — three ways of measuring nothing. It had no
+defence against a report that is complete, parseable, and describes a **DIFFERENT TREE**. **"Did the
+instrument produce output?" and "did the instrument measure THIS?" are different questions**, and
+this repo's own rule already says a reading taken before its subject changed is not a reading — I had
+applied that to database A/Bs today and not to my own toolchain.
+
+**Fixed three ways:**
+1. The two unused-vars (typed the mock via its generic instead of named parameters).
+2. **`npm run lint:ratchet` now generates the report itself**, so local and CI cannot diverge.
+3. **A staleness check in the script** (`findStaleness`, exported and tested): if any file the report
+   claims to have linted is newer than the report itself, it exits 2 and names the worst offender.
+   Proven to fire — `touch` one route, and it refuses.
+
+⚠ **Also corrected a false claim in that guard's own test header** — *"This repo does not run eslint
+in CI and ci.yml says so"*. Raw eslint is not a gate, but the RATCHET job is blocking and it runs
+eslint. That sentence is part of why I believed the local number.
+
+**Verification.** 1,427 files / 15,820 tests green (+7); `tsc` clean; ratchet 717 = baseline **from a
+freshly generated report**. Mutation-tested 4/4: never-stale, first-instead-of-worst offender,
+zero-slack (a 1 s tolerance exists for coarse checkout mtimes), and dropping the generate step from
+the npm script. A test also pins that CI's own job still generates before comparing.
+
+**Revert path:** `git revert <sha>`. Code + tooling only, no DB or schema change.
+
 ### 2026-09-02 · ✅ SHIPPED + ✅ SWEEP COMPLETE — known-issues #57 is fully triaged: 19 candidates → 4 real, 15 refuted
 
 Last confirmed item, and the close-out of the PostgREST-cap sweep opened this morning.
