@@ -126,6 +126,17 @@ ORDER BY sum(rows_found) DESC;
   `edition_id`** against only 141 recorded failures — either the failures table tracks one narrow
   event path or there is a coverage gap. **Do not read that as a defect without establishing which**,
   and it is a different subsystem from this filing.
+  🔁 **ANSWERED 2026-09-02 ~03:5x PT, and it is NEITHER of the two options this bullet offered.**
+  `edition_id` is a UUID FK to `editions`, and **Pinnacle editions live in `pinnacle_editions` keyed by
+  `edition_key`, not in `editions`** — so a NULL there is Pinnacle's normal state and is **not the
+  resolution criterion**. The indexer's `resolved` gate is `editionKey && knownEditionKeys.has(editionKey)`,
+  seeded from BOTH tables, so only genuinely unknown edition_keys are queued: **154 failure rows, not
+  86,847.** The split by collection is the tell — AllDay's 47,900 `direct` rows are **0% NULL**,
+  Pinnacle's 86,847 are **100%**. 🚨 **The misreading has already caused an incident once:** the code
+  comment records that an earlier `!editionUuid` gate *"treated every pinnacle_editions-only edition as a
+  failure and re-queued it every tick"*, which fired the per-tick Sentry noise. ✅ Harm test negative:
+  every consumer of `cached_listings_v2.edition_id` is AllDay or Golazos; no Pinnacle surface reads it.
+  Recorded in the register's NOT-A-FINDING section so it is not raised a third time.
 - **`match-topshot-players`** is already known-issues **#54** (a daily no-op needing a product
   decision, not a fix).
 

@@ -32,7 +32,7 @@ failure it documents.
 
 ## 2026-09-02 — 13 filings
 
-- [Ten Top Shot players are split across two spellings of their own name, and 54 of their editions sit on a second, near-empty player page — Alperen Şengün's page says 43 when he has 74](2026-09-02T1045Z-ten-topshot-players-are-split-across-two-spellings-and-half-their-editions-sit-on-a-second-page.md)
+- [Ten Top Shot players (and one Golazos) are split across two spellings of their own name, 55 editions stranded on a second near-empty page — Alperen Şengün's page says 43 when he has 74; the cause is two ingests disagreeing, NOT diacritics](2026-09-02T1045Z-ten-topshot-players-are-split-across-two-spellings-and-half-their-editions-sit-on-a-second-page.md)
 - [`wallet_moments_cache` carries 19 indexes / 1,924 MB against a 941 MB heap — and ranking them by scan count would have recommended dropping the hottest one, created 5.6 hours earlier](2026-09-02T0940Z-wmc-carries-19-indexes-and-scan-counts-lie-about-which-are-cold.md)
 - [⚠ HALF RESOLVED, falsifier NOT met — `sales-serial-backfill`'s Top Shot lane is 100% dead for 6 days (`1033`/`1015` still growing at +245/+436 per 6 h), and `pipeline_runs` only says `unknown`; the AllDay half is EMPTY across every failure reason, not just the `not_in` treadmill the filing scoped](2026-09-02T0855Z-sales-serial-backfill-topshot-lane-is-100pct-dead-for-6-days-and-pipeline_runs-only-says-unknown.md)
 - [106 `audit_*` scratch tables hold 221 MB of a 14 GB database — and that number is the argument for leaving them alone](2026-09-02T0815Z-106-audit-scratch-tables-are-221mb-of-14gb-and-that-is-the-argument-for-leaving-them.md)

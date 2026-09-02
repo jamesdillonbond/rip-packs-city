@@ -114,3 +114,32 @@ SELECT e.* FROM e JOIN g USING (norm_slug) ORDER BY e.norm_slug, e.editions DESC
 ⚠ **Scope stated rather than implied:** measured on `nba_top_shot` only, because that is where D26
 lives. **The other four published collections were NOT swept**, and the same slug expression governs
 them — LaLiga Golazos in particular is full of diacritics and is the obvious next read.
+
+---
+
+## 🔁 SCOPE GAP CLOSED, same session — and my own prediction about it was WRONG
+
+Section 5 said only `nba_top_shot` was swept and named **LaLiga Golazos** as the obvious next read
+because it "is full of diacritics". Swept across all five published collections:
+
+| collection | players split | editions involved | editions stranded on the other spelling |
+|---|---:|---:|---:|
+| `nba_top_shot` | **10** | 145 | **54** |
+| `laliga_golazos` | **1** | 3 | **1** |
+| `nfl_all_day` | 0 | — | — |
+| `disney_pinnacle` | 0 | — | — |
+| `ufc_strike` | 0 | — | — |
+
+⭐ **Golazos has ONE, not the pile I predicted.** Its player names carry plenty of diacritics — they
+are simply spelled *consistently*, so they slugify to one ugly-but-stable slug each rather than two.
+👉 **The defect is not "names contain diacritics", it is "TWO INGESTS DISAGREE about one name".**
+Top Shot has two producers writing `editions.player_name` (the NBA-stats numeric lane and the
+on-chain/Studio lane); the other four collections do not, and that — not the character set — is what
+makes Top Shot the only one with a real population.
+
+⚠ **Which also narrows the fix.** Slugifying on `unaccent` (option 2) would change the canonical URL
+of every diacritic player in **all five** collections to repair **11 players in two of them**. Option
+1 — reconcile the two Top Shot spellings — now looks like the proportionate one, and its "which
+spelling wins" question is answerable per player rather than as a policy: **prefer the spelling the
+on-chain metadata uses**, since that is what a collector sees on the moment itself. ⛔ Still a product
+call, still not shipped, but the choice is smaller than section 4 implied.
