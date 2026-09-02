@@ -4082,6 +4082,13 @@ export async function POST(req: NextRequest) {
     let currentMessages = messages;
     let iterations = 0;
     const MAX_ITERATIONS = 5;
+    // Set when the tool loop runs out of iterations with nothing to say. Until
+    // 2026-09-02 that outcome rendered as the same "too complex" copy AND the
+    // same category as any other answer, so it was indistinguishable in
+    // support_conversations from a real timeout — and the smoke suite, which
+    // reads categories, could not see it at all. Naming it costs one column
+    // value and makes the failure countable.
+    let iterationLimitHit = false;
     let conciergeErrorMode: ConciergeErrorMode | null = null;
 
     let streamWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
@@ -4263,13 +4270,30 @@ export async function POST(req: NextRequest) {
         finalResponse = CONCIERGE_ERROR_MESSAGES[conciergeErrorMode].response;
       } else {
         if (!finalResponse) {
+          // Two different things land here and they are NOT the same event: the
+          // tool loop ran its full MAX_ITERATIONS budget and still had no text
+          // (a query too broad for five hops), or the run ended some other way
+          // with nothing to say. Only the first is countable as a capacity
+          // problem, so it gets its own category below — the copy stays the
+          // same, because it is the right thing to tell the user either way.
+          iterationLimitHit = iterations >= MAX_ITERATIONS;
           finalResponse = "That query was too complex for me to handle in time. Try breaking it down. You can also check the Sniper page directly for the full live feed.";
         }
         if (escalated) {
           finalResponse += "\n\nYou can also DM us directly at https://twitter.com/RipPacksCity for a faster response.";
         }
       }
-      const category = resolveCategory(message, conciergeErrorMode);
+      // ⚠ `iteration_limit` is deliberately DISTINCT from the error categories:
+      // the concierge degraded-share smoke check counts `concierge_unavailable`,
+      // and an iteration exhaustion is not a dependency outage — folding it in
+      // would inflate that check with a capacity signal and re-create the
+      // manufactured-evidence shape that check was already fixed for once.
+      // Query it on its own:
+      //   select count(*) from support_conversations
+      //   where category = 'iteration_limit' and is_smoke_test is not true;
+      const category = iterationLimitHit && !conciergeErrorMode
+        ? "iteration_limit"
+        : resolveCategory(message, conciergeErrorMode);
 
       const playerSearched =
         usedTools.includes("search_catalog_deals") || usedTools.includes("search_live_deals") || usedTools.includes("search_across_collections") || usedTools.includes("search_serial_deals")

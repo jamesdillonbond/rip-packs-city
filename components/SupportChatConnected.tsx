@@ -1,6 +1,7 @@
 "use client";
 
 import SupportChat from "@/components/SupportChat";
+import { getCollection } from "@/lib/collections";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -18,10 +19,37 @@ export default function SupportChatConnected() {
     walletAddr: null,
   });
 
+  // ⚠ This derivation used to assume every route is /<collection>/<page>, which
+  // was true while the chat only lived under (collections) and (analytics).
+  // The 2026-09-02 public mounts (/insights/*, home, /about, /blog,
+  // /early-access) broke that assumption in two ways that both reached the
+  // model: /insights/squeeze reported pageContext "squeeze (insights)" AND
+  // collectionId "insights" — a slug no collection has, so every tool that
+  // defaults to "the page's active collection" resolved it to a null UUID —
+  // and home reported itself as plain "overview", which is the key for a
+  // COLLECTION overview page, so a first-time anonymous visitor was handed the
+  // Top Shot overview's quick-suggestion pills.
+  // The rule now: a first segment is a collection only if lib/collections.ts
+  // says so. Everything else gets an honest label and a null collectionId.
   const segments = pathname.split("/").filter(Boolean);
-  const collectionId = segments[0] || "";
-  const pageContext = segments[1] || "overview";
-  const pageLabel = collectionId ? `${pageContext} (${collectionId})` : pageContext;
+  const maybeCollection = segments[0] || "";
+  const isCollectionRoute = !!maybeCollection && !!getCollection(maybeCollection);
+
+  let collectionId = "";
+  let pageLabel: string;
+  if (isCollectionRoute) {
+    collectionId = maybeCollection;
+    pageLabel = `${segments[1] || "overview"} (${collectionId})`;
+  } else if (maybeCollection === "insights") {
+    // Keep the "(insights)" suffix: SupportChat's PAGE_DEFAULTS lookup splits on
+    // "(" and the board name alone would collide with collection page keys
+    // ("market" is both an insights board and a per-collection tab).
+    pageLabel = `${segments[1] || "index"} (insights)`;
+  } else if (segments.length === 0) {
+    pageLabel = "home";
+  } else {
+    pageLabel = segments.join("/");
+  }
 
   // Pull the canonical identity from the cookie-backed /api/profile/me. The
   // server is the trust boundary for support_conversations rows; this fetch

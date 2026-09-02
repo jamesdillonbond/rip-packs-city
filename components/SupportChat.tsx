@@ -230,6 +230,40 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
 };
 const DEFAULT_SUGGESTIONS = ["Report a bug", "Suggest a feature", "Something looks off", "How does FMV work?"];
 
+// ⚠ PUBLIC-SURFACE PILLS — added 2026-09-02 with the /insights + home mounts.
+// The sets above were written for signed-in beta testers and they LEAD WITH
+// FEEDBACK INTAKE: DEFAULT_SUGGESTIONS is three-quarters "report a bug /
+// suggest a feature / something looks off". That is the right ask of a tester
+// and the wrong first thing to show a stranger who arrived from Google on a
+// public board and has never used the product — it asks them to report a bug in
+// something they have not tried yet. These sets demonstrate a capability
+// instead, which is what a first-time visitor needs in order to have a question
+// at all. Feedback intake is still one tap away in the input and still priority
+// #3 in the system prompt; it just does not lead.
+const INSIGHTS_DEFAULTS = ["What is this board telling me?", "Biggest sales this week", "Anything listed under FMV right now?", "How is FMV calculated?"];
+
+// Per-board overrides for the boards with the most traffic. Keyed by the board
+// segment, matched against the "<board> (insights)" label.
+const INSIGHTS_BOARD_DEFAULTS: Record<string, string[]> = {
+  squeeze: ["What does squeeze % mean?", "Most squeezed editions right now", "How is locked supply counted?", "What's my wallet's exposure?"],
+  "set-squeeze": ["What does squeeze % mean?", "Which sets are most locked up?", "Cheapest set for me to finish?", "How is this counted?"],
+  "first-mint": ["Why is a #1 serial worth more?", "Who holds the grails?", "Is any #1 listed right now?", "How much premium does #1 carry?"],
+  "underpriced-serials": ["What makes a serial special?", "Best value special serial right now", "How current is this feed?", "Find me a rookie special serial"],
+  "top-sales": ["Biggest sales this week", "What drove that sale?", "Is that player heating up?", "How is FMV calculated?"],
+  deals: ["How is a deal picked?", "Best deals right now", "Show me deals under $10", "How current is this feed?"],
+  "pack-sniper": ["How does pack EV work?", "Best value pack right now", "Is that pack worth ripping?", "What did packs actually return?"],
+  "pack-reality": ["What did packs actually return?", "How is realized EV different from EV?", "Best value pack right now", "Should I rip or buy singles?"],
+  rookies: ["How's the rookie market?", "Which rookies are moving?", "Cheapest rookie moments", "What is a Rookie Year badge?"],
+  "account-value": ["What's my collection worth?", "How is FMV calculated?", "How do I check a wallet?", "What's liquid in my bag?"],
+};
+
+const PUBLIC_PAGE_DEFAULTS: Record<string, string[]> = {
+  home: ["What is Rip Packs City?", "What's my collection worth?", "Biggest sales this week", "Show me deals under $10"],
+  about: ["How is FMV calculated?", "Which collections do you cover?", "Where does the data come from?", "Is it free?"],
+  blog: ["What is Rip Packs City?", "How is FMV calculated?", "Biggest sales this week", "What's my collection worth?"],
+  "early-access": ["What do I get with an account?", "Is it free?", "What's my collection worth?", "How is FMV calculated?"],
+};
+
 export default function SupportChat({ pageContext, collectionId, userWallet, ownerKey, walletConnected, signedInLabel }: {
   pageContext?: string; collectionId?: string | null; userWallet?: string | null; ownerKey?: string | null; walletConnected?: boolean; signedInLabel?: string | null;
 }) {
@@ -330,7 +364,15 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
 
     const fullKey = (pageContext || "").trim().toLowerCase();
     const pageName = fullKey.split("(")[0].trim();
-    const defaultSuggestions = PAGE_DEFAULTS[fullKey] || PAGE_DEFAULTS[pageName] || DEFAULT_SUGGESTIONS;
+    // Public surfaces resolve FIRST: an insights board's own name can collide
+    // with a collection tab key ("market" is both), so the "(insights)" suffix
+    // has to win before PAGE_DEFAULTS is consulted at all.
+    const defaultSuggestions = fullKey.endsWith("(insights)")
+      ? (INSIGHTS_BOARD_DEFAULTS[pageName] || INSIGHTS_DEFAULTS)
+      : PUBLIC_PAGE_DEFAULTS[fullKey]
+        || PAGE_DEFAULTS[fullKey]
+        || PAGE_DEFAULTS[pageName]
+        || DEFAULT_SUGGESTIONS;
     setQuickSuggestions(defaultSuggestions);
 
     // ⚠ Discovery for narrative search lives in the PILLS, not here. An earlier
@@ -343,7 +385,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
     // running it, which is strictly better teaching than describing it.
     const instantWelcome = ownerKey
       ? `Hey ${ownerKey} — RPC is in free beta, so I'm mostly here to help you get unstuck, answer how-things-work questions, and pass feedback to the team. I can also pull deals, check FMV, break down a wallet, and surface live market data — biggest sales, what's moving, rookies, scarcity — whenever you want.\n\nWhat's up?`
-      : `Welcome to Rip Packs City — we're in free beta. I'm here to help you get unstuck, answer questions, and capture bug reports or feature requests for the team. I can also find deals, check FMV, analyze a wallet, and pull live market data — biggest sales, what's moving, rookie trends, scarcity, and more.\n\nWhat can I help with?`;
+      : `Welcome to Rip Packs City. Ask me anything about Flow collectibles — what a moment is worth and why, what's listed under FMV right now, what a wallet holds, what packs actually return, the biggest sales this week. I can also explain anything on this page.\n\nWe're in free beta, so if something looks wrong or missing, tell me and it goes straight to the team.\n\nWhat can I help with?`;
 
     setMessages([{ id: "welcome", role: "system", text: instantWelcome, timestamp: new Date() }]);
 
