@@ -80,6 +80,21 @@ The identical defect was present for the AllDay and UFC studio imports — and t
 self-heal. **Only the size of the prize was wrong, and it was wrong in the flattering direction**,
 which is the direction nobody re-checks.
 
+⚠ **AND ~42,569 IS STILL AN UPPER BOUND — I took my own advice and sampled the CONVERSION per source
+rather than stopping at the exclusion.** The first tick after the exclusion recovered **7 of 120**, on a
+band that was 113 `topshot_marketplace` rows. Probed, 8 hash-bucket-sampled txs per source:
+
+| source | Withdraw present | reading |
+|---|---:|---|
+| `nba_top_shot` / `onchain` | **8 of 8** | decodable |
+| `nba_top_shot` / `topshot_marketplace` | **1 of 8** | mostly not — and NOT listings either, some other shape |
+
+So the realistic prize is **≈ 38,200, almost all of it `onchain` (36,872)**, and `topshot_marketplace`
+contributes a few hundred of its 4,959. ⛔ **`topshot_marketplace` is deliberately NOT excluded**: 4,959
+rows is about four hours of the walk's ~34,560 attempts a day and it is BOUNDED — that is a one-time
+cost, not the 408,309-row treadmill the studio sources were. **Exclude a population for being
+permanently undecodable and large, not merely for converting poorly.**
+
 **The fix** excludes both studio-history sources from the claim, the same way Golazos is already
 excluded. **Cost measured, not assumed:** 455 ms / 13,943 buffers to fill a 120-row batch, ALL shared
 HIT and zero disk reads (bitmap scan on `sales_2026_seller_address_idx`; older partitions never
