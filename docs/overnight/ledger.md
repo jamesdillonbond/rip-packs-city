@@ -10,6 +10,54 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ CLOSED #41 by re-derivation — running the job 3.2× MORE OFTEN cut its failures 23.1% → 4.0% at UNCHANGED cost, and the price the fix was expected to carry never appeared
+
+**Session:** Claude Code interactive, Trevor's box, ~20:0x PT. Measurement only; **nothing changed** —
+the fix had already landed on 08-28 and this settles whether it worked.
+
+⚠ **#41's numbers described a regime that no longer exists.** It reports jobid 235
+`rpc-refresh-market-index-daily` failing **21.1%** under `7 */6`; the live schedule is **`7 */2`**,
+reverted 2026-08-28 (Trevor's call, ledger). **Pooling across that change point measures nothing** — the
+whole-history rate reads 9.1% and describes neither regime. Split on it:
+
+| regime | runs/day | fail % | p50 ok | p90 ok | busy s/day | **wasted s/day** |
+|---|---:|---:|---:|---:|---:|---:|
+| **A · `7 */6`** (26 runs / 7 d) | 3.7 | **23.1%** | — | 496 s | 1,347 | **514** |
+| **B · `7 */2`** (50 runs / 4 d) | 12.0 | **4.0%** | **25 s** | 303 s | **1,301** | **301** |
+
+⭐ **Running it 3.2× MORE OFTEN cut the failure rate 23.1% → 4.0% and waste by 41%, at UNCHANGED total
+cost.** The mechanism is not a surprise once stated: `REFRESH MATERIALIZED VIEW CONCURRENTLY` costs
+roughly what CHANGED since the last refresh, so tripling the frequency roughly thirds the per-run delta —
+**the work is conserved, not added**, and each run fits inside the 600 s budget instead of being clipped
+by it. **The original cadence cut was a false economy: it saved nothing measurable and bought a 23%
+failure rate.**
+
+✅ **The 08-28 decision's OWN exit condition is MET** — *"over the next ~2 days, `*/2` failure rate ≤ ~5%
+and p50 near 113 s"* → **4.0% and p50 25 s**, the latter **4.5× better than forecast**. Its falsifier
+(*"if `*/2` now fails >10%, revert"*) never fired.
+⛔ **And its stated price was ~2× PESSIMISTIC.** The entry booked *"+2.2 busy-h/week gross"* (≈ +1,131
+s/day) over a `7 */6` baseline, predicting ~2,669 busy s/day. **Measured: 1,301 — slightly BELOW the
+baseline it was supposed to cost more than.** The estimate came from a dose–response measured on a
+busier instance; the per-run cost fell further than the model allowed for. ⭐ **Worth recording because
+the error was in the SAFE direction and would otherwise never be revisited** — a cost accepted and not
+incurred is exactly the kind of entry nobody re-checks.
+
+⚠ **Two honest caveats, stated rather than smoothed.** Regime B is **4 days against A's 7**, and this is
+a **NATURAL experiment on a shared instance, not a controlled one** — plenty else changed in the window
+(three sessions shipping DB work). **The direction is solid; the exact magnitudes are not**, and the
+busy-per-day difference (1,347 → 1,301, −3.4%) is inside noise and is claimed as *unchanged*, not as a
+saving.
+
+⚠ **RE-OPEN TRIGGER, because the tail mechanism is real and merely rare now:** max success is **554 s
+against the 600 s ceiling — 7.7% headroom.** If daily failures return above ~10%, or p90 climbs back
+over ~450 s, the delta has grown again. ⭐ **The lever is cadence UP, not budget up** — #42's warning
+that raising a budget cuts failures while raising waste applies in the other direction, and this job is
+the counter-example that shows why: more frequent runs made it both more reliable AND no more expensive.
+
+**Item updated in place** (`known-issues` #41 → ✅ closed, original filing retained unchanged beneath the
+correction); **STATUS INDEX regenerated with `npm run docs:issues-index`** rather than hand-edited —
+29 open/19 closed → **28 open/20 closed** — and `known-issues-index-lists-every-item` is green (9/9).
+
 ### 2026-09-01 · ✅ VERDICT: KEEP the covering index — it HALVED the cost, and my "it did nothing" call two entries below was wrong
 
 **`idx_wmc_lock_wallet_coll_cover` passes its falsifier decisively. Kept. 213 MB, earning it.**
