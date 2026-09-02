@@ -803,3 +803,28 @@ ignore it. `rows_written` now counts the resolutions; the rare backfill is repor
 the fixture row sits at `retry_count: 9`, one bump from retirement, and the assertion is that
 `listing_resolution_failures` received **zero** UPDATEs. Each of the twelve was mutation-checked by
 reverting the route and confirming it reds.
+
+### The sweep that followed, and the DISCRIMINATOR it produced
+
+The line shape above appears **25 times** across `app/`, `lib/` and `workers/` (55 occurrences). Most are
+harmless. Crossing that list against files that also contain a retirement expression
+(`retry_count` · `RETRY_COUNT_CAP` · `resolved_at` · `UNRESOLVABLE`) narrowed it to **five more files**,
+and READING each — the grep is the shortlist, never the finding — gave four distinct landing places:
+
+| route | what a failed read produced |
+|---|---|
+| `topshot-offers-indexer` | every offer fell to `if (!editionId) { unresolved++; continue }`, **zero rows written, and the cursor advanced anyway** — nothing revisits a block below the cursor, so the offers are **permanently lost** under an `ok: true` run with a plausible `unresolved` count |
+| `cron/allday-resolve-unmapped` | `existing` empty ⇒ **every** resolved edition counted "missing" ⇒ one on-chain `getEditionData` **per id**, each with a delay, then a mass upsert back over rows that were already there — a Cadence storm big enough to blow the route's own `maxDuration` |
+| `allday-listings-indexer` | every listing of the tick queued into `listing_resolution_failures`, which the retry drainer then works with real Cadence borrows and a finite retry budget, for rows that were never unresolvable |
+| `cron/pinnacle-trades-indexer` | every trade row written with `edition_id: null` — indistinguishable from an uncataloged Pin and **never corrected**, because the upsert is `ignoreDuplicates: true` |
+
+👉 **The fix is the same one line in all four** (`if (error) throw …`), and in three of them it lands on
+machinery the route ALREADY documents: an aborted tick leaves the cursor where it was and logs
+`ok = false`. **One cycle, nothing lost.**
+
+⭐ **The fifth was deliberately LEFT ALONE, and saying so is the point.**
+`wallet-backfill`'s `seeded_wallets.last_refreshed_at` read discards its error too — and there a NaN
+sends the wallet down the **full-walk** path: more work, never less, never a wrong answer. It now
+carries a comment saying it is deliberate, so the next sweep does not re-derive it. **A rule that cannot
+name its own exceptions gets applied mechanically until someone breaks something with it.**
+

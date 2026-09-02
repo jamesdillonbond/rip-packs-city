@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the tenth-shape sweep: four more indexers where a failed read was silently losing, flooding or NULLing rows
+
+**Files:** `app/api/topshot-offers-indexer/route.ts` · `app/api/cron/allday-resolve-unmapped/route.ts` ·
+`app/api/allday-listings-indexer/route.ts` · `app/api/cron/pinnacle-trades-indexer/route.ts` (+ a
+deliberate NON-change in `app/api/wallet-backfill/route.ts`), and three test files. **No DB change.**
+
+Follow-through on tonight's earlier listing-retry fixes. The shape —
+`const { data } = await (supabaseAdmin as any)…` with `error` destructured away — appears **25 times**
+across `app/`+`lib/`+`workers/`. **Most are harmless, so the sweep needed a discriminator, not a ban:**
+cross the list against files that also carry a retirement expression (`retry_count`, `RETRY_COUNT_CAP`,
+`resolved_at`, `UNRESOLVABLE`) → **five more files**, then READ each, because the grep is the shortlist
+and never the finding.
+
+| route | what a failed read produced |
+|---|---|
+| `topshot-offers-indexer` | every offer fell to `unresolved++; continue`, **0 rows written, and the cursor advanced anyway** — nothing revisits a block below the cursor, so the offers are **permanently lost**, under `ok:true` with a plausible `unresolved` count |
+| `cron/allday-resolve-unmapped` | `existing` empty ⇒ **every** edition counted "missing" ⇒ one on-chain `getEditionData` **per id** (each with a delay) then a mass upsert back over rows already there — a Cadence storm large enough to blow the route's own `maxDuration` |
+| `allday-listings-indexer` | the whole tick queued into `listing_resolution_failures`, which the retry drainer then works with real Cadence borrows and a finite retry budget, for rows that were never unresolvable |
+| `cron/pinnacle-trades-indexer` | every trade written with `edition_id: null` — indistinguishable from an uncataloged Pin, and **never corrected** because the upsert is `ignoreDuplicates: true` |
+
+👉 **The same one line fixes all four** (`if (error) throw …`), and in three it lands on machinery the
+route ALREADY documents: an aborted tick leaves the cursor where it was and logs `ok=false`. **One
+cycle, nothing lost.**
+
+⭐ **The fifth was deliberately LEFT ALONE and now says so.** `wallet-backfill`'s
+`seeded_wallets.last_refreshed_at` read discards its error too — but there a NaN sends the wallet down
+the **full-walk** path: more work, never less, never a wrong answer. It carries a comment saying the
+omission is intentional, so the next sweep does not re-derive it. **A rule that cannot name its own
+exceptions gets applied mechanically until someone breaks something with it.**
+
+⚠ **Three tests, each pinning an ABSENCE and each mutation-checked:** the offers one asserts the
+**cursor write does not happen** (not that an error appeared); the AllDay indexer one asserts **nothing
+is queued and the cursor holds**; the Pinnacle one asserts **no rows are written** rather than a page of
+`edition_id` NULLs. Removing each `throw` reds exactly its own test.
+
+**Verified:** full suite **1420 files / 15,671 tests green**; `tsc --noEmit` clean; eslint ratchet
+**717 = baseline**.
+
+**Revert:** `git revert` the code commit. No DB component.
+
 ### 2026-09-02 · 📏 VERIFIED — R54 and R55 both cleared their own exit conditions, and one of them PROVES its contract rather than just reading green
 
 **No code, no DB change.** Two "watch next tick" rows discharged from `pipeline_runs` +
