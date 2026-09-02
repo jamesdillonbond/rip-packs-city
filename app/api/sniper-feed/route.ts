@@ -627,24 +627,53 @@ interface BadgeRow {
 //      declared but NEVER ASSIGNED anywhere in this file. `hasBadge` was
 //      therefore false for every Top Shot row, on both legs.
 //
-// external_id is unique in badge_editions (4,981 rows / 4,981 distinct), and
-// it matches BOTH the ts_listings edition key and the RPC's moment_id, so a
-// single map serves both legs. Verified live: 200/200 RPC rows join, 77 of
-// which carry at least one real badge.
+// external_id is unique in badge_editions and matches BOTH the ts_listings
+// edition key and the RPC's moment_id, so a single map serves both legs.
+//
+// 🚨 THIS WAS A BARE `.select()` AND THE TABLE OUTGREW THE CAP. The comment here
+// used to justify it as "safe because badge_editions is a small table (hundreds
+// of rows)" against a measured 4,981. Measured again 2026-09-02: **9,471 Top
+// Shot rows**, so PostgREST returned 1,000 of them — 10.6% — and `hasBadge` was
+// false for ~89% of the editions that actually carry a badge. There is no error
+// and no short read to notice: the fetch succeeds and the map is simply wrong.
+// A count in a comment is a DATED SAMPLE, never a bound. Paged with .range()
+// over a stable unique sort so the size stops mattering.
 async function fetchBadgesByEditionKey(
   supabase: SupabaseClient
 ): Promise<Map<string, Array<{ id: string; title: string }>>> {
-  const { data, error } = await (supabase as any)
-    .from("badge_editions")
-    .select("external_id, player_name, play_tags, set_play_tags")
-    .eq("collection_id", "95f28a17-224a-4025-96ad-adf8a4c63bfd");
+  // KEYSET, not OFFSET. external_id is unique within this collection (9,471 of
+  // 9,471 distinct, verified live), so a `> cursor` walk is both deterministic
+  // and O(n). Measured 2026-09-02 on the last page: keyset 1,935 buffers /
+  // 118 ms vs the equivalent .range() page at 7,698 / 187 ms — an OFFSET page
+  // re-walks every row before it, so a ten-page read pays that quadratically.
+  const rows: BadgeRow[] = [];
+  const PAGE = 1000;
+  const MAX_PAGES = 200; // safety bound; the table is ~15k rows across collections
+  let cursor = "";
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let q = (supabase as any)
+      .from("badge_editions")
+      .select("external_id, player_name, play_tags, set_play_tags")
+      .eq("collection_id", "95f28a17-224a-4025-96ad-adf8a4c63bfd")
+      .order("external_id", { ascending: true })
+      .limit(PAGE);
+    if (cursor) q = q.gt("external_id", cursor);
+    const { data, error } = await q;
 
-  if (error) {
-    console.error(`[sniper-feed] badge_editions fetch error: ${error.message}`);
-    return new Map();
+    if (error) {
+      console.error(`[sniper-feed] badge_editions fetch error @page ${page}: ${error.message}`);
+      // Enrichment: a partial badge map costs chips and the badge premium, not
+      // the listing itself — so this is not noted on the source-failure sink.
+      break;
+    }
+    const rowsPage = (data ?? []) as BadgeRow[];
+    rows.push(...rowsPage);
+    if (rowsPage.length < PAGE) break;
+    const next = rowsPage[rowsPage.length - 1]?.external_id;
+    // No cursor means no progress — stop rather than re-read page 0 forever.
+    if (!next || next === cursor) break;
+    cursor = next;
   }
-
-  const rows = (data ?? []) as BadgeRow[];
   const result = new Map<string, Array<{ id: string; title: string }>>();
   for (const row of rows) {
     const key = (row.external_id ?? "").trim();
@@ -779,16 +808,33 @@ async function fetchJerseyNumbers(
   playerNames: string[]
 ): Promise<Map<string, number>> {
   if (!playerNames.length) return new Map();
-  const { data, error } = await (supabase as any)
-    .from("players")
-    .select("name, jersey_number")
-    .eq("collection", "nba_top_shot")
-    .not("jersey_number", "is", null);
 
-  if (error || !data?.length) return new Map();
+  // ⚠ Also over the cap. Measured 2026-09-02: 1,317 Top Shot players carry a
+  // jersey number, so a bare .select() returned 1,000 and the last ~24% of
+  // players never had their jersey-serial listings flagged. Same silent shape
+  // as badge_editions above — a successful read of the wrong rows.
+  const rows: Array<{ name: string; jersey_number: number }> = [];
+  const PAGE = 1000;
+  const MAX_ROWS = 100000;
+  for (let from = 0; from < MAX_ROWS; from += PAGE) {
+    const { data, error } = await (supabase as any)
+      .from("players")
+      .select("name, jersey_number")
+      .eq("collection", "nba_top_shot")
+      .not("jersey_number", "is", null)
+      // players.id is the unique key; name is not guaranteed unique, so order
+      // on id to keep the page boundary deterministic.
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) break;
+    const page = (data ?? []) as Array<{ name: string; jersey_number: number }>;
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+  if (!rows.length) return new Map();
 
   const map = new Map<string, number>();
-  for (const row of data as { name: string; jersey_number: number }[]) {
+  for (const row of rows) {
     map.set(row.name.toLowerCase().trim(), row.jersey_number);
   }
   console.log(`[sniper-feed] jersey_numbers: ${map.size} players loaded`);
