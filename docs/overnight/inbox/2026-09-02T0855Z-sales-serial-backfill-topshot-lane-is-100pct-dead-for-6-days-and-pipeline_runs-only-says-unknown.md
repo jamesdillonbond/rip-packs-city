@@ -117,3 +117,48 @@ is a fix for a *rate*, never for a *gap*.
 untouched. Top Shot's 1,094 remaining null-serial sales are exactly the ones only that lane can reach —
 `nft_edition_map` gained **2** of them. **The instrument half stays open, and it is now the whole of
 this filing.**
+
+---
+
+## 🔁 FALSIFIER RUN 2026-09-02 ~03:3x PT — NOT MET on the Top Shot half; the AllDay half is EMPTY across every reason
+
+This filing's exit condition was: *"Re-run the `failure_detail` breakdown. If Top Shot's `http_530`
+and `http_429` counts stop growing, the upstream recovered and this filing is a historical record."*
+
+**They have not stopped.** Trailing 6 hours: **`http_530: error code: 1033` +245**, **`http_429: error
+code: 1015` +436**, newest 08:41:04Z. ⛔ **The Top Shot lane is still 100% dead and this filing is still
+open.**
+
+### The AllDay half, by contrast, is finished — and across EVERY failure reason, not just `not_in`
+
+Re-derived after the `nft_edition_map` leg and the 45d → 3650d default window shipped. Every AllDay
+row in `sales_serial_backfill_failures` whose sale is still tracked now points at a **resolved** sale:
+
+| collection | failure_detail | rows (24 h) | sale now has a serial |
+|---|---|---:|---:|
+| `nfl_all_day` | `not_in:0xe4cf4bdc1751c65d` | 269 | **269** |
+| `nfl_all_day` | `escrowed_or_unseeded` | 119 | **119** |
+| `nfl_all_day` | `not_in:0xb4254874588aa1a2` | 36 | **36** |
+| `nfl_all_day` | `not_in:0xbf478c4f106c4ac1` | 24 | **24** |
+| `nfl_all_day` | `not_in:0x19c4d1ed5cffac6c` | 16 | **16** |
+| `nfl_all_day` | `not_in:0x4ba45c2312086820` | 14 | **14** |
+| `nba_top_shot` | `http_530: error code: 1033` | 682 | 78 |
+| `nba_top_shot` | `http_429: error code: 1015` | 436 | 15 |
+
+⭐ **This filing scoped the AllDay problem to `onchain_nil` / `not_in` and proposed an escalating
+cooldown for it. The local fix retired `escrowed_or_unseeded` as well — a reason the proposal never
+considered — because it was never a property of the FAILURE at all.** Every one of those rows failed
+for a different upstream reason and every one of them was answerable from `nft_edition_map`.
+👉 **When the answer is available locally, the taxonomy of upstream failure reasons is beside the
+point — do not design a policy around a breakdown of it.**
+
+⚠ **Top Shot's 78 + 15 resolved are NOT attributed to tonight's changes** and should not be read that
+way: its null-serial population is unchanged at **1,094**, and the local legs reach only 2 of them.
+Those 93 were resolved before this window. **The 1,094 are exactly the rows only the dead lane can
+reach**, which is why the two halves of this filing had opposite outcomes.
+
+### Still open, and now the whole of it
+
+1. The Top Shot lane's `1033` / `1015` deadness (upstream; a breaker fixes the 530, a backoff the 429).
+2. `unknown` as the only `failures_by_reason` bucket Top Shot ever reports — the null instrument. The
+   discriminator was already in `failure_detail`; only the aggregate dropped it.

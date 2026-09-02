@@ -10,6 +10,67 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the null-serial recovery job could never see the rows the history backfills produce (default 45d → 3650d)
+
+**What.** Eighty minutes after the unbounded drain took AllDay's null-serial population to **zero**,
+it was back at **499** — and none of them was inside the hourly job's 45-day window. The mechanism is
+structural, not a backlog: the `*-sales-history-backfill` walkers write **historical** sales, so their
+`sold_at` is older than 45 days **by construction**, and pg_cron jobid 76 calls
+`backfill_null_serial_sales_from_moments()` with **no argument**. The default alone decided what the
+platform could recover, and it excluded exactly the rows that arrive continuously.
+
+| measured 2026-09-02 ~10:2xZ | |
+|---|---:|
+| AllDay null-serial sales with a real `nft_id` | 499 |
+| …inside the 45-day window | **0** |
+| …that resolve from the three legs today | **499 — 100%** |
+| …ingested in the last 2 hours (`sold_at` 2025-12-29 → 2026-01-22) | 499 |
+
+The 09:52Z `allday-studio-sales-history-backfill` tick alone contributed ~378. Default widened to
+**3650 days**; one call with the new default wrote **499**, and AllDay is at **0** again with only Top
+Shot's 1,094 (the separately-dead edge lane) left.
+
+**Cost, like-for-like, same session, subplans FORCED:** 45 d → 1,094 rows / **10,593 buffers** / 826 ms;
+3,650 d → 1,593 rows / **15,895 buffers** / 2,634 ms. **+5,302 buffers and +1.8 s per hourly run**
+against a 60 s bound; every partition carries an `idx_sales_<year>_serial_backfill_targets` index, so
+the empty years are index scans, not seq scans.
+⚠ **A bare `count(*)` over the same subquery reads ~15× cheaper (745 buffers) because the planner
+DROPS the COALESCE subplans** — that shape measures the candidate scan only and must never be compared
+against the one above. I made that mistake first and caught it on the plan, not on the number.
+⚠ **And the 45-day figure is not a saving:** all 1,094 rows it scans resolve from none of the three
+legs, so the job was already spending 10,593 buffers an hour re-probing the unresolvable while
+skipping the 499 that were one query away.
+
+⛔ **Why the DEFAULT and not the cron command** — jobid 76 is owned by `cron_heavy`, and no
+session-reachable role may `cron.alter_job` a job that role owns (`postgres` is a member, not the
+owner; `has_table_privilege('postgres','cron.job','UPDATE')` is false). The command is operator-only;
+the default is not. The parameter survives, so a caller can still bound the window.
+
+**Pinned, and the test now drives BOTH windows** — an explicit `45` (6 rows, `nftOld` untouched) AND
+the bare default (reaches the 100-day-old sale). A new `nftAncient` fixture at 4,000 days keeps the age
+filter pinned by a live case at the widest setting rather than by its absence. Three mutations red:
+default narrowed back to 45 · age filter deleted · leg precedence flipped. Drift guard repointed in the
+same commit.
+
+⭐ **The transferable point: a bounded window is a claim about where the work comes from.** This one
+was written for a FORWARD indexer's recent rows and silently became wrong the day a BACKWARD walker
+started writing into the same table. **When you add a producer, re-read every consumer's window.**
+
+⚠ **RE-OPEN TRIGGER, because this change's cost is LINEAR in a population I did not fix.** The scan
+now re-probes every unresolvable row every hour, and today that is Top Shot's **1,094**, which only the
+separately-dead `sales-serial-backfill` edge lane can resolve (`http_530: error code: 1033` and
+`http_429: error code: 1015`, both still growing at 245 / 436 in the trailing 6 h — that filing's
+falsifier is NOT met). **If that count climbs past ~5,000 while the lane stays dead, re-measure the
+hourly buffers before assuming this is still cheap**; the lever then is excluding rows the local legs
+have already refused, not narrowing the window again.
+
+**Revert path.** DB: `CREATE OR REPLACE FUNCTION` from
+`supabase/migrations/20260902090207_audit_20260902_null_serial_backfill_reads_nft_edition_map_as_a_third_source.sql`
+(identical body, `DEFAULT 45`). Code: `git revert` the commit whose message begins
+`fix(db): the null-serial recovery window`. ⚠ The 499 written serials are NOT reverted by either and
+should not be.
+
+
 ### 2026-09-02 · ✅ SHIPPED — the error-discarding-read population reached **ZERO**, and the ratchet broke by succeeding
 
 **What.** The remaining 28 occurrences are bound: ten forward indexers and the flowty unmapped drain
