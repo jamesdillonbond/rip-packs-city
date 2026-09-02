@@ -10,6 +10,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ VERIFIED IN PRODUCTION — 0 of 120 became 109 of 120 on the first tick; and a race 42 seconds after the floor migration committed is the more useful half of this entry
+
+**Follow-up to the spork-floor entry below.** Migration
+`audit_20260902_claim_sales_counterparty_batch_self_heals_a_cursor_stranded_below_the_floor`
+(file `20260902042214_…`), plus one guarded `UPDATE` on the state row (recorded here because it
+changed prod data outside a migration).
+
+**The floor works, measured on the real caller one tick later:**
+
+| tick | rows_found | recovered | duration | cursor after |
+|---|---:|---:|---:|---|
+| 04:10:44 (before) | 120 | **0** | 118,188 ms | 2023-09-23 |
+| 04:20:44 (after) | 120 | **109** | **37,289 ms** | 2026-07-24 |
+
+**0 of 120 across 288 consecutive runs → 109 of 120 (91%) in one tick** — the ~11/12 rate the worker's
+own header documents — and the tick is **3× faster**, because rows that can answer do not burn the 12 s
+per-call timeout.
+
+🚨 **But the tick BETWEEN those two found zero rows in 514 ms and looked perfectly healthy, and the
+reason is worth more than the fix.** The floor migration set `cursor_sold_at = NULL` inside its
+transaction and **its post-state assertions passed** — 0 claimable below the floor, 50 above it. It was
+correct at commit. A worker tick that started at **04:10:44 had already claimed a batch from below the
+floor**, and when it finished at **04:12:42** its `apply_sales_counterparty` wrote that stale cursor
+straight back over the reset. The next claim then had `cursor < floor`, which is an empty range:
+`rows_found: 0`, `ok: true`, no error — **indistinguishable from a healthy drained pipeline.**
+
+⭐ **A migration's post-state proves the state AT COMMIT. It cannot prove the state survived a
+concurrent writer.** When you reset a cursor a live pipeline owns, either fence the invalid state or
+**verify a TICK LATER rather than at commit** — a passing post-state is not a substitute for watching
+the pipeline run. This was caught only because the next tick was actually watched.
+
+**Two fixes, and the second is the durable one.**
+1. The stranded cursor was cleared with a **guarded** update — `WHERE cursor_sold_at < floor_sold_at` —
+   so it is idempotent and cannot clobber a legitimate in-progress walk.
+2. `claim_sales_counterparty_batch` now treats a cursor **strictly below the floor as no cursor at
+   all**. It is invalid state, not a position: no normal apply can produce it, because every apply sets
+   the cursor to `min(sold_at)` over a batch the claim already bounded below by the floor. It can only
+   come from a legacy value, this race, or an operator **raising** the floor past the cursor — and in
+   every one of those cases the alternative is an empty range on every tick, forever, reporting
+   *drained*. Restarting cannot double-work: the claim only returns rows whose seller is still NULL.
+
+**The post-state REPRODUCES the failure rather than describing it:** it moves the cursor to exactly the
+value the in-flight tick wrote, requires 50 rows back and all of them at or above the floor, restores
+the live cursor **before** the assertions run so a failure cannot leave the poisoned value behind, and
+then asserts the live cursor is byte-identical to what it was.
+
+**REVERT:** re-apply `20260902041209`'s function body (identical except the self-heal branch). No
+table, column, index, schedule or grant is touched. The state row is at `cursor_sold_at
+2026-07-24 22:02:03.613+00`, walking normally.
+
 ### 2026-09-01 · ✅ VERIFIED ON A LIVE TICK — the lock-check user tier works: 0 → 370 of 400 checks now reach real users' wallets
 
 **Closes the fix shipped two entries below.** Verified on the **04:08:18Z tick** (the first to run the
