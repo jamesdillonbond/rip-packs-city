@@ -10,6 +10,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · 🔧 FIXED — the new secret-in-URL guard reported "the fix has landed" on Windows about a leak that is STILL IN THE SOURCE
+
+**What was wrong.** `__tests__/no-env-secret-in-fetch-url.test.ts` (shipped earlier today with the
+`?token=` sweep) walks with `join()` and compares the result against `ALLOWED`, which is written with
+FORWARD slashes. On Windows `join()` emits `\`, so the one permitted offender —
+`app/api/ufc-wallet-scan/route.ts:58`, the DELIBERATE `&token=${TOKEN}` that cannot be fixed until
+`enrich-ufc-wallet` v47 is redeployed — matched no allowance. The two-way check then inverted **both**
+of its assertions: `staleAllowances` fired *"An allowance no longer matches any leak — the fix has
+landed"*, and had execution reached the second assertion it would have flagged the documented
+exemption as a NEW leak.
+
+⭐ **This is the honesty class aimed at a GUARD rather than a page:** the check did detect the offender
+(verified — 1 offender found, forward-slash normalisation makes the allowance match), but rendered its
+own path-comparison failure as the positive fact *"the fix has landed"* about a live shared-secret
+leak. `INGEST_SECRET_TOKEN` gates ~15 edge functions, so that is the worst sentence this file could
+emit. ⚠ **CI is Linux and was GREEN throughout — `main` was never red**; the inversion is visible only
+on Trevor's box, which is also the only place the local `npm test` gate runs.
+
+**Fix:** normalise with `p.split(sep).join("/")` at the single push site, plus a comment block saying
+why (a guard that inverts on one platform is worse than none, because it reads as a positive result).
+
+**Proven in BOTH directions, not just green:** passes with the real exemption matched; and with a
+synthetic `&token=${PROBE_SECRET}` planted in `lib/`, it FAILS and names the file — so it can still see
+a genuine new leak. Probe deleted; full suite **1428/1428 files, 15,821 tests, real exit 0**
+(⚠ the first run reported `exit 0` only because `npm test | tail` reports the PIPE's status — the
+suite was red; read the output, never the piped code). `npx tsc --noEmit` exit 0.
+
+⛔ **The underlying leak is UNCHANGED and still deliberate** — do not "fix" line 58 alone; the deploy
+of the header-accepting `enrich-ufc-wallet` build must land first, then delete the fn's `?token=`
+branch, then the caller. The allowance stays until then.
+
+**Revert path:** `git revert <sha of this commit>` — test-only, no runtime code touched.
+
 ### 2026-09-02 · ✅ SHIPPED — the All Day sniper's FMV read materialised 274,519 rows PER PAGE, and that is the 45-second timeout
 
 Root-caused from two production errors that share a **deployment AND a second** —
@@ -1727,6 +1760,34 @@ trend** — a delta between two stocks is neither a rate nor a sign. ⓘ And `ro
 **different population** from `conflated_editions_remaining`, so the 1,000/night is not evidence either
 way. **EXIT: re-read it in a week — the series is now durable in `pipeline_runs_daily.extra_num_sums`.**
 If it is still ~960, that is a new row about the drain RATE, not a re-opening of the timer race.
+
+### 2026-09-02 · 🟢 QUIET NIGHT (cloud NO-PUSH) — nothing shipped, health GREEN, post-ship watch clean
+
+**Mode:** genuine overnight (DB 08:02Z / 01:02 PT, no skew), CLOUD NO-PUSH (no git cred in this cloud
+session; mount has no `remote.origin.pushurl`). DB migrations + artifact repairs were shippable in
+principle; none surfaced as clearly-safe + net-positive. Code/deploys queued.
+
+**Reviewed:** all fresh inbox filings since the 09-01 08:18Z pass; 11 artifacts (none flagged).
+**Every fresh candidate is code/route work (off-limits + NO-PUSH) or already resolved:**
+- concierge distribution/throttle → QUEUE (route+tsx)
+- `lock-check-batch` fairness defect (serves 12 of 249 hot wallets) → QUEUE (open, Trevor's call; three flat rewrites already refuted on buffers — live LATERAL is best, do not re-derive)
+- `idx_wmc_metadata_fillable` now 100% false-positive after the 152-row drain → QUEUE (DROP is destructive+marginal; real lever is caller route-code)
+- Candy secondary now on OpenSea Solana → QUEUE (route + gated chain-two)
+- deploy-tool `verify_jwt` default hazard → informational (already in memory)
+- fmv-recalc historical fallback → **RESOLVED by Claude Code**, converged (its own post-ship watch)
+
+**Post-ship watch (prev ~48h) ALL HOLDING:** parity commit `e376ccae` (docs only) no-op on behaviour ✓;
+ops_snapshot `pipeline_fails_24h` classifier working (upstream field populated) ✓; fmv-recalc predicate
+fix converged (37 runs/6h, 2 transient errors, max hf=54) ✓; wmc drain fillable_now=0 ✓. Nothing reverted.
+
+**Deltas:** unmapped_resolution_backlog_max 225→**209** (declining, structural); trust breaches 2→**1**;
+stalled pipelines→**[]**; db 14114→**14639 MB**; topshot HIGH+MED 8040→7922 (re-pricing churn, stale% flat 31.7).
+
+**Shipped:** none. **Revert path:** n/a. **Continuity writes** (metrics/handoff/this entry) went to the
+**mount, uncommitted** under NO-PUSH — a push-capable run should commit them. Handoff:
+`docs/handoff-2026-09-02-overnight-pass.md`. Inbox archival (356-file backlog) deferred to a push-capable run.
+
+**Addendum (2026-09-02, push-capable Claude Code session):** these continuity writes are now committed, as this entry asked. Of the queued items, the **concierge distribution/throttle** work shipped later the same day (see the concierge entries above); `lock-check-batch` fairness, `idx_wmc_metadata_fillable` and the `verify_jwt` default remain OPEN.
 
 ### 2026-09-01 · ✅ SHIPPED + 📏 MEASURED — R30's falsifier is durable now, one high-write day already contradicts the zero, and the biggest lane had no denominator
 

@@ -1,59 +1,60 @@
 {
-  "run": "nightly-20260901T0800Z-desktop-PUSH-ENABLED",
-  "captured_at_utc": "2026-09-01T08:05Z",
-  "captured_at_pt": "2026-09-01T01:05 PT",
-  "mode": "GENUINE OVERNIGHT (DB now() 08:02:42Z, app rows 07:56Z, no skew; real local 01:0x PT). PUSH-ENABLED via device-VM .rpc-git-cred (git push --dry-run == 'Everything up-to-date' at start). Prior 0300Z cloud pass + Claude Code interactive had already drained all 09-01 inbox items; near-every live lever is hot (<48h) or operator-blocked.",
+  "run": "nightly-20260902T0803Z-cloud-NO-PUSH",
+  "captured_at_utc": "2026-09-02T08:04Z",
+  "captured_at_pt": "2026-09-02T01:04 PT",
+  "mode": "GENUINE OVERNIGHT (DB now() 08:02:48Z, app rows 07:56Z, no skew; real local 01:0x PT). CLOUD NO-PUSH: git push --dry-run == 'could not read Username' (no cred in this cloud session; mount has NO remote.origin.pushurl to harvest). DB migrations + artifact repairs would still apply; code/deploys queued. This blocker is specific to THIS cloud session — Trevor's machine and Claude Code push normally.",
   "genuine_overnight": true,
-  "push_available": true,
-  "read_at": "origin/main 8d99f051c2a5c27df384192fc82c160765e1f596 (2026-09-01 05:54:15Z), static through the pass.",
-  "shipped_to_prod_state": "1 parity commit e376ccae — recovered the fileless migration 20260901071258 (allday-dist rehydrate, applied to prod 07:12Z by a prior session, never committed). Byte-exact, md5 33e0d434b37f61eac5fe50c57a41f4ad == prod. No production behaviour changed (DB object already existed). 0 production-behaviour ships.",
+  "push_available": false,
+  "read_at": "origin/main 51a4d8a2 (fresh clone), static through the pass.",
+  "shipped_to_prod_state": "NOTHING SHIPPED. Quiet, healthy night; every fresh candidate is code/route work (off-limits + NO-PUSH) or already resolved by Claude Code. No DB migration or artifact repair surfaced as clearly-safe + net-positive.",
   "security": {
     "invariants": "clean []",
     "anon_write_holes": "clean []",
     "rls_off_base_tables": "clean []",
     "secdef_anon_violations": "clean []"
   },
-  "health_verdict": "GREEN",
-  "db_size_mb": 14114,
+  "health_verdict": "GREEN (1 known structural breach)",
+  "db_size_mb": 14639,
   "sentinel_ts_uuid_editions_48h": 0,
-  "stalled_pipelines": ["allday-pack-opens-backfill (known EarlyDrop ~94%-unlogged false-positive; do NOT suppress/raise)"],
+  "stalled_pipelines": [],
   "pipeline_alerts": {
-    "count": 4,
+    "count": 1,
     "rows": [
-      "allday-pack-opens-backfill cron_silent 110min — EarlyDrop false-positive, KNOWN, do not fix.",
-      "fmv-backfill 5/15 (33.3%) failure_rate — trailing 2-day window; NO new failures (count held at 5, denom 13->15); ages out. DO NOT fix again.",
-      "golazos_sales resolving_editions info — structural.",
-      "unmapped-sales-nfl_all_day info — 47,212 actionable of 104,687; ~605d to clear; structural, do NOT raise threshold."
+      "unmapped-sales-nfl_all_day info — 46,339 actionable of 103,758 (57,419 multi-NFT, frozen by design); inflow 8/24h vs outflow 937/24h; ~49.9d to clear; structural, do NOT raise threshold."
     ]
   },
+  "pipeline_fails_24h_note": "Now classified upstream-vs-own (09-01 evening ship). offers-sweep 36/36 = breaker working; ingest 7/6 upstream. Own-failures small: sync-nba-projections 8 (dead sports proxy #8), wallet-backfill 7, wallet-backfill-golazos 6, wallet-backfill-allday 6 — chronic partial pagination failures, none new.",
   "trust_health": {
     "arms": 38,
-    "breaches": 2,
+    "breaches": 1,
     "rows": [
-      "public_board_slow_count = 1 (breach_at 1) — planner-pruned instrument; Vercel 5xx shows only known IPFS-gateway class + a few no-crash board 504s at daytime-band onset (~0.1%).",
-      "unmapped_resolution_backlog_max = 225 (breach_at 100) — structural, declining 265->255->228->225. Do NOT raise breach_at."
+      "unmapped_resolution_backlog_max = 209 (breach_at 100) — structural, declining 265->228->225->209. Do NOT raise breach_at.",
+      "public_board_slow_count = 0 — cleared vs prior run's 1 (planner-pruned instrument, noisy)."
     ],
-    "trust_precompute_max_age_hours": 5.29,
+    "trust_precompute_max_age_hours": 5.26,
     "topshot_fmv_pct_stale_30d": 31.7
   },
-  "vercel_prod_3h_5xx": {
-    "note": "Dominated by known external IPFS-gateway class (/api/public/ipfs-media/<cid>, 1 each). Non-IPFS: packs/summary x3, sniper-feed x1, collection-stats x1, liquidity-distribution x1 — no error-level logs (transient 504s at daytime-IO-band onset), ~0.1% of ~3000 req.",
-    "500_crashes": 0
+  "vercel_prod_24h_errors": {
+    "note": "31 groups, all chronic/known. Top: url.parse DeprecationWarning 280 (harmless), TimeoutError on /api/og/collection + /api/public/ipfs-media 258 (OG/IPFS fetch, low-sev), Top Shot GraphQL 530 41 (upstream, breaker), pack-detail/sniper-feed saturation statement-timeouts single-digits, AD GQL 403 4 (dead AD proxy). No new class, no spike.",
+    "500_crashes_new": 0
   },
-  "editions_by_collection": { "candy_mlb": 125, "ufc_strike": 518, "nfl_all_day": 6190, "nba_top_shot": 19933, "laliga_golazos": 575 },
-  "fmv_by_collection_topshot": { "HIGH": 2194, "MEDIUM": 5846, "LOW": 4769, "STALE": 1640, "NO_DATA": 3388, "ASK_ONLY": 1897, "SALES_ONLY": 28 },
+  "editions_by_collection": { "candy_mlb": 125, "ufc_strike": 518, "nfl_all_day": 6190, "nba_top_shot": 19942, "laliga_golazos": 575 },
+  "fmv_by_collection_topshot": { "HIGH": 2161, "MEDIUM": 5761, "LOW": 4949, "STALE": 1700, "NO_DATA": 3378, "ASK_ONLY": 1797, "SALES_ONLY": 25 },
+  "fmv_high_med_deltas": "topshot HIGH+MED 8040->7922 (-118), stale% flat 31.7 — normal re-pricing churn (delete-then-insert cycles editions between buckets), not a staleness regression.",
   "post_ship_watch_prev_24_48h": {
     "verdict": "ALL HOLDING — no regressions, nothing auto-reverted",
-    "refresh_wmc_fmv_drift_active": "4,246 blocks/call over 33 calls vs 30,993 pre-ship (>=20-call confirmation the 0410Z note required; exit met)",
-    "get_allday_unresolved_pulls": "1,622 blocks/call over 6 calls vs 129,112 buffers pre-ship",
-    "refresh_mv_pack_ev_latest": "11,209 blocks/call over 7 calls, stable",
-    "fmv-recalc": "all runs ok, no errors over 6h",
+    "parity_commit_e376ccae": "docs/file only, no production-behaviour change; nothing to regress.",
+    "ops_snapshot_fails_24h_classifier (09-01 evening)": "WORKING — pipeline_fails_24h now carries upstream field, ranking own-failures above upstream 530s as designed.",
+    "fmv-recalc predicate fix (Claude Code)": "CONVERGED — 37 runs/6h, only 2 transient fallback errors (not 100%), max historical_fallback=54; backlog drained per filing's post-ship watch.",
+    "wmc backfill drain (Claude Code, 152 rows)": "fillable_now=0 per filing; idempotent forward-only fill.",
     "security": "clean post-ship"
   },
   "needs_trevor": [
-    "Retire duplicate scheduled task trig_01AZzLzkTPp5xbSjK1EFmeCw (58 */2 * * *) — delete/update_trigger need MCP approval, closed to autonomous runs.",
-    "Both scheduled tasks UNBOUND (no device binding, cannot add post-creation) — verify a v3 card offers a binding before creating it.",
-    "INGEST_SECRET_TOKEN gates sales-counterparty-backfill / sales-serial-backfill treadmills (run clean, recover ~nothing).",
-    "Studio-client Top Shot migration still open, route-code (rpc-handoff), sized against dead public-api.nbatopshot.com (still 530, positive control 200 same second)."
+    "Concierge distribution (route/tsx): SupportChatConnected absent from app/insights/layout.tsx + 30 boards, home, /edition, /early-access — 2,704 insights sessions/30d with no launcher. Also signed-in allowance drops 40/hr -> 5/day. 0 real conversations since 08-16. Code change, needs push.",
+    "lock-check-batch fairness DEFECT (open): 48/48 ok, full rate, but serves 12 of 249 hot wallets (69% to one). Tie-break under 1.47M NULL lock_checked_at decides targeting; p_max_age_days inert. Fix = is_user_wallet priority tier. Pipeline-targeting route code, Trevor's call.",
+    "idx_wmc_metadata_fillable now 100% false-positive (admits 63,283, 0 fillable) — ~185 buffers/call no selectivity. Real lever is caller route-code (gate/stop per-wallet backfill call); DROP is destructive + marginal. Decision needed.",
+    "Candy secondary now on OpenSea Solana (Candy a launch partner, ~08-31) — every Candy market surface is Magic-Eden-only; OpenSea Candy trades captured nowhere. New ingest source = route code + gated (chain-two).",
+    "Sentry dark since 08-18 (#34, re-confirmed): client-only failures captured by nothing; E2E DOM Smoke badge is the whole detection surface. Not paying is Trevor's call.",
+    "Inbox archival backlog: 356 un-archived filings (back to 08-09). Archival is a git commit; NO-PUSH cloud nights can't land the moves. A push-capable run (Claude Code / desktop) should git-mv consumed filings to inbox/archive/."
   ]
 }
