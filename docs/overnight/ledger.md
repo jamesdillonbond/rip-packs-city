@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · 🔧 The exclusion I shipped four minutes earlier had the NULL trap in it — `NOT IN` drops an unlabelled row, `IS DISTINCT FROM` attempts it
+
+**Migration `audit_20260902_sales_counterparty_source_exclusion_is_null_safe_so_an_unlabelled_row_is_attempted_not_dropped`**
+(file `20260902050558_…`). Follow-up to `…050149`, which added
+`AND s.source NOT IN ('allday_studio_history_v1', 'ufc_studio_history_v1')`.
+
+⚠ **`NOT IN` yields NULL for a NULL source, and NULL is not TRUE, so the row is EXCLUDED.** For a
+*claim*, that is the wrong default: a writer that forgets to set `source` would have its rows vanish
+from this backfill **silently and permanently**, with `rows_found` simply never counting them — the
+exact shape of every defect fixed tonight, reintroduced by the fix for one of them.
+
+`IS DISTINCT FROM` yields TRUE for NULL, so an unlabelled row is **attempted**.
+👉 **Attempt-unless-known-undecodable is the right default for a claim, and NULL is not knowledge.**
+
+⚠ **The population this protects is EMPTY today — 0 NULL-source rows above the floor — so nothing here
+proves it works on live data.** It is prospective; the post-state RAISEs that count rather than
+asserting it, because **a check that can only pass is not evidence.** Caught by asking what the new
+predicate does to a value that is not in either set, not by a failure.
+
+**REVERT:** re-apply `20260902050149`'s body (identical apart from these two predicates). No table,
+index, schedule or grant changed.
+
 ### 2026-09-01 · ⛔ CORRECTION TO MY OWN ENTRY — the "450,987 recoverable" is wrong by 10×; it counted rows whose TRANSACTION IS REACHABLE, not rows whose SELLER IS DECODABLE
 
 **Migration `audit_20260902_sales_counterparty_claim_excludes_studio_history_rows_whose_tx_is_a_listing_not_a_sale`**
