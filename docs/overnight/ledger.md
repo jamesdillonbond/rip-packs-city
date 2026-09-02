@@ -10,6 +10,90 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED — `sales-counterparty-backfill` had walked off the edge of Flow's history and was burning ~9.2 h/day to recover nothing; it now has a FLOOR, and the 450,987 rows it can still recover are back in front of it
+
+**Migration `audit_20260902_sales_counterparty_backfill_gets_a_spork_floor_and_a_second_pass`**
+(file `20260902041209_…`). Drains inbox filing `2026-09-01T0600Z` / register **R70**, which was
+root-caused and bracketed but shipped nothing *"because of ACCESS, not judgement"*. ⭐ **The access
+objection turned out to be wrong: the filing says the fix is worker code needing `wrangler deploy`,
+and the candidate picker is a DB function** — `claim_sales_counterparty_batch`. The whole fix is a
+migration, and it took effect on the next tick with no deploy at all. **Re-read a "blocked" item's
+blocker before inheriting it** — that is now twice in this ledger.
+
+**The state, re-derived rather than quoted:** cursor at `2023-09-23 12:30:13Z`, **288 runs in 24 h, all
+`ok`, ZERO with `applied > 0`**, ~9.2 h of runtime a day.
+
+⭐ **The cause is the failed-read-served-as-200 class, pointed at an upstream.** Past its prune horizon
+Flow REST does not 404 — it answers **HTTP 200** with `execution: "Pending"`, `status: ""` and **zero
+events**. A caller that checks `res.ok`, finds no `Withdraw` event and advances the cursor behaves
+exactly as it would for a throttled miss. **`res.ok` is not a liveness check.**
+
+**The wall, bracketed to a window that contains no rows at all.** 24 `pg_net` probes from this database
+(the sandbox cannot reach `rest-mainnet.onflow.org` — the agent proxy 403s the CONNECT), every one
+HTTP 200:
+
+| probe | result |
+|---|---|
+| 2023-10-05 · 11-01 · 11-03 ×3 · 11-05 ×3 · 11-07 ×3 | `Pending`, 0 events |
+| 2023-11-08 **14:01:30Z · 14:30:16Z · 15:00:11Z · 15:58:12Z** | `Pending`, 0 events |
+| 2023-11-08 **18:51:39Z** · 21:00:08Z · 11-09 ×3 · 11-10 · 11-20 · 12-10 | `Success`, 4–12 events |
+| 2026-08-30 (positive control, same loop) | `Success`, 23 events |
+
+**15:58:12Z is the last `sales` row before the gap and 18:51:39Z the first after it — `sales` holds no
+row between them — so a floor of `2023-11-08T17:00:00Z` partitions the population EXACTLY:** nothing
+recoverable is skipped, nothing pruned is attempted. (Flow Mainnet 25.)
+
+⛔ **This sharpens the filing and corrects a recorded memory.** The filing bracketed the wall at
+2023-11-01 → 11-20; it is 2023-11-08 midday. And `sales-counterparty-backfill-second-pass` records
+*"no spork wall at this endpoint"* on the evidence that it answered 200 back to 2024-12-31. **There is
+a wall** — ⭐ **a probe that reads only the HTTP status can never find this boundary, however far back
+it goes.**
+
+**Sizing, re-measured** (null seller · in-scope collection · 64-hex hash): **2,308,045** total ·
+**450,987 (19.5%) at or above the floor and still recoverable** · **1,857,058 (80.5%) permanently
+undecodable** through this endpoint · **1,705,787** below the old cursor, i.e. **~49 more days** of the
+grind that was about to happen.
+
+**Shipped, in the one order that is safe:** `floor_sold_at` on the state row (the floor is DATA, so an
+operator can raise it without a migration; `NOT NULL DEFAULT` the measured boundary and the function
+still `COALESCE`s, so it cannot be NULLed back into an unbounded walk) → the claim bounds **both**
+branches → **only then** `cursor_sold_at = NULL`. 🚨 **The reset without the floor reproduces the exact
+state this removes**, so both are in one migration where a later reader cannot split them.
+
+**Post-state, both directions:** with the cursor still where the walk actually was, the claim returns
+**0** rows — the behavioural proof the floor binds, taken *before* the reset — and after the reset it
+returns **50**, oldest `2026-…` and never below the floor. A check that can only pass by returning
+nothing twice is not a check.
+
+**Cost unchanged:** the worker already makes 120 × 288 = 34,560 Flow REST calls a day; they now land on
+rows that can answer. **~13 days to drain 450,987**, then the claim goes cheap and empty forever.
+
+⚠ **Two residuals, stated rather than implied.** (1) **The WORKER still cannot tell a pruned era from a
+throttled miss** — it reads `res.ok`, not `execution`. The floor makes that moot for the boundary we
+measured; it does **not** protect against Flow pruning further. That fix is
+`workers/sales-counterparty-backfill/index.ts` and needs a `wrangler deploy`, so it is deliberately NOT
+committed — **shipping worker source that nothing deploys would put the repo ahead of what runs.**
+(2) Once drained, the Cloudflare cron should be slowed; that is an operator action too.
+👉 **The symptom that either matters again is the same one: ticks that still FIND rows and recover
+none.**
+
+⭐ **Transferable, and it generalises past this pipeline: a cursored backfill needs a FLOOR, not just a
+cursor.** A newest-first walk terminates only by running out of data, so without a lower bound it walks
+off the edge of what its upstream can serve and keeps going — at full cost, reporting success.
+
+⚠ **Tooling gotcha met on the first attempt, worth more than the SQL:**
+`pg_get_function_identity_arguments` prints `p_limit integer` and **drops the DEFAULT**, so a
+`CREATE OR REPLACE` rebuilt from it fails with **`42P13 cannot remove parameter defaults from existing
+function`** — which reads like a signature or permissions problem and is neither. Use
+`pg_get_function_arguments`. The failed apply was fully transactional: nothing partially applied
+(verified — the column did not exist and the cursor was unmoved).
+
+**REVERT (two independent halves):**
+`UPDATE public.sales_counterparty_backfill_state SET cursor_sold_at = '2023-09-23 12:30:13.482348+00' WHERE id = 1;`
+and re-apply the previous `claim_sales_counterparty_batch` body (no `>= v_floor` clause). Dropping the
+column is optional — it is inert without the function. Everything the second pass writes stays
+fill-only and mirrored in `sales_counterparty_recovered`, revertible row by row.
+
 ### 2026-09-01 · ✅ SHIPPED — the operator's 24 h failure list was ranking ONE upstream outage above every pipeline that is actually broken; `pipeline_fails_24h` now classifies
 
 **Migration `audit_20260902_ops_snapshot_fails_24h_separates_upstream_outages_from_our_own_failures`**
