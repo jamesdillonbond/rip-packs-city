@@ -21,14 +21,40 @@ type ScanResponse = {
   [key: string]: unknown
 }
 
+// 🚨 THE TOKEN GOES IN A HEADER, NOT THE URL. Supabase edge-function logs record
+// full request URLs, so `&token=` wrote INGEST_SECRET_TOKEN — a secret shared
+// across ~15 edge functions — into the log store on every UFC wallet scan, which
+// is a USER-TRIGGERED path (CollectionTabClient), not a cron.
+// ⛔ Do NOT "confirm" the old leak by reading those logs: reading them IS the
+// leak. The caller's source is the proof, and it is these two functions.
+// ⚠ The token should still be treated as EXPOSED. Stopping new writes does not
+// un-write the old ones; rotation is its own project (~15 functions).
 async function callScan(wallet: string): Promise<ScanResponse> {
-  const url = `${SUPABASE_FN_BASE}/scan-ufc-wallet?wallet=${encodeURIComponent(wallet)}&token=${TOKEN}`
-  const res = await fetch(url, { method: "GET", signal: AbortSignal.timeout(30000) })
+  // Deployed scan-ufc-wallet v40 accepts EITHER a Bearer header or `?token=`
+  // (verified against the deployed source, not just repo HEAD), so this is safe.
+  const url = `${SUPABASE_FN_BASE}/scan-ufc-wallet?wallet=${encodeURIComponent(wallet)}`
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    signal: AbortSignal.timeout(30000),
+  })
   if (!res.ok) throw new Error(`scan-ufc-wallet HTTP ${res.status}`)
   return (await res.json()) as ScanResponse
 }
 
 async function callEnrich(wallet: string, start: number): Promise<EnrichResponse> {
+  // ⛔ STILL `?token=`, AND THAT IS DELIBERATE — DO NOT "FIX" THIS LINE ALONE.
+  // Deployed enrich-ufc-wallet v47 reads the Authorization header NOWHERE; the
+  // query param is its ONLY accepted path (verified against the deployed source).
+  // Moving this to a header before that build ships would 401 every UFC wallet
+  // scan — a live user-facing break. The header-accepting build IS written and
+  // committed (supabase/functions/enrich-ufc-wallet/index.ts, additive: it keeps
+  // `?token=`), and is registered in scripts/check-edge-fn-drift.mjs →
+  // DEPLOY_DEFERRED with the reason it was not shipped from here.
+  // ORDER, and it only breaks in one direction: deploy that build FIRST, then
+  // change this line, then delete the fn's `?token=` branch. Never the reverse.
+  // Tracked by __tests__/no-env-secret-in-fetch-url.test.ts, which allows exactly
+  // this one site and FAILS if the allowance outlives the leak.
   const url = `${SUPABASE_FN_BASE}/enrich-ufc-wallet?wallet=${encodeURIComponent(wallet)}&token=${TOKEN}&start=${start}`
   const res = await fetch(url, { method: "POST", signal: AbortSignal.timeout(55000) })
   if (!res.ok) throw new Error(`enrich-ufc-wallet HTTP ${res.status}`)

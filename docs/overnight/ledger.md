@@ -10,6 +10,69 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED (3 of 4 sites) — a shared secret was being written into request logs from a USER-TRIGGERED path
+
+**Files:** `app/api/ufc-pipeline/route.ts` · `app/api/ufc-wallet-scan/route.ts` ·
+`supabase/functions/enrich-ufc-wallet/index.ts` (committed, **NOT deployed** — see below) ·
+`scripts/check-edge-fn-drift.mjs` · `__tests__/no-env-secret-in-fetch-url.test.ts` (new).
+**No DB change.**
+
+Found by generalising the `?? ""` sweep from this morning's OpenSea fix. Four call sites put
+`INGEST_SECRET_TOKEN` — a secret **shared across ~15 edge functions and a dozen routes** — into a URL
+query string. Request logs record full URLs, so each call wrote the secret into a log store.
+
+🚨 **THE ONE THAT MATTERS: `ufc-wallet-scan` is user-triggered, not cron.** `CollectionTabClient`
+calls it whenever a user scans a UFC wallet, so the write rate is driven by traffic, not by a
+schedule. The `ufc-pipeline` sales-indexer call was the sharpest instance: it was **already sending
+the correct `Authorization: Bearer` header**, so its `?token=` was pure redundancy that leaked and
+bought nothing.
+
+⛔ **I did not read the logs to size the impact — reading them IS the leak.** The caller's source is
+the proof. Same discipline the `sales-serial-backfill` fix recorded hours earlier.
+
+**Shipped, 3 sites:** `ufc-listing-cache` (query → header), `ufc-sales-indexer` (deleted the
+redundant param; the header was already there), `scan-ufc-wallet` (query → header). Safe because the
+**deployed** `scan-ufc-wallet` v40 accepts either form — verified against deployed source via a
+redacted-report subagent, not repo HEAD.
+
+⛔ **NOT shipped, 1 site, and the asymmetry is the finding.** Deployed `enrich-ufc-wallet` v47 reads
+the Authorization header **nowhere** — `?token=` is its only accepted path. Switching that caller
+would have 401'd every UFC wallet scan: a live user-facing break. So the additive header branch is
+written and committed but the caller still uses `?token=`, and the **order only breaks in one
+direction**: deploy first, then move the caller, then delete the fn's query branch.
+
+⚠ **Why I stopped short of the deploy.** `deploy_edge_function` takes file content as an **inline
+JSON argument**, so an MCP deploy means hand-transcribing 340 lines / 15.9 KB that embed **hardcoded
+Cadence contract addresses** (`0x1d7e57aa55817448`, `0x329feb3ab062d289`). A wrong hex digit there
+does not crash — it silently resolves the wrong contract. That is exactly what the deploy skill
+forbids transcription for, and it would land on a user path. Registered in `DEPLOY_DEFERRED` with the
+CLI command that ships it safely. Same call as the `sync-nba-projections` entry, which was likewise
+aborted by a byte-exactness gate rather than shipped.
+
+**Parity checked before editing the fn**, both directions: deployed v47 and the repo file are
+**byte-identical** (md5 `6c7d…a35`; `deno.json` `cc8d…2af`), so the committed change is purely additive
+and a later deploy cannot silently revert deployed-only logic.
+
+**New ratchet, and it runs BOTH ways.** `no-env-secret-in-fetch-url.test.ts` walks `app lib scripts`
+and fails on any `process.env`-backed secret interpolated into a query string. It allows exactly the
+one blocked site — and **fails if that allowance ever stops matching**, i.e. once the deploy lands the
+test tells you to delete the exemption. A one-way allowlist is how a temporary exception becomes
+permanent. ⚠ Scoped to `process.env` on purpose: unsubscribe/confirm links legitimately carry a
+per-recipient token in a URL, and reddening those would buy nothing.
+
+**Positive control run:** re-injected the `ufc-listing-cache` leak → the guard failed and named the
+file and line; restored → green. A guard that has never failed is not evidence.
+
+**Verified:** 6/6 on the two touched suites; `edge-fn-drift-checker` 45/46 with the one failure
+**pre-existing** (missing optional `@deno/eszip`, identical on the stashed tree); `tsc --noEmit` clean
+in every changed file; eslint adds zero violations (one pre-existing warning at line 400, untouched).
+
+**Revert path:** `git revert <sha>`. No DB, no secret, no deploy.
+
+**Still owed:** the `enrich-ufc-wallet` deploy (CLI, one command — in the DEPLOY_DEFERRED entry), then
+the caller flip, then deleting the fn's `?token=` branch. ⚠ And the token must still be treated as
+**EXPOSED** — stopping new writes does not un-write the old ones.
+
 ### 2026-09-02 · 🚨 RED MAIN, MINE, FOUR COMMITS — `npm run lint:ratchet` never ran eslint, and read a STALE report all day
 
 **`main`'s CI was red on every code commit I pushed today** (`24aed0c69`, `cbef9d016`, `1b8f36065`,
