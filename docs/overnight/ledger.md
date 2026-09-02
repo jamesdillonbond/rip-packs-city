@@ -10,6 +10,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — four more public boards stated a claim out of a failed read, and three of them blamed the READER'S FILTERS
+
+**What shipped.** `initialFailed={!ok}` on `cross-collection`, `parallel-premiums`, `rookie-board`
+and `top-sales`, wired into each client's empty state via `sectionEmptyCopy`; six new SSR cases plus
+their no-change controls in
+`__tests__/insights-seeded-boards-do-not-conclude-from-a-failed-seed.tsx`; write-up in
+`key-files-and-honesty.md`.
+
+**How they were found.** By re-running the predicate the 2026-08-24 sweep had already written down —
+*"server pages that KNOW `ok` and seed a client component without passing it"* — which had fixed five
+boards and stopped. **10 candidates: 4 real, 6 cleared.**
+
+| board | what a failed read published | why it stood |
+|---|---|---|
+| `cross-collection` | "No wallets found." + "No overlap data." | effect returns early on the default sort — no mount refetch |
+| `parallel-premiums` | "No parallels match these filters." | effect returns early on `firstRender` |
+| `rookie-board` | "No rookie editions match those filters." | `const rows = initialRows` — no state, no effect |
+| `top-sales` | "No sales match those filters." | its own header: "the default view never refetches on mount" |
+
+⚠ All four already rendered the degraded banner from the very `ok` they dropped — the same finding
+the earlier five recorded, which is why a banner is not a fix.
+
+⭐ **Three of the four blame the FILTERS, which is worse than "there are none":** it tells the reader
+to go widen filters that were never the problem. ⚠ **`parallel-premiums` already had the right
+sentence** for its own refetch failure and initialised that state to `false` unconditionally — the
+concept was present, the seed was not, so any grep for "does this board handle failure?" answers yes.
+
+⚠ **Two sibling layers swept clean in the same pass**, recorded with their method: layer 1
+(`app/api/public/**`, 37 routes — the 7 without the helper are media proxies, a logger, a write and
+two deliberate hand-rolled `{ error }` bodies) and layer 4 (29 insights OG cards — the 13 without
+`boardEmptyCopy` fall back to product copy, a progress line, or `—`).
+
+**Verified.** SSR-asserted (a mount effect would correct jsdom before it looked); mutation-tested —
+unwrapping any one empty state or dropping any one `initialFailed` reds exactly one assertion.
+`tsc` clean.
+
+**Revert path.** `git revert` the commit, or find it by message
+`fix(insights): four boards stated a claim out of a failed read`. No DB half.
+
 ### 2026-09-02 · 📏 MEASURED (docs only) — wmc index bloat regrows in ~2.5 days, and `wmc-reindex-verify` is a watcher nothing can clear
 
 **Nothing shipped to code or the DB.** Filed as known-issues **#56**.

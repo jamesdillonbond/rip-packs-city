@@ -350,6 +350,55 @@ For `new-collectors` I first guarded the gateway panels' *"No data in this windo
 
 ---
 
+## FOUR MORE fifth-layer boards (2026-09-02) — the 08-24 predicate was right and had not been run to exhaustion
+
+The 2026-08-24 sweep above states the correct predicate — **"server pages that KNOW `ok` and seed a
+client component without passing it"** — fixed five boards, and stopped. Re-running that exact
+predicate on 2026-09-02 returned **10 candidates: 4 real, 6 cleared.**
+
+| board | the sentence a failed read published | why it stood |
+|---|---|---|
+| `cross-collection` | **"No wallets found."** AND **"No overlap data."** | effect returns early while `sort` is the default `"moments"` — **no mount refetch** |
+| `parallel-premiums` | "No parallels match these filters." | effect returns early on `firstRender` |
+| `rookie-board` | "No rookie editions match those filters." | `const rows = initialRows` — **no state and no effect at all** |
+| `top-sales` | "No sales match those filters." | its own header: *"the default view never refetches on mount"* |
+
+⚠ **All four already rendered `<DegradedDataNotice …>` from the very `ok` they then dropped** — the
+same finding as the first five, which is why the banner is recorded there as not being a fix.
+
+⭐ **THREE OF THE FOUR BLAME THE FILTERS, and that is a distinct and worse sub-class than "there are
+none".** "No sales match those filters" invites the reader to widen filters that were never the
+problem — the actionable-harm test the canon applies to a false claim about the reader's own account,
+pointed at their query instead. A board that says *"nothing matched"* is not obviously wrong to a
+reader; a board that says *"your filters matched nothing"* tells them where to look, and it is lying
+about where.
+
+⚠ **`parallel-premiums` is the one worth studying: it already had the right sentence.** Its client
+renders *"Couldn't load these filters just now — this says nothing about which parallels match."* for
+its OWN refetch failure, and initialised that state to `false` unconditionally. **The concept was
+present, the seed was not** — so a grep for "does this board handle a failed read?" answers yes. The
+question that finds it is the predicate above, asked of the PAGE.
+
+**The six cleared, with the reason each is not an instance** (recorded so the next sweep does not
+re-open them): `market-pulse`, and the `EditionsGridPaginated` seeds on the pack-dist, player and
+series pages — those pages **throw** on the detail read, so an empty seed cannot come from a failure;
+`profile/[username]`, whose client renders `—` and omits the wallet line rather than concluding
+anything; and `pack-sniper`'s collection twin, whose `initialDeals={[]}` is a literal, not a read.
+
+⚠ **Two sibling layers were swept in the same pass and are CLEAN** — recorded because a negative
+result is only useful if its method is written down. **Layer 1** (`app/api/public/**`, 37 routes):
+the 7 without `apiErrorResponse`/`boardUnavailable` are 3 media proxies, a logger, a write, and two
+that hand-roll an honest `{ error }` with the real status on purpose. **Layer 4** (OG cards, 29
+`app/api/og/insights/**`): the 13 without `boardEmptyCopy` fall back to generic product copy
+("Volume, sales, buyers and sellers across 24h / 7d / 30d — free.") or a progress line ("Scoring the
+live drops…") or `—`, none of which is a claim about the data.
+
+**Pinned in `__tests__/insights-seeded-boards-do-not-conclude-from-a-failed-seed.tsx`** — SSR
+(`renderToString`), because a mount effect would correct the state before jsdom looked; each failure
+case asserts the **absence** of the false claim and is paired with a no-change control asserting the
+genuinely-empty board still says its original sentence. Mutation-tested: unwrapping any one empty
+state, or dropping `initialFailed` from any one page, reds exactly one assertion.
+
 ## The CACHING amplifier (2026-08-24) — ISR bakes a failed read into the whole `revalidate` window
 
 ⭐ **Found BY a fix, not by a search.** Minutes after the fifth-layer honesty fix deployed (`34d8ff78`),
