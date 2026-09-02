@@ -42,7 +42,37 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
-## ⭐ HEADLINE METRIC + DEMAND + OPS — re-read live 2026-08-29 17:25 PT (2026-08-30 00:25Z) (supersedes the 08-28 16:20 PT block below)
+## ⭐ HEADLINE METRIC — re-read live 2026-09-01 20:5x PT (2026-09-02 03:5xZ) (supersedes the 08-29 17:25 PT block below)
+
+**All-rows basis (Trevor's 08-28 decision). Read THE DOCUMENTED WAY — straight from
+`public.rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by
+`rpc_thp_leg_fmv_coverage`), never by calling `rpc_fmv_confidence_share()`.** Leg age at read: **2.2 h**
+for the five shared collections (01:48:00Z), **0.0 h** for Pinnacle (03:55:00Z, jobid 331's own
+schedule). ⓘ An independent hand-derivation over `fmv_snapshots` agreed to the decimal on all five
+shared collections — recorded as a cross-check of the precompute, not as the source.
+
+| collection | priced | HIGH/MEDIUM | share | vs 08-29 |
+|---|---:|---:|---:|---:|
+| nba_top_shot | 19,771 | 7,885 | **39.9%** | **FLAT** (+29 denom, +17 rows) |
+| nfl_all_day | 6,190 | 1,574 | **25.4%** | +53 rows, +0.8 pt on an unchanged denominator |
+| laliga_golazos | 575 | 2 | 0.3% | flat |
+| ufc_strike | 518 | 0 | 0.0% | flat |
+| candy_mlb | 125 | 79 | 63.2% | +3 rows, +2.4 pt |
+| **estate-wide** | **27,179** | **9,540** | **35.1%** | **+73 rows, +0.2 pt** |
+| *disney_pinnacle (separate leg)* | — | — | *45.0%* | *+1.2 pt vs 08-27's 43.8%* |
+
+🚨 **THE GATE HAS NOT MOVED IN 3.5 DAYS.** Top Shot is 39.9% on 08-29 and 39.9% now — the +278-row
+attributable jump the 08-29 block records was a one-off re-grade from that day's ask-corroboration work,
+and nothing has replaced it since. **Estate-wide +0.2 pt over 3.5 days is not progress toward the gate;
+it is drift.** ⚠ Stated because the 08-29 entry reads as momentum and a reader could extrapolate it.
+
+⛔ **AND NOTHING SHIPPED 2026-08-31/09-01 WAS AIMED AT THIS METRIC, deliberately.** That session's work —
+the fmv-recalc historical fallback, the LATERAL rewrites, the UFC RPC, the pack-reality honesty fix —
+writes only `ASK_ONLY`/`SALES_ONLY`/`STALE`/`LOW` labels or changes copy, **so it cannot move HIGH/MEDIUM
+by construction and must not be credited with the +0.2 pt.** The levers that move this metric are
+sales-density and ask-corroboration, not pipeline reliability.
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC + DEMAND + OPS — re-read live 2026-08-29 17:25 PT (2026-08-30 00:25Z) (supersedes the 08-28 16:20 PT block below)
 
 **All-rows basis (Trevor's 08-28 decision). Fresh `fmv_current` read; numerators and denominators recorded, per the 08-28 rule.**
 
