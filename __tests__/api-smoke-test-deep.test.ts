@@ -198,6 +198,9 @@ function greenFixtures(): Fixtures {
     },
     "rpc:check_secdef_anon_execute_violations": { data: [], error: null },
     "rpc:check_public_security_invariants": { data: [], error: null },
+    // {inspected, offenders} — the one guard RPC returning a jsonb OBJECT.
+    // `inspected` must clear the arm's own not-vacuous floor (20).
+    "rpc:check_cron_heavy_job_exec_drift": { data: { inspected: 56, offenders: [] }, error: null },
     cached_listings: { count: 24, error: null } as unknown as { data?: unknown; error?: unknown },
     smoke_test_results: { data: null, error: null },
   }
@@ -264,7 +267,7 @@ afterEach(() => {
 })
 
 describe("GET /api/smoke-test — deep drive of the full battery", () => {
-  it("fully-green run: 55/55 (hard 43/43), rows persisted ok:true, no alert dispatch, bearer injected, concierge probes gated OFF", async () => {
+  it("fully-green run: 56/56 (hard 44/44), rows persisted ok:true, no alert dispatch, bearer injected, concierge probes gated OFF", async () => {
     const spy = install(greenFixtures())
     const { calls } = installSmokeFetch(greenStubs())
 
@@ -280,11 +283,15 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     // degrading". It exists because the concierge failed ~780 conversations over
     // 14 days while this suite reported ALL PASSED — the only concierge probes
     // were soft AND opt-in, so nothing measured whether users got answers.
-    expect(env.total).toBe(55)
-    expect(env.passed).toBe(55)
+    expect(env.total).toBe(56)
+    expect(env.passed).toBe(56)
     expect(env.allPassed).toBe(true)
-    expect(env.hardTotal).toBe(43) // 12 checks are soft-flagged in a green run
-    expect(env.hardPassed).toBe(43)
+    expect(env.hardTotal).toBe(44) // 12 checks are soft-flagged in a green run
+    // 2026-09-02: 55 -> 56 (43 -> 44 hard). Added the cron_heavy execute-drift arm:
+    // a scheduled job that cannot execute its own function dies in 0.0 s, writes no
+    // pipeline_runs row, and is otherwise invisible. Hard by design — it is a
+    // catalogue read with no transient failure mode worth softening.
+    expect(env.hardPassed).toBe(44)
     expect(env.softFailures).toBe(0)
     expect(env.liveConcierge).toBe(false)
     expect(env.results.every((r) => r.passed)).toBe(true)
@@ -306,7 +313,7 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     // Persistence: one insert of all structured rows, all ok, stamped with ranAt.
     const writes = spy.writes["smoke_test_results"]
     expect(writes).toHaveLength(1)
-    expect(writes[0].rows).toHaveLength(55)
+    expect(writes[0].rows).toHaveLength(56)
     expect(writes[0].rows.every((r) => r.ok === true && r.error === null)).toBe(true)
     expect(writes[0].rows[0].ran_at).toBe(env.ranAt)
 
@@ -695,6 +702,102 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     expect(state.sentryMessages.join(" ")).not.toContain("some_secret_mv")
   })
 
+  // ── cron_heavy execute drift ───────────────────────────────────────────────
+  //
+  // A cron_heavy job that cannot EXECUTE its own function dies in 0.0 s with
+  // `permission denied for function`, writes NO pipeline_runs row, and leaves the
+  // message only in cron.job_run_details. It is the DEFAULT outcome of the mandated
+  // `REVOKE EXECUTE ... FROM PUBLIC, anon, authenticated` on a new public function,
+  // and it has now happened four times (2026-08-23 ×3, 2026-09-02 ×1).
+  //
+  // ⚠ This arm's payload is a jsonb OBJECT, not an array — the only guard here that
+  // is — so the array-shaped fail-closed tests above do not cover it. These do.
+
+  it("a cron_heavy job that cannot execute its function HARD-fails, with the job named", async () => {
+    const f = greenFixtures()
+    f["rpc:check_cron_heavy_job_exec_drift"] = {
+      data: {
+        inspected: 56,
+        offenders: [{ jobid: 434, jobname: "rpc-topshot-onchain-rekey", function: "run_topshot_onchain_rekey" }],
+      },
+      error: null,
+    }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+    const guard = findResult(env, "cron_heavy can execute every function it is scheduled to call")
+
+    expect(guard.passed).toBe(false)
+    // The guard DID evaluate — the assertion-style title is correct here.
+    expect(guard.couldNotRun).toBeFalsy()
+    expect(guard.soft).toBeFalsy()
+    // Naming the job is the whole value: the DB-side symptom is silence.
+    expect(guard.detail).toContain("rpc-topshot-onchain-rekey")
+    expect(guard.detail).toContain("run_topshot_onchain_rekey")
+    expect(state.sentryMessages).toContain(
+      "smoke test failed: cron_heavy can execute every function it is scheduled to call",
+    )
+  })
+
+  // ⛔ THE ONE THAT MATTERS MOST. `offenders: []` from a walk that inspected almost
+  // nothing is the exact shape of a guard passing by looking at an empty set — this
+  // repo's most-repeated failure. It must read as BROKEN, never as clean.
+  it("an implausibly small population is couldNotRun, NOT a clean bill of health", async () => {
+    const f = greenFixtures()
+    f["rpc:check_cron_heavy_job_exec_drift"] = { data: { inspected: 3, offenders: [] }, error: null }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+    const guard = findResult(env, "cron_heavy can execute every function it is scheduled to call")
+
+    expect(guard.passed).toBe(false)
+    expect(guard.couldNotRun).toBe(true)
+    expect(guard.detail).toContain("broken guard")
+    expect(guard.notes?.inspected).toBe(3)
+    expect(state.sentryMessages).toContain(
+      "smoke check could not run: cron_heavy can execute every function it is scheduled to call",
+    )
+  })
+
+  it.each([
+    ["array payload", [] as unknown],
+    ["null payload", null as unknown],
+    ["offenders missing", { inspected: 56 } as unknown],
+    ["inspected missing", { offenders: [] } as unknown],
+  ])("a non-{inspected,offenders} payload (%s) is couldNotRun, NEVER a pass", async (_label, payload) => {
+    const f = greenFixtures()
+    f["rpc:check_cron_heavy_job_exec_drift"] = { data: payload, error: null }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+    const guard = findResult(env, "cron_heavy can execute every function it is scheduled to call")
+
+    expect(guard.passed).toBe(false)
+    expect(guard.couldNotRun).toBe(true)
+    expect(guard.soft).toBeFalsy()
+    expect(guard.detail).toContain("unexpected payload shape")
+  })
+
+  // Positive control for the four above: the honest clean state must still PASS, or
+  // the arm is green-by-breaking-it.
+  it("a walk that inspected a real population with no offenders is an honest pass", async () => {
+    install(greenFixtures())
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+    const guard = findResult(env, "cron_heavy can execute every function it is scheduled to call")
+
+    expect(guard.passed).toBe(true)
+    expect(guard.couldNotRun).toBeFalsy()
+    expect(guard.notes?.inspected).toBe(56)
+    expect(state.sentryMessages).not.toContain(
+      "smoke check could not run: cron_heavy can execute every function it is scheduled to call",
+    )
+  })
+
   it("a stalled *-sales-indexer HARD-fails with the pipeline named; non-sales stalls are filtered out of the check", async () => {
     const f = greenFixtures()
     f["rpc:detect_stalled_pipelines"] = {
@@ -744,14 +847,14 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     }
   })
 
-  it("?concierge=1 arms the 4 live-LLM probes (59 total) and reports liveConcierge in the envelope", async () => {
+  it("?concierge=1 arms the 4 live-LLM probes (60 total) and reports liveConcierge in the envelope", async () => {
     install(greenFixtures())
     installSmokeFetch(greenStubs())
 
     const env = await run("?concierge=1")
 
     expect(env.liveConcierge).toBe(true)
-    expect(env.total).toBe(59)
+    expect(env.total).toBe(60)
     expect(env.allPassed).toBe(true)
     for (const name of [
       "concierge resolves Pinnacle query (collectionId routing)",

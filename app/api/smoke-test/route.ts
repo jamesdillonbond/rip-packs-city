@@ -355,7 +355,14 @@ function softIfTransientRpc(
 //   check_secdef_anon_execute_violations → scalar jsonb
 //   check_cursor_stall_threshold_drift   → scalar jsonb
 //   detect_stalled_pipelines             → scalar jsonb
-// All five return a JSON array TODAY (measured 2026-08-25 via jsonb_typeof, and
+//   check_cron_heavy_job_exec_drift      → scalar jsonb, and it is the ONE that
+//                                          returns a jsonb OBJECT rather than an
+//                                          array — {inspected, offenders}. Its arm
+//                                          reads `offenders` explicitly and treats
+//                                          any other shape as couldNotRun, so it is
+//                                          outside the array-vs-scalar hazard below
+//                                          by construction rather than by luck.
+// The first five return a JSON array TODAY (measured 2026-08-25 via jsonb_typeof, and
 // each COALESCEs its own NULL), so nothing is currently mis-reporting. The
 // exposure is PROSPECTIVE and cheap to close: a scalar-jsonb function returning
 // SQL NULL arrives as `null`, and rewriting any of them to the object shape a
@@ -1368,6 +1375,86 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       name: "cursor-stall threshold shared by classifier and alert arm",
       endpoint: "rpc:check_cursor_stall_threshold_drift",
       expected: "zero-violations",
+    }),
+
+    // A `cron_heavy` job that cannot EXECUTE the function it is scheduled to call
+    // fails in 0.0 s with `permission denied for function`, writes NO pipeline_runs
+    // row (the function never runs, so it never logs), and leaves the message only
+    // in `cron.job_run_details` — which nothing in this repo reads. It is therefore
+    // indistinguishable from a job that was never scheduled: silent, free, and green
+    // on every instrument.
+    //
+    // ⚠ IT IS THE DEFAULT OUTCOME OF THE CORRECT ANON REVOKE, NOT AN ODDITY. A new
+    // public function is executable by `cron_heavy` only via the PUBLIC grant it
+    // inherits at creation, and the mandated
+    // `REVOKE EXECUTE … FROM PUBLIC, anon, authenticated` removes exactly that. Four
+    // recorded instances: two Pinnacle trade jobs and a series rollup (2026-08-23),
+    // then `run_topshot_onchain_rekey` (2026-09-02) — which shipped from a session
+    // that had the write-up available and walked into it anyway. Three prose records
+    // did not prevent a fourth, which is why this arm exists at all.
+    //
+    // ⚠ `inspected` is checked, not just `offenders`. The guard walks `cron.job` and
+    // regex-extracts `public.<fn>(` from each command; if that walk ever matches
+    // nothing it would report zero offenders and read as a clean bill of health. A
+    // guard that passes by inspecting an empty set is this repo's most-repeated
+    // failure, so an implausibly small population is a FAILURE here, not a pass.
+    // See migration audit_20260902_revoke_from_public_silently_unschedules_a_cron_heavy_job.
+    time(async () => {
+      const meta = {
+        name: "cron_heavy can execute every function it is scheduled to call",
+        endpoint: "rpc:check_cron_heavy_job_exec_drift",
+        expected: "zero-offenders",
+      };
+      const { data, error } = await rpcRetry(svc, "check_cron_heavy_job_exec_drift");
+      if (error) {
+        return { ...meta, passed: false, couldNotRun: true, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+      }
+      const payload = data as { inspected?: unknown; offenders?: unknown } | null;
+      const inspected = typeof payload?.inspected === "number" ? payload.inspected : null;
+      const offenders = Array.isArray(payload?.offenders) ? payload.offenders : null;
+      if (inspected === null || offenders === null) {
+        const shape = data === null ? "null" : Array.isArray(data) ? "array" : typeof data;
+        return {
+          ...meta,
+          passed: false,
+          couldNotRun: true,
+          detail: `rpc returned an unexpected payload shape (${shape}, expected {inspected, offenders}) — the guard never evaluated`,
+          statusCode: null,
+          bodyExcerpt: null,
+          notes: null,
+        };
+      }
+      // 56 pairs live at 2026-09-02. The floor is deliberately far below that so
+      // ordinary unscheduling does not trip it, and far above zero so a broken walk
+      // cannot pass.
+      if (inspected < 20) {
+        return {
+          ...meta,
+          passed: false,
+          couldNotRun: true,
+          detail: `the walk inspected only ${inspected} job/function pair(s) — that is a broken guard, not a clean run`,
+          statusCode: null,
+          bodyExcerpt: null,
+          notes: { inspected, offender_count: offenders.length },
+        };
+      }
+      const passed = offenders.length === 0;
+      return {
+        ...meta,
+        passed,
+        detail: passed
+          ? `0 offenders across ${inspected} scheduled job/function pair(s)`
+          : `${offenders.length} cron_heavy job(s) cannot execute their own function: ${offenders
+              .map((o: { jobname?: string; function?: string }) => `${o.jobname}→${o.function}`)
+              .join(", ")}`,
+        statusCode: null,
+        bodyExcerpt: passed ? null : JSON.stringify(offenders).slice(0, 500),
+        notes: { inspected, offender_count: offenders.length },
+      };
+    }, {
+      name: "cron_heavy can execute every function it is scheduled to call",
+      endpoint: "rpc:check_cron_heavy_job_exec_drift",
+      expected: "zero-offenders",
     }),
 
     // Phase 4: auth-gated profile routes accept or redirect. 200 OR 401 all OK.

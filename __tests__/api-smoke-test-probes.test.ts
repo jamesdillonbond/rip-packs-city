@@ -124,6 +124,9 @@ function greenFixtures(over: Fixtures = {}): Fixtures {
     "rpc:detect_stalled_pipelines": { data: [], error: null },
     "rpc:analytics_pipeline_health": { data: { pipelines: { fmv: { status: "healthy", lag_minutes: 4, expected_max_lag_min: 90 } } }, error: null },
     "rpc:check_secdef_anon_execute_violations": { data: [], error: null },
+    // {inspected, offenders} — the one guard RPC returning a jsonb OBJECT.
+    // `inspected` must clear the arm's own not-vacuous floor (20).
+    "rpc:check_cron_heavy_job_exec_drift": { data: { inspected: 56, offenders: [] }, error: null },
     "rpc:check_public_security_invariants": { data: [], error: null },
     cached_listings: { count: 24, error: null } as unknown as { data?: unknown; error?: unknown },
     smoke_test_results: { data: null, error: null },
