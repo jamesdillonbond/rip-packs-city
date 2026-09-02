@@ -10,6 +10,93 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · SHIPPED + ⛔ SELF-CORRECTION — 3 more deploys, drift 24 → 6, and the entry below undercounted the operator's list because my cheaper derivation dropped the annotations
+
+**Corrects the entry immediately below (`16 of 18 … drift 18 → 2`).** That entry is right about what it
+did and wrong about what remained. **The operator list is 4 secrets, not 2**, and the real total was
+never 18 — tier 1 is a lower bound.
+
+**How I got it wrong.** I re-derived drift from `list_edge_functions` metadata fed into the script's
+exported `classifyImportMapDrift`. That is a legitimate PAT-free shortcut and it is genuinely useful —
+but it is **tier 1 only**, and it carries **none of the curated decision annotations that live in the
+checker script itself**: `GATE_KEY_DEPLOY_BLOCKED` (a 6-entry do-not-deploy list) and `DEPLOY_DEFERRED`
+(added 2026-08-31 by commit `7ee060d` precisely so a deliberately-undeployed function stops reading as
+"SAFE"). **I flagged that third state in my own plan at the start of the pass and then did not check
+it.** A cheaper derivation that drops the annotations is not the same instrument. Reading the actual CI
+log was the fix, and it should have been step one.
+
+**Consequence, and it was benign:** I deployed `compute-topshot-pack-ev`, which was `DEPLOY_DEFERRED`.
+No harm — the deferral reason is *"deploying buys nothing today"*, not a safety block, and the function
+has **no caller anywhere** (no `cron.job` row, nothing in `.github/workflows`, zero invocations in 24 h
+of `function_edge_logs`), so an early deploy is inert rather than premature. Its map entry now records
+that the code half is done and the remaining step is the un-pause alone.
+
+### The annotation was itself wrong, in both directions
+
+Re-derived all six blocked entries against the **deployed** sources (redacted-report subagent):
+
+- ⛔ **Its stated mechanism is wrong for the 4 that remain.** It says *"their `*_GATE_KEY` secrets are
+  UNSET"*. **Nothing can enumerate Supabase secrets, so that was never a measurement.** What those four
+  deployed builds actually do is gate on a **hardcoded string literal** compiled into the artifact —
+  they read no `*_GATE_KEY` at all. The conclusion survives; the correct statement of the risk is *repo
+  HEAD introduces an env dependency the deployed build does not have*. That restatement is what makes
+  the next question askable — **"do deployed and HEAD read the same env names?"** — and that question is
+  what cleared two entries.
+- ➖ **Two were blocked for no mechanism at all**, and are now deployed: `backfill-pack-opens-api` and
+  `backfill-allday-pack-supply`. Each **already** reads its own `*_GATE_KEY` and **already** fails closed;
+  HEAD reads the same var, adding only an optional `_OLD`. Same requirement before and after.
+  `backfill-allday-pack-supply` is positively proven: all **3,195** `allday_pack_supply` rows carry
+  `updated_at` **five minutes after** its fail-closed build shipped — a gate reading `""` could not have
+  written them. ⚠ **Over-blocking is not the safe default**: it parks fixable work as permanent drift and
+  trains readers to scroll past the list.
+
+Both corrections are now in `scripts/check-edge-fn-drift.mjs` with a test asserting the new state, so a
+naive revert fails loudly instead of silently re-parking two deployable functions.
+
+### ⛔ One deploy STOPPED by its own byte-exactness gate — a transport limit, not a code problem
+
+`sync-nba-projections` needs `_shared/nba-projections-parse.ts`, whose line 40 is
+`.replace(/[̀-ͯ]/g, "")` — where `̀` is **six literal ASCII characters**.
+`deploy_edge_function` takes file content as a **JSON string argument**, and JSON *also* decodes
+`\uXXXX`, so the deploy substitutes the two **raw combining marks** unless the backslash is doubled at
+every layer.
+
+⚠ **The failure would have been silent and delayed.** The raw form behaves identically today — nothing
+red, no test fails. It rots when a Windows mount, an editor re-encode or the next transport drops the
+invisible marks: accent-stripping stops and the ingest **auto-INSERTs duplicate `nba_players` rows for
+every accented name** (Dončić, Jokić). **That file's own header comment predicted this exact mechanism
+and was right.** A subagent reproduced the mismatch three times, confirmed it deterministic, and
+**skipped the deploy rather than ship it** — which is the correct outcome and the reason the mandatory
+diff exists.
+
+**Not retried, deliberately.** The change is a behaviour-neutral refactor (`030b9fa6a`) on a pipeline
+that is 100 % failing on upstream Akamai 403s and suppressed to 2026-10-14 — real silent-corruption risk
+for **zero** benefit today. Added to `DEPLOY_DEFERRED` with the condition that clears it, plus the
+readback assertion to make if it is ever deployed via MCP.
+
+✅ **Checked the blast radius of that class across everything already shipped:** none of the 18 functions
+deployed earlier this pass contains a `\uXXXX` sequence, and **CI run #31's eszip content census
+independently confirms all of them now match repo source byte-for-byte.** The deploys are verified by
+the project's own instrument, not by my deploy responses.
+
+### Post-state (CI run #31, tier 1 + tier 2, 38 bodies read / 32 canonically matched)
+
+| | before | after |
+|---|---|---|
+| PROVEN drifted (import map) | 19 | **2** |
+| CONTENT drift (body ≠ repo) | 25 | **6** |
+| total DRIFT | 24 | **6** |
+| of which blocked on an operator secret | — | **4** |
+| of which deferred by decision | — | **2** |
+
+**Every remaining item is now either an operator secret or a recorded deferral. Nothing is left in the
+"someone should get to this" state.** Handoff: `claude/needs-trevor-2026-09-02-step-by-step.md`.
+
+⚠ Also corrected: an unauthenticated boot probe is a good liveness check, but **the discriminator is the
+BODY, not the status code** — functions in this repo return 401 *or* 403 from their own gate
+(`pinnacle-owner-discovery` 401, `backfill-pack-opens-api` 403). A recipe that keys on the number will
+invert the check on half the fleet.
+
 ### 2026-09-01 · 🛠 SHIPPED — the ledger rebase-conflict recipe is now an EXECUTABLE, because retyping it from prose has produced the same false positive SEVEN times (including once, tonight, by me)
 
 **Session:** Claude Code interactive, Trevor's box, ~18:0x PT.
