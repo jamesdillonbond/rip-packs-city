@@ -2,6 +2,46 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ RE-DERIVED 2026-09-02 — the "one measured-but-unshipped DB fix" is LOW-STAKES, because its cost premise is not a production shape
+
+CLAUDE.md carried this for weeks as the single remaining measured DB fix, *"blocked on a DECISION not a
+diagnosis"*: replacing `compute_pack_ev_per_edition_weighted`'s `fmv_current` leg, filed at
+**18,766 vs 1,046,192 buffers**, held up because the change re-seeds a pinned fixture (Trevor's call).
+
+**Re-read the blocker, as this file's own rule says to, and the cost half of it has gone.**
+
+**1. The 1,046,192 figure is a BULK-JOIN shape that nothing calls.** The ledger entry it comes from
+measured `LEFT JOIN fmv_current` over **3,097 edition ids at once**. Every real caller invokes the
+function **per dist**: DB-side `refresh_atlas_pack_ev` (jobid 217) and
+`backfill_topshot_historical_pack_ev` (jobid 71); repo-side the `compute-topshot-pack-ev` and
+`compute-allday-pack-ev` edge functions, both one RPC per dist. There is no bulk call site.
+
+**2. Measured at the real call site, 2026-09-02 (EXPLAIN ANALYZE, BUFFERS, warm), driving the exact
+57-dist atlas set jobid 217 uses:**
+
+| what | ms | buffers |
+|---|---:|---:|
+| all 57 dists in one pass | **1,746** | **152,542** |
+| the driver seq scan alone | 116 | 2,898 |
+| ⇒ per function call | ~29 | **~2,625** |
+
+A single call measured separately: **141 ms / 3,600 buffers**, of which 285 buffers were the probe's
+own `dist_id` lookup.
+
+**3. Corroborated from the other side by the fleet numbers.** After the 2026-08-30 top-consumer drain,
+jobid 217 runs a full 57-dist tick in **~2 s** (mean 195 s → 2 s at unchanged run count) and jobid 71
+in **~1 s** (178 s → 1 s). A function costing ~1M buffers per call could not produce those times.
+
+👉 **So the decision is no longer "accept a fixture re-seed to win 55× on the platform's hottest
+compute".** The win at the real call sites is small, and the change was already verified
+value-identical against the live view (0 mismatches). ⛔ **This is NOT a recommendation to close the
+item** — Trevor still owns the fixture question, and the leg remains the more correct shape. It is a
+correction of the STAKES, so nobody spends a session unblocking a lever that is now worth little.
+
+⚠ **And the transferable half:** the filed figure was never wrong — it measured a shape that was
+never run. **A cost figure is only actionable together with the CALL SITE it was measured at**, and
+neither the ledger entry nor the CLAUDE.md pointer carried one.
+
 ## How to read this file (added 2026-08-27)
 
 **Newest first, and only the FIRST dated block is current.** Every other headline block carries

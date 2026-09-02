@@ -413,6 +413,18 @@ against "faster because there is less to do". Read from **`pipeline_runs_daily`*
 **Identical output per completed run on both sides — 57.0 rows — so the job is doing the same work.**
 What changed is that it now finishes every tick instead of ~83% of them.
 
+⚠ **One latent hole found while checking this, and MEASURED NOT TO BE FIRING.**
+`refresh_atlas_pack_ev` wraps its whole body in `EXCEPTION WHEN OTHERS THEN RETURN
+jsonb_build_object('ok', false, …)` and does **not** log in the handler — so a *catchable* error would
+return normally, pg_cron would record **`succeeded`**, and `pipeline_runs` would get no row: invisible
+in both instruments at once. **It has never fired.** The identity
+`cron ticks − cron failures − completed runs = 0` holds on **every one of the last 12 full days**
+(e.g. 08-21: 24 − 7 − 17; 09-01: 24 − 0 − 24), so every non-completing tick was a pg_cron-recorded
+timeout, never a swallow. Filed as latent, deliberately not "fixed" on a hot path where the path is
+measured dead. ⭐ The identity itself is the reusable part: it separates *killed* from *swallowed*
+for any SQL cron job that logs its own completion, and it needs `pipeline_runs_daily` rather than
+`pipeline_runs` to reach back more than ~73 h.
+
 🚨 **AND A TRAP I WALKED INTO WRITING THIS, recorded because it produced a confident wrong number.**
 My first version of this control read `pipeline_runs` directly and reported **3 completed runs before
 vs 66 after**, a 22× claim. That is a **RETENTION ARTIFACT**: `pipeline_runs` keeps ~73 h, and the
@@ -432,6 +444,24 @@ still **32**, so no config changed under it. (4) ⚠ The rival explanation — t
 outage simply removed work — is REFUTED as the cause: Top Shot sales ingest continued across the
 boundary (**4,428 → 3,015 rows**, 1,929 → 1,673 distinct editions, a −32% market/weekend dip), which
 cannot produce a 7.9× fleet-wide cut or a 97× and 178× per-job one.
+
+⭐⭐ **INDEPENDENT CORROBORATION from a different instrument and a different set of pipelines.** The
+`wallet-backfill*` family are **HTTP routes, not pg_cron jobs**, and they log to `pipeline_runs`
+rather than `cron.job_run_details` — so nothing about the measurement above can propagate into them.
+Their failures collapsed on the same boundary, and their errors name the same cause (`Timed out
+acquiring connection from the pool`, `canceling statement due to lock timeout`, `rpc upsert_wmc_batch
+timed out` — all DB contention), read from `pipeline_runs_daily`:
+
+| pipeline | 08-23 | 08-30 | 08-31 | 09-01 |
+|---|---|---|---|---|
+| `wallet-backfill-pinnacle` | **225 / 1,125** | 22 / 842 | **0 / 375** | **0 / 571** |
+| `wallet-backfill-allday` | **334 / 1,151** | 40 / 876 | 4 / 375 | 6 / 571 |
+| `wallet-backfill` | 43 / 299 | 18 / 616 | 8 / 375 | 10 / 571 |
+| `wallet-backfill-ufc` | 25 / 494 | 6 / 709 | **0 / 375** | **0 / 571** |
+
+⚠ **Those failures were LOSING ROWS, not just failing** — their `last_error` carries
+`wmc_upsert_chunk_failures=N rows_lost=200` / `rows_lost=800` on most of the pre-boundary days, and
+none after. So the drain bought data completeness in `wallet_moments_cache`, not only time.
 
 ⛔ **Consequences for other filed items, which are now measuring history:** #42's per-job waste figures
 for jobids 217 and 73, any pooled `pg_stat_statements` ranking (its stats were last reset 2026-08-12,

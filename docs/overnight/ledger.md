@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · 📏 RE-DERIVED (docs only) — the "one measured-but-unshipped DB fix" is LOW-STAKES: its 1,046,192-buffer premise is a shape nothing calls
+
+**Nothing shipped to code or the DB.** CLAUDE.md's bullet is DISPLACED (400 → 396 chars, file
+39,972) onto a full write-up in `roadmap-status.md`.
+
+**Why re-read it at all:** CLAUDE.md's own line said *"a sibling's stated blocker turned out to be a
+MEASUREMENT, not a decision — re-read a 'blocked' item's blocker before inheriting it."* Taking that
+literally, twice in one day, is what produced this.
+
+**What the numbers say.** The filed figure measured `LEFT JOIN fmv_current` over **3,097 edition ids
+at once**. **No caller does that.** All four call it PER DIST — `refresh_atlas_pack_ev` (jobid 217),
+`backfill_topshot_historical_pack_ev` (jobid 71), and the `compute-topshot-pack-ev` /
+`compute-allday-pack-ev` edge functions. Measured at the real call site, driving the exact 57-dist
+atlas set jobid 217 uses:
+
+| what | ms | buffers |
+|---|---:|---:|
+| all 57 dists in one pass | **1,746** | **152,542** |
+| driver seq scan alone | 116 | 2,898 |
+| ⇒ per call | ~29 | **~2,625** |
+
+Corroborated from the other side: jobid 217 now completes a full tick in ~2 s and jobid 71 in ~1 s,
+which a function costing ~1M buffers per call could not do.
+
+👉 **The decision is no longer "accept a fixture re-seed to win 55× on the hottest compute".**
+⛔ Not a recommendation to close it — the fixture question is still Trevor's and the leg is still the
+more correct shape. It is a correction of the STAKES.
+
+⚠ **Transferable:** the filed figure was never wrong; it measured a shape that was never run.
+**A cost figure is only actionable together with the CALL SITE it was measured at**, and neither the
+ledger entry nor the CLAUDE.md pointer carried one.
+
+**Revert path.** Docs only — `git revert` the commit, or find it by message
+`docs: re-read the blocked pack-EV item's blocker`.
+
 ### 2026-09-02 · ✅ SHIPPED — the concierge had ~0 real users because it was on none of the public entry points, and signing in cut its allowance from 40/hr to 5/day
 
 **The reframe.** 33 tools, 4,209 lines, and **55 real (`is_smoke_test=false`) conversations
@@ -144,6 +179,10 @@ distinct jobs, so this is not retirement; (3) Postgres has **not restarted in 81
 (4) the rival explanation — the Top Shot 530 outage removing work — is **refuted**: Top Shot sales
 ingest continued across the boundary (4,428 → 3,015 rows, a −32% dip), which cannot produce a 7.9×
 fleet cut or a 178× per-job one.
+
+⭐⭐ **A sixth control, independent in both instrument and population:** the `wallet-backfill*` pipelines are HTTP routes logging to `pipeline_runs`, not pg_cron jobs, so nothing above can leak into them — and their failures collapse on the same boundary with DB-contention errors (`Timed out acquiring connection from the pool`, `canceling statement due to lock timeout`). `wallet-backfill-pinnacle` **225/1,125 (08-23) → 0/375 (08-31) → 0/571 (09-01)**; `wallet-backfill-ufc` 25/494 → 0/375 → 0/571. ⚠ **Those failures were LOSING ROWS** — their errors carry `wmc_upsert_chunk_failures=N rows_lost=200`…`800` on most pre-boundary days and none after, so the drain bought `wallet_moments_cache` COMPLETENESS as well as time.
+
+⛔ **One lead checked and REFUTED, recorded so nobody re-opens it:** `wallet-backfill-golazos` writes `rows_written = 0` on 30 of the last 35 days and its wmc rows have not been re-stamped since 08-30 14:10, which reads exactly like a dead pipeline. It is not: `rows_found` is **8,000–25,000 per day** and `rows_skipped` ≈ `rows_found`, i.e. it reads every Golazos moment and finds nothing changed. **`rows_written` counts CHANGES, so 0 is the honest value for a quiet 133-wallet collection** — the third of the three meanings this repo's own rule assigns to a zero there.
 
 **What was corrected.** `cron-and-schedulers.md` (a RESOLVED subsection with the matched-window
 tables, placed after the pooled one whose reasoning is kept because it was right about the
