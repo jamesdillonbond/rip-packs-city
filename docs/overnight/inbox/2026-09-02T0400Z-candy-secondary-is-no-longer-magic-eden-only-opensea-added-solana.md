@@ -55,6 +55,47 @@ RPC already has OpenSea plumbing — for **Panini**: `OPENSEA_API_KEY`,
 **Ethereum-scoped** (`/chain/ethereum/...`), so the auth and fetch shape port but the chain path does
 not.
 
+## ✅ SETTLED 04:05Z — `solana` IS a supported chain in OpenSea API v2
+
+Answered empirically rather than from docs (their `supported-chains` doc page is now just a
+deprecation notice). **`GET https://api.opensea.io/api/v2/chains` is PUBLIC — HTTP 200, no key** — and
+returns 29 chains including:
+
+```json
+{"chain": "solana", "name": "Solana", "symbol": "SOL", "supports_swaps": true,
+ "block_explorer": "Solscan", "block_explorer_url": "https://solscan.io/"}
+```
+
+So the remediation path is real, not hypothetical: port the Panini fetch shape to a Candy reader on
+`chain=solana`, add it as a SECOND source to sales/listings/offers, and stop hardcoding
+`marketplace: 'magic_eden'`. ⚠ Dedup on transaction signature — an aggregated listing could otherwise
+double-count against the ME feed.
+
+### ⛔ TRAP — OpenSea's `flow` is Flow **EVM**, NOT Cadence. Do not chase it.
+
+The same list contains `{"chain": "flow", "name": "Flow", ...}`, which looks like it might open an
+OpenSea data source for Top Shot / AllDay / Golazos. **It does not.** The tell is in the same record:
+`"block_explorer_url": "https://evm.flowscan.io"` — this is **Flow EVM**. RPC's Flow collections are
+**Cadence** NFTs and do not live there. Anyone reading "OpenSea supports Flow" and planning against it
+is planning against the wrong VM.
+
+### ⚠ BLOCKER for any further probing — and a possible live gap
+
+Every OpenSea v2 endpoint beyond `/chains` returns
+`401 {"errors":["Missing an API Key, which is required for this request."]}` — confirmed against
+`/v2/collections/candy-mlb` and `/v2/collections?chain=solana`.
+
+**`OPENSEA_API_KEY` is NOT in `.env.local`** (verified by name; no value read). RPC's existing OpenSea
+callers read it as `process.env.OPENSEA_API_KEY ?? ""`, i.e. **they fail soft to an empty key**. So:
+
+- I cannot verify from here whether Candy's collection is actually live on OpenSea, or what its slug is.
+- ⚠ **Worth Trevor confirming the key exists in Vercel**, because if it does not, `app/api/panini/listings`
+  and `app/api/panini/market-stats` are already 401ing silently on a user-facing surface. Those are
+  request-time routes, not crons, so they write no `pipeline_runs` row and **green pipelines do not
+  cover them** — the Panini cron pipelines are 3,378/3,378 ok and say nothing about this.
+
+## The original open question, now answered above
+
 ## ⚠ The open question — deliberately not guessed
 
 **Whether OpenSea's public API v2 exposes Solana listings/events yet, and under what `chain` value,
