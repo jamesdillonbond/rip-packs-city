@@ -10,6 +10,72 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED + ✅ SWEEP COMPLETE — known-issues #57 is fully triaged: 19 candidates → 4 real, 15 refuted
+
+Last confirmed item, and the close-out of the PostgREST-cap sweep opened this morning.
+
+**`/api/support-report` — a RATE over a truncated denominator.** Every figure in the report
+(`totalMessages`, `uniqueSessions`, per-category counts, `dailyVolume`, and **`deflectionRate`**) is
+computed from one unbounded `select("*")`. Measured live: **666 conversations in the default 7-day
+window** — two thirds of the way to the cap — and ⚠ **`days` was UNCLAMPED**, so `?days=11` already
+crossed it. Past the cap the deflection rate would be computed over a truncated denominator, which is
+wrong in an unpredictable *direction* rather than merely low: 1,000 deflected + 1,000 escalated is
+50%, and truncated it reads **100%** — a plausible number, which is the dangerous kind.
+
+⚠ **A second bug in the same three lines:** `parseInt("abc")` → NaN → `new Date(NaN).toISOString()`
+**throws a RangeError**, so `?days=abc` 500'd. Both sibling routes (`/api/edition-history`,
+`/api/profile/portfolio-history`) carry an explicit NaN guard with a comment saying exactly this.
+**This route was the one sibling that never got the fix** — a fix applied per-file rather than per-
+pattern leaves siblings behind, which is the same lesson as "grep for the EXPRESSION, not the file".
+
+Keyset-paged on `id`. ⚠ **Ordering for the PAGE WALK and ordering for the REPORT are different jobs**
+— the walk needs a unique key, the report wants newest-first — so the sort is re-applied in memory.
+
+---
+
+**THE SWEEP IS DONE. 19 candidates → 4 confirmed and fixed, 15 refuted.**
+
+| confirmed + fixed | what it cost |
+|---|---|
+| `app/api/sniper-feed` badge map | 1,000 of 9,471 rows; `hasBadge` false for ~89% of badged editions |
+| `app/api/sniper-feed` jersey map | 1,000 of 1,317 players |
+| `lib/sniper/pinnacle.ts` FMV map | 290 of 416 edition keys, and a miss **drops the listing** |
+| `compute-laliga-pack-ev` pool | 134 of 211 dists per tick, non-deterministically |
+| `ownership-onchain-walk` per wallet | 21 owners over 1,000; max 26,737 |
+| `/api/support-report` | a rate over a truncated denominator |
+
+(Six reads across four files-worth of fixes.)
+
+⭐ **THE HIT RATE IS THE FINDING: 15 of 19 candidates were NOT defects, and 14 of those 15 for the
+same reason** — the bound is real but lives in a *different statement* from the `.from()`, so a
+single-chain regex window ends before it (`let q = …; if (x) q = q.eq(…); await q.limit(50)`).
+**A static scan of query chains has a ~20% precision ceiling on this codebase.** That is exactly why
+the sweep was filed as CANDIDATES and why no ban-at-zero guard was shipped over the 197-site
+superset: it would have been ~90% false alarms and would have been suppressed within a week.
+
+⚠ **The 15th refutation is the interesting one.** `lib/studio-sales-history.ts:239` reads `sales` by
+`edition_id` and **367 editions have over 1,000 sales** (max 20,339), so it IS truncated — but the
+truncated set only pre-filters duplicates before an insert whose `23505` path falls back to per-row
+inserts and counts them as dupes. **The DB's unique constraint is the real guard; the read is an
+optimisation.** So it is a PERFORMANCE cost on those 367 editions (a failed batch degrading to N
+single inserts), not a wrong answer. ⛔ **Deliberately NOT fixed:** it writes to `sales`, and a
+correctness-neutral change to a write path buys nothing worth that risk. Recorded, not shipped.
+
+⚠ **Two more "correct today, fragile tomorrow" reads, also deliberately left alone:**
+`ufc-enrichment-drain` and `ufc-studio-sales-history-backfill` both read all UFC `editions` unbounded
+and there are **518** — comfortably under, and both comments state the number accurately today. They
+are one collection-expansion away from being this morning's badge bug. Noted in #57 rather than
+pre-emptively paged.
+
+**Verification.** 1,427 files / 15,813 tests green (+9); `tsc` clean; ratchet 717 = baseline.
+Mutation-tested 6/6 — and **two survived the first sweep**: the no-progress cursor guard (again — no
+fixture produced "the same full page forever") and the in-memory re-sort, which `dailyVolume` and
+`topCategories` cannot see because they sort themselves. `escalatedDetails` is the only
+order-dependent output and now pins it. ⭐ **When a mutant survives, ask which OUTPUT could see it —
+the answer is often "only one of six".**
+
+**Revert path:** `git revert <sha>`. Code-only, no DB or schema change.
+
 ### 2026-09-02 · ✅ SHIPPED — Golazos pack EV skipped 77 of 211 distributions per tick, and an AVERAGE was doing a bound's job on the ownership walk
 
 Two more confirmed out of known-issues #57. Both are the same silent shape as the badge/Pinnacle

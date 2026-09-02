@@ -1095,3 +1095,61 @@ measurement**; each needs its own live count under its own filter.
   per-key index inside the instance, and clearing `fx.tables` does not reset it — so a suite that
   builds the client ONCE has its third sequence-using test start mid-array and red correct code.
   Plain-object fixtures never noticed, because they ignore the cursor. Rebuild the client per seed.
+
+## Closing the cap sweep (2026-09-02): 19 candidates, 4 defects, and the HIT RATE is the finding
+
+The silent-truncation sweep above is done. **19 candidates → 4 confirmed and fixed, 15 refuted.**
+
+**The four:** `sniper-feed`'s badge map (1,000 of 9,471) and jersey map (1,000 of 1,317);
+`lib/sniper/pinnacle.ts`'s FMV map (290 of 416 keys, and a miss **drops the listing**);
+`compute-laliga-pack-ev`'s pool (134 of 211 dists per tick, non-deterministically);
+`ownership-onchain-walk`'s per-wallet read (21 owners over 1,000, max 26,737); and
+`/api/support-report`, where every figure including a **rate** came off one unbounded read.
+
+### ⭐ 15 of 19 were NOT defects, and 14 of those for the SAME reason
+
+The bound is real but lives in a **different statement** from the `.from()`:
+
+```ts
+let q = supabase.from("editions").select("…").eq("collection_id", id)
+if (player) q = q.ilike("player_name", `%${player}%`)
+const { data } = await q.limit(50)      // ← the regex window ended long before here
+```
+
+**A static scan of query chains has roughly a 20% precision ceiling on this codebase.** That number
+is the reusable part. It is why the 197-site superset was filed as CANDIDATES and never turned into a
+ban-at-zero guard: ~90% false alarms gets a guard suppressed within a week, and a suppressed guard is
+worse than no guard because it reads as coverage. **Scan output is a reading list, not a finding
+list.**
+
+### ⚠ "Is it truncated?" and "does the truncation change an answer?" are two questions
+
+`lib/studio-sales-history.ts` reads `sales` by `edition_id`, and **367 editions have over 1,000
+sales** (max 20,339) — so it genuinely truncates. But that set only pre-filters duplicates ahead of an
+insert whose `23505` path falls back to per-row inserts and counts them as dupes. **The unique
+constraint is the real guard; the read is an optimisation.** A performance cost, not a wrong answer,
+and deliberately not fixed because it writes to `sales` — a correctness-neutral change to a write
+path is not worth the risk. Truncation is necessary but not sufficient for a defect.
+
+### ⚠ A RATE over a truncated denominator is wrong in an unpredictable DIRECTION
+
+`/api/support-report`'s `deflectionRate`: 1,000 deflected + 1,000 escalated is 50%; truncated at the
+cap it reads **100%**. Not "a bit low" — a *plausible* number pointing the wrong way. When auditing a
+capped read, **rank its outputs by whether they are counts or ratios**; the ratios are the ones that
+lie convincingly.
+
+### ⚠ A fix applied PER FILE leaves siblings behind
+
+The same three lines in `support-report` also had `parseInt("abc")` → NaN →
+`new Date(NaN).toISOString()`, which **throws**. Both sibling routes — `/api/edition-history` and
+`/api/profile/portfolio-history` — carry an explicit NaN guard with a comment saying exactly this.
+This route never got it. Same shape as "grep for the EXPRESSION, not the file", one layer up: when
+you fix a param-parsing bug, grep for the *parse*, not the route.
+
+### ⚠ When a mutant survives, ask which OUTPUT could observe it
+
+Two survivors here, both instructive. The no-progress cursor guard killed nothing because no fixture
+produced the "same full page forever" case it exists for — **a safety belt with no test is
+indistinguishable from dead code**. And the in-memory re-sort survived because `dailyVolume` and
+`topCategories` sort themselves; `escalatedDetails` was the only one of six outputs that could see
+row order, and it is what now pins it.
