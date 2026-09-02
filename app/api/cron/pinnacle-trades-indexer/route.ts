@@ -401,10 +401,17 @@ async function runIndexer(req: NextRequest) {
       frontier = backfill ? last.s : last.e
       blocksRead += wave.reduce((n, c) => n + (c.e - c.s + 1), 0)
 
-      await (supabaseAdmin as any)
+      const { error: cursorAnchorErr } = await (supabaseAdmin as any)
         .from("event_cursor")
         .update({ last_processed_block: frontier, updated_at: new Date().toISOString() })
         .eq("id", cursorId)
+      // ⚠ A DISCARDED CURSOR-WRITE ERROR TURNS A FAILED ADVANCE INTO A LOGGED
+      // MOVEMENT. `cursorAfter` is the only field an operator can read to see the
+      // walk progressing, and it was assigned whether or not the write landed — so a
+      // tick that could not persist its cursor reported the new block anyway, and the
+      // next tick silently re-scanned the identical range. Throw instead: the outer
+      // catch marks the run ok:false and leaves `cursorAfter` at its real value.
+      if (cursorAnchorErr) throw new Error(`cursor advance failed: ${cursorAnchorErr.message}`)
 
       if (w + CHUNK_CONCURRENCY < chunks.length) await delay(INTER_CHUNK_DELAY_MS)
     }

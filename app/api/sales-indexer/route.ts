@@ -335,10 +335,17 @@ export async function POST(req: NextRequest) {
 
     if (matchingEvents.length === 0) {
       // Update cursor even if no events (capped if a chunk fetch failed).
-      await (supabaseAdmin as any)
+      const { error: cursorAnchorErr } = await (supabaseAdmin as any)
         .from("event_cursor")
         .update({ last_processed_block: cursorTarget, updated_at: new Date().toISOString() })
         .eq("id", "topshot_sales")
+      // ⚠ A DISCARDED CURSOR-WRITE ERROR TURNS A FAILED ADVANCE INTO A LOGGED
+      // MOVEMENT. `cursorAfter` is the only field an operator can read to see the
+      // walk progressing, and it was assigned whether or not the write landed — so a
+      // tick that could not persist its cursor reported the new block anyway, and the
+      // next tick silently re-scanned the identical range. Throw instead: the outer
+      // catch marks the run ok:false and leaves `cursorAfter` at its real value.
+      if (cursorAnchorErr) throw new Error(`cursor advance failed: ${cursorAnchorErr.message}`)
 
       await writePipelineRun({
         startedAt: startedAtIso,
@@ -918,10 +925,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 7: Update cursor (capped if a chunk fetch failed).
-    await (supabaseAdmin as any)
+    const { error: cursorAnchorErr2 } = await (supabaseAdmin as any)
       .from("event_cursor")
       .update({ last_processed_block: cursorTarget, updated_at: new Date().toISOString() })
       .eq("id", "topshot_sales")
+    // Same as above: a failed advance must not be logged as a movement.
+    if (cursorAnchorErr2) throw new Error(`cursor advance failed: ${cursorAnchorErr2.message}`)
 
     await writePipelineRun({
       startedAt: startedAtIso,

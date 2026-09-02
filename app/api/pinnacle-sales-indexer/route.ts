@@ -238,10 +238,17 @@ async function runIndexer(req: NextRequest) {
         }
         lastChunkEnd = e
         // Update cursor per chunk so partial progress isn't lost
-        await (supabaseAdmin as any)
+        const { error: cursorAnchorErr } = await (supabaseAdmin as any)
           .from("event_cursor")
           .update({ last_processed_block: lastChunkEnd, updated_at: new Date().toISOString() })
           .eq("id", "pinnacle_sales")
+        // ⚠ A DISCARDED CURSOR-WRITE ERROR TURNS A FAILED ADVANCE INTO A LOGGED
+        // MOVEMENT. `cursorAfter` is the only field an operator can read to see the
+        // walk progressing, and it was assigned whether or not the write landed — so a
+        // tick that could not persist its cursor reported the new block anyway, and the
+        // next tick silently re-scanned the identical range. Throw instead: the outer
+        // catch marks the run ok:false and leaves `cursorAfter` at its real value.
+        if (cursorAnchorErr) throw new Error(`cursor advance failed: ${cursorAnchorErr.message}`)
       } catch (err) {
         console.log(`[pinnacle-sales-indexer] chunk ${s}-${e} error:`, err instanceof Error ? err.message : String(err))
         // ⚠ STOP. This loop writes the cursor PER CHUNK, so without the break a

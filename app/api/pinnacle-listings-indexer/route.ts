@@ -380,10 +380,17 @@ export async function POST(req: NextRequest) {
       // First-run init: anchor cursor at sealed tip and exit. We only want
       // forward churn — no historical backscan. Subsequent ticks walk forward.
       if (lastBlock === 0) {
-        await (supabaseAdmin as any)
+        const { error: cursorAnchorErr } = await (supabaseAdmin as any)
           .from("event_cursor")
           .update({ last_processed_block: currentHeight, updated_at: new Date().toISOString() })
           .eq("id", "pinnacle_listings")
+        // ⚠ A DISCARDED CURSOR-WRITE ERROR TURNS A FAILED ADVANCE INTO A LOGGED
+        // MOVEMENT. `cursorAfter` is the only field an operator can read to see the
+        // walk progressing, and it was assigned whether or not the write landed — so a
+        // tick that could not persist its cursor reported the new block anyway, and the
+        // next tick silently re-scanned the identical range. Throw instead: the outer
+        // catch marks the run ok:false and leaves `cursorAfter` at its real value.
+        if (cursorAnchorErr) throw new Error(`cursor advance failed: ${cursorAnchorErr.message}`)
         cursorBefore = "0"
         cursorAfter = String(currentHeight)
         extra.message = "first run, cursor anchored to sealed tip"
@@ -780,10 +787,12 @@ export async function POST(req: NextRequest) {
       // — every write above is an idempotent upsert or an event-keyed update.
       const cursorTarget =
         firstFailedChunkStart !== null ? firstFailedChunkStart - 1 : targetHeight
-      await (supabaseAdmin as any)
+      const { error: cursorWriteErr } = await (supabaseAdmin as any)
         .from("event_cursor")
         .update({ last_processed_block: cursorTarget, updated_at: new Date().toISOString() })
         .eq("id", "pinnacle_listings")
+      // Same as above: a failed advance must not be logged as a movement.
+      if (cursorWriteErr) throw new Error(`cursor advance failed: ${cursorWriteErr.message}`)
       cursorAfter = String(cursorTarget)
 
       if (firstFailedChunkStart !== null) {

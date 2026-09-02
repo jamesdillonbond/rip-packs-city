@@ -634,3 +634,86 @@ describe("topshot-offers-indexer — cursor + control flow", () => {
     expect(fetchMock.calls).toHaveLength(0)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚨 A FAILED CURSOR ADVANCE IS NOT A MOVEMENT.
+// `cursorAfter` was assigned immediately after an `await …from("event_cursor")
+// .update(…)` whose result was discarded, so a write that supabase-js REFUSED
+// still logged the new block. `cursor_before`/`cursor_after` is the only pair an
+// operator can read to see a walk progressing, and it was reporting an
+// unmeasured number: the next tick re-scanned the identical range while the log
+// showed the indexer moving on. Twenty-one routes shared the shape; the
+// structural ban lives in `event-cursor-writes-bind-their-error`, and this is
+// the behavioural half on one of them.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("topshot-offers-indexer — a failed cursor write is not reported as progress", () => {
+  it("logs ok:false and leaves cursor_after unmoved when the cursor update errors", async () => {
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        avail: [
+          eventBlock({
+            height: 1100,
+            txId: "c".repeat(64),
+            eventType: OFFER_AVAILABLE,
+            payload: offerAvailPayload({
+              offerId: "777",
+              amount: "10.00000000",
+              params: { _type: "TopShotEdition", setId: "8", playId: "133" },
+            }),
+          }),
+        ],
+      }),
+    )
+    // Call 1 is the cursor READ; call 2 is the advancing UPDATE.
+    const spy = install({
+      event_cursor: [
+        { data: { last_processed_block: 1000 }, error: null },
+        { data: null, error: { message: "cursor write boom" } },
+      ],
+      editions: { data: [{ external_id: "8:133", id: "uuid-8133" }], error: null },
+      offers: { data: [], error: null },
+    })
+
+    const res = await POST(req())
+    const body = await res.json()
+
+    const log = terminalLog(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: false })
+    expect(String((log as Record<string, unknown>).p_error)).toContain("cursor advance failed")
+    // ⛔ THE LOAD-BEARING ABSENCE: the run must not claim it reached the tip.
+    // Before the fix this logged p_cursor_after: "1250" off a write that failed.
+    expect((log as Record<string, unknown>).p_cursor_after).not.toBe("1250")
+    expect(body.cursorAfter).not.toBe("1250")
+    expect(body.ok).toBe(false)
+  })
+
+  it("positive control: the same fixtures WITHOUT the write error do advance to the tip", async () => {
+    // Without this, the assertion above would pass for a route that never got as
+    // far as the cursor at all.
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        avail: [
+          eventBlock({
+            height: 1100,
+            txId: "d".repeat(64),
+            eventType: OFFER_AVAILABLE,
+            payload: offerAvailPayload({
+              offerId: "778",
+              amount: "10.00000000",
+              params: { _type: "TopShotEdition", setId: "8", playId: "133" },
+            }),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      editions: { data: [{ external_id: "8:133", id: "uuid-8133" }], error: null },
+      offers: { data: [], error: null },
+    })
+
+    const res = await POST(req())
+    expect(res.status).toBe(200)
+    expect(terminalLog(spy.rpcCalls)).toMatchObject({ p_ok: true, p_cursor_after: "1250" })
+  })
+})

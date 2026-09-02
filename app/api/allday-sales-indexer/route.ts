@@ -1127,10 +1127,17 @@ export async function POST(req: NextRequest) {
       // none failed). Later successful chunks are harmlessly re-scanned next tick.
       const cursorTarget =
         firstFailedChunkStart !== null ? firstFailedChunkStart - 1 : targetHeight
-      await (supabaseAdmin as any)
+      const { error: cursorWriteErr } = await (supabaseAdmin as any)
         .from("event_cursor")
         .update({ last_processed_block: cursorTarget, updated_at: new Date().toISOString() })
         .eq("id", "allday_sales")
+      // ⚠ A DISCARDED CURSOR-WRITE ERROR TURNS A FAILED ADVANCE INTO A LOGGED
+      // MOVEMENT. `cursorAfter` is the only field an operator can read to see the
+      // walk progressing, and it was assigned whether or not the write landed — so a
+      // tick that could not persist its cursor reported the new block anyway, and the
+      // next tick silently re-scanned the identical range. Throw instead: the outer
+      // catch marks the run ok:false and leaves `cursorAfter` at its real value.
+      if (cursorWriteErr) throw new Error(`cursor advance failed: ${cursorWriteErr.message}`)
       cursorAfter = String(cursorTarget)
 
       extra.blocks_scanned = cursorTarget - lastBlock
