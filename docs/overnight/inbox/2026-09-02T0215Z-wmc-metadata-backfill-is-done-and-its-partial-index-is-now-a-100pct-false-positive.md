@@ -93,3 +93,43 @@ positive *for this function*, but it was built a day ago and I have not enumerat
 **EXIT / next measurement:** re-run the two counts in a week. If `fillable` is still 0, nothing
 regenerates and the per-refresh call is retirable outright. If it climbs, something upstream is writing
 wmc rows with NULLs that editions *can* fill, and the real defect is there instead.
+
+---
+
+## 🔁 EXIT MEASUREMENT TAKEN EARLY — 2026-09-01 ~23:1x PT (Claude Code cloud session), ~4 h after the drain
+
+The exit condition above says *"re-run the two counts in a week. If `fillable` is still 0, nothing
+regenerates and the per-refresh call is retirable outright. If it climbs, something upstream is writing
+wmc rows with NULLs that editions **can** fill."* **It has already climbed, and the second branch is the
+live one — so the retire-it option is off the table.**
+
+```
+index_admits: 63,312      fillable_now: 29        (~4 h after fillable hit 0)
+```
+
+**All 29 are `nba_top_shot`, in 2 wallets, and 29 of 29 need `tier`** (5 also need `mint_count`, 5
+`team_name`; none need `player_name` or `set_name`).
+
+⭐ **And the regeneration is on the EDITIONS side, not the wmc side — which the filing's wording did not
+anticipate.** The wmc rows are OLD: `created_at` **2026-04-05**, one exception at 2026-09-02 02:54Z. What
+is new is the *edition*: every one of them has `editions.updated_at` in the **06:05:4x–06:05:52Z**
+window, i.e. minutes before this read. **An edition gaining a value flips a long-standing wmc row from
+unfillable to fillable without anything touching wallet_moments_cache at all.** That is the mechanism,
+and it means the population will keep regenerating for as long as the editions catalogue keeps being
+enriched — at roughly **29 per 4 h ≈ 175/day**, against ~4,000 calls/day.
+
+⚠ **What this does NOT establish.** `editions.updated_at` moving does not prove `tier` was the column
+that changed — a write that touched any column bumps it. So *"the editions ingest is filling tiers"* is
+the plausible reading, not a measured one; the falsifiable version needs the ingest's own diff, not a
+timestamp. **Recorded as a mechanism hypothesis with its evidence, so the next session does not inherit
+it as fact.**
+
+👉 **Consequence for the suggested action.** "Stop invoking this on every wallet refresh" is still the
+right lever — ~4,000 calls/day for ~175 rows is a 23:1 waste ratio — but the gate must not be "never
+call it", and it cannot key on wmc write activity either, because **the trigger is an editions write on
+rows the refresh never touched**. A gate that only fires when the refresh inserted new wmc rows would
+have missed all 29 of these.
+
+⛔ **The index advice stands unchanged: do NOT drop `idx_wmc_metadata_fillable` on the strength of either
+reading.** Its callers have still not been enumerated.
+

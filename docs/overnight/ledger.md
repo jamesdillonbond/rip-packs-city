@@ -10,6 +10,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · 📏 MEASUREMENT — the wmc-metadata exit condition, taken 4 h early, answers the branch nobody expected
+
+**No code, no DB change.** Two inbox filings annotated in place.
+
+**`backfill_wmc_metadata_from_editions`** (filing `2026-09-02T0215Z-…`) set an exit condition: re-run the
+two counts in a week; **`fillable = 0` ⇒ the per-refresh call is retirable outright**, **climbing ⇒
+something upstream is writing NULLs**. Re-run ~4 h after the drain: **`index_admits` 63,312 ·
+`fillable_now` 29** — it climbed, so **retiring the call is off the table**.
+
+⭐ **The regeneration is on the EDITIONS side, which the filing's wording did not anticipate.** All 29
+are `nba_top_shot`, 2 wallets, **29 of 29 needing `tier`**; the wmc rows were created **2026-04-05**,
+but every matching `editions` row has `updated_at` in the **06:05:4x–06:05:52Z** window minutes before
+the read. **An edition gaining a value flips a months-old wmc row from unfillable to fillable with
+nothing touching `wallet_moments_cache` at all** — so a gate keyed on "did this refresh write wmc rows"
+would have missed all 29. Rate ≈ **175/day against ~4,000 calls/day** (a 23:1 waste ratio, so the
+caller-side lever still stands; only the "never call it" version is dead).
+
+⚠ **Recorded as a hypothesis, not a fact:** `editions.updated_at` moving does **not** prove `tier` was
+the column that changed. The falsifiable version needs the ingest's own diff.
+
+⭐ **And a re-derivation that found nothing new, which is worth saying too.** Ranking
+`pg_stat_statements` by total time to hunt for more of this class put **`refresh_wmc_fmv_changed` first
+by a distance — 2,738 calls · 665,696 s · 243 s/call · 188.6 M disk blocks over the 21-day window** —
+and that is **already known-issues #36**, owned and quantified. Three `candy_*` board views sit at
+~780,000 buffers per PostgREST read (~2,500 reads each in the window); also already recorded. **No new
+register item.**
+
+**Second filing annotated:** `2026-09-02T0010Z-…offers-sweep-530…` — its residual concern (upstream
+530s inflating `pipeline_fails_24h`) **was shipped earlier tonight** as
+`audit_20260902_ops_snapshot_fails_24h_separates_upstream_outages_from_our_own_failures`; the filing now
+says so, and repeats that **the writer was correctly left alone**.
+
 ### 2026-09-01 · ✅ SHIPPED — `/api/collection-stats` ran the same 19,942-probe FMV scan TWICE per request; folded, plus a 291× false claim removed on the way
 
 **Migration `audit_20260902_collection_stats_folds_the_high_medium_pass_into_the_scan_it_already_makes`**

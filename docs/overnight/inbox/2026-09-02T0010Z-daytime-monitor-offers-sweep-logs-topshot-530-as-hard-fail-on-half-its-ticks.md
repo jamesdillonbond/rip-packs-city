@@ -85,3 +85,21 @@ emit.
 ⭐ **The transferable point: when a pipeline alternates ok/not-ok with a suspiciously regular period,
 compute `window / tick_interval` before calling it a race.** And a filing's suggested fix is a hypothesis
 like any other — this one was measured against the code it proposed to change, and did not survive it.
+
+---
+
+## ✅ THE RESIDUAL CONCERN IS SHIPPED — 2026-09-01 ~21:0x PT (Claude Code cloud session)
+
+The refutation above ends by saying the real fix belongs **on the reading side**, and that is what went in:
+migration `audit_20260902_ops_snapshot_fails_24h_separates_upstream_outages_from_our_own_failures`
+(file `20260902035928_…`). `rpc_ops_snapshot`'s `pipeline_fails_24h` bucket now carries an `upstream`
+count per pipeline, split with the **same signature the breaker uses** — `CLOUDFLARE_ORIGIN_DOWN` from
+`lib/pipeline/upstream-breaker.ts` — and orders on `(fails - upstream) DESC` so a genuine failure ranks
+above upstream noise. At the time it shipped, **51 of `offers-sweep`'s 82 fails in the window were
+upstream 530s**.
+
+⚠ **The two copies of that regex are pinned against each other** by
+`__tests__/ops-snapshot-upstream-signature-matches-breaker-guard.test.ts`, which resolves the newest
+migration that redefines the function and requires the SQL to contain exactly one `error ~* '…'` pattern
+— so a future edit that narrows one copy without the other reds a test instead of silently
+misclassifying. **The writer was not touched**, exactly as this filing's refutation says it must not be.
