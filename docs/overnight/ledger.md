@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the Pinnacle sniper could not price 30% of its editions, and a miss DROPS the listing
+
+First item triaged out of known-issues #57's 19-site list, and the one with the worst landing.
+
+**Measured live.** `lib/sniper/pinnacle.ts`'s `loadFmvMap()` read `pinnacle_catalog` unbounded.
+**2,470 rows carry an `fmv_usd`**, PostgREST returned 1,000, and under the old
+`ORDER BY fmv_sales_count_30d DESC, fmv_usd DESC` those first 1,000 cover **290 of the 416 distinct
+`legacy_edition_key`s — 69.7%**.
+
+⛔ **A map miss is not cosmetic here.** `flowtyNftToSniperDeals` does
+`if (!fmvData || fmvData.fmv <= 0) return []` — it **DROPS the listing**. So ~30% of Pinnacle
+editions could not appear on the sniper board however they were priced, and the board read as
+honestly quiet because nothing errored. ⚠ **Not a dormant path:** production returned
+`flowtyCount: 42` with real deals the same day (the module's own comment calls the Flowty leg
+"dormant since the 2026-05-13 shutdown" — that is stale; **a comment's claim about liveness is a
+dated sample too**).
+
+**Fix.** Keyset paging on `render_id` (unique, 2,600 of 2,600 verified live). ⚠ **And the
+representative-render choice had to become EXPLICIT, not a refactor for its own sake:** the old code
+expressed "most liquid, then highest FMV" as a global `ORDER BY` plus first-wins, which needs the
+read to be both COMPLETE and TOTALLY ORDERED — neither held. It had no unique tiebreak, so which
+render represented a key could differ between two identical requests; and under paging, first-wins
+over a page order that is not the ranking order is simply wrong. `moreRepresentative()` now compares
+sales → FMV → lowest `render_id`, which makes the answer stable and page-order-independent.
+
+⭐ **Two of the 19 were REFUTED on inspection, and that is the point of filing them as candidates.**
+`lib/concierge/fmv-distribution.ts:202` and `app/api/support-chat/route.ts:2172` both carry a
+deliberate `.limit(500)` / `.limit(50)` — my scanner's chain window ended before it, because the
+query is built across several statements (`let q = …; if (x) q = q.eq(…); await q.limit(50)`).
+**A multi-statement builder defeats a single-chain regex**, which is a real limitation of the #57
+method and is now recorded in it. 2 checked, 2 refuted, 1 confirmed, 16 left.
+
+**Verification.** 1,427 files / 15,796 tests green (+7); `tsc` clean; ratchet 717 = baseline.
+Seven behavioural cases through a sequence-fixture mock that also records the cursors the loop
+passed, so "it paged" is asserted as *the cursor advanced to page 1's last render_id*, not merely as
+"more than one read happened". **Mutation-tested 6/6:** single-page, no-short-page-break, first-wins,
+last-wins, no-tiebreak, and drop-everything-on-a-page-error each red at least one case.
+
+**Revert path:** `git revert <sha>`. Code-only, no DB or schema change.
+
 ### 2026-09-02 · ✅ SHIPPED — the sniper's badge map saw 10.6% of the table, and its "small table" comment was the reason
 
 Found while triaging the sniper-feed timeouts, one layer under the honesty fix above. Two reads in
