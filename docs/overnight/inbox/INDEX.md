@@ -1,4 +1,4 @@
-# Inbox index — 358 live filings
+# Inbox index — 359 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,8 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-09-02 — 9 filings
+## 2026-09-02 — 10 filings
 
+- [106 `audit_*` scratch tables hold 221 MB of a 14 GB database — and that number is the argument for leaving them alone](2026-09-02T0815Z-106-audit-scratch-tables-are-221mb-of-14gb-and-that-is-the-argument-for-leaving-them.md)
 - [pack-EV / `fmv_current`: both owed measurements are done in a QUIET window — and one of them refutes the earlier refutation's mechanism](2026-09-02T0700Z-pack-ev-the-two-owed-measurements-are-done-and-one-refutes-the-refutation.md)
 - [`/api/collection-stats` runs the same 19,942-probe FMV scan twice per request — and the number it recomputes is already precomputed](2026-09-02T0545Z-collection-stats-runs-the-same-19942-probe-fmv-scan-twice-per-request.md)
 - [Top Shot on Flow EVM / OpenSea — BUILD IT, and `tokenId` is already our `moment_id`](2026-09-02T0430Z-topshot-on-flow-evm-build-it-tokenid-is-momentid.md)
