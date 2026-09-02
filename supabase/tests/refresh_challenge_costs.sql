@@ -25,7 +25,7 @@ CREATE TABLE challenges (id uuid, collection_id uuid, reward_kind text, reward_p
 CREATE TABLE badge_editions (external_id text, collection_id uuid, low_ask numeric);
 CREATE TABLE challenge_slot_editions (challenge_id uuid, slot_order int, external_id text);
 CREATE TABLE mv_topshot_set_play_catalog (external_id text, fmv_usd numeric);
-CREATE TABLE pack_ev_latest (dist_id text, collection_id uuid, gross_ev numeric);
+CREATE TABLE pack_ev_latest (dist_id text, collection_id uuid, gross_ev numeric, snapshotted_at timestamptz);
 CREATE TABLE pack_purchases (pack_dist_id text, event_kind text, sale_price numeric, sealed_at timestamptz);
 CREATE TABLE pack_drop_pool (dist_id text, edition_id uuid, drop_weight numeric);
 CREATE TABLE fmv_snapshots (edition_id uuid, fmv_usd numeric, computed_at timestamptz);
@@ -118,7 +118,15 @@ INSERT INTO challenges (id, collection_id, reward_kind, reward_pack_dist_id, rew
 INSERT INTO badge_editions (external_id, collection_id, low_ask) VALUES ('ekA','00000000-0000-0000-0000-00000000cccc',30),('ekB','00000000-0000-0000-0000-00000000cccc',40);
 INSERT INTO challenge_slot_editions (challenge_id, slot_order, external_id) VALUES ('00000000-0000-0000-0000-0000000c0001',1,'ekA'),('00000000-0000-0000-0000-0000000c0001',2,'ekB');
 INSERT INTO mv_topshot_set_play_catalog (external_id, fmv_usd) VALUES ('ekM',88);
-INSERT INTO pack_ev_latest (dist_id, collection_id, gross_ev) VALUES ('d1','00000000-0000-0000-0000-00000000cccc',250);
+-- TWO rows for d1 on purpose. The 2026-09-02 hoist reads this view through
+-- `SELECT DISTINCT ON (dist_id) ... ORDER BY dist_id, snapshotted_at DESC`, so a
+-- single row would satisfy the assertion below no matter which row the ordering
+-- picked -- i.e. it could not tell a working ORDER BY from a dropped one. The
+-- stale row carries a DIFFERENT gross_ev (999), so 'CH1 reward = 250' now also
+-- proves the LATEST snapshot wins.
+INSERT INTO pack_ev_latest (dist_id, collection_id, gross_ev, snapshotted_at) VALUES
+  ('d1','00000000-0000-0000-0000-00000000cccc',999, now() - interval '2 days'),
+  ('d1','00000000-0000-0000-0000-00000000cccc',250, now());
 INSERT INTO pack_purchases (pack_dist_id, event_kind, sale_price, sealed_at) VALUES
   ('d4','secondary_sale',100, now()-interval '1 day'),
   ('d4','secondary_sale',200, now()-interval '2 day'),
