@@ -321,18 +321,27 @@ export async function fetchUnifiedFmvDistribution(
   // cost and what replaced it. Both constraints hold at once now: one row per
   // edition, and no full pass.
   // ⛔ DO NOT put this back to `.from("fmv_current").in("edition_id", ids)`.
-  // fmv_current is a DISTINCT ON (edition_id) view over fmv_snapshots, and a
-  // PostgREST IN filter does NOT push down into it: Postgres materialises the
-  // WHOLE DISTINCT ON first — 1,385,975 rows scanned to 27,186 distinct — and
-  // only then semi-joins the ids. Same 500 Top Shot "Base Set" ids, measured
-  // 2026-09-02 in one session:
-  //     .in() over the view ....... 1,334,789 buffers (~10.4 GB)   16,736 ms
-  //     get_editions_latest_fmv ...     5,359 buffers                470 ms
-  // 249x fewer buffers. Judge any change here on BUFFERS, not wall clock.
-  // That 16.7 s sat inside a 60 s lambda that also runs the Anthropic tool
-  // loop, so broad FMV questions did not just run slow — a live probe the same
-  // day ("what is a Base Set common worth?") answered "the FMV lookup timed
-  // out on that one". The RPC applies the view's own selection rule per id
+  // fmv_current is a DISTINCT ON (edition_id) view over fmv_snapshots with no
+  // per-group LIMIT, so reading it by edition id reaches the partitioned index
+  // and STILL scans every snapshot row for each edition (~35 and growing), with
+  // Unique discarding all but the newest. Warm, same session, 2026-09-02, the
+  // 500-id list the caller actually sends, as a BOUND ARRAY (which is what
+  // PostgREST emits - edition_id = ANY($1), confirmed in pg_stat_statements):
+  //     fmv_current, = ANY($1) ..... 25,330 buffers   1,070 ms
+  //     get_editions_latest_fmv ....  2,002 buffers       4 ms
+  // ~13x fewer buffers here, 17x over the whole 6,190-edition All Day list.
+  // ⚠ CORRECTED: the first version of this comment said "does NOT push down"
+  // and claimed 1,334,789 buffers / 249x. Both came from a benchmark whose
+  // "before" arm wrote the ids as IN (SELECT … FROM a CTE ordered by
+  // external_id) — that becomes a HASH semi-join over the fully materialised
+  // view, a shape PostgREST never sends. Re-measured and isolated to that one
+  // ORDER BY. The swap is still right; the number was 15x too flattering.
+  // The 16.7 s that motivated it sat inside a 60 s lambda that also runs the
+  // Anthropic tool loop, and a live probe the same day ("what is a Base Set
+  // common worth?") answered "the FMV lookup timed out on that one" — so the
+  // user-facing symptom was real even though the attributed cost was not.
+  // Judge any change here on BUFFERS, not wall clock.
+  // The RPC applies the view's own selection rule per id
   // (LATERAL ... ORDER BY computed_at DESC LIMIT 1) and was verified to return
   // byte-identical rows for those 500 ids: 500 = 500, zero rows differing
   // either way. See migration 20260902225408 (+ 225443, its enum fix).

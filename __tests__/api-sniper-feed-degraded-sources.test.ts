@@ -66,6 +66,19 @@ vi.mock("@/lib/supabase", () => ({
 
 import { GET } from "@/app/api/sniper-feed/route"
 
+/** Default RPC behaviour. The All Day FMV map reads `get_editions_latest_fmv`,
+ *  not the `fmv_current` table, so its failure branch has to be reachable from
+ *  `st.fmv` — otherwise the "a failed All Day FMV map read is named" case would
+ *  seed an error nothing ever returns and pass on an empty board instead. */
+async function defaultRpc(name: string) {
+  if (name === "get_editions_latest_fmv") {
+    if (st.throwOn.has("fmv_current")) throw new Error("socket hang up")
+    if (st.fmv.error) return { data: null, error: st.fmv.error }
+    return { data: st.fmv.data, error: null }
+  }
+  return { data: [], error: null }
+}
+
 const get = (qs: string) => new Request(`https://t/api/sniper-feed${qs}`)
 const ADQS = "?collection=nfl-all-day&minDiscount=0&maxPrice=100000&rarity=all&team=all"
 const TSQS = "?collection=nba-top-shot&minDiscount=0&maxPrice=100000&rarity=all&team=all"
@@ -84,7 +97,7 @@ beforeEach(() => {
   st.badges = { data: [], error: null }
   st.throwOn = new Set<string>()
   rpc.mockReset()
-  rpc.mockResolvedValue({ data: [], error: null })
+  rpc.mockImplementation(defaultRpc)
   gqlOk = true
   gqlStatus = 200
   gqlThrows = false
@@ -147,6 +160,17 @@ describe("GET /api/sniper-feed — a failed source is never rendered as a quiet 
   it("a failed All Day FMV map read is named", async () => {
     st.editions = { data: [{ id: "e1", external_id: "555" }], error: null }
     st.fmv = { data: [], error: { message: "canceling statement due to statement timeout" } }
+    const body = await (await GET(get(ADQS))).json()
+    expect(body.sourcesFailed).toContain("allday-fmv")
+    expect(body.degraded).toBe(true)
+  })
+
+  it("a THROWN All Day FMV RPC is named (the catch, not the error branch)", async () => {
+    // supabase-js RETURNS errors, but the network layer under it still throws,
+    // and the two land in different branches. The case above pins the error
+    // field; this one pins the catch on the SAME read.
+    st.editions = { data: [{ id: "e1", external_id: "555" }], error: null }
+    st.throwOn = new Set(["fmv_current"])
     const body = await (await GET(get(ADQS))).json()
     expect(body.sourcesFailed).toContain("allday-fmv")
     expect(body.degraded).toBe(true)

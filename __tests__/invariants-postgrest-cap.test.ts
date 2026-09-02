@@ -91,7 +91,7 @@ describe("invariant: PostgREST 1000-row cap fixes stay fixed", () => {
     expect(src).toMatch(/\.range\(/)
   })
 
-  it("sniper-feed's All Day FMV map reads fmv_current and pages it with .range()", () => {
+  it("sniper-feed's All Day FMV map is bounded by an edition-id list", () => {
     const src = read("app", "api", "sniper-feed", "route.ts")
     // 2026-07-25: the AllDay leg built its FMV map from a raw, UNBOUNDED
     // `fmv_snapshots.eq(collection_id).order(computed_at DESC)` read, justified
@@ -101,8 +101,21 @@ describe("invariant: PostgREST 1000-row cap fixes stay fixed", () => {
     // than pricing it off its own ask, a truncated map drops most of the board.
     // This slipped past the preventive guard below because that allowlist is
     // per-FILE and this route was listed for its other, .in()-bounded TS read.
-    expect(src).toMatch(/\.from\(\s*["']fmv_current["']\s*\)/)
-    expect(src).toMatch(/\.range\(/)
+    //
+    // ⚠ NARROWED TO THE FUNCTION 2026-09-02. This used to assert
+    // `.from("fmv_current")` and `.range(` against the WHOLE FILE, which is the
+    // vacuous shape this repo keeps re-learning: when the All Day leg moved off
+    // the view entirely, both patterns still matched — the Top Shot leg's
+    // `fmv_current` read and the jersey read's `.range(` — so a case titled for
+    // All Day would have gone on passing with the All Day read deleted. Slice the
+    // function the title names.
+    const start = src.indexOf("async function computeAllDaySniperFeed(")
+    expect(start, "computeAllDaySniperFeed not found").toBeGreaterThan(-1)
+    const body = src.slice(start, src.indexOf("\n}\n", start))
+    expect(body).toMatch(/get_editions_latest_fmv/)
+    expect(body).toMatch(/p_edition_ids:\s*chunk/)
+    // the editions read that now carries the cap is itself keyset-paged
+    expect(body).toMatch(/\.gt\(\s*["']id["']\s*,\s*edCursor\s*\)/)
     // and the stale premise must not come back
     expect(src).not.toMatch(/fmv_snapshots is small for AllDay/)
   })

@@ -2232,11 +2232,31 @@ async function executeTool(
       // live check fails. It is NOT a price anything is offered at.
       let fmv: number | null = null;
       let confidence: string | null = null;
+      //
+      // 🚨 KEYED ON `edition_id`, THE VIEW'S OWN DISTINCT ON COLUMN — never on an
+      // embedded `editions!inner(external_id)` filter. `fmv_current` is
+      // `DISTINCT ON (edition_id)`: a qual on that column becomes an index
+      // condition, a qual on a JOINED table's column cannot and the planner
+      // builds the whole view to feed the join. Measured warm 2026-09-02, the
+      // equivalent join against one edition:
+      //
+      //     JOIN editions ON e.id = f.edition_id WHERE e.external_id = $1
+      //         .... 933,871 buffers (~7.3 GB)   1,390 ms
+      //     WHERE edition_id = $1
+      //         ....         6 buffers               0.06 ms
+      //
+      // …inside the 60 s concierge lambda, on every "what is this worth" turn.
+      // `edition.id` is in hand from the lookup above in BOTH branches, so the
+      // join was never needed. ⚠ It was also LESS correct: the embed matched on
+      // external_id alone with no collection scope, and Top Shot stores every
+      // moment twice (int-keyed and UUID-keyed — see keepCanonicalEditions
+      // above), so it could price the sibling row. This keys the edition the
+      // lookup actually resolved.
       try {
         const { data: f } = await supabase
           .from("fmv_current")
-          .select("fmv_usd, confidence, edition_id, editions!inner(external_id)")
-          .eq("editions.external_id", editionKey)
+          .select("fmv_usd, confidence, edition_id")
+          .eq("edition_id", edition.id)
           .limit(1);
         const row = (f ?? [])[0] as any;
         if (row) {

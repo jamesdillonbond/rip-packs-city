@@ -86,15 +86,40 @@ describe("sniper-feed: reads over the 1000-row cap stay paged", () => {
   // The PROPERTY the control was really protecting — the All Day FMV map is
   // bounded, never one unbounded read — still holds, and holds better. So the
   // case is inverted rather than deleted, and now pins the property.
+  //
+  // ⚠ INVERTED A SECOND TIME, 2026-09-02, for a REASON WORTH KEEPING: the first
+  // inversion pinned `.from("fmv_current").in("edition_id", chunk)` and justified
+  // it with "that qual reaches the index". It does — and it is still expensive,
+  // because the view has no per-group LIMIT, so the index-cond scan reads every
+  // snapshot row per edition and `Unique` discards all but the newest. Warm, same
+  // session, the whole 6,190-edition AD id list: 424,475 buffers / 631 ms for the
+  // view against 24,760 / 51 ms for `get_editions_latest_fmv()`'s per-id LATERAL
+  // LIMIT 1. **"Reaches the index" is not "is cheap".** The bound is what this
+  // case protects, so it follows the read rather than pinning where it lives.
   it("the All Day FMV map is bounded by an edition-id list, not a collection scan", () => {
     const body = fnBody("computeAllDaySniperFeed")
-    expect(body).toMatch(/\.from\(\s*["']fmv_current["']\s*\)/)
-    // The bound: chunked by the DISTINCT ON key.
-    expect(body).toMatch(/\.in\(\s*["']edition_id["']\s*,\s*chunk\s*\)/)
-    // And the shape that caused the timeout must NOT come back: a qual on
-    // collection_id against fmv_current materialises the whole view per page.
-    const fmvRead = body.slice(body.indexOf('.from("fmv_current")'))
-    expect(fmvRead.slice(0, 400)).not.toMatch(/collection_id/)
+    // The bound: chunked, and keyed on the ids the editions read just produced.
+    expect(body).toMatch(/\.rpc\(\s*["']get_editions_latest_fmv["']/)
+    expect(body).toMatch(/p_edition_ids:\s*chunk/)
+    expect(body).toMatch(/editionIds\.slice\(i,\s*i \+ FMV_RPC_CHUNK\)/)
+    // …and the chunk stays under the 1000-row cap, which applies to an RPC result
+    // set exactly as it does to a table read. Assert the VALUE, not the constant:
+    // raising it to 6,190 would keep every spelling above and silently truncate.
+    const chunkSize = Number(/FMV_RPC_CHUNK\s*=\s*(\d+)/.exec(body)?.[1])
+    expect(chunkSize).toBeGreaterThan(0)
+    expect(chunkSize).toBeLessThanOrEqual(1000)
+    // And the shape that caused the timeout must NOT come back. A collection-wide
+    // scan needs the view: pinning its ABSENCE here is narrower than grepping for
+    // `collection_id`, which this function legitimately uses on `editions`.
+    expect(body).not.toMatch(/\.from\(\s*["']fmv_current["']\s*\)/)
+  })
+
+  it("POSITIVE CONTROL: the fmv_current absence check can fail", () => {
+    // Without this, a rename of the function under test would leave an assertion
+    // that passes because it matched nothing — the failure mode that has killed
+    // three guards in this repo.
+    const reverted = `const { data } = await c.from("fmv_current").select("edition_id").eq("collection_id", X)`
+    expect(reverted).toMatch(/\.from\(\s*["']fmv_current["']\s*\)/)
   })
 
   it("the editions read that feeds it is itself paged", () => {

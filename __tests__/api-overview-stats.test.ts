@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for /api/overview-stats. Mocks @/lib/supabase's
 // supabaseAdmin: chained .from().select().eq() count queries (editions +
-// fmv_current HIGH — distinct latest-per-edition, NOT raw fmv_snapshots history)
-// plus two rpc() calls (get_market_pulse_all for the 24h
+// edition_fmv_current HIGH — distinct latest-per-edition, NOT raw fmv_snapshots
+// history) plus two rpc() calls (get_market_pulse_all for the 24h
 // volume, get_fmv_movers for movers). Pins the invalid-collection guard (200
 // zeros, DB untouched) and one mocked happy path (standard collection) that
 // asserts totals, HIGH-confidence count, resolved 24h volume, and movers.
@@ -13,13 +13,16 @@ const state = {
   highConfCount: 0 as number | null,
   marketPulse: [] as any[],
   movers: [] as any[],
+  /** Every table the route actually read, in order. */
+  tablesRead: [] as string[],
 }
 
 vi.mock("@/lib/supabase", () => {
   const builder = (table: string) => {
+    state.tablesRead.push(table)
     const result = () => {
       if (table === "editions") return { count: state.editionsCount, error: null }
-      if (table === "fmv_current") return { count: state.highConfCount, error: null }
+      if (table === "edition_fmv_current") return { count: state.highConfCount, error: null }
       return { count: 0, error: null }
     }
     const b: any = {
@@ -49,6 +52,7 @@ beforeEach(() => {
   state.highConfCount = 0
   state.marketPulse = []
   state.movers = []
+  state.tablesRead = []
 })
 
 describe("GET /api/overview-stats", () => {
@@ -78,6 +82,14 @@ describe("GET /api/overview-stats", () => {
     expect(body.movers).toEqual([{ edition_id: "u1", delta_pct: 12.3 }])
     // Sets the SWR cache header on the success path.
     expect(res.headers.get("Cache-Control")).toContain("s-maxage=300")
+    // 🚨 And it counted the MATERIALISED table, not the DISTINCT ON view. A
+    // collection_id qual against `fmv_current` cannot push down and materialises
+    // the whole view — measured 1,331,923 buffers / 14,085 ms for this one count,
+    // against 909 / 39 ms here. Assert the table, because the count comes back
+    // identical either way: the mock returns 5232 for whichever read fires, so
+    // nothing about the RESPONSE can tell the two apart.
+    expect(state.tablesRead).toContain("edition_fmv_current")
+    expect(state.tablesRead).not.toContain("fmv_current")
   })
 
   it("defaults to nba-top-shot when no collection param is given", async () => {

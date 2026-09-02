@@ -1091,10 +1091,10 @@ async function computeAllDaySniperFeed(opts: {
   //    rather than priced off its own ask, a truncated map would silently drop
   //    most of the board instead of merely mislabelling it.
   //
-  //    fmv_current is DISTINCT ON (edition_id) latest — <=1 row per edition, so
-  //    no JS dedupe is needed. `.gt("fmv_usd", 0)` filters the ~1,075 editions
-  //    whose newest snapshot is NULL server-side, so a map MISS and an unusable
-  //    FMV are the same condition for buildDeal.
+  //    Both the view and `get_editions_latest_fmv()` return the latest snapshot,
+  //    <=1 row per edition, so no JS dedupe is needed. The ~1,075 editions whose
+  //    newest snapshot is NULL land in the map as `fmv: null`, which buildDeal
+  //    drops — so a map MISS and an unusable FMV stay the same condition.
   //
   // 🚨 THE READ ORDER IS LOAD-BEARING, AND GETTING IT WRONG COST 45-SECOND
   // TIMEOUTS IN PRODUCTION. This used to page `fmv_current` filtered by
@@ -1111,11 +1111,27 @@ async function computeAllDaySniperFeed(opts: {
   // and `Vercel Runtime Timeout Error: Task timed out after 45 seconds` on the
   // SAME deployment and the SAME second — one request, both symptoms.
   //
-  // Inverting the order fixes it because `.in("edition_id", …)` IS the DISTINCT ON
-  // key, so PostgREST's `= ANY(array)` reaches the partitioned index. Measured the
-  // production shape, 40 editions: `Index Cond: (edition_id = ANY (...))` on all
-  // three partitions, **2,894 buffers / 21 ms** — about 72 buffers per edition, so
-  // ~3 s for the whole 6,190-edition catalogue instead of ~136 s.
+  // Inverting the order fixed the timeout because `edition_id` IS the DISTINCT ON
+  // key, so PostgREST's `= ANY($1)` reaches the partitioned index instead of
+  // materialising the view.
+  //
+  // ⚠ REACHING THE INDEX IS NOT THE SAME AS BEING CHEAP, and the first draft of
+  // this comment conflated the two. `fmv_current` has no per-group LIMIT, so an
+  // index-cond scan still reads EVERY snapshot row for each edition and lets
+  // `Unique` discard all but the newest. Measured warm 2026-09-02, the whole
+  // 6,190-edition AD id list, same session, bound-array form (what PostgREST
+  // actually sends):
+  //
+  //     fmv_current WHERE edition_id = ANY($1) ..... 424,475 buffers   631 ms
+  //     per-id LATERAL LIMIT 1 ..................... 24,760 buffers     51 ms
+  //
+  // …so the read now goes through `get_editions_latest_fmv()`, whose LATERAL stops
+  // at the first row per edition. 17x fewer buffers on an IO-bound instance.
+  //
+  // ⚠ That 17x is NOT the 249x an earlier benchmark of the same swap reported. That
+  // arm built its id array inside a materialised CTE, which defeats the index cond;
+  // PostgREST never sends that shape, so its 1.33M buffers measured the harness.
+  // Judge this on the bound-array arm.
   //
   // ⚠ The route's OWN `fetchFmvBatch` already used the `.in("edition_id", …)`
   // shape for Top Shot. The right pattern was in this file the whole time, one
@@ -1153,18 +1169,21 @@ async function computeAllDaySniperFeed(opts: {
       edCursor = next;
     }
 
-    // 1b. FMV keyed on the DISTINCT ON column, chunked to stay under PostgREST's
-    //     URL limit. This is the read whose SHAPE was the whole defect.
+    // 1b. FMV per edition through the LATERAL helper, keyed on the DISTINCT ON
+    //     column and chunked at 500 — the same bound the concierge uses, and well
+    //     under PostgREST's 1000-row cap, which applies to an RPC result set the
+    //     same way it applies to a table read. This is the read whose SHAPE was
+    //     the whole defect.
     const editionIds = Array.from(extByEditionId.keys());
-    for (let i = 0; i < editionIds.length; i += 500) {
-      const chunk = editionIds.slice(i, i + 500);
-      const { data: fmvRows, error: fmvErr } = await (supabase as any)
-        .from("fmv_current")
-        .select("edition_id, fmv_usd, confidence")
-        .in("edition_id", chunk)
-        .gt("fmv_usd", 0);
+    const FMV_RPC_CHUNK = 500;
+    for (let i = 0; i < editionIds.length; i += FMV_RPC_CHUNK) {
+      const chunk = editionIds.slice(i, i + FMV_RPC_CHUNK);
+      const { data: fmvRows, error: fmvErr } = await (supabase as any).rpc(
+        "get_editions_latest_fmv",
+        { p_edition_ids: chunk },
+      );
       if (fmvErr) {
-        console.error(`[sniper-feed] AD fmv_current error @chunk ${i / 500}: ${fmvErr.message}`);
+        console.error(`[sniper-feed] AD fmv error @chunk ${i / FMV_RPC_CHUNK}: ${fmvErr.message}`);
         sink.note("allday-fmv");
         break;
       }
@@ -1172,6 +1191,11 @@ async function computeAllDaySniperFeed(opts: {
         const ext = extByEditionId.get(row.edition_id);
         if (!ext) continue;
         const raw = row.fmv_usd == null ? NaN : Number(row.fmv_usd);
+        // Keep NULL as null — never 0, never the ask. The view read also carried a
+        // server-side `.gt("fmv_usd", 0)`; that was bandwidth, not correctness, and
+        // it is deliberately NOT reproduced here. buildDeal's own guard is what
+        // excludes a null/0 FMV, and two tests pin it — re-adding the filter here
+        // would make those tests pass on the filter instead of on the guard.
         fmvMap.set(ext, {
           fmv: Number.isFinite(raw) ? raw : null,
           confidence: String(row.confidence ?? "LOW"),

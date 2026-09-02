@@ -30,11 +30,17 @@ const rpc = vi.hoisted(() =>
 // "AD fmv_current statement timeout" + "Task timed out after 45 seconds" was.
 //
 // The route now reads AD `editions` FIRST — keyset-paged on `id`, an indexed
-// column on a plain table — and then chunks `fmv_current` by `.in("edition_id", …)`,
-// which IS the DISTINCT ON key and therefore reaches the index.
+// column on a plain table — and then asks for FMV BY EDITION ID.
+//
+// 2026-09-02 (second pass): that id-keyed read moved off `fmv_current` and onto
+// `get_editions_latest_fmv()`. Reaching the index is not the same as being cheap —
+// the view has no per-group LIMIT, so even an index-cond scan reads every snapshot
+// row per edition and lets `Unique` throw the rest away. Warm, same session, the
+// whole 6,190-edition AD id list: 424,475 buffers / 631 ms for the view versus
+// 24,760 / 51 ms for the helper's per-id LATERAL LIMIT 1.
 //
 // So the mock is: KEYSET-aware for `editions` (it slices st.editions.data and
-// records each cursor in st2.editionCursors) and IN-aware for `fmv_current` (it
+// records each cursor in st2.editionCursors) and ID-aware for the FMV RPC (it
 // returns only the rows whose edition_id was actually asked for, recording each
 // chunk in st2.fmvChunks). A mock that ignored the id list would let a route that
 // never filters pass.
@@ -55,7 +61,6 @@ vi.mock("@/lib/supabase", () => ({
         select: () => b, eq: () => b, order: () => b,
         in: (_col: string, list: string[]) => {
           inList = list
-          if (table === "fmv_current") st2.fmvChunks.push(list)
           return b
         },
         gt: (col: string, v: string) => {
@@ -92,6 +97,21 @@ vi.mock("@/lib/supabase", () => ({
 
 import { GET } from "@/app/api/sniper-feed/route"
 
+/** Default RPC behaviour. ID-aware for the FMV helper: it records the chunk it was
+ *  asked for and returns ONLY those rows, so a route that stopped passing ids —
+ *  or started asking for a whole collection again — cannot pass. Everything else
+ *  answers empty, which is what the GQL-fallback tests then override. */
+async function defaultRpc(name: string, params?: any) {
+  if (name === "get_editions_latest_fmv") {
+    const want: string[] = params?.p_edition_ids ?? []
+    st2.fmvChunks.push(want)
+    if (st.fmv.error) return { data: null, error: st.fmv.error }
+    const rows = st.fmv.data as Array<{ edition_id: string }>
+    return { data: rows.filter((r) => want.includes(r.edition_id)), error: null }
+  }
+  return { data: [], error: null }
+}
+
 // AllDay GQL fetch fixture.
 let gqlEdges: any[] = []
 let gqlHasNext = false
@@ -115,7 +135,7 @@ beforeEach(() => {
   st.fmv = { data: [], error: null }
   st.editions = { data: [], error: null }
   rpc.mockReset()
-  rpc.mockResolvedValue({ data: [], error: null })
+  rpc.mockImplementation(defaultRpc)
   gqlEdges = []
   gqlHasNext = false
   installFetch()
@@ -177,9 +197,10 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     gqlEdges = [node()]
     const body = await (await GET(get(ADQS))).json()
     expect(body.count).toBe(0)
-    // NOTE: the mock does not implement the route's server-side `.gt("fmv_usd",0)`
-    // filter, so this NULL actually reaches the map — which is the point: it
-    // exercises buildDeal's OWN guard, the second layer. The old
+    // NOTE: nothing filters this NULL out before the map — the route deliberately
+    // does NOT reproduce the old read's server-side `.gt("fmv_usd", 0)`, because
+    // that filter would make this test pass on the filter instead of on
+    // buildDeal's OWN guard, the second layer. The old
     // `Number(null) || 0` + `|| askPrice` combination produced a row labelled
     // confidenceSource "fmv_snapshots" with baseFmv == askPrice (60).
     expect(body.deals.some((d: any) => d.baseFmv === 0 || d.baseFmv === 60)).toBe(false)
@@ -219,7 +240,7 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
   // ever held a few hundred editions — and once a missing FMV EXCLUDES a row,
   // a truncated map silently drops most of the board. Now it reads fmv_current
   // (<=1 row/edition) and pages with .range().
-  it("pages fmv_current past the 1000-row cap so a high-offset edition still prices", async () => {
+  it("pages editions past the 1000-row cap so a high-offset edition still prices", async () => {
     // 1,500 editions: the target sits at index 1,200, i.e. only reachable on the
     // SECOND page. Under a single unbounded read it would be invisible.
     //
@@ -269,12 +290,12 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     expect(st2.editionCursors.length).toBeLessThanOrEqual(2)
   })
 
-  it("asks fmv_current for the EDITION IDS, never for the whole collection", async () => {
+  it("asks for FMV by EDITION ID, never for the whole collection", async () => {
     // 🚨 The defect was the read's SHAPE, not its size. `fmv_current` is
     // DISTINCT ON (edition_id): a qual on that key pushes into the index, a qual
     // on collection_id does not and materialises 274,519 snapshot rows per page.
-    // Pinning the .in() means a refactor back to a collection-wide scan reds here
-    // rather than in production's 45-second timeout.
+    // Pinning the id list means a refactor back to a collection-wide scan reds
+    // here rather than in production's 45-second timeout.
     st.editions = { data: [{ id: "E1", external_id: "555" }], error: null }
     st.fmv = { data: [{ edition_id: "E1", fmv_usd: 250, confidence: "HIGH" }], error: null }
     gqlEdges = [node()]
@@ -285,7 +306,7 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
   })
 
   it("stops chunking and degrades (no throw) when an fmv read errors", async () => {
-    st.fmv = { data: [], error: { message: "fmv_current down" } }
+    st.fmv = { data: [], error: { message: "fmv helper down" } }
     st.editions = { data: [{ id: "E1", external_id: "555" }], error: null }
     gqlEdges = [node()]
     const res = await GET(get(ADQS))

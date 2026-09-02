@@ -100,9 +100,30 @@ async function standardStats(collectionId: string) {
     // Count DISTINCT editions currently at HIGH confidence, not raw snapshot rows.
     // fmv_snapshots keeps daily history (many rows per edition), so counting it
     // returned ~14x the true number — more "high-confidence editions" than total
-    // editions. fmv_current is DISTINCT ON (edition_id) latest-per-edition.
+    // editions.
+    //
+    // 🚨 READS `edition_fmv_current` (a real table, refreshed hourly), NOT the
+    // `fmv_current` VIEW. The view is DISTINCT ON (edition_id), so a qual on
+    // `collection_id` — any column but the key — cannot push down: Postgres
+    // materialises the WHOLE view first. Measured 2026-09-02, this exact count:
+    //
+    //     fmv_current ......... 1,331,923 buffers   14,085 ms
+    //     edition_fmv_current .       909 buffers       39 ms
+    //
+    // 1,465x. It carries collection_id precisely so collection-scoped reads have
+    // somewhere to go. ⚠ The trade is hourly staleness: the two counts differed
+    // by 4 of 2,177 for Top Shot at the time of measurement, which an overview
+    // headline can absorb and a per-edition price could not.
+    //
+    // ⚠ AND THIS ROUTE HAS NO CALLER. Nothing in app/, lib/ or components/
+    // fetches it, and production logged ZERO requests to /api/overview-stats in
+    // 72h (the five collection /overview PAGES logged 5,824). So this is landmine
+    // removal, not a measured production win — do not quote the 14 s as time
+    // anyone waited. It is fixed rather than deleted because the next person to
+    // wire an overview panel would otherwise inherit the worst fmv_current shape
+    // in the repo, already written and looking reviewed.
     (supabaseAdmin as any)
-      .from("fmv_current")
+      .from("edition_fmv_current")
       .select("edition_id", { count: "exact", head: true })
       .eq("collection_id", collectionId)
       .eq("confidence", "HIGH"),
