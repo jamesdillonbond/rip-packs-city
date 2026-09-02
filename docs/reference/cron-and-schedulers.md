@@ -1162,3 +1162,66 @@ control that was wrong on the first attempt, is in
 `cron.job_run_details` (retention here is ~55 days, 201k rows — far longer than
 `pipeline_runs`' ~73 h) for jobs whose failures cluster at a single round duration. A
 job that fails at *exactly* the same number every time is at a ceiling, not flaky.
+
+
+## 🚨 A Next.js cron route can be SUPERSEDED BY AN EDGE FUNCTION and still look alive in the repo (2026-09-02)
+
+`app/api/cron/compute-laliga-pack-ev/route.ts` was fixed, tested and mutation-tested for a real
+truncation defect — and **it has not run since 2026-08-27.** The live Golazos pack-EV producer is a
+Supabase **edge function**: pg_cron **jobid 44 `rpc-compute-golazos-pack-ev`, `37 */6 * * *`,
+active** → `/functions/v1/compute-golazos-pack-ev`. The edge function does not share the defect; it
+writes `pack_drop_pool` per dist and iterates the ~40 distributions it already holds from upstream.
+
+### The one-query pre-flight, and where it belongs
+
+**Before touching anything under `app/api/cron/`, ask whether it runs:**
+
+```sql
+SELECT count(*) AS runs_73h, max(started_at) AS newest
+FROM public.pipeline_runs WHERE pipeline = '<pipeline-name>';
+-- zero rows is not proof; pipeline_runs retains ~73h. Then:
+SELECT count(*) AS days, max(day) AS last_day
+FROM public.pipeline_runs_daily WHERE pipeline = '<pipeline-name>';   -- indefinite
+```
+
+Zero in the first and a stale `last_day` in the second is the signature of a **superseded** route.
+⚠ **`pipeline_runs` alone cannot tell "never ran" from "ran outside retention"** — that is the
+documented retention artifact, and it is why the daily rollup is the second half of the check.
+
+### ⚠ THE MIGRATION IS INVISIBLE IN THE REPO
+
+The route still exists, still compiles, still has tests, still has a heartbeat call, and its name is
+still greppable. **Nothing in the source says an edge function took over.** The only evidence is
+runtime: `pipeline_runs_daily` stopping on a date, plus a `cron.job` whose command points at
+`/functions/v1/<name>` rather than `/api/cron/<name>`. Both halves of the fleet are in `cron.job`,
+so **read the PATH out of the command** — not just whether a job exists:
+
+```sql
+SELECT jobid, jobname, schedule, active,
+       (regexp_match(command, 'https?://[A-Za-z0-9._-]+(/[A-Za-z0-9/_.-]*)'))[1] AS path
+FROM cron.job WHERE command ILIKE '%<name>%';
+```
+
+⛔ **Project only the PATH, never the command.** The query string carries the gate key, and a
+truncating projection (`left(command, 140)`) has already leaked a partial one — a path-only regex
+stops before the `?`.
+
+### ⭐ A POST-DEPLOY CHECK THAT CAN ONLY CONFIRM IS NOT A CHECK
+
+This was caught by verifying, not by reviewing. The before/after in `pack_ev_history` showed the
+post-fix run writing **fewer** dists (23 vs 36–39), and chasing that disagreement is what surfaced
+`rows_found: 40` and the absence of the run's own new `extra` field — i.e. **those runs were never
+the fixed code's**. Had the number moved the flattering way it would have been recorded as verified.
+**Design the post-deploy check so a wrong fix produces a different number, and then go and read the
+number.**
+
+⚠ And the first metric reached for was the wrong SUBJECT: `pack_ev_history` rows grouped by minute
+look like "runs of my pipeline" and were another producer's. Same family as pairing a count from one
+table with a property from another — **the fixed code was compared against someone else's output.**
+
+### ⛔ AND STILL DO NOT DELETE IT
+
+No pg_cron job and no in-repo caller reference the route. That is five of the eight caller sources
+this file names — **cron-job.org and the Windows Task Scheduler on Trevor's box are invisible from a
+sandbox**, and both are documented as real producers of production traffic. A dead-code candidate is
+a filing, not a deletion.

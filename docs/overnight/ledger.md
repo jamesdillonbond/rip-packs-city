@@ -303,6 +303,40 @@ the answer is often "only one of six".**
 
 ### 2026-09-02 · ✅ SHIPPED — Golazos pack EV skipped 77 of 211 distributions per tick, and an AVERAGE was doing a bound's job on the ownership walk
 
+> 🚨 **CORRECTION, same day ~13:20 PT — THE GOLAZOS HALF OF THIS ENTRY IS OVERSTATED. The route it
+> fixes DOES NOT RUN.** Everything below about `pack_drop_pool` is true of the CODE and false as a
+> statement about production. `app/api/cron/compute-laliga-pack-ev/route.ts` has **zero rows in
+> `pipeline_runs`** across the whole ~73 h retention window — not even a heartbeat — and
+> `pipeline_runs_daily` (indefinite) shows its **last run was 2026-08-27**. It was superseded by a
+> Supabase **edge function**: pg_cron **jobid 44 `rpc-compute-golazos-pack-ev`, `37 */6 * * *`,
+> active**, calling `/functions/v1/compute-golazos-pack-ev` — which is what wrote the 00:37 / 06:37 /
+> 12:37 / 18:37 rows I later measured. ⛔ **And the live edge function does NOT have this defect at
+> all:** it *writes* `pack_drop_pool` per dist and computes EV by iterating the ~40 distributions it
+> already holds from the upstream GraphQL (`rows_found: 40`, never ~1,000). There is no unbounded
+> pool scan on the live path.
+>
+> ⭐ **This is "name the caller before you touch the function", and I did not.** I read the code,
+> measured the table, confirmed a real truncation, wrote tests and mutation-tested them — and never
+> asked whether that route executes. CLAUDE.md's own example for this rule is an afternoon spent on a
+> function with zero callers. **The measurement that would have caught it took one query**
+> (`SELECT count(*) FROM pipeline_runs WHERE pipeline = '<name>'`), and it belongs BEFORE the fix,
+> not after it.
+>
+> ⚠ **What caught it was verifying the fix, not reviewing it.** I checked `pack_ev_history` for a
+> before/after and the post-fix run had written FEWER dists (23 vs 36–39) — which is when the numbers
+> stopped matching my code at all (`rows_found: 40`, and my new `extra.pool_rows_read` absent). **A
+> post-deploy check that only confirms is not a check**; this one disconfirmed and that is why the
+> error is in this entry rather than in next month's assumptions.
+>
+> ✅ **The ownership-walk half of this entry is UNAFFECTED and stands** —
+> `app/api/cron/ownership-onchain-walk/route.ts` runs and its whale truncation was real.
+> ✅ The Golazos change itself is harmless and strictly more correct; it is dead code that is now
+> correct dead code. ⚠ **NOT deleted:** no pg_cron job and no in-repo caller reference it, but
+> **cron-job.org and Trevor's Task Scheduler are invisible from here**, and CLAUDE.md names both as
+> real caller sources. Deleting on a five-of-eight sweep is exactly the mistake this file warns about.
+> Filed as a dead-code candidate for Trevor rather than actioned.
+
+
 Two more confirmed out of known-issues #57. Both are the same silent shape as the badge/Pinnacle
 fixes above — a read that SUCCEEDS and returns the wrong rows — but each fails in its own way.
 
