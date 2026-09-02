@@ -10,6 +10,86 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED — a 9,859-row AllDay price recovery was moving at ONE row per tick because the claim had no `ORDER BY`, and the limit it asked for was not the limit it got
+
+**Migrations `…045049_audit_20260902_allday_price_recovery_claims_singleton_tx_candidates_instead_of_an_unordered_page`
+and `…045206_…claim_returns_resolution_hint_so_the_writer_cannot_blank_it`**, plus
+`app/api/admin/recover-v1-budget-exhausted/route.ts` and its test. Third and largest of the
+zero-yield finds, from the same 30-day census.
+
+**Every run of `allday-price-recover` said the same thing:**
+
+```
+candidates 1000 · distinct_txs 304 · skipped_multi_nft_rows 999
+fail_reasons {multi_nft_tx_total_unsplittable: 999} · tx_decode_ok 1
+```
+
+⭐ **It was not failing. It was reading the wrong 1,000 rows, over and over.** The route selected from
+`unmapped_sales` with **no `ORDER BY`**, so it got physical order — the same page every tick — and then
+discarded 999 of those rows because a multi-NFT V1-Dapper tx yields one gross DUC total that cannot be
+split per-NFT. **One row per tick, 72 ticks a day.**
+
+⚠ **And the limit it asked for was never the limit it got.** `CANDIDATE_LIMIT = 2000`, and PostgREST
+**clamps above 1,000** — which is why `extra.candidates` read *exactly* 1000 on every run for months.
+**That is what the documented cap looks like from the outside when nobody checks the number against
+what was asked for**, and it hid inside a constant that looks deliberate.
+
+**The population it was walking past** (unresolved · AllDay · `price_extraction =
+'v1_tx_decode_budget_exhausted'`):
+
+| | |
+|---|---:|
+| candidate rows | **47,691** |
+| distinct transactions | 21,409 |
+| **SINGLETON txs — one decode each, recoverable** | **9,859** ← starved |
+| rows inside multi-NFT txs — unsplittable here | 37,832 |
+
+At one row per tick the 9,859 need **~137 days**. The route's own 200 s budget at ~80 ms of pacing plus
+a Flow round-trip does hundreds per tick, so with the right candidates it is about a day's work — and
+those sales stop carrying a parked price of 0. `promote_unmapped_sales` then moves them into
+`public.sales`, which is FMV input, so this lands on the roadmap's accuracy gate rather than beside it.
+
+**The fix** is a claim RPC that applies the singleton-tx test in SQL and orders on the unique `id`.
+⛔ **It is not a new scan:** the partial index `idx_unmapped_allday_price_recover_targets` already
+exists for exactly this predicate and is ordered by `transaction_hash`, so the `PARTITION BY
+transaction_hash` window needs **no sort** — measured **95 ms, 27,194 buffers, ALL shared HIT and zero
+disk reads**, which matters because this instance's constraint is `shared_blks_read`.
+
+⚠ **The route's multi-NFT skip STAYS, and its test with it.** The RPC's answer is a snapshot; a sibling
+row for the same tx can land between the claim and the decode. Deleting the test because "the query
+prevents it now" would remove the only thing pinning the backstop.
+
+🚨 **A defect I introduced and caught before it shipped, and the shape is the transferable part.** The
+first version of the claim returned no `resolution_hint`. The route's write path does
+`{ ...(row.resolution_hint ?? {}) }`, strips two keys and writes the object **back** — so with the
+column missing, `?? {}` spreads to an empty object and the UPDATE would have **REPLACED the hint on
+every recovered row**, discarding every other key it held. ⭐ **A claim that returns FEWER columns is
+not free when the writer round-trips one of them** — `?? {}` turned a missing column into a positive
+claim that the object was empty, the fabricated-value shape in jsonb rather than in a number. **The
+existing test caught it**, because it asserts the SURVIVING content
+(`toEqual({ backfill: "allday_v1_history" })`) rather than the field's presence.
+
+ⓘ **Noticed while reading, NOT changed:** the route's *"fix an already-promoted price-0 sale in
+place"* branch keys on `row.resolved_at`, and both the old query and the new claim filter
+`resolved_at IS NULL` — so **production can never reach it.** It is pre-existing (the old read had the
+same filter), it is covered by a test that supplies a resolved row, and it is defensive rather than
+wrong. Recorded because a reader of that branch would reasonably conclude the pipeline handles
+already-promoted rows, and it does not.
+
+👉 **Follow-up, deliberately not bundled:** the 37,832 permanently-unsplittable rows still sit inside
+the candidate predicate, so the claim scans 47,691 to return 9,859 and, once drained, will scan 47,691
+to return none. Re-classifying them would shrink the scan to the live set — and
+`unmapped_sales_resolution_failures` **exists for exactly that and is EMPTY**, so the classification is
+recomputed and thrown away every tick. That is a 37,832-row data mutation and deserves its own change
+with its own revert path.
+
+**EXIT:** within a day, `extra.tx_decode_ok` in the hundreds per run and the singleton population
+falling from 9,859 toward 0. **FALSIFIER:** if `skipped_multi_nft_rows` is still ~999, the route is
+still reading the table — the claim did not take.
+**REVERT:** `git revert` the route commit and
+`DROP FUNCTION public.claim_allday_v1_price_recovery_candidates(integer);`. The function only READS;
+no data was mutated by either migration.
+
 ### 2026-09-01 · ✅ SHIPPED — every per-step counter a pipeline emits was being deleted after ~73 h; `pipeline_runs_daily` now keeps the VALUES, not just which keys existed
 
 **Migration `audit_20260902_pipeline_runs_daily_keeps_numeric_extra_values_not_just_key_presence`**
