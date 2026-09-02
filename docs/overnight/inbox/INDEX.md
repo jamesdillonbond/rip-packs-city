@@ -32,7 +32,7 @@ failure it documents.
 
 ## 2026-09-02 — 11 filings
 
-- [`sales-serial-backfill`'s Top Shot lane is 100% dead for 6 days, the cause is fully known per-row, and `pipeline_runs` only says `unknown`](2026-09-02T0855Z-sales-serial-backfill-topshot-lane-is-100pct-dead-for-6-days-and-pipeline_runs-only-says-unknown.md)
+- [⚠ HALF RESOLVED — `sales-serial-backfill`'s Top Shot lane is 100% dead for 6 days, the cause is fully known per-row, and `pipeline_runs` only says `unknown` (the AllDay `not_in` treadmill it also filed is GONE: 2,307 serials recovered locally, 0 targets left)](2026-09-02T0855Z-sales-serial-backfill-topshot-lane-is-100pct-dead-for-6-days-and-pipeline_runs-only-says-unknown.md)
 - [106 `audit_*` scratch tables hold 221 MB of a 14 GB database — and that number is the argument for leaving them alone](2026-09-02T0815Z-106-audit-scratch-tables-are-221mb-of-14gb-and-that-is-the-argument-for-leaving-them.md)
 - [pack-EV / `fmv_current`: both owed measurements are done in a QUIET window — and one of them refutes the earlier refutation's mechanism](2026-09-02T0700Z-pack-ev-the-two-owed-measurements-are-done-and-one-refutes-the-refutation.md)
 - [`/api/collection-stats` runs the same 19,942-probe FMV scan twice per request — and the number it recomputes is already precomputed](2026-09-02T0545Z-collection-stats-runs-the-same-19942-probe-fmv-scan-twice-per-request.md)

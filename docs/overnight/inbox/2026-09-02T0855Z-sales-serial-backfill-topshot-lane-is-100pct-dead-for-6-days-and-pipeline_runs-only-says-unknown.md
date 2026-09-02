@@ -78,3 +78,42 @@ Re-run the `failure_detail` breakdown. **If Top Shot's `http_530` and `http_429`
 the upstream recovered and this filing is a historical record, not an open item** — the lane needs no
 code to start working again. **The instrument half stays open either way:** `unknown` will hide the next
 cause exactly as well as it hid this one.
+
+---
+
+## 🔁 THE ALLDAY HALF IS GONE — and NOT by fixing the thing this filing proposed fixing
+
+Discharged 2026-09-02 ~02:1x PT, same session. This filing's "separate, DB-side finding" — `nfl_all_day`
+/ `onchain_nil` / `not_in`, **700 rows / 9,959 attempts since 08-07** — proposed an escalating cooldown
+in `get_serial_backfill_targets`, gated on a measurement of how many of the 700 were permanently
+unrecoverable.
+
+**That measurement is now unnecessary, because the rows are no longer targets at all.**
+`backfill_null_serial_sales_from_moments` gained a third `COALESCE` leg reading `nft_edition_map`
+(ledger 2026-09-02) and one unbounded pass wrote **2,307 serials**. AllDay's null-serial population with
+a real `nft_id` went **2,295 → 0**; UFC **10 → 0**; Golazos **2 → 0**.
+
+Re-measured after the drain:
+
+| | |
+|---|---:|
+| `get_serial_backfill_targets(allday, 1000)` | **0** |
+| `get_serial_backfill_targets(topshot, 1000)` | 69 (the rest of the 1,094 sit inside the 24 h cooldown) |
+| AllDay rows in `sales_serial_backfill_failures` | 2,144 |
+| …of those, whose sale now carries a serial | **2,144 — 100%** |
+
+The picker's leading predicate is `s.serial_number IS NULL OR s.serial_number = 0`, so a resolved sale
+is skipped **permanently and by construction**. The treadmill does not need a backoff; it has no fuel.
+
+⭐ **The lesson, and it is the reusable half.** The escalating-cooldown fix was scoped against the
+*retry* — how often we re-ask an upstream that keeps saying `not_in`. The actual defect was one level
+up: **the answer was already in our own database, in a table the resolver never read.** A backoff would
+have made the treadmill cheaper and left 2,180 sales permanently unpriced. 👉 **Before tuning how often
+you re-ask a failing upstream, check whether anything local already knows the answer** — a retry policy
+is a fix for a *rate*, never for a *gap*.
+
+⛔ **What this does NOT resolve, stated so nobody reads the zero as a green light:** the Top Shot lane's
+`http_530` / `http_429` deadness, and the `unknown` null-instrument in `pipeline_runs.extra`, are
+untouched. Top Shot's 1,094 remaining null-serial sales are exactly the ones only that lane can reach —
+`nft_edition_map` gained **2** of them. **The instrument half stays open, and it is now the whole of
+this filing.**

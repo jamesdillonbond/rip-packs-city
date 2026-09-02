@@ -10,6 +10,55 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the null-serial sale backfill reads `nft_edition_map` as a third source; 2,307 sales recovered, AllDay's remainder went to ZERO
+
+**What.** `public.backfill_null_serial_sales_from_moments` (pg_cron jobid 76, `5 * * * *`) resolved a
+missing `sales.serial_number` from only two sources — `moments`, then `wallet_moments_cache`. A third
+table, `nft_edition_map`, already held the answer for most of what those two missed. Added it as a
+**strictly third** `COALESCE` leg (it can never overwrite either predecessor) with the same `> 0`
+guard and the same collection scoping.
+
+**Why it was safe to add.** Positive control on sales that ALREADY carry a serial — the fix cannot
+move these — `nft_edition_map` agrees: AllDay 5,775/5,775 (1-in-20 hash sample) · Top Shot
+143,496/143,497 · UFC 1,351/1,351 · Golazos 463/463. **145,311 checked, 145,310 agree.**
+
+**Measured effect.** Ran once unbounded (`p_max_age_days => 3650`; the three-leg candidate scan is
+1.94 s / 33,602 buffers warm, inside the function's own 60 s `statement_timeout`) → **2,307 rows
+updated**. Null-serial sales carrying a real `nft_id`, before → after:
+
+| collection | before | after |
+|---|---:|---:|
+| `nfl_all_day` | 2,295 | **0** |
+| `nba_top_shot` | 1,094 | 1,094 |
+| `ufc_strike` | 10 | **0** |
+| `laliga_golazos` | 2 | **0** |
+
+Top Shot's 1,094 are genuinely unresolvable locally — that lane is the `sales-serial-backfill` edge
+function, filed separately as 100% dead for 6 days on Cloudflare `1033`/`1015`. Post-check:
+`0` non-positive serials across all 4,856,647 serialled sales.
+
+⚠ **Two independent gaps lived in this one function and I nearly shipped the wrong one.** My first
+sizing said "824 AllDay rows are one COALESCE away"; measuring *within* the 45-day window showed only
+1,096 candidates, **all Top Shot**, of which `nft_edition_map` gained **2**. The AllDay rows are all
+OLDER than 45 days — so the **age window**, not the missing leg, is what excluded them. Both gaps are
+real; the drain pass above closes the age one for the existing backlog, and the leg keeps it closed
+going forward for anything inside 45 days. **The default stays 45** so the hourly job's cost is
+unchanged.
+
+**Pinned.** `supabase/tests/backfill_null_serial_sales_from_moments.sql` gained the fixture table,
+6 rows and 4 assertions (nem wins alone · loses to `moments` · loses to `wmc` · `> 0` and
+collection-scoping both bind it); `__tests__/db-invariants-drift-guard.test.ts` repointed at the new
+migration in the SAME commit. All 180 SQL invariants pass against a throwaway PG 16, and 4 mutations
+(promote nem above wmc · drop its `> 0` guard · drop its collection scope · delete the leg) each go
+red on a named assertion.
+
+**Revert path.** DB: `CREATE OR REPLACE FUNCTION` from
+`supabase/migrations/20260705193000_audit_20260705_recover_null_serial_sales_from_moments.sql`
+(the two-leg version). Code: `git revert` the commit whose message begins
+`fix(db): null-serial sale backfill reads nft_edition_map`. ⚠ The 2,307 written serials are NOT
+reverted by either and should not be — they are correct values from a source that agreed 145,310/145,311.
+
+
 ### 2026-09-02 · ✅ VERIFIED + 📏 a 6-day-dead lane found while verifying it
 
 **The token fix is confirmed in production.** `sales-serial-backfill` ran **08:40:12Z, `ok: true`,
