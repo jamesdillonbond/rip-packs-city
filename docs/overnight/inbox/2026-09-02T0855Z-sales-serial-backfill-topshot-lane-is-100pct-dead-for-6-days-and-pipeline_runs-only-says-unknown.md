@@ -162,3 +162,40 @@ reach**, which is why the two halves of this filing had opposite outcomes.
 1. The Top Shot lane's `1033` / `1015` deadness (upstream; a breaker fixes the 530, a backoff the 429).
 2. `unknown` as the only `failures_by_reason` bucket Top Shot ever reports — the null instrument. The
    discriminator was already in `failure_detail`; only the aggregate dropped it.
+
+---
+
+## ⛔ The escalating backoff is NOT worth shipping for the Top Shot lane — measured, with the number
+
+The sibling 0435Z filing proposed an escalating cooldown keyed on
+`sales_serial_backfill_failures.retry_count`, and noted it is fixable **without a deploy** because
+`get_serial_backfill_targets` is a `LANGUAGE sql` DB function. Before shipping it I measured what it
+would actually buy, because *a decision not to act stated without a number is the one nobody
+re-checks*.
+
+| lane | open rows | avg `retry_count` | max | at ≥5 | at ≥10 | total attempts |
+|---|---:|---:|---:|---:|---:|---:|
+| `nba_top_shot` | 1,094 | **3.1** | 6 | 231 | **0** | 3,419 |
+| `nfl_all_day` | 67 | 1.0 | 1 | 0 | 0 | 67 |
+
+⭐ **The existing flat 24 h cooldown is already doing the work.** Over a ~6-day outage a row could
+have been retried ~72 times at the lane's 2-hourly cadence; the observed average is **3.1**, and the
+worst row is at **6**. An escalating cooldown would bite only the **231** rows at ≥5 and would trim a
+fraction of ~570 attempts/day.
+
+👉 **Contrast with the case the proposal was written for.** The AllDay `not_in` treadmill was **700
+rows / 9,959 attempts over 26 days ≈ 14 attempts per row**; Top Shot is **3.1 per row over 6 days**.
+**Same table, same picker, two orders of magnitude apart** — and the proposal's value came entirely
+from the AllDay shape, which no longer exists.
+
+⚠ **And the failure classes want opposite remedies, which is the deeper reason not to reach for the
+backoff here.** `not_in` is a statement about a ROW (this moment is not in that holder's collection —
+permanent until re-walked). `http_530` / `http_429` is a statement about the UPSTREAM, identical for
+every row. **A per-row backoff is the wrong instrument for a fleet-wide outage**: it penalises rows
+for something none of them caused, and it slows recovery for exactly the rows that failed most once
+the upstream returns. The right instrument is a **breaker** — stop asking while the upstream is down —
+and that lives in the edge function, which is deploy-gated.
+
+⛔ **So: not shipped, and not because it is risky — because it is worth about 20% of a small number,
+and it is the wrong shape for this failure class.** Re-open it if `retry_count` starts climbing past
+~10 while the upstream stays down, which would mean the flat cooldown has stopped bounding the churn.

@@ -68,6 +68,17 @@ change time.** Options, in increasing order of blast radius:
 exclusion: a stub that has failed 200 times does not deserve the same cadence as one that has failed
 once.
 
+⛔ **BUT DO NOT CARRY THAT RECOMMENDATION ACROSS TO THE SERIAL-BACKFILL LANE, WHERE IT WAS ALSO
+PROPOSED — measured 2026-09-02 and it is worth ~20% of a small number there.** That lane already has a
+flat 24 h cooldown and it is working: over a ~6-day upstream outage its rows average **3.1** retries
+against a possible ~72, max 6, none at ≥10. The AllDay case the proposal was written for was **14
+attempts per row over 26 days** — two orders of magnitude apart, same table, same picker.
+⭐ **And the failure classes want opposite instruments:** `not_in` is a statement about a ROW, so a
+per-row backoff fits; `http_530`/`http_429` is a statement about the UPSTREAM, identical for every
+row, so a backoff penalises rows for something none of them caused and slows recovery for the ones
+that failed most. **That one wants a breaker, not a backoff.** Detail:
+[inbox 2026-09-02T0855Z](2026-09-02T0855Z-sales-serial-backfill-topshot-lane-is-100pct-dead-for-6-days-and-pipeline_runs-only-says-unknown.md).
+
 ## Falsifier / re-derive before acting
 
 Re-run the rollup query above. **If `rows_written` over the trailing 30 days is materially above ~40,
