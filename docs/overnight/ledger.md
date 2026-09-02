@@ -10,6 +10,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — a RATCHET so the tenth shape cannot grow back where it does damage
+
+**File:** `__tests__/consequential-read-binds-its-error-ratchet.test.ts`. No code, no DB change.
+
+Tonight's sweep fixed seven routes by hand. This makes the class **measurable and non-growing** in the
+place it does damage.
+
+**The guard walks a tree, not a list:** every `app/api/**/route.ts` whose stripped source contains a
+**landing expression** (`retry_count` · `RETRY_COUNT_CAP` · `UNRESOLVABLE` · `resolved_at` ·
+`last_processed_block`) — **35 routes** — and counts `const { … } = await …supabaseAdmin…`
+destructurings that bind no `error`. 👉 **The discriminator is the LANDING, not the expression**, which
+is why it does not walk all of `app/`.
+
+**Baseline 61 occurrences across 20 files, measured 2026-09-02.** ⚠ **It is a ratchet, not a ban, and
+the honest claim is "this must not GROW here" — NOT "these are 61 bugs."** Most are probably harmless
+even inside these files; deciding that needs reading each one, which is the next pass's work, and the
+number is what makes that progress visible.
+
+⛔ **A per-file allowlist was rejected on this repo's own record:** it has to be re-read by every future
+auditor, and three guards have already died on a rename. **A count is rename-proof.**
+
+⚠ **Three not-vacuous floors, because a guard that inspects nothing passes.** `filesMatching` returns
+`[]` for a missing root; `stripComments` has blanked real source three times in this repo. So the guard
+asserts the family is **≥ 30**, that four named routes are still discovered, and — the one that matters
+— that the detector still finds **≥ 20** occurrences. Without that third floor a blanked tree reads as
+a clean zero.
+
+⛔ **And the five fixed routes are PINNED at zero**, so a revert reds a test instead of quietly
+restoring the defect.
+
+⚠ **Mutation-checked in BOTH directions:** lowering the baseline to 60 reds the ratchet (`rose to 61`),
+and re-introducing one discarding read into `topshot-offers-indexer` reds both the ratchet and that
+route's pin.
+
+**Verified:** full suite **1420 files / 15,680 tests green**; `tsc --noEmit` clean; eslint ratchet
+**717 = baseline**. Four swept indexers: **10 post-deploy runs, 0 failures.**
+
+**Revert:** `git revert` the commit.
+
 ### 2026-09-02 · 📏 WATCHED THE SECOND TICK — `allday-price-recover` is doing exactly what it should, and my own alarm about it was a plausible mechanism rather than a measurement
 
 **No change shipped.** Follow-up on tonight's singleton-tx claim fix, plus a self-correction.
