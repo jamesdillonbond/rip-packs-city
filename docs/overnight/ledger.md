@@ -10,6 +10,74 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED — DB · lock-check now prioritises USER wallets over seeded coverage (the defect two entries below, fixed)
+
+**Migration:** `20260902034649_audit_20260902_lock_check_batch_prioritises_user_wallets_over_seeded_coverage`
+**Revert:** re-apply the previous body — identical except `hot` selects only `addr`, the priority branch
+orders by `w2.lock_checked_at ASC NULLS FIRST` alone, `dedup` has no `is_user`, and `ranked` orders by
+`is_priority DESC, lock_checked_at ASC NULLS FIRST`. Full prior body is in the entry two below and in
+the migration header. No data change, no schema change, signature byte-identical.
+
+**The defect (measured, 24 h, `nba_top_shot`):** `lock-check-batch` green on every instrument — 48/48
+runs, 19,200 found, 19,184 written, exactly its designed rate — while those checks reached **12
+wallets, 69.2 % to one, and ALL TWELVE SEEDED**. The 31 user wallets (saved + linked) holding TopShot
+moments hold **212,201 rows, 100 % qualifying**, and had received **0 checks in 24 h, 230 in 30 d**.
+`hot` UNIONed seeded/saved/linked with **no preference among them**; with 1,474,231 NULL
+`lock_checked_at` values every candidate ties, so an unspecified tie-break was the entire targeting
+algorithm and seeded won on mass (274 wallets with work vs 31; largest holds 21,124 moments).
+
+**The change:** carry `is_user` through `hot → cand → dedup` and rank on it first.
+⚠ **The load-bearing detail is easy to miss:** the priority branch has its **own** `LIMIT p_limit`, so
+`is_user DESC` had to be added to **that branch's ORDER BY too** — otherwise user rows are discarded
+there before the final ranking ever sees them.
+
+**Untouched, deliberately:** throughput, batch size, cadence, the per-wallet inner `LIMIT`, and the
+non-priority fallback leg. This changes **who** is served, not how much.
+
+### Verified (each read AFTER applying, in its own step)
+
+| check | result |
+|---|---|
+| overloads | **1** — signature identical, no new overload |
+| ACL | `postgres=X/postgres \| service_role=X/postgres` — unchanged, no anon/authenticated |
+| `check_secdef_anon_execute_violations()` | **`[]`** |
+| `db:pins:check` | 189/189 clean |
+| live call, `nba_top_shot` | **200/200 user-wallet rows** (was 0/200) |
+| live call, `disney_pinnacle` | **170/200 user rows across 8 wallets** (was 0/200) |
+| cost | **16,201 buffers** for the full shape — no regression (priority leg alone was 21,725) |
+
+⚠ **`count(*)` on that violations check reads 1 and means nothing** — it returns ONE ROW containing an
+array. Read the value, not the row count. I made that exact error and caught it on the re-read.
+
+### ⛔ NOT yet verified, and this is the binding one
+
+**Verify on ROWS WRITTEN PER WALLET CLASS, never on `ok`.** This pipeline has been green and wrong for
+its entire life; a throughput arm cannot see a targeting failure. The real positive control is a
+`lock_checked_at` bump on a saved/linked wallet after a genuine tick:
+
+```sql
+select count(*) filter (where w.lock_checked_at > now() - interval '1 hour') as checks_1h
+from wallet_moments_cache w join collections c on c.id = w.collection_id
+where c.slug='nba_top_shot' and w.wallet_address in (
+  select wallet_addr::text from saved_wallets
+  union select parent_addr::text from linked_accounts
+  union select child_addr::text from linked_accounts);
+```
+
+**If user wallets are still at 0 after a few ticks, revert — do not rationalise.**
+
+### Open, recorded rather than guessed
+
+- **Breadth within the user tier.** TopShot returned 200/200 to a *single* user wallet (Pinnacle spread
+  across 8, because its user wallets are smaller). All 31 user wallets clear in ~22 days at today's
+  unchanged rate, largest first. Capping per-wallet contribution would spread it — but that is **not**
+  exactness-preserving, since one wallet can legitimately own all 200 rows of the correct answer.
+  Deliberately left as a decision, not slipped in.
+- **Capacity is untouched and unreachable.** The 7-day target implies ~271,000 checks/day; actual is
+  ~9,590 (**3.5 %**), and 1,474,231 rows have never been checked. `p_max_age_days` is therefore
+  **inert** — NULLs permanently sort ahead of anything timestamped, so nothing checked is re-checked.
+  This sends scarce capacity to the right wallets; it does not create capacity.
+
 ### 2026-09-01 · ✅ CLOSED #47 — the experiment's falsifier is ANSWERED and NOT met (kills stopped), but the recovery is NOT cleanly attributable to the change that was supposed to cause it
 
 **Session:** Claude Code interactive, Trevor's box, ~20:2x PT. Measurement only; **nothing changed.**
