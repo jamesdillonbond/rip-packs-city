@@ -140,3 +140,60 @@ changes what the product promises about lock freshness, so it belongs to Trevor 
 **Cheapest thing that would settle it:** ask which wallets are actually *viewed*. If the busiest
 wallet is an institutional/seeded address nobody opens, the current allocation is pure waste and the
 cap is a clear win. `page_views` or the saved-wallet table would answer it in one query.
+
+---
+
+## ✅ THE OWED VERIFICATION IS DONE — 2026-09-02 ~02:5x PT (09:5xZ), ~6 h after the change landed
+
+This filing closed with *"Still verify on **rows written per wallet class**, not on `ok` — this
+pipeline has been green and wrong for its entire life, and a throughput arm cannot see the
+difference."* The prioritisation shipped at **03:50Z** (`20260902035016`,
+`lock_check_batch_prioritises_user_wallets_over_seeded_coverage`). Here is that verification.
+
+**Method.** Two EQUAL 3 h 50 m windows either side of 03:50Z — equal length on purpose, because
+"distinct wallets in a window" grows with window length and an unequal comparison flatters the later
+half. A wallet counts as a USER wallet if it appears in `saved_wallets.wallet_addr` or
+`wallet_links.cadence_addr`; everything else is seeded coverage.
+
+### `nba_top_shot` — the lane this filing measured
+
+| window | wallets | rows checked | **user wallets** | **user rows** | **user share** |
+|---|---:|---:|---:|---:|---:|
+| 00:00–03:50Z (before) | 7 | 1,600 | **0** | **0** | **0 %** |
+| 03:50–07:40Z (after) | **2** | 1,600 | **2** | **1,600** | **100 %** |
+
+**Identical throughput, and the recipient class flipped completely: 0 % → 100 %.**
+
+🚨 **And note what the obvious metric would have said.** Wallets touched went **7 → 2**. A breadth arm
+— the very thing this filing argued was missing — would have read this fix as a **regression**. The
+class split is the only view in which it is a success, and it is the view the filing asked for.
+⭐ **A throughput arm could not see the fairness failure; a breadth arm cannot see the fairness fix.
+Neither is a substitute for asking who actually received the work.**
+
+### `nfl_all_day` — the other lane, same windows, much smaller effect
+
+| window | user wallets | user rows | seeded wallets | seeded rows | user share |
+|---|---:|---:|---:|---:|---:|
+| before | 4 | 3,961 | 62 | 90,320 | 4.2 % |
+| after | **8** | **5,441** | 80 | 76,495 | **6.6 %** |
+
+Twice the user wallets served and +37 % user rows, on 13 % lower total throughput. Real but modest —
+**AllDay is not where this filing's starvation lived**, and its 18 user wallets (of 268 total with
+AllDay rows) still receive under 7 % of the lane's work.
+
+### ⚠ What this does NOT establish
+
+- **One window each side, on one day.** A direction, not a distribution. Re-run over a week before
+  quoting these as steady state.
+- **Not isolated.** Plenty else runs on this instance; the 13 % AllDay throughput dip in particular is
+  as likely to be load as to be the change. What is not plausibly noise is Top Shot's **0 % → 100 %**
+  class flip at constant row count.
+- ⛔ **The arithmetic gap is untouched, exactly as this filing predicted.** Top Shot still holds
+  **1,471,944** rows with `lock_checked_at IS NULL` (of 1,904,528), and the lane is running ~400
+  rows/h ≈ **9,600/day**, so the never-checked backlog alone is still **~153 days**. **The change
+  decided who gets the scarce capacity. It did not create any.** The `p_max_age_days` predicate
+  remains inert for as long as 1.47 M NULLs sort ahead of every timestamped row.
+
+👉 **Still open, and now the whole of this filing:** the capacity question (271,000 checks/day needed
+vs 9,600 actual) and the NULL tie-break that makes `p_max_age_days` a no-op. Neither is an
+optimisation — both need a decision about what lock freshness is supposed to promise.
