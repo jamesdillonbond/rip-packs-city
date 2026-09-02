@@ -514,10 +514,14 @@ rows, extracts every `public.<fn>(` named in each command, and returns
 `{inspected, offenders}` — offenders being names no overload of which `cron_heavy` may
 execute. `inspected` exists so a walk that matched nothing cannot read as a clean bill of
 health. Live at creation: **inspected 56, offenders 0**.
-⚠ It is a DB-side function with **no scheduled caller yet** — call it after creating any
-function you intend to schedule, and treat that as the same reflex as re-running
-`check_secdef_anon_exec_drift()`. Wiring it into the sentinel is the obvious next step and
-is deliberately NOT claimed as done.
+✅ **AND IT IS WIRED, same session** — an unrun check is the shape this repo calls theatre.
+It is an arm of `/api/smoke-test` (`cron_heavy can execute every function it is scheduled
+to call`), which runs on **every push to `main`**, daily at 12:11 UTC via
+`smoke-tests.yml`, and 6×/day on the Vercel cron `17 */4 * * *`. It is HARD (it pages), it
+fails closed on any payload that is not `{inspected, offenders}`, and an `inspected` below
+20 is reported as a BROKEN GUARD rather than a clean run. Still call it by hand after
+creating any function you intend to schedule — same reflex as re-running
+`check_secdef_anon_exec_drift()` — but nothing now depends on remembering to.
 
 **THE RULE, both halves:**
 1. **After scheduling any pg_cron job under a non-`postgres` role, assert `has_function_privilege('<role>', '<fn>(<args>)', 'EXECUTE')`** — scheduling a job does not imply permission to execute what it calls.

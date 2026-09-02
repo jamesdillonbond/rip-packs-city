@@ -999,9 +999,13 @@ the conflict was undocumented. It was documented; it recurred anyway, because a 
 is read after you know your topic and this trap fires while you are thinking about anon
 safety rather than scheduling. **So the deliverable is the check, not the note:**
 `check_cron_heavy_job_exec_drift()` walks `cron.job` and returns `{inspected, offenders}`
-(live: 56 / 0). ⛔ **Run it after creating ANY function you intend to schedule**, and pair
-the schedule with `GRANT EXECUTE … TO cron_heavy` — 48 of the other 49 cron_heavy-called
-functions already carry `cron_heavy=X/postgres`.
+(live: 56 / 0), **and it is wired into `/api/smoke-test` as a hard arm** — every push to
+`main`, daily at 12:11 UTC, and 6×/day on the Vercel cron. It fails closed on an
+unexpected payload shape and reports `inspected < 20` as a broken guard rather than a
+clean run, because `offenders: []` from a walk that saw nothing is exactly the empty-set
+pass this repo keeps re-finding. ⛔ **Still run it by hand after creating ANY function you
+intend to schedule**, and pair the schedule with `GRANT EXECUTE … TO cron_heavy` — 48 of
+the other 49 cron_heavy-called functions already carry `cron_heavy=X/postgres`.
 
 ✅ **Verified end-to-end through a temporary second `cron_heavy` job, since a
 `cron_heavy`-owned job cannot be `cron.alter_job`'d from any session-reachable role** (the

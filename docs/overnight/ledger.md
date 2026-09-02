@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the cron_heavy execute-drift check is now RUN, not just written
+
+**What shipped.** A new hard arm on `/api/smoke-test`: *"cron_heavy can execute every
+function it is scheduled to call"*, calling `check_cron_heavy_job_exec_drift()` (created
+earlier today in `20260902113501`). Five tests plus a positive control in
+`__tests__/api-smoke-test-deep.test.ts`; the pinned battery counts move 55→56 and hard
+43→44.
+
+**Why, immediately rather than "next".** The check was created hours earlier and had **no
+caller** — which is precisely the shape this repo calls theatre, and the same gap that let
+the trap it detects recur four times. It now runs on every push to `main`, daily at 12:11
+UTC (`smoke-tests.yml`), and 6×/day on the Vercel cron `17 */4 * * *`.
+
+⚠ **The arm checks `inspected`, not only `offenders`.** The guard regex-extracts
+`public.<fn>(` from each `cron.job` command; if that walk ever stops matching it would
+report zero offenders and read as clean. Anything under 20 pairs is reported as a BROKEN
+GUARD (`couldNotRun`), never as a pass. It also fails closed on any payload that is not
+`{inspected, offenders}` — this is the ONE guard RPC here returning a jsonb object rather
+than an array, so the existing array-shaped fail-closed tests did not cover it.
+
+**Mutation-tested, both directions.** Removing the `inspected < 20` branch reds the
+empty-set test; letting a missing `offenders` fall back to `[]` reds the shape test. The
+green-state positive control keeps it from being green-by-breaking-it.
+
+**Revert path.** `git revert` the commit, or find it by message
+`feat(smoke): a cron_heavy job that cannot execute its own function is a hard failure`.
+No DB half — `check_cron_heavy_job_exec_drift()` already exists and is unchanged.
+
 ### 2026-09-02 · ✅ SHIPPED — the Top Shot on-chain re-key was being ROLLED BACK on half its runs, and moved to pg_cron
 
 **What shipped.** Migration `20260902112507` (`run_topshot_onchain_rekey()`), pg_cron
