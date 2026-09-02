@@ -10,6 +10,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · 📏 RE-DERIVED — R25's headline is resolved, R53's cost figure has fallen 2.9×, and one comparison was nearly a retention artifact
+
+**No code, no DB change.** Two register rows re-measured rather than inherited, per the standing rule
+that a filed finding is a hypothesis.
+
+**R25 — "8 `rpc_thp_leg_*` jobs have zero `pipeline_runs` observability" is RESOLVED.** All eight now
+dispatch through `run_thp_leg_logged(<leg>::regprocedure, '<name>')`, and over 72 h measured on BOTH
+instruments **95 of 96 dispatches carry a `pipeline_runs` row** (plus a `-heartbeat` row each). The one
+gap is `board-liveness`, whose cron run FAILED — a killed run cannot log itself.
+
+⚠ **AND THE COMPARISON WAS NEARLY WRONG.** Measured over **7 days** it reads **12 logged against 28
+dispatched** — a 57% logging gap that does not exist. `pipeline_runs` retains **~73 h**; `cron.job_run_details`
+does not. 👉 **Two instruments with different retentions cannot be differenced over a window longer than
+the shorter one.** The 72 h window is the whole of the correction.
+
+🚨 **The structural residual is now the whole of R25:** every logged run reads `ok = true` while
+`cron.job_run_details` records real failures, because **a wall-killed leg writes no terminal row at
+all** — the failure is ABSENT, not failed, exactly like the `after()` kill class. The only detector is
+the CORRELATION (dispatch present, terminal row missing).
+
+**R53 — the 437 min/week must not be re-quoted.** Same instrument, same 7-day shape:
+
+| leg | R53 (08-23) | now |
+|---|---|---|
+| family total | **437 min/wk** | **149 min/wk** |
+| `impossible-parallel` p50 · fails | 489 s · 9/26 (34.6%) | **187 s · 3/28 (10.7%)** |
+| `fmv-coverage` p50 | 233 s | **2 s** |
+| `serial-supply` p50 | 80 s | **12 s** |
+
+⚠ **The delta is RECORDED, not ATTRIBUTED** — several unrelated changes landed in between and no cause
+was measured. `impossible-parallel` still reaches `max 600 s`, so it still hits the wall; what changed is
+that its p50 sits at **3.2× headroom** instead of the 1.2× that made ordinary variance fatal.
+
+✅ **The actionable half of R53's sentinel finding has SHIPPED since:** `v_rpc_trust_health_freshness`
+publishes `computed_at` / `age_hours` / `is_stale` per metric (19 metrics, all `is_stale = false`,
+oldest 5.94 h). *"The metric goes STALE rather than reading 999"* is no longer invisible — staleness is
+a column. ⭐ **The general lesson survives and is the part to carry: a sentinel that cannot fire on its
+most common failure is not a sentinel — measure the metric's AGE, never only its value.**
+
 ### 2026-09-01 · ✅ SHIPPED — deep-audit D39 closed: the alert path can now see its own cache going stale, and the obvious fix was the wrong one
 
 **Migration `audit_20260902_alerts_see_the_unmapped_backlog_cache_going_stale_instead_of_reading_its_last_good_payload_as_current`**
