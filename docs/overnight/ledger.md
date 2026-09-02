@@ -287,9 +287,24 @@ to return none. Re-classifying them would shrink the scan to the live set — an
 recomputed and thrown away every tick. That is a 37,832-row data mutation and deserves its own change
 with its own revert path.
 
-**EXIT:** within a day, `extra.tx_decode_ok` in the hundreds per run and the singleton population
-falling from 9,859 toward 0. **FALSIFIER:** if `skipped_multi_nft_rows` is still ~999, the route is
-still reading the table — the claim did not take.
+✅ **VERIFIED IN PRODUCTION on the first tick after the deploy** (05:20:14Z) — **500× the throughput:**
+
+| | before (05:00) | after (05:20) |
+|---|---:|---:|
+| `candidates` | 1000 *(clamped from 2000)* | **500** *(asked for, and got)* |
+| `skipped_multi_nft_rows` | **999** | **0** |
+| `tx_decode_ok` | **1** | **500** |
+| `updated_unmapped` / `rows_written` | 1 | **500** |
+| `still_uncertain` | 0 | **0** — every one decoded |
+| duration | 1,140 ms | 107,714 ms *(of a 200 s budget)* |
+
+**1 row per tick → 500.** The 9,859-row backlog is ~20 ticks — about **seven hours**, against the ~137
+days it was on. The EXIT is met on the first observation and the falsifier (`skipped_multi_nft_rows`
+still ~999) did not fire.
+
+ⓘ `promoted: 0` on that tick is expected and is not this change: `promote_unmapped_sales` needs
+price > 0 **AND** an edition mapping, and the mapping is filled by a different job. The prices are now
+there for it to find.
 **REVERT:** `git revert` the route commit and
 `DROP FUNCTION public.claim_allday_v1_price_recovery_candidates(integer);`. The function only READS;
 no data was mutated by either migration.
