@@ -10,6 +10,69 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the sniper's badge map saw 10.6% of the table, and its "small table" comment was the reason
+
+Found while triaging the sniper-feed timeouts, one layer under the honesty fix above. Two reads in
+`/api/sniper-feed` had silently outgrown PostgREST's 1,000-row cap.
+
+**Measured live 2026-09-02:**
+
+| read | rows | returned | coverage |
+|---|---|---|---|
+| `badge_editions`, Top Shot scope | **9,471** | 1,000 | **10.6%** |
+| `players`, `nba_top_shot` with a jersey number | **1,317** | 1,000 | 76% |
+
+Both were bare `.select()`s. **Nothing fails**: PostgREST returns 1,000 rows and no error, no page
+comes back short, and the map is simply wrong. `hasBadge` was false for ~89% of the editions that
+actually carry a badge, and ~24% of players never had their jersey serials flagged.
+
+⭐ **The comment WAS the defect.** The badge read carried an explicit justification —
+*"Safe because badge_editions is a small table (hundreds of rows)"* — plus a measured
+*"4,981 rows / 4,981 distinct"*. Both were true when written. The table has since nearly doubled, and
+a reader who checks the justification finds a number and stops. **A row count in a comment is a
+DATED SAMPLE, never a bound**, which is the same rule this repo's memory files already apply to
+themselves and had not applied to code.
+
+⛔ **The worse consequence is a control that claims a filter it applied to a truncated map.** With the
+cap in place, ticking **Badges only** hid ~89% of the badged listings that exist and the board read
+as nearly empty — and it reads as empty *honestly*, because no read errored. The degraded-source
+signal shipped this morning cannot see it: that is the third state (read ok + truncated), not the
+first.
+
+⚠ **The existing cap guard could not see it either, and the reason is durable.**
+`invariants-postgrest-cap.test.ts` is scoped to ONE idiom — a raw `fmv_snapshots` read ordered
+`computed_at DESC` — so it is structurally silent about every other unbounded read, **including two
+in a file its own allowlist already names.** A guard's DERIVATION fixes its blast radius; being
+listed in one does not mean a file is covered.
+
+**Fix.** Badges page by **KEYSET**, not offset: `external_id` is unique within the collection (9,471
+of 9,471), so `.gt(external_id, cursor).limit(1000)` is both deterministic and O(n). Measured on the
+last page: **keyset 1,935 buffers / 118 ms vs the equivalent `.range()` page at 7,698 / 187 ms** — an
+OFFSET page re-walks every row before it, so a ten-page read pays that quadratically. Jersey numbers
+page with `.range()` over `id` (two pages; not worth a cursor).
+
+**A SWEEP came out of it, and it is filed rather than shipped.** Crossing every `.from(t).select()`
+in `app/` + `lib/` against `pg_class.reltuples > 1000` gives 197 sites; narrowing to reads with **no
+row-bounding filter at all** (no `.in()`, `.range()`, `.limit()`, `.single()`, count-head) leaves
+**19**. Several look like the same defect on other surfaces — `lib/sniper/pinnacle.ts:30` reads
+`pinnacle_catalog` (2,600 rows) unbounded, and `lib/concierge/fmv-distribution.ts:202` and
+`app/api/support-chat/route.ts:2172` both read `editions` (27,350 rows) scoped only by collection.
+⚠ **Not yet verified — a static heuristic is a candidate list, not a finding.** known-issues #57.
+
+**Verification.** 1,427 files / 15,789 tests green; `tsc` clean; ratchet 717 = baseline. Four
+behavioural cases drive the paging through a sequence fixture (a badge that exists ONLY on page two
+must reach the deal, and must reach the `badgeOnly` filter); three source pins hold the shape.
+Mutation-tested: single-page, no-short-page-break and throw-on-page-error all red.
+
+⚠ **Two testing traps hit while writing those.** (1) A `/\.range\(/` assertion SURVIVED a mutant that
+deleted the call — the source COMMENT beside it says ".range()" too. Fixed by pinning the paging
+EXPRESSION rather than the word, which needs no comment stripper. (2) `makeSupabaseFixture` was built
+ONCE in that suite's mock, and a SEQUENCE fixture's cursor lives inside the instance and is not reset
+by clearing `fx.tables` — so the third test to use a sequence started mid-array and reds correct
+code. The client is now rebuilt per `seed()`.
+
+**Revert path:** `git revert <sha>`. Code-only, no DB or schema change.
+
 ### 2026-09-02 · ✅ SHIPPED — the Pack Sniper told four users to widen their filters while NFL All Day was 403ing it
 
 The flagship deal-finding surface, and the same class as the four insights boards above — but

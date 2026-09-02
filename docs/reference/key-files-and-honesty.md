@@ -1036,3 +1036,62 @@ of a read that can fail needs a don't-cache-the-failure rule, however short the 
 arms** (`fetchTopShotPool`, the All Day FMV map build), reachable only by a THROW and not by
 supabase-js's RETURNED `error`. ⚠ **supabase-js returning errors rather than throwing means the two
 branches need two fixtures; a suite that only sets `{ error }` leaves every catch arm unpinned.**
+
+## The SILENT-TRUNCATION sibling (2026-09-02): a read that SUCCEEDS and returns the wrong rows
+
+Found an hour after the sniper-feed honesty fix above, in the same route, and it is the state that
+fix cannot see.
+
+Two reads in `/api/sniper-feed` had outgrown PostgREST's 1,000-row cap. Measured live:
+`badge_editions` at Top Shot scope is **9,471 rows** and returned **1,000** (10.6%); `players` with a
+jersey number is **1,317** and returned 1,000. Both were bare `.select()`s. **Nothing fails** — no
+error, no short page — so `hasBadge` was false for ~89% of the editions that carry a badge.
+
+### ⚠ THIS IS THE THIRD STATE, AND `sourcesFailed` IS BLIND TO IT
+
+The canon's three states are: read failed · read ok + genuinely empty · **read ok + unrenderable**.
+A per-source failure flag closes the first. It says nothing about a read that answered successfully
+with a tenth of the rows. **Do not treat a degraded-source signal as coverage for truncation** — the
+two need different instruments, and the truncated one has no runtime tell at all.
+
+The sharpest consequence here was a CONTROL, not copy: ticking **Badges only** filtered against a
+map missing ~89% of its entries, so the board went nearly empty *honestly*. A filter applied to a
+truncated input claims a filter it did not really apply.
+
+### ⭐ THE COMMENT WAS THE DEFECT
+
+The read carried its own justification — *"Safe because badge_editions is a small table (hundreds of
+rows)"* — plus a measured *"4,981 rows / 4,981 distinct"*. Both were true when written. A reader who
+checks the justification finds a number and stops. **A row count in a comment is a DATED SAMPLE,
+never a bound.** This repo already applies that rule to its own memory files; it had not applied it
+to code. When a comment's number is what makes the code correct, either re-measure it or make the
+code not depend on it — the second is always available (page it).
+
+### ⚠ BEING IN A GUARD'S ALLOWLIST IS NOT COVERAGE
+
+`__tests__/invariants-postgrest-cap.test.ts` names `app/api/sniper-feed/route.ts` in its allowlist and
+still could not see either defect: that guard is scoped to ONE idiom — a raw `fmv_snapshots` read
+ordered `computed_at DESC`. Its **derivation** fixes its blast radius. Two capped reads sat in a file
+the guard already mentions, which is the most misleading possible place for them to be.
+
+### The sweep, and why 19 is the honest number rather than 197
+
+Crossing every `.from(t).select()` in `app/` + `lib/` against `pg_class.reltuples > 1000` gives 197
+sites; dropping every chain that carries a bound — `.range(`, `.limit(`, `.single(`, `head: true`,
+`selectInChunks`, or an `.in()`/`.or()` over a caller-supplied key list — leaves **19** (known-issues
+#57). ⛔ **A ban-at-zero guard over the 197 would be noise and is deliberately not shipped**: most are
+legitimately `.in()`-chunked, and a guard that cries wolf gets suppressed. ⚠ Nor are the 19 called
+findings — a static heuristic cannot tell that `.eq("owner_key", k)` is bounded by one user's days
+while `.eq("owner_address", wallet)` is not bounded for a whale. **A candidate list is not a
+measurement**; each needs its own live count under its own filter.
+
+### Two testing traps from the same afternoon
+
+- ⚠ **A `/\.range\(/` assertion SURVIVED a mutant that deleted the call** — the source *comment*
+  beside it says ".range()" too. The fix is not the comment stripper (blind three times here): pin the
+  paging EXPRESSION (`.range(from,` / `.gt("external_id", cursor)`), which prose does not carry, and
+  add a positive control asserting the pattern does NOT match the words in a comment.
+- ⚠ **A SEQUENCE fixture's cursor outlives the test that used it.** `makeSupabaseFixture` keeps its
+  per-key index inside the instance, and clearing `fx.tables` does not reset it — so a suite that
+  builds the client ONCE has its third sequence-using test start mid-array and red correct code.
+  Plain-object fixtures never noticed, because they ignore the cursor. Rebuild the client per seed.
