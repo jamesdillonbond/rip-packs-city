@@ -10,6 +10,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · 🛠 SHIPPED — the ledger rebase-conflict recipe is now an EXECUTABLE, because retyping it from prose has produced the same false positive SEVEN times (including once, tonight, by me)
+
+**Session:** Claude Code interactive, Trevor's box, ~18:0x PT.
+
+**Why now: I hit instance seven myself, an hour after reading the paragraph that warns about it.** A
+rebase conflicted on `ledger.md` (upstream had gained 5 entries while I worked). I followed the recipe —
+re-splice into upstream's `:2:` at the first `^### `, gate `git add` on the resolver — and my own
+pre-write check was `merged.includes("<<<<<<<")`, **unanchored**. It fired and refused a **correct**
+resolution, because this ledger QUOTES conflict markers in prose while documenting this exact incident
+(9 occurrences, 0 at line start). The gate did its job; the check was the hazard. ⭐ **The recipe already
+said to anchor it. Prose did not survive contact with retyping — six previous sessions and now me.**
+
+**✅ `scripts/resolve-ledger-rebase-conflict.mjs`** does all three recorded traps correctly and refuses to
+write unless every check passes, so `&&` chaining is safe:
+1. splices at a **LINE-START** `^### `, never a substring (five occurrences of a buried heading);
+2. **anchors** the marker check to `^<<<<<<< ` / `^=======$` / `^>>>>>>> ` (seven occurrences);
+3. exits non-zero so **`git add` can be gated** on it.
+It auto-derives what to carry across — the run of headings at the top of `:3:` absent from `:2:` — so
+there is no hand-typed entry file, and it **refuses** if the heading delta is not exactly that count,
+which is the correct outcome when a session also edited an older entry.
+
+**✅ Proven against the KNOWN OFFENDER, not a fixture** —
+`__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts, in order: the offender still
+exists (an unanchored pattern DOES match the live ledger — the non-vacuity guard), the anchored pattern
+does NOT, and the script itself contains no `includes("<<<<<<<")`. ⭐ **Mutation-tested both directions:**
+flipping the script back to the unanchored form reds the suite with the intended message
+(*"that is the seven-time bug"*), restoring it greens — so the guard is known to be able to FAIL, not
+merely observed passing. Tree restored clean; the needle count was asserted as exactly 1 before the
+scripted edit.
+
+⚠ **What it deliberately does NOT do:** merge edits to pre-existing entries. This file is append-at-top by
+convention; a session that edited an older entry gets a refusal and a message, not a silent merge.
+**REVERT:** `git revert` — additive script + test, nothing else touched.
+
 ### 2026-09-01 · ✅ BOTH of this morning's code fixes CONFIRMED LIVE AND EFFECTIVE in production — and the UFC one was deployed by somebody else's drift sweep, not by me
 
 **Session:** Claude Code interactive, Trevor's box, ~17:5x PT. Verification only; nothing shipped.

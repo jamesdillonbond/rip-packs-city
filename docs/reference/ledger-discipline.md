@@ -155,3 +155,49 @@ actual bad commit, and reds.
 **Recovery, when markers do reach `main`:** both sides are usually intact and complete. Verify that
 each side starts at a `^### ` heading, keep BOTH (newest first), and delete only the three marker
 lines — programmatically, with the ordering asserted. Then re-run all four guards before committing.
+
+---
+
+## ✅ 2026-09-01 — THE RECIPE IS NOW AN EXECUTABLE: `scripts/resolve-ledger-rebase-conflict.mjs`
+
+**Written because I hit instance SEVEN of the unanchored-marker false positive myself, roughly an hour
+after reading the section above that documents it.** A rebase conflicted; I followed the recipe
+correctly — re-splice into `:2:` at the first `^### `, gate `git add` on the resolver — and my *own*
+retyped check was `merged.includes("<<<<<<<")`. It refused a **correct** resolution, because this ledger
+quotes conflict markers in prose while describing this very class (9 occurrences in the file, **0** at
+line start). ⭐ **Prose did not survive contact with retyping. Six sessions, then me.**
+
+```bash
+node scripts/resolve-ledger-rebase-conflict.mjs && git add docs/overnight/ledger.md
+GIT_EDITOR=true git rebase --continue
+```
+
+It implements every rule in this file and **refuses to write unless all of them pass**, so the `&&`
+gating is safe:
+
+| rule | how |
+|---|---|
+| splice at a **line-start** `^### ` | `findIndex(l => /^### /.test(l))`, never a substring |
+| **anchored** marker check | `/^(<<<<<<< \|=======$\|>>>>>>> )/m` — the seven-time bug |
+| **gate `git add`** on the resolver | exits non-zero on any failure |
+| heading delta | asserts `after - before === <entries carried>`, not a fixed +1 |
+| blank-line check as a **DELTA** | asserts `noblank(out) <= noblank(upstream)` |
+| no content-pinned title assertion | auto-derives the entries to carry; nothing is spelled literally |
+
+⚠ **The blank-line baseline is computed at RUN TIME, deliberately.** This file records **303** headings
+lacking a preceding blank line on 2026-08-16; the live measurement on **2026-09-01 is 80**. The number
+moved, so hard-coding either one would have produced a guard that fires on a correct splice. **A ledger
+check whose baseline you have not measured is a check you do not know the meaning of** — so it measures.
+
+**It auto-derives what to carry across**: the run of headings at the top of `:3:` that `:2:` does not
+have. There is no hand-typed entry file and no title literal, which retires the second stale-guard
+instance recorded above. ⚠ **It deliberately refuses** if the heading delta is not exactly that count —
+the correct outcome when a session ALSO edited an older entry, which this append-at-top file's recipe
+does not cover.
+
+**Proven against the known offender, not a fixture:**
+`__tests__/ledger-rebase-resolver-marker-check-is-anchored.test.ts` asserts in order that (1) the
+offender still exists — an unanchored pattern DOES match the live ledger, which is the non-vacuity guard
+— (2) the anchored pattern does not, and (3) the script contains no `includes("<<<<<<<")`.
+⭐ **Mutation-tested both ways**: reverting the script to the unanchored form reds the suite with the
+intended message; restoring it greens. The guard is known to be able to FAIL, not merely observed passing.
