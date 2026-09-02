@@ -10,6 +10,101 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · 🚨 SHIPPED — the guard that watches for anon-executable SECURITY DEFINER functions was looking at NINE hardcoded names, and the schema has 559
+
+**Migration `audit_20260902_secdef_anon_exec_guard_walks_the_schema_instead_of_a_nine_name_list`**
+(file `20260902051740_…`). ⛔ **Nothing is actually exposed** — every reachable function is deliberate.
+**The defect is the instrument**, and it is the one CLAUDE.md's own rule names.
+
+`check_secdef_anon_execute_violations()` iterated a hardcoded `p.proname = ANY(ARRAY[…nine names…])`.
+It was **structurally blind to every SECDEF function outside that list — including every one created
+in the last three months.** It returned `[]`; `rpc_ops_snapshot` published that as
+`security.secdef_anon_violations`; the smoke test hard-passed on it (and would have Sentry-alerted on
+anything else); the daytime monitor's health line read *"security 0/0/0/0"*.
+
+⭐ **Found by asking a DIFFERENT instrument the same question.** Supabase's own advisor reports
+`anon_security_definer_function_executable` ×3 and `authenticated_…` ×4. Ours reported zero. **Two
+instruments, one question, opposite answers — and the wrong one was ours.**
+
+**All four reachable rows are deliberate, and each was READ before being suppressed:**
+
+| function | reachable by | why it is fine |
+|---|---|---|
+| `get_trophy_slab_data_by_username(text)` | anon + auth | public profile page; resolves `profile_bio.username` → `get_trophy_slab_data()` |
+| `serial_fmv_estimate(…)` ×2 overloads | anon + auth | serial-premium calculator behind the public boards; pooled market model, no user data |
+| `get_my_fan_teams()` | **auth only** | body scopes itself `WHERE uft.user_id = auth.uid()`, so SECDEF bypassing RLS widens nothing |
+
+**The change is CLAUDE.md's own rule applied to its own guard:** *prefer a TREE WALK over a curated
+list, and make SUPPRESSION the curated list.* Coverage **9 → 559 functions**. Suppression is keyed on
+the **FULL SIGNATURE**, so a new overload of a deliberately public function is reviewed rather than
+inherited — and `args` is now in the output for the same reason, additively (both consumers key on
+`function`).
+
+⚠⚠ **THE FIRST APPLY FAILED, AND THAT IS THE BEST EVIDENCE THE OLD GUARD WAS BLIND.** I built the
+suppression list from the three functions the ADVISOR named, and the post-state rejected it: the walk
+returned a **fourth**, `get_my_fan_teams`, which is authenticated-only and which I had skipped while
+reading for *anon*. ⭐ **Build a suppression list from the WALK'S OWN OUTPUT, never from your reading of
+another instrument's summary.** The migration aborted transactionally; nothing partially applied.
+
+**Non-vacuity is asserted, not assumed:** the post-state requires the walk to see **≥50** SECDEF
+functions (it sees 559) — *a rewrite that inspected nothing would also return `[]` and look perfect* —
+and requires **exactly 4** reachable rows, so a stale suppression entry cannot rot in silence. Proved
+separately, read-only: the same walk with the suppression dropped returns exactly those four.
+
+**REVERT:** re-apply the previous nine-name body. ⛔ Do not, except to unbreak something — it restores
+a guard that inspects 9 of 559 functions and reports a zero that means almost nothing.
+
+### 2026-09-01 · ✅ SHIPPED — a daily backfill logged `ok: true` with an EMPTY error sample every time Top Shot GraphQL was down, and nothing could see it
+
+**Code:** `app/api/admin/backfill-topshot-subedition-circulation/route.ts` + two new tests. Fourth find
+from the 30-day zero-yield census, and the one that is purely an honesty defect — no starvation, no
+wasted work, just a run that says it succeeded when it read nothing at all.
+
+**Every daily run in the retained window:**
+
+```
+pages 0 · gql_editions_seen 0 · rows_found 3,822 · rows_written 0
+terminated_reason "gql_fault" · errors_sample [] · ok TRUE
+```
+
+**Three separate silences, stacked:**
+
+1. **`fetchPage` collapsed every failure to a bare `null`** — a non-OK status, a GraphQL `errors`
+   array and a thrown exception were indistinguishable. So an operator reading a failed run could not
+   tell an upstream outage from a broken credential from a timeout.
+2. **`terminated_reason: "gql_fault"` had NOTHING beside it.** CLAUDE.md's own rule, one field over:
+   *a count of zero with no error field cannot distinguish "nothing to do" from "could not look".*
+3. ⭐ **`ok` was derived from `errors.length === 0`, and `errors` holds per-edition WRITE failures — a
+   different thing entirely from the upstream READ failing.** So the one number an observer keys on was
+   computed from a population that is empty precisely BECAUSE nothing was read.
+
+**And that third one is why nothing caught it.** With `ok: true` the run appears in no failure bucket,
+and it cannot trip `check_pipelines_running_but_not_succeeding`, whose predicate is `ok_runs = 0 AND
+work_done = 0` — **a pipeline that lies about `ok` is invisible to the arm built for exactly this
+shape.**
+
+**Fixed:** the fault reason is carried out of `fetchPage` and recorded verbatim (truncated) in
+`extra.gql_fault_reason` **and** in the HTTP body — the manual-run view had the same silence one layer
+out — and `ok` is false when the run read nothing. ⭐ **The non-OK branch now reads the response BODY,
+not just the status**, because a Cloudflare 530 says *"origin is down"* only in its body, and that is
+the signature the failure buckets classify on — so this run will now land in the `upstream` column
+shipped earlier tonight rather than being counted against us.
+
+⛔ **SCOPED TO A TOTAL READ FAILURE ON PURPOSE**, and the control test is what pins it: a fault on page 5
+after four pages of data is a **partial sweep that committed** — productive, not stalled, and the repo's
+own rule keeps such a run green. Only `pages === 0` with nothing seen is unambiguously failed.
+
+**Mutation-proved in BOTH directions:** reverting `ok` to the old expression fails with *"a run that
+read nothing and wrote nothing is not a success"*; widening `readNothing` to any `gql_fault` fails the
+partial-sweep control. Restored, 12/12 green.
+
+⚠ **The pipeline is not FIXED by this — the upstream is still down** (the Top Shot GraphQL 530 outage,
+known-issues #20/#8 territory). What changed is that its failure is now **countable**: it will appear
+in `pipeline_fails_24h`, correctly bucketed as `upstream`, instead of vanishing into a green run. **A
+daily job that cannot be seen failing is worse than one that fails loudly.**
+
+**REVERT:** `git revert` the code commit. No DB object, migration or schedule changed.
+
 ### 2026-09-01 · 🔧 The exclusion I shipped four minutes earlier had the NULL trap in it — `NOT IN` drops an unlabelled row, `IS DISTINCT FROM` attempts it
 
 **Migration `audit_20260902_sales_counterparty_source_exclusion_is_null_safe_so_an_unlabelled_row_is_attempted_not_dropped`**
@@ -369,6 +464,17 @@ aligning next time that state row is touched, since the floor is DATA.
 ⚠ **Residual, operator:** the lane's population is now permanently 0 in this window, so its ~47 runs/day
 could be retired or slowed. Left armed deliberately — a drained tick is one bounded index range, and if
 a historical importer ever inserts 2024 rows the lane picks them up on its own.
+
+✅ **VERIFIED IN PRODUCTION on the first tick after the deploy** (05:12:14Z):
+
+| | before (04:42) | after (05:12) |
+|---|---:|---:|
+| `rows_found` | 45 | **0** |
+| `exhausted_in_window` | *(key absent)* | **45** |
+| duration | 12,019 ms | **5,201 ms** |
+
+**45 spork-proxy decodes and 45 no-op row versions per tick → zero**, and the excluded rows are now
+VISIBLE rather than silently absent — which was the whole point of pairing the predicate with a count.
 
 **REVERT:** `git revert` the code commit. No DB object, migration or schedule changed; the 45 rows are
 untouched and stay exactly as they are.
