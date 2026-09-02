@@ -673,3 +673,52 @@ rule in action: **when you find one, grep for the EXPRESSION, not the file.**
 spellings — `toContain("telegram-FAILED")`, `toEqual` on the whole result object — which red on an
 honest addition. They now match the `…-FAILED` **prefix** (the property any reader keys on) *and*
 assert the reason is present, which is the improvement.
+
+---
+
+## The NINTH shape (2026-09-02): the failed read arrives from OUTSIDE, as an upstream **HTTP 200** — and the fix is a FLOOR, not an error branch
+
+Every shape above is ours: our code turns a failed read into a claim. This one is the same defect with
+the failure originating at an **upstream that reports success for data it cannot serve**, which is
+worse in one specific way — **there is no error to branch on, anywhere, at any layer.**
+
+**The instance.** `sales-counterparty-backfill` walks `sales` newest-first, decoding each tx via
+`rest-mainnet.onflow.org` to recover the seller. Past Flow's prune horizon that endpoint does **not**
+404. It answers:
+
+```
+HTTP 200  { "block_id": "", "execution": "Pending", "status": "", "events": [] }
+```
+
+`res.ok` is true, there is no `Withdraw` event, so the worker records an ordinary miss and advances the
+cursor — **exactly what it does for a throttled request.** Result: **288 runs a day, all `ok`, ~9.2 h of
+runtime, ZERO rows recovered**, and every fleet instrument reading *idle* rather than *blind*.
+`rows_written` was **honestly** 0.
+
+⭐ **THE DISCRIMINATOR IS THE BODY, NOT THE STATUS.** `execution !== "Success"`, or zero events on a
+transaction that certainly had some. **A probe that reads only the HTTP status can never find a prune
+horizon, however far back it goes** — which is how a recorded memory came to state that this endpoint
+*"has no spork wall"* on the evidence that it answered 200 back to 2024-12-31.
+
+⭐ **AND THE STRUCTURAL FIX IS A FLOOR, NOT AN ERROR BRANCH.** A cursored newest-first walk terminates
+only by running out of data, so without a **lower bound** it walks off the edge of what its upstream can
+serve and keeps going, at full cost, reporting success. **A cursored backfill needs a FLOOR, not just a
+cursor.** Shipped as `sales_counterparty_backfill_state.floor_sold_at` — deliberately DATA rather than a
+literal inside the function, so it can be raised when an upstream prunes further without a migration,
+with a `COALESCE` in the function so it cannot be NULLed back into an unbounded walk.
+
+⚠ **TWO MEASUREMENT LESSONS, and the second overturned a filed number.**
+
+1. **The cursor is not a decodability timestamp.** `deep-audit-register` R70 put the boundary at
+   `2023-11-08T14:39Z`, read from `cursor_sold_at`. But the cursor advances past rows that were
+   **missed**, so it runs ahead of the last row actually converted. Read the **rows written** instead:
+   the last productive hour recovered down to `sold_at 2023-11-08 19:41:13Z` and no further — five hours
+   from where the cursor said.
+2. **Bracket a boundary against a gap in your OWN data.** 24 probes put the last `Pending` row at
+   `2023-11-08 15:58:12Z` and the first `Success` at `18:51:39Z`, and `sales` holds **no row between
+   them** — so a floor anywhere inside that gap partitions the population *exactly*, and the choice
+   stops being a judgement call about margin.
+
+⚠ **A floor is a property of the ENDPOINT, not of the chain.** 2,339 rows below this one — back to
+2021-07-31 — were recovered by a different path on a single day in 2026-07. Do not let "unreachable"
+harden into "does not exist": name the endpoint in the claim.
