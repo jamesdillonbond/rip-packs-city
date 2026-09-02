@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · 📏 WATCHED THE SECOND TICK — `allday-price-recover` is doing exactly what it should, and my own alarm about it was a plausible mechanism rather than a measurement
+
+**No change shipped.** Follow-up on tonight's singleton-tx claim fix, plus a self-correction.
+
+**It works, and here is the whole tick:** `candidates 500 · distinct_txs 500 · tx_decode_ok 500 ·
+tx_decode_fail 0 · updated_unmapped 500 · still_uncertain 0`. Six consecutive ticks 05:20–07:00Z, each
+recovering **500** prices against the **1 per tick** it managed before. `updated_sales: 0` is correct
+and not a miss — these are `unmapped_sales` rows; promotion to `sales` is a separate, throttled step
+(`promote_skipped: "recent_run"`).
+
+**Sizing re-derived, and it confirms the earlier figure rather than replacing it.** Live: **44,690**
+unresolved rows carry `v1_tx_decode_budget_exhausted`, of which **6,860 are singletons** — the only ones
+this claim will serve, the other **37,830 being multi-NFT txs whose single gross price cannot be split**.
+6,860 + the ~3,000 already drained ≈ the **9,859** recorded last night. **~14 ticks ≈ 4.6 h left.**
+
+🚨 **AND THE PART WORTH RECORDING IS THAT I WAS WRONG.** `duration_ms` went from **~1,000 ms to
+~110,000 ms** per tick when the fix landed, and I reasoned my way to an alarming story: the claim's
+`cand` CTE has no LIMIT, so it materialises the whole 44,690-row population every call — **therefore**
+the tick would keep costing 110 s every 20 minutes forever, finding nothing, once the singletons
+drained. A new treadmill, self-inflicted.
+
+**Measured warm, it is 116 ms.**
+
+| shape | ms | buffers | reads |
+|---|---:|---:|---:|
+| the live `count(*) OVER (PARTITION BY …)` claim | **116** | **24,187** | 28 |
+| a `GROUP BY … HAVING count(*) = 1` rewrite | 77 | **47,309** | 0 |
+
+**The 110 s is the ON-CHAIN DECODE of 500 transactions, not the claim** — and it stops the moment the
+backlog does. **There is no future treadmill, and the rewrite I was about to ship is WORSE**: faster in
+milliseconds and **2× the buffers**, on the instance whose IO budget is the platform's number-one
+problem. ⭐ **Compare BUFFERS, never timings** — the trap caught in its own file, one tick after
+shipping the thing that raised the number.
+
+⚠ **What is real:** one tick in seven (07:20Z) died on `select:canceling statement due to statement
+timeout` at **60,136 ms** against a query whose warm cost is 116 ms — a **500×** outlier, so
+contention, not the plan. It self-retries in 20 minutes and the cadence arm (90 min) will not fire on
+it. **Recorded, not acted on: a single outlier is not a rate.**
+
+**Probe cleaned up:** `zz_probe_claim_shape` created via `execute_sql` and dropped; `pg_proc` re-checked,
+**0 remaining**.
+
 ### 2026-09-02 · ✅ SHIPPED — `INGEST_SECRET_TOKEN` stops being written into the edge log store on every call
 
 **File:** `app/api/cron/sales-serial-backfill/route.ts` + its test. **No DB change, no edge deploy, no
