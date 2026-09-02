@@ -374,6 +374,57 @@ tuning. ⛔ **And do not "make the declarations real" as a batch:** several jobs
 past their declared value (jobid 217 declares 120 s and has succeeded at 595 s), so enforcing them
 would convert working runs into failures. See known-issues **#43**.
 
+## 🚨 A CORRELATED SUBQUERY AGAINST A `DISTINCT ON` VIEW RE-MATERIALISES THE WHOLE VIEW ONCE PER OUTER ROW (measured 2026-09-02)
+
+**The shape.** `pack_ev_latest` is a view of `pack_ev_history` with
+`DISTINCT ON (pack_listing_id) … ORDER BY pack_listing_id, snapshotted_at DESC`. A
+scalar subquery correlated on `dist_id` cannot push that predicate through the
+DISTINCT, so Postgres evaluates the ENTIRE view for every outer row.
+
+Measured in `refresh_challenge_costs()` (EXPLAIN ANALYZE, BUFFERS, warm, **31** outer
+rows):
+
+| form | time | buffers |
+|---|---|---|
+| correlated scalar subquery | **40,716 ms** | **21,094,324** |
+| hoisted once into a temp table | **1,220 ms** | **681,430** |
+
+**31× the buffers, 33× the time, for 31 rows** — the multiplier is exactly the outer
+row count, which is the tell. The view's own `pack_ask_state` `NOT EXISTS` subplan ran
+**3,849,487 times** and accounted for 11.4M of those buffers on its own.
+
+⚠ **This was 99.7% of that function's cost and the arm produced NOTHING.** `rows=0` on
+all 31 loops: of the 29 distinct `challenges.reward_pack_dist_id`, all 29 are in
+`pack_distributions` and **zero** have any row in `pack_ev_history` — challenge reward
+packs are rewards, not listings, and that table is keyed on `pack_listing_id`. Checked
+both alternative explanations first: not the view's filters (the base table has no rows
+either) and not a vocabulary mismatch (same numeric-string id space, and the history's
+max dist id is *higher* than the challenges').
+
+⛔ **The fix was to HOIST, not to DELETE the arm.** It is empty for a structural reason
+today, but a reward pack that ever gets listed would populate it, and the cost was never
+the arm — it was evaluating it 31 times. Pinned by
+`__tests__/challenge-costs-pack-ev-lookup-stays-hoisted.test.ts`, because the correlated
+form is the one a reader reaches for: shorter, natural next to the sibling COALESCE
+arms, and **nothing about it looks expensive**.
+
+⚠ **The consequence was a silent daily outage, not slowness.** pg_cron jobid 87
+`rpc-refresh-challenge-costs` died at exactly **120.0 s** on **8 of its last 52 runs
+(15.4%)**, and both UPDATEs live in one `SELECT refresh_challenge_costs()`, so the
+timeout rolled back the cost refresh as well — on those days *nothing* was refreshed.
+⭐ **120 s is this cluster's DEFAULT `statement_timeout` (`120000`), which is what a
+`postgres`-owned pg_cron job runs under** — known-issues #43 established that those 12
+jobs "run at the cluster default" without naming the number. Now it is named.
+
+⚠ **AND THE FIRST VERSION OF THE MIGRATION'S OWN CONTROL WAS WRONG — it asserted that
+no `cached_reward_value` changed, and 18 of 31 changed.** The stored values came from
+the last SUCCESSFUL cron run, a day or more earlier; arms 2–4 read `pack_purchases` and
+`fmv_snapshots`, which move daily. **A before/after comparison spanning a refresh window
+measures the DATA moving and reports it as a code difference.** The honest control was
+narrower: only arm 1 changed, and the two forms of arm 1 differ only where a reward dist
+appears in the view — so `overlap = 0` is a complete equivalence proof, at 1.2 s instead
+of the 40 s an old-vs-new A/B would have cost. Migration `20260902120329`.
+
 ## 🚨 A GATEWAY `504 upstream request timeout` ON A **WRITE** RPC IS A ROLLBACK — you pay the full cost and keep nothing (proven by control 2026-09-02)
 
 The ~120 s Supabase gateway cap is already documented above (known-issues #43, third

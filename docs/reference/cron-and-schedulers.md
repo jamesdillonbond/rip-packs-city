@@ -1014,3 +1014,31 @@ remains. First successful run **75,803 ms**, `ok`, 0 sales / 0 moments re-keyed,
 moments deferred on genuine collisions. ⭐ **63% of the ~120 s gateway cap, 13% of the
 600 s ceiling it now runs under** — a job at 63% of its ceiling fails half the time from
 IO contention alone, which is the entire diagnosis in one number.
+
+## jobid 87 `rpc-refresh-challenge-costs` — 15% of its daily runs died at the CLUSTER default, invisibly (fixed 2026-09-02)
+
+`20 7 * * *`, owner **`postgres`** — so no role `statement_timeout` applies and it runs
+at this cluster's **default 120 s** (`statement_timeout = 120000`). It died at exactly
+**120.0 s** on **8 of its last 52 recorded runs (15.4%)**: 08-14, 08-15, 08-18, 08-21,
+08-23, 08-24, 08-26, 09-02. Successful runs took 30–120 s, i.e. it lived at its ceiling.
+
+⚠ **Nothing watched it.** `refresh_challenge_costs()` writes no `pipeline_runs` row, so
+the only witness was `cron.job_run_details` — which no sweep in this repo reads. And
+because both of its UPDATEs sit inside one `SELECT refresh_challenge_costs()`, a timeout
+in the second **rolled back the first**: on those 8 days nothing was refreshed at all and
+`challenges.cached_cost_to_complete` / `cached_reward_value` silently aged another day.
+
+**Root cause and fix:** 99.7% of the cost was a correlated scalar subquery against the
+`DISTINCT ON` view `pack_ev_latest`, re-materialised once per challenge row —
+**40,716 ms / 21,094,324 buffers**, for an arm that returns NULL for every row.
+Hoisted into a single temp-table build it is **1,220 ms / 681,430 buffers**, and the
+whole function now runs in **1.2 s** (verified live after apply: 31 rows, 1.208 s). Full
+write-up, including the two alternative explanations that were ruled out first and the
+control that was wrong on the first attempt, is in
+[database.md](database.md). Pinned by
+`__tests__/challenge-costs-pack-ev-lookup-stays-hoisted.test.ts`.
+
+⭐ **The generalisable part is how it was FOUND**, and it is cheap to repeat: sweep
+`cron.job_run_details` (retention here is ~55 days, 201k rows — far longer than
+`pipeline_runs`' ~73 h) for jobs whose failures cluster at a single round duration. A
+job that fails at *exactly* the same number every time is at a ceiling, not flaky.

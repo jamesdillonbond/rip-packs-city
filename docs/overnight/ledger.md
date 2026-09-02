@@ -10,6 +10,55 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — `refresh_challenge_costs` spent 99.7% of its budget on a lookup that cannot match, and died at the wall 15% of days
+
+**What shipped.** Migration `20260902120329` hoists the `pack_ev_latest` arm out of the
+per-challenge COALESCE into a single temp-table build; plus
+`__tests__/challenge-costs-pack-ev-lookup-stays-hoisted.test.ts` and write-ups in
+`database.md` and `cron-and-schedulers.md`.
+
+**The defect.** pg_cron jobid 87 `rpc-refresh-challenge-costs` (`20 7 * * *`, owner
+`postgres`) died at **exactly 120.0 s** on **8 of its last 52 runs (15.4%)**. 120 s is
+this cluster's DEFAULT `statement_timeout` — what a `postgres`-owned job runs under, a
+number known-issues #43 referred to but never named. Both UPDATEs are in one
+`SELECT refresh_challenge_costs()`, so the timeout **rolled back the cost refresh too**:
+on those days nothing was refreshed and the cached values aged another day. Nothing
+watched it — the function writes no `pipeline_runs` row and no sweep reads
+`cron.job_run_details`.
+
+**Measured, per arm (EXPLAIN ANALYZE, BUFFERS, warm, 31 rows):**
+
+    UPDATE 1 costs                    98 ms /      1,447 buffers
+    UPDATE 2 arm 1 pack_ev_latest 40,716 ms / 21,094,324 buffers   ← 99.7%
+    UPDATE 2 arm 2 pack_purchases    266 ms /        988 buffers
+    UPDATE 2 arm 3 drop_pool × fmv   785 ms /     22,437 buffers   ← the answer
+
+⭐ **A correlated scalar subquery against a `DISTINCT ON` view re-materialises the whole
+view once per outer row** — the multiplier is exactly the outer row count. Hoisted:
+**1,220 ms / 681,430 buffers**. Verified live after apply: **31 rows in 1.208 s**.
+
+⚠ **And the arm returns NULL for every row.** All 29 challenge reward dists are in
+`pack_distributions`; **zero** have a row in `pack_ev_history`. Both alternative
+explanations were ruled out first — not the view's filters (the base table is empty for
+them) and not a vocabulary mismatch (same id space, and history's max dist id is
+*higher*). ⛔ Deleting the arm was still rejected: the cost was evaluating it 31 times,
+not the arm.
+
+🚨 **The migration's FIRST control was wrong and it caught itself.** It asserted that no
+`cached_reward_value` changed; **18 of 31 changed** and it rolled back. The stored values
+came from the last successful run a day earlier, and arms 2–4 read tables that move
+daily — **a before/after comparison spanning a refresh window measures the DATA moving
+and reports it as a code difference.** The honest control is `overlap = 0` between the
+challenge dists and the view: with no matching rows both forms of arm 1 are NULL for
+every row whatever the tie-break. 1.2 s instead of the 40 s an old-vs-new A/B needed.
+
+**Revert path.** `git revert` the commit or find it by message
+`perf(db): the challenge-cost pack-EV lookup runs once, not once per challenge`, then
+re-apply the prior definition (the pre-hoist body is quoted in full inside migration
+`20260902120329`'s header measurements and recoverable from `pg_proc` history via the
+earlier defining migration). DB half: `CREATE OR REPLACE` back to the correlated arm —
+no data to undo, the function only rewrites cached columns it recomputes daily.
+
 ### 2026-09-02 · ✅ SHIPPED — the cron_heavy execute-drift check is now RUN, not just written
 
 **What shipped.** A new hard arm on `/api/smoke-test`: *"cron_heavy can execute every
