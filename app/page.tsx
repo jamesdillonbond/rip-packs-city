@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import SupportChatConnected from "@/components/SupportChatConnected"
 import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import HomePageMarketing from "@/components/HomePageMarketing"
@@ -49,5 +50,15 @@ export const metadata: Metadata = {
 export default async function HomePage() {
   const user = await getCurrentUser()
   if (user) redirect("/dashboard")
-  return <HomePageMarketing />
+  // The concierge, added 2026-09-02 alongside the /insights mount. This page is
+  // 227 non-bot home_view sessions in 30 days and had no way to ask a question;
+  // a signed-in visitor never reaches it (redirected above), so this instance
+  // only ever serves anonymous traffic and cannot double up with the launcher
+  // in the (collections) / (analytics) layouts. Revert: delete these two lines.
+  return (
+    <>
+      <HomePageMarketing />
+      <SupportChatConnected />
+    </>
+  )
 }

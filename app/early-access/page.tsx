@@ -6,7 +6,17 @@
 // (`app/**/*Client.tsx`). A `page.tsx` matches NEITHER gate's include.
 
 import EarlyAccessClient from "./EarlyAccessClient"
+import SupportChatConnected from "@/components/SupportChatConnected"
 
 export default function EarlyAccessPage() {
-  return <EarlyAccessClient />
+  return (
+    <>
+      <EarlyAccessClient />
+      {/* Concierge, added 2026-09-02 with the /insights + home mounts: this is a
+          public entry point a stranger lands on and it had no way to ask a
+          question. No sub-layout here carries the launcher, so there is no
+          double-mount. Revert: delete this line and the import. */}
+      <SupportChatConnected />
+    </>
+  )
 }

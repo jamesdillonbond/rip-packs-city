@@ -5,6 +5,7 @@
 // shape is generic so future posts only need to add an entry to POSTS.
 
 import Link from "next/link"
+import SupportChatConnected from "@/components/SupportChatConnected"
 
 export const dynamic = "force-static"
 export const revalidate = 86400
@@ -110,6 +111,7 @@ const BLURB: React.CSSProperties = {
 
 export default function BlogIndex() {
   return (
+    <>
     <main style={PAGE}>
       <h1 style={H1}>Field Notes</h1>
       <p style={SUBTITLE}>
@@ -126,5 +128,11 @@ export default function BlogIndex() {
         </Link>
       ))}
     </main>
+      {/* Concierge, added 2026-09-02 with the /insights + home mounts: this is a
+          public entry point a stranger lands on and it had no way to ask a
+          question. No sub-layout here carries the launcher, so there is no
+          double-mount. Revert: delete this line and the import. */}
+      <SupportChatConnected />
+    </>
   )
 }

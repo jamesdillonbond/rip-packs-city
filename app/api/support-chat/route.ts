@@ -658,6 +658,19 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "get_cheapest_sets_to_complete",
+    description:
+      "Rank the Top Shot sets a wallet is PART-WAY THROUGH by what it would cost to finish each one at the current floor — cheapest first. THE tool for 'which set is cheapest for me to complete?', 'what set should I finish?', 'am I close to finishing anything?', i.e. any completion question where the user has NOT named a set. ⚠ Do not use get_set_completion_cost for these — that one REQUIRES a set name and is for pricing ONE named set the user already chose. Top Shot only. Scope is sets the wallet already owns at least one play in and has not finished; sets it has never touched are not ranked, so say that rather than implying this is every set on Top Shot. ⚠ READ `fully_buyable` BEFORE QUOTING A COST. `cost_to_complete_at_floor_usd` sums only the missing plays that are currently LISTED (`missing_listed` of `missing_plays`) — when those differ, the set CANNOT be finished today at any price and the number is a partial cost, so say so instead of presenting it as the cost to finish. Compare it against `missing_fmv_usd`: below = finishing is +EV at floor, above = a premium. Accepts a Flow address (0x + 16 hex) or a Top Shot username we hold on file.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or a Top Shot username. Required." },
+        limit: { type: "number", description: "How many sets to rank, 1..25, default 10." },
+      },
+      required: ["walletAddress"],
+    },
+  },
+  {
     name: "get_collector_report",
     description:
       "The Top Collector Report for ONE wallet — a single composite read for 'give me the full picture of this collection': cross-collection rollup (moments + FMV), Top Shot squeeze exposure, 2025 rookie-cohort coverage, WNBA Series 7 coverage, the wallet's closest set completions, and its acquisitions over the last 90 days. Use it when a collector asks for an overview / report / rundown / 'how does my collection look' rather than one specific number — it is ONE call where check_wallet + check_wallet_squeeze + get_set_completion_cost would be three or four. Needs a Flow address (0x + 16 hex); a Top Shot username resolves only when we hold it on file, and when we do not the tool says so — then call check_wallet with the username and reuse the `wallet` address it returns. NEVER guess an address. ⚠ Scope is not uniform: the rollup is cross-collection but the squeeze, rookie-cohort and WNBA sections are TOP SHOT ONLY — say which is which rather than letting a Top Shot number read as a whole-portfolio one. Read-only; same report that backs the public /insights/tc-report page.",
@@ -763,7 +776,7 @@ RPC is in free, open beta — anyone can create a free account, no invite needed
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
-**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_edition_listings / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), pull the whole-collection Top Collector Report for a wallet (get_collector_report), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_edition_listings / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost) or rank which set is CHEAPEST to finish when they have not named one (get_cheapest_sets_to_complete), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), pull the whole-collection Top Collector Report for a wallet (get_collector_report), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -884,6 +897,7 @@ When the user asks about market STATE rather than one specific price, reach for 
 - **get_market_movers** — the market-pulse board: which editions are heating up or cooling by recent volume/price. For "what's moving", "what's hot", "market pulse".
 - **get_rookies** — the rookie market board (rookie moments by momentum). For "how are rookies doing", "hot rookies".
 - **get_premiums** — how much premium parallels (kind="parallel") or low serials (kind="serial") carry over base editions. For "do parallels carry a premium", "what's a low serial worth over floor". Top Shot.
+- **get_cheapest_sets_to_complete** vs **get_set_completion_cost** — the user having NAMED a set is the whole difference. "How much to finish the Base Set?" is get_set_completion_cost; "which set is cheapest for me to finish / am I close to anything?" is get_cheapest_sets_to_complete, which ranks the sets they are already part-way through. ⚠ Never answer the second with the first — it requires a set name, and asking the user to pick one is asking them the question they asked you. ⚠ On the ranking, cost_to_complete_at_floor_usd covers only the missing plays that are LISTED: when fully_buyable is false the set cannot be finished today at any price and that number is partial — say so, do not quote it as the cost to finish.
 - **get_collector_report** — the composite per-wallet Top Collector Report (rollup, squeeze, rookie cohort, WNBA S7, closest set completions, 90-day acquisitions) in ONE call. Reach for it on "how does my collection look / give me the rundown", instead of chaining check_wallet + check_wallet_squeeze + set completion. ⚠ Its sections do not share a scope — the rollup is cross-collection, the squeeze and cohort sections are Top Shot only — so label them; and a username it cannot resolve means call check_wallet first, never invent an address.
 - **get_ecosystem_stat** — ecosystem boards by metric: new_collectors (newest active collectors), offer_spread (bid/ask spread), first_mint (first-mint scarcity), cross_collection (multi-collection overlap). For broad "state of the ecosystem" questions.
 - **get_insight_board** — reads any of the other shareable /insights boards by name: squeeze / set_squeeze (supply locked+burned), set_completers (closest to finishing sets), trophies (#1 / first-mint holders), pinnacle_scarcity, allday_scarcity, topshot_pack_market / allday_pack_market (pack prices), pack_reality / allday_pack_reality (what packs actually returned vs cost), market (Top Shot daily index). For board/ecosystem questions the tools above don't cover.
@@ -3181,6 +3195,59 @@ async function executeTool(
     return fetchPublicInsight(base, `/api/public/insights/${path}`, limit);
   }
 
+  if (toolName === "get_cheapest_sets_to_complete") {
+    try {
+      const inputAddr = String(toolInput.walletAddress ?? "").trim();
+      let resolvedAddr = inputAddr;
+      if (!/^0x[a-fA-F0-9]{16}$/.test(inputAddr)) {
+        // On-file resolver only — same reasoning as get_collector_report: check_wallet
+        // owns the full ladder and returns the address it resolved to.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
+          p_username: inputAddr,
+        });
+        if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
+          resolvedAddr = rpcResult.wallet_address.startsWith("0x")
+            ? rpcResult.wallet_address
+            : `0x${rpcResult.wallet_address}`;
+        } else {
+          return JSON.stringify({
+            status: "username_not_resolved",
+            wallet: inputAddr,
+            message:
+              "I don't have that username's wallet on file. Call check_wallet with the username first and reuse the address it returns, or ask the user for the 0x address.",
+          });
+        }
+      }
+      const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 10)) || 10, 1), 25);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any).rpc("get_topshot_cheapest_sets_to_complete", {
+        p_wallet: resolvedAddr.toLowerCase(),
+        p_limit: limit,
+      });
+      if (error) {
+        return JSON.stringify({
+          status: "error",
+          wallet: resolvedAddr,
+          message: safeApiError(error, "set-completion ranking unavailable").error,
+        });
+      }
+      // An empty ranking is a real answer — the wallet has finished everything it
+      // started, or holds nothing in any indexed set. It is NOT a failed lookup.
+      if (!data || !Array.isArray(data.sets) || data.sets.length === 0) {
+        return JSON.stringify({
+          status: "no_results",
+          wallet: resolvedAddr,
+          sets_in_progress: data?.sets_in_progress ?? 0,
+          message: "No Top Shot sets in progress for that wallet — nothing part-finished to rank. That is a real answer, not an outage.",
+        });
+      }
+      return JSON.stringify({ status: "ok", ...data });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: safeApiError(err, "set-completion ranking failed").error });
+    }
+  }
+
   if (toolName === "get_collector_report") {
     try {
       const inputAddr = String(toolInput.walletAddress ?? "").trim();
@@ -4174,6 +4241,18 @@ export async function POST(req: NextRequest) {
           .map((b: any) => b.text)
           .join("\n")
           .trim();
+        // ⚠ `max_tokens` lands here. Until 2026-09-02 it fell through silently and
+        // the user got a mid-sentence answer with nothing marking it as cut off —
+        // worst on exactly what this bot is good at, a long markdown table.
+        // ⚠ It has NEVER been observed: across 5,643 support_conversations rows the
+        // longest bot_response is 2,107 chars against a ~4,000-char cap, p95 687.
+        // So this is insurance, not a fix for a live defect — do not re-file it as
+        // one, and do not raise max_tokens on the strength of this comment.
+        // Marking beats continuing: a continuation doubles the spend on the rare
+        // path, while an honest "there is more" lets the user ask for the rest.
+        if (response.stop_reason === "max_tokens" && finalResponse) {
+          finalResponse += "\n\n_(I hit my length limit mid-answer — ask me to continue and I'll pick up where this stops.)_";
+        }
         iterationTraces.push(trace);
         break;
       }
@@ -4238,7 +4317,28 @@ export async function POST(req: NextRequest) {
       const fr = finalResponse;
       const er = escalated;
       const erReason = escalationReason ?? null;
+      const cacheRead = iterationTraces.reduce((n, t) => n + (t.cache_read ?? 0), 0);
+      const cacheWrite = iterationTraces.reduce((n, t) => n + (t.cache_write ?? 0), 0);
       after(async () => {
+        // ⚠ The [chat-trace] line carries these too, but Vercel's runtime-log query
+        // API timed out on every window tried on 2026-09-02 (30m down to a fixed
+        // 10m range), which made the prompt-caching change unfalsifiable in
+        // practice. usage_events is queryable and already exists, so the claim now
+        // has an instrument that answers:
+        //   select feature_name, count(*), sum((metadata->>'read')::bigint)
+        //   from usage_events where feature_name = 'concierge_prompt_cache' ...
+        // Written only when the API actually reported usage, so a row means the
+        // numbers are real rather than defaulted.
+        if (cacheRead > 0 || cacheWrite > 0) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase as any).from("usage_events").insert({
+              wallet_address: userWallet ?? "anon",
+              feature_name: "concierge_prompt_cache",
+              metadata: { read: cacheRead, write: cacheWrite, iterations: iterationTraces.length, smoke: isSmokeTest },
+            });
+          } catch { /* telemetry must never break a reply */ }
+        }
         await persistConversation({
           session_id: sessionId,
           user_message: message,

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SupportChatConnected from "@/components/SupportChatConnected";
 import type { Metadata } from "next";
 import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
@@ -80,6 +81,12 @@ export default function AboutPage() {
       </main>
 
       <SiteFooter />
+
+      {/* Concierge, added 2026-09-02 with the /insights + home mounts: /about is
+          where a stranger reads what RPC is, and it had no way to ask a follow-up
+          question. No sub-layout here carries the launcher, so there is no
+          double-mount. Revert: delete this line and the import. */}
+      <SupportChatConnected />
     </div>
   );
 }
