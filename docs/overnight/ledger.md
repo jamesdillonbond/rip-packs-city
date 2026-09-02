@@ -10,6 +10,59 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · 📏 `/api/collection-stats` runs the SAME 19,942-probe FMV scan twice per request — measured, filed, deliberately NOT shipped
+
+**Filing `2026-09-02T0545Z-collection-stats-runs-the-same-19942-probe-fmv-scan-twice-per-request.md`.**
+Nothing changed. Touches register **R6** and **R52**, and ⛔ **does not overturn R52** — the win needs no
+new object.
+
+**Quiet-band floor for `get_collection_stats`, one call each** (05:2xZ, outside the saturation band):
+
+| slug | buffers (hit + read) | ms |
+|---|---:|---:|
+| `nba_top_shot` | 244,916 (+**21,403** read) cold · 244,754 warm | 3,863 · **1,257 warm** |
+| `nfl_all_day` | 82,816 (+**12,547**) | **3,265** |
+| `disney_pinnacle` | 31,739 | 830 |
+| `ufc_strike` · `laliga_golazos` | 7,435 · 6,954 | 113 · 153 |
+
+⭐ **30× separation, tracking EDITION COUNT** — a per-edition scan. ⚠ **Top Shot's WARM call still
+touches 244,754 buffers**; only the disk reads fall, so **this cannot be waited out by cache warming.**
+
+**The actionable part:** `get_collection_stats` computes FMV coverage with one lateral probe per
+edition, and the route's `computeHighMediumPct()` then runs **the byte-equivalent scan again in the same
+request** for a different FILTER. They sit in a `Promise.all`, so wall-clock hides it — **the DB load is
+the sum, and this instance is IO-bound.** Second pass measured alone: **116,945 buffers, 2,875 ms,
+19,942 lateral loops.**
+
+**The fix is a fold, not a rebuild:** add one `COUNT(*) FILTER (…IN ('HIGH','MEDIUM'))` to the SELECT
+that already scans, and delete the route's second query. Same numbers, same freshness, **~117k buffers
+and ~2.9 s off every uncached request.**
+
+⛔ **Not shipped, and the reason is the surface, not the difficulty.** It patches a LIVE PUBLIC function
+of 12.5 KB. ⭐ The repo already owns the safe technique —
+`20260815083710_…_prune_future_fmv_partitions` reads `pg_get_functiondef`, asserts the pattern occurs
+exactly N times, refuses if already patched, and `EXECUTE replace(...)`s — **so this wants a session
+that can hold the diff, not a 13 KB hand-transcription at the end of a long night.** The trap is named
+in the filing: the Pinnacle branch's `INTO` list starts with the same prefix, so a bare match hits both.
+
+⛔ **And I did NOT take the tempting shortcut.** `rpc_trust_health_precompute` already publishes this
+metric per collection, and it is **the same instrument** — the route's live Top Shot figure is **39.8%**
+(7,927 / 19,942) against the precompute's **39.9%**, the gap being its ~3.5 h age. Reading it would cut
+the second pass to one row. **But that trades a live number for one up to ~3 h stale on a user-facing
+accuracy claim, and the precompute carries only the percentage while the route also returns the COUNT.**
+Fold first; swap only if someone decides that staleness is acceptable. *(This is not R41's 49.7-vs-34.2
+disagreement — different pair, and these two agree.)*
+
+ⓘ **One more number worth keeping:** each probe hits **three partitions**, and `fmv_snapshots_2027`
+returns 0 rows on all 19,942 loops for **39,884 buffers** — ~34% of the leg, at ~2 buffers per probe per
+partition. ⛔ Do not "fix" it with a `computed_at` lower bound: an edition whose newest snapshot predates
+the bound would silently leave the covered count. 👉 **The tax of a partitioned lateral scales with
+PARTITION COUNT** — a 2028 partition adds another ~40k buffers to this call for nothing.
+
+**What it does for R6:** its exit condition asked for saturation-relative numbers. These are the QUIET
+floor, and even quiet All Day is 3.3 s. **R6 does not need a saturation window to be believed; it needs
+the fold.**
+
 ### 2026-09-01 · 🚨 SHIPPED — the guard that watches for anon-executable SECURITY DEFINER functions was looking at NINE hardcoded names, and the schema has 559
 
 **Migration `audit_20260902_secdef_anon_exec_guard_walks_the_schema_instead_of_a_nine_name_list`**
