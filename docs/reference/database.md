@@ -1203,8 +1203,14 @@ Swept it 2026-09-02. **21 views use `DISTINCT ON`.** Of the callers:
   - `compute_pack_ev_from_pool` — *"LATERAL instead of the fmv_current view (a full 1.31M-row pass per join)"*
   - `compute_pack_ev_per_edition_weighted` — *"the planner cannot push a join key into DISTINCT ON, so every call walked all 1.31M fmv_snapshots rows"*
   - `backfill_pack_rip_metadata` — *"LATERAL instead of LEFT JOIN fmv_current (the DISTINCT ON view, a full pass over every snapshot per call)"*
-  - `health_check` reads it unqualified, but it aggregates over the whole view **on purpose** — the
-    full set is the intent, not an accident. Checked and cleared.
+  - `health_check` reads it unqualified — **and has ZERO callers.** ⚠ I first cleared this as "the
+    full set is the intent"; the real reason is better and was one query away. **0 pg_cron jobs
+    reference it**, and all three in-repo mentions are comments describing migrations *away* from
+    it: `data-integrity` (*"the previous version called the full health_check() aggregate
+    (~14.7s…)"* → now `get_fmv_coverage()`) and `stale-fmv-monitor` (*"reads the inputs we need
+    directly"*). So it is a dead ~14.7 s aggregate, not a live full scan — **nothing to optimise,
+    and nothing to worry about.** ⭐ Second time in one day that "name the caller" changed the
+    answer rather than merely confirming it.
 
 ⭐ **So the SQL layer learned this lesson thoroughly and the TypeScript layer never heard it.** Three
 functions carry explicit comments about the DISTINCT ON pushdown; the route-side read in
