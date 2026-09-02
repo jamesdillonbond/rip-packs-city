@@ -4,6 +4,16 @@
 // collection `activities` feed (newest-first), resolves each sale's mint to an
 // RPC edition via DAS, and writes a `sales` row in USD.
 //
+// ⛔ COVERAGE, stated up front because the row fields understate it: this route
+// sees MAGIC EDEN ONLY. OpenSea added Solana NFT trading ~2026-08-31 with Candy
+// Digital as a NAMED LAUNCH PARTNER, and a Candy trade clearing there is captured
+// NOWHERE by RPC. Confirmed rather than inferred: count(distinct marketplace) = 1
+// across every Candy sale ever recorded. Candy is small (~3,041 sales / $25,115
+// per 30d) so this is an accuracy gap, not an emergency — but the LISTINGS side is
+// sharper, since Magic Eden lists ~0 Candy items under the quest-hold rule, so an
+// empty deals/sniper/floor board can mean "we are blind", not "no market".
+// See docs/overnight/inbox/2026-09-02T0400Z-candy-secondary-is-no-longer-magic-eden-only-*.md
+//
 // ARMED 2026-07-19: CANDY_MLB_ME_SYMBOL is filled with the verified live symbol
 // and a Vercel cron drives this every 3h. Magic Eden currently lists 0 Candy items
 // (quest-hold rule) so every tick is a 1-call no-op; the first printed secondary
@@ -370,6 +380,29 @@ async function handleIndex(req: NextRequest) {
             price_usd: priceUsd,
             price_native: price,
             currency: "SOL",
+            // ⚠ BOTH OF THESE ARE NARROWER THAN THEY LOOK. Read this before drawing
+            // any conclusion about Candy market coverage from a `sales` row.
+            //
+            // `marketplace` is HARDCODED, not detected: every row this route writes
+            // says magic_eden because Magic Eden is the only venue it reads. So
+            // `count(distinct marketplace)` on Candy is 1 by CONSTRUCTION — it is a
+            // fact about this indexer, never about the market. It cannot show
+            // coverage loss, which is exactly why the 2026-08-31 OpenSea/Solana
+            // launch (Candy is a named launch partner) was invisible here.
+            //
+            // ⛔ `source: "solana_das"` NAMES THE RESOLVER, NOT THE SALES SOURCE.
+            // DAS only maps mint -> edition (see getAsset above). The SALES come
+            // from Magic Eden's HTTP activities feed (ME_BASE /activities). It
+            // reads like on-chain provenance and is not: a 2026-09-02 audit nearly
+            // concluded "sales are on-chain, so OpenSea trades are captured for
+            // free" from this tag alone. They are not captured at all.
+            //
+            // ⚠ DO NOT RENAME THIS TAG. `solana_das` is load-bearing downstream:
+            // docs/overnight/flow-ecosystem-watch.md carries "no new source tag vs
+            // baseline" as a standing check and lists `candy_mlb solana_das` as
+            // known, so a rename reads as a NEW VENUE APPEARING. It would also
+            // split ~6,600 historical rows and break two tests. Add a second
+            // source instead; leave this one alone.
             marketplace: "magic_eden",
             source: "solana_das",
             transaction_hash: signature,
