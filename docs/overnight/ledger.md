@@ -10,6 +10,83 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the concierge's cheapest-set-to-finish question, the max_tokens branch, the last public mounts, and the prompt-cache reading is IN: a 21,119-token prefix, hit across requests
+
+Second concierge pass of the day; the first is the entry below. Commits `235af701`
+(code + migration `20260902144913`), following `a6c271d9` / `467e927e` / `bb81cd72` / `2b00c1f3`.
+
+**⭐ The owed measurement is taken, and it is the good outcome.** The caching breakpoint shipped
+earlier today was unfalsifiable in practice — **every Vercel runtime-log query timed out**, at 30m,
+25m, 20m, 8m, 5m and a fixed 10m range, so `[chat-trace]`'s `cache_read_total` could not be read at
+all. Fixed by writing the totals to `usage_events` as `feature_name='concierge_prompt_cache'`, which
+is queryable. Two live anonymous probes, one minute apart:
+
+| probe | iterations | cache_write | cache_read |
+|---|---|---|---|
+| 1 (cold prefix, 2 tool iterations) | 2 | **21,119** | **21,119** |
+| 2 (warm, 1 iteration) | 1 | **0** | **21,119** |
+
+Read that second row carefully — **write 0, read 21,119** is a cache hit ACROSS REQUESTS, not a
+within-request artifact, which is the thing a single reading could not have told apart. So: the
+static prefix is **21,119 tokens**, it was previously billed at full input rate on *every iteration
+of every request*, and it is now written once and read at the cache rate thereafter. ⚠ **This is a
+token measurement, not a dollar figure** — no spend number is claimed here, and one should not be
+quoted from it without the price sheet.
+
+**`get_cheapest_sets_to_complete` + `get_topshot_cheapest_sets_to_complete()`.** `get_set_completion_cost`
+is `required: ["setName","walletAddress"]`, so *"what is the cheapest set for me to complete right
+now?"* could not be answered — `support_conversations` **4821/4822** (2026-07-12) asked exactly that,
+twice, and got *"the set completion tool requires a specific set name"* both times. **Asking the user
+to name a set is asking them the question they asked us.** The new RPC does one pass over
+`mv_topshot_set_play_catalog` grouped by set, for the sets the wallet is part-way through, with floor
+semantics **copied verbatim** from `get_topshot_set_completion_plan` so the two cannot disagree about
+what a set costs. Measured on a 365-moment wallet: **1,879 buffers, 91 ms**, 46 candidate sets of 265.
+Verified live end-to-end — the July question now returns a ranked table, *The Challenge: Pro* at
+**$2.61**, 57% complete, 3 missing and all listed.
+
+⛔ **The trap it is built around, and the reason `fully_buyable` exists:** summing only the missing
+plays that HAVE a listing makes an **uncompletable set look cheap** — missing 40 with 2 listed sums to
+the price of those 2 and ranks FIRST. Every row carries `missing_listed` and `fully_buyable`,
+`fully_buyable` sorts first, and both the `reading_note` and the tool description forbid quoting a
+partial cost as the cost to finish. **A "cheapest" ranking over a partial denominator ranks the
+unbuyable things first** — the same shape as every other silently-sliced ranking in this file.
+
+**`max_tokens` is no longer silent.** The tool loop handled `end_turn` and `tool_use`; everything else
+returned the accumulated text as the final answer, so a `max_tokens` stop rendered mid-sentence with
+nothing marking it. Now marked with an offer to continue. ⚠ **It has NEVER fired** — longest
+`bot_response` over 5,643 rows is **2,107 chars** against a ~4,000-char cap, p95 **687**, zero rows in
+the 3,600–4,200 band. **Insurance, not a live defect; do not re-file it as one, and do not raise
+`max_tokens` on the strength of this entry.** Marking beats continuing: a continuation doubles the
+spend on the rare path while an honest "there is more" lets the user ask.
+
+**The last public entry points.** Home, `/about`, `/blog` and `/early-access` now carry the launcher,
+finishing what the `/insights` mount started. Verified live: **exactly one** `Open RPC concierge`
+button on each of `/`, `/about`, `/blog`, `/early-access` and `/insights/*` — no double-mount, which
+was the whole risk of doing this per-page instead of in the root layout. `/edition/[id]` is skipped
+deliberately: it is a pure redirect route with no UI.
+
+**Migration hygiene.** `20260902144913_audit_20260902_get_topshot_cheapest_sets_to_complete.sql` is
+committed with the version read back from `supabase_migrations.schema_migrations`. SECURITY DEFINER,
+service-role only — `anon` and `authenticated` EXECUTE verified **false**, `service_role` **true**,
+`jsonb_array_length(check_secdef_anon_exec_drift())` **0**. The committed file's function body is
+**md5-equal** to prod's `prosrc` (`cbb529acf5af54a9e675e31d6bfae971`), so nothing was transcribed by
+eye.
+
+**Revert paths.** Code: `git revert 235af701` — the four parts are independent (the tool + its
+executor block; the `max_tokens` marker; the `usage_events` cache insert; the four page mounts).
+DB: `DROP FUNCTION public.get_topshot_cheapest_sets_to_complete(text, integer);` — nothing else
+references it and the tool degrades to "not available".
+
+**Still owed.** Exhausting `MAX_ITERATIONS = 5` still leaves `finalResponse` empty and renders as
+*"That query was too complex…"*, which is indistinguishable in the data from a real timeout; a
+distinct `category` would let the smoke suite see it. And the R73 watch is unchanged: `concierge_opened`
+rows from real traffic within 7 days, falsifier as filed.
+
+⚠ **Two probe rows** sit under `session_id = 'probe-concierge-ship-2026-09-02'` with
+`is_smoke_test=false` (the smoke header is validated against `SMOKE_TEST_SESSION_TOKEN`, which an
+agent session does not hold) — **exclude that session_id from any real-traffic count**, as with
+`probe-verify-001`.
+
 ### 2026-09-02 · ✅ SHIPPED — four more public boards stated a claim out of a failed read, and three of them blamed the READER'S FILTERS
 
 **What shipped.** `initialFailed={!ok}` on `cross-collection`, `parallel-premiums`, `rookie-board`
