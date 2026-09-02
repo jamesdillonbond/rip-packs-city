@@ -953,13 +953,12 @@ Respond in whatever language the user writes in.`;
   return { cacheable, dynamic };
 }
 
-// Back-compat: the concatenation of the two parts is byte-identical to the
-// single string this function used to return. Kept so any caller (and the
-// tests that assert on prompt CONTENT) can keep reading one string.
-function buildSystemPrompt(ctx: Parameters<typeof buildSystemPromptParts>[0]): string {
-  const parts = buildSystemPromptParts(ctx);
-  return parts.cacheable + parts.dynamic;
-}
+// ⚠ There is deliberately NO buildSystemPrompt() wrapper here. One was written
+// for back-compat and removed the same pass: nothing imports this module's
+// helpers (the prompt guards read route.ts as SOURCE text, not as an import),
+// so it was dead code and the eslint no-unused-vars ratchet caught it.
+// `cacheable + dynamic` is byte-identical to the single string this function
+// returned before the caching split — if you need the whole prompt, join them.
 
 // ── FMV distribution result formatter ─────────────────────────────────────────
 //
