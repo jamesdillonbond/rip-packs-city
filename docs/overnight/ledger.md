@@ -10,6 +10,61 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ⚠ COLLISION — two sessions shipped the SAME lock-check fix 3.5 minutes apart under the SAME migration name; both rows kept, and the new information is what neither pass had
+
+**This entry sits directly above the entry that shipped the same change** (session `014wx7Jm`,
+commit `2006b31e5`, migration `20260902034649`). Mine is `20260902035016`, applied 3 m 27 s later, and
+because the later `CREATE OR REPLACE` wins it is **the live body**. Nothing is broken and nothing needs
+undoing — this entry records the collision, the reconciliation, and the one thing that is genuinely new.
+
+**Both passes drained inbox filing `2026-09-02T0330Z` (the one that says "first thing to ship next
+pass"), independently re-derived the same numbers** — Top Shot 24 h: **9,590 checks to 12 seeded-only
+wallets, 0 to any saved or linked wallet**, against 31 user wallets holding **212,201 rows, 100%
+qualifying** — and independently found the same load-bearing detail: the class tier has to go on the
+**priority leg's OWN `ORDER BY … LIMIT p_limit`**, because that limit collapses the ~11,978 probed rows
+before `dedup`/`ranked` ever see them. A tier on the final `ROW_NUMBER` alone — the obvious reading of
+the filing's "carry the flag through `cand`/`dedup`" — would have changed **nothing**.
+
+**Reconciliation: BOTH files are committed, deliberately.** `check-migration-parity.mjs` keys on
+migration NAME, and both applied rows carry the *same* name — so keeping one file would have satisfied
+the guard while silently hiding a second real applied row. Each file now matches its own row's version
+exactly, and the later one carries a header naming the earlier.
+
+**The two bodies are output-equivalent**; the only differences are (1) mine adds
+`WHERE u.addr IS NOT NULL` to `hot` — one nullable `linked_accounts` side contributes exactly 1 NULL
+address, and `w.wallet_address = NULL` is never true, so that group could only cost a probe and never
+produce a row; and (2) `ranked` orders `is_priority DESC, is_user DESC` in mine and the reverse in
+theirs, which is equivalent because the non-priority leg hardcodes `false AS is_user` in **both**, so
+`is_user ⇒ is_priority` and neither key can overtake the other. Verified before applying:
+**200 of 200 batch rows to user wallets**, against 0 before.
+
+⭐ **What my pass adds that the other did not have — the round-robin follow-up is AFFORDABLE, and the
+objection to it is measured false.** With the tier in, one user whale (**39,657 qualifying rows**)
+absorbs whole ticks, so the 31 user wallets are served depth-first over ~22 days and a 50-row user
+wallet can wait weeks behind a whale. The reason to hesitate is that spreading work means more Cadence
+groups per run, and the route header warns loudly about run length. **Measured rather than assumed:
+`wallets_grouped` is ALREADY 12–30 per run at 8–58 s** (15 consecutive runs, both slugs) against a
+300 s ceiling — so a round-robin across ~31 user wallets is squarely in-band. ⚠ **The route header's
+"p90 241,381 ms, 80% of budget" is a DATED SAMPLE that no longer describes this route** — re-derive it
+before quoting it as a constraint. Not shipped: it wants a pass that can watch a tick land.
+
+⛔ **Still NOT fixed by either pass, and worth restating so it is not mistaken for done:** the
+arithmetic. 9,590 checks/day against a 7-day freshness target needing ~271,000/day. This makes scarce
+capacity go to the right wallets; **it does not create capacity.**
+
+⭐ **The transferable lesson is the collision itself, and it cost two sessions the same hour.** Nothing
+in the inbox, the ledger or the DB marks a filing as claimed, so two passes draining the same queue
+took the same top item within minutes. It surfaced only as `(non-fast-forward)` on `git push` — which
+per the standing rule reads exactly like a permissions failure and had to be diagnosed from the error
+string. 👉 **`git fetch origin main` and re-read the top of the ledger BEFORE starting a filing, not
+before pushing** — a filing that says *"the first thing to ship next pass"* is precisely the one another
+session is also reading.
+
+**REVERT (either file):** re-apply
+`20260901203834_audit_20260901_revert_lock_check_batch_plpgsql_my_measurement_was_wrong` verbatim — it
+holds the exact prior body. No table, index or schedule changed.
+
+
 ### 2026-09-01 · ✅ SHIPPED — DB · lock-check now prioritises USER wallets over seeded coverage (the defect two entries below, fixed)
 
 **Migration:** `20260902034649_audit_20260902_lock_check_batch_prioritises_user_wallets_over_seeded_coverage`
