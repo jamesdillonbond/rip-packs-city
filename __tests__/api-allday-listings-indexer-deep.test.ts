@@ -631,6 +631,44 @@ describe("allday-listings-indexer — edition-resolution ladder", () => {
     expect(spy.writes.listing_resolution_failures ?? []).toHaveLength(0)
   })
 
+  // ⚠ A FAILED LADDER READ IS NOT AN ABSENT MAPPING. The three lookups used to
+  // discard supabase-js's `error` and fall through `?? []`, so an unread table
+  // sent every listing of the tick into `listing_resolution_failures` — a queue
+  // the retry drainer then works through with real Cadence borrows and a finite
+  // retry budget, for rows that were never unresolvable. Asserted as the ABSENCE
+  // of the queue write and of the cursor advance.
+  it("a failed wmc read queues NOTHING and does not advance the cursor", async () => {
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        v1Avail: [
+          eventBlock({
+            height: 1100,
+            txId: "f".repeat(64),
+            eventType: V1_AVAIL,
+            payload: v1AvailPayload({ nftId: "777", lrid: "9077", price: "5.00000000" }),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      wallet_moments_cache: { data: null, error: { message: "wmc read boom" } },
+      nft_edition_map: { data: [], error: null },
+      editions: { data: [], error: null },
+      cached_listings_v2: { data: [], error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(spy.writes.listing_resolution_failures ?? []).toHaveLength(0)
+    expect(spy.writes.event_cursor ?? []).toHaveLength(0)
+
+    const log = terminalLog(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("wallet_moments_cache lookup")
+  })
+
   it("unresolvable (borrow nil) -> listing_resolution_failures with the transient reason; breadcrumbs but NO Sentry page", async () => {
     const tx1 = "2".repeat(64)
     fetchMock = installFetchMock(

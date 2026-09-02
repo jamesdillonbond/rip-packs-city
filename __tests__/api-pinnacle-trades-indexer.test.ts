@@ -240,6 +240,22 @@ describe("pinnacle-trades-indexer — what it writes", () => {
     expect(byNft.n1).toBe("ed-n1")
     expect(byNft.n2).toBeNull()
   })
+
+  // ⚠ A FAILED MAP READ IS NOT AN UNMAPPED PIN. The lookup used to discard
+  // supabase-js's `error` and fall through `?? []`, so every trade row would be
+  // written with `edition_id: null` — indistinguishable from a genuinely
+  // uncataloged Pin, and never corrected, because the upsert runs
+  // `ignoreDuplicates: true` so a later tick will not rewrite the row. Asserted
+  // as the ABSENCE of the write, not the presence of an error string.
+  it("a failed pinnacle_nft_map read writes NO rows rather than a page of edition_id NULLs", async () => {
+    fetchMock = installFetchMock(flowStubs(tradeBlocks()))
+    const spy = install({
+      event_cursor: cursorFixture,
+      pinnacle_nft_map: { data: null, error: { message: "map read boom" } },
+    })
+    await POST(req())
+    expect(spy.writes.pinnacle_trade_events ?? []).toHaveLength(0)
+  })
 })
 
 describe("pinnacle-trades-indexer — backfill mode", () => {

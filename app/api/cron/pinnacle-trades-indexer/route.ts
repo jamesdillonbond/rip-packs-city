@@ -491,10 +491,16 @@ async function runIndexer(req: NextRequest) {
 
     for (let i = 0; i < uniqueNftIds.length; i += 500) {
       const batch = uniqueNftIds.slice(i, i + 500)
-      const { data } = await (supabaseAdmin as any)
+      // ⚠ THROW — DO NOT `?? []` THIS. A failed read is not an absent mapping:
+      // every trade row below would be written with `edition_id: null`, which is
+      // indistinguishable from a genuinely uncataloged pin and is never revisited
+      // (the row upserts `ignoreDuplicates: true`, so a later tick will not
+      // correct it). The `unresolved` count would rise and read as catalogue drift.
+      const { data, error } = await (supabaseAdmin as any)
         .from("pinnacle_nft_map")
         .select("nft_id, edition_key")
         .in("nft_id", batch)
+      if (error) throw new Error(`pinnacle_nft_map lookup: ${error.message}`)
       for (const row of data ?? []) {
         if (row.edition_key) nftToEditionId.set(String(row.nft_id), row.edition_key)
       }
@@ -504,11 +510,12 @@ async function runIndexer(req: NextRequest) {
     if (stillUnresolved.length > 0) {
       for (let i = 0; i < stillUnresolved.length; i += 500) {
         const batch = stillUnresolved.slice(i, i + 500)
-        const { data } = await (supabaseAdmin as any)
+        const { data, error } = await (supabaseAdmin as any)
           .from("wallet_moments_cache")
           .select("moment_id, edition_key")
           .eq("collection_id", PINNACLE_COLLECTION_ID)
           .in("moment_id", batch)
+        if (error) throw new Error(`wallet_moments_cache lookup: ${error.message}`)
         for (const row of data ?? []) {
           if (row.edition_key) nftToEditionId.set(row.moment_id, row.edition_key)
         }

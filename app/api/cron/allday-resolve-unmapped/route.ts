@@ -452,8 +452,16 @@ async function run(startedAt: string) {
     const existing = new Set<string>()
     for (let i = 0; i < ids.length; i += 500) {
       const batch = ids.slice(i, i + 500)
-      const { data } = await (supabaseAdmin as any)
+      // ⚠ THROW — DO NOT `?? []` THIS. A failed read leaves `existing` empty, so
+      // EVERY resolved edition falls into `missing` below and the loop issues one
+      // on-chain `getEditionData` per id (each with a CADENCE_DELAY_MS pause) and
+      // then upserts them all back over rows that were already there. A single
+      // unread page turns a no-op into a Cadence storm large enough to push this
+      // route past its own maxDuration — and none of it is visible, because the
+      // reason is an error nobody looked at.
+      const { data, error } = await (supabaseAdmin as any)
         .from("editions").select("external_id").eq("collection_id", ALLDAY_COLLECTION_ID).in("external_id", batch)
+      if (error) throw new Error(`editions existence lookup: ${error.message}`)
       for (const r of data ?? []) existing.add(r.external_id)
     }
     const missing = ids.filter((id) => !existing.has(id))

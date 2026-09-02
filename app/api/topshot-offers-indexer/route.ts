@@ -305,21 +305,31 @@ export async function POST(req: NextRequest) {
     const editionIdByExt = new Map<string, string>()
     for (let i = 0; i < extKeys.length; i += DB_IN_CHUNK) {
       const chunk = extKeys.slice(i, i + DB_IN_CHUNK)
-      const { data } = await (supabaseAdmin as any)
+      // ⚠ THROW — DO NOT `?? []` THIS. supabase-js RETURNS errors, so discarding
+      // `error` made a failed read look like "none of these editions are
+      // cataloged", every offer fell into `if (!editionId) { unresolved++;
+      // continue }`, and the cursor at step 5 advanced anyway. Nothing revisits a
+      // block below the cursor, so those offers would be PERMANENTLY lost while
+      // the run logged ok:true with a plausible `unresolved` count. The abort path
+      // this file already documents at the top is the correct one: it leaves the
+      // cursor where it was and logs ok=false.
+      const { data, error } = await (supabaseAdmin as any)
         .from("editions")
         .select("external_id, id")
         .eq("collection_id", TS_COLLECTION_ID)
         .in("external_id", chunk)
+      if (error) throw new Error(`editions lookup: ${error.message}`)
       for (const r of (data as Array<{ external_id: string; id: string }> | null) ?? []) editionIdByExt.set(r.external_id, r.id)
     }
 
     const momentByNft = new Map<string, { momentId: string; editionId: string; serial: number | null }>()
     for (let i = 0; i < nftIds.length; i += DB_IN_CHUNK) {
       const chunk = nftIds.slice(i, i + DB_IN_CHUNK)
-      const { data } = await (supabaseAdmin as any)
+      const { data, error } = await (supabaseAdmin as any)
         .from("moments")
         .select("nft_id, id, edition_id, serial_number")
         .in("nft_id", chunk)
+      if (error) throw new Error(`moments lookup: ${error.message}`)
       for (const r of (data as Array<{ nft_id: string; id: string; edition_id: string; serial_number: number | null }> | null) ?? [])
         momentByNft.set(r.nft_id, { momentId: r.id, editionId: r.edition_id, serial: r.serial_number })
     }

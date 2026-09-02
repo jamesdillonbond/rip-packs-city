@@ -581,6 +581,51 @@ describe("topshot-offers-indexer — cursor + control flow", () => {
     expect(String(log?.p_error)).toContain("blocks sealed HTTP 500")
   })
 
+  // 🚨 THE ONE THAT LOSES DATA. `editionIdByExt` used to be built from
+  // `const { data } = await …` with `error` discarded, so a failed read looked
+  // like "none of these editions are cataloged": every offer fell into
+  // `if (!editionId) { unresolved++; continue }`, ZERO rows were written, and the
+  // cursor advanced to targetHeight anyway. Nothing revisits a block below the
+  // cursor, so those offers were gone — under a run that logged ok:true with a
+  // plausible `unresolved` count. Asserted as the ABSENCE of the cursor write.
+  it("a failed editions read never advances the cursor and never silently drops the offers", async () => {
+    const tx1 = "e".repeat(64)
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        avail: [
+          eventBlock({
+            height: 1100,
+            txId: tx1,
+            eventType: OFFER_AVAILABLE,
+            payload: offerAvailPayload({
+              offerId: "901",
+              amount: "12.00000000",
+              params: { _type: "TopShotEdition", setId: "8", playId: "133" },
+            }),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      editions: { data: null, error: { message: "editions read boom" } },
+      offers: { data: [], error: null },
+    })
+
+    const res = await POST(req())
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(String(body.error)).toContain("editions lookup")
+    // ⛔ THE LOAD-BEARING ASSERTION: the cursor must not move, or the block is
+    // never read again.
+    expect(spy.writes.event_cursor ?? []).toHaveLength(0)
+    expect(offerUpserts(spy)).toHaveLength(0)
+
+    const log = terminalLog(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("editions lookup")
+  })
+
   it("401s without the token before any I/O", async () => {
     install({})
     fetchMock = installFetchMock(flowRestStubs({}))

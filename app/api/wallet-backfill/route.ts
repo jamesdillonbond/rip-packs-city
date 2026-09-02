@@ -190,6 +190,13 @@ async function stampLastRefreshed(wallet: string, changedRows?: number) {
   let refreshStats = true
   if (changedRows === 0) {
     try {
+      // ⓘ `error` is DELIBERATELY not checked here, and this is the one read in
+      // this sweep that should fail open. A missing/unreadable `last_refreshed_at`
+      // makes `lastMs` NaN, which sends the wallet down the FULL-walk path — more
+      // work, never less, and never a wrong answer. Contrast every other lookup in
+      // these routes, where an unread table becomes "not found" and lands on a
+      // retirement, a dropped row or a NULL foreign key. The discriminator is not
+      // the expression; it is where `not found` LANDS.
       const { data } = await (supabaseAdmin as any)
         .from("seeded_wallets")
         .select("last_refreshed_at")

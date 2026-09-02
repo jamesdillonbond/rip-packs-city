@@ -531,11 +531,17 @@ export async function POST(req: NextRequest) {
       if (uniqueNftIds.length > 0) {
         for (let i = 0; i < uniqueNftIds.length; i += 500) {
           const batch = uniqueNftIds.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
+          // ⚠ THROW on all three rungs — DO NOT `?? []` them. A failed read is not
+          // an absent mapping: every listing would fall through to the
+          // `listing_resolution_failures` queue, which the retry drainer then
+          // works through with real Cadence calls and a retry budget, for rows
+          // that were never unresolvable. The tick failing costs one cycle.
+          const { data, error } = await (supabaseAdmin as any)
             .from("wallet_moments_cache")
             .select("moment_id, edition_key")
             .eq("collection_id", ALLDAY_COLLECTION_ID)
             .in("moment_id", batch)
+          if (error) throw new Error(`wallet_moments_cache lookup: ${error.message}`)
           for (const row of data ?? []) {
             if (row.edition_key) nftToEditionExternalId.set(row.moment_id, row.edition_key)
           }
@@ -545,11 +551,12 @@ export async function POST(req: NextRequest) {
         if (stillMissing.length > 0) {
           for (let i = 0; i < stillMissing.length; i += 500) {
             const batch = stillMissing.slice(i, i + 500)
-            const { data } = await (supabaseAdmin as any)
+            const { data, error } = await (supabaseAdmin as any)
               .from("nft_edition_map")
               .select("nft_id, edition_external_id")
               .eq("collection_id", ALLDAY_COLLECTION_ID)
               .in("nft_id", batch)
+            if (error) throw new Error(`nft_edition_map lookup: ${error.message}`)
             for (const row of data ?? []) {
               if (row.edition_external_id) nftToEditionExternalId.set(row.nft_id, row.edition_external_id)
             }
@@ -588,11 +595,12 @@ export async function POST(req: NextRequest) {
       if (editionExternalIds.length > 0) {
         for (let i = 0; i < editionExternalIds.length; i += 500) {
           const batch = editionExternalIds.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
+          const { data, error } = await (supabaseAdmin as any)
             .from("editions")
             .select("id, external_id")
             .eq("collection_id", ALLDAY_COLLECTION_ID)
             .in("external_id", batch)
+          if (error) throw new Error(`editions lookup: ${error.message}`)
           for (const row of data ?? []) editionExternalIdToUuid.set(row.external_id, row.id)
         }
       }
