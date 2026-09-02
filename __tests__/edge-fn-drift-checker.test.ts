@@ -675,6 +675,18 @@ describe("edge-fn drift: redeploy advice must exclude the gate-key-blocked funct
     expect(GATE_KEY_DEPLOY_BLOCKED.has("compute-golazos-pack-ev")).toBe(true)
   })
 
+  it("does NOT block the two whose deployed build already reads the same gate var", () => {
+    // Removed 2026-09-02. The block assumed their secret was unset; re-derived from
+    // the DEPLOYED sources, each already reads its own *_GATE_KEY and already fails
+    // closed, and repo HEAD reads THE SAME var. Same requirement before and after,
+    // so the deploy could not introduce a new dependency. Both were deployed that
+    // pass and boot-probe clean.
+    // ⚠ This asserts the CORRECTED state, so a naive revert of that commit fails
+    // here rather than silently re-parking two deployable functions.
+    expect(GATE_KEY_DEPLOY_BLOCKED.has("backfill-pack-opens-api")).toBe(false)
+    expect(GATE_KEY_DEPLOY_BLOCKED.has("backfill-allday-pack-supply")).toBe(false)
+  })
+
   it("does NOT block the two functions deployed after the dual-accept cutoff", () => {
     // Over-blocking is a real cost too: it would leave a genuinely fixable
     // function stuck as permanent drift. Both were deployed 2026-08-15, so they
@@ -698,7 +710,7 @@ describe("edge-fn drift: redeploy advice must exclude the gate-key-blocked funct
       "ingest-pinnacle-mints",
       "b",
       "compute-topshot-pack-ev",
-      "backfill-pack-opens-api",
+      "ingest-topshot-pack-opens-history",
       "c",
     ]
     const { safe, mustNotDeploy, deferred } = partitionByDeploySafety(input)

@@ -192,6 +192,27 @@ export function driftExitCode({ driftedCount, tier2Attempted, tier2Ran }) {
  * backfill-topshot-pack-supply break, and it is strictly worse than the drift it
  * would "fix".
  *
+ * ⚠ THE MECHANISM ABOVE WAS RE-DERIVED 2026-09-02 AND IS STATED WRONG FOR THE
+ * FOUR THAT REMAIN. It says the secret "is unset". Nothing can enumerate Supabase
+ * secrets, so that was never a measurement. What the four DEPLOYED builds actually
+ * do (read back via get_edge_function through a redacted-report subagent) is gate
+ * on a HARDCODED STRING LITERAL compiled into the artifact; they read no
+ * *_GATE_KEY at all. The correct statement of the risk is therefore:
+ *
+ *   repo HEAD introduces an env-var dependency THE DEPLOYED BUILD DOES NOT HAVE,
+ *   and fails closed if it is unset.
+ *
+ * The conclusion (do not deploy without an operator setting the secret first) is
+ * unchanged — but the restated mechanism is what makes the NEXT question askable:
+ * "do deployed and HEAD read the same env vars?" If they do, there is no new
+ * dependency and the function is safe. That question is what cleared two entries
+ * off this list, and it is the check to run before adding one.
+ *
+ * ⛔ COROLLARY — A GREEN pipeline_runs PROVES NOTHING HERE. All four are fully
+ * green (ingest-pinnacle-mints: 2,599/2,599 ok in 7d). That proves cron's ?key=
+ * matches the deployed build's baked-in literal. It is not evidence about a
+ * secret, because the running program is not the program in the repo.
+ *
  * THEY ARE DRIFTED *BECAUSE* THEY WERE NEVER REDEPLOYED, WHICH IS CORRECT.
  * Their drift signature is their documented one: deployed import_map:false while
  * the repo source imports by bare specifier -- exactly what tier 1 keys on. So
@@ -211,8 +232,18 @@ export const GATE_KEY_DEPLOY_BLOCKED = new Set([
   'ingest-topshot-pack-opens-history',
   'ingest-pinnacle-mints',
   'compute-golazos-pack-ev',
-  'backfill-pack-opens-api',
-  'backfill-allday-pack-supply',
+  // ➖ REMOVED 2026-09-02, and deployed the same pass:
+  //   backfill-pack-opens-api, backfill-allday-pack-supply
+  // Both were blocked on the assumption their gate secret was unset. Re-derived
+  // from the deployed sources: each ALREADY reads its own *_GATE_KEY from env and
+  // ALREADY fails closed without it, and repo HEAD reads THE SAME var (adding only
+  // an optional _OLD rotation fallback). Same requirement before and after ⇒ the
+  // deploy could not introduce a new dependency, so the block had no mechanism.
+  // Corroborating for backfill-allday-pack-supply: all 3,195 allday_pack_supply
+  // rows carry updated_at five minutes AFTER its fail-closed build shipped, which
+  // a gate reading "" could not have written — the secret is demonstrably set.
+  // ⚠ Over-blocking is not the safe default. It parks a fixable function as
+  // permanent drift and trains readers to scroll past the whole list.
 ])
 
 /**
@@ -239,7 +270,7 @@ export const GATE_KEY_DEPLOY_BLOCKED = new Set([
 export const DEPLOY_DEFERRED = new Map([
   [
     'compute-topshot-pack-ev',
-    'the pipeline is PAUSED and alert-suppressed to 2026-09-13 (dead upstream host public-api.nbatopshot.com, 530/1033), so the honesty fix has no ticks to correct — deploying buys nothing today. CLEARS WHEN: this pipeline TICKS AGAIN — check `SELECT max(started_at) FROM pipeline_runs WHERE pipeline = \'compute-topshot-pack-ev\'`, not whether "Top Shot is back". ⚠ Those differ: measured 2026-08-31 09:5xZ, Top Shot FMV freshness had RECOVERED (topshot_fmv_stale_hours 0.2) while the legacy host still returned 530 residentially and this pipeline had 0 ticks in 24h — FMV is sales-driven and recovered without it. Deploy WITH the un-pause; the honest ok:false flag is then exactly what tells you the restored pipeline works. Ledger 2026-08-30 + inbox 2026-08-31T0610Z.',
+    '\u26a0 THE CODE HALF IS DONE \u2014 v59 deployed 2026-09-02 by the cloud pass, which did NOT consult this map (it re-derived tier 1 from list_edge_functions metadata, where the deferral annotation does not exist). Harmless: the function has no caller at all (no cron.job entry, nothing in .github/workflows, zero invocations in 24h of function_edge_logs), so an early deploy is inert rather than premature. The original reason, still true for the half that remains: the pipeline is PAUSED and alert-suppressed to 2026-09-13 (dead upstream host public-api.nbatopshot.com, 530/1033), so the honesty fix has no ticks to correct. CLEARS WHEN: this pipeline TICKS AGAIN \u2014 check `SELECT max(started_at) FROM pipeline_runs WHERE pipeline = \'compute-topshot-pack-ev\'`, not whether "Top Shot is back". \u26a0 Those differ: measured 2026-08-31 09:5xZ, Top Shot FMV freshness had RECOVERED (topshot_fmv_stale_hours 0.2) while the legacy host still returned 530 residentially and this pipeline had 0 ticks in 24h \u2014 FMV is sales-driven and recovered without it. The remaining step is the UN-PAUSE alone; the honest ok:false flag is already deployed and is exactly what tells you the restored pipeline works. Ledger 2026-08-30 + inbox 2026-08-31T0610Z, deploy recorded in ledger 2026-09-01.',
   ],
 ])
 
@@ -664,7 +695,7 @@ async function main() {
             // inline IS the fix: the list is what stops someone working the
             // report top-to-bottom straight into an outage.
             const blockedLine = mustNotDeploy.length
-              ? ` ⛔ DO NOT REDEPLOY ${mustNotDeploy.length}: ${mustNotDeploy.join(', ')} — their *_GATE_KEY secrets are UNSET, so deploying makes the gate fail CLOSED and 403 every tick (the 2026-08-11 outage mechanism). They are drifted BECAUSE they were never redeployed, which is correct until an operator sets the secrets.`
+              ? ` ⛔ DO NOT REDEPLOY ${mustNotDeploy.length}: ${mustNotDeploy.join(', ')} — their DEPLOYED builds gate on a HARDCODED literal and read no *_GATE_KEY, while repo HEAD reads one from env and fails CLOSED without it — so deploying introduces a dependency that is not currently in force and 403s every tick (the 2026-08-11 outage mechanism). ⛔ Their green pipeline_runs is NOT evidence the secret exists: it proves cron matches the old build's literal. They are drifted BECAUSE they were never redeployed, which is correct until an operator sets the secrets. Re-derived 2026-09-02; absence from this list is never clearance — diff deployed-vs-HEAD env names first.`
               : ``
             return head + safeLine + deferredLine + blockedLine
           })()
