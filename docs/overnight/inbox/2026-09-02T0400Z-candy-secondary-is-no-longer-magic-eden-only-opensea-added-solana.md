@@ -71,7 +71,47 @@ So the remediation path is real, not hypothetical: port the Panini fetch shape t
 `marketplace: 'magic_eden'`. ⚠ Dedup on transaction signature — an aggregated listing could otherwise
 double-count against the ME feed.
 
-### ⛔ TRAP — OpenSea's `flow` is Flow **EVM**, NOT Cadence. Do not chase it.
+### ⛔ CORRECTION — my "don't chase Flow EVM" line was WRONG (Trevor caught it)
+
+The same list contains `{"chain": "flow", ..., "block_explorer_url": "https://evm.flowscan.io"}`, i.e.
+Flow **EVM**, not Cadence. I first wrote that off as a trap: *"RPC's Flow collections are Cadence, so
+this is not a Top Shot data source."* **The VM claim is right; the conclusion is wrong.**
+
+**Top Shot moments ARE bridged Cadence → Flow EVM and ARE tradable on OpenSea:**
+
+- Dapper ships official bridging contracts (`dapperlabs/nba-smart-contracts/evm-bridging/`).
+- `BridgedTopShotMoments` **mainnet `0x84c6a2e6765E88427c41bB38C82a78b570e24709`**, Flow EVM chain
+  **747** — ERC-721 (+enumeration/burn, ERC-2981), **1:1 to a Cadence-native moment** via
+  `CrossVMMetadataViews.EVMPointer`.
+- Live collection `opensea.io/collection/nba-top-shot`, created Feb 2025 by Dapper.
+
+⚠ **The reusable lesson: a "wrong VM" argument is not sufficient when a BRIDGE exists.** Check for one
+before dismissing a cross-VM lane — I nearly steered the next session away from a real market.
+
+### 📏 …and yet: do NOT build it. The lane is measured dead.
+
+| | Top Shot volume |
+|---|---|
+| **Cadence (what RPC tracks)** | **$24,037/day** — 109,714 sales / $721,123 per 30 d |
+| **OpenSea Flow EVM** | **$0.85 / 24 h**; $211.4K lifetime *since Feb 2025* |
+
+**≈28,000 : 1.** The entire lifetime OpenSea total is under **nine days** of our Cadence volume.
+62,844 items bridged, only **562 listed (<1 %)**, floor $0.21. A Flow-EVM indexer would add ~0.004 %
+of volume. **Same shape as `atlas-proxy` — real, deployed, and not worth wiring.**
+
+⚠ AllDay/Golazos not separately checked, deliberately: AllDay's Cadence volume is ~13× smaller than
+Top Shot's, so it cannot clear a bar Top Shot fails by four orders of magnitude.
+
+**If it ever matters the build is small** — `evm_chains` already holds `flow_evm_mainnet (747)`,
+`lib/evm-rpc.ts` is chain-parameterised, the `flowevm-proxy` worker and
+`EVM_PROXY_{URL,SECRET}_FLOW_EVM_MAINNET` exist, and there is an EVM transfers ingest. ⚠ But the
+scaffold has **never run**: `wallet_links` = 0, zero `flow_evm` collections, and `max(started_at)` for
+any `%evm%` pipeline is **NULL**. Untested, not merely idle.
+
+**Re-check trigger, not a date:** revisit only if OpenSea Top Shot 24 h volume clears **~$500/day**
+(≈2 % of Cadence). That number is on the public collection page and needs no API key.
+
+### (superseded) ⛔ TRAP — OpenSea's `flow` is Flow **EVM**, NOT Cadence. Do not chase it.
 
 The same list contains `{"chain": "flow", "name": "Flow", ...}`, which looks like it might open an
 OpenSea data source for Top Shot / AllDay / Golazos. **It does not.** The tell is in the same record:
