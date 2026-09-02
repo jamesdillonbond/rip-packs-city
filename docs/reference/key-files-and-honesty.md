@@ -858,3 +858,48 @@ straight into `sales`. 👉 **A read that builds a GUARD has the guard's blast r
 👉 **Bind the error always; what you DO with it depends on where `not found` lands, and on whether a
 throw actually reaches a handler that holds the line.**
 
+---
+
+## The tenth shape's population is **ZERO** (2026-09-02) — and the three landings that were worst
+
+`consequential-read-binds-its-error-ratchet` went **61 → 51 → 47 → 28 → 0** in one night. What the
+last two passes found is worth keeping, because each is a *landing* the earlier sweep had not named:
+
+1. **A cursor READ whose failure REWINDS the walk.** The five `*-sales-history-backfill` routes walk
+   BACKWARD, so `event_cursor.last_processed_block` is the LOWEST block already scanned. A discarded
+   error left `ceiling` at `CEILING_INIT` — the TOP — and the tick then **upserted that high block
+   back over the real cursor**. One blip discards the entire backward walk, silently, at `ok: true`,
+   and nothing re-walks a range above a cursor. ⭐ **On a backward walker a failed read is not a
+   pause, it is a rewind.**
+2. **A cursor WRITE whose failure is LOGGED AS A MOVEMENT.** Twenty-one routes assigned `cursorAfter`
+   straight after an `await …from("event_cursor").update(…)` whose result was thrown away.
+   `cursor_before`/`cursor_after` is the only pair an operator can read to see a walk progressing, so
+   the instrument for this whole class was itself publishing an unmeasured number. ⚠ **The read
+   ratchet is structurally blind to it** — it matches `const { … } = await supabaseAdmin`, and a bare
+   `await …update(…)` has nothing destructured. Its own ban now lives in
+   `__tests__/event-cursor-writes-bind-their-error.test.ts`.
+3. **A failed LOCAL read that routes work to an UPSTREAM whose answer RETIRES the row.** In
+   `topshot-flowty-unmapped-drain`, a failed `wallet_moments_cache` / `nft_edition_map` / `editions`
+   read makes the nft look unmapped, which sends it to on-chain `getMinted`; an HTTP-200 not-found
+   there bumps `drain_attempts` toward `MAX_DRAIN_ATTEMPTS` and **retires the row permanently**.
+   ⭐ **The landing can be two hops away** — the read's own branch looks harmless, and the retirement
+   is written by a different subsystem reacting to what the failed read caused.
+
+### ⚠ The fix is not always "throw" — `candy-sales-indexer`'s four each landed differently
+
+- **high-water read** (`max(sold_at)`, the cursor): failure → `cursorBeforeMs = 0` → re-walk the whole
+  feed against a bounded page budget. **Throw.**
+- **editions lookup**, memoised in `edIdByKey`: one failure poisons every later sale on that key in
+  the same sweep. **Throw.**
+- **park-queue read**: failure reads as "nothing owed"; the drain does nothing and reports success.
+  **Throw.**
+- **the open-backlog COUNT** — `unresolved_open: unresolvedOpen ?? 0`, the fabricated-number shape
+  verbatim. supabase-js resolves a failed count as `{count: null, error}`, so it published a
+  **measured zero** on the one field an observer would use to watch that backlog grow. ⛔ **Do NOT
+  throw here.** It runs after every write of the sweep, so failing the run to report a statistic
+  discards real work. It reports `null` plus `unresolved_open_error`.
+
+👉 **The decision is the same question as always — where does the failure LAND — applied per read, not
+per file.** Three reads in one route can want three different answers, and one of them wanted the
+opposite of the other three.
+

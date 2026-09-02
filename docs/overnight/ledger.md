@@ -10,6 +10,58 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the error-discarding-read population reached **ZERO**, and the ratchet broke by succeeding
+
+**What.** The remaining 28 occurrences are bound: ten forward indexers and the flowty unmapped drain
+(22 chunked id lookups, patched mechanically), `candy-sales-indexer` (4, by hand — see below), and two
+admin routes. **61 → 51 → 47 → 28 → 0.** Every one throws into its route's outer catch, which marks
+the run `ok:false` and leaves the cursor where it was, so the same range is re-scanned next tick.
+
+⚠ **`topshot-flowty-unmapped-drain` is the sharp one:** a failed wmc / `nft_edition_map` / `editions`
+read makes the nft look unmapped, which sends it to the on-chain `getMinted` path, and an HTTP-200
+not-found there **bumps `drain_attempts` toward `MAX_DRAIN_ATTEMPTS` and retires the row permanently**.
+A database blip could retire rows whose edition was in our own table.
+
+**`candy-sales-indexer`'s four are each a different landing, so each got its own decision:**
+
+- **the high-water read IS the cursor** (`max(sold_at)` over Candy sales). A failure fell through to
+  `cursorBeforeMs = 0` — indistinguishable from *"we have no Candy sales yet"* — and the sweep would
+  walk the whole ME activities feed from the beginning against a bounded page budget, spending the
+  tick on history it already held and reporting a normal short sweep. **Throws.**
+- **the editions lookup is MEMOISED in `edIdByKey`**, so one failed read poisons every later sale on
+  that edition_key in the same sweep. **Throws.**
+- **the park-queue read** read as "nothing owed", so the drain did nothing and the tick reported
+  success. **Throws.**
+- 🚨 **the open-backlog COUNT was the fabricated-number shape, verbatim:**
+  `unresolved_open: unresolvedOpen ?? 0`. supabase-js resolves a failed count as
+  `{count: null, error}`, so a read that never happened published **a measured zero** — *"the park
+  queue is empty"* — on the one field an observer would use to watch that backlog grow. ⛔ **This one
+  does NOT throw**, and the asymmetry is the point: it runs after every write of the sweep, so failing
+  there would discard real work to report a statistic. It reports `null` plus
+  `unresolved_open_error`.
+
+🚨 **THE RATCHET WENT RED FOR SUCCEEDING, AND THAT IS THE DURABLE LESSON.** Its not-vacuous floor
+asserted `>= 20` occurrences still matched **in the tree** — a control that reads as a check on the
+DETECTOR but is keyed on the DEFECT. The moment the last one was fixed the guard failed.
+⭐ **"A guard must be satisfiable at a population of zero" is already written down in this repo, and
+this file's own header cites it — it still shipped this way.** The floor is now nine assertions
+against **synthetic** source (four shapes it must catch, three bound forms it must not — including
+`{ data: cursorRow, error: cursorErr }`, the exact false positive this detector once had — plus a
+commented-out read that `stripComments` must blank). It is satisfiable at zero and still fails if the
+stripper or the regex stops working. **The ratchet is now a BAN at 0.**
+
+⭐ The per-route `it.each` pins are redundant against a ban and were KEPT for one reason, now written
+in the file: each row also asserts the route is still **discovered**. A ban alone cannot tell *"this
+route is clean"* from *"this route is no longer in the population"* — a rename, a move, or a landing
+expression edited out all read as success.
+
+**Tests.** `candy-sales-indexer` gains 5 (four failure paths + a positive control that a working count
+still reports its number), each verified against a mutation that restores the old behaviour — the
+`?? 0` mutation is the one that matters, and it goes red on *"unresolved_open must not be 0"*.
+
+**Revert path.** `git revert` the commit whose message begins `fix(indexers): the last 28`. Code only.
+
+
 ### 2026-09-02 · ✅ SHIPPED — 21 indexers logged a cursor advance they had not made; new ban-at-zero guard
 
 **What.** A block cursor is the one piece of pipeline state a re-run cannot reconstruct, and

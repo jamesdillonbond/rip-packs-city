@@ -1711,3 +1711,55 @@ suppression list is empty — an allowlist there would be theatre.
 shape by design; `fmv-recalc`'s "cursor" is not a block number at all. 👉 **A cursor-continuity check
 that ignores WHICH cursor a run used reads a dual-mode indexer as 50% broken.** No incidence was
 claimed, in either direction.
+
+---
+
+## 🚨 A ratchet that reaches ZERO breaks its own not-vacuous check — worked example, 2026-09-02
+
+`consequential-read-binds-its-error-ratchet` drove its population **61 → 51 → 47 → 28 → 0** in one
+night. The last fix turned the guard **red**, and the failing assertion was its *not-vacuous floor*:
+
+```ts
+it("is not vacuous: the pattern still matches real source", () => {
+  const total = family.reduce((n, f) => n + discardingReads(stripComments(readFileSync(f, "utf8"))), 0)
+  expect(total).toBeGreaterThanOrEqual(20)     // ← AssertionError: expected 0 to be >= 20
+})
+```
+
+Its comment called it *"a positive control on the DETECTOR itself"*. **It is not.** It is keyed on the
+**defect**, so it can only pass while the defect survives. This repo's rule — *"a not-vacuous check
+must be satisfiable at a population of ZERO, or the guard punishes its own success"* — is already
+written down, **and this file's own header cited it while shipping the violation.** Knowing the rule
+did not prevent it; the shape did.
+
+👉 **The tell is what the floor COUNTS.** A floor over *"files walked"*, *"objects inspected"*, or
+*"synthetic fixtures the detector classified correctly"* survives success. A floor over *"violations
+found"* cannot, and it reads identically at a glance.
+
+**The repair, and the shape to copy:**
+
+```ts
+it("is not vacuous: the DETECTOR still detects", () => {
+  expect(discardingReads(`const { data } = await supabaseAdmin.from("x")`)).toBe(1)
+  expect(discardingReads(`const { data: rows } = await supabaseAdmin.from("x")`)).toBe(1)
+  expect(discardingReads(`const { count: n } = await supabaseAdmin.from("x")`)).toBe(1)
+  expect(discardingReads(`const { data, error } = await supabaseAdmin.from("x")`)).toBe(0)
+  // ⚠ the false positive this very detector once had: `[^}]*` swallowed the binding
+  expect(discardingReads(`const { data: cursorRow, error: cursorErr } = await …`)).toBe(0)
+  expect(discardingReads(stripComments(`// const { data } = await supabaseAdmin.from("x")`))).toBe(0)
+})
+```
+
+Nine assertions against **synthetic** source: shapes it must catch, bound forms it must not, and one
+commented-out read proving the shared stripper is reachable and still blanking. It is satisfiable at
+zero and still fails if `stripComments` blanks the tree or the regex stops matching — the two
+failures the original floor was reaching for. **Keep the population floor separately** (`family.length
+>= 30`, plus four routes asserted present by name): that one counts what was WALKED, not what was
+broken, so it also survives.
+
+⭐ **And when a ratchet hits zero, convert it.** The honest claim strengthens from *"this must not
+grow"* to *"there are none"*, so `BASELINE` becomes `0` and the per-route pins become redundant —
+**except** as population detectors: each `it.each` row also asserts its route is still *discovered*,
+which is the one thing a ban cannot see. A rename, a move, or a landing expression edited out of a
+file all read as success to a ban at zero.
+
