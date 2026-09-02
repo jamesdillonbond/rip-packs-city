@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · 📏 VERIFIED — R54 and R55 both cleared their own exit conditions, and one of them PROVES its contract rather than just reading green
+
+**No code, no DB change.** Two "watch next tick" rows discharged from `pipeline_runs` +
+`pipeline_runs_daily`, and closed.
+
+**R54 `apply-fmv-haircut`** — exit was *"the first 22:35Z run writes `ok` with 7/7 legs"*. Four
+consecutive clean daily ticks: **08-29, 08-30 22:35:21Z, 08-31 22:35:20Z, 09-01 22:35:19Z**, every one
+`ok = true` with `legs_total 7 / legs_failed 0`, 105–144 rows and $10.3–11.0 k removed per run. **The
+falsifier did not fire**, so the degraded band WAS the cause and the residual "scope or split the Top
+Shot leg" is not needed. A 6-of-8 failure rate that turned out to be a **schedule collision**, not a
+query defect.
+
+**R55 `drain-conflated-subeditions`** — exit was *"next 20:30Z tick reports `ok:true` (with
+`truncated_steps` naming any overrunner)"*. Four consecutive clean ticks. ⭐ **And the proof is better
+than the green:** 08-31's run carries **`truncated_steps: ["seed_recent"]` with
+`step_ms.seed_recent = 120,285`** — the step DID overrun, the 110 s statement timeout fired first, the
+57014 path reclassified it as a NAMED truncation, and the run stayed green. **That is precisely the
+contract the ~120 s gateway had been stealing.** 09-01's `seed_recent` came in at 79,073 ms untruncated,
+so the step is variable rather than permanently over. No `upstream request timeout` on any of the four —
+the 10 s of margin held.
+
+🆕 **A SEPARATE OBSERVATION on R55, recorded rather than claimed.** `conflated_editions_remaining` reads
+**1,001 → 959 → 963** across 08-30 / 08-31 / 09-01 while the job writes ~1,000 rows a night. **The tick
+is restored; whether the POPULATION is draining is a different question, and three points is not a
+trend** — a delta between two stocks is neither a rate nor a sign. ⓘ And `rows_written ≈ wmc_split`, a
+**different population** from `conflated_editions_remaining`, so the 1,000/night is not evidence either
+way. **EXIT: re-read it in a week — the series is now durable in `pipeline_runs_daily.extra_num_sums`.**
+If it is still ~960, that is a new row about the drain RATE, not a re-opening of the timer race.
+
 ### 2026-09-01 · ✅ SHIPPED + 📏 MEASURED — R30's falsifier is durable now, one high-write day already contradicts the zero, and the biggest lane had no denominator
 
 **Files:** `app/api/wallet-backfill/route.ts` + `__tests__/api-wallet-backfill-deep.test.ts`. No DB change.
