@@ -138,6 +138,11 @@ export async function POST(req: NextRequest) {
       let decodeOtherStatus = 0
       let firstBadStatus: number | null = null
       let bailedEarly = false
+      // Rows in the window this lane has ALREADY decoded to exhaustion. Reported
+      // rather than merely excluded: a predicate that silently shrinks a
+      // population turns "nothing left to do" and "we stopped looking" into the
+      // same reading, which is the defect this whole change exists to remove.
+      let exhaustedInWindow = 0
       let ok = true
       let errMsg: string | null = null
 
@@ -154,11 +159,36 @@ export async function POST(req: NextRequest) {
             ? lastRun.extra.cursor_sold_at
             : null) ?? null
 
+        // ⚠ `payer_address IS NULL` IS LOAD-BEARING, AND IT IS THE FIX FOR A TREADMILL
+        // THIS LANE RAN FOR DAYS (2026-09-02).
+        //
+        // Measured: 47 runs/day, `rows_found` 45 EVERY run, `buyers_resolved` 0 every
+        // run, `decode_404`/`decode_failed`/`decode_other_status` all 0, `wrapped:
+        // true`, cursor never set. The window held exactly 45 null-buyer rows and ALL
+        // 45 already carried a payer AND a proposer — i.e. every one had already been
+        // decoded successfully by this lane, which found exec accounts and no buyer.
+        // Because a buyer-less row keeps `buyer_address IS NULL` it was re-selected
+        // next run, re-decoded through the spork proxy, and re-UPDATEd with the
+        // identical payer/proposer: **2,115 proxy decodes and 2,115 no-op row versions
+        // a day on a partitioned `sales`, forever, at `ok: true` with `rows_written: 0`
+        // reading exactly like "nothing to do".**
+        //
+        // A decoded tx is IMMUTABLE, so re-running the SAME decoder over it cannot
+        // produce a different answer — the row is terminal for this lane. On Top Shot
+        // sales `payer_address` is only ever written by a tx decode (this route's two
+        // lanes and `sales-indexer`), so `payer set AND buyer null` means exactly
+        // "decoded, no buyer recoverable".
+        //
+        // 👉 THE ONE CASE THAT UN-SKIPS THEM: a CHANGED decoder. If
+        // `decodeTopShotSaleTxViaSpork` learns a new buyer path, these rows are
+        // candidates again — run a one-off pass with this predicate removed rather
+        // than deleting it here, and watch `exhausted_in_window` fall.
         let q = (supabaseAdmin as any)
           .from("sales")
           .select("id, nft_id, transaction_hash, sold_at, seller_address")
           .eq("collection", "nba_top_shot")
           .is("buyer_address", null)
+          .is("payer_address", null)
           .not("transaction_hash", "is", null)
           .gte("sold_at", HIST_WINDOW_START)
           .lt("sold_at", cursorBefore && cursorBefore < HIST_WINDOW_END ? cursorBefore : HIST_WINDOW_END)
@@ -173,6 +203,20 @@ export async function POST(req: NextRequest) {
         }
         const rows = (data ?? []) as NullBuyerRow[]
         found = rows.length
+
+        // The excluded population, counted rather than assumed. `head: true` so this
+        // costs a count and not a page, and the error is NOT swallowed into 0 — a
+        // failed count published as a measured zero is the fabricated-number shape.
+        const { count: exhaustedCount, error: exhaustedErr } = await (supabaseAdmin as any)
+          .from("sales")
+          .select("id", { count: "exact", head: true })
+          .eq("collection", "nba_top_shot")
+          .is("buyer_address", null)
+          .not("payer_address", "is", null)
+          .not("transaction_hash", "is", null)
+          .gte("sold_at", HIST_WINDOW_START)
+          .lt("sold_at", HIST_WINDOW_END)
+        exhaustedInWindow = exhaustedErr ? -1 : (exhaustedCount ?? -1)
 
         let minSoldAt: string | null = null
         for (const row of rows) {
@@ -255,6 +299,10 @@ export async function POST(req: NextRequest) {
               // cursor having walked past mainnet19, not a fault — and it means
               // further passes over this range can only ever write zero.
               spork_floor: found > 0 && buyersResolved === 0 && decode404 === found,
+              // -1 means the count itself failed. It is deliberately NOT 0: a
+              // failed read rendered as a measured zero would say "nothing is
+              // parked" when the truth is "we could not look".
+              exhausted_in_window: exhaustedInWindow,
               wrapped: cursorAfter === null,
               bailed_early: bailedEarly,
               duration_ms: Date.now() - startedAt,
