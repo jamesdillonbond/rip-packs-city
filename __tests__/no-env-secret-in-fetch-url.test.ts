@@ -1,6 +1,15 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync, readdirSync, statSync } from "node:fs"
-import { join } from "node:path"
+import { join, sep } from "node:path"
+
+// ⚠ Paths are compared against ALLOWED, which is written with FORWARD slashes,
+// so every path this file reports must be normalised. `join` emits `\` on
+// Windows, and an un-normalised offender matches no allowance — which on that
+// platform made the two-way check state the OPPOSITE of the truth: it reported
+// "the fix has landed" for a leak that is still in the source, and would then
+// have flagged the deliberate exemption as a new one. A guard that inverts on
+// one platform is worse than no guard, because it reads as a positive result.
+const posix = (p: string) => p.split(sep).join("/")
 
 // ── A secret belongs in a HEADER, never in a URL ─────────────────────────────
 // Request logs record full URLs. A token in a query string is therefore written
@@ -75,7 +84,7 @@ describe("no env-backed secret is interpolated into a fetch URL", () => {
           let m: RegExpExecArray | null
           while ((m = re.exec(line))) {
             if (envNames.has(m[1])) {
-              offenders.push(`${file}:${i + 1}  ${t.slice(0, 100)}`)
+              offenders.push(`${posix(file)}:${i + 1}  ${t.slice(0, 100)}`)
             }
           }
         })
