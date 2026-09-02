@@ -46,6 +46,11 @@ session-reachable role may `cron.alter_job` a job that role owns (`postgres` is 
 owner; `has_table_privilege('postgres','cron.job','UPDATE')` is false). The command is operator-only;
 the default is not. The parameter survives, so a caller can still bound the window.
 
+✅ **VERIFIED ON ITS OWN SCHEDULE, not just by my manual call:** pg_cron jobid 76's **11:05:00Z** tick
+`succeeded` and AllDay's null-serial population with a real `nft_id` reads **0** immediately after —
+the first unattended run of the widened default, against a producer (`allday-studio-sales-history-backfill`)
+that had refilled it twice in the preceding two hours.
+
 **Pinned, and the test now drives BOTH windows** — an explicit `45` (6 rows, `nftOld` untouched) AND
 the bare default (reaches the 100-day-old sale). A new `nftAncient` fixture at 4,000 days keeps the age
 filter pinned by a live case at the widest setting rather than by its absence. Three mutations red:
