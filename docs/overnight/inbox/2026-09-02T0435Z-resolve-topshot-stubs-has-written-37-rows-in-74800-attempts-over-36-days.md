@@ -207,10 +207,30 @@ wmc does not hold for that edition_key · 0 came from an ambiguous key · 0 left
   `cron.job.command`, `pg_proc.prosrc`, `pg_views`, and a full-repo grep; it appears only in its
   own pinned test. It is dormant, and this repo has already lost an afternoon to optimising a
   function with no callers. Fix it *if* something starts calling it.
-- **The 5 stubs missing `tier` rather than a name** are untouched; wmc carries `tier` too, so
-  that is a small follow-on with the same shape and the same ambiguity question.
+- **The stubs missing `tier` rather than a name** are untouched, and my "same shape, small
+  follow-on" guess about them is **measured wrong**: across all **1,100** Top Shot editions with a
+  NULL `tier`, wmc supplies a tier for **zero** of them — not ambiguous, absent. `wallet_moments_cache`
+  carries a `tier` column, which is what made the guess plausible; it is empty for exactly this
+  population. **There is no wmc-shaped fix for tier**, and the same is presumably true of the chain,
+  since the resolver has been asking. Recorded so nobody re-derives the hypothesis.
 - **This filing's cadence analysis is still correct for the 253 that remain**, and options 1–3
   still apply to them. It is now a much smaller prize.
+
+### ⚠ The lens does NOT generalize to the neighbouring columns — measured, so nobody re-derives it
+
+`wallet_moments_cache` carries `tier` and `mint_count` as well as `player_name`, which makes "do the
+same for the other missing edition fields" look obvious. It is not:
+
+| Top Shot editions missing… | rows | unambiguous from wmc | ambiguous | **no wmc value at all** |
+|---|---:|---:|---:|---:|
+| `player_name` | 2,000 | **267** | 79 | 1,654 |
+| `tier` | 1,100 | **0** | 0 | **1,100** |
+| `circulation_count` | 1,168 | **5** | 0 | **1,163** |
+
+The columns exist in wmc and are **empty for exactly the populations that need them**. `player_name`
+is the one column wmc actually carries for these rows, and that is why this fix works and the two
+obvious sequels do not. ⭐ **"The local table has that column" is not "the local table has that
+value" — a schema is not a measurement.**
 
 ### ⭐ The transferable point, and it is the second time tonight
 

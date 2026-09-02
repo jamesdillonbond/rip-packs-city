@@ -10,6 +10,57 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — five backward history backfills could RESET their own walk on one failed read; ratchet 47 → 28
+
+**What.** The five `*-sales-history-backfill` routes (allday · golazos · topshot-flowty · ufc ·
+pinnacle) walk BACKWARD from a ceiling toward the spork floor, with
+`event_cursor.last_processed_block` holding the LOWEST block already scanned. Every one of them
+opened with `const { data: cursorRow } = await supabaseAdmin.from("event_cursor")…` — **`error`
+discarded.** supabase-js RETURNS its errors, so a failed read fell straight through with `ceiling`
+still at `CEILING_INIT`, the **TOP of the walk**; the tick then scanned near the top and **upserted
+that high block back over the real cursor**. One transient blip would have discarded the entire
+backward walk, silently, at `ok: true` — and nothing re-walks a range above the cursor, so the
+skipped history is not recovered by a later tick.
+
+**A second defect in the same block:** the cursor upsert also discarded its result while
+`cursorWritten` was assigned unconditionally, so a **failed advance logged as a movement**.
+`p_cursor_after` is the one instrument an operator would use to notice any of this, and it was
+reporting an unmeasured number. (Not caught by the read ratchet — the upsert has no `const {`.)
+
+**Also bound:** fourteen chunked `.in()` id lookups (`wallet_moments_cache`, `nft_edition_map`,
+`pinnacle_nft_map`, `editions`) across the same five files. A failed one read as *"this nft is
+unmapped"* → every id in the batch fell to the on-chain Cadence fallback, and whatever that could not
+resolve was written as an unmapped sale carrying no edition. All now throw into the outer catch,
+which leaves the cursor unmoved so the **same block range is re-scanned next tick** — the correct
+recovery for a walker.
+
+**Ratchet 47 → 28** (`consequential-read-binds-its-error-ratchet`), and the five routes are pinned at
+zero by name.
+
+**Did it fire?** ⚠ **No evidence within retention, and retention is the caveat.** `pipeline_runs`
+holds ~73 h; over that window all seven live history backfills show **0 runs where `cursor_after` >
+`cursor_before`** and **0 runs where a run's `cursor_before` jumped above the previous run's
+`cursor_after`** — the two shapes this defect would leave. That is a clean 73 h, not a clean history.
+
+**Checked and NOT a finding, recorded so it is not re-derived:** `ufc-sales-history-backfill` (last
+run 08-27, cursor 10.25 M blocks above the floor) and `topshot-flowty-sales-history-backfill` (last
+run 08-17, cursor exactly AT the floor) both look like silently dead walkers. Both are deliberate:
+the watchlist rows carry `is_active = false` with notes — flowty **RETIRED 2026-08-16, complete**;
+UFC stopped because **UFC migrated to Aptos 2026-05-13 and the Flow market is dead**. The cadence
+watchlist had already recorded both. ⭐ **Absence of runs is not a defect when the instrument that
+would alert on it has been deliberately switched off and says why.**
+
+**Tests.** `__tests__/api-cron-sales-history-backfill-cursor-honesty.test.ts`, 4 cases, every
+assertion an ABSENCE: a failed cursor read writes **no** cursor row, **no** sales, **no** unmapped
+rows and 500s with null before/after; a failed cursor write reports `cursor_after === cursor_before`;
+a failed wmc lookup leaves the cursor unmoved. Plus a **positive control** that the happy path really
+does read the stored cursor and walk DOWN from it — without it the first test would pass for a route
+that never runs at all. Three mutations (drop each guard) each go red on exactly its own assertion.
+
+**Revert path.** `git revert` the commit whose message begins
+`fix(history-backfill): a failed cursor read could rewind`. No DB or data change — code only.
+
+
 ### 2026-09-02 · ✅ SHIPPED — 267 Top Shot editions were named from `wallet_moments_cache`, which the chain resolver never read
 
 **What.** `resolve-topshot-stubs` had written **37 rows in 74,800 attempts over 36 days** (0.049%
