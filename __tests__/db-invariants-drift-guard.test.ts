@@ -335,8 +335,13 @@ const PINS = [
     // defining migration for this function.
     fn: "backfill_null_serial_sales_from_moments",
     test: "supabase/tests/backfill_null_serial_sales_from_moments.sql",
+    // Re-pointed AGAIN 2026-09-02, hours later and in the same session: the
+    // DEFAULT age window went 45d -> 3650d once it was measured that the
+    // `*-sales-history-backfill` walkers write sales older than 45 days by
+    // construction, so every null-serial row they produced was permanently
+    // unreachable by the hourly job that calls this with no argument.
     migration:
-      "supabase/migrations/20260902090207_audit_20260902_null_serial_backfill_reads_nft_edition_map_as_a_third_source.sql",
+      "supabase/migrations/20260902102507_audit_20260902_null_serial_recovery_default_window_covers_the_history_backfills.sql",
   },
   {
     fn: "get_wallet_moments_with_fmv",

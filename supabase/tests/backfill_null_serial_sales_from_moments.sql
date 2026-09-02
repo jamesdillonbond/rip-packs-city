@@ -12,13 +12,19 @@
 --   (c) it only touches sales with serial_number IS NULL, a real nft_id, sold
 --       within p_max_age_days; and it is IDEMPOTENT (never clobbers a serial that
 --       is already set — the UPDATE re-checks s.serial_number IS NULL).
+--       ⚠ The DEFAULT is 3650 days as of 2026-09-02, not 45. The hourly job calls
+--       this with no argument, and the `*-sales-history-backfill` walkers write
+--       sales whose `sold_at` is by construction far older than 45 days — so the
+--       old default made every row they produce permanently unreachable (measured:
+--       499 AllDay rows, 0 inside the window, 100% resolvable). Both the explicit
+--       45 and the wide default are driven below, so neither can drift unnoticed.
 --   (d) returns the count actually updated.
 --   (e) the wmc and nft_edition_map legs are COLLECTION-SCOPED — a row for the
 --       same nft_id under a different collection_id must not match. (moments is
 --       keyed on nft_id alone, which is the pre-existing shape.)
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260902090207_audit_20260902_null_serial_backfill_reads_nft_edition_map_as_a_third_source.sql);
+-- (supabase/migrations/20260902102507_audit_20260902_null_serial_recovery_default_window_covers_the_history_backfills.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -62,15 +68,19 @@ INSERT INTO public.sales (id, nft_id, collection_id, serial_number, sold_at) VAL
   ('50000000-0000-0000-0000-000000000009', 'nftAllThree',    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', NULL, now() - interval '1 day'),
   ('50000000-0000-0000-0000-00000000000a', 'nftWmcOverNem',  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', NULL, now() - interval '1 day'),
   ('50000000-0000-0000-0000-00000000000b', 'nftNemZero',     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', NULL, now() - interval '1 day'),
-  ('50000000-0000-0000-0000-00000000000c', 'nftNemOtherColl','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', NULL, now() - interval '1 day');
+  ('50000000-0000-0000-0000-00000000000c', 'nftNemOtherColl','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', NULL, now() - interval '1 day'),
+  -- Older than the 3650-day DEFAULT, so the parameter still bounds something even
+  -- at its widest setting — otherwise the age filter would be pinned by nothing.
+  ('50000000-0000-0000-0000-00000000000d', 'nftAncient',     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', NULL, now() - interval '4000 days');
 
 INSERT INTO public.moments (nft_id, serial_number) VALUES
   ('nftFromMoment', 11),
   ('nftBoth', 22),        -- moments wins over wmc for nftBoth
   ('nftAlready', 999),    -- would-be source, but sale already has a serial
   ('nftZeroSrc', 0),      -- non-positive → ignored
-  ('nftOld', 33),         -- valid source, but the sale is too old
-  ('nftAllThree', 88);    -- outranks BOTH wmc (99) and nft_edition_map (111)
+  ('nftOld', 33),         -- too old for an explicit 45, INSIDE the 3650-day default
+  ('nftAllThree', 88),    -- outranks BOTH wmc (99) and nft_edition_map (111)
+  ('nftAncient', 44);     -- a valid source, but the sale predates even the 3650-day default
 
 INSERT INTO public.wallet_moments_cache (collection_id, moment_id, serial_number) VALUES
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'nftFromWmc', 44),
@@ -88,7 +98,7 @@ INSERT INTO public.nft_edition_map (collection_id, nft_id, serial_number) VALUES
   ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'nftNemOtherColl', 999); -- WRONG collection → must not match
 
 -- >>> BEGIN verbatim backfill_null_serial_sales_from_moments (keep byte-identical to the migration) >>>
-CREATE OR REPLACE FUNCTION public.backfill_null_serial_sales_from_moments(p_max_age_days integer DEFAULT 45)
+CREATE OR REPLACE FUNCTION public.backfill_null_serial_sales_from_moments(p_max_age_days integer DEFAULT 3650)
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -139,13 +149,13 @@ END;
 $function$;
 -- <<< END verbatim backfill_null_serial_sales_from_moments <<<
 
--- (1) Exactly 6 sales get a serial: FromMoment, FromWmc, Both, FromNem,
--- AllThree, WmcOverNem. Already (has one), ZeroSrc (every source is 0), NemZero
--- (its only source is 0), NemOtherColl (mapped under another collection), Old
--- (out of age window), and '' nft_id are all skipped.
+-- (1) Under an EXPLICIT 45-day window, exactly 6 sales get a serial: FromMoment,
+-- FromWmc, Both, FromNem, AllThree, WmcOverNem. Already (has one), ZeroSrc (every
+-- source is 0), NemZero (its only source is 0), NemOtherColl (mapped under another
+-- collection), Old and Ancient (out of window), and '' nft_id are all skipped.
 SELECT _assert_eq(
-  public.backfill_null_serial_sales_from_moments()::text,
-  '6', 'only the 6 eligible null-serial sales are backfilled');
+  public.backfill_null_serial_sales_from_moments(45)::text,
+  '6', 'an explicit 45-day window backfills only the 6 eligible recent sales');
 
 -- (2) source precedence + fallback landed correctly, across all three legs.
 SELECT _assert_eq((SELECT serial_number::text FROM public.sales WHERE nft_id='nftFromMoment'),
@@ -174,9 +184,28 @@ SELECT _assert_eq((SELECT serial_number FROM public.sales WHERE nft_id='nftNemZe
 SELECT _assert_eq((SELECT serial_number FROM public.sales WHERE nft_id='nftNemOtherColl')::text,
   NULL, 'the nft_edition_map leg is collection-scoped — another collection does not match');
 SELECT _assert_eq((SELECT serial_number FROM public.sales WHERE nft_id='nftOld')::text,
-  NULL, 'a sale older than p_max_age_days is out of scope');
+  NULL, 'a sale older than an EXPLICIT p_max_age_days is out of scope');
 
--- (4) idempotent: a second run changes nothing.
+-- (4) ⛔ THE DEFAULT IS WIDE, AND THIS IS THE CALL THE HOURLY JOB ACTUALLY MAKES.
+-- pg_cron jobid 76 runs `SELECT public.backfill_null_serial_sales_from_moments()`
+-- with no argument, so the default alone decides what the platform recovers. It
+-- must now reach the 100-day-old sale that the explicit 45 above left alone —
+-- exactly the rows the `*-sales-history-backfill` walkers produce. If this drops
+-- back to 0 the default has been narrowed and that whole population is stranded
+-- again, silently.
+SELECT _assert_eq(
+  public.backfill_null_serial_sales_from_moments()::text,
+  '1', 'the DEFAULT window reaches a 100-day-old sale that an explicit 45 does not');
+SELECT _assert_eq((SELECT serial_number::text FROM public.sales WHERE nft_id='nftOld'),
+  '33', 'the 100-day-old sale is recovered under the default window');
+
+-- (5) …and the parameter STILL BOUNDS at its widest: a sale older than 3650 days
+-- is out of scope even with no argument, so the age filter is pinned by a live
+-- case rather than by its absence.
+SELECT _assert_eq((SELECT serial_number FROM public.sales WHERE nft_id='nftAncient')::text,
+  NULL, 'a sale older than the 3650-day DEFAULT is still out of scope');
+
+-- (6) idempotent: a second run at the default changes nothing.
 SELECT _assert_eq(
   public.backfill_null_serial_sales_from_moments()::text,
   '0', 'second run is a no-op');

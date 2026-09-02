@@ -106,8 +106,10 @@ for an insert the AllDay dedup trigger silently SUPPRESSED and `insert_vanished`
 for one that is genuinely unexplained; `log_pipeline_run` stubbed, but
 `allday_sales_cross_source_dedup` installed VERBATIM so the suppression path is
 real), and `backfill_null_serial_sales_from_moments` (serial recovery for
-serial-FMV — moments>0 then wmc>0 precedence, the `>0` guard against a fake #0,
-age-window scope, idempotency), plus the **FMV read + write flagships** (2026-07-28):
+serial-FMV — moments>0 then wmc>0 then, since 2026-09-02, `nft_edition_map`>0
+precedence, the `>0` guard against a fake #0, age-window scope at BOTH an
+explicit 45 days and the wide 3650-day DEFAULT the hourly job actually runs,
+idempotency), plus the **FMV read + write flagships** (2026-07-28):
 `get_wallet_moments_with_fmv` (THE wallet-display read — latest-FMV-per-edition
 [future-dated snapshots ignored], the sort ladder, filter + `total_count`, the
 `price_band_30d` gate [LOW/MEDIUM conf + ≥10 sc30d + ≥5 recent sales, outlier-
