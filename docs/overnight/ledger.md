@@ -10,6 +10,64 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ VERDICT: KEEP the covering index — it HALVED the cost, and my "it did nothing" call two entries below was wrong
+
+**`idx_wmc_lock_wallet_coll_cover` passes its falsifier decisively. Kept. 213 MB, earning it.**
+Revert path unchanged: `DROP INDEX CONCURRENTLY idx_wmc_lock_wallet_coll_cover;`
+
+Clean like-for-like, pgss-to-pgss on queryid `696026922022888777` (the PostgREST wrapper — the only
+comparable series), window **02:14:28 → 03:37:03**, entirely after the 02:10:23 build:
+
+| window | n | blocks/call | ms/call |
+|---|---|---|---|
+| 09-01 20:05 → 22:05 (pre) | 8 | 41,870 | 17,839 |
+| 09-01 22:05 → 00:05 (pre) | 8 | 45,177 | 15,402 |
+| 09-02 00:05 → 02:05 (pre) | 8 | 46,965 | 17,821 |
+| 02:05 → 02:14 (STRADDLE — ignore) | 2 | 47,903 | 19,916 |
+| **02:14:28 → 03:37:03 (POST)** | **4** | **21,115** | **2,915** |
+
+**2.0–2.2× fewer blocks, ~5–6× less time.** The stated falsifier was "not materially below ~42,000 ⇒
+drop". 21,115 is less than half. It stands.
+
+⛔ **And it refutes my own entry two below, which said the index was "aimed at the wrong cost".** That
+conclusion came from a **non-comparable EXPLAIN number** — the same instrument error that entry itself
+documents, made one more time while writing it up. The correct account of the mechanism:
+
+- The index did **not** eliminate heap fetches. `Heap Fetches: 16,866` is real, caused by
+  visibility-map staleness on a table this same pipeline keeps dirtying. That part of the entry holds.
+- But it **cut** them. The old `idx_wmc_lock_wallet_coll` has identical key columns and **no INCLUDE**,
+  so it needed a heap visit for `moment_id`/`edition_key` on *every* one of the ~46,255 materialised
+  rows. The covering index needs one only where the VM says the page is not all-visible — **16,866 of
+  46,255, a 64 % reduction.** That is the halving.
+
+**A partial win from a covering index is the expected outcome on a hot-write table, not a failure.**
+The error was treating "not the 14× I hoped for" as "nothing", on a number that could not measure it.
+
+### Confounds checked, not waved away
+
+- **Rising trend:** pre-index was climbing 33,596 → 46,965 over 20 h, so "flat" would have been
+  ambiguous. **A drop to 21,115 is far outside that trend** — this is not an arrested rise.
+- **autoanalyze at 02:38** could in principle have changed the plan. Ruled out: with
+  `autovacuum_analyze_scale_factor = 0.02` on 2.5 M live tuples the table is analysed at least daily
+  and almost certainly several times a day, so analyses fell inside the pre-index windows too — and
+  those stayed flat at 42–47 k across 20 hours. A single analyze does not explain a halving that
+  begins exactly at the index build.
+- **Cache warming from my own EXPLAINs** in that window cannot flatter the number: the metric is
+  `shared_blks_read + shared_blks_hit`, so a warmed buffer still counts.
+- ⚠ **n = 4.** Honest limitation. The next natural check is the 04:05Z / 06:05Z snapshots; the effect
+  size (2×) is far larger than the pre-index window-to-window spread (±6 %), so it is unlikely to be
+  noise, but it is one window.
+
+⚠ **Also corrected: a false alarm I raised and killed in one query.** I read "no cron run in ~37
+minutes" off the estate and started to treat it as an incident. **The DB clock said 03:36:46 — the
+gap was 46 seconds.** I had been tracking time by my own arithmetic across turns instead of asking the
+database, which CLAUDE.md and memory both say is the only trustworthy clock here. Nothing was wrong;
+103 jobs active, 23 runs in the prior 10 minutes.
+
+**Unchanged and still the important finding:** the lock-check targeting defect (100 % of checks to
+seeded wallets, 0 % to users) is entirely independent of this index and is not affected by the
+verdict. `cron.unschedule('oneoff-wmc-lock-wallet-coll-cover')` done; no `oneoff-*` jobs remain.
+
 ### 2026-09-01 · ✅ SHIPPED (#50) — `/insights/pack-reality` was telling the public "No +EV packs right now" because OUR prices were stale, not because the market was empty
 
 **Session:** Claude Code interactive, Trevor's box, ~19:2x–19:5x PT. Migration `20260902032401` + route +
