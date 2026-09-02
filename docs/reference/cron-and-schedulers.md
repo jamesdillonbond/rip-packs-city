@@ -360,6 +360,85 @@ list**; rank by `count / that job's own runs`, and every row comes out the same.
 and never run, spread across the fleet, writing nothing to `pipeline_runs` — so a per-pipeline arm can
 only ever see it as a missing row, never as a failure.
 
+### ✅ RESOLVED — the class stopped dead at **2026-08-30 18:26:00Z** and the table above is a POOLED reading straddling that (measured 2026-09-02 ~12:5xZ)
+
+🚨 **Read this before acting on anything in the two blocks above.** The subsection immediately
+preceding was re-derived earlier the same day over a **7-day window**, concluded *"384 startup
+timeouts = 76.6% of all failures … unchanged"*, and is wrong about the present for the reason this
+file itself documents: **a rate pooled across a change point measures the change's ABSENCE.** All 384
+are on one side of it. The last `job startup timeout` on this database is **2026-08-30 18:26:00Z**.
+
+Matched windows of **66.6 hours** either side of that instant, same instrument, same query:
+
+| window | runs | `job startup timeout` | distinct jobs hit | all failures |
+|---|---:|---:|---:|---:|
+| before | 11,969 | **270** | **52** | — |
+| after | 11,153 | **0** | **0** | **5** |
+
+**270 → 0 across 52 jobs, at 93% of the run volume.** The prior per-job rate was ~1.1–1.9%, so ~110–210
+were expected in the "after" window. Zero arrived.
+
+⭐ **THE MECHANISM IS THE ONE THIS FILE PREDICTED, and it was reached the way the file said to reach
+it — "the lever is reducing overlap" — except overlap fell because the WORK got cheaper, not because
+anything was re-staggered.** Same 66.6 h windows, successful runs only (so timeout durations cannot
+flatter it):
+
+| window | ok runs | total ok run-seconds | mean | p95 | max |
+|---|---:|---:|---:|---:|---:|
+| before | 11,622 | **201,812 s** | 17.36 s | 105.4 s | 768 s |
+| after | 11,144 | **25,682 s** | **2.30 s** | **9.4 s** | 551 s |
+
+**7.9× less database time on successful ticks alone**, at 96% of the run count — and mean concurrency
+(total run-seconds ÷ wall-seconds) fell **1.02 → 0.11**, which is why a 6-worker pool stopped being
+contended. Per job, over the same windows:
+
+| job | runs before → after | mean seconds before → after |
+|---|---|---|
+| `rpc-refresh-wmc-fmv-changed` (303) | 400 → 398 | **210 s → 15 s** |
+| `rpc-atlas-pack-ev` (217) | 66 → 67 | **195 s → 2 s** |
+| `rpc-backfill-historical-pack-ev` (71) | 66 → 67 | **178 s → 1 s** |
+
+This is the fleet-scale confirmation of the 2026-08-30/31 top-consumer drain, which had been verified
+per-query but never against the fleet.
+
+⭐ **THE OUTCOME CONTROL — the work did not shrink, it completed more often.** `refresh_atlas_pack_ev`
+(jobid 217) writes its row only if it reaches the end, so its OUTPUT settles "faster because cheaper"
+against "faster because there is less to do". Read from **`pipeline_runs_daily`**, which is indefinite:
+
+| day | completed runs (of 24 ticks) | `rows_written` | per completed run |
+|---|---:|---:|---:|
+| 08-21 → 08-30 | **17 – 23** | 969 – 1,140 | **57.0** |
+| 08-31, 09-01 | **24, 24** | 1,368 | **57.0** |
+
+**Identical output per completed run on both sides — 57.0 rows — so the job is doing the same work.**
+What changed is that it now finishes every tick instead of ~83% of them.
+
+🚨 **AND A TRAP I WALKED INTO WRITING THIS, recorded because it produced a confident wrong number.**
+My first version of this control read `pipeline_runs` directly and reported **3 completed runs before
+vs 66 after**, a 22× claim. That is a **RETENTION ARTIFACT**: `pipeline_runs` keeps ~73 h, and the
+"before" window sits 66.6–133 h back, i.e. mostly outside it. The rows were pruned, not missing. This
+file already says a missing `pipeline_runs` record is usually retention — **and the 66.6 h matched
+window that is correct for `cron.job_run_details` (55-day retention) is exactly the wrong window for
+`pipeline_runs`.** Two instruments, two retentions; a window chosen for one silently lies in the
+other. `pipeline_runs_daily` is the instrument for anything older than ~2 days, at the cost of a ≤6 h
+lag.
+
+⚠ **Controls run before believing it, because "everything got 8× faster" is exactly the shape of a
+broken instrument.** (1) The instrument still records: 11,149 runs with `end_time`, and it captured a
+statement timeout (jobid 87) and a permission denial (jobid 434) on 09-02. (2) The job mix is
+unchanged — **118 distinct jobs before, 117 after** — so this is not jobs being retired. (3) Postgres
+has **not restarted in 81 days** and `max_worker_processes` is still **6**, `cron.max_running_jobs`
+still **32**, so no config changed under it. (4) ⚠ The rival explanation — that the Top Shot 530
+outage simply removed work — is REFUTED as the cause: Top Shot sales ingest continued across the
+boundary (**4,428 → 3,015 rows**, 1,929 → 1,673 distinct editions, a −32% market/weekend dip), which
+cannot produce a 7.9× fleet-wide cut or a 97× and 178× per-job one.
+
+⛔ **Consequences for other filed items, which are now measuring history:** #42's per-job waste figures
+for jobids 217 and 73, any pooled `pg_stat_statements` ranking (its stats were last reset 2026-08-12,
+so ~85% of that window is the old regime), and the "~55 ticks a day launch and never run" figure
+directly above — that rate is now **0/day**. The startup-timeout **detector** should be kept: the
+class is resolved, not impossible, and it returns the moment total IO climbs back.
+
 ### 🚨 …but the 01:00–19:00Z BAND is NOT a scheduling problem, and conflating the two is the trap
 
 ⚠ **Measured the same day: the pg_cron RUN COUNT is FLAT across all 24 hours — 480–552 per hour — while

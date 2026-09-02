@@ -10,6 +10,66 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · 📏 MEASURED (docs only) — the pg_cron fleet got **7.9× cheaper at 2026-08-30 18:26:00Z**, `job startup timeout` went 270 → 0, and three filed items are now measuring history
+
+**Nothing shipped to code or the DB.** Three reference docs corrected against a change point
+nobody had located.
+
+**The finding.** `job startup timeout` — the class filed as 76.6% of all pg_cron failures and
+re-derived EARLIER TODAY as *"flat per job … unchanged"* — **stopped dead on 2026-08-30 at
+18:26:00Z** and has not recurred. Matched 66.6 h windows either side of that instant:
+
+| window | runs | startup timeouts | jobs hit | all failures |
+|---|---:|---:|---:|---:|
+| before | 11,969 | **270** | **52** | — |
+| after | 11,153 | **0** | **0** | **5** |
+
+⭐ **The earlier re-derivation is a POOLED reading straddling the change point** — the trap
+`cron-and-schedulers.md` documents in its own header, committed today against its own rule. All 384
+of its startup timeouts are on one side.
+
+**The mechanism, successful runs only so timeout durations cannot flatter it:** 11,622 ok runs /
+**201,812 s** → 11,144 ok runs / **25,682 s**. **7.9× less database time at 96% of the run count**;
+mean 17.36 s → 2.30 s; p95 105.4 s → 9.4 s; mean concurrency **1.02 → 0.11**, which is why a
+6-worker pool stopped being contended. Per job: **jobid 303 210 s → 15 s**, **jobid 217 195 s → 2 s**,
+**jobid 71 178 s → 1 s**, each at unchanged run counts. This is the **fleet-scale confirmation of the
+2026-08-30/31 top-consumer drain**, which had only ever been verified per query.
+
+⭐ **The outcome control says the work did not shrink, it completed more often.**
+`refresh_atlas_pack_ev` writes its `pipeline_runs` row only if it reaches the end. Read from
+`pipeline_runs_daily` (indefinite): completed runs/day **17–23 of 24 ticks** before → **24/24** on
+08-31 and 09-01, with **57.0 rows written per completed run on BOTH sides**. Same work, finished
+every time instead of ~83%.
+
+🚨 **I got this wrong first and it is worth recording.** My first pass read `pipeline_runs` over the
+same 66.6 h matched windows and reported **3 completed runs before vs 66 after** — a 22× claim I had
+already written into two docs before checking. It is a **retention artifact**: `pipeline_runs` keeps
+~73 h and that window sits 66.6–133 h back. ⚠ **The window that is correct for
+`cron.job_run_details` (55-day retention) is the wrong window for `pipeline_runs` — two instruments,
+two retentions, and one silently answers about pruning instead of behaviour.**
+
+⚠ **Four controls, because "everything got 8× faster" is the shape of a broken instrument.**
+(1) the instrument still records — 11,149 runs carry `end_time`, and it caught a statement timeout
+(jobid 87) and a permission denial (jobid 434) on 09-02; (2) the job mix is unchanged, **118 → 117**
+distinct jobs, so this is not retirement; (3) Postgres has **not restarted in 81 days** and
+`max_worker_processes` is still 6 / `cron.max_running_jobs` still 32, so no config moved under it;
+(4) the rival explanation — the Top Shot 530 outage removing work — is **refuted**: Top Shot sales
+ingest continued across the boundary (4,428 → 3,015 rows, a −32% dip), which cannot produce a 7.9×
+fleet cut or a 178× per-job one.
+
+**What was corrected.** `cron-and-schedulers.md` (a RESOLVED subsection with the matched-window
+tables, placed after the pooled one whose reasoning is kept because it was right about the
+mechanism); `database.md` (`refresh_wmc_fmv_changed` "mean 330 s" is now **15 s** — stale by 22×);
+`known-issues.md` #42 (⛔ **do not pull the Class-A headroom lever — the distribution it was derived
+from no longer exists**). ⚠ Any `pg_stat_statements` ranking is pooled too: its stats were reset
+2026-08-12, so ~85% of that window is the old regime.
+
+⛔ **The startup-timeout detector stays.** The class is resolved, not impossible; it returns the
+moment total IO climbs back.
+
+**Revert path.** Docs only — `git revert` the commit, or find it by message
+`docs: the pg_cron fleet got 7.9x cheaper on 2026-08-30`.
+
 ### 2026-09-02 · ✅ SHIPPED — `refresh_challenge_costs` spent 99.7% of its budget on a lookup that cannot match, and died at the wall 15% of days
 
 **What shipped.** Migration `20260902120329` hoists the `pack_ev_latest` arm out of the
