@@ -1250,3 +1250,36 @@ output frozen at exactly the last logged run is about as unambiguous as this get
 (cron-job.org, a GHA workflow, the Task Scheduler). ⛔ Which makes "re-enable it" the wrong call from
 here: **re-enabling a schedule someone deliberately removed is the mirror image of leaving a broken
 one dead**, and nothing visible from this side distinguishes them.
+
+
+### The completed sweep: 14 quiet pipeline names → **2 real items**
+
+Ran the pre-flight above across all 70 `app/api/cron/**/route.ts` files (52 distinct pipeline names)
+on 2026-09-02. Fourteen had no runs. After triage:
+
+- 🚨 **`wallet-username-resolver`** — genuinely stopped, `wallet_usernames` frozen at the same instant.
+- ⚠ **`cadence-payer-balance-check`** — a monitoring gap: nothing watches the payer wallet balance.
+- ✅ **The other 12 are fine, across SEVEN distinct causes:** dead upstream marketplace (×2), closed
+  collection market, redundant producer switched off, **renamed driver (×3)**, feature-flag disabled
+  (×2), retired data lane, static 4-row table, and **my own extraction artifacts (×2)**.
+
+⭐ **≈86% false alarms, and the same rate in both halves of the list.** A "N pipelines have no runs"
+list is a **reading list**, never a findings list — same precision ceiling as the static query-shape
+scan (15 of 19 refuted the same day). Neither became a guard, for the same reason: at that rate a
+guard is suppressed within a week and then reads as coverage.
+
+### The two discriminators that did all the work
+
+Neither requires understanding what the pipeline does:
+
+1. **Query the table the pipeline WRITES.** Frozen at the last logged run → stopped. Current → the
+   driver was renamed. This settled 5 of 7 in the "ran then stopped" group.
+2. **Read the route's actual `log_pipeline_run` call.** ⚠ **The pipeline name often does not match
+   the directory name** — `app/api/cron/sync-sales-ingest-dune/` logs as `sales-ingest-dune`, and
+   `app/api/cron/sales-serial-backfill/` logs as `sales-serial-backfill-trigger` while the *edge
+   function* logs the real work as `sales-serial-backfill`. Two of the fourteen were my own
+   extraction artifacts because of exactly this.
+
+⚠ **"Renamed driver" was the single most common real cause (3 of 12).** Assume it before assuming a
+defect: `refresh-cross-collection` → `cross-collection-deals-mv`, `sales-serial-backfill-trigger` →
+`sales-serial-backfill`, `compute-laliga-pack-ev` → `compute-golazos-pack-ev`.

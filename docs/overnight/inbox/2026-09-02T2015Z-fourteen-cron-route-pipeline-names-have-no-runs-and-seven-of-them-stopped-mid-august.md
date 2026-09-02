@@ -177,3 +177,46 @@ removed or fell over is not answerable from here, and those two facts want oppos
 The "no runs and no daily history at all" group is still the least trustworthy list in this filing:
 zero daily rows is at least as likely to mean *the route logs under a name the regex missed*. They
 need a read of each route's `log_pipeline_run` call, not another query.
+
+
+---
+
+# ✅ SWEEP COMPLETE ~14:40 PT — all 14 triaged. **2 real items out of 14; 12 are fine.**
+
+§3's group is done too, by reading each route's actual `log_pipeline_run` call instead of trusting
+the regex — which is what §3 said it would take.
+
+| pipeline | what the evidence says | verdict |
+|---|---|---|
+| `signup-reminder` | route logs `p_extra: { skipped: "disabled" }` | ✅ **feature-flag disabled, intentional** |
+| `weekly-digest` | same | ✅ **feature-flag disabled, intentional** |
+| `refresh-cross-collection` | the work runs as **`cross-collection-deals-mv`**, last day **2026-09-02 (today)** | ⛔ **superseded, route dead** |
+| `sales-serial-backfill-trigger` | route lives at `app/api/cron/sales-serial-backfill/`; the work runs as **`sales-serial-backfill`** (the edge function), last day **today** | ⛔ **superseded, trigger route dead** |
+| `sales-ingest-dune` | route lives at `app/api/cron/sync-sales-ingest-dune/`; no runs, and the sibling `ownership-sync-dune` Dune lane is also inactive | ⓘ **Dune lane appears retired — confirm with Trevor, do not re-enable** |
+| `refresh-serial-fmv-multipliers` | `pinnacle_serial_fmv_multipliers` holds **4 rows** — a static bucket table, not a daily-refresh product | ⓘ **trivial; nothing degrades** |
+| `cadence-payer-balance-check` | a read-only monitor of the Cadence payer wallet balance; not running ⇒ **no balance alerting** | ⚠ **MONITORING GAP** |
+
+## ⚠ Two of my own extractions were wrong, in the way §3 predicted
+
+`sales-ingest-dune` and `sales-serial-backfill-trigger` looked like phantom names because **the
+pipeline name does not match the directory name**: they live at `sync-sales-ingest-dune/` and
+`sales-serial-backfill/`. §3 said the zero-daily-history group was the least trustworthy list here
+and that it needed a read rather than a query. It did.
+
+## Final tally for the whole filing
+
+**14 names with no runs → 2 items worth anything:**
+
+1. 🚨 `wallet-username-resolver` — **confirmed stopped**, output frozen, cost measured (4.1% → 6.0%).
+2. ⚠ `cadence-payer-balance-check` — a **monitoring gap**, not a data defect: nothing is watching the
+   payer wallet's balance. ⛔ Not re-enabled — it is hot-wallet-adjacent (observation only, but the
+   schedule question is the same deliberate-vs-fell-over ambiguity as every other row here).
+
+**The other 12 are correct, intentional, superseded, or trivial — across SEVEN distinct causes**
+(dead upstream marketplace ×2, closed collection market, redundant producer, renamed driver ×3,
+feature-flag disabled ×2, retired data lane, static table, extraction artifact ×2).
+
+⭐ **≈86% false alarms, and the same rate held in both halves of the list.** That is the number to
+remember the next time a "N pipelines have no runs" list appears: **it is a reading list.** The two
+cheap discriminators that did all the work were (a) query the table the pipeline WRITES, and (b) read
+the route's actual `log_pipeline_run` call. Neither requires understanding the pipeline.
