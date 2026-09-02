@@ -359,6 +359,36 @@ describe("CollectionOverviewClient — the three-way sales claim", () => {
     expect(document.body.textContent).not.toMatch(/more sale.? in this window/)
   })
 
+  // ── "Priced from Sales" must be THAT metric or nothing ─────────────────────
+  // The cell reads `fmv_high_medium_pct` — the share of editions whose latest FMV
+  // rests on corroborated sales. It used to fall back to `fmv_pct`, which is the
+  // share carrying ANY non-NO_DATA snapshot and is far larger. Measured live
+  // 2026-09-02: LaLiga Golazos 87.3% vs a true 0.3%; UFC Strike 73.6% vs 0.0%.
+  it("renders the HIGH/MEDIUM share when the read supplies it", async () => {
+    mount(() => json(200, STATS({ fmv_pct: 87.3, fmv_high_medium_pct: 0.3 })), "laliga-golazos")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Priced from Sales/))
+    expect(document.body.textContent).toMatch(/0%/)
+    expect(document.body.textContent).not.toMatch(/87%/)
+  })
+
+  // ⚠ ASSERTED AS AN ABSENCE. The failure this prevents is not an error message
+  // going missing — it is a DIFFERENT, much larger number being published under
+  // this label. So the assertion is that 87% never appears, not that some
+  // fallback string does.
+  it("publishes no priced-from-sales figure at all when that share is missing", async () => {
+    mount(() => json(200, STATS({ fmv_pct: 87.3, fmv_high_medium_pct: null })), "laliga-golazos")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Priced from Sales/))
+    expect(document.body.textContent).not.toMatch(/87%/)
+  })
+
+  // Zero is a measurement, not an absence — UFC Strike's share is genuinely 0.0%.
+  it("renders a genuine zero share as 0%", async () => {
+    mount(() => json(200, STATS({ fmv_pct: 73.6, fmv_high_medium_pct: 0 })), "ufc-strike")
+    await waitFor(() => expect(document.body.textContent).toMatch(/Priced from Sales/))
+    expect(document.body.textContent).toMatch(/0%/)
+    expect(document.body.textContent).not.toMatch(/74%/)
+  })
+
   // ⚠ A 200 CARRYING AN `error` KEY is a failure, not a collection with no data. Storing it
   // makes `stats` truthy and every KPI reads `stats ? (x ?? 0) : null` — so the whole band
   // would render as "0 editions / 0% priced / $0" instead of em-dashes. That is deep-audit

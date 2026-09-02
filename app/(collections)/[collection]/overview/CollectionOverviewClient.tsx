@@ -333,11 +333,19 @@ export default function CollectionOverviewClient({ collection }: { collection: s
           accent={accent}
           loading={loading}
           valueColor={accent}
+          /* ⚠ NO FALLBACK TO `fmv_pct`, AND THE OLD ONE WAS A FALSE CLAIM.
+             This cell used to render `fmv_pct` when `fmv_high_medium_pct` was
+             null. Those are DIFFERENT METRICS: `fmv_pct` is the share of
+             editions carrying any non-NO_DATA snapshot, which is far larger.
+             Measured 2026-09-02 — LaLiga Golazos 87.3% vs a true 0.3%, UFC
+             Strike 73.6% vs a true 0.0%. A failed read of the HIGH/MEDIUM share
+             would have published a 291× overstatement under the label
+             "Priced from Sales". Null renders the skeleton, which says nothing
+             rather than something false. Zero is a real value here and still
+             renders as "0%". */
           value={
-            stats
-              ? stats.fmv_high_medium_pct != null
-                ? `${Math.round(stats.fmv_high_medium_pct)}%`
-                : `${Math.round(stats.fmv_pct ?? 0)}%`
+            stats && stats.fmv_high_medium_pct != null
+              ? `${Math.round(stats.fmv_high_medium_pct)}%`
               : null
           }
         />

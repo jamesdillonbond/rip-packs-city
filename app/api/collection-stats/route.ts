@@ -1,63 +1,31 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { safeApiError, statusForSafeError } from "@/lib/api-error"
 
-// % of editions whose LATEST FMV snapshot is HIGH or MEDIUM confidence.
-// Reframes the misleading "FMV Coverage 100%" — a collection can have a snapshot
-// for every edition yet still have ~43% labelled NO_DATA. We surface the share
-// of editions priced with usable confidence instead. Pinnacle reads from
-// pinnacle_fmv_snapshots (its own per-collection table); everything else uses
-// the partitioned fmv_snapshots table keyed by collection_id.
-async function computeHighMediumPct(
-  slug: string,
-): Promise<{ count: number | null; pct: number | null }> {
-  try {
-    const sql = slug === "disney-pinnacle"
-      ? `
-          -- PIN-FMV-REKEY Wave 3: per-render coverage from pinnacle_catalog
-          -- (one row per render_id) instead of the retiring per-edition blend.
-          SELECT
-            (SELECT COUNT(*) FROM pinnacle_catalog WHERE fmv_confidence IN ('HIGH','MEDIUM')) AS high_medium,
-            (SELECT COUNT(*) FROM pinnacle_catalog) AS edition_total
-        `
-      : `
-          WITH latest AS (
-            SELECT l.confidence
-            FROM editions e
-            CROSS JOIN LATERAL (
-              SELECT fs.confidence
-              FROM fmv_snapshots fs
-              WHERE fs.collection_id = '${COLLECTION_UUID_BY_SLUG[slug] ?? ""}'
-                AND fs.edition_id = e.id
-              ORDER BY fs.computed_at DESC
-              LIMIT 1
-            ) l
-            WHERE e.collection_id = '${COLLECTION_UUID_BY_SLUG[slug] ?? ""}'
-          ),
-          ed AS (
-            SELECT COUNT(*) AS total
-            FROM editions
-            WHERE collection_id = '${COLLECTION_UUID_BY_SLUG[slug] ?? ""}'
-          )
-          SELECT
-            (SELECT COUNT(*) FROM latest WHERE confidence IN ('HIGH','MEDIUM')) AS high_medium,
-            (SELECT total FROM ed) AS edition_total
-        `
-
-    const { data, error } = await (supabaseAdmin as any).rpc("query_sql", { query: sql })
-    if (error || !data) return { count: null, pct: null }
-    const row = Array.isArray(data) ? data[0] : data
-    const hm = Number(row?.high_medium ?? 0)
-    const total = Number(row?.edition_total ?? 0)
-    if (!Number.isFinite(hm) || !Number.isFinite(total) || total <= 0) {
-      return { count: hm, pct: null }
-    }
-    return { count: hm, pct: (hm / total) * 100 }
-  } catch {
-    return { count: null, pct: null }
-  }
-}
+// ── THE HIGH/MEDIUM SHARE COMES FROM get_collection_stats, NOT A SECOND SCAN ──
+//
+// `fmv_high_medium_count` / `fmv_high_medium_pct` are the share of this
+// collection's editions whose LATEST FMV snapshot is HIGH or MEDIUM confidence.
+// They exist because "FMV Coverage 100%" was misleading — a collection can have a
+// snapshot for every edition and still have ~43% of them labelled NO_DATA.
+//
+// ⛔ THIS ROUTE USED TO COMPUTE THEM ITSELF, and that was a duplicate of work the
+// RPC had already done. `get_collection_stats` walks every edition with one
+// `fmv_snapshots` probe each to produce `fmv_covered`; `computeHighMediumPct()`
+// then ran the BYTE-EQUIVALENT scan a second time through `query_sql` for a
+// different FILTER, inside the same `Promise.all`. Wall-clock hid it. The DB load
+// is the SUM, and this instance is IO-bound.
+//
+// MEASURED 2026-09-02, quiet band (so this is the FLOOR, not the typical cost):
+// the second pass alone was 116,945 buffers / 2,875 ms / 19,942 lateral loops on
+// Top Shot. Migration
+// `20260902054902_audit_20260902_collection_stats_folds_the_high_medium_pass_into_the_scan_it_already_makes`
+// folded the aggregate into the pass the function already makes — proved
+// row-for-row equivalent against the query below, in a single snapshot — so this
+// route now reads the numbers straight off the RPC payload.
+//
+// 👉 If you are about to add another per-edition metric here: add it to the
+// function's existing aggregate, not to a second query.
 
 // A failed stats read must NOT be served as HTTP 200.
 //
@@ -106,11 +74,9 @@ export async function GET(req: NextRequest) {
   const normalized = collection.replace(/-/g, "_")
 
   try {
-    const [statsRes, hmRes] = await Promise.all([
-      (supabaseAdmin as any).rpc("get_collection_stats", { p_slug: normalized }),
-      computeHighMediumPct(collection),
-    ])
-    const { data, error } = statsRes
+    const { data, error } = await (supabaseAdmin as any).rpc("get_collection_stats", {
+      p_slug: normalized,
+    })
 
     if (error) {
       return statsUnavailable(error, "rpc_error")
@@ -120,9 +86,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(data, { status: 404 })
     }
 
+    // ⚠ The two keys are NORMALIZED TO null when the RPC does not carry them,
+    // never defaulted to 0 or to a different metric. An absent field would
+    // otherwise vanish from the JSON entirely and the consumer could not tell
+    // "not measured" from "measured as zero" — and zero here is a real value
+    // (UFC Strike is genuinely 0.0%).
     const enriched =
       data && typeof data === "object" && !Array.isArray(data)
-        ? { ...data, fmv_high_medium_count: hmRes.count, fmv_high_medium_pct: hmRes.pct }
+        ? {
+            ...data,
+            fmv_high_medium_count: (data as any).fmv_high_medium_count ?? null,
+            fmv_high_medium_pct: (data as any).fmv_high_medium_pct ?? null,
+          }
         : data
 
     return NextResponse.json(enriched, {
