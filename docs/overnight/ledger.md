@@ -10,6 +10,67 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED — the operator's 24 h failure list was ranking ONE upstream outage above every pipeline that is actually broken; `pipeline_fails_24h` now classifies
+
+**Migration `audit_20260902_ops_snapshot_fails_24h_separates_upstream_outages_from_our_own_failures`**
+(file `20260902035928_…`) + guard `__tests__/ops-snapshot-upstream-signature-matches-breaker-guard.test.ts`.
+Drains the residual concern in inbox filing `2026-09-02T0010Z` — the one part of that filing that
+survived its own refutation.
+
+**The number.** `rpc_ops_snapshot`'s `pipeline_fails_24h` was a bare `count(*) WHERE ok=false` ordered by
+that count. Measured immediately before shipping: **51 of 82 failures in 24 h are ONE Top Shot GraphQL
+Cloudflare 530**, spread across **seven** pipelines. The list it produced read:
+
+| old ranking | | new ranking (`fails`/`upstream`) |
+|---|---|---|
+| offers-sweep **36** | → | sync-nba-projections **8/0** |
+| sync-nba-projections 8 | | wallet-backfill **7/0** |
+| ingest 7 | | wallet-backfill-allday **5/0** |
+| wallet-backfill 7 | | wallet-backfill-golazos **5/0** |
+| … | | … offers-sweep **36/36** demoted |
+
+`offers-sweep` sat at the top **with fresh data** (`edition_offers` max `updated_at` ~1 min old) and its
+failures are the breaker working as designed, while `sync-nba-projections` (dead sports proxy, #8) and
+three `wallet-backfill*` pipelines losing rows sat underneath it.
+
+⛔ **The fix is on the READER, and that is the whole point.** The obvious repair — have `offers-sweep`
+log `ok=true` for a 530 — was already measured against the code it proposed to change and is
+**harmful**: `checkUpstreamBreaker` finds "the most recent REAL run" by skipping skip-markers, so a
+failing probe reporting `ok=true` leaves **no failing run to find**, the breaker returns `last_run_ok`
+forever, and it attacks a dead upstream at full price on every tick with nothing recording that the
+protection was lost. **Changing a writer to make a metric look nicer destroys the signal the writer
+exists to emit.** The writer is untouched; the observer learned to classify.
+
+**Additive, so no reader breaks:** `fails` still counts EVERY failure — nothing is hidden or subtracted
+— each row gains `upstream`, and the order becomes `(fails - upstream) DESC, fails DESC`.
+
+**The signature is a hand-copy of `CLOUDFLARE_ORIGIN_DOWN`** (`lib/pipeline/upstream-breaker.ts`),
+because SQL cannot import it. ⭐ **So the copy got a guard, and the guard was proved in BOTH
+directions rather than assumed:** narrowing the SQL regex to `(failed with 530)` fails it naming the TS
+source; renaming the `'upstream'` key fails it naming the migration; restored, 4/4 green. It resolves
+the migration by **walking every file that redefines the function and taking the newest**, so a later
+migration that quietly drops the classifier fails here instead of being checked against a superseded
+file it does not govern. It requires **exactly one** `error ~* '…'` match and returns null on two —
+a header comment quoting the pattern cannot be read instead of the code, and no comment stripper is
+needed to get that right.
+
+⚠ **Two things this does NOT do.** It is repo-vs-repo, so it says nothing about production — a
+definition applied via MCP and never committed would satisfy it (that gap is
+`scripts/check-db-pin-staleness.mjs`, and `rpc_ops_snapshot` is not pinned there). And a signature
+that is too NARROW files a real outage as our own failure while a bare `530` files our own failure as
+someone else's outage; the guard pins the shape against both, but only the four spellings observed so
+far are covered — **a fifth spelling is a silent miscount, and it will show up as an upstream burst
+appearing in the our-own column.**
+
+**Post-state, both directions and non-vacuous:** every row carries all three keys · every sibling key
+of the snapshot survives (a rewrite that dropped one would leave this migration's own target looking
+perfect) · and the ordering assertion runs **only when the window contains both kinds**, saying so
+rather than passing vacuously when it does not.
+
+**REVERT:** re-apply the previous body — the `pipeline_fails_24h` sub-select without the `upstream`
+FILTER and with `ORDER BY n DESC`. Nothing else in the snapshot, and no table, index, schedule or
+grant, is touched.
+
 ### 2026-09-01 · ⚠ COLLISION — two sessions shipped the SAME lock-check fix 3.5 minutes apart under the SAME migration name; both rows kept, and the new information is what neither pass had
 
 **This entry sits directly above the entry that shipped the same change** (session `014wx7Jm`,
