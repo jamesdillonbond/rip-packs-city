@@ -11,7 +11,9 @@ import { searchPinnacleDeals, getPinnacleFmv } from "@/lib/concierge/pinnacle-ro
 //       never a bare edition_key.
 //   (b) editions.tier is filtered with .eq(UPPERCASE), never .ilike (enum).
 //   (c) the unified get_fmv path reads BOTH editions and FMV (the bulk
-//       distribution via fmv_current to dodge the 1000-row clamp; the single
+//       distribution via the get_editions_latest_fmv RPC — a per-id LATERAL
+//       LIMIT 1 that dodges the 1000-row clamp WITHOUT the full DISTINCT ON
+//       pass that filtering the fmv_current view by key forced; the single
 //       editionKey lookup via fmv_snapshots + limit(1)).
 // A recording fake Supabase client captures every from()/filter call so the
 // exact table + method + args are asserted.
@@ -35,8 +37,12 @@ function makeRecorder(results: Record<string, any>) {
           calls.push({ table, method: "maybeSingle", args: [] })
           return results[`${table}:single`] ?? { data: null, error: null }
         },
-        then: (resolve: any) =>
-          resolve(results[table] ?? { data: [], error: null }),
+        then: (resolve: any) => {
+          const r = results[table] ?? { data: [], error: null }
+          // The unified path also takes an exact head count over the same
+          // filter; serve a count that agrees with the rows.
+          return resolve(Array.isArray(r.data) ? { ...r, count: r.data.length } : r)
+        },
       }
       for (const m of [
         "select", "not", "neq", "eq", "ilike", "in", "order", "limit", "lte", "gte", "gt",
@@ -44,6 +50,10 @@ function makeRecorder(results: Record<string, any>) {
         builder[m] = rec(m)
       }
       return builder
+    },
+    rpc(name: string, args: any) {
+      calls.push({ table: `rpc:${name}`, method: "rpc", args: [args] })
+      return Promise.resolve(results[name] ?? { data: [], error: null })
     },
   }
   return { client, calls }
@@ -53,7 +63,7 @@ const has = (calls: Call[], table: string, method: string, argMatch?: (a: any[])
   calls.some((c) => c.table === table && c.method === method && (!argMatch || argMatch(c.args)))
 
 describe("(c) unified get_fmv reads editions + fmv (current/snapshots)", () => {
-  it("queries BOTH editions and fmv_current for a filtered distribution", async () => {
+  it("queries editions AND the latest-FMV RPC, scoped to the matched ids", async () => {
     const { client, calls } = makeRecorder({
       editions: {
         data: [
@@ -62,7 +72,7 @@ describe("(c) unified get_fmv reads editions + fmv (current/snapshots)", () => {
         ],
         error: null,
       },
-      fmv_current: {
+      get_editions_latest_fmv: {
         data: [
           { edition_id: "e1", fmv_usd: 10, confidence: "HIGH", computed_at: "2026-07-12T00:00:00Z" },
           { edition_id: "e2", fmv_usd: 20, confidence: "HIGH", computed_at: "2026-07-11T00:00:00Z" },
@@ -75,9 +85,21 @@ describe("(c) unified get_fmv reads editions + fmv (current/snapshots)", () => {
       player: "LeBron",
     })
     expect(has(calls, "editions", "select")).toBe(true)
-    expect(has(calls, "fmv_current", "select")).toBe(true)
-    // the bulk FMV read must be scoped to the matched edition ids
-    expect(has(calls, "fmv_current", "in", (a) => a[0] === "edition_id")).toBe(true)
+    // ⛔ The bulk FMV read must go through the RPC, NOT a fmv_current select.
+    // A PostgREST filter on that view does not push down: Postgres materialises
+    // the entire DISTINCT ON and then semi-joins — measured 2026-09-02 at
+    // 1,334,789 buffers / 16.7 s for 500 ids against 5,359 / 470 ms here, which
+    // is the difference between an answer and a timed-out FMV lookup.
+    expect(has(calls, "rpc:get_editions_latest_fmv", "rpc")).toBe(true)
+    expect(has(calls, "fmv_current", "select")).toBe(false)
+    // and it must still be scoped to exactly the matched edition ids
+    expect(
+      has(calls, "rpc:get_editions_latest_fmv", "rpc", (a) =>
+        Array.isArray(a[0]?.p_edition_ids) &&
+        a[0].p_edition_ids.includes("e1") &&
+        a[0].p_edition_ids.includes("e2"),
+      ),
+    ).toBe(true)
     expect(res.status).toBe("ok")
     expect((res as any).mode).toBe("distribution")
   })
