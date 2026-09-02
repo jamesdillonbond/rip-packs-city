@@ -62,7 +62,7 @@
       "schedule": "22 */3 * * *"
     },
     {
-      "path": "/api/admin/drain-topshot-misattribution?rekey=1",
+      "path": "/api/admin/drain-topshot-misattribution",
       "schedule": "0 11 * * *"
     },
     {

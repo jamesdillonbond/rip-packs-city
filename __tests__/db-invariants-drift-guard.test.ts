@@ -317,6 +317,18 @@ const PINS = [
     migration: "supabase/migrations/20260702130000_audit_20260702_allday_cross_source_dedup_writer_trigger.sql",
   },
   {
+    // Added 2026-09-02 IN THE SAME SESSION as the change. A pg_cron wrapper whose
+    // whole job is that a FAILED re-key still writes a pipeline_runs row — so the
+    // properties worth pinning are the ABSENCES (NULL, never 0, on the error path)
+    // and the fact that it does not re-raise. Its callee runs where the ~120 s
+    // Supabase gateway cap does not apply; the HTTP ?rekey=1 leg it replaces was
+    // rolled back on roughly half its daily runs.
+    fn: "run_topshot_onchain_rekey",
+    test: "supabase/tests/run_topshot_onchain_rekey.sql",
+    migration:
+      "supabase/migrations/20260902112507_audit_20260902_topshot_onchain_rekey_runs_where_it_has_more_than_120s.sql",
+  },
+  {
     // Added 2026-09-02 with the function. The pinned behaviour is the AMBIGUITY
     // filter: on an edition_key where wallet_moments_cache holds more than one
     // distinct player_name, wmc was measured 58.8% wrong (10 of 17 subedition

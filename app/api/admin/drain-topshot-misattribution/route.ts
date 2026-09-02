@@ -23,6 +23,24 @@
 // Query params:
 //   ?limit=N    cap targets resolved this tick (default CANDIDATES_PER_RUN)
 //   ?rekey=1    after resolution, run remap_topshot_from_onchain_map()
+//               ⚠ UNSCHEDULED 2026-09-02 — the daily vercel.json entry dropped this
+//               param; the re-key now runs as pg_cron `rpc-topshot-onchain-rekey`
+//               (jobid 434, `33 11 * * *`) via run_topshot_onchain_rekey(). The leg
+//               is KEPT here and still works on demand; only the schedule moved.
+//               WHY: this path reaches the RPC over PostgREST, where the Supabase
+//               GATEWAY hard-caps the request at ~120 s no matter what the function
+//               declares (it declares 300 s, which is unreachable here). The CONTROL
+//               that settles the cost is the audit tables, not the error string: on
+//               all five `rekey: upstream request timeout` days between 08-23 and
+//               08-28, audit_topshot_sale_drain_remap_20260621 gained ZERO rows — the
+//               gateway giving up ROLLS THE WORK BACK, so ~1.4 GB of reads on a
+//               22 MB/s instance bought nothing, on roughly half the daily runs.
+//               ⚠ Do NOT "fix" this by making the query faster: measured 2026-09-02,
+//               the sales leg scans 3,198,302 Top Shot rows (174,820 buffers / 9.0 s
+//               warm) and the planner's hash join is the RIGHT plan — forcing the
+//               nested loop over the per-partition nft_id indexes costs 1,315,991
+//               buffers / 33.3 s. `cron_heavy` carries statement_timeout=600s, which
+//               is the actual fix.
 //   ?probe=1    resolve WITHOUT writing the map; return a sample (shape check)
 //   ?wmc=1      swap target pool to the TS wmc UUID fossils + the wmc re-key leg
 //               ⚠ UNSCHEDULED 2026-08-17 — the fossil population is measured ZERO.

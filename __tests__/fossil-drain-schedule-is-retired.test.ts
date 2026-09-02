@@ -71,16 +71,40 @@ describe("topshot-wmc-fossil-drain schedule is retired", () => {
   })
 
   it("keeps the daily non-wmc drain, which is a DIFFERENT and productive pool", () => {
-    // The `?rekey=1` leg reads topshot_misattrib_drain_targets and wrote 888 rows
-    // on 2026-08-17. Retiring the wmc leg must not touch it — they share a route
-    // but not a target pool, a rekey RPC, or a pipeline name.
+    // The drain reads topshot_misattrib_drain_targets and wrote 888 rows on
+    // 2026-08-17. Retiring the wmc leg must not touch it — they share a route but
+    // not a target pool, a rekey RPC, or a pipeline name.
     const daily = crons().filter(
       (c) =>
         c.path.startsWith("/api/admin/drain-topshot-misattribution") &&
         !/[?&]wmc=1(&|$)/.test(c.path),
     )
     expect(daily).toHaveLength(1)
-    expect(daily[0].path).toContain("rekey=1")
+  })
+
+  it("no longer schedules ?rekey=1 over HTTP — that leg moved to pg_cron 2026-09-02", () => {
+    // ⚠ THIS ASSERTION WAS INVERTED, NOT DELETED. It used to require `rekey=1` on
+    // the daily entry. The re-key reaches remap_topshot_from_onchain_map() over
+    // PostgREST, where the Supabase gateway hard-caps the request at ~120 s — and
+    // the CONTROL that settles what that costs is the audit tables: on all five
+    // `rekey: upstream request timeout` days between 08-23 and 08-28,
+    // audit_topshot_sale_drain_remap_20260621 gained ZERO rows. The gateway giving
+    // up ROLLS THE WORK BACK; it is not a lost response over a committed re-key.
+    // It now runs as pg_cron job `rpc-topshot-onchain-rekey` (11:33 UTC daily)
+    // under `cron_heavy`, whose role statement_timeout is 600 s.
+    //
+    // Pinned so the obvious "restore" — putting rekey=1 back on the Vercel entry —
+    // reds instead of silently double-running a 1.4 GB scan twice a day.
+    const rekeyed = crons().filter((c) => /[?&]rekey=1(&|$)/.test(c.path))
+    expect(rekeyed).toEqual([])
+  })
+
+  it("retires the rekey SCHEDULE only — ?rekey=1 still works on the route by hand", () => {
+    // Same disposition as the wmc leg above: schedule-only. A manual re-key after
+    // a large map import must stay possible.
+    const code = stripComments(routeSrc())
+    expect(code).toMatch(/searchParams\.get\("rekey"\)/)
+    expect(code).toContain("remap_topshot_from_onchain_map")
   })
 
   it("retires the SCHEDULE only — the ?wmc=1 capability still exists on the route", () => {
