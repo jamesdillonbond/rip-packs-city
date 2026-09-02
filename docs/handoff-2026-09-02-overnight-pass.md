@@ -98,6 +98,32 @@ are unshippable under NO-PUSH.
    NO-PUSH cloud nights cannot land, so the pile grows. A push-capable run (Claude Code / desktop) should
    `git mv` consumed filings into `docs/overnight/inbox/archive/` and commit.
 
+   > 🚨 **DO NOT ACT ON THIS ITEM AS WRITTEN — it conflicts with `inbox/INDEX.md`, which is the more
+   > specific authority and says the opposite.** Checked by a push-capable Claude Code session on
+   > 2026-09-02 ~14:15 PT, which was in a position to do it and deliberately did not.
+   >
+   > INDEX.md's own header: *"Archiving by date was considered and **rejected**. The
+   > `rpc-nightly-autonomous-pass` task DRAINS this directory: moving a filing that was never acted on
+   > would silently remove it from that queue, and nothing would ever surface it again. A date is not a
+   > drained-determination, and **no per-item drained state exists to read**. **Archiving is Trevor's
+   > call, not a chore.**"*
+   >
+   > ⭐ **The item's own qualifier is the unexecutable part.** "`git mv` **consumed** filings" is exactly
+   > right — and there is no way to determine which are consumed. The only mechanically available
+   > interpretation is *by date*, which is the one that was explicitly rejected, and "356 filings back to
+   > 08-09" invites precisely that. **An instruction whose only executable reading is the forbidden one
+   > will eventually be executed.**
+   >
+   > ⚠ Archiving is also not a pure `git mv`: **`INDEX.md` carries 4 CI assertions, two of them COUNTS**,
+   > so archiving a filing means deleting its INDEX entry in the same commit or CI reds
+   > (`__tests__/inbox-index-lists-every-filing.test.ts`). `docs/overnight/inbox/archive/` already exists;
+   > the directory is not the blocker.
+   >
+   > 👉 **What would actually unblock this: a per-item drained marker** — a front-matter line or a
+   > trailing `## Drained <date> — <what shipped>` section that a pass writes when it acts on a filing.
+   > Then archiving becomes mechanical and safe instead of a judgement call nobody can make from a date.
+   > Until that exists, this stays Trevor's.
+
 ## Failed / blocked / reverted
 
 None. No verification failure; production shipping was never engaged (nothing was eligible).
@@ -106,5 +132,8 @@ None. No verification failure; production shipping was never engaged (nothing wa
 
 `metrics-latest.json`, this handoff, and a ledger entry were written **to the mounted tree** (the durable
 store future runs read). Under NO-PUSH they are **uncommitted** — a push-capable run should commit them.
+
+> ✅ **DONE — committed as `ca4e8b63e`** ("commit the 2026-09-02 cloud pass's continuity writes, which
+> NO-PUSH stranded on the mount"). Verified 2026-09-02 ~14:15 PT; no action left on this paragraph.
 Inbox filings were left in place (not moved) to avoid a large uncommitted churn on Trevor's working tree;
 see queued item 6.

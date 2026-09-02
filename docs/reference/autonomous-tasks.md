@@ -50,3 +50,38 @@ until it is re-created with it — **that is an operator action, not something t
 
 Coordinating your own work: skim `ledger.md` before a session so you don't duplicate or collide; the night pass will not edit files committed in the last 24–48h. To halt all autonomous shipping (before a launch or during a risky refactor), create `docs/FREEZE.md` — both tasks drop to read-only while it exists. The weekly Monday `rpc-weekly-health-check` lists everything shipped autonomously in the prior 7 days, each with its revert command, so it can be reviewed or rolled back. The full task prompts live in Cowork (Scheduled), not in this repo.
 
+
+## 🚨 The inbox-archival instruction conflicts with `INDEX.md`, and the forbidden reading is the only executable one (2026-09-02)
+
+The 2026-09-02 overnight handoff queued, for a push-capable run:
+
+> *"A push-capable run (Claude Code / desktop) should `git mv` consumed filings into
+> `docs/overnight/inbox/archive/` and commit."*
+
+`docs/overnight/inbox/INDEX.md` says the opposite, and is the more specific authority:
+
+> *"Archiving by date was considered and **rejected**… moving a filing that was never acted on would
+> silently remove it from that queue, and nothing would ever surface it again. A date is not a
+> drained-determination, and **no per-item drained state exists to read**. **Archiving is Trevor's
+> call, not a chore.**"*
+
+⭐ **The dangerous part is the qualifier.** "`git mv` **consumed** filings" is exactly the right
+instruction — and nothing in the repo can tell you which filings are consumed. So the only
+mechanically available reading is *by date*, which is the rejected one, and a queued item that says
+"356 filings back to 08-09" points straight at it. **An instruction whose only executable
+interpretation is the forbidden one will eventually be executed** — by a session that reads the
+handoff and not the INDEX header.
+
+⛔ A push-capable session checked this on 2026-09-02, was able to do it, and did not.
+
+### What would actually unblock it
+
+A **per-item drained marker** written by whichever pass acts on a filing — front-matter, or a
+trailing `## Drained <date> — <what shipped>` section. Archiving then becomes mechanical: move
+anything with a marker older than N days. Until that exists the determination cannot be made from the
+filesystem, and the answer stays "Trevor's call".
+
+⚠ And archiving is never a bare `git mv`: **`INDEX.md` carries 4 CI assertions, two of them COUNTS**,
+so a filing's INDEX entry must be deleted in the same commit or
+`__tests__/inbox-index-lists-every-filing.test.ts` reds. `docs/overnight/inbox/archive/` already
+exists — the directory was never the blocker.
