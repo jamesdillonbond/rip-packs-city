@@ -10,6 +10,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — Golazos pack EV skipped 77 of 211 distributions per tick, and an AVERAGE was doing a bound's job on the ownership walk
+
+Two more confirmed out of known-issues #57. Both are the same silent shape as the badge/Pinnacle
+fixes above — a read that SUCCEEDS and returns the wrong rows — but each fails in its own way.
+
+**1. `compute-laliga-pack-ev` — the pool read was unbounded AND unordered.** Measured live: the
+Golazos `pack_drop_pool` holds **1,958 rows across 211 dist_ids**, and the first 1,000 in PHYSICAL
+order carry only **134 of the 211**. So 77 distributions could not get an EV row on any given tick.
+⚠ **And WHICH 77 changed between runs** — no `ORDER BY`, so an unordered LIMIT is physical order, not
+a sample, and physical order shifts as the table is rewritten. That is why `pack_ev_history` has
+eventually seen all 211 while a single run covers a fraction. ⚠ **The instrument read healthy
+throughout:** `rowsFound: poolRows.length` logged 1,000 as though that were the pool.
+⚠ **Do NOT attribute the whole gap to the cap** — the latest run wrote 39 dists, well under the 134
+the cap allows, so the RPC's own `ok !== true` filter drops most of the rest. The cap is ONE of two
+causes; this fix removes the non-deterministic one. Paged with `.range()` over
+`(dist_id, edition_id, slot_name)` — the PK's own order, so the page boundary is deterministic — and
+a failed page now **fails the run** rather than computing EV over a partial pool, with
+`extra.pool_rows_read` recording what was actually read.
+
+**2. `ownership-onchain-walk` — the justification was an AVERAGE.** The comment read *"avg
+~23/wallet, well under PostgREST's 1000-row cap"*. ⭐ **An average says nothing about the tail, and
+the tail is exactly who a verification walk exists for.** Measured live: 270,424 rows over 7,903
+owners (avg 34), **max 26,737, and 21 owners hold more than 1,000**. For each of those the read
+returned 1,000 rows with no error and no short page, so the walk confirmed a fraction of their
+holdings and left the rest looking unconfirmed — on the pipeline whose entire job is confirming
+ownership. Keyset on `nft_id` (this table's PK); a page error now counts the wallet as an error
+rather than confirming a partial set, because `vanished` feeds the index's own view of who holds what.
+
+⛔ **THREE MORE REFUTED, all the same way.** `app/api/market/route.ts:248` (`.limit(1000)` plus a
+documented cap-aware ordering strategy), `app/api/analytics/insider/signals/route.ts:39`
+(`.limit(25)`), and `app/api/edition-history/route.ts:69` (`.eq(edition_id)` + a `days` param clamped
+to 1–90; max snapshots for any edition is **391 in 365 days**, so ~97 at the ceiling). Running total:
+**8 of 19 triaged — 3 confirmed and fixed, 5 refuted; 11 left.** ⚠ **Every refutation so far is a
+multi-statement builder**, which is now recorded in #57 as a known limitation of the scan.
+
+**Verification.** 1,427 files / 15,804 tests green (+8); `tsc` clean; ratchet 717 = baseline.
+**Mutation-tested 8/8** across the two: single-page, no-short-page-break, swallow-the-page-error and
+drop-the-rows-read counter on the pool; single-page, swallow-error, no-short-break and the
+no-progress cursor guard on the walk. ⚠ The cursor-guard mutant SURVIVED the first sweep — no fixture
+produced the pathological "same full page forever" case; a termination test now covers it.
+
+**Revert path:** `git revert <sha>`. Code-only, no DB or schema change.
+
 ### 2026-09-02 · ✅ SHIPPED — the Pinnacle sniper could not price 30% of its editions, and a miss DROPS the listing
 
 First item triaged out of known-issues #57's 19-site list, and the one with the worst landing.
