@@ -436,6 +436,24 @@ the answer is often "only one of six".**
 > error is in this entry rather than in next month's assumptions.
 >
 > ✅ **The ownership-walk half of this entry is UNAFFECTED and stands** —
+>
+> 📌 **PRE-FIX BASELINE for the owed verification, recorded 2026-09-02 ~14:45 PT.** The walk runs
+> **daily at 13:30Z**, and its last run (2026-09-02 13:30Z) PREDATES the 18:02Z deploy — so **every
+> run below is pre-fix and the first post-fix run is 2026-09-03 13:30Z.** Nothing about this fix has
+> been exercised in production yet; do not read it as verified.
+>
+> | run | rows_found | confirmed | skipped | wallet_errors |
+> |---|---:|---:|---:|---:|
+> | 08-31 13:30Z | 3,015 | 1,039 | 1,976 | 2 |
+> | 09-01 13:30Z | 3,445 | 1,455 | 1,990 | 2 |
+> | 09-02 13:30Z | 3,349 | 1,339 | 2,010 | 2 |
+>
+> **What a working fix should do:** `rows_found` and `confirmed` RISE, because the 21 owners holding
+> >1,000 rows (max 26,737) previously contributed only their first 1,000. ⚠ **And watch
+> `wallet_errors`** — it has been a flat 2 for three runs, and the fix ADDS an error path (a failed
+> page now counts the wallet as an error rather than confirming a partial set), so a rise there is
+> this change, not noise. ⭐ Recorded because a check that can only confirm is not a check: if these
+> numbers do NOT move, the fix did nothing and that must be legible tomorrow.
 > `app/api/cron/ownership-onchain-walk/route.ts` runs and its whale truncation was real.
 > ✅ The Golazos change itself is harmless and strictly more correct; it is dead code that is now
 > correct dead code. ⚠ **NOT deleted:** no pg_cron job and no in-repo caller reference it, but
