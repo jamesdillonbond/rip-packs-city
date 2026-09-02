@@ -171,9 +171,11 @@ function buildDistribution(
  *     ILIKE filter when one is provided; when none is provided they are
  *     still skipped via player_name IS NOT NULL to avoid the no-name catalog
  *     rows polluting distributions).
- *  2. Pull the latest FMV per edition_id from fmv_current (DISTINCT ON latest;
- *     avoids the 1000-row PostgREST clamp that raw fmv_snapshots history hits)
- *     and reduce client-side.
+ *  2. Pull the latest FMV per edition_id via get_editions_latest_fmv (a per-id
+ *     LATERAL LIMIT 1 over fmv_snapshots). This avoids BOTH the 1000-row
+ *     PostgREST clamp that raw fmv_snapshots history hits AND the full
+ *     DISTINCT ON pass that filtering the fmv_current view by key forces —
+ *     measured 2026-09-02 at 1,334,789 buffers / 16.7 s versus 5,359 / 470 ms.
  *  3. Aggregate to {count, p10, p50, p90, min, max, sample_editions}.
  *
  * Returns single-edition shape when exactly one edition matches AND has FMV;
@@ -308,20 +310,47 @@ export async function fetchUnifiedFmvDistribution(
   }
 
   const ids: string[] = editions.map((e: { id: string }) => e.id)
-  // Read latest-per-edition from fmv_current (DISTINCT ON (edition_id)), NOT raw
-  // fmv_snapshots. fmv_snapshots keeps daily history (~34 rows/edition), so a bare
-  // .in() over ~500 editions returns ~17k rows and PostgREST clamps that at 1000;
-  // ordered computed_at DESC *globally*, only the ~330 most-recently-snapshotted
-  // editions would survive the clamp — the other ~34% silently vanish from the
-  // distribution, biasing p10/p50/p90 toward recently-priced (hot) editions.
-  // fmv_current returns at most one row per edition (<= the 500-edition cap), so
-  // nothing is dropped.
-  const { data: snaps, error: snErr } = await supabase
-    .from("fmv_current")
-    .select("edition_id, fmv_usd, confidence, computed_at")
-    .in("edition_id", ids)
-    .order("computed_at", { ascending: false })
-  if (snErr) return { status: "no_results", message: `fmv_current query error: ${snErr.message}` }
+  // Latest FMV per edition, one row each. ⚠ The original reason for NOT reading
+  // raw fmv_snapshots still stands and must not be undone: it keeps daily
+  // history (~34 rows/edition), so a bare .in() over ~500 editions returns ~17k
+  // rows, PostgREST clamps at 1,000, and ordered computed_at DESC *globally*
+  // only the ~330 most-recently-snapshotted editions survive — the other ~34%
+  // silently vanish and p10/p50/p90 skew toward recently-priced (hot) editions.
+  // The fix for THAT was to read the fmv_current view. The fix was correct and
+  // its cost was never measured; see the block below for what it turned out to
+  // cost and what replaced it. Both constraints hold at once now: one row per
+  // edition, and no full pass.
+  // ⛔ DO NOT put this back to `.from("fmv_current").in("edition_id", ids)`.
+  // fmv_current is a DISTINCT ON (edition_id) view over fmv_snapshots, and a
+  // PostgREST IN filter does NOT push down into it: Postgres materialises the
+  // WHOLE DISTINCT ON first — 1,385,975 rows scanned to 27,186 distinct — and
+  // only then semi-joins the ids. Same 500 Top Shot "Base Set" ids, measured
+  // 2026-09-02 in one session:
+  //     .in() over the view ....... 1,334,789 buffers (~10.4 GB)   16,736 ms
+  //     get_editions_latest_fmv ...     5,359 buffers                470 ms
+  // 249x fewer buffers. Judge any change here on BUFFERS, not wall clock.
+  // That 16.7 s sat inside a 60 s lambda that also runs the Anthropic tool
+  // loop, so broad FMV questions did not just run slow — a live probe the same
+  // day ("what is a Base Set common worth?") answered "the FMV lookup timed
+  // out on that one". The RPC applies the view's own selection rule per id
+  // (LATERAL ... ORDER BY computed_at DESC LIMIT 1) and was verified to return
+  // byte-identical rows for those 500 ids: 500 = 500, zero rows differing
+  // either way. See migration 20260902225408 (+ 225443, its enum fix).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: snaps, error: snErr } = await (supabase as any).rpc("get_editions_latest_fmv", {
+    p_edition_ids: ids,
+  })
+  // ⚠ A failed READ is not "no editions matched". This result type has no
+  // error variant, so the message has to carry the distinction the shape
+  // cannot — the prompt's error-vs-empty rule depends on the model being able
+  // to tell them apart, and "no results" plus a silent failure reads as an
+  // honest empty catalog.
+  if (snErr) {
+    return {
+      status: "no_results",
+      message: `FMV LOOKUP FAILED (not an empty result): get_editions_latest_fmv errored — ${snErr.message}. Tell the user the price check failed; do NOT say there is no FMV for this.`,
+    }
+  }
 
   // Reduce to latest FMV per edition.
   const latestById = new Map<
