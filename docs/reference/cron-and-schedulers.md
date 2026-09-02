@@ -877,3 +877,33 @@ correction above: **1800 m = 2.6× the measured 11.35 h max inter-run gap**. ⚠
 CEILING, not just a choice**: the sentinel's `Pipeline Success Coverage` arm reads a 24–48 h window
 and its own comment states the invariant that the window must stay wider than the slowest watchlisted
 cadence. Anything longer makes that arm flap.
+
+---
+
+## A finished backward walk keeps running forever, and that is CHEAPER than retiring it (measured 2026-09-02)
+
+`allday-sales-history-backfill` reached its spork floor on **2026-08-11** — `event_cursor
+.allday_sales_v1_backfill` sits at exactly `137390146 = SPORK_FLOOR_HINT`. Its Vercel cron
+(`7 */3 * * *`) has kept firing ever since: ~8 invocations a day that take the
+`end < SPORK_FLOOR_HINT` early return, log `note: reached_spork_floor_hint`, write nothing and exit.
+Roughly 154 no-op runs by 09-02.
+
+The obvious cleanup is the one already applied to its sibling: `topshot-flowty-sales-history-backfill`
+was **RETIRED 2026-08-16 — schedule removed from `vercel.json`, the ROUTE kept**, and its
+`pipeline_cadence_watchlist` row set `is_active = false` with the reason written into `notes`. So the
+precedent, the mechanism and the wording all exist.
+
+⛔ **It was NOT applied here, and the reason is a number rather than caution.** The whole cost of
+leaving it is **8 no-op lambda invocations a day** and one of 35 `vercel.json` cron slots. Against
+that, removing the schedule means someone must restore it if the operator-gated spork-proxy ever lands
+(the deeper 2021 → 2025-12-29 tail is only reachable through it). Near-zero either way, and churning
+deployment config for near-zero is how a config drifts away from what anyone can explain.
+
+⚠ **The enumeration that had to happen first, because it is the trap this repo has already recorded:**
+the route ends with `fireNextPipelineStep("/api/cron/allday-resolve-unmapped")`, so deleting its
+schedule also deletes 8 daily triggers of the unmapped resolver. That would have been the real cost —
+except the resolver logs as **`allday-unmapped-resolver`** (not its route name) and is independently
+fired by `allday-sales-indexer` at both of its exits: **79 runs / 1,698 rows in 24 h**, against the
+backfill's 8. 👉 **Before removing a SCHEDULE, enumerate what the route FIRES, not just what fires the
+route** — and search `pipeline_runs` by the pipeline's own logged name, which here matches neither the
+route path nor the cron entry.

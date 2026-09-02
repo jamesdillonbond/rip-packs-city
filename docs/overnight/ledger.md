@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — 21 indexers logged a cursor advance they had not made; new ban-at-zero guard
+
+**What.** A block cursor is the one piece of pipeline state a re-run cannot reconstruct, and
+`cursor_before` / `cursor_after` on the `pipeline_runs` row is the ONLY pair an operator can read to
+see a walk progressing. **Twenty-one routes assigned `cursorAfter` immediately after an
+`await supabaseAdmin.from("event_cursor").update(…)` whose result was discarded** — so a write
+supabase-js REFUSED still logged the new block, and the next tick re-scanned the identical range while
+the log showed the indexer moving on. All 21 now bind the error and throw into the outer catch, which
+marks the run `ok:false` and leaves `cursorAfter` at its real value. 26 cursor writes across 15 files
+are now bound; 0 are not.
+
+⚠ **The read ratchet could never have found these.** `consequential-read-binds-its-error-ratchet`
+matches `const { … } = await supabaseAdmin`; a bare `await supabaseAdmin.from(…).update(…)` has
+nothing destructured to inspect. **Two guards, disjoint syntax, neither finds the other's
+population** — worth remembering the next time a ratchet reads clean.
+
+**New guard `__tests__/event-cursor-writes-bind-their-error.test.ts` — a BAN AT ZERO, not a ratchet.**
+Cursor writes are few, uniform and consequential by construction, so an allowlist would be theatre.
+It carries two not-vacuous floors (≥20 writes found, ≥10 files) plus a **detector positive control**
+on synthetic bound/unbound/read snippets, because a guard that inspects nothing passes and this repo
+has had `stripComments` blank real source three times.
+
+**Behavioural half** on `topshot-offers-indexer`: a failed cursor update must log `ok:false` and must
+NOT report `cursor_after: "1250"`, with a **positive control** proving the same fixtures minus the
+error DO reach the tip — without it the assertion would pass for a route that never got to the cursor.
+Both mutations (drop the check; unbind one site) go red on exactly their own assertion.
+
+⛔ **DID IT FIRE? NOT ESTABLISHED, and the tempting evidence is a FALSE POSITIVE.** The signature —
+run N logs `cursor_after = X`, run N+1 logs `cursor_before < X` — appears over 73 h as
+`pinnacle-trades-indexer` **436 of 874 runs (50%)**, `fmv-recalc` 20/429, `allday-sales-indexer`
+2/234. **The 50% is innocent:** that route runs in two modes under ONE pipeline name against TWO
+cursors (`pinnacle_trades` ascending from a floor, `pinnacle_trades_backfill` descending toward it),
+so alternating ticks produce this shape by design. `fmv-recalc`'s cursor is not a block number at all.
+⭐ **A cursor-continuity check that ignores WHICH CURSOR a run used reads a dual-mode indexer as 50%
+broken** — so no incidence is claimed here, in either direction.
+
+**Revert path.** `git revert` the commit whose message begins `fix(indexers): a failed cursor advance`.
+Code only; no DB or data change.
+
+
 ### 2026-09-02 · ✅ SHIPPED — five backward history backfills could RESET their own walk on one failed read; ratchet 47 → 28
 
 **What.** The five `*-sales-history-backfill` routes (allday · golazos · topshot-flowty · ufc ·

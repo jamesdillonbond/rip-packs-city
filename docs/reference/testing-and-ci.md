@@ -1654,3 +1654,60 @@ table — `pg_get_function_identity_arguments` includes parameter names and neve
 
 And, once two guards share a population, **assert that they AGREE** — disagreement means one is looking
 somewhere the other is not, which is exactly the failure that started this.
+
+---
+
+## Two guards over one defect class, disjoint syntax — and neither can find the other's population (2026-09-02)
+
+`consequential-read-binds-its-error-ratchet` was built to catch a discarded supabase-js error. Its
+detector is:
+
+```
+const\s*\{([^}]*)\}\s*=\s*await\s*\(?\s*supabaseAdmin      // then: does group 1 name `error`?
+```
+
+That is not a rule about **reads**; it is a rule about **destructuring**. So it is structurally blind
+to the most consequential write on this platform:
+
+```ts
+await supabaseAdmin.from("event_cursor").update({ last_processed_block: X })…
+cursorAfter = String(X)          // ← logged whether or not the write landed
+```
+
+**Twenty-one routes carried exactly that**, and the ratchet had been read as clean over the same tree
+minutes earlier. A block cursor is the one piece of pipeline state a re-run cannot reconstruct, and
+`cursor_before`/`cursor_after` on `pipeline_runs` is the only pair an operator can read to see a walk
+progressing — so a failed advance was **logged as a movement**, and the next tick re-scanned the
+identical range while the log said otherwise.
+
+⭐ **The transferable rule: a guard's DERIVATION fixes its blast radius, and a detector keyed on a
+SYNTACTIC FORM covers that form, not the concept it was written for.** Before trusting a clean
+ratchet, write down the shapes the same defect can take that its regex cannot express — here, every
+statement with no `const {` at all. Then decide whether that is a second guard (it was) or a widened
+one (it could not be: widening this regex to bare `await` would sweep every fire-and-forget write in
+the tree into a population the ratchet is not shaped for).
+
+**Ban vs ratchet, decided on the population rather than by habit.** The read population is large and
+mostly benign, so it is ratcheted and goes down over time. Cursor writes are **few, uniform, and
+consequential by construction**, so `event-cursor-writes-bind-their-error` is a **ban at zero** and its
+suppression list is empty — an allowlist there would be theatre.
+
+**What makes the ban non-vacuous** (the same three-part shape as every other guard here):
+
+- **Floors on the population it inspected** — `>= 20` cursor writes across `>= 10` files. `routeFiles()`
+  returns `[]` for a root that does not exist, and `stripComments` has blanked real source three times
+  in this repo; both failures read as a clean ban without this.
+- **A positive control on the DETECTOR, not the tree** — synthetic bound / unbound / read snippets,
+  asserting it flags the unbound one, passes the bound one, and does **not** count a `.select()` as a
+  write. *Prove a watcher can see a failure before relying on it.*
+- **A behavioural half** (`api-topshot-offers-indexer-deep`): a failed cursor update must log
+  `ok:false` and must NOT report reaching the tip, with its own positive control that the same fixtures
+  minus the error DO reach it — otherwise the assertion passes for a route that never got that far.
+
+⚠ **And the retroactive-incidence check for this class is a trap.** The obvious signature — run N logs
+`cursor_after = X`, run N+1 opens at `cursor_before < X` — reported `pinnacle-trades-indexer` at
+**436 of 874 runs (50%)**. That route runs **two modes under one pipeline name against two cursors**
+(`pinnacle_trades` ascending, `pinnacle_trades_backfill` descending), so alternating ticks produce the
+shape by design; `fmv-recalc`'s "cursor" is not a block number at all. 👉 **A cursor-continuity check
+that ignores WHICH cursor a run used reads a dual-mode indexer as 50% broken.** No incidence was
+claimed, in either direction.
