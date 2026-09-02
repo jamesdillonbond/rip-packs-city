@@ -1125,3 +1125,61 @@ predicted, and `Heap Fetches: 82,082` is the entire gap.** An Index Only Scan fa
 heap wherever the visibility map is unset; `relallvisible/relpages` was **83.2%**, and a
 `VACUUM (INDEX_CLEANUP OFF, ANALYZE)` took it to **88.6%**. ⭐ **Generalisable: when an
 Index-Only-Scan win under-delivers on buffers, read `Heap Fetches` before doubting the index.**
+
+
+## 🚨 The 45-second sniper timeout was a DISTINCT ON pushdown (2026-09-02) — 274,519 rows per page
+
+`/api/sniper-feed?collection=nfl-all-day` produced two production errors that turn out to be one
+request: `AD fmv_current error @0: canceling statement due to statement timeout` and
+`Vercel Runtime Timeout Error: Task timed out after 45 seconds`, on the **same deployment and the same
+second**. ⭐ **Correlating a pair of errors by deployment + timestamp is what turned an unexplained
+lambda timeout into a one-query diagnosis** — neither line alone said anything about the other.
+
+### The rule, with the number attached
+
+`fmv_current` is `DISTINCT ON (edition_id) … FROM fmv_snapshots ORDER BY edition_id, computed_at DESC`.
+**A qual on the DISTINCT ON KEY pushes down into the index; a qual on any other column does not.** The
+read filtered on `collection_id`. One page, measured live:
+
+```
+Limit  (actual time=5.438..19528.379 rows=1000)
+  Buffers: shared hit=233394 read=29998
+  ->  Unique  (rows=5248)
+        ->  Merge Append  (rows=274519)      ← the whole view, per page
+Execution Time: 19529.331 ms
+```
+
+Six pages, OFFSET growing → **~1.84M buffers, ~136 s of DB work for one user request**, against a 45 s
+lambda budget and a statement timeout. Both ceilings were hit, which is why both errors appeared.
+
+### The fix is an ORDER, not a bound
+
+Read the collection's `editions` first (keyset on `id` — indexed, plain table), then chunk
+`fmv_current` by `.in("edition_id", …)`, which IS the DISTINCT ON key.
+
+### ⚠ MEASURE THE PRODUCTION CALLER'S SHAPE, NOT A CONVENIENT ONE
+
+Three forms of "the same" filter give three different plans:
+
+| form | plan | cost (500 / 40 editions) |
+|---|---|---|
+| `.eq(collection_id)` + `.range()` | Merge Append over the whole view | 263,392 buffers / 19,529 ms per page |
+| `IN (SELECT id FROM …)` | Merge Semi Join | 114,446 buffers / 287 ms |
+| `IN (<literal uuids>)` ← **what PostgREST sends** | `Index Cond: (edition_id = ANY (...))` on all partitions | **2,894 buffers / 21 ms** (~72/edition) |
+
+The subquery form is the trap: it *looks* like the fix and is 68× better, but it is not the plan
+production gets. Building the literal-array statement is tedious (a 500-uuid `EXPLAIN` is ~18 KB), so
+measure a **smaller literal list and report cost per row** rather than substituting a shape the
+caller never issues.
+
+### ⭐ A CORRECT SIBLING IS NOT A GUARD
+
+`fetchFmvBatch`, one function away in the same file, has always used `.in("edition_id", …)` on
+`fmv_current` for the Top Shot leg. The right pattern sat beside the wrong one for months. When you
+fix a read shape, **grep for the shape across the file and its siblings** — this was the third
+instance in one day of a fix applied per-file leaving a sibling behind.
+
+### ⚠ Inverting the order MOVES the cap
+
+The 1000-row cap lands on `editions` instead, so that read has to be paged in the same change or the
+fix trades one silent truncation for another.

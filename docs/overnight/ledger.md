@@ -10,6 +10,59 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the All Day sniper's FMV read materialised 274,519 rows PER PAGE, and that is the 45-second timeout
+
+Root-caused from two production errors that share a **deployment AND a second** —
+`AD fmv_current error @0: canceling statement due to statement timeout` and
+`Vercel Runtime Timeout Error: Task timed out after 45 seconds`. ⭐ **Same deployment, same
+timestamp, same route: one request, both symptoms.** Correlating the pair is what turned an
+unexplained timeout into a one-query diagnosis.
+
+**The measurement.** `fmv_current` is `DISTINCT ON (edition_id)` over `fmv_snapshots`. The read
+filtered on `collection_id` — **a qual on the DISTINCT ON KEY pushes down; a qual on any other column
+does not.** One page, measured live:
+
+```
+Unique over 274,519 snapshot rows → 5,248 editions → filter → 1,000 returned
+shared hit=233,394 read=29,998        Execution Time: 19,529 ms
+```
+
+…and the route ran **six** of those, with OFFSET growing, against a 45 s lambda budget and a
+statement timeout. Roughly **136 s of DB work for one request**.
+
+**The fix is an ORDER, not a bound.** Read AD `editions` first (keyset on `id` — indexed, plain
+table), then chunk `fmv_current` by `.in("edition_id", …)`, which IS the DISTINCT ON key.
+⚠ **Verified against the PRODUCTION CALLER's shape, not a convenient one:** a first probe used
+`IN (SELECT …)` and got a merge semi-join (114,446 buffers / 287 ms) — better but not the real plan.
+PostgREST sends a literal array, so I measured `edition_id IN (<40 literal uuids>)` and got
+**`Index Cond: (edition_id = ANY (...))` on all three partitions — 2,894 buffers / 21 ms**, ≈72
+buffers per edition. Extrapolated over 6,190 AD editions: **~446k buffers / ~3 s, against ~1.84M
+buffers / ~136 s.** The 45 s ceiling stops being reachable.
+
+⭐ **The right pattern was already in this file.** `fetchFmvBatch` — one function away — has used
+`.in("edition_id", …)` on `fmv_current` for the Top Shot leg all along. **A correct sibling is not a
+guard.** Same lesson as the NaN-guard on `support-report` earlier today, and the third time today
+that a fix applied per-file left a sibling behind.
+
+⚠ **A control I wrote THIS MORNING had to be inverted, which is the rule working.** It asserted the
+AD map still contained `if (page.length < FMV_PAGE) break;` — the SPELLING of the loop I have now
+deliberately deleted. The property it was really protecting (the map is bounded, never one unbounded
+read) still holds and holds better, so the case is **inverted, not deleted**, and now pins the
+property: chunked by the DISTINCT ON key, with `collection_id` banned from the `fmv_current` read.
+**Pin the property, not the spelling** — recorded again because I broke it within hours of applying it.
+
+⚠ **The fix moves the 1000-row cap onto `editions`**, so that read is keyset-paged in the same change
+— otherwise it trades one silent truncation for another.
+
+**Verification.** 1,427 files / 15,825 tests green (+5); `tsc` clean; ratchet 717 = baseline.
+**Mutation-tested 5/5** — reverting to the collection scan, single-page editions, and either error
+branch going unnamed all red at least one case. ⚠ The no-progress cursor guard survived the first
+sweep for the **third time today**; it needed a mock flag that ignores the cursor to produce the
+"same full page forever" case at all. **A guard against a state your fixtures cannot reach is
+untested by construction.**
+
+**Revert path:** `git revert <sha>`. Code-only, no DB or schema change.
+
 ### 2026-09-02 · ✅ SHIPPED — mounting the concierge on public pages handed strangers a bug-report form, and told the model a collection called "insights" exists
 
 Third concierge pass; `90fc6c38`. ⛔ **The first item is a defect I introduced this morning in
