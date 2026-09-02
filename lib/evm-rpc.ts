@@ -2,10 +2,24 @@ const SUPPORTED_CHAINS = {
   flow_evm_mainnet: {
     chainId: 747,
     legacyEnvPrefix: "FLOWEVM",
+    // Flow EVM mainnet publishes a free, keyless, read-only JSON-RPC endpoint.
+    // A proxy still WINS when configured (below) — this is only the fallback.
+    //
+    // ⛔ Why this exists: requiring a proxy for public read-only chain data kept
+    // an entire built pipeline dark. `EVM_PROXY_URL_FLOW_EVM_MAINNET` is present
+    // but its value is 2 characters — effectively blank — so every Flow EVM call
+    // threw at config time, `evm_nft_transfers` sat at 0 rows, and no `%evm%`
+    // pipeline ever recorded a single start. Failing closed protects a secret;
+    // there is no secret here, so it bought darkness and nothing else.
+    publicRpcUrl: "https://mainnet.evm.nodes.onflow.org",
   },
   base_mainnet: {
     chainId: 8453,
     legacyEnvPrefix: null,
+    // ⚠ Deliberately none. Base is rate-limit sensitive and the proxy is what
+    // carries the quota; it must keep failing closed rather than silently
+    // hammering a public endpoint.
+    publicRpcUrl: null,
   },
 } as const;
 
@@ -29,7 +43,7 @@ function legacyEnvVarName(slug: ChainSlug, kind: "URL" | "SECRET"): string | nul
   return `${prefix}_PROXY_${kind}`;
 }
 
-function getProxyConfig(slug: ChainSlug): { url: string; secret: string } {
+function getProxyConfig(slug: ChainSlug): { url: string; secret: string | null } {
   const primaryUrlVar = envVarName(slug, "URL");
   const primarySecretVar = envVarName(slug, "SECRET");
   const legacyUrlVar = legacyEnvVarName(slug, "URL");
@@ -43,6 +57,12 @@ function getProxyConfig(slug: ChainSlug): { url: string; secret: string } {
     (legacySecretVar ? process.env[legacySecretVar] : undefined);
 
   if (!url || !secret) {
+    // Proxy incomplete — fall back to a public endpoint if this chain has one.
+    // Both halves must be present to use the proxy: a URL without its secret
+    // would send unauthenticated requests to a private proxy and 401.
+    const publicUrl = SUPPORTED_CHAINS[slug].publicRpcUrl;
+    if (publicUrl) return { url: publicUrl, secret: null };
+
     const tried = legacyUrlVar
       ? `${primaryUrlVar} or ${legacyUrlVar}`
       : primaryUrlVar;
@@ -85,17 +105,21 @@ async function evmCall<T>(
     method,
     params,
   };
+  // Only send the proxy secret to a proxy. On the public fallback there is no
+  // secret, and attaching a header named like one to a third-party endpoint is
+  // how credentials leak to hosts that were never meant to see them.
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (secret !== null) headers["X-Proxy-Secret"] = secret;
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Proxy-Secret": secret,
-    },
+    headers,
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
     throw new Error(
-      `${chainSlug} proxy returned ${res.status}: ${await res.text()}`
+      `${chainSlug} ${secret === null ? "public RPC" : "proxy"} returned ${res.status}: ${await res.text()}`
     );
   }
   const json = (await res.json()) as JsonRpcResponse<T>;

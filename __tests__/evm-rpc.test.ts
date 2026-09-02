@@ -71,13 +71,52 @@ describe("static chain metadata", () => {
 })
 
 describe("proxy config resolution", () => {
-  it("throws a descriptive error when neither primary nor legacy env is set", async () => {
+  // ── flow_evm_mainnet no longer fails closed, and that is deliberate ────────
+  // It used to throw here. Failing closed protects a SECRET; Flow EVM mainnet
+  // publishes a free keyless read-only endpoint, so there is no secret to
+  // protect and the only thing the throw bought was darkness: the proxy URL was
+  // present-but-blank, so every call threw at config time, `evm_nft_transfers`
+  // sat at 0 rows and no `%evm%` pipeline ever recorded a single start.
+  // ⚠ base_mainnet still fails closed (test below) — its proxy carries a rate
+  // limit quota, so silently falling back to a public endpoint would be wrong.
+  it("falls back to the PUBLIC Flow EVM endpoint when no proxy is configured", async () => {
     delete process.env.EVM_PROXY_URL_FLOW_EVM_MAINNET
     delete process.env.EVM_PROXY_SECRET_FLOW_EVM_MAINNET
-    await expect(getChainId("flow_evm_mainnet")).rejects.toThrow(
-      /EVM proxy not configured for flow_evm_mainnet.*EVM_PROXY_URL_FLOW_EVM_MAINNET or FLOWEVM_PROXY_URL/
-    )
-    expect(fetchMock).not.toHaveBeenCalled()
+    fetchMock.mockResolvedValueOnce(okJson({ jsonrpc: "2.0", id: 1, result: "0x2eb" }))
+
+    await expect(getChainId("flow_evm_mainnet")).resolves.toBe(747)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("https://mainnet.evm.nodes.onflow.org")
+    // No secret exists on the public path, so no secret-shaped header may be
+    // sent — attaching one to a third-party host is how credentials leak to
+    // endpoints that were never meant to see them.
+    expect((init.headers as Record<string, string>)["X-Proxy-Secret"]).toBeUndefined()
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json")
+  })
+
+  it("prefers a configured proxy over the public endpoint", async () => {
+    // Precedence matters: the fallback must never quietly override an operator's
+    // deliberate proxy configuration.
+    process.env.EVM_PROXY_URL_FLOW_EVM_MAINNET = "https://proxy.example/rpc"
+    process.env.EVM_PROXY_SECRET_FLOW_EVM_MAINNET = "proxy-secret"
+    fetchMock.mockResolvedValueOnce(okJson({ jsonrpc: "2.0", id: 1, result: "0x2eb" }))
+
+    await getChainId("flow_evm_mainnet")
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("https://proxy.example/rpc")
+    expect((init.headers as Record<string, string>)["X-Proxy-Secret"]).toBe("proxy-secret")
+  })
+
+  it("a URL without its secret does NOT use the proxy — it uses the public endpoint", async () => {
+    // Half a proxy config is not a proxy config: sending unauthenticated
+    // requests to a private proxy would 401 every call.
+    process.env.EVM_PROXY_URL_FLOW_EVM_MAINNET = "https://proxy.example/rpc"
+    delete process.env.EVM_PROXY_SECRET_FLOW_EVM_MAINNET
+    delete process.env.FLOWEVM_PROXY_SECRET
+    fetchMock.mockResolvedValueOnce(okJson({ jsonrpc: "2.0", id: 1, result: "0x2eb" }))
+
+    await getChainId("flow_evm_mainnet")
+    expect(fetchMock.mock.calls[0][0]).toBe("https://mainnet.evm.nodes.onflow.org")
   })
 
   it("falls back to the legacy FLOWEVM_* env vars when primary is unset", async () => {

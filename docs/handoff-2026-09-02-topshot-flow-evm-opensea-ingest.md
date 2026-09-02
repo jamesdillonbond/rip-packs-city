@@ -136,3 +136,70 @@ A pipeline that runs green while capturing nothing is this estate's recurring fa
 1. `select count(*) from sales where marketplace = 'opensea'` — must become **> 0** after a backfill.
 2. Spot-check one booked sale against its tx hash on `evm.flowscan.io`.
 3. `select count(distinct marketplace) from sales s join collections c on c.id=s.collection_id where c.slug='nba_top_shot'` — must become **≥ 2**. Today it is 1, and that 1 is a fact about our indexers, not the market.
+
+---
+
+# ⚠ CORRECTIONS — written 2026-09-02 evening, while building step 2
+
+Four things above are wrong or incomplete. Read these before writing any code against this spec.
+
+## 1. The scaffold already exists, and step 2 is now SHIPPED using it
+
+The spec reads as a greenfield build. It is not. The estate already had, unused:
+`evm_nft_transfers` (month-partitioned), `evm_nft_current_owners`, `evm_nft_contracts`,
+`evm_indexer_cursors`, `evm_chains` (with `flow_evm_mainnet (747)` already present), a 506-line
+`app/api/cron/evm-transfers-ingest/route.ts` with rate-limit backoff and cursor management, plus
+`app/api/admin/evm-health` and `evm-indexer-status`. **Do not rebuild any of it.**
+
+It had never run for two reasons, both now fixed:
+- `lib/evm-rpc.ts` threw unless a proxy **URL and secret** were both set, and the Flow EVM proxy URL
+  is present-but-blank. Now falls back to the public keyless endpoint (Base still fails closed).
+- `evm_nft_contracts` held one row: a Base/Beezie contract with `is_active = false`. Top Shot's
+  bridged contract is now registered and active.
+
+**`start_block` = 18,620,723**, the first block at which the contract has code — found by binary
+search on `eth_getCode` (26 calls), timestamp **2025-02-24T22:08:07Z**. Use this number; do not guess.
+
+## 2. ⛔ THE INGEST HAD NO HEAD CLAMP — it would have silently lost data
+
+`runContract` advanced the cursor by a flat `BLOCKS_PER_WINDOW` every tick and **never fetched the
+chain head**. Correct only while behind head: the moment it caught up it would run PAST the tip, and
+every transfer mined behind the cursor would never be scanned — logging `ok=true, rows_found=0`
+forever. Fixed (`toBlock = min(window, head)`) **before** the pipeline was enabled. Had it been
+switched on as-found, the backfill would have looked fine and ongoing capture would have been zero.
+
+## 3. One window per tick cannot backfill
+
+`runContract` scanned exactly ONE 5,000-block window per tick. 58.6M blocks = **11,726 windows** ≈ a
+**4-month** backfill. It now walks windows until the shared `BUDGET_MS` is spent (~hours), committing
+the cursor per window, and **breaks for the rest of the tick if a window was halved by a 429** rather
+than re-provoking the limit.
+
+## 4. ⛔ The `sales` schema makes step 1 harder than this spec implies
+
+Both are hard blockers the spec does not mention:
+
+- **`sales.edition_id` is `NOT NULL`** (uuid). A bridged tokenId cannot be booked until it resolves to
+  an edition. `wallet_moments_cache` has **`edition_key`, not `edition_id`**, so resolution is a
+  cascade (wmc → `edition_key` → `editions.id`, with a moments-table leg and a GQL fallback) already
+  implemented across ~200 lines of `app/api/sales-indexer/route.ts`. **Do not reimplement it.**
+- **`sales.price_usd` is `NOT NULL`**, so "degrade to a null USD rather than losing the trade" (above)
+  is impossible as written. Either resolve a rate or do not insert.
+- **`sales.moment_id` is a `uuid`**, not the numeric momentID. The numeric tokenId belongs in
+  **`nft_id`** (varchar).
+
+**The right home for an unresolved EVM sale is `unmapped_sales`** (130,788 rows, with
+`promote_unmapped_sales()` and `unmapped_sales_resolution_failures` already built) — the estate's
+existing pattern for exactly this. Write there and let promotion resolve editions, rather than
+inventing a second resolver or dropping trades.
+
+## 5. Sequencing that follows from the above
+
+Step 2 (ownership/transfers) was shipped FIRST, not step 1, because it writes only to its own empty
+partitioned tables and **touches `sales` not at all** — so it carries no FMV risk and needs no
+edition resolution. It also produces the transfer corpus that step 1 then classifies, which makes the
+sales lane a read-and-classify job rather than a second chain scanner.
+
+⚠ **The `source`-tag warning above therefore has NOT yet been triggered** — nothing has been written
+to `sales`, so `flow-ecosystem-watch`'s "no new source tag vs baseline" check is untouched. It still
+applies to whoever builds step 1.

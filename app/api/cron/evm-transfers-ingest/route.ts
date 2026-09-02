@@ -18,6 +18,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import {
   getLogs,
   getBlockByNumber,
+  getBlockNumber,
   type ChainSlug,
   type EvmLog,
 } from "@/lib/evm-rpc";
@@ -280,119 +281,156 @@ async function runContract(
     }
     cursorBefore = String(lastProcessed);
 
-    const fromBlock = lastProcessed + 1;
-    const requestedToBlock = lastProcessed + BLOCKS_PER_WINDOW;
+    // ⛔ HEAD CLAMP + MULTI-WINDOW WALK — both are required before this pipeline
+    // may run, and neither existed. It had never executed (blank proxy URL), so
+    // nothing had exercised either path.
+    //
+    // 1. NO HEAD CLAMP WAS SILENT DATA LOSS. The cursor advanced by a flat
+    //    BLOCKS_PER_WINDOW every tick with no knowledge of the chain tip. That is
+    //    correct only while behind head; the moment it caught up it would keep
+    //    running PAST the tip, and every transfer later mined behind the cursor
+    //    would never be scanned. It would log ok=true with rows_found=0 forever —
+    //    a healthy-looking pipeline capturing nothing, which is this estate's
+    //    signature failure. `toBlock` is now min(window, head).
+    //
+    // 2. ONE WINDOW PER TICK CANNOT BACKFILL. Top Shot's bridged contract was
+    //    deployed at block 18,620,723 (2025-02-24, found by binary search on
+    //    eth_getCode), leaving 58.6M blocks = 11,726 windows. At one window per
+    //    tick that is a ~4-month backfill; walking windows until the shared
+    //    BUDGET_MS is spent makes it hours. The cursor is advanced and committed
+    //    per window, so an error or rate-limit mid-walk keeps everything already
+    //    written and simply resumes next tick.
+    const headBlock = await getBlockNumber(chainSlug);
+    extra.head_block = headBlock;
 
-    // Fetch logs filtered to this contract + Transfer topic. On a 429,
-    // the helper halves the window and retries with backoff; we advance
-    // the cursor to whatever to-block actually succeeded.
-    const logsRes = await fetchLogsWithRateLimitBackoff(
-      chainSlug,
-      fromBlock,
-      requestedToBlock,
-      c.contract_address
-    );
-    const logs: EvmLog[] = logsRes.logs;
-    const toBlock = logsRes.effectiveToBlock;
-    rowsFound = logs.length;
-    extra.from_block = fromBlock;
-    extra.to_block = toBlock;
-    extra.requested_to_block = requestedToBlock;
-    extra.logs_returned = logs.length;
-    extra.logs_attempts = logsRes.attempts;
-    if (logsRes.rate_limited_attempts > 0) {
-      extra.rate_limited_attempts = logsRes.rate_limited_attempts;
-      extra.window_halved = toBlock < requestedToBlock;
-    }
+    let windows = 0;
+    while (lastProcessed < headBlock && Date.now() - startedMs < BUDGET_MS) {
+      const fromBlock = lastProcessed + 1;
+      const requestedToBlock = Math.min(lastProcessed + BLOCKS_PER_WINDOW, headBlock);
 
-    // Resolve block_timestamp per log. block_timestamp is a partition key
-    // column on evm_nft_transfers and rejects NULL. Base RPC includes
-    // `blockTimestamp` (hex unix seconds) on each log; for providers that
-    // don't, fall back to eth_getBlockByNumber batched over unique block
-    // numbers so we don't make one round-trip per log.
-    const tsByBlock = new Map<string, string>(); // blockNumber hex -> ISO
-    const missingBlocks = new Set<string>();
-    for (const log of logs) {
-      if (log.blockTimestamp) {
-        if (!tsByBlock.has(log.blockNumber)) {
-          tsByBlock.set(log.blockNumber, blockTimestampHexToIso(log.blockTimestamp));
-        }
-      } else {
-        missingBlocks.add(log.blockNumber);
-      }
-    }
-    if (missingBlocks.size > 0) {
-      const fetched = await Promise.all(
-        Array.from(missingBlocks).map(async (bn) => {
-          const block = await getBlockByNumber(chainSlug, bn);
-          return [bn, block?.timestamp ?? null] as const;
-        })
+      // Fetch logs filtered to this contract + Transfer topic. On a 429,
+      // the helper halves the window and retries with backoff; we advance
+      // the cursor to whatever to-block actually succeeded.
+      const logsRes = await fetchLogsWithRateLimitBackoff(
+        chainSlug,
+        fromBlock,
+        requestedToBlock,
+        c.contract_address
       );
-      for (const [bn, tsHex] of fetched) {
-        if (tsHex) tsByBlock.set(bn, blockTimestampHexToIso(tsHex));
+      const logs: EvmLog[] = logsRes.logs;
+      const toBlock = logsRes.effectiveToBlock;
+      rowsFound += logs.length;
+      if (windows === 0) extra.from_block = fromBlock;
+      extra.to_block = toBlock;
+      extra.requested_to_block = requestedToBlock;
+      extra.logs_returned = (Number(extra.logs_returned) || 0) + logs.length;
+      extra.logs_attempts = (Number(extra.logs_attempts) || 0) + logsRes.attempts;
+      if (logsRes.rate_limited_attempts > 0) {
+        extra.rate_limited_attempts = logsRes.rate_limited_attempts;
+        extra.window_halved = toBlock < requestedToBlock;
       }
-      extra.blocks_resolved_via_rpc = missingBlocks.size;
-    }
 
-    // Decode + dedup in-memory before upserting.
-    const inserts: Array<Record<string, unknown>> = [];
-    let skippedNonStandard = 0;
-    let skippedNoTimestamp = 0;
-    for (const log of logs) {
-      // ERC-721 Transfer = 4 topics. ERC-20 emits 3; skip those defensively.
-      if (!log.topics || log.topics.length < 4) {
-        skippedNonStandard++;
-        continue;
+      // Resolve block_timestamp per log. block_timestamp is a partition key
+      // column on evm_nft_transfers and rejects NULL. Base RPC includes
+      // `blockTimestamp` (hex unix seconds) on each log; for providers that
+      // don't, fall back to eth_getBlockByNumber batched over unique block
+      // numbers so we don't make one round-trip per log.
+      const tsByBlock = new Map<string, string>(); // blockNumber hex -> ISO
+      const missingBlocks = new Set<string>();
+      for (const log of logs) {
+        if (log.blockTimestamp) {
+          if (!tsByBlock.has(log.blockNumber)) {
+            tsByBlock.set(log.blockNumber, blockTimestampHexToIso(log.blockTimestamp));
+          }
+        } else {
+          missingBlocks.add(log.blockNumber);
+        }
       }
-      const blockTs = tsByBlock.get(log.blockNumber);
-      if (!blockTs) {
-        // Partition key column is NOT NULL — skip rather than fail the batch.
-        skippedNoTimestamp++;
-        continue;
+      if (missingBlocks.size > 0) {
+        const fetched = await Promise.all(
+          Array.from(missingBlocks).map(async (bn) => {
+            const block = await getBlockByNumber(chainSlug, bn);
+            return [bn, block?.timestamp ?? null] as const;
+          })
+        );
+        for (const [bn, tsHex] of fetched) {
+          if (tsHex) tsByBlock.set(bn, blockTimestampHexToIso(tsHex));
+        }
+        extra.blocks_resolved_via_rpc = missingBlocks.size;
       }
-      inserts.push({
-        chain_id: c.chain_id,
-        contract_address: c.contract_address.toLowerCase(),
-        token_id: topicToTokenId(log.topics[3]),
-        from_address: topicToAddress(log.topics[1]),
-        to_address: topicToAddress(log.topics[2]),
-        block_number: hexToNumber(log.blockNumber),
-        log_index: hexToNumber(log.logIndex),
-        transaction_hash: log.transactionHash.toLowerCase(),
-        block_timestamp: blockTs,
-      });
-    }
-    if (skippedNonStandard > 0) extra.skipped_non_standard = skippedNonStandard;
-    if (skippedNoTimestamp > 0) extra.skipped_no_timestamp = skippedNoTimestamp;
 
-    for (let i = 0; i < inserts.length; i += UPSERT_CHUNK) {
-      const batch = inserts.slice(i, i + UPSERT_CHUNK);
-      const { error: upsertErr } = await (supabaseAdmin as any)
-        .from("evm_nft_transfers")
-        .upsert(batch, {
-          onConflict:
-            "chain_id,contract_address,token_id,block_number,log_index,block_timestamp",
-          ignoreDuplicates: true,
+      // Decode + dedup in-memory before upserting.
+      const inserts: Array<Record<string, unknown>> = [];
+      let skippedNonStandard = 0;
+      let skippedNoTimestamp = 0;
+      for (const log of logs) {
+        // ERC-721 Transfer = 4 topics. ERC-20 emits 3; skip those defensively.
+        if (!log.topics || log.topics.length < 4) {
+          skippedNonStandard++;
+          continue;
+        }
+        const blockTs = tsByBlock.get(log.blockNumber);
+        if (!blockTs) {
+          // Partition key column is NOT NULL — skip rather than fail the batch.
+          skippedNoTimestamp++;
+          continue;
+        }
+        inserts.push({
+          chain_id: c.chain_id,
+          contract_address: c.contract_address.toLowerCase(),
+          token_id: topicToTokenId(log.topics[3]),
+          from_address: topicToAddress(log.topics[1]),
+          to_address: topicToAddress(log.topics[2]),
+          block_number: hexToNumber(log.blockNumber),
+          log_index: hexToNumber(log.logIndex),
+          transaction_hash: log.transactionHash.toLowerCase(),
+          block_timestamp: blockTs,
         });
-      if (upsertErr) {
-        throw new Error(`upsert_failed: ${upsertErr.message}`);
       }
-      rowsWritten += batch.length;
+      if (skippedNonStandard > 0) extra.skipped_non_standard = skippedNonStandard;
+      if (skippedNoTimestamp > 0) extra.skipped_no_timestamp = skippedNoTimestamp;
+
+      for (let i = 0; i < inserts.length; i += UPSERT_CHUNK) {
+        const batch = inserts.slice(i, i + UPSERT_CHUNK);
+        const { error: upsertErr } = await (supabaseAdmin as any)
+          .from("evm_nft_transfers")
+          .upsert(batch, {
+            onConflict:
+              "chain_id,contract_address,token_id,block_number,log_index,block_timestamp",
+            ignoreDuplicates: true,
+          });
+        if (upsertErr) {
+          throw new Error(`upsert_failed: ${upsertErr.message}`);
+        }
+        rowsWritten += batch.length;
+      }
+
+      // Advance the cursor to toBlock once all writes succeed. We advance
+      // even on empty ranges so the walk makes forward progress.
+      const { error: advanceErr } = await (supabaseAdmin as any)
+        .from("evm_indexer_cursors")
+        .update({
+          last_processed_block: toBlock,
+          last_advanced_at: new Date().toISOString(),
+          total_transfers_indexed: totalIndexed + rowsWritten,
+        })
+        .eq("chain_id", c.chain_id)
+        .eq("contract_address", c.contract_address);
+      if (advanceErr) throw new Error(`cursor_advance_failed: ${advanceErr.message}`);
+      cursorAfter = String(toBlock);
+      lastProcessed = toBlock;
+      windows++;
+
+      // ⚠ A halved window means the provider just rate-limited us. Walking
+      // straight into the next window would re-provoke it; yield the rest of
+      // the tick instead. Everything already written stays written and the
+      // cursor is committed, so the next tick resumes cleanly.
+      if (toBlock < requestedToBlock) break;
     }
 
-    // Advance the cursor to toBlock once all writes succeed. We advance
-    // even on empty ranges so the walk makes forward progress.
-    const { error: advanceErr } = await (supabaseAdmin as any)
-      .from("evm_indexer_cursors")
-      .update({
-        last_processed_block: toBlock,
-        last_advanced_at: new Date().toISOString(),
-        total_transfers_indexed: totalIndexed + rowsWritten,
-      })
-      .eq("chain_id", c.chain_id)
-      .eq("contract_address", c.contract_address);
-    if (advanceErr) throw new Error(`cursor_advance_failed: ${advanceErr.message}`);
-    cursorAfter = String(toBlock);
+    extra.windows = windows;
+    extra.caught_up = lastProcessed >= headBlock;
+    extra.blocks_behind_head = Math.max(0, headBlock - lastProcessed);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (isRateLimitErr(msg)) {

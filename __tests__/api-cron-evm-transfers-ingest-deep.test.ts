@@ -26,6 +26,10 @@ const state = vi.hoisted(() => ({
   getLogsCalls: [] as Array<{ slug: string; filter: Record<string, unknown> }>,
   blocksByNumber: {} as Record<string, { timestamp: string } | null>,
   blockCalls: [] as string[],
+  // Chain head. The route now clamps every window to this and walks windows
+  // until it is reached, so a test that wants exactly ONE window sets it to
+  // that window's to-block. 6000 = the default cursor (1000) + one 5000 window.
+  headBlock: 6000,
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -50,6 +54,7 @@ vi.mock("@/lib/evm-rpc", () => ({
     state.blockCalls.push(bn)
     return state.blocksByNumber[bn] ?? null
   },
+  getBlockNumber: async () => state.headBlock,
 }))
 
 const { GET, POST } = await import("@/app/api/cron/evm-transfers-ingest/route")

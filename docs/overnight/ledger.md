@@ -10,6 +10,77 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — activated a built-but-never-run EVM pipeline, after fixing the silent data loss inside it
+
+**Files:** `lib/evm-rpc.ts` · `app/api/cron/evm-transfers-ingest/route.ts` · `vercel.json` ·
+`__tests__/evm-rpc.test.ts` · `__tests__/api-cron-evm-transfers-ingest-deep.test.ts` ·
+migration `20260902223139_audit_20260902_register_topshot_bridged_flow_evm_contract`.
+**Writes nothing to `sales`.**
+
+Trevor asked for the Flow EVM Top Shot lane. I checked before building and **the pipeline already
+existed**: `evm_nft_transfers` (month-partitioned), `evm_nft_current_owners`, `evm_indexer_cursors`,
+`evm_chains` with `flow_evm_mainnet (747)` already registered, a 506-line ingest route with rate-limit
+backoff, and two admin surfaces. 0 rows, 0 recorded starts. **The build was a 4-line unblock plus two
+defect fixes, not a greenfield ingest.**
+
+**Why it had never run — two independent blockers:**
+1. `lib/evm-rpc.ts` threw unless a proxy **URL *and* secret** were both set, and
+   `EVM_PROXY_URL_FLOW_EVM_MAINNET` is present-but-blank (2 chars). Flow EVM mainnet publishes a free
+   **keyless** read-only endpoint, so failing closed protected no secret — it bought darkness only.
+   Now falls back to the public endpoint; ⚠ **`base_mainnet` deliberately still fails closed**, because
+   its proxy is what carries a rate-limit quota.
+2. `evm_nft_contracts` held exactly one row — a **Base/Beezie** contract, `is_active = false`, and
+   Beezie is retired. There was no active work on any chain.
+
+🚨 **THE ONE THAT MATTERS: the ingest had NO HEAD CLAMP, and enabling it as-found would have been
+silent data loss.** `runContract` advanced the cursor by a flat `BLOCKS_PER_WINDOW` every tick and
+**never fetched the chain head** (`getBlockNumber` was not even imported). That is correct only while
+behind head — the moment it caught up it would run PAST the tip at 5,000 blocks/tick, and every
+transfer mined behind the cursor would never be scanned, **logging `ok=true, rows_found=0` forever**.
+The backfill would have looked perfect and ongoing capture would have been zero. This estate's exact
+signature failure, sitting unshipped in code that had never executed. `toBlock` is now
+`min(window, head)`.
+
+⚠ **Second defect: one window per tick cannot backfill.** 58.6M blocks = **11,726 windows** ≈ a
+**4-month** backfill. Now walks windows until the shared `BUDGET_MS` is spent (~hours), committing the
+cursor per window so an error mid-walk keeps everything already written. ⚠ And it **breaks for the
+rest of the tick when a window was halved by a 429** rather than immediately re-provoking the limit —
+which also preserves the existing rate-limit test's semantics exactly.
+
+**`start_block` = 18,620,723**, measured not guessed: the first block at which the contract has code,
+by binary search on `eth_getCode` (26 calls), timestamp **2025-02-24T22:08:07Z** — matching Dapper's
+EVM-bridging launch. Starting later forfeits history; starting at 0 burns ~3,700 empty windows.
+
+**Deliberately shipped step 2 (transfers/ownership) BEFORE step 1 (sales), inverting the spec.** It
+writes only to its own empty partitioned tables and **touches `sales` — the table FMV depends on —
+not at all**, so it carries no FMV risk and needs no edition resolution. It also builds the transfer
+corpus that the sales lane will classify, turning step 1 into a read-and-classify job rather than a
+second chain scanner. ⓘ Consequence: `flow-ecosystem-watch`'s "no new source tag" check is **not**
+tripped by this commit, because nothing reached `sales`.
+
+⚠ **Three spec errors found and corrected in the handoff doc**, any of which would have sunk a naive
+step 1: `sales.edition_id` is **NOT NULL** (so a sale cannot be booked before its edition resolves,
+and `wallet_moments_cache` carries `edition_key`, not `edition_id`); `sales.price_usd` is **NOT NULL**
+(so the spec's "degrade to a null USD" is impossible); and `sales.moment_id` is a **uuid** — the
+numeric tokenId belongs in `nft_id`. The right home for an unresolved EVM sale is the existing
+`unmapped_sales` + `promote_unmapped_sales()` machinery, not a second resolver.
+
+**Verified:** 70/70 across all 9 EVM/migration/cron suites; `evm-rpc` 15→17 tests (the flow_evm
+fail-closed assertion was **intentionally replaced** and the change is argued in the test itself, with
+base_mainnet's fail-closed test kept as the contrast); `tsc` clean on every changed file; eslint
+violation count **unchanged** (6 pre-existing `any` casts, identical on the stashed tree); migration
+recovered to a file **md5-verified against prod**, never transcribed.
+
+**Cron:** `vercel.json` → `/api/cron/evm-transfers-ingest` at `4,14,24,34,44,54 * * * *`, staggered off
+the busy minutes. Vercel injects `CRON_SECRET` itself, so **no secret passed through this session**.
+
+**Revert path:** `git revert <sha>`, then
+`update evm_nft_contracts set is_active = false where chain_id = 747;` and remove the cron entry.
+The transfer rows are additive and harmless if left.
+
+**Verify on rows, never on `ok`:** `select count(*) from evm_nft_transfers` must leave 0, and
+`extra.blocks_behind_head` in `pipeline_runs` must fall tick over tick.
+
 ### 2026-09-02 · 🔧 FIXED — the new secret-in-URL guard reported "the fix has landed" on Windows about a leak that is STILL IN THE SOURCE
 
 **What was wrong.** `__tests__/no-env-secret-in-fetch-url.test.ts` (shipped earlier today with the
