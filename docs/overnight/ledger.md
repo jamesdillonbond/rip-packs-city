@@ -10,6 +10,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · 🔧 FIXED — the memory-doc link guard read a Postgres regex inside backticks as a broken pointer, and reddened `main` for 5 commits
+
+**What shipped.** `scripts/check-memory-doc-links.mjs` now blanks fenced code blocks and inline
+code spans before matching links; three fixtures in `__tests__/memory-doc-links-guard.test.ts`
+pin both directions.
+
+**What broke.** `ce85c45c6` (docs-only) added this line to `docs/reference/tooling-gotchas.md`:
+
+    `count(*) FILTER (WHERE command ~ '[?&](key|token|secret)=')`
+
+The character class `[?&]` is immediately followed by the alternation group, so the line contains
+the byte sequence `](` and the guard's `LINK_RE` read it as a pointer to a file named
+`key|token|secret`. Five consecutive runs failed — `ce85c45c6`, `b5b713b4e`, `a744f11a4`,
+`e794ecf9c`, `180f9ee7f` — in **two** jobs, because the vitest suite also runs the guard live
+("the LIVE memory docs are clean"). Every other job was green throughout.
+
+⚠ **The lesson is about the SWEEP, not the regex.** Each of those five commits was docs-only, and
+I ran the register-integrity, inbox-index and ledger guards after each edit. I never ran
+`check-memory-doc-links.mjs`, because "I only touched docs" reads as *below* the CI surface —
+when it is exactly the surface a docs-only commit is gated by. There is no docs-only fast path.
+
+⚠ **A markdown link inside backticks is not a pointer** (it does not render as one, so nothing can
+rot), which is why narrowing the guard cannot hide a real breakage. The positive control is the
+third fixture: a dead link OUTSIDE the backticks on the same line still fails, and the one inside
+is asserted ABSENT from the output — mutation-tested by reverting the strip, which reds all three
+new fixtures plus the live-tree case.
+
+**Revert path.** `git revert` the commit, or re-`grep` the message
+`fix(guard): a link inside backticks is not a pointer`. No DB or prod-state half.
+
 ### 2026-09-02 · ✅ SHIPPED — the null-serial recovery job could never see the rows the history backfills produce (default 45d → 3650d)
 
 **What.** Eighty minutes after the unbounded drain took AllDay's null-serial population to **zero**,
