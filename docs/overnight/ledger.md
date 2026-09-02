@@ -10,6 +10,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ VERIFIED + 📏 a 6-day-dead lane found while verifying it
+
+**The token fix is confirmed in production.** `sales-serial-backfill` ran **08:40:12Z, `ok: true`,
+571 found / 60 resolved** — the first tick after the caller switched to `Authorization: Bearer`. ⚠ **The
+failure mode here was SILENCE, not a red row**: a rejected header returns 401 from the edge function,
+which writes no `pipeline_runs` row at all, so the check was for the row's **presence** at the expected
+minute. Cadence is exactly 120 min (avg = max = 120 over 48 h), so 08:40:12 was the decisive tick and it
+is there.
+
+🚨 **And its payload contained a finding.** Filed as
+`2026-09-02T0855Z-sales-serial-backfill-topshot-lane-…`:
+
+- **The Top Shot lane has recovered NOTHING in 14 consecutive runs — 1,509 processed, 0 resolved** —
+  across the full ~73 h `pipeline_runs` retention, while the pipeline logs `ok: true` throughout.
+  ⚠ **`rows_written` is a per-PIPELINE aggregate over two lanes with opposite health**: AllDay's 107
+  resolutions are the number, so a lane dead for six days is invisible in it.
+- **Its only recorded reason is `{"unknown": N}`** — and `unknown` is assigned at THREE different
+  places in the edge function, each of which sets a `detail` saying which.
+- ⭐ **The discriminator was already on disk.** `record_serial_backfill_failure` persists that `detail`
+  to `sales_serial_backfill_failures.failure_detail`; only the AGGREGATE drops it. One query:
+  **`http_530: error code: 1033` — 682 rows / 1,819 attempts since 08-27**, and
+  **`http_429: error code: 1015` — 436 rows / 1,515 attempts since 08-29.** 100% of the lane.
+- ⭐ **`error code: 1033` is character-for-character `CLOUDFLARE_ORIGIN_DOWN`**, the signature
+  `lib/pipeline/upstream-breaker.ts` already exports — the same outage tripping `offers-sweep`'s breaker
+  on schedule tonight. **One upstream event, two pipelines: one protected and instrumented, the other
+  burning its whole batch into it every two hours for six days.**
+
+⛔ **Not shipped: the fix is an edge deploy**, and this session touched neither the edge fleet nor a
+secret. ⚠ **And do NOT copy `upstream-breaker.ts` into the Deno function** — that is how this repo got
+37 divergent `stripComments`, two of them measurably blind.
+
+ⓘ **A separate, DB-side item recorded in the same filing:** `nfl_all_day` / `onchain_nil` /
+`not_in:<holder>` is **700 rows / 9,959 attempts since 2026-08-07** — ~14 tries per row over 26 days,
+because `get_serial_backfill_targets` applies a **flat 24 h cooldown with no escalation**. That picker
+IS a DB function, so an escalating backoff needs no deploy — **deliberately NOT done, because it needs a
+measurement first**: an escalating backoff on a row that is merely awaiting a wallet re-walk just delays
+its recovery.
+
 ### 2026-09-02 · ✅ SHIPPED — `allday-sales-indexer`'s four reads, including the one that writes a PERMANENT NULL serial
 
 **Files:** `app/api/allday-sales-indexer/route.ts` + its deep test; ratchet baseline **51 → 47**.
