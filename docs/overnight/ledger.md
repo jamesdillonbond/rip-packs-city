@@ -10,6 +10,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED + 📏 MEASURED — R30's falsifier is durable now, one high-write day already contradicts the zero, and the biggest lane had no denominator
+
+**Files:** `app/api/wallet-backfill/route.ts` + `__tests__/api-wallet-backfill-deep.test.ts`. No DB change.
+
+⭐ **R30's own instruction was *"if this is re-run, make the counter durable first"* — and that shipped
+hours earlier tonight** as `pipeline_runs_daily.extra_num_sums`
+(`audit_20260902_pipeline_runs_daily_keeps_numeric_extra_values_not_just_key_presence`), which sums every
+NUMERIC `extra` value per pipeline per day, indefinitely, against `pipeline_runs`' ~73 h. So
+`chunk_rows_lost` / `chunk_rows_recovered` / `chunk_errors` / `rows_to_write` are now permanent.
+
+🚨 **AND IT ALREADY CONTRADICTS THE ZERO.** 2026-08-30 was a high-write day and it is retained:
+
+| pipeline | attempted | lost | chunk_errors |
+|---|---:|---:|---:|
+| `wallet-backfill-allday` | **167,970** | **15,425** | 90 |
+| `wallet-backfill-pinnacle` | 1,833 | 2,196 | 27 |
+| `wallet-backfill-ufc` | 813 | 456 | 7 |
+| `wallet-backfill-golazos` | 106 | 106 | 4 |
+
+**That is AFTER the 2026-08-28 backstop experiment**, so the mechanism was still live on 08-30.
+08-31 → 09-02 read 0 lost on 159 / 15 / 9 attempted — the denominator collapse R30 already named, not
+evidence of a fix.
+
+⚠ **DO NOT COMPUTE `lost / attempted` NAIVELY.** Pinnacle reads **lost 2,196 > attempted 1,833**, which
+is impossible within one run: some code paths emit `chunk_rows_lost` without `rows_to_write`, so the two
+sums are not over the same population. Order of magnitude only until the emitters are aligned. **This is
+the "never pair a count from one source with a property from another" rule one level down — same table,
+different runs.**
+
+ⓘ **Semantics read from `lib/chains/flow/wmc-chunk-upsert.ts`, not assumed:** `chunkRowsLost +=
+chunk.length` on a FAILED upsert; `chunkRowsRecovered += chunk.length` counts rows in a chunk that
+succeeded AFTER a retry. **They are DISJOINT — `recovered` is not a subtraction from `lost`.**
+
+✅ **SHIPPED: one emitter gap closed, on the biggest lane.** Top Shot `wallet-backfill` emitted **no
+`rows_to_write` at all** — it buffers and flushes its own chunks, so there was no `rows` array to
+measure, leaving the largest wallet lane the only one whose loss RATE is not computable. Added. **And
+its three non-happy exit paths emitted no chunk fields either**, so a run that lost chunks and THEN hit
+a storage-limit / no-capability / fatal error **reported neither the loss nor the attempt — the run most
+likely to have lost rows was the one that hid it.** All three now carry `rows_to_write` +
+`chunkFailureExtra`, and their `rows_skipped` includes the lost rows as the success path already did.
+
+⚠ **Five tests pin it as PRESENCE, not value** (`Object.keys(extra)` must contain the keys), because
+absent and zero are different answers — and all five were mutation-checked: stripping the emissions reds
+exactly those five.
+
+**Verified:** full suite **1420 files / 15,668 tests green**; `tsc --noEmit` clean; eslint ratchet
+**717 = baseline**.
+
+**Revert:** `git revert` the code commit. No DB component.
+
 ### 2026-09-01 · 📏 RE-DERIVED — R25's headline is resolved, R53's cost figure has fallen 2.9×, and one comparison was nearly a retention artifact
 
 **No code, no DB change.** Two register rows re-measured rather than inherited, per the standing rule
