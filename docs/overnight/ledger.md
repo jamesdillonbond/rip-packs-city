@@ -10,6 +10,66 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — mounting the concierge on public pages handed strangers a bug-report form, and told the model a collection called "insights" exists
+
+Third concierge pass; `90fc6c38`. ⛔ **The first item is a defect I introduced this morning in
+`a6c271d9`/`235af701` and did not catch until I went looking at what the new surfaces actually
+render.** Shipping a component onto routes it was never written for is not a mount, it is a port.
+
+**`SupportChatConnected` assumed every route is `/<collection>/<page>`.** True while the chat only
+lived under `(collections)` and `(analytics)`; false the moment it went on `/insights/*`, home,
+`/about`, `/blog`, `/early-access`. Two consequences, both of which reached the model:
+
+1. `/insights/squeeze` reported `collectionId: "insights"` — **a slug no collection has**. Every tool
+   that defaults to "the page's active collection" ran `COLLECTION_UUID_BY_SLUG["insights"]` and got
+   `undefined` → a null UUID. Not a crash; a quietly unscoped read on the highest-traffic public
+   surface.
+2. Home reported `pageContext: "overview"` — which is **`PAGE_DEFAULTS`' key for a COLLECTION
+   overview page**, so a first-time anonymous visitor was served the Top Shot overview's pills.
+
+Fixed: a first segment is a collection only if `lib/collections.ts` says so; everything else gets an
+honest label (`home`, `about`, `blog`, `early-access`, `"<board> (insights)"`) and a **null**
+collectionId. ⚠ The `(insights)` suffix is deliberate — `SupportChat`'s lookup splits on `(`, and a
+bare board name collides with a collection tab key (**`market` is both**).
+
+**The pills were not merely wrong, they were backwards.** `DEFAULT_SUGGESTIONS` is three-quarters
+*"Report a bug / Suggest a feature / Something looks off"*, and that is what an anonymous stranger
+on a public board was shown. **It asks someone to report a bug in a product they have not tried
+yet.** That copy is correct for the audience it was written for — signed-in beta testers — and this
+is the general shape: **an empty state written for one audience becomes actively hostile when the
+surface changes audience, and nothing errors.** Public surfaces now get capability pills that
+demonstrate the product, with per-board sets for the ten highest-traffic boards, and the anonymous
+welcome leads with what the bot can answer. Feedback intake is still one tap away in the input and
+still priority #3 in the system prompt; it just does not lead.
+
+Verified live on the deployed build, by opening the panel and reading the DOM rather than the source:
+- `/insights/squeeze` → *"What does squeeze % mean?"*, *"Most squeezed editions right now"*, *"How is
+  locked supply counted?"*, *"What's my wallet's exposure?"* (the server's generic pills merge in
+  behind them at positions 5–6, which is the right place for them).
+- `/` → *"What is Rip Packs City?"*, *"What's my collection worth?"*, *"Biggest sales this week"*,
+  *"Show me deals under $10"* — i.e. the derivation change is live, home no longer resolves to
+  `overview`.
+
+**R74(3) closed.** Exhausting `MAX_ITERATIONS` wrote the same `category` as any other answer, so it
+was indistinguishable in `support_conversations` from a real timeout and the smoke suite — which
+reads categories — could not see it. It now writes `category='iteration_limit'`. ⚠ **Deliberately a
+distinct value from the error categories:** the concierge degraded-share check counts
+`concierge_unavailable`, and an iteration exhaustion is a CAPACITY signal, not a dependency outage —
+folding it in would inflate that check with the wrong population and re-create the
+manufactured-evidence shape it was already fixed for once (2026-08-16, `63bfc654`). Verified there is
+**no CHECK constraint** on `support_conversations.category` before shipping a new value into it.
+Count it on its own:
+`select count(*) from support_conversations where category='iteration_limit' and is_smoke_test is not true;`
+
+**Revert:** `git revert 90fc6c38`. The three parts are independent — the derivation in
+`SupportChatConnected`, the pill sets + anon welcome in `SupportChat`, and the `iteration_limit`
+category in the route.
+
+**⚠ The lesson worth keeping, because it cost a same-day regression:** *verify a mount by opening the
+thing and reading what it renders, not by grepping that the component is present.* The launcher was
+in the SSR HTML on every page I checked this morning — that check passed, and it could not see that
+the panel behind it was mislabelled and showed the wrong four buttons.
+
 ### 2026-09-02 · ✅ SHIPPED (3 of 4 sites) — a shared secret was being written into request logs from a USER-TRIGGERED path
 
 **Files:** `app/api/ufc-pipeline/route.ts` · `app/api/ufc-wallet-scan/route.ts` ·
