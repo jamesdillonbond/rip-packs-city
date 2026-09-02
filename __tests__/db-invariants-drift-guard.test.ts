@@ -317,6 +317,17 @@ const PINS = [
     migration: "supabase/migrations/20260702130000_audit_20260702_allday_cross_source_dedup_writer_trigger.sql",
   },
   {
+    // Added 2026-09-02 with the function. The pinned behaviour is the AMBIGUITY
+    // filter: on an edition_key where wallet_moments_cache holds more than one
+    // distinct player_name, wmc was measured 58.8% wrong (10 of 17 subedition
+    // keys named a different player). The `count(DISTINCT ...) = 1` guard is the
+    // difference between a backfill and a fabrication, so it is pinned.
+    fn: "backfill_topshot_stub_player_names_from_wmc",
+    test: "supabase/tests/backfill_topshot_stub_player_names_from_wmc.sql",
+    migration:
+      "supabase/migrations/20260902092542_audit_20260902_topshot_stub_player_names_come_from_wmc_before_the_chain.sql",
+  },
+  {
     // Re-pointed 2026-09-02 IN THE SAME SESSION as the change: nft_edition_map
     // joined moments + wallet_moments_cache as a THIRD, strictly-last COALESCE
     // leg (2,192 null-serial sales recoverable; AllDay's unresolvable remainder
