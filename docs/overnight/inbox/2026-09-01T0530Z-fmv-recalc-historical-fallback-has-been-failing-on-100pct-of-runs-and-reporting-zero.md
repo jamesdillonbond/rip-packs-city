@@ -194,3 +194,33 @@ within a day.
 The step really was failing on 350 of 350 runs; the `LIMIT`-after-`GROUP BY` really was the cause; the
 candidate-first LATERAL really did take it from >30 s to ~7 s; and the count-without-an-error-field
 really was what hid it. Only the **sizing** and the **admission predicate** were wrong.
+
+### ✅ POST-SHIP on the predicate fix (2026-09-02 00:2xZ) — converged in one tick
+
+First run on the new build, 00:28:05Z: **`historical_fallback: 31`, `historical_fallback_error: null`** —
+exactly the 31 measured before shipping. Immediately after: **qualifying population = 0.** The 31 were
+covered and the backlog is empty; the treadmill's cause is gone. From here the step should sit at 0 with
+a null error, which is the honest "nothing to do" state and is distinguishable from the old timeout only
+because that error field exists.
+
+⚠ **ONE CLAIM FROM THE LEDGER ENTRY IS NOT VERIFIABLE THE WAY I IMPLIED, and it is an instrument trap
+worth more than the claim.** I wrote that *"the 23,800-writes-per-day of redundant delete+insert should
+disappear from `fmv_snapshots`"*. That reduction follows by construction (200 pairs/tick → ~0), but it
+**cannot be confirmed by counting `fmv_snapshots` rows per hour**, and the obvious query actively misleads:
+
+| hour (Z) | rows with that `computed_at` |
+|---|---:|
+| 16:00 – 19:00 | **57 – 148** |
+| 20:00 – 23:00 | **1,643 – 4,858** |
+
+That looks like writes exploding at 20:00Z. They did not — `fmv-recalc` ran a steady **6–7 times per
+hour** across the whole span, covering 1,200–1,400 historical editions an hour throughout. **The step
+writes delete-then-insert** (`.delete().gte("computed_at", todayStart)` before each insert), so an
+edition re-processed an hour later has its earlier row **removed**. A `count(*) … GROUP BY hour` therefore
+measures **what SURVIVED**, not what was written, and older hours are systematically hollowed out by
+later ticks.
+
+⭐ Same shape as the recorded `unmapped_sales` lesson — *a staging queue is not a log; resolved rows are
+DELETEd, so all-rows windows are survivorship-biased* — in a different table. **On any delete-then-insert
+table, row counts over time are not a write rate.** To measure this properly you need the writer's own
+counters (`extra.historical_fallback`) or `pg_stat_user_tables.n_tup_ins`, not the table's contents.
