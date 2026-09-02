@@ -828,3 +828,33 @@ sends the wallet down the **full-walk** path: more work, never less, never a wro
 carries a comment saying it is deliberate, so the next sweep does not re-derive it. **A rule that cannot
 name its own exceptions gets applied mechanically until someone breaks something with it.**
 
+### The largest instance, and the counter-example that keeps the rule honest
+
+`app/api/sales-indexer/route.ts` (pipeline `topshot-sales-indexer`, 230 runs / 72 h, 1,585 rows,
+0 failures) carried **ten** of the shape — found by the ratchet, an hour after the ratchet shipped.
+
+Its landing is the worst of the set. Every map-building read feeds the resolution ladder
+(`wallet_moments_cache` → `moments` → GQL), so a failed read reads as *"none of these nfts are known"*:
+every event falls to **`unresolvedIds.push(nftId); continue`** — **never written to `sales`, never
+parked in `unmapped_sales`** — and Step 7 advances the cursor regardless. The run logs `ok: true` with
+an `unresolved_count` indistinguishable from an ordinary catalogue gap.
+
+⭐ **Two of the ten were not on the drop path at all**, and they are the ones a quick read would have
+skipped: `edIdToExt` and `baseKeyToId` **BUILD** Step 4e's unconfirmed-parallel guard. An unread table
+leaves both maps empty, the guard silently does nothing, and the mis-attribution it exists to catch goes
+straight into `sales`. 👉 **A read that builds a GUARD has the guard's blast radius, not its own.**
+
+### ⛔ AND "THROW" IS NOT THE FIX FOR EVERY READ — two counter-examples, both deliberate
+
+1. **Inside a per-item `try/catch`, a throw is a silent drop.** The per-nft GQL reads in the same route
+   sit inside a local catch that logs and continues. Throwing there would be caught locally and the nft
+   dropped anyway — **trading a silent wrong path for a silent drop.** What actually had to be stopped
+   was falling into the `ensure_topshot_edition_stub` branch on an UNREAD table, which **MINTS an
+   edition** for one that already exists. So that read checks its error and refuses to stub.
+2. **A read whose miss costs only extra work should fail OPEN.** `wallet-backfill`'s
+   `seeded_wallets.last_refreshed_at` read discards its error and should: a NaN sends the wallet down
+   the full-walk path — more work, never less, never a wrong answer.
+
+👉 **Bind the error always; what you DO with it depends on where `not found` lands, and on whether a
+throw actually reaches a handler that holds the line.**
+
