@@ -164,25 +164,38 @@ export async function POST(req: NextRequest) {
   const payload = row.event_payload as EventPayload
   const flowId = String(row.flow_id)
 
+  // ⚠ EVERY LOOKUP BELOW 500s ON `error` RATHER THAN FALLING THROUGH.
+  // supabase-js RETURNS errors, so `if (data?.x)` alone made an unread table
+  // indistinguishable from an absent mapping — and on this route that lands in
+  // the `!editionUuid` branch, which BUMPS retry_count. Ten bumps retire the row
+  // permanently at the drainer's cap, so a read failure could spend an operator
+  // action on making the row harder to recover.
+  //
   // wmc lookup
   let externalId: string | null = null
   {
-    const { data } = await (supabaseAdmin as any)
+    const { data, error } = await (supabaseAdmin as any)
       .from("wallet_moments_cache")
       .select("edition_key")
       .eq("collection_id", ALLDAY_COLLECTION_ID)
       .eq("moment_id", flowId)
       .maybeSingle()
+    if (error) {
+      return NextResponse.json({ error: `wallet_moments_cache lookup: ${error.message}` }, { status: 500 })
+    }
     if (data?.edition_key) externalId = String(data.edition_key)
   }
   // nft_edition_map fallback
   if (!externalId) {
-    const { data } = await (supabaseAdmin as any)
+    const { data, error } = await (supabaseAdmin as any)
       .from("nft_edition_map")
       .select("edition_external_id")
       .eq("collection_id", ALLDAY_COLLECTION_ID)
       .eq("nft_id", flowId)
       .maybeSingle()
+    if (error) {
+      return NextResponse.json({ error: `nft_edition_map lookup: ${error.message}` }, { status: 500 })
+    }
     if (data?.edition_external_id) externalId = String(data.edition_external_id)
   }
   // Cadence borrow against the seller for this single row.
@@ -204,12 +217,15 @@ export async function POST(req: NextRequest) {
 
   let editionUuid: string | null = null
   if (externalId) {
-    const { data } = await (supabaseAdmin as any)
+    const { data, error } = await (supabaseAdmin as any)
       .from("editions")
       .select("id")
       .eq("collection_id", ALLDAY_COLLECTION_ID)
       .eq("external_id", externalId)
       .maybeSingle()
+    if (error) {
+      return NextResponse.json({ error: `editions lookup: ${error.message}` }, { status: 500 })
+    }
     if (data?.id) editionUuid = String(data.id)
   }
 
@@ -263,11 +279,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `v2 upsert: ${upsertErr.message}` }, { status: 500 })
   }
 
+  // ⛔ THE MARK IS THE RESOLUTION. This used to log the error and then answer
+  // `{ok:true, resolved:true}`, telling the operator the row was closed while it
+  // sat in the queue — the operator's next move is to stop looking at it.
   const { error: markErr } = await (supabaseAdmin as any)
     .from("listing_resolution_failures")
     .update({ resolved_at: nowIso, last_retry_at: nowIso })
     .eq("id", id)
-  if (markErr) console.log(`[admin-listing-retry-force] resolved-mark err: ${markErr.message}`)
+  if (markErr) {
+    console.log(`[admin-listing-retry-force] resolved-mark err: ${markErr.message}`)
+    return NextResponse.json(
+      {
+        error: `resolved-mark: ${markErr.message}`,
+        // The v2 row DID land — say so, so a retry is understood as idempotent
+        // rather than as a second insert.
+        v2_upserted: true,
+        resolved: false,
+        edition_id: editionUuid,
+        external_id: externalId,
+      },
+      { status: 500 },
+    )
+  }
 
   return NextResponse.json({
     ok: true,

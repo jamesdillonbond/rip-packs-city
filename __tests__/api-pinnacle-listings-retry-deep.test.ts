@@ -186,10 +186,18 @@ describe("pinnacle-listings-retry — dual-table resolution semantics", () => {
     expect(typeof marks[0]?.rows[0]?.resolved_at).toBe("string")
 
     const log = terminalLog(spy)
+    // ⚠ INVERTED 2026-09-01. This asserted `p_rows_written: 1` with the comment
+    // "only the UUID backfill counts as a write" — which was the defect, stated
+    // as if it were the contract. Pinnacle editions live in `pinnacle_editions`,
+    // which has no editions UUID, so the common branch writes no v2 row and a
+    // fully successful tick reported ZERO written. Over 30 days that read
+    // 2,704 runs / 92,164 found / 0 written on a pipeline doing its job.
+    // rows_written is the RESOLUTIONS; the rare UUID backfill is reported
+    // separately as `edition_id_backfilled`.
     expect(log).toMatchObject({
       p_pipeline: "pinnacle-listings-retry",
       p_rows_found: 2,
-      p_rows_written: 1, // only the UUID backfill counts as a write
+      p_rows_written: 2,
       p_rows_skipped: 0,
       p_ok: true,
       p_error: null,
@@ -197,8 +205,10 @@ describe("pinnacle-listings-retry — dual-table resolution semantics", () => {
     })
     expect(log?.p_extra).toMatchObject({
       resolved: 2,
+      edition_id_backfilled: 1,
       still_unresolved: 0,
       retry_count_hit_cap: 0,
+      v2_write_errors: 0,
       cadence_attempted: 0,
       cadence_resolved: 0,
     })
@@ -237,8 +247,15 @@ describe("pinnacle-listings-retry — dual-table resolution semantics", () => {
     // pinnacle_editions-only -> resolved, no v2 write.
     expect(spy.writes.cached_listings_v2 ?? []).toHaveLength(0)
     const log = terminalLog(spy)
-    expect(log).toMatchObject({ p_rows_found: 1, p_rows_written: 0, p_rows_skipped: 0 })
-    expect(log?.p_extra).toMatchObject({ resolved: 1, cadence_attempted: 1, cadence_resolved: 1 })
+    // Resolved without a v2 write, and rows_written says so: 1 resolution,
+    // 0 edition_id backfills.
+    expect(log).toMatchObject({ p_rows_found: 1, p_rows_written: 1, p_rows_skipped: 0 })
+    expect(log?.p_extra).toMatchObject({
+      resolved: 1,
+      edition_id_backfilled: 0,
+      cadence_attempted: 1,
+      cadence_resolved: 1,
+    })
   })
 })
 
@@ -273,17 +290,27 @@ describe("pinnacle-listings-retry — re-queue + retirement accounting", () => {
     const failureUpdates = (spy.writes.listing_resolution_failures ?? [])
       .filter((w) => w.method === "update")
       .flatMap((w) => w.rows)
-    // Two retry bumps, zero resolved marks.
-    expect(failureUpdates).toHaveLength(2)
+    // ⚠ CHANGED 2026-09-01: ONE bump, not two. Row 4's edition IS known and it
+    // is OUR write that failed, so bumping its retry_count spends the row's
+    // budget on our fault — ten such faults and RETRY_COUNT_CAP retires a
+    // resolvable listing permanently. It is left untouched and simply retried.
+    // Row 5's key is known nowhere, which is a real bump.
+    expect(failureUpdates).toHaveLength(1)
     expect(failureUpdates.every((r) => !("resolved_at" in r))).toBe(true)
-    expect(failureUpdates.map((r) => r.retry_count).sort()).toEqual([1, 10])
+    expect(failureUpdates.map((r) => r.retry_count)).toEqual([10])
 
     const log = terminalLog(spy)
-    expect(log).toMatchObject({ p_rows_found: 2, p_rows_written: 0, p_rows_skipped: 2 })
+    // ⛔ And the tick is NOT ok. A partial write failure that only reached a
+    // console line was invisible to every observer, and now that the row keeps
+    // its budget it would otherwise loop forever in silence.
+    expect(log).toMatchObject({ p_rows_found: 2, p_rows_written: 0, p_rows_skipped: 1, p_ok: false })
+    expect(String(log?.p_error)).toContain("cached_listings_v2 backfill write")
     expect(log?.p_extra).toMatchObject({
       resolved: 0,
-      still_unresolved: 1, // id 4: 0 -> 1
+      edition_id_backfilled: 0,
+      still_unresolved: 0,
       retry_count_hit_cap: 1, // id 5: 9 -> 10 retires
+      v2_write_errors: 1,
       cadence_attempted: 0,
     })
   })
@@ -409,9 +436,10 @@ describe("pinnacle-listings-retry — Cadence fallback edge cases", () => {
     // Only row Z resolved (pinnacle_editions-only -> no v2 write).
     expect(spy.writes.cached_listings_v2 ?? []).toHaveLength(0)
     const log = terminalLog(spy)
-    expect(log).toMatchObject({ p_rows_found: 3, p_rows_written: 0, p_rows_skipped: 2, p_ok: true })
+    expect(log).toMatchObject({ p_rows_found: 3, p_rows_written: 1, p_rows_skipped: 2, p_ok: true })
     expect(log?.p_extra).toMatchObject({
       resolved: 1,
+      edition_id_backfilled: 0,
       still_unresolved: 2,
       cadence_attempted: 3,
       cadence_resolved: 1,
@@ -419,8 +447,102 @@ describe("pinnacle-listings-retry — Cadence fallback edge cases", () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚨 A FAILED LOOKUP MUST NOT RETIRE WORK.
+//
+// The four resolution-ladder reads (pinnacle_nft_map, wallet_moments_cache,
+// editions, pinnacle_editions) used to discard supabase-js's `error` and fall
+// through `?? []`, which made "the read failed" indistinguishable from "this
+// nft has no mapping". On THIS route that is not cosmetic: an unresolved row
+// gets its retry_count bumped, and ten bumps retire it permanently at
+// RETRY_COUNT_CAP. At a */15 schedule a sustained read failure would have
+// retired every queued row in about two and a half hours — a failed read
+// DELETING work.
+//
+// ⚠ Each case asserts the ABSENCE of the destructive act — zero UPDATEs on
+// listing_resolution_failures — not merely that an error string appeared.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("pinnacle-listings-retry — a failed ladder read fails the tick instead of retiring rows", () => {
+  const cases: Array<{ name: string; fixtures: Record<string, unknown>; wants: string }> = [
+    {
+      name: "pinnacle_nft_map",
+      wants: "pinnacle_nft_map lookup",
+      fixtures: {
+        pinnacle_nft_map: { data: null, error: { message: "nft map down" } },
+        wallet_moments_cache: { data: [], error: null },
+        editions: { data: [], error: null },
+        pinnacle_editions: { data: [], error: null },
+      },
+    },
+    {
+      name: "wallet_moments_cache",
+      wants: "wallet_moments_cache lookup",
+      fixtures: {
+        pinnacle_nft_map: { data: [], error: null },
+        wallet_moments_cache: { data: null, error: { message: "wmc down" } },
+        editions: { data: [], error: null },
+        pinnacle_editions: { data: [], error: null },
+      },
+    },
+    {
+      name: "editions",
+      wants: "editions lookup",
+      fixtures: {
+        // A key IS derived, so the edition-table leg is actually reached.
+        pinnacle_nft_map: { data: [{ nft_id: "700", edition_key: "KF:Std:1" }], error: null },
+        wallet_moments_cache: { data: [], error: null },
+        editions: { data: null, error: { message: "editions down" } },
+        pinnacle_editions: { data: [], error: null },
+      },
+    },
+    {
+      name: "pinnacle_editions",
+      wants: "pinnacle_editions lookup",
+      fixtures: {
+        pinnacle_nft_map: { data: [{ nft_id: "700", edition_key: "KF:Std:1" }], error: null },
+        wallet_moments_cache: { data: [], error: null },
+        editions: { data: [], error: null },
+        pinnacle_editions: { data: null, error: { message: "pin editions down" } },
+      },
+    },
+  ]
+
+  for (const c of cases) {
+    it(`a failed ${c.name} read bumps NO retry_count and logs ok=false`, async () => {
+      fetchMock = installFetchMock([scriptsStub([])])
+      const spy = install({
+        listing_resolution_failures: {
+          data: [qrow({ id: 700, flowId: "700", retry: 9 })],
+          error: null,
+        },
+        cached_listings_v2: { data: null, error: null },
+        ...c.fixtures,
+      } as Fixtures)
+
+      await POST(req())
+      await runDeferred()
+
+      // ⛔ THE LOAD-BEARING ASSERTION. This row sits at retry_count 9, one bump
+      // from permanent retirement. Nothing may touch it.
+      const failureWrites = (spy.writes.listing_resolution_failures ?? []).filter(
+        (w) => w.method === "update",
+      )
+      expect(failureWrites).toHaveLength(0)
+
+      const log = terminalLog(spy)
+      expect(log?.p_ok).toBe(false)
+      expect(String(log?.p_error)).toContain(c.wants)
+      expect(log).toMatchObject({ p_rows_written: 0, p_rows_skipped: 0 })
+    })
+  }
+})
+
 describe("pinnacle-listings-retry — DB write-error branches", () => {
-  it("logs (does not throw) when the resolved-mark UPDATE errors; resolved count is unaffected", async () => {
+  // ⚠ INVERTED 2026-09-01. This test's own title used to end "resolved count is
+  // unaffected", and that WAS the bug: `resolved = resolvedIds.length` ran
+  // unconditionally after the error branch, so a failed mark was published as N
+  // rows resolved while all N stayed in the queue. The mark IS the resolution.
+  it("reports ZERO resolved and a failed tick when the resolved-mark UPDATE errors", async () => {
     // Sequence on the failures table: call#1 = queue read (ok), call#2 = the
     // resolved-mark UPDATE (errors -> console.log branch).
     fetchMock = installFetchMock([scriptsStub([])])
@@ -439,12 +561,20 @@ describe("pinnacle-listings-retry — DB write-error branches", () => {
     await POST(req())
     await runDeferred()
 
-    // The editions-backed key backfilled the v2 row (one UPDATE write) and the
-    // failure is still counted resolved even though the resolved-mark logged.
+    // The editions-backed key DID backfill the v2 row, and that is reported —
+    // but the failure row is NOT resolved, because the mark that resolves it
+    // failed. Asserted as the ABSENCE of the false claim: resolved is 0, not
+    // "an error message appeared somewhere".
     expect((spy.writes.cached_listings_v2 ?? [])).toHaveLength(1)
     const log = terminalLog(spy)
-    expect(log).toMatchObject({ p_rows_found: 1, p_rows_written: 1, p_ok: true })
-    expect(log?.p_extra).toMatchObject({ resolved: 1, still_unresolved: 0 })
+    expect(log).toMatchObject({ p_rows_found: 1, p_rows_written: 0, p_ok: false })
+    expect(String(log?.p_error)).toContain("resolved-mark failed")
+    expect(log?.p_extra).toMatchObject({
+      resolved: 0,
+      edition_id_backfilled: 1,
+      resolved_mark_failed: 1,
+      still_unresolved: 0,
+    })
   })
 
   it("continues past a retry-bump UPDATE error without counting it as still_unresolved", async () => {

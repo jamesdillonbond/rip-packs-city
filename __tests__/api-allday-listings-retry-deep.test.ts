@@ -125,6 +125,139 @@ beforeEach(() => {
   state.afterCbs.length = 0
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚨 A FAILED READ OR WRITE MUST NOT CLOSE A QUEUE ROW.
+//
+// This drain has two irreversible outcomes for a row: `resolved_at` (out of the
+// queue for good) and a retry_count bump that retires it at RETRY_COUNT_CAP.
+// Both used to be reachable from a FAILURE:
+//   - the three ladder reads discarded supabase-js's `error` and fell through
+//     `?? []`, so an unread table looked like an absent mapping and the row was
+//     bumped toward retirement;
+//   - the v2 upsert logged its error and carried on, and the resolved-mark then
+//     ran over the WHOLE of resolvedIds — closing failure rows whose listing was
+//     never written. Nothing re-derives those listings; they are simply lost.
+//
+// ⚠ Each case asserts the ABSENCE of the closing write, not the presence of an
+// error string.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("allday-listings-retry — a failed read or write leaves the queue row alone", () => {
+  const readCases: Array<{ name: string; fixtures: Record<string, unknown>; wants: string }> = [
+    {
+      name: "wallet_moments_cache",
+      wants: "wallet_moments_cache lookup",
+      fixtures: {
+        wallet_moments_cache: { data: null, error: { message: "wmc down" } },
+        nft_edition_map: { data: [], error: null },
+        editions: { data: [], error: null },
+      },
+    },
+    {
+      name: "nft_edition_map",
+      wants: "nft_edition_map lookup",
+      fixtures: {
+        wallet_moments_cache: { data: [], error: null },
+        nft_edition_map: { data: null, error: { message: "map down" } },
+        editions: { data: [], error: null },
+      },
+    },
+    {
+      name: "editions",
+      wants: "editions lookup",
+      fixtures: {
+        // A key IS derived, so the editions leg is actually reached.
+        wallet_moments_cache: { data: [{ moment_id: "900", edition_key: "EXT-900" }], error: null },
+        nft_edition_map: { data: [], error: null },
+        editions: { data: null, error: { message: "editions down" } },
+      },
+    },
+  ]
+
+  for (const c of readCases) {
+    it(`a failed ${c.name} read bumps NO retry_count and logs ok=false`, async () => {
+      fetchMock = installFetchMock([scriptsStub([])])
+      const spy = install({
+        listing_resolution_failures: {
+          data: [qrow({ id: 900, flowId: "900", retry: 9 })],
+          error: null,
+        },
+        cached_listings_v2: { data: null, error: null },
+        ...c.fixtures,
+      } as Fixtures)
+
+      await POST(req())
+      await runDeferred()
+
+      // ⛔ THE LOAD-BEARING ASSERTION. This row sits at retry_count 9, one bump
+      // from permanent retirement. Nothing may touch it.
+      expect(
+        (spy.writes.listing_resolution_failures ?? []).filter((w) => w.method === "update"),
+      ).toHaveLength(0)
+
+      const log = terminalLog(spy)
+      expect(log?.p_ok).toBe(false)
+      expect(String(log?.p_error)).toContain(c.wants)
+      expect(log).toMatchObject({ p_rows_written: 0, p_rows_skipped: 0 })
+    })
+  }
+
+  it("a failed v2 upsert leaves the failure row OPEN — neither resolved nor bumped", async () => {
+    fetchMock = installFetchMock([scriptsStub([])])
+    const spy = install({
+      listing_resolution_failures: {
+        data: [qrow({ id: 901, flowId: "901", retry: 9 })],
+        error: null,
+      },
+      wallet_moments_cache: { data: [{ moment_id: "901", edition_key: "EXT-901" }], error: null },
+      nft_edition_map: { data: [], error: null },
+      editions: { data: [{ id: "uuid-901", external_id: "EXT-901" }], error: null },
+      cached_listings_v2: { data: null, error: { message: "v2 write boom" } },
+    } as Fixtures)
+
+    await POST(req())
+    await runDeferred()
+
+    // The upsert WAS attempted...
+    expect((spy.writes.cached_listings_v2 ?? []).filter((w) => w.method === "upsert")).toHaveLength(1)
+    // ...and the failure row was left completely alone: no resolved_at (which
+    // would lose the listing for good) and no retry bump (our fault, not its
+    // budget). Asserted as an absence of ANY write to that table.
+    expect(
+      (spy.writes.listing_resolution_failures ?? []).filter((w) => w.method === "update"),
+    ).toHaveLength(0)
+
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_rows_found: 1, p_rows_written: 0, p_rows_skipped: 0, p_ok: false })
+    expect(String(log?.p_error)).toContain("cached_listings_v2 upsert row")
+    expect(log?.p_extra).toMatchObject({ resolved: 0, v2_write_errors: 1 })
+  })
+
+  it("reports ZERO resolved and a failed tick when the resolved-mark UPDATE errors", async () => {
+    fetchMock = installFetchMock([scriptsStub([])])
+    const spy = install({
+      // call#1 = queue read (ok), call#2 = the resolved-mark UPDATE (errors).
+      listing_resolution_failures: [
+        { data: [qrow({ id: 902, flowId: "902" })], error: null },
+        { data: null, error: { message: "mark boom" } },
+      ],
+      wallet_moments_cache: { data: [{ moment_id: "902", edition_key: "EXT-902" }], error: null },
+      nft_edition_map: { data: [], error: null },
+      editions: { data: [{ id: "uuid-902", external_id: "EXT-902" }], error: null },
+      cached_listings_v2: { data: null, error: null },
+    } as Fixtures)
+
+    await POST(req())
+    await runDeferred()
+
+    // The v2 row DID land — that is reported as written — but the failure row is
+    // not resolved, because the mark that resolves it failed.
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_rows_found: 1, p_rows_written: 1, p_ok: false })
+    expect(String(log?.p_error)).toContain("resolved-mark failed")
+    expect(log?.p_extra).toMatchObject({ resolved: 0, resolved_mark_failed: 1 })
+  })
+})
+
 describe("allday-listings-retry — resolution + v2 insert contract", () => {
   it("wmc + nft_edition_map rungs resolve without Cadence; v2 rows rebuilt from event_payload (DUC -> price_usd, FLOW -> null, epoch expiry -> ISO), failures marked resolved", async () => {
     fetchMock = installFetchMock([scriptsStub([])])

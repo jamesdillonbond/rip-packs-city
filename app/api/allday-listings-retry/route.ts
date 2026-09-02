@@ -213,6 +213,7 @@ export async function POST(req: NextRequest) {
     let retryCountHitCap = 0
     let cadenceAttempted = 0
     let cadenceResolved = 0
+    let v2WriteErrors = 0
 
     try {
       // Drain RETRY_BATCH_LIMIT oldest unresolved + sub-cap rows. Exclude
@@ -242,11 +243,18 @@ export async function POST(req: NextRequest) {
       const nftToEditionExternalId = new Map<string, string>()
       for (let i = 0; i < nftIds.length; i += 500) {
         const batch = nftIds.slice(i, i + 500)
-        const { data } = await (supabaseAdmin as any)
+        // ⚠ THROW ON A FAILED LOOKUP — DO NOT `?? []` IT. supabase-js RETURNS
+        // errors rather than throwing, so discarding `error` made a failed read
+        // indistinguishable from "this nft has no mapping". On this route an
+        // unresolved row has its retry_count BUMPED and is retired permanently
+        // at RETRY_COUNT_CAP, so a sustained read failure would have DELETED
+        // work. Failing the tick costs one cycle and retires nothing.
+        const { data, error } = await (supabaseAdmin as any)
           .from("wallet_moments_cache")
           .select("moment_id, edition_key")
           .eq("collection_id", ALLDAY_COLLECTION_ID)
           .in("moment_id", batch)
+        if (error) throw new Error(`wallet_moments_cache lookup: ${error.message}`)
         for (const row of data ?? []) {
           if (row.edition_key) nftToEditionExternalId.set(row.moment_id, row.edition_key)
         }
@@ -257,11 +265,12 @@ export async function POST(req: NextRequest) {
       if (stillMissing.length > 0) {
         for (let i = 0; i < stillMissing.length; i += 500) {
           const batch = stillMissing.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
+          const { data, error } = await (supabaseAdmin as any)
             .from("nft_edition_map")
             .select("nft_id, edition_external_id")
             .eq("collection_id", ALLDAY_COLLECTION_ID)
             .in("nft_id", batch)
+          if (error) throw new Error(`nft_edition_map lookup: ${error.message}`)
           for (const row of data ?? []) {
             if (row.edition_external_id) nftToEditionExternalId.set(row.nft_id, row.edition_external_id)
           }
@@ -307,11 +316,14 @@ export async function POST(req: NextRequest) {
       if (editionExternalIds.length > 0) {
         for (let i = 0; i < editionExternalIds.length; i += 500) {
           const batch = editionExternalIds.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
+          const { data, error } = await (supabaseAdmin as any)
             .from("editions")
             .select("id, external_id")
             .eq("collection_id", ALLDAY_COLLECTION_ID)
             .in("external_id", batch)
+          // An unread editions table is not an ABSENT edition, and `!uuid` is
+          // exactly what sends a row to the bump/retire path below.
+          if (error) throw new Error(`editions lookup: ${error.message}`)
           for (const row of data ?? []) externalIdToUuid.set(row.external_id, row.id)
         }
       }
@@ -352,27 +364,51 @@ export async function POST(req: NextRequest) {
         resolvedIds.push(q.id)
       }
 
-      // Upsert resolved rows into cached_listings_v2.
+      // ── Upsert resolved rows into cached_listings_v2 ─────────────────────
+      // 🚨 A FAILED UPSERT MUST NOT BE MARKED RESOLVED. This loop used to log
+      // the error and carry on, and the mark below then ran over the WHOLE of
+      // `resolvedIds` — so a listing whose v2 row was never written had its
+      // failure row closed with `resolved_at`, which takes it out of the queue
+      // permanently. The listing is then lost: nothing else re-derives it.
+      // `insertRows` and `resolvedIds` are built one-for-one in the loop above,
+      // so the same slice indexes both.
+      const writeFailedIds = new Set<number>()
       for (let i = 0; i < insertRows.length; i += 100) {
         const batch = insertRows.slice(i, i + 100)
+        const batchIds = resolvedIds.slice(i, i + 100)
         const { error } = await (supabaseAdmin as any)
           .from("cached_listings_v2")
           .upsert(batch, { onConflict: "listing_resource_id,source", ignoreDuplicates: false })
         if (error) {
           console.log("[allday-listings-retry] v2 upsert err:", error.message)
+          for (const id of batchIds) writeFailedIds.add(id)
+          v2WriteErrors += batchIds.length
         } else {
           rowsWritten += batch.length
         }
       }
 
-      // Mark resolved rows.
-      if (resolvedIds.length > 0) {
+      // Mark resolved rows — only those whose v2 row actually landed. Rows whose
+      // upsert failed are left untouched: not resolved, and NOT retry-bumped
+      // either, because the failure was ours and spending their retry budget on
+      // it would retire them at the cap.
+      const markIds = resolvedIds.filter((id) => !writeFailedIds.has(id))
+      if (markIds.length > 0) {
         const { error } = await (supabaseAdmin as any)
           .from("listing_resolution_failures")
           .update({ resolved_at: new Date().toISOString(), last_retry_at: new Date().toISOString() })
-          .in("id", resolvedIds)
-        if (error) console.log("[allday-listings-retry] resolved-mark err:", error.message)
-        resolved = resolvedIds.length
+          .in("id", markIds)
+        // ⛔ THE MARK IS THE RESOLUTION. `resolved` used to be assigned after
+        // this branch unconditionally, so a failed UPDATE was published as N
+        // rows resolved while all N stayed queued.
+        if (error) {
+          console.log("[allday-listings-retry] resolved-mark err:", error.message)
+          ok = false
+          errorMsg = errorMsg ?? `resolved-mark failed for ${markIds.length} row(s): ${error.message}`
+          extra.resolved_mark_failed = markIds.length
+        } else {
+          resolved = markIds.length
+        }
       }
 
       // Bookkeeping for the stragglers. Three paths:
@@ -439,9 +475,19 @@ export async function POST(req: NextRequest) {
       extra.still_unresolved = stillUnresolved
       extra.retry_count_hit_cap = retryCountHitCap
       extra.unresolvable_marked = unresolvableMarked
+      // Always present, so an observer can tell "no write errors" from "this
+      // field was never emitted" without reading the route.
+      extra.v2_write_errors = v2WriteErrors
       extra.cadence_attempted = cadenceAttempted
       extra.cadence_resolved = cadenceResolved
       extra.elapsed_ms = Date.now() - start
+      if (v2WriteErrors > 0) {
+        // A tick that failed part of its work is not an `ok` tick. Without this
+        // the only trace is a console line nothing reads, and the affected rows
+        // loop silently because they no longer consume retry budget.
+        ok = false
+        errorMsg = errorMsg ?? `${v2WriteErrors} cached_listings_v2 upsert row(s) failed`
+      }
     } catch (err) {
       ok = false
       errorMsg = err instanceof Error ? err.message : String(err)

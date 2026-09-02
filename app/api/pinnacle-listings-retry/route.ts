@@ -219,6 +219,8 @@ export async function POST(req: NextRequest) {
     let retryCountHitCap = 0
     let cadenceAttempted = 0
     let cadenceResolved = 0
+    let editionIdBackfilled = 0
+    let v2WriteErrors = 0
 
     try {
       const { data: queueRows, error: qErr } = await (supabaseAdmin as any)
@@ -242,12 +244,22 @@ export async function POST(req: NextRequest) {
       // ── wmc batch lookup first (free, fast) ──────────────────────────────
       const nftIds = [...new Set(queue.map((q) => q.flow_id))]
       const nftToEditionKey = new Map<string, string>()
+      // ⚠ THROW ON A FAILED LOOKUP — DO NOT `?? []` IT.
+      // supabase-js RETURNS errors rather than throwing, so discarding `error`
+      // here made a failed read indistinguishable from "this nft has no mapping".
+      // That is not a cosmetic difference on this route: an unresolved row gets
+      // its retry_count BUMPED, and ten bumps retire it permanently at
+      // RETRY_COUNT_CAP. At */15 a sustained read failure would have retired
+      // every queued row in 2.5 hours — a read failure DELETING work, which is
+      // the worst shape of the failure-renders-as-data class. Failing the tick
+      // costs one cycle and retires nothing.
       for (let i = 0; i < nftIds.length; i += 500) {
         const batch = nftIds.slice(i, i + 500)
-        const { data } = await (supabaseAdmin as any)
+        const { data, error } = await (supabaseAdmin as any)
           .from("pinnacle_nft_map")
           .select("nft_id, edition_key")
           .in("nft_id", batch)
+        if (error) throw new Error(`pinnacle_nft_map lookup: ${error.message}`)
         for (const row of data ?? []) {
           if (row.edition_key) nftToEditionKey.set(String(row.nft_id), String(row.edition_key))
         }
@@ -257,11 +269,12 @@ export async function POST(req: NextRequest) {
       if (stillMissing.length > 0) {
         for (let i = 0; i < stillMissing.length; i += 500) {
           const batch = stillMissing.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
+          const { data, error } = await (supabaseAdmin as any)
             .from("wallet_moments_cache")
             .select("moment_id, edition_key")
             .eq("collection_id", PINNACLE_COLLECTION_ID)
             .in("moment_id", batch)
+          if (error) throw new Error(`wallet_moments_cache lookup: ${error.message}`)
           for (const row of data ?? []) {
             if (row.edition_key) nftToEditionKey.set(String(row.moment_id), String(row.edition_key))
           }
@@ -317,6 +330,11 @@ export async function POST(req: NextRequest) {
               .select("edition_key")
               .in("edition_key", batch),
           ])
+          // Same rule as the rungs above: an unread edition table is not an
+          // ABSENT edition. `known` false is what bumps retry_count, so
+          // swallowing these errors would retire resolvable rows.
+          if (edRes?.error) throw new Error(`editions lookup: ${edRes.error.message}`)
+          if (pinRes?.error) throw new Error(`pinnacle_editions lookup: ${pinRes.error.message}`)
           for (const row of edRes?.data ?? []) {
             editionKeyToUuid.set(row.external_id, row.id)
             knownEditionKeys.add(row.external_id)
@@ -332,6 +350,12 @@ export async function POST(req: NextRequest) {
       //    completed_at / price_usd / etc.
       const resolvedIds: number[] = []
       const stillUnresolvedIds: number[] = []
+      // ⚠ A row whose v2 backfill ERRORED goes into NEITHER list, and that is not
+      // tidiness. It is neither resolved nor "still unresolved": the edition IS
+      // known, our write failed. Bumping its retry_count spends the row's budget
+      // on OUR fault and, ten faults later, retires a resolvable listing
+      // permanently. Such rows stay in the queue untouched and are simply
+      // retried — counted in `v2WriteErrors`, which turns the tick red.
       for (const q of queue) {
         const editionKey = nftToEditionKey.get(q.flow_id)
         const uuid = editionKey ? editionKeyToUuid.get(editionKey) : null
@@ -355,10 +379,10 @@ export async function POST(req: NextRequest) {
               `[pinnacle-listings-retry] v2 update err lrid=${q.listing_resource_id}:`,
               updErr.message
             )
-            stillUnresolvedIds.push(q.id)
+            v2WriteErrors++
             continue
           }
-          rowsWritten++
+          editionIdBackfilled++
         }
         resolvedIds.push(q.id)
       }
@@ -369,8 +393,18 @@ export async function POST(req: NextRequest) {
           .from("listing_resolution_failures")
           .update({ resolved_at: nowIso, last_retry_at: nowIso })
           .in("id", resolvedIds)
-        if (error) console.log("[pinnacle-listings-retry] resolved-mark err:", error.message)
-        resolved = resolvedIds.length
+        // ⛔ THE MARK IS THE RESOLUTION. This used to log the error and then
+        // assign `resolved` unconditionally, so a failed UPDATE was reported as
+        // N rows resolved while all N stayed in the queue — a failed write
+        // published as work done, and the only place it showed was a log line.
+        if (error) {
+          console.log("[pinnacle-listings-retry] resolved-mark err:", error.message)
+          ok = false
+          errorMsg = errorMsg ?? `resolved-mark failed for ${resolvedIds.length} row(s): ${error.message}`
+          extra.resolved_mark_failed = resolvedIds.length
+        } else {
+          resolved = resolvedIds.length
+        }
       }
 
       // Bump retry_count on the stragglers. RETRY_COUNT_CAP retires the row
@@ -394,12 +428,33 @@ export async function POST(req: NextRequest) {
       }
 
       rowsSkipped = stillUnresolved + retryCountHitCap
+      // ── rows_written COUNTS THE RESOLUTIONS, not just the UUID backfills ──
+      // It used to increment only inside `if (uuid)`, the RARE branch: Pinnacle
+      // editions live in `pinnacle_editions`, which has no editions UUID to
+      // write, so a tick that resolved a full batch of them still reported
+      // `rows_written: 0`. That put a correctly-working pipeline in every
+      // zero-yield sweep permanently (measured 2026-09-02: 2,704 runs / 92,164
+      // found / 0 written over 30 days) — the null-instrument shape, one field
+      // over. `resolved` is the pipeline's actual output; the v2 backfill is a
+      // side effect of the rare branch and is reported separately.
+      rowsWritten = resolved
       extra.resolved = resolved
+      extra.edition_id_backfilled = editionIdBackfilled
       extra.still_unresolved = stillUnresolved
       extra.retry_count_hit_cap = retryCountHitCap
+      // Always present, so an observer can tell "no write errors" from "this
+      // field was never emitted" without reading the route.
+      extra.v2_write_errors = v2WriteErrors
       extra.cadence_attempted = cadenceAttempted
       extra.cadence_resolved = cadenceResolved
       extra.elapsed_ms = Date.now() - start
+      if (v2WriteErrors > 0) {
+        // A tick that failed part of its work is not an `ok` tick. Without this
+        // the only trace is a console line nothing reads, and the rows loop
+        // forever because they no longer consume retry budget.
+        ok = false
+        errorMsg = errorMsg ?? `${v2WriteErrors} cached_listings_v2 backfill write(s) failed`
+      }
     } catch (err) {
       ok = false
       errorMsg = err instanceof Error ? err.message : String(err)
