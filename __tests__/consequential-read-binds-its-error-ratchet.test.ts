@@ -57,11 +57,13 @@ const family = filesMatching("app/api", (n) => n === "route.ts", LANDING)
 
 /**
  * Measured 2026-09-02 over 35 consequential routes, comments stripped.
- * **61 → 51 → 47**: `sales-indexer`'s ten map-building reads, then
- * `allday-sales-indexer`'s four, bound in the same night. ⛔ THIS NUMBER GOES
- * DOWN OR STAYS. Raising it re-opens the class.
+ * **61 → 51 → 47 → 28**: `sales-indexer`'s ten map-building reads, then
+ * `allday-sales-indexer`'s four, then the five `*-sales-history-backfill`
+ * routes' nineteen — five cursor reads whose failure RESET the backward walk,
+ * and fourteen chunked id lookups whose failure read as "unmapped". ⛔ THIS
+ * NUMBER GOES DOWN OR STAYS. Raising it re-opens the class.
  */
-const BASELINE = 47
+const BASELINE = 28
 
 describe("a read in a consequential route binds its error", () => {
   // ⚠ filesMatching returns [] for a root that does not exist, and a guard that
@@ -120,6 +122,16 @@ describe("a read in a consequential route binds its error", () => {
     // Its AllDay sibling: the serial lookup there is the last source before the
     // row is written, and a NULL serial does not self-heal.
     "app/api/allday-sales-indexer/route.ts",
+    // The five backward history backfills. Their cursor read is the worst case
+    // in the family: a failure left `ceiling` at CEILING_INIT and the tick then
+    // wrote that TOP block back over the real cursor, discarding the whole
+    // backward walk in one run at ok:true, with nothing that re-walks above a
+    // cursor to recover it.
+    "app/api/cron/allday-sales-history-backfill/route.ts",
+    "app/api/cron/golazos-sales-history-backfill/route.ts",
+    "app/api/cron/topshot-flowty-sales-history-backfill/route.ts",
+    "app/api/cron/ufc-sales-history-backfill/route.ts",
+    "app/api/cron/pinnacle-sales-history-backfill/route.ts",
   ])("%s binds the error on every supabaseAdmin read", (route) => {
     expect(family, `${route} must still be discovered`).toContain(route)
     expect(discardingReads(stripComments(readFileSync(route, "utf8")))).toBe(0)

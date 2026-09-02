@@ -451,11 +451,25 @@ async function run(req: NextRequest): Promise<NextResponse> {
 
   let ceiling = CEILING_INIT
   if (!dryRun) {
-    const { data: cursorRow } = await supabaseAdmin
+    const { data: cursorRow, error: cursorErr } = await supabaseAdmin
       .from("event_cursor")
       .select("last_processed_block")
       .eq("id", CURSOR_ID)
       .maybeSingle()
+    // ⛔ A FAILED CURSOR READ IS NOT "no cursor yet", AND THE DIFFERENCE IS THE
+    // WHOLE BACKFILL. supabase-js RETURNS its errors rather than throwing, so
+    // this used to fall straight through with `ceiling` still at CEILING_INIT —
+    // the TOP of the backward walk. The tick would then re-scan the range it
+    // started from months ago and UPSERT THAT HIGH BLOCK BACK OVER THE REAL
+    // CURSOR, discarding every block of backward progress in one run, silently,
+    // and reporting ok:true. Nothing ever re-walks a range above the cursor, so
+    // the history skipped in between is not recovered by a later tick.
+    if (cursorErr) {
+      await logRun(startedAt, startedMs, false, 0, 0, 0, `cursor read failed: ${cursorErr.message}`, null, null, {
+        skipped: "cursor_read_failed",
+      })
+      return NextResponse.json({ ok: false, error: `cursor read failed: ${cursorErr.message}` }, { status: 500 })
+    }
     if (cursorRow && Number(cursorRow.last_processed_block) > 0) {
       ceiling = Number(cursorRow.last_processed_block)
     }
@@ -564,11 +578,18 @@ async function run(req: NextRequest): Promise<NextResponse> {
     const nftToSerial = new Map<string, number>()
     for (let i = 0; i < uniqueNftIds.length; i += 500) {
       const batch = uniqueNftIds.slice(i, i + 500)
-      const { data } = await supabaseAdmin
+      const { data, error } = await supabaseAdmin
         .from("wallet_moments_cache")
         .select("moment_id, edition_key, serial_number")
         .eq("collection_id", GOLAZOS_COLLECTION_ID)
         .in("moment_id", batch)
+      // ⛔ A failed lookup here is INDISTINGUISHABLE from "this nft is unmapped".
+      // supabase-js returns its errors, so `data ?? []` published the failure as an
+      // empty result: every id in the batch fell through to the on-chain Cadence
+      // fallback, and whatever that could not resolve was written as an unmapped
+      // sale carrying no edition. Throwing reaches the outer catch, which leaves the
+      // cursor unmoved so the SAME block range is re-scanned on the next tick.
+      if (error) throw new Error(`wallet_moments_cache lookup failed (batch at ${i}): ${error.message}`)
       for (const row of (data ?? []) as Array<{ moment_id: string; edition_key: string | null; serial_number: number | null }>) {
         if (row.edition_key) nftToEditionKey.set(row.moment_id, row.edition_key)
         const serial = Number(row.serial_number)
@@ -578,11 +599,13 @@ async function run(req: NextRequest): Promise<NextResponse> {
     const stillUnmapped = uniqueNftIds.filter((id) => !nftToEditionKey.has(id))
     for (let i = 0; i < stillUnmapped.length; i += 500) {
       const batch = stillUnmapped.slice(i, i + 500)
-      const { data } = await supabaseAdmin
+      const { data, error } = await supabaseAdmin
         .from("nft_edition_map")
         .select("nft_id, edition_external_id, serial_number")
         .eq("collection_id", GOLAZOS_COLLECTION_ID)
         .in("nft_id", batch)
+      // Same shape as the lookup above: a failed read must not read as unmapped.
+      if (error) throw new Error(`nft_edition_map lookup failed (batch at ${i}): ${error.message}`)
       for (const row of (data ?? []) as Array<{ nft_id: string; edition_external_id: string | null; serial_number: number | null }>) {
         if (row.edition_external_id) nftToEditionKey.set(row.nft_id, row.edition_external_id)
         const serial = Number(row.serial_number)
@@ -641,11 +664,16 @@ async function run(req: NextRequest): Promise<NextResponse> {
     const editionKeys = [...new Set(nftToEditionKey.values())]
     for (let i = 0; i < editionKeys.length; i += 500) {
       const batch = editionKeys.slice(i, i + 500)
-      const { data } = await supabaseAdmin
+      const { data, error } = await supabaseAdmin
         .from("editions")
         .select("id, external_id")
         .eq("collection_id", GOLAZOS_COLLECTION_ID)
         .in("external_id", batch)
+      // ⛔ A failed lookup here reads as "none of these editions exist", which sends
+      // every one of them into the hydrate path: on-chain calls for editions already
+      // in the table, then an upsert back over the rows that were already correct.
+      // Throwing leaves the cursor unmoved so the range is re-scanned intact.
+      if (error) throw new Error(`editions lookup failed (batch at ${i}): ${error.message}`)
       for (const row of (data ?? []) as Array<{ id: string; external_id: string }>) editionKeyToId.set(row.external_id, row.id)
     }
 
@@ -738,12 +766,21 @@ async function run(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    await supabaseAdmin
+    const { error: cursorWriteErr } = await supabaseAdmin
       .from("event_cursor")
       .upsert(
         { id: CURSOR_ID, last_processed_block: start, updated_at: new Date().toISOString() },
         { onConflict: "id" },
       )
+    // ⚠ `cursorWritten` is what `cursorAfter` reports. Assigning it without
+    // checking the write turned a FAILED advance into a LOGGED movement: the
+    // next tick re-scans the identical range while the run log shows the walk
+    // progressing. Throwing here reaches the outer catch, which leaves
+    // `cursorWritten` null so `cursorAfter` falls back to `cursorBefore` — the
+    // truth — and marks the run ok:false.
+    if (cursorWriteErr) {
+      throw new Error(`cursor upsert failed at start=${start}: ${cursorWriteErr.message}`)
+    }
     cursorWritten = start
 
     extra.scanned = `${start}-${end}`
