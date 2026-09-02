@@ -605,11 +605,11 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_insight_board",
-    description: "Read any of RPC's other public insight boards by name — the shareable /insights/* surfaces not covered by a more specific tool. Use for board/ecosystem questions about supply, scarcity, set completion, trophies, or the pack market. board options: 'squeeze' (Top Shot supply locked + burned, ecosystem-wide), 'set_squeeze' (set-level squeeze), 'set_completers' (wallets closest to completing sets), 'trophies' (#1 / first-mint trophy room — who holds the grails), 'pinnacle_scarcity' (Disney Pinnacle scarcity), 'allday_scarcity' (NFL All Day scarcity), 'topshot_pack_market' (Top Shot pack prices / market), 'allday_pack_market' (All Day pack market), 'pack_reality' (Top Shot pack REALIZED EV — what packs actually returned vs cost), 'allday_pack_reality' (All Day pack realized EV), 'market' (Top Shot daily market index). Read-only; report the rows factually, no buy/sell calls, and any figure you cite must come from this tool call this turn.",
+    description: "Read any of RPC's other public insight boards by name — the shareable /insights/* surfaces not covered by a more specific tool. Use for board/ecosystem questions about supply, scarcity, set completion, trophies, or the pack market. board options: 'squeeze' (Top Shot supply locked + burned, ecosystem-wide), 'set_squeeze' (set-level squeeze), 'set_completers' (wallets closest to completing sets), 'trophies' (#1 / first-mint trophy room — who holds the grails), 'pinnacle_scarcity' (Disney Pinnacle scarcity), 'allday_scarcity' (NFL All Day scarcity), 'topshot_pack_market' (Top Shot pack prices / market), 'allday_pack_market' (All Day pack market), 'pack_reality' (Top Shot pack REALIZED EV — what packs actually returned vs cost), 'allday_pack_reality' (All Day pack realized EV), 'market' (Top Shot daily market index), 'rookie_board' (the Top Shot rookie EDITION board — a different source from get_rookies' 2025 rookie index, so use this one for per-edition rookie supply/burn questions), 'panini_squeeze' (Panini Blockchain squeeze) and 'candy_mlb' (Candy / Solana MLB) — the two collections that are board-only and NOT browsable as tab surfaces, so hand out the board and do not imply a full collection — and 'pack_drops' (upcoming / recent pack drops). Read-only; report the rows factually, no buy/sell calls, and any figure you cite must come from this tool call this turn.",
     input_schema: {
       type: "object" as const,
       properties: {
-        board: { type: "string", enum: ["squeeze", "set_squeeze", "set_completers", "trophies", "pinnacle_scarcity", "allday_scarcity", "topshot_pack_market", "allday_pack_market", "pack_reality", "allday_pack_reality", "market"], description: "Which public insight board to read. Required." },
+        board: { type: "string", enum: ["squeeze", "set_squeeze", "set_completers", "trophies", "pinnacle_scarcity", "allday_scarcity", "topshot_pack_market", "allday_pack_market", "pack_reality", "allday_pack_reality", "market", "rookie_board", "panini_squeeze", "candy_mlb", "pack_drops"], description: "Which public insight board to read. Required." },
         limit: { type: "number", description: "Max rows, 1..50, default 20." },
       },
       required: ["board"],
@@ -657,10 +657,22 @@ const TOOLS: Anthropic.Tool[] = [
       required: ["walletAddress"],
     },
   },
+  {
+    name: "get_collector_report",
+    description:
+      "The Top Collector Report for ONE wallet — a single composite read for 'give me the full picture of this collection': cross-collection rollup (moments + FMV), Top Shot squeeze exposure, 2025 rookie-cohort coverage, WNBA Series 7 coverage, the wallet's closest set completions, and its acquisitions over the last 90 days. Use it when a collector asks for an overview / report / rundown / 'how does my collection look' rather than one specific number — it is ONE call where check_wallet + check_wallet_squeeze + get_set_completion_cost would be three or four. Needs a Flow address (0x + 16 hex); a Top Shot username resolves only when we hold it on file, and when we do not the tool says so — then call check_wallet with the username and reuse the `wallet` address it returns. NEVER guess an address. ⚠ Scope is not uniform: the rollup is cross-collection but the squeeze, rookie-cohort and WNBA sections are TOP SHOT ONLY — say which is which rather than letting a Top Shot number read as a whole-portfolio one. Read-only; same report that backs the public /insights/tc-report page.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex), or a Top Shot username we may hold on file. Required." },
+      },
+      required: ["walletAddress"],
+    },
+  },
 ];
 
 // ── System prompt (closed-beta posture: support / feedback first, deals second)
-function buildSystemPrompt(ctx: {
+function buildSystemPromptParts(ctx: {
   pageContext?: string;
   collectionId?: string;
   ownerKey?: string;
@@ -670,7 +682,7 @@ function buildSystemPrompt(ctx: {
   dailyDeal?: any;
   profile?: { display_name?: string | null; favorite_team?: string | null; twitter?: string | null } | null;
   priorConversationCount?: number;
-}): string {
+}): { cacheable: string; dynamic: string } {
   const { pageContext, collectionId, ownerKey, userWallet, walletConnected, marketPulse, dailyDeal, profile, priorConversationCount } = ctx;
 
   const activeCollection = collectionId ? getCollection(collectionId) : null;
@@ -736,7 +748,14 @@ Tailor responses to this page's purpose:
 - **analytics**: ecosystem intelligence — top sales, tier trends, player analytics, series volume`
     : "";
 
-  return `You are the RPC Concierge — the in-product support partner and beta-feedback collector for Rip Packs City, a multi-collection intelligence platform for Flow blockchain digital collectibles.
+  // ── Prompt-caching split ───────────────────────────────────────────────────
+  // `cacheable` is byte-identical on every request and on every iteration of the
+  // tool loop, so it is sent as a cache_control breakpoint (see the call site).
+  // `dynamic` carries everything that varies per user/page and MUST stay after
+  // it — moving a per-request value above the breakpoint silently kills every
+  // cache hit while still behaving correctly, which is the expensive way to
+  // find out. `publishedLabels` is constant per deploy, so it stays above.
+  const cacheable = `You are the RPC Concierge — the in-product support partner and beta-feedback collector for Rip Packs City, a multi-collection intelligence platform for Flow blockchain digital collectibles.
 
 ## Your Posture (free beta)
 RPC is in free, open beta — anyone can create a free account, no invite needed (never tell a user they need an invite or are on a waitlist). Your primary job, in order:
@@ -744,7 +763,7 @@ RPC is in free, open beta — anyone can create a free account, no invite needed
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
-**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_edition_listings / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_edition_listings / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board / search_catalog / get_price_history / find_quirky_serials. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), pull the whole-collection Top Collector Report for a wallet (get_collector_report), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -865,6 +884,7 @@ When the user asks about market STATE rather than one specific price, reach for 
 - **get_market_movers** — the market-pulse board: which editions are heating up or cooling by recent volume/price. For "what's moving", "what's hot", "market pulse".
 - **get_rookies** — the rookie market board (rookie moments by momentum). For "how are rookies doing", "hot rookies".
 - **get_premiums** — how much premium parallels (kind="parallel") or low serials (kind="serial") carry over base editions. For "do parallels carry a premium", "what's a low serial worth over floor". Top Shot.
+- **get_collector_report** — the composite per-wallet Top Collector Report (rollup, squeeze, rookie cohort, WNBA S7, closest set completions, 90-day acquisitions) in ONE call. Reach for it on "how does my collection look / give me the rundown", instead of chaining check_wallet + check_wallet_squeeze + set completion. ⚠ Its sections do not share a scope — the rollup is cross-collection, the squeeze and cohort sections are Top Shot only — so label them; and a username it cannot resolve means call check_wallet first, never invent an address.
 - **get_ecosystem_stat** — ecosystem boards by metric: new_collectors (newest active collectors), offer_spread (bid/ask spread), first_mint (first-mint scarcity), cross_collection (multi-collection overlap). For broad "state of the ecosystem" questions.
 - **get_insight_board** — reads any of the other shareable /insights boards by name: squeeze / set_squeeze (supply locked+burned), set_completers (closest to finishing sets), trophies (#1 / first-mint holders), pinnacle_scarcity, allday_scarcity, topshot_pack_market / allday_pack_market (pack prices), pack_reality / allday_pack_reality (what packs actually returned vs cost), market (Top Shot daily index). For board/ecosystem questions the tools above don't cover.
 
@@ -903,7 +923,9 @@ Relay each finding's \`why\` — "you have a palindrome" is unverifiable on its 
 - "Why is the sniper feed empty?" → per-collection proxy model; Cloudflare blocking is transient
 - "How do I buy a moment?" → Connect your Dapper wallet on the native marketplace (nbatopshot.com / nflallday.com / etc.); RPC deep-links directly. NOTE: Flowty wound down its NFT marketplace in May 2026 — never recommend Flowty (or "checking Flowty") for buying, listing, or recent-sold comps; always point to the native marketplace.
 - "Does RPC support X collection?" → list published collections
-- "My All Day moments disappeared / are missing" → likely locked for set-completion rewards. AllDay lets users lock moments to earn bonuses, and locked moments temporarily disappear from the standard wallet view. Ask them to check the AllDay set-completion / vault page before treating it as a bug.${collectionBlurb}${marketSection}${userSection}${pageSection}
+- "My All Day moments disappeared / are missing" → likely locked for set-completion rewards. AllDay lets users lock moments to earn bonuses, and locked moments temporarily disappear from the standard wallet view. Ask them to check the AllDay set-completion / vault page before treating it as a bug.`;
+
+  const dynamic = `${collectionBlurb}${marketSection}${userSection}${pageSection}
 
 ## Product surfaces you must know (current)
 - **Public /insights boards** (shareable, anon-public URLs — hand these out freely; they're the most shareable thing RPC has). /insights is the index. Highlights: /insights/top-sales (biggest recent sales + who bought/sold), /insights/deals (below-FMV asks), /insights/market-pulse (movers), /insights/rookies and /insights/rookie-board, /insights/squeeze and /insights/set-squeeze (supply locked/burned), /insights/first-mint, /insights/serial-premiums and /insights/parallel-premiums, /insights/underpriced-serials, /insights/offer-spread, /insights/new-collectors, /insights/cross-collection, /insights/pack-reality + /insights/topshot-pack-market + /insights/allday-pack-market, /insights/pinnacle-scarcity, /insights/set-completers, /insights/trophies, /insights/candy-mlb (Candy / Solana MLB), /insights/panini-squeeze (Panini). If a question maps to one, link it.
@@ -927,6 +949,16 @@ Bad — double-logging: user says "I found a bug"; bot calls log_bug immediately
 Bad — pitch after support: bot logs a bug, then says "Logged it — also, I noticed there are 12 moments listed 30%+ below FMV right now if you want a break from troubleshooting." (No — close with "Anything else?" full stop.)
 
 Respond in whatever language the user writes in.`;
+
+  return { cacheable, dynamic };
+}
+
+// Back-compat: the concatenation of the two parts is byte-identical to the
+// single string this function used to return. Kept so any caller (and the
+// tests that assert on prompt CONTENT) can keep reading one string.
+function buildSystemPrompt(ctx: Parameters<typeof buildSystemPromptParts>[0]): string {
+  const parts = buildSystemPromptParts(ctx);
+  return parts.cacheable + parts.dynamic;
 }
 
 // ── FMV distribution result formatter ─────────────────────────────────────────
@@ -3150,6 +3182,65 @@ async function executeTool(
     return fetchPublicInsight(base, `/api/public/insights/${path}`, limit);
   }
 
+  if (toolName === "get_collector_report") {
+    try {
+      const inputAddr = String(toolInput.walletAddress ?? "").trim();
+      let resolvedAddr = inputAddr;
+      if (!/^0x[a-fA-F0-9]{16}$/.test(inputAddr)) {
+        // Deliberately the ON-FILE resolver only — no live Top Shot lookup here.
+        // check_wallet owns the full resolution ladder and returns the address it
+        // resolved to; handing an unresolved username back to the model is both
+        // cheaper and honest, and it keeps ONE ladder to maintain rather than a
+        // third partial copy of it.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
+          p_username: inputAddr,
+        });
+        if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
+          resolvedAddr = rpcResult.wallet_address.startsWith("0x")
+            ? rpcResult.wallet_address
+            : `0x${rpcResult.wallet_address}`;
+        } else {
+          return JSON.stringify({
+            status: "username_not_resolved",
+            wallet: inputAddr,
+            message:
+              "I don't have that username's wallet on file for the report. Call check_wallet with the username first and reuse the address it returns, or ask the user for the 0x address.",
+          });
+        }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any).rpc("get_wallet_tc_report", {
+        p_wallet: resolvedAddr.toLowerCase(),
+      });
+      // An RPC error is an ERROR, never an empty report — a wallet whose report
+      // failed to build and a wallet with nothing in it are different claims.
+      if (error) {
+        return JSON.stringify({
+          status: "error",
+          wallet: resolvedAddr,
+          message: safeApiError(error, "collector report unavailable").error,
+        });
+      }
+      if (!data) {
+        return JSON.stringify({
+          status: "no_results",
+          wallet: resolvedAddr,
+          message: "No report for that wallet — it may not be indexed yet. Say that rather than reporting an empty collection.",
+        });
+      }
+      return JSON.stringify({
+        status: "ok",
+        wallet: resolvedAddr,
+        scope_note:
+          "Rollup is cross-collection; squeeze exposure, the 2025 rookie cohort and WNBA Series 7 are TOP SHOT ONLY. State which is which.",
+        report: data,
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: safeApiError(err, "collector report failed").error });
+    }
+  }
+
   if (toolName === "get_insight_board") {
     const boardMap: Record<string, string> = {
       squeeze: "squeeze",
@@ -3163,6 +3254,17 @@ async function executeTool(
       pack_reality: "pack-reality",
       allday_pack_reality: "allday-pack-reality",
       market: "market",
+      // Added 2026-09-02. These four public boards existed with their own
+      // /api/public/insights routes and their own traffic but were reachable by
+      // NO concierge tool. ⚠ Two more (/insights/tc-report, /insights/squeeze-check)
+      // are deliberately NOT here: both REQUIRE a ?wallet= param and 400 without
+      // one, so they are wallet tools wearing a board's URL — squeeze-check is
+      // already served by check_wallet_squeeze, and tc-report by
+      // get_collector_report. Check for a required param before adding a path.
+      rookie_board: "rookie-board",
+      panini_squeeze: "panini-squeeze",
+      candy_mlb: "candy-mlb",
+      pack_drops: "pack-drops",
     };
     const path = boardMap[String(toolInput.board ?? "")];
     if (!path) return JSON.stringify({ status: "error", message: "board must be one of: " + Object.keys(boardMap).join(", ") + "." });
@@ -3868,7 +3970,7 @@ export async function POST(req: NextRequest) {
 
     const ownerCtx = ownerKey ? await loadOwnerContext(ownerKey) : { profile: null, priorConversationCount: 0 };
 
-    const systemPrompt = buildSystemPrompt({
+    const systemParts = buildSystemPromptParts({
       pageContext,
       collectionId,
       ownerKey: ownerKey ?? undefined,
@@ -3879,6 +3981,22 @@ export async function POST(req: NextRequest) {
       profile: ownerCtx.profile,
       priorConversationCount: ownerCtx.priorConversationCount,
     });
+
+    // ── Prompt caching ────────────────────────────────────────────────────
+    // The static prefix (the tool definitions + the invariant prompt body) is
+    // tens of thousands of characters and was re-sent in full on EVERY call and
+    // on every iteration of the tool loop below (up to MAX_ITERATIONS) — the
+    // single largest line item in this route's Anthropic spend, and a chunk of
+    // its time-to-first-token. ONE cache_control breakpoint on the cacheable
+    // system block covers the tools too, because the cache prefix is ordered
+    // tools → system → messages.
+    // ⚠ Anything per-request must stay in `systemParts.dynamic`, BELOW the
+    // breakpoint. A varying byte above it does not break correctness — it
+    // silently never hits the cache, which is the expensive way to find out.
+    const systemBlocks: Anthropic.TextBlockParam[] = [
+      { type: "text", text: systemParts.cacheable, cache_control: { type: "ephemeral" } },
+      { type: "text", text: systemParts.dynamic },
+    ];
     // Bot DMs are stateless on the client side — rebuild recent turns
     // server-side so the conversation has memory across messages.
     const effectiveHistory: Anthropic.MessageParam[] =
@@ -3934,7 +4052,7 @@ export async function POST(req: NextRequest) {
       const stream = anthropic.messages.stream({
         model: CONCIERGE_MODEL,
         max_tokens: 1024,
-        system: systemPrompt,
+        system: systemBlocks,
         tools: TOOLS,
         messages: currentMessages,
       });
@@ -3962,7 +4080,7 @@ export async function POST(req: NextRequest) {
           : await anthropic.messages.create({
               model: CONCIERGE_MODEL,
               max_tokens: 1024,
-              system: systemPrompt,
+              system: systemBlocks,
               tools: TOOLS,
               messages: currentMessages,
             });

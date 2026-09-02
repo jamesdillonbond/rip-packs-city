@@ -8,6 +8,7 @@ import type { Metadata } from "next"
 import InsightsEmailCapture from "@/components/insights/InsightsEmailCapture"
 import FunnelTracker from "@/components/FunnelTracker"
 import SiteFooter from "@/components/SiteFooter"
+import SupportChatConnected from "@/components/SupportChatConnected"
 import WalletSearchBand from "@/components/WalletSearchBand"
 import { TWITTER_INHERITED, BRAND_TITLE_TEMPLATE } from "@/lib/seo"
 
@@ -75,6 +76,22 @@ export default function InsightsLayout({ children }: { children: React.ReactNode
       {children}
       <InsightsEmailCapture />
       <SiteFooter />
+      {/* The concierge. Mounted here 2026-09-02 because it was absent from every
+          public entry point: it lives in the (collections) and (analytics)
+          layouts and on a handful of signed-in surfaces, and NOT on /insights —
+          which is 2,704 non-bot funnel_events sessions in the 30 days to
+          2026-09-02, second only to /nba-top-shot/collection and the single
+          largest anonymous surface RPC has. Those visitors had no way to ask a
+          question at all. /api/support-chat is already in proxy.ts's public
+          allowlist and anonymous callers are bounded by the durable per-IP
+          limiter, so this needs no auth change. One instance in the layout
+          covers all ~30 boards (the layout persists across /insights/*), and
+          SupportChatConnected derives pageContext from usePathname, so a board
+          identifies itself to the prompt for free.
+          ⚠ Anonymous visitors 307 on /api/profile/me and render signed-out —
+          correct, but it is one doomed request per board navigation. Revert:
+          delete this line and the import. */}
+      <SupportChatConnected />
     </>
   )
 }

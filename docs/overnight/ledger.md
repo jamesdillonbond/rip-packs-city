@@ -10,6 +10,94 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the concierge had ~0 real users because it was on none of the public entry points, and signing in cut its allowance from 40/hr to 5/day
+
+**The reframe.** 33 tools, 4,209 lines, and **55 real (`is_smoke_test=false`) conversations
+all-time** — last real user turn **2026-08-16**, zero in the three weeks since, and reading the
+transcripts nearly all 55 are Trevor (`tg:1755958876` plus one dashboard session). ⛔ **The
+constraint is distribution, not answer quality** — do not audit the answers on a corpus of 55
+turns that are mostly ours. Two structural causes, both verified:
+
+1. `SupportChatConnected` was mounted in **ten** places, all signed-in or collection surfaces, and
+   in **none** of the public entry points — absent from `app/layout.tsx`, `app/insights/layout.tsx`
+   (all ~30 boards), home, `/blog`, `/about`, `/edition/[id]`. 30-day non-bot `funnel_events`:
+   `insights_view` **2,704 sessions**, `home_view` 227 — every one with no launcher on the page.
+   ⚠ `collection_view` reads 16,762 but events/session ≈ 1.00 (crawler signature) and only 34
+   sessions ever pasted a wallet — **do not quote it as human volume**.
+2. **The quota was inverted.** Anonymous callers hit `bump_concierge_ip_rate(ip, 40, 3600)` = 40/hr.
+   A signed-in user SKIPS that limiter (`if (!userWallet && !trustedBot)`) and hits
+   `feature_quotas` `plan='free'` → `daily_limit = 5`. Signing in made the bot **8× stingier**,
+   against the no-paywall-until-traction gate.
+
+**Shipped.**
+- **DB (no deploy):** `feature_quotas` free `concierge_messages` **5 → 40**. 1 row updated.
+  Verified through the real code path — `check_feature_quota('0x…','concierge_messages')` returns
+  `daily_limit: 40, remaining: 40`. **Revert:** `update feature_quotas set daily_limit = 5 where
+  feature_name='concierge_messages' and plan='free';`
+- **Telemetry first, mount second** (`components/SupportChat.tsx`): added `concierge_opened`,
+  `concierge_suggestion_clicked`, `concierge_closed_without_send`. The only event before today was
+  `chat-message-sent`, so a quiet period was ambiguous between *nobody saw the launcher* and
+  *people opened it and bounced* — opposite fixes. ⚠ Shipping this AFTER the mount would have made
+  the mount unmeasurable. `chat-message-sent`'s name and exact `{ length }` payload are unchanged —
+  `__tests__/component-SupportChat.test.tsx` pins both.
+- **The mount** (`app/insights/layout.tsx`): one instance covers all ~30 boards (the layout persists
+  across `/insights/*`), and `pageContext` derives from `usePathname`, so a board names itself to
+  the prompt for free. `/api/support-chat` was already in `proxy.ts`'s public allowlist and anon
+  callers are bounded by the durable per-IP limiter, so **no auth change was needed**.
+- **Prompt caching** (`app/api/support-chat/route.ts`): there was **no `cache_control` anywhere**.
+  ~45,300 chars of tool definitions + ~39,700 of system-prompt source were re-sent on every call
+  AND on every iteration of the tool loop (`MAX_ITERATIONS = 5`). `buildSystemPrompt` is now
+  `buildSystemPromptParts` returning `{ cacheable, dynamic }`, and the call site sends a two-block
+  `system` with one ephemeral breakpoint on `cacheable` — which covers the tools too, since the
+  cache prefix is ordered tools → system → messages. ⚠ **The split point is load-bearing:** any
+  per-request value moved above the breakpoint does not break correctness, it silently stops
+  hitting the cache. `cacheable + dynamic` is byte-identical to the old single string, and
+  `buildSystemPrompt` is kept as that concatenation for the content-asserting tests.
+- **Four unreachable boards** into `get_insight_board`'s `boardMap` + enum: `rookie_board`,
+  `panini_squeeze`, `candy_mlb`, `pack_drops`.
+- **New tool `get_collector_report`** — the composite per-wallet Top Collector Report
+  (`get_wallet_tc_report`), one call where check_wallet + check_wallet_squeeze + set-completion
+  were three or four. Resolves a username via the on-file resolver only and otherwise hands the
+  model back to `check_wallet`, so there is no third partial copy of the resolution ladder.
+
+⛔ **Two of the six "unreachable boards" were not boards, and adding them to `boardMap` would have
+shipped two entries that 400 on every call.** `/api/public/insights/tc-report` and `squeeze-check`
+both **require** `?wallet=`. `squeeze-check` reads `get_wallet_squeeze_exposure` — **exactly what
+`check_wallet_squeeze` already calls**, so it was never missing. `tc-report` became the new tool
+above. **Check for a required param before adding a path to a board map.**
+
+**Revert path (code):** `git revert` this commit. The four code changes are independent —
+`app/insights/layout.tsx` (delete the `<SupportChatConnected />` line + its import), the three
+`track()` calls in `SupportChat.tsx`, the `boardMap`/enum entries + `get_collector_report` block in
+`route.ts`, and the caching split (restore `system: systemPrompt` at both call sites and re-join
+the two literals). The DB change reverts separately with the SQL above.
+
+**Watch / exit condition.** `select feature_name, count(*) from usage_events where feature_name
+like 'concierge%' and occurred_at > now() - interval '7 days' group by 1` should show
+`concierge_opened` rows from `/insights` traffic. **Falsifier:** if `concierge_opened` stays at 0
+for 7 days against ~2,700 insights sessions/30d, the launcher is not being seen at all and the fix
+is placement/affordance, not reach — a floating bubble is the wrong instrument and the next lever
+is `ExplainButton` (today wired into only `CollectionMomentTable` and `PortfolioSummary`) on board
+rows. If `concierge_opened` is healthy but `concierge_closed_without_send` dominates, the gap is
+the empty state, not the mount.
+
+**Owed, not shipped.**
+- `get_set_completion_cost` still `required: ["setName","walletAddress"]`. The real 2026-07-12 ask —
+  *"what is the cheapest set for me to complete right now?"* — failed twice then and fails today. A
+  collector does not know which set is cheapest; that IS the question. Wants a rank-across-sets mode
+  in the shape `get_challenges` already has (ranks by `netEv`, no set name required).
+- `stop_reason === "max_tokens"` falls into the bare `else` of the tool loop and returns truncated
+  text with **no marker and no continuation**, at `max_tokens: 1024` (~4,000 chars). ⚠ **Never
+  observed** — over 5,643 `support_conversations` rows the longest `bot_response` is **2,107 chars**,
+  p95 **687**, zero rows in the 3,600–4,200 band. Insurance, not a defect; do not report it as live.
+- Exhausting `MAX_ITERATIONS` leaves `finalResponse` empty and renders as *"That query was too
+  complex…"*, indistinguishable in the data from a real timeout. A distinct `category` would let the
+  smoke suite see it.
+- Anonymous visitors on `/insights` 307 on `/api/profile/me` and render signed-out (correct, and
+  handled) — but it is one doomed request per board navigation.
+
+Filing: `docs/overnight/inbox/2026-09-02T0645Z-the-concierge-is-unreachable-on-every-page-anonymous-traffic-lands-on.md`
+
 ### 2026-09-02 · 📏 MEASURED (docs only) — the pg_cron fleet got **7.9× cheaper at 2026-08-30 18:26:00Z**, `job startup timeout` went 270 → 0, and three filed items are now measuring history
 
 **Nothing shipped to code or the DB.** Three reference docs corrected against a change point

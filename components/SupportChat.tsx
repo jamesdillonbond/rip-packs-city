@@ -246,9 +246,35 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
+  // Did this mount ever send a user message? Drives concierge_closed_without_send.
+  // A ref, not state: it must not re-render anything and must survive the close.
+  const sentAnyRef = useRef(false);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
   useEffect(() => { if (isOpen) { setTimeout(() => inputRef.current?.focus(), 300); setHasNewMessage(false); } }, [isOpen]);
+
+  // ── Funnel instrumentation ────────────────────────────────────────────────
+  // Until 2026-09-02 the ONLY event this component emitted was
+  // chat-message-sent, so a period with no conversations was ambiguous between
+  // "nobody ever saw the launcher" and "people opened it and could not think of
+  // a question" — which need opposite fixes. Open and abandon are the two reads
+  // that separate them. Cheap: `track` coalesces by feature name per debounce
+  // window, and failures are silent by design.
+  const openedRef = useRef(false);
+  useEffect(() => {
+    if (isOpen) {
+      openedRef.current = true;
+      track("concierge_opened", { page: pageContext ?? null, collection: collectionId ?? null, signed_in: !!walletConnected });
+      return;
+    }
+    // Only an actual close counts as an abandon — not the initial closed render.
+    if (openedRef.current && !sentAnyRef.current) {
+      track("concierge_closed_without_send", { page: pageContext ?? null, collection: collectionId ?? null, suggestions_shown: quickSuggestions.length });
+    }
+    // quickSuggestions is read, not depended on: re-firing this effect when the
+    // pills arrive would emit a spurious abandon while the panel is still shut.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, pageContext, collectionId, walletConnected]);
 
   // Escape closes the panel and returns focus to the launcher. Every other
   // overlay on the site already does this (MomentDetailModal, PaywallModal,
@@ -402,6 +428,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
     const trimmed = (overrideText || input).trim();
     if (!trimmed || isLoading) return;
     track("chat-message-sent", { length: trimmed.length });
+    sentAnyRef.current = true;
     setMessages((prev) => [...prev, { id: `u_${Date.now()}`, role: "user", text: trimmed, timestamp: new Date() }]);
     setInput(""); setIsLoading(true);
     const history = messages
@@ -595,7 +622,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
           {quickSuggestions.length > 0 && (
             <div style={{ overflowX: "auto", whiteSpace: "nowrap", padding: "8px 12px", display: "flex", gap: 6, scrollbarWidth: "none", flexShrink: 0 }} className="rpc-hide-scrollbar">
               {quickSuggestions.map((suggestion) => (
-                <button key={suggestion} onClick={() => sendMessage(suggestion)} disabled={isLoading} style={{ fontSize: 12, color: "var(--rpc-text-secondary)", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", padding: "6px 12px", borderRadius: 20, cursor: isLoading ? "default" : "pointer", transition: "border-color 0.15s, color 0.15s", whiteSpace: "nowrap", flexShrink: 0 }}
+                <button key={suggestion} onClick={() => { track("concierge_suggestion_clicked", { suggestion }); sendMessage(suggestion); }} disabled={isLoading} style={{ fontSize: 12, color: "var(--rpc-text-secondary)", background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", padding: "6px 12px", borderRadius: 20, cursor: isLoading ? "default" : "pointer", transition: "border-color 0.15s, color 0.15s", whiteSpace: "nowrap", flexShrink: 0 }}
                   onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = "var(--rpc-red)"; (e.target as HTMLElement).style.color = "var(--rpc-text-primary)"; }}
                   onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = "var(--rpc-border)"; (e.target as HTMLElement).style.color = "var(--rpc-text-secondary)"; }}>
                   {suggestion}
