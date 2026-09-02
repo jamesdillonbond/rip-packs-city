@@ -10,6 +10,67 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the Pack Sniper told four users to widen their filters while NFL All Day was 403ing it
+
+The flagship deal-finding surface, and the same class as the four insights boards above — but
+one layer lower, and with a live victim count rather than an audit finding.
+
+**What the runtime errors said.** `get_runtime_errors` over 24h showed
+`[sniper-feed] AD GQL FAILED: HTTP 403 <title>block</title>` — **4 occurrences, 4 users** — plus
+4 × `Vercel Runtime Timeout Error: Task timed out after 45 seconds` on the same route.
+`/api/sniper-feed` is a user-facing on-demand route, not a pipeline (`pipeline_runs_daily` returns
+`[]` for `%sniper%`), so those are four collectors who got a wrong answer, not four missed cron ticks.
+
+**What they saw.** `fetchAlldayGqlPage` returned `{ edges: [], endCursor: null, hasNextPage: false }`
+from **every** failure mode — HTTP non-200, a GQL `errors[]` payload, a missing
+`searchMarketplaceEditions`, and a thrown fetch. That empty page is indistinguishable from "the
+marketplace has no matching editions", so the route answered **200 with `deals: []`** and
+`SniperClient` printed
+
+> THE FLOOR IS QUIET — No deals match your filters. Try widening your search.
+
+…under a **CLEAR FILTERS** button. The worst sub-class: not merely a false claim, but a false
+*diagnosis* that sends the reader to change a filter that was never the cause, on the surface that
+tells them what is underpriced.
+
+**It was not one branch.** Nine deal-bearing reads collapsed the same way — `ts_listings`
+(error + throw), `get_editions_for_sniper` (without an edition key a listing has no FMV to price
+against, so it is dropped downstream), all four All Day GQL branches, the All Day `fmv_current`
+map (error + throw — a listing with no FMV is EXCLUDED rather than priced off its own ask, so a
+failed map empties the board), `get_allday_sniper_deals`, and `get_topshot_sniper_deals`.
+
+**Fix.** New tested primitive `lib/sniper/source-failures.ts` — a per-request `SourceFailureSink`
+threaded as an ARGUMENT (a module-level one would publish one reader's outage in another's
+response; the route caches per-param inside a warm lambda). Each branch calls `sink.note(<label>)`;
+the response gains `sourcesFailed: string[]` and `degraded: boolean`. **Empty means we actually
+looked** — the only case the UI may say the floor is quiet in. The client swaps the conclusion for
+`SNIPER_DEGRADED_EMPTY_COPY` ("Couldn't reach the listing feed just now… it says nothing about how
+many deals are out there") and swaps CLEAR FILTERS for RETRY, because clearing filters cannot
+recover a failed read and offering it is the same false diagnosis in button form.
+
+**Two second-order fixes it forced:**
+- A degraded build is **evicted from the warm-lambda cache** (`deleteCache`), or the 25 s TTL hands
+  this request's outage to the next reader — the ISR-caches-a-failed-read shape at lambda scale.
+- `/api/public/log/empty-sniper` builds its logged payload from an **explicit allowlist**, so the
+  new `degraded` / `sourcesFailed` fields would have been dropped SILENTLY and the beacon would have
+  read as coverage while recording nothing. Added there too, with a bound on the label list.
+  ⚠ **Generalisable: an allowlist-shaped logger makes a new client field dead on arrival.**
+
+**Enrichment reads are deliberately NOT noted** (badges, jersey numbers, pack EV) — they degrade a
+row's decoration, not its existence, so noting them would fire the degraded copy on a board that is
+honestly empty.
+
+**Verification.** 1,426 test files / 15,777 tests green (+2 files, +40 tests); `tsc --noEmit` clean;
+eslint ratchet 717 = baseline over 2,889 files. **Mutation-tested: 11 of 11 `sink.note` call sites
+killed** — the first sweep left 2 survivors (the `catch` arms of `fetchTopShotPool` and the All Day
+FMV map build, reachable only by a THROW, not by supabase-js's returned `error`), and both got a
+pin. Three client mutants (`feedDegraded = false`, the literal empty copy, the old heading ternary)
+each red 2 cases. Every case carries a NO-CHANGE CONTROL: `sourcesFailed: []` and a response
+predating the field both still read as a genuinely quiet floor.
+
+**Revert path:** `git revert <code sha>` (route + client + lib + beacon). Purely additive to the
+response envelope — no DB or schema change, no migration, nothing to unwind server-side.
+
 ### 2026-09-02 · ✅ SHIPPED — the concierge's cheapest-set-to-finish question, the max_tokens branch, the last public mounts, and the prompt-cache reading is IN: a 21,119-token prefix, hit across requests
 
 Second concierge pass of the day; the first is the entry below. Commits `235af701`

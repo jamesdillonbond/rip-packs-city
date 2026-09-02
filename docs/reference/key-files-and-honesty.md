@@ -971,3 +971,68 @@ last two passes found is worth keeping, because each is a *landing* the earlier 
 per file.** Three reads in one route can want three different answers, and one of them wanted the
 opposite of the other three.
 
+
+## Layer 1 with a VICTIM COUNT (2026-09-02): the Pack Sniper told four users to widen filters while All Day 403'd it
+
+Every other instance in this file was found by audit. This one was found in `get_runtime_errors`, and
+the log line names how many people got the wrong answer.
+
+**The evidence.** 24h of Vercel runtime errors: `[sniper-feed] AD GQL FAILED: HTTP 403
+<title>block</title>` — **4 occurrences, 4 users**. `/api/sniper-feed` is user-facing and on-demand,
+not a pipeline (`pipeline_runs_daily` returns `[]` for `%sniper%`), so that is four collectors, not
+four cron ticks.
+
+**The shape.** `fetchAlldayGqlPage` returned `{ edges: [], endCursor: null, hasNextPage: false }` from
+HTTP non-200, a GQL `errors[]` payload, a missing `searchMarketplaceEditions`, AND a thrown fetch. An
+empty page is indistinguishable from "the marketplace has no matching editions", so the route answered
+**200 with `deals: []`** and the board printed *"THE FLOOR IS QUIET — No deals match your filters. Try
+widening your search."* under a **CLEAR FILTERS** button.
+
+### ⚠ THE BUTTON IS PART OF THE CLAIM
+
+The copy was the documented actionable sub-class — a false *diagnosis*, sending the reader to change a
+filter that was never the cause. But the escape hatch beneath it said the same thing again in a form
+that cannot be read as hedging: offering CLEAR FILTERS asserts that filters are why the board is blank.
+**When you fix an empty-state's copy, fix its CALL TO ACTION in the same pass** — otherwise the surface
+keeps making the claim in the one place a frustrated reader is most likely to click. It now offers
+RETRY.
+
+### The count was NINE, in one route
+
+`ts_listings` (error + throw) · `get_editions_for_sniper` (no edition key ⇒ no FMV ⇒ the listing is
+dropped downstream, so this is deal-bearing, not enrichment) · all four All Day GQL branches · the All
+Day `fmv_current` map (error + throw — a listing with no FMV is EXCLUDED rather than priced off its own
+ask) · `get_allday_sniper_deals` · `get_topshot_sniper_deals`.
+
+### The fix's two transferable parts
+
+- **A per-request sink threaded as an ARGUMENT**, never a module-level accumulator
+  (`lib/sniper/source-failures.ts`). This route caches per-param inside a warm lambda, so a shared
+  accumulator would publish one reader's outage in another reader's response. The unit suite pins that
+  two sinks are independent, which is the case a plausible refactor breaks.
+- **The response's `sourcesFailed: []` is the load-bearing state, not `degraded: true`.** Empty means
+  we actually looked — the only condition under which any surface may say the floor is quiet. A field
+  that is merely absent (a cached response predating the change) reads as NOT degraded, so the change
+  cannot cry wolf on warm traffic; both directions carry a no-change control.
+
+### ⛔ AN ALLOWLIST-SHAPED LOGGER MAKES A NEW CLIENT FIELD DEAD ON ARRIVAL
+
+`/api/public/log/empty-sniper` — the empty-sniper diagnostic beacon — builds its logged payload as an
+**explicit field allowlist**. Adding `degraded` / `sourcesFailed` to the client beacon would have
+shipped a change that recorded **nothing**, with no error anywhere, while reading as instrumentation in
+both the client diff and the test suite. The beacon exists precisely to separate "server returned
+zero" from "fetch failed", and without these it could not see the third state that was actually
+happening. ⚠ **Whenever you add a field to a beacon or telemetry payload, open the RECEIVER and check
+whether it enumerates fields** — and pin the round trip, which is what the four new cases there do.
+
+### And the cache is an amplifier at lambda scale too
+
+A 25 s in-memory `getOrSetCache` TTL is small enough to feel harmless, and it is still the
+ISR-caches-a-failed-read shape: without the `deleteCache` on a degraded build, one reader's 403 is
+served to every reader of the same filter combination for the rest of the window. **Any cache in front
+of a read that can fail needs a don't-cache-the-failure rule, however short the TTL.**
+
+**Mutation-tested 11/11** on the `sink.note` sites. The first sweep left **2 survivors — both `catch`
+arms** (`fetchTopShotPool`, the All Day FMV map build), reachable only by a THROW and not by
+supabase-js's RETURNED `error`. ⚠ **supabase-js returning errors rather than throwing means the two
+branches need two fixtures; a suite that only sets `{ error }` leaves every catch arm unpinned.**
