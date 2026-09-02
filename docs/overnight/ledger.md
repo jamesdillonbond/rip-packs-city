@@ -10,6 +10,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED — a missing OpenSea key was being reported to operators as an OpenSea outage
+
+**Files:** `app/api/panini/listings/route.ts` · `app/api/panini/market-stats/route.ts` ·
+`__tests__/api-panini-listings-honesty.test.ts` (+3 tests, 9→12). **No DB change. No response-shape change.**
+Prompted by Trevor answering the open question from the `2026-09-02T0400Z` filing: **`OPENSEA_API_KEY`
+is NOT set in Vercel.** That turned a flagged unknown into a live defect.
+
+🚨 **THE ONE THAT MATTERS: the 502 these routes return is load-bearing BECAUSE it claims the failure is
+upstream** — the route's own comment says so, verbatim: *"the 502 is load-bearing — it says the failure
+is UPSTREAM, which is what tells an operator whether WE broke."* Both routes read the key as
+`process.env.OPENSEA_API_KEY ?? ""`, a SOFT failure. OpenSea API v2 rejects an unauthenticated request,
+so an unset key 401s every call, lands in the same `catch` as a genuine outage, and publishes the same
+`upstream_unavailable`. The one failure an operator could fix in 30 seconds was the one being attributed
+to a third party.
+
+⚠ **And no instrument this project owns could have caught it.** Two independent reasons, both verified
+this pass: (1) the catch logs via `console.log`, i.e. **info** level, which never reaches Vercel's runtime
+ERROR groups — a 7d `get_runtime_errors` pull returned 50 groups and neither route appears in any of them;
+(2) both routes sit behind the auth wall (`web_fetch_vercel_url` on `/api/panini/listings` returned
+`x-matched-path: /login`), so they cannot be probed from outside either. Silent on the inside, unreachable
+from the outside.
+
+**Fix:** hoist `apiKey` out of the `try` so the `catch` can see it, and when it is empty log the CAUSE at
+**error** level, naming the variable and stating this is ours. Response shape deliberately untouched — the
+502 contract is pinned by the honesty suite and stays pinned. The line self-extinguishes the moment the
+secret is set, which the second new test asserts (a guard that keeps shouting after the fix is one
+operators learn to ignore).
+
+⚠ **Both routes, one commit.** They had the identical defect; the source assertion added to the honesty
+file checks BOTH, because a fix that lands on one is exactly how the other survives — the same reasoning
+the sibling-key leak guard above it already uses.
+
+**Verified:** `api-panini-{listings,listings-deep,listings-honesty,market-stats}` **25→28 passing**;
+`tsc --noEmit` shows only the pre-existing baseline (fcl/stripe/market), none in the touched files;
+eslint violation count on the touched files **unchanged** (3 pre-existing `no-explicit-any` in the test
+helpers, present identically on the committed version — confirmed by linting the stashed tree).
+
+**Revert path:** `git revert <sha>`. No DB, no secret, no deploy.
+
+**Still Trevor's:** setting `OPENSEA_API_KEY` in Vercel is what actually restores the two Panini surfaces
+(`/panini-blockchain/overview` and `/panini-blockchain/sniper`). This change does not fix them — it makes
+their being broken **visible**, which is the part an agent session can do.
+
 ### 2026-09-01 · 📏 MEASUREMENT — pack-EV's two owed measurements are done, and one of them refutes the refutation's mechanism
 
 **Nothing shipped, deliberately.** CLAUDE.md marks this **Trevor's call** (re-seeding a pinned fixture

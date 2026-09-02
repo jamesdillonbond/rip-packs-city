@@ -188,3 +188,77 @@ describe("GET /api/panini/listings — the 502 does not publish upstream text", 
     }
   })
 })
+
+// ── 3. a missing key was reported as an upstream outage ─────────────────────
+// Both /api/panini routes read `process.env.OPENSEA_API_KEY ?? ""` — a SOFT
+// failure. OpenSea API v2 rejects an unauthenticated request, so an unset key
+// 401s every call, lands in the same catch as a real outage, and returns the
+// same `upstream_unavailable` 502. Confirmed 2026-09-02 with Trevor: the key is
+// NOT set in Vercel, so this is the live behaviour, not a hypothetical.
+//
+// ⚠ The 502 is load-bearing precisely because it claims the failure is UPSTREAM
+// (see the test above). That makes the misattribution worse than a generic
+// error: it actively points an operator away from the one thing they can fix.
+//
+// ⚠ And nothing could have caught it. The route logs at `info`, which never
+// reaches Vercel's runtime ERROR groups, and it sits behind the auth wall
+// (`x-matched-path: /login`), so it cannot be probed from outside either. The
+// misconfiguration was invisible from every instrument this project owns.
+//
+// The response shape stays exactly as pinned above; only the LOG gains a
+// cause line, at error level, which self-extinguishes once the secret is set.
+describe("GET /api/panini/listings — a missing key is ours, not OpenSea's", () => {
+  const KEY = "OPENSEA_API_KEY"
+  let saved: string | undefined
+  beforeEach(() => {
+    saved = process.env[KEY]
+  })
+  afterEach(() => {
+    if (saved === undefined) delete process.env[KEY]
+    else process.env[KEY] = saved
+  })
+
+  it("names the unset key at error level when the call fails", async () => {
+    delete process.env[KEY]
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    fetchImpl = router({ listingsStatus: 401 })
+
+    const res = await (await loadGET())()
+    expect(res.status).toBe(502)
+
+    const said = spy.mock.calls.map((c) => c.join(" ")).join("\n")
+    expect(said).toContain(KEY)
+    expect(said).toMatch(/not an OpenSea outage/)
+    spy.mockRestore()
+  })
+
+  it("stays silent about the key when one is configured", async () => {
+    // The whole point is that it self-extinguishes. A guard that keeps shouting
+    // after the fix is a guard operators learn to ignore.
+    process.env[KEY] = "a-configured-key"
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    fetchImpl = router({ listingsStatus: 503 })
+
+    const res = await (await loadGET())()
+    expect(res.status).toBe(502)
+
+    const said = spy.mock.calls.map((c) => c.join(" ")).join("\n")
+    expect(said).not.toContain(KEY)
+    spy.mockRestore()
+  })
+
+  it("both /api/panini routes carry the attribution guard", () => {
+    // A SOURCE assertion for the same reason as the sibling-key check above:
+    // the two routes had the identical defect, and a fix that lands on only one
+    // is exactly how the other survives.
+    for (const route of ["listings", "market-stats"]) {
+      const src = readFileSync(
+        join(process.cwd(), "app", "api", "panini", route, "route.ts"),
+        "utf8",
+      )
+      expect(src, `${route} must distinguish an unset key from an outage`).toMatch(
+        /if\s*\(\s*!apiKey\s*\)\s*\{[\s\S]{0,400}?console\.error/,
+      )
+    }
+  })
+})

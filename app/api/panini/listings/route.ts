@@ -67,8 +67,11 @@ export async function GET() {
     })
   }
 
+  // Hoisted out of the try so the catch can tell an UNCONFIGURED key apart from
+  // an upstream outage. See the attribution note in the catch below.
+  const apiKey = process.env.OPENSEA_API_KEY ?? ""
+
   try {
-    const apiKey = process.env.OPENSEA_API_KEY ?? ""
     const headers = { "x-api-key": apiKey }
 
     // Fetch listings
@@ -230,6 +233,21 @@ export async function GET() {
     // NOT routed through `apiErrorResponse` on purpose: that classifier would
     // flatten this to a 500, and the 502 is load-bearing — it says the failure is
     // UPSTREAM, which is what tells an operator whether WE broke.
+    // ⚠ A MISSING KEY IS NOT AN UPSTREAM FAILURE — it is ours, and the 502 above
+    // says the opposite. OpenSea API v2 rejects an unauthenticated request, so an
+    // unset `OPENSEA_API_KEY` 401s every call and lands here, indistinguishable
+    // from OpenSea actually being down. Confirmed 2026-09-02: the key is NOT set
+    // in Vercel. Nothing could have told us — this logs at `info`, which never
+    // reaches Vercel's runtime ERROR groups, and the route is behind the auth
+    // wall so it cannot be probed from outside. Name the cause at error level so
+    // the misconfiguration surfaces as its own group. Self-extinguishes when the
+    // secret is set; the 502 response shape is deliberately unchanged (pinned by
+    // __tests__/api-panini-listings-honesty.test.ts).
+    if (!apiKey) {
+      console.error(
+        "[panini/listings] OPENSEA_API_KEY is not set — this 502 is our misconfiguration, not an OpenSea outage"
+      )
+    }
     console.log(
       "[panini/listings] upstream failure:",
       err instanceof Error ? err.message : String(err)
