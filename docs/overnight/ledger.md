@@ -10,6 +10,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ BOTH of this morning's code fixes CONFIRMED LIVE AND EFFECTIVE in production — and the UFC one was deployed by somebody else's drift sweep, not by me
+
+**Session:** Claude Code interactive, Trevor's box, ~17:5x PT. Verification only; nothing shipped.
+
+**✅ THE UFC FMV PRELOAD — flagged this morning as "committed but NOT deployed", now LIVE, and BOTH
+halves of its EXIT are met.** I left `enrich-ufc-wallet` undeployed deliberately (the deploy carried a
+second, unrelated undeployed change and needed `deno.json` + `import_map_path` + `verify_jwt:false` or it
+boot-fails silently). **A concurrent Cowork session's edge-fn drift sweep deployed it at ~08:30Z** as part
+of redeploying 16 of 18 drifted functions — `enrich-ufc-wallet` is now **v47** with `import_map: true`
+(was v46 / `import_map: false`) and **`verify_jwt: false` preserved.** ⚠ That sweep hit the exact trap I
+had flagged — `deploy_edge_function` declares `verify_jwt` **default TRUE**, so omitting it silently
+flips a gate-keyed function to 401 every caller — and its own entry records catching it on a rehearsal
+target. **Two sessions identified the same hazard independently before it bit.**
+
+📏 **Measured, not inferred — the RPC's own falsifier was "0 calls a week after the caller ships":**
+
+| | old PostgREST slice | now, via `get_fmv_snapshot_for_editions` |
+|---|---:|---:|
+| calls | — | **227** |
+| buffers / call | **~185,457** | **3,268** |
+| mean time | **~29,400 ms** (vs a 30 s cap) | **97.5 ms** |
+
+**EXIT half 1 was "< 12,000 buffers per call" → 3,268. MET.**
+**EXIT half 2 was "queryid `1387451210050502049` leaves the top-15 diff entirely" → over a 7.5 h
+`ops_pgss_delta` window it is ABSENT FROM THE TOP 12. MET.** ⭐ Note the instrument: this used the
+purpose-built `public.ops_pgss_delta(interval, int)` shipped by another session today, **not** raw
+cumulative `pg_stat_statements` — the cumulative view still shows 3,042 lifetime calls at 53,203
+buffers, which would have read as "still running" and is exactly the trap that reader exists to avoid.
+
+**✅ THE `cache-refresh` BATCHING is live too**, visible in the same delta as
+`UPDATE wallet_moments_cache … WHERE moment_id = ANY ($4)` — the batched shape, where it was a single-row
+`.eq()` before. ⚠ **Stated carefully rather than flattered:** ~8,672 buffers per call now vs 7,689 per
+call before, but **each call now covers up to 10 moments instead of exactly 1**. So the per-call figure
+is roughly flat while the per-moment cost falls by up to ~9×; the exact factor depends on the average
+batch size (≤10, and only rows with GQL data are included), which I have NOT measured. The direction is
+certain, the magnitude is bounded, and I am not claiming the 9×.
+
+⭐ **The transferable bit is about the DEPLOY, not the SQL: an edge function I deliberately left
+undeployed shipped anyway, four hours later, inside an unrelated fleet-wide sweep.** On a repo with
+several concurrent agents, "committed but deliberately not deployed" is **not a stable state** — anything
+that redeploys from repo HEAD will carry it. Deferring a deploy is therefore a *timing* decision, not a
+*gate*; if a change genuinely must not ship, it cannot merely sit on `main` unmentioned. Here the outcome
+was good and the numbers confirm it, but that was luck about who swept and when, not a control.
+
 ### 2026-09-01 · SHIPPED — edge fleet (cloud autonomous pass) · 16 of 18 PROVEN-drifted edge functions redeployed; drift 18 → 2, and the deploy tool's safe-looking default was the outage
 
 **Revert path:** per function, redeploy the previous version's source (every prior version is retained
