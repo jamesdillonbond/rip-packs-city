@@ -307,9 +307,12 @@ the answer is often "only one of six".**
 > fixes DOES NOT RUN.** Everything below about `pack_drop_pool` is true of the CODE and false as a
 > statement about production. `app/api/cron/compute-laliga-pack-ev/route.ts` has **zero rows in
 > `pipeline_runs`** across the whole ~73 h retention window — not even a heartbeat — and
-> `pipeline_runs_daily` (indefinite) shows its **last run was 2026-08-27**. It was superseded by a
-> Supabase **edge function**: pg_cron **jobid 44 `rpc-compute-golazos-pack-ev`, `37 */6 * * *`,
-> active**, calling `/functions/v1/compute-golazos-pack-ev` — which is what wrote the 00:37 / 06:37 /
+> `pipeline_runs_daily` (indefinite) shows its **last completion was 2026-08-23** and its last
+> heartbeat 2026-08-27. The live producer is a Supabase **edge function**: pg_cron **jobid 44
+> `rpc-compute-golazos-pack-ev`, `37 */6 * * *`, active**, calling
+> `/functions/v1/compute-golazos-pack-ev` — and ⭐ **it is not a successor: it has run daily since
+> 2026-07-29, four days BEFORE the route's first run.** The route was a redundant SECOND producer
+> that was later switched off, not a predecessor that got replaced — which is what wrote the 00:37 / 06:37 /
 > 12:37 / 18:37 rows I later measured. ⛔ **And the live edge function does NOT have this defect at
 > all:** it *writes* `pack_drop_pool` per dist and computes EV by iterating the ~40 distributions it
 > already holds from the upstream GraphQL (`rows_found: 40`, never ~1,000). There is no unbounded

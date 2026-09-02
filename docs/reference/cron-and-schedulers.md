@@ -1167,7 +1167,11 @@ job that fails at *exactly* the same number every time is at a ceiling, not flak
 ## 🚨 A Next.js cron route can be SUPERSEDED BY AN EDGE FUNCTION and still look alive in the repo (2026-09-02)
 
 `app/api/cron/compute-laliga-pack-ev/route.ts` was fixed, tested and mutation-tested for a real
-truncation defect — and **it has not run since 2026-08-27.** The live Golazos pack-EV producer is a
+truncation defect — and **it has not run since 2026-08-27.** ⭐ **And its live counterpart is not a successor** — the
+edge function has run daily since **2026-07-29, four days before the route's first run**, so the
+route was a redundant SECOND producer that was later switched off. **"Stopped" does not imply
+"replaced", and the counterpart can be RENAMED** (`laliga` → `golazos`), so name-matching finds
+nothing. The live Golazos pack-EV producer is a
 Supabase **edge function**: pg_cron **jobid 44 `rpc-compute-golazos-pack-ev`, `37 */6 * * *`,
 active** → `/functions/v1/compute-golazos-pack-ev`. The edge function does not share the defect; it
 writes `pack_drop_pool` per dist and iterates the ~40 distributions it already holds from upstream.
