@@ -50,3 +50,77 @@ skipped this run;** the backing data queries that the live-health dashboard read
 
 *inbox written to mount, push unavailable (cloud NO-PUSH — mount `remote.origin.pushurl` is the
 unauthenticated public URL).*
+
+
+---
+
+# CONFIRMED ~13:55 PT (20:55Z), same day — **both items were already fixed hours before this filing was written.** Item 2's classification is wrong.
+
+Neither needs the next tick. Checked by the cloud session that shipped both fixes.
+
+## 1. `rpc-topshot-onchain-rekey` — ✅ RESOLVED, and now INSTRUMENTED
+
+The filing's reasoning is right and the conclusion holds. Two things to add:
+
+- **Timing.** The grant migration is named `20260902113501` (11:35:01Z); the failed run was
+  **11:33:00Z** — the grant landed about two minutes later. ⚠ **That is corroboration, not proof:**
+  `supabase_migrations.schema_migrations` has columns `version, statements, name, created_by,
+  idempotency_key, rollback` and **no applied-at timestamp**, so the filename is the only clock. Do
+  not quote it as an apply instant.
+- ⭐ **The better evidence is an instrument, not a timestamp.**
+  `check_cron_heavy_job_exec_drift()` → **`{"inspected": 56, "offenders": []}`**. That function was
+  shipped the same morning *for exactly the recurrence this filing asks the night pass to watch for*
+  (the CREATE-OR-REPLACE-resets-grants class), it walks every `cron_heavy`-scheduled callable rather
+  than the one that failed, and it is wired into `/api/smoke-test` as a **hard** arm that fails closed
+  on `inspected < 20`. So "confirm the next run" is no longer the only check available: **a reset
+  would now red the smoke suite within the hour instead of surfacing as one failed job a day later.**
+- ⛔ Agreed: **do not re-grant.** Confirmed correct.
+
+## 2. `rpc-refresh-challenge-costs` — ⚠ THE CLASSIFICATION IS WRONG, and the fix shipped 4 h 40 m after the failure
+
+**"A single statement-timeout at 07:20Z after two clean days" understates it.** Full
+`cron.job_run_details` for jobid 87, eleven consecutive daily runs:
+
+| date | result | duration |
+|---|---|---:|
+| 08-23 | **failed** | 120 s (timeout) |
+| 08-24 | **failed** | 120 s (timeout) |
+| 08-25 | succeeded | 57.5 s |
+| 08-26 | **failed** | 120 s (timeout) |
+| 08-27 | succeeded | 74.3 s |
+| 08-28 | succeeded | 81.3 s |
+| 08-29 | succeeded | 101.6 s |
+| 08-30 | succeeded | 82.7 s |
+| 08-31 | succeeded | 40.1 s |
+| 09-01 | succeeded | 40.5 s |
+| 09-02 | **failed** | 120 s (timeout) |
+
+👉 **Four failures in eleven runs — 36%, not one.** ⚠ **The filing looked back two days and inferred a
+transient spell from it. A rate needs a DISTRIBUTION, not a snapshot** — this repo's own rule, and the
+two days it happened to sample (40.1 s and 40.5 s) were the two fastest runs in the window. The
+successes trend 57 → 74 → 81 → **101** → 82 against a 120 s ceiling: a batch chronically at its
+budget, which is a cost problem, not collateral.
+
+**And it is already fixed.** Migration `20260902120329` hoists arm 1 of the `cached_reward_value`
+COALESCE out of the per-row loop into a `_pack_ev` temp table — verified live in `pg_proc`
+(`refresh_challenge_costs` now contains `CREATE TEMP TABLE _pack_ev`) — and the hoisted function
+**measured 1.208 s** against that 40–101 s history. The 07:20Z failure this filing reports predates
+that migration by **4 h 40 m**; every run in the table above is pre-fix.
+
+⭐ **Credit where due: the filing named the correct lever without knowing it had landed** — *"scoping
+the UPDATE's per-view reads (the same DISTINCT-ON-filtered-on-non-key-column shape already fixed
+elsewhere)"*. That is precisely the fix. Only the priority ("LOW", "self-clearing") and the
+saturation-collateral read were wrong.
+
+**Expected at the next tick (2026-09-03 07:20Z): a success in ~1–2 s.** If it instead times out
+again, the hoist is not the whole cost and arms 2–4 need the same treatment — that, not a timeout
+bump, remains the lever.
+
+## 3. ⭐ That DISTINCT-ON shape is now THREE instances, and it is a root cause, not a coincidence
+
+`pack_ev_latest` (challenge costs), and — found independently the same day — `fmv_current` in
+`/api/sniper-feed`'s All Day leg, where a qual on `collection_id` against a view keyed on
+`edition_id` materialised **274,519 rows per page, 19.5 s, six pages**, producing paired
+`statement timeout` + `Task timed out after 45 seconds` errors on one request. **A qual on a
+DISTINCT ON view's KEY pushes down; a qual on any other column does not.** Written up in
+[database.md](../../reference/database.md).

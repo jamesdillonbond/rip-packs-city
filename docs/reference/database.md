@@ -1179,6 +1179,65 @@ caller never issues.
 fix a read shape, **grep for the shape across the file and its siblings** — this was the third
 instance in one day of a fix applied per-file leaving a sibling behind.
 
+### ⭐ THIS IS NOW THREE INSTANCES — treat it as a root cause, not a coincidence
+
+1. **`pack_ev_latest`** in `refresh_challenge_costs` — the arm-1 hoist (migration `20260902120329`).
+   Before: 4 timeouts in 11 daily runs (36%), successes trending 57 → 74 → 81 → **101** s against a
+   120 s ceiling. After: **1.208 s**.
+2. **`fmv_current`** in `/api/sniper-feed`'s All Day leg — this section. 274,519 rows per page,
+   19.5 s, six pages, paired statement-timeout + 45 s lambda kill.
+3. **`fmv_current`** in the same route's `computeAllDaySniperFeed`, the read `fetchFmvBatch` two
+   functions away had always done correctly.
+
+### ✅ THE DB SIDE IS ALREADY CLEAN — and the reason is the finding
+
+Swept it 2026-09-02. **21 views use `DISTINCT ON`.** Of the callers:
+
+- **App/lib callers**: every one filters on the view's own key. `allday_edition_floor_ask` and
+  `golazos_edition_floor_ask` are `DISTINCT ON (edition_id)` and both callers use `.in("edition_id", …)`.
+  Clean.
+- **SQL functions reading `fmv_current`**: **8**, and every one is either keyed on `edition_id`
+  (`compute_pack_ev_from_pool_tier_weighted`, `sentinel_edition_coverage`,
+  `sentinel_fmv_confidence_canonical_ts`) or has ALREADY been converted to a LATERAL with the reason
+  in the source:
+  - `compute_pack_ev_from_pool` — *"LATERAL instead of the fmv_current view (a full 1.31M-row pass per join)"*
+  - `compute_pack_ev_per_edition_weighted` — *"the planner cannot push a join key into DISTINCT ON, so every call walked all 1.31M fmv_snapshots rows"*
+  - `backfill_pack_rip_metadata` — *"LATERAL instead of LEFT JOIN fmv_current (the DISTINCT ON view, a full pass over every snapshot per call)"*
+  - `health_check` reads it unqualified, but it aggregates over the whole view **on purpose** — the
+    full set is the intent, not an accident. Checked and cleared.
+
+⭐ **So the SQL layer learned this lesson thoroughly and the TypeScript layer never heard it.** Three
+functions carry explicit comments about the DISTINCT ON pushdown; the route-side read in
+`/api/sniper-feed` was making the identical mistake with no comment anywhere in `app/`. **A lesson
+can be completely absorbed in one layer of a codebase and completely absent from another** — the
+same family as "a correct sibling is not a guard", one level up. When you fix a query-shape bug,
+ask which OTHER LANGUAGE in the repo issues the same query.
+
+### ⭐ AND THERE IS ALREADY A MATERIALISED ANSWER FOR THE COLLECTION-SCOPED CASE
+
+**`edition_fmv_current`** — a real table (`relkind='r'`, 27,179 rows), described in
+`get_market_summary` as *"the same latest-row-per-edition set as the fmv_current view, materialised
+hourly"*, refreshed by `refresh_edition_fmv_current`. It carries `collection_id`, so **you can filter
+it by collection**. Five functions already use it (`get_series_editions`, `get_series_rollups`,
+`get_topshot_sniper_deals`, `refresh_series_detail_rollup`, `get_market_summary`).
+
+👉 **"All FMVs for collection X" should read `edition_fmv_current`, not `fmv_current`.** Use the view
+only when you have edition ids, or when hourly staleness is unacceptable.
+
+⚠ **And a screen for this has to use word boundaries.** `'%fmv_current%'` also matches
+`edition_fmv_current`, which turned 8 real view-readers into a list of 13 and produced two confident
+false positives before I noticed. Use `prosrc ~ '\mfmv_current\M'`.
+
+👉 **Whenever you filter a `DISTINCT ON (k)` view by anything other than `k`, assume it materialises
+the whole view and measure it.** The tell in the plan is a `Subquery Scan` with a `Filter:` on your
+column sitting above a `Unique` whose row count is the WHOLE table, not your slice. Grep for views
+with `DISTINCT ON` and check what their callers filter on:
+
+```sql
+SELECT viewname FROM pg_views
+WHERE schemaname = 'public' AND definition ILIKE '%DISTINCT ON%';
+```
+
 ### ⚠ Inverting the order MOVES the cap
 
 The 1000-row cap lands on `editions` instead, so that read has to be paged in the same change or the
