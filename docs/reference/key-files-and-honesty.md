@@ -722,3 +722,23 @@ with a `COALESCE` in the function so it cannot be NULLed back into an unbounded 
 ⚠ **A floor is a property of the ENDPOINT, not of the chain.** 2,339 rows below this one — back to
 2021-07-31 — were recovered by a different path on a single day in 2026-07. Do not let "unreachable"
 harden into "does not exist": name the endpoint in the claim.
+
+### ⛔ AND THE SAME NIGHT, THE FIX'S OWN SIZING WAS THE NINTH SHAPE POINTED AT ME
+
+The floor above was shipped with the headline *"450,987 rows above it are still recoverable."* **That
+number counts rows whose TRANSACTION IS REACHABLE. It says nothing about whether a seller exists in the
+transaction to be decoded** — which is the only thing the pipeline does. It is the circular sizing this
+canon already records from fmv-recalc (*"I sized a backlog using the very predicate that was defining
+it wrongly"*), committed by the next session, in a different pipeline, hours after reading it.
+
+**It surfaced by watching the SECOND tick.** The first recovered 109 of 120 and would have been quoted
+happily. The next six recovered **0 of 720**, all `allday_studio_history_v1` — whose rows carry the
+`NFTStorefrontV2.ListingAvailable` transaction, not the transfer. 21 of 21 hash-bucket-sampled txs
+(two bucket moduli, so not one physical page) came back `Success` with **zero Withdraw events and one
+ListingAvailable**, against a 3-of-3 positive control on `onchain` rows. A listing moves no NFT.
+Corrected: **reachable 450,987 · decodable ≈ 42,569 (9.4%)**.
+
+⭐ **Two rules, and the second is the cheap one.** *Reachable* and *convertible* are different
+populations, and a floor or predicate tells you only the first — **size a backlog by SAMPLING THE
+CONVERSION, never by counting what survives the filter.** And **watch the second tick**: the first tick
+after a fix is the one most likely to flatter it.
