@@ -60,6 +60,17 @@ export type FmvDistributionResult =
       min_fmv: number
       max_fmv: number
       sample_editions: DistributionalSampleEdition[]
+      /**
+       * Honesty fields. `count` is how many PRICED editions went into the
+       * percentiles; `population_matched` is how many editions the filter
+       * actually matched. When `truncated` is true they are different things
+       * and the percentiles describe a SLICE, not the set.
+       */
+      population_matched?: number
+      scanned?: number
+      scan_cap?: number
+      truncated?: boolean
+      truncation_note?: string
     }
 
 interface UnifiedInput {
@@ -88,9 +99,12 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+type ScanInfo = { populationMatched: number; scanned: number; cap: number }
+
 function buildDistribution(
   rows: Array<DistributionalSampleEdition>,
-  sampleLimit: number
+  sampleLimit: number,
+  scan?: ScanInfo
 ): FmvDistributionResult {
   if (rows.length === 0) {
     return { status: "no_results", message: "No catalog editions matched those filters." }
@@ -130,6 +144,20 @@ function buildDistribution(
     min_fmv: round2(fmvs[0]),
     max_fmv: round2(fmvs[fmvs.length - 1]),
     sample_editions: samples,
+    ...(scan
+      ? {
+          population_matched: scan.populationMatched,
+          scanned: scan.scanned,
+          scan_cap: scan.cap,
+          truncated: scan.populationMatched > scan.cap,
+          ...(scan.populationMatched > scan.cap
+            ? {
+                truncation_note:
+                  `These percentiles are computed over ${scan.scanned} editions out of ${scan.populationMatched} that matched — the read is capped at ${scan.cap}. They describe a SLICE of the filter, not the whole thing, and the slice is taken in a fixed catalog order rather than at random, so it is not a representative sample either. Say so and offer to narrow by set or tier (search_catalog lists the matching sets); do not present these as the distribution for the whole filter.`,
+              }
+            : {}),
+        }
+      : {}),
   }
 }
 
@@ -198,14 +226,39 @@ export async function fetchUnifiedFmvDistribution(
   // sample-edition output. NULL set_name rows (1,389 in NBA TS) are kept
   // unless setName was provided as a filter — they have valid player names
   // and FMVs and shouldn't be hidden from a "LeBron Commons" query.
+  // ⚠ ONE filter builder for both the count and the fetch. They must apply
+  // byte-identical predicates — a population count taken over a different
+  // WHERE than the sample is worse than no count at all, because it looks
+  // authoritative. Do not inline either copy.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const applyCatalogFilters = (q: any): any => {
+    let out = q.not("player_name", "is", null).neq("player_name", "")
+    if (input.collectionUuid) out = out.eq("collection_id", input.collectionUuid)
+    if (input.player) out = out.ilike("player_name", `%${input.player}%`)
+    if (input.setName) out = out.ilike("set_name", `%${input.setName}%`)
+    if (input.tier) out = out.eq("tier", input.tier.toUpperCase())
+    return out
+  }
+
+  // How many editions does this filter ACTUALLY match? Measured 2026-09-02:
+  // a bitmap-AND over the trigram + collection indexes, 2,241 buffers /
+  // 20.8 ms, so it is affordable on every call — and without it the tool
+  // cannot tell "500 editions matched" from "5,016 matched and you are
+  // seeing a tenth of them".
+  const { count: populationMatched } = await applyCatalogFilters(
+    supabase.from("editions").select("id", { count: "exact", head: true })
+  )
+
   let query = supabase
     .from("editions")
     .select("id, external_id, player_name, set_name, tier, collection_id")
-    .not("player_name", "is", null)
-    .neq("player_name", "")
-  if (input.collectionUuid) query = query.eq("collection_id", input.collectionUuid)
-  if (input.player) query = query.ilike("player_name", `%${input.player}%`)
-  if (input.setName) query = query.ilike("set_name", `%${input.setName}%`)
+  query = applyCatalogFilters(query)
+  // Deterministic order. Without one, LIMIT returns rows in PHYSICAL order,
+  // which shifts as the table is rewritten — so two identical calls could
+  // report different percentiles for the same filter and neither would look
+  // wrong. external_id is not a random sample either, but it is STABLE and
+  // explainable, and the truncation note says which it is.
+  query = query.order("external_id", { ascending: true })
   // editions.tier is a Postgres enum (tier_type) — values COMMON, FANDOM,
   // RARE, LEGENDARY, ULTIMATE. ILIKE doesn't work on enum columns without
   // an explicit text cast, and the supabase-js .ilike() helper doesn't
@@ -213,12 +266,21 @@ export async function fetchUnifiedFmvDistribution(
   // model can pass any case (common, Common, COMMON) — sixth run of
   // Test 2 confirmed the model now reaches for the tier param after the
   // f55e022 prompt rule, but the upstream filter was silently failing.
-  if (input.tier) query = query.eq("tier", input.tier.toUpperCase())
-  // Hard cap to keep the result set bounded — the model never needs more
-  // than ~500 editions to compute a meaningful distribution. Larger queries
-  // return the first 500 ordered by id, which is acceptable for a sampled
-  // distribution at p10/p50/p90.
-  const { data: editionRows, error: edErr } = await query.limit(500)
+  // ⚠ Hard cap. The comment this replaces claimed the first 500 come back
+  // "ordered by id, which is acceptable for a sampled distribution" — both
+  // halves were wrong. There was no ORDER BY, so it was PHYSICAL order; and a
+  // physical-order slice of a catalog written in ingest order is not a sample,
+  // it is a systematically early subset. MEASURED 2026-09-02: setName "Base
+  // Set" matches 5,016 editions across TWO distinct set names, and the first
+  // 500 covered ONE of the two — so p10/p50/p90 were computed over 10% of the
+  // filter, from one set, and returned with count: 500 as the distribution.
+  // ⛔ A percentile is worse than a truncated list here: a list that stops is
+  // visibly short, a percentile over a slice looks like a summary of
+  // everything. The cap STAYS (raising it multiplies the fmv_current read,
+  // which is the expensive half) — what changes is that the caller is told,
+  // via population_matched / truncated / truncation_note.
+  const SCAN_CAP = 500
+  const { data: editionRows, error: edErr } = await query.limit(SCAN_CAP)
   if (edErr) return { status: "no_results", message: `editions query error: ${edErr.message}` }
   // ⚠ Drop Top Shot's UUID-keyed twins before anything is counted. `editions`
   // holds every Top Shot moment under BOTH the int `setID:playID` key and a
@@ -292,7 +354,11 @@ export async function fetchUnifiedFmvDistribution(
     })
   }
 
-  return buildDistribution(enriched, sampleLimit)
+  return buildDistribution(enriched, sampleLimit, {
+    populationMatched: typeof populationMatched === "number" ? populationMatched : editions.length,
+    scanned: editionRows?.length ?? 0,
+    cap: SCAN_CAP,
+  })
 }
 
 interface PinnacleInput {
@@ -347,6 +413,13 @@ export async function fetchPinnacleFmvDistribution(
     }
   }
 
+  // ⚠ No population count / truncation flag on THIS path, and that is a
+  // measurement, not an oversight. Measured 2026-09-02: pinnacle_catalog holds
+  // 2,470 priced renders, the busiest CHARACTER has 35 and the busiest SET has
+  // 102 — so a filtered query cannot reach the 500 cap, and only a bare
+  // no-filter call could. The unified (Top Shot / All Day / Golazos) path is
+  // the one where the cap really binds: "Base Set" alone matches 5,016.
+  // Re-measure before assuming this still holds if the catalog grows.
   let query = supabase
     .from("pinnacle_catalog")
     .select(cols)

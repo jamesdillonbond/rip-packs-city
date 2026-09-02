@@ -888,6 +888,7 @@ Badges carry real market premium (Rookie Year, Top Shot Debut, Championship Year
 
 ## Reading get_fmv / search_catalog_deals responses
 - mode = "distribution" (count >= 2): surface median (median_fmv), middle 80% (p10 → p90), count for breadth, name 1-3 sample editions. Frame the user's price relative to the distribution.
+- ⚠ **If the result carries truncated: true, the percentiles are a SLICE, not the filter.** Read population_matched: the filter matched that many editions and only "scanned" of them were read, in a fixed catalog order rather than at random. You MUST say that plainly — "that matched N editions and I priced the first M of them, so treat this as a sample" — and offer to narrow by set or tier. Do NOT present a truncated distribution as the range for the whole filter, and do not quietly drop the caveat because the numbers look reasonable. A percentile over a slice is more misleading than a short list, because it LOOKS like a summary of everything.
 - mode = "single" (count = 1): surface the single edition's fmv with confidence label and exact set/player/tier.
 - status = "no_results": say so; do not invent a ballpark.
 
@@ -1036,6 +1037,17 @@ function formatDistributionForModel(
       confidence: s.confidence,
       edition_url: editionUrlFor(collectionId, s.external_id),
     })),
+    // ⚠ `count` is how many PRICED editions went into the percentiles.
+    // `population_matched` is how many the FILTER matched. When `truncated`
+    // is true those are different things and the percentiles describe a
+    // SLICE — the model is told to say so rather than presenting them as the
+    // distribution for the whole filter. Measured 2026-09-02: setName
+    // "Base Set" matches 5,016 editions across two set names and the scan
+    // covers 500 of them.
+    population_matched: result.population_matched,
+    scanned: result.scanned,
+    truncated: result.truncated ?? false,
+    ...(result.truncation_note ? { truncation_note: result.truncation_note } : {}),
   });
 }
 
