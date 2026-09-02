@@ -10,6 +10,85 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the concierge's FMV lookup read 10.4 GB to price 500 editions, and the question that exposed it was timing out in production
+
+Fourth concierge pass. `f7aae9c5` (fix + two migrations `20260902225408` / `225443`), `5d7bea98`
+(the tests it broke), `8ba9b962` (the truncation disclosure + guards it grew out of).
+
+**⛔ THE FIND.** `get_fmv`'s distribution path pulled latest-FMV-per-edition with
+`fmv_current.in(edition_id, ids)`. `fmv_current` is a `DISTINCT ON (edition_id)` view over
+`fmv_snapshots`, and **a PostgREST IN filter does not push down into it**: Postgres materialises the
+whole `DISTINCT ON` — **1,385,975 rows scanned to 27,186 distinct** — and only then semi-joins the
+500 ids. Same 500 Top Shot "Base Set" ids, one session, 2026-09-02:
+
+| shape | buffers | time |
+|---|---|---|
+| `fmv_current.in(500 ids)` (shipped) | **1,334,789** (~10.4 GB) | 16,736 ms |
+| per-id `LATERAL … LIMIT 1` | **5,359** | 470 ms |
+
+**249× fewer buffers.** ⚠ Judge any change here on BUFFERS — the wall-clock halves are warm/cold
+contaminated and only the buffer count is a cost.
+
+**This was not "slow", it was BROKEN in production.** The 16.7 s read sits inside a 60 s lambda that
+also runs the Anthropic tool loop. A live anonymous probe the same day — *"what is a Base Set common
+worth?"* — came back with ***"The FMV lookup timed out on that one."*** The most-used tool on the
+product's accuracy-critical surface could not answer a set-level price question at all.
+
+⭐ **The instructive part is that the previous fix was correct.** The route reads `fmv_current`
+*deliberately*, and its comment explains why: raw `fmv_snapshots` keeps ~34 rows/edition, so a bare
+`.in()` over 500 editions returns ~17k rows, PostgREST clamps at 1,000, and ordered `computed_at DESC`
+*globally* only the ~330 most-recently-snapshotted editions survive — a 34% silent loss that skews
+p10/p50/p90 toward hot editions. **That reasoning is right and still holds.** What was never done was
+measuring the cure. **A fix chosen on correctness grounds and never costed is a live defect with a
+good alibi** — the comment made it look settled, which is why it survived.
+`get_editions_latest_fmv` satisfies both constraints: one row per edition AND no full pass.
+
+**Correctness before speed:** the RPC applies the view's own selection rule per id and was diffed
+against it on the same 500 ids — **500 rows each, zero differing in either direction**.
+`computed_at <= now()` is load-bearing (it bounds the index condition); verified `fmv_snapshots`
+holds **zero** future-dated rows, so it excludes nothing the view returned.
+
+**Two migrations, not one, and the second is the lesson.** The first failed at RUNTIME:
+`fmv_snapshots.confidence` is the enum `fmv_confidence`, not `text`, so `RETURNS TABLE (… confidence
+text …)` threw 42804 on the first call. ⚠ **CREATE succeeded.** plpgsql checks the row type when the
+query RUNS, not when the function is defined — **a plpgsql function is not verified by having applied
+cleanly, only by being called.** Both migrations are committed because prod carries both.
+
+**Also fixed on the way past.** `FmvDistributionResult` has no error variant, so a failed FMV read
+rendered as `status: "no_results"` — which the prompt's error-vs-empty rule reads as an honestly
+empty catalog. The message now leads with `FMV LOOKUP FAILED` and tells the model not to claim there
+is no FMV.
+
+**And the truncation disclosure it pairs with (`8ba9b962`).** The same path capped `editions` at 500
+with NO `ORDER BY` and reported `count / p10 / p50 / p90 / min / max`, with a comment calling it
+"the first 500 ordered by id … acceptable for a sampled distribution". Both halves were wrong: no
+ORDER BY means PHYSICAL order, and a physical-order slice of a catalog written in ingest order is a
+systematically early subset, not a sample. Measured: `setName` "Base Set" matches **5,016 editions
+across TWO set names** and the first 500 covered **one** of them — percentiles over 10% of the
+filter, reported as the distribution. Players never bind the cap (0 of 1,414 exceed 500, max 170);
+**4 of 191 sets do, the largest at 4,732**. ⛔ **A percentile is worse than a truncated list: a list
+that stops is visibly short, a percentile over a slice looks like a summary of everything.** The cap
+stays; the result now carries `population_matched` / `scanned` / `truncated` / `truncation_note`
+from an exact head count over the *same* filter (2,241 buffers / 20.8 ms), plus a deterministic
+`order("external_id")` so two identical calls agree.
+
+**Verified live, same question, same session:** 200 in **14.3 s**, opening with *"Heads up — the Base
+Set has 5,016 Common editions matching that filter, and I can only price a slice of 500 at a time,
+so treat these as a sample, not a complete distribution"*, then the numbers, then an offer to narrow.
+The disclosure was not prompted for in the question — the model read the fields and led with them.
+
+**Revert.** Code: `git revert f7aae9c5` (and `8ba9b962` for the disclosure).
+DB: `DROP FUNCTION public.get_editions_latest_fmv(uuid[]);` — restore the `.from("fmv_current").in(…)`
+read, which `lib/concierge/fmv-distribution.ts` documents in place.
+
+⚠ **I left main red for ~13 minutes** (`f7aae9c5`, `b1ee9add`) and `ci-status` caught it correctly.
+Ten tests stubbed a supabase client with only `.from()`, so moving the read to `.rpc()` failed with
+"supabase.rpc is not a function" — **the tests were pinning the old read, which is what they are
+for.** ⛔ **vitest cannot run on the Windows mount** (rolldown's native binding is win32), so a change
+to a STUBBED data path on this repo should be shipped expecting one CI round, not treated as a
+surprise. Fixed in `5d7bea98`; the stubs now key on the RPC name and assert `fmv_current` is NOT
+selected, so the suite pins which read happens rather than only what comes back.
+
 ### 2026-09-02 · ✅ SHIPPED — `db-pin-staleness` went red for the first time in days and was RIGHT: 2 of 191 pins had drifted, and repairing one exposed an unasserted feature
 
 **How it surfaced.** The fleet sentinel's Detector Health arm is CRITICAL on `edge-fn-drift`'s 12×
