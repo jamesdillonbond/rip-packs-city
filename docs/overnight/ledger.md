@@ -10,6 +10,108 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ⭐ CORRECTION + ✅ SHIPPED — the 249× below is 17×, the mechanism is not the one either of us wrote down, and the sweep that cleared `app/` missed two live instances
+
+Follow-up to the two entries below (`f7aae9c5` / R75, and the sniper-feed inversion). **Both fixes
+were right. Both explanations were wrong, in opposite directions, and two live defects survived
+because of it.**
+
+**⛔ THE CLAIM THAT DOES NOT SURVIVE.** *"A PostgREST IN filter does not push down into a
+`DISTINCT ON` view."* It does. Measured warm, same session, same 500 ids, every shape a client can
+produce:
+
+| shape | plan | buffers |
+|---|---|---|
+| `IN (SELECT … FROM a CTE ordered by external_id)` | **Hash** Semi Join → whole view | 1,336,516 |
+| the same CTE ordered by `id` instead | **Merge** Semi Join, early-terminating | 152,869 |
+| `IN (<500 literal uuids>)` | `Index Cond: edition_id = ANY (...)` | 35,852 |
+| `= ANY(ARRAY[…])` | same | 35,852 |
+| **`= ANY($1)` bound array — what PostgREST actually sends** | same | **35,017** |
+
+Rows 1 and 2 differ by **one word** — the ORDER BY inside the id subquery — and by 8.7×. The 1.33M
+in R75 is row 1: its harness, not the route. `pg_stat_statements` still holds the
+`explain … with ids as (…)` text that produced it, and the production text beside it
+(`query LIKE 'WITH pgrst_source%'`) shows `= ANY($1)`. ⚠ **When a benchmark's "before" arm is 38×
+worse than the same query issued the production way, the harness is the finding.** My own half of the
+error was the mirror image: I had written "`IN (<literal uuids>)` ← **what PostgREST sends**" into
+`database.md` and never checked. It plans identically, so the conclusion survived and the reason to
+trust it never existed. ⚠ **`pg_stat_statements` is at 4,905 of 5,000 entries, so it is EVICTING** —
+absence from it is not evidence a query never ran.
+
+**✅ THE BETTER RULE.** `edition_id = ANY(...)` reaches the partitioned index **and still costs ~70
+buffers per edition**, because the view has **no per-group `LIMIT`**: it reads every snapshot row per
+edition (~35, growing daily) and `Unique` discards all but the newest. A per-id `LATERAL … LIMIT 1`
+stops at the first row — **~4 buffers per edition**. 👉 **"Reaches the index" is not "is cheap."**
+
+| id list | `fmv_current WHERE edition_id = ANY($1)` | `get_editions_latest_fmv` |
+|---|---|---|
+| 500 Top Shot | 25,330 buffers / 1,070 ms | 2,002 / 4.0 ms |
+| all 6,190 All Day | **424,475 buffers / 631 ms** | **24,760 / 51 ms** |
+
+R75's swap is a **17×** win, not 249× — and 17× is the number that justifies doing it everywhere,
+which the inflated one did not.
+
+**✅ SHIPPED — 1. sniper-feed All Day FMV map.** `fmv_current.in("edition_id", chunk)` →
+`get_editions_latest_fmv(chunk)`: **424,475 → ~26,000 buffers per request**. The hours-earlier fix
+took that read from ~1.84M to 424k (4.3×) and looked finished; it had captured under a quarter of the
+win. ⭐ **A fix that is correct, measured and documented can still be a quarter of a fix — and it is
+the documentation that stops it looking like one.**
+
+**✅ SHIPPED — 2 and 3, and these are the ones the morning sweep declared clean.** That sweep
+concluded *"App/lib callers: every one filters on the view's own key."* False:
+
+| site | shape | warm | now |
+|---|---|---|---|
+| `/api/overview-stats` | `count .eq(collection_id).eq(confidence)` | **1,331,923 buffers / 14,085 ms** | `edition_fmv_current` — **909 / 39 ms** |
+| `/api/support-chat` `get_edition_listings` | `.select("… editions!inner(external_id)").eq("editions.external_id", k)` | **933,871 buffers / 1,390 ms** | `.eq("edition_id", edition.id)` — **6 / 0.06 ms** |
+
+⚠ **The second is why the sweep missed both: the offending column is not in the read's own table.** A
+grep for `collection_id` beside `fmv_current` cannot see an embedded-resource filter. It was also
+less CORRECT than the fix — it matched `external_id` with no collection scope, and Top Shot stores
+every moment twice, so it could price the sibling row; the edition UUID it needed was already in hand
+two statements above. That one is on the **live concierge**, on every "what is this worth" turn.
+⚠ `/api/overview-stats` by contrast **has no caller**: nothing in the repo fetches it and production
+logged **zero** requests in 72h (the five collection `/overview` PAGES logged 5,824). Landmine
+removal, not a wait anyone endured — second time in two days that "name the caller" changed what a
+finding meant.
+
+**Guards.** New ban at zero: `__tests__/fmv-current-reads-are-keyed-on-edition-id.test.ts` walks
+`app/` and `lib/`, requires an `edition_id` qual on every `.from("fmv_current")` call site, asserts
+the COUNT it inspected and that it reached both roots, and carries the two live shapes as positive
+controls. ⭐ **Asserts the RIGHT column is PRESENT rather than enumerating wrong ones — a ban list is
+only as long as the last incident.** Separately, `sniper-feed-capped-reads-stay-paged` and
+`invariants-postgrest-cap` both pinned the All Day read by NAME against the WHOLE FILE; when that leg
+stopped using the view, both patterns still matched (the Top Shot leg's `fmv_current`, the jersey
+read's `.range(`), so a case *titled* for All Day would have passed with the All Day read deleted.
+Both now slice `computeAllDaySniperFeed`. Five mutants — ids→all, chunk 500→6190, RPC renamed,
+overview-stats back to the view, support-chat back to the embed — all killed.
+
+**⛔ AND A THIRD MEASUREMENT OF THE SAME THING LANDED WHILE THIS WAS IN FLIGHT, REFUTED IN PLACE.**
+Inbox filing `2026-09-02T2329Z-sixteen-routes-…` reported *"THREE ids cost the same 1.33M buffers as
+five hundred — the cost is FIXED, not proportional"*, with the discriminator *"`.eq("edition_id", x)`
+is fine, `.in("edition_id", [...])` is not"*. Re-measured in both the literal-`IN` and bound
+`= ANY($1)` forms — 1 / 3 / 10 / 100 / 500 ids cost **6 / 23 / 311 / 5,312 / 25,330 buffers**, a
+straight line at ~50-70 per edition. A three-id call is 23 buffers, not 1,331,405. ⛔ **The
+discriminator was wrong in the direction that does harm:** it cleared `/api/overview-stats` and
+`/api/support-chat` — the only two genuinely pathological sites, at 1.33M and 934k — as "safe, need
+nothing", and pointed a morning's work at thirteen cheap ones. Corrected in the filing and in
+INDEX.md rather than archived; the site list, the drop-in RPC and *"enumerate consumers by the
+OBJECT, not by the language the first instances were written in"* all stand — that last rule is
+precisely what would have caught the two it cleared. ⭐ **Three sessions measured one view in one day
+and produced 249x, "fixed cost", and 17x. The two wrong answers came from harnesses; the tell in both
+was an arm far worse than the same query issued the production way.**
+
+**Still open, sized:** 15 `.in("edition_id", …)` reads of `fmv_current` across 13 files. Nine select
+only columns `get_editions_latest_fmv` already returns; five (`fetchFmvBatch`, `api/fmv`,
+`wallet-search` ×2, `cache-refresh`) need a WIDER helper first — `wallet-search` on a 5,000-moment
+wallet is ~350k buffers where ~20k would do. The function's own `COMMENT ON FUNCTION` still says
+249×; fix it on the next migration that touches FMV rather than burning a `PGRST002` burst on a
+comment.
+
+**Revert.** Code: `git revert <this sha>` restores all three reads and reverts the guards with them.
+DB: nothing — no migration in this change, and the two scratch functions used for the measurements
+were dropped (`pg_proc` LIKE `_scratch%` = 0).
+
 ### 2026-09-02 · ✅ SHIPPED — the concierge's FMV lookup read 10.4 GB to price 500 editions, and the question that exposed it was timing out in production
 
 Fourth concierge pass. `f7aae9c5` (fix + two migrations `20260902225408` / `225443`), `5d7bea98`

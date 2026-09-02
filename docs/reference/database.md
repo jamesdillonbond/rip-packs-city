@@ -1154,23 +1154,81 @@ lambda budget and a statement timeout. Both ceilings were hit, which is why both
 
 ### The fix is an ORDER, not a bound
 
-Read the collection's `editions` first (keyset on `id` — indexed, plain table), then chunk
-`fmv_current` by `.in("edition_id", …)`, which IS the DISTINCT ON key.
+Read the collection's `editions` first (keyset on `id` — indexed, plain table), then ask for FMV by
+edition id, which IS the DISTINCT ON key. ⚠ **That was shipped as `fmv_current.in("edition_id", …)`
+and then shipped AGAIN, hours later, as `get_editions_latest_fmv(ids)`** — see
+"reaching the index is not the same as being cheap" below. The first version took the request from
+~1.84M buffers to 424k (4.3×); the second took it to 24.8k (a further 17×). **The first fix was
+right and captured under a quarter of the available win, which is exactly the state that reads as
+"done".**
 
 ### ⚠ MEASURE THE PRODUCTION CALLER'S SHAPE, NOT A CONVENIENT ONE
 
-Three forms of "the same" filter give three different plans:
+Forms of "the same" filter give different plans:
 
-| form | plan | cost (500 / 40 editions) |
+| form | plan | cost, 500 editions |
 |---|---|---|
-| `.eq(collection_id)` + `.range()` | Merge Append over the whole view | 263,392 buffers / 19,529 ms per page |
-| `IN (SELECT id FROM …)` | Merge Semi Join | 114,446 buffers / 287 ms |
-| `IN (<literal uuids>)` ← **what PostgREST sends** | `Index Cond: (edition_id = ANY (...))` on all partitions | **2,894 buffers / 21 ms** (~72/edition) |
+| `.eq(collection_id)` + `.range()` | Merge Append over the whole view | 263,392 buffers / 19,529 ms **per page** |
+| `IN (SELECT … ORDER BY external_id LIMIT 500)` | **Hash** Semi Join → whole view | **1,336,516 buffers / 34,633 ms** |
+| `IN (SELECT … ORDER BY id LIMIT 500)` | **Merge** Semi Join, early-terminating | 152,869 buffers / 318 ms |
+| `IN (SELECT id FROM editions WHERE collection_id …)` | Merge Semi Join | 35,868 buffers / 125 ms |
+| `IN (<literal uuids>)` | `Index Cond: (edition_id = ANY (...))` | 35,852 buffers |
+| `= ANY(ARRAY[<literals>])` | same | 35,852 buffers |
+| `= ANY($1)`, bound array ← **what PostgREST actually sends** | same | 35,017 buffers / 58 ms |
 
-The subquery form is the trap: it *looks* like the fix and is 68× better, but it is not the plan
-production gets. Building the literal-array statement is tedious (a 500-uuid `EXPLAIN` is ~18 KB), so
-measure a **smaller literal list and report cost per row** rather than substituting a shape the
-caller never issues.
+⚠ **Rows two and three differ by ONE WORD** — the ORDER BY inside the id subquery — and by **8.7×**.
+Order the inner set by `edition_id` and the planner can merge-join against the view's own sort order
+and stop early; order it by anything else (`external_id`, a relevance score, nothing at all) and it
+falls back to a **hash** semi-join, which has to build the entire `DISTINCT ON` first. **The tell is
+the join NODE, not the qual.** Neither row is what a PostgREST client provokes: an array constant
+becomes an index condition, so there is no join to pick a strategy for.
+
+⭐ **CORRECTED 2026-09-02, same day, by two sessions measuring the same swap and disagreeing by 15×.**
+Both were wrong, in opposite directions, and both errors are the same error — *a probe whose harness
+differs from production in the one dimension the answer depends on*:
+
+- **"`IN (<literal uuids>)` ← what PostgREST sends" was wrong.** It sends
+  `edition_id = ANY($1)` with a **bound array parameter**. Read it off
+  `pg_stat_statements` (`WHERE query LIKE 'WITH pgrst_source%'`) rather than guessing — the
+  normalised text shows the parameter. It happens to plan identically to the literal list here, so the
+  conclusion survived; the *reason to trust it* did not exist until it was checked.
+- **A 249× "before/after" for the same swap was an artifact of its own harness.** That arm expressed
+  the id list as `IN (SELECT … FROM ids)` over a CTE ordered by `external_id`, which becomes a hash
+  semi-join over the fully materialised view — a shape PostgREST never sends. The real ratio is
+  **17×**, not 249×. ⚠ **When a benchmark's "before" arm is 38× worse than the same query issued the
+  production way, the harness is the finding.** Reproduced and isolated to the one ORDER BY, so this
+  is a measurement, not a theory about one.
+- Id **spread does not matter**: 500 contiguous ids and 500 scattered ids (`ORDER BY md5(id::text)`)
+  cost 35,852 vs 35,012 buffers. Only the wall clock moves, with cache warmth.
+
+### 🚨 REACHING THE INDEX IS NOT THE SAME AS BEING CHEAP
+
+The bigger correction. `edition_id = ANY(...)` *does* push into
+`fmv_snapshots_<year>_edition_id_computed_at_*` — and still costs **~70 buffers per edition**, because
+**the view has no per-group `LIMIT`**: the index-cond scan reads EVERY snapshot row for each edition
+(~35 of them, and growing daily) and `Unique` throws all but the newest away. A per-id
+`LATERAL … ORDER BY computed_at DESC LIMIT 1` stops at the first row: **~4 buffers per edition**.
+
+Measured warm-vs-warm, same session, same id lists, 2026-09-02:
+
+| id list | `fmv_current WHERE edition_id = ANY($1)` | per-id LATERAL `LIMIT 1` |
+|---|---|---|
+| 500 Top Shot | 25,330 buffers / 1,070 ms | 2,002 buffers / 4.0 ms |
+| 500 All Day | 35,017 buffers / 58 ms | 2,001 buffers / 4.1 ms |
+| **all 6,190 All Day** | **424,475 buffers / 631 ms** | **24,760 buffers / 51 ms** |
+
+👉 So the pushdown rule needs a second clause: **a qual on the DISTINCT ON key reaches the index; it
+does not bound the rows per group.** For a bounded id list prefer
+`public.get_editions_latest_fmv(uuid[])` (added 2026-09-02, service_role only, byte-identical
+selection rule) over the view. `/api/sniper-feed`'s All Day leg and the concierge's FMV distribution
+both call it. ⚠ Its own `COMMENT ON FUNCTION` still carries the 249× figure — **17× is the number**;
+correct the comment on the next migration that touches FMV rather than burning a
+`PGRST002` burst on a comment.
+
+⚠ **Cost is linear in the id count in every pushed-down form** — 40 / 200 / 500 ids measured 2,894 /
+14,624 / 35,852 buffers, ~72 each — so **chunk size is a round-trip decision, not a cost decision**.
+Chunk at ≤1000 because PostgREST's row cap applies to an RPC result set too, not because a bigger
+chunk is more expensive.
 
 ### ⭐ A CORRECT SIBLING IS NOT A GUARD
 
@@ -1178,6 +1236,17 @@ caller never issues.
 `fmv_current` for the Top Shot leg. The right pattern sat beside the wrong one for months. When you
 fix a read shape, **grep for the shape across the file and its siblings** — this was the third
 instance in one day of a fix applied per-file leaving a sibling behind.
+
+⚠ **And then the "correct" sibling became the remaining instance.** `fetchFmvBatch` still reads the
+view, because it needs `wap_usd / floor_price_usd / days_since_sale / sales_count_30d` and
+`get_editions_latest_fmv` returns four columns. **15 `.in("edition_id", …)` reads of `fmv_current`
+remain across 13 files** (2026-09-02 count — re-derive; ⚠ a naive grep counts 16, because
+`lib/concierge/fmv-distribution.ts` names the shape in a *comment* telling you not to use it). Nine
+of them select only columns the helper
+already returns; the other five (`fetchFmvBatch`, `api/fmv`, `wallet-search` ×2, `cache-refresh`)
+need a WIDER helper first. The ones that matter are the ones whose id list is large —
+`wallet-search` on a 5,000-moment wallet is ~350k buffers where ~20k would do; `recent-sales` is
+capped at 50 ids and is not worth touching.
 
 ### ⭐ THIS IS NOW THREE INSTANCES — treat it as a root cause, not a coincidence
 
@@ -1189,13 +1258,35 @@ instance in one day of a fix applied per-file leaving a sibling behind.
 3. **`fmv_current`** in the same route's `computeAllDaySniperFeed`, the read `fetchFmvBatch` two
    functions away had always done correctly.
 
-### ✅ THE DB SIDE IS ALREADY CLEAN — and the reason is the finding
+### ⛔ "THE DB SIDE IS ALREADY CLEAN" — the sweep that said so MISSED TWO LIVE INSTANCES IN app/
 
 Swept it 2026-09-02. **21 views use `DISTINCT ON`.** Of the callers:
 
-- **App/lib callers**: every one filters on the view's own key. `allday_edition_floor_ask` and
-  `golazos_edition_floor_ask` are `DISTINCT ON (edition_id)` and both callers use `.in("edition_id", …)`.
-  Clean.
+- ⛔ **"App/lib callers: every one filters on the view's own key" WAS FALSE, and a re-sweep the same
+  evening found the two it missed.** `allday_edition_floor_ask` and `golazos_edition_floor_ask` are
+  fine. `fmv_current` was not:
+
+  | site | shape | measured (warm) | now |
+  |---|---|---|---|
+  | `/api/overview-stats` | `count .eq(collection_id).eq(confidence)` | **1,331,923 buffers / 14,085 ms** | `edition_fmv_current`, **909 / 39 ms** |
+  | `/api/support-chat` (`get_edition_listings`) | `.select("… editions!inner(external_id)").eq("editions.external_id", k)` | **933,871 buffers / 1,390 ms** | `.eq("edition_id", edition.id)`, **6 / 0.06 ms** |
+
+  ⚠ **The second is why the first sweep missed both: the offending column is not in the read's own
+  table.** A grep for `collection_id` beside `fmv_current` cannot see an embedded-resource filter,
+  and the edition UUID it needed was already in hand two statements above — so the join was never
+  necessary, and it was also less correct (it matched `external_id` with no collection scope, and
+  Top Shot stores every moment twice). ⭐ **A sweep that enumerates the WRONG columns is bounded by
+  the last incident; assert the RIGHT one is present instead.** Now a ban at zero:
+  `__tests__/fmv-current-reads-are-keyed-on-edition-id.test.ts` walks `app/` and `lib/`, requires an
+  `edition_id` qual on every `.from("fmv_current")` call site, and asserts the COUNT it inspected.
+  ⚠ Note also that `/api/overview-stats` **has no caller at all** — nothing in the repo fetches it and
+  production logged zero requests in 72h (the five collection `/overview` PAGES logged 5,824) — so its
+  14 s was a landmine, not a wait anyone endured.
+  Second time in two days that "name the caller" changed what a finding meant (the first:
+  `health_check`).
+- ⚠ And keyed-on-`edition_id` is **not** the same as cheap — see "reaching the index is not the same
+  as being cheap" above. Read the remaining keyed callers as "none provokes the full-view pass",
+  never as "none is worth optimising".
 - **SQL functions reading `fmv_current`**: **8**, and every one is either keyed on `edition_id`
   (`compute_pack_ev_from_pool_tier_weighted`, `sentinel_edition_coverage`,
   `sentinel_fmv_confidence_canonical_ts`) or has ALREADY been converted to a LATERAL with the reason

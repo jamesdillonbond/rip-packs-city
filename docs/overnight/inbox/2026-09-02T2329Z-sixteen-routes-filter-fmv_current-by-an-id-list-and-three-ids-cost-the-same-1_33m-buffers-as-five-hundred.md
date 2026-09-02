@@ -7,6 +7,61 @@ not touched — see "Why this is filed rather than fixed" at the bottom.
 
 ---
 
+## ⛔ CORRECTION, 2026-09-03 ~00:1x UTC — DO NOT ACT ON THE TABLE BELOW. IT IS REFUTED, TITLE INCLUDED.
+
+Left in full because the refutation is the useful part, and because the site list and the drop-in RPC
+are still right. **Re-measured, same view, same session, both the literal-`IN` form and the bound
+`= ANY($1)` form PostgREST actually emits:**
+
+| ids | buffers (literal IN) | buffers (`= ANY($1)`) |
+|---|---|---|
+| 1 | 6 | 10 |
+| 3 | **23** | **23** |
+| 10 | 311 | 311 |
+| 100 | 5,312 | 5,312 |
+| 500 | 25,330 | 25,330 |
+
+⭐ **The cost is PROPORTIONAL, ~50–70 buffers per edition. It is not fixed, and a three-id call costs
+23 buffers, not 1,331,405.** The single-key number (8) is the only figure in the original table that
+reproduces — and it sits on the same straight line as the rest, which is the tell: a genuinely fixed
+cost would not pass through 8 at n=1.
+
+**⛔ THE DISCRIMINATOR IS WRONG IN THE DIRECTION THAT DOES HARM.** *"`.eq("edition_id", x)` is fine,
+`.in("edition_id", [...])` is not"* clears the two sites that were genuinely pathological and
+redirects a morning's work at thirteen that are cheap. Both "safe, need nothing" sites were measured
+warm within the hour and are **now fixed** (see the ledger entry for 2026-09-02):
+
+| site the filing cleared | actual, warm | now |
+|---|---|---|
+| `/api/overview-stats` `.eq(collection_id).eq(confidence)` | **1,331,923 buffers / 14,085 ms** | `edition_fmv_current` — 909 / 39 ms |
+| `/api/support-chat` `.eq("editions.external_id", k)` via `editions!inner` | **933,871 buffers / 1,390 ms** | `.eq("edition_id", edition.id)` — 6 / 0.06 ms |
+
+Neither is a single-key predicate on the view. `.eq` on **some other column** — or on an EMBEDDED
+table's column — is the pathological shape; `.eq` vs `.in` was never the axis. **The axis is whether
+the qual is on `edition_id` at all.** That property is now a ban at zero:
+`__tests__/fmv-current-reads-are-keyed-on-edition-id.test.ts`.
+
+**Where 1.33M actually comes from.** Every entry in `pg_stat_statements` near that figure is a
+collection-wide qual, a JOIN, or `IN (SELECT … FROM a CTE ordered by external_id)` — the last of which
+the planner serves as a **hash** semi-join over the fully materialised view. Reorder that CTE by `id`
+and the identical query is a **merge** semi-join at 152,869 buffers. There is no bound-array or
+literal-list entry anywhere near 1.33M. ⚠ **A benchmark arm 38× worse than the same query issued the
+production way is measuring the harness.**
+
+**What survives, and it is most of the filing:** the site list; `get_editions_latest_fmv` as the
+drop-in; "widen the RPC deliberately, every column is carried per id"; "enumerate consumers by the
+OBJECT, not by the language the first instances were written in" — which is exactly the rule that
+would have caught the two sites this filing cleared. **What changes is the RANKING.** At ~50–70
+buffers/edition the remaining sites are worth fixing in proportion to their id-list SIZE, not
+uniformly: `wallet-search` on a 5,000-moment wallet is ~350k buffers where ~20k would do;
+`recent-sales` is capped at 50 ids and is not worth touching. The exit condition should be
+"large-list sites converted, each with its own before/after", not "the `.in()` count reaches zero".
+
+⚠ The LATERAL is still the better shape everywhere (~4 buffers/edition against ~70) — a **17×** win,
+not the 249× the concierge entry recorded. That correction is in `docs/reference/database.md`.
+
+---
+
 ## The measurement
 
 `fmv_current` is `SELECT DISTINCT ON (edition_id) … FROM fmv_snapshots ORDER BY edition_id,
