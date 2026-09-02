@@ -193,17 +193,48 @@ async function run(req: NextRequest) {
         }
         walletsWalked++;
 
-        // This wallet's Dune-attributed rookie rows (avg ~23/wallet, well under
-        // PostgREST's 1000-row cap).
-        const { data: rows, error: rErr } = await supabaseAdmin
-          .from("topshot_ownership")
-          .select("nft_id, edition_external_id, serial_number")
-          .eq("owner_address", wallet);
-        if (rErr) {
-          walletErrors++;
-          return;
+        // This wallet's Dune-attributed rookie rows.
+        //
+        // 🚨 THE OLD JUSTIFICATION WAS AN AVERAGE USED AS A BOUND: "avg ~23/wallet,
+        // well under PostgREST's 1000-row cap". An average says nothing about the
+        // tail, and the tail is exactly who this walk exists for. Measured live
+        // 2026-09-02: 270,424 rows over 7,903 owners (avg 34), but the MAX is
+        // 26,737 and **21 owners hold more than 1,000** — for each of those the
+        // read returned 1,000 rows with no error and no short page, so the walk
+        // silently confirmed a fraction of their holdings and left the rest
+        // looking unconfirmed.
+        //
+        // Keyset on nft_id, which is this table's primary key.
+        const rows: Array<{ nft_id: string; edition_external_id: string; serial_number: number | null }> = [];
+        {
+          const PAGE = 1000;
+          const MAX_PAGES = 100;
+          let cursor = "";
+          let readErr = false;
+          for (let page = 0; page < MAX_PAGES; page++) {
+            let q = (supabaseAdmin as any)
+              .from("topshot_ownership")
+              .select("nft_id, edition_external_id, serial_number")
+              .eq("owner_address", wallet)
+              .order("nft_id", { ascending: true })
+              .limit(PAGE);
+            if (cursor) q = q.gt("nft_id", cursor);
+            const { data, error } = await q;
+            if (error) { readErr = true; break; }
+            const pageRows = (data ?? []) as typeof rows;
+            rows.push(...pageRows);
+            if (pageRows.length < PAGE) break;
+            const next = pageRows[pageRows.length - 1]?.nft_id;
+            // No cursor means no progress — stop rather than re-read page 0.
+            if (!next || next === cursor) break;
+            cursor = next;
+          }
+          if (readErr) {
+            walletErrors++;
+            return;
+          }
         }
-        for (const r of (rows ?? []) as Array<{
+        for (const r of rows as Array<{
           nft_id: string;
           edition_external_id: string;
           serial_number: number | null;

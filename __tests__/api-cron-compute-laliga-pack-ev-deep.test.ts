@@ -205,3 +205,89 @@ describe("compute-laliga-pack-ev — failure honesty", () => {
     expect(state.afterCbs).toHaveLength(0)
   })
 })
+
+describe("compute-laliga-pack-ev — the pool read pages past PostgREST's 1000-row cap", () => {
+  // 🚨 MEASURED, NOT HYPOTHETICAL. This read was unbounded AND unordered.
+  // PostgREST caps every read at 1,000 rows with no error and no short page.
+  // Live 2026-09-02: the Golazos pool holds **1,958 rows across 211 dist_ids**,
+  // and the first 1,000 in PHYSICAL order carry only **134 of the 211** — so 77
+  // distributions could not get an EV row on any given tick, and WHICH 77
+  // changed as the table was rewritten (an unordered LIMIT is physical order,
+  // not a sample). `pack_ev_history` has eventually seen all 211 while a single
+  // run covers a fraction, which is the churn showing.
+  //
+  // ⚠ The instrument read healthy the whole time: rowsFound logged 1,000 as
+  // though that were the pool.
+
+  const PAGE = 1000
+  const poolRow = (dist: string, ed: string) => ({ dist_id: dist, edition_id: ed, slot_name: "s1" })
+  const fullPage = () => Array.from({ length: PAGE }, (_, i) => poolRow("d-page1", `e${i}`))
+
+  it("a dist that only appears on the SECOND page still gets its EV computed", async () => {
+    const spy = install({
+      pack_drop_pool: [
+        { data: fullPage(), error: null },
+        { data: [poolRow("d-page2", "e-late")], error: null },
+      ],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const evDists = spy.rpcCalls
+      .filter((c) => c.name === "compute_pack_ev_from_pool")
+      .map((c) => c.args?.p_dist_id)
+    expect(evDists).toContain("d-page2")
+    expect(evDists).toContain("d-page1")
+  })
+
+  it("NO-CHANGE CONTROL: a SHORT first page stops after one read", async () => {
+    const spy = install({
+      pack_drop_pool: [
+        { data: [poolRow("d1", "e1")], error: null },
+        // Consumed only if the loop wrongly asks for a second page.
+        { data: [poolRow("d-should-not-appear", "e2")], error: null },
+      ],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const evDists = spy.rpcCalls
+      .filter((c) => c.name === "compute_pack_ev_from_pool")
+      .map((c) => c.args?.p_dist_id)
+    expect(evDists).toEqual(["d1"])
+  })
+
+  it("a page error mid-walk FAILS the run rather than computing EV over a partial pool", async () => {
+    // ⛔ A partial pool is not a smaller pool: every distribution missing from it
+    // silently loses its EV row, and the run would log ok=true having done it.
+    const spy = install({
+      pack_drop_pool: [
+        { data: fullPage(), error: null },
+        { data: null, error: { message: "canceling statement due to statement timeout" } },
+      ],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toContain("pool fetch:")
+    expect(spy.rpcCalls.filter((c) => c.name === "compute_pack_ev_from_pool")).toHaveLength(0)
+    expect(spy.writes.pack_ev_history ?? []).toHaveLength(0)
+  })
+
+  it("reports the rows it ACTUALLY read on a partial pool, not zero and not the cap", async () => {
+    // rowsFound is the instrument an observer reads to decide the run was fine.
+    const spy = install({
+      pack_drop_pool: [
+        { data: fullPage(), error: null },
+        { data: null, error: { message: "boom" } },
+      ],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_extra.pool_rows_read).toBe(PAGE)
+  })
+})

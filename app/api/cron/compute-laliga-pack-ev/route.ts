@@ -56,6 +56,7 @@ function isAuthed(req: NextRequest): boolean {
 interface PoolRow {
   dist_id: string
   edition_id: string
+  slot_name: string | null
 }
 
 async function logPipelineRun(args: {
@@ -131,25 +132,62 @@ export async function POST(req: NextRequest) {
       const sb = supabaseAdmin as any
 
       // 1. Pull all (dist_id, edition_id) pairs in the Golazos pool.
-      const { data: poolRowsRaw, error: poolErr } = await sb
-        .from("pack_drop_pool")
-        .select("dist_id, edition_id")
-        .eq("collection_id", GOLAZOS_COLLECTION_ID)
+      //
+      // 🚨 THIS READ WAS UNBOUNDED AND THE POOL OUTGREW THE CAP. PostgREST caps
+      // every read at 1,000 rows with no error and no short page. Measured live
+      // 2026-09-02: the Golazos pool holds 1,958 rows across 211 dist_ids, and
+      // the first 1,000 rows in PHYSICAL order carry only 134 of those 211 — so
+      // 77 distributions were unreachable on any given tick.
+      //
+      // ⚠ Two compounding problems, not one. The read had no ORDER BY either, so
+      // the 1,000 rows returned are physical order, which changes as the table is
+      // rewritten. The SET of distributions that got an EV row therefore churned
+      // between runs — which is why pack_ev_history has eventually seen all 211
+      // while any single run covers a fraction. An unordered LIMIT is not a
+      // sample.
+      //
+      // ⚠ And the instrument read HEALTHY throughout: rowsFound logged
+      // poolRows.length, i.e. 1,000, as though that were the pool.
+      //
+      // Paged with .range() over the PK's own order — (dist_id, edition_id,
+      // slot_name) is unique within a collection, so the page boundary is
+      // deterministic. At ~2k rows the offset cost is negligible; a keyset cursor
+      // would need a composite comparison for no measurable gain.
+      const poolRows: PoolRow[] = []
+      const POOL_PAGE = 1000
+      const POOL_MAX_PAGES = 200
+      let poolErr: { message: string } | null = null
+      for (let page = 0; page < POOL_MAX_PAGES; page++) {
+        const from = page * POOL_PAGE
+        const { data, error } = await sb
+          .from("pack_drop_pool")
+          .select("dist_id, edition_id, slot_name")
+          .eq("collection_id", GOLAZOS_COLLECTION_ID)
+          .order("dist_id", { ascending: true })
+          .order("edition_id", { ascending: true })
+          .order("slot_name", { ascending: true, nullsFirst: true })
+          .range(from, from + POOL_PAGE - 1)
+        if (error) { poolErr = error; break }
+        const rows = (data ?? []) as PoolRow[]
+        poolRows.push(...rows)
+        if (rows.length < POOL_PAGE) break
+      }
 
+      // ⛔ A PARTIAL POOL IS NOT A SMALLER POOL. Every distribution missing from
+      // it silently loses its EV row for this tick, so a failed page fails the
+      // run rather than quietly computing EV over whatever arrived.
       if (poolErr) {
         await logPipelineRun({
           startedAtIso,
           ok: false,
-          rowsFound: 0,
+          rowsFound: poolRows.length,
           rowsWritten: 0,
           rowsSkipped: 0,
           errorMsg: `pool fetch: ${poolErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - startedAt },
+          extra: { counters, elapsed_ms: Date.now() - startedAt, pool_rows_read: poolRows.length },
         })
         return
       }
-
-      const poolRows = (poolRowsRaw ?? []) as PoolRow[]
       if (poolRows.length === 0) {
         counters.pool_empty = true
         await logPipelineRun({

@@ -281,3 +281,109 @@ describe("ownership-onchain-walk — verification walk", () => {
     await runDeferred()
   })
 })
+
+describe("ownership-onchain-walk — a whale's rows page past PostgREST's 1000-row cap", () => {
+  // 🚨 THE OLD JUSTIFICATION WAS AN AVERAGE USED AS A BOUND. The comment read
+  // "avg ~23/wallet, well under PostgREST's 1000-row cap" — but an average says
+  // nothing about the tail, and the tail is exactly who a verification walk
+  // exists for. Measured live 2026-09-02: 270,424 rows over 7,903 owners
+  // (avg 34), MAX **26,737**, and **21 owners hold more than 1,000**. For each of
+  // those the read returned 1,000 rows with no error and no short page, so the
+  // walk confirmed a fraction of their holdings and left the rest looking
+  // unconfirmed — on the pipeline whose entire job is confirming ownership.
+
+  const PAGE = 1000
+  const row = (id: string) => ({ nft_id: id, edition_external_id: "1:1", serial_number: 1 })
+  /** A full page of ids, zero-padded so nft_id sorts as the cursor expects. */
+  const fullPage = () => Array.from({ length: PAGE }, (_, i) => row(`a${String(i).padStart(6, "0")}`))
+
+  it("confirms a moment that only appears on the SECOND page", async () => {
+    const W = "0xwhale000000001"
+    const late = "z999999"
+    state.heldByWallet = { [W]: [...fullPage().map((r) => r.nft_id), late] }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      topshot_ownership: [
+        { data: fullPage(), error: null },
+        { data: [row(late)], error: null },
+        { data: null, error: null }, // upsert
+      ],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const ids = (spy.writes.topshot_ownership ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)
+      .map((r) => r.nft_id)
+    expect(ids).toContain(late)
+    expect(ids).toHaveLength(PAGE + 1)
+  })
+
+  it("NO-CHANGE CONTROL: a SHORT first page stops after one read", async () => {
+    const W = "0xsmall000000001"
+    state.heldByWallet = { [W]: ["100", "should-not-appear"] }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      topshot_ownership: [
+        { data: [row("100")], error: null },
+        // Consumed only if the loop wrongly asks for a second page.
+        { data: [row("should-not-appear")], error: null },
+        { data: null, error: null },
+      ],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const ids = (spy.writes.topshot_ownership ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)
+      .map((r) => r.nft_id)
+    expect(ids).toEqual(["100"])
+  })
+
+  it("terminates when the cursor cannot advance, instead of walking to MAX_PAGES", async () => {
+    // The pathological case the no-progress guard exists for: an upstream that
+    // keeps returning the same full page. Without the guard the loop runs to its
+    // page ceiling and accumulates 100x the rows — slow, and the confirmed count
+    // becomes nonsense rather than merely incomplete.
+    const W = "0xwhale000000003"
+    const page = fullPage()
+    state.heldByWallet = { [W]: page.map((r) => r.nft_id) }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      // A single-entry sequence repeats its last payload on every read.
+      topshot_ownership: [{ data: page, error: null }],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const rows = (spy.writes.topshot_ownership ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)
+    // Two reads at most: the first page, then the repeat that proves no progress.
+    expect(rows.length).toBeLessThanOrEqual(2 * PAGE)
+  })
+
+  it("a page error mid-walk counts the wallet as an ERROR rather than confirming a partial set", async () => {
+    // ⛔ Confirming half a whale's holdings and reporting the rest vanished would
+    // be worse than skipping the wallet: `vanished` feeds the index's own view of
+    // who still holds what.
+    const W = "0xwhale000000002"
+    state.heldByWallet = { [W]: fullPage().map((r) => r.nft_id) }
+    const spy = install({
+      "rpc:get_stale_ownership_wallets": { data: [{ owner_address: W }], error: null },
+      topshot_ownership: [
+        { data: fullPage(), error: null },
+        { data: null, error: { message: "canceling statement due to statement timeout" } },
+        { data: null, error: null },
+      ],
+    })
+    await POST(req())
+    await runDeferred()
+
+    expect((spy.writes.topshot_ownership ?? []).filter((w) => w.method === "upsert")).toHaveLength(0)
+    const log = logRun(spy.rpcCalls)
+    expect((log?.p_extra as Record<string, unknown>)?.wallet_errors).toBe(1)
+  })
+})
