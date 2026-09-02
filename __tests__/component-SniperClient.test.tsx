@@ -1645,3 +1645,98 @@ describe("SniperClient — relative deals with missing fields", () => {
     await waitFor(() => expect(screen.getAllByText("—").length).toBeGreaterThan(0))
   })
 })
+
+describe("SniperClient — a 200 whose SOURCES failed is not a quiet market either", () => {
+  // ⚠ The gap the block at the top of this file did NOT cover. Those cases pin
+  // the `data == null && error` shape — a fetch that failed outright. But every
+  // deal-bearing read inside /api/sniper-feed used to collapse to an empty list
+  // on failure and the route still answered 200, so `data` arrived NON-null with
+  // `deals: []` and the board printed the quiet-floor conclusion. Live evidence,
+  // 2026-09-02: four users hit `AD GQL FAILED: HTTP 403` in 24h.
+  //
+  // `sourcesFailed` closes it: empty means we actually looked.
+  //
+  // These render through the mocked `useWarmCache`, so what appears is computed
+  // from `data` on the first pass — there is no mount effect to correct the
+  // state afterwards, which is the condition that would otherwise force an SSR
+  // assertion here.
+
+  it("does not print the quiet-floor conclusion when a source failed", async () => {
+    warm = {
+      data: feed({ deals: [], tsCount: 0, sourcesFailed: ["allday-marketplace"], degraded: true }),
+      loading: false, error: null, refresh: vi.fn(),
+    }
+    render(<SniperClient />)
+
+    expect(await screen.findByText(/COULDN'T LOAD THE FLOOR/i)).toBeTruthy()
+    expect(screen.queryByText(/THE FLOOR IS QUIET/i)).toBeNull()
+    expect(screen.queryByText(/No deals match your filters/i)).toBeNull()
+    expect(screen.queryByText(/widening your search/i)).toBeNull()
+  })
+
+  it("reports the failed read instead of diagnosing the reader's filters", async () => {
+    warm = {
+      data: feed({ deals: [], tsCount: 0, sourcesFailed: ["ts_listings"], degraded: true }),
+      loading: false, error: null, refresh: vi.fn(),
+    }
+    render(<SniperClient />)
+
+    expect(await screen.findByText(/Couldn't reach the listing feed/i)).toBeTruthy()
+  })
+
+  it("offers RETRY, not CLEAR FILTERS — clearing filters cannot recover a failed read", async () => {
+    // ⚠ The button is the diagnosis in another form. Leaving CLEAR FILTERS as
+    // the only escape hatch tells the reader their filters are why the board is
+    // blank, which is exactly the false claim the copy above stopped making.
+    const refresh = vi.fn()
+    warm = {
+      data: feed({ deals: [], tsCount: 0, sourcesFailed: ["topshot-deals-rpc"], degraded: true }),
+      loading: false, error: null, refresh,
+    }
+    render(<SniperClient />)
+    await screen.findByText(/COULDN'T LOAD THE FLOOR/i)
+
+    expect(screen.queryByRole("button", { name: /CLEAR FILTERS/i })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: /^RETRY$/i }))
+    expect(refresh).toHaveBeenCalled()
+  })
+
+  it("NO-CHANGE CONTROL: sourcesFailed empty still reads as a genuinely quiet floor", async () => {
+    // The mirror direction. Routing every empty board into "couldn't load"
+    // would just move the dishonesty and cry wolf on the system working.
+    warm = {
+      data: feed({ deals: [], tsCount: 0, sourcesFailed: [], degraded: false }),
+      loading: false, error: null, refresh: vi.fn(),
+    }
+    render(<SniperClient />)
+
+    expect(await screen.findByText(/THE FLOOR IS QUIET/i)).toBeTruthy()
+    expect(await screen.findByText(/No deals match your filters/i)).toBeTruthy()
+    expect(screen.queryByText(/COULDN'T LOAD THE FLOOR/i)).toBeNull()
+    expect(screen.getByRole("button", { name: /CLEAR FILTERS/i })).toBeTruthy()
+  })
+
+  it("NO-CHANGE CONTROL: a response predating the field is not reported as degraded", async () => {
+    // A cached 200 from before this shipped carries no `sourcesFailed`. Treating
+    // absence as failure would make every warm response cry wolf.
+    warm = { data: feed({ deals: [], tsCount: 0 }), loading: false, error: null, refresh: vi.fn() }
+    render(<SniperClient />)
+
+    expect(await screen.findByText(/THE FLOOR IS QUIET/i)).toBeTruthy()
+    expect(screen.queryByText(/COULDN'T LOAD THE FLOOR/i)).toBeNull()
+  })
+
+  it("a degraded feed that still returned rows renders them — partial is not empty", async () => {
+    // The All Day GQL falling over drops us onto the edition-level RPC, which
+    // often DOES return rows. Those rows are real and must still show; the
+    // degraded copy belongs to the empty state only.
+    warm = {
+      data: feed({ deals: [deal()], tsCount: 1, sourcesFailed: ["allday-marketplace"], degraded: true }),
+      loading: false, error: null, refresh: vi.fn(),
+    }
+    render(<SniperClient />)
+
+    expect((await screen.findAllByText(/Damian Lillard/i)).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/COULDN'T LOAD THE FLOOR/i)).toBeNull()
+  })
+})

@@ -57,6 +57,15 @@ export async function POST(req: NextRequest) {
     visibleDealsCount: body.visibleDealsCount,
     tsCount: body.tsCount,
     flowtyCount: body.flowtyCount,
+    // ⚠ This payload is an explicit ALLOWLIST — a field the client sends but
+    // this object omits is dropped silently, so the beacon would read as
+    // coverage while recording nothing. These two split a degraded build (a
+    // deal-bearing read failed, `fetchStatus` still "ok" because the route
+    // answered 200) from a genuinely quiet floor.
+    degraded: body.degraded === true,
+    sourcesFailed: Array.isArray(body.sourcesFailed)
+      ? body.sourcesFailed.slice(0, 12).map((v) => cap(v, 64))
+      : null,
     hasOwnerKey: body.hasOwnerKey,
     filters: body.filters,
     pageUrl: cap(body.pageUrl, 400),

@@ -28,6 +28,7 @@ const fx = vi.hoisted(() => ({ tables: {} as Record<string, any> }))
 
 vi.mock("@/lib/cache", () => ({
   getOrSetCache: async (_k: string, _ttl: number, factory: () => Promise<any>) => factory(),
+  deleteCache: () => {},
 }))
 // makeSupabaseFixture captures its fixtures object BY REFERENCE, so hand it a
 // live Proxy view of fx.tables — a plain reassignment would silently detach it

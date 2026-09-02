@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 //   - the RPC-FALLBACK path: empty GQL pool → get_allday_sniper_deals → deal mapping
 //   - the fallback RPC error → empty result
 
-vi.mock("@/lib/cache", () => ({ getOrSetCache: async (_k: string, _t: number, fn: any) => fn() }))
+vi.mock("@/lib/cache", () => ({ getOrSetCache: async (_k: string, _t: number, fn: any) => fn(), deleteCache: () => {} }))
 
 const st = vi.hoisted(() => ({
   fmv: { data: [] as any[], error: null as any },

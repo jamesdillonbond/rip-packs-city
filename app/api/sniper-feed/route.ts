@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getOrSetCache } from "@/lib/cache";
+import { getOrSetCache, deleteCache } from "@/lib/cache";
 import { z } from "zod";
 import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
 // Per-serial weighting + display signal lives in a tested lib module.
@@ -18,6 +18,10 @@ import {
   sortSniperDeals,
   mergeDedupeByEditionKey,
 } from "@/lib/sniper/feed-helpers";
+// Per-request source-failure accumulator. Every deal-bearing read below used to
+// collapse to an empty list on failure, so the route answered 200 with
+// `deals: []` and the UI concluded "No deals match your filters."
+import { createSourceFailureSink, sniperFeedDegraded, type SourceFailureSink } from "@/lib/sniper/source-failures";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -380,7 +384,8 @@ async function attachSerialFmvEstimates(supabase: SupabaseClient, deals: SniperD
 // so we use the Supabase table as the primary TS feed source.
 
 async function fetchTopShotPool(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  sink: SourceFailureSink
 ): Promise<{ listings: RawListing[]; tsCount: number }> {
   try {
     const { data, error } = await (supabase as any)
@@ -391,6 +396,7 @@ async function fetchTopShotPool(
 
     if (error) {
       console.error("[sniper-feed] ts_listings fetch error:", error.message);
+      sink.note("ts_listings");
       return { listings: [], tsCount: 0 };
     }
 
@@ -398,7 +404,7 @@ async function fetchTopShotPool(
 
     // Resolve edition external_ids by matching player_name + set_name + series
     // against the editions + players tables. This gives us the edition key for FMV lookup.
-    const editionKeyMap = await resolveEditionKeys(supabase, rows);
+    const editionKeyMap = await resolveEditionKeys(supabase, rows, sink);
 
     const listings: RawListing[] = rows.map((r: {
       listing_id: string;
@@ -444,6 +450,7 @@ async function fetchTopShotPool(
     return { listings, tsCount: listings.length };
   } catch (err) {
     console.error("[sniper-feed] ts_listings exception:", err instanceof Error ? err.message : String(err));
+    sink.note("ts_listings");
     return { listings: [], tsCount: 0 };
   }
 }
@@ -452,7 +459,8 @@ async function fetchTopShotPool(
 // against editions joined with players. Returns flowId → external_id map.
 async function resolveEditionKeys(
   supabase: SupabaseClient,
-  rows: Array<{ flow_id: string; player_name: string | null; set_name: string | null; series_number: number | null }>
+  rows: Array<{ flow_id: string; player_name: string | null; set_name: string | null; series_number: number | null }>,
+  sink: SourceFailureSink
 ): Promise<Map<string, string>> {
   const result = new Map<string, string>();
   if (!rows.length) return result;
@@ -473,7 +481,10 @@ async function resolveEditionKeys(
     .rpc("get_editions_for_sniper", { p_collection_id: null });
 
   if (error) {
+    // Deal-bearing, not enrichment: without an edition key a listing has no
+    // FMV to price against, so it is dropped downstream.
     console.error("[sniper-feed] edition RPC error:", error.message);
+    sink.note("topshot-edition-keys");
     return result;
   }
   if (!editionRows?.length) {
@@ -523,7 +534,7 @@ interface AlldayGqlPage {
   hasNextPage: boolean;
 }
 
-async function fetchAlldayGqlPage(after: string | null): Promise<AlldayGqlPage> {
+async function fetchAlldayGqlPage(after: string | null, sink: SourceFailureSink): Promise<AlldayGqlPage> {
   try {
     const url = ALLDAY_PROXY_URL || "https://nflallday.com/consumer/graphql";
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -541,6 +552,7 @@ async function fetchAlldayGqlPage(after: string | null): Promise<AlldayGqlPage> 
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       console.error(`[sniper-feed] AD GQL FAILED: HTTP ${res.status} ${txt.slice(0, 200)}`);
+      sink.note("allday-marketplace");
       return { edges: [], endCursor: null, hasNextPage: false };
     }
     const json = await res.json() as {
@@ -552,11 +564,13 @@ async function fetchAlldayGqlPage(after: string | null): Promise<AlldayGqlPage> 
     };
     if (json.errors && json.errors.length) {
       console.error(`[sniper-feed] AD GQL FAILED: ${json.errors[0].message ?? "unknown GQL error"}`);
+      sink.note("allday-marketplace");
       return { edges: [], endCursor: null, hasNextPage: false };
     }
     const search = json.data?.searchMarketplaceEditions;
     if (!search) {
       console.error(`[sniper-feed] AD GQL FAILED: missing searchMarketplaceEditions`);
+      sink.note("allday-marketplace");
       return { edges: [], endCursor: null, hasNextPage: false };
     }
     return {
@@ -567,15 +581,16 @@ async function fetchAlldayGqlPage(after: string | null): Promise<AlldayGqlPage> 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`[sniper-feed] AD GQL FAILED: ${msg}`);
+    sink.note("allday-marketplace");
     return { edges: [], endCursor: null, hasNextPage: false };
   }
 }
 
-async function fetchAlldayPool(): Promise<Array<Record<string, unknown>>> {
-  const page1 = await fetchAlldayGqlPage(null);
+async function fetchAlldayPool(sink: SourceFailureSink): Promise<Array<Record<string, unknown>>> {
+  const page1 = await fetchAlldayGqlPage(null, sink);
   let page2Edges: unknown[] = [];
   if (page1.hasNextPage && page1.endCursor) {
-    const page2 = await fetchAlldayGqlPage(page1.endCursor);
+    const page2 = await fetchAlldayGqlPage(page1.endCursor, sink);
     page2Edges = page2.edges;
   }
   const allEdges = [...page1.edges, ...page2Edges].slice(0, 200);
@@ -884,6 +899,10 @@ export async function GET(req: Request) {
           flowtyCount: pin.flowtyCount,
           lastRefreshed: pin.lastRefreshed,
           deals: pin.deals as unknown as SniperDeal[],
+          // lib/sniper/pinnacle.ts throws on a failed read rather than
+          // returning an empty board, so an empty result here IS a looked-and-
+          // found-nothing. Nothing to note.
+          sourcesFailed: [] as string[],
         };
       };
     }
@@ -896,12 +915,14 @@ export async function GET(req: Request) {
         flowtyCount: 0,
         lastRefreshed: new Date().toISOString(),
         deals: [] as SniperDeal[],
+        // A deliberate no-source state, not a failed read: nothing is plumbed.
+        sourcesFailed: [] as string[],
       });
     }
     return () => computeSniperFeed({ minDiscount, rarity: effectiveRarity, team, badgeOnly, serialFilter, maxPrice, sortBy, league: params.league });
   }
 
-  type FeedResult = { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean };
+  type FeedResult = { count: number; tsCount: number; flowtyCount: number; lastRefreshed: string; deals: SniperDeal[]; cached?: boolean; sourcesFailed?: string[] };
 
   function applyOuterFilters(deals: SniperDeal[]): SniperDeal[] {
     let out = deals;
@@ -921,6 +942,11 @@ export async function GET(req: Request) {
 
   try {
     const result = (await getOrSetCache(baseCacheKey, CACHE_TTL, buildComputeFn())) as FeedResult;
+    const sourcesFailed = result.sourcesFailed ?? [];
+    // ⚠ Do not let a degraded build sit in the warm-lambda cache for the full
+    // TTL — the next request would inherit this request's outage. The response
+    // stays honest either way; this just shortens how long it lasts.
+    if (sniperFeedDegraded(sourcesFailed)) deleteCache(baseCacheKey);
     const filteredDeals = applyOuterFilters(result.deals);
 
     // Final shaping uses the filtered set.
@@ -959,6 +985,11 @@ export async function GET(req: Request) {
           topshot: true,
           flowty: false,
         },
+        // Names the deal-bearing reads that failed on this build. Empty means
+        // every source answered — so an empty `deals` is a real "nothing
+        // matched", which is the only case the UI may say so in.
+        sourcesFailed,
+        degraded: sniperFeedDegraded(sourcesFailed),
       },
       {
         headers: { "Cache-Control": "public, max-age=0, s-maxage=90, stale-while-revalidate=60" },
@@ -972,6 +1003,8 @@ export async function GET(req: Request) {
         deals: [],
         count: 0,
         marketplaceAvailability: { topshot: true, flowty: false },
+        sourcesFailed: ["sniper-feed"],
+        degraded: true,
       },
       { status: 500 }
     );
@@ -989,6 +1022,7 @@ const ALLDAY_THUMBNAIL_BASE = "https://media.nflallday.com/editions/";
 async function computeAllDaySniperFeed(opts: {
   minDiscount: number; rarity: string; team: string; maxPrice: number; sortBy: string;
 }) {
+  const sink = createSourceFailureSink();
   const { minDiscount, rarity, team, maxPrice } = opts;
   const supabase = supabaseAdmin;
   const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
@@ -1031,6 +1065,9 @@ async function computeAllDaySniperFeed(opts: {
         .range(from, from + FMV_PAGE - 1);
       if (fmvErr) {
         console.error(`[sniper-feed] AD fmv_current error @${from}: ${fmvErr.message}`);
+        // Deal-bearing: a listing with no FMV is EXCLUDED rather than priced off
+        // its own ask, so a truncated map empties the board.
+        sink.note("allday-fmv");
         break;
       }
       const page = (fmvRows ?? []) as Array<{ edition_id: string; fmv_usd: number | null; confidence: string }>;
@@ -1060,11 +1097,12 @@ async function computeAllDaySniperFeed(opts: {
     }
   } catch (err) {
     console.error(`[sniper-feed] AD FMV map build failed: ${err instanceof Error ? err.message : String(err)}`);
+    sink.note("allday-fmv");
   }
   console.log(`[sniper-feed] AD FMV map size: ${fmvMap.size}`);
 
   // 2. Pull the live marketplace pool from NFL All Day public GQL.
-  const nodes = await fetchAlldayPool();
+  const nodes = await fetchAlldayPool(sink);
 
   // 3. Fallback to the RPC path when the live feed is empty — preserves the
   //    behavior that was shipping before this rewrite.
@@ -1080,7 +1118,8 @@ async function computeAllDaySniperFeed(opts: {
     });
     if (error) {
       console.error(`[sniper-feed] get_allday_sniper_deals error: ${error.message}`);
-      return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [] };
+      sink.note("allday-deals-rpc");
+      return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [], sourcesFailed: sink.failed };
     }
     // Same honesty rule as the live path: a row with no usable FMV cannot be
     // shown as a discount (see hasUsableFmv).
@@ -1147,6 +1186,9 @@ async function computeAllDaySniperFeed(opts: {
       flowtyCount: fallback.length,
       lastRefreshed: new Date().toISOString(),
       deals: fallback,
+      // Non-empty here still carries the GQL failure that sent us down this
+      // path: the fallback is edition-level, so the board is real but partial.
+      sourcesFailed: sink.failed,
     };
   }
 
@@ -1351,6 +1393,7 @@ async function computeAllDaySniperFeed(opts: {
     flowtyCount: filtered.length,
     lastRefreshed: new Date().toISOString(),
     deals: filtered,
+    sourcesFailed: sink.failed,
   };
 }
 
@@ -1361,6 +1404,7 @@ async function computeSniperFeed(opts: {
 }) {
   const { minDiscount, rarity, team, badgeOnly, serialFilter, maxPrice, sortBy } = opts;
 
+  const sink = createSourceFailureSink();
   const supabase = supabaseAdmin;
 
   // P1a display guard — clamp base FMV to the edition's 90d max sale when it
@@ -1369,7 +1413,7 @@ async function computeSniperFeed(opts: {
   const fmvGuard = await loadTopshotFmvGuard(supabase as any).catch(() => new Map());
 
   // 1. Fetch TS listings (Flowty marketplace shut down May 2026 — TS GQL only).
-  const { listings: tsListings, tsCount } = await fetchTopShotPool(supabase as any);
+  const { listings: tsListings, tsCount } = await fetchTopShotPool(supabase as any, sink);
 
   console.log(`[sniper-feed] fetched ts=${tsListings.length}`);
 
@@ -1396,6 +1440,9 @@ async function computeSniperFeed(opts: {
     });
     if (rpcErr) {
       console.error(`[sniper-feed] get_topshot_sniper_deals error: ${rpcErr.message}`);
+      // Reached only when the GQL pool is already sparse, so this failure is
+      // the difference between a populated board and an apparently quiet one.
+      sink.note("topshot-deals-rpc");
     } else {
       // No usable FMV -> no row. `Number(r.fmv_usd) || 0` below would emit
       // baseFmv/adjustedFmv 0 — a literal $0.00 fair value (see hasUsableFmv).
@@ -1791,5 +1838,6 @@ async function computeSniperFeed(opts: {
     flowtyCount: 0,
     lastRefreshed: new Date().toISOString(),
     deals: sorted,
+    sourcesFailed: sink.failed,
   };
 }

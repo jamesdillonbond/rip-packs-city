@@ -34,6 +34,7 @@ const fx = vi.hoisted(() => ({ tables: {} as Record<string, any> }))
 
 vi.mock("@/lib/cache", () => ({
   getOrSetCache: async (_k: string, _ttl: number, factory: () => Promise<any>) => factory(),
+  deleteCache: () => {},
 }))
 
 // makeSupabaseFixture captures its fixtures object BY REFERENCE — hand it a

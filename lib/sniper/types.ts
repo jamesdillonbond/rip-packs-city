@@ -82,6 +82,15 @@ export interface FeedResult {
   lastRefreshed: string;
   deals: SniperDeal[];
   cached?: boolean;
+  /**
+   * Deal-bearing reads that FAILED on this build (internal source labels, not
+   * UI copy). Empty means every source answered, so an empty `deals` is a
+   * genuine "nothing matched" — the only case the UI may say so in.
+   * See lib/sniper/source-failures.ts.
+   */
+  sourcesFailed?: string[];
+  /** `sourcesFailed.length > 0`. Sent by the route so clients need not derive it. */
+  degraded?: boolean;
 }
 
 export type SortOption =

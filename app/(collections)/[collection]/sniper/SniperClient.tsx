@@ -27,6 +27,12 @@ import SniperStatsBar from "@/components/sniper/SniperStatsBar";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
 import type { SniperDeal, FeedResult, SortOption } from "@/lib/sniper/types";
 import {
+  sniperFeedDegraded,
+  sniperEmptyCopy,
+  SNIPER_DEGRADED_EMPTY_COPY,
+  SNIPER_DEGRADED_EMPTY_HEADING,
+} from "@/lib/sniper/source-failures";
+import {
   buildListingSuggestions,
   suggestionsState,
   type ListingSuggestion,
@@ -394,6 +400,14 @@ function SniperMomentsBody() {
     { ttlMs: 30_000 },
   );
   const error = warmError ? String(warmError) : null;
+  // ⚠ A 200 with `deals: []` is NOT evidence the floor is quiet. Each of the
+  // feed's deal-bearing reads (ts_listings, the All Day marketplace GQL, the
+  // two deal RPCs, the All Day FMV map) used to collapse to an empty list on
+  // failure, and the empty state then told the reader to widen filters that
+  // were never the reason. `sourcesFailed` names the reads that failed; empty
+  // means we actually looked. (see lib/sniper/source-failures.ts)
+  const sourcesFailed = data?.sourcesFailed;
+  const feedDegraded = sniperFeedDegraded(sourcesFailed);
 
   // ── Task 1: detect sold/delisted deals as data changes ────────────────────
   useEffect(() => {
@@ -679,6 +693,10 @@ function SniperMomentsBody() {
       feedKey,
       fetchStatus: isFetchFailed ? "failed" : "ok",
       fetchError: isFetchFailed ? String(error) : null,
+      // A 200 whose deal-bearing reads failed reads as "ok" above. Without
+      // these two the beacon cannot tell a degraded build from a quiet floor.
+      degraded: feedDegraded,
+      sourcesFailed: sourcesFailed ?? null,
       serverDealsCount: data?.deals?.length ?? null,
       visibleDealsCount: visibleDeals.length,
       tsCount: data?.tsCount ?? null,
@@ -703,7 +721,7 @@ function SniperMomentsBody() {
     } catch {
       /* noop */
     }
-  }, [loading, data, error, visibleDeals.length, collectionSlug, feedKey, ownerKey, tierTab, sortBy, minDiscount, maxPrice, serialFilter, badgeOnly, flowWalletOnly, search, showVerifiedOnly, ownedFilter, playerFilter]);
+  }, [loading, data, error, feedDegraded, sourcesFailed, visibleDeals.length, collectionSlug, feedKey, ownerKey, tierTab, sortBy, minDiscount, maxPrice, serialFilter, badgeOnly, flowWalletOnly, search, showVerifiedOnly, ownedFilter, playerFilter]);
 
   return (
     <div className="rpc-binder-bg" style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", overflowX: "hidden" }}>
@@ -1018,8 +1036,15 @@ function SniperMomentsBody() {
               <circle cx="50" cy="50" r="7" fill="#080808" />
             </svg>
             <p className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>
-              {hiddenByVerifiedGate > 0 ? "NO VERIFIED-FMV DEALS RIGHT NOW" : "THE FLOOR IS QUIET"}
+              {feedDegraded
+                ? SNIPER_DEGRADED_EMPTY_HEADING
+                : hiddenByVerifiedGate > 0 ? "NO VERIFIED-FMV DEALS RIGHT NOW" : "THE FLOOR IS QUIET"}
             </p>
+            {feedDegraded && hiddenByVerifiedGate > 0 && (
+              <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.5 }}>
+                {SNIPER_DEGRADED_EMPTY_COPY}
+              </p>
+            )}
             {hiddenByVerifiedGate > 0 ? (
               <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.5 }}>
                 {hiddenByVerifiedGate} listing{hiddenByVerifiedGate === 1 ? " is" : "s are"} hidden by
@@ -1028,7 +1053,9 @@ function SniperMomentsBody() {
                 the &ldquo;discount&rdquo; is 0% by construction, not a deal. You can still browse them.
               </p>
             ) : (
-              <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)" }}>No deals match your filters. Try widening your search.</p>
+              <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.5 }}>
+                {sniperEmptyCopy(sourcesFailed, "No deals match your filters. Try widening your search.")}
+              </p>
             )}
             {hiddenByVerifiedGate > 0 && (
               <button
@@ -1038,16 +1065,27 @@ function SniperMomentsBody() {
                 SHOW ASK-PRICED LISTINGS
               </button>
             )}
-            <button
-              onClick={() => {
-                setTierTab("all"); setMinDiscount(0); setMaxPrice(0);
-                setSerialFilter("all"); setBadgeOnly(false);
-                setFlowWalletOnly(false); setShowVerifiedOnly(false); setSearch("");
-              }}
-              className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
-            >
-              CLEAR FILTERS
-            </button>
+            {feedDegraded ? (
+              // Clearing filters cannot recover a read that failed; offering it
+              // is the same false diagnosis in button form.
+              <button
+                onClick={() => refresh()}
+                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
+              >
+                RETRY
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setTierTab("all"); setMinDiscount(0); setMaxPrice(0);
+                  setSerialFilter("all"); setBadgeOnly(false);
+                  setFlowWalletOnly(false); setShowVerifiedOnly(false); setSearch("");
+                }}
+                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
+              >
+                CLEAR FILTERS
+              </button>
+            )}
           </div>
         )}
 

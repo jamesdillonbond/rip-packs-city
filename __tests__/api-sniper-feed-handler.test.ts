@@ -12,6 +12,7 @@ const st = vi.hoisted(() => ({
   result: null as any,
   shouldThrow: false,
   lastKey: "" as string,
+  deleted: [] as string[],
 }))
 vi.mock("@/lib/cache", () => ({
   getOrSetCache: async (key: string, _ttl: number, _fn: any) => {
@@ -19,6 +20,7 @@ vi.mock("@/lib/cache", () => ({
     if (st.shouldThrow) throw new Error("compute exploded")
     return st.result
   },
+  deleteCache: (key: string) => { st.deleted.push(key) },
 }))
 
 import { GET } from "@/app/api/sniper-feed/route"
@@ -45,6 +47,7 @@ beforeEach(() => {
   st.result = feed([deal()])
   st.shouldThrow = false
   st.lastKey = ""
+  st.deleted = []
 })
 
 describe("GET /api/sniper-feed — handler contract", () => {
