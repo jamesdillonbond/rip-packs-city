@@ -83,7 +83,13 @@ type ModelVsReality = {
 type SourceError = { source: string; message: string }
 
 type ApiResponse = {
-  meta: { fetched_at: string; errors?: SourceError[] }
+  meta: {
+    fetched_at: string
+    errors?: SourceError[]
+    // Why an empty ranker is empty. `stale_count` = packs passing every ranker
+    // filter EXCEPT the 48h freshness one. null when the route could not read it.
+    ranker_staleness?: { stale_count: number; newest_qualifying_snapshot: string | null } | null
+  }
   stats: Stats
   distribution: DistRow[]
   top_ev: TopEvRow[]
@@ -180,6 +186,41 @@ export default function PackRealityPage() {
   // `data?.top_ev?.length ?? 0` published a hard "0" both while loading and on
   // failure — a manufactured number in a sentence that reads as a finding.
   const evCount = !loadFailed && data != null ? (data.top_ev?.length ?? 0) : null
+
+  // ⚠ THE THIRD STATE. An empty ranker had exactly two renderings — read failed,
+  // or "No +EV packs right now." The second is a claim about the MARKET, and on
+  // 2026-09-01 it was false: 3 packs passed every filter and were 107-130h old,
+  // so the 48h freshness clause emptied the board while our own pack prices sat
+  // stale behind the dead public-api.nbatopshot.com endpoint. The read was fine;
+  // the SOURCE was stale, and nothing on this page could tell the difference.
+  //
+  // Non-null ONLY when: the read succeeded, the board is empty, and packs would
+  // qualify but for freshness. Anything else falls back to the old copy, so a
+  // genuinely empty market still reads as one.
+  //
+  // ⚠ Safe from the hydration class: this is a "use client" page whose data
+  // arrives from a client fetch, so `data` is null during SSR and this branch
+  // cannot render on the server — the relative time is never computed twice in
+  // two zones. Do NOT lift this to a server component without re-checking that.
+  const rankerStale = useMemo(() => {
+    if (loadFailed || loading || data == null) return null
+    if ((data.top_ev ?? []).length > 0) return null
+    const s = data.meta?.ranker_staleness
+    if (!s || !(s.stale_count > 0) || !s.newest_qualifying_snapshot) return null
+    // ⚠ This stops being true the moment `data` is server-seeded — if you ever add an
+    // initial prop, anchor the age to a server-stamped value instead of the clock.
+    // hydration-safe: unreachable during SSR — `data` is useState<ApiResponse|null>(null)
+    // filled by a client fetch, so the `data == null` guard above returns before this
+    // line on the server render; the clock is read only after mount, never in two zones.
+    const ms = Date.now() - new Date(s.newest_qualifying_snapshot).getTime()
+    if (!Number.isFinite(ms) || ms < 0) return null
+    const hours = Math.floor(ms / 3_600_000)
+    const agoLabel =
+      hours < 48
+        ? `${hours} hour${hours === 1 ? "" : "s"} ago`
+        : `${Math.floor(hours / 24)} days ago`
+    return { count: s.stale_count, agoLabel }
+  }, [data, loadFailed, loading])
 
   const tweetIntent = useMemo(() => {
     const text = `I ran the math on every Top Shot pack ripped in the last 60 days.\n\n145,000+ rips. Median pull value under $2. ~41% deliver nothing.\n\nHonest pack ranker:`
@@ -303,7 +344,9 @@ export default function PackRealityPage() {
               ? "The +EV ranker is temporarily unavailable — reload to try again."
               : loading
                 ? "Loading…"
-                : "No +EV packs right now."}
+                : rankerStale
+                  ? `Our Top Shot pack prices are stale, so the ranker has nothing fresh enough to show — ${rankerStale.count} pack${rankerStale.count === 1 ? "" : "s"} would otherwise qualify, last priced ${rankerStale.agoLabel}. This is our data being behind, not a reading of the market.`
+                  : "No +EV packs right now."}
           </div>
         ) : (
           <div className="rpc-scroll-x">

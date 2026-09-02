@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
   const limitRaw = Number(url.searchParams.get("limit") ?? "10");
   const limit = Math.max(1, Math.min(100, Number.isFinite(limitRaw) ? limitRaw : 10));
 
-  const [statsRes, distRes, topEvRes, realizedRes] = await Promise.all([
+  const [statsRes, distRes, topEvRes, realizedRes, rankerStaleRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from("topshot_pack_reality_stats").select("*").limit(1),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -68,6 +68,16 @@ export async function GET(req: NextRequest) {
       )
       .gte("n_opens", 10)
       .limit(1000),
+    // Why the +EV ranker is empty, when it is empty. The board's own zero rows
+    // cannot distinguish "nothing qualifies" (an honest market answer) from
+    // "everything that qualifies is stale" (a claim about OUR pipeline) — and on
+    // 2026-09-01 it was the second: 3 packs passed every filter and were 107-130h
+    // old, so the 48h freshness clause emptied the board while the page said
+    // "No +EV packs right now." This view is that MV's filter minus the freshness
+    // clause. It is DELIBERATELY not fatal: if it fails we simply cannot explain
+    // an empty board, which is the status quo, not a regression.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from("v_topshot_pack_reality_ranker_staleness").select("*").limit(1),
   ]);
 
   // PARTIAL FAILURE IS NOT A 500. Until 2026-08-02 the first three legs were
@@ -181,6 +191,28 @@ export async function GET(req: NextRequest) {
     .sort((a, b) => (b.n_opens ?? 0) - (a.n_opens ?? 0))
     .slice(0, 8);
 
+  // ── Why an empty ranker is empty ────────────────────────────────────────
+  // Only meaningful when top_ev is empty AND the read succeeded. `stale_count`
+  // is how many packs pass every ranker filter but the 48h freshness one; when
+  // that is > 0 and the board is empty, the emptiness is OUR staleness, not the
+  // market's, and the client must not say "No +EV packs right now."
+  // ⚠ null when this leg failed — the client then falls back to the old copy,
+  // which is the status quo rather than a new false claim.
+  const staleRow = (rankerStaleRes.data?.[0] ?? null) as {
+    qualifying_ignoring_freshness?: number | null;
+    newest_qualifying_snapshot?: string | null;
+  } | null;
+  if (rankerStaleRes.error) {
+    console.error("[public/insights/pack-reality] v_topshot_pack_reality_ranker_staleness", rankerStaleRes.error);
+  }
+  const rankerStaleness =
+    staleRow == null
+      ? null
+      : {
+          stale_count: Number(staleRow.qualifying_ignoring_freshness ?? 0),
+          newest_qualifying_snapshot: staleRow.newest_qualifying_snapshot ?? null,
+        };
+
   const elapsedMs = Date.now() - startedAt;
   const res = NextResponse.json({
     meta: {
@@ -194,6 +226,7 @@ export async function GET(req: NextRequest) {
       elapsed_ms: elapsedMs,
       filters: { limit },
       errors,
+      ranker_staleness: rankerStaleness,
     },
     stats: statsRes.data?.[0] ?? null,
     distribution: distRes.data ?? [],

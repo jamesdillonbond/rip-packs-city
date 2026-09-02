@@ -375,6 +375,46 @@ describe("PackRealityPage — board formatting + degraded states", () => {
     expect(text).not.toContain("not a reading of the market")
   })
 
+  it("an empty board caused by OUR STALE PRICES must not claim the market is empty", async () => {
+    // ⚠ THE THIRD STATE, and it was live in production on 2026-09-01. The two
+    // tests above cover "read failed" and "read ok + genuinely empty". There is
+    // a third: the read succeeds, the board is empty, and the ONLY reason is
+    // that our own pack prices are too stale to pass the ranker's 48h freshness
+    // clause. Measured that day: 3 packs passed every other filter, aged 107h,
+    // 113h and 130h, because their secondary-ask source is the dead
+    // public-api.nbatopshot.com endpoint. The page said "No +EV packs right
+    // now." — a claim about the MARKET, made out of a fact about US.
+    vi.stubGlobal(
+      "fetch",
+      jsonOnce({
+        meta: {
+          fetched_at: "2026-09-02T00:00:00Z",
+          errors: [],
+          ranker_staleness: {
+            stale_count: 3,
+            // Well outside the 48h window relative to any plausible test clock.
+            newest_qualifying_snapshot: new Date(Date.now() - 130 * 3600_000).toISOString(),
+          },
+        },
+        stats: {},
+        distribution: [],
+        top_ev: [],
+      })
+    )
+    render(<PackRealityPage />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/stale/i))
+
+    const text = document.body.textContent ?? ""
+    // ⚠ THE ASSERTION THAT IS THE POINT: the ABSENCE of the false claim, not the
+    // presence of new copy. A test that only checked for the word "stale" would
+    // pass even if the market claim were still rendered beside it — which is
+    // exactly how the 2026-08-15 defect survived its own comment.
+    expect(text).not.toContain("No +EV packs right now.")
+    // And it must attribute the emptiness to us rather than to the market.
+    expect(text).toContain("not a reading of the market")
+    expect(text).toMatch(/5 days ago/)
+  })
+
   it("names the degraded upstreams when meta.errors is populated", async () => {
     vi.stubGlobal(
       "fetch",
