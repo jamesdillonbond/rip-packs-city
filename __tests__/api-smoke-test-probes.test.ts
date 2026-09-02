@@ -296,6 +296,54 @@ describe("smoke-test — SMOKE_TEST_SESSION_TOKEN opt-in probes", () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚨 A LATENCY MISS MUST NOT READ AS AN AUTH FAILURE.
+// The `after()` probe applied its 3 s budget to every status and reported
+// `HTTP ${status} in ${ms}ms`, so a COLD-START 401 at 3,030 ms — 30 ms over, on
+// a path that short-circuits at the auth gate and never reaches the four
+// parallel wallet searches — hard-failed the workflow with
+// `HARD FAIL: … — HTTP 401 in 3030ms`. That sends the reader to the wrong
+// subsystem (observed 2026-09-02; it did, for several minutes).
+// ⚠ Timers are faked here, so `elapsed` is 0 and the too-slow branch cannot
+// fire. What these pin is the part that was actually wrong: WHICH statuses the
+// budget applies to, and whether the result says the property went untested.
+// ─────────────────────────────────────────────────────────────────────────────
+const AFTER_PROBE =
+  "/api/profile/resolve-and-associate responds non-5xx (after() budget applies only to a 200)"
+
+describe("smoke-test — the after() probe separates 'not exercised' from 'too slow'", () => {
+  it("a 401 passes and SAYS the after() property was never exercised", async () => {
+    install(greenFixtures())
+    installSmokeFetch(
+      greenStubs([jsonStub("/api/profile/resolve-and-associate", { error: "Unauthorized" }, 401)]),
+    )
+    const r = find(await run(), AFTER_PROBE)
+    expect(r.passed).toBe(true)
+    // ⛔ The load-bearing half: the result must not imply the property held.
+    expect(r.notes?.after_exercised).toBe(false)
+    expect(r.detail).toContain("after() NOT exercised")
+  })
+
+  it("a 200 marks the property as actually exercised", async () => {
+    install(greenFixtures())
+    installSmokeFetch(greenStubs())
+    const r = find(await run(), AFTER_PROBE)
+    expect(r.passed).toBe(true)
+    expect(r.notes?.after_exercised).toBe(true)
+  })
+
+  it("a 5xx still hard-fails, and its detail names the STATUS rather than the clock", async () => {
+    install(greenFixtures())
+    installSmokeFetch(
+      greenStubs([jsonStub("/api/profile/resolve-and-associate", { error: "boom" }, 503)]),
+    )
+    const r = find(await run(), AFTER_PROBE)
+    expect(r.passed).toBe(false)
+    expect(r.detail).toContain("server error")
+    expect(r.notes?.after_exercised).toBe(false)
+  })
+})
+
 describe("smoke-test — envelope + crash guards", () => {
   it("classifies a twice-timing-out public page as soft inconclusive rather than a regression", async () => {
     install(greenFixtures())

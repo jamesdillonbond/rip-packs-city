@@ -10,6 +10,54 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — a smoke check reported a 30 ms latency miss as `HTTP 401`, and I read it as an auth failure before reading the code
+
+**Files:** `app/api/smoke-test/route.ts` + `__tests__/api-smoke-test-probes.test.ts`. No DB change.
+
+**Found by being fooled by it.** A `Smoke Tests` run went red on my own push with:
+
+```
+HARD FAIL: /api/profile/resolve-and-associate returns quickly (after() non-blocking) — HTTP 401 in 3030ms
+```
+
+I opened the profile-auth path. **The 401 was fine and expected** — the check's own condition is
+`res.status < 500 && elapsed < 3000`, and what failed was **3,030 ms against a 3,000 ms budget. A 1%
+latency overshoot, reported in a message whose loudest token is `HTTP 401`.**
+
+🚨 **And the budget did not apply to anything.** A 401 short-circuits at the auth gate **before** the
+four parallel wallet searches the check is named for, so its wall clock says nothing about `after()`.
+**The check's NAME claimed a property its ASSERTION could not test on the path CI actually takes** —
+the "title carries a promise the assertion does not keep" shape, in the one instrument CLAUDE.md calls
+the entire detection surface for client-only failures.
+
+⭐ **The cry-wolf history was already in the file, one probe up.** Phase 4.1 hits the SAME endpoint and
+carries `smokeFetchRetry` with a comment recording **NEXTJS-K, 43 false failures over three months**
+from this endpoint's latency flap. Phase 4.2 sat next to it with a tighter budget and no hardening.
+
+**What shipped:** the 3 s budget now applies **only to a 200**; the two failure modes report
+**separately** (`server error: HTTP 503 …` vs `after() budget exceeded: …ms >= 3000ms on a 200`); a 401
+says **`auth short-circuit, after() NOT exercised`**; and `notes.after_exercised` is **always emitted,
+including false**, so a reader can tell *the property held* from *the property was never tested*
+without opening the route.
+
+⛔ **NOT wrapped in `smokeFetchRetry` like its sibling, deliberately** — a retry's time lands inside
+`elapsed`, so hardening it would corrupt the very measurement the check exists to take.
+
+⚠ **Flap rate measured, not assumed: 1 failure in 30 runs over 3 h.** Small — which is exactly why it
+is worth fixing rather than tolerating: a rare red whose message points at the wrong subsystem costs
+more attention than a frequent one that is honest.
+
+⚠ Two of the three new tests are mutation-checked against the reverted route (the third is a positive
+control). Timers are faked, so `elapsed` is 0 and the too-slow branch cannot fire — the tests pin the
+part that was wrong: **which statuses the budget applies to, and whether the result admits the property
+went untested.**
+
+**Verified:** full suite **1420 files / 15,685 tests green**; `tsc --noEmit` clean; eslint ratchet
+**717 = baseline**. ✅ And the change that triggered the red is itself verified: `topshot-sales-indexer`
+first post-deploy tick **08:23:04Z ok, 20 found / 7 written**, cadence unchanged at 20.0 min.
+
+**Revert:** `git revert` the commit.
+
 ### 2026-09-02 · ✅ SHIPPED — the largest instance of the class: TEN error-discarding reads in the route that writes Top Shot sales
 
 **Files:** `app/api/sales-indexer/route.ts` (pipeline `topshot-sales-indexer`) + its deep test; ratchet

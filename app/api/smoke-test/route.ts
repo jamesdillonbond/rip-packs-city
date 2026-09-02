@@ -1497,11 +1497,27 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
 
     // Phase 4.2: /api/profile/resolve-and-associate must respond quickly even
     // though it fires 4 parallel wallet-search calls in the background.
+    //
+    // ⚠ THE 3 s BUDGET ONLY MEANS SOMETHING ON A 200, AND SAYING SO IS THE FIX.
+    // A 401 short-circuits at the auth gate BEFORE those four searches, so its
+    // wall clock says nothing about `after()`. This check used to apply the
+    // budget to every status and report `HTTP ${status} in ${ms}ms`, so a
+    // COLD-START 401 at 3,030 ms — 30 ms over, on a path that never reaches the
+    // background work — hard-failed the whole workflow with the message
+    // `HARD FAIL: … — HTTP 401 in 3030ms`. **That reads as an auth breakage and
+    // sends the reader to the wrong subsystem** (observed 2026-09-02; the
+    // sibling run 24 s later was green). Its Phase 4.1 twin already carries a
+    // retry for this endpoint's known latency flap — NEXTJS-K, 43 false failures
+    // over three months — so the cry-wolf history here is documented, not
+    // theoretical.
+    // ⛔ Deliberately NOT wrapped in smokeFetchRetry like 4.1: a retry's time is
+    // included in `elapsed`, so hardening it would corrupt the very measurement
+    // this check exists to take.
     time(async () => {
       const meta = {
-        name: "/api/profile/resolve-and-associate returns quickly (after() non-blocking)",
+        name: "/api/profile/resolve-and-associate responds non-5xx (after() budget applies only to a 200)",
         endpoint: "/api/profile/resolve-and-associate",
-        expected: "non-5xx-under-3s",
+        expected: "non-5xx; under-3s only when it authenticates",
       };
       const start = Date.now();
       const res = await smokeFetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
@@ -1512,19 +1528,35 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         signal: AbortSignal.timeout(5000),
       });
       const elapsed = Date.now() - start;
-      const ok = res.status < 500 && elapsed < 3000;
+      // Only a 200 reaches the four parallel wallet searches, so only a 200 can
+      // test whether they block the response.
+      const afterExercised = res.status === 200;
+      const badStatus = res.status >= 500;
+      const tooSlow = afterExercised && elapsed >= 3000;
+      // ⚠ The two failure modes are reported SEPARATELY. One message covering
+      // both is what made a latency miss read as a status failure.
+      const detail = badStatus
+        ? `server error: HTTP ${res.status} in ${elapsed}ms`
+        : tooSlow
+          ? `after() budget exceeded: ${elapsed}ms >= 3000ms on a 200`
+          : afterExercised
+            ? `HTTP 200 in ${elapsed}ms`
+            : `HTTP ${res.status} in ${elapsed}ms — auth short-circuit, after() NOT exercised`;
       return {
         ...meta,
-        passed: ok,
-        detail: `HTTP ${res.status} in ${elapsed}ms`,
+        passed: !badStatus && !tooSlow,
+        detail,
         statusCode: res.status,
         bodyExcerpt: null,
-        notes: { latency_ms: elapsed },
+        // `after_exercised` is ALWAYS emitted, including false, so a reader can
+        // tell "the property held" from "the property was never tested" without
+        // reading this route.
+        notes: { latency_ms: elapsed, after_exercised: afterExercised },
       };
     }, {
-      name: "/api/profile/resolve-and-associate returns quickly (after() non-blocking)",
+      name: "/api/profile/resolve-and-associate responds non-5xx (after() budget applies only to a 200)",
       endpoint: "/api/profile/resolve-and-associate",
-      expected: "non-5xx-under-3s",
+      expected: "non-5xx; under-3s only when it authenticates",
     }),
 
     // Phase 4 (opt-in): authed /nba-top-shot/collection render
