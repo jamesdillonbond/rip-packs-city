@@ -22,29 +22,66 @@ const rpc = vi.hoisted(() =>
   // `never[]`, so mockImplementation returning real rows fails to typecheck.
   vi.fn(async (_name: string, _params?: any): Promise<any> => ({ data: [], error: null })),
 )
-// The FMV map reads `fmv_current` (DISTINCT ON latest, <=1 row/edition) and pages
-// it with .range() — 6,190 live AD rows exceed PostgREST's 1000-row cap. The mock
-// is range-AWARE (it slices st.fmv.data) so the paging loop is actually driven
-// rather than short-circuited, and st.pages records the windows requested.
-const st2 = vi.hoisted(() => ({ pages: [] as Array<[number, number]> }))
+// ⚠ THE READ ORDER CHANGED 2026-09-02 AND THIS MOCK ENCODES IT. The FMV map used
+// to page `fmv_current` filtered by `collection_id`; that filter cannot push down
+// (the view is DISTINCT ON (edition_id), so collection_id is "any other column"),
+// and one page measured 263,392 buffers / 19.5 s — six of those against a 45 s
+// lambda budget, which is what production's paired
+// "AD fmv_current statement timeout" + "Task timed out after 45 seconds" was.
+//
+// The route now reads AD `editions` FIRST — keyset-paged on `id`, an indexed
+// column on a plain table — and then chunks `fmv_current` by `.in("edition_id", …)`,
+// which IS the DISTINCT ON key and therefore reaches the index.
+//
+// So the mock is: KEYSET-aware for `editions` (it slices st.editions.data and
+// records each cursor in st2.editionCursors) and IN-aware for `fmv_current` (it
+// returns only the rows whose edition_id was actually asked for, recording each
+// chunk in st2.fmvChunks). A mock that ignored the id list would let a route that
+// never filters pass.
+const st2 = vi.hoisted(() => ({
+  editionCursors: [] as Array<string | null>,
+  fmvChunks: [] as string[][],
+  /** Make the editions read IGNORE the cursor, i.e. hand back the same full page
+   *  forever — the pathological case the loop's no-progress guard exists for. */
+  ignoreCursor: false,
+}))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     from(table: string) {
-      let range: [number, number] | null = null
+      let cursor: string | null = null
+      let inList: string[] | null = null
+      let limit: number | null = null
       const b: any = {
-        select: () => b, eq: () => b, order: () => b, in: () => b, gt: () => b,
-        range: (from: number, to: number) => {
-          range = [from, to]
-          if (table === "fmv_current") st2.pages.push([from, to])
+        select: () => b, eq: () => b, order: () => b,
+        in: (_col: string, list: string[]) => {
+          inList = list
+          if (table === "fmv_current") st2.fmvChunks.push(list)
           return b
         },
+        gt: (col: string, v: string) => {
+          if (table === "editions" && col === "id") cursor = v
+          return b
+        },
+        limit: (n: number) => { limit = n; return b },
+        range: () => b,
         then: (resolve: any) => {
           if (table === "fmv_current") {
             if (st.fmv.error) return resolve({ data: null, error: st.fmv.error })
-            const rows = st.fmv.data
-            return resolve(range ? { data: rows.slice(range[0], range[1] + 1), error: null } : st.fmv)
+            const rows = st.fmv.data as Array<{ edition_id: string }>
+            const want = inList
+            return resolve({
+              data: want ? rows.filter((r) => want.includes(r.edition_id)) : rows,
+              error: null,
+            })
           }
-          return resolve(table === "editions" ? st.editions : { data: [], error: null })
+          if (table === "editions") {
+            if (st.editions.error) return resolve({ data: null, error: st.editions.error })
+            const all = st.editions.data as Array<{ id: string }>
+            st2.editionCursors.push(cursor)
+            const after = cursor && !st2.ignoreCursor ? all.filter((e) => e.id > (cursor as string)) : all
+            return resolve({ data: limit ? after.slice(0, limit) : after, error: null })
+          }
+          return resolve({ data: [], error: null })
         },
       }
       return b
@@ -72,7 +109,9 @@ const get = (qs: string) => new Request(`https://t/api/sniper-feed${qs}`)
 const ADQS = "?collection=nfl-all-day&minDiscount=0&maxPrice=100000&rarity=all&team=all"
 
 beforeEach(() => {
-  st2.pages = []
+  st2.editionCursors = []
+  st2.fmvChunks = []
+  st2.ignoreCursor = false
   st.fmv = { data: [], error: null }
   st.editions = { data: [], error: null }
   rpc.mockReset()
@@ -182,33 +221,89 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
   // (<=1 row/edition) and pages with .range().
   it("pages fmv_current past the 1000-row cap so a high-offset edition still prices", async () => {
     // 1,500 editions: the target sits at index 1,200, i.e. only reachable on the
-    // SECOND page. Under the old single unbounded read it was invisible.
-    const rows = Array.from({ length: 1500 }, (_, i) => ({
-      edition_id: `E${i}`, fmv_usd: 100, confidence: "HIGH",
+    // SECOND page. Under a single unbounded read it would be invisible.
+    //
+    // ⚠ The cap now bites on the EDITIONS read, not the FMV read — that is the
+    // whole point of the 2026-09-02 inversion. Ids are zero-padded so the keyset
+    // cursor (`id > last`) orders the way the route assumes.
+    const eds = Array.from({ length: 1500 }, (_, i) => ({
+      id: `E${String(i).padStart(5, "0")}`,
+      external_id: `X${i}`,
     }))
-    rows[1200] = { edition_id: "TARGET", fmv_usd: 250, confidence: "HIGH" }
-    st.fmv = { data: rows, error: null }
-    st.editions = { data: [{ id: "TARGET", external_id: "555" }], error: null }
+    eds[1200] = { id: "E01200", external_id: "555" }
+    st.editions = { data: eds, error: null }
+    st.fmv = {
+      data: [
+        ...eds.slice(0, 100).map((e) => ({ edition_id: e.id, fmv_usd: 100, confidence: "HIGH" })),
+        { edition_id: "E01200", fmv_usd: 250, confidence: "HIGH" },
+      ],
+      error: null,
+    }
     gqlEdges = [node()]
 
     const body = await (await GET(get(ADQS))).json()
     expect(body.count).toBe(1)
-    expect(body.deals[0].baseFmv).toBe(250) // priced off page 2
+    expect(body.deals[0].baseFmv).toBe(250) // priced off an edition past the cap
     expect(body.deals[0].discount).toBe(76) // (250-60)/250
-    // two full pages + a short third page that ends the loop
-    expect(st2.pages.length).toBeGreaterThanOrEqual(2)
-    expect(st2.pages[0]).toEqual([0, 999])
-    expect(st2.pages[1]).toEqual([1000, 1999])
+    // First read has no cursor; the second resumes after page 1's last id.
+    expect(st2.editionCursors.length).toBeGreaterThanOrEqual(2)
+    expect(st2.editionCursors[0]).toBeNull()
+    expect(st2.editionCursors[1]).toBe("E00999")
   })
 
-  it("stops paging and degrades (no throw) when a page read errors", async () => {
+  it("terminates when the editions cursor cannot advance, instead of walking to the page ceiling", async () => {
+    // An upstream that keeps returning the same full page. Without the
+    // no-progress guard the loop runs to its ceiling (200 pages), turning a
+    // 1,000-row read into 200,000 rows of duplicates on a route that already
+    // has a 45-second budget.
+    st2.ignoreCursor = true
+    st.editions = {
+      data: Array.from({ length: 1000 }, (_, i) => ({ id: `E${String(i).padStart(5, "0")}`, external_id: `X${i}` })),
+      error: null,
+    }
+    st.fmv = { data: [], error: null }
+    gqlEdges = [node()]
+
+    await GET(get(ADQS))
+    // First read (no cursor) + the repeat that proves no progress. Never 200.
+    expect(st2.editionCursors.length).toBeLessThanOrEqual(2)
+  })
+
+  it("asks fmv_current for the EDITION IDS, never for the whole collection", async () => {
+    // 🚨 The defect was the read's SHAPE, not its size. `fmv_current` is
+    // DISTINCT ON (edition_id): a qual on that key pushes into the index, a qual
+    // on collection_id does not and materialises 274,519 snapshot rows per page.
+    // Pinning the .in() means a refactor back to a collection-wide scan reds here
+    // rather than in production's 45-second timeout.
+    st.editions = { data: [{ id: "E1", external_id: "555" }], error: null }
+    st.fmv = { data: [{ edition_id: "E1", fmv_usd: 250, confidence: "HIGH" }], error: null }
+    gqlEdges = [node()]
+
+    await GET(get(ADQS))
+    expect(st2.fmvChunks.length).toBeGreaterThanOrEqual(1)
+    expect(st2.fmvChunks[0]).toEqual(["E1"])
+  })
+
+  it("stops chunking and degrades (no throw) when an fmv read errors", async () => {
     st.fmv = { data: [], error: { message: "fmv_current down" } }
     st.editions = { data: [{ id: "E1", external_id: "555" }], error: null }
     gqlEdges = [node()]
     const res = await GET(get(ADQS))
     expect(res.status).toBe(200) // degrades to an unpriced (therefore empty) feed
-    expect((await res.json()).count).toBe(0)
-    expect(st2.pages.length).toBe(1) // broke out after the first failed page
+    const body = await res.json()
+    expect(body.count).toBe(0)
+    expect(st2.fmvChunks.length).toBe(1) // broke out after the first failed chunk
+    // ...and says so, rather than letting an empty board read as a quiet market.
+    expect(body.sourcesFailed).toContain("allday-fmv")
+  })
+
+  it("a failed EDITIONS read is named too — no edition row means no FMV lookup", async () => {
+    st.editions = { data: [], error: { message: "editions down" } }
+    st.fmv = { data: [], error: null }
+    gqlEdges = [node()]
+    const body = await (await GET(get(ADQS))).json()
+    expect(body.count).toBe(0)
+    expect(body.sourcesFailed).toContain("allday-fmv")
   })
 
   it("a listing with no/zero price is dropped (buildDeal returns null)", async () => {

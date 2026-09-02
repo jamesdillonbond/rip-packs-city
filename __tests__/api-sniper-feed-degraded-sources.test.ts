@@ -140,8 +140,20 @@ describe("GET /api/sniper-feed — a failed source is never rendered as a quiet 
 
   // A listing with no FMV is EXCLUDED rather than priced off its own ask, so a
   // failed FMV map empties the board just as surely as a failed listing read.
+  //
+  // ⚠ Since 2026-09-02 the FMV read is chunked by edition_id, so it only runs
+  // once the EDITIONS read has produced ids — the fixture has to seed them, or
+  // this case would pass for the wrong reason (no FMV read attempted at all).
   it("a failed All Day FMV map read is named", async () => {
+    st.editions = { data: [{ id: "e1", external_id: "555" }], error: null }
     st.fmv = { data: [], error: { message: "canceling statement due to statement timeout" } }
+    const body = await (await GET(get(ADQS))).json()
+    expect(body.sourcesFailed).toContain("allday-fmv")
+    expect(body.degraded).toBe(true)
+  })
+
+  it("a failed All Day EDITIONS read is named — it gates the FMV lookup", async () => {
+    st.editions = { data: [] as any[], error: { message: "upstream request timeout" } }
     const body = await (await GET(get(ADQS))).json()
     expect(body.sourcesFailed).toContain("allday-fmv")
     expect(body.degraded).toBe(true)

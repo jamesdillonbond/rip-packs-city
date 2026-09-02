@@ -74,11 +74,35 @@ describe("sniper-feed: reads over the 1000-row cap stay paged", () => {
     expect(body).toMatch(/length\s*<\s*PAGE/)
   })
 
-  it("NO-CHANGE CONTROL: the already-paged All Day FMV map is untouched", () => {
-    // It was correct before this change and must stay correct — a fix that
-    // rewrote it would be a regression this file should notice.
-    expect(SRC).toMatch(/\.from\(\s*["']fmv_current["']\s*\)/)
-    expect(SRC).toMatch(/if \(page\.length < FMV_PAGE\) break;/)
+  // ⚠ THIS CASE WAS INVERTED THE SAME DAY IT WAS WRITTEN, AND THAT IS THE LESSON.
+  // It began as a no-change control asserting the All Day FMV map still carried
+  // `if (page.length < FMV_PAGE) break;` — i.e. it pinned the SPELLING of one
+  // paging loop. Hours later that loop was deleted on purpose: the read was
+  // paging `fmv_current` filtered by `collection_id`, which cannot push down
+  // (the view is DISTINCT ON (edition_id)), costing 263,392 buffers / 19.5 s per
+  // page and timing the route out at 45 s. The map is now built the other way
+  // round — editions first, then `.in("edition_id", …)`.
+  //
+  // The PROPERTY the control was really protecting — the All Day FMV map is
+  // bounded, never one unbounded read — still holds, and holds better. So the
+  // case is inverted rather than deleted, and now pins the property.
+  it("the All Day FMV map is bounded by an edition-id list, not a collection scan", () => {
+    const body = fnBody("computeAllDaySniperFeed")
+    expect(body).toMatch(/\.from\(\s*["']fmv_current["']\s*\)/)
+    // The bound: chunked by the DISTINCT ON key.
+    expect(body).toMatch(/\.in\(\s*["']edition_id["']\s*,\s*chunk\s*\)/)
+    // And the shape that caused the timeout must NOT come back: a qual on
+    // collection_id against fmv_current materialises the whole view per page.
+    const fmvRead = body.slice(body.indexOf('.from("fmv_current")'))
+    expect(fmvRead.slice(0, 400)).not.toMatch(/collection_id/)
+  })
+
+  it("the editions read that feeds it is itself paged", () => {
+    // Inverting the order moves the 1000-row cap onto `editions`, so the bound
+    // has to move with it or the fix trades one silent truncation for another.
+    const body = fnBody("computeAllDaySniperFeed")
+    expect(body).toMatch(/\.gt\(\s*["']id["']\s*,\s*edCursor\s*\)/)
+    expect(body).toMatch(/rows\.length\s*<\s*ED_PAGE/)
   })
 
   it("POSITIVE CONTROL: the assertions can fail — a bare .select() has no page window", () => {

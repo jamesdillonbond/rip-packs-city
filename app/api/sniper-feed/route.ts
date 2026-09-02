@@ -1092,53 +1092,90 @@ async function computeAllDaySniperFeed(opts: {
   //    most of the board instead of merely mislabelling it.
   //
   //    fmv_current is DISTINCT ON (edition_id) latest — <=1 row per edition, so
-  //    no JS dedupe is needed — and it is paged with .range() because 6,190 rows
-  //    still exceeds the cap. `.gt("fmv_usd", 0)` filters the ~1,075 editions
+  //    no JS dedupe is needed. `.gt("fmv_usd", 0)` filters the ~1,075 editions
   //    whose newest snapshot is NULL server-side, so a map MISS and an unusable
   //    FMV are the same condition for buildDeal.
+  //
+  // 🚨 THE READ ORDER IS LOAD-BEARING, AND GETTING IT WRONG COST 45-SECOND
+  // TIMEOUTS IN PRODUCTION. This used to page `fmv_current` filtered by
+  // `collection_id` and THEN resolve external_ids. But **a qual on a DISTINCT ON
+  // view's KEY pushes down; a qual on any other column does not** — and
+  // `fmv_current` is `DISTINCT ON (edition_id)`, so `collection_id` is "any other
+  // column". Measured live 2026-09-02, ONE page of that read:
+  //
+  //     Unique over 274,519 snapshot rows → 5,248 editions → filter → 1,000
+  //     shared hit=233,394 read=29,998   Execution Time: 19,529 ms
+  //
+  // …times SIX pages, against a 45 s lambda budget. Production showed exactly
+  // that: `AD fmv_current error @0: canceling statement due to statement timeout`
+  // and `Vercel Runtime Timeout Error: Task timed out after 45 seconds` on the
+  // SAME deployment and the SAME second — one request, both symptoms.
+  //
+  // Inverting the order fixes it because `.in("edition_id", …)` IS the DISTINCT ON
+  // key, so PostgREST's `= ANY(array)` reaches the partitioned index. Measured the
+  // production shape, 40 editions: `Index Cond: (edition_id = ANY (...))` on all
+  // three partitions, **2,894 buffers / 21 ms** — about 72 buffers per edition, so
+  // ~3 s for the whole 6,190-edition catalogue instead of ~136 s.
+  //
+  // ⚠ The route's OWN `fetchFmvBatch` already used the `.in("edition_id", …)`
+  // shape for Top Shot. The right pattern was in this file the whole time, one
+  // function away, and the wrong one still shipped: **a correct sibling is not a
+  // guard.**
   const fmvMap = new Map<string, { fmv: number | null; confidence: string }>();
   try {
-    const byEditionId = new Map<string, { fmv: number | null; confidence: string }>();
-    const FMV_PAGE = 1000;
-    for (let from = 0; ; from += FMV_PAGE) {
-      const { data: fmvRows, error: fmvErr } = await (supabase as any)
-        .from("fmv_current")
-        .select("edition_id, fmv_usd, confidence")
+    // 1a. AD editions first — this read IS bounded by an indexed collection_id
+    //     on a plain table, and it is the id list the FMV read needs anyway.
+    const extByEditionId = new Map<string, string>();
+    const ED_PAGE = 1000;
+    let edCursor = "";
+    for (let page = 0; page < 200; page++) {
+      let q = (supabase as any)
+        .from("editions")
+        .select("id, external_id")
         .eq("collection_id", ALLDAY_COLLECTION_ID)
-        .gt("fmv_usd", 0)
-        // fmv_current is DISTINCT ON (edition_id), so edition_id is unique here.
-        .order("edition_id", { ascending: true })
-        .range(from, from + FMV_PAGE - 1);
-      if (fmvErr) {
-        console.error(`[sniper-feed] AD fmv_current error @${from}: ${fmvErr.message}`);
-        // Deal-bearing: a listing with no FMV is EXCLUDED rather than priced off
-        // its own ask, so a truncated map empties the board.
+        .order("id", { ascending: true })
+        .limit(ED_PAGE);
+      if (edCursor) q = q.gt("id", edCursor);
+      const { data: edRows, error: edErr } = await q;
+      if (edErr) {
+        console.error(`[sniper-feed] AD editions error @page ${page}: ${edErr.message}`);
+        // Deal-bearing: no edition row means no FMV lookup means the listing is
+        // dropped, exactly as a missing FMV would be.
         sink.note("allday-fmv");
         break;
       }
-      const page = (fmvRows ?? []) as Array<{ edition_id: string; fmv_usd: number | null; confidence: string }>;
-      for (const row of page) {
+      const rows = (edRows ?? []) as Array<{ id: string; external_id: string | null }>;
+      for (const e of rows) if (e.external_id) extByEditionId.set(e.id, String(e.external_id));
+      if (rows.length < ED_PAGE) break;
+      const next = rows[rows.length - 1]?.id;
+      // No cursor means no progress — stop rather than re-read page 0 forever.
+      if (!next || next === edCursor) break;
+      edCursor = next;
+    }
+
+    // 1b. FMV keyed on the DISTINCT ON column, chunked to stay under PostgREST's
+    //     URL limit. This is the read whose SHAPE was the whole defect.
+    const editionIds = Array.from(extByEditionId.keys());
+    for (let i = 0; i < editionIds.length; i += 500) {
+      const chunk = editionIds.slice(i, i + 500);
+      const { data: fmvRows, error: fmvErr } = await (supabase as any)
+        .from("fmv_current")
+        .select("edition_id, fmv_usd, confidence")
+        .in("edition_id", chunk)
+        .gt("fmv_usd", 0);
+      if (fmvErr) {
+        console.error(`[sniper-feed] AD fmv_current error @chunk ${i / 500}: ${fmvErr.message}`);
+        sink.note("allday-fmv");
+        break;
+      }
+      for (const row of (fmvRows ?? []) as Array<{ edition_id: string; fmv_usd: number | null; confidence: string }>) {
+        const ext = extByEditionId.get(row.edition_id);
+        if (!ext) continue;
         const raw = row.fmv_usd == null ? NaN : Number(row.fmv_usd);
-        byEditionId.set(row.edition_id, {
+        fmvMap.set(ext, {
           fmv: Number.isFinite(raw) ? raw : null,
           confidence: String(row.confidence ?? "LOW"),
         });
-      }
-      if (page.length < FMV_PAGE) break;
-    }
-    if (byEditionId.size > 0) {
-      const editionIds = Array.from(byEditionId.keys());
-      // Chunk IN() to stay well under PostgREST URL limits.
-      for (let i = 0; i < editionIds.length; i += 500) {
-        const chunk = editionIds.slice(i, i + 500);
-        const { data: editionRows } = await (supabase as any)
-          .from("editions")
-          .select("id, external_id")
-          .in("id", chunk);
-        for (const e of (editionRows ?? []) as Array<{ id: string; external_id: string | null }>) {
-          const entry = byEditionId.get(e.id);
-          if (entry && e.external_id) fmvMap.set(String(e.external_id), entry);
-        }
       }
     }
   } catch (err) {
