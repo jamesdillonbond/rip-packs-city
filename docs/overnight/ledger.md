@@ -10,6 +10,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED — `/api/collection-stats` ran the same 19,942-probe FMV scan TWICE per request; folded, plus a 291× false claim removed on the way
+
+**Migration `audit_20260902_collection_stats_folds_the_high_medium_pass_into_the_scan_it_already_makes`**
+(file `20260902054902_…`) + `app/api/collection-stats/route.ts` + the overview KPI. Closes the
+2026-09-02T0545Z inbox filing; touches register **R6**, and **does NOT overturn R52** — no new object.
+
+`get_collection_stats(text)` already walks every edition with one `fmv_snapshots` probe each to compute
+`fmv_covered`. The route's `computeHighMediumPct()` then ran the **byte-equivalent scan a second time**
+through `query_sql` for a different FILTER, in the same `Promise.all` — so **wall-clock hid it while the
+database paid the sum**, on an IO-bound instance. Second pass alone, measured in the QUIET band (a
+floor, not a typical): **116,945 buffers / 2,875 ms / 19,942 lateral loops**.
+
+**Folded into the pass the function already makes**, both branches (per-edition and Pinnacle's
+render-grain), and the route now reads `fmv_high_medium_count` / `_pct` straight off the payload.
+
+⭐ **Equivalence PROVED, not argued.** A plan comparison only shows *cheaper*. The post-state calls the
+patched function and the route's original query **in the SAME STATEMENT** — one snapshot, so a
+concurrent `fmv-recalc` write cannot make an equivalent pair look different — and compares count, total
+and pct for all five collections, with the loop's population asserted (a loop that runs zero times
+passes every assertion inside it). All five matched.
+
+⚠ **Patched SURGICALLY** via the `20260815083710` technique: `pg_get_functiondef` → assert each anchor
+occurs **exactly once** → refuse if already patched → `EXECUTE replace(...)`. The 12.5 KB body is never
+retyped. The trap it guards is real — **the Pinnacle branch's `INTO` list starts with the same two
+variables as the non-Pinnacle one**, so a bare prefix anchor patches the wrong branch.
+
+🚨 **AND THE THING I DID NOT GO LOOKING FOR.** The KPI read `fmv_high_medium_pct` but **fell back to
+`fmv_pct` when it was null — a DIFFERENT metric**, the share carrying *any* non-`NO_DATA` snapshot.
+Measured live at the same instant: **LaLiga Golazos 87.3% against a true 0.3%; UFC Strike 73.6% against
+a true 0.0%** — a **291× overstatement** published under the label *"Priced from Sales"* whenever the
+real read failed. Now renders **nothing** rather than something false, and zero (a real value) still
+renders `0%`. **The fallback was the failure-renders-as-data class hiding inside a ternary, and the
+tell was that the two branches were different measurements.**
+
+⚠ **Pinned as an ABSENCE**, per the standing rule: the new tests assert **87% never appears**, not that
+some fallback string does — and the mutation check confirms it: restoring the old ternary reds exactly
+that test. The route test pins the one-pass property on the **RPC call list**, because a timing
+assertion cannot see a duplicate hidden in a `Promise.all`.
+
+**Verified:** full suite **1420 files / 15,652 tests green**; `tsc --noEmit` clean; eslint ratchet
+**717 = baseline**.
+
+**Revert:** invert the four replacements in the migration (drop the two `v_fmv_hm_*` declarations, the
+two added aggregates, the two jsonb keys) and `git revert` the code commit.
+
 ### 2026-09-01 · ✅ SHIPPED — `allday-price-recover` is now on the cadence watchlist, with a MEASURED threshold
 
 **Migration `audit_20260902_watch_allday_price_recover_now_that_it_recovers_500_rows_a_tick_instead_of_one`**

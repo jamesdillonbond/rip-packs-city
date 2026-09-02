@@ -1,7 +1,18 @@
 # `/api/collection-stats` runs the SAME 19,942-probe FMV scan **twice** per request — and the number it recomputes is already precomputed
 
 **Filed 2026-09-01 ~22:4x PT (2026-09-02 ~05:45Z), Claude Code cloud session.**
-**Nothing shipped, and the reason is stated rather than implied:** the fix patches a LIVE PUBLIC
+
+> ✅ **SHIPPED 2026-09-01 ~22:5x PT** — migration
+> `20260902054902_audit_20260902_collection_stats_folds_the_high_medium_pass_into_the_scan_it_already_makes`
+> plus `app/api/collection-stats/route.ts` and the overview KPI. The fold went in exactly as described
+> here, in BOTH branches (the Pinnacle render-grain one too), and equivalence was proved for all five
+> collections in a single statement. R6 annotated; **R6 is NOT closed** — its owed saturation measurement
+> is untouched. ⛔ The "tempting alternative" (reading `rpc_trust_health_precompute`) was NOT taken, for
+> the reason given below. 🚨 **One thing this filing did not see:** the KPI fell back from
+> `fmv_high_medium_pct` to `fmv_pct` when the former was null — a different, much larger metric (Golazos
+> 87.3% vs a true 0.3%). Fixed in the same commit.
+
+**Nothing shipped AT FILING TIME** (it has since shipped — see the banner above), **and the reason is stated rather than implied:** the fix patches a LIVE PUBLIC
 function, and the safe way to do it is a technique this repo already owns (below). Filing it with the
 full measurement so the next session can apply it with a diff in front of them.
 
