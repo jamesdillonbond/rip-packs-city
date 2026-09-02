@@ -1,4 +1,4 @@
-# Inbox index — 361 live filings
+# Inbox index — 362 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,8 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-09-02 — 12 filings
+## 2026-09-02 — 13 filings
 
+- [Ten Top Shot players are split across two spellings of their own name, and 54 of their editions sit on a second, near-empty player page — Alperen Şengün's page says 43 when he has 74](2026-09-02T1045Z-ten-topshot-players-are-split-across-two-spellings-and-half-their-editions-sit-on-a-second-page.md)
 - [`wallet_moments_cache` carries 19 indexes / 1,924 MB against a 941 MB heap — and ranking them by scan count would have recommended dropping the hottest one, created 5.6 hours earlier](2026-09-02T0940Z-wmc-carries-19-indexes-and-scan-counts-lie-about-which-are-cold.md)
 - [⚠ HALF RESOLVED, falsifier NOT met — `sales-serial-backfill`'s Top Shot lane is 100% dead for 6 days (`1033`/`1015` still growing at +245/+436 per 6 h), and `pipeline_runs` only says `unknown`; the AllDay half is EMPTY across every failure reason, not just the `not_in` treadmill the filing scoped](2026-09-02T0855Z-sales-serial-backfill-topshot-lane-is-100pct-dead-for-6-days-and-pipeline_runs-only-says-unknown.md)
 - [106 `audit_*` scratch tables hold 221 MB of a 14 GB database — and that number is the argument for leaving them alone](2026-09-02T0815Z-106-audit-scratch-tables-are-221mb-of-14gb-and-that-is-the-argument-for-leaving-them.md)
