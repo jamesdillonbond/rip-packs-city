@@ -138,3 +138,85 @@ switched off, taking the two real findings with it.
 The same sweep at a 24 h window listed 15 pipelines and was even noisier, for the same reason.
 **Where it earns its keep is as the FIRST step of a per-pipeline read**, which is how tonight's two
 real treadmills (`sales-counterparty-backfill` and `topshot-buyer-backfill-historical`) were found.
+
+---
+
+## ✅ HALF SHIPPED 2026-09-02 ~02:2x PT — and the fix was not the one this filing proposed
+
+This filing framed the problem as a CADENCE problem (4.4 sweeps a day over a 520-row queue)
+and offered three fixes, all of them ways to ask the chain **less often**: an attempt column,
+an exponential backoff, or retiring the schedule. All three were correct about the cost and
+wrong about the cause.
+
+**The chain does not have these player names. Our own database does.** Measured over the 515
+stub editions missing a `player_name`: **346 have one in `wallet_moments_cache`.** And the
+stubs were created *from* wmc rows — `stub_editions_from_wmc` inserts
+`player_name` as `NULL,  -- player to be resolved later` while reading a wmc row that carries
+the name. **The row that created the stub had the answer, and threw it away.**
+
+### What shipped
+
+`public.backfill_topshot_stub_player_names_from_wmc(p_limit)` (migration `20260902092542`),
+run once: **267 editions filled.** `get_topshot_stub_targets` fell **520 → 253** and Top Shot's
+nameless editions **2,000 → 1,733**, so the resolver's ~2,300 chain lookups and ~2,300 no-op
+`editions` UPDATEs per day roughly HALVE. That is the displacement argument this instance
+requires for anything new: it removes more work than it adds.
+
+Cost of the new scan, measured warm: **107 ms / 51,418 buffers, every one a cache hit.**
+
+### 🚨 The control did NOT come back clean, and the unclean part was not formatting
+
+Comparing wmc against Top Shot editions that **already** carry a `player_name` — a control the
+fix cannot move — **46 of 11,866 disagree**. Most are benign (Steph/Stephen, Vučević/Vucevic,
+O.G./OG Anunoby). **Three name a different human being:**
+
+| edition | `editions` | `wallet_moments_cache` |
+|---|---|---|
+| `2:1::16` | Trae Young | **Alex Sarr** |
+| `2:4::16` | John Collins | **Matas Buzelis** |
+| `2:7::16` | Julius Randle | **Andre Drummond** |
+
+All three sit on edition_keys where wmc holds **more than one** distinct `player_name`. Split on
+that, over subedition (`::NN`) keys, which is where the risk concentrates:
+
+| wmc names for the key | checked | disagree | share |
+|---|---:|---:|---:|
+| exactly 1 | 2,750 | 8 | 0.29 % — **all eight are Steph/Stephen Curry, ZERO wrong players** |
+| more than 1 | 17 | 10 | **58.8 %** |
+
+So the shipped filter is `count(DISTINCT player_name) = 1`, and the **79 ambiguous stubs are
+deliberately left nameless**: a Dynamic Duos play genuinely has two players, and picking one is
+a false claim, not a partial answer. ⭐ **A source that is right 99.6% of the time and wrong
+about *which person this is* 58.8% of the time on an identifiable subset is not a 99.6% source —
+it is two sources, and the discriminator is what makes it usable.**
+
+Verified against what was actually written (recorded row-by-row in
+`audit_20260902_stub_names_written` *before* the run, so the check does not merely re-derive the
+function's own predicate): **267 written · 267 match the pre-recorded candidate · 0 carry a name
+wmc does not hold for that edition_key · 0 came from an ambiguous key · 0 left empty.**
+
+### ⛔ What did NOT ship, and why
+
+- **No schedule.** The obvious next step is a daily cron, and the measured inflow does not
+  justify one: the resolver wrote 37 rows in 36 days, so locally-resolvable stubs arrive at
+  most ~1/day. Re-derive before adding a job — the query is
+  `SELECT count(*) FROM editions e JOIN LATERAL (...) w ON true WHERE ... AND w.n_names = 1`,
+  the same one in the migration's post-state. **If it climbs back above ~50, schedule it.**
+- **`stub_editions_from_wmc` was NOT fixed, though it is the source of the defect.** Seeding
+  `player_name` at insert time is the real repair. ⚠ **It has ZERO callers** — checked
+  `cron.job.command`, `pg_proc.prosrc`, `pg_views`, and a full-repo grep; it appears only in its
+  own pinned test. It is dormant, and this repo has already lost an afternoon to optimising a
+  function with no callers. Fix it *if* something starts calling it.
+- **The 5 stubs missing `tier` rather than a name** are untouched; wmc carries `tier` too, so
+  that is a small follow-on with the same shape and the same ambiguity question.
+- **This filing's cadence analysis is still correct for the 253 that remain**, and options 1–3
+  still apply to them. It is now a much smaller prize.
+
+### ⭐ The transferable point, and it is the second time tonight
+
+The other treadmill closed this session (`sales-serial-backfill`'s AllDay `not_in` lane, 700
+rows / 9,959 attempts) died the same way: the answer was in a local table the resolver never
+read. **Before tuning how often you re-ask a failing upstream, check whether anything local
+already knows the answer — a retry policy fixes a *rate*, never a *gap*.** A backoff here would
+have made 74,800 futile lookups into 8,000 futile lookups and left 267 editions permanently
+nameless.

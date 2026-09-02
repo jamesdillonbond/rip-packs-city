@@ -10,6 +10,63 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — 267 Top Shot editions were named from `wallet_moments_cache`, which the chain resolver never read
+
+**What.** `resolve-topshot-stubs` had written **37 rows in 74,800 attempts over 36 days** (0.049%
+yield), re-asking the chain ~4.4×/day for player names on the same 520 editions. The chain does not
+have them. **Our own `wallet_moments_cache` has them for 346 of the 515** — and those stubs were
+created FROM wmc rows by `stub_editions_from_wmc`, which inserts `player_name` as
+`NULL, -- player to be resolved later` while reading a row that carries the name.
+
+New `public.backfill_topshot_stub_player_names_from_wmc(p_limit)`, run once: **267 filled**.
+`get_topshot_stub_targets` **520 → 253**; Top Shot nameless editions **2,000 → 1,733**. The
+resolver's ~2,300 chain lookups and ~2,300 no-op `editions` UPDATEs per day roughly halve, so this
+**displaces** work rather than adding it — the standing requirement for anything new on this
+instance. Candidate scan measured warm: **107 ms / 51,418 buffers, all cache hits.**
+
+🚨 **The control did not come back clean, and the unclean part was not formatting.** Against Top
+Shot editions that already carry a name — a control the fix cannot move — **46 of 11,866 disagree**.
+Most are benign (Steph/Stephen, Vučević/Vucevic). **Three name a different person:** `2:1::16`
+Trae Young → **Alex Sarr**, `2:4::16` John Collins → **Matas Buzelis**, `2:7::16` Julius Randle →
+**Andre Drummond**. All three sit on edition_keys where wmc holds MORE THAN ONE distinct name. Split
+on that over subedition (`::NN`) keys: **n=1 → 2,750 checked, 8 disagree, all eight Steph/Stephen,
+ZERO wrong players**; **n>1 → 17 checked, 10 wrong (58.8%)**. So the shipped filter is
+`count(DISTINCT player_name) = 1`, and the **79 ambiguous stubs stay nameless on purpose** — a
+Dynamic Duos play really has two players, and picking one is a false claim, not a partial answer.
+⭐ **A source that is 99.6% right overall and 58.8% wrong about WHICH PERSON on an identifiable
+subset is not a 99.6% source — it is two sources, and the discriminator is what makes it usable.**
+
+**Verified against what was written, not against the function's own predicate** (the candidates were
+recorded row-by-row in `audit_20260902_stub_names_written` BEFORE the run): 267 written · 267 match
+the pre-recorded candidate · **0** carry a name wmc does not hold for that edition_key · **0** came
+from an ambiguous key · **0** left empty.
+
+⚠ **I shipped a VACUOUS post-state check in `20260902092542` and corrected it in `20260902092816`
+rather than editing history.** The "positive control the change cannot move" read
+`player_name IS NOT NULL AND (player_name IS NULL OR player_name = '')` — a contradiction, zero for
+every database in every state. It could never have failed. The replacement is the row-by-row check
+above. **A control that cannot fail is not a control**, and it reads as coverage until someone
+re-reads the predicate.
+
+⚠ **A second one, caught by mutation testing and fixed in the COMMENT rather than the assertion.**
+The pinned test claimed the UPDATE's second never-clobber re-check was covered; deleting that
+re-check leaves the file GREEN, because both halves read the same snapshot and only a CONCURRENT
+writer can separate them. The header now says exactly that, and says not to "fix" it by asserting
+something weaker. 6 of 7 mutations red; the 7th is named as uncovered.
+
+⛔ **Deliberately NOT done:** no cron schedule (measured inflow is ~1 locally-resolvable stub/day —
+re-derive the candidate count and schedule only if it climbs back above ~50); `stub_editions_from_wmc`
+NOT fixed even though it is the source of the defect, because it has **zero callers** (checked
+`cron.job.command`, `pg_proc.prosrc`, `pg_views`, full-repo grep — it appears only in its own pinned
+test); the 5 stubs missing `tier` rather than a name.
+
+**Revert path.** Data: `UPDATE editions e SET player_name = NULL FROM audit_20260902_stub_names_written a
+WHERE e.id = a.edition_id AND e.player_name = a.player_name_written;` (all 267 were NULL/empty before;
+the recipe is also a `COMMENT ON TABLE` on that table). Function: `DROP FUNCTION
+public.backfill_topshot_stub_player_names_from_wmc(integer);` — nothing calls it on a schedule.
+Code: `git revert` the commit whose message begins `feat(db): Top Shot stub player names come from`.
+
+
 ### 2026-09-02 · ✅ SHIPPED — the null-serial sale backfill reads `nft_edition_map` as a third source; 2,307 sales recovered, AllDay's remainder went to ZERO
 
 **What.** `public.backfill_null_serial_sales_from_moments` (pg_cron jobid 76, `5 * * * *`) resolved a
