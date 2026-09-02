@@ -823,3 +823,43 @@ own pgss diff: 352,591 / 336,813 / 279,358). A single wasted read — such as th
 **Read the board ONCE per pass and reuse the row set.** ⚠ It also CAN time out at 60 s; CLAUDE.md
 already prefers the sentinel's `Trust Health` check to any arm count quoted in
 [trust-board-and-safety.md](trust-board-and-safety.md).
+
+---
+
+## 🚨 A credential probe is bounded by its CORPUS, not its regex (2026-09-02)
+
+The deep-audit register's standing **"No hardcoded credentials"** probe greps `eyJhbGciOiJ`,
+`sb_secret_`, `sk-ant-`, `AKIA`, `ghp_`, `github_pat_`, `re_`, the Telegram shape and **`rpc_pls_`**
+over **`origin/main`**, and reports **0 real hits**. The pattern list is right. The search space is
+not:
+
+- **All 14 HTTP-dispatching pg_cron jobs send their gate key in the URL** (`…/functions/v1/<fn>?key=`),
+  **13 of them active, 0 using a header.** That is the `rpc_pls_` prefix the probe greps for, sitting
+  in `cron.job.command` — which lives only in the database and is outside `origin/main` by
+  construction.
+
+👉 **"0 real hits" reads as an estate-wide all-clear and is a statement about one corpus.** The same
+blindness covers Vercel env, edge-function secrets, cron-job.org job definitions and anything else
+that is *configuration* rather than *code*. When a probe returns clean, ask what it SEARCHED before
+believing what it found — the same rule as *"ask what a passing guard is structurally silent about"*,
+applied to a corpus instead of a code path.
+
+### Handling rules that apply the moment you go looking
+
+- ⛔ **Do NOT read Supabase edge-function logs to "confirm" a URL-borne credential.** Full request
+  URLs are exactly what those logs record, so reading them is the leak. The count of offending jobs
+  IS the finding; log evidence adds nothing and costs what it measures.
+- **Project so a value cannot be selected.** `count(*) FILTER (WHERE command ~ '[?&](key|token|secret)=')`
+  answers the question without returning command text. To name the target, capture only what precedes
+  the credential: `substring(command from 'functions/v1/([a-z0-9_-]+)')` stops at the `?`.
+- ⚠ **A truncating projection is not a redaction.** `left(command, 140)` on one of these rows prints
+  a *partial* key into the transcript — enough to be a leak, not enough to be useful. Filter and
+  aggregate; never truncate.
+- **The DB-side remedy needs no key to pass through a session at all:** rewrite the command in place
+  with `regexp_replace` inside `cron.alter_job`, so the value never leaves the database. One job at a
+  time, post-state checked against `net._http_response` — `net.http_get(url, params, headers,
+  timeout_milliseconds)` does take a `headers jsonb`.
+- ⚠ **Relocation is not rotation, and the ORDER matters.** Moving a key out of the URL stops the log
+  store filling; it does not un-log what is there, and on this estate these values are additionally
+  burned in public git history (known-issues #22). Rotation is what closes it — but rotating BEFORE
+  the relocation lands just re-publishes the new value on the next tick.
