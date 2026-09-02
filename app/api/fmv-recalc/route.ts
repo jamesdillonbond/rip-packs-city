@@ -1215,8 +1215,11 @@ export async function POST(req: NextRequest) {
     // due to statement timeout", and every one of them still reported
     // `historicalFallback=0`, `ok: true`, with `rows_written` looking healthy from
     // the OTHER steps. The failure was visible only in a console.warn nobody reads.
-    // Measured cost of admitting it: 8,571 editions qualify, 4,277 of them have
-    // paid sales and were getting no historical FMV at all.
+    // ⚠ The sizing first written here — "8,571 editions qualify, 4,277 with paid
+    // sales getting no historical FMV at all" — was the OLD PREDICATE'S OUTPUT, not a
+    // measure of genuine need, and it is retained only so the correction below reads
+    // in order. The real backlog was ~13. Sizing a backlog with the same broken
+    // predicate that defines it is circular; measure the PROPERTY instead.
     //
     // The old shape could not finish. `LIMIT 1000` sat AFTER the GROUP BY, so the
     // planner merge-joined ALL editions against 4,853,937 sales rows and aggregated
@@ -1241,6 +1244,32 @@ export async function POST(req: NextRequest) {
     // reading this because the number is 0 again, read `historical_fallback_error`
     // first: it now tells you whether the step failed or simply had nothing to do.
     //
+    // ⛔ CORRECTION 2026-09-01 ~00:1xZ — THE ADMISSION PREDICATE WAS WRONG, and making
+    // the step RUN is what exposed it. 18 h after the fix: 119 runs, 23,800 editions
+    // "covered", and the qualifying population had fallen only 4,277 → 3,382. It was
+    // a TREADMILL, not a drain.
+    //   The mechanism, read off one edition's snapshot history: this step writes
+    //   `algo_version = 1.7.0` at 00:08:29, and the thin-sales guard overwrites the
+    //   same edition with `algo_version = thin-sales-guard-v3` 43 seconds later. The
+    //   old clause `algo_version NOT LIKE '1.7.%'` then re-admitted it on the very
+    //   next tick, forever.
+    //   `algo_version NOT LIKE '1.7.%'` was a staleness PROXY from when 1.7.x was the
+    //   only writer. There are now EIGHT, and seven do not match: cold-tail-1.0 (2,537
+    //   editions), thin-sales-guard-v3 (615), ask_only_v2 (86), topshot-gql-v1_haircut
+    //   (82), allday-listing-ask-v1 (44), topshot-gql-v1 (13), ask_only_v2_haircut
+    //   (12), thin-sales-guard-v3_p90clamp (1). None of them is stale — ZERO of the
+    //   cold-tail rows were older than 7 days.
+    //   Measured over the same population: old predicate admits 3,390, the staleness
+    //   predicate admits 13 (10 NO_DATA + 3 older than 7 days + 0 never-priced).
+    //   **99.6% of admissions were false**, ~200 redundant delete+insert pairs per tick
+    //   on a hot partitioned table.
+    // ⭐ So the test is now on the PROPERTY (computed_at age) rather than on the
+    // IDENTITY of the writer. An algo-version allowlist would rot again the moment a
+    // ninth writer appears; a staleness test cannot.
+    // ⚠ Expect `historical_fallback` to read ~13 or 0 from here, NOT 200. That is the
+    // step working correctly on a real backlog, not the old timeout — and
+    // `historical_fallback_error` is what distinguishes the two.
+    //
     // ⚠ The `EXISTS (sales)` is INSIDE the candidate CTE on purpose, and moving it
     // out would starve this backfill. 4,294 of the 8,571 qualifying editions have
     // NO paid sales and can never be converted by this step; if they could enter
@@ -1260,20 +1289,19 @@ export async function POST(req: NextRequest) {
               SELECT e.id, e.collection_id, e.external_id, la.confidence::text AS prev_confidence
               FROM editions e
               LEFT JOIN LATERAL (
-                SELECT fs.edition_id, fs.algo_version, fs.confidence
+                SELECT fs.edition_id, fs.algo_version, fs.confidence, fs.computed_at
                 FROM fmv_snapshots fs
                 WHERE fs.edition_id = e.id
                 ORDER BY fs.computed_at DESC
                 LIMIT 1
               ) la ON true
-              -- Admit editions with no snapshot, or a non-1.7.x snapshot, OR a 1.7.x
-              -- snapshot that is currently NO_DATA (the F5 / corrected-D3 recovery):
-              -- editions that have sales but were stamped NO_DATA by an earlier
-              -- empty-window pass and then frozen out by the "skip 1.7.x" guard.
+              -- Admit editions with no snapshot, or a NO_DATA one, OR one that is
+              -- genuinely STALE. Staleness is tested on computed_at, NOT on the
+              -- algo_version string — see the correction below.
               -- Scoped to confidence='NO_DATA' ONLY — a broader relax would re-admit
               -- (and risk re-clobbering) good 1.7.x HIGH/MEDIUM rows, the 2026-05-30
               -- Step 6 self-perpetuating-cycle class.
-              WHERE (la.edition_id IS NULL OR la.algo_version NOT LIKE '1.7.%' OR la.confidence = 'NO_DATA')
+              WHERE (la.edition_id IS NULL OR la.confidence = 'NO_DATA' OR la.computed_at < now() - interval '7 days')
                 AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
                 AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
                 AND EXISTS (SELECT 1 FROM sales s WHERE s.edition_id = e.id AND s.price_usd > 0)
