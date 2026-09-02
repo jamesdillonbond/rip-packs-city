@@ -237,7 +237,12 @@ describe("wallet-backfill — walk + upsert contract", () => {
 
     const log = walkLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_ok: true, p_rows_found: 3, p_rows_written: 3, p_rows_skipped: 0 })
-    expect(log?.p_extra).toMatchObject({ chunk_errors: 0, chunk_rows_lost: 0 })
+    // ⚠ `rows_to_write` is the DENOMINATOR deep-audit R30 asks loss to be judged
+    // against. This lane buffers and flushes its own chunks, so it had no `rows`
+    // array to measure and emitted nothing — leaving the biggest wallet lane the
+    // only one whose loss RATE was not computable. An absolute `chunk_rows_lost: 0`
+    // proves nothing on a day only a handful of rows are handed to the writer.
+    expect(log?.p_extra).toMatchObject({ chunk_errors: 0, chunk_rows_lost: 0, rows_to_write: 3 })
     expect(log?.p_extra).toMatchObject({
       wallet: WALLET,
       on_chain_count: 3,
@@ -331,6 +336,8 @@ describe("wallet-backfill — walk + upsert contract", () => {
     expect(log?.p_extra).toMatchObject({
       chunk_errors: 1,
       chunk_rows_lost: 2,
+      // Both halves of the ratio, on the same run: 2 of 2 attempted were lost.
+      rows_to_write: 2,
       first_chunk_error: "wmc upsert boom",
     })
     // the 2 fetched-but-unwritten rows are attributed as skipped
@@ -383,6 +390,14 @@ describe("wallet-backfill — lock + error reclassification", () => {
       terminated_reason: "storage_limit_exceeded",
       flagged_for_sharded_scan: true,
     })
+    // ⚠ THE CHUNK KEYS MUST BE PRESENT ON THIS PATH, not merely zero-valued.
+    // These three exit paths used to emit no chunk fields at all, so a run that
+    // lost chunks and THEN hit one of them reported neither the loss nor the
+    // attempt — the run most likely to have lost rows was the one that hid it.
+    // Asserted as PRESENCE, because absent and zero are different answers.
+    for (const k of ["chunk_errors", "chunk_rows_lost", "rows_to_write"]) {
+      expect(Object.keys(log?.p_extra as object)).toContain(k)
+    }
     expect(String((log?.p_extra as Record<string, unknown>).error_excerpt)).toContain("1106")
     expect(state.lockReleases).toEqual([`nba_top_shot:${WALLET}`])
   })
@@ -400,6 +415,9 @@ describe("wallet-backfill — lock + error reclassification", () => {
       terminated_reason: "no_collection_capability",
       flagged_for_no_capability: true,
     })
+    for (const k of ["chunk_errors", "chunk_rows_lost", "rows_to_write"]) {
+      expect(Object.keys(log?.p_extra as object)).toContain(k)
+    }
   })
 
   it("a generic walk error logs ok:false with the message and still releases the lock", async () => {
@@ -412,6 +430,9 @@ describe("wallet-backfill — lock + error reclassification", () => {
     const log = walkLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_ok: false, p_error: "access node timeout" })
     expect(log?.p_extra).toMatchObject({ terminated_reason: "error" })
+    for (const k of ["chunk_errors", "chunk_rows_lost", "rows_to_write"]) {
+      expect(Object.keys(log?.p_extra as object)).toContain(k)
+    }
     expect(state.lockReleases).toEqual([`nba_top_shot:${WALLET}`])
   })
 })

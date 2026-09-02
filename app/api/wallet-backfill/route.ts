@@ -239,6 +239,14 @@ async function runBackfill(
   // other four collections and silently missed Top Shot. One mechanism, one set
   // of edge cases.
   const chunkTally = newChunkTally()
+  // ⚠ THE DENOMINATOR, and this lane was the only one without it. deep-audit R30
+  // asks for chunk loss judged PER ROW ATTEMPTED, never as an absolute count —
+  // an absolute zero is nearly guaranteed on a day the cache is caught up and
+  // only a handful of rows are handed to the writer. Every sibling lane emits
+  // `rows_to_write`; this route buffers and flushes its own chunks, so it had
+  // no single `rows` array to measure and emitted nothing. Without it the
+  // biggest lane's loss RATE is not computable at all.
+  let totalRowsAttempted = 0
   let terminatedReason:
     | "no_more_moments"
     | "safety_ceiling"
@@ -392,6 +400,7 @@ async function runBackfill(
       // totalUpserted now counts rows ACTUALLY written (insert + real update).
       if (allRows.length >= UPSERT_CHUNK) {
         const chunk = allRows.splice(0, allRows.length)
+        totalRowsAttempted += chunk.length
         totalUpserted += await upsertWmcChunkWithRetry(
           chunk,
           "wallet-backfill",
@@ -409,6 +418,7 @@ async function runBackfill(
 
     // Flush whatever's still buffered. Same change-detecting RPC as above.
     if (allRows.length > 0) {
+      totalRowsAttempted += allRows.length
       totalUpserted += await upsertWmcChunkWithRetry(
         allRows,
         "wallet-backfill",
@@ -457,6 +467,7 @@ async function runBackfill(
         pages_fetched: batchesFetched,
         total_moments_seen: totalFetched,
         skipped_cached: totalSkippedCached,
+        rows_to_write: totalRowsAttempted,
         ...chunkFailureExtra(chunkTally),
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: terminatedReason,
@@ -477,11 +488,17 @@ async function runBackfill(
         wallet,
         rowsFound: totalFetched,
         rowsWritten: totalUpserted,
-        rowsSkipped: totalSkippedCached,
+        // ⚠ LOST CHUNK ROWS COUNT AS SKIPPED HERE TOO. The success path already
+        // adds them; these exit paths did not, so a run that lost chunks and
+        // THEN hit one of them under-reported both the loss and the attempt —
+        // the run most likely to have lost rows was the one that hid it.
+        rowsSkipped: totalSkippedCached + chunkTally.chunkRowsLost,
         ok: true,
         extra: {
           pages_fetched: batchesFetched,
           total_moments_seen: totalFetched,
+          rows_to_write: totalRowsAttempted,
+          ...chunkFailureExtra(chunkTally),
           terminated_reason: "storage_limit_exceeded",
           flagged_for_sharded_scan: true,
           skip_cached: skipCached,
@@ -502,11 +519,13 @@ async function runBackfill(
         wallet,
         rowsFound: totalFetched,
         rowsWritten: totalUpserted,
-        rowsSkipped: totalSkippedCached,
+        rowsSkipped: totalSkippedCached + chunkTally.chunkRowsLost,
         ok: true,
         extra: {
           pages_fetched: batchesFetched,
           total_moments_seen: totalFetched,
+          rows_to_write: totalRowsAttempted,
+          ...chunkFailureExtra(chunkTally),
           terminated_reason: "no_collection_capability",
           flagged_for_no_capability: true,
           skip_cached: skipCached,
@@ -523,12 +542,14 @@ async function runBackfill(
       wallet,
       rowsFound: totalFetched,
       rowsWritten: totalUpserted,
-      rowsSkipped: totalSkippedCached,
+      rowsSkipped: totalSkippedCached + chunkTally.chunkRowsLost,
       ok: false,
       error: msg,
       extra: {
         pages_fetched: batchesFetched,
         total_moments_seen: totalFetched,
+        rows_to_write: totalRowsAttempted,
+        ...chunkFailureExtra(chunkTally),
         terminated_reason: terminatedReason,
         skip_cached: skipCached,
         elapsed_ms: elapsedMs,
