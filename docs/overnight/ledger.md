@@ -10,6 +10,123 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · 📏 A 30-day zero-yield census of the whole fleet, and a correction that stops R30 being closed on a number that means nothing
+
+**Nothing shipped from this entry** — one inbox filing
+(`2026-09-02T0435Z-resolve-topshot-stubs-…`), one register annotation on **R30**. It is the sweep that
+found tonight's two treadmills, plus the reason it must never become an alarm.
+
+**The sweep reads `pipeline_runs_daily`, which is indefinite** — deliberately, because `pipeline_runs`
+retains ~73 h and a 3-day window cannot tell a standing state from a bad afternoon:
+
+```sql
+SELECT pipeline, count(*) days, sum(runs) runs, sum(rows_found) found, sum(rows_written) written,
+       round(100.0*sum(rows_written)/NULLIF(sum(rows_found),0), 3) AS yield_pct
+FROM pipeline_runs_daily WHERE day > current_date - 30 GROUP BY 1
+HAVING sum(rows_found) >= 5000 AND sum(rows_written) * 200 < sum(rows_found) AND count(*) >= 10;
+```
+
+**Nine pipelines. Two are real, and I checked the other seven rather than assuming.** The top row by a
+factor of twelve — `snapshot-pack-asks`, 24,090,015 "found" over 30 days — is a **false positive**: its
+`rows_found` is 2,974 on every run, the size of the currently-listed pack set, and it is a delta
+snapshot that writes only what changed in ~3 s. Others are dispatchers (writing nothing is the job),
+block-range walkers, or already known (`match-topshot-players` is #54).
+
+⭐ **`rows_found` DOES NOT MEAN THE SAME THING TWICE.** Across those nine it means rows scanned, the
+size of a live set, blocks traversed, dispatches issued, and candidates examined. **So this is a triage
+list a human reads, never a threshold a machine fires on** — an arm built on it would page on
+`snapshot-pack-asks` forever and be switched off, taking the real findings with it. The 24 h version
+was noisier still (15 pipelines). ⛔ **Do not build that arm.** Where it earns its keep is as the FIRST
+step of a per-pipeline read — which is exactly how both of tonight's treadmills were found.
+
+⛔ **R30 MUST NOT BE CLOSED ON `rows_lost = 0`, and it currently looks closable.** Two independent
+reasons, both measured:
+
+1. **Its falsifier can no longer be run.** R30's next step was *"split the backstop's kill share at this
+   commit"*. The commit landed **2026-08-28 06:09Z**; the oldest retained `wallet-backfill%` row is
+   **2026-08-30 00:45Z**. The pre-side is gone. And `pipeline_runs_daily` stores only
+   **`extra_key_counts`** — key PRESENCE, not values — so `chunk_rows_lost` was never made durable.
+   ⭐ **An experiment whose measurement window is shorter than the time it takes anyone to read it has
+   no falsifier at all.** If it is re-run, make the counter durable first.
+2. **The zero is a DENOMINATOR ARTEFACT.** Over the retained 48 h: 7,065 runs, 3,251 carrying
+   `chunk_rows_lost`, **every one zero**, `chunk_errors` zero, and the key genuinely present (not a
+   vanished field read as 0). **But `rows_to_write` across those runs totals 236** — against 7,334,914
+   moments seen and 7,616,009 skipped as already cached. Losses happened on the UPSERT path, so with
+   236 rows to upsert in two days **a zero is nearly guaranteed whether or not the mechanism was
+   fixed**. 0 of 236 is not evidence against ~110k lost per 48 h. 👉 Settle it in the next HIGH-WRITE
+   window and judge **loss per row attempted**, never the absolute count.
+
+**The filing** records `resolve-topshot-stubs`: **37 rows written in 74,800 attempts over 36 days**
+(0.049%), 520 permanently-stuck editions rotated ~4.4× a day. ⭐ Unlike the two treadmills, **its
+rotation is working as designed** — `ORDER BY updated_at ASC NULLS FIRST`, with a comment saying why.
+The queue has nothing left to find, which is a different problem with a different owner. ⛔ And the
+obvious cheap fix has a trap: *"skip anything attempted in the last 24 h"* uses the SAME COLUMN for
+"attempted" and "changed", so it would delay every genuinely new stub by up to a day. What is missing is
+an attempt time separate from a change time.
+
+### 2026-09-01 · ✅ SHIPPED — a second zero-yield treadmill, found by sweeping for the class the spork floor exposed: `topshot-buyer-backfill-historical` re-decoded the SAME 45 rows 47 times a day, forever
+
+**Code:** `app/api/admin/backfill-topshot-buyers/route.ts` (historical lane) + new guard
+`__tests__/backfill-topshot-buyers-historical-skips-exhausted-rows.test.ts`. Found by asking the
+generalising question after the spork-floor fix — *which other pipelines find rows and convert none?* —
+not by a filing.
+
+**The reading, and every field of it says "healthy":**
+
+| | |
+|---|---:|
+| runs / 24 h | 47 |
+| `rows_found` | **45 on every single run** |
+| `buyers_resolved` · `rows_written` | **0** |
+| `decode_404` · `decode_failed` · `decode_other_status` | **0 · 0 · 0** |
+| `exec_accounts_resolved` | **45** |
+| `spork_floor` · `wrapped` · `cursor_sold_at` | false · true · null |
+
+⭐ **Nothing was failing** — that is what made it invisible. The lane decoded all 45 successfully.
+
+**The mechanism.** The window `[2023-11-08T16:07:03Z, 2025-01-01)` holds exactly **45** null-buyer rows,
+and **all 45 already carried a payer AND a proposer** — every one had been decoded by this lane before,
+which found exec accounts and no buyer. A buyer-less row keeps `buyer_address IS NULL`, so the next run
+selected the same 45, re-decoded them through the spork proxy, and re-`UPDATE`d them with the identical
+payer/proposer. With 45 < `HIST_BATCH` (120) the cursor was set to `null` every run (`wrapped: true`),
+so the walk restarted from the window's top forever. **2,115 proxy decodes and 2,115 no-op row versions
+a day on a partitioned `sales`** — the row churn is the part that costs more than the calls.
+
+**The fix is one predicate, and it is justified rather than convenient:** `payer_address IS NULL` in the
+claim. A decoded tx is **immutable**, so re-running the *same* decoder cannot produce a different
+answer; on Top Shot sales `payer_address` is written only by a tx decode (this route's two lanes and
+`sales-indexer`), so *payer set AND buyer null* means exactly "decoded, no buyer recoverable".
+👉 **The one case that un-skips them is a CHANGED decoder** — recorded in the code: run a one-off pass
+with the predicate removed rather than deleting it.
+
+⭐ **And the predicate alone would have created the defect one level up.** A filter that silently shrinks
+a population makes *"nothing left to do"* and *"we stopped looking"* the same reading. So the run now
+also reports **`extra.exhausted_in_window`** — the count it excluded — **and that count is `-1`, never
+`0`, when the count itself fails.** A failed read published as a measured zero would say "nothing is
+parked" when the truth is "we could not look".
+
+**The guard asserts BEHAVIOUR, not the presence of a predicate.** Its supabase mock *applies* the
+filters (and throws on an operator it does not implement, so a silently-ignored filter cannot pass), and
+it carries three controls: nothing exhausted ⇒ all 3 still claimed (a predicate excluding *everything*
+would otherwise pass), an empty window ⇒ the key present and `0` rather than absent, and a failed count
+⇒ `-1`. **Mutation-proved both ways:** deleting the predicate fails it with *"an exhausted row must not
+be claimed again: expected 3 to be 1"*; restored, 4/4 green.
+
+⭐ **An independent corroboration of tonight's other floor, from a completely different source.** This
+route's `HIST_WINDOW_START` is **`2023-11-08T16:07:03Z`** — the mainnet24 root height read from the live
+node on 08-30. My 24 `pg_net` probes bracketed Flow REST's prune horizon to *between 15:58:12Z and
+18:51:39Z on the same day*, and 16:07:03Z falls inside that bracket. **Two methods, two endpoints, one
+boundary.** The `sales_counterparty` floor is set at 17:00:00Z, which partitions identically (no `sales`
+row exists between 15:58:12Z and 18:51:39Z) but is 53 minutes above the true root — cosmetic, and worth
+aligning next time that state row is touched, since the floor is DATA.
+
+⚠ **Residual, operator:** the lane's population is now permanently 0 in this window, so its ~47 runs/day
+could be retired or slowed. Left armed deliberately — a drained tick is one bounded index range, and if
+a historical importer ever inserts 2024 rows the lane picks them up on its own.
+
+**REVERT:** `git revert` the code commit. No DB object, migration or schedule changed; the 45 rows are
+untouched and stay exactly as they are.
+
 ### 2026-09-01 · ✅ VERIFIED IN PRODUCTION — 0 of 120 became 109 of 120 on the first tick; and a race 42 seconds after the floor migration committed is the more useful half of this entry
 
 **Follow-up to the spork-floor entry below.** Migration
