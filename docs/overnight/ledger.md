@@ -10,6 +10,99 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · 📏 THE LOCK-CHECK PIPELINE IS STARVING 237 OF 249 WALLETS — and three "obvious" optimisations were all refuted by measurement
+
+**Nothing shipped. Read-only investigation, deliberately.** Every candidate change I tested was worse
+than what is live, and the one change worth making is a product decision, not an optimisation.
+
+Follows the entry below (the covering index). It answers *why* that index did nothing, and finds
+something considerably more important than its buffer cost.
+
+### ⛔ The user-facing finding: lock checks go to 12 wallets, 69 % of them to ONE
+
+`lock-check-batch` is healthy by every instrument — **48 runs / 24 h, 48 ok, 19,200 rows found,
+19,184 written**, exactly its designed throughput. And yet, over the same 24 h on `nba_top_shot`:
+
+| | |
+|---|---|
+| distinct wallets that received ANY check | **12** |
+| checks that went to the single busiest wallet | **6,641 (69.2 %)** |
+| checks that went to the top 5 wallets | **99.9 %** |
+| hot wallets that HAVE qualifying work | **249** |
+
+**237 of the 249 wallets users actually care about got nothing.** The pipeline is not stalled, not
+erroring, and not alerting — it is doing full-rate work on a handful of wallets. No existing arm
+watches distribution, so this was invisible.
+
+**Mechanism:** 1,474,231 of 1,904,215 TopShot rows have `lock_checked_at IS NULL`. Under
+`ORDER BY lock_checked_at ASC NULLS FIRST` **every one of those 1.47 M rows is TIED**, so the outer
+sort's tie-break — effectively the LATERAL's input order — decides everything, and the first wallets
+scanned take the whole batch.
+
+⚠ **A second consequence: the `p_max_age_days` predicate is INERT.** There will always be ~1.47 M
+NULLs sorting ahead of anything with a timestamp, so no already-checked row is ever re-checked.
+Freshness is not "7 days" — it is "checked once, then not again this year".
+
+📏 **And the target is arithmetically unreachable anyway.** Keeping 1.9 M rows fresh within 7 days
+needs ~271,000 checks/day. Actual: **9,590/day — 3.5 % of requirement**; the never-checked backlog
+alone is **154 days** at current rate. The route's own header already says `MAX_AGE_DAYS` is "a
+BACKGROUND TARGET, NOT A PROMISE THIS BATCH KEEPS" — correct, and now quantified.
+
+### ⛔ Why the covering index did nothing — visibility, not projection
+
+The priority leg's plan confirms the new index is chosen and **is** an Index Only Scan. It also says:
+
+```
+Index Only Scan using idx_wmc_lock_wallet_coll_cover (rows=46255, loops=584)
+  Heap Fetches: 16866
+```
+
+**An index-only scan still visits the heap for any tuple on a page the visibility map does not mark
+all-visible.** INCLUDE columns have no bearing on that — the visit is forced by *visibility*. And the
+writer dirtying those pages is **this same pipeline**: ~19,200 scattered UPDATEs/day across 120,286
+heap pages, non-HOT because `lock_checked_at` sits in 4+ indexes. Each batch un-marks the pages the
+next batch wants to read index-only.
+
+⛔ **Autovacuum is NOT the lever — checked before proposing it.** The table already carries
+`autovacuum_vacuum_scale_factor=0.02` / `analyze 0.02` / `insert 0.05` (defaults 0.2/0.1/0.2),
+`autovacuum_count=693`, last run **20 minutes** before measurement, dead tuples **1.18 %**. This is a
+write-rate property, not a vacuum-tuning gap.
+
+**Rule: when a plan says `Index Only Scan`, read `Heap Fetches:` before believing it.**
+
+### ⛔ Three refuted rewrites — the live shape won, by 26–29×
+
+Measured head-to-head, same arguments, same session, judged on buffers:
+
+| shape | buffers | ms | rows materialised |
+|---|---|---|---|
+| **live: per-wallet LATERAL, inner `LIMIT 200`** | **21,725** | 2,602 | 46,255 |
+| `wallet_address IN (SELECT … FROM hot)` | 631,906 | 18,826 | 1,862,848 |
+| `wallet_address = ANY(array(…))` | 565,784 | 2,752 | 1,665,575 |
+
+Both rewrites collapse the per-wallet bound and materialise the **whole** qualifying set — the first
+as a Hash Join, the second as one huge Index Cond scan — then top-N sort. **I predicted an
+early-terminating ordered scan and got neither.** Predicting a plan instead of reading one is the
+third time that has cost me today.
+
+⚠ **Do not re-derive these.** Early termination would need a scan ordered by `lock_checked_at`
+globally (`idx_wmc_lockcheck_order`, which exists) — but `wallet_address` is not in that index, so
+membership costs a heap visit per candidate, and the planner will not choose it. **The live
+per-wallet LATERAL is the best of the three and should be left alone.**
+
+📏 Also corrected: I claimed "~117,000 rows materialised". **It is 46,255** — only 249 of the 584 hot
+wallets hold TopShot rows at all. 224 of those 249 hit the inner cap.
+
+### The one change worth making is a POLICY decision, not a fix
+
+Capping each wallet's contribution (a smaller inner `LIMIT`) would cut materialised rows ~20–180×
+**and** spread checks across ~200 distinct wallets per run instead of 1. But it is a genuine
+trade — breadth vs depth. Today one wallet converges in ~22 days while 237 never start; under a cap,
+all advance and none completes. ⚠ It is **not** exactness-preserving: one wallet can legitimately own
+all 200 of the correct answer. Given 69 % to a single wallet, breadth looks clearly right for users —
+but that is Trevor's call, and it is written up for him rather than shipped at 03:30Z on
+twenty-minute-old measurements.
+
 ### 2026-09-01 · ⛔ THE INDEX WAS BUILT ON THE WRONG PREMISE — it works, it is used, and the cost it was aimed at is not where the cost is. Verdict HELD, not claimed.
 
 **Revert path:** `DROP INDEX CONCURRENTLY idx_wmc_lock_wallet_coll_cover;` (rebuild is 23.6 s).

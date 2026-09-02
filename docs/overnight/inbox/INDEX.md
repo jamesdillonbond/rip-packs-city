@@ -1,4 +1,4 @@
-# Inbox index — 352 live filings
+# Inbox index — 353 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,13 +30,11 @@ failure it documents.
 
 ---
 
-## 2026-09-02 — 2 filings
+## 2026-09-02 — 4 filings
 
+- [`lock-check-batch` is at full rate, fully green, and starving 237 of 249 wallets](2026-09-02T0330Z-lock-check-is-full-rate-and-starving-237-of-249-wallets.md)
 - [📏 `backfill_wmc_metadata_from_editions` had 152 rows left, now filled — and its partial index is a 100% false positive](2026-09-02T0215Z-wmc-metadata-backfill-is-done-and-its-partial-index-is-now-a-100pct-false-positive.md)
 - [The deploy tool's *safe* default was the outage — and a green pipeline proved nothing about the secret](2026-09-02T0045Z-the-deploy-tools-safe-default-was-the-outage-and-a-green-pipeline-proved-nothing-about-the-secret.md)
-
-## 2026-09-02 — 1 filing
-
 - [Daytime monitor — offers-sweep logs Top Shot 530 as a hard fail on half its ticks](2026-09-02T0010Z-daytime-monitor-offers-sweep-logs-topshot-530-as-hard-fail-on-half-its-ticks.md)
 
 ## 2026-09-01 — 7 filings
