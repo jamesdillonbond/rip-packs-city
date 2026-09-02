@@ -32,6 +32,10 @@ failure it documents.
 
 ## 2026-09-02 — 1 filing
 
+- [The deploy tool's *safe* default was the outage — and a green pipeline proved nothing about the secret](2026-09-02T0045Z-the-deploy-tools-safe-default-was-the-outage-and-a-green-pipeline-proved-nothing-about-the-secret.md)
+
+## 2026-09-02 — 1 filing
+
 - [Daytime monitor — offers-sweep logs Top Shot 530 as a hard fail on half its ticks](2026-09-02T0010Z-daytime-monitor-offers-sweep-logs-topshot-530-as-hard-fail-on-half-its-ticks.md)
 
 ## 2026-09-01 — 7 filings

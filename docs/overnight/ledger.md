@@ -10,6 +10,90 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · SHIPPED — edge fleet (cloud autonomous pass) · 16 of 18 PROVEN-drifted edge functions redeployed; drift 18 → 2, and the deploy tool's safe-looking default was the outage
+
+**Revert path:** per function, redeploy the previous version's source (every prior version is retained
+server-side; `list_edge_functions` carries `ezbr_sha256` per version). No DB change, no migration.
+
+**Why this was mine and not Trevor's.** The standing handoff listed the whole redeploy fleet as an
+operator task on the strength of "the Supabase CLI is confirmed unavailable on Trevor's box"
+(`rpc-edge-fn-deploy` §4, measured 2026-08-15). That is still true — but the same skill says to *treat
+the CLI as unavailable and go straight to the MCP fallback*, and `mcp__Supabase__deploy_edge_function`
+uses a different credential path that works from here. The handoff had also gone stale in two ways: it
+told Trevor to pass `--import-map supabase/functions/<fn>/deno.json` (**wrong — the map is repo-level,
+`supabase/functions/deno.json`**), and it quoted a 19/6 split that no longer held.
+
+**Re-derived the drift rather than trusting the number.** `npm run edge:drift:check` needs a
+`SUPABASE_ACCESS_TOKEN` Management PAT that is not in `.env.local`, which is *why* the number had gone
+stale. But tier 1 does not need the PAT: the script exports a pure `classifyImportMapDrift(repo,
+deployed)` and the only deployed field it wants is `import_map`, which `list_edge_functions` returns.
+Fed that in ⇒ **18 PROVEN drifted** (not 19), 3 inapplicable, 0 undeployed.
+
+### ⛔ The trap, caught by the rehearsal and not by reasoning
+
+`mcp__Supabase__deploy_edge_function` declares `verify_jwt` **required with default `true`**. I omitted
+it on the first deploy. The call **succeeded** and flipped the function `false → true` — putting the
+Supabase gateway in front of a function whose entire auth is an `INGEST_SECRET_TOKEN` bearer header.
+Every caller would 401 *before the handler runs*, and **a 401'd edge function writes no `pipeline_runs`
+row**, so it reads as "dormant", not "broken". That is the 2026-08-12 ~40 h silent-outage shape reached
+by a completely different route.
+
+It cost nothing because the rehearsal target was chosen to be the quietest thing in the fleet —
+`seed-topshot-pack-distributions`: no `cron.job` caller, no in-repo caller, 0 runs in 7 days. Had the
+sweep started with `pinnacle-nft-resolver` (**854 runs / 7 d**) it would have been a live outage.
+Repaired in the same pass; `ezbr_sha256` proved the repair byte-identical to the intended source.
+
+### What shipped (all verified `import_map: true` · `verify_jwt: false` · `status: ACTIVE`)
+
+| tranche | functions | live check |
+|---|---|---|
+| dormant, flat layout | `seed-topshot-pack-distributions` `seed-allday-pack-distributions` `scan-ufc-wallet` `scan-pinnacle-wallet` `backfill-allday-listing-serials` `backfill-topshot-base-parallel-probe` `special-serial-sweep` `hybrid-custody-backfill` `ingest-topshot-atlas-pool` | n/a — no caller |
+| `_shared` importers | `topshot-insider-detect-patterns` (dormant, deployed first as the layout rehearsal) · `compute-allday-pack-ev` (**live, 143 runs/7 d**) | `compute-allday-pack-ev` post-deploy tick 23:37:05Z `ok=true` |
+| live traffic | `pinnacle-owner-discovery` · `pinnacle-owner-discovery-forward` (151/7 d) · `pinnacle-nft-resolver` (854/7 d) · `sales-serial-backfill` · `compute-topshot-pack-ev` (62 KB / 1,599 lines) | forward 23:57:04Z ok · resolver 00:06:02Z ok (100 found, 5.4 s — same shape as pre-deploy) · sales-serial 00:40:12Z ok |
+
+⚠ **A function importing `../_shared/…` cannot use the flat layout.** It needs repo-relative names —
+`entrypoint_path: supabase/functions/<fn>/index.ts`, `import_map_path: supabase/functions/deno.json`,
+dep at `supabase/functions/_shared/<dep>.ts`. `snapshot-institutional-wallets` was already deployed this
+way and is the working reference.
+
+**Post-state, mechanically re-derived: PROVEN drift 18 → 2.**
+
+### ⛔ The 2 that remain are genuinely two-part — and the reason is not the one on file
+
+`compute-golazos-pack-ev` (cron **44**) and `ingest-pinnacle-mints` (crons **83**, **84**) are the only
+drifted functions with cron callers, and both are gate-keyed. Both are **green right now** —
+`ingest-pinnacle-mints` logged 2,726 runs / 2,726 ok in 7 d; golazos 12/12. **That greenness proves
+nothing about the secret.** A redacted-report subagent read the deployed sources: both **gate on a
+hardcoded string literal baked into the deployed build**, while repo HEAD reads
+`GOLAZOS_PACK_EV_GATE_KEY` / `PINNACLE_MINTS_GATE_KEY` from env and **fails closed when unset**.
+Deploying either without setting its secret first is exactly the 08-12 break.
+
+Structural precondition re-run (§2 of the skill; **no key value selected — length, prefix and md5 only**):
+all three crons pass `looks_real` (`^rpc_pls_`), none is a placeholder, and **83 and 84 share one key**
+(identical md5), so one secret covers both. Lengths are **26 / 28** — i.e. these are still the
+*original, publicly-burned* keys, not the 40-char rotated form, which makes these two the natural place
+to do a real rotation rather than re-install a burned credential. Repo HEAD supports the `_OLD`
+dual-accept pattern, so it can be done with **no window**. Handed over in
+`claude/needs-trevor-2026-09-02-step-by-step.md`.
+
+### Correction to a claim I made earlier this pass
+
+I flagged `sync-nba-projections` (0 ok / 25 runs, `all_upstreams_failed`) as an unflagged live break.
+**Wrong on the "unflagged" half.** `pipeline_alert_suppression` has carried a row for it since
+2026-08-13 with `expires_at` **2026-10-14** — dated to just after the season opens — and the failure-rate
+arm does catch it. The failures are real (Akamai 403s on all three upstreams, ESPN 403s residentially
+too; known-issues #8) but downstream impact is nil in the offseason and every proposed fix is already
+recorded as measured-dead. **No change made; the suppression is sound.** ⚠ One trap for October: `ok`
+turning true will not by itself refill the tables — both legs are slate-gated, and 08-02/03 recorded
+8 runs / 8 ok / `rows_written = 0`. **Verify on rows written, never on `ok`.**
+
+### Also corrected mid-pass
+
+`ingest-pinnacle-mints` first read as a **live silent outage** — jobs 83/84 firing 2,576× in 3 days with
+zero `pipeline_runs` rows. It was my query. The function self-logs as `ingest-pinnacle-mints-forward` /
+`-backfill`, **not** its slug. ⚠ Enumerate the `pipeline:` literals in a function's source before
+concluding anything from an empty `pipeline_runs` result.
+
 ### 2026-09-01 · ⛔ REFUTED a filed finding BEFORE acting on it — offers-sweep's 530 alternation is the breaker working, and the suggested fix would have DISARMED it
 
 **Session:** Claude Code interactive, Trevor's box, ~17:4x PT. Read-only; **nothing changed, deliberately.**
