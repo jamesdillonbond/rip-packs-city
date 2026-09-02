@@ -317,9 +317,15 @@ const PINS = [
     migration: "supabase/migrations/20260702130000_audit_20260702_allday_cross_source_dedup_writer_trigger.sql",
   },
   {
+    // Re-pointed 2026-09-02 IN THE SAME SESSION as the change: nft_edition_map
+    // joined moments + wallet_moments_cache as a THIRD, strictly-last COALESCE
+    // leg (2,192 null-serial sales recoverable; AllDay's unresolvable remainder
+    // went to zero). The 20260705 migration is superseded as the newest
+    // defining migration for this function.
     fn: "backfill_null_serial_sales_from_moments",
     test: "supabase/tests/backfill_null_serial_sales_from_moments.sql",
-    migration: "supabase/migrations/20260705193000_audit_20260705_recover_null_serial_sales_from_moments.sql",
+    migration:
+      "supabase/migrations/20260902090207_audit_20260902_null_serial_backfill_reads_nft_edition_map_as_a_third_source.sql",
   },
   {
     fn: "get_wallet_moments_with_fmv",
