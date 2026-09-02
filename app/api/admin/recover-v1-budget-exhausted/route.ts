@@ -32,10 +32,18 @@ const ALLDAY_DEPOSIT_EVENT = "A.e4cf4bdc1751c65d.AllDay.Deposit"
 const ALLDAY_WITHDRAW_EVENT = "A.e4cf4bdc1751c65d.AllDay.Withdraw"
 const TX_DECODE_DELAY_MS = 80
 
-// Rows to pull per tick (deduped by tx below). Flow REST shares a ~20 req/s
-// project budget; each distinct tx costs one decode. The elapsed budget is the
-// real limiter, this just bounds the initial read.
-const CANDIDATE_LIMIT = 2000
+// Rows to pull per tick. Flow REST shares a ~20 req/s project budget; each
+// distinct tx costs one decode. The elapsed budget is the real limiter, this
+// just bounds the initial read.
+//
+// ⚠ WAS 2000, WHICH THIS ROUTE NEVER GOT. The old read went straight at
+// `unmapped_sales` through PostgREST, which CLAMPS a limit above 1,000 — and
+// `extra.candidates` duly read exactly 1000 on every run for months, which is
+// what the documented cap looks like from the outside when nobody checks the
+// number against what was asked for. The claim is now an RPC that bounds
+// p_limit itself, and 500 is a real number: at ~80 ms of pacing plus a Flow
+// round-trip per decode, several hundred fit inside ELAPSED_BUDGET_MS.
+const CANDIDATE_LIMIT = 500
 const ELAPSED_BUDGET_MS = 200_000
 const PROMOTE_LIMIT = 1000
 
@@ -74,13 +82,34 @@ async function run(startedAt: string, startedMs: number) {
   let ok = true
 
   try {
-    const { data, error } = await (supabaseAdmin as any)
-      .from("unmapped_sales")
-      .select("id, nft_id, transaction_hash, resolved_at, resolution_hint")
-      .eq("collection_id", ALLDAY_COLLECTION_ID)
-      .is("resolved_at", null)
-      .eq("resolution_hint->>price_extraction", "v1_tx_decode_budget_exhausted")
-      .limit(CANDIDATE_LIMIT)
+    // ⚠ CLAIM THROUGH THE RPC, NOT THE TABLE — this is the fix, not a refactor.
+    //
+    // The old read selected from `unmapped_sales` with NO ORDER BY, so it got
+    // PHYSICAL order: the same page on every tick. That page held 304 distinct
+    // txs of which 303 were multi-NFT, so the loop below threw away 999 of
+    // 1,000 rows and decoded ONE. Every run, for months, at `ok: true`.
+    //
+    // Measured 2026-09-02 — the population it was walking past:
+    //   47,691 candidate rows over 21,409 txs
+    //    9,859 SINGLETON txs, recoverable with one decode each   ← starved
+    //   37,832 rows inside multi-NFT txs, unsplittable here
+    // At one row per tick that backlog needs ~137 days; the elapsed budget can
+    // do hundreds per tick once the candidates are the right ones.
+    //
+    // `claim_allday_v1_price_recovery_candidates` applies the singleton-tx test
+    // in SQL and orders on the unique id.
+    //
+    // ⚠ It returns `resolution_hint` ON PURPOSE, and the first version of it did
+    // not. The write path below rebuilds the hint from `row.resolution_hint`,
+    // strips two keys and writes the object back — so with the column missing,
+    // `?? {}` would have spread to an empty object and the UPDATE would have
+    // REPLACED the hint on every recovered row, discarding every other key it
+    // held. Caught before the route shipped; a claim that returns FEWER columns
+    // is not free when the writer round-trips one of them.
+    const { data, error } = await (supabaseAdmin as any).rpc(
+      "claim_allday_v1_price_recovery_candidates",
+      { p_limit: CANDIDATE_LIMIT },
+    )
     if (error) {
       summary.fatal = `select:${error.message?.slice(0, 200)}`
       ok = false

@@ -11,6 +11,19 @@ import { makeInstrumentedSupabaseFixture, type RecordedRpcCall } from "./helpers
 //   - in-place sales price fix when the row already promoted at price 0;
 //   - multi-NFT tx skip (unsplittable gross);
 //   - uncertain decode left untouched; promote invoked; honest counters.
+//
+// ⚠ UPDATED 2026-09-02: candidates now arrive from the RPC
+// `claim_allday_v1_price_recovery_candidates`, not from a raw `unmapped_sales`
+// select. The old read had no ORDER BY, so it took physical order — the same
+// page every tick — and discarded 999 of 1,000 rows as multi-NFT while 9,859
+// singleton-tx rows sat unreachable behind it. The claim applies the
+// singleton test in SQL.
+//
+// ⭐ THE MULTI-NFT CASE BELOW IS KEPT AND IS NOT DEAD. The RPC's answer is a
+// snapshot; a second row for the same tx can be inserted between the claim and
+// the decode, so the route's own group-size skip is the backstop. Deleting the
+// test because "the query prevents it now" would remove the only thing pinning
+// that backstop.
 
 const state = vi.hoisted(() => ({
   sb: null as unknown,
@@ -74,9 +87,9 @@ describe("recover-v1-budget-exhausted — auth", () => {
     expect((await POST(req("Bearer nope"))).status).toBe(401)
   })
   it("accepts the INGEST token on POST and the CRON token on GET", async () => {
-    install({ unmapped_sales: { data: [], error: null }, "rpc:promote_unmapped_sales": { data: { promoted: 0 }, error: null } })
+    install({ "rpc:claim_allday_v1_price_recovery_candidates": { data: [], error: null }, "rpc:promote_unmapped_sales": { data: { promoted: 0 }, error: null } })
     expect((await POST(req("Bearer ingest-token"))).status).toBe(200)
-    install({ unmapped_sales: { data: [], error: null }, "rpc:promote_unmapped_sales": { data: { promoted: 0 }, error: null } })
+    install({ "rpc:claim_allday_v1_price_recovery_candidates": { data: [], error: null }, "rpc:promote_unmapped_sales": { data: { promoted: 0 }, error: null } })
     expect((await GET(req("Bearer cron-token", "GET"))).status).toBe(200)
   })
 })
@@ -86,7 +99,7 @@ describe("recover-v1-budget-exhausted — recovery", () => {
     const tx = "0x" + "a".repeat(64)
     state.decodeByTx[tx] = { priceCertain: true, priceDuc: 14.25, priceReason: "matched" }
     const spy = install({
-      unmapped_sales: { data: [umRow()], error: null },
+      "rpc:claim_allday_v1_price_recovery_candidates": { data: [umRow()], error: null },
       "rpc:promote_unmapped_sales": { data: { promoted: 1, still_unresolved: 9 }, error: null },
     })
 
@@ -110,7 +123,7 @@ describe("recover-v1-budget-exhausted — recovery", () => {
     const tx = "0x" + "c".repeat(64)
     state.decodeByTx[tx] = { priceCertain: true, priceDuc: 8, priceReason: "matched_no_splits" }
     const spy = install({
-      unmapped_sales: { data: [umRow({ id: "u2", transaction_hash: tx, resolved_at: new Date().toISOString() })], error: null },
+      "rpc:claim_allday_v1_price_recovery_candidates": { data: [umRow({ id: "u2", transaction_hash: tx, resolved_at: new Date().toISOString() })], error: null },
       sales: { data: [{ id: "s1" }], error: null },
       "rpc:promote_unmapped_sales": { data: { promoted: 0 }, error: null },
     })
@@ -122,12 +135,35 @@ describe("recover-v1-budget-exhausted — recovery", () => {
     expect(upd?.rows[0]).toMatchObject({ price_usd: 8, price_native: 8 })
   })
 
+  it("claims through the singleton-tx RPC with a bounded limit, not a raw unordered read", async () => {
+    // The defect this replaced was a `.from("unmapped_sales").select(...)` with no
+    // ORDER BY and a limit of 2000 that PostgREST clamped to 1000 — so the route
+    // re-read one physical page forever and decoded one row per tick. Two things
+    // are pinned: the claim goes through the RPC, and the limit it asks for is
+    // one it can actually be given.
+    const spy = install({
+      "rpc:claim_allday_v1_price_recovery_candidates": { data: [], error: null },
+      "rpc:promote_unmapped_sales": { data: { promoted: 0 }, error: null },
+    })
+    await POST(req("Bearer ingest-token"))
+
+    const claim = spy.rpcCalls.find((c) => c.name === "claim_allday_v1_price_recovery_candidates")
+    expect(claim, "candidates must come from the singleton-tx claim, not a raw table read").toBeTruthy()
+    const limit = (claim!.args as Record<string, number>).p_limit
+    expect(limit).toBeGreaterThan(0)
+    // Above 1000 the value is silently clamped, which is how the old constant
+    // (2000) came to mean 1000 without anyone noticing.
+    expect(limit).toBeLessThanOrEqual(1000)
+  })
+
   it("skips a multi-NFT tx (unsplittable gross) and leaves an uncertain decode alone", async () => {
     const multiTx = "0x" + "d".repeat(64)
     const soloTx = "0x" + "e".repeat(64)
     state.decodeByTx[soloTx] = { priceCertain: false, priceDuc: null, priceReason: "split_sum_mismatch" }
     const spy = install({
-      unmapped_sales: {
+      // Two rows on ONE tx, as they would arrive if a sibling row landed between
+      // the claim and the decode — the case the route's own skip still covers.
+      "rpc:claim_allday_v1_price_recovery_candidates": {
         data: [
           umRow({ id: "m1", transaction_hash: multiTx, nft_id: "1" }),
           umRow({ id: "m2", transaction_hash: multiTx, nft_id: "2" }),
