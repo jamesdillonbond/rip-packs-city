@@ -742,3 +742,64 @@ Corrected: **reachable 450,987 · decodable ≈ 42,569 (9.4%)**.
 populations, and a floor or predicate tells you only the first — **size a backlog by SAMPLING THE
 CONVERSION, never by counting what survives the filter.** And **watch the second tick**: the first tick
 after a fix is the one most likely to flatter it.
+
+---
+
+## THE TENTH SHAPE (2026-09-01): the discarded read error whose landing place is a RETIREMENT path
+
+Every entry above is about a failed read that gets *published* as a fact. This one is worse in a
+specific way: the failed read is never shown to anyone, and instead **destroys the work it was reading
+about**.
+
+The shape is the plainest possible line, and there are **55 of it** in `app/`, `lib/` and `workers/`
+as of 2026-09-01:
+
+```ts
+const { data } = await (supabaseAdmin as any).from("...").select("...").in("...", batch)
+for (const row of data ?? []) { /* build a map */ }
+```
+
+`error` is destructured away. supabase-js **RETURNS** errors rather than throwing, so a failed read
+yields `data: null` and the `?? []` turns it into *"this table has no row for any of these ids."*
+
+⚠ **Most of the 55 are harmless — and that is exactly why this needs a discriminator rather than a
+ban.** In an enrichment loop, an unread lookup means one un-enriched row and the next tick fixes it.
+**Ask instead: WHERE DOES `not found` LAND?** Three landing places found in one sweep of the two
+listing-retry drainers and their admin sibling:
+
+| landing place | consequence of a failed read |
+|---|---|
+| `stillUnresolvedIds.push(id)` → `retry_count + 1` | **10 bumps retire the row permanently** at `RETRY_COUNT_CAP` |
+| `UNRESOLVABLE_MARKER` + `resolved_at = now()` | **irreversible**, on the first occurrence |
+| an enrichment map | harmless — retried next tick |
+
+👉 **THE RULE: `?? []` is safe over a read whose miss is RE-TRIED, and unsafe over a read whose miss is
+RECORDED.** At `*/15` with a cap of 10, a sustained read failure retires every queued row in **two and
+a half hours**, and the only trace is `rows_skipped` going up — which looks like the pipeline working.
+
+### Two siblings of the same shape, in the same files
+
+1. **A failed WRITE that is nevertheless marked done.** `allday-listings-retry` upserted resolved rows
+   into `cached_listings_v2` in batches, logged any error, carried on — and then marked **the whole of
+   `resolvedIds`** `resolved_at`. A listing whose v2 row never landed had its failure row closed
+   forever, and **nothing else re-derives it.** The fix indexes the id list by the same slice as the
+   batch, so only rows whose write landed are marked.
+2. **`x = list.length` after an error branch that only logs.** All three routes ended their
+   resolved-mark with `if (error) console.log(...)` followed by an unconditional
+   `resolved = resolvedIds.length`. **The mark IS the resolution**, so that published N rows resolved
+   while all N stayed queued. In the admin route it answered the operator `{ok: true, resolved: true}`
+   — the one signal that stops a human from looking again.
+
+### And the null-instrument, one field over
+
+`pinnacle-listings-retry` incremented `rowsWritten` only inside `if (uuid)` — the RARE branch. Pinnacle
+editions live in `pinnacle_editions`, which has no `editions` UUID to write, so a tick that resolved a
+full batch still reported `rows_written: 0`. Over 30 days: **2,704 runs · 92,164 found · 0 written**, on
+a pipeline doing its job — which puts it in every zero-yield sweep forever and trains the reader to
+ignore it. `rows_written` now counts the resolutions; the rare backfill is reported separately as
+`extra.edition_id_backfilled`.
+
+⭐ **How the tests pin all of it: as an ABSENCE of the destructive act.** Not *"an error was logged"* —
+the fixture row sits at `retry_count: 9`, one bump from retirement, and the assertion is that
+`listing_resolution_failures` received **zero** UPDATEs. Each of the twelve was mutation-checked by
+reverting the route and confirming it reds.

@@ -10,6 +10,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED — a discarded read error that lands on a RETIREMENT path, in all three listing-retry routes
+
+**Files:** `app/api/pinnacle-listings-retry/route.ts` · `app/api/allday-listings-retry/route.ts` ·
+`app/api/admin/listing-retry-force/route.ts`, plus their three test files. **No DB change.**
+Started from the `2026-09-02T0435Z` filing's passing note that `pinnacle-listings-retry`'s
+`rows_written` counts only one of its two write paths; the counter was the smallest of what was there.
+
+🚨 **THE ONE THAT MATTERS: `const { data } = await …` with `error` destructured away, over a read whose
+MISS IS RECORDED RATHER THAN RE-TRIED.** supabase-js RETURNS errors, so a failed lookup became
+*"this table has no row for any of these ids"* — and on these routes `not found` lands on
+`retry_count + 1`, which **retires the row permanently at `RETRY_COUNT_CAP` = 10**. At `*/15` a
+sustained read failure would have retired **every queued row in two and a half hours**, with no trace
+but `rows_skipped` rising, which reads as the pipeline working. Eight such reads across the three
+routes now throw (or 500) instead. **⚠ There are 55 instances of this line shape in `app/`+`lib/`+
+`workers/`; most are harmless. The discriminator is not the expression, it is WHERE `not found` LANDS**
+— written up as the TENTH SHAPE in [key-files-and-honesty.md](../reference/key-files-and-honesty.md).
+
+🚨 **A DATA-LOSS BUG found in the same read: `allday-listings-retry` marked rows resolved whose write
+had FAILED.** The v2 upsert loop logged its error and carried on, then the resolved-mark ran over the
+**whole** of `resolvedIds` — so a listing whose `cached_listings_v2` row never landed had its failure
+row closed with `resolved_at`, and **nothing else re-derives it.** `insertRows` and `resolvedIds` are
+built one-for-one, so the same slice now indexes both and only rows whose write landed are marked.
+
+⛔ **`resolved = list.length` after an error branch that only logs** — all three routes. The mark IS the
+resolution, so that published N rows resolved while all N stayed queued; in the admin route it answered
+the operator `{ok: true, resolved: true}`, the one signal that stops a human looking again.
+
+✅ **The filed counter defect:** `rows_written` incremented only inside `if (uuid)`, the RARE branch —
+Pinnacle editions live in `pinnacle_editions` and have no `editions` UUID, so a tick that resolved a
+full batch reported **0 written**. Over 30 days: **2,704 runs · 92,164 found · 0 written** on a pipeline
+doing its job. Now counts resolutions, with `extra.edition_id_backfilled` carrying the rare backfill and
+`extra.v2_write_errors` always present so "none" is distinguishable from "not emitted".
+
+⚠ **A row whose write failed is now in NEITHER bucket** — not resolved, and not retry-bumped either,
+because the fault was ours and spending its budget on that retires a recoverable listing. To stop that
+becoming a silent forever-loop, any `v2_write_errors > 0` makes the tick `ok = false`.
+
+⭐ **Twelve tests added, every one pinning an ABSENCE and every one mutation-checked.** The fixture row
+sits at `retry_count: 9`, one bump from retirement, and the assertion is that
+`listing_resolution_failures` received **zero** UPDATEs — not that an error string appeared somewhere.
+Reverting each route change reds exactly the matching tests. **Two existing tests were INVERTED, not
+deleted**: one asserted `p_rows_written: 1` with the comment *"only the UUID backfill counts as a
+write"*, and one was titled *"…resolved count is unaffected"* — both stated the defect as if it were
+the contract.
+
+**Verified:** full suite **1420 files / 15,665 tests green**; `tsc --noEmit` clean; eslint ratchet
+**717 = baseline**.
+
+**Revert:** `git revert` the code commit. No DB or migration component.
+
 ### 2026-09-01 · 📏 MEASUREMENT — the wmc-metadata exit condition, taken 4 h early, answers the branch nobody expected
 
 **No code, no DB change.** Two inbox filings annotated in place.
