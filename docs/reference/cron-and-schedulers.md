@@ -328,6 +328,38 @@ doubt (17 against a pool of 6); do not quote 17 as exact.
 ⛔ **The lever is NOT raising `max_worker_processes`** — it is compute-tier-linked, needs a restart, and
 CLAUDE.md forbids buying the way out. **The lever is reducing overlap.**
 
+### 🔁 Re-derived 2026-09-02 — the rate is FLAT PER JOB, which is what a shared-pool model predicts
+
+7-day window, `cron.job_run_details`: **384 `job startup timeout` = 76.6% of all failures**, inside
+R29's filed 67–80% band and unchanged. What is new is the SHAPE. Expressed as a share of *each job's
+own* runs:
+
+| job | schedule | owner | startup timeouts (7 d) | % of ITS runs |
+|---|---|---|---:|---:|
+| `rpc-pinnacle-mints-backfill` | `*/2 * * * *` | postgres | 71 | **1.4 %** |
+| `rpc-topshot-pack-sales-backfill` | `1-58/3` | postgres | 36 | **1.1 %** |
+| `rpc-allday-pack-sales-backfill` | `*/3` | postgres | 36 | **1.1 %** |
+| `rpc-allday-dist-opened-backfill` | `2-58/4` | postgres | 35 | **1.4 %** |
+| `rpc-backfill-wmc-fmv-confidence` | `2-59/5` | postgres | 28 | **1.4 %** |
+| `rpc-backfill-pack-pool` | 12×/h | postgres | 18 | **1.7 %** |
+| `rpc-roll-pack-ask-hourly-low` | `7,22,37,52` | cron_heavy | 13 | **1.9 %** |
+| `rpc-refresh-wmc-fmv-changed` | `7-57/10` | cron_heavy | 12 | **1.2 %** |
+
+⭐ **Every job sits at ~1.1–1.9% regardless of schedule, owner, or what it does.** The absolute counts
+rank by RUN COUNT, not by any property of the job — `rpc-pinnacle-mints-backfill` leads because it
+fires every 2 minutes, not because it is special.
+
+👉 **Two consequences.** (1) This is corroboration of the worker-pool mechanism above from an
+independent angle: a shared pool of 6 gives every arriving job the same chance of finding it full, and
+a flat per-job failure rate is exactly that. (2) **There is therefore no single job to fix** — the
+absolute leaders are the frequent ones, so cutting overlap helps everything proportionally and picking
+off "the worst job" would move ~1.4% of one job's ticks. ⚠ **Do not read the ranking as a culprit
+list**; rank by `count / that job's own runs`, and every row comes out the same.
+
+⚠ **And the invisible-loss figure follows from the rate, not from a count:** ~55 ticks a day launch
+and never run, spread across the fleet, writing nothing to `pipeline_runs` — so a per-pipeline arm can
+only ever see it as a missing row, never as a failure.
+
 ### 🚨 …but the 01:00–19:00Z BAND is NOT a scheduling problem, and conflating the two is the trap
 
 ⚠ **Measured the same day: the pg_cron RUN COUNT is FLAT across all 24 hours — 480–552 per hour — while
