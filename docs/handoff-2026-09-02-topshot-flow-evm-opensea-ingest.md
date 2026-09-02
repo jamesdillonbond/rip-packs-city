@@ -50,6 +50,53 @@ A bridged moment's EVM owner is a **COA** such as `0x00000000000000000000000205f
 - Control proving the COA is real: `balanceOf(COA)` = **186**. Also: `balanceOf` = **0** for all ten
   of our largest tracked whales — the wallets we track are not bridging.
 
+## 💰 Price parsing — DECODED FROM A REAL SALE, and the trap that books $0
+
+Worked fully against `0x9c90802ea8fbe7ebd7c549761f1f13eb7465b8b5b17edd1fd362499d773c033d`.
+
+`OrderFulfilled(bytes32 orderHash, address indexed offerer, address indexed zone, address recipient,
+SpentItem[] offer, ReceivedItem[] consideration)` where
+`SpentItem = (uint8 itemType, address token, uint256 identifier, uint256 amount)` and
+`ReceivedItem` is the same plus a trailing `address recipient`. `itemType`: **0 = native, 1 = ERC-20,
+2 = ERC-721**.
+
+Decoded values from that tx:
+
+| field | value |
+|---|---|
+| offer (1 item) | itemType **1 (ERC-20)**, `0xd3bf53dac106a0290b0483ecbc89d40fcc961f3e`, amount `50500000000000000000` |
+| consideration 1 | itemType **2 (ERC-721)**, `0x84c6…24709`, identifier **51214935**, amount 1 → offerer |
+| consideration 2 | itemType 1, amount `505000000000000000` → `0x0000a26b00c1f0df003000390027140000faa719` (**OpenSea fee recipient**) |
+| consideration 3 | itemType 1, amount `2525000000000000000` → creator royalty |
+
+Payment token resolved on-chain: `name()` = **"Wrapped Flow"**, `symbol()` = **WFLOW**,
+`decimals()` = **18**. So: **price = 50.5 WFLOW**, fees 0.505 (**1 %** OpenSea) + 2.525 (**5 %**
+creator royalty), seller nets **47.47**. `identifier` **51214935** is the Top Shot momentID — the join
+key, straight out of the event.
+
+### ⛔ THE TRAP
+This sale is a **bid acceptance**: the buyer's payment is the **`offer`** (an ERC-20), and the NFT
+appears in `consideration`. A parser that computes price by summing `consideration` items of
+**itemType 0 (native)** — the obvious first implementation — returns **0 for this sale**. Measured:
+native total = **0 wei**. It would book a real trade at **$0.00**, silently, and poison the FMV comp
+for that edition. Same family as the documented "a timeout renders as $0" class.
+
+**Rule — handle BOTH directions:**
+- **Listing purchase** (buyer pays): NFT is in `offer`; price = Σ `consideration` amounts (native or
+  ERC-20) — i.e. seller proceeds + fees + royalty.
+- **Bid acceptance** (seller accepts): NFT is in `consideration`; price = the **`offer`** amount.
+- **Decide by where itemType 2 sits**, never by assuming a direction.
+- Accept native (itemType 0) **and** WFLOW (itemType 1, `0xd3bf53da…`) as payment. ⚠ Any other ERC-20
+  should be recorded but flagged, not silently valued at zero.
+
+### FLOW → USD
+`sales.price_usd` needs a historical rate. **`fetchFlowUsd()` already exists**
+(`lib/pack-drops-board.ts:164`) but is a **spot** rate. The historical model to copy is
+`solUsdOn(atMs)` (`lib/chains/solana/das.ts:237`), which keys CoinGecko's
+`/coins/{id}/history` on a `dd-mm-yyyy` UTC date — add the same with id `flow`.
+⚠ Store `price_native` + `currency` regardless, so a missing rate degrades to a null USD rather than
+losing the trade.
+
 ## Build order (each step independently useful)
 
 **1 · Sales (highest value, no blockers).** Scan `Transfer` logs on `0x84c6…`; for each tx, fetch the
