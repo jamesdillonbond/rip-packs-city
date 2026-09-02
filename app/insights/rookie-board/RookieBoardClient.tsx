@@ -477,7 +477,16 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
             = circulation − burned − locked.
           </p>
           {burnRows.length === 0 ? (
-            <div className="rpc-rb-state">No burned rookie editions match those filters.</div>
+            <div className="rpc-rb-state">
+              {/* ⚠ THE SECOND PANEL. Found only when the deployed HTML was checked:
+                  the burn view reads the SAME `initialRows`, so a failed seed made
+                  it blame the filters too. "Fix per PANEL, not per page." */}
+              {sectionEmptyCopy(
+                !initialFailed,
+                "Burned rookie editions",
+                "No burned rookie editions match those filters.",
+              )}
+            </div>
           ) : (
             <div className="rpc-rb-blist">
               {burnRows.map((r, i) => (

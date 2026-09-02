@@ -520,6 +520,35 @@ describe("three more seeded boards do not blame the filters for a failed seed", 
     expect(html).not.toMatch(/couldn.{1,8}t be loaded/i)
   })
 
+  // ⚠ THE SECOND PANEL, found by checking the DEPLOYED HTML rather than by reading
+  // the component: rookie-board has a BURN view over the SAME `initialRows`, so the
+  // first fix left "No burned rookie editions match those filters." still blaming
+  // the filters on a failed seed. The canon's "fix per PANEL, not per page" applies
+  // inside a single client too.
+  //
+  // ⚠ ASSERTED ON THE SOURCE, and the reason is worth stating rather than hiding:
+  // the burn view is behind a CLIENT toggle (`useState<ViewMode>("board")`), so it
+  // is absent from SSR entirely and `renderToString` cannot reach it. A source pin
+  // is weaker than the SSR assertions above — it checks the call, not the output —
+  // so it is scoped to exactly that: both empty states in this file must route
+  // through the helper, and neither may print its bare sentence unconditionally.
+  it("rookie-board routes BOTH of its empty states through sectionEmptyCopy", () => {
+    const src = readPage("app", "insights", "rookie-board", "RookieBoardClient.tsx")
+    for (const sentence of [
+      "No rookie editions match those filters.",
+      "No burned rookie editions match those filters.",
+    ]) {
+      // The sentence must appear ONLY as the helper's `empty` argument, never as
+      // the direct child of a state div.
+      expect(src, `${sentence} must be the helper's empty argument`).toMatch(
+        new RegExp(`sectionEmptyCopy\\([\\s\\S]{0,120}${sentence.replace(/[.*+?^$()|[\]\\]/g, "\\$&")}`),
+      )
+      expect(src, `${sentence} must not be printed unconditionally`).not.toMatch(
+        new RegExp(`>\\s*${sentence.replace(/[.*+?^$()|[\]\\]/g, "\\$&")}\\s*<`),
+      )
+    }
+  })
+
   it("all three pages pass initialFailed derived from their own read's ok", () => {
     for (const board of ["parallel-premiums", "rookie-board", "top-sales"]) {
       const src = readPage("app", "insights", board, "page.tsx")

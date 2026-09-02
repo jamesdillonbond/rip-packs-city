@@ -403,6 +403,15 @@ that hand-roll an honest `{ error }` with the real status on purpose. **Layer 4*
 ("Volume, sales, buyers and sellers across 24h / 7d / 30d — free.") or a progress line ("Scoring the
 live drops…") or `—`, none of which is a claim about the data.
 
+🚨 **A SECOND PANEL inside one of the four, and it was found by reading the DEPLOYED HTML rather
+than the component.** `rookie-board` has a **burn view** over the same `initialRows`, so the first
+fix left *"No burned rookie editions match those filters."* still blaming the filters on a failed
+seed. **"Fix per PANEL, not per page" applies INSIDE a single client, not only across pages** — and
+the thing that surfaced it was verifying the deploy, not re-reading the diff. ⚠ It is pinned at
+SOURCE level and that limit is stated in the test: the burn view sits behind a client
+`useState<ViewMode>("board")` toggle, so it is absent from SSR entirely and `renderToString` cannot
+reach it.
+
 **Pinned in `__tests__/insights-seeded-boards-do-not-conclude-from-a-failed-seed.tsx`** — SSR
 (`renderToString`), because a mount effect would correct the state before jsdom looked; each failure
 case asserts the **absence** of the false claim and is paired with a no-change control asserting the

@@ -119,6 +119,8 @@ concept was present, the seed was not, so any grep for "does this board handle f
 two deliberate hand-rolled `{ error }` bodies) and layer 4 (29 insights OG cards — the 13 without
 `boardEmptyCopy` fall back to product copy, a progress line, or `—`).
 
+🚨 **A FOLLOW-UP FIX, and how it was found matters more than what it was.** Verifying the deploy by fetching the live SSR HTML (132 `<tr>` on `/insights/cross-collection`, zero degraded copy — the healthy path intact) surfaced a **SECOND panel** in `rookie-board`: its BURN view reads the same `initialRows` and still said "No burned rookie editions match those filters." ⭐ **"Fix per PANEL, not per page" applies INSIDE one client.** Shipped in the same pass; pinned at source level because that view sits behind a client toggle and never reaches SSR, and the test says so rather than implying more coverage than it has.
+
 **Verified.** SSR-asserted (a mount effect would correct jsdom before it looked); mutation-tested —
 unwrapping any one empty state or dropping any one `initialFailed` reds exactly one assertion.
 `tsc` clean.
