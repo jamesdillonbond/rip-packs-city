@@ -109,9 +109,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function fetchPage(
-  cursor: string,
-): Promise<{ editions: RawEdition[]; nextCursor: string | null } | null> {
+// ⚠ RETURNS THE REASON, NOT JUST `null` (2026-09-02). Every failure path here used
+// to collapse to a bare `null` — a non-OK status, a GraphQL `errors` array and a
+// thrown exception were indistinguishable — and the caller turned all three into
+// `terminated_reason: "gql_fault"` with `errors_sample: []`. So an operator reading
+// a failed run could not tell an upstream outage from a broken credential from a
+// timeout, which is the whole point of logging it. The reason is now carried out
+// and recorded verbatim (truncated) in `extra.gql_fault_reason`.
+type PageFault = { fault: string }
+type PageOk = { editions: RawEdition[]; nextCursor: string | null }
+
+function isFault(r: PageOk | PageFault): r is PageFault {
+  return (r as PageFault).fault !== undefined
+}
+
+async function fetchPage(cursor: string): Promise<PageOk | PageFault> {
   const body = {
     query: CATALOG_QUERY,
     operationName: "SubeditionCirculationSweep",
@@ -124,15 +136,23 @@ async function fetchPage(
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // The body matters as much as the status: a Cloudflare 530 says "origin is
+      // down" only in its body, and that is the signature rpc_ops_snapshot's
+      // failure buckets classify on.
+      const text = await res.text().catch(() => "");
+      return { fault: `Top Shot GraphQL failed with ${res.status}. Response body: ${text.slice(0, 200)}` };
+    }
     const json = (await res.json()) as any;
-    if (Array.isArray(json?.errors) && json.errors.length > 0) return null;
+    if (Array.isArray(json?.errors) && json.errors.length > 0) {
+      return { fault: `graphql errors: ${JSON.stringify(json.errors).slice(0, 200)}` };
+    }
     const summary = json?.data?.searchMarketplaceEditions?.data?.searchSummary;
     const editions: RawEdition[] = summary?.data?.data ?? [];
     const nextCursor: string | null = summary?.pagination?.rightCursor ?? null;
     return { editions, nextCursor };
-  } catch {
-    return null;
+  } catch (e) {
+    return { fault: `fetch threw: ${e instanceof Error ? e.message : String(e)}`.slice(0, 220) };
   }
 }
 
@@ -218,6 +238,9 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   let gqlEditionsSeen = 0;
   let parallelRowsSeen = 0;
   let terminatedReason = "catalog_exhausted";
+  // null when no page faulted. Never "" — an empty string and "we did not fault"
+  // are different facts and must not share a rendering.
+  let gqlFaultReason: string | null = null;
   const probeDistinctParallels = new Set<number>();
   const probeSamples: Array<{ set: any; play: any; pid: number; circ: any }> = [];
 
@@ -232,8 +255,9 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     }
     if (cursor) seenCursors.add(cursor);
     const result = await fetchPage(cursor);
-    if (!result) {
+    if (isFault(result)) {
       terminatedReason = "gql_fault";
+      gqlFaultReason = result.fault;
       break;
     }
     const { editions, nextCursor } = result;
@@ -360,7 +384,24 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   }
 
   const durationMs = Date.now() - startedAt;
-  const ok = errors.length === 0;
+
+  // ⚠ A RUN THAT READ NOTHING IS NOT A SUCCESS (2026-09-02).
+  //
+  // `ok` used to be `errors.length === 0`, and `errors` holds per-edition WRITE
+  // failures — a different thing entirely from the upstream READ failing. So when
+  // Top Shot GraphQL was down the very first page faulted, the loop broke
+  // immediately, nothing was read or written, and the run logged `ok: true` with
+  // `errors_sample: []`. Measured: that is EVERY daily run in the retained window
+  // (`pages: 0`, `gql_editions_seen: 0`, `rows_found` ~3,822, `rows_written` 0),
+  // and because `ok` was true it appeared in no failure bucket and could not trip
+  // `check_pipelines_running_but_not_succeeding`, which requires ok_runs = 0.
+  //
+  // ⛔ SCOPED TO A TOTAL READ FAILURE ON PURPOSE. A fault on page 5 after four
+  // pages of data is a PARTIAL SWEEP THAT COMMITTED — productive, not stalled —
+  // and the repo's own rule is that such a run stays green. Only `pages === 0`
+  // AND nothing seen is unambiguously a failed run.
+  const readNothing = terminatedReason === "gql_fault" && pages === 0 && gqlEditionsSeen === 0;
+  const ok = errors.length === 0 && !readNothing;
 
   try {
     await supabase.from("pipeline_runs").insert({
@@ -372,7 +413,12 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       rows_written: updated,
       rows_skipped: matched - updated,
       ok,
-      error: errors.length > 0 ? errors.slice(0, 3).map((e) => e.reason).join(" | ") : null,
+      // The upstream fault leads, because when it is present it is the reason the
+      // run did nothing; per-edition write errors follow it.
+      error:
+        [readNothing ? gqlFaultReason : null, errors.slice(0, 3).map((e) => e.reason).join(" | ") || null]
+          .filter(Boolean)
+          .join(" | ") || null,
       extra: {
         pages,
         gql_editions_seen: gqlEditionsSeen,
@@ -385,6 +431,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         ask_errors: askErrors.slice(0, 3),
         duration_ms: durationMs,
         terminated_reason: terminatedReason,
+        // null when no page faulted. `terminated_reason: "gql_fault"` with no
+        // reason beside it was the defect: a count of zero and no error field
+        // cannot distinguish "nothing to do" from "could not look".
+        gql_fault_reason: gqlFaultReason,
         errors_sample: errors.slice(0, 5),
         // Diagnostic (matched=0 on first run): compare the GQL parallel triples
         // against what our :: editions expect, to find the keying mismatch.
@@ -413,6 +463,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     ask_upserts: askUpserts,
     duration_ms: durationMs,
     terminated_reason: terminatedReason,
+    // Mirrors the pipeline_runs `extra` field. The HTTP body is what an operator
+    // sees on a manual run, and it carried `terminated_reason: "gql_fault"` with
+    // nothing to say WHICH fault — the same silence, one layer out.
+    gql_fault_reason: gqlFaultReason,
     errors_count: errors.length,
     errors_sample: errors.slice(0, 5),
   });

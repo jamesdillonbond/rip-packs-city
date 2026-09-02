@@ -31,11 +31,22 @@ vi.mock("@/lib/supabase", () => {
 import { GET, POST } from "@/app/api/admin/backfill-topshot-subedition-circulation/route"
 
 // A page queue for fetchPage: each fetch() call shifts the next page.
-let pageQueue: Array<{ ok: boolean; editions?: any[]; cursor?: string | null }> = []
+let pageQueue: Array<{ ok: boolean; status?: number; body?: string; editions?: any[]; cursor?: string | null }> = []
 function installFetch() {
   vi.stubGlobal("fetch", vi.fn(async () => {
     const p = pageQueue.shift()
-    if (!p || p.ok === false) return { ok: false, status: 500, json: async () => ({}) }
+    // ⚠ `text` is required, not decorative: the route reads a non-ok RESPONSE BODY,
+    // because a Cloudflare 530 says "origin is down" only in its body and that is
+    // the signature rpc_ops_snapshot's failure buckets classify on. A mock without
+    // it makes the route's own catch fire and reports the wrong fault reason.
+    if (!p || p.ok === false) {
+      return {
+        ok: false,
+        status: p?.status ?? 500,
+        text: async () => p?.body ?? "",
+        json: async () => ({}),
+      }
+    }
     return {
       ok: true,
       json: async () => ({ data: { searchMarketplaceEditions: { data: { searchSummary: { data: { data: p.editions ?? [] }, pagination: { rightCursor: p.cursor ?? null } } } } } }),
@@ -94,6 +105,40 @@ describe("subedition-circulation — probe + faults", () => {
     pageQueue = [{ ok: false }]
     const body = await (await GET(auth())).json()
     expect(body.terminated_reason).toBe("gql_fault")
+  })
+
+  // ── a run that read NOTHING is not a success (2026-09-02) ────────────────
+  //
+  // Every daily run in the retained window logged `ok: true` with `pages: 0`,
+  // `gql_editions_seen: 0`, `rows_written: 0` and `errors_sample: []`, because
+  // `ok` was derived from per-edition WRITE errors while the failure was the
+  // upstream READ. It therefore appeared in no failure bucket and could not trip
+  // `check_pipelines_running_but_not_succeeding`, which requires ok_runs = 0.
+  it("reports ok:false and NAMES the upstream fault when the first page fails", async () => {
+    pageQueue = [{ ok: false, status: 530, body: "<head><title>An error has occured</title></head>" }]
+    const body = await (await GET(auth())).json()
+
+    expect(body.terminated_reason).toBe("gql_fault")
+    expect(body.ok, "a run that read nothing and wrote nothing is not a success").toBe(false)
+    // The reason must survive to where an operator reads it — a count of zero with
+    // no error beside it cannot distinguish "nothing to do" from "could not look".
+    expect(body.gql_fault_reason).toContain("530")
+    expect(body.gql_fault_reason).toContain("An error has occured")
+  })
+
+  it("CONTROL — a fault AFTER a page of data stays ok: a partial sweep that committed is productive", async () => {
+    // This is the distinction the scoping exists for. Without it the fix would
+    // redden every run that loses its upstream mid-sweep, which the repo's own
+    // rule calls productive rather than stalled.
+    pageQueue = [
+      { ok: true, editions: [gqlEdition(3, 25, 7001)], cursor: "C2" },
+      { ok: false, status: 530 },
+    ]
+    const body = await (await GET(auth())).json()
+    expect(body.terminated_reason).toBe("gql_fault")
+    expect(body.ok).toBe(true)
+    // Still NAMED, even when it does not redden the run.
+    expect(body.gql_fault_reason).toContain("530")
   })
 
   it("caps pages via ?maxPages and honors the page cursor loop", async () => {
