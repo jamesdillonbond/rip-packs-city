@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED — `allday-price-recover` is now on the cadence watchlist, with a MEASURED threshold
+
+**Migration `audit_20260902_watch_allday_price_recover_now_that_it_recovers_500_rows_a_tick_instead_of_one`**
+(file `20260902054042_…`). Companion to tonight's singleton-tx claim fix, which took this pipeline from
+**1 row/tick to ~500** and made it the thing draining the 9,859-row AllDay V1 price backlog into `sales`
+— i.e. FMV input, on the roadmap's accuracy gate. It was **not on `pipeline_cadence_watchlist`**, so
+nothing would have noticed it dying.
+
+⚠ **The threshold is measured, not derived from the schedule.** Over **228 inter-run gaps in 7 days**:
+min 17 min · avg 20 · **max 40**. Nominal cadence is 20 minutes, so the obvious `60` would sit only
+1.5× above the *observed* worst case and page on an ordinary skipped tick. **90** is ~4.5 ticks of
+headroom and matches `lock-check-batch`. The migration's post-state **re-derives the max gap from
+`pipeline_runs` and raises if the threshold does not clear it**, so it fails if the cadence has moved
+since this was written — and refuses outright if there are no runs in 7 days.
+
+ⓘ It will go **quiet-but-not-silent** once the backlog drains (~6 h): the Vercel cron still fires and
+still writes a row, so `rows_written → 0` with `ok` true. Neither arm reports that — `detect_stalled_pipelines()`
+keys on the last run's TIME and `check_pipelines_running_but_not_succeeding()` requires `ok_runs = 0`.
+**Silence here means the cron stopped, which is exactly what we want to hear about.**
+
+⛔ **Three pipelines deliberately NOT added**, each for a stated reason, so a later pass does not read
+the omission as an oversight: `topshot-buyer-backfill-historical` (drained BY DESIGN as of tonight — a
+stall arm there reports on the cron, not the work) · `resolve-topshot-stubs` (37 rows in 74,800 attempts
+over 36 days; its cadence says nothing about what is wrong with it) · `topshot-subedition-circulation-backfill`
+(upstream down and now correctly `ok=false` — adding it makes a permanently-red arm, which CLAUDE.md
+records as indistinguishable from a broken one).
+
+**Revert:** `DELETE FROM public.pipeline_cadence_watchlist WHERE pipeline = 'allday-price-recover';`
+
 ### 2026-09-01 · ⛔ CORRECTION 18 minutes later — my tree-walk guard DUPLICATED one this database has had since July, and the one it duplicated is better
 
 **Migration `audit_20260902_secdef_violations_reads_the_existing_allowlist_table_instead_of_my_duplicate_hardcoded_list`**
