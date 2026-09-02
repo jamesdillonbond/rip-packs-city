@@ -1,4 +1,4 @@
-# Inbox index — 355 live filings
+# Inbox index — 356 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,8 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-09-02 — 6 filings
+## 2026-09-02 — 7 filings
 
+- [Top Shot on Flow EVM / OpenSea — BUILD IT, and `tokenId` is already our `moment_id`](2026-09-02T0430Z-topshot-on-flow-evm-build-it-tokenid-is-momentid.md)
 - [`resolve-topshot-stubs` has written 37 rows in 74,800 attempts over 36 days — 520 permanently-stuck editions re-queried ~4x a day](2026-09-02T0435Z-resolve-topshot-stubs-has-written-37-rows-in-74800-attempts-over-36-days.md)
 - [Candy secondary is no longer Magic-Eden-only — OpenSea added Solana, Candy is a launch partner](2026-09-02T0400Z-candy-secondary-is-no-longer-magic-eden-only-opensea-added-solana.md)
 - [`lock-check-batch` is at full rate, fully green, and starving 237 of 249 wallets](2026-09-02T0330Z-lock-check-is-full-rate-and-starving-237-of-249-wallets.md)
