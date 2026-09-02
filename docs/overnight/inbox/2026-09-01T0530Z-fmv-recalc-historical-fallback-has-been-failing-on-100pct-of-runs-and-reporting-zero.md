@@ -127,3 +127,70 @@ now, either the query is still failing — and `historical_fallback_error` will 
 the candidate set is starving, which would show as the same edition ids being re-picked every tick.
 **REVERT:** `git revert` the code commit; no DB object changed. Snapshots already written stay as history
 and are repriced by the normal sweep.
+
+---
+
+## ⛔ CORRECTION 2026-09-01 ~17:2x PT — the fix WORKED but its exit condition FAILED, and the reason is a second, deeper defect this filing got wrong
+
+**Post-ship watch, 18 h after deploy.** The step runs, every tick, with no errors. And the backlog did
+not drain:
+
+| | |
+|---|---:|
+| runs with coverage | **119** |
+| editions "covered" | **23,800** |
+| runs reporting `historical_fallback_error` | 1 |
+| qualifying population, start → now | **4,277 → 3,382** |
+
+23,800 writes for ~895 net progress. **That is a treadmill, not a drain.**
+
+### The mechanism, read off one edition's snapshot history
+
+```
+00:08:29   algo 1.7.0                  ← this step writes
+00:09:12   algo thin-sales-guard-v3    ← 43 s later, the thin-sales guard overwrites
+```
+
+`thin-sales-guard-v3` does not match `'1.7.%'`, so the edition is **re-admitted on the very next tick**,
+forever. Two steps in the same route were fighting each other.
+
+### ⛔ What this filing got wrong
+
+`algo_version NOT LIKE '1.7.%'` was a **staleness PROXY** from when 1.7.x was the only writer. There are
+now **eight**, and seven do not match:
+
+| algo_version | editions | NO_DATA | older than 7d |
+|---|---:|---:|---:|
+| `cold-tail-1.0` | 2,537 | 10 | **0** |
+| `thin-sales-guard-v3` | 615 | 0 | 3 |
+| `ask_only_v2` | 86 | 0 | 0 |
+| `topshot-gql-v1_haircut` | 82 | 0 | 0 |
+| `allday-listing-ask-v1` | 44 | 0 | 0 |
+| `topshot-gql-v1` · `ask_only_v2_haircut` · `thin-sales-guard-v3_p90clamp` | 26 | 0 | 0 |
+
+**None of them is stale.** Measured over the same population: the old predicate admits **3,390**; a
+staleness predicate admits **13** (10 `NO_DATA` + 3 older than 7 days + 0 never-priced). **99.6% of
+admissions were false.**
+
+🚨 **So this filing's headline sizing — "8,571 qualify, 4,277 convertible" — was the broken predicate's
+own OUTPUT, not a measure of need.** I sized a backlog using the very predicate that was defining it
+wrongly, and then quoted the result as a measurement. **That is circular, and it is the more useful
+lesson here than the SQL.** The real backlog was ~13–31.
+
+### The fix
+
+`WHERE (la.edition_id IS NULL OR la.confidence = 'NO_DATA' OR la.computed_at < now() - interval '7 days')`
+
+⭐ The test is now on the **PROPERTY** (snapshot age) rather than the **IDENTITY** of the writer. An
+algo-version allowlist would rot again the moment a ninth writer appears; a staleness test cannot.
+
+⚠ **Expect `historical_fallback` to read ~13–31 or 0 from here, not 200.** That is the step working on a
+real backlog, not a return of the timeout — and `extra.historical_fallback_error`, added in the same
+change that exposed all this, is exactly what distinguishes the two. The instrument earned its keep
+within a day.
+
+### What still stands from the original finding
+
+The step really was failing on 350 of 350 runs; the `LIMIT`-after-`GROUP BY` really was the cause; the
+candidate-first LATERAL really did take it from >30 s to ~7 s; and the count-without-an-error-field
+really was what hid it. Only the **sizing** and the **admission predicate** were wrong.

@@ -10,6 +10,97 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ⛔ REFUTED a filed finding BEFORE acting on it — offers-sweep's 530 alternation is the breaker working, and the suggested fix would have DISARMED it
+
+**Session:** Claude Code interactive, Trevor's box, ~17:4x PT. Read-only; **nothing changed, deliberately.**
+
+The 2026-09-02T0010Z daytime-monitor filing observed `offers-sweep` rendering the SAME Top Shot GraphQL
+530 two ways — `ok=false` on about half its ticks, `ok=true` + `extra.skipped=upstream_outage` on the
+other half — called it *"a detection/ordering race in the sweep"*, and suggested taking the graceful-skip
+branch on every tick so a real failure is not buried.
+
+**📏 The alternation is ARITHMETIC, not a race.** `lib/pipeline/upstream-breaker.ts` is half-open by
+construction: one real failure buys a window, ticks inside it skip, the first tick outside makes a REAL
+attempt. `OUTAGE_BREAKER_WINDOW_MS` = **30 min**; the observed tick gap is **exactly 20.0 min across all
+18 runs in 6 h**. `ceil(30/20) = 2` ⇒ **one real attempt per two ticks**, and the observed sequence is a
+perfectly regular period-2 square wave with no jitter. ⭐ **A race does not produce a square wave locked
+to the window/interval ratio** — that ratio is the falsifiable prediction, and it holds exactly.
+
+**🚨 The suggested fix would have caused the outage it was meant to tidy.** The breaker decides on
+`rows.find(r => !isSkipMarker(r))` then `if (lastReal.ok !== false) return { skip: false }`. Skip markers
+are DELIBERATELY excluded when finding "the most recent real run". Had the failing probe reported
+`ok: true`, there would be **no failing real run to find**: the breaker would read `last_run_ok` every
+tick and **never trip again**, turning 1 real attempt per 2 ticks into a full-price attempt against a
+dead upstream on EVERY tick, forever, with nothing recording that the protection was lost. The module's
+own header warns of exactly this. ⛔ **The `ok=false` on every second tick is LOAD-BEARING** — it is the
+state the breaker reads to know the upstream is still down.
+
+**✅ The residual concern is real and is NOT dismissed:** `pipeline_fails_24h` really is inflated by ~18
+rows that are one outage, and that can mask a genuine offers-sweep failure. But the fix belongs on the
+**READING** side — exclude or separately bucket runs whose `error` matches `CLOUDFLARE_ORIGIN_DOWN`, an
+already-exported and tested signature built for this — not on the writing side. **Changing a writer to
+make a metric look nicer destroys the signal the writer exists to emit.**
+
+⭐ **Transferable: when a pipeline alternates ok/not-ok on a suspiciously regular period, compute
+`window / tick_interval` before calling it a race.** And a filing's suggested FIX is a hypothesis exactly
+like its finding — this one was measured against the code it proposed to change and did not survive it.
+Filing annotated in place with the refutation (append-only convention).
+
+### 2026-09-01 · ⛔ MY OWN FIX FAILED ITS EXIT CONDITION — the historical fallback was a TREADMILL, its admission predicate tested the WRITER'S IDENTITY instead of STALENESS, and my sizing of the backlog was circular
+
+**Session:** Claude Code interactive, Trevor's box, ~17:1x–17:4x PT. Post-ship watch on this morning's
+`fmv-recalc` historical-fallback fix (entries below).
+
+**📏 THE WATCH FAILED, and I am reporting the number that does not flatter the change.** 18 h after
+deploy: **119 runs, 23,800 editions "covered", 1 run reporting an error — and the qualifying population
+fell only 4,277 → 3,382.** 23,800 writes for ~895 net progress. **A treadmill, not a drain.** ⭐ My own
+FALSIFIER predicted exactly this shape — *"the candidate set is starving, which would show as the same
+edition ids being re-picked every tick"* — which is the only reason it was caught on the first look
+rather than read as success. The step ran, returned rows, and logged no error the whole time.
+
+**⭐ THE MECHANISM, read off one edition's snapshot history rather than reasoned about:**
+`00:08:29 algo 1.7.0` (this step writes) → **`00:09:12 algo thin-sales-guard-v3`** (the thin-sales guard
+overwrites, 43 seconds later). The old clause `algo_version NOT LIKE '1.7.%'` then re-admitted that
+edition on the very next tick, forever. **Two steps in the same route were fighting each other.**
+
+**⛔ THE PREDICATE WAS A STALENESS *PROXY* THAT STOPPED WORKING.** `NOT LIKE '1.7.%'` dates from when
+1.7.x was the only writer of `fmv_snapshots`. There are now **EIGHT**, and **seven** do not match:
+`cold-tail-1.0` (2,537 editions), `thin-sales-guard-v3` (615), `ask_only_v2` (86),
+`topshot-gql-v1_haircut` (82), `allday-listing-ask-v1` (44), `topshot-gql-v1` (13),
+`ask_only_v2_haircut` (12), `thin-sales-guard-v3_p90clamp` (1). **None is stale — ZERO of the 2,537
+cold-tail rows were older than 7 days.** Measured over one population: **old predicate 3,390 · staleness
+predicate 13** (10 `NO_DATA` + 3 older than 7 days + 0 never-priced). **99.6% of admissions were false**,
+each costing a delete+insert pair on a hot partitioned table, ~200 per tick.
+
+**🚨 AND THE SIZING IN MY OWN FILING WAS CIRCULAR — this is the more useful lesson than the SQL.** I
+reported *"8,571 qualify, 4,277 convertible"* as the cost of the silence. That was **the broken
+predicate's own OUTPUT**, not a measure of need: I sized a backlog with the very expression that was
+defining it wrongly, then quoted the result as a measurement. The real backlog was **~13–31**. ⭐ **When
+a query is suspect, its row count is not evidence about the world — measure the PROPERTY independently.**
+
+**✅ SHIPPED — test the PROPERTY, not the writer's IDENTITY.**
+`WHERE (la.edition_id IS NULL OR la.confidence = 'NO_DATA' OR la.computed_at < now() - interval '7 days')`
+⭐ An algo-version **allowlist** would rot again the moment a ninth writer appears; a **staleness test
+cannot**. This is CLAUDE.md's "prefer a ban at zero over an allowlist" applied to a predicate rather than
+a guard. Re-measured at ship time: admits **31**, all 31 with paid sales, i.e. all genuinely convertible.
+⚠ **Expect `extra.historical_fallback` to read ~13–31 or 0 from here, NOT 200** — that is the step
+working on a real backlog, not a return of the timeout. **`extra.historical_fallback_error`, added this
+morning in the change that exposed all of this, is exactly what distinguishes the two. The instrument
+earned its keep inside a day.**
+
+**What still stands from this morning, unchanged:** the step really was failing on 350 of 350 runs; the
+`LIMIT`-after-`GROUP BY` really was why; the candidate-first LATERAL really did take it >30 s → ~7 s; and
+the missing error field really was what hid it for months. **Only the SIZING and the ADMISSION PREDICATE
+were wrong** — and both were inherited from the code rather than measured independently.
+
+**REVERT:** `git revert` the code commit — no DB object changed; snapshots already written remain as
+history and are repriced by the normal sweep. **EXIT:** `historical_fallback` should now track the real
+backlog (single/low-double digits) and the qualifying population should stop churning; the 23,800-writes-
+per-day of redundant delete+insert should disappear from `fmv_snapshots`. **FALSIFIER:** if the
+qualifying population is still ~3,000+ tomorrow, the staleness gate is not the whole story and something
+else re-admits. **Filing:** the correction is appended in place to
+`inbox/2026-09-01T0530Z-fmv-recalc-historical-fallback-has-been-failing-on-100pct-of-runs-and-reporting-zero.md`.
+
 ### 2026-09-01 · ⛔ SHIPPED AND REVERTED IN ONE PASS — I measured `get_lock_check_batch` wrong, and the control was the thing that lied
 
 **Net production change: none.** Recording it in full because the error is reusable and the real finding survives.
