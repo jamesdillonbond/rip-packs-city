@@ -140,3 +140,28 @@ of which **10 are `statement timeout` averaging 601s** inside this exact leg —
 `cron_heavy` producing zero rows**, on the instance whose IO budget is the platform's number-one
 problem. The lever the focus file names is cutting work, and this is the largest measured single
 piece of pure waste currently identified.
+
+---
+
+## 🔁 BOTH OWED MEASUREMENTS DISCHARGED 2026-09-01 ~23:5x PT, in a quiet window — and section 2's MECHANISM is refuted
+
+Full write-up:
+[`2026-09-02T0700Z-pack-ev-the-two-owed-measurements-are-done-and-one-refutes-the-refutation.md`](2026-09-02T0700Z-pack-ev-the-two-owed-measurements-are-done-and-one-refutes-the-refutation.md).
+Positive control at measurement time: **4 active backends, 3 in IO wait, longest query 4 s.**
+
+- **Section 3's open question — "does any edition actually carry snapshots under more than one
+  `collection_id`?" — is answered: ZERO**, over all 1,384,957 rows / 27,179 distinct editions. So the
+  feared pre-existing defect does not exist, and the coverage a fixture re-seed gives up is coverage of
+  a state production has never held.
+- ⛔ **Section 2's "leading explanation (UNCONFIRMED): a cost crossover" is REFUTED.** Plain `EXPLAIN`
+  at 3 / 100 / 500 / 1,000 / 1,500 / 3,097 ids keeps the identical plan with the `Index Cond` intact on
+  all three partitions, and the cost grows **sub-linearly**. The plan never flips. The 55 s timeout was
+  **the spell**, which this filing's own point 3 warned was not usable for wall times.
+- **The conclusion survives; the reasoning did not — and the third option dies with it.** Executed warm:
+  `= ANY(3,097)` costs **256,030 buffers / 619 ms** against the lateral's **18,657 / 265 ms**, and its
+  cost is **LINEAR in the id count** (500 → 43,648 · 1,000 → 85,067 · 3,097 → 256,030). **Chunking at
+  500 buys nothing.** The mechanism: `= ANY` prunes which EDITIONS are read but not which SNAPSHOTS —
+  `DISTINCT ON (edition_id)` still reads each matched edition's whole history (mean **50.9** snapshots
+  per edition) before Uniquing it.
+
+👉 **A pushdown that selects rows but not VERSIONS is not a fix for a latest-per-key view.**

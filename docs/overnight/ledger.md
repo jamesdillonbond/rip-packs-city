@@ -10,6 +10,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · 📏 MEASUREMENT — pack-EV's two owed measurements are done, and one of them refutes the refutation's mechanism
+
+**Nothing shipped, deliberately.** CLAUDE.md marks this **Trevor's call** (re-seeding a pinned fixture
+on pack-EV) and that stands. What is discharged here are the **two measurements the 2026-08-18 filing
+said must be run before either fix ships** and had to abandon in a saturation spell. New filing
+`2026-09-02T0700Z-…`; the 08-18 filing carries a pointer.
+
+**Positive control:** 4 active backends · 3 in IO wait · longest query 4 s (against 08-18's 69% of
+sessions in IO wait). Warm-vs-warm, one instrument, one session.
+
+**1. "Does any edition carry snapshots under more than one `collection_id`?" — ZERO**, over
+**1,384,957 rows / 27,179 distinct editions**. The feared pre-existing defect (the old join silently
+dropping a non-latest collection's price) **does not exist**, and the pin's D3/D6 rows model a state
+production has never held — so the coverage a re-seed gives up is coverage of nothing. **That does not
+make it not a decision; it makes it a much cheaper one.**
+
+⛔ **2. The "cost crossover" is REFUTED — and it was the last hope for a fixture-preserving fix.**
+Plain `EXPLAIN` at 3 / 100 / 500 / 1,000 / 1,500 / 3,097 ids keeps the identical plan with the
+`Index Cond` intact on all three partitions, cost growing **sub-linearly** (260 → 43,463). The plan
+never flips. **The 55 s timeout that motivated the hypothesis was the SPELL** — which that filing's own
+point 3 warned was unusable for wall times, before reading one as evidence about a plan.
+
+**Executed warm, and the third option dies here:**
+
+| shape | buffers | ms |
+|---|---:|---:|
+| `LEFT JOIN fmv_current` (live) | **1,046,192** | killed at 55 s |
+| `LEFT JOIN LATERAL … LIMIT 1` | **18,657** | 265 |
+| `= ANY(3,097)` | 256,030 | 619 |
+| `= ANY(1,000)` | 85,067 | 128 |
+| `= ANY(500)` | 43,648 | 66 |
+
+⭐ **`= ANY` is LINEAR in the id count** (500 → 43,648 · 3,097 → 256,030 = 43,648 × 6.19, within 3%),
+**so chunking at 500 like `/api/fmv` buys nothing.** 👉 **The transferable mechanism: `= ANY` prunes
+which ROWS are read, not which VERSIONS.** `DISTINCT ON (edition_id)` still reads each matched
+edition's whole history — mean **50.9 snapshots per edition** — before Uniquing it. **A pushdown that
+selects rows but not versions is not a fix for a latest-per-key view.**
+
+⚠ **The 08-18 conclusion survives; its reasoning did not — and the reasoning is what a later session
+would have re-used.** Same lesson as the `count(*)`-control error: **a refutation with a false
+mechanism is not safe to inherit.**
+
+**Nothing written to `supabase/migrations/`** — a committed-but-unapplied migration turns
+`npm run db:pins:check` red, the documented staleness trap. **`fmv_current` not touched**
+(`security_invoker=true`). **Three `zz_probe_*` scratch functions created via `execute_sql` and
+dropped; `pg_proc` re-checked, 0 remaining.**
+
 ### 2026-09-01 · ✅ SHIPPED — a discarded read error that lands on a RETIREMENT path, in all three listing-retry routes
 
 **Files:** `app/api/pinnacle-listings-retry/route.ts` · `app/api/allday-listings-retry/route.ts` ·
