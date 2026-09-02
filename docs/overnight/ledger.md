@@ -10,6 +10,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the EVM ingest's first scheduled tick 401'd, and it wrote no row saying so
+
+**Files:** `app/api/cron/evm-transfers-ingest/route.ts` · `__tests__/api-cron-evm-transfers-ingest.test.ts` (+3).
+
+Immediately after activating the EVM lane I checked the instrument rather than the deploy, and the
+pipeline had **no `pipeline_runs` rows at all**. Absence is ambiguous — "never fired" and "rejected at
+the door" look identical — so I read the request log instead:
+
+```
+22:44:26  GET /api/cron/evm-transfers-ingest  401
+```
+
+**The cron fired and was rejected.** Vercel cron sends `Authorization: Bearer $CRON_SECRET`; this
+route accepted **only** `INGEST_SECRET_TOKEN` (it predates Vercel-cron and was written for
+cron-job.org). Adding it to `vercel.json` gave it a driver whose credential it does not accept.
+
+🚨 **And the 401 returns BEFORE any `pipeline_runs` row is written**, so a route that is being called
+every ten minutes and rejecting every call is indistinguishable from one nothing calls. Exactly the
+08-12 edge-function shape, on the Vercel side. **A green deploy plus a scheduled entry is not
+evidence the job runs.**
+
+**Fix:** accept either secret, matching `app/api/cron/refresh-insights-cache`. ⚠ Both arms are guarded
+on the secret being non-empty — an unset `CRON_SECRET` would otherwise make the literal `Bearer `
+authenticate every caller, the same fail-soft `?? ""` class swept earlier today.
+
+**Pinned as a regression test, not just fixed** — 3 cases: accepts `CRON_SECRET`, still accepts
+`INGEST_SECRET_TOKEN` for manual runs, and an unset `CRON_SECRET` rejects a bare `Bearer `.
+**Positive control run:** with the fix reverted, exactly the `CRON_SECRET` case fails and the other
+eight pass; restored, 9/9.
+
+**Revert path:** `git revert <sha>` (the route falls back to ingest-token-only and the Vercel cron
+resumes 401ing).
+
 ### 2026-09-02 · ✅ SHIPPED — the "inbox archival backlog" was refuted for the THIRD time, and the sweep that refuted it found 88 dead doc links
 
 **Origin.** The 09-02 cloud handoff (committed earlier this session) told a push-capable run to

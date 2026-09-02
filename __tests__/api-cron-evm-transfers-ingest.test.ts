@@ -45,6 +45,48 @@ afterEach(() => {
   else process.env.INGEST_SECRET_TOKEN = savedIngest
 })
 
+describe("evm-transfers-ingest — Vercel cron authorisation", () => {
+  // ⚠ Regression pin for a LIVE 401. The first scheduled tick after this route
+  // was added to vercel.json returned 401 at 2026-09-02 22:44:26Z, because
+  // Vercel cron sends `Bearer $CRON_SECRET` and the route accepted only
+  // INGEST_SECRET_TOKEN. A 401 returns before any `pipeline_runs` row is
+  // written, so the pipeline read as dormant rather than broken — which is why
+  // this is pinned as a test and not just fixed.
+  const saved = { cron: process.env.CRON_SECRET, ingest: process.env.INGEST_SECRET_TOKEN }
+  afterEach(() => {
+    if (saved.cron === undefined) delete process.env.CRON_SECRET
+    else process.env.CRON_SECRET = saved.cron
+    if (saved.ingest === undefined) delete process.env.INGEST_SECRET_TOKEN
+    else process.env.INGEST_SECRET_TOKEN = saved.ingest
+  })
+
+  it("accepts Bearer CRON_SECRET, the header Vercel actually sends", async () => {
+    process.env.INGEST_SECRET_TOKEN = "ingest-tok"
+    process.env.CRON_SECRET = "cron-tok"
+    const { GET } = await import("@/app/api/cron/evm-transfers-ingest/route")
+    const res = await GET(makeReq({ auth: "Bearer cron-tok" }))
+    expect(res.status).toBe(200)
+  })
+
+  it("still accepts Bearer INGEST_SECRET_TOKEN for manual runs", async () => {
+    process.env.INGEST_SECRET_TOKEN = "ingest-tok"
+    process.env.CRON_SECRET = "cron-tok"
+    const { GET } = await import("@/app/api/cron/evm-transfers-ingest/route")
+    const res = await GET(makeReq({ auth: "Bearer ingest-tok" }))
+    expect(res.status).toBe(200)
+  })
+
+  it("an UNSET CRON_SECRET must not let a bare `Bearer ` through", async () => {
+    // The fail-soft class: an empty expected value turns the literal "Bearer "
+    // into a valid credential for every caller.
+    process.env.INGEST_SECRET_TOKEN = "ingest-tok"
+    delete process.env.CRON_SECRET
+    const { GET } = await import("@/app/api/cron/evm-transfers-ingest/route")
+    expect((await GET(makeReq({ auth: "Bearer " }))).status).toBe(401)
+    expect((await GET(makeReq({ auth: "Bearer wrong" }))).status).toBe(401)
+  })
+})
+
 describe("POST /api/cron/evm-transfers-ingest — auth guards", () => {
   it("500s when INGEST_SECRET_TOKEN is unset", async () => {
     delete process.env.INGEST_SECRET_TOKEN

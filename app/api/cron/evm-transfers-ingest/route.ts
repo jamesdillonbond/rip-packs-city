@@ -8,7 +8,8 @@
 // Beezie Collectibles on Base is the first registered target. New contracts
 // require only an INSERT into evm_nft_contracts.
 //
-// Auth: Bearer INGEST_SECRET_TOKEN (also accepts ?token=). GET/POST.
+// Auth: Bearer CRON_SECRET (Vercel cron) or Bearer INGEST_SECRET_TOKEN
+// (also accepts ?token=). GET/POST.
 // Fire-and-forget via after() so cron-job.org's 30s HTTP cap can't kill the
 // ingest mid-write; internal work is still bounded to BUDGET_MS so a slow
 // contract can't starve later contracts in the same tick.
@@ -504,6 +505,27 @@ async function logRun(args: {
 }
 
 function authorized(req: NextRequest): boolean {
+  // ⚠ VERCEL CRON SENDS `Authorization: Bearer $CRON_SECRET`, NOT the ingest
+  // token. This route accepted only INGEST_SECRET_TOKEN, so its first scheduled
+  // tick 401'd — and a 401 returns BEFORE any `pipeline_runs` row is written, so
+  // the pipeline reads as dormant rather than broken. Measured 2026-09-02
+  // 22:44:26Z: `GET /api/cron/evm-transfers-ingest 401`, zero rows logged.
+  // Same accept-either shape as the other Vercel-driven cron routes
+  // (see app/api/cron/refresh-insights-cache).
+  // ⚠ Both arms are guarded on the secret being non-empty. An unset secret would
+  // otherwise make the literal `Bearer ` authenticate every caller — the
+  // fail-soft `?? ""` class swept earlier today.
+  const cronSecret = process.env.CRON_SECRET;
+  const authHeader = req.headers.get("authorization");
+  if (
+    cronSecret &&
+    authHeader &&
+    authHeader.startsWith("Bearer ") &&
+    authHeader.slice(7) === cronSecret
+  ) {
+    return true;
+  }
+
   const expected = process.env.INGEST_SECRET_TOKEN;
   if (!expected) return false;
   const bearer = req.headers.get("authorization");
