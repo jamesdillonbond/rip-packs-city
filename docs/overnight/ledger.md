@@ -10,6 +10,83 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ⛔ THE INDEX WAS BUILT ON THE WRONG PREMISE — it works, it is used, and the cost it was aimed at is not where the cost is. Verdict HELD, not claimed.
+
+**Revert path:** `DROP INDEX CONCURRENTLY idx_wmc_lock_wallet_coll_cover;` (rebuild is 23.6 s).
+**Status: NOT dropped, NOT declared a win.** The clean measurement does not exist yet; it does at 04:05Z.
+
+**The build itself is fine.** pg_cron jobid **433** fired 02:10:00Z, returned `CREATE INDEX` at
+02:10:23Z (23.6 s), `indisvalid = true`, `indisready = true`. It **is** being used —
+`pg_stat_all_indexes.idx_scan = 1,166` within 25 minutes. ⚠ It is **213 MB**, not the ~100 MB I
+estimated when booking it; I should have sized it from the row count rather than by feel.
+
+### ⛔ My own exit criterion was un-runnable, and the reason is a measurement trap
+
+The ledger said *"blocks/call should fall from ~21,261 toward ~3,000"*. Applying it gave **29,089
+buffers** — apparently worse. It was not worse. **The two numbers measure different queries.**
+`EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM get_lock_check_batch(…)` measures the **direct call**;
+`pg_stat_statements` records what PostgREST actually runs — a wrapper carrying `pgrst_source`,
+`json_to_record`, `count()`, `json_agg` and its own LIMIT/OFFSET. **Different queryid, different
+accounting.** Comparing one to the other is the same error class as using a `count(*)` control for a
+row-projecting query, which I already made once this session.
+
+**Fix the instrument before writing the criterion, and write the queryid into it.** Rebuilt the A/B
+as pgss-to-pgss on queryid `696026922022888777` by window-functioning `audit_20260830_pgss_snap`
+(`ops_pgss_delta` only compares *now* to one baseline, so it cannot express an old window).
+
+| window (clean, pre-index) | n | blocks/call |
+|---|---|---|
+| 09-01 05:21 → 06:05 | 2 | 33,596 |
+| 09-01 09:01 → 10:05 | 4 | 42,037 |
+| 09-01 14:05 → 16:05 | 8 | 42,278 |
+| 09-01 20:05 → 22:05 | 8 | 41,870 |
+| 09-01 22:05 → 00:05 | 8 | 45,177 |
+| **09-02 00:05 → 02:05** | **8** | **46,965** ← last clean pre |
+
+**The real baseline is ~42,000–47,000, not 21,261 — and it was CLIMBING all day.** The only
+post-index window (02:05→02:14) straddles the 02:10:23 build and has **n = 2**. That is not a verdict
+and I am not treating it as one. Re-armed for 04:15Z, when 02:14:28 → 04:05 gives a fully post-index
+window at n≈7, with the threshold restated against the correct baseline.
+
+⚠ **And the rising trend is a real confound I will not paper over:** "flat after the change" could be
+"did nothing" *or* "arrested a rise". If it lands flat, that is an ambiguity to state, not a win to
+claim.
+
+### 📏 The finding that outranks the index: it fetches ~117,000 rows to return 200
+
+Two measurements explain the whole cost, and they invert the premise I built the index on.
+
+- **`hot` = 584 wallets** (`seeded_wallets ∪ saved_wallets ∪ linked_accounts.parent ∪ .child`).
+- The priority leg runs a **LATERAL per hot wallet with an inner `LIMIT p_limit` (200)**. 584 wallets
+  × 2 collections ≈ **1,168 probes per call** — which matches the observed `idx_scan = 1,166` almost
+  exactly, independently confirming the mechanism.
+
+So the function materialises up to **584 × 200 ≈ 116,800 rows, dedups, ranks, and returns 200.**
+That is ~41 blocks per probe — the index is doing its job per-probe; **there are simply too many
+probes.** Same shape as this session's earlier "top consumer fetched 9,613 rows to reject them".
+
+⛔ **The leg I assumed was expensive is cheap.** I expected the non-priority leg
+(`collection_id` + `ORDER BY lock_checked_at LIMIT 200`) to walk far to find qualifying rows. It does
+not: **nba_top_shot has 1,862,843 of 1,904,210 rows qualifying — 97.8%** (1,474,626 never checked),
+so its LIMIT 200 is satisfied immediately. disney_pinnacle is 4.0% of 57,578, i.e. 2,305 rows, also
+trivial. **The covering index removed heap fetches from a leg whose cost was never heap fetches.**
+
+⚠ **The obvious fix does NOT work and must not be shipped as one.** Lowering the inner `LIMIT` is a
+semantics change, not an optimisation: the outer `ROW_NUMBER() … ORDER BY is_priority DESC,
+lock_checked_at ASC` then `LIMIT 200` means **one wallet can legitimately supply all 200** of the
+final result, so exactness requires inner limit = outer limit. A rewrite has to reason about
+lock-check fairness across wallets and be measured on buffers. Designed change for a fresh pass.
+
+### Re-confirmed, because I got this wrong once already this session
+
+Same call, same arguments: **29,089 buffers cold (6,245 ms) and 29,089 buffers warm (76 ms)** — an
+**82× wall-clock swing at identical buffer cost**. Judge on buffers.
+
+⚠ Two smaller traps, both self-inflicted and both silent: a `Function Scan` line **hides the inner
+plan** (a SECURITY DEFINER function is never inlined), so index choice must be read from
+`pg_stat_all_indexes`, not EXPLAIN — and that view must be filtered on **`indexrelname`** (the index),
+not `relname` (the table), which returns zero rows and reads exactly like "the index is unused".
+
 ### 2026-09-01 · ✅ DRAINED (152 rows) + 📏 the largest TIME consumer on the instance is invisible to every buffer-ranked sweep, and its partial index is now a 100% false positive
 
 **Session:** Claude Code interactive, Trevor's box, ~19:1x PT.
