@@ -10,6 +10,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ CLOSED #47 — the experiment's falsifier is ANSWERED and NOT met (kills stopped), but the recovery is NOT cleanly attributable to the change that was supposed to cause it
+
+**Session:** Claude Code interactive, Trevor's box, ~20:2x PT. Measurement only; **nothing changed.**
+
+**📏 Split at the 08-28 deploy exactly as the item instructs, never pooled:**
+**pre (22:10Z slot, 08-17→08-28, 12 days): 6 killed / 12 = 50%** · **post (01:10Z slot, 08-29→09-02,
+5 days): 0 killed / 5 = 0%.** Against a 50% null, five clean nights is `p ≈ 0.03`. **The stated
+falsifier — *"if it is still killed at ~45% from 01:10Z, the cause is D8 itself and the durable fix is
+the `paginateGroup` chunking"* — is NOT met**, so that unshipped chunking is **not indicated** by this
+evidence.
+
+⚠ **ATTRIBUTION CONFOUND, and I am flagging it rather than banking the win.** Post-change durations are
+**661 s (08-29), then 109 / 93 / 110 / 90 s** — the collapse lands **between 08-29 and 08-30, a day
+AFTER the 08-28 deploy**, coinciding with a heavy 08-30 wave of wmc index / vacuum / param-blind work
+(#52 and neighbours). ⭐ **"The kills stopped" is established. "The schedule change stopped them" is
+NOT** — the job now finishes in ~90–110 s against an 800 s wall where it previously ran 139–498 s, and
+it is the MARGIN that changed, not obviously the slot. An experiment whose treatment and a large
+confound land a day apart cannot separate them, and saying so is cheaper than a wrong attribution that
+gets cited later.
+
+⚠ **Five runs CLASSIFY, they do not RATE** (standing small-probe rule): this supports "no longer ~45%",
+not "0%".
+
+🚨 **THE ITEM'S OWN KILL INSTRUMENT IS UNRELIABLE FOR THE CURRENT DAY, and it nearly cost me a sixth
+kill.** #47 defines a kill as *"a MISSING DAY in `pipeline_runs_daily`"*. That rollup refreshes
+**six-hourly**. On **2026-09-02 it showed the day ABSENT** — which I would have counted — while
+`pipeline_runs` shows the run at **01:10:43Z, ok, 89.7 s, 28,483 rows**, with its heartbeat. **Always
+confirm a "missing day" against `pipeline_runs` before calling it a kill.** This is CLAUDE.md's existing
+"never read `pipeline_runs_daily` for RECENCY" rule biting the one instrument built on top of it — the
+warning now lives in the item.
+
+ⓘ `npm run pipelines:kills` reports it **`HEALTHY · 4 ticks, no kills`** — correct but *understated*,
+because the pre-change kills sit outside `pipeline_runs`' ~73 h retention, so the tool cannot see what
+it recovered from and classifies it `HEALTHY` rather than `RECOVERED`. ⭐ **A recovery detector bounded
+by a 73-hour window cannot see a DAILY pipeline's history** — for anything daily, the rollup (with the
+recency caveat above) is the only instrument with reach.
+
+⚠ **RE-OPEN TRIGGER:** any missing day the `pipeline_runs` check CONFIRMS, or durations climbing back
+over ~400 s. **The D8 lock-contention mechanism was never removed** — the job simply stopped running
+close enough to the 800 s wall for it to matter.
+
+**Item updated in place** (#47 → ✅ closed, original filing retained beneath); **index regenerated with
+`npm run docs:issues-index`** — 28 open/20 closed → **27 open/21 closed**; guard green 9/9.
+
 ### 2026-09-01 · ✅ CLOSED #41 by re-derivation — running the job 3.2× MORE OFTEN cut its failures 23.1% → 4.0% at UNCHANGED cost, and the price the fix was expected to carry never appeared
 
 **Session:** Claude Code interactive, Trevor's box, ~20:0x PT. Measurement only; **nothing changed** —
