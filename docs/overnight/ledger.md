@@ -10,6 +10,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED — deep-audit D39 closed: the alert path can now see its own cache going stale, and the obvious fix was the wrong one
+
+**Migration `audit_20260902_alerts_see_the_unmapped_backlog_cache_going_stale_instead_of_reading_its_last_good_payload_as_current`**
+(file `20260902064112_…`). No code change.
+
+`check_unmapped_backlog_growth()` is one line —
+`COALESCE((SELECT payload FROM unmapped_backlog_growth_cache WHERE id = 1), '[]')` — with two silent
+failures behind it: a dead writer serves the **last-good payload forever as current**, and a missing
+row answers `[]`, **a clean bill of health manufactured from absence**, on the alert path itself.
+
+⛔ **The reader was the WRONG place to fix it, and that is the part worth carrying.**
+`get_pipeline_alerts_core()`'s consumer arm builds its `detail` by concatenating
+`e->>'open_actionable_rows'`, `e->>'collection'`, `e->>'open_rows'` … . Returning a differently-shaped
+element — a `{"status":"stale"}` marker, the obvious "honest" move — makes every one of those `->>`
+reads NULL, and `||` over NULL yields NULL, so **the honest reader would have emitted an alert with a
+NULL detail**. 👉 **An array cannot express *unknown* to a consumer that expects rows of a fixed shape;
+the unknown belongs on the CALLER.**
+
+**What shipped:** one extra row in the existing `data_stale` arm's `freshness` subquery, inheriting its
+severity ladder (>48 h high, else medium), its wording, and its `active_suppressions` join — so an
+operator suppresses it as `pipeline = 'unmapped_backlog_growth_cache'`, like any other.
+
+⚠ **D39's caution — "a naive raise-when-stale risks a permanently-red arm" — is answered with a
+MEASUREMENT.** jobid 261 over 30 days: **453 successful runs, gaps min 55 / avg 74 / MAX 422 min
+(7.0 h)** against the arm's inherited **24 h**. That is **3.4× the observed worst case** and 24 missed
+hourly ticks before it says a word, on a job whose own failure rate is 9.1% (15 of 165 in 7 d).
+
+⭐ **The missing-row half needed a `COALESCE` or the fix would have reproduced its own second defect.**
+`max(refreshed_at)` over zero rows is NULL, `now() - NULL` is NULL, and `NULL > interval '24 hours'` is
+**not true** — so an absent row would have stayed invisible in the NEW arm exactly as in the reader.
+`COALESCE(…, interval '99 days')` makes absence the loudest state, and the `metric` label names which
+of the two cases fired instead of leaving it inferred from a suspicious number.
+
+⚠ **Post-state proves BOTH directions, because a silent arm and a blind arm look identical.** It
+asserts `get_pipeline_alerts()` still returns an array end-to-end; that the new arm is **silent** on the
+live 10.8-minute-old cache (an arm that fires on a healthy instance is the permanently-red shape); and
+that it **CAN** fire, by evaluating the missing-row predicate against `id = -999` and requiring it to
+raise.
+
+⛔ **Deliberately NOT done:** the reader still serves last-good while stale. That is the standard cache
+contract, its consumers are shape-locked to it, and with this arm alongside an operator sees both the
+numbers and the fact that they are old.
+
+ⓘ **Stated plainly:** the delivery plane is down (R62/R71 — Telegram fails, email unconfigured), so
+this arm's output is visible in `get_pipeline_alerts()` / `/api/check-alerts` but **will not page
+anyone until those credentials land**. It is still worth having; it is not worth calling coverage.
+
+**Revert:** re-apply the previous definition — it differs ONLY by the third branch of the `freshness`
+subquery; delete the `UNION ALL SELECT 'unmapped_backlog_growth_cache' …` block.
+
 ### 2026-09-01 · ✅ SHIPPED — a missing OpenSea key was being reported to operators as an OpenSea outage
 
 **Files:** `app/api/panini/listings/route.ts` · `app/api/panini/market-stats/route.ts` ·
