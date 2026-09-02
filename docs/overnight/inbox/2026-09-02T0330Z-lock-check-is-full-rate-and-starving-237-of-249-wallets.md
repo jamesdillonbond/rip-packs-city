@@ -65,6 +65,62 @@ measurement, and sits at 1.18 % dead tuples.
 > **Diagnostic rule worth keeping: when a plan says `Index Only Scan`, read the `Heap Fetches:` line
 > before believing the index works.**
 
+## ⛔ CORRECTION, 03:50Z — this is a DEFECT, not the policy trade I filed 20 minutes ago
+
+I filed the section below as "breadth vs depth, Trevor's call". Then I ran the query it recommended,
+and the answer removes the trade entirely.
+
+**Every one of the 12 wallets receiving checks is a SEEDED coverage wallet.** Not one is user-saved,
+not one is linked. And on the other side:
+
+| | user wallets (saved + linked) | seeded coverage wallets |
+|---|---|---|
+| wallets holding TopShot moments | 31 of 344 | — |
+| TopShot rows held | **212,201** | — |
+| rows qualifying for a lock check | **212,201 (100 %)** | — |
+| checks received in 24 h | **0** | **9,590** |
+| checks received in 30 d | **230** (0.1 %) | ~121,000 |
+
+**The priority leg exists specifically to favour the wallets users care about, and it is delivering
+100 % of its output to seeded coverage wallets and 0 % to user wallets.** Users' own moments have had
+zero lock checks in 24 hours and 230 in a month. That is not a tuning preference; it is the feature
+not doing the thing it was built to do.
+
+**Why:** `hot` UNIONs seeded, saved and linked with **no preference among them**, so a seeded wallet
+is indistinguishable from a user wallet in the ordering. Seeded wallets then win on sheer mass — 274
+of them with work versus 31 user wallets, and the biggest holds 21,124 moments against a typical user
+wallet's handful. With all 1.47 M NULLs tied, mass decides.
+
+### The fix is smaller and safer than the cap I proposed below
+
+Do **not** cap per-wallet contribution — that was aimed at the wrong problem and carries the real
+breadth/depth trade. Instead **add a tier to the ordering**: user (saved/linked) wallets rank above
+seeded-only wallets, i.e. carry a `is_user_wallet` flag through `cand`/`dedup` and order by it before
+`lock_checked_at`. That:
+
+- is a strict priority fix, not a fairness trade — nothing is starved that was previously served,
+  because seeded wallets simply resume once user wallets are current;
+- clears the entire 212,201-row user backlog in ~22 days at today's unchanged 9,590/day, then hands
+  the capacity straight back to seeded coverage;
+- leaves throughput, batch size, cadence and the `LIMIT` structure untouched;
+- needs no new index — `is_user_wallet` is derived from the `hot` CTE that is already computed.
+
+⚠ Still verify on **rows written per wallet class**, not on `ok` — this pipeline has been green and
+wrong for its entire life, and a throughput arm cannot see the difference.
+
+⚠ And it does not fix the arithmetic: 9,590/day against a 7-day target needing ~271,000/day stands
+regardless. This makes the scarce capacity go to the right wallets; it does not create capacity.
+
+**Not shipped tonight** — it is a live-pipeline function change and the measurements are 20 minutes
+old. It is the first thing to ship next pass, with a per-class verification query.
+
+---
+
+## Superseded — the policy framing I filed before running the query
+
+*(Kept deliberately: the reasoning below is wrong in its conclusion, and the reason it is wrong —
+I proposed a trade-off without first checking who was actually being served — is the useful part.)*
+
 ## The decision for Trevor
 
 Capping each wallet's contribution (a smaller inner `LIMIT`) would cut materialised rows 20–180× *and*

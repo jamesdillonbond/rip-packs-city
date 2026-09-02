@@ -93,6 +93,42 @@ per-wallet LATERAL is the best of the three and should be left alone.**
 📏 Also corrected: I claimed "~117,000 rows materialised". **It is 46,255** — only 249 of the 584 hot
 wallets hold TopShot rows at all. 224 of those 249 hit the inner cap.
 
+### ⛔ CORRECTION 03:50Z — I ran the query I recommended, and it is a DEFECT, not a policy call
+
+I wrote the section below as a breadth-vs-depth trade for Trevor. Then I ran the settling query it
+named, and the trade disappears.
+
+**All 12 wallets receiving checks are SEEDED coverage wallets — none is user-saved, none is linked.**
+
+| | user wallets (saved + linked) | seeded |
+|---|---|---|
+| holding TopShot moments | 31 of 344 | — |
+| TopShot rows | **212,201** | — |
+| qualifying for a check | **212,201 (100 %)** | — |
+| checks in 24 h | **0** | **9,590** |
+| checks in 30 d | **230** (0.1 %) | ~121,000 |
+
+**The priority leg exists to favour the wallets users care about and is sending 100 % of its output
+to seeded coverage wallets.** `hot` UNIONs seeded/saved/linked with **no preference among them**, so
+seeded wins on mass — 274 wallets with work against 31, the largest holding 21,124 moments — and with
+all 1.47 M NULLs tied, mass is the whole tie-break.
+
+**The fix is smaller and safer than the cap below:** carry an `is_user_wallet` flag through
+`cand`/`dedup` and order by it before `lock_checked_at`. Strict priority, not a fairness trade —
+seeded resumes once user wallets are current (~22 days for the 212,201-row backlog at today's
+unchanged rate). No index needed; the flag is derived from the `hot` CTE already being computed.
+⚠ Verify on **rows written per wallet class**, never on `ok` — this pipeline has been green and wrong
+for its entire life. ⚠ It does not create capacity: 9,590/day vs ~271,000/day needed still stands.
+
+**Not shipped tonight** — live-pipeline function change on 20-minute-old measurements. First thing
+next pass, with a per-class verification query.
+
+⚠ **The lesson is the order I did things in.** I proposed a trade-off, wrote it up as Trevor's call,
+and only then ran the one query that showed there was no trade-off. **Check who is actually being
+served before designing a policy for serving them.**
+
+### Superseded — the policy framing, kept because the error is the useful part
+
 ### The one change worth making is a POLICY decision, not a fix
 
 Capping each wallet's contribution (a smaller inner `LIMIT`) would cut materialised rows ~20–180×
