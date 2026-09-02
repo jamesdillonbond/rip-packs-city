@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ VERIFIED ON A LIVE TICK — the lock-check user tier works: 0 → 370 of 400 checks now reach real users' wallets
+
+**Closes the fix shipped two entries below.** Verified on the **04:08:18Z tick** (the first to run the
+new function; the migration landed ~03:46Z and the prior tick was 03:38:17Z), `ok=true`, 400 found /
+400 written — throughput unchanged, exactly as designed.
+
+⛔ **Verified on ROWS WRITTEN PER WALLET CLASS, not on `ok`** — the whole point, since this pipeline was
+green at its full designed rate the entire time it was serving the wrong wallets.
+
+| collection | checks in window | **to USER wallets** | distinct wallets |
+|---|---|---|---|
+| `nba_top_shot` | 200 | **200 (100 %)** — was **0** | 1 |
+| `disney_pinnacle` | 200 | **170 (85 %)** — was **0** | 8 |
+| **total per tick** | **400** | **370 (92.5 %)** — was **0** | 9 |
+
+Prior state, for the record: user wallets received **0 checks in 24 h and 230 in 30 days** while 12
+seeded coverage wallets took all 9,590.
+
+📏 **The live tick matched the pre-apply direct call EXACTLY** — 200/200 for TopShot and 170/200 across
+8 wallets for Pinnacle, both predicted before applying. That agreement is itself worth noting: the
+function behaves identically under the real PostgREST caller as under a direct `select`, which is not
+guaranteed for a `LANGUAGE sql` RPC (they are planned param-blind).
+
+**At this rate the 212,201-row user backlog clears in ~22 days**, after which seeded coverage resumes
+automatically — no further intervention, no scheduled follow-up needed.
+
+### Still open, and deliberately so
+
+- **Breadth within the user tier.** TopShot gives one wallet the whole batch; Pinnacle spreads over 8
+  (its user wallets are smaller). Capping per-wallet contribution would spread TopShot too, but it is
+  **not exactness-preserving** — one wallet can legitimately own all 200 rows of the correct answer.
+  Left as a decision, not slipped in under a verification.
+- **Capacity is untouched and unreachable.** ~271,000 checks/day would be needed for the stated 7-day
+  target; actual is ~9,590 (**3.5 %**). `p_max_age_days` remains **inert** — 1.47 M NULLs permanently
+  sort ahead of anything timestamped, so nothing already checked is re-checked. This sends scarce
+  capacity to the right wallets; it does not create capacity.
+
 ### 2026-09-01 · ✅ SHIPPED — `sales-counterparty-backfill` had walked off the edge of Flow's history and was burning ~9.2 h/day to recover nothing; it now has a FLOOR, and the 450,987 rows it can still recover are back in front of it
 
 **Migration `audit_20260902_sales_counterparty_backfill_gets_a_spork_floor_and_a_second_pass`**
