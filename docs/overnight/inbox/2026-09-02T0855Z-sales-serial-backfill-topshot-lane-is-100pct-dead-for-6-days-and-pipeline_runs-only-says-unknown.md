@@ -199,3 +199,71 @@ and that lives in the edge function, which is deploy-gated.
 ⛔ **So: not shipped, and not because it is risky — because it is worth about 20% of a small number,
 and it is the wrong shape for this failure class.** Re-open it if `retry_count` starts climbing past
 ~10 while the upstream stays down, which would mean the flat cooldown has stopped bounding the churn.
+
+
+---
+
+# RE-DERIVED 2026-09-02 ~12:50 PT (19:50Z), ~11 h after filing — the falsifier FIRED, and the DB-side fix is REFUTED
+
+Ran this filing's own falsifier plus the measurement it correctly refused to act without.
+**Nothing shipped; one proposed change is now recommended AGAINST.**
+
+## 1. Falsifier: the upstream has NOT recovered — this is an open item
+
+| lane · detail | filing (08:55Z) rows / attempts | now (19:50Z) rows / attempts |
+|---|---|---|
+| `nba_top_shot` · `http_530` | 682 / 1,819 | **1,288 / 2,618** |
+| `nba_top_shot` · `http_429` | 436 / 1,515 | **939 / 2,032** |
+
+Newest Top Shot failure **18:40:39Z — about an hour before this re-derivation.** 198 rows failed in
+the last 6 h, 1,232 in the last 24 h. The filing's stated exit condition ("if the counts stop growing,
+this is a historical record") is **not met**.
+
+## 2. ⛔ THE DB-SIDE ESCALATING COOLDOWN MUST NOT BE BUILT — its population is ZERO
+
+The filing proposed an escalating cooldown on `get_serial_backfill_targets`, and explicitly gated it
+on a measurement: *"how many of the 700 are genuinely permanent versus recoverable?"* Here it is —
+every failure row joined back to its sale:
+
+| lane · detail | failure rows | serial NOW resolved | **still eligible** |
+|---|---:|---:|---:|
+| `nfl_all_day` · `onchain_nil` / `not_in` | 2,069 | **2,069 (100%)** | **0** |
+| `nfl_all_day` · `no_holder` / `escrowed_or_unseeded` | 296 | **296 (100%)** | **0** |
+| `nba_top_shot` · `gql_null_serial` | 42 | 42 (100%) | 0 |
+| `nba_top_shot` · `unknown` / `http_530` | 1,288 | 493 (38%) | 795 |
+| `nba_top_shot` · `unknown` / `http_429` | 939 | 519 (55%) | 420 |
+
+👉 **All 2,069 `not_in` rows have since had their serial resolved by another path, so none of them is
+an eligible target any more.** The picker's `WHERE serial_number IS NULL OR = 0` already excludes
+every one. An escalating cooldown would act on an empty set.
+
+⭐ **And the filing's premise is refuted, not merely its urgency.** It reasoned that *"`not_in` means
+the moment is not in the recorded holder's collection, which for a sold-on moment is PERMANENT."*
+**100% of them recovered.** `not_in` is a statement about one stale holder snapshot, not about the
+moment.
+
+⭐ **The conservative call was the correct one, and this is the evidence.** The filing declined to
+ship the cooldown pending a measurement and wrote down its own falsifier —
+*"an escalating backoff on a recoverable row just delays the recovery."* Shipping it would have
+delayed recovery on 2,365 AllDay rows that were all going to resolve.
+
+## 3. ⚠ Two numbers in the filing do not reproduce — both from mixing populations
+
+- **"about 14 attempts per row over 26 days"** — `max(retry_count)` across the whole Top Shot lane is
+  **6**, and the mean is **2.07**. The 14 came from dividing an attempt SUM over the failures table by
+  a row count that had already shrunk as rows resolved: **a count from one population against a
+  property of another.** No row has been retried anywhere near fourteen times.
+- **`http_429` "since 2026-08-29"** — live `min(first_failed_at)` for that bucket is **2026-08-03**.
+  Not chased; flagged so the next reader does not treat either date as established.
+
+## 4. What is still open, unchanged
+
+**The Top Shot lane and the instrument, both edge-side, both operator-gated.** 1,215 of 1,240 eligible
+Top Shot sales carry a failure row and 1,163 are inside the 24 h cooldown, so the lane is churning the
+same population against a Cloudflare 530/429 every two hours. Retries DO work when the upstream is up
+— 38% of the 530 rows and 55% of the 429 rows have resolved since — which is an argument for the
+**breaker** (stop burning the batch while the origin is down) rather than for abandoning the retry.
+
+Suggested fixes **1** (wire the breaker) and **2** (stop `unknown` being a null instrument) stand
+exactly as written. Suggested fix **3** (backoff for the 429) stands. Suggested fix under
+"A separate, DB-side finding" is **withdrawn** by §2 above.
