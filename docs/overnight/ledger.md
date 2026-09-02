@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — `INGEST_SECRET_TOKEN` stops being written into the edge log store on every call
+
+**File:** `app/api/cron/sales-serial-backfill/route.ts` + its test. **No DB change, no edge deploy, no
+secret touched.**
+
+This route built `…/functions/v1/sales-serial-backfill?token=${ingest}`. **Supabase edge-function logs
+record FULL REQUEST URLS**, so `INGEST_SECRET_TOKEN` — a secret **shared across ~15 edge functions** —
+was written to the log store on **every call, ~12×/day**. It now travels as
+`Authorization: Bearer ${ingest}` against the bare function path.
+
+⭐ **It was safe to do BEFORE step (a), and the known-issues note says why without saying so.** The
+recorded fix order is (a) tighten the edge fn's header check → (b) move the caller to the header →
+(c) delete the `?token=` branch, "do not reorder". **The hazard is one-directional: (c) before (b) 401s
+the caller.** (b) alone works against the CURRENTLY DEPLOYED function *precisely because* its header
+branch is the sloppy `auth.includes(TOKEN)` substring test, which `Bearer <token>` satisfies. **The
+defect enables its own fix.**
+
+⛔ **(a) and (c) are NOT done** — both are edge deploys, and this session touched neither the edge fleet
+nor any secret. ⛔ **And the old leak was NOT "confirmed" by reading the logs — reading them IS the
+leak.** The caller's own source line was the proof.
+
+⚠ **The token stays EXPOSED and should still be rotated.** This stops NEW writes; it does not un-write
+the old ones. That rotation spans ~15 functions and is its own project.
+
+⚠ **Pinned as an ABSENCE:** the test asserts the token and the string `token=` **never appear in the
+outbound URL**, not merely that an `Authorization` header is present — asserting the header alone would
+pass with the query param still there, which is the exact regression. Mutation-checked: restoring the
+query param reds it.
+
+**Verified:** full suite **1420 files / 15,672 tests green**; `tsc --noEmit` clean; eslint ratchet
+**717 = baseline**.
+
+**Revert:** `git revert` the commit. ⚠ Safe in isolation only while step (c) is undone — once the edge
+fn's `?token=` branch is deleted, reverting this 401s the caller.
+
 ### 2026-09-02 · ✅ SHIPPED — the tenth-shape sweep: four more indexers where a failed read was silently losing, flooding or NULLing rows
 
 **Files:** `app/api/topshot-offers-indexer/route.ts` · `app/api/cron/allday-resolve-unmapped/route.ts` ·
