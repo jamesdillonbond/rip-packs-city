@@ -10,6 +10,63 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED — every per-step counter a pipeline emits was being deleted after ~73 h; `pipeline_runs_daily` now keeps the VALUES, not just which keys existed
+
+**Migration `audit_20260902_pipeline_runs_daily_keeps_numeric_extra_values_not_just_key_presence`**
+(file `20260902044456_…`). This is the general fix for the gap that killed a measurement earlier
+tonight, shipped in the same pass that found it.
+
+**The gap.** `pipeline_runs` retains ~73 h. `pipeline_runs_daily` is indefinite — but of a run's
+`extra` it kept only **`extra_key_counts`: which keys were PRESENT, never what they said.** So every
+per-step counter was gone three days after it was written, and no question about an older change could
+be answered however carefully it had been framed. **Three separate measurements this week ran into it:**
+R30's falsifier (*"split the backstop's kill share at this commit"*) is now unanswerable because the
+pre-side aged out; fmv-recalc's 350-of-350 failure needed four days of `extra.historical_fallback` and
+only just fit; and both treadmills fixed tonight are *"finds rows, converts none"* claims, which are
+statements about `extra` counters over weeks, not days.
+
+**The change: `extra_num_sums`** — for each (pipeline, day), the SUM of every numeric top-level key.
+It **composes with** the existing column rather than replacing it: `extra_key_counts` says how many runs
+carried the key, `extra_num_sums` says what they added up to, so **mean = sum / count** is derivable and
+neither is redundant.
+
+⭐ **It paid for itself within the minute.** Running the rollup over the retained window preserved
+tonight's before/after **permanently**, before those raw rows are pruned:
+
+| pipeline | 08-31 | 09-01 | 09-02 |
+|---|---|---|---|
+| `sales-counterparty-backfill` | `batch 34,560 · applied 0` | `batch 34,560 · applied 0` | **`applied 109`** |
+| `topshot-buyer-backfill-historical` | `exec_resolved 2,160 · buyers 0` | `2,115 · 0` | — |
+| `lock-check-batch` | `wallets_grouped 239` | `906` | — |
+
+⛔ **And it corrects tonight's own filing upward:** `sales-counterparty-backfill`'s `duration_ms` sums
+to **36,889,569 ms on 09-01 — 10.25 hours a day**, not the ~9.2 h the inbox filing estimated, for zero
+rows recovered. **The instrument that would have caught it is the one that now exists.**
+
+⚠ **Three ways to misread the column, all written into its `COMMENT`.** (1) **A sum is only meaningful
+for a COUNTER** — `to_block`, `sealed_tip` and cursor heights sum to nonsense; the column does not know
+which key is which, the reader does. (2) **NULL means the column did not exist for that day**, not that
+the day had no numeric keys — the 08-30 rows above show exactly that, and reading it as 0 is the
+fabricated-number shape. (3) **Top-level keys only**; nested objects contribute nothing — the same limit
+`extra_key_counts` already had, kept deliberately because flattening would collide keys from different
+sub-objects.
+
+**Two details that are defensive rather than cosmetic:** the new aggregate carries the *same*
+`jsonb_typeof(e) = 'object'` guard as the key-count expression (one non-object `extra` on one row would
+otherwise abort the INSERT for **every** pipeline in the window), and the conflict clause uses
+`COALESCE(EXCLUDED.extra_num_sums, d.extra_num_sums)` so a re-aggregation of a day whose raw rows have
+since been pruned cannot blank a value that was correct when written.
+
+**Post-state, against the RAW table rather than against itself:** the rollup is actually run, then the
+pipeline-day with the most numeric keys is picked, one of its keys taken, and the rolled-up sum required
+to equal a direct `sum()` over `pipeline_runs`. It also asserts `extra_key_counts` **survived** — a
+rewrite that dropped it would have left this migration's own target looking perfect — and refuses to
+pass if the rollup upserted nothing, since then none of the assertions inspected anything.
+
+**REVERT:** re-apply the previous `rollup_pipeline_runs` body (identical minus the one column), then
+`ALTER TABLE public.pipeline_runs_daily DROP COLUMN extra_num_sums;`. The column is inert without the
+function and dropping it loses only data that did not exist before.
+
 ### 2026-09-01 · 📏 A 30-day zero-yield census of the whole fleet, and a correction that stops R30 being closed on a number that means nothing
 
 **Nothing shipped from this entry** — one inbox filing
