@@ -1593,3 +1593,64 @@ diagnosis it exists to give.
   in both. When a classifier partitions, **assert the partition**, not each side.
 - ⚠ **Deleting an IMPORT is not a mutation of the behaviour** — the helper name is still in the source
   and the guard still matches, while the build breaks for an unrelated reason. Mutate the **calls**.
+
+---
+
+## A guard can be blind in a way its output never shows — and the DB had two of them, one right (2026-09-02)
+
+`check_secdef_anon_execute_violations()` is the guard that watches for SECURITY DEFINER functions
+`anon` or `authenticated` can EXECUTE. It **iterated a hardcoded list of NINE function names.** The
+schema has **559 SECDEF functions.** It returned `[]`; `rpc_ops_snapshot` published that as
+`security.secdef_anon_violations`; the smoke test hard-passed on it and would have Sentry-alerted on
+anything else; the daytime monitor's health line read *"security 0/0/0/0"*. **Four anon/authenticated-
+executable rows existed the whole time, and the guard never looked at them.**
+
+⭐ **IT WAS FOUND BY ASKING A DIFFERENT INSTRUMENT THE SAME QUESTION.** Supabase's own advisor reports
+`anon_security_definer_function_executable`; ours reported zero. **Two instruments, one question,
+opposite answers — and the wrong one was ours.** When a guard has an external counterpart, run both
+once; agreement is cheap and disagreement is the whole finding.
+
+### ⛔ And then the fix duplicated a guard that already existed
+
+The rewrite — a tree walk, correctly — carried its own **hardcoded** suppression list. But
+`check_secdef_anon_exec_drift()` had walked the same population since 2026-07-21, subtracting
+`public.secdef_anon_exec_allowlist`, **a table**. The duplicate was found by a one-line census of
+`check_*` functions run *after* building it.
+
+👉 **The standing rule "name the caller before you touch the function" has a sibling: CHECK WHETHER THE
+GUARD ALREADY EXISTS BEFORE WRITING IT.** For this database that is one query:
+
+```sql
+SELECT proname, length(prosrc) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+WHERE n.nspname='public' AND proname LIKE 'check\_%' ORDER BY 1;
+```
+
+### Why a suppression TABLE beats a suppression LITERAL
+
+Four reasons, and the third is the one that matters most:
+
+1. Operator-editable without a migration.
+2. Every row carries a `note` and an `approved_at` — a suppression becomes an auditable **decision**.
+3. ⚠ **The table's notes were better-researched than the ones written from scratch.** The literal
+   called `serial_fmv_estimate` a *"public pricing calculator"*; the table records that it is reached
+   **INDIRECTLY** through a SECURITY INVOKER function and an anon-SELECTable `security_invoker` view —
+   *"an invoker caller executes the callee AS THE CALLER, so revoking breaks the wallet-moments read
+   and the public board."* **A security finding was suppressed without knowing why the grant was
+   needed. It happened to be right; that is not the same thing.**
+4. The table is RLS-protected with no anon/authenticated SELECT or INSERT, so **the guard cannot be
+   disarmed by the roles it watches** — a property a literal cannot have, but also cannot lose.
+
+⚠ **Match on `oid::regprocedure`** (type names, no parameter names) when comparing against such a
+table — `pg_get_function_identity_arguments` includes parameter names and never matches.
+
+### The three assertions that make a rewritten guard non-vacuous
+
+- **It inspected a population**: `>= 50` SECDEF functions seen. *A rewrite that looked at nothing would
+  also return `[]` and look perfect.*
+- **The suppression is what removes the rows**, not the walk missing them: every reachable row must be
+  in the allowlist.
+- **No stale entries**: the allowlist may not hold more rows than are reachable, or a suppression rots
+  in silence.
+
+And, once two guards share a population, **assert that they AGREE** — disagreement means one is looking
+somewhere the other is not, which is exactly the failure that started this.
