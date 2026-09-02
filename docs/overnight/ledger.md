@@ -10,6 +10,58 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ DRAINED (152 rows) + 📏 the largest TIME consumer on the instance is invisible to every buffer-ranked sweep, and its partial index is now a 100% false positive
+
+**Session:** Claude Code interactive, Trevor's box, ~19:1x PT.
+
+⭐ **Found by ranking `ops_pgss_delta` on TOTAL TIME instead of buffers.**
+`backfill_wmc_metadata_from_editions` is **last by buffers and first by time** in a 127-minute window:
+**337 calls · 2,879 buffers/call · 3,069 ms/call · 1,034 DB-seconds** — ≈4,000 calls/day ≈ **3.4 h of DB
+time daily**. Every recent saturation pass has ranked on buffers, which puts it near the bottom and never
+surfaces it. **A cost ranking is a choice of axis, and this one hid the biggest consumer of the scarcer
+resource.**
+
+**📏 The work actually left was 152 rows.** The function admits a row only if a wmc column is NULL **and**
+the joined edition has a value to supply. Measured whole-table: the partial index's predicate matches
+**63,435**; **actually fillable = 152**, across **5 wallets, all `nba_top_shot`**. **99.76% of admissions
+could never be filled.**
+
+**✅ DRAINED:** `select public.backfill_wmc_metadata_from_editions(null, null)` → **152**, and `fillable`
+is now **0**. This is the function's OWN designed operation run once unscoped rather than waiting for
+those 5 wallets to refresh individually; it only writes a NULL column from a non-NULL edition value
+(`COALESCE` preserves anything present), so it cannot overwrite data.
+⚠ **REVERT: none, and none is wanted — said plainly rather than left implied.** No snapshot was taken and
+the prior state was 152 NULLs this function exists to remove; reverting means re-introducing them.
+Forward-only, idempotent, identical to what already runs ~4,000×/day.
+
+**🚨 THE FINDING THAT OUTLIVES THE FIX: `idx_wmc_metadata_fillable` is now 100% false-positive.** Built
+2026-08-31 to make this cheap, it is partial on `(edition_key IS NOT NULL) AND (tier IS NULL OR …)` —
+**it can only test the LEFT side**, because a partial index cannot reference another table. Post-drain:
+**admits 63,283, fillable 0.** Those rows' editions are NULL there too, so they are permanently
+unfillable and will be re-offered on every call forever. The live plan shows the price: a `BitmapAnd` of
+**68,166** entries from it plus **68,620** from `idx_wmc_lock_wallet_coll`, reduced to **27** heap rows,
+all 27 then rejected by the editions join — the wallet index does the real work and the partial index
+adds scan without selectivity.
+
+**⚠ The 3,069 ms/call is NOT the query's own work, and the confound is stated rather than buried.**
+Isolated on a typical wallet: **20.9 ms / 504 buffers**. Production: **3,069 ms / 2,879 buffers** —
+**146× the time for 5.7× the buffers.** Time that does not track buffers is not scan time.
+**HYPOTHESIS ONLY:** lock contention on `wallet_moments_cache`, among the hottest tables here (the
+`lock_checked_at` UPDATEs alone ran 210× in the same window). ⛔ **My isolation test was a `SELECT`;
+production runs an `UPDATE`, which takes row locks** — so 20.9 ms bounds the READ half only and part of
+the gap is legitimately the write. Too large to be only that, but I did not separate them. **Next
+instrument is `pg_stat_activity.wait_event_type` sampled during a live call, or `log_lock_waits` — not
+another EXPLAIN.**
+
+👉 **Lever is caller-side:** with zero addressable work, ~4,000 calls/day is overhead. Stop invoking it on
+every wallet refresh, or gate it on a cheap "has this wallet gained fillable NULLs" test. Route code, so
+it needs a push and a decision on whether the backfill is load-bearing at all.
+⛔ **Do NOT drop `idx_wmc_metadata_fillable` on this filing alone** — it is 100% false-positive *for this
+function*, is one day old, and I did not enumerate its other callers.
+**EXIT:** re-run both counts in a week — `fillable` still 0 ⇒ nothing regenerates and the per-refresh call
+is retirable; climbing ⇒ something upstream writes NULL-bearing wmc rows and the real defect is there.
+**Filing:** `inbox/2026-09-02T0215Z-wmc-metadata-backfill-is-done-and-its-partial-index-is-now-a-100pct-false-positive.md`.
+
 ### 2026-09-01 · SHIPPED + ⛔ SELF-CORRECTION — 3 more deploys, drift 24 → 6, and the entry below undercounted the operator's list because my cheaper derivation dropped the annotations
 
 **Corrects the entry immediately below (`16 of 18 … drift 18 → 2`).** That entry is right about what it
