@@ -57,9 +57,11 @@ const family = filesMatching("app/api", (n) => n === "route.ts", LANDING)
 
 /**
  * Measured 2026-09-02 over 35 consequential routes, comments stripped.
- * ⛔ THIS NUMBER GOES DOWN OR STAYS. Raising it re-opens the class.
+ * **61 at first measurement → 51** once `sales-indexer`'s ten map-building reads
+ * were bound in the same pass. ⛔ THIS NUMBER GOES DOWN OR STAYS. Raising it
+ * re-opens the class.
  */
-const BASELINE = 61
+const BASELINE = 51
 
 describe("a read in a consequential route binds its error", () => {
   // ⚠ filesMatching returns [] for a root that does not exist, and a guard that
@@ -112,6 +114,9 @@ describe("a read in a consequential route binds its error", () => {
     "app/api/allday-listings-indexer/route.ts",
     "app/api/allday-listings-retry/route.ts",
     "app/api/pinnacle-listings-retry/route.ts",
+    // The largest single instance: ten reads in the route that writes Top Shot
+    // sales, whose miss dropped the sale AND advanced the cursor.
+    "app/api/sales-indexer/route.ts",
   ])("%s binds the error on every supabaseAdmin read", (route) => {
     expect(family, `${route} must still be discovered`).toContain(route)
     expect(discardingReads(stripComments(readFileSync(route, "utf8")))).toBe(0)

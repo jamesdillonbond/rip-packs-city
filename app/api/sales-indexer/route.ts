@@ -375,14 +375,30 @@ export async function POST(req: NextRequest) {
     // base onto its ::subID edition, so parallel sales stop colliding with the Standard
     // printing on the base (the F9 write-time split — 2026-07-04). Complements the
     // existing "Standard must never sit on a ::subID" guard.
+    // ⚠ EVERY MAP-BUILDING READ BELOW BINDS ITS `error` AND THROWS, and on this
+    // route that is not defensive padding — it is the difference between a
+    // missed tick and PERMANENT LOSS OF TOP SHOT SALES. supabase-js RETURNS
+    // errors, so `const { data } = …` made a failed read look like "none of
+    // these nfts are known": every event falls through to
+    // `unresolvedIds.push(nftId); continue`, is never written to `sales` and
+    // never parked in `unmapped_sales`, and Step 7 advances the cursor anyway.
+    // Nothing revisits a block below the cursor. The run logs ok:true with an
+    // `unresolved_count` that looks like an ordinary catalogue gap.
+    // Throwing lands in the outer catch, which writes ok:false with
+    // `cursorAfter: null` — the cursor holds and the next tick re-reads the
+    // range. One cycle, nothing lost.
     const confirmedParallelSub = new Map<string, { subId: number; targetExt: string }>()
     for (let i = 0; i < uniqueNftIds.length; i += 500) {
       const batch = uniqueNftIds.slice(i, i + 500)
-      const { data: subRows } = await (supabaseAdmin as any)
+      const { data: subRows, error: subErr } = await (supabaseAdmin as any)
         .from("topshot_moment_subeditions")
         .select("nft_id, subedition_id, base_external_id")
         .in("nft_id", batch)
         .gt("subedition_id", 0)
+      // An unread submap is not "this nft is not a parallel": Step 4e would then
+      // redirect GENUINE parallels onto the base edition, which is precisely the
+      // collision the F9 write-time split exists to prevent.
+      if (subErr) throw new Error(`topshot_moment_subeditions lookup: ${subErr.message}`)
       if (subRows) {
         for (const row of subRows) {
           const base = row.base_external_id ? String(row.base_external_id) : null
@@ -403,11 +419,12 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < targetExts.length; i += 500) {
       const batch = targetExts.slice(i, i + 500)
       if (batch.length === 0) break
-      const { data: subEdRows } = await (supabaseAdmin as any)
+      const { data: subEdRows, error: subEdErr } = await (supabaseAdmin as any)
         .from("editions")
         .select("id, external_id")
         .eq("collection_id", TOPSHOT_COLLECTION_ID)
         .in("external_id", batch)
+      if (subEdErr) throw new Error(`::subID editions lookup: ${subEdErr.message}`)
       if (subEdRows) {
         for (const row of subEdRows) subExtToId.set(row.external_id, row.id)
       }
@@ -417,11 +434,12 @@ export async function POST(req: NextRequest) {
     const cacheMap = new Map<string, { edition_key: string; serial_number: number | null }>()
     for (let i = 0; i < uniqueNftIds.length; i += 500) {
       const batch = uniqueNftIds.slice(i, i + 500)
-      const { data: cacheRows } = await (supabaseAdmin as any)
+      const { data: cacheRows, error: cacheErr } = await (supabaseAdmin as any)
         .from("wallet_moments_cache")
         .select("moment_id, edition_key, serial_number")
         .in("moment_id", batch)
 
+      if (cacheErr) throw new Error(`wallet_moments_cache lookup: ${cacheErr.message}`)
       if (cacheRows) {
         for (const row of cacheRows) {
           if (row.edition_key) {
@@ -447,11 +465,12 @@ export async function POST(req: NextRequest) {
       const rawMoments = new Map<string, { editionId: string; serial: number | null }>()
       for (let i = 0; i < remaining.length; i += 500) {
         const batch = remaining.slice(i, i + 500)
-        const { data: momentRows } = await (supabaseAdmin as any)
+        const { data: momentRows, error: momentErr } = await (supabaseAdmin as any)
           .from("moments")
           .select("nft_id, edition_id, serial_number")
           .in("nft_id", batch)
 
+        if (momentErr) throw new Error(`moments lookup: ${momentErr.message}`)
         if (momentRows) {
           for (const row of momentRows) {
             if (row.edition_id) {
@@ -470,12 +489,16 @@ export async function POST(req: NextRequest) {
       const canonicalEdIds = new Set<string>()
       for (let i = 0; i < candidateEdIds.length; i += 500) {
         const batch = candidateEdIds.slice(i, i + 500)
-        const { data: edRows } = await (supabaseAdmin as any)
+        const { data: edRows, error: edErr } = await (supabaseAdmin as any)
           .from("editions")
           .select("id, external_id")
           .in("id", batch)
           .eq("collection_id", TOPSHOT_COLLECTION_ID)
 
+        // An unread editions table is not "none of these editions are
+        // canonical" — that verdict empties momentsMap and drops every
+        // moments-resolved sale into the rate-limited GQL tail.
+        if (edErr) throw new Error(`canonical editions lookup: ${edErr.message}`)
         if (edRows) {
           for (const row of edRows) {
             if (isCanonicalExtId(row.external_id)) canonicalEdIds.add(row.id)
@@ -494,12 +517,13 @@ export async function POST(req: NextRequest) {
     if (editionKeys.length > 0) {
       for (let i = 0; i < editionKeys.length; i += 500) {
         const batch = editionKeys.slice(i, i + 500)
-        const { data: edRows } = await (supabaseAdmin as any)
+        const { data: edRows, error: edErr } = await (supabaseAdmin as any)
           .from("editions")
           .select("id, external_id")
           .in("external_id", batch)
           .eq("collection_id", TOPSHOT_COLLECTION_ID)
 
+        if (edErr) throw new Error(`edition_key lookup: ${edErr.message}`)
         if (edRows) {
           for (const row of edRows) {
             // Only trust canonical int-pair edition_keys. A wmc row keyed to a
@@ -604,7 +628,13 @@ export async function POST(req: NextRequest) {
               const playN = playFlowIdRaw != null ? parseInt(String(playFlowIdRaw), 10) : NaN
               if (Number.isFinite(setN) && Number.isFinite(playN)) {
                 const extKey = `${setN}:${playN}`
-                const { data: edRow } = await (supabaseAdmin as any)
+                // ⚠ NOT a throw, deliberately: this read sits inside the
+                // per-nft try/catch below, so throwing would be caught locally
+                // and the nft would be dropped anyway — trading a silent wrong
+                // path for a silent drop. What must NOT happen is falling into
+                // the `ensure_topshot_edition_stub` branch on an UNREAD table,
+                // which MINTS an edition for one that already exists.
+                const { data: edRow, error: edRowErr } = await (supabaseAdmin as any)
                   .from("editions")
                   .select("id")
                   .eq("collection_id", TOPSHOT_COLLECTION_ID)
@@ -612,7 +642,11 @@ export async function POST(req: NextRequest) {
                   .limit(1)
                   .maybeSingle()
 
-                if (edRow?.id) {
+                if (edRowErr) {
+                  console.log(
+                    `[sales-indexer] editions read failed for ${extKey} (nftID=${nftId}): ${edRowErr.message} — NOT stubbing`,
+                  )
+                } else if (edRow?.id) {
                   const entry = { editionId: edRow.id, serial: safeSerial }
                   gqlResolvedMap.set(nftId, entry)
                   gqlEditionCache.set(nftId, entry)
@@ -621,7 +655,7 @@ export async function POST(req: NextRequest) {
                   // the same SECDEF stub the moments hydrator uses — creates a minimal
                   // int-keyed edition (inheriting set metadata) and returns its uuid. NEVER
                   // fall back to a UUID-pair external_id.
-                  const { data: stubId } = await (supabaseAdmin as any).rpc("ensure_topshot_edition_stub", {
+                  const { data: stubId, error: stubErr } = await (supabaseAdmin as any).rpc("ensure_topshot_edition_stub", {
                     p_set_id_onchain: setN,
                     p_play_id_onchain: playN,
                   })
@@ -630,7 +664,10 @@ export async function POST(req: NextRequest) {
                     gqlResolvedMap.set(nftId, entry)
                     gqlEditionCache.set(nftId, entry)
                   } else {
-                    console.log(`[sales-indexer] GQL edition stub failed for ${extKey} (nftID=${nftId})`)
+                    console.log(
+                      `[sales-indexer] GQL edition stub failed for ${extKey} (nftID=${nftId})` +
+                        (stubErr ? `: ${stubErr.message}` : ""),
+                    )
                   }
                 }
               } else {
@@ -668,10 +705,14 @@ export async function POST(req: NextRequest) {
     const assignableArr = [...assignableEdIds]
     for (let i = 0; i < assignableArr.length; i += 500) {
       const batch = assignableArr.slice(i, i + 500)
-      const { data: edRows } = await (supabaseAdmin as any)
+      const { data: edRows, error: edErr } = await (supabaseAdmin as any)
         .from("editions")
         .select("id, external_id")
         .in("id", batch)
+      // Step 4e's guard is BUILT from this map. An unread table leaves it empty,
+      // the guard silently does nothing, and the unconfirmed-parallel
+      // mis-attribution it exists to catch goes straight into `sales`.
+      if (edErr) throw new Error(`assignable editions lookup: ${edErr.message}`)
       if (edRows) {
         for (const row of edRows) if (row.external_id) edIdToExt.set(row.id, row.external_id)
       }
@@ -687,11 +728,12 @@ export async function POST(req: NextRequest) {
       const baseArr = [...baseKeysNeeded]
       for (let i = 0; i < baseArr.length; i += 500) {
         const batch = baseArr.slice(i, i + 500)
-        const { data: edRows } = await (supabaseAdmin as any)
+        const { data: edRows, error: edErr } = await (supabaseAdmin as any)
           .from("editions")
           .select("id, external_id")
           .in("external_id", batch)
           .eq("collection_id", TOPSHOT_COLLECTION_ID)
+        if (edErr) throw new Error(`base editions lookup: ${edErr.message}`)
         if (edRows) {
           for (const row of edRows) baseKeyToId.set(row.external_id, row.id)
         }

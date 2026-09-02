@@ -10,6 +10,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the largest instance of the class: TEN error-discarding reads in the route that writes Top Shot sales
+
+**Files:** `app/api/sales-indexer/route.ts` (pipeline `topshot-sales-indexer`) + its deep test; ratchet
+baseline **61 → 51**. No DB change.
+
+Found by the ratchet shipped an hour earlier, which is the point of having it. **Ten** of the class in
+one route — the primary Top Shot sales writer, **230 runs / 72 h, 1,585 rows, 0 failures.**
+
+🚨 **The landing here is the worst yet.** Every map-building read fed the resolution ladder
+(`wallet_moments_cache` → `moments` → GQL). A failed read looked like *"none of these nfts are known"*,
+so every event fell through to **`unresolvedIds.push(nftId); continue`** — **never written to `sales`,
+never parked in `unmapped_sales`** — and Step 7 advanced the cursor anyway. **Nothing revisits a block
+below the cursor.** The run logged `ok: true` with an `unresolved_count` indistinguishable from an
+ordinary catalogue gap. **Permanent loss of Top Shot sales, the FMV input for the platform's largest
+collection.**
+
+**Eight now throw**, landing in the outer catch that already writes `ok:false` with
+`cursorAfter: null` — the cursor holds, the next tick re-reads the range. **One cycle, nothing lost.**
+Two of them were not even the drop path: `edIdToExt` and `baseKeyToId` BUILD Step 4e's
+unconfirmed-parallel guard, so an unread table left the guard **silently doing nothing** and the
+mis-attribution it exists to catch went straight into `sales`.
+
+⭐ **Two were deliberately NOT converted to throws, and the reason is the interesting one.** The
+per-nft GQL reads sit inside a local `try/catch`, so throwing would be caught there and the nft dropped
+anyway — **trading a silent wrong path for a silent drop.** What must not happen is falling into the
+`ensure_topshot_edition_stub` branch on an UNREAD table, which **MINTS an edition** for one that already
+exists. So that read now checks its error and refuses to stub, and the stub RPC's own error is finally
+included in its log line instead of being inferred from a missing id. **"Throw" is the fix for a read
+whose miss is recorded; it is not the fix for every read.**
+
+⚠ **Pinned as an ABSENCE and mutation-checked:** the test asserts **no cursor write and no `sales`
+write**, not that an error appeared. Removing the one `throw` reds it.
+
+**Verified:** full suite **1420 files / 15,682 tests green**; `tsc --noEmit` clean; eslint ratchet
+**717 = baseline**. Pre-change baseline for the watch: `topshot-sales-indexer` **230 runs / 0 failed /
+1,585 rows in 72 h**.
+
+**Revert:** `git revert` the code commit; the ratchet baseline goes back to 61 with it.
+
 ### 2026-09-02 · ✅ SHIPPED — a RATCHET so the tenth shape cannot grow back where it does damage
 
 **File:** `__tests__/consequential-read-binds-its-error-ratchet.test.ts`. No code, no DB change.

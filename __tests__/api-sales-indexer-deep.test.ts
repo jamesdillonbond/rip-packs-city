@@ -707,6 +707,38 @@ describe("sales-indexer — a failed chunk must HOLD the cursor, not skip its bl
     expect(runExtra(spy).first_failed_chunk).toBe(1251)
   })
 
+  // 🚨 A FAILED DB READ IS NOT AN EMPTY CATALOGUE, AND ON THIS ROUTE THE
+  // DIFFERENCE IS PERMANENT LOSS OF TOP SHOT SALES. The map-building reads used
+  // to discard supabase-js's `error`, so an unread table looked like "none of
+  // these nfts are known": every event fell through to
+  // `unresolvedIds.push(nftId); continue`, was never written to `sales` and never
+  // parked in `unmapped_sales`, and Step 7 advanced the cursor anyway. Nothing
+  // revisits a block below the cursor. The run logged ok:true with an
+  // `unresolved_count` indistinguishable from an ordinary catalogue gap.
+  // Asserted as the ABSENCE of the cursor write.
+  it("a failed wallet_moments_cache read holds the cursor and never drops the sales", async () => {
+    const txf = "f".repeat(64)
+    state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9001", "15.5", txf, DAPPER_MERCHANT)]
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      topshot_moment_subeditions: { data: [], error: null },
+      wallet_moments_cache: { data: null, error: { message: "wmc read boom" } },
+      editions: { data: [], error: null },
+      sales: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // ⛔ THE LOAD-BEARING ASSERTION: the block range must remain unread.
+    expect(spy.writes.event_cursor ?? []).toHaveLength(0)
+    expect(spy.writes.sales ?? []).toHaveLength(0)
+
+    const run = pipelineRun(spy)
+    expect(run?.ok).toBe(false)
+    expect(String(run?.error)).toContain("wallet_moments_cache lookup")
+  })
+
   it("a failure in the very first chunk holds the cursor exactly where it started", async () => {
     // The boundary: cursorTarget becomes lastBlock, so the run must be a no-op
     // rather than moving the cursor backwards or writing a negative span.
