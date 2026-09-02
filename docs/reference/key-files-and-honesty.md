@@ -379,11 +379,21 @@ its OWN refetch failure, and initialised that state to `false` unconditionally. 
 present, the seed was not** — so a grep for "does this board handle a failed read?" answers yes. The
 question that finds it is the predicate above, asked of the PAGE.
 
-**The six cleared, with the reason each is not an instance** (recorded so the next sweep does not
+⭐ **THE DENOMINATOR, because a sweep that does not state one is not repeatable.** The predicate was
+run over **216 server components** under `app/**` — every `.tsx` that is not `"use client"`, not just
+`page.tsx`, which is what catches the layout- and section-level seeds the 08-23 pair
+(`FmvHistoryChart`, the team page's editions grid) lived in. After the four fixes the candidate list
+is **9**, every one of them cleared below.
+
+**The cleared, with the reason each is not an instance** (recorded so the next sweep does not
 re-open them): `market-pulse`, and the `EditionsGridPaginated` seeds on the pack-dist, player and
 series pages — those pages **throw** on the detail read, so an empty seed cannot come from a failure;
 `profile/[username]`, whose client renders `—` and omits the wallet line rather than concluding
-anything; and `pack-sniper`'s collection twin, whose `initialDeals={[]}` is a literal, not a read.
+anything; `pack-sniper`'s collection twin, whose `initialDeals={[]}` is a literal, not a read;
+`edition/[slug]`, which already passes `salesOk` and `offersOk`; the team page, which gates the whole
+roster grid behind `playersOk ?` and self-hides the sets section rather than claiming it is empty;
+and `market-pulse`, whose client has **no empty branch at all** — it maps its rows and asserts
+nothing, so zero rows produce zero sentences.
 
 ⚠ **Two sibling layers were swept in the same pass and are CLEAN** — recorded because a negative
 result is only useful if its method is written down. **Layer 1** (`app/api/public/**`, 37 routes):
