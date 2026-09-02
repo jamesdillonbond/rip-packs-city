@@ -37,7 +37,15 @@ export default async function RookieBoardPage() {
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Rookie board", ok)])} />
-      <RookieBoardClient initialRows={rows} initialFetchedAt={fetchedAt} />
+      {/*
+        ⚠ `initialFailed` is the FIFTH honesty layer, and the banner above is NOT a
+        substitute for it — the 2026-08-24 sweep that fixed five boards records that
+        all five already had one. `fetchBoardForPage` returns `[]` on a failed read,
+        and that arrives below carrying NO PROVENANCE.
+        ⚠ This client NEVER refetches — `const rows = initialRows`, no state and no
+        effect — so "No rookie editions match those filters." stands for the whole visit.
+      */}
+      <RookieBoardClient initialRows={rows} initialFetchedAt={fetchedAt} initialFailed={!ok} />
     </>
   )
 }

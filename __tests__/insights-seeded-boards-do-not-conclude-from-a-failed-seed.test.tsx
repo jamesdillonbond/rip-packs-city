@@ -368,3 +368,168 @@ describe("pack-sniper does not conclude about the market from a failed seed", ()
     }
   })
 })
+
+// ── cross-collection (the WHALE MAP), found 2026-09-02 ──────────────────────
+//
+// The sixth board of this class, and it was missed by the 2026-08-24 sweep for a
+// reason worth stating: that sweep's own write-up records the correct predicate
+// ("server pages that KNOW `ok` and seed a client component without passing it")
+// and this page satisfies it exactly — it computes `ok` from THREE reads, renders
+// the degraded banner from that very `ok`, and then hands the client `initial`
+// alone.
+//
+// ⚠ TWO conclusive sentences, not one, and they are about different things:
+//   "No wallets found."   ← a claim about the COHORT
+//   "No overlap data."    ← a claim about the SET OVERLAP table
+// Both are reachable from a failed read, because `fetchInitial` returns
+// `wallets: cohortRes.data ?? []` and `ts_set_overlap: setOverlapRes.data ?? []`
+// on every path including the budget-overrun catch.
+//
+// ⚠ AND IT DOES NOT SELF-CORRECT. The client's effect returns early on its first
+// run while `sort` is the default "moments" (`if (isFirstRun.current) { … if
+// (sort === "moments") return }`), so there is NO mount refetch: the sentences
+// stand for the whole visit unless the reader changes the sort. The page's stated
+// purpose is putting the cohort tables into the raw server HTML for crawlers.
+describe("cross-collection does not conclude about the cohort from a failed seed", () => {
+  const seed = (rows: { wallets: unknown[]; overlap: unknown[] }) =>
+    ({
+      meta: { fetched_at: "2026-09-02T00:00:00Z" },
+      stats: null,
+      wallets: rows.wallets,
+      ts_set_overlap: rows.overlap,
+    }) as never
+
+  it("SSR: a failed seed says it couldn't load, NOT that there are no wallets or no overlap", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const CrossCollectionBoardClient = (
+      await import("@/app/insights/cross-collection/CrossCollectionBoardClient")
+    ).default
+    const html = renderToString(
+      <CrossCollectionBoardClient initial={seed({ wallets: [], overlap: [] })} initialFailed />,
+    )
+    // ⚠ Assert the ABSENCE of each false claim. Asserting only that the degraded
+    // sentence appears would pass a board printing BOTH.
+    expect(html).not.toMatch(/No wallets found/)
+    expect(html).not.toMatch(/No overlap data/)
+    expect(html).toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("SSR NO-CHANGE CONTROL: a genuinely empty board still says both original sentences", async () => {
+    // Without this, deleting the empty states outright would satisfy the
+    // assertions above — a guard that can be passed by removing the feature is
+    // not a guard.
+    const { renderToString } = await import("react-dom/server")
+    const CrossCollectionBoardClient = (
+      await import("@/app/insights/cross-collection/CrossCollectionBoardClient")
+    ).default
+    const html = renderToString(
+      <CrossCollectionBoardClient
+        initial={seed({ wallets: [], overlap: [] })}
+        initialFailed={false}
+      />,
+    )
+    expect(html).toMatch(/No wallets found/)
+    expect(html).toMatch(/No overlap data/)
+    expect(html).not.toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("the page passes initialFailed derived from its own read's ok", () => {
+    const src = readPage("app", "insights", "cross-collection", "page.tsx")
+    expect(src, "the whale map must tell the board whether the seed failed").toMatch(
+      /initialFailed=\{!ok\}/,
+    )
+    // …and the `ok` it passes must still be the one derived from all three legs,
+    // not a constant someone wired in to satisfy the line above.
+    expect(src).toMatch(/ok:\s*errors\.length === 0/)
+  })
+})
+
+// ── three more, all found by the same predicate on 2026-09-02 ───────────────
+//
+// `parallel-premiums`, `rookie-board` and `top-sales` each compute `ok`, render
+// the degraded banner from it, and then hand the client the unlabelled `[]`.
+// ⚠ All three empty sentences blame the FILTERS — "No parallels match these
+// filters.", "No rookie editions match those filters.", "No sales match those
+// filters." — which is the actionable sub-class: a reader who believes it widens
+// filters that were never the problem.
+//
+// ⚠ NONE of the three self-corrects, measured from the code rather than assumed:
+//   parallel-premiums  effect returns early on `firstRender`
+//   rookie-board       `const rows = initialRows` — no state, no effect at all
+//   top-sales          its own header: "the default view never refetches on mount"
+describe("three more seeded boards do not blame the filters for a failed seed", () => {
+  it("SSR parallel-premiums: a failed seed says it couldn't load, not that nothing matches", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/parallel-premiums/ParallelPremiumsBoardClient")).default
+    const html = renderToString(
+      <C initialRows={[]} initialFetchedAt="2026-09-02T00:00:00Z" initialFailed />,
+    )
+    expect(html).not.toMatch(/No parallels match these filters/)
+    // This board already owned the right sentence for its OWN refetch; the fix
+    // was seeding that state from the server read instead of always `false`.
+    expect(html).toMatch(/Couldn.{1,8}t load these filters just now/i)
+  })
+
+  it("SSR parallel-premiums NO-CHANGE CONTROL: a genuinely empty board still blames the filters", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/parallel-premiums/ParallelPremiumsBoardClient")).default
+    const html = renderToString(
+      <C initialRows={[]} initialFetchedAt="2026-09-02T00:00:00Z" initialFailed={false} />,
+    )
+    expect(html).toMatch(/No parallels match these filters/)
+    expect(html).not.toMatch(/Couldn.{1,8}t load these filters just now/i)
+  })
+
+  it("SSR rookie-board: a failed seed says it couldn't load, not that nothing matches", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/rookie-board/RookieBoardClient")).default
+    const html = renderToString(
+      <C initialRows={[]} initialFetchedAt="2026-09-02T00:00:00Z" initialFailed />,
+    )
+    expect(html).not.toMatch(/No rookie editions match those filters/)
+    expect(html).toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("SSR rookie-board NO-CHANGE CONTROL: a genuinely empty board still blames the filters", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/rookie-board/RookieBoardClient")).default
+    const html = renderToString(
+      <C initialRows={[]} initialFetchedAt="2026-09-02T00:00:00Z" initialFailed={false} />,
+    )
+    expect(html).toMatch(/No rookie editions match those filters/)
+    expect(html).not.toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("SSR top-sales: a failed seed says it couldn't load, not that nothing matches", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/top-sales/TopSalesBoardClient")).default
+    const html = renderToString(
+      <C initialRows={[]} initialFetchedAt="2026-09-02T00:00:00Z" initialFailed />,
+    )
+    expect(html).not.toMatch(/No sales match those filters/)
+    expect(html).toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("SSR top-sales NO-CHANGE CONTROL: a genuinely empty board still blames the filters", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/top-sales/TopSalesBoardClient")).default
+    const html = renderToString(
+      <C initialRows={[]} initialFetchedAt="2026-09-02T00:00:00Z" initialFailed={false} />,
+    )
+    expect(html).toMatch(/No sales match those filters/)
+    expect(html).not.toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("all three pages pass initialFailed derived from their own read's ok", () => {
+    for (const board of ["parallel-premiums", "rookie-board", "top-sales"]) {
+      const src = readPage("app", "insights", board, "page.tsx")
+      expect(src, `${board} must tell its board whether the seed failed`).toMatch(
+        /initialFailed=\{!ok\}/,
+      )
+      // …and `ok` must still come from the read, not be a literal wired in to
+      // satisfy the line above.
+      expect(src, `${board} must derive ok from its own read`).toMatch(/\bok\b/)
+      expect(src, `${board} must not hardcode ok`).not.toMatch(/const ok = (true|false)/)
+    }
+  })
+})

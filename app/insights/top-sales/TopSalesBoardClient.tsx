@@ -24,6 +24,7 @@
 // See app/insights/top-sales/page.tsx for the data source + server fetch.
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
@@ -298,11 +299,20 @@ function SaleRow({ r, rank, nowMs }: { r: Row; rank: number; nowMs: number | nul
 
 type Props = {
   initialRows: Row[]
+  /**
+   * ⚠ TRUE when the SERVER read failed. This client's default view never
+   * refetches on mount, so an unlabelled `[]` made the board say "No sales match
+   * those filters." — a claim about the FILTERS — until the reader changed one.
+   */
+  initialFailed?: boolean
   initialFetchedAt: string | null
 }
 
-export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: Props) {
+export default function TopSalesBoardClient({ initialRows, initialFetchedAt, initialFailed = false }: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
+  // Provenance for the SEED only — a successful refetch replaces `rows` and
+  // clears it, so from then on the board speaks about a read that happened.
+  const [seedFailed, setSeedFailed] = useState(initialFailed)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
@@ -386,6 +396,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
+        setSeedFailed(false)
         setFetchedAt(j.meta?.fetched_at ?? null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
@@ -581,7 +592,10 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
         ) : loading ? (
           <div className="rpc-ts-state">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="rpc-ts-state">No sales match those filters.</div>
+          <div className="rpc-ts-state">
+            {/* ⚠ The empty wording is UNCHANGED; only the degraded case is new. */}
+            {sectionEmptyCopy(!seedFailed, "Top sales", "No sales match those filters.")}
+          </div>
         ) : (
           <div className="rpc-ts-list">
             {rows.map((r, i) => (

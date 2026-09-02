@@ -41,7 +41,15 @@ export default async function TopSalesPage() {
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Top sales", ok)])} />
-      <TopSalesBoardClient initialRows={rows} initialFetchedAt={fetchedAt} />
+      {/*
+        ⚠ `initialFailed` is the FIFTH honesty layer, and the banner above is NOT a
+        substitute for it — the 2026-08-24 sweep that fixed five boards records that
+        all five already had one. `fetchBoardForPage` returns `[]` on a failed read,
+        and that arrives below carrying NO PROVENANCE.
+        ⚠ This client's own header says "the default view never refetches on mount",
+        so "No sales match those filters." stands until the reader changes a filter.
+      */}
+      <TopSalesBoardClient initialRows={rows} initialFetchedAt={fetchedAt} initialFailed={!ok} />
     </>
   )
 }

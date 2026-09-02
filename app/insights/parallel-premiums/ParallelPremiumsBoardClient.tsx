@@ -54,9 +54,17 @@ const SORTS: SortOpt[] = [
 
 export default function ParallelPremiumsBoardClient({
   initialRows,
+  initialFailed = false,
   initialFetchedAt,
 }: {
   initialRows: ParallelRow[]
+  /**
+   * ⚠ TRUE when the SERVER read failed, so `initialRows`'s `[]` is an ABSENCE OF
+   * DATA rather than an empty result set. Without it this board opened on
+   * "No parallels match these filters." — a claim about the FILTERS — and its
+   * effect returns early on the first render, so nothing corrects it.
+   */
+  initialFailed?: boolean
   initialFetchedAt: string
 }) {
   const [rows, setRows] = useState<ParallelRow[]>(initialRows)
@@ -71,7 +79,8 @@ export default function ParallelPremiumsBoardClient({
   // another filter's label — worse than an empty state, because every row on
   // screen is real and simply answers a question the reader did not ask. Same
   // shape as the analytics player search that showed the previous player's rows.
-  const [loadFailed, setLoadFailed] = useState(false)
+  // Seeded from the SERVER read; a successful client refetch clears it below.
+  const [loadFailed, setLoadFailed] = useState(initialFailed)
   const firstRender = useRef(true)
 
   // Parallel-name chips derive from the initial (unfiltered-by-name) dataset so

@@ -33,7 +33,17 @@ export default async function ParallelPremiumsPage() {
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Parallel premiums", ok)])} />
-      <ParallelPremiumsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} />
+      {/*
+        ⚠ `initialFailed` is the FIFTH honesty layer, and the banner above is NOT a
+        substitute for it — the 2026-08-24 sweep that fixed five boards records that
+        all five already had one. `fetchBoardForPage` returns `[]` on a failed read,
+        and that arrives below carrying NO PROVENANCE.
+        ⚠ This client already renders the right degraded sentence for its OWN
+        refetch; it simply started that state at `false` no matter what the server read
+        did. Its effect also returns early on the first render, so there is no mount
+        refetch to correct it.
+      */}
+      <ParallelPremiumsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} initialFailed={!ok} />
     </>
   )
 }

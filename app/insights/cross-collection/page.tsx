@@ -98,7 +98,20 @@ export default async function CrossCollectionPage() {
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Whale map", ok)])} />
-      <CrossCollectionBoardClient initial={initial} />
+      {/*
+        ⚠ `initialFailed` is the FIFTH honesty layer, and the banner above is NOT a
+        substitute for it — the 2026-08-24 sweep that fixed five boards records that
+        all five already had one. On a failed read this page's fallback is `[]` for
+        both tables, and that arrives here carrying NO PROVENANCE, so without this
+        prop the board states "No wallets found." and "No overlap data." as facts
+        about the cohort, directly under a notice saying the data is degraded.
+        ⚠ And this client does NOT refetch on mount: its effect returns early on the
+        first run while `sort` is the default "moments", so those sentences stand for
+        the whole visit unless the reader changes the sort. The page's stated purpose
+        is putting the cohort tables into the raw server HTML for crawlers, which is
+        exactly the copy a crawler would take away.
+      */}
+      <CrossCollectionBoardClient initial={initial} initialFailed={!ok} />
     </>
   )
 }

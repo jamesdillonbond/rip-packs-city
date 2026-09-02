@@ -18,6 +18,7 @@
 // rendered in the table anyway, only promised in the prose.)
 
 import { useMemo, useState } from "react"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { RookieEditionRow as Row } from "@/lib/rookie-edition-board"
@@ -231,10 +232,16 @@ function BurnRow({ r, rank }: { r: Row; rank: number }) {
 
 type Props = {
   initialRows: Row[]
+  /**
+   * ⚠ TRUE when the SERVER read failed. This client NEVER refetches — `rows` is
+   * `initialRows`, with no state and no effect — so an unlabelled `[]` made the
+   * board say "No rookie editions match those filters." for the whole visit.
+   */
+  initialFailed?: boolean
   initialFetchedAt: string | null
 }
 
-export default function RookieBoardClient({ initialRows, initialFetchedAt }: Props) {
+export default function RookieBoardClient({ initialRows, initialFetchedAt, initialFailed = false }: Props) {
   const [view, setView] = useState<ViewMode>("board")
   const [tier, setTier] = useState<TierFilter>("all")
   const [parallel, setParallel] = useState<ParallelFilter>("all")
@@ -454,7 +461,10 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt }: Pro
             are tracked on <strong>Standard</strong> editions — parallels read “—”, not $0.
           </p>
           {playerGroups.length === 0 ? (
-            <div className="rpc-rb-state">No rookie editions match those filters.</div>
+            <div className="rpc-rb-state">
+              {/* ⚠ The empty wording is UNCHANGED; only the degraded case is new. */}
+              {sectionEmptyCopy(!initialFailed, "Rookie editions", "No rookie editions match those filters.")}
+            </div>
           ) : (
             playerGroups.map((g) => <PlayerCard key={g.player} g={g} />)
           )}

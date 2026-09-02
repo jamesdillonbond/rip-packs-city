@@ -10,6 +10,7 @@
 // progressive enhancement and only refetches when the sort changes.
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import Link from "next/link"
 
@@ -104,10 +105,22 @@ function CollDot({ on, label }: { on: boolean; label: string }) {
 
 type Props = {
   initial: ApiResponse
+  /**
+   * ⚠ TRUE when the SERVER read failed, so `initial`'s `[]` is an ABSENCE OF
+   * DATA rather than an empty cohort. The page's degraded banner does not reach
+   * the tables below, and this client does not refetch on mount, so without this
+   * the board states "No wallets found." / "No overlap data." as facts for the
+   * whole visit.
+   */
+  initialFailed?: boolean
 }
 
-export default function CrossCollectionBoardClient({ initial }: Props) {
+export default function CrossCollectionBoardClient({ initial, initialFailed = false }: Props) {
   const [data, setData] = useState<ApiResponse | null>(initial)
+  // Provenance for the SEED only. A successful client refetch replaces `data`
+  // wholesale, so it also clears this — from that point the tables are speaking
+  // about a read that actually happened.
+  const [seedFailed, setSeedFailed] = useState(initialFailed)
   // Server already gave us the default (moments-desc) view — not "loading" on
   // first paint; loading only flips true on a sort refetch.
   const [loading, setLoading] = useState(false)
@@ -134,6 +147,7 @@ export default function CrossCollectionBoardClient({ initial }: Props) {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setData(j)
+        setSeedFailed(false)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
@@ -255,7 +269,10 @@ export default function CrossCollectionBoardClient({ initial }: Props) {
         ) : loading ? (
           <div className="rpc-cc-state">Loading…</div>
         ) : wallets.length === 0 ? (
-          <div className="rpc-cc-state">No wallets found.</div>
+          <div className="rpc-cc-state">
+            {/* ⚠ The empty wording is UNCHANGED; only the degraded case is new. */}
+            {sectionEmptyCopy(!seedFailed, "Cohort wallets", "No wallets found.")}
+          </div>
         ) : (
           <table className="rpc-cc-table">
             <thead>
@@ -337,7 +354,9 @@ export default function CrossCollectionBoardClient({ initial }: Props) {
           ) : null}
         </p>
         {overlap.length === 0 ? (
-          <div className="rpc-cc-state">{loading ? "Loading…" : "No overlap data."}</div>
+          <div className="rpc-cc-state">
+            {loading ? "Loading…" : sectionEmptyCopy(!seedFailed, "Set overlap", "No overlap data.")}
+          </div>
         ) : (
           <table className="rpc-cc-table">
             <thead>
