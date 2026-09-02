@@ -134,3 +134,46 @@ off on purpose is the mirror-image mistake of leaving a broken one dead. **Nothi
 
 For each: find the table it writes and compare `max(updated_at)` against its last logged day.
 **Same instant → confirmed stopped. Still current → refuted, and its driver was renamed.**
+
+
+---
+
+# TRIAGE COMPLETE ~14:25 PT — all 7 checked. **Exactly ONE is a real problem.**
+
+Applied the output-table falsifier to the remaining five. The result argues strongly for filing lists
+like this as candidates: **6 of 7 are correct, superseded, or already working.**
+
+| # | pipeline | output evidence | verdict |
+|---|---|---|---|
+| 1 | `topshot-flowty-sales-history-backfill` | Flowty's marketplace shut down May 2026; **0** sales carry `source='flowty'` | ✅ **correct to be stopped** |
+| 2 | `topshot-flowty-unmapped-drain` | same | ✅ **correct to be stopped** |
+| 3 | `compute-laliga-pack-ev` | edge fn `compute-golazos-pack-ev` runs 6-hourly and predates it | ✅ **redundant producer, switched off** |
+| 4 | `ownership-sync-dune` | dune-sourced `topshot_ownership` frozen **2026-08-14**, but the table overall is current (**2026-09-02 13:30Z**) via `source='onchain_walk'` | ⓘ **lane superseded, table healthy** |
+| 5 | `ufc-sales-history-backfill` | UFC's newest sale is **2026-05-13 17:06Z**, 0 sales in 30 d — its Flow market **closed** that day | ✅ **correct to be stopped; nothing to backfill** |
+| 6 | `topshot-deal-floor-serials` | `edition_offers.low_ask_serial` current **today**, 1,469/1,479 rows in 7 d | ⛔ **refuted — driver renamed** |
+| 7 | `wallet-username-resolver` | `wallet_usernames.max(updated_at)` frozen at **2026-08-30 15:59:50Z**, the same instant it stopped logging | 🚨 **CONFIRMED STOPPED** |
+
+## ⭐ What the 6-of-7 result is worth
+
+**A "stopped pipeline" list is mostly noise, and the noise has FIVE different causes** — a dead
+upstream marketplace (×2), a closed collection market, a redundant producer, and a renamed driver.
+None of those is a defect; only one is. **Publishing this as a findings list would have been ~86%
+false alarms**, which is the same precision problem as the #57 static scan (15 of 19 refuted) and the
+same reason neither became a guard.
+
+👉 **The falsifier is what made it cheap**: one query per pipeline against the table it writes,
+versus reading seven routes and their schedules.
+
+## The one real item, restated
+
+`wallet-username-resolver` — output frozen 2026-08-30 15:59:50Z, no `cron.job` row, driver invisible
+from a sandbox. Measured cost: buyer wallets with no username row went **4.1% → 6.0%** across matched
+~3-day windows either side of the stop (29 vs 26 missing — small absolute numbers; the unarguable
+half is the frozen timestamp). ⛔ **Still not re-enabled** — whether its schedule was deliberately
+removed or fell over is not answerable from here, and those two facts want opposite actions.
+
+## §3's seven remain untriaged, and deliberately so
+
+The "no runs and no daily history at all" group is still the least trustworthy list in this filing:
+zero daily rows is at least as likely to mean *the route logs under a name the regex missed*. They
+need a read of each route's `log_pipeline_run` call, not another query.
