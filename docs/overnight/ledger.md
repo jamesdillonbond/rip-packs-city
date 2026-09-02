@@ -10,6 +10,78 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ⛔ CORRECTION TO MY OWN ENTRY — the "450,987 recoverable" is wrong by 10×; it counted rows whose TRANSACTION IS REACHABLE, not rows whose SELLER IS DECODABLE
+
+**Migration `audit_20260902_sales_counterparty_claim_excludes_studio_history_rows_whose_tx_is_a_listing_not_a_sale`**
+(file `20260902050149_…`). Corrects the spork-floor entry below and fixes the scope it exposed.
+
+⛔ **The error is the one this ledger already describes, committed by the next session in a different
+pipeline.** The fmv-recalc filing on 09-01 says: *"I sized a backlog using the very predicate that was
+defining it wrongly, and then quoted the result as a measurement."* I read that today, and then did
+it — **"450,987 at or above the floor and still recoverable"** is the FLOOR's output, and the floor is
+a statement about **reachability**, not about whether a seller exists in the transaction to be found.
+
+⭐ **It surfaced by WATCHING, not by re-reading — the tick after the one I celebrated:**
+
+| tick | found | recovered | duration |
+|---|---:|---:|---:|
+| 04:20 | 120 | **109** | 37 s |
+| 04:25 → 04:50, six ticks | 120 each | **0 of 720** | ~82 s each |
+
+Every row in that band is `nfl_all_day` / `allday_studio_history_v1`.
+
+**The cause, probed directly rather than inferred: those rows carry the
+`NFTStorefrontV2.ListingAvailable` transaction, not the transfer.** 21 of 21 hash-bucket-sampled txs
+across `allday_studio_history_v1` and `ufc_studio_history_v1` — **two different bucket moduli**, so not
+one physical page — returned HTTP 200 / `execution: Success` with **zero `TopShot|AllDay|UFC_NFT`
+Withdraw events and exactly one `ListingAvailable`**, against a **3-of-3 positive control** on
+`nba_top_shot` / `onchain` rows (26 events, 1 Withdraw each). **A listing moves no NFT, so there is no
+seller in it to decode** — no number of passes recovers these.
+
+⭐ **And the codebase already knew this shape.** `lock-check-batch`'s header records that *"Golazos
+secondary 'sales' reference ListingAvailable txs with no moment transfer, so they are not claimed."*
+The identical defect was present for the AllDay and UFC studio imports — and those **were** claimed.
+
+**Corrected sizing above the floor** (null seller · 64-hex hash · in-scope collection):
+
+| source | rows | |
+|---|---:|---|
+| `allday_studio_history_v1` | 297,670 | listing txs — undecodable here |
+| `ufc_studio_history_v1` | 110,639 | listing txs — undecodable here |
+| `nba_top_shot` / `onchain` | 36,872 | decodable |
+| `nba_top_shot` / `topshot_marketplace` | 4,959 | decodable |
+| `ufc_strike` / `onchain` · TS `ts_history_backfill_v1` · AllDay `onchain_dapper_v1` | 499 · 190 · 49 | decodable |
+| **REACHABLE** | **450,987** | |
+| **DECODABLE** | **≈ 42,569 (9.4 %)** | |
+
+⛔ **Everything else in the floor entry stands** — the wall, the 2023-11-08 bracket, the 0-of-288, the
+self-heal. **Only the size of the prize was wrong, and it was wrong in the flattering direction**,
+which is the direction nobody re-checks.
+
+**The fix** excludes both studio-history sources from the claim, the same way Golazos is already
+excluded. **Cost measured, not assumed:** 455 ms / 13,943 buffers to fill a 120-row batch, ALL shared
+HIT and zero disk reads (bitmap scan on `sales_2026_seller_address_idx`; older partitions never
+executed). It is more per call than the unfiltered claim — **and it returns 120 rows that can convert
+instead of 120 that cannot.**
+
+**Post-state, both directions:** a full 120-row batch must still come back (an exclusion that emptied
+the claim would look exactly like a drained pipeline — the failure mode this whole night is about), and
+**zero** of those 120 may be studio-history rows.
+
+👉 **Follow-up, not bundled:** the 408,309 undecodable rows still sit inside the predicate, so the walk
+scans past them forever. Marking them would shrink the scan; that is a 408k-row data mutation and
+deserves its own change. ⚠ **If a third `*_studio_history_v1` source appears, probe a dozen
+hash-bucket-sampled txs for a Withdraw before assuming either way.**
+
+⭐ **The transferable rule, and it is the reason this entry exists at all: "reachable" and "convertible"
+are different populations, and a floor/predicate tells you only the first.** Size a backlog by
+SAMPLING THE CONVERSION, never by counting what survives the filter — and if you have just shipped a
+fix, watch the SECOND tick, not the first. The first tick here was 109 of 120 and I would happily have
+quoted it.
+
+**REVERT:** re-apply `20260902042214`'s function body (identical minus the two `source NOT IN` lines).
+No table, index, schedule or grant changed.
+
 ### 2026-09-01 · ✅ SHIPPED — a 9,859-row AllDay price recovery was moving at ONE row per tick because the claim had no `ORDER BY`, and the limit it asked for was not the limit it got
 
 **Migrations `…045049_audit_20260902_allday_price_recovery_claims_singleton_tx_candidates_instead_of_an_unordered_page`
