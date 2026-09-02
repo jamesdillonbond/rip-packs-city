@@ -10,6 +10,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · 📏 MEASURED (docs only) — wmc index bloat regrows in ~2.5 days, and `wmc-reindex-verify` is a watcher nothing can clear
+
+**Nothing shipped to code or the DB.** Filed as known-issues **#56**.
+
+**The rate, which is the new information.** The 08-30/31 REINDEX campaign took
+`idx_wmc_cohort_cover` from **614.4 MB / 22.53% leaf density** to **165.7 MB / 81.14%** (−448.7 MB,
+−73% across the campaign). Since then: **299.2 MB / 45.13% at 09-01 20:23Z**, **326.4 MB at 09-02
+~13:35Z**. ⭐ **~64 MB/day on one index — a REINDEX buys about a week.** All three targets moved
+together, ≈484 → ≈901 MB; wmc now carries **~1,962 MB of index against a ~941 MB heap** over 19
+indexes.
+
+⚠ **Density was NOT re-probed today, on purpose.** `pgstatindex` reads the whole index — ~900 MB
+across the three targets on a 22 MB/s instance — and the sizes alone already carry the signal. The
+45.13% is 09-01's reading and is labelled as such rather than presented as current.
+
+🚨 **The half that needs a decision is the instrument.** `wmc-reindex-verify` fails while any target
+is under 60% density, has run **3 times ever**, is RED, and **no reindex job exists** — the only
+maintenance job on this database is `maint-vacuum-sales-hot-partition` (jobid 383), which is `sales`.
+**A watcher that cannot go green is indistinguishable from a broken one**, which is this repo's own
+rule.
+
+⚠ **One hypothesis, explicitly not proven:** regrowth may have ACCELERATED after 08-30, because the
+same drain that cut fleet cost 7.9× took `wallet-backfill-pinnacle` from 225 failures/day to 0, so
+far more upserts now reach wmc. **There is no pre-campaign per-day baseline**, so this needs a second
+post-reindex interval, not more reasoning.
+
+⛔ **Not booked, for coordination not technical reasons** — the campaign is another session's thread
+(which cleaned up after itself and deliberately did not re-book), and a concurrent session was
+pushing to `main` while this was measured. ⚠ When it IS booked: **a pg_cron `failed` on a REINDEX job
+does not mean the work did not happen** — `REINDEX INDEX CONCURRENTLY` commits its phases, so a 600 s
+kill still leaves the reindex complete (the 08-30 entry records the campaign logged as a total
+failure while freeing 448 MB).
+
+🚨 **Also recorded, because I walked into it THREE TIMES in one afternoon: every multi-day window over this database right now straddles 2026-08-30 18:26Z.** A 14-day pooled waste ranking pointed at jobids 217/71/303 whose waste is entirely pre-boundary; a 5-day aggregate made `reconcile-saved-wallet-stats` look 44% failing when its recent rate is ~4% (7/11 on 08-30 → 1/24 on 09-01); and the `pg_stat_statements` top-consumer list is ~85% old regime. **Until ~2026-09-13, split every window on that instant** — which is what `supabase/analysis/cron-waste-triage.sql` already does, and it classified all three correctly while my hand-rolled queries did not. ⭐ **The committed instrument was right and I overrode it; that is the failure to avoid, not the arithmetic.**
+
+**Revert path.** Docs only — `git revert` the commit, or find it by message
+`docs(known-issues): wmc index bloat regrows in ~2.5 days`.
+
 ### 2026-09-02 · 📏 RE-DERIVED (docs only) — the "one measured-but-unshipped DB fix" is LOW-STAKES: its 1,046,192-buffer premise is a shape nothing calls
 
 **Nothing shipped to code or the DB.** CLAUDE.md's bullet is DISPLACED (400 → 396 chars, file

@@ -463,6 +463,17 @@ timed out` — all DB contention), read from `pipeline_runs_daily`:
 `wmc_upsert_chunk_failures=N rows_lost=200` / `rows_lost=800` on most of the pre-boundary days, and
 none after. So the drain bought data completeness in `wallet_moments_cache`, not only time.
 
+🚨 **AND THE GENERAL RULE, because one session walked into this THREE TIMES in an afternoon:**
+**every multi-day window over this database right now straddles 2026-08-30 18:26Z.** A 14-day pooled
+`sum(duration) WHERE failed` ranking pointed confidently at jobids 217/71/303, all of whose waste is
+pre-boundary. A 5-day aggregate made `reconcile-saved-wallet-stats` look 44% failing when its recent
+rate is ~4% (7/11 on 08-30 → 1/24 on 09-01). A `pg_stat_statements` top-consumer list put
+`refresh_wmc_fmv_changed` at 666,112 s and mean 240 s, from a window that is ~85% old regime.
+👉 **Until roughly 2026-09-13, split every window on that instant or use a `recent` arm** — which is
+exactly what `supabase/analysis/cron-waste-triage.sql` exists to do, and it classified all three of
+those correctly while the hand-rolled queries did not. **The committed instrument was right and was
+overridden; that is the failure to avoid, not the arithmetic.**
+
 ⛔ **Consequences for other filed items, which are now measuring history:** #42's per-job waste figures
 for jobids 217 and 73, any pooled `pg_stat_statements` ranking (its stats were last reset 2026-08-12,
 so ~85% of that window is the old regime), and the "~55 ticks a day launch and never run" figure
