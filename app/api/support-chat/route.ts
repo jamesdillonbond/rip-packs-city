@@ -4043,6 +4043,13 @@ export async function POST(req: NextRequest) {
       stop_reason: string | null;
       tool_calls: Array<{ name: string; ms: number; timed_out: boolean }>;
       tool_total_ms: number;
+      // Prompt-cache accounting. Without these two the caching breakpoint above
+      // is UNFALSIFIABLE from outside — a broken split behaves identically and
+      // just costs full price, and no wall-clock reading can tell you which you
+      // have (see the one-warm-timing-is-not-a-cost rule). cache_read > 0 on
+      // iteration 2+ of a request is the proof the prefix is stable.
+      cache_read: number | null;
+      cache_write: number | null;
     };
     const iterationTraces: IterationTrace[] = [];
     const requestStartedMs = Date.now();
@@ -4072,6 +4079,8 @@ export async function POST(req: NextRequest) {
           stop_reason: null,
           tool_calls: [],
           tool_total_ms: 0,
+          cache_read: null,
+          cache_write: null,
         };
         const anthropicStart = Date.now();
         const response = useStream
@@ -4084,6 +4093,10 @@ export async function POST(req: NextRequest) {
               messages: currentMessages,
             });
         trace.anthropic_ms = Date.now() - anthropicStart;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const usage: any = (response as any).usage ?? null;
+        trace.cache_read = typeof usage?.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : null;
+        trace.cache_write = typeof usage?.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : null;
         trace.stop_reason = response.stop_reason ?? null;
 
         if (response.stop_reason === "end_turn") {
@@ -4212,6 +4225,8 @@ export async function POST(req: NextRequest) {
               iterations: iterationTraces.length,
               anthropic_ms_total: anthropicTotal,
               tool_ms_total: toolTotal,
+              cache_read_total: iterationTraces.reduce((n, t) => n + (t.cache_read ?? 0), 0),
+              cache_write_total: iterationTraces.reduce((n, t) => n + (t.cache_write ?? 0), 0),
               messages_in_history: recentHistory.length,
               stream: useStream,
               iter: iterationTraces,
