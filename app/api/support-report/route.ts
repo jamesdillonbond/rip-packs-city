@@ -24,22 +24,59 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const days = parseInt(req.nextUrl.searchParams.get("days") || "7", 10);
+  // ⚠ NaN-guard + clamp, the same way /api/edition-history and
+  // /api/profile/portfolio-history already do. `?days=abc` gave NaN, and
+  // `new Date(NaN).toISOString()` THROWS a RangeError — this route was the one
+  // sibling that never got that fix. The clamp also bounds the read below.
+  const rawDays = parseInt(req.nextUrl.searchParams.get("days") || "7", 10);
+  const days = Number.isFinite(rawDays) ? Math.min(Math.max(rawDays, 1), 90) : 7;
   const format = req.nextUrl.searchParams.get("format") || "json";
   const since = new Date(Date.now() - days * 86400000).toISOString();
 
-  const { data: allRows, error: fetchErr } = await supabase
-    .from("support_conversations")
-    .select("*")
-    .gte("created_at", since)
-    .not("is_smoke_test", "is", true)
-    .order("created_at", { ascending: false });
-
-  if (fetchErr) {
-    return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+  // 🚨 THIS READ WAS UNBOUNDED, AND EVERY NUMBER BELOW IS COMPUTED FROM IT.
+  // PostgREST caps every read at 1,000 rows with no error and no short page, so
+  // past that the report's totalMessages, uniqueSessions, per-category counts,
+  // daily volume AND its deflectionRate would all be computed over a truncated
+  // population — a RATE over a truncated denominator, which is wrong in an
+  // unpredictable direction rather than merely low. Measured live 2026-09-02:
+  // 666 conversations in the default 7-day window, i.e. two thirds of the way to
+  // the cap, and `days` was unclamped, so `?days=11` already crossed it.
+  //
+  // Paged by keyset on `id` (the PK). Ordering for the PAGE WALK and ordering for
+  // the REPORT are different jobs: the walk needs a unique key, the report wants
+  // newest-first, so the sort is re-applied in memory once every page is in.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the rest of
+  // this route reads rows as `any` (the client is `any` too); typing them here
+  // only would push the change well past the read this commit is fixing.
+  const rows: any[] = [];
+  {
+    const PAGE = 1000;
+    const MAX_PAGES = 200;
+    let cursor = "";
+    for (let page = 0; page < MAX_PAGES; page++) {
+      let q = supabase
+        .from("support_conversations")
+        .select("*")
+        .gte("created_at", since)
+        .not("is_smoke_test", "is", true)
+        .order("id", { ascending: true })
+        .limit(PAGE);
+      if (cursor) q = q.gt("id", cursor);
+      const { data, error: fetchErr } = await q;
+      // ⛔ A partial report is worse than no report: its rate reads plausible.
+      if (fetchErr) {
+        return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+      }
+      const pageRows = (data ?? []) as any[];
+      rows.push(...pageRows);
+      if (pageRows.length < PAGE) break;
+      const next = pageRows[pageRows.length - 1]?.id as string | undefined;
+      // No cursor means no progress — stop rather than re-read page 0 forever.
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
   }
-
-  const rows = allRows || [];
+  rows.sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
   const totalMessages = rows.length;
   const uniqueSessions = new Set(rows.map((r: any) => r.session_id)).size;
   const escalated = rows.filter((r: any) => r.escalated);
