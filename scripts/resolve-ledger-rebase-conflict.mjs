@@ -38,7 +38,7 @@
 // amount and refuse, which is the correct outcome — finish that part by hand.
 
 import { execFileSync } from "node:child_process"
-import { readFileSync, writeFileSync } from "node:fs"
+import { writeFileSync } from "node:fs"
 
 const FILE = process.argv[2] ?? "docs/overnight/ledger.md"
 const HEADING = /^### /
