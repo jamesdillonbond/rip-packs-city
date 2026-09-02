@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from "vitest"
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest"
 
 // Route-integration test for /api/cron/sales-serial-backfill.
 // Auth: Bearer CRON_SECRET or INGEST_SECRET_TOKEN (read at REQUEST time; proxies
@@ -13,9 +13,13 @@ import { describe, it, expect, beforeAll, vi } from "vitest"
 // the accept is observable without any fetch to the edge function. Both bearer
 // regimes (CRON_SECRET and INGEST) are driven.
 
+// after() CAPTURES rather than no-ops, so the deferred edge-fn POST can be
+// replayed and inspected. The auth/accept tests do not replay it, so they behave
+// exactly as before.
+const state = vi.hoisted(() => ({ afterCbs: [] as Array<() => unknown> }))
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
-  return { ...actual, after: () => {} }
+  return { ...actual, after: (cb: () => unknown) => void state.afterCbs.push(cb) }
 })
 
 process.env.INGEST_SECRET_TOKEN = "test-ingest-token"
@@ -60,5 +64,48 @@ describe("POST /api/cron/sales-serial-backfill — success path (immediate 202 a
   it("GET alias reaches the same 202 accept when authed", async () => {
     const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
     expect(res.status).toBe(202)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚨 THE TOKEN MUST NOT TRAVEL IN THE URL.
+// This route used to build `…/sales-serial-backfill?token=${ingest}`. Supabase
+// edge-function logs record FULL REQUEST URLS, so INGEST_SECRET_TOKEN — a secret
+// shared across ~15 edge functions — was written into the log store on every
+// call, ~12×/day. The assertion below is an ABSENCE: the token never appears in
+// the URL. Asserting only that the header is present would pass with the query
+// param still there, which is the exact regression this guards.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("POST /api/cron/sales-serial-backfill — the edge-fn call carries the token as a HEADER", () => {
+  afterEach(() => {
+    state.afterCbs.length = 0
+    vi.unstubAllGlobals()
+  })
+
+  it("never puts INGEST_SECRET_TOKEN in the URL, and sends it as an Authorization header", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown, init?: RequestInit) => {
+        calls.push({ url: String(input), init })
+        return { status: 202, json: async () => ({ ok: true }) } as unknown as Response
+      }),
+    )
+
+    // The earlier accept tests never replayed their callbacks, so drop them:
+    // replaying four deferred triggers would make this assert on the wrong call.
+    state.afterCbs.length = 0
+    const res = await mod.POST(makeReq({ method: "POST", auth: "Bearer test-ingest-token" }))
+    expect(res.status).toBe(202)
+    for (const cb of state.afterCbs.splice(0)) await cb()
+
+    expect(calls).toHaveLength(1)
+    // ⛔ THE LOAD-BEARING ASSERTION.
+    expect(calls[0].url).not.toContain("test-ingest-token")
+    expect(calls[0].url).not.toContain("token=")
+    expect(calls[0].url).toBe("https://stub.supabase.co/functions/v1/sales-serial-backfill")
+    // And it is still authorized — the fix must not simply drop the credential.
+    const headers = calls[0].init?.headers as Record<string, string>
+    expect(headers.Authorization).toBe("Bearer test-ingest-token")
   })
 })
