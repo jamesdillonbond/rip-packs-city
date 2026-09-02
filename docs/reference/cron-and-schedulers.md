@@ -1229,3 +1229,24 @@ No pg_cron job and no in-repo caller reference the route. That is five of the ei
 this file names — **cron-job.org and the Windows Task Scheduler on Trevor's box are invisible from a
 sandbox**, and both are documented as real producers of production traffic. A dead-code candidate is
 a filing, not a deletion.
+
+
+### ⭐ The OUTPUT TABLE is a better liveness falsifier than the pipeline name
+
+`pipeline_runs` tells you a NAME stopped logging. It cannot tell you whether the WORK stopped —
+a driver can be renamed, and this repo has at least one case where it was. Checked two routes whose
+names both went quiet on 2026-08-30, with opposite results:
+
+| pipeline | last logged | its output table | verdict |
+|---|---|---|---|
+| `wallet-username-resolver` | 2026-08-30 | `wallet_usernames.max(updated_at)` = **2026-08-30 15:59:50Z**, the same instant | **stopped** |
+| `topshot-deal-floor-serials` | 2026-08-30 | `edition_offers.low_ask_serial` current **today**, 1,469/1,479 rows in 7 d | **alive, renamed driver** |
+
+👉 **Identical evidence in `pipeline_runs_daily`, opposite conclusions.** So the liveness check is two
+steps, not one: the name tells you where to look, and **the table it writes tells you the answer.** An
+output frozen at exactly the last logged run is about as unambiguous as this gets.
+
+⚠ **And neither had a `cron.job` row**, so both were driven by something a sandbox cannot see
+(cron-job.org, a GHA workflow, the Task Scheduler). ⛔ Which makes "re-enable it" the wrong call from
+here: **re-enabling a schedule someone deliberately removed is the mirror image of leaving a broken
+one dead**, and nothing visible from this side distinguishes them.

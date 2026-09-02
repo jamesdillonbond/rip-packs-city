@@ -83,3 +83,54 @@ Two different things, and they should not be conflated:
 Re-run §1. **If a name in §2 or §3 shows a `last_day` of today, it is alive and this filing was wrong
 about it** — the likeliest cause is that it runs on a cadence longer than the window, or logs under a
 name the regex missed. If §2's list grows, schedules are still being lost.
+
+
+---
+
+# TRIAGE, same session ~13:50 PT — 2 of 7 checked, and ⭐ THE OUTPUT TABLE IS A BETTER FALSIFIER THAN THE PIPELINE NAME
+
+§6 above proposed re-running the liveness query as the falsifier. **There is a stronger one, and it
+discriminated these two cleanly on the first try: look at what the pipeline WRITES.** A pipeline name
+can stop while the work continues under another name; an output table cannot lie about being frozen.
+
+## ✅ CONFIRMED STOPPED — `wallet-username-resolver`
+
+`wallet_usernames.max(updated_at)` = **2026-08-30 15:59:50Z** — the *same instant* the pipeline stopped
+logging. 9,370 rows, nothing touched since. The table is frozen at the moment the pipeline died, which
+is about as unambiguous as this gets.
+
+**The cost, measured with a matched control** — distinct buyer wallets with no `wallet_usernames` row,
+over ~3-day windows either side of the stop:
+
+| window | wallets | missing | % |
+|---|---:|---:|---:|
+| pre-stop (08-27 → 08-30 16:00Z, 3.0 d) | 640 | 26 | **4.1%** |
+| post-stop (08-30 16:00Z → now, ~3.2 d) | 487 | 29 | **6.0%** |
+
+⚠ **State the size honestly: 29 vs 26 is a small absolute difference on small numbers**, and the 4.1%
+baseline is the floor of wallets that simply never set a username. The incremental effect is ≈1.9
+points, roughly **3 newly-unresolvable wallets per day and growing**. The unarguable half is the
+frozen `updated_at`, not the percentage. `wallet_usernames` is read by `/api/public/special-serial-owners`,
+`lib/edition/fetchers.ts`, `lib/pinnacle/moment-detail.ts` and `/api/admin/rewards`, so the visible
+symptom is a raw `0x…` address where a name used to appear — degraded, **not a false claim**.
+
+## ⛔ REFUTED — `topshot-deal-floor-serials` is doing its job
+
+Its pipeline name last logged 2026-08-30, exactly like the one above. **Its output is current:**
+`edition_offers.low_ask_serial` has `max(updated_at)` = **2026-09-02 18:22Z (today)**, with 1,469 of
+1,479 rows touched in the last 7 days. Something is still writing those serials under a different
+name. ⭐ **Two pipelines, identical evidence in `pipeline_runs_daily`, opposite conclusions** — which
+is exactly why §4 says "no runs ≠ no callers" and why this list is candidates rather than findings.
+
+## ⚠ Neither has a pg_cron job at all
+
+`cron.job` has **zero** rows matching either. Both were driven by something invisible from a sandbox —
+cron-job.org, a GHA workflow, or the Task Scheduler on Trevor's box. So for
+`wallet-username-resolver` the open question is **"was its schedule deliberately removed, or did it
+fall over?"** and ⛔ **that is Trevor's to answer, not mine** — re-enabling a schedule someone turned
+off on purpose is the mirror-image mistake of leaving a broken one dead. **Nothing re-enabled.**
+
+## Updated falsifier for the remaining 5
+
+For each: find the table it writes and compare `max(updated_at)` against its last logged day.
+**Same instant → confirmed stopped. Still current → refuted, and its driver was renamed.**
