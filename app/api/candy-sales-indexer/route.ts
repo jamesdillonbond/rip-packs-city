@@ -217,12 +217,19 @@ async function handleIndex(req: NextRequest) {
     let cursorAfter: string | null = null
     try {
       // Incremental high-water mark: the most recent Candy sale we already have.
-      const { data: latest } = await (supabaseAdmin as any)
+      const { data: latest, error: latestErr } = await (supabaseAdmin as any)
         .from("sales")
         .select("sold_at")
         .eq("collection_id", CANDY_MLB_UUID)
         .order("sold_at", { ascending: false })
         .limit(1)
+      // ⛔ THIS READ IS THE CURSOR. supabase-js RETURNS its errors, so a failed
+      // read fell through to `cursorBeforeMs = 0` — indistinguishable from "we
+      // have no Candy sales yet" — and the sweep would then walk the WHOLE
+      // activities feed from the beginning against a bounded page budget,
+      // exhausting it on history it already has and reporting the result as a
+      // normal short sweep. Throwing leaves the high-water mark untouched.
+      if (latestErr) throw new Error(`sales high-water read failed: ${latestErr.message}`)
       const cursorBeforeMs: number = latest?.[0]?.sold_at
         ? new Date(latest[0].sold_at).getTime()
         : 0
@@ -354,12 +361,16 @@ async function handleIndex(req: NextRequest) {
 
         let editionId = edIdByKey.get(key)
         if (editionId === undefined) {
-          const { data: edRow } = await (supabaseAdmin as any)
+          const { data: edRow, error: edErr } = await (supabaseAdmin as any)
             .from("editions")
             .select("id")
             .eq("external_id", key)
             .eq("collection_id", CANDY_MLB_UUID)
             .limit(1)
+          // ⛔ A failed read here is not "no such edition": it would be CACHED as
+          // null in `edIdByKey` for the rest of the sweep, so every later sale on
+          // the same edition inherits one failed read and lands unlinked.
+          if (edErr) throw new Error(`editions read failed for ${key}: ${edErr.message}`)
           editionId = edRow?.[0]?.id ?? null
           edIdByKey.set(key, editionId ?? null)
         }
@@ -512,13 +523,17 @@ async function handleIndex(req: NextRequest) {
       // them.
       let drainAttempted = 0
       let drainResolved = 0
-      const { data: owed } = await (supabaseAdmin as any)
+      const { data: owed, error: owedErr } = await (supabaseAdmin as any)
         .from("candy_sales_unresolved")
         .select("signature, token_mint, block_time, price_sol, buyer, seller")
         .is("resolved_at", null)
         .lt("attempts", MAX_PARK_ATTEMPTS)
         .order("block_time", { ascending: true })
         .limit(DRAIN_LIMIT)
+      // ⛔ A failed read of the park queue reads as "nothing owed", so the drain
+      // silently does nothing and the run still reports success. The queue is the
+      // whole point of the drain; its absence must not be inferred from a failure.
+      if (owedErr) throw new Error(`candy_sales_unresolved read failed: ${owedErr.message}`)
       for (const r of owed ?? []) {
         if (assetFetches >= ASSET_FETCH_BUDGET) break
         drainAttempted++
@@ -564,10 +579,20 @@ async function handleIndex(req: NextRequest) {
         }
       }
 
-      const { count: unresolvedOpen } = await (supabaseAdmin as any)
+      const { count: unresolvedOpen, error: unresolvedOpenErr } = await (supabaseAdmin as any)
         .from("candy_sales_unresolved")
         .select("signature", { count: "exact", head: true })
         .is("resolved_at", null)
+      // ⚠ `?? 0` ON A SUPABASE COUNT IS THE FABRICATED-NUMBER SHAPE. supabase-js
+      // resolves a failed count as `{ count: null, error }`, so `unresolvedOpen
+      // ?? 0` published a MEASURED ZERO — "the park queue is empty" — out of a
+      // read that never happened, on the one field an observer would use to see
+      // the backlog growing. This one does NOT throw: it runs after every write
+      // of the sweep, so failing the run here would discard real work to report a
+      // statistic. It reports `null` plus a discriminator instead.
+      if (unresolvedOpenErr) {
+        console.log(`[${PIPELINE_NAME}] unresolved_open count failed: ${unresolvedOpenErr.message}`)
+      }
 
       // An entirely empty activities response is an upstream fault, not a quiet
       // market: this collection prints mints/bids/lists continuously, and ME's
@@ -600,7 +625,9 @@ async function handleIndex(req: NextRequest) {
         pack_sales_seen: packSales,
         drain_attempted: drainAttempted,
         drain_resolved: drainResolved,
-        unresolved_open: unresolvedOpen ?? 0,
+        // null, never 0 — see the count read above.
+        unresolved_open: unresolvedOpenErr ? null : (unresolvedOpen ?? 0),
+        unresolved_open_error: unresolvedOpenErr ? unresolvedOpenErr.message : null,
         activities_seen: activitiesSeen,
         asset_fetches: assetFetches,
         me_key_present: Boolean(process.env.MAGIC_EDEN_API_KEY),

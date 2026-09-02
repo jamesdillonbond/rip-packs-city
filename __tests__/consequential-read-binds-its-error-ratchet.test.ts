@@ -26,18 +26,33 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 //                          later tick ever corrects it
 //
 // 👉 **The discriminator is not the expression, it is WHERE `not found` LANDS.**
-// That is why this walks only files that CONTAIN a landing expression, and why
-// it is a RATCHET rather than a ban: most of the remaining occurrences are
-// probably harmless even in these files, and the honest claim is
-// "this class must not GROW here", not "each of these is a defect".
+// That is why this walks only files that CONTAIN a landing expression.
 //
-// ── WHY A RATCHET AND NOT AN ALLOWLIST ─────────────────────────────────────
-// A per-file allowlist is the shape this repo keeps calling theatre: it has to
-// be re-read by every future auditor, and three guards have already died on a
-// rename. A COUNT is rename-proof. Drive it DOWN; never up.
+// ── IT WAS A RATCHET; AT 2026-09-02 IT REACHED ZERO AND BECAME A BAN ────────
+// 61 → 51 → 47 → 28 → **0**, in one night, across `sales-indexer`,
+// `allday-sales-indexer`, the five `*-sales-history-backfill` walkers, ten
+// forward indexers, `candy-sales-indexer` and two admin routes. A ratchet was
+// the right instrument while the population was large and partly benign; at
+// zero the honest claim strengthens from "this must not GROW" to "there are
+// none", so the baseline is 0 and stays 0.
+//
+// ⚠ **A ratchet reaching zero BREAKS ITS OWN NOT-VACUOUS CHECK, and this file
+// is the worked example.** Its floor asserted `>= 20` real occurrences still
+// matched in the tree — a positive control on the DETECTOR that was actually
+// keyed on the DEFECT. The moment the last one was fixed the guard went red
+// **for succeeding**. That is the "a guard must be satisfiable at a population
+// of zero" rule failing in production, on a file whose own header cites it.
+// The fix is the shape the cursor-write ban already uses: control the detector
+// against SYNTHETIC source, never against the tree's remaining defects.
 //
 // ⚠ The count is an upper bound on a CLASS, not a defect tally. Do not quote it
-// as "N bugs".
+// as "N bugs" — and now that it is 0, do not quote it as "no bugs" either: it
+// says this expression no longer appears unbound in these files.
+//
+// ── WHY NOT AN ALLOWLIST ───────────────────────────────────────────────────
+// A per-file allowlist is the shape this repo keeps calling theatre: it has to
+// be re-read by every future auditor, and three guards have already died on a
+// rename. A COUNT is rename-proof.
 
 /** Where a missed row gets RECORDED rather than retried. */
 const LANDING = /retry_count|RETRY_COUNT_CAP|UNRESOLVABLE|resolved_at|last_processed_block/
@@ -57,13 +72,10 @@ const family = filesMatching("app/api", (n) => n === "route.ts", LANDING)
 
 /**
  * Measured 2026-09-02 over 35 consequential routes, comments stripped.
- * **61 → 51 → 47 → 28**: `sales-indexer`'s ten map-building reads, then
- * `allday-sales-indexer`'s four, then the five `*-sales-history-backfill`
- * routes' nineteen — five cursor reads whose failure RESET the backward walk,
- * and fourteen chunked id lookups whose failure read as "unmapped". ⛔ THIS
- * NUMBER GOES DOWN OR STAYS. Raising it re-opens the class.
+ * **61 → 51 → 47 → 28 → 0.** ⛔ THIS NUMBER GOES DOWN OR STAYS, and it is
+ * already at the floor: any rise re-opens the class.
  */
-const BASELINE = 28
+const BASELINE = 0
 
 describe("a read in a consequential route binds its error", () => {
   // ⚠ filesMatching returns [] for a root that does not exist, and a guard that
@@ -82,15 +94,28 @@ describe("a read in a consequential route binds its error", () => {
     }
   })
 
-  it("is not vacuous: the pattern still matches real source", () => {
-    // A positive control on the DETECTOR itself. If stripComments blanks the
-    // tree or the regex stops matching, this floor fires instead of the ratchet
-    // silently reading zero and passing.
-    const total = family.reduce(
-      (n, f) => n + discardingReads(stripComments(readFileSync(f, "utf8"))),
-      0,
-    )
-    expect(total).toBeGreaterThanOrEqual(20)
+  it("is not vacuous: the DETECTOR still detects", () => {
+    // ⚠ This used to assert `>= 20` occurrences still matched IN THE TREE. That
+    // is a control keyed on the DEFECT, so it went red the moment the last one
+    // was fixed — the guard punishing its own success, which is precisely what
+    // this repo's rules forbid. Controlled against SYNTHETIC source instead, it
+    // is satisfiable at a population of zero and still catches the two ways this
+    // check can silently stop working: stripComments blanking real source, and
+    // the regex ceasing to match the shape.
+    expect(discardingReads(`const { data } = await supabaseAdmin.from("x")`)).toBe(1)
+    expect(discardingReads(`const { data } = await (supabaseAdmin as any).from("x")`)).toBe(1)
+    expect(discardingReads(`const { data: rows } = await supabaseAdmin.from("x")`)).toBe(1)
+    expect(discardingReads(`const { count: n } = await supabaseAdmin.from("x")`)).toBe(1)
+    // Bound reads must NOT count. ⚠ The third of these is the real bug this
+    // detector once had: `[^}]*` swallowed the error binding, so a CORRECTLY
+    // bound read was reported as a violation and the population read 100+.
+    expect(discardingReads(`const { data, error } = await supabaseAdmin.from("x")`)).toBe(0)
+    expect(discardingReads(`const { error } = await supabaseAdmin.from("x")`)).toBe(0)
+    expect(
+      discardingReads(`const { data: cursorRow, error: cursorErr } = await supabaseAdmin.from("x")`),
+    ).toBe(0)
+    // And the stripper must still be reachable and still blank comments.
+    expect(discardingReads(stripComments(`// const { data } = await supabaseAdmin.from("x")`))).toBe(0)
   })
 
   it(`does not exceed the ${BASELINE}-occurrence baseline`, () => {
@@ -110,6 +135,11 @@ describe("a read in a consequential route binds its error", () => {
   // ⛔ THE FIXES ARE PINNED. These five were swept on 2026-09-02 and each one's
   // failure mode is written up in key-files-and-honesty.md. A revert must red a
   // test rather than quietly restore the defect.
+  // ⚠ REDUNDANT AGAINST THE BAN, AND KEPT ANYWAY FOR ONE REASON: each row also
+  // asserts `family` still CONTAINS the route. The ban alone cannot tell "this
+  // route is clean" from "this route is no longer discovered" — a rename, a move
+  // under a different folder, or a landing expression being edited out all read
+  // as success. These are population detectors wearing a per-route name.
   it.each([
     "app/api/topshot-offers-indexer/route.ts",
     "app/api/cron/pinnacle-trades-indexer/route.ts",

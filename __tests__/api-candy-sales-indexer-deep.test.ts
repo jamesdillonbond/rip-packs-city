@@ -579,3 +579,147 @@ describe("candy-sales-indexer — sealed-pack sales", () => {
     expect(extra.drain_attempted).toBe(0)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚨 `?? 0` ON A SUPABASE COUNT IS THE FABRICATED-NUMBER SHAPE.
+// supabase-js resolves a failed count as `{ count: null, error }` — it does NOT
+// throw — so `unresolved_open: unresolvedOpen ?? 0` published a MEASURED ZERO
+// ("the park queue is empty") out of a read that never happened, on the single
+// field an observer would use to watch that backlog grow. The assertion below is
+// an ABSENCE: the number 0 must not appear. Asserting only that an error string
+// is present would pass with the `?? 0` still there.
+//
+// ⚠ And this one deliberately does NOT fail the run. The count is taken after
+// every write of the sweep, so throwing here would discard real work to report a
+// statistic — the honest answer is `null` plus a discriminator, not a dead tick.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("candy-sales-indexer — a failed backlog count reports null, never 0", () => {
+  it("logs unresolved_open null + an error, and still completes the sweep", async () => {
+    const acts: Act[] = [
+      { signature: "sCnt", type: "buyNow", tokenMint: "mCnt", buyer: "b", seller: "s", price: 1, blockTime: 1_700_000_900 },
+    ]
+    state.assets = { mCnt: { key: "mlb-icons:trout", serial: 7 } }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [{ data: [], error: null }],
+      editions: { data: [{ id: "ed-trout" }], error: null },
+      candy_sales_unresolved: [
+        { data: [], error: null }, // drain read — nothing parked
+        // ⛔ the open-backlog COUNT fails
+        { data: null, error: { message: "count boom" }, count: null },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    const extra = log?.p_extra as Record<string, unknown>
+    // ⛔ THE LOAD-BEARING ABSENCE.
+    expect(extra.unresolved_open).not.toBe(0)
+    expect(extra.unresolved_open).toBeNull()
+    expect(String(extra.unresolved_open_error)).toContain("count boom")
+    // The sweep itself is unaffected — the sale still landed.
+    expect((spy.writes.sales ?? []).flatMap((w) => w.rows).length).toBeGreaterThan(0)
+    expect(log).toMatchObject({ p_ok: true })
+  })
+
+  it("a failed EDITIONS read fails the run instead of caching a null edition for the sweep", async () => {
+    // ⛔ The result is memoised in `edIdByKey`, so ONE failed read poisons every
+    // later sale on the same edition_key in the same sweep — each of them lands
+    // unlinked, and nothing in the row says the link was lost rather than absent.
+    const acts: Act[] = [
+      { signature: "sEd", type: "buyNow", tokenMint: "mEd", buyer: "b", seller: "s", price: 1, blockTime: 1_700_000_904 },
+    ]
+    state.assets = { mEd: { key: "mlb-icons:trout", serial: 11 } }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [{ data: [], error: null }],
+      editions: { data: null, error: { message: "editions boom" } },
+      candy_sales_unresolved: [{ data: [], error: null }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: false })
+    expect(String(log?.p_error)).toContain("editions read failed")
+    expect((spy.writes.sales ?? []).flatMap((w) => w.rows)).toHaveLength(0)
+  })
+
+  it("a failed HIGH-WATER read fails the run instead of restarting the walk from zero", async () => {
+    // ⛔ This read IS the cursor: `max(sold_at)` over Candy sales. A failure fell
+    // through to `cursorBeforeMs = 0`, indistinguishable from "we have no Candy
+    // sales yet", and the sweep would then walk the entire ME activities feed
+    // from the beginning against a bounded page budget — spending the whole tick
+    // on history it already holds, and reporting it as a normal short sweep.
+    const acts: Act[] = [
+      { signature: "sHw", type: "buyNow", tokenMint: "mHw", buyer: "b", seller: "s", price: 1, blockTime: 1_700_000_903 },
+    ]
+    state.assets = { mHw: { key: "mlb-icons:trout", serial: 10 } }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [{ data: null, error: { message: "high-water boom" } }],
+      editions: { data: [{ id: "ed-trout" }], error: null },
+      candy_sales_unresolved: [{ data: [], error: null }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: false })
+    expect(String(log?.p_error)).toContain("sales high-water read failed")
+    // It must not have walked anything off a cursor it never read.
+    expect((spy.writes.sales ?? []).flatMap((w) => w.rows)).toHaveLength(0)
+  })
+
+  it("a failed PARK-QUEUE read fails the run instead of reading as an empty queue", async () => {
+    // ⛔ The drain exists to work the park queue. A failed read of it looked
+    // exactly like "nothing owed": the drain did nothing, the tick reported
+    // success, and the queue grew unattended. This must fail the run.
+    const acts: Act[] = [
+      { signature: "sDrain", type: "buyNow", tokenMint: "mDrain", buyer: "b", seller: "s", price: 1, blockTime: 1_700_000_902 },
+    ]
+    state.assets = { mDrain: { key: "mlb-icons:trout", serial: 9 } }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [{ data: [], error: null }],
+      editions: { data: [{ id: "ed-trout" }], error: null },
+      candy_sales_unresolved: [{ data: null, error: { message: "park queue boom" } }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: false })
+    expect(String(log?.p_error)).toContain("candy_sales_unresolved read failed")
+  })
+
+  it("positive control: the same shape with a working count reports the number", async () => {
+    // Without this, the assertion above would pass for a route that stopped
+    // reporting the field at all.
+    const acts: Act[] = [
+      { signature: "sCnt2", type: "buyNow", tokenMint: "mCnt2", buyer: "b", seller: "s", price: 1, blockTime: 1_700_000_901 },
+    ]
+    state.assets = { mCnt2: { key: "mlb-icons:trout", serial: 8 } }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [{ data: [], error: null }],
+      editions: { data: [{ id: "ed-trout" }], error: null },
+      candy_sales_unresolved: [
+        { data: [], error: null },
+        { data: null, error: null, count: 4 },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.unresolved_open).toBe(4)
+    expect(extra.unresolved_open_error).toBeNull()
+  })
+})

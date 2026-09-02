@@ -303,10 +303,16 @@ async function runIndexer(req: NextRequest) {
 
     for (let i = 0; i < uniqueNftIds.length; i += 500) {
       const batch = uniqueNftIds.slice(i, i + 500)
-      const { data } = await (supabaseAdmin as any)
+      const { data, error: readErr } = await (supabaseAdmin as any)
         .from("pinnacle_nft_map")
         .select("nft_id, edition_key")
         .in("nft_id", batch)
+      // ⛔ A FAILED READ HERE IS INDISTINGUISHABLE FROM "nothing matched", AND THE
+      // CURSOR ADVANCES EITHER WAY. supabase-js RETURNS its errors, so the `?? []`
+      // below published the failure as an empty result and the run moved past this
+      // block range for good. Throwing reaches the outer catch, which marks the run
+      // ok:false and leaves the cursor where it was, so the range is re-scanned.
+      if (readErr) throw new Error(`pinnacle_nft_map read failed: ${readErr.message}`)
       for (const row of data ?? []) {
         if (row.edition_key) nftToEditionId.set(String(row.nft_id), row.edition_key)
       }
@@ -316,11 +322,13 @@ async function runIndexer(req: NextRequest) {
     if (stillUnresolved.length > 0) {
       for (let i = 0; i < stillUnresolved.length; i += 500) {
         const batch = stillUnresolved.slice(i, i + 500)
-        const { data } = await (supabaseAdmin as any)
+        const { data, error: readErr2 } = await (supabaseAdmin as any)
           .from("wallet_moments_cache")
           .select("moment_id, edition_key")
           .eq("collection_id", "7dd9dd11-e8b6-45c4-ac99-71331f959714")
           .in("moment_id", batch)
+        // Same shape as the read above: a failed read must not render as "no match".
+        if (readErr2) throw new Error(`wallet_moments_cache read failed: ${readErr2.message}`)
         for (const row of data ?? []) {
           if (row.edition_key) nftToEditionId.set(row.moment_id, row.edition_key)
         }

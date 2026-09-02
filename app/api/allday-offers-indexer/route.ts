@@ -290,10 +290,16 @@ export async function POST(req: NextRequest) {
     const completedArr = Array.from(completedIds)
     for (let i = 0; i < completedArr.length; i += DB_IN_CHUNK) {
       const chunk = completedArr.slice(i, i + DB_IN_CHUNK)
-      const { data: rows } = await (supabaseAdmin as any)
+      const { data: rows, error: readErr } = await (supabaseAdmin as any)
         .from("allday_open_offers")
         .select("edition_id")
         .in("offer_id", chunk)
+      // ⛔ A FAILED READ HERE IS INDISTINGUISHABLE FROM "nothing matched", AND THE
+      // CURSOR ADVANCES EITHER WAY. supabase-js RETURNS its errors, so the `?? []`
+      // below published the failure as an empty result and the run moved past this
+      // block range for good. Throwing reaches the outer catch, which marks the run
+      // ok:false and leaves the cursor where it was, so the range is re-scanned.
+      if (readErr) throw new Error(`allday_open_offers read failed: ${readErr.message}`)
       for (const r of (rows as Array<{ edition_id: string }> | null) ?? []) touched.add(r.edition_id)
       const { error } = await (supabaseAdmin as any)
         .from("allday_open_offers")
@@ -307,10 +313,12 @@ export async function POST(req: NextRequest) {
     const maxByEdition = new Map<string, number>()
     for (let i = 0; i < touchedArr.length; i += DB_IN_CHUNK) {
       const chunk = touchedArr.slice(i, i + DB_IN_CHUNK)
-      const { data: rows } = await (supabaseAdmin as any)
+      const { data: rows, error: readErr2 } = await (supabaseAdmin as any)
         .from("allday_open_offers")
         .select("edition_id, amount")
         .in("edition_id", chunk)
+      // Same shape as the read above: a failed read must not render as "no match".
+      if (readErr2) throw new Error(`allday_open_offers read failed: ${readErr2.message}`)
       for (const r of (rows as Array<{ edition_id: string; amount: number }> | null) ?? []) {
         const prev = maxByEdition.get(r.edition_id)
         const amt = Number(r.amount)

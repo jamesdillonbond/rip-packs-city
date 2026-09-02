@@ -183,11 +183,17 @@ async function drain(maxRange: number, startBlockOverride: string | null) {
   let done = false
 
   try {
-    const { data: cursorRow } = await (supabaseAdmin as any)
+    const { data: cursorRow, error: cursorErr } = await (supabaseAdmin as any)
       .from("event_cursor")
       .select("last_processed_block")
       .eq("id", CURSOR_ID)
       .maybeSingle()
+    // ⛔ A FAILED CURSOR READ IS NOT "no cursor yet". supabase-js RETURNS its
+    // errors, so this fell through to `lastBlock = 0` and then to
+    // `DEFAULT_START - 1` — restarting the walk from the beginning and upserting
+    // that low block back over a cursor that had advanced for weeks. Throwing
+    // reaches the outer catch, which marks the run not-ok and writes no cursor.
+    if (cursorErr) throw new Error(`cursor read failed: ${cursorErr.message}`)
 
     let lastBlock = Number(cursorRow?.last_processed_block ?? 0)
     if (startBlockOverride != null && startBlockOverride !== "") {

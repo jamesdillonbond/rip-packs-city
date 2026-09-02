@@ -381,11 +381,17 @@ export async function POST(req: NextRequest) {
       if (uniqueNftIds.length > 0) {
         for (let i = 0; i < uniqueNftIds.length; i += 500) {
           const batch = uniqueNftIds.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
+          const { data, error: readErr } = await (supabaseAdmin as any)
             .from("wallet_moments_cache")
             .select("moment_id, edition_key")
             .eq("collection_id", UFC_COLLECTION_ID)
             .in("moment_id", batch)
+          // ⛔ A FAILED READ HERE IS INDISTINGUISHABLE FROM "nothing matched", AND THE
+          // CURSOR ADVANCES EITHER WAY. supabase-js RETURNS its errors, so the `?? []`
+          // below published the failure as an empty result and the run moved past this
+          // block range for good. Throwing reaches the outer catch, which marks the run
+          // ok:false and leaves the cursor where it was, so the range is re-scanned.
+          if (readErr) throw new Error(`wallet_moments_cache read failed: ${readErr.message}`)
           for (const row of data ?? []) {
             if (row.edition_key) nftToEditionExternalId.set(row.moment_id, row.edition_key)
           }
@@ -397,11 +403,13 @@ export async function POST(req: NextRequest) {
       if (editionExternalIds.length > 0) {
         for (let i = 0; i < editionExternalIds.length; i += 500) {
           const batch = editionExternalIds.slice(i, i + 500)
-          const { data } = await (supabaseAdmin as any)
+          const { data, error: readErr2 } = await (supabaseAdmin as any)
             .from("editions")
             .select("id, external_id")
             .eq("collection_id", UFC_COLLECTION_ID)
             .in("external_id", batch)
+          // Same shape as the read above: a failed read must not render as "no match".
+          if (readErr2) throw new Error(`editions read failed: ${readErr2.message}`)
           for (const row of data ?? []) editionExternalIdToUuid.set(row.external_id, row.id)
         }
       }

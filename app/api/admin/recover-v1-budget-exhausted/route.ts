@@ -189,11 +189,24 @@ async function run(startedAt: string, startedMs: number) {
 
       // Drain anything now price>0 AND edition-resolvable.
       try {
-        const { data: pr } = await (supabaseAdmin as any).rpc("promote_unmapped_sales", {
+        const { data: pr, error: prErr } = await (supabaseAdmin as any).rpc("promote_unmapped_sales", {
           p_collection_id: ALLDAY_COLLECTION_ID,
           p_limit: PROMOTE_LIMIT,
         })
-        summary.promoted = Number((pr as any)?.promoted ?? 0) || 0
+        // ⛔ supabase-js RETURNS an rpc error rather than throwing, so the
+        // surrounding try/catch never saw one and `?? 0` published a MEASURED
+        // ZERO: an operator running this recovery by hand read "promoted: 0" —
+        // "there was nothing to promote" — out of a call that failed. This route
+        // exists to be read by a human during an incident, which is exactly when
+        // a fabricated zero is most expensive. It does not throw (the caller may
+        // still want the rest of the summary); it reports null and says why.
+        if (prErr) {
+          summary.promoted = null
+          summary.promote_error = prErr.message
+          console.log(`[${PIPELINE_NAME}] promote rpc err: ${prErr.message}`)
+        } else {
+          summary.promoted = Number((pr as any)?.promoted ?? 0) || 0
+        }
         // 2026-08-30: the drain skips itself for 20 min after a real run; surface that
         // so a manual recovery does not read a throttled tick as "nothing promoted".
         if ((pr as any)?.skipped) summary.promote_skipped = String((pr as any).skipped)
