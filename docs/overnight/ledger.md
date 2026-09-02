@@ -10,6 +10,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — `db-pin-staleness` went red for the first time in days and was RIGHT: 2 of 191 pins had drifted, and repairing one exposed an unasserted feature
+
+**How it surfaced.** The fleet sentinel's Detector Health arm is CRITICAL on `edge-fn-drift`'s 12×
+streak (chronic, blocked on operator secrets — untouched here). Reading the LOG rather than the badge
+showed a SECOND watched detector had just turned: `db-pin-staleness` failed **2026-09-02 12:08Z** after
+green runs on 09-01, 08-31 ×2, 08-30 and 08-29. ⭐ **A fresh red next to a chronic one is the one worth
+reading** — and it was correct: `checked 191 pins — 189 clean, 2 needing attention`.
+
+**Both drifts had same-day causes, found by name rather than guessed.** `refresh_challenge_costs` was
+redefined by `20260902120329` (the pack-EV lookup hoisted out of the per-row loop); `rollup_pipeline_runs`
+by `20260902044456` (`extra_num_sums`). Both shipped **without moving their PINS entry**, which is
+exactly the drift this detector exists to catch. Repointed both, and re-embedded each function's DDL in
+its `supabase/tests/*.sql` pin — the drift guard requires those to be byte-identical (normalized) to the
+migration the pin NAMES, so a repoint alone reds it.
+
+🚨 **The repair exposed a defect that would have RED-DED CI, and only a structural check found it.**
+`rollup_pipeline_runs`'s new body writes `extra_num_sums`, but the pin's **fixture table did not have
+that column** — `supabase/tests/*.sql` run under psql in CI only, and there is no Postgres on this box,
+so `npm test` is structurally blind to it. Found by enumerating every relation the new body references
+and diffing against what the fixture creates (the other three names resolved to CTEs, checked, not
+assumed). Column added, mirroring live ordinal 18.
+
+⭐ **And the checker's own advice held: "a stale pin usually means the assertions describe old
+behaviour." It did — the entire point of the change was unasserted.** The pin tested only
+`extra_key_counts` (which keys were present); nothing tested that VALUES are now summed — the gap that
+killed three measurements this week. Added two assertions. ⚠ **The key choice is load-bearing: on `a`
+the count and the sum are BOTH 2, so an assertion on `a` passes identically under either behaviour and
+would read as coverage while proving nothing.** `b` is 2 vs **4**. Asserted `b`, and said why in the file.
+✅ **Expected values verified against LIVE Postgres before committing** (`{a:2,b:4}` vs counts `{a:2,b:2}`;
+beta `{ok:1}` surviving two non-object payloads), not derived on paper.
+
+**Also:** both pin headers cited their OLD migration and a 2026-08-01 md5. Refreshed, and **the
+EXPRESSION is recorded beside each digest** (`md5(pg_get_functiondef(oid))`) so it stays checkable
+rather than being a bare hash nobody can reproduce.
+
+**Verified:** `db:pins:check` **191/191 clean** (was 189/2); drift guard **199/199**; full suite
+**1430/1430 files, 15,836 tests, real exit 0**. ⛔ Nothing about `edge-fn-drift` changed — that arm is
+still CRITICAL and still needs Trevor.
+
+**Revert path:** `git revert <sha>` — test/pin files only, no runtime code and no DB object touched.
+
 ### 2026-09-02 · ✅ SHIPPED — the EVM ingest's first scheduled tick 401'd, and it wrote no row saying so
 
 **Files:** `app/api/cron/evm-transfers-ingest/route.ts` · `__tests__/api-cron-evm-transfers-ingest.test.ts` (+3).

@@ -15,9 +15,18 @@
 -- That is silent destruction of the archive this table exists to preserve.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260806034500_audit_20260806_rollup_pipeline_runs_shape_defensive_extra.sql),
--- whose body was verified byte-identical to live prod via prosrc md5 on
--- 2026-08-15. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- (supabase/migrations/20260902044456_audit_20260902_pipeline_runs_daily_keeps_numeric_extra_values_not_just_key_presence.sql).
+-- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+--
+-- REPOINTED 2026-09-02: that migration added extra_num_sums (per-key SUMS of the
+-- numeric values, not merely which keys were present) and redefined the function
+-- without moving the pin, so db-pin-staleness went red -- correctly. The fixture
+-- table below gained the column to match live, and two assertions were added,
+-- because the checker's own advice is that a stale pin usually means the
+-- assertions describe old behaviour -- and here they did: the whole point of the
+-- change was unasserted.
+-- Verified against LIVE prod 2026-09-02, expression recorded beside the digest so
+-- it stays checkable: md5(pg_get_functiondef(oid)) = 7eb2e491fe9b503dff35f46e93aa2a14.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -59,16 +68,18 @@ CREATE TABLE public.pipeline_runs_daily (
   last_error       text,
   extra_key_counts jsonb,
   refreshed_at     timestamptz,
+  -- ordinal 18 live: added by migration 20260902044456, AFTER refreshed_at.
+  extra_num_sums   jsonb,
   PRIMARY KEY (pipeline, day)
 );
 
 -- >>> BEGIN verbatim rollup_pipeline_runs (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.rollup_pipeline_runs(p_days integer DEFAULT 4)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public', 'pg_temp'
-SET statement_timeout TO '120s'
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+ SET statement_timeout TO '120s'
 AS $function$
 DECLARE
   v_cutoff date;
@@ -84,7 +95,7 @@ BEGIN
     rows_found, rows_written, rows_skipped,
     duration_ms_avg, duration_ms_p95, duration_ms_max,
     first_run_at, last_run_at, collection_slugs, last_error,
-    extra_key_counts, refreshed_at
+    extra_key_counts, extra_num_sums, refreshed_at
   )
   SELECT
     r.pipeline,
@@ -115,6 +126,22 @@ BEGIN
         GROUP BY k
       ) ek
     ),
+    (
+      -- VALUES, not just presence. See the column comment: a key's SUM is only
+      -- meaningful when the key is a counter, and NULL here means "this day predates
+      -- the column", never "no numeric keys". Same shape-defence as above — one
+      -- non-object `extra` must not abort the whole window.
+      SELECT jsonb_object_agg(k, s)
+      FROM (
+        SELECT kv.key AS k, sum((kv.value)::numeric) AS s
+        FROM unnest(array_agg(r.extra)) e,
+             LATERAL jsonb_each(
+               CASE WHEN jsonb_typeof(e) = 'object' THEN e ELSE '{}'::jsonb END
+             ) AS kv
+        WHERE jsonb_typeof(kv.value) = 'number'
+        GROUP BY kv.key
+      ) es
+    ),
     now()
   FROM public.pipeline_runs r
   WHERE r.started_at >= v_cutoff::timestamptz
@@ -135,6 +162,9 @@ BEGIN
     collection_slugs = EXCLUDED.collection_slugs,
     last_error       = COALESCE(EXCLUDED.last_error, d.last_error),
     extra_key_counts = EXCLUDED.extra_key_counts,
+    -- COALESCE, not a plain assignment: a re-aggregation of a day whose raw rows have
+    -- been pruned away would otherwise blank a value that was correct when written.
+    extra_num_sums   = COALESCE(EXCLUDED.extra_num_sums, d.extra_num_sums),
     refreshed_at     = now()
   -- MONOTONE GUARD (load-bearing): the oldest day in the window is PARTIALLY PRUNED
   -- by prune_pipeline_runs(3). Without this, re-aggregating a half-deleted day would
@@ -221,6 +251,18 @@ SELECT _assert_eq(
   (SELECT extra_key_counts ->> 'b' FROM public.pipeline_runs_daily WHERE pipeline='alpha'),
   '2', 'and does so per key, not per row');
 
+-- extra_num_sums keeps the VALUES, not just which keys existed (migration
+-- 20260902044456). Three separate measurements died on that gap, so it needs a pin.
+--
+-- Asserted on `b`, and the choice is load-bearing. Key `a` appears in two runs
+-- carrying 1 each, so its COUNT and its SUM are both 2 -- an assertion on `a`
+-- passes identically whether this column sums values or merely counts keys, i.e.
+-- it would restate the assertion above while READING as a new one. `b` appears in
+-- two runs carrying 2 each: count 2, sum 4. Only `b` separates the behaviours.
+SELECT _assert_eq(
+  (SELECT (extra_num_sums ->> 'b')::numeric::text FROM public.pipeline_runs_daily WHERE pipeline='alpha'),
+  '4', 'extra_num_sums SUMS each key numeric values (2+2) rather than counting runs');
+
 -- ⚠ THE MONOTONE GUARD ─────────────────────────────────────────────────────
 -- Simulate the pruner half-deleting today's oldest run, then re-roll. The stored
 -- row must NOT regress from 3 runs to 2. This is the assertion that makes the
@@ -270,6 +312,9 @@ SELECT _assert_eq((SELECT runs::text FROM public.pipeline_runs_daily WHERE pipel
   'a non-object `extra` does not abort the rollup');
 SELECT _assert_eq((SELECT extra_key_counts ->> 'ok' FROM public.pipeline_runs_daily WHERE pipeline='beta'), '1',
   'the object rows still contribute their keys; the non-objects contribute none');
+SELECT _assert_eq(
+  (SELECT (extra_num_sums ->> 'ok')::numeric::text FROM public.pipeline_runs_daily WHERE pipeline='beta'),
+  '1', 'and the numeric sum survives the non-object rows rather than aborting the window');
 SELECT _assert(
   (SELECT runs FROM public.pipeline_runs_daily WHERE pipeline='alpha') IS NOT NULL,
   'and the OTHER pipelines in the same window are still written');

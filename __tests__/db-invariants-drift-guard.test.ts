@@ -832,7 +832,7 @@ const PINS = [
     fn: "refresh_challenge_costs",
     test: "supabase/tests/refresh_challenge_costs.sql",
     migration:
-      "supabase/migrations/20260801231200_audit_20260801_snapshot_refresh_challenge_costs.sql",
+      "supabase/migrations/20260902120329_audit_20260902_challenge_costs_arm1_hoisted_out_of_the_per_row_loop.sql",
   },
   {
     // Points at the 2026-08-01 snapshot, NOT the 2026-07-13 migration whose
@@ -1147,7 +1147,7 @@ const PINS = [
     fn: "rollup_pipeline_runs",
     test: "supabase/tests/rollup_pipeline_runs.sql",
     migration:
-      "supabase/migrations/20260806034500_audit_20260806_rollup_pipeline_runs_shape_defensive_extra.sql",
+      "supabase/migrations/20260902044456_audit_20260902_pipeline_runs_daily_keeps_numeric_extra_values_not_just_key_presence.sql",
   },
   {
     // pg_cron `7-57/10 * * * *` (jobid 303), and the platform's #2 disk reader

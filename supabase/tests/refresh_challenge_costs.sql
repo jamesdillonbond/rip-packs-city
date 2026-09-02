@@ -7,10 +7,15 @@
 -- fmv; other -> NULL), and the returned refreshed-challenge count.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260801231200_audit_20260801_snapshot_refresh_challenge_costs.sql);
--- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts, and the
--- md5 of pg_get_functiondef was confirmed byte-identical to LIVE prod on 2026-08-01
--- (1baf9ce7087aa4979573c722decbbe7a).
+-- (supabase/migrations/20260902120329_audit_20260902_challenge_costs_arm1_hoisted_out_of_the_per_row_loop.sql);
+-- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
+--
+-- REPOINTED 2026-09-02: the pin had named the 2026-08-01 snapshot, and that day's
+-- perf fix (the pack-EV lookup hoisted out of the per-row loop into the _pack_ev
+-- TEMP table) redefined the function without moving the pin -- so db-pin-staleness
+-- went red, correctly, and this is the repair rather than a behaviour change.
+-- Verified against LIVE prod 2026-09-02, expression recorded beside the digest so
+-- it stays checkable: md5(pg_get_functiondef(oid)) = c39522c974490a3071f8813d31bf803b.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -27,11 +32,11 @@ CREATE TABLE fmv_snapshots (edition_id uuid, fmv_usd numeric, computed_at timest
 
 -- >>> BEGIN verbatim refresh_challenge_costs (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.refresh_challenge_costs(p_collection_id uuid DEFAULT '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)
- RETURNS integer
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
- SET statement_timeout TO '120s'
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+SET statement_timeout TO '120s'
 AS $function$
 DECLARE v_n integer;
 BEGIN
@@ -58,11 +63,24 @@ BEGIN
     cached_cost_to_complete = costs.cost, cached_entry_floor = costs.entry_floor, cost_refreshed_at = now()
   FROM costs WHERE c.id = costs.challenge_id;
 
+  -- ⛔ HOISTED ON PURPOSE — DO NOT INLINE THIS BACK INTO THE COALESCE BELOW.
+  -- pack_ev_latest is a DISTINCT ON view, so a correlated subquery against it
+  -- re-materialises the entire view once per challenge row: 40,716 ms and
+  -- 21,094,324 buffers for 31 rows, which is 99.7% of this function's cost and the
+  -- reason jobid 87 hit the 120 s wall on 15% of its runs. Computed once here it is
+  -- 1,220 ms / 681,430 buffers.
+  DROP TABLE IF EXISTS _pack_ev;
+  CREATE TEMP TABLE _pack_ev ON COMMIT DROP AS
+  SELECT DISTINCT ON (pe.dist_id) pe.dist_id, pe.gross_ev
+  FROM public.pack_ev_latest pe
+  WHERE pe.collection_id = p_collection_id
+  ORDER BY pe.dist_id, pe.snapshotted_at DESC;
+  CREATE INDEX ON _pack_ev (dist_id);
+
   UPDATE public.challenges c SET cached_reward_value = (
     CASE
       WHEN c.reward_kind = 'pack' AND c.reward_pack_dist_id IS NOT NULL THEN COALESCE(
-        (SELECT pe.gross_ev FROM public.pack_ev_latest pe
-         WHERE pe.dist_id = c.reward_pack_dist_id AND pe.collection_id = c.collection_id LIMIT 1),
+        (SELECT pv.gross_ev FROM _pack_ev pv WHERE pv.dist_id = c.reward_pack_dist_id),
         (SELECT round(percentile_cont(0.5) WITHIN GROUP (ORDER BY pp.sale_price)::numeric, 2)
          FROM public.pack_purchases pp
          WHERE pp.pack_dist_id = c.reward_pack_dist_id AND pp.event_kind = 'secondary_sale'
