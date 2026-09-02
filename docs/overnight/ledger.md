@@ -10,6 +10,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ⛔ CORRECTION 18 minutes later — my tree-walk guard DUPLICATED one this database has had since July, and the one it duplicated is better
+
+**Migration `audit_20260902_secdef_violations_reads_the_existing_allowlist_table_instead_of_my_duplicate_hardcoded_list`**
+(file `20260902053535_…`). The entry below is right that the nine-name guard was blind; **the fix I
+shipped for it carried its own hardcoded suppression list, and that was the wrong half.**
+
+`check_secdef_anon_exec_drift()` has walked the same population since **2026-07-21**, subtracting
+**`public.secdef_anon_exec_allowlist` — a TABLE.** I wrote a second walk with the list baked into the
+body.
+
+⭐ **I found it by running a one-line census of `check_*` functions AFTER building mine.** Running it
+FIRST would have answered the question in seconds. The standing rule *"name the caller before you touch
+the function"* has a sibling worth writing down: **check whether the thing you are about to build
+already exists.**
+
+**The table is better than my literal in four specific ways**, and the third is the one that stings:
+
+1. Operator-editable **without a migration**.
+2. Each row carries a `note` and an `approved_at` — a suppression is an auditable DECISION, not a
+   constant.
+3. ⚠ **Its notes are better-researched than mine.** I called `serial_fmv_estimate` a *"public pricing
+   calculator"*. The table records the real reason: it is reached **INDIRECTLY** through the SECURITY
+   INVOKER function `get_wallet_moments_with_fmv` and the anon-SELECTable security_invoker view
+   `topshot_underpriced_serials_board` — *"an invoker caller executes the callee AS THE CALLER, so
+   revoking breaks the wallet-moments read and the public board."* **I suppressed a security finding
+   without knowing why the grant was needed.** It happened to be right. That is not the same thing.
+4. It is **RLS-protected with no anon/authenticated SELECT or INSERT** (verified), so the guard cannot
+   be disarmed by the roles it watches.
+
+**Also fixed in passing:** matching must be on `oid::regprocedure` (type names, no parameter names) —
+the form the allowlist stores. `pg_get_function_identity_arguments`, which my version used, includes
+parameter names and would never have matched the table.
+
+**The post-state gains a CROSS-INSTRUMENT CONTROL that did not exist before:** the two guards now share
+a population and an allowlist, so they must return the same count — disagreement means one is looking
+somewhere the other is not, which is the failure that started this. It also refuses if the allowlist
+holds more entries than there are reachable rows, so a stale suppression cannot rot.
+
+👉 **Left for whoever wants it:** two functions still do this job. Retiring this one in favour of the
+drift function means repointing `rpc_ops_snapshot` and the smoke test (which reads `function`, while
+drift returns `identity`). **The duplicate LOGIC is gone, which was the defect; the duplicate NAME is
+cosmetic and its consumers are load-bearing.**
+
+**REVERT:** re-apply `20260902051740`'s body. ⛔ Do not — it re-forks the suppression list away from the
+table the real evidence lives in.
+
 ### 2026-09-01 · ⛔ THIRD sizing correction, and this one refutes my own PROBE METHOD: "has a Withdraw event" is necessary, not sufficient
 
 **Migration `audit_20260902_sales_counterparty_comment_corrected_topshot_marketplace_converts_zero_of_480`**
