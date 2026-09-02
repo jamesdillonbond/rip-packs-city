@@ -10,6 +10,81 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the Top Shot on-chain re-key was being ROLLED BACK on half its runs, and moved to pg_cron
+
+**What shipped.** Migration `20260902112507` (`run_topshot_onchain_rekey()`), pg_cron
+**jobid 434 `rpc-topshot-onchain-rekey`, `33 11 * * *`, owner `cron_heavy`**, and
+`vercel.json` drops `?rekey=1` from the daily `/api/admin/drain-topshot-misattribution`
+entry. Route header, `docs/reference/database.md`, `docs/reference/cron-and-schedulers.md`,
+a DB-invariant pin (`supabase/tests/run_topshot_onchain_rekey.sql`, registered in the
+drift guard) and the inverted `fossil-drain-schedule-is-retired` assertions all in the
+same change.
+
+**The finding, and it generalises.** `remap_topshot_from_onchain_map()` had exactly one
+caller — a Vercel cron, so PostgREST, so the Supabase **gateway's ~120 s cap**, against a
+function declaring an unreachable 300 s. 🚨 **A gateway `504 upstream request timeout` on
+a WRITE RPC is a ROLLBACK.** The control is the function's own audit table: on all five
+`rekey: upstream request timeout` days (08-23 → 08-28)
+`audit_topshot_sale_drain_remap_20260621` gained **zero** rows, against 673 on the one
+successful day. Each of those ticks did ~1.4 GB of reads on a 22 MB/s instance and kept
+nothing. The existing docs said the statement "keeps running server-side" — true about
+COST, silent about COMMIT, and the two compound.
+
+⚠ **Why it hid:** the re-key is idempotent, so the next successful run catches up and no
+backlog ever grows. Nothing downstream could distinguish it. Re-derived live 2026-09-02:
+**0** sales and **10** moments currently need a re-key, i.e. the work is current — this
+was pure waste plus a lying `ok=false`, not data loss.
+
+⛔ **"Make the query faster" was measured and rejected**, not assumed: the sales leg scans
+3,198,302 Top Shot rows for **174,820 buffers / 9.0 s** warm, and the planner's hash join
+is the RIGHT plan — forcing the nested loop over the per-partition `nft_id` indexes costs
+**1,315,991 buffers / 33.3 s**, 7.5× the buffers. The lever is `cron_heavy`'s role
+`statement_timeout = 600s`, which is where the sibling re-key (jobid 62) has always run.
+
+⚠ **Stated hole, proven not assumed:** a `statement_timeout` kill writes NO `pipeline_runs`
+row — `EXCEPTION WHEN OTHERS` cannot swallow a `57014` cancel (re-proved with `SET LOCAL
+statement_timeout='300ms'` + `pg_sleep(2)`). Read a kill by correlation against
+`cron.job_run_details`, never from the absence of a failure row.
+
+🚨 **THE FIX BROKE ON ITS OWN FIRST TICK, AND THAT IS THE MOST REUSABLE PART.** Jobid 434
+fired at 11:33Z and died in **0.0 s**: `permission denied for function
+run_topshot_onchain_rekey`. **The mandated anon hardening and the mandated scheduler are in
+direct conflict** — ⚠ **and this is the FOURTH recorded instance, not a discovery: `database.md`
+has documented it since 2026-08-23 (two Pinnacle trade jobs, one series rollup). Migration
+`20260902113501`'s header claims nothing said so; that claim is WRONG and the correction is in
+`database.md` and `cron-and-schedulers.md`. Three prose records did not prevent a fourth
+instance, which is why the deliverable is the CHECK.** `REVOKE EXECUTE … FROM PUBLIC` removes the PUBLIC grant that is
+`cron_heavy`'s ONLY path to a new public function (`ALTER DEFAULT PRIVILEGES` here covers
+anon/authenticated/service_role, not cron_heavy). ⚠ The failure shape is worse than the
+error: 0.0 s, **no `pipeline_runs` row at all** (the function never runs, so it never
+logs), message only in `cron.job_run_details`, which no fleet sweep reads — indistinguishable
+from a job that was never scheduled. Fixed by migration `20260902113501`: an explicit
+`GRANT … TO cron_heavy` (the convention — 48 of the other 49 cron_heavy-called functions
+already carry `cron_heavy=X/postgres`, so this was a missing line, not a new idea) plus
+`check_cron_heavy_job_exec_drift()`, a ban at zero whose population is walked from
+`cron.job` and which returns `{inspected, offenders}` so a run that inspected nothing
+cannot read as clean. Live: **inspected 56, offenders 0**.
+
+✅ **VERIFIED END-TO-END, through the production caller.** A temporary second `cron_heavy`
+job was scheduled, watched, and unscheduled (only jobid 434 remains). First successful run
+**11:35:48→11:37:04Z = 75,803 ms**, `ok`, `rows_written 0`, `moments_deferred_conflict 10`.
+⭐ **63% of the ~120 s gateway cap; 13% of `cron_heavy`'s 600 s** — that single number is
+the argument for the move: a job at 63% of its ceiling fails half the time from IO
+contention alone.
+
+⚠ **ONE CORRECTION TO THIS ENTRY'S OWN CLAIM, made in the same hour.** That run went
+through the Supabase **MCP** `execute_sql` tool, which gave up at its 60 s budget; I read
+`pipeline_runs` at ~11:36, saw nothing, and briefly recorded it as a second replication of
+the rollback finding. **It committed at 11:37:04** — a reading taken while its subject was
+still changing. The gateway-504 rollback finding stands on its OWN control (the audit
+table, 5 for 5); **an MCP tool timeout is a different layer and does NOT abort the
+statement.** Do not carry either result across to the other.
+
+**Revert path.** `SELECT cron.unschedule(434);` then restore `?rekey=1` in `vercel.json`
+(`git revert` the code commit, or find it by message `feat(cron): the Top Shot on-chain
+re-key runs where it has more than 120s`). `DROP FUNCTION public.run_topshot_onchain_rekey();`
+is optional — it has no other caller. No data migration to undo.
+
 ### 2026-09-02 · 🔧 FIXED — the memory-doc link guard read a Postgres regex inside backticks as a broken pointer, and reddened `main` for 5 commits
 
 **What shipped.** `scripts/check-memory-doc-links.mjs` now blanks fenced code blocks and inline

@@ -374,6 +374,78 @@ tuning. ⛔ **And do not "make the declarations real" as a batch:** several jobs
 past their declared value (jobid 217 declares 120 s and has succeeded at 595 s), so enforcing them
 would convert working runs into failures. See known-issues **#43**.
 
+## 🚨 A GATEWAY `504 upstream request timeout` ON A **WRITE** RPC IS A ROLLBACK — you pay the full cost and keep nothing (proven by control 2026-09-02)
+
+The ~120 s Supabase gateway cap is already documented above (known-issues #43, third
+ceiling). What was **not** written down is what happens to the WORK when it fires, and
+the existing prose could be read the wrong way: the `match-topshot-players` entry notes
+that "the statement keeps running server-side after the client has already given up",
+which is true about **cost** and says nothing about **commit**.
+
+**It does not commit.** The control is an audit table the function writes on its own
+success path, compared day-by-day against `pipeline_runs_daily.last_error` for
+`topshot-misattrib-drain` (daily, Vercel cron → PostgREST → `remap_topshot_from_onchain_map()`):
+
+| day | `pipeline_runs` error | rows added to `audit_topshot_sale_drain_remap_20260621` |
+|---|---|---|
+| 08-23 | `rekey: upstream request timeout` | **0** |
+| 08-24 | `rekey: upstream request timeout` | **0** |
+| 08-25 | `rekey: upstream request timeout` | **0** |
+| 08-26 | `rekey: upstream request timeout` | **0** |
+| 08-27 | (ok) | 673 sales / 107 moments |
+| 08-28 | `rekey: upstream request timeout` | **0** |
+| 08-31 | `HTTP 530 ×3` (GQL leg only — the re-key ran) | 335 sales / 7 moments |
+| 09-01 | `HTTP 530 ×3` | 60 sales |
+| 09-02 | `HTTP 530 ×3` | 70 sales |
+
+Five for five: every gateway timeout wrote **nothing**. The connection close propagates
+to the backend, the transaction aborts, and the ~1.4 GB of reads it had already done on
+a **22 MB/s** instance buys zero rows.
+
+⚠ **Both halves are true and they compound — this is the worst possible shape.** The
+statement burns a pooled connection and the IO budget for its full server-side duration,
+*and* the result is discarded. Treat any `upstream request timeout` on a write path as
+**"it did not happen"**, and never as "the response was lost but the write landed".
+
+⚠ **The read/write asymmetry is why this was missable.** On a READ RPC a gateway timeout
+costs you the answer and nothing else, so the six `upstream request timeout` pipelines
+already catalogued above read as "slow, needs work". On a WRITE RPC the same string means
+the pipeline **is not doing its job at all** on those ticks — and if the work is
+idempotent (as this re-key is) the next successful run silently catches up, so the
+backlog never grows and no downstream metric ever shows it. **Nothing but the audit table
+could tell the two apart.**
+
+⭐ **VERIFIED SAME DAY, AND THE NUMBER IS THE ARGUMENT.** The first successful run of the
+relocated job (`run_topshot_onchain_rekey()`, 2026-09-02 11:35:48→11:37:04Z) took
+**75,803 ms** — `ok`, `rows_written 0`, `moments_deferred_conflict 10`. That is **63% of
+the ~120 s gateway cap and 13% of `cron_heavy`'s 600 s**. A job sitting at 63% of its
+ceiling does not fail half the time because it is broken; it fails half the time because
+IO contention is worth more than 37%.
+
+⚠ **AND ONE SCOPE CORRECTION, LEARNED BY GETTING IT WRONG IN THE SAME HOUR: "the client
+gave up" DOES NOT IMPLY A ROLLBACK, and the discriminator is WHICH client.** That same
+call was issued through the Supabase **MCP** `execute_sql` tool, which gave up at its own
+**60 s** budget. The statement kept running and **COMMITTED at 75.8 s** — the row above is
+its row. I read `pipeline_runs` at ~11:36, saw zero rows, and briefly recorded that as a
+second replication of the rollback finding. It was a **reading taken while its subject was
+still changing**, which this file already warns is not a reading at all.
+- **Supabase gateway 504 (`upstream request timeout`, PostgREST path): ABORTS.** Evidence
+  is the 5-for-5 audit-table control above, not a mechanism.
+- **MCP `execute_sql` 60 s tool timeout: DOES NOT ABORT.** Evidence is the committed row.
+👉 So never "just run it once to check" through MCP and read the absence of a row as
+proof of anything — **wait past the statement's own duration before concluding**, and do
+not carry either result across to the other layer.
+
+👉 **The fix is the CALLER, not the clock.** `cron_heavy` carries
+`statement_timeout = 600s` as a role config, five times the gateway cap and with no
+gateway in the path at all, which is why the sibling re-key (jobid 62) has never had this
+problem. Moving the call there is a scheduler change, not a query change — see
+[cron-and-schedulers.md](cron-and-schedulers.md) for the worked example (jobid 434).
+⛔ **Do not reach for "make the query faster" first**: measured the same day, the sales
+leg of that re-key scans 3,198,302 Top Shot rows for **174,820 buffers / 9.0 s warm**, and
+the planner's hash join is the RIGHT plan — forcing the nested loop over the
+per-partition `nft_id` indexes costs **1,315,991 buffers / 33.3 s**, 7.5× worse.
+
 ## 🚨 A PARTIAL INDEX WHOSE PREDICATE SAYS `col IS NOT NULL` ON A `NOT NULL` COLUMN IS UNREACHABLE ON PG 17 (2026-08-23)
 
 This DB is **PostgreSQL 17.6**. PG 17 removes a redundant `col IS NOT NULL` qual when `col` is declared
@@ -424,6 +496,28 @@ Full evidence, plans and the enumerated population:
 🚨 **THE REASON IT SURVIVED "VERIFICATION": the functions were tested by calling them over the Supabase MCP, which connects as `postgres` — a role that HAS execute.** They returned clean JSON and were recorded as working. Neither writes `pipeline_runs`, so the permission failure happened *before* any logging and presented as **silence**, not failure; the session even reasoned "`updated: 0` is correct right now", which was true for entirely the wrong reason. **The only witness was `cron.job_run_details`, which nothing watches.**
 
 ⚠ **A concurrent session hit the IDENTICAL trap the same night** (`20260823032000_audit_20260823_series_rollup_cron_heavy_execute_grant.sql`). Two independent instances in one night is not a coincidence — it is the default behaviour of the correct anon revoke.
+
+🚨 **FOURTH INSTANCE, 2026-09-02 — AND IT HAPPENED TO SOMEONE WHO HAD THIS PARAGRAPH
+AVAILABLE AND DID NOT READ IT.** `run_topshot_onchain_rekey()` (jobid 434) shipped with the
+correct `REVOKE … FROM PUBLIC, anon, authenticated` and no `cron_heavy` grant; its first
+tick died in 0.0 s with the same `permission denied for function`. The migration that
+shipped it (`20260902113501`) even asserts in its own header that "nothing said so" —
+**which is false, and the correction belongs here rather than in that applied file: this
+paragraph has said so since 2026-08-23.**
+
+⭐ **THAT IS THE ACTUAL FINDING. Three documented instances did not prevent a fourth,
+because the record is PROSE — read after a session already knows its topic — and the trap
+fires at the moment you are thinking about anon safety, not about scheduling.** What was
+missing was never knowledge; it was a CHECK. `check_cron_heavy_job_exec_drift()`
+(migration `20260902113501`) is that check: it walks `cron.job` for active `cron_heavy`
+rows, extracts every `public.<fn>(` named in each command, and returns
+`{inspected, offenders}` — offenders being names no overload of which `cron_heavy` may
+execute. `inspected` exists so a walk that matched nothing cannot read as a clean bill of
+health. Live at creation: **inspected 56, offenders 0**.
+⚠ It is a DB-side function with **no scheduled caller yet** — call it after creating any
+function you intend to schedule, and treat that as the same reflex as re-running
+`check_secdef_anon_exec_drift()`. Wiring it into the sentinel is the obvious next step and
+is deliberately NOT claimed as done.
 
 **THE RULE, both halves:**
 1. **After scheduling any pg_cron job under a non-`postgres` role, assert `has_function_privilege('<role>', '<fn>(<args>)', 'EXECUTE')`** — scheduling a job does not imply permission to execute what it calls.

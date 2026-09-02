@@ -939,3 +939,74 @@ fired by `allday-sales-indexer` at both of its exits: **79 runs / 1,698 rows in 
 backfill's 8. 👉 **Before removing a SCHEDULE, enumerate what the route FIRES, not just what fires the
 route** — and search `pipeline_runs` by the pipeline's own logged name, which here matches neither the
 route path nor the cron entry.
+
+## ⭐ MOVING A JOB OFF PostgREST IS A REAL FIX — `rpc-topshot-onchain-rekey` (jobid 434), 2026-09-02
+
+**What moved.** The Top Shot on-chain re-key (`remap_topshot_from_onchain_map()`) had
+exactly one caller: the Vercel cron `/api/admin/drain-topshot-misattribution?rekey=1`
+(`0 11 * * *`). That reaches it over PostgREST, where the Supabase **gateway** hard-caps
+the request at ~120 s no matter what the function declares — and it declares 300 s, so
+the declaration was unreachable on the only path anyone used it from. It is now pg_cron
+**jobid 434 `rpc-topshot-onchain-rekey`, `33 11 * * *`, owned by `cron_heavy`**, calling
+the thin wrapper `run_topshot_onchain_rekey()`. The `?rekey=1` param was dropped from
+`vercel.json` in the same change; the route still supports it by hand.
+
+**Why the move is the fix and not a workaround.** `cron_heavy.rolconfig` is
+`statement_timeout = 600s` — five times the gateway cap, with no gateway in the path.
+That is already how the sibling re-key (jobid 62 `rpc-remap-misattributed-sales`) runs,
+which is why jobid 62 has never shown this failure and the HTTP one showed it on roughly
+half its runs.
+
+**What it cost while it was on the wrong path.** Five `rekey: upstream request timeout`
+days between 08-23 and 08-28, and the audit tables gained **zero** rows on every one of
+them — the gateway timeout is a **rollback**, so each of those ticks did ~1.4 GB of reads
+on a 22 MB/s instance and kept nothing. The full control table and the read/write
+asymmetry that made it missable are in
+[database.md](database.md#-a-gateway-504-upstream-request-timeout-on-a-write-rpc-is-a-rollback--you-pay-the-full-cost-and-keep-nothing-proven-by-control-2026-09-02).
+
+⚠ **Picking the minute is not cosmetic here.** The obvious `20 11 * * *` collides with
+`rpc-allday-serial-fmv-power-model` (jobid 50, `20 11 * * 0`) and sits inside the Sunday
+11:00–11:50 block that carries five weekly FMV multiplier jobs (`15/20/25/35/50 11 * * 0`).
+`33` past the hour was chosen because the only thing it shares a minute with is an hourly
+MV refresh (jobid 73, `3,33 * * * *`) that already coexists with everything. **Read the
+weekly jobs, not just the daily ones, before picking a minute** — a weekly collision
+shows up on one day in seven and reads as noise.
+
+⚠ **The wrapper exists for OBSERVABILITY, and it has a stated hole.** `pg_cron` alone
+records only `cron.job_run_details`; nothing in this repo's fleet sweeps reads that, so a
+bare `SELECT public.remap_…()` schedule would have made the re-key invisible to every
+`pipeline_runs` instrument. `run_topshot_onchain_rekey()` writes
+`pipeline='topshot-onchain-rekey'` on both the success and the caught-error path (NULL
+counters on the error path, never 0). 🚨 **But a `statement_timeout` kill writes NO row at
+all** — an `EXCEPTION WHEN OTHERS` cannot swallow a statement-timeout cancel on this
+database (already recorded in database.md; re-proved 2026-09-02 with a `SET LOCAL
+statement_timeout='300ms'` + `pg_sleep(2)` DO block, and the `57014` propagated straight
+out of the handler). So on a 600 s overrun this looks exactly like a job that never fired.
+**Read it by CORRELATION against `cron.job_run_details` (status='failed'), never from the
+absence of a failure row** — the same rule this file already states for `after()` kills.
+Pinned by `supabase/tests/run_topshot_onchain_rekey.sql` (mutation-tested: publishing a 0
+instead of NULL on the error path, a fabricated `rows_found = 0`, and removing the
+exception handler each red it).
+
+🚨 **AND IT DIED ON ITS FIRST TICK — 0.0 s, `permission denied for function`.** The
+mandated anon hardening (`REVOKE EXECUTE … FROM PUBLIC, anon, authenticated`) removes the
+PUBLIC grant that is `cron_heavy`'s ONLY path to a new public function. ⚠ **This is the
+FOURTH recorded instance of that exact trap** (two Pinnacle trade jobs and a series
+rollup, all 2026-08-23) — see
+[database.md](database.md#both-pinnacle-trade-cron-jobs-failed-on-every-run-from-creation)
+for the full write-up, and note that migration `20260902113501`'s header wrongly claims
+the conflict was undocumented. It was documented; it recurred anyway, because a paragraph
+is read after you know your topic and this trap fires while you are thinking about anon
+safety rather than scheduling. **So the deliverable is the check, not the note:**
+`check_cron_heavy_job_exec_drift()` walks `cron.job` and returns `{inspected, offenders}`
+(live: 56 / 0). ⛔ **Run it after creating ANY function you intend to schedule**, and pair
+the schedule with `GRANT EXECUTE … TO cron_heavy` — 48 of the other 49 cron_heavy-called
+functions already carry `cron_heavy=X/postgres`.
+
+✅ **Verified end-to-end through a temporary second `cron_heavy` job, since a
+`cron_heavy`-owned job cannot be `cron.alter_job`'d from any session-reachable role** (the
+limitation this file already records). It was unscheduled immediately; only jobid 434
+remains. First successful run **75,803 ms**, `ok`, 0 sales / 0 moments re-keyed, 10
+moments deferred on genuine collisions. ⭐ **63% of the ~120 s gateway cap, 13% of the
+600 s ceiling it now runs under** — a job at 63% of its ceiling fails half the time from
+IO contention alone, which is the entire diagnosis in one number.
