@@ -10,6 +10,83 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-01 · ✅ SHIPPED (#50) — `/insights/pack-reality` was telling the public "No +EV packs right now" because OUR prices were stale, not because the market was empty
+
+**Session:** Claude Code interactive, Trevor's box, ~19:2x–19:5x PT. Migration `20260902032401` + route +
+page + test.
+
+**🚨 A LIVE, PUBLIC, FALSE MARKET CLAIM — and the page's existing honesty machinery could not see it.**
+The "Honest +EV ranker" had exactly two renderings for an empty board: *"temporarily unavailable"* when
+the read failed, and **"No +EV packs right now."** when it succeeded and returned nothing. The second is
+a claim about the MARKET. Measured 2026-09-01 it was false. The funnel through the board's own filter:
+
+| stage | rows |
+|---|---:|
+| `pack_ev_latest`, Top Shot (freshest 03:13Z) | **1,210** |
+| positive EV | 61 |
+| priced · non-reward · has a `dist_id` | 34 |
+| under 90% depleted · FMV coverage ≥ 40% | **3** |
+| **AND `snapshotted_at` within 48h** | **0** ← the entire loss |
+
+The three survivors are **106.9h, 113.3h and 130.3h old**, all `price_source = 'secondary'` — their
+secondary-ask source is the dead `public-api.nbatopshot.com` endpoint (the 530 class). ⭐ **So the READ
+was fine and the SOURCE was stale: a THIRD state the page had no way to distinguish, on a buy/no-buy
+input.** CLAUDE.md's rule is "there are always THREE states, never two"; here the third was
+read-ok-but-our-data-is-behind, and it rendered as a market fact.
+
+**✅ SHIPPED — `v_topshot_pack_reality_ranker_staleness`** (`20260902032401`): the MV's filter **minus**
+the 48h freshness clause, aggregated to one row (`qualifying_ignoring_freshness`,
+`newest_qualifying_snapshot`, `qualifying_and_fresh`). It answers exactly one question — *is an empty
+ranker empty because nothing qualifies, or because everything that qualifies is stale?* Live reading:
+**3 / 2026-08-28 16:25Z / 0.**
+🔒 A new view lands with default PUBLIC access, so it was explicitly closed: verified from the catalog
+after applying — `has_table_privilege` **false** for both `anon` and `authenticated`, SELECT to
+`postgres` + `service_role` only, `security_invoker=on` set explicitly (a later `CREATE OR REPLACE` with
+no `WITH` clause silently strips it), `check_secdef_anon_execute_violations()` = 0.
+⚠⚠ **The predicates are DUPLICATED from the MV on purpose and the coupling is stated in the migration
+header AND the view's COMMENT.** The clean alternative — make this view the base and have the MV select
+from it — needs a `DROP` + `CREATE` of a live, cron-refreshed MV with indexes. **That trade was made
+deliberately, not overlooked.** If you change the MV's filter, change this view in the same migration.
+
+**✅ Route** (`app/api/public/insights/pack-reality/route.ts`): reads it as a **fifth, deliberately
+non-fatal leg** and publishes `meta.ranker_staleness`. ⚠ **It is deliberately NOT registered with
+`noteError`**, so the existing `errors.length === 4` total-outage test keeps its meaning — a new read
+must not be able to turn a partial outage into a 503. If this leg fails, `ranker_staleness` is null and
+the page falls back to the old copy: the status quo, not a new false claim.
+
+**✅ Page**: the empty state now has four branches — failed · loading · **stale** · genuinely empty. The
+stale copy names the cause and the age and ends *"This is our data being behind, not a reading of the
+market."* ⚠ Hydration-safe by construction and commented as such: this is a `"use client"` page whose
+data arrives from a client fetch, so `data` is null during SSR and the relative time is never computed
+in two zones. **Do not lift it to a server component without re-checking that.**
+
+**✅ TEST ASSERTS THE ABSENCE OF THE FALSE CLAIM, not the presence of new copy** —
+`expect(text).not.toContain("No +EV packs right now.")` — because a test that merely looked for the word
+"stale" would pass with the market claim still rendered beside it, **which is exactly how the 2026-08-15
+defect on this same page survived its own correct comment.** ⭐ **Mutation-tested:** forcing
+`rankerStale` to null reds the suite with the page rendering "No +EV packs right now."; restoring greens
+(14/14). The other two directions are untouched and still pass — a genuinely empty market still reads as
+one, which is the `board-status.ts` cry-wolf cost.
+
+⛔ **This does NOT fix #50's underlying cause** — no fresh Top Shot pack-ask source exists while the
+legacy endpoint 530s, so the ranker stays empty. It stops the page **lying about why**. #50 remains open
+on its data half.
+**REVERT:** `git revert` the code commit; `DROP VIEW IF EXISTS public.v_topshot_pack_reality_ranker_staleness;`
+**EXIT:** when a fresh pack-ask source lands, `qualifying_and_fresh` goes > 0 and the board repopulates
+on its own — no code change needed. **FALSIFIER:** if `stale_count` reads 0 while the board is empty and
+packs are visibly stale, the duplicated predicates have drifted from the MV's.
+
+⚠ **A REPO GUARD CAUGHT ME MID-FIX, and it was right.**
+`__tests__/insights-client-dates-are-hydration-safe-guard.test.ts` bans a wall-clock read in an insights
+client component (React #418) and reddened on my `Date.now()`. My reasoning was sound — the branch is
+unreachable during SSR because `data` is `useState(null)` filled by a client fetch — but I had written
+that argument in a block comment ABOVE the `useMemo`, and the guard requires the justification **inline
+at the call**, within the call line and the 4 above it. ⭐ **That window is the point:** an escape placed
+anywhere in the file is an allowlist with extra steps, and the next reader must find the argument at the
+clock, not in a paragraph elsewhere. Marker moved into range with the real reason **and** the condition
+that would invalidate it (*"if you ever add an initial prop, anchor the age to a server-stamped value"*).
+Guard + component tests green, 38/38.
+
 ### 2026-09-01 · 📏 THE LOCK-CHECK PIPELINE IS STARVING 237 OF 249 WALLETS — and three "obvious" optimisations were all refuted by measurement
 
 **Nothing shipped. Read-only investigation, deliberately.** Every candidate change I tested was worse
