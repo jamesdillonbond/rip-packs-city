@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — two more `after()` routes get an invocation marker, and the pass STOPPED at two because the third-ranked candidate was measured on the wrong caller
+
+E5's tenth pass. Ratchet **33 → 31**, re-derived off the failing no-slack assertion, not by subtracting.
+
+`max(duration_ms)` over the 73 h `pipeline_runs` retains, read 2026-09-02, against each route's own `maxDuration`:
+
+| route | max | wall | margin |
+|---|---:|---:|---:|
+| `cron/panini-ingest` | 40,097 ms | **60,000** | **67%** (3,501 runs) |
+| `cron/evm-transfers-ingest` | 26,195 ms | **60,000** | **44%** (p90 25,536 ms over 49 runs) |
+
+Panini is the worst margin left in the fleet, and its caller is the residential runner on Trevor's box — one of the caller sources this sandbox cannot see — so without the marker a killed tick and a runner that never posted are **the same observation**. evm's p90 sits at 25.5 s, so the tail is where it normally lives, not a spike; its internal `BUDGET_MS` is 25 s and a pass that overruns that has nothing left to break out of.
+
+⚠ Both maxima are **censored at the wall by construction** — a tick that crossed wrote no terminal row, so it is absent from the distribution rather than at the top of it.
+
+**⛔ THE THIRD-RANKED CANDIDATE WAS REJECTED ON RE-DERIVATION, and it is the trap in this selection rule.** `admin/backfill-offer-fill-sales` reads 82,045 ms of a 300,000 ms wall (27%) — but its `after()` path is the LEGACY one; the route's own comment says the ~235 s tail is served by a **synchronous GHA path** instead. So that maximum almost certainly belongs to the path that *cannot* be killed at the wall, and citing it would have been a number measured on the wrong caller. Everything below it is ≤20% of its own wall, so the wall-margin tier is now exhausted and the rule has stopped discriminating. **Rank by margin, then check WHICH PATH produced the number.**
+
+**Also fixed in the harness, and it is worth reading before adding the next pin:** the ordering test's fake query builder had no `.order()`, so `evm-transfers-ingest` threw mid-`after()` and the test reported *"the route wrote no terminal row"* — **the harness reproducing the exact failure it exists to detect.** The builder now carries a deliberate superset of chainable methods; each returns the builder, so adding one can only remove a false failure, never mask a real one.
+
+**Shipped.** `writeInvocationHeartbeat` in both routes (panini's inside `after()`, since the empty-payload path returns early with its own terminal row and a marker there would be an invocation that did no work); four new pins in `__tests__/heartbeat-marker-precedes-the-terminal-row.test.ts` including an empty-payload no-change control and an unauthorized positive control; ratchet lowered with the measurements. Both ordering pins mutation-checked — deleting either call fails the pin AND the ratchet. tsc clean; eslint unchanged at the same 23 pre-existing errors on these files.
+
+**Revert.** `git revert <this sha>` — removes the markers and restores BUDGET 33. No schema or data change.
+
 ### 2026-09-02 · ✅ SHIPPED — the profile's "Top Movers" panel published a −$1,999 loss on a Moment the collector never owned; `get_top_movers` now joins editions by collection and costs half · Cowork (device VM)
 
 Started as a cost question (two `57014` timeouts on `/api/profile/top-movers` tonight, both the 19,385-row wallet) and the same-snapshot diff turned up a false claim first.
