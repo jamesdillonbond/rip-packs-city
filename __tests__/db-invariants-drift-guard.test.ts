@@ -1246,7 +1246,7 @@ const PINS = [
     // buffers against a 9,296-page table. Fenced: 9,296 buffers. Equivalence proven
     // both directions before ship.
     migration:
-      "supabase/migrations/20260831133323_audit_20260831_unmapped_backlog_growth_fence_comment_correct_function_level_numbers.sql",
+      "supabase/migrations/20260903174421_audit_20260903_unmapped_backlog_growth_no_eta_from_a_stalled_drain.sql",
   },
   {
     // pg_cron `25 9 * * *`. One of only TWO scheduled SECDEF functions that

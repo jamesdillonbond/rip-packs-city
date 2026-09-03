@@ -114,6 +114,7 @@ BEGIN
       count(*) FILTER (WHERE u.ingested_at > now() - interval '24 hours'
                          AND u.sold_at   <= now() - interval '7 days')              AS inflow_24h_backfill,
       count(*) FILTER (WHERE u.resolved_at  > now() - interval '24 hours')          AS outflow_24h,
+      count(*) FILTER (WHERE u.resolved_at  > now() - interval '3 hours')           AS outflow_3h,
       min(u.sold_at) FILTER (WHERE u.resolved_at IS NULL)                           AS oldest_open_sold_at
     FROM public.unmapped_sales u
     GROUP BY u.collection_id
@@ -128,10 +129,19 @@ BEGIN
       p.inflow_24h_fresh,
       p.inflow_24h_backfill,
       p.outflow_24h,
+      p.outflow_3h,
+      -- ⚠ THE 24h OUTFLOW IS A TRAILING COUNT AND IT LAGS A COLLAPSED DRAIN.
+      -- Steady state puts an eighth of the 24h outflow in any 3h window, so
+      -- `outflow_3h * 16 < outflow_24h` says the CURRENT rate is below HALF the
+      -- 24h average — the window is still carrying a burst that has stopped.
+      -- Same table and same column as outflow_24h, so this is one instrument
+      -- compared against itself over two windows, not two instruments paired.
+      (p.outflow_3h * 16 < p.outflow_24h) AS drain_stalled,
       p.inflow_24h - p.outflow_24h AS net_24h,
       CASE WHEN p.inflow_24h > 0
            THEN round(p.outflow_24h::numeric / p.inflow_24h, 4) END AS drain_ratio,
       CASE WHEN p.outflow_24h > p.inflow_24h_fresh
+            AND NOT (p.outflow_3h * 16 < p.outflow_24h)
            THEN round((p.open_rows - COALESCE(x.open_gross_unsplittable_rows,0))::numeric
                       / (p.outflow_24h - p.inflow_24h_fresh), 1) END AS days_to_drain,
       p.oldest_open_sold_at,
@@ -237,6 +247,57 @@ SELECT _assert(
 SELECT _assert_eq(
   (SELECT payload -> 0 ->> 'outflow_24h' FROM public.unmapped_backlog_growth_cache WHERE id=1),
   '100', 'outflow_24h counts rows resolved in the window');
+
+-- ⚠ ...AND THE ETA IS ONLY PUBLISHED WHILE THE DRAIN IS STILL RUNNING ───────
+-- Positive control first: the 100 rows above were resolved an hour ago, so the
+-- short window still sees them and the ETA above is legitimate.
+SELECT _assert_eq(
+  (SELECT payload -> 0 ->> 'outflow_3h' FROM public.unmapped_backlog_growth_cache WHERE id=1),
+  '100', 'outflow_3h sees a drain that is still running');
+SELECT _assert_eq(
+  (SELECT payload -> 0 ->> 'drain_stalled' FROM public.unmapped_backlog_growth_cache WHERE id=1),
+  'false', 'a running drain is not stalled');
+
+-- ⭐ THE DEFECT THIS PINS, 2026-09-03. `outflow_24h` is a TRAILING count, so it
+-- keeps reporting a burst for a full day after the burst stops, and
+-- `days_to_drain` divides by it. Production published "~32.6d to clear the
+-- actionable pile" off 1,263 resolved/24h while the CURRENT rate was 10 per 3h
+-- — a real ETA nearer 526 days. ⚠ The published number had gone UP from 25.1d
+-- three hours earlier while the true rate went DOWN, because the numerator
+-- barely moves and the stale burst ages out slowly: **a decaying series makes
+-- this read plausible and wrong, in the reassuring direction.**
+--
+-- Moving the SAME resolved rows out of the 3h window reproduces it exactly:
+-- nothing about the pile changes, only the recency of the drain.
+UPDATE public.unmapped_sales SET resolved_at = now() - interval '10 hours'
+ WHERE resolved_at IS NOT NULL;
+SELECT public.refresh_unmapped_backlog_growth();
+SELECT _assert_eq(
+  (SELECT payload -> 0 ->> 'outflow_24h' FROM public.unmapped_backlog_growth_cache WHERE id=1),
+  '100', 'the 24h window still counts them — this is what makes the stale ETA look real');
+SELECT _assert_eq(
+  (SELECT payload -> 0 ->> 'outflow_3h' FROM public.unmapped_backlog_growth_cache WHERE id=1),
+  '0', 'but nothing has drained recently');
+SELECT _assert_eq(
+  (SELECT payload -> 0 ->> 'drain_stalled' FROM public.unmapped_backlog_growth_cache WHERE id=1),
+  'true', 'so the drain is flagged stalled');
+SELECT _assert(
+  (SELECT payload -> 0 -> 'days_to_drain' FROM public.unmapped_backlog_growth_cache WHERE id=1) = 'null'::jsonb,
+  'and NO ETA is published — an ETA off a rate that has stopped is a fabricated measurement, '
+  'which is exactly what the 24h-only arithmetic published in production');
+
+-- ⚠ A STALL IS NOT THE SAME STATE AS NO FLOW AT ALL, and the flag has to keep
+-- them apart: `ufc_strike` has always reported days_to_drain NULL with zero
+-- outflow, and reading THAT as a stall would invent a regression. With no
+-- outflow at all the predicate is 0*16 < 0, which is false.
+UPDATE public.unmapped_sales SET resolved_at = NULL;
+SELECT public.refresh_unmapped_backlog_growth();
+SELECT _assert_eq(
+  (SELECT payload -> 0 ->> 'drain_stalled' FROM public.unmapped_backlog_growth_cache WHERE id=1),
+  'false', 'a collection that never drained is NOT stalled, it is idle');
+SELECT _assert(
+  (SELECT payload -> 0 -> 'days_to_drain' FROM public.unmapped_backlog_growth_cache WHERE id=1) = 'null'::jsonb,
+  'and it still publishes no ETA, for the original reason');
 
 -- ── The inflow split: fresh vs backfill ───────────────────────────────────
 -- The severity rule keys on inflow_24h_FRESH, not total inflow, precisely so a
