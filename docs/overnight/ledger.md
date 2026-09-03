@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · 🔧 AMENDMENT — the batch raise is worth MORE than I claimed, but not in the way I claimed
+
+Amends the "doubled lock-check breadth" entry below, which published
+**"~19,200 → ~38,400 checks/day"**. ⛔ **That number is wrong and was a projection, not a measurement.**
+Verified on the first tick of the new build (00:38:17Z) plus a direct count:
+
+| collection | rows QUALIFYING for a check right now |
+|---|---|
+| `disney_pinnacle` | **200** |
+| `nba_top_shot` | **1,856,962** |
+
+**Pinnacle's lock backlog is effectively DRAINED.** `get_lock_check_batch('disney_pinnacle', 400, 7)`
+returns exactly 200 — and that is *supply*, not an internal cap: 200 is the entire qualifying
+population. So doubling `BATCH_LIMIT` cannot double the total, because the limit is applied **per
+slug** and one of the two slugs has nothing left to give. The first new-build tick returned
+**413 rows = 400 TopShot + 13 Pinnacle**, not 800.
+
+⭐ **The real effect is better than a doubling of the total, and I had the framing wrong.** Before, the
+static per-slug split spent **half the batch on a collection that was already current**. Now
+essentially the whole batch lands on the only collection with a backlog: **TopShot goes 200 → 400 per
+tick, ~9,600 → ~19,200/day**, while Pinnacle takes only the handful of rows that age past 7 days each
+tick. Capacity now follows the backlog for free — no allocator needed, because each slug simply
+returns what qualifies.
+
+⚠ **Revised horizon, and it is worse than the earlier note implied:** 1,856,962 qualifying TopShot rows
+at ~19,200/day is **~96 days** to clear, not the "~22 days" the 09-02 targeting entry projected — that
+projection counted only the 212,201 user-tier rows, not the whole qualifying population.
+
+**Headroom confirmed for a further raise, deliberately NOT taken tonight:** the new-build tick ran
+**28.7s = 9.6% of the 300s ceiling** with 3 wallet groups, and runtime scales with `wallets_grouped`
+(one Cadence round trip each), not rows — a whale supplying 400 rows in 3 groups is cheap. A further
+2–2.5× looks affordable, but stacking a second raise on a **single** observation is how a measured
+change turns into a guess. Let this one run, then re-read `duration_ms` p90 and `wallets_grouped`.
+
+**No code change in this amendment** — the raise stands and is correct. Only the published number is
+corrected.
+
 ### 2026-09-02 · ✅ SHIPPED — the seed's PROVENANCE, twice: a portfolio we could not read stopped rendering as an empty one, and seven boards stopped stamping "Updated just now" over a failed read
 
 Two instances of the FIFTH honesty layer — a server-seeded prop — found by sweeping `app/` for
