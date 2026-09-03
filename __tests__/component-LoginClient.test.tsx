@@ -247,9 +247,25 @@ describe("LoginClient — errors arriving in the URL from proxy.ts and /auth/con
     expect(screen.queryByText("allowlist_unavailable")).toBeNull()
   })
 
-  it("forwards an /auth/confirm failure code into the inline error", async () => {
+  it("forwards an /auth/confirm failure into the inline error — as COPY, not the code", async () => {
+    // ⚠ INVERTED 2026-09-03. This asserted `getByText("session_failed")`, i.e.
+    // it PINNED the raw slug reaching the user — the sibling case directly above
+    // had been asserting the opposite property for `allowlist_unavailable` since
+    // it was written. The PROPERTY this case is named for (a confirm failure
+    // reaches the inline error) is unchanged and still asserted; only the
+    // spelling moved, so the case is inverted rather than deleted.
     renderAt("error=session_failed")
-    expect(screen.getByText("session_failed")).toBeTruthy()
+    expect(screen.getByText(/couldn.t finish signing you in/i)).toBeTruthy()
+    expect(screen.queryByText("session_failed")).toBeNull()
+  })
+
+  it("an UNKNOWN ?error= value is not rendered — a crafted link is not our voice", async () => {
+    // The value is attacker-supplied. Echoing it put arbitrary text inside our
+    // own error banner on our own login page: not XSS (React escapes it), but a
+    // phishing message wearing our UI, which is worse here.
+    renderAt("error=Your+account+was+locked.+Call+555-0100")
+    expect(screen.queryByText(/555-0100/)).toBeNull()
+    expect(screen.getByText(/something went wrong signing you in/i)).toBeTruthy()
   })
 
   it("a submit CLEARS a stale URL error DURING the in-flight window", async () => {
@@ -266,7 +282,7 @@ describe("LoginClient — errors arriving in the URL from proxy.ts and /auth/con
     let release: (v: unknown) => void = () => {}
     sendMagicLink.mockImplementation(() => new Promise((r) => (release = r)))
     renderAt("error=session_failed")
-    expect(screen.getByText("session_failed")).toBeTruthy()
+    expect(screen.getByText(/couldn.t finish signing you in/i)).toBeTruthy()
 
     fireEvent.change(emailBox(), { target: { value: "a@b.com" } })
     fireEvent.click(submit())

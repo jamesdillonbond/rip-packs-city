@@ -16,6 +16,7 @@
 "use client"
 
 import { useState } from "react"
+import { loginErrorCopy } from "@/lib/auth/login-error-copy"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { sendMagicLink } from "@/lib/auth/supabase-client"
@@ -34,11 +35,13 @@ export default function LoginClient() {
   // closed-beta messaging stays visible even after the user resubmits with a
   // different email.
   const isClosedBetaBlock = urlErrorRaw === "access_revoked"
-  const urlError = isClosedBetaBlock
-    ? null
-    : urlErrorRaw === "allowlist_unavailable"
-      ? "Sign-in service is temporarily unavailable. Please try again in a moment."
-      : urlErrorRaw
+  // ⚠ MAPPED, NEVER ECHOED. This used to fall through to `urlErrorRaw` for any
+  // value it did not recognise, so (a) real slugs like "session_failed" were
+  // shown to people, and (b) — the one that matters — ANY text in the query
+  // string rendered inside our own error banner, in our voice, on the login
+  // page. A crafted link was a phishing message wearing our UI. See
+  // lib/auth/login-error-copy.ts.
+  const urlError = loginErrorCopy(urlErrorRaw)
   const [email, setEmail] = useState("")
   const [status, setStatus] = useState<Status>("idle")
   const [error, setError] = useState(urlError ?? "")
