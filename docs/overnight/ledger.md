@@ -10,6 +10,63 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — a social card published $143,849 as "still sealed in packs" where the truth is $2,358,840, because an EXACT count sat beside a CAPPED sum
+
+Found by sweeping the OG layer — the fourth honesty layer, and the one I had not checked tonight.
+
+**⛔ THE DEFECT.** `/api/og/insights/panini-squeeze` read
+`.select("sealed_fmv_exposure_usd", { count: "exact" })` with **no bound** and summed the returned
+rows in JS. PostgREST caps an unbounded `.select()` at 1,000 rows and reports **no error**, while
+`count: "exact"` is a real `COUNT(*)` over the whole view. Measured live 2026-09-03:
+
+| | |
+|---|---|
+| `panini_squeeze_board` rows | **4,813** |
+| true `sum(sealed_fmv_exposure_usd)` | **$2,358,840** |
+| what the card published | **$143,849** — 16.4× low |
+| …beside | **"4,813 editions"**, which was correct |
+
+⛔ **The PAIRING is what makes it worse than either half alone: an exact count next to a truncated sum
+reads as one coherent measurement.** And it is a SOCIAL CARD, so the number travels without the page
+around it, into an edge-cached PNG.
+
+⚠ **The route's `catch` could never have caught this, and neither could an error check.** supabase-js
+RESOLVES rather than throwing — and the cap does not even set `error`. The read simply SUCCEEDS and
+returns fewer rows than exist. Nothing at runtime distinguishes it from a small board.
+
+**THE FIX.** Page the aggregate on `id` with `.range()`, and publish only when the walk covered the
+population the count reports (`complete && seen === expected`); otherwise `editions` stays 0 and the
+card falls back to its existing neutral tagline. ⚠ A partial sum rendering as a total is the same
+defect one order smaller, so the completeness gate is load-bearing, not defensive.
+
+**Guards.** `api-og-panini-squeeze-sum-is-not-capped` asserts on rendered TEXT via the `og-capture`
+harness: the sum covers every page (4,813 rows → $2,358,370, not the first page's $490,000), an
+unfinishable walk publishes nothing, and — the no-change control — a genuinely small board still
+publishes.
+
+⭐ **The fourth case is the one worth keeping, and it took two tries to make it real.** A mutant that
+DELETED the deterministic `.order("id")` SURVIVED, twice. First because the stub sliced positionally
+regardless of ordering; then, after modelling physical order, because the route calls `.from()` once
+**per page**, so a rotation counter scoped inside `from()` reset every page and the table never
+appeared to move. **Both times the guard looked right and measured nothing.** The case now uses
+DISTINCT per-row values — with a constant value the overlaps and omissions cancel exactly and the
+wrong row SET produces the right SUM, which is precisely why unordered paging survives review.
+
+**Sweep, closed with a number.** Across `app/`, `lib/` and `workers/`: **59 files use
+`count: "exact"`; 0 now pair an unbounded `.select()` with a JS `reduce`.** This was the only
+instance. The rest of the OG layer swept clean — `og/profile` and `og/share` both carry an explicit
+`ok`/`fetched` flag with comments explaining why, and the `?? 0` sites elsewhere are per-row field
+defaults inside successful reads, not population zeros.
+
+⚠ **And `og/profile` is the third "correct sibling" of the day:** its comment records the identical
+defect — *"a failed `saved_wallets` read returned `[]`, `totalFmv` reduced to 0, and the card
+published \$0 as that person's portfolio"* — fixed there on 2026-08-13, while the PROFILE PAGE
+rendering the same two numbers kept the bug until tonight. **Someone fixed the share card and never
+checked the page it shares.**
+
+**Revert.** `git revert <this sha>` restores the unbounded aggregate; the guard reverts with it.
+DB: nothing.
+
 ### 2026-09-02 · 🔧 AMENDMENT — the batch raise is worth MORE than I claimed, but not in the way I claimed
 
 Amends the "doubled lock-check breadth" entry below, which published
