@@ -10,6 +10,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the post-sign-in redirect was both dropped and unsafe, and the unsafe half is the SECOND instance of one disguise today
+
+Drains another part of finding **#9** of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md`
+(*"`/auth/confirm` ignores its `?redirect=`"*, filed as P2 polish). The polish was real. **The
+security half was not in the filing.**
+
+**1 · FUNCTIONAL, as filed.** `/api/auth/request-magic-link` already carried the login page's `next`
+into the emailed callback as `?redirect=`, and `AuthConfirmClient` **never read it** — it hard-coded
+`router.replace("/")`. It only LOOKED fine because `/` bounces a signed-in user to `/dashboard`, so
+the common case worked and every deep link silently lost its destination. A campaign link to
+`/dashboard#trophy` landed on the top of the dashboard.
+
+**2 · 🚨 OPEN REDIRECT ON AN AUTH CALLBACK, not filed.** The one sanitiser in the chain was
+`redirect.startsWith("/")`, in `buildCallbackUrl`. **That is not a same-origin test:**
+`//evil.example/x` starts with `/` and resolves to `https://evil.example/x`. So the shape was already
+in the emailed link, and honouring `?redirect=` without fixing it would have completed the exploit —
+a link that really is ours, really signs the victim in, then lands them on someone else's page
+**already authenticated and primed to trust it**. Backslash (`/\evil.example`) is the same attack;
+browsers treat it as authority-position too.
+
+⭐ **SECOND INSTANCE OF THIS EXACT DISGUISE IN ONE SESSION.** The first was trophy-slab art
+(`lib/profile/trophy-thumbnail.ts`, shipped an hour earlier) — found independently, in unrelated code,
+by a different route. **The transferable lesson is not "remember to check for `//`". It is that
+`startsWith("/")` was never a security check**, and it reads like one, which is why it survives review
+in two places at once. Both now go through `lib/auth/safe-redirect.ts` / the thumbnail allowlist.
+
+⚠ **And the fix had a trap of its own that a test caught:** `params` inside that effect is the HASH
+(Supabase's implicit flow puts the token in the fragment); `?redirect=` is a QUERY param. Reading it
+from `params` would have been silently always-null and the fix inert. Read from
+`window.location.search`, which also avoids adding a Suspense boundary this page does not have.
+
+**Guards.** `post-auth-redirect-is-same-origin` covers the deep link the fix exists for
+(`/dashboard#trophy`), the protocol-relative and backslash disguises, absolute URLs, `javascript:`,
+a mid-string newline, and a pin on BOTH ends of the chain — the write side puts the value in an
+emailed link and the read side navigates to it, so either alone leaves the hole open. Five mutants —
+drop the `//` check, allow the backslash variant, hard-code `/` again, read the hash instead of the
+query, restore the weak check in the route — **all killed**.
+
+ⓘ **Two of my own assertions were wrong and the CODE was right; both are recorded in the test rather
+than quietly deleted.** A trailing CRLF is `.trim()`ed to a valid path (rejecting it would break a
+legitimate redirect for no gain), and a SPACE is not a control character — it cannot split a header
+and a browser percent-encodes it.
+
+**Still open from #9:** `DashboardClient` throws `data.error` so a capped user sees
+`plan_limit_reached` instead of `data.message`; the first-run tour device flag; stale `rpc_*`
+localStorage across accounts; display name defaults to the raw email local part; `/profile/edit`
+polish.
+
+**Revert.** `git revert <this sha>`. DB: nothing.
+
 ### 2026-09-02 · ✅ SHIPPED — `/login?error=` rendered whatever was in the query string, so a crafted link was a phishing message wearing our own UI
 
 Drains part of finding **#9** of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md`, which filed it
