@@ -62,7 +62,7 @@ END;
 $function$;
 ```
 
-⚠ **Grep target for the same bug elsewhere:** `editions e ON e.external_id = wmc.edition_key` without `e.collection_id = wmc.collection_id` — the collision is real (Golazos 391/511/575 vs Top Shot/All Day keys). `prosrc` sweep owed.
+**Sweep for the same bug, done the same hour** (every `pg_proc.prosrc`, `pg_views`, `pg_matviews` joining `external_id` ↔ `edition_key`): 46 objects match; 28 carry `collection_id = <alias>.collection_id`, 16 more scope the join by `p_collection_id` / `v_collection_id` or Top Shot-only columns (`set_id_onchain`, `play_id_onchain`, `mv_topshot_set_play_catalog`) — read each snippet, not just the regex. **One is genuinely collection-blind: `check_set_completion(p_wallet)`** — and it has zero callers (no repo grep hit, no `cron.job`, no other function, one `pg_stat_statements` row). Left as is; if anything ever calls it, its "set complete" answer can be inflated by cross-collection keys.
 
 ### 2026-09-02 · ✅ SHIPPED — the intermittently-red edge-deno job was wall-clock dependent, and the fix overturns a filed decision that had a cost with no number in it
 
