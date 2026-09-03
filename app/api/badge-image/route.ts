@@ -101,7 +101,31 @@ export async function GET(request: NextRequest) {
   }
   // Binary passthrough — both sources are SVG now; served through as-is by
   // content-type.
-  const buf = await upstream.arrayBuffer()
+  //
+  // ⚠ THE BODY READ NEEDS ITS OWN CATCH, AND THE `try` ABOVE DOES NOT COVER IT.
+  // The abort signal attached to the fetch stays live for the response body, so
+  // a deadline that elapses — or a connection reset — DURING `arrayBuffer()`
+  // rejects here, outside every catch in this handler, and escapes as a 500.
+  // That is the same defect this route's header describes, one statement later:
+  // a bound whose failure is a throw rather than a status.
+  //
+  // ⓘ Found on 2026-09-03 by grepping the SHAPE after the sibling
+  // `/api/public/ipfs-media` was measured doing it at scale — 426 uncaught
+  // TimeoutErrors across 60 users in 24 h, from a signal that outlived the
+  // headers. This route buffers rather than streams, so the window is far
+  // smaller and no live instance is claimed here; the branch is unreachable-
+  // looking, not unreachable. CLAUDE.md's rule is to grep for the EXPRESSION,
+  // not the file.
+  let buf: ArrayBuffer
+  try {
+    buf = await upstream.arrayBuffer()
+  } catch (err) {
+    const name = err instanceof Error ? err.name : 'unknown'
+    console.log(
+      `[badge-image] upstream body failed src=${src} name=${name} reason=${name === 'TimeoutError' ? 'abort_body' : 'transport_body'}`,
+    )
+    return new NextResponse(null, { status: 502 })
+  }
   const contentType = upstream.headers.get('content-type') ?? 'image/webp'
   return new NextResponse(buf, {
     headers: {

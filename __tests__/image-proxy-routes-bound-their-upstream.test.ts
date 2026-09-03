@@ -192,6 +192,85 @@ describe("a timed-out upstream answers with a status, never a throw", () => {
     expect(res.status).toBe(404)
   })
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // ⚠ A BOUND THAT ONLY WRAPS THE FETCH IS HALF A BOUND.
+  //
+  // The abort signal attached to a fetch stays live for the RESPONSE BODY. Both
+  // proxies read theirs with `await upstream.arrayBuffer()` AFTER the try/catch
+  // closes, so a deadline elapsing — or a connection reset — during that read
+  // rejected outside every catch in the handler and escaped as a 500. Exactly
+  // the failure the bound was added to remove, one statement later.
+  //
+  // ⓘ Found by grepping the SHAPE, not the file, after the sibling
+  // `/api/public/ipfs-media` was measured doing it at scale: 426 uncaught
+  // TimeoutErrors across 60 users in 24 h, 2026-09-03. These two BUFFER rather
+  // than stream, so the window is much smaller and no live instance is claimed
+  // for them — but the source-level check above cannot see the difference
+  // between a body read that is guarded and one that is not, which is why this
+  // half is behavioural.
+  // ───────────────────────────────────────────────────────────────────────────
+  /** Headers arrive fine; the body read is what fails. */
+  function stubBodyFailingFetch(name = "TimeoutError") {
+    const err = new Error("The operation was aborted due to timeout")
+    err.name = name
+    return vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "image/svg+xml" }),
+      arrayBuffer: async () => {
+        throw err
+      },
+    }))
+  }
+
+  it("badge-image: a body that fails AFTER the headers still answers 502, not a throw", async () => {
+    vi.stubGlobal("fetch", stubBodyFailingFetch())
+    const { GET } = await import("@/app/api/badge-image/route")
+    const res = await GET(new NextRequest("https://t/api/badge-image?name=rookieYear") as never)
+    expect(res.status).toBe(502)
+  })
+
+  it("moment-thumbnail: same contract on the body read", async () => {
+    vi.stubGlobal("fetch", stubBodyFailingFetch())
+    const { GET } = await import("@/app/api/moment-thumbnail/route")
+    const res = await GET(new NextRequest("https://t/api/moment-thumbnail?flowId=25510") as never)
+    expect(res.status).toBe(502)
+  })
+
+  it("a TRANSPORT fault mid-body is named apart from our own deadline", async () => {
+    // The discriminator is the whole value of the log line: raising the bound
+    // only helps one of the two, and a reset mid-transfer is the likelier of
+    // them on a buffered read this small.
+    const logs: string[] = []
+    vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => void logs.push(a.join(" ")))
+    vi.stubGlobal("fetch", stubBodyFailingFetch("TypeError"))
+    const { GET } = await import("@/app/api/badge-image/route")
+    const res = await GET(new NextRequest("https://t/api/badge-image?name=rookieYear") as never)
+    expect(res.status).toBe(502)
+    const line = logs.find((l) => l.includes("[badge-image] upstream body failed"))
+    expect(line, "a body failure must be logged at all").toBeTruthy()
+    expect(line).toContain("reason=transport_body")
+    expect(line).not.toContain("reason=abort_body")
+  })
+
+  it("NO-CHANGE CONTROL: a body that reads FINE is still served, with its content-type", async () => {
+    // Without this, wrapping the read in a catch that swallowed everything would
+    // pass all three cases above.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "image/svg+xml" }),
+        arrayBuffer: async () => new TextEncoder().encode("<svg/>").buffer,
+      })),
+    )
+    const { GET } = await import("@/app/api/badge-image/route")
+    const res = await GET(new NextRequest("https://t/api/badge-image?name=rookieYear") as never)
+    expect(res.status).toBe(200)
+    expect(res.headers.get("Content-Type")).toBe("image/svg+xml")
+  })
+
   it("NO-CHANGE CONTROL: an unknown slug is still rejected before any fetch", async () => {
     const spy = vi.fn()
     vi.stubGlobal("fetch", spy)

@@ -34,7 +34,21 @@ export async function GET(request: NextRequest) {
     // The CDN answered and said no — pass its status through unchanged.
     return new NextResponse(null, { status: upstream.status })
   }
-  const blob = await upstream.arrayBuffer()
+  // ⚠ Its own catch — the `try` above wraps only the fetch. The abort signal
+  // stays live for the response body, so a deadline elapsing (or a reset)
+  // during `arrayBuffer()` rejects HERE and escapes as a 500 rather than the
+  // 502 an `<img onError>` can act on. Same shape as the sibling proxies; see
+  // /api/badge-image for the case that prompted the sweep.
+  let blob: ArrayBuffer
+  try {
+    blob = await upstream.arrayBuffer()
+  } catch (err) {
+    const name = err instanceof Error ? err.name : 'unknown'
+    console.log(
+      `[moment-thumbnail] upstream body failed flowId=${flowId} name=${name} reason=${name === 'TimeoutError' ? 'abort_body' : 'transport_body'}`,
+    )
+    return new NextResponse(null, { status: 502 })
+  }
   const contentType = upstream.headers.get('content-type') ?? 'image/jpeg'
   return new NextResponse(blob, {
     headers: {
