@@ -240,6 +240,7 @@ function FilledSlab({
           badges={visibleBadges}
           badgeTax={badgeTax}
           extraBadgeCount={extraBadgeCount}
+          reserveCorner={mode === "owner" && !!onRemove}
         />
 
         {/* Row 2 — moment screen */}
@@ -323,12 +324,16 @@ function SlabLabel({
   badges,
   badgeTax,
   extraBadgeCount,
+  reserveCorner = false,
 }: {
   slab: TrophySlabData;
   accent: string;
   badges: string[];
   badgeTax: ReturnType<typeof useBadgeTaxonomy>;
   extraBadgeCount: number;
+  /** Owner mode: the always-visible ✕ sits in the top-right corner, so the
+   *  serial/tier column moves left of it instead of under it. */
+  reserveCorner?: boolean;
 }) {
   const tierLabel = (slab.tier ?? "COMMON").toUpperCase();
   const serial =
@@ -359,6 +364,7 @@ function SlabLabel({
         background: LABEL_SILVER,
         borderRadius: 6,
         padding: 8,
+        paddingRight: reserveCorner ? 34 : 8,
         display: "flex",
         gap: 7,
         alignItems: "stretch",
