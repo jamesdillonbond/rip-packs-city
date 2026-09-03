@@ -10,6 +10,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — known-issues #40 closed on a week of the real caller's rows, and `sets_summary`'s DDL finally exists in the repo (register R58 residual b) · Cowork (device VM)
+
+- **#40 — candy listings sweep.** The item's own exit reading, taken over 7 days rather than one tick: `candy-listings-indexer` **26/26 ok, 26/26 `sweep_complete: true`, avg 25.0 s (max 74.9 s)** against the 252–391 s that truncated, `budget_exhausted: false` on every run, `activities_seen` 500–1,000, 1,580–1,681 listings per sweep. Duration collapsed ~10×, so round-trip count was dominant and `6455fb9` stands. Entry flipped to ✅, index regenerated. Nothing shipped in code.
+- **R58 (b) — `sets_summary` had no `CREATE` anywhere in `supabase/migrations/`.** Recorded from `pg_get_viewdef` + `pg_indexes` as `20260903064122_audit_20260902_sets_summary_ddl_recorded_from_prod`, every statement `IF NOT EXISTS` + `WITH NO DATA`, applied through `apply_migration` so parity sees the row. Verified a no-op: 833 rows before and after, ACL `{postgres, service_role}` unchanged, 3 indexes unchanged, `computed_at` still the 07:50Z refresh. Register row updated; still owed there: the D20 predicate in pinned `get_set_detail` and the JSON-LD `numberOfItems: 0` third state — both cosmetic and unreachable today.
+- **Regression sweep after tonight's five deploys (7 h of production 5xx, grouped by path):** the only application errors are three `resolve-and-associate` 502s from **my own walkthrough at 00:26–00:45Z, before `d3fabcd` deployed** (Top Shot's tunnel was returning Cloudflare 1033 — the defect #1 fixed), two honest `top-movers` 503s (`57014` on the 19k-row wallet — the route's documented degraded branch), and the standing IPFS-proxy 502 class (declined item). Nothing attributable to the onboarding, FMV-split, tour, or board changes.
+
+**Revert.** #40: docs only. R58: no-op migration — delete the file + its `schema_migrations` row; the object stays.
+
 ### 2026-09-02 · ✅ SHIPPED — the pack-detail bound WORKED: re-measured the errors it was written for, and recorded that the RPCs are NOT the slow part
 
 `lib/pack-dist/fetchers.ts`'s budget header quoted **124 users / 86 users / 26 users** from Vercel's 24 h window on 2026-08-23. Those are the numbers that justified the 5 s bound — and they have been sitting in the file as if they were TODAY's severity ever since. Re-measured on the same grouping, 24 h to 2026-09-03 05:43Z:
