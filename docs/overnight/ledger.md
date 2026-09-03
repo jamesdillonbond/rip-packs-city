@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — re-QA finding: the public profile's COLLECTION BREAKDOWN summed to ~2× the PORTFOLIO FMV headline above it; rows now show total − stale with a stale caption (migration `20260903142035`) · Cowork (cloud)
+
+**Found by re-running the onboarding walkthrough as `qa0903b`** (tour 6/6 · claim handle → `/profile/edit` URL preview → save → `/profile/qa0903b`): the headline read **$48.0K** (+ $46.1K across 369 stale-priced — the 09-02 split) while the breakdown panel one screen below listed **NBA Top Shot $87.8K**, NFL All Day $4.0K, UFC Strike $1.3K … — the raw wmc sum, stale included. Same page, two totals, ~2× apart. The dashboard's saved-wallet cards were already on the split (UFC Strike **$11.68** = $1,322 − $1,310); the breakdown was the last surface on the old number.
+
+**Shipped.** `get_collection_breakdown(p_wallet)` appends `stale_fmv` / `stale_count` per collection, read through `editions → edition_fmv_current` (the sanctioned source; never `wmc.fmv_confidence`), `total_fmv` unchanged; the route sums both across wallets (and treats their absence as 0, not NaN); `CollectionBreakdownCard` renders `total − stale` per row, the split bar on live value, and a `+ $X stale · N` caption on rows that have one (`data-stale-caption`); the FMV column stays visible when everything is stale ($0.00 + caption) instead of vanishing. **Measured** on the 19,391-Moment whale: 19,048 → 23,884 buffers / 89 ms warm (+25%, two hash joins over editions + efc); per-collection values match the `saved_wallets` cache to the hourly-refresh delta (TS 87,801/43,353 vs cached 87,753/43,353). ACL unchanged (anon/authenticated/service_role EXECUTE), invoker-rights, `check_secdef_anon_exec_drift()` = 0. Callers enumerated: only `/api/profile/collection-breakdown` (pg_proc, pg_views, cron, repo).
+
+**Verified.** `tsc` clean · component gate 251 files / 3,163 tests, 94.0 lines / 91.09 stmts · new card cases fail on the old card (2 failed | 4 passed) and pass on the new; route merge case sums both fields across two wallets · 7 ratchets + both migration guards green.
+
+**Revert.** `git revert <code sha>`; DB: re-create the function with its previous body —
+```sql
+CREATE OR REPLACE FUNCTION public.get_collection_breakdown(p_wallet text) RETURNS json LANGUAGE sql STABLE SET search_path TO 'public','pg_temp' AS $function$
+  select coalesce(json_agg(row_to_json(t)), '[]'::json) from (
+    select c.id::text as collection_id, c.name as collection_name, count(*)::int as moment_count, coalesce(sum(w.fmv_usd), 0)::numeric as total_fmv
+    from wallet_moments_cache w left join collections c on c.id = w.collection_id
+    where w.wallet_address = lower(p_wallet) group by c.id, c.name order by total_fmv desc nulls last, moment_count desc) t; $function$;
+```
+(the card tolerates the missing fields — it falls back to the raw total).
+
 ### 2026-09-03 · ✅ SHIPPED (prod DB) — a full advisor sweep: zero ERRORs, every WARN explained, and one real find — `net._http_response` had never been analysed and reported ZERO live rows
 
 **The sweep.** `get_advisors` both types, read by level rather than by count: **security 230 lints — 0 ERROR, 9 WARN, 221 INFO**; **performance 335 lints — 0 ERROR, 0 WARN, 335 INFO**.
