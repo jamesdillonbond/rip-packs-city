@@ -10,6 +10,63 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — trophy art is allowlisted and serials come from the moment index; and the filing that prompted it was ~80% wider than the defect
+
+Drains finding **#7 (P1)** of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md`. ⭐ **The
+re-derivation is the more useful half.**
+
+**⛔ THE FILING IS OVERSTATED, AND ACTING ON IT AS WRITTEN WOULD HAVE BEEN MOSTLY REDUNDANT WORK.** It
+reports that `POST /api/profile/trophy` upserts `playerName`, `fmv`, `serialNumber`, `tier`,
+`thumbnailUrl` "straight from the request body with no ownership check" — true of the HANDLER — and
+recommends resolving every display field server-side. But the public renderer,
+`get_trophy_slab_data`, already does: it selects `COALESCE(e.<field>, tm.<field>)` and
+`COALESCE(f.fmv_usd, tm.fmv)`, so the live `editions` / `fmv_snapshots` values **WIN** and a forged
+player, set, tier, circulation, video, FMV or badge list is overridden the moment the edition
+resolves. ⚠ **Reading the write path alone says twelve fields are forgeable; reading the READ path
+says two are.**
+
+**✅ THE TWO THAT ARE REAL** — not COALESCEd, published as submitted:
+
+- **`thumbnail_url`** — the one with teeth. Rendered on a public profile **and fetched SERVER-SIDE**
+  by `/api/og/profile/[username]`, which inlines trophy art as data URIs. An arbitrary value is an
+  arbitrary image on someone's public page *plus* a server-side fetch of a host they chose.
+- **`serial_number`** — "#1 of 15,000" IS the trophy, and it came from the request body.
+
+**THE FIX.** `lib/profile/trophy-thumbnail.ts` allowlists the art; the serial is resolved from
+`wallet_moments_cache` by `(moment_id, collection_id)` and preferred over the submitted value. A
+manual pin of a moment we have never indexed keeps the submitted serial — status quo, not a
+regression. A rejected thumbnail becomes `null` and the slab falls back rather than 400ing an
+otherwise fine pin.
+
+⭐ **THE ALLOWLIST IS DERIVED, NOT GUESSED**, from `editions.thumbnail_url` on 2026-09-03:
+`assets.nbatopshot.com` 11,064 · `media.nflallday.com` 6,190 · `ipfs.dapperlabs.com` 2,248 ·
+`assets.laligagolazos.com` 575 · `ipfs.io` 518 · `arweave.net` 125 · `storage.googleapis.com` 13 —
+plus the same-origin `/api/public/pinnacle-image/…` proxy, which a host-only list would have rejected
+and which one live row uses. **A guessed list silently blanks the art of whichever host it forgot.**
+
+**⚠ NOT AN INCIDENT, AND SAID SO RATHER THAN IMPLIED.** Measured live: **19 trophy rows across 7
+users**; every thumbnail on a legitimate host (`assets.nbatopshot.com` 16, `media.nflallday.com` 2,
+one Pinnacle proxy path). **And a no-change control the fix cannot move: all 19 resolve in
+`wallet_moments_cache`, and every stored serial ALREADY agrees with the indexed one** — so the change
+closes a latent vector without altering a single live value, and the new read is not a dead path.
+
+**Guards.** `trophy-pin-does-not-publish-client-asserted-art-or-serial` covers the seven catalogue
+hosts, the same-origin proxy path, an attacker host, two lookalike hosts (it is a hostname SET, not a
+`.includes()`), `javascript:`/`data:`/`http:`, a **protocol-relative** `//evil.example/x.png` (an
+absolute URL wearing a relative disguise — a naive "starts with /" check passes it, which is why the
+same-origin branch is a prefix test), a same-origin path outside the image proxy, and non-string
+input. Plus a source-level pin that the ROUTE calls the sanitizer — a perfect sanitizer is inert if
+the handler still writes the body value. Five mutants — restore the body value, drop the serial
+preference, make the host set a substring test, make same-origin a bare-slash test, drop the protocol
+check — **all killed**.
+
+**Still open from that handoff:** #2 (address-path users get no public handle — genuinely a product
+call), #3 (trophy-case share URL + referral), #4 (**Trevor's**, Supabase dashboard email templates),
+#5 (✕ unreachable on touch), #6 (dashboard and public FMV disagree — needs a canonical-figure
+decision), #8, #9.
+
+**Revert.** `git revert <this sha>`. DB: nothing.
+
 ### 2026-09-02 · ✅ SHIPPED — username signup was dead whenever Top Shot's public API was, and the fix was already in the tree one route over
 
 Drains finding **#1 (P0)** of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md` — a new-user
