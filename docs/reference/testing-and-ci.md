@@ -621,16 +621,35 @@ pass (several surfaces are on the roadmap's untouchable list, and several have *
 branch to reject INTO**, so bounding them blind turns a slow page into a thrown error boundary, which is
 worse than slow). Ceiling started at 17. **Lower it in the commit that bounds a page; never raise it.**
 
-### 🚨 A GUARD SCOPED TO WHERE THE BUG WAS FOUND IS SCOPED TO THE PAST — third instance, 2026-09-03
+### 🚨 A GUARD SCOPED TO WHERE THE BUG WAS FOUND IS SCOPED TO THE PAST — FOUR instances, 2026-09-03
 
-The passage above records the shape once, for the Supabase-read class. **It has now happened three
-times, in three different classes, and the third one is the cleanest statement of it.**
+The passage above records the shape once, for the Supabase-read class. **It has now happened four
+times, in four different classes, all four found within about eighteen hours of each other.**
 
-| # | class | the guard, and the glob it froze | the next instance, and why it was outside |
+| # | class | the guard, and the set it froze | the next instance, and why it was outside |
 |---|---|---|---|
 | 1 | server pages with an unbounded Supabase read | `insights-server-pages-bound-their-reads` walks `app/insights` | `/[collection]/overview` hung 30 s — not under `app/insights` |
 | 2 | unbounded `fetch` on an OG card | `og-fetches-are-bounded` walks `app/api/og/**` + `lib/og/**` | `app/api/badge-image` + `app/api/moment-thumbnail` — not under either |
-| 3 | *(the pattern itself)* | — | — |
+| 3 | a bound that only covers the HEADERS | the fix and its behavioural pins named the two routes in the error report | `avatar-media` had the same shape; caught only because the sweep asked *"what returns an upstream body?"* rather than *"which routes were in the incident?"* |
+| 4 | an `after()` route with no invocation marker | `after-route-heartbeat-ratchet` read **each route file's own text** for a `pipeline_runs` write | **five** routes whose terminal write is one delegation away in `lib/chains/flow/wallet-backfill-helpers.ts` |
+
+⭐ **INSTANCE 4 IS THE MOST INSTRUCTIVE, BECAUSE THE SCOPE WAS NOT A GLOB.** That ratchet went out of
+its way NOT to use a path convention — its header argues at length that *"routes under `app/api/cron/`
+is a curated list wearing a glob"* and derives the population structurally instead. **It was still
+scoped to the past**, because the structural predicate it chose (`after(` + a visible terminal write)
+asked about the ROUTE FILE and the property lives across the call boundary. ⚠ **So "derive it
+structurally" is not the fix on its own — the derivation has to be over the set where the PROPERTY is
+meaningful, not over the text you happen to be reading.**
+
+⛔ **And the cost was not theoretical.** The blindest of the five, `wallet-backfill-golazos`, was the
+**fleet's top wall-kill route — 6 `Task timed out` in 24 h, more than every other route on the platform
+combined** — and every one of those kills was recorded by nothing. It was found by looking at Vercel's
+timeout log grouped by `requestPath`, an instrument **outside** `pipeline_runs` entirely.
+
+⚠ **When widening a walk raises a ratchet's number, say which predicate changed.** BUDGET went 31 → 35
+in that commit, and that is a POPULATION CORRECTION rather than banked slack: the "never raise it" rule
+bans licensing new *instances*, while widening the walk admits the old number measured a subset. A
+raise that cannot name the predicate change behind it is the thing the rule forbids.
 
 **Instance 2 is worth reading closely, because the guard was excellent.** On 2026-08-29 it drove its
 class to a MEASURED zero — *30 bare calls across 28 files, none carrying a signal* — asserted the
