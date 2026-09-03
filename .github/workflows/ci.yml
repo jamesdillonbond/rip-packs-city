@@ -927,23 +927,22 @@ jobs:
       # .ts extension) — this cleared the _shared "Cannot find module" error class.
       # --node-modules-dir=auto is retained for the SDK's transitive npm type deps;
       # it is not what makes the import map resolve (see the job header).
-      # TEMPORARY (2026-09-02): capture the graph Deno actually resolves, so a
-      # deno.lock can be committed. jsr.io / deno.land / esm.sh are all blocked
-      # from the dev sandbox, so CI is the only place the lock can be generated.
-      # This step is removed in the commit that adds the lockfile.
-      - name: lockfile (diagnostic)
-        if: always()
-        run: |
-          if [ -f supabase/functions/deno.lock ]; then
-            echo "LOCK_B64_BEGIN"
-            base64 -w0 supabase/functions/deno.lock
-            echo ""
-            echo "LOCK_B64_END"
-          else
-            echo "no lockfile was written"
-          fi
+      # ⚠ supabase/functions/deno.lock is COMMITTED and is what makes this job
+      # deterministic — without it every run re-resolves the graph and can land
+      # inside the seconds-wide window where a package has aged past Deno's
+      # minimum-dependency-age but its own sub-dependency has not. Deliberately
+      # NOT --frozen: a drifted lock should be rewritten, not turned into a red
+      # gate. Reasoning and the control: .gitignore, and
+      # __tests__/edge-function-deps-are-locked.test.ts.
       - name: deno check (type + import resolution)
         run: deno check --config supabase/functions/deno.json --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
+      # ⚠ INFORMATIONAL, AND IT LOOKS LIKE IT IS NOT. `|| true` means this step
+      # cannot fail the job — but `denoland/setup-deno` registers a problem
+      # matcher, so every finding is re-emitted as a `##[error]` annotation on
+      # the run summary. 17 of them show on EVERY run, pass or fail (require-await
+      # on `Deno.serve(async …)` handlers, one no-unused-vars, one
+      # no-inner-declarations). They are not the reason a red edge-deno run is
+      # red — read the `deno check` step instead.
       - name: deno lint (informational)
         if: always()
         run: deno lint supabase/functions/ || true

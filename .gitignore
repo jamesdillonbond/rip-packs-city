@@ -129,13 +129,27 @@ e2e-results.json
 playwright-report/
 test-results/
 
-# Deno edge-function toolchain artifacts. `deno check --config supabase/functions/
-# deno.json` (the edge-deno CI job, and any local repro of it) writes a lockfile
-# beside that config. Deliberately NOT committed: CI has never validated against
-# one, and adding it introduces a lock-mismatch failure mode on remote-dep drift
-# for a gate that is now blocking. `supabase functions deploy` resolves deps
-# independently of it.
-supabase/functions/deno.lock
+# ⚠ `supabase/functions/deno.lock` USED TO BE IGNORED HERE, and it is now COMMITTED.
+# The rule that stood until 2026-09-02 read: "Deliberately NOT committed: CI has
+# never validated against one, and adding it introduces a lock-mismatch failure
+# mode on remote-dep drift for a gate that is now blocking."
+#
+# That is a cost stated with no number in it, and the other side of the trade now
+# has one. Without a lock the edge-deno job RE-RESOLVES the whole graph on every
+# run, so it is wall-clock dependent: Deno refuses any version published inside
+# its minimum-dependency-age window (default 24 h), and it does not backtrack to
+# an older parent when a required sub-dependency is still too young. supabase-js
+# 2.113.0 aged in at 2026-09-03T06:04:34Z and its own auth-js 2.113.0 at
+# 06:05:01Z, so for those 27 seconds there was NO resolvable graph — measured, one
+# hard failure at 06:04:15Z in the last 60 runs, self-healing, and it recurs on
+# every Supabase release whose sub-packages publish seconds apart.
+#
+# The claimed cost does not materialise: `deno check` is NOT frozen, so it
+# rewrites a drifted lock rather than failing on it. Measured with Deno 2.9.6
+# against a control the repo can re-run: a floating `^3` range locked to a
+# version only 11 h old still resolves and passes under the DEFAULT 24 h policy,
+# while the same version with no lock is a hard error. See
+# `__tests__/edge-function-deps-are-locked.test.ts`.
 
 # `git format-patch` hand-offs from Cowork sessions that cannot push land here as
 # an untracked directory at the repo ROOT (e.g. "Rip Packs City/cowork-2026-08-25/").
