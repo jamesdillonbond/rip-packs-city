@@ -213,10 +213,27 @@ async function getPublicProfileUncached(
   let bio: Row
   let bioErr: { message: string } | null = null
   let trophyData: Row
+  let trophyErr: { message: string } | null = null
   let wallets: Row
+  let walletsErr: { message: string } | null = null
   try {
-    ;[{ data: bio, error: bioErr }, { data: trophyData }, { data: wallets }] = await withBoardBudget<
-      [{ data: Row; error: { message: string } | null }, { data: Row }, { data: Row }]
+    // ⚠ EVERY read's `error` is destructured. Until 2026-09-03 only the bio's
+    // was; the trophies RPC and the saved_wallets read dropped theirs, and
+    // supabase-js RETURNS errors — so a failed trophies read resolved
+    // `{ data: null, error }`, became `trophies = []`, and the profile page,
+    // the trophy-case page AND both OG cards published "No trophies pinned
+    // yet" out of a database error (the empty state that CONCLUDES, about a
+    // collector's own case). Same shape on wallets → "0 moments / $0".
+    ;[
+      { data: bio, error: bioErr },
+      { data: trophyData, error: trophyErr },
+      { data: wallets, error: walletsErr },
+    ] = await withBoardBudget<
+      [
+        { data: Row; error: { message: string } | null },
+        { data: Row; error: { message: string } | null },
+        { data: Row; error: { message: string } | null },
+      ]
     >(
       Promise.all([
     supabase
@@ -236,7 +253,11 @@ async function getPublicProfileUncached(
       )
       .eq("user_id", userId),
       ]) as Promise<
-        [{ data: Row; error: { message: string } | null }, { data: Row }, { data: Row }]
+        [
+          { data: Row; error: { message: string } | null },
+          { data: Row; error: { message: string } | null },
+          { data: Row; error: { message: string } | null },
+        ]
       >,
       "public-profile-bundle",
       remaining(),
@@ -272,6 +293,18 @@ async function getPublicProfileUncached(
   if (bioErr) {
     console.error("[public/profile bio]", bioErr)
     return { ok: false, status: 500, error: bioErr.message }
+  }
+  // A partial bundle is a failed bundle. `complete:false` is not available to
+  // this payload's consumers (they discriminate on `ok`), so the canon's other
+  // option applies: fail the read. Every caller already renders `ok:false` as
+  // "couldn't load" — never as an empty case or a $0 portfolio.
+  if (trophyErr) {
+    console.error("[public/profile trophies]", trophyErr)
+    return { ok: false, status: 500, error: trophyErr.message }
+  }
+  if (walletsErr) {
+    console.error("[public/profile wallets]", walletsErr)
+    return { ok: false, status: 500, error: walletsErr.message }
   }
   if (!bio) {
     console.log(`[public/profile:${source}] bio_missing_for_user_id elapsedMs=${Date.now() - startedAt}`)
