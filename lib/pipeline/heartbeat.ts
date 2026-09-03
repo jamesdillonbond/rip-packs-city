@@ -12,9 +12,37 @@
 //
 // So kills are read by CORRELATION, and that needs a marker row written BEFORE
 // the work begins:
-//   heartbeat + terminal row -> ran to completion
+//   heartbeat + terminal row -> a terminal row LANDED  (see the caveat below)
 //   heartbeat only           -> after() dropped or killed at the wall
 //   neither                  -> route never reached (cron / auth)
+//
+// 🚨 THE FIRST LINE USED TO READ "ran to completion" AND THAT IS TOO STRONG —
+// MEASURED 2026-09-03, ON A ROUTE CONVERTED NINETY MINUTES EARLIER.
+// `cron/evm-transfers-ingest`, tick of 2026-09-03 07:34:26Z:
+//
+//   Vercel:  GET /api/cron/evm-transfers-ingest 200 [error]
+//            "Vercel Runtime Timeout Error: Task timed out after 60 seconds"
+//   DB:      marker at 07:34:26.210Z, terminal row at the same start,
+//            ok = true, duration_ms = 60,464 against a 60,000 ms wall.
+//
+// ⭐ THE PLATFORM KILLED THAT INVOCATION AND THE CORRELATION IS CLEAN. The
+// terminal write raced the wall and won, so `lib/pipeline/kill-rate.ts` scores
+// the tick as healthy. The test answers "did a terminal row land", never "did
+// the invocation survive" — those coincide only when the row is written well
+// before the wall, which is the common case and not the interesting one.
+//
+// ⚠ THE CHEAP SECOND DISCRIMINATOR IS ALREADY IN THE ROW: `duration_ms` at or
+// beyond the route's own `maxDuration`. Not wired into the classifier, because
+// that module has no per-route wall to compare against — the walls live in
+// `export const maxDuration` in each route source. Stated here rather than
+// silently left as a gap; the neighbouring ticks of that same pipeline all ran
+// 25.1–25.6 s, so a 60.4 s reading is visibly anomalous to a human and invisible
+// to the instrument.
+//
+// ⚠ AND IT IS THE CENSORED-MAXIMUM POINT AGAIN, from the other side. That route
+// was selected for conversion on a measured max of 26,195 ms — the true tail was
+// hidden because killed ticks wrote nothing — and the first hour of observation
+// after the marker landed produced a tick AT the wall.
 //
 // ── WHY A HELPER, MEASURED RATHER THAN ASSERTED (2026-08-20) ───────────────
 // Five routes had hand-rolled this. All five agreed on the hard part (the

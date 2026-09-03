@@ -49,6 +49,23 @@
 // broken era's 87.5 %), which RAISES p and makes `recovered` HARDER to reach.
 // The test can therefore under-call a recovery; it will not manufacture one.
 //
+// 🚨 WHAT `killed` ACTUALLY MEANS, AND THE CASE THAT NARROWS IT (2026-09-03).
+// `killed` is "no terminal row correlated to this marker" — which is NOT the
+// same as "the platform did not kill this invocation". Measured, one tick:
+// `cron/evm-transfers-ingest` at 2026-09-03 07:34:26Z carries a Vercel
+// `Task timed out after 60 seconds` AND a marker AND a terminal row with
+// ok = true and duration_ms = 60,464 against a 60,000 ms wall. ⭐ The terminal
+// write raced the wall and won, so this classifier scores that tick CLEAN.
+//
+// ⚠ So a `healthy` verdict is a statement about terminal rows landing, not about
+// invocations surviving, and the under-count is silent. The discriminator that
+// would catch it is `duration_ms` at or beyond the ROUTE'S OWN `maxDuration` —
+// deliberately not added here, because this module has no per-route wall to
+// compare against (they live in `export const maxDuration` in each route file)
+// and inventing a fleet-wide constant would misclassify every short-wall route.
+// Wiring it needs the walls read from source; that is a real piece of work and
+// it is named rather than half-done.
+//
 // ⚠ WHAT THIS DOES NOT DO. It is a description of a record, not a diagnosis.
 // `recovered` means the kills stopped, never that anyone knows why — attribute
 // a cause by naming the deploy, as the header above does. And independence is
