@@ -10,6 +10,47 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — doubled lock-check breadth, after refuting every number that justified the old limit
+
+**File:** `app/api/cron/lock-check-batch/route.ts` (`BATCH_LIMIT` 200 → 400, plus a corrected comment
+block). **No DB change, no schema change.**
+
+The route's own header carried an ordered plan for raising throughput — *"202+after() CRON-30S wrap
+first, then BATCH_LIMIT, then cadence"* — and **step 1 had already shipped**, so step 2 was the next
+move. ⭐ **I read the constraint before measuring, and re-measured before trusting it.**
+
+⚠ **Every number justifying 200 was stale**, all taken before the covering index and before the
+2026-09-02 `is_user` targeting fix:
+
+| claim (2026-07-19 / the heartbeat note) | re-measured 2026-09-02 |
+|---|---|
+| selection is `O(limit × hot wallets)`, 5.8s @200 → 24.5s @800 | **sub-linear**: 14,965 buffers @200 vs 42,169 @800 (2.8× for 4× rows); **865 ms and 728 ms** |
+| "runs already take 17-27s" vs a 30s client cap | p50 **17.0s** / p90 **34.5s** / max **60.9s** |
+| p90 241,381 ms = **80%** of the 300 s ceiling, max 295,604 ms (98.5%) | p90 = **11.5%** of budget, max = **20%** |
+
+🎁 **An unclaimed bonus from this morning's targeting fix, found only by measuring:** it did not just
+change *which* rows are picked, it made the route **markedly faster** — p90 **54.9s → 34.5s** and max
+**250.7s → 60.9s** across 114 runs before vs 40 after. I had verified that fix on distribution and
+explicitly recorded throughput as unchanged; the latency win was real and unmeasured.
+
+⭐ **THE SIZING RULE, which the old comment got wrong: runtime scales with `wallets_grouped`, not with
+rows.** One Cadence round trip per wallet group, so 400 rows over 22 wallets costs 22 calls and the
+same 400 rows over 5 wallets costs 5. Measured 22 wallets → 30.2s, 18 → 20.5s (~1.4 s/wallet).
+**Watch `extra.wallets_grouped`, not `rows_written`.**
+
+**Effect:** ~19,200 → ~38,400 checks/day. ⚠ Still ~6× short of the ~226,000/day a 7-day target needs,
+and **1,510,216 rows have still never been checked** — this is breadth, not a freshness promise.
+⚠ **And it is explicitly NOT a user-facing freshness improvement:** displayed locks are kept honest by
+the on-view refresh (`/api/cache-refresh?refreshLocked=1`); this batch is the background sweep
+underneath it. Do not describe it as making shown locks more trustworthy.
+
+**Exit criterion written into the code:** if `duration_ms` p90 exceeds ~180,000 ms, **revert to 200
+rather than raising `maxDuration`** — a `maxDuration` kill cannot be caught by `try/catch`, and the
+202 has already told the caller the tick succeeded.
+
+**Verified:** 22/22 across the three lock-check/heartbeat suites; `tsc` clean; eslint clean.
+**Revert path:** `git revert <sha>` (one constant).
+
 ### 2026-09-02 · ⭐ CORRECTION + ✅ SHIPPED — the 249× below is 17×, the mechanism is not the one either of us wrote down, and the sweep that cleared `app/` missed two live instances
 
 Follow-up to the two entries below (`f7aae9c5` / R75, and the sniper-feed inversion). **Both fixes

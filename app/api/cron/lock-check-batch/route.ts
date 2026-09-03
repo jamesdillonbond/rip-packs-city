@@ -31,24 +31,56 @@ const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const PIPELINE_NAME = "lock-check-batch"
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts?block_height=sealed"
 
-const BATCH_LIMIT = 200
+// Raised 200 -> 400 on 2026-09-02. ⚠ EVERY NUMBER THE OLD COMMENT BLOCK USED TO
+// JUSTIFY 200 WAS RE-MEASURED AND IS NOW WRONG — see the corrected block below.
+const BATCH_LIMIT = 400
 
 // MAX_AGE_DAYS is a BACKGROUND TARGET, NOT A PROMISE THIS BATCH KEEPS.
 //
 // Measured 2026-07-19/20: honouring a 7-day re-check across ~1.6M Top Shot wmc
-// rows needs ~226,000 checks/day. This batch delivers ~19,200/day (200 rows x
-// 48 runs, all succeeding since the 120s statement_timeout fix). That is ~12x
-// short, and 1.4M rows have never been checked at all — so a row can sit far
-// longer than 7 days and that is expected, not a fault.
+// rows needs ~226,000 checks/day. This batch delivered ~19,200/day (200 rows x
+// 48 runs) and delivers ~38,400/day after the 2026-09-02 raise to 400. That is
+// still ~6x short, and 1,510,216 rows have never been checked at all (measured
+// 2026-09-02) — so a row can sit far longer than 7 days and that is expected,
+// not a fault.
 //
-// Do NOT "fix" this by raising BATCH_LIMIT alone. The route is triggered from
-// cron-job.org, which has a HARD 30s client timeout; runs already take 17-27s.
-// A bigger batch pushes every run past the cap, cron-job.org marks them failed
-// and can AUTO-DISABLE the entry — silently stopping lock checking entirely.
-// Correct order if throughput is ever raised: 202+after() CRON-30S wrap first,
-// then BATCH_LIMIT, then cadence. See the 2026-07-19 "LOCK FRESHNESS" ledger
-// entry, which also measured the selection read as O(limit x hot wallets)
-// (5.8s @200 -> 24.5s @800), the real reason a naive raise fails.
+// The ordered plan this comment used to describe was: 202+after() CRON-30S wrap
+// FIRST, then BATCH_LIMIT, then cadence. ✅ Step 1 has since shipped (the
+// `after()` + 202 conversion below), so cron-job.org's 30s client cap no longer
+// bounds anything — it sees an immediate 202. **Step 2 is this raise.**
+//
+// ⚠ RE-MEASURED 2026-09-02 BEFORE RAISING, because every number that justified
+// 200 was taken under behaviour that no longer exists (pre-dating both the
+// covering index and the 2026-09-02 is_user targeting fix):
+//
+//   claim (2026-07-19)                    | re-measured 2026-09-02
+//   --------------------------------------|------------------------------------
+//   selection O(limit x hot wallets),      | SUB-LINEAR: 14,965 buffers @200 vs
+//     5.8s @200 -> 24.5s @800              |   42,169 @800 (2.8x for 4x rows),
+//                                          |   865ms and 728ms — under a second
+//   "runs already take 17-27s"             | p50 17.0s / p90 34.5s / max 60.9s
+//   p90 241,381ms = 80% of the 300s        | p90 34.5s = 11.5% of budget;
+//     ceiling, max 295,604ms (98.5%)       |   max 60.9s = 20%
+//
+// The two big movers were the covering index and the is_user tier fix, which
+// between them cut p90 54.9s -> 34.5s and max 250.7s -> 60.9s.
+//
+// ⭐ RUNTIME SCALES WITH `wallets_grouped`, NOT WITH ROWS — one Cadence call per
+// wallet group (chunked at PER_CADENCE_CHUNK), so a batch of 400 rows spread
+// over 22 wallets costs 22 round trips, and the SAME 400 rows on 5 wallets costs
+// 5. Measured: 22 wallets -> 30.2s, 18 wallets -> 20.5s (~1.4s/wallet). Sizing
+// this on row count is the mistake; watch `extra.wallets_grouped`.
+//
+// At 400/collection expect roughly double the groups: ~120s worst case against
+// the 300,000ms ceiling (40%). ⚠ IF `duration_ms` p90 GOES ABOVE ~180,000ms,
+// REVERT TO 200 rather than raising `maxDuration` — a maxDuration kill CANNOT be
+// caught (see the heartbeat note below), and the 202 has already told the caller
+// the tick succeeded.
+//
+// ⚠ This doubles BREADTH COVERAGE, not the user-facing freshness guarantee —
+// that is the on-view refresh described below. Do not describe it as making
+// displayed locks more trustworthy; it makes the background sweep reach twice as
+// many rows per day (~19,200 -> ~38,400).
 //
 // What actually makes displayed locks trustworthy today is the ON-VIEW refresh
 // (/api/cache-refresh?refreshLocked=1), which advances the viewed wallet's
