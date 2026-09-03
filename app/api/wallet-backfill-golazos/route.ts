@@ -48,6 +48,25 @@ export const dynamic = "force-dynamic"
 // ⭐ FALSIFIER: if ticks now run past ~300 s the work itself is pathological and
 // the fix is inside `runAllDayDetailsBackfill`, not here. The marker below is
 // what makes that measurable — before it, a kill here was recorded nowhere.
+//
+// ── PRE-CHANGE BASELINE, so the falsifier has something to be checked against.
+// 1,621 runs over the 73 h `pipeline_runs` retains, read 2026-09-03 08:15Z, all
+// under the 60,000 ms wall:
+//
+//   p50    918 ms          (most wallets are trivial)
+//   p90 30,990 ms
+//   p99 47,113 ms
+//   max 59,801 ms          ← 99.7% OF THE WALL
+//   215 runs over 25 s · 19 over 45 s · 17 not ok
+//
+// 🚨 A MAXIMUM AT 99.7% OF THE CEILING IS THE CENSORED-MAXIMUM SIGNATURE IN ITS
+// CLEAREST FORM. The distribution is pressed flat against the wall because
+// everything that would have crossed it wrote no row at all — so the six
+// observed kills are not the tail, they are the part of the tail that Vercel
+// happened to log. The p99 was already at 78% of the wall before any of them.
+//
+// ⚠ Re-derive rather than quote: after the raise, the honest comparison is this
+// same distribution against 600,000 ms, and the number to watch is the new max.
 export const maxDuration = 600
 
 // cadenceScript (the ID-only walk) is retained but unused by the details
