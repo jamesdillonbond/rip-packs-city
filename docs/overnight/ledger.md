@@ -10,6 +10,57 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — two user-facing image proxies threw a 500 instead of answering, and the reason they were missed is the third instance of one shape
+
+**⛔ FOUND IN THE LIVE ERROR TABLE, not by a grep.** Vercel runtime errors for the 24 h to
+2026-09-03 05:43Z carry a group of **463 `TimeoutError: The operation was aborted due to timeout`
+across 69 users**, on routes including `/api/badge-image`.
+
+`app/api/badge-image` and `app/api/moment-thumbnail` each called `fetch` with **no `AbortSignal` AND
+no `try/catch`**, on `runtime = 'edge'`. So a slow CDN threw out of the handler — **a 500, rather
+than a status the caller's `<img onError>` can act on**. A decorative badge became a broken image
+*and* a server error.
+
+**⭐ THE PART WORTH KEEPING IS WHY THEY WERE MISSED.** `__tests__/og-fetches-are-bounded.test.ts`
+drove **exactly this class** to zero on 2026-08-29 — *30 bare `fetch` calls across 28 files, zero
+carrying a signal* — and then froze its ban to the directories where the class had been found:
+`app/api/og/**` and `lib/og/**`. These two routes sit in neither, so they were outside that walk
+**BY CONSTRUCTION**. `scripts/check-unbounded-server-reads.mjs` records the identical shape for the
+Supabase-read class in its own header (*"the guard written to make it shape-level walks
+`app/insights`, so occurrence 4 was outside it BY CONSTRUCTION"*).
+
+🚨 **That is the THIRD time a guard's glob has excluded the next instance of the class it was written
+for.** The lesson is not "widen that glob" — it is that **a guard scoped to where the bug was found
+is scoped to the past.**
+
+**WHAT SHIPPED.** Both routes now bound at **8 s** and answer **502** on a failed upstream, with a log
+line naming `abort_timeout` vs `transport`. ⚠ **8 s and not the platform limit, for a recorded
+reason:** `ipfs-media` originally set its bound to the platform's own 25 s initial-response cutoff, so
+the platform always won the race and killed the function **before the catch could run** — making the
+soft-fail path unreachable dead code for exactly the slow-upstream case it was written for (205 such
+504s in one 40-minute window, 2026-07-27). **A bound only helps if it fires first.**
+
+⚠ **And the new guard is deliberately WIDER than the fix** — bounding only the two routes in the error
+report would repeat the mistake a third time. `__tests__/image-proxy-routes-bound-their-upstream.test.ts`
+walks **all of `app/api/**`** minus the OG tree (which keeps its own stricter ban), freezes the
+measured population at **BUDGET = 26** (28 before the two conversions), and adds a **ban at zero** on
+the three user-facing image proxies specifically — those are named individually because a walk cannot
+tell "decorative image proxy" from "cron route", and only the former has a settled answer on failure.
+
+⚠ **A RATCHET, not a ban, for the other 26 on purpose:** most are cron/ingest routes where *"what
+should this return on a timeout?"* is a real per-route decision and several have no honest degraded
+answer to reject into. Banning them blind turns a slow ingest into a thrown one.
+
+**Mutation-verified, and the two arms separate cleanly:** dropping the `signal:` reddens FOUR arms
+(budget, no-slack, ban-at-zero, and the behavioural assertion that the signal reached the call);
+dropping the `try/catch` reddens exactly the 502 case, with the raw `TimeoutError` escaping — **which
+is the production symptom itself.** Two no-change controls hold: a CDN that ANSWERS 404 still passes
+its own status through (502 is reserved for "we never heard back", and collapsing them would hide a
+dead slug behind an apparent timeout), and an unknown slug is still rejected before any fetch.
+
+**REVERT:** `git revert <this sha>` — restores the unbounded calls and removes the guard. No DB or
+schema change.
+
 ### 2026-09-02 · ✅ SHIPPED — CI estate audit drain: the push-time smoke smoked the PREVIOUS deploy, `workers/**` was type-checked by nothing, and ten ops workflows died before their own error line · Claude Code (cloud)
 
 - **What shipped (one code commit, every item independent inside it):** `smoke-tests.yml` triggers on `deployment_status` (Production + success) instead of `push` — the old `sleep 45` sat against a 110–124 s build, so every push-time run hit `/api/smoke-test` a minute BEFORE the new build was live and a broken push read green (its red landed on the next push under the wrong sha); concierge stays armed only for schedule/dispatch, both pinning tests updated · new `workers-typecheck` CI job (tsc per `workers/*/tsconfig.json`, floor 3; `@cloudflare/workers-types` added to root devDeps — the root tsconfig excludes `workers` and vitest strips types, so nothing type-checked 6k lines of ingest/proxy code) · `run-db-tests.sh` fails under 90 files (183 today; it passed at zero) · `cat "$F" 2>/dev/null || echo "<no body>"` in badge-sync, pinnacle-owner-discovery, sales-indexers-backstop ×3, topshot-listing-cache, topshot-sales-history-backfill, offer-fill-backfill (a connection failure left no file, bare `cat` exited 1, `bash -e` killed the step before its `::warning::`) · `401|403 → exit 1` in the GHA-only callers (badge-sync ×2, backward owner-discovery, TS sales-history backfill — a rotated token was a green warning forever) · `allday-ingest.yml` DELETED (72 asks/day into a route that returns `skipped:"flowty_api_empty"` unconditionally) · `topshot-listing-cache.yml` + `cron-schedule.md` corrected: the rpc-pipeline backstop step they cite was removed 2026-06-25, the route is single-trigger (Vercel 15,35,55) · `rpc-pipeline` six POSTs `--retry 2 --max-time 180` → `--max-time 200` (a retry after a client timeout re-POSTed an unlocked 300 s route while it was still running) · `migration-autorecover` fails on a stopped rebase and asserts `ls-remote == HEAD` after push (it could log "Pushed" over "Everything up-to-date") · `timeout-minutes` on all 14 ci.yml jobs + migration-parity/autorecover, db-pin-staleness, edge-fn-drift, allow-list-reconcile, ops-monitor ×3 · `permissions: contents: read` on ci.yml + 16 workflows · dispatch inputs and the smoke secret via `env:` · sales-indexers-backstop wall 5→14 min (its retries needed 12.4), pinnacle-owner-discovery 10→12, offer-fill-backfill gets a concurrency group · five duplicate 9-line comments in ci.yml collapsed to one-line pointers.
