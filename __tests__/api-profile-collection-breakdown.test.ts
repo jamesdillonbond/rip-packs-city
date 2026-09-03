@@ -279,3 +279,34 @@ describe("GET /api/profile/collection-breakdown", () => {
     expect(collections[1].collection_id).toBe("c1")
   })
 })
+
+// Migration 20260903142035 appended stale_fmv / stale_count to
+// get_collection_breakdown's rows. The route must carry them through and SUM
+// them across wallets exactly as it sums total_fmv — a merge that summed one
+// and dropped the other would make the card's "total − stale" wrong for any
+// multi-wallet collector.
+describe("GET /api/profile/collection-breakdown — stale split", () => {
+  it("sums stale_fmv and stale_count across wallets and passes them through", async () => {
+    state.user = { id: "u1" }
+    state.savedWallets = {
+      data: [{ wallet_addr: "0xa", collection_id: "c1" }, { wallet_addr: "0xb", collection_id: "c1" }],
+      error: null,
+    }
+    state.breakdown = {
+      "0xa": { data: [{ collection_id: "c1", collection_name: "TS", moment_count: 3, total_fmv: 100, stale_fmv: 40, stale_count: 2 }], error: null },
+      "0xb": { data: [{ collection_id: "c1", collection_name: "TS", moment_count: 2, total_fmv: 50, stale_fmv: 10, stale_count: 1 }], error: null },
+    }
+    const res = await GET(req("https://t/api/profile/collection-breakdown"))
+    expect(res.status).toBe(200)
+    const { collections } = await res.json()
+    expect(collections[0]).toMatchObject({ collection_id: "c1", moment_count: 5, total_fmv: 150, stale_fmv: 50, stale_count: 3 })
+  })
+
+  it("treats a row without the new fields (older function) as zero stale, not NaN", async () => {
+    state.user = { id: "u1" }
+    state.savedWallets = { data: [{ wallet_addr: "0xa", collection_id: "c1" }], error: null }
+    state.breakdown = { "0xa": { data: [{ collection_id: "c1", collection_name: "TS", moment_count: 1, total_fmv: 9 }], error: null } }
+    const { collections } = await (await GET(req("https://t/api/profile/collection-breakdown"))).json()
+    expect(collections[0]).toMatchObject({ total_fmv: 9, stale_fmv: 0, stale_count: 0 })
+  })
+})

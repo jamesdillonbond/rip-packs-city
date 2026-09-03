@@ -9,7 +9,18 @@ interface CollectionBreakdownRow {
   collection_name: string;
   moment_count: number;
   total_fmv: number;
+  // STALE-confidence slice of total_fmv (route ≥ 2026-09-03). Rows render
+  // total − stale with the stale part as a caption, the SAME split the
+  // profile headline and the dashboard's saved-wallet cards use — before
+  // this the breakdown summed to ~2× the headline directly above it.
+  stale_fmv?: number | null;
+  stale_count?: number | null;
   color: string;
+}
+
+/** Live (non-stale) FMV of a row — what the headline calls PORTFOLIO FMV. */
+function liveFmv(r: CollectionBreakdownRow): number {
+  return Math.max(0, (Number(r.total_fmv) || 0) - (Number(r.stale_fmv) || 0));
 }
 
 export default function CollectionBreakdownCard(props: { ownerKey: string }) {
@@ -32,9 +43,9 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
       .finally(function() { setLoading(false); });
   }, [props.ownerKey]);
 
-  const totalFmv = rows.reduce(function(s, r) { return s + (Number(r.total_fmv) || 0); }, 0);
+  const totalFmv = rows.reduce(function(s, r) { return s + liveFmv(r); }, 0);
   const totalMoments = rows.reduce(function(s, r) { return s + (Number(r.moment_count) || 0); }, 0);
-  const showFmv = totalFmv > 0;
+  const showFmv = totalFmv > 0 || rows.some(function(r) { return (Number(r.stale_fmv) || 0) > 0; });
 
   return (
     <section style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "14px 16px" }}>
@@ -55,7 +66,7 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
           {showFmv && (
             <div style={{ display: "flex", width: "100%", height: 8, borderRadius: 4, overflow: "hidden", background: "rgba(255,255,255,0.04)", marginBottom: 14 }}>
               {rows.map(function(r) {
-                const pct = totalFmv > 0 ? (Number(r.total_fmv) / totalFmv) * 100 : 0;
+                const pct = totalFmv > 0 ? (liveFmv(r) / totalFmv) * 100 : 0;
                 if (pct <= 0) return null;
                 return <div key={r.collection_id} style={{ width: pct + "%", background: r.color }} title={r.collection_name + " " + pct.toFixed(1) + "%"} />;
               })}
@@ -73,8 +84,18 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
                     {r.moment_count}
                   </span>
                   {showFmv && (
-                    <span style={{ fontSize: 11, fontFamily: monoFont, color: "#fff", minWidth: 64, textAlign: "right" }}>
-                      {fmtDollars(Number(r.total_fmv) || 0)}
+                    <span style={{ minWidth: 64, textAlign: "right" }}>
+                      <span style={{ display: "block", fontSize: 11, fontFamily: monoFont, color: "#fff" }}>
+                        {fmtDollars(liveFmv(r))}
+                      </span>
+                      {(Number(r.stale_fmv) || 0) > 0 && (
+                        <span
+                          data-stale-caption
+                          style={{ display: "block", fontSize: 8, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", letterSpacing: "0.06em", whiteSpace: "nowrap" }}
+                        >
+                          + {fmtDollars(Number(r.stale_fmv) || 0)} stale{(Number(r.stale_count) || 0) > 0 ? " · " + Number(r.stale_count).toLocaleString() : ""}
+                        </span>
+                      )}
                     </span>
                   )}
                 </div>

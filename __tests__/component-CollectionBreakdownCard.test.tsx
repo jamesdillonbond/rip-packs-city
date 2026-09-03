@@ -57,6 +57,47 @@ describe("CollectionBreakdownCard", () => {
     expect(seg).not.toBeNull()
   })
 
+  // The profile HEADLINE is total − stale (migration 20260903023012). Until
+  // 2026-09-03 this card printed the RAW total per row, so a page read
+  // "$48.0K" at the top and "NBA Top Shot $87.8K" one panel below it. The
+  // row must show the same split as the headline, with the stale part as a
+  // caption — and the raw total must NOT appear anywhere.
+  it("renders total − stale per row with a stale caption, never the raw total", async () => {
+    fetchMock.mockReturnValue(
+      okJson({
+        collections: [
+          { collection_id: "ts", collection_name: "NBA Top Shot", moment_count: 100, total_fmv: 87800, stale_fmv: 43300, stale_count: 144, color: "#E03A2F" },
+          { collection_id: "ad", collection_name: "NFL All Day", moment_count: 10, total_fmv: 500, stale_fmv: 0, stale_count: 0, color: "#4F94D4" },
+        ],
+      })
+    )
+    const { container } = render(<CollectionBreakdownCard ownerKey="0xabc" />)
+    await waitFor(() => expect(container.textContent).toContain("NBA Top Shot"))
+    const txt = container.textContent!
+    expect(txt).toContain("$44.5K") // 87800 − 43300
+    expect(txt).not.toContain("$87.8K")
+    const captions = container.querySelectorAll("[data-stale-caption]")
+    expect(captions.length).toBe(1) // only the row that HAS a stale slice
+    expect(captions[0].textContent).toContain("$43.3K")
+    expect(captions[0].textContent).toContain("144")
+    // The split bar is proportioned on LIVE value: 44,500 of 45,000 = 98.9%.
+    expect(container.querySelector('[title="NBA Top Shot 98.9%"]')).not.toBeNull()
+  })
+
+  it("still shows the FMV column when everything is stale (live total 0)", async () => {
+    fetchMock.mockReturnValue(
+      okJson({
+        collections: [
+          { collection_id: "ufc", collection_name: "UFC Strike", moment_count: 247, total_fmv: 1310, stale_fmv: 1310, stale_count: 191, color: "#F59E0B" },
+        ],
+      })
+    )
+    const { container } = render(<CollectionBreakdownCard ownerKey="0xabc" />)
+    await waitFor(() => expect(container.textContent).toContain("UFC Strike"))
+    expect(container.textContent).toContain("$0.00")
+    expect(container.querySelector("[data-stale-caption]")?.textContent).toContain("$1.3K")
+  })
+
   it("omits per-row FMV figures when total FMV is zero", async () => {
     fetchMock.mockReturnValue(
       okJson({

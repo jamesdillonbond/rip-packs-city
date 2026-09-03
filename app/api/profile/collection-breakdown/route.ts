@@ -74,6 +74,13 @@ type Row = {
   collection_name: string | null
   moment_count: number
   total_fmv: number | string | null
+  // Appended by migration 20260903142035: the STALE-confidence slice of
+  // total_fmv, read through editions → edition_fmv_current. The card shows
+  // total − stale with the stale part as a caption, exactly like the profile
+  // headline — before this the breakdown rows summed to ~2× the headline on
+  // the same page (re-QA 2026-09-03).
+  stale_fmv?: number | string | null
+  stale_count?: number | string | null
 }
 
 interface SavedWallet {
@@ -147,7 +154,7 @@ export async function GET(req: NextRequest) {
 
     const merged = new Map<
       string,
-      { collection_id: string; collection_name: string; moment_count: number; total_fmv: number }
+      { collection_id: string; collection_name: string; moment_count: number; total_fmv: number; stale_fmv: number; stale_count: number }
     >()
 
     for (const addr of addrs) {
@@ -182,15 +189,21 @@ export async function GET(req: NextRequest) {
         const id = r.collection_id ?? "unknown"
         const existing = merged.get(id)
         const fmv = Number(r.total_fmv ?? 0)
+        const stale = Number(r.stale_fmv ?? 0)
+        const staleCount = Number(r.stale_count ?? 0)
         if (existing) {
           existing.moment_count += Number(r.moment_count ?? 0)
           existing.total_fmv += Number.isFinite(fmv) ? fmv : 0
+          existing.stale_fmv += Number.isFinite(stale) ? stale : 0
+          existing.stale_count += Number.isFinite(staleCount) ? staleCount : 0
         } else {
           merged.set(id, {
             collection_id: id,
             collection_name: r.collection_name ?? "Unknown",
             moment_count: Number(r.moment_count ?? 0),
             total_fmv: Number.isFinite(fmv) ? fmv : 0,
+            stale_fmv: Number.isFinite(stale) ? stale : 0,
+            stale_count: Number.isFinite(staleCount) ? staleCount : 0,
           })
         }
       }
