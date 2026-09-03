@@ -37,9 +37,26 @@ vi.mock("@/lib/auth/supabase-server", () => ({
     return state.user
   },
 }))
+// ⚠ MOCKS THE CACHE-AWARE RESOLVER, because that is what the route calls as of
+// 2026-09-03. It used to call `resolveTopShotUsername` — live Top Shot GQL and
+// nothing else — so every username signup 502'd whenever
+// `public-api.nbatopshot.com` was down, even for the 9,370 handles already in
+// `wallet_usernames`. The layered resolver was already in the tree, used by the
+// ANONYMOUS home analyzer; the signed-in path had the worse implementation.
+//
+// The mock returns the real `ResolveOutcome` union, not a nullable object,
+// because the ROUTE'S 404-vs-502 branch now keys on `reason` — a discrimination
+// a `null` return cannot express.
 vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
-  resolveTopShotUsername: async () => { if (state.resolveThrows) throw new Error("gql down"); return state.resolved },
+  resolveTopShotUsernameCacheAware: async () => {
+    if (state.resolveThrows) return { found: false, reason: "topshot_gql_error", detail: "gql down" }
+    if (!state.resolved) return { found: false, reason: "username_not_found_on_topshot" }
+    return { found: true, ...state.resolved, source: "wallet_usernames", cacheLayer: "wallet_usernames" }
+  },
 }))
+
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 
 import { POST } from "@/app/api/profile/resolve-and-associate/route"
 
@@ -83,6 +100,68 @@ describe("POST /api/profile/resolve-and-associate — guards", () => {
     state.user = { id: "u1" }; state.resolveThrows = true
     expect((await POST(req({ username: "trevor" }))).status).toBe(502)
   })
+  it("502s on a cache MISS during an outage, and 404s only when Top Shot answered 'no such user'", async () => {
+    // 🚨 THE DISCRIMINATION IS THE FIX. `username_not_found_on_topshot` is a real
+    // answer about the handle; `not_in_any_cache` (and `topshot_gql_error`) mean
+    // WE could not look. The old code could not tell them apart — the live
+    // resolver returned `null` for both, so an outage rendered as "no such
+    // Dapper username" on a signup form, which sends a real user away believing
+    // their handle is wrong.
+    state.user = { id: "u1" }
+    state.resolved = null
+    // Reason-carrying miss: not a 404.
+    const mod = await import("@/lib/chains/flow/topshot-username-resolve")
+    const spy = vi
+      .spyOn(mod, "resolveTopShotUsernameCacheAware")
+      .mockResolvedValue({ found: false, reason: "not_in_any_cache" } as never)
+    try {
+      const res = await POST(req({ username: "someone" }))
+      expect(res.status).toBe(502)
+      const body = await res.json()
+      expect(body.error).toMatch(/Couldn.t reach the Top Shot directory/i)
+      expect(
+        body.error,
+        "an outage must not be reported as a bad username",
+      ).not.toMatch(/Couldn.t find that Dapper username/i)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("400s on a whitespace-only handle instead of blaming the directory", async () => {
+    // The mirror image of the bug being fixed: reporting OUR failure as the
+    // user's is the defect, and reporting the USER'S bad input as our outage is
+    // the same error pointed the other way. The `!rawUsername` guard above only
+    // catches a missing field.
+    state.user = { id: "u1" }
+    const mod = await import("@/lib/chains/flow/topshot-username-resolve")
+    const spy = vi
+      .spyOn(mod, "resolveTopShotUsernameCacheAware")
+      .mockResolvedValue({ found: false, reason: "empty_username" } as never)
+    try {
+      const res = await POST(req({ username: "   " }))
+      expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body.error).not.toMatch(/Couldn.t reach the Top Shot directory/i)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("the route reads the LAYERED resolver, not live GQL — otherwise the fix is inert", () => {
+    // A behavioural test cannot see this: the resolver is mocked, so a route
+    // calling the live-only function would still pass every case above. The
+    // property that makes the fix real is WHICH resolver it calls.
+    const src = readFileSync(
+      join(process.cwd(), "app/api/profile/resolve-and-associate/route.ts"),
+      "utf8",
+    )
+    expect(src).toMatch(/resolveTopShotUsernameCacheAware\(\s*supabase\s*,/)
+    // …and the live-only one is gone. `wallet-search` kept the good pattern for
+    // months while this route did not; the regression is a one-word edit.
+    expect(src).not.toMatch(/\bresolveTopShotUsername\(/)
+  })
+
   it("500s when the saved_wallets upsert fails", async () => {
     state.user = { id: "u1" }; state.resolved = { walletAddress: "0xabc", username: "t" }; state.upsertErr = { message: "upsert down" }
     expect((await POST(req({ username: "t" }))).status).toBe(500)

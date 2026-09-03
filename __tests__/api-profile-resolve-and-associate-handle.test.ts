@@ -60,8 +60,14 @@ vi.mock("@/lib/supabase", () => {
 })
 
 vi.mock("@/lib/auth/supabase-server", () => ({ getCurrentUser: async () => state.user }))
+// ⚠ The route moved to the cache-aware resolver 2026-09-03 (see the sibling
+// test's note): live-GQL-only meant an outage 502'd signups for handles we
+// already had cached.
 vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
-  resolveTopShotUsername: async () => state.resolved,
+  resolveTopShotUsernameCacheAware: async () =>
+    state.resolved
+      ? { found: true, ...state.resolved, source: "wallet_usernames", cacheLayer: "wallet_usernames" }
+      : { found: false, reason: "username_not_found_on_topshot" },
 }))
 vi.mock("@/lib/pro-tier", () => ({ checkFeatureQuota: async () => ({ daily_limit: null, plan: "free" }) }))
 vi.mock("@/lib/profile/warm-wallet", () => ({ warmWalletDeep: async () => {} }))

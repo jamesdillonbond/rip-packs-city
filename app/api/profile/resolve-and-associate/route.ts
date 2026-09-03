@@ -31,7 +31,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
-import { resolveTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve";
+import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve";
 import { publishedCollections } from "@/lib/collections";
 import { checkFeatureQuota } from "@/lib/pro-tier";
 import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
@@ -113,11 +113,53 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "username or address required" }, { status: 400 });
     }
 
-    let resolved;
-    try {
-      resolved = await resolveTopShotUsername(rawUsername);
-    } catch (err: any) {
-      console.error("[resolve-and-associate] GQL error:", err?.message);
+    // 🚨 CACHE-AWARE, NOT LIVE-ONLY. This used to call `resolveTopShotUsername`,
+    // which is Top Shot's public GQL and nothing else — so whenever
+    // `public-api.nbatopshot.com` was down, EVERY username signup 502'd, even for
+    // handles we already hold. `wallet_usernames` carries **9,370** of them
+    // (re-derived 2026-09-03).
+    //
+    // That endpoint is not reliably up: grouped 72h counts of
+    // "Top Shot GraphQL failed with 530 … Cloudflare Tunnel error" were
+    // `/api/wallet-search` 243, THIS ROUTE 43, `/api/cron/offers-sweep` 108 —
+    // intermittent for days, not a one-off (QA walkthrough,
+    // docs/handoff-2026-09-02-onboarding-trophy-case-qa.md #1).
+    //
+    // ⭐ And the layered resolver was already in the tree, used by the ANONYMOUS
+    // home analyzer (`app/api/wallet-search/route.ts`) — verified resolving
+    // `jamesdillonbond` during the same outage this route was failing on. The
+    // signed-in path, which is the one the hero copy leads with and the only one
+    // that auto-claims a public handle, had the worse implementation. **A correct
+    // sibling is not a guard.**
+    //
+    // ⚠ The two failure branches below are NOT interchangeable and the outcome
+    // reason is what separates them: `username_not_found_on_topshot` is a real
+    // answer about the handle (404), while a GQL error or a cache miss during an
+    // outage is us failing to look (502) — the honesty canon's "a failed read is
+    // not an empty result", on a signup form.
+    const outcome = await resolveTopShotUsernameCacheAware(supabase, rawUsername);
+
+    if (!outcome.found) {
+      // A whitespace-only handle is a BAD INPUT, not an outage. The guard above
+      // only rejects a missing field, so "   " reaches here — and blaming the
+      // Top Shot directory for it would be the mirror image of the bug this
+      // change fixes: reporting our own failure as the user's.
+      if (outcome.reason === "empty_username") {
+        return NextResponse.json({ error: "username or address required" }, { status: 400 });
+      }
+      if (outcome.reason === "username_not_found_on_topshot") {
+        return NextResponse.json(
+          {
+            error:
+              "Couldn't find that Dapper username. Double-check spelling or try entering your wallet address directly instead.",
+          },
+          { status: 404 }
+        );
+      }
+      console.error(
+        `[resolve-and-associate] resolve failed: ${outcome.reason}`,
+        "detail" in outcome ? outcome.detail : undefined
+      );
       return NextResponse.json(
         {
           error:
@@ -127,18 +169,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!resolved) {
-      return NextResponse.json(
-        {
-          error:
-            "Couldn't find that Dapper username. Double-check spelling or try entering your wallet address directly instead.",
-        },
-        { status: 404 }
-      );
-    }
-
-    walletAddress = resolved.walletAddress;
-    username = resolved.username;
+    walletAddress = outcome.walletAddress;
+    username = outcome.username;
   }
 
   const targets = publishedCollections().filter(
