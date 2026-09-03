@@ -73,8 +73,11 @@ describe("PriceAlertsCard", () => {
 
   it("shows an error message when the load fails", async () => {
     fetchMock.mockReturnValueOnce(Promise.resolve({ ok: false, status: 500 } as Response))
-    const { getByText } = render(<PriceAlertsCard ownerKey="0xowner" />)
+    const { getByText, queryByText } = render(<PriceAlertsCard ownerKey="0xowner" />)
     await waitFor(() => expect(getByText("Failed to load alerts")).toBeTruthy())
+    // The failure must not ALSO conclude "No price alerts set" — before
+    // 2026-09-03 the catch wrote `[]` into the list and both rendered.
+    expect(queryByText(/No price alerts set/)).toBeNull()
   })
 
   it("Pause issues a PATCH toggling active off", async () => {

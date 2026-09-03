@@ -39,7 +39,8 @@ export default function PriceAlertsCard(props: { ownerKey: string }) {
       setAlerts(Array.isArray(data) ? data : []);
     } catch (err: any) {
       setError(err?.message ?? "Failed to load");
-      setAlerts([]);
+      // A failed read is not an empty list: `alerts` stays as it was, so the
+      // "No price alerts set" conclusion cannot render beside the error.
     } finally {
       setLoading(false);
     }

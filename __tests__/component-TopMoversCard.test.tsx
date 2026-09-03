@@ -67,3 +67,24 @@ describe("TopMoversCard", () => {
     expect(container.textContent).not.toContain("+$10.00 ·")
   })
 })
+
+// A read that has not happened yet is not an empty read. The server render
+// (and the beat before the effect fires, and an empty ownerKey) must show the
+// skeleton, never the "history building — check back in a few days"
+// conclusion — that copy explains a blank as pipeline progress and sends the
+// reader away. Asserted by SSR because a mount effect corrects client state
+// before jsdom looks. Seen live 2026-09-03 in the SSR HTML of /profile/qa0903.
+describe("TopMoversCard — not-yet-read is not empty", () => {
+  it("does not conclude on the server render", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const html = renderToString(<TopMoversCard ownerKey="0xabc" />)
+    expect(html).not.toMatch(/FMV history building/)
+    expect(html).not.toMatch(/No gainers in window/)
+  })
+
+  it("does not conclude when no fetch can run (empty ownerKey)", () => {
+    const { container } = render(<TopMoversCard ownerKey="" />)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(container.textContent).not.toMatch(/FMV history building/)
+  })
+})

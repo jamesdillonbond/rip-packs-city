@@ -24,7 +24,14 @@ export default function TopMoversCard(props: { ownerKey: string }) {
       .finally(function() { setLoading(false); });
   }, [props.ownerKey]);
 
-  const empty = !loading && !failed && (!data || (data.gainers.length === 0 && data.losers.length === 0));
+  // Three states, never two: read failed · read ok + empty · NOT READ YET.
+  // `data === null` is the third — the server render, the beat before the
+  // effect fires, and an empty ownerKey all sit there — and it must show the
+  // skeleton, not the "history building" conclusion (seen live 2026-09-03 in
+  // the SSR HTML of /profile/qa0903, which is what crawlers and OG scrapers
+  // read).
+  const pending = loading || (!failed && data === null);
+  const empty = !pending && !failed && data !== null && data.gainers.length === 0 && data.losers.length === 0;
 
   function MoverRowDisplay(props: { row: MoverRow; positive: boolean }) {
     const r = props.row;
@@ -55,7 +62,7 @@ export default function TopMoversCard(props: { ownerKey: string }) {
         <span style={labelStyle}>📊 Top Movers · 7d</span>
         <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.3)" }}>FMV deltas across owned editions</span>
       </div>
-      {loading ? (
+      {pending ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {[90, 80, 70, 60].map(function(w, i) { return <div key={i} style={{ width: w + "%", height: 14, background: "rgba(255,255,255,0.04)", borderRadius: 4, animation: "pulse 1.6s ease-in-out infinite" }} />; })}
         </div>
