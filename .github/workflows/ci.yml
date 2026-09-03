@@ -611,6 +611,134 @@ jobs:
             node scripts/check-register-integrity.mjs
           fi
 
+  # Inbox no-clobber guard — ADDED 2026-09-03 after a real incident THIS repo's
+  # three existing inbox guards could not have caught.
+  #
+  # Two sessions edited one filing twenty minutes apart. The second rewrote it in
+  # place from a copy read before the first landed, silently deleting an 84-line
+  # `## \u26d4 CORRECTION` block — the block refuting the filing's headline number.
+  # A human reading the diff caught it (4ed563071 destroyed it, 2f1263240 restored
+  # it); nothing in CI moved.
+  #
+  # \U0001f6a8 ALL THREE EXISTING INBOX GUARDS PASSED AND NONE COULD HAVE FAILED.
+  # `inbox-index-lists-every-filing`, `fix-inbox-index-counts` and
+  # `inbox-is-append-only-since-the-rule` ask WHICH filings exist and HOW MANY. A
+  # rewrite that keeps the file keeps the count. That is the ledger's own 2026-07
+  # lesson — "diff the SET, not the count" (2966c0a, 356 -> 356 while destroying
+  # two revert paths) — sitting unlearned one directory over.
+  #
+  # \u2b50 THE DETECTOR TOOK THREE DESIGNS AND THE TWO FAILURES ARE THE POINT.
+  # v1 ("every `## ` heading before must exist after") caught the incident and then
+  # FALSE-POSITIVED on the repair, because the repairing session renamed two
+  # sections while merging — the same shape that made the LEDGER guard punish
+  # compliance on 2026-08-22/23. v2 ("the after-file must still hold SOME
+  # correction heading") MISSED the incident, because the clobbering commit added
+  # its own correction while deleting the other: 1 -> 1. The count-blindness lesson
+  # reproduced inside the guard written about count-blindness.
+  # v3 keys on CONTENT — a correction's longest body lines must still appear
+  # somewhere in the after-file. Renaming and moving are free; deletion is not.
+  #
+  # \u26a0 CORRECTIONS ONLY, deliberately. They are the highest-value, lowest-churn
+  # content in a filing (they exist because someone acted on a wrong number) and
+  # "the correction vanished" has no legitimate cause. Everything else in a filing
+  # stays free to be rewritten, so this guard has no reason to be disabled.
+  #
+  # \u26a0 The comparison needs the parent revision, so this job carries
+  # fetch-depth: 2 and runs on push only, exactly like ledger-guard. The
+  # DETECTOR ITSELF is pinned on every event by
+  # __tests__/inbox-corrections-cannot-be-silently-clobbered.test.ts, whose cases
+  # are built from the real before/after text of the incident — so a PR is not
+  # unguarded, it is only un-compared.
+  inbox-guard:
+    name: Inbox no-clobber guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Fail if an inbox correction was deleted
+        run: |
+          DETECT=scripts/find-clobbered-inbox-corrections.mjs
+          if [ ! -f "$DETECT" ]; then
+            echo "::error::$DETECT is missing, so the inbox clobber guard cannot run. Failing rather than skipping: a guard that silently no-ops is indistinguishable from a passing one."
+            exit 1
+          fi
+          if ! git rev-parse HEAD~1 >/dev/null 2>&1; then echo "no parent commit — skip"; exit 0; fi
+          # \u26a0 Every `run:` block is `bash -e`, so a fallible command in an
+          # ASSIGNMENT aborts the step there. Written `X=$(…) || X=""` so the
+          # explicit test below decides, not the assignment's exit status.
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'docs/overnight/inbox/*.md' ':!docs/overnight/inbox/archive/**') || CHANGED=""
+          if [ -z "$CHANGED" ]; then
+            echo "no inbox filing changed in this push — nothing to compare"; exit 0
+          fi
+          # \u26a0 ASSERT THE COUNT INSPECTED. A walk that silently matched nothing
+          # exits 0 and reads exactly like a clean repo.
+          echo "inbox filings changed in this push:"
+          echo "$CHANGED"
+          INSPECTED=0
+          FAILED=0
+          REMOVED=0
+          CLOBBERED=0
+          # Via a FILE, not a pipe: a `... | while` runs the loop in a SUBSHELL, so
+          # every counter it increments is discarded at the `done` and the step
+          # reports "inspected: 0 / failed: 0" no matter what it found.
+          printf '%s\n' "$CHANGED" > /tmp/inbox_changed.txt
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            git show "HEAD~1:$f" > /tmp/inbox_before.md 2>/dev/null || : > /tmp/inbox_before.md
+            # A filing DELETED or MOVED by this push has no after-file, so every
+            # correction it held is gone. That IS the property this guard exists to
+            # protect, and it is reported — but with its own message, because the
+            # fix ("splice into the current file") makes no sense for a removal and
+            # a wrong remedy in an error is worse than none.
+            if [ ! -f "$f" ]; then
+              REMOVED=$((REMOVED + 1))
+              LOST_R=$(node "$DETECT" /tmp/inbox_before.md /dev/null) || LOST_R="0"
+              if [ "${LOST_R:-0}" -gt 0 ]; then
+                FAILED=$((FAILED + 1))
+                echo "::error file=$f::This filing was REMOVED and carried ${LOST_R} correction block(s). docs/overnight/inbox/ is APPEND-ONLY since 2026-08-17 (see docs/overnight/focus.md and __tests__/inbox-is-append-only-since-the-rule.test.ts) — filings are permanent citation targets, referenced by path from CLAUDE.md, the ledger, committed migrations and live product source. Restore the file."
+              fi
+              INSPECTED=$((INSPECTED + 1))
+              continue
+            fi
+            cp "$f" /tmp/inbox_after.md
+            LOST=$(node "$DETECT" /tmp/inbox_before.md /tmp/inbox_after.md) || LOST=""
+            if [ -z "$LOST" ]; then
+              echo "::error::the inbox clobber detector produced no output for $f, so it did not run. Failing rather than skipping: a guard that silently no-ops is indistinguishable from a passing one."
+              exit 1
+            fi
+            INSPECTED=$((INSPECTED + 1))
+            if [ "$LOST" -gt 0 ]; then
+              FAILED=$((FAILED + 1))
+              CLOBBERED=$((CLOBBERED + 1))
+              echo "::error file=$f::${LOST} correction block(s) present in HEAD~1 are GONE in HEAD. The text below no longer appears anywhere in the file:"
+              node "$DETECT" --show /tmp/inbox_before.md /tmp/inbox_after.md || echo "(detector failed to list them)"
+            fi
+          done < /tmp/inbox_changed.txt
+          echo "inbox filings removed in this push: $REMOVED"
+          echo "inbox filings inspected: $INSPECTED"
+          if [ "$INSPECTED" -eq 0 ]; then
+            echo "::error::inbox filings changed but none were inspected — the walk is wrong, not the repo clean."
+            exit 1
+          fi
+          if [ "$FAILED" -gt 0 ]; then
+            if git log -1 --pretty=%B | grep -qF '[inbox-correction-retracted]'; then
+              echo "Removal allowed — commit tagged [inbox-correction-retracted]."
+              exit 0
+            fi
+            # \u26a0 The remedy is printed only for the failure it fits. A REMOVED
+            # filing cannot be repaired by "splice into the current file", and an
+            # error carrying a remedy that does not work is worse than one carrying
+            # none — the reader tries it, it fails, and the guard loses its
+            # authority.
+            if [ "$CLOBBERED" -gt 0 ]; then
+              echo "::error::This is the concurrent-session clobber: you wrote back a copy of the filing read earlier in the session, destroying a correction committed in between. FIX: git show HEAD~1:<filing>, splice your edit into the CURRENT file, re-push. Renaming or moving a correction is fine — this only fires when the TEXT is gone. If a correction is genuinely being RETRACTED, put [inbox-correction-retracted] in the commit message."
+            fi
+            exit 1
+          fi
+          echo "OK — no corrections lost."
+
   # Deno type-check + lint for the Supabase edge functions (supabase/functions/**).
   # Those run on Deno and are excluded from the vitest/tsc coverage measure (no
   # Deno toolchain elsewhere in CI), so the edge SOURCE was previously
