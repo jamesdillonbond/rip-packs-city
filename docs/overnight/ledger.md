@@ -10,6 +10,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — username signup was dead whenever Top Shot's public API was, and the fix was already in the tree one route over
+
+Drains finding **#1 (P0)** of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md` — a new-user
+walkthrough that shipped nothing and handed off findings. **Re-derived before acting, per the standing
+rule, and both numbers hold.**
+
+**⛔ THE DEFECT.** `POST /api/profile/resolve-and-associate` called `resolveTopShotUsername()` —
+Top Shot's public GQL and nothing else. So whenever `public-api.nbatopshot.com` was down, EVERY
+username signup 502'd, including for handles we already hold. `wallet_usernames` carries **9,370**
+of them (re-derived 2026-09-03, matching the filing exactly). That endpoint is not reliably up: the
+filing's grouped 72 h counts of `Top Shot GraphQL failed with 530 … Cloudflare Tunnel error` were
+`/api/wallet-search` 243, **this route 43**, `/api/cron/offers-sweep` 108 — intermittent for days.
+
+⭐ **AND THE LAYERED RESOLVER WAS ALREADY THERE.** `resolveTopShotUsernameCacheAware` (4 DB cache
+layers, live GQL last, write-back on a live hit) is what the ANONYMOUS home analyzer
+(`app/api/wallet-search/route.ts`) already used — the filing confirmed it resolving `jamesdillonbond`
+during the same outage this route was failing on. **The signed-in path — the one the hero copy leads
+with, and the only one that auto-claims a public handle — had the worse implementation.** ⛔ **Fourth
+"a correct sibling is not a guard" of the day**, after `fetchFmvBatch`, `slabsError` and `og/profile`.
+
+**✅ AND IT FIXES A SECOND, QUIETER DEFECT THE FILING DID NOT NAME.** The old live resolver returned
+`null` for BOTH "Top Shot says no such user" and "we could not reach Top Shot", so a cache miss during
+an outage rendered as **"Couldn't find that Dapper username"** — sending a real user away believing
+their own handle was wrong. The outcome union carries the reason, so the route now splits them:
+`username_not_found_on_topshot` → 404 (a real answer about the handle), `topshot_gql_error` /
+`not_in_any_cache` → 502 (we failed to look). **The honesty canon's "a failed read is not an empty
+result", on a signup form.**
+
+⚠ **And the mirror image, which I added rather than inherited:** `empty_username` now returns the
+route's existing 400 instead of the 502. Reporting the USER'S bad input as OUR outage is the same
+error pointed the other way, and a whitespace-only handle reaches that branch because the guard above
+it only rejects a missing field.
+
+**Guards.** The two existing test files mocked `resolveTopShotUsername` and went red on the change —
+they were pinning the old read, which is what they are for. Both now mock the cache-aware resolver
+returning the real `ResolveOutcome` union (a nullable return cannot express the 404-vs-502 split).
+New cases: a reason-carrying cache miss is a 502 and **explicitly not** the "couldn't find that
+username" copy; a whitespace handle is a 400; and a source-level pin that the route calls
+`resolveTopShotUsernameCacheAware(supabase, …)` and no longer calls `resolveTopShotUsername(` at all —
+⚠ **without that pin the fix is inert under test**, because the resolver is mocked and a route calling
+the live-only function would still pass every behavioural case. Mutants — revert to live-only, collapse
+the branch to 404, collapse it to 502 — **all killed**.
+
+**Not done from that handoff, and named rather than implied:** #2 (address-path users get no public
+handle — needs a product call between auto-handle and a "claim your handle" prompt), #3 (trophy-case
+share URL), #4 (Supabase email templates — **Trevor's, dashboard-only**), #5–#9. #7 (trophy pins are
+client-asserted, no ownership check) is the one I would take next.
+
+**Revert.** `git revert <this sha>`. DB: nothing.
+
 ### 2026-09-02 · ✅ SHIPPED — a social card published $143,849 as "still sealed in packs" where the truth is $2,358,840, because an EXACT count sat beside a CAPPED sum
 
 Found by sweeping the OG layer — the fourth honesty layer, and the one I had not checked tonight.
