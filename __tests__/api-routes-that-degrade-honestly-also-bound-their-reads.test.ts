@@ -140,7 +140,7 @@ const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
  * the predicate change that caused it, exactly as the heartbeat ratchet's
  * 31 → 35 does.
  */
-const BUDGET = 131
+const BUDGET = 130
 
 describe("an API route that degrades honestly also bounds the read it degrades on", () => {
   it("is not vacuous — and the check is SATISFIABLE AT A POPULATION OF ZERO", () => {

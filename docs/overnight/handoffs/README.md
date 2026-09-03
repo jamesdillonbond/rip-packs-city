@@ -37,9 +37,17 @@ failure mode `docs/overnight/inbox/INDEX.md` records for an entry left behind af
 
 ## Live
 
-- **`2026-09-03-top-movers-total-budget.patch`** — bounds the unbounded per-wallet loop in
-  `/api/profile/top-movers` with one TOTAL deadline, each read bounded by the remainder, plus five
-  test cases. Written 2026-09-03 ~02:50 PT; the ledger entry of that date carries the reasoning, the
-  sizing evidence and the exact finish steps. ⚠ Its shipping commit must ALSO lower `BUDGET` from
-  **131 → 130** in `__tests__/api-routes-that-degrade-honestly-also-bound-their-reads.test.ts`, which
-  asserts `.toBe()` — CI goes red if the conversion lands without it.
+_(none)_
+
+## Retired
+
+- **`2026-09-03-top-movers-total-budget.patch`** — ⚠ **the file was NEVER in git.** `.gitignore:92`
+  (`*.patch`) silently dropped it from the parking commit (`220d834`), so the entry above it and the
+  ledger entry both pointed at a file that existed only in the parking session's sandbox. The work was
+  re-derived from the ledger's spec and shipped 2026-09-03 (see that day's ledger entry "one TOTAL
+  budget"): `TOP_MOVERS_TOTAL_BUDGET_MS = 25_000`, each read bounded by the remainder, the deadline
+  checked before each call, five cases including total-is-not-per-read and the pre-call-check
+  mutation, `BUDGET` 131 → 130.
+  ⚠ **Park under a name `.gitignore` does not swallow** (`.diff`, or `.patch.txt`) — and verify with
+  `git show --stat` that the parking commit actually carries the file. A parked patch that is not in
+  the commit is a promise, not an artifact.

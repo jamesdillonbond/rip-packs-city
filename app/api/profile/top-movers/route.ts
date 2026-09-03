@@ -22,6 +22,32 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { withBoardBudget } from "@/lib/insights/board-page-fetch";
+
+// ── ONE TOTAL BUDGET, NOT ONE PER READ ───────────────────────────────────────
+// `get_top_movers` runs once per saved wallet, SEQUENTIALLY, and nothing bounds
+// the calls or their number — a collector with more wallets simply waits
+// longer, without limit, until the platform kills the function. A kill has no
+// body, so `TopMoversCard` (which correctly discriminates on `res.ok`) gets a
+// bare 5xx and every honest branch below is unreachable. 2 × 5xx in the 24 h to
+// 2026-09-03 08:00Z, both on the ~19k-Moment whale.
+//
+// ⚠ A per-read bound of N still lets ten wallets run 10·N. The quantity with no
+// ceiling is the SUM, so there is ONE deadline for the request, each read is
+// bounded by WHAT IS LEFT of it, and the deadline is checked BEFORE each call —
+// otherwise "the last read may start with 1 ms left" and the total is not a
+// ceiling. On exhaustion the answer is the honest 5xx, never a partial list
+// published as the whole one (see the `continue` note in the loop).
+//
+// Sized so it cannot degrade a request that works today: the largest SUCCESSFUL
+// `get_top_movers` in `pg_stat_statements` on 2026-09-03 was 8,801 ms (that
+// whale); 25,000 ms sits well above anything this route has been seen to
+// complete. The route declares no `maxDuration`, so its real wall is the
+// platform default — do not tighten this to a tidy number without measuring.
+//
+// ⚠ The abandoned query keeps running server-side (supabase-js has no cancel);
+// we stop WAITING on it, which is the trade every other bounded read makes.
+export const TOP_MOVERS_TOTAL_BUDGET_MS = 25_000;
 
 // Resolve a public ownerKey (username) → user_id the same way the other
 // public ownerKey-driven profile endpoints (teams, portfolio-history) do.
@@ -35,17 +61,36 @@ type OwnerResolution =
   | { ok: true; userId: string | null }
   | { ok: false; error: unknown };
 
-async function resolveUserId(ownerKey: string): Promise<OwnerResolution> {
-  const { data, error } = await (supabase as any)
-    .from("profile_bio")
-    .select("user_id")
-    .ilike("username", ownerKey)
-    .maybeSingle();
-  if (error) {
-    console.log("[top-movers] resolveUserId failed:", error.message);
+async function resolveUserId(ownerKey: string, bound: Bound): Promise<OwnerResolution> {
+  try {
+    const { data, error } = await bound<any>(
+      (supabase as any)
+        .from("profile_bio")
+        .select("user_id")
+        .ilike("username", ownerKey)
+        .maybeSingle(),
+      "resolveUserId"
+    );
+    if (error) {
+      console.log("[top-movers] resolveUserId failed:", error.message);
+      return { ok: false, error };
+    }
+    return { ok: true, userId: (data as any)?.user_id ?? null };
+  } catch (error) {
+    console.log("[top-movers] resolveUserId failed:", (error as Error)?.message);
     return { ok: false, error };
   }
-  return { ok: true, userId: (data as any)?.user_id ?? null };
+}
+
+type Bound = <T>(p: Promise<T>, label: string) => Promise<T>;
+
+/** The request's single deadline; `remaining()` is what every read gets. */
+function startBudget(totalMs: number) {
+  const started = Date.now();
+  const remaining = () => totalMs - (Date.now() - started);
+  const bound: Bound = (p, label) =>
+    withBoardBudget(p, label, Math.max(1, remaining()), "api/profile/top-movers/");
+  return { remaining, bound };
 }
 
 interface Mover {
@@ -79,9 +124,10 @@ export async function GET(req: NextRequest) {
 
   // Public ownerKey path (profile page) vs authenticated own-view fallback.
   const ownerKey = (req.nextUrl.searchParams.get("ownerKey") ?? "").trim();
+  const { remaining, bound } = startBudget(TOP_MOVERS_TOTAL_BUDGET_MS);
   let userId: string | null = null;
   if (ownerKey) {
-    const owner = await resolveUserId(ownerKey);
+    const owner = await resolveUserId(ownerKey, bound);
     if (!owner.ok) {
       return apiErrorResponse(owner.error, "api/profile/top-movers");
     }
@@ -98,9 +144,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data: walletsRaw, error: walletsError } = await (supabase as any).rpc(
-      "get_user_saved_wallets",
-      { p_user_id: userId }
+    const { data: walletsRaw, error: walletsError } = await bound<any>(
+      (supabase as any).rpc("get_user_saved_wallets", { p_user_id: userId }),
+      "get_user_saved_wallets"
     );
 
     if (walletsError) {
@@ -134,10 +180,22 @@ export async function GET(req: NextRequest) {
       if (seenWallet.has(addr)) continue;
       seenWallet.add(addr);
 
-      const { data, error } = await (supabase as any).rpc("get_top_movers", {
-        p_wallet: addr,
-        p_days: days,
-      });
+      // The deadline is checked BEFORE the call, so the total is a real
+      // ceiling (a read that starts with nothing left is not "bounded by the
+      // remainder", it is a read the budget already forbade).
+      if (remaining() <= 0) {
+        const err = new Error(
+          `[api/profile/top-movers] total budget of ${TOP_MOVERS_TOTAL_BUDGET_MS}ms exhausted after ` +
+            `${seenWallet.size - 1} of ${wallets.length} wallets`
+        );
+        console.log("[top-movers]", err.message);
+        return apiErrorResponse(err, "api/profile/top-movers");
+      }
+
+      const { data, error } = await bound<any>(
+        (supabase as any).rpc("get_top_movers", { p_wallet: addr, p_days: days }),
+        "get_top_movers:" + addr
+      );
       if (error) {
         console.log(
           "[top-movers] get_top_movers failed for",
