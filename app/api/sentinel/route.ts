@@ -164,15 +164,41 @@ export async function POST(req: NextRequest) {
   // row falls back to the hardcoded default below (a config gap can never silently
   // disable a check); enabled=false neutralizes the check to ok after evaluation.
   // The route uses the service-role key, so it bypasses the table's RLS.
+  //
+  // ACK (audit_20260903_sentinel_threshold_config_ack_with_reason_and_expiry). A
+  // row may also carry `ack_reason` + `ack_expires_at`: a critical check with an
+  // UNEXPIRED ack is downgraded to warn after evaluation, with the reason and the
+  // expiry rendered in its detail. It never reaches ok, it never touches a check
+  // that is not critical, and an EXPIRED ack leaves the check critical and says
+  // so — the red comes back on its own. Built for the case the Detector Health
+  // arm did not anticipate: a red whose clearing condition is outside the estate
+  // (edge-fn-drift correctly red for functions only an operator can move) paged
+  // CRITICAL every hour from 2026-08-30 and masked every other arm. `enabled=false`
+  // is the wrong lever for that — it is permanent and carries no reason.
   const cfgMap: Record<
     string,
-    { warn_at: number | null; crit_at: number | null; enabled: boolean }
+    {
+      warn_at: number | null;
+      crit_at: number | null;
+      enabled: boolean;
+      ack: { reason: string; expiresAt: Date } | null;
+    }
   > = {};
   try {
     const { data: cfgRows } = await supabase
       .from("sentinel_threshold_config")
-      .select("check_name, warn_at, crit_at, enabled");
+      .select("check_name, warn_at, crit_at, enabled, ack_reason, ack_expires_at");
     for (const r of cfgRows || []) {
+      // An ack is honoured only when BOTH halves are present and the date parses;
+      // half an ack is no ack, so a malformed row can never silence a page.
+      const ackDate = r.ack_expires_at ? new Date(r.ack_expires_at) : null;
+      const ack =
+        typeof r.ack_reason === "string" &&
+        r.ack_reason.trim() !== "" &&
+        ackDate !== null &&
+        !Number.isNaN(ackDate.getTime())
+          ? { reason: r.ack_reason.trim(), expiresAt: ackDate }
+          : null;
       cfgMap[r.check_name] = {
         warn_at:
           r.warn_at === null || r.warn_at === undefined
@@ -183,6 +209,7 @@ export async function POST(req: NextRequest) {
             ? null
             : Number(r.crit_at),
         enabled: r.enabled !== false,
+        ack,
       };
     }
   } catch {
@@ -1433,6 +1460,22 @@ export async function POST(req: NextRequest) {
       status: "warn",
       detail: `Exception: ${e?.message}`,
     });
+  }
+
+  // A critical check with an UNEXPIRED ack is downgraded to warn — visible, reasoned,
+  // dated, and back to critical the moment the ack lapses. Never to ok: the ack says
+  // "known and owned", not "fine". An expired ack is rendered too, so a reader can
+  // tell "it came back" from "nobody ever looked".
+  for (const c of checks) {
+    const ack = cfgMap[c.name]?.ack;
+    if (!ack || c.status !== "critical") continue;
+    const until = ack.expiresAt.toISOString().slice(0, 10);
+    if (ack.expiresAt.getTime() > now.getTime()) {
+      c.status = "warn";
+      c.detail = `[ACKNOWLEDGED until ${until} — ${ack.reason}] ${c.detail}`;
+    } else {
+      c.detail = `[ACK EXPIRED ${until} — ${ack.reason}] ${c.detail}`;
+    }
   }
 
   // A check explicitly disabled via config (enabled=false) is forced to ok so it

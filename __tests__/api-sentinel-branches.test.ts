@@ -575,3 +575,98 @@ describe("sentinel — sniper-feed arms + notification failure", () => {
     expect(r.notifications).toContain("telegram")
   })
 })
+
+// ── Acknowledged criticals (audit_20260903_sentinel_threshold_config_ack_with_reason_and_expiry) ──
+//
+// The Detector Health arm was built to page on a detector that is CORRECT and red
+// unread. On 2026-08-30 it took its first reading and found edge-fn-drift red for
+// functions only an operator can move (unset *_GATE_KEY secrets, recorded deferrals),
+// so the fleet alarm went CRITICAL every hour for a condition engineering cannot
+// clear — and masked every other arm. The ack is the answer the 08-31 filing asked
+// for: a reason and an EXPIRY, downgrading critical to warn (never ok) while unexpired,
+// coming back on its own when it lapses. `enabled=false` is the wrong lever — it is
+// permanent, silent, and carries no reason.
+//
+// Properties pinned, each with the failure mode it would let through:
+//   1. unexpired ack → warn, reason + date in detail, report no longer CRITICAL.
+//      (Never `ok`: an ack says "known and owned", not "fine".)
+//   2. EXPIRED ack → still critical, annotated as expired. (A lapsed ack that kept
+//      silencing would be enabled=false with extra steps.)
+//   3. an ack touches ONLY a critical check. (A warn or ok must not gain the banner —
+//      the property is "downgrade a page", not "annotate a check".)
+//   4. half an ack is no ack — reason without a date, or an unparsable date, does
+//      not downgrade. (A malformed row must never silence a page.)
+describe("sentinel — an acknowledged critical", () => {
+  const GH = "api.github.com"
+  const ARM = "Detector Health (GitHub Actions)"
+  const streak = (n: number, tail: string[] = []) =>
+    jsonRoute(GH, {
+      workflow_runs: [...Array(n).fill("failure"), ...tail].map((c) => ({ status: "completed", conclusion: c })),
+    })
+  const REASON = "operator-owned: 4 functions wait on *_GATE_KEY secrets, 2 deferred by decision"
+  const cfg = (row: Record<string, unknown>): Fixtures => ({
+    sentinel_threshold_config: { data: [{ check_name: ARM, warn_at: null, crit_at: null, enabled: true, ...row }], error: null },
+  })
+  const future = new Date(Date.now() + 7 * 864e5).toISOString()
+  const past = new Date(Date.now() - 864e5).toISOString()
+
+  beforeEach(() => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+  })
+  afterEach(() => {
+    delete process.env.GITHUB_ACTIONS_READ_TOKEN
+  })
+
+  it("control — the same streak with no ack row pages CRITICAL", async () => {
+    const r = await run({}, [sniperOk, telegramOk, resendOk, streak(12)])
+    expect(chk(r, ARM).status).toBe("critical")
+    expect(r.status).toBe("CRITICAL")
+  })
+
+  it("an unexpired ack downgrades the critical to warn — never ok — with the reason and expiry rendered", async () => {
+    const control = await run({}, [sniperOk, telegramOk, resendOk, streak(12)])
+    const r = await run(cfg({ ack_reason: REASON, ack_expires_at: future }), [sniperOk, telegramOk, resendOk, streak(12)])
+    const arm = chk(r, ARM)
+    expect(arm.status).toBe("warn")
+    expect(arm.detail).toContain(`[ACKNOWLEDGED until ${future.slice(0, 10)}`)
+    expect(arm.detail).toContain(REASON)
+    // The finding itself is still in the detail — an ack annotates, it does not hide.
+    expect(arm.detail).toContain("Consecutive-failure streaks: edge-fn-drift 12x")
+    // Diff the SET, not the count: exactly this arm leaves the critical set and no
+    // other check moves. (These fixtures carry unrelated criticals on purpose — the
+    // deep suite owns the all-green battery — so the report-level status is not the
+    // property here; the membership change is.)
+    const crit = (x: { checks: Check[] }) => x.checks.filter((c) => c.status === "critical").map((c) => c.name).sort()
+    expect(crit(control)).toContain(ARM)
+    expect(crit(r)).toEqual(crit(control).filter((n) => n !== ARM))
+  })
+
+  it("an EXPIRED ack leaves the check critical and says the ack expired", async () => {
+    const r = await run(cfg({ ack_reason: REASON, ack_expires_at: past }), [sniperOk, telegramOk, resendOk, streak(12)])
+    const arm = chk(r, ARM)
+    expect(arm.status).toBe("critical")
+    expect(arm.detail).toContain(`[ACK EXPIRED ${past.slice(0, 10)}`)
+    expect(arm.detail).not.toContain("ACKNOWLEDGED")
+    expect(r.status).toBe("CRITICAL")
+  })
+
+  it("an ack touches only a critical check — a warn keeps its status and gains no banner, and so does ok", async () => {
+    const warn = chk(await run(cfg({ ack_reason: REASON, ack_expires_at: future }), [sniperOk, telegramOk, resendOk, streak(3, ["success"])]), ARM)
+    expect(warn.status).toBe("warn")
+    expect(warn.detail).not.toContain("ACKNOWLEDGED")
+    const ok = chk(await run(cfg({ ack_reason: REASON, ack_expires_at: future }), [sniperOk, telegramOk, resendOk, streak(0, ["success"])]), ARM)
+    expect(ok.status).toBe("ok")
+    expect(ok.detail).not.toContain("ACKNOWLEDGED")
+  })
+
+  it("half an ack is no ack — a reason with no date, or an unparsable date, does not downgrade", async () => {
+    const noDate = chk(await run(cfg({ ack_reason: REASON, ack_expires_at: null }), [sniperOk, telegramOk, resendOk, streak(12)]), ARM)
+    expect(noDate.status).toBe("critical")
+    expect(noDate.detail).not.toContain("ACKNOWLEDGED")
+    const badDate = chk(await run(cfg({ ack_reason: REASON, ack_expires_at: "next month" }), [sniperOk, telegramOk, resendOk, streak(12)]), ARM)
+    expect(badDate.status).toBe("critical")
+    expect(badDate.detail).not.toContain("ACKNOWLEDGED")
+    const noReason = chk(await run(cfg({ ack_reason: "  ", ack_expires_at: future }), [sniperOk, telegramOk, resendOk, streak(12)]), ARM)
+    expect(noReason.status).toBe("critical")
+  })
+})

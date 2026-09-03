@@ -187,3 +187,9 @@ sentinel needs is the shape it already uses for pipelines — `reason` + `expire
 means two nullable columns on this table plus a small route change; it is specified, not started.**
 ⛔ **And the DECISION to ack this particular red is Trevor's, not a night pass's** — building the
 mechanism and using it are separate acts, and only the first is safe to do unattended.
+
+---
+
+## ✅ CLOSED 2026-09-03 — built and USED, on Trevor's decision (ledger 2026-09-03 "the sentinel gains an ACK", register R84)
+
+The revised recommendation above shipped as specified: `ack_reason` + `ack_expires_at` on `sentinel_threshold_config` (pair CHECK, migration `20260903163248`), the route downgrading a critical check with an unexpired ack to `warn` — never `ok` — with the reason and date rendered ahead of the finding, and an expired ack rendered as expired while the check pages critical again. **The decision to ack this particular red was taken by Trevor on 2026-09-03 (AskUserQuestion, "Build and ack, 30 days"), not by a pass**, exactly the separation the last paragraph asked for. Detector Health is acked to 2026-10-03T07:00Z. The drift itself is unchanged and still correct: 6 functions on 2026-09-03 (down from 25 here — 19 were redeployed since), 4 blocked on `*_GATE_KEY` secrets, 2 `DEPLOY_DEFERRED`. Re-verify on 2026-10-03 when it re-surfaces.
