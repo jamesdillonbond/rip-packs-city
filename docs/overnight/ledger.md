@@ -10,6 +10,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — four more `after()` heartbeats, chosen on wall margin because the watchlist tier no longer contains the routes at risk
+
+**E5: BUDGET 37 → 33.** ⚠ **The selection RULE changed, and that is the part worth recording.** Every
+prior batch picked from `pipeline_cadence_watchlist WHERE is_active`, on the argument that a kill
+there is *actively misread* rather than merely unlogged. Re-derived 2026-09-02: **the tightest margin
+left among watchlisted-and-unconverted routes is `topshot-listing-cache` at 4% of a 300 s wall.** The
+watchlist tier is done; the risk has moved. All four below are `max(duration_ms)` over the 73 h
+`pipeline_runs` retains, against each route's own `maxDuration`:
+
+| route | margin | why |
+|---|---|---|
+| `cron/resolve-topshot-stubs` | **29,313 ms of 30,000 — 97.7%** | the **smallest wall in the fleet**, three more ticks at 21.8–25.2 s, and **not watchlisted at all** |
+| `check-alerts` | 37,415 ms of 60,000 — **62%** | 🚨 the **ALERTING route** |
+| `cron/refresh-conflated-editions` | 79,059 ms of 120,000 — **66%** | all three ticks a daily job leaves in the window |
+| `cron/alerts-send` | 23,067 ms of 60,000 — **38%** | fires every 10 min, so the tail is sampled often |
+
+⭐ **THE `resolve-topshot-stubs` MAXIMUM IS CENSORED AT THE WALL BY CONSTRUCTION.** A tick that
+crossed 30 s wrote nothing, so it is **absent** from that distribution rather than at the top of it —
+the recorded max can never exceed the ceiling however often the ceiling is hit. That is not a
+detail; it means **the observed distribution cannot answer the question being asked of it**, and the
+marker is the only thing that can.
+
+🚨 **`check-alerts` is the worst case on the fleet and the reason is the honesty canon, not the
+number.** Its output is outbound mail and Telegram, so **a killed tick fails by SENDING NOTHING** —
+no delivery, no `pipeline_runs` row, and a 202 already returned. *An alert whose output is silence is
+unfalsifiable from outside.* Same for `alerts-send`.
+
+⚠ **Two of the four build their OWN supabase client** (`createClient`, not `lib/supabase`), so the
+helper's `db` argument is passed explicitly — its default would write through a different connection.
+**Mutation-verified: dropping that argument makes the marker vanish from the client the route uses**,
+and the test reports *"no pipeline_runs marker was written at all"*.
+
+⚠ **Three of the four ordering pins failed on their first run for reasons that had nothing to do with
+the marker** — `resolve-topshot-stubs` answers **200, not 202**; `check-alerts` exports **GET, not
+POST**; and `alerts-send` reads `req.nextUrl`, which a plain `Request` lacks, so it threw
+*"Cannot read properties of undefined"* **before the marker was ever written** — a failure that reads
+exactly like a missing call. Each is now named in the test.
+
+ⓘ **Deliberately NOT claimed:** `resolve-topshot-stubs` shows a 90-minute gap on 2026-09-01 04:39Z
+that looks like two killed ticks. It is not — it falls inside the correlated band where 28 scheduled
+pipelines each skipped a tick (**R77**), so it is a scheduler event, not this route dying.
+
+ⓘ **Coordination note:** a concurrent session covered `FirstRunTour`'s spotlight in `e287c1e8a` at
+almost the same moment as `8747cbb66` did. Both landed cleanly, but that is duplicated work — the red
+gate should have been claimed in the ledger before either of us started on it.
+
+**REVERT:** `git revert <this sha>` — removes the four calls, their ordering pins and the BUDGET
+change. No DB or schema change; the marker rows already written age out with `pipeline_runs`' ~73 h
+retention.
+
 ### 2026-09-02 · ✅ main was RED for ~35 min on the component gate — covered the tour's anchoring half, and confirmed two pipelines dark since 08-30
 
 **Two unrelated things in one entry because they landed in the same window.**
