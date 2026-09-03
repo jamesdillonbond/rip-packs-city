@@ -297,6 +297,30 @@ first — a `cron_heavy`-owned job cannot be rescheduled from any session-reacha
   would have raised `invalid transaction termination` on the first COMMIT and taken the watchdog **fully
   dark** — worse than the one-tick-in-eight it was meant to fix.
 
+### ⚠ HOW TO READ `get_advisors` — EVERY CHECK TESTS A SHAPE, AND THE PROPERTY YOU CARE ABOUT IS ONE STEP AWAY (2026-09-03)
+
+Full sweep that day: **security 230 lints — 0 ERROR, 9 WARN, 221 INFO; performance 335 — 0 ERROR, 0
+WARN, 335 INFO.** Nothing needed fixing. ⭐ **But three of its four check types over-report in the same
+way, and it is the same way every time**, so read the level first and then ask what the check actually
+tested:
+
+| check | what it tests | the property you care about |
+|---|---|---|
+| `function_search_path_mutable` | `proconfig IS NULL` | is it `SECURITY DEFINER`, and can `anon`/`authenticated` EXECUTE it? **Both flagged routines are INVOKER with no grant — and pinning them is impossible, see below** |
+| `no_primary_key` | no PK **constraint** | is uniqueness enforced AT ALL? `fmv_thin_sale_ask_disclosure_cache` is flagged and carries `CREATE UNIQUE INDEX … (edition_id)`, so it is constrained and safe to `.range()` |
+| `unused_index` | `idx_scan` counters | whether the index is COLD — ⛔ **scan counts lie about that**, see the 2026-09-02 `wmc` filing (19 indexes) |
+| `rls_enabled_no_policy` | RLS on, 0 policies | 221 of these are the audit scratch tables the 2026-09-02 filing already priced at 221 MB of 14 GB |
+
+⚠ **Worked example of the `no_primary_key` trap, all eight non-scratch rows, three different reasons and
+zero findings:** one has uniqueness via a `…_pkey`-named unique index with no constraint behind it; one
+(`candy_treasury_wallet_cache`) holds **one row**, where a PK is meaningless; and the rest —
+`sales_ingest_recovered` and the three `audit_lt_*` LiveToken audit tables — are **empty**.
+⭐ **Check rows and indexes before treating a missing PK as a defect.**
+
+ⓘ `auth_db_connections_absolute` (Auth capped at 10 connections) is a real setting and a **non-issue
+here** — monetization is tabled until 50+ weekly actives, so nothing is near that bound. Do not pass it
+on as a recommendation.
+
 ### ⚠ `get_advisors` WILL KEEP TELLING YOU TO MAKE THIS EXACT MISTAKE (2026-09-03)
 
 **The Supabase security advisor reports `function_search_path_mutable` on both of the routines that
