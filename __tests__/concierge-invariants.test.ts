@@ -86,10 +86,15 @@ describe("(c) unified get_fmv reads editions + fmv (current/snapshots)", () => {
     })
     expect(has(calls, "editions", "select")).toBe(true)
     // ⛔ The bulk FMV read must go through the RPC, NOT a fmv_current select.
-    // A PostgREST filter on that view does not push down: Postgres materialises
-    // the entire DISTINCT ON and then semi-joins — measured 2026-09-02 at
-    // 1,334,789 buffers / 16.7 s for 500 ids against 5,359 / 470 ms here, which
-    // is the difference between an answer and a timed-out FMV lookup.
+    // A qual on edition_id DOES reach the view's index - the cost is that the
+    // view has no per-group LIMIT, so it reads every snapshot per edition and
+    // Unique discards the rest. Measured 2026-09-02 for 500 ids: 25,330 buffers
+    // warm (42,342 cold on a heavier id set) against 2,002-5,359 for the per-id
+    // LATERAL LIMIT 1, which was the difference between an answer and a
+    // timed-out FMV lookup inside the 60 s lambda.
+    // ⛔ RETRACTED from this comment: "does not push down", and 1,334,789 /
+    // 16.7 s / 249x - a benchmark arm written as IN (SELECT ...), which is not
+    // a shape PostgREST sends. Measure the shape the client actually sends.
     expect(has(calls, "rpc:get_editions_latest_fmv", "rpc")).toBe(true)
     expect(has(calls, "fmv_current", "select")).toBe(false)
     // and it must still be scoped to exactly the matched edition ids

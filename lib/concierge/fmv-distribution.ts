@@ -173,9 +173,12 @@ function buildDistribution(
  *     rows polluting distributions).
  *  2. Pull the latest FMV per edition_id via get_editions_latest_fmv (a per-id
  *     LATERAL LIMIT 1 over fmv_snapshots). This avoids BOTH the 1000-row
- *     PostgREST clamp that raw fmv_snapshots history hits AND the full
- *     DISTINCT ON pass that filtering the fmv_current view by key forces —
- *     measured 2026-09-02 at 1,334,789 buffers / 16.7 s versus 5,359 / 470 ms.
+ *     PostgREST clamp that raw fmv_snapshots history hits AND the row
+ *     amplification of reading fmv_current, which has no per-group LIMIT and
+ *     so scans every snapshot per edition — measured 2026-09-02 for 500 ids at
+ *     25,330 buffers / 1,070 ms warm (42,342 / 10.0 s cold on a heavier id
+ *     set) versus 2,002 / 4.0 ms for the RPC. See the ⛔ block at the read
+ *     itself: the 1,334,789 / 249x this line used to cite is RETRACTED.
  *  3. Aggregate to {count, p10, p50, p90, min, max, sample_editions}.
  *
  * Returns single-edition shape when exactly one edition matches AND has FMV;
@@ -330,6 +333,10 @@ export async function fetchUnifiedFmvDistribution(
   //     fmv_current, = ANY($1) ..... 25,330 buffers   1,070 ms
   //     get_editions_latest_fmv ....  2,002 buffers       4 ms
   // ~13x fewer buffers here, 17x over the whole 6,190-edition All Day list.
+  // ⚠ A SECOND session re-measured cold on 500 Top Shot "Base Set" ids and got
+  // 42,342 buffers / 10.0 s against 5,359 / 470 ms — 8x, not 13x. Both are
+  // right: cold vs warm, and Base Set editions carry ~80 snapshots each against
+  // a ~35 average. Quote a RANGE and say what was cold.
   // ⚠ CORRECTED: the first version of this comment said "does NOT push down"
   // and claimed 1,334,789 buffers / 249x. Both came from a benchmark whose
   // "before" arm wrote the ids as IN (SELECT … FROM a CTE ordered by

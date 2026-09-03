@@ -551,6 +551,15 @@ were dropped (`pg_proc` LIKE `_scratch%` = 0).
 
 ### 2026-09-02 · ✅ SHIPPED — the concierge's FMV lookup read 10.4 GB to price 500 editions, and the question that exposed it was timing out in production
 
+> ⛔ **RETRACTION NOTICE, added in place 2026-09-03.** The `1,334,789 buffers / 16,736 ms / 249×`
+> table below, and the sentence *"a PostgREST IN filter does not push down into it"*, are **both
+> refuted** — see the CORRECTION entry earlier in this file. `= ANY($1)`, which is what PostgREST
+> actually sends, **does** reach the index; the 1.33M came from a benchmark arm written as
+> `IN (SELECT …)`. The real figures are **25,330 → 2,002 buffers warm (17×)** and, from a second
+> session measuring cold on a heavier id set, **42,342 → 5,359 (8×)**. **The ship was right, the
+> symptom was real, the number was not.** Left in full below because the retraction is the useful
+> part.
+
 Fourth concierge pass. `f7aae9c5` (fix + two migrations `20260902225408` / `225443`), `5d7bea98`
 (the tests it broke), `8ba9b962` (the truncation disclosure + guards it grew out of).
 

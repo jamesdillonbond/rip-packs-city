@@ -40,12 +40,15 @@ function makeClient(results: Record<string, { single?: any; list?: any }>) {
       }
       return b
     },
-    // ⚠ Latest-FMV-per-edition is an RPC, not a view select. Filtering the
-    // fmv_current view by key made Postgres materialise the whole DISTINCT ON
-    // first — measured 2026-09-02 at 1,334,789 buffers / 16.7 s for 500 ids
-    // against 5,359 / 470 ms for the per-id LATERAL the RPC runs. Keying these
+    // ⚠ Latest-FMV-per-edition is an RPC, not a view select. fmv_current is
+    // DISTINCT ON (edition_id) with no per-group LIMIT, so reading 500 editions
+    // through it makes Postgres read every snapshot row per edition and keep
+    // only the newest — 25,330 buffers warm (42,342 cold on a heavier id set)
+    // against 2,002-5,359 for the per-id LATERAL the RPC runs. Keying these
     // fixtures on the RPC name is what keeps this suite honest about which
     // read the code actually performs.
+    // ⛔ The 1,334,789 / 249x this comment used to cite is RETRACTED: it was
+    // measured with IN (SELECT ...), a subquery PostgREST never sends.
     rpc(name: string, args: any) {
       calls.push({ table: `rpc:${name}`, chain: [["rpc", args]] })
       return Promise.resolve(results[name]?.list ?? { data: null, error: null })
