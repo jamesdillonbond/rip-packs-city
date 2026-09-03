@@ -180,3 +180,25 @@ describe("the WALLETS tile counts addresses, not saved_wallets rows", () => {
     expect(document.body.textContent).not.toMatch(/\d+\s+WALLETS?\b/)
   })
 })
+
+// 2026-09-03: the header's ANALYZE link searched Top Shot for the RPC HANDLE
+// (`?q=<handle>`), a different namespace — it worked only when the handle
+// happened to equal the Top Shot username. It must carry a saved wallet's Top
+// Shot username, and it must not render at all when none is known.
+describe("public profile — the ANALYZE link carries a Top Shot username, never the handle", () => {
+  it("links ?q= to the saved wallet's Top Shot username", async () => {
+    installFetch({ ...PROFILE, bio: { ...PROFILE.bio, username: "qa0903b" }, wallets: [{ ...PROFILE.wallets[0], username: "jamesdillonbond" }] })
+    render(<ProfileClient />)
+    await waitFor(() => expect(screen.getByText(/ANALYZE/i)).toBeTruthy())
+    const a = screen.getByText(/ANALYZE/i).closest("a")!
+    expect(a.getAttribute("href")).toBe("/nba-top-shot/collection?q=jamesdillonbond")
+    expect(a.getAttribute("href")).not.toContain("qa0903b")
+  })
+
+  it("renders no ANALYZE link when no wallet has a known Top Shot username", async () => {
+    installFetch({ ...PROFILE, wallets: [{ ...PROFILE.wallets[0], username: null }] })
+    render(<ProfileClient />)
+    await waitFor(() => expect(screen.getByText(/SHARE YOUR COLLECTION/i)).toBeTruthy())
+    expect(screen.queryByText(/ANALYZE/i)).toBeNull()
+  })
+})

@@ -316,6 +316,10 @@ export default function ProfileClient(props: {
   const accentBg = hexToRgba(accentColor, 0.15);
   const accentBorder = hexToRgba(accentColor, 0.4);
   const filledCount = slabs.filter(Boolean).length;
+  // The Top Shot username behind the collector's saved wallet(s), if the
+  // payload knows one — the only key the collection page's `?q=` accepts that
+  // this public payload carries.
+  const analyzeKey = wallets.find(function(w) { return !!w.username; })?.username ?? null;
   const publicSlabs = slabs.filter(Boolean) as TrophySlabData[];
   // ⚠ SAME DEFINITION AS THE DASHBOARD. `cached_fmv` is the TOTAL including
   // stale-priced Moments; the dashboard's headline excludes them and shows the
@@ -400,9 +404,18 @@ export default function ProfileClient(props: {
             <RpcLogo size={32} />
           </Link>
           <div style={{ flex: 1 }} />
-          <Link href={"/nba-top-shot/collection?q=" + encodeURIComponent(username)} className="rpc-btn-ghost" style={{ textDecoration: "none", fontSize: 10, color: accentColor, borderColor: accentBorder }}>
-            {"ANALYZE " + username.toUpperCase() + "'S WALLET →"}
-          </Link>
+          {/* ⚠ `?q=` is a TOP SHOT username / address search, and the RPC handle
+              is a different namespace (profile_bio.username). Until 2026-09-03
+              this linked `?q=<handle>`, which resolved only when the two
+              happened to coincide — for `qa0903b` it searched Top Shot for a
+              collector who does not exist. Use a saved wallet's Top Shot
+              username (the address is deliberately stripped from the public
+              payload); with none known there is nothing honest to link. */}
+          {analyzeKey && (
+            <Link href={"/nba-top-shot/collection?q=" + encodeURIComponent(analyzeKey)} className="rpc-btn-ghost" style={{ textDecoration: "none", fontSize: 10, color: accentColor, borderColor: accentBorder }}>
+              {"ANALYZE " + username.toUpperCase() + "'S WALLET →"}
+            </Link>
+          )}
         </div>
       </header>
 
