@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED (docs-in-code) — the golazos wall raise has a pre-change baseline now, and it is the clearest censored maximum on the platform
+
+Follow-up to the entry below, measured after it shipped so the falsifier has something to be checked against. `wallet-backfill-golazos`, **1,621 runs** over the 73 h `pipeline_runs` retains, read 2026-09-03 08:15Z, every one of them under the old **60,000 ms** wall:
+
+| stat | value |
+|---|---:|
+| p50 | 918 ms |
+| p90 | 30,990 ms |
+| p99 | 47,113 ms |
+| **max** | **59,801 ms — 99.7% of the wall** |
+| over 25 s | 215 |
+| over 45 s | 19 |
+| not ok | 17 |
+
+🚨 **A maximum at 99.7% of the ceiling is the censored-maximum signature in its clearest form.** The distribution is pressed flat against the wall because everything that would have crossed it **wrote no row at all** — so the six `Task timed out` kills Vercel logged are not the tail, they are the part of the tail an independent instrument happened to catch. The p99 was already at **78% of the wall** before any of them.
+
+⭐ This is a stronger justification than the one in the shipping commit, which rested on the sibling comparison and the git history. It is recorded next to the change rather than only here, because the falsifier ("if ticks now run past ~300 s the work is pathological") is unusable without the before.
+
+⚠ Re-derive rather than quote: the honest post-change comparison is this same distribution against 600,000 ms, and the number to watch is the new max.
+
+Comment-only. tsc clean.
+
+**Revert.** `git revert <this sha>` — removes the baseline comment only; the wall and marker are the entry below.
+
 ### 2026-09-03 · ✅ SHIPPED — the heartbeat ratchet was blind to five routes BY CONSTRUCTION, and the blindest one is the fleet's top wall-kill route
 
 **⛔ FOURTH INSTANCE of the same shape in this repo, and this time in a guard I lowered twice tonight.** `__tests__/after-route-heartbeat-ratchet.test.ts` derived its population from each **route file's own text** — `after(` plus a visible `pipeline_runs` write. A route whose terminal write lives one delegation away in a `lib/` helper therefore never qualified, and a kill there is exactly as invisible as anywhere else. CLAUDE.md records the previous three, one almost word for word: *"one walked `app/api/cron` while the tenth copy sat in the `lib/` module two routes delegate to."*
