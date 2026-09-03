@@ -74,8 +74,16 @@ describe("a .gitignore rule cannot silently swallow a file under docs/", () => {
 
   it("takes the FIVE other patterns that were live traps, not just that one", () => {
     // Asserted individually rather than in a loop so a failure names the rule.
-    expect(isAddable("docs/tmp-gitignore-probe/logs/x.md"), "logs/").toBe(true)
-    expect(isAddable("docs/tmp-gitignore-probe/imports/y.md"), "imports/").toBe(true)
+    // ⚠ `.txt`, NOT `.md`, and the extension is not the point of these two — the
+    // DIRECTORY pattern is. `__tests__/live-docs-md-links-resolve.test.ts` walks
+    // every `docs/**/*.md` and reads each one, vitest runs test files in parallel
+    // workers, and a probe that appears and vanishes mid-walk is an `ENOENT`
+    // between its `readdirSync` and its `readFileSync` — an intermittent red with
+    // no cause in either file. Exactly the wall-clock-dependent failure class
+    // fixed for `edge-deno` earlier today; not worth reintroducing to save a
+    // three-character rename.
+    expect(isAddable("docs/tmp-gitignore-probe/logs/x.txt"), "logs/").toBe(true)
+    expect(isAddable("docs/tmp-gitignore-probe/imports/y.txt"), "imports/").toBe(true)
     expect(isAddable("docs/tmp-gitignore-probe-sweep-1.log"), "sweep-*.log").toBe(true)
     expect(isAddable("docs/tmp-gitignore-probe.tsbuildinfo"), "*.tsbuildinfo").toBe(true)
     expect(isAddable("docs/tmp-gitignore-probe/npm-debug.log"), "npm-debug.log*").toBe(true)
