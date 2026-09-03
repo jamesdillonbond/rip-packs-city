@@ -10,6 +10,54 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ CORRECTION (prod ACL + repo) — the new migration's REVOKE named only `public`, and a guard I had not looked for caught it
+
+⚠ **A defect in MY OWN change, found by CI, not by me.** The `mcp_log_tool_call`
+migration copied its grant block verbatim from the 2026-05 original:
+`revoke all on function … from public`. **CLAUDE.md states the rule outright —
+revoke `FROM PUBLIC, anon, authenticated` in ONE statement, because this DB
+carries a PUBLIC default AND `ALTER DEFAULT PRIVILEGES`** — and
+`__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` enforces
+it over every migration since its cutoff. I did not know that guard existed.
+
+⭐ **The rule I skipped is also already written down: *"Grep for the guards that
+READ a file before you EDIT it."*** I grepped for guards reading the ledger and
+the register, and never for guards reading `supabase/migrations/`. **A guard you
+have not looked for is indistinguishable from one that does not exist, right up
+until it reds `main`.**
+
+⛔ **NOT a live exposure, verified before claiming either way.**
+`has_function_privilege` reads **anon=false, authenticated=false,
+service_role=true** — *before* the correction as well as after. The reason is the
+one the guard's own message gives: **`CREATE OR REPLACE FUNCTION` does not reset a
+function ACL**, so the 2026-05 grants carried through untouched and nothing was
+ever open. The correction makes the ACL explicitly closed instead of incidentally
+closed. ⚠ **Do not read this entry as "anon could write `usage_events`" — it could
+not.**
+
+**Shipped:** the three-role `REVOKE` re-run against prod, and the migration file
+corrected to match so it is a true description of the end state rather than of
+one applied statement. ⚠ **The `-- anon-exec: intentional` marker was the other
+accepted way to satisfy the guard and was deliberately NOT used: it asserts the
+anon grant is wanted, which is false here.** A guard satisfied by a false claim is
+worse than a red one.
+
+**Also recorded — cheap-check 11 in the register**, from the *other* red on the
+same push: **two sessions each took the next free register ID (`R84`), git merged
+both cleanly, and `main` went red on a duplicate.** ⚠ **A rebase reporting no
+conflict is not evidence there is no collision** — the rows are different lines in
+different sections, so there is nothing for git to conflict on; the clash is
+*semantic*. ⛔ **And the red surfaced on the OTHER session's commit**, the first CI
+run after my duplicate landed, so the failing commit named the wrong change. Rule
+recorded: the row pushed FIRST keeps the number, the later one renumbers
+(`R84` → `R85`) and says so, because its own earlier commit messages now cite a
+stale ID.
+
+**Revert:** `grant execute on function public.mcp_log_tool_call(text, text, jsonb)
+to anon, authenticated;` would undo the ACL half — **there is no reason to, and it
+would open a `SECURITY DEFINER` writer to anonymous callers.** The file half is
+`git revert` of the correction commit.
+
 ### 2026-09-03 · ✅ SHIPPED (prod DB, migration `20260903164254`) — the second half: the MCP cap counted a key NOTHING WROTE, so `used_today` was pinned at 0 for every plan
 
 The morning entry below fixed the plan-vocabulary half and said plainly that the
