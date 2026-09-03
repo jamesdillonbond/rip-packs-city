@@ -10,6 +10,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — an inbox correction could be deleted in a rewrite and no guard could see it; the detector took three designs and the two failures are the lesson
+
+**⛔ THE INCIDENT (real, this session).** Two sessions edited
+`docs/overnight/inbox/2026-09-02T2329Z-sixteen-routes-filter-fmv_current-…md` twenty minutes apart.
+The second rewrote it in place from a copy read before the first landed, silently deleting an
+**84-line `## ⛔ CORRECTION` block — the block refuting the filing's headline measurement**.
+`4ed563071` destroyed it; `2f1263240` restored it. **A human reading the diff caught it. Nothing in
+CI moved, and the response was a memory note.**
+
+**🚨 ALL THREE EXISTING INBOX GUARDS PASSED AND NONE COULD HAVE FAILED.**
+`inbox-index-lists-every-filing`, `fix-inbox-index-counts` and `inbox-is-append-only-since-the-rule`
+ask *which filings exist* and *how many*. A rewrite that keeps the file keeps the count. ⭐ That is
+this ledger's own 2026-07 lesson — **diff the SET, not the count** (`2966c0a`, 356 → 356 while
+destroying two revert paths) — sitting unlearned one directory over, in the folder the night pass
+drains.
+
+**⭐ THREE DESIGNS. THE TWO THAT FAILED ARE WORTH MORE THAN THE ONE THAT SHIPPED**, because each was
+refuted by the REAL before/after commits rather than by invented markdown:
+
+| design | incident | repair | why it died |
+|---|---|---|---|
+| **v1** — every `## ` heading before must exist after | caught | **FALSE-POSITIVE** | the repairing session legitimately RENAMED two sections while merging. Identical shape to 2026-08-22/23, where the ledger guard **punished compliance** with its own future-date arm. A guard that reds `main` for an ordinary edit gets disabled. |
+| **v2** — the after-file must still hold SOME correction heading | **MISSED** | clean | the clobbering commit ADDED its own correction while deleting mine: **1 → 1**. ⛔ The count-blindness lesson reproducing itself *inside the guard written about count-blindness*. |
+| **v3** — content fingerprint: a correction's longest body lines must still appear somewhere | **1** | **0** | renaming and moving are free; only deletion fails. |
+
+**WHAT SHIPPED.** `scripts/find-clobbered-inbox-corrections.mjs` (prints a COUNT — do **not** `| wc -l`
+it) + the `inbox-guard` CI job: push-only, `fetch-depth: 2`, HEAD~1 vs HEAD for every changed filing
+outside `archive/`. Pinned on every event by
+`__tests__/inbox-corrections-cannot-be-silently-clobbered.test.ts` (8 cases), including three
+NO-CHANGE CONTROLS (renamed, moved, unchanged) and a positive control that the workflow read is real.
+**The whole step body was executed against real history in a throwaway clone** — `4ed563071` exits 1,
+`2f1263240` exits 0, a push touching no filing exits 0 with "nothing to compare", a deleted filing
+exits 1, `[inbox-correction-retracted]` exits 0, and a missing detector exits 1 rather than skipping.
+
+⚠ **Corrections only, deliberately** — highest value, lowest churn, and *"the correction vanished"*
+has no legitimate cause. Everything else in a filing stays free to be rewritten, so the guard has no
+reason to be switched off.
+
+⚠ **Two shell traps the step had to dodge, both already recorded here.** A `… | while read` loop runs
+in a **subshell**, so every counter it increments is discarded at the `done` and the step would report
+`inspected: 0` whatever it found — fed from a file instead, and the reason is in the comment. And a
+**REMOVED** filing gets its own error text, because *"splice into the current file"* is a remedy that
+cannot work for a deletion, and an error whose remedy fails costs the guard its authority.
+
+**REVERT:** `git revert <this sha>` — removes the `inbox-guard` job, the detector and its test. No DB
+or prod state touched.
+
 ### 2026-09-02 · ✅ SHIPPED — the wallet-cap message was written, correct, and never reached anybody; the client threw the machine code instead
 
 Drains the last code item of finding **#9** of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md`

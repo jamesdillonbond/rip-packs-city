@@ -125,6 +125,48 @@ index called two closed items open. Both were caught by
 neither by a reader. ⚠ **Archiving a filing means deleting its entry in the same commit** — and if the
 archive decision is later reversed, the entry has to come back with it.
 
+## 🚨 The inbox's CONTENT had no watcher at all until 2026-09-03 — only its FILE LIST
+
+The section above is about `INDEX.md`, the map. **The filings themselves were unguarded**, and on
+**2026-09-03** that cost a correction. Two sessions edited
+`docs/overnight/inbox/2026-09-02T2329Z-sixteen-routes-filter-fmv_current-…md` twenty minutes apart;
+the second rewrote it in place from a copy read before the first landed, deleting an **84-line
+`## ⛔ CORRECTION` block — the block refuting the filing's headline measurement**. Caught by a human
+reading the diff (`4ed563071` destroyed it, `2f1263240` restored it). Nothing in CI moved.
+
+🚨 **All three existing inbox guards passed, and none of them COULD have failed.**
+`inbox-index-lists-every-filing`, `fix-inbox-index-counts` and `inbox-is-append-only-since-the-rule`
+ask *which filings exist* and *how many*. **A rewrite that keeps the file keeps the count.** That is
+the ledger's own 2026-07 lesson — *diff the SET, not the count* (`2966c0a`, 356 → 356 while
+destroying two revert paths) — sitting unlearned one directory over. The first response was a memory
+note, which is the shape this file already records as insufficient: *a rule that lives only in prose
+is a rule that holds until someone follows the older convention.*
+
+**The guard:** `scripts/find-clobbered-inbox-corrections.mjs` + the `inbox-guard` CI job (push-only,
+`fetch-depth: 2`, HEAD~1 vs HEAD for every changed filing outside `archive/`), pinned on every event
+by `__tests__/inbox-corrections-cannot-be-silently-clobbered.test.ts` — whose cases are built from
+the **real** before/after text, so they fail if it stops catching what actually happened.
+
+⭐ **It took three designs, and the two failures are worth more than the fix.**
+
+| design | on the incident | on the repair | why it died |
+|---|---|---|---|
+| **v1** — every `## ` heading before must exist after | caught | **false-positive** | the repairing session legitimately RENAMED two sections while merging. Identical to the 2026-08-22/23 ledger case where *the guard punished compliance* — and a guard that reds `main` for an ordinary edit is one people disable. |
+| **v2** — the after-file must still hold SOME correction heading | **missed** | clean | the clobbering commit ADDED its own correction while deleting the other, so the count went **1 → 1**. ⛔ *The count-blindness lesson, reproduced inside the guard written about count-blindness.* |
+| **v3** — content fingerprint: a correction's longest body lines must still appear somewhere | caught (1) | clean (0) | renaming and moving are free; only deletion fails. |
+
+⚠ **Corrections only, deliberately.** They are the highest-value, lowest-churn content in a filing —
+they exist because someone acted on a wrong number — and *"the correction vanished"* has no
+legitimate cause. Everything else stays free to be rewritten, so the guard has no reason to be
+switched off. A genuine retraction opts out with `[inbox-correction-retracted]` in the commit
+message, the same shape as the ledger's `[ledger-roll]`.
+
+⚠ **Two shell traps the CI step had to dodge, both this repo's own:** a `… | while read` loop runs in
+a **subshell**, so every counter it increments is discarded at the `done` and the step reports
+`inspected: 0` whatever it found (fed from a file instead); and a **REMOVED** filing gets its own
+error text, because *"splice into the current file"* is a remedy that does not work for a deletion,
+and an error carrying a remedy that fails costs the guard its authority.
+
 ## 🚨 The trap none of the above catches: `git add -A` in the same command as a stash pop
 
 **2026-08-29** — a `git stash pop` after `git pull --rebase` conflicted on the ledger, and the

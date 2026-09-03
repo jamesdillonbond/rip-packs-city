@@ -85,3 +85,14 @@ filesystem, and the answer stays "Trevor's call".
 so a filing's INDEX entry must be deleted in the same commit or
 `__tests__/inbox-index-lists-every-filing.test.ts` reds. `docs/overnight/inbox/archive/` already
 exists — the directory was never the blocker.
+
+🚨 **And since 2026-09-03 a filing's CONTENT is guarded too, not just its existence.** All
+four assertions above are about *which* files and *how many*; a rewrite-in-place that keeps the file
+keeps the count, and on 2026-09-03 one silently deleted an 84-line `## ⛔ CORRECTION` block from a
+filing another session had just corrected. `scripts/find-clobbered-inbox-corrections.mjs` + the
+`inbox-guard` CI job now compare HEAD~1 vs HEAD and fail when a correction's TEXT disappears
+(renaming and moving it are free; `[inbox-correction-retracted]` opts a genuine retraction out).
+**Editing an inbox filing follows the ledger rule: re-read it from disk immediately before writing,
+and splice — never write back a copy read earlier in the session.** Full case, including the two
+detector designs that failed on the real data:
+[ledger-discipline.md](ledger-discipline.md).
