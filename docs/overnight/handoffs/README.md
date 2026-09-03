@@ -51,3 +51,18 @@ _(none)_
   ⚠ **Park under a name `.gitignore` does not swallow** (`.diff`, or `.patch.txt`) — and verify with
   `git show --stat` that the parking commit actually carries the file. A parked patch that is not in
   the commit is a promise, not an artifact.
+
+  ⭐ **UPDATE, same day, from the session that caused it: the naming advice is no longer the fix, and
+  it should not be relied on.** ⛔ *"Pick a name the ignore list does not match"* asks a writer to
+  hold the whole of `.gitignore` in their head, and **`*.patch` was one of six live traps** — `logs/`
+  (swallowing all of `docs/logs/`), `imports/`, `sweep-*.log`, `*.pem` and `*creds*.json` would each
+  have done the same thing to a differently-named file. `.gitignore` now carries **`!docs/**`**, so
+  nothing under `docs/` can be swallowed by an ordinary artifact rule, with the SECRET patterns
+  re-asserted after it so a stray `.env.local` / `*creds*.json` / `*.pem` stays ignored there.
+  `__tests__/gitignore-cannot-silently-swallow-a-docs-file.test.ts` holds both halves and the
+  ORDERING they depend on.
+
+  ⚠ **`git show --stat` is still worth doing** and is now the belt to that braces — but note WHY the
+  original check failed, because it is not carelessness: `git add` never reports what an ignore rule
+  skipped, and a clean `git status` afterwards is CONSISTENT with the file having been added. **The
+  two observations a writer naturally makes cannot distinguish the two outcomes.**

@@ -160,3 +160,36 @@ Rip Packs City/
 
 # Cowork desktop-VM push credential (2026-08-29): never commit, never print
 .rpc-git-cred
+
+# 🚨 NOTHING UNDER docs/ MAY BE SILENTLY IGNORED — added 2026-09-03 after an incident.
+#
+# A parking commit wrote docs/overnight/handoffs/<name>.patch, ran `git add -A`, saw a
+# clean `git status`, and pushed. `*.patch` above swallowed the file SILENTLY: the commit
+# carried only the README, whose "Live" entry then pointed at nothing and whose ledger
+# entry said "the patch is committed". The next session found a promise, not an artifact.
+#
+# ⚠ `git add` does not report what an ignore rule skipped, and a clean `git status`
+# afterwards is CONSISTENT with the file having been added. The two observations a writer
+# naturally makes cannot tell the two outcomes apart — which is why this is a rule and not
+# a note telling people to look harder.
+#
+# ⭐ AND `*.patch` WAS NOT THE ONLY TRAP. Measured the same day, every one of these would
+# have been swallowed under docs/: `logs/` (so docs/logs/ entirely), `imports/`,
+# `sweep-*.log`, `*.pem`, `*creds*.json`. Six of six are addable after this rule.
+#
+# docs/ exists to be READ FROM THE REPO. A file there that only the authoring sandbox can
+# see is worse than absent, because it reads as present to its author.
+# ⚠ MUST STAY ABOVE THE SECRET RE-ASSERTION BELOW, and below everything it overrides:
+# a negation only overrides patterns that come BEFORE it.
+!docs/**
+
+# ⛔ …BUT NEVER SECRETS, EVEN UNDER docs/. Re-asserted AFTER the negation, because a blanket
+# `!docs/**` would otherwise make an `.env.local`, a `*creds*.json` or a `*.pem` dropped in
+# docs/ committable. This repo has already paid for a credential leak once (the 2026-08-03
+# filter-repo purge), so the convenience rule above must not quietly widen that surface.
+# ⚠ These duplicate patterns above ON PURPOSE — a duplicate is the mechanism, not an
+# oversight, and deleting one as redundant re-opens the hole under docs/.
+.env*.local
+*creds*.json
+*-creds.json
+*.pem
