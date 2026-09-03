@@ -621,6 +621,41 @@ pass (several surfaces are on the roadmap's untouchable list, and several have *
 branch to reject INTO**, so bounding them blind turns a slow page into a thrown error boundary, which is
 worse than slow). Ceiling started at 17. **Lower it in the commit that bounds a page; never raise it.**
 
+### 🚨 A GUARD SCOPED TO WHERE THE BUG WAS FOUND IS SCOPED TO THE PAST — third instance, 2026-09-03
+
+The passage above records the shape once, for the Supabase-read class. **It has now happened three
+times, in three different classes, and the third one is the cleanest statement of it.**
+
+| # | class | the guard, and the glob it froze | the next instance, and why it was outside |
+|---|---|---|---|
+| 1 | server pages with an unbounded Supabase read | `insights-server-pages-bound-their-reads` walks `app/insights` | `/[collection]/overview` hung 30 s — not under `app/insights` |
+| 2 | unbounded `fetch` on an OG card | `og-fetches-are-bounded` walks `app/api/og/**` + `lib/og/**` | `app/api/badge-image` + `app/api/moment-thumbnail` — not under either |
+| 3 | *(the pattern itself)* | — | — |
+
+**Instance 2 is worth reading closely, because the guard was excellent.** On 2026-08-29 it drove its
+class to a MEASURED zero — *30 bare calls across 28 files, none carrying a signal* — asserted the
+population it inspected, carried a curated-exemption list with the bound each exempt file uses
+instead, and explained in its own header why a render check could not see the property. **It did
+everything this repo asks of a guard except one thing: it took its file set from where the bug had
+been found.**
+
+Five days later `/api/badge-image` produced **463 `TimeoutError`s across 69 users in 24 h** — the
+identical defect, one directory over, with the guard green the whole time.
+
+⭐ **THE RULE.** When a class is driven to zero, the ban's population is the last decision to make,
+and *"the directories where I found it"* is the wrong answer every time. Ask instead: **what is the
+widest set where this property is even MEANINGFUL?** For an unbounded `fetch` that is every server
+route, not the six that happened to fail. If that set is too large to ban, **ban at zero on the
+subset whose failure answer is settled and RATCHET the rest** — which is what
+`__tests__/image-proxy-routes-bound-their-upstream.test.ts` does: a ban on the three user-facing image
+proxies (their answer is a status, so `<img onError>` can fall back) and a frozen ceiling of 26 over
+the remaining `app/api/**`, where *"what should this return on a timeout?"* is a real per-route
+decision.
+
+⚠ **And do not read this as "always widen the glob".** Instance 1's ban is still correctly scoped —
+`app/insights` pages genuinely share a degraded contract that other surfaces do not. **The error is
+not narrowness; it is narrowness inherited from the incident rather than argued from the property.**
+
 ⚠ **The first count was 31 and wrong: `Array.from(` matched a loose `/\.from\s*\(/`.** supabase-js takes
 a STRING first argument on both `.from()` and `.rpc()`, so the pattern requires one — 31 → 19. An earlier
 filing's "23" is superseded.
