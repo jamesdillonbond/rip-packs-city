@@ -48,6 +48,7 @@ jobs:
         with:
           fetch-depth: 2
       - id: classify
+        name: Classify the push (docs-only or code)
         env:
           BEFORE: ${{ github.event.before }}
           EVENT: ${{ github.event_name }}
