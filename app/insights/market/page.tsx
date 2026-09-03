@@ -63,10 +63,17 @@ async function fetchInitialRows(): Promise<{ rows: Row[]; loadError: string | nu
 
 export default async function MarketIndexPage() {
   const { rows, loadError } = await fetchInitialRows()
+  // ⚠ `initialFetchedAt` is NULL, not the render clock, when the read FAILED.
+  // "Updated <now>" is a claim about the DATA's freshness built from OUR clock: on
+  // a failed read it told the reader our numbers were current at the same moment
+  // the board had none — the fabricated-freshness shape. FreshnessStamp renders
+  // null as "—", whose documented meaning is exactly "no timestamp was supplied".
+  // The DegradedDataNotice inside the board is NOT a substitute: a page with one
+  // honest error branch is not an honest page.
   return (
     <MarketIndexClient
       initialRows={rows}
-      initialFetchedAt={new Date().toISOString()}
+      initialFetchedAt={!loadError ? new Date().toISOString() : null}
       loadError={loadError}
     />
   )

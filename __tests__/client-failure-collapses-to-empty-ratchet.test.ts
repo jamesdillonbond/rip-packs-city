@@ -133,8 +133,18 @@ const ROOTS = ["app", "components"]
  * 68 and not 69 because `PortfolioSparkline` was converted in the same commit —
  * which is also what proves the new alternation is wired to the count rather
  * than merely present.
+ *
+ * ⬇ 68 → 67 on 2026-09-02: `ProfileClient`'s public-profile fetch was converted.
+ * It was the `r.ok ? r.json() : null` + empty-`.catch` pair, so a failed read
+ * left the server-seeded `initialWallets={[]}` standing as this collector's real
+ * portfolio — on their own profile, in the sub-class this repo calls the worst.
+ * It now throws on non-ok and both branches set `profileError`, mirroring the
+ * `slabsError` handling that already sat twenty lines below it in the same file.
+ * ⭐ The ratchet fell by exactly one, which is the check the 08-24 note asks for:
+ * a ratchet that does not move when you convert a site is measuring something
+ * other than what you fixed.
  */
-const BUDGET = 68
+const BUDGET = 67
 
 /**
  * A failure funnelled into the success-with-nothing value.

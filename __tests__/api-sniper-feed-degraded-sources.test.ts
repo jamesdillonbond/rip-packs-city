@@ -205,6 +205,13 @@ describe("GET /api/sniper-feed — a failed source is never rendered as a quiet 
     expect(body.sourcesFailed).toContain("allday-deals-rpc")
     expect(body.degraded).toBe(true)
     expect(body.deals).toEqual([])
+    // ⚠ …and it does NOT claim a refresh time. SniperStatsBar renders
+    // "updated <time>" from this field, so stamping the clock on the failed-read
+    // return put a freshness claim on a board that had just failed to read
+    // anything — the fabricated-number family, applied to a timestamp. Seen live
+    // 2026-09-03 00:12Z (the AD GraphQL 403s, so this fallback is the whole
+    // board). The bar guards on truthiness, so null omits the line.
+    expect(body.lastRefreshed ?? null).toBeNull()
   })
 
   it("a failed ts_listings read is named on the Top Shot board", async () => {

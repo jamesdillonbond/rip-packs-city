@@ -180,6 +180,9 @@ export default function ProfileClient(props: {
   initialWallets?: SavedWalletPublic[];
   /** DISTINCT wallet addresses — see the WALLETS tile for why not wallets.length. */
   initialWalletCount?: number | null;
+  /** The SSR read FAILED, so `initialWallets` is [] out of an outage rather than
+   *  out of an empty collection. Without this the two are indistinguishable. */
+  initialFailed?: boolean;
 }) {
   const params = useParams();
   const username = params?.username as string;
@@ -193,6 +196,12 @@ export default function ProfileClient(props: {
   const [bio, setBio] = useState<ProfileBio | null>(props.initialBio ?? null);
   const [favoriteTeams, setFavoriteTeams] = useState<UserFavoriteTeam[]>([]);
   const [wallets, setWallets] = useState<SavedWalletPublic[]>(props.initialWallets ?? []);
+  // ⚠ A FAILED READ IS NOT AN EMPTY PORTFOLIO — the same distinction `slabsError`
+  // makes for the trophy case, which sat 20 lines below this one while the wallet
+  // read went without it. Seeded from the SERVER's read so the SSR paint is honest
+  // too, then re-decided by the client fetch below (cleared on success, set on
+  // failure), because the client can succeed where the server timed out.
+  const [profileError, setProfileError] = useState(!!props.initialFailed);
   // Server-computed, because `wallets` has had its addresses stripped and so
   // cannot be deduped here. null = the payload did not carry it, which the
   // tile renders by OMITTING the line rather than falling back to
@@ -224,15 +233,26 @@ export default function ProfileClient(props: {
 
     const enc = encodeURIComponent(username);
 
+    // ⚠ THROW on a non-ok response rather than resolving null. The old form
+    // (`r.ok ? r.json() : null` then `if (!data) return`) swallowed the status,
+    // so a 503 left the seeded state in place and rendered as the collector's
+    // real portfolio. Both branches now land on setProfileError, exactly as the
+    // trophy-slabs read below does.
     const publicP = fetch("/api/public/profile/" + enc)
-      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(r) {
+        if (!r.ok) throw new Error("public profile " + r.status);
+        return r.json();
+      })
       .then(function(data) {
-        if (!data) return;
+        if (!data) throw new Error("public profile: empty body");
         if (data.bio) setBio(data.bio);
         if (Array.isArray(data.wallets)) setWallets(data.wallets);
         if (typeof data.wallet_count === "number") setWalletCount(data.wallet_count);
+        // The client succeeded where the server may not have, so a stale
+        // server-seeded failure must not outlive it.
+        setProfileError(false);
       })
-      .catch(function() {});
+      .catch(function() { setProfileError(true); });
 
     // Trophy slabs come from the new enriched RPC, not the legacy
     // public-profile aggregation. The RPC returns play_description,
@@ -571,6 +591,23 @@ export default function ProfileClient(props: {
             )}
           </div>
         </div>
+
+        {/* ⚠ Says WHY the tiles above are blank. Without this the em-dashes read
+            as "this collector holds nothing" — and the saved-wallet list below
+            simply does not render when the array is empty, so on their OWN
+            profile a collector sees a portfolio they built reduced to nothing
+            with no indication anything failed, and re-adds wallets that are
+            already there. The wording states which of the two it is; "—" alone
+            cannot. Same rule as the trophy case's "couldn't load" branch. */}
+        {profileError && (
+          <div
+            className="rpc-mono"
+            style={{ marginBottom: 24, fontSize: 11, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.06em", lineHeight: 1.5 }}
+          >
+            We couldn&rsquo;t load this portfolio, so the figures above are MISSING, not zero — and any
+            saved wallets are hidden rather than absent. Refresh to try again.
+          </div>
+        )}
 
         {/* ── Trophy Case (all 6, front and center under the KPI row) ── */}
         <section style={{ marginBottom: 32 }}>

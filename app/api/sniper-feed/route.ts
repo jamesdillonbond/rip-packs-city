@@ -1226,7 +1226,15 @@ async function computeAllDaySniperFeed(opts: {
     if (error) {
       console.error(`[sniper-feed] get_allday_sniper_deals error: ${error.message}`);
       sink.note("allday-deals-rpc");
-      return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [], sourcesFailed: sink.failed };
+      // ⚠ `lastRefreshed: null`, NOT the clock. This is the FAILED-read return, and
+      // SniperStatsBar renders "updated <time>" from this field — so stamping it
+      // here put a freshness claim on a board that had just failed to read
+      // anything. The bar already guards `{lastRefreshed && …}`, so null omits the
+      // line rather than printing a time we cannot stand behind. Seen live
+      // 2026-09-03 00:12Z: "AD FMV map size: 6190" (this read is fine) followed by
+      // "get_allday_sniper_deals error: canceling statement due to statement
+      // timeout" — an empty board that would have said it was updated just now.
+      return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: null, deals: [], sourcesFailed: sink.failed };
     }
     // Same honesty rule as the live path: a row with no usable FMV cannot be
     // shown as a discount (see hasUsableFmv).

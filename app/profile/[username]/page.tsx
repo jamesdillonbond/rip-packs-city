@@ -39,11 +39,28 @@ export default async function PublicProfilePage(props: {
   const result = await getPublicProfile(username, "ssr")
   const data = result.ok ? result.data : null
 
+  // 🚨 `initialFailed` IS THE PROVENANCE OF THE SEED, AND WITHOUT IT THE SEED
+  // LIES. `result.ok` was computed here and then discarded, so a failed read
+  // handed ProfileClient `initialWallets={[]}` — byte-identical to a collector
+  // who holds nothing. The KPI tiles then render PORTFOLIO FMV "—" and MOMENTS
+  // "—", which is exactly the rendering this file's header records as the
+  // 2026-06-12 audit finding, re-created for the failure path. On someone's own
+  // profile that is the worst sub-class: it invites them to re-add wallets they
+  // already added.
+  //
+  // ⚠ AND ISR MAKES IT STICK: `revalidate = 300`, so one failed read is served
+  // to every visitor for five minutes. The client re-fetch usually corrects it,
+  // but crawlers, link unfurls and the pre-hydration paint all see the seed.
+  //
+  // The fix is the pattern already in ProfileClient one fetch below — the trophy
+  // case's `slabsError`, which carries "we could not read it" through to the
+  // render. A correct sibling is not a guard.
   return (
     <ProfileClient
       initialBio={data?.bio ?? null}
       initialWallets={Array.isArray(data?.wallets) ? data.wallets : []}
       initialWalletCount={typeof data?.wallet_count === "number" ? data.wallet_count : null}
+      initialFailed={!result.ok}
     />
   )
 }

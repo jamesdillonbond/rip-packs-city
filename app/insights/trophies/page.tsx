@@ -51,11 +51,18 @@ async function fetchInitialRows(): Promise<{ rows: Row[]; ok: boolean }> {
 
 export default async function TrophiesPage() {
   const { rows, ok } = await fetchInitialRows()
+  // ⚠ `initialFetchedAt` is NULL, not the render clock, when the read FAILED.
+  // "Updated <now>" is a claim about the DATA's freshness built from OUR clock: on
+  // a failed read it told the reader our numbers were current at the same moment
+  // the board had none — the fabricated-freshness shape. FreshnessStamp renders
+  // null as "—", whose documented meaning is exactly "no timestamp was supplied".
+  // The DegradedDataNotice inside the board is NOT a substitute: a page with one
+  // honest error branch is not an honest page.
   return (
     <TrophiesBoardClient
       initialRows={rows}
       initialDegraded={summarizeDegraded([boardStatus("Trophy Room", ok)])}
-      initialFetchedAt={new Date().toISOString()}
+      initialFetchedAt={ok ? new Date().toISOString() : null}
     />
   )
 }
