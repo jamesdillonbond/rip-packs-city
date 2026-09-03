@@ -10,6 +10,82 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the seed's PROVENANCE, twice: a portfolio we could not read stopped rendering as an empty one, and seven boards stopped stamping "Updated just now" over a failed read
+
+Two instances of the FIFTH honesty layer — a server-seeded prop — found by sweeping `app/` for
+`initial*={…}` and checking each SEED rather than each FILE. ⚠ **The file-level sweep was useless and
+that is worth keeping: all 32 server pages that seed a client contain SOME failure vocabulary, so a
+file-scoped grep returns zero offenders. Both defects sat in files that handle failure correctly
+elsewhere.**
+
+**1. `/profile/<username>` — the sub-class this repo calls the worst: a false claim about the reader's
+OWN account.** `page.tsx` computed `result.ok` from `getPublicProfile` and **threw it away**, passing
+`initialWallets={[]}` on failure — byte-identical to a collector who holds nothing. The KPI tiles then
+render `PORTFOLIO FMV —` and `MOMENTS —`, and the saved-wallet list **does not render at all** when
+the array is empty. So a collector who has added six wallets sees a page with none and no sign
+anything failed — and re-adds work already done. ⚠ It is the exact rendering this page's OWN header
+records as the 2026-06-12 audit finding, re-created for the failure path after the SSR seed fixed it
+for the loading path. ⚠ **And ISR makes one failure stick: `revalidate = 300`.** The client re-fetch
+usually corrects it, but crawlers, link unfurls and the pre-hydration paint all see the seed — and the
+client fetch swallowed its own failure twice over (`r.ok ? r.json() : null` discarded the status,
+`.catch(function() {})` discarded the throw), so a client-side blip left the seeded state standing as
+fact. ⭐ **A CORRECT SIBLING IS NOT A GUARD, AGAIN, AT TWENTY LINES:** `slabsError` — the same
+distinction for the trophy case, with a comment explaining exactly why it was needed — sits directly
+below the wallet fetch that lacked it.
+
+**2. Seven public `/insights` boards stamped `Updated <render clock>` unconditionally.**
+`initialFetchedAt={new Date().toISOString()}` is a claim about the DATA's freshness built from OUR
+clock: on a failed read it told the reader our numbers were current at the moment the board had none.
+⭐ **Every one of the seven ALREADY passed a degraded flag in the same JSX block** — so they rendered
+"Updated just now" directly above "we couldn't load this". **A page with one honest error branch is
+not an honest page.** Now `ok ? new Date().toISOString() : null`; `FreshnessStamp` already renders
+null as "—" and its own doc fixes that as meaning "no timestamp was supplied", which is the true
+statement. (trophies · allday-scarcity · offer-spread · pinnacle-scarcity · set-squeeze · squeeze ·
+market)
+
+**3. `/api/sniper-feed`'s failed-read return stamped `lastRefreshed: new Date()`, and I found it by
+reading production logs for the fix I had just shipped.** 00:12Z showed
+`AD FMV map size: 6190` (the read I fixed — healthy) followed by
+`get_allday_sniper_deals error: canceling statement due to statement timeout` — a DIFFERENT read,
+reached only because the All Day GraphQL is 403ing. That path already named the source correctly
+(`sink.note("allday-deals-rpc")`, shipped earlier today), but `SniperStatsBar` renders
+`updated <time>` from `lastRefreshed`, so the empty degraded board said it had just been updated. Now
+`null`; the bar already guards on truthiness, so the line is omitted. ⭐ **The instance was found by
+VERIFYING the previous fix rather than by looking for it** — the same route as the 08-31
+`fmv-recalc` find.
+
+**Guards.** `component-ProfileClient-failed-seed-is-not-an-empty-portfolio` asserts by
+**`renderToString`**, because ProfileClient DOES refetch on mount — the documented case where
+`useState(true)` and `useState(false)` both leave every client test green; the mirror-image mutant is
+killed only by the SSR cases plus two no-change controls. Plus a jsdom case for the client-fetch
+failure and one for a client SUCCESS clearing a server-seeded failure (**that last one was found by
+mutation** — removing `setProfileError(false)` left everything else green, and would have pinned a
+permanent "couldn't load" on a profile that loads fine). `a-freshness-stamp-is-not-minted-from-a-failed-read`
+is a tree walk, ban at zero, asserting the COUNT it inspected and matching the PROPERTY (any guard
+passes; a real `computed_at` passes) rather than a spelling. Mutants: page drops the provenance ·
+`useState(false)` · `useState(true)` · notice deleted · client catch re-swallowed · success never
+clears · one board reverted to the bare clock — **all killed**. ⓘ One survivor recorded as
+EQUIVALENT rather than a gap: restoring `r.ok ? r.json() : null` alone still throws on the null body
+one line later.
+
+⭐ **AND THE RATCHET DID ITS JOB, WHICH IS THE CHECK ITS OWN HEADER ASKS FOR.**
+`client-failure-collapses-to-empty-ratchet` went red with *"BUDGET is 68 but only 67 sites qualify"* —
+the ProfileClient conversion removed a site, so the budget was slack. Lowered to **67** in the same
+commit. Its 08-24 note records the inverse case as the tell that a detector is broken: *"a ratchet
+that does not fall when you convert a site is measuring something other than what you fixed."* This
+one fell by exactly one. ⓘ The eslint-ratchet staleness check added earlier today also fired on its
+own case (report written before the test file was edited) — both instruments behaved.
+
+**Also verified today's earlier ship by rendered DOM, which the sandbox cannot do itself:** dispatched
+`E2E DOM Smoke` (run 136, workflow_dispatch, 00:09Z) against production after
+`dpl_9mZ7x8afRAngBrtATMhbNrcybKvZ` went READY — **success**, covering `/nfl-all-day/sniper` and every
+collection tab. Egress from this sandbox to www is a proxy POLICY denial (403 on CONNECT), so
+dispatching the workflow is the way to get a real browser at the deployed site from here.
+
+**Revert.** `git revert <this sha>` — restores the discarded `result.ok`, the swallowed client catch,
+the seven unconditional clocks and the sniper feed's stamped failure return; the guards revert with
+it. DB: nothing.
+
 ### 2026-09-02 · ✅ SHIPPED — doubled lock-check breadth, after refuting every number that justified the old limit
 
 **File:** `app/api/cron/lock-check-batch/route.ts` (`BATCH_LIMIT` 200 → 400, plus a corrected comment
