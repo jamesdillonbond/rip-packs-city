@@ -90,7 +90,10 @@ describe("insights boards — interaction coverage", () => {
     const { getByText, getAllByText } = render(<RookiesBoardClient initial={rookiesInitial} />)
     fireEvent.click(getByText("Lock rate"))
     await waitFor(() => expect((globalThis.fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("sort=lock"))).toBe(true))
-    expect(getAllByText(/Zaccharie Risacher/).length).toBeGreaterThan(0)
+    // The refetch resolving and re-rendering happens AFTER the call the line above
+    // waited for — asserting synchronously here read "Loading…" on a loaded CI runner
+    // (2026-09-03, 1 of ~40 runs). Wait for the render, not the call.
+    await waitFor(() => expect(getAllByText(/Zaccharie Risacher/).length).toBeGreaterThan(0))
   })
 
   it("AllDayScarcityBoardClient refetches on a sort change", async () => {
@@ -104,7 +107,7 @@ describe("insights boards — interaction coverage", () => {
     const select = container.querySelector("select")!
     fireEvent.change(select, { target: { value: "mint" } })
     await waitFor(() => expect((globalThis.fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("allday-scarcity"))).toBe(true))
-    expect(getAllByText(/Patrick Mahomes/).length).toBeGreaterThan(0)
+    await waitFor(() => expect(getAllByText(/Patrick Mahomes/).length).toBeGreaterThan(0))
   })
 
   it("SetSqueezeBoardClient refetches on a sort change", async () => {
@@ -118,7 +121,7 @@ describe("insights boards — interaction coverage", () => {
     const select = container.querySelector("select")!
     fireEvent.change(select, { target: { value: "buyable" } })
     await waitFor(() => expect((globalThis.fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("set-squeeze"))).toBe(true))
-    expect(getAllByText(/Metallic Gold Squeeze Set/).length).toBeGreaterThan(0)
+    await waitFor(() => expect(getAllByText(/Metallic Gold Squeeze Set/).length).toBeGreaterThan(0))
   })
 
   // AllDayScarcity: the sort refetch was covered above; the TIER pill (which sets
