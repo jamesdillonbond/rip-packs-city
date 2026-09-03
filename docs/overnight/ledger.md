@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · 🌙 OVERNIGHT PASS CLOSE (Cowork, ~23:00 → 00:10 PT next day) — what shipped, what was verified by the real caller, what got worse, what needs Trevor
+
+**Shipped tonight, in order, all `main` + CI green:** `3b60113`/`c8f292f` (onboarding QA #2/#3/#5/#8/#9) · `5ab2d3b`/`e287c1e` (#6 FMV split, landing block, tour spotlight) · `87a173c`/`4c6353c` (#4 email templates from Chrome, device-key clear on every sign-in path; **the clobber and its restore**) · `c79e9cf` (one first-visit form) · `b67a74a` (R50 allday board → `edition_fmv_current`) · `30f0a86` (#27 cron 600→300 s) · `53c87b8` (`/api/profile/me` handle-only) · `4236daf` (#40 closed, `sets_summary` DDL) · `a214e6b` (#42 re-read) · `d4b912c` (`get_top_movers` false-claim fix + half cost). Migrations applied live and committed: `20260903023012`, `20260903055218`, `20260903064122`, `20260903065142`.
+
+**Verified by the real caller, not by me:** the second QA account signed up through the branded email and landed on `/dashboard`; the username path resolved `jamesdillonbond` in 981 ms during a Top Shot tunnel outage that 502'd the same call three times earlier tonight; jobs 352/353/354 ticked under the new command (4 / 2 / 3 s); the allday board's first post-change liveness sample read **519 ms** (prior four: 1,209–1,422 ms; probe prunes the join, so a floor); the profile's top loser is now a Moment the wallet holds; 7 h of production 5xx grouped by path show nothing attributable to any of it.
+
+**Worse / not done:** mobile layout is still unmeasured — every path I had was blocked tonight (details in the QA memory); the sandbox disk (88%, 153 leaked session dirs) still needs the vhdx rename; `refresh_wmc_fmv_changed` is the instance's #1 consumer in `pg_stat_statements` (~231 s/call × 2,888 calls in the window) and I deliberately did not touch it — that lane has its own open inbox thread and a concurrent owner. `check_set_completion` is collection-blind and orphaned; left.
+
+**Needs Trevor:** nothing from the handoff. Standing items unchanged: #22 purge, #58 `OPENSEA_API_KEY`, the alerting-plane secrets (R71/R62/#25), and whether to keep fronting your own trophy case on the landing page.
+
+**Watch in flight:** `trig_01HLeH3uVXQEFdmWhSjvW9fA` (2026-09-05 04:00Z) re-reads `reconcile-saved-wallet-stats` and reverts the function body if the stale-split join hurt it.
+
 ### 2026-09-03 · ✅ SHIPPED — two more `after()` routes get an invocation marker, and the pass STOPPED at two because the third-ranked candidate was measured on the wrong caller
 
 E5's tenth pass. Ratchet **33 → 31**, re-derived off the failing no-slack assertion, not by subtracting.
