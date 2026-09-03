@@ -222,11 +222,26 @@ export async function POST(req: NextRequest) {
     // Count DISTINCT wallet_addr, not rows. saved_wallets holds one row per
     // (wallet, collection), so a row count reads 5 after a single Dapper wallet
     // and blocked every free user (cap 1) on their SECOND collection.
-    const { data: addrRows } = await supabase
+    const { data: addrRows, error: addrErr } = await supabase
       .from("saved_wallets")
       .select("wallet_addr")
       .eq("user_id", user.id)
       .limit(1000);
+    // DECISION (re-affirmed 2026-09-03): this cap check stays FAIL-OPEN — a
+    // transient count failure must not block a collector's save, and the
+    // downside is one extra free-plan wallet during an outage. But fail-open
+    // and SILENT is a guard nobody can see fail: supabase-js RETURNS errors,
+    // so `addrRows` is null and the count reads 0 with no trace. Bind the
+    // error and log it at error level, so an outage that lets the cap slip
+    // is at least measurable in the request log.
+    if (addrErr) {
+      console.error(
+        "[saved-wallets POST] quota count read failed (cap check fails OPEN):",
+        addrErr.message,
+        "code:",
+        (addrErr as { code?: string }).code ?? "unknown"
+      );
+    }
 
     const quota = await checkFeatureQuota(walletAddr, "saved_wallets_max");
     const maxAllowed = quota.daily_limit; // null = unlimited per quota RPC contract
