@@ -15,8 +15,8 @@ import { render, cleanup, screen } from "@testing-library/react"
 vi.mock("next/link", () => ({ default: ({ children, ...p }: any) => <a {...p}>{children}</a> }))
 vi.mock("@/components/RpcLogo", () => ({ default: () => <div /> }))
 vi.mock("@/components/profile/ShareProfileButtons", () => ({
-  default: ({ trophyCount }: { trophyCount?: number }) => (
-    <div data-testid="share-buttons" data-count={String(trophyCount)} />
+  default: ({ trophyCount, surface }: { trophyCount?: number; surface?: string }) => (
+    <div data-testid="share-buttons" data-count={String(trophyCount)} data-surface={String(surface)} />
   ),
 }))
 vi.mock("@/components/TrophySlab", () => ({
@@ -82,6 +82,11 @@ describe("TrophyCaseShareClient", () => {
     // So the tweet can claim a full case only when it is one.
     render(<TrophyCaseShareClient {...base} trophies={[trophy("m1", "A"), trophy("m2", "B")]} />)
     expect(screen.getByTestId("share-buttons").getAttribute("data-count")).toBe("2")
+  })
+
+  it("shares ITSELF — the trophy-case surface, not the profile (2026-09-02 QA #3)", () => {
+    render(<TrophyCaseShareClient {...base} trophies={[trophy("m1", "A")]} />)
+    expect(screen.getByTestId("share-buttons").getAttribute("data-surface")).toBe("trophy-case")
   })
 
   it("does not claim a trophy count when the read failed", () => {

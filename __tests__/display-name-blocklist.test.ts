@@ -240,4 +240,27 @@ describe("resolveDisplayName — ladder rungs, wallet fallbacks, shortAddress ed
     expect(r.source).toBe("wallet_short")
     expect(r.display_name).not.toBe("should-not-appear")
   })
+
+  // 2026-09-02 (onboarding QA #9): the public handle outranks the raw email
+  // local-part, so an address-path signup who chose a handle is not greeted as
+  // `tdillonbond+qa0903` in their own header.
+  describe("resolveDisplayName — the public handle beats the email local-part", () => {
+    it("picks profile_bio.username when display_name is empty but a handle exists", async () => {
+      const { resolveDisplayName } = await loadResolver({
+        user_profiles: null,
+        profile_bio: { display_name: null, username: "qa0903" },
+      })
+      const r = await resolveDisplayName({ user_id: UID, email: "tdillonbond+qa0903@example.com" })
+      expect(r).toEqual({ source: "profile_bio_handle", display_name: "qa0903" })
+    })
+
+    it("still prefers a chosen display_name over the handle", async () => {
+      const { resolveDisplayName } = await loadResolver({
+        user_profiles: null,
+        profile_bio: { display_name: "QA Nine Oh Three", username: "qa0903" },
+      })
+      const r = await resolveDisplayName({ user_id: UID, email: "x@example.com" })
+      expect(r).toEqual({ source: "profile_bio", display_name: "QA Nine Oh Three" })
+    })
+  })
 })

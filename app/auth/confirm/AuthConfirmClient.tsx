@@ -102,6 +102,43 @@ export default function AuthConfirmClient() {
         // authoritative "new account" count is auth.users.created_at; this
         // measures completed sign-ins / link-click-through. Fire-and-forget.
         trackFunnelEvent({ eventType: "account_created", surface: "auth_confirm" })
+
+        // A different account than the one this browser last held: drop the
+        // per-device wallet keys the collection pages hydrate from. They are
+        // per-ORIGIN, so a second signup on a shared machine otherwise starts
+        // with the previous collector's owner key / last wallet / owned-cache
+        // (measured 2026-09-02: a brand-new account preloaded 15,160 Moments of
+        // someone else's wallet before it had added one). Server reads are
+        // guarded either way; this is about not doing the wrong work. The
+        // first-run flag goes too — it is per-user state kept on the device.
+        try {
+          const { data: sessionData } = await supabase.auth.getUser()
+          const uid = sessionData?.user?.id ?? null
+          const LAST = "rpc_session_user"
+          const previous = window.localStorage.getItem(LAST)
+          if (uid && previous && previous !== uid) {
+            const doomed: string[] = []
+            for (let i = 0; i < window.localStorage.length; i++) {
+              const k = window.localStorage.key(i)
+              if (!k) continue
+              if (
+                k === "rpc_owner_key" ||
+                k === "rpc_last_wallet" ||
+                k === "rpc_wallet_address" ||
+                k === "rpc_last_hydrated" ||
+                k === "rpc:first-run-completed" ||
+                k.startsWith("rpc_owned_")
+              ) {
+                doomed.push(k)
+              }
+            }
+            doomed.forEach((k) => window.localStorage.removeItem(k))
+          }
+          if (uid) window.localStorage.setItem(LAST, uid)
+        } catch {
+          // private mode / storage blocked — nothing to clear
+        }
+
         if (!cancelled) {
           setMessage("Signed in. Redirecting…")
           // ⚠ HONOURS ?redirect=, which this page previously ignored entirely.

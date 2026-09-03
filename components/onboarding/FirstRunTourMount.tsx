@@ -5,11 +5,20 @@
 // and renders FirstRunTour conditionally. Drop this near the bottom of
 // any authenticated page tree (dashboard is the canonical home) and the
 // tour fires once per user — afterwards the GET returns completed=true
-// and the wrapper renders nothing. localStorage is a one-session fallback
-// for the moment between dismissal and the API write landing.
+// and the wrapper renders nothing.
+//
+// ⚠ THE SERVER IS THE AUTHORITY. The device flag used to short-circuit the
+// fetch, and localStorage is per-ORIGIN, not per-user: a second account
+// signing in on the same browser inherited the first account's "done" and
+// never saw the tour (observed 2026-09-02 on a brand-new signup). The flag is
+// still written (FirstRunTour's dismiss uses it to cover the moment before
+// the POST lands) but it no longer decides anything here. If the API cannot
+// answer, nothing is shown — a tour is not worth guessing about.
 
 import { useEffect, useState } from "react"
 import FirstRunTour from "./FirstRunTour"
+
+const DEVICE_FLAG = "rpc:first-run-completed"
 
 export default function FirstRunTourMount() {
   const [shouldShow, setShouldShow] = useState(false)
@@ -18,25 +27,23 @@ export default function FirstRunTourMount() {
   useEffect(() => {
     let cancelled = false
 
-    // Fast-path: if localStorage already says we're done, skip the fetch.
-    try {
-      if (localStorage.getItem("rpc:first-run-completed") === "1") {
-        setResolved(true)
-        setShouldShow(false)
-        return
-      }
-    } catch { /* private mode — fall through */ }
-
     fetch("/api/profile/first-run-tour", { cache: "no-store" })
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         if (cancelled) return
-        const isCompleted = !!(j && j.completed)
+        if (!j || typeof j.completed !== "boolean") {
+          // The API did not answer the question — show nothing.
+          setShouldShow(false)
+          setResolved(true)
+          return
+        }
+        const isCompleted = j.completed
         setShouldShow(!isCompleted)
         setResolved(true)
-        if (isCompleted) {
-          try { localStorage.setItem("rpc:first-run-completed", "1") } catch { /* swallow */ }
-        }
+        try {
+          if (isCompleted) localStorage.setItem(DEVICE_FLAG, "1")
+          else localStorage.removeItem(DEVICE_FLAG)
+        } catch { /* swallow */ }
       })
       .catch(() => {
         if (!cancelled) setResolved(true)

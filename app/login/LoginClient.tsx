@@ -295,7 +295,7 @@ export default function LoginClient() {
               letterSpacing: "0.08em",
               textTransform: "uppercase",
             }}>
-              New here? Enter your email — a free account is instant, no invite needed.{" "}
+              New here? A free account is instant, no invite needed — track your wallets across every Flow collection, then pin your 6 best Moments to a trophy case you can share.{" "}
               <Link href="/insights" style={{ color: "var(--rpc-text-muted)" }}>
                 Or browse without an account →
               </Link>

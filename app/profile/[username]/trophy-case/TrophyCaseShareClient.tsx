@@ -13,6 +13,7 @@
 // time either changed, and a visitor arriving from a shared link would see a
 // different case than the one the owner arranged.
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import RpcLogo from "@/components/RpcLogo";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
@@ -36,6 +37,37 @@ export default function TrophyCaseShareClient({
   readFailed: boolean;
 }) {
   const accent = accentColor || "var(--rpc-red)";
+
+  // Viewer's auth id, so a share from THIS page carries the same &ref= the
+  // dashboard and profile shares do (the referral loop was only wired on those
+  // two — the page built for sharing was the one that dropped it). Anonymous
+  // viewers stay null; the ref is only meaningful for the owner sharing their
+  // own case, and the server ignores self-referral anyway.
+  const [viewerId, setViewerId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (typeof fetch !== "function") return;
+    try {
+      fetch("/api/profile/me", { cache: "no-store" })
+        .then(async (r) => {
+          // A failed read leaves viewerId at its initial null — nothing is
+          // CLAIMED from it (the ref is an optional attribution tag), so there
+          // is no third state to render here.
+          if (!r.ok || cancelled) return;
+          const data = await r.json();
+          if (cancelled) return;
+          const id = data?.user?.id;
+          setViewerId(typeof id === "string" && id ? id : null);
+        })
+        .catch(() => {});
+    } catch {
+      // best-effort
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const slabs = trophies
     .filter((t) => t && t.moment_id)
     .slice(0, 6) as unknown as TrophySlabData[];
@@ -177,6 +209,8 @@ export default function TrophyCaseShareClient({
           <ShareProfileButtons
             username={username}
             trophyCount={slabs.length}
+            surface="trophy-case"
+            referrerId={viewerId}
             compact
           />
           <Link

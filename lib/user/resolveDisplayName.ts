@@ -26,6 +26,7 @@ export type ResolvedDisplayName = {
   source:
     | "user_profiles"
     | "profile_bio"
+    | "profile_bio_handle"
     | "allow_list_username"
     | "email_local"
     | "wallet_short"
@@ -66,7 +67,7 @@ export async function resolveDisplayName(opts: {
       .maybeSingle(),
     (supabaseAdmin as any)
       .from("profile_bio")
-      .select("display_name")
+      .select("display_name, username")
       .eq("user_id", user_id)
       .maybeSingle(),
     opts.email
@@ -87,6 +88,12 @@ export async function resolveDisplayName(opts: {
 
   const fromAllowList = pickIfClean(al?.data?.username, "allow_list_username")
   if (fromAllowList) return fromAllowList
+
+  // The public handle beats the raw email local-part. A collector who chose
+  // `qa0903` as their /profile URL should not be greeted as `TDILLONBOND+QA0903`
+  // in their own dashboard header (2026-09-02 onboarding QA, finding #9).
+  const fromHandle = pickIfClean(pb?.data?.username, "profile_bio_handle")
+  if (fromHandle) return fromHandle
 
   const emailLocal = opts.email ? opts.email.split("@")[0] : null
   const fromEmail = pickIfClean(emailLocal, "email_local")

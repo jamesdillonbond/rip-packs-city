@@ -199,7 +199,14 @@ function FilledSlab({
               border: "none",
               cursor: "pointer",
               padding: 0,
-              display: hovered ? "flex" : "none",
+              // ALWAYS rendered, never hover-gated. The slab is a <Link>, so on a
+              // touch screen the first tap navigates before any hover state
+              // exists — a `display: none` until hover made a pinned trophy
+              // impossible to remove from a phone (2026-09-02 onboarding QA,
+              // finding #5). Hover now only brightens it.
+              display: "flex",
+              opacity: hovered ? 1 : 0.72,
+              transition: "opacity 120ms ease",
               alignItems: "center",
               justifyContent: "center",
             }}

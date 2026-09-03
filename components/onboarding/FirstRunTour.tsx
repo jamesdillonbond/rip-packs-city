@@ -51,9 +51,18 @@ const STEPS: TourStep[] = [
   },
   {
     id: "saved-wallets",
-    title: "Save up to 3 wallets free",
+    // ⚠ No number here. The cap comes from checkFeatureQuota at request time;
+    // a hard-coded "3" drifted from it once already (2026-09-02 QA #9).
+    title: "Save your wallets",
     body: "Add a Top Shot username or Flow address; we'll pre-warm the data so it loads instantly.",
     anchor: "saved-wallets-card",
+    cta: "Got it",
+  },
+  {
+    id: "trophy-case",
+    title: "Build your trophy case",
+    body: "Pin your 6 best Moments, add a caption, and share the case on X — it gets its own page and social card at rippackscity.com/profile/<you>/trophy-case.",
+    anchor: "trophy-case",
     cta: "Got it",
   },
   {

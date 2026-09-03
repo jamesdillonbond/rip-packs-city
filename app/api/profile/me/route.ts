@@ -45,6 +45,32 @@ export async function GET() {
   // would make a signed-in reader render as ANON on every public board that
   // calls this unconditionally — trading a quiet false claim for a louder one.
   let identityDegraded = false
+
+  // ⚠ THE PUBLIC HANDLE COMES FIRST. `profile_bio.username` is the handle the
+  // collector chose (or that resolve-and-associate claimed for them) — it is the
+  // `/profile/<u>` URL, and it is what ProfileClient compares against to decide
+  // whether the viewer is looking at their OWN page. Until 2026-09-02 this route
+  // never read it: it derived `username` from allow_list (closed-beta era) and
+  // then from saved_wallets.username (the TOP SHOT name), so an address-path
+  // signup — or anyone who renamed their handle in /profile/edit — answered
+  // `username: null` here while `/profile/<u>` existed, and the owner-only
+  // share block on their own profile never rendered (QA walkthrough, finding #2).
+  // The Top Shot-name fallbacks below are kept for callers that still key on
+  // them, but a real handle wins.
+  {
+    const { data: bio, error: bioError } = await (supabaseAdmin as any)
+      .from("profile_bio")
+      .select("username")
+      .eq("user_id", user.id)
+      .maybeSingle()
+    if (bioError) {
+      identityDegraded = true
+      console.error(`[profile/me] profile_bio read failed: ${bioError.message ?? String(bioError)}`)
+    }
+    const handle = typeof bio?.username === "string" ? bio.username.trim() : ""
+    if (handle) username = handle
+  }
+
   if (user.email) {
     const { data, error } = await (supabaseAdmin as any)
       .from("allow_list")
@@ -56,7 +82,7 @@ export async function GET() {
       identityDegraded = true
       console.error(`[profile/me] allow_list read failed: ${error.message ?? String(error)}`)
     }
-    username = data?.username ?? null
+    username = username ?? data?.username ?? null
     walletAddr = data?.wallet_addr ?? null
   }
 

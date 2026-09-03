@@ -183,6 +183,10 @@ function ProfilePageInner() {
   const [userId, setUserId] = useState<string | null>(null);
   const [resolvedDisplayName, setResolvedDisplayName] = useState<string | null>(null);
   const [bio, setBio] = useState<Bio | null>(null);
+  // True once /api/profile/bio has answered OK. A null `bio` before that is
+  // "unknown", not "no handle" — the claim-your-handle card below must not
+  // render on a read that has not happened or failed.
+  const [bioLoaded, setBioLoaded] = useState(false);
   const [wallets, setWallets] = useState<SavedWallet[]>([]);
   const [slabs, setSlabs] = useState<(TrophySlabData | null)[]>([null, null, null, null, null, null]);
   // Did the TROPHY-SLABS read itself fail this pass? Same reasoning as
@@ -444,6 +448,7 @@ function ProfilePageInner() {
       if (bioRes.ok) {
         const b = await bioRes.json();
         setBio(b?.bio ?? null);
+        setBioLoaded(true);
       }
       let walletList: SavedWallet[] = [];
       setWalletsFailed(!walletsRes.ok);
@@ -892,15 +897,18 @@ function ProfilePageInner() {
         </section>
 
         {/* ── Your public profile ──
-            Every collector now HAS one (the handle defaults from their Dapper
-            username), and until this card none of them could tell: the only
+            A collector who arrived by Top Shot username has one (the handle
+            defaults from that name); one who pasted a 0x address does NOT, and
+            gets the claim card instead. Until this card none of them could tell: the only
             mention was a toast that fires once, on the call that created it.
             A profile nobody knows the URL of is a profile nobody shares — which
             made every improvement to the page and its social card unreachable
             for the people they were built for. */}
-        {bio?.username && (
+        {bio?.username ? (
           <PublicProfileCard username={bio.username} userId={userId} />
-        )}
+        ) : bioLoaded && wallets.length > 0 ? (
+          <ClaimHandleCard />
+        ) : null}
 
         {/* ── Hero: onboarding CTA / HeroMoment / Trophy Case ── */}
         {/* ⚠ `walletsFailed` FIRST. An empty `wallets` is ambiguous — it means
@@ -1721,7 +1729,7 @@ function TrophyCaseSection({
   const trailingEmpty = editMode ? Math.max(0, 6 - filled.length) : 0;
 
   return (
-    <section className="rpc-section">
+    <section className="rpc-section" data-tour-anchor="trophy-case">
       <style>{`
         @media (max-width: 768px) {
           .rpc-trophy-slab-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
@@ -2017,6 +2025,91 @@ function PublicProfileCard({
         </Link>
         <ShareProfileButtons username={username} referrerId={userId} compact />
       </div>
+    </section>
+  );
+}
+
+// ── Claim your handle ────────────────────────────────────────────────────────
+//
+// The comment above PublicProfileCard says every collector has a handle. That
+// is only true on the USERNAME path: a collector who pastes a 0x address (the
+// path the resolver's own outage copy steers people to) never gives us a Top
+// Shot name to derive one from, so `profile_bio.username` stays null, the
+// card above never renders, and the trophy case they just built has no URL —
+// not even for them. Measured in the 2026-09-02 onboarding walkthrough: the
+// dashboard offered no route to /profile/edit beyond a header button whose
+// label never mentions a URL. We deliberately do NOT auto-derive a handle from
+// the email local-part: claim-username.ts's rules (never suffix, never hand
+// someone a consolation name) apply here too — the collector picks it.
+
+function ClaimHandleCard() {
+  return (
+    <section
+      className="rpc-section"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        flexWrap: "wrap",
+        gap: 12,
+        border: `1px solid ${ACCENT_RED}44`,
+        borderRadius: 10,
+        padding: "14px 16px",
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: monoFont,
+            fontSize: 9,
+            letterSpacing: "0.18em",
+            color: "var(--rpc-text-muted)",
+            textTransform: "uppercase",
+          }}
+        >
+          Your public profile
+        </div>
+        <div
+          style={{
+            fontFamily: condensedFont,
+            fontWeight: 800,
+            fontSize: 18,
+            letterSpacing: "0.03em",
+            color: "var(--rpc-text-primary)",
+            marginTop: 3,
+          }}
+        >
+          Claim your handle to get a shareable URL
+        </div>
+        <div
+          style={{
+            fontFamily: monoFont,
+            fontSize: 10,
+            color: "var(--rpc-text-muted)",
+            marginTop: 4,
+          }}
+        >
+          rippackscity.com/profile/<span style={{ color: "var(--rpc-text-secondary)" }}>your-name</span> — your
+          trophy case and portfolio, ready to post on X or Discord.
+        </div>
+      </div>
+      <Link
+        href="/profile/edit"
+        className="rpc-btn-primary"
+        style={{
+          fontFamily: condensedFont,
+          fontWeight: 700,
+          fontSize: 11,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          textDecoration: "none",
+          padding: "8px 14px",
+          borderRadius: 5,
+          whiteSpace: "nowrap",
+        }}
+      >
+        Claim handle →
+      </Link>
     </section>
   );
 }

@@ -144,6 +144,16 @@ describe("TrophySlab", () => {
     expect(onRemove).toHaveBeenCalledWith(3)
   })
 
+  it("the remove control is reachable WITHOUT hover (touch has none, and the slab is a link)", () => {
+    // 2026-09-02 onboarding QA #5: `display: none` until mouseenter meant a
+    // phone user's first tap navigated to /moment/<id> and the ✕ never existed.
+    const { getByLabelText } = render(
+      <TrophySlab slab={base} slot={2} mode="owner" onRemove={vi.fn()} />,
+    )
+    const btn = getByLabelText("Remove slab 2") as HTMLElement
+    expect(btn.style.display).not.toBe("none")
+  })
+
   it("public mode has no remove control", () => {
     const onRemove = vi.fn()
     const { queryByLabelText } = render(

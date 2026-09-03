@@ -35,19 +35,43 @@ const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
 const RED = "var(--rpc-red)";
 
+export type ShareSurface = "profile" | "trophy-case";
+
+function sharePath(username: string, surface: ShareSurface): string {
+  const base = `/profile/${encodeURIComponent(username)}`;
+  return surface === "trophy-case" ? `${base}/trophy-case` : base;
+}
+
 function profileUrl(
   username: string,
   medium: string,
   referrerId?: string | null,
+  surface: ShareSurface = "profile",
 ): string {
   const origin =
     typeof window !== "undefined"
       ? window.location.origin
       : "https://www.rippackscity.com";
   const ref = referrerId ? `&ref=${encodeURIComponent(referrerId)}` : "";
-  return `${origin}/profile/${encodeURIComponent(
-    username,
-  )}?utm_source=share&utm_medium=${medium}${ref}`;
+  return `${origin}${sharePath(username, surface)}?utm_source=share&utm_medium=${medium}${ref}`;
+}
+
+// The social card behind a shared URL is rendered on first request and takes
+// 3.6–4.7 s cold (measured 2026-09-02; ~80 ms once the edge has it). X's card
+// fetcher does not wait that long, so the first person to post a fresh case
+// could get a link with no picture. Warm it the moment the user reaches for
+// the share button — the intent composer opens on top while this runs.
+function prewarmCard(username: string, surface: ShareSurface): void {
+  if (typeof window === "undefined" || typeof fetch !== "function") return;
+  const og =
+    surface === "trophy-case"
+      ? `/api/og/trophy-case/${encodeURIComponent(username)}`
+      : `/api/og/profile/${encodeURIComponent(username)}`;
+  try {
+    void fetch(og, { method: "GET", cache: "force-cache" }).catch(() => {});
+  } catch {
+    // best-effort only
+  }
 }
 
 export default function ShareProfileButtons({
@@ -57,6 +81,7 @@ export default function ShareProfileButtons({
   trophyCount,
   compact,
   referrerId,
+  surface,
 }: {
   username: string;
   fmv?: number | null;
@@ -67,7 +92,12 @@ export default function ShareProfileButtons({
   /** Sharer's auth user id — when set, the shared link carries &ref= so a
    *  verified-wallet signup credits the sharer. */
   referrerId?: string | null;
+  /** Which page the link points at. The trophy-case share page must share
+   *  ITSELF — its own URL carries the trophy-case social card — not the
+   *  profile it belongs to (2026-09-02 onboarding QA, finding #3). */
+  surface?: ShareSurface;
 }) {
+  const shareSurface: ShareSurface = surface ?? "profile";
   const [copied, setCopied] = useState(false);
 
   const tweetText = useMemo(() => {
@@ -91,8 +121,14 @@ export default function ShareProfileButtons({
         ? ` My trophy case${trophyCount < 6 ? "" : " (all 6 slots)"} is up:`
         : "";
     const cta = referrerId ? " See how yours stacks up 👇" : "";
+    if (shareSurface === "trophy-case") {
+      // The card the link unfurls into IS the trophy case, so lead with it.
+      const n = trophyCount && trophyCount > 0 ? trophyCount : null;
+      const what = n ? (n === 1 ? "the Moment" : `the ${n} Moments`) : "the Moments";
+      return `My trophy case on @RipPacksCity — ${what} I chose to show off${stat}.${cta || " 👇"}`;
+    }
     return `My collection on @RipPacksCity${stat}.${trophies}${cta}`;
-  }, [fmv, moments, referrerId, trophyCount]);
+  }, [fmv, moments, referrerId, trophyCount, shareSurface]);
 
   // Fire-and-forget reward. The endpoint is session-resolved + DB-capped, so a
   // repeat same-day click is a harmless no-op ({ awarded:false }). 401 (anon)
@@ -108,16 +144,18 @@ export default function ShareProfileButtons({
   }, []);
 
   const shareX = useCallback(() => {
-    const url = profileUrl(username, "x", referrerId);
+    const url = profileUrl(username, "x", referrerId, shareSurface);
     const intent = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
       tweetText,
     )}&url=${encodeURIComponent(url)}`;
+    prewarmCard(username, shareSurface);
     track();
     window.open(intent, "_blank", "noopener,noreferrer");
-  }, [username, tweetText, track, referrerId]);
+  }, [username, tweetText, track, referrerId, shareSurface]);
 
   const copy = useCallback(async () => {
-    const url = profileUrl(username, "copy", referrerId);
+    const url = profileUrl(username, "copy", referrerId, shareSurface);
+    prewarmCard(username, shareSurface);
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
@@ -126,7 +164,7 @@ export default function ShareProfileButtons({
       // clipboard can be blocked — non-fatal.
     }
     track();
-  }, [username, track, referrerId]);
+  }, [username, track, referrerId, shareSurface]);
 
   const btn: React.CSSProperties = {
     padding: compact ? "8px 14px" : "10px 18px",

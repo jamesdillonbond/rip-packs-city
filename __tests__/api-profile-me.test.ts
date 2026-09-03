@@ -10,10 +10,12 @@ const state: {
   user: any
   allow: { data: any; error: any }
   saved: { data: any; error: any }
+  bio: { data: any; error: any }
 } = {
   user: null,
   allow: { data: null, error: null },
   saved: { data: null, error: null },
+  bio: { data: null, error: null },
 }
 
 function chain(getResult: () => any): any {
@@ -32,7 +34,9 @@ function chain(getResult: () => any): any {
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     from: (table: string) =>
-      chain(() => (table === "saved_wallets" ? state.saved : state.allow)),
+      chain(() =>
+        table === "saved_wallets" ? state.saved : table === "profile_bio" ? state.bio : state.allow
+      ),
   },
 }))
 
@@ -50,6 +54,50 @@ beforeEach(() => {
   state.user = null
   state.allow = { data: null, error: null }
   state.saved = { data: null, error: null }
+  state.bio = { data: null, error: null }
+})
+
+// ⚠ THE PUBLIC HANDLE WINS (2026-09-02, onboarding QA finding #2). `username`
+// here is what ProfileClient compares against `/profile/<u>` to decide the
+// viewer owns the page; until this read existed an address-path signup (no Top
+// Shot name anywhere) got `username: null` while their profile existed, and the
+// owner-only share block never rendered on their own page.
+describe("GET /api/profile/me — profile_bio.username is the handle", () => {
+  it("prefers the profile_bio handle over the allow_list and saved_wallets names", async () => {
+    state.user = { id: "h1", email: "a@b.com" }
+    state.bio = { data: { username: "qa0903" }, error: null }
+    state.allow = { data: { username: "allowname", wallet_addr: "0xabc" }, error: null }
+    state.saved = { data: { wallet_addr: "0xsaved", username: "topshotname" }, error: null }
+    const body = await (await GET()).json()
+    expect(body.user.username).toBe("qa0903")
+    expect(body.user.wallet_addr).toBe("0xabc") // wallet still comes from the old chain
+  })
+
+  it("an address-path signup with a chosen handle and no Top Shot name answers the handle", async () => {
+    state.user = { id: "h2", email: "a@b.com" }
+    state.bio = { data: { username: "qa0903" }, error: null }
+    state.allow = { data: null, error: null }
+    state.saved = { data: { wallet_addr: "0xsaved", username: null }, error: null }
+    const body = await (await GET()).json()
+    expect(body.user.username).toBe("qa0903")
+    expect(body.user.identity_degraded).toBe(false)
+  })
+
+  it("a blank handle does not mask the fallbacks", async () => {
+    state.user = { id: "h3", email: "a@b.com" }
+    state.bio = { data: { username: "   " }, error: null }
+    state.saved = { data: { wallet_addr: "0xsaved", username: "topshotname" }, error: null }
+    const body = await (await GET()).json()
+    expect(body.user.username).toBe("topshotname")
+  })
+
+  it("a failed profile_bio read is degraded, not a known absence", async () => {
+    state.user = { id: "h4", email: "a@b.com" }
+    state.bio = { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } }
+    const body = await (await GET()).json()
+    expect(body.user.identity_degraded).toBe(true)
+    expect(JSON.stringify(body)).not.toContain("canceling statement")
+  })
 })
 
 describe("GET /api/profile/me", () => {
