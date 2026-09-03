@@ -94,3 +94,16 @@ section in place — never by moving it.
 ## Failed / reverted
 
 None.
+
+---
+## Status of the "Queued for Trevor" list — re-verified 2026-09-03 15:55 PT (Claude Code, Trevor's box)
+
+The list above was carried forward from earlier handoffs without re-checking. Live state:
+
+1. **Concierge distribution — ALREADY DONE 2026-09-02, drop it.** `SupportChatConnected` is mounted on `app/insights/layout.tsx`, `app/page.tsx`, `/about`, `/blog`, `/early-access` (16 mounts total); `feature_quotas` free `concierge_messages` is **40** (raised from 5 on 09-02, note on the row); the route carries a `cache_control` breakpoint. The 09-02T0645Z filing's four fixes are shipped except the "boards the bot cannot read" tool-coverage item.
+2. **lock-check-batch fairness** — unchanged, and the 09-02T0330Z filing says the one change worth making is Trevor's call (a per-user priority tier is a product decision, not an optimisation). Still queued.
+3. **Sentry dark since 08-18** — unchanged (#34, paying decision).
+4. **`OPENSEA_API_KEY`** — unchanged (#58, one env var).
+5. **Fresh inbox measurement findings** — the two 09-03 daytime filings this list did not yet know about were both re-derived and RESOLVED in place the same afternoon (the parallel-serial "regression" was the self-healer's echo; the pack-opens "wedge" was the known abort class; the candy board was materialised instead of widening its alarm). Ledger 2026-09-03, `focus.md` steer 2026-09-03.
+
+**Not for the night pass:** the wallet-username-resolver port off the dead host, and the player-slug `unaccent` question (moves live URLs — Trevor).

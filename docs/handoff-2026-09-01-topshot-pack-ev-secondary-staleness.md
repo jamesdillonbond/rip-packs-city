@@ -42,3 +42,17 @@ WHERE collection_id='95f28a17-224a-4025-96ad-adf8a4c63bfd'
 
 - Do not delete stale `pack_ev_latest` rows or force-clear the availability flags as a "fix" — that hides the question rather than answering it.
 - Do not touch FMV/pricing/ingest logic to patch this from the sweep. Confirm hypothesis first; any change is code-review-gated.
+
+---
+## ✅ INVESTIGATED AND FIXED WHERE IT MATTERED — 2026-09-03 (15:50 PT, Claude Code on Trevor's box)
+
+**Re-measured (`pack_ev_latest`, Top Shot, 22:4xZ):** 1,210 rows · **1,061** older than 3 days · **654** of those `secondary_available` · **22** of those `is_positive_ev` · oldest **135 days**. Same shape as the sweep, two days on.
+
+**Which hypothesis:** (2), the frozen-flag artifact, is real regardless of (1): `secondary_available` and `secondary_ask` are columns ON the snapshot row, so they are exactly as fresh as `snapshotted_at`. Whether the recompute also under-scopes secondary packs (1) was NOT re-derived here — the surface fix below is correct either way, and (1) is a cost/scope question for the compute job, not a user-facing one once every surface gates.
+
+**Investigation item 1 — surfaces reading `secondary_available` without a freshness gate: TWO, both now gated.**
+- `app/api/og/pack/route.tsx` — the social unfurl. It derived the verdict anchor from `secondary_available`/`secondary_ask` with no age check while the pack page suppresses the verdict past `EV_SNAPSHOT_MAX_AGE_HOURS` (72 h). So each of the 22 stale-available-positive packs unfurled as a green **+EV** off a 3-to-135-day-old snapshot — an affirmative buy signal on the one surface with no methodology footnote. Now selects `ev_snapshotted_at` and applies `isEvSnapshotStale`: stale → **EV STALE**, no ratio, no sealed value, no green; checked BEFORE survivor bias (the page's rule). Unknown stamp stays not-stale (the helper's rule). Three tests.
+- `app/api/packs/grails/route.ts` — `buyableOnly=true` filtered on `primary_available.eq.true,secondary_available.eq.true` alone. Now also `ev_snapshotted_at >= now() − 72 h`; a null stamp is excluded on purpose ("buyable" is an affirmative claim). Two tests pin the query, not the payload.
+- The pack detail page already gated (`isEvSnapshotStale`, 72 h); the deals surface already gated (`lib/packs/pack-deals.ts` imports the same bar). `app/api/pack-ev/route.ts` WRITES the flag; `support-chat` reads `price_source`/asks with its own copy — not re-audited here.
+
+**Item 2 (recompute scope) and item 3 (live cross-check of the 22)** — not done; both are about the job, and neither changes what a reader sees now that the surfaces gate. If (1) is pursued, the number to beat is 654 stale-available rows, and the instrument is this file's own reproduce query.

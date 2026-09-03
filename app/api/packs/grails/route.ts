@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG, SLUG_TO_DB_SLUG } from "@/lib/collections"
+import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sb: any = supabaseAdmin
@@ -136,7 +137,18 @@ export async function GET(req: NextRequest) {
       .in("dist_id", distIds)
 
     if (buyableOnly) {
-      metaQuery = metaQuery.or("primary_available.eq.true,secondary_available.eq.true")
+      // `primary_available` / `secondary_available` are columns on the pack_ev_latest
+      // snapshot, so they are exactly as fresh as `ev_snapshotted_at`. Without this
+      // bound, "buyable" included rows whose availability was last observed months
+      // ago (measured 2026-09-03: 654 of 1,210 Top Shot rows over three days old still
+      // said secondary_available, the oldest 135 days). Same 72 h bar as the pack
+      // page and the deals surface (EV_SNAPSHOT_MAX_AGE_HOURS); a null stamp is
+      // excluded here on purpose — "buyable" is an affirmative claim, and an
+      // undatable availability cannot back one.
+      const freshCutoff = new Date(Date.now() - EV_SNAPSHOT_MAX_AGE_HOURS * 3600 * 1000).toISOString()
+      metaQuery = metaQuery
+        .or("primary_available.eq.true,secondary_available.eq.true")
+        .gte("ev_snapshotted_at", freshCutoff)
     }
 
     const { data: meta, error: mErr } = await metaQuery

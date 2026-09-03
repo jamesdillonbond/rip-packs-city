@@ -16,6 +16,7 @@ import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { OgMark } from "@/lib/og/marks"
+import { isEvSnapshotStale } from "@/lib/pack-dist-verdict"
 
 export const runtime = "edge"
 
@@ -61,6 +62,12 @@ interface PackRow {
   ev_depletion_pct: number | string | null
   secondary_ask: number | string | null
   secondary_available: boolean | null
+  // Age of the pack_ev_latest snapshot this row was built from. `secondary_available`
+  // and `secondary_ask` are COLUMNS ON THAT SNAPSHOT, so they are exactly as fresh as
+  // this timestamp — a 135-day-old row marked available is a claim about a market
+  // that has long since moved (measured 2026-09-03: 654 of 1,210 Top Shot rows over
+  // three days old still carried secondary_available, 22 of them is_positive_ev).
+  ev_snapshotted_at: string | null
   collection_slug: string | null
 }
 
@@ -72,7 +79,7 @@ async function fetchPack(distId: string, collectionSlug: string | null): Promise
   const sb: any = createClient(url, key, { auth: { persistSession: false } })
   let q = sb
     .from("pack_table_rows")
-    .select("title, tier, retail_price_usd, ev_pack_price, pack_ev, gross_ev, value_ratio, is_positive_ev, depletion_pct, ev_depletion_pct, secondary_ask, secondary_available, collection_slug")
+    .select("title, tier, retail_price_usd, ev_pack_price, pack_ev, gross_ev, value_ratio, is_positive_ev, depletion_pct, ev_depletion_pct, secondary_ask, secondary_available, ev_snapshotted_at, collection_slug")
     .eq("dist_id", distId)
     .limit(1)
   if (collectionSlug) q = q.eq("collection_slug", collectionSlug)
@@ -171,13 +178,25 @@ export async function GET(req: NextRequest) {
     (secondaryAskAnchor !== null && grossEv !== null && grossEv > 3 * secondaryAskAnchor)
   )
 
+  // Freshness gate (2026-09-03) — the SAME 72 h bar the pack page and the deals
+  // surface apply (`EV_SNAPSHOT_MAX_AGE_HOURS`), which this card did not. The
+  // unfurl is the one surface where nobody can see the methodology footnote that
+  // carries the timestamp, so a stale row here was a green "+EV" buy signal with
+  // no age on it at all. `secondary_available` / `secondary_ask` are columns on
+  // the same snapshot, so the anchor itself is only as current as this stamp.
+  // Checked FIRST, before survivor bias, for the reason the page gives: when the
+  // snapshot is days old, "survivor bias" is the wrong explanation to publish.
+  // An UNKNOWN stamp is deliberately not stale (the helper's rule) — a card must
+  // not manufacture a finding out of its own missing data.
+  const evStale = isEvSnapshotStale({ snapshottedAt: row?.ev_snapshotted_at ?? null })
+
   const packEv = grossEv !== null && secondaryAskAnchor !== null ? grossEv - secondaryAskAnchor : null
   const valueRatio = grossEv !== null && secondaryAskAnchor !== null ? grossEv / secondaryAskAnchor : null
   const isPositive = packEv !== null && packEv > 0
-  const hasVerdict = secondaryAskAnchor !== null && !evSurvivorBiased && packEv !== null
+  const hasVerdict = secondaryAskAnchor !== null && !evStale && !evSurvivorBiased && packEv !== null
   const depletion = row?.depletion_pct ?? null
 
-  const verdictLabel = secondaryAskAnchor === null ? "NO ASK" : evSurvivorBiased ? "EV N/A" : packEv === null ? "EV PENDING" : isPositive ? "+EV" : "−EV"
+  const verdictLabel = secondaryAskAnchor === null ? "NO ASK" : evStale ? "EV STALE" : evSurvivorBiased ? "EV N/A" : packEv === null ? "EV PENDING" : isPositive ? "+EV" : "−EV"
   const verdictColor = !hasVerdict ? "#9CA3AF" : isPositive ? "#10B981" : "#EF4444"
   const verdictBg = !hasVerdict ? "rgba(156,163,175,0.10)" : isPositive ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)"
   const verdictBorder = !hasVerdict ? "rgba(156,163,175,0.25)" : isPositive ? "rgba(16,185,129,0.30)" : "rgba(239,68,68,0.30)"
@@ -296,7 +315,7 @@ export async function GET(req: NextRequest) {
             value={fmtUsd(secondaryAskAnchor ?? retail)}
             color="#FFFFFF"
           />
-          <Stat label="VALUE SEALED" value={evSurvivorBiased ? "—" : fmtUsd(grossEv)} color={hasVerdict && isPositive ? "#10B981" : "#FFFFFF"} />
+          <Stat label="VALUE SEALED" value={evStale || evSurvivorBiased ? "—" : fmtUsd(grossEv)} color={hasVerdict && isPositive ? "#10B981" : "#FFFFFF"} />
           <Stat
             label="EV VS ASK"
             value={!hasVerdict || valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}

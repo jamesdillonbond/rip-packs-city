@@ -264,3 +264,50 @@ describe("/api/og/pack — the verdict", () => {
     expect(capture.c!.options()).toMatchObject({ width: 1200, height: 630 })
   })
 })
+
+// ── Guard 3 (2026-09-03): freshness ─────────────────────────────────────────
+//
+// `secondary_available` and `secondary_ask` are columns on the pack_ev_latest
+// snapshot, so the verdict anchor is exactly as fresh as `ev_snapshotted_at`.
+// The pack page and the deals surface already suppress the verdict past the
+// shared 72 h bar (EV_SNAPSHOT_MAX_AGE_HOURS); this card did not, and the unfurl
+// is the one surface with no methodology footnote to carry the age. Measured
+// 2026-09-03: 654 of 1,210 Top Shot rows over three days old still carried
+// secondary_available, 22 of them is_positive_ev, the oldest 135 days.
+describe("/api/og/pack — the freshness gate", () => {
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3600 * 1000).toISOString()
+
+  it("SUPPRESSES the verdict and the sealed value on a snapshot older than the 72 h bar", async () => {
+    // Four days old: the page would already refuse to headline this. The row is
+    // otherwise the HEALTHY +EV shape, so only the age can be what flips it.
+    mockDb({ pack: { ...HEALTHY, ev_snapshotted_at: hoursAgo(96) } })
+    const el = await render(TS)
+    const text = ogText(el)
+
+    expect(text).toContain("EV STALE")
+    expect(text).not.toContain("+EV")
+    expect(text).not.toContain("3.00x")
+    expect(text).not.toContain("$60.00")
+    expect(usesColor(el, "#10B981")).toBe(false)
+  })
+
+  it("keeps the verdict on a snapshot inside the bar — the gate is about age, not the column's presence", async () => {
+    mockDb({ pack: { ...HEALTHY, ev_snapshotted_at: hoursAgo(2) } })
+    const el = await render(TS)
+    const text = ogText(el)
+
+    expect(text).toContain("+EV")
+    expect(text).toContain("3.00x")
+    expect(text).not.toContain("EV STALE")
+    expect(usesColor(el, "#10B981")).toBe(true)
+  })
+
+  it("staleness is judged BEFORE survivor bias — a stale, depleted pool says STALE, not N/A", async () => {
+    // Both gates trip. The page's rule: when the snapshot is days old, "survivor
+    // bias" is the wrong explanation to give the reader.
+    mockDb({ pack: { ...HEALTHY, gross_ev: 801, ev_depletion_pct: 96, secondary_ask: 10, ev_snapshotted_at: hoursAgo(96) } })
+    const text = ogText(await render(TS))
+    expect(text).toContain("EV STALE")
+    expect(text).not.toContain("EV N/A")
+  })
+})

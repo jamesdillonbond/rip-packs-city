@@ -5,11 +5,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // missing-collection 400, unknown-collection 400, the empty-grails 200
 // ({rows:[]}), and a happy path that joins meta onto the grail rows.
 
-const state: { grails: any; gErr: any; meta: any; mErr: any } = {
+const state: { grails: any; gErr: any; meta: any; mErr: any; calls: Array<[string, ...any[]]> } = {
   grails: [],
   gErr: null,
   meta: [],
   mErr: null,
+  // Every filter the route applies to the pack_table_rows side, in order. The
+  // 2026-09-03 freshness gate is a CLAIM about the query, not about the payload
+  // (the mock returns whatever it is given), so it is pinned by what was asked.
+  calls: [],
 }
 
 vi.mock("@/lib/collections", () => ({
@@ -26,9 +30,9 @@ vi.mock("@/lib/supabase", () => {
     const b: any = {
       select: () => b,
       eq: () => b,
-      gte: () => b,
+      gte: (...a: any[]) => { if (table === "pack_table_rows") state.calls.push(["gte", ...a]); return b },
       in: () => b,
-      or: () => b,
+      or: (...a: any[]) => { if (table === "pack_table_rows") state.calls.push(["or", ...a]); return b },
       order: () => b,
       limit: () => b,
       then: (resolve: any) => resolve(payload()),
@@ -47,6 +51,7 @@ beforeEach(() => {
   state.gErr = null
   state.meta = []
   state.mErr = null
+  state.calls = []
 })
 
 describe("GET /api/packs/grails", () => {
@@ -87,5 +92,41 @@ describe("GET /api/packs/grails", () => {
     const res = await GET(req("https://t/api/packs/grails?collection=nba_top_shot"))
     expect(res.status).toBe(200)
     expect((await res.json()).collection_id).toBe("uuid-ts")
+  })
+})
+
+// ── 2026-09-03: "buyable" is an affirmative claim, so it is freshness-gated ──
+//
+// primary_available / secondary_available are columns on the pack_ev_latest
+// snapshot, exactly as fresh as ev_snapshotted_at. Measured the day this landed:
+// 654 of 1,210 Top Shot rows over three days old still said secondary_available,
+// the oldest 135 days. The same 72 h bar the pack page and deals surface use.
+describe("GET /api/packs/grails — buyableOnly is freshness-gated", () => {
+  it("applies the availability OR **and** an ev_snapshotted_at lower bound inside the 72 h bar", async () => {
+    state.grails = [{ dist_id: "d1", grails_100: 5, max_pull_fmv: 1000 }]
+    state.meta = [{ dist_id: "d1", title: "Premium Pack", secondary_available: true }]
+    const before = Date.now()
+    const res = await GET(req("https://t/api/packs/grails?collection=nba-top-shot&buyableOnly=true"))
+    expect(res.status).toBe(200)
+
+    const or = state.calls.find((c) => c[0] === "or")
+    expect(or?.[1]).toBe("primary_available.eq.true,secondary_available.eq.true")
+
+    const gte = state.calls.find((c) => c[0] === "gte")
+    expect(gte, "no ev_snapshotted_at bound was applied").toBeDefined()
+    expect(gte![1]).toBe("ev_snapshotted_at")
+    const cutoff = Date.parse(gte![2])
+    // 72 h ago, give or take the test's own wall clock.
+    expect(before - cutoff).toBeGreaterThan(71 * 3600 * 1000)
+    expect(before - cutoff).toBeLessThan(73 * 3600 * 1000)
+  })
+
+  it("applies NEITHER filter when buyableOnly is off — the leaderboard still shows every pack", async () => {
+    state.grails = [{ dist_id: "d1", grails_100: 5, max_pull_fmv: 1000 }]
+    state.meta = [{ dist_id: "d1", title: "Premium Pack" }]
+    const res = await GET(req("https://t/api/packs/grails?collection=nba-top-shot"))
+    expect(res.status).toBe(200)
+    expect(state.calls.some((c) => c[0] === "or")).toBe(false)
+    expect(state.calls.some((c) => c[0] === "gte")).toBe(false)
   })
 })
