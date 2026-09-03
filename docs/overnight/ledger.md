@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED (docs-in-code) — a KILLED tick can carry a CLEAN heartbeat correlation, measured 90 minutes after converting the route
+
+`lib/pipeline/heartbeat.ts` has said since 2026-08-20 that `heartbeat + terminal row -> ran to completion`. **That is too strong, and the counter-example arrived on a route this session converted ninety minutes earlier.**
+
+`app/api/cron/evm-transfers-ingest`, tick of **2026-09-03 07:34:26Z**, both sides:
+
+| source | says |
+|---|---|
+| Vercel | `GET /api/cron/evm-transfers-ingest 200 [error]` — **`Task timed out after 60 seconds`** |
+| `pipeline_runs` | marker at 07:34:26.210Z, terminal row same start, **`ok = true`**, **`duration_ms = 60,464`** against a **60,000 ms** wall |
+
+⭐ **The platform killed that invocation and the correlation is clean** — the terminal write raced the wall and won, so `lib/pipeline/kill-rate.ts` scores the tick healthy. The test answers *"did a terminal row LAND"*, never *"did the invocation SURVIVE"*, and those coincide only when the row is written well before the wall — the common case, and not the interesting one.
+
+⚠ **The under-count is silent**, so both headers now carry the correction and the evidence rather than the old claim.
+
+**⛔ The instrument change is NAMED, not half-done.** The discriminator is already in the row — `duration_ms` at or beyond the ROUTE'S OWN `maxDuration` — but `kill-rate.ts` has no per-route wall to compare against: they live in `export const maxDuration` in each route file, and the walls in use are 30/60/120/300/800 s, so any fleet-wide constant would misclassify most of the fleet. The work is specified in the filing, including that its hard half is a pipeline-name → route mapping that exists nowhere machine-readable.
+
+**ⓘ A second question, deliberately unanswered:** that tick ran 60.4 s while the route's own `BUDGET_MS` is 25 s — and all **12** neighbouring ticks in the preceding three hours ran **25.1–25.6 s**. 2.4× its internal budget with nothing stopping it. ⛔ n=1, so not a finding; the cheap next step is `duration_ms > 30000` on that pipeline.
+
+**⭐ And it is the censored maximum from the other side.** The route was selected for conversion on a measured `max(duration_ms)` of **26,195 ms**, understated precisely because killed ticks write nothing — and the first hour of observation after the marker landed produced a tick at the wall. The selection rule was right and its own input was low.
+
+Comment-only in both modules; 50 tests across the three heartbeat files green, tsc clean. Filed as `2026-09-03T0800Z-a-killed-tick-can-carry-a-clean-heartbeat-correlation.md`.
+
+**Revert.** `git revert <this sha>` — restores the older, over-strong claim. Nothing executable changed.
+
 ### 2026-09-03 · ✅ SHIPPED — swept the whole tree for the streaming-abort shape, found a third instance, and made it a BAN AT ZERO
 
 The rule this repo keeps re-learning, applied on purpose this time: **when you find one, grep for the EXPRESSION, not the file** — and *"a guard scoped to where the bug was found is scoped to the past"* (recorded 2026-09-02 as the third instance of that shape).
