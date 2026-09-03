@@ -10,6 +10,71 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED (prod DB, migration `20260903164254`) — the second half: the MCP cap counted a key NOTHING WROTE, so `used_today` was pinned at 0 for every plan
+
+The morning entry below fixed the plan-vocabulary half and said plainly that the
+cap was **still inert for an independent reason**. That reason is now fixed too,
+and the earlier diagnosis of it was **wrong in a way worth recording**: it said
+the fix needed a `wrangler deploy` nobody here can run. ⭐ **It did not.** The
+Worker already calls `mcp_log_tool_call` on every tool call, so the missing write
+belonged in the function it was **already calling** — a DB change, shipping
+through the same path as every other migration. *Check what the caller already
+calls before concluding a fix is out of reach.*
+
+`check_feature_quota` counts `usage_events WHERE feature_name = p_feature`
+**exactly**, and the worker gates on `'mcp_query'`. `mcp_log_tool_call` wrote only
+`'mcp_' ||` the tool name, so calls landed as `mcp_get_fmv` / `mcp_lookup_wallet`
+and the counted key was written by nothing at all. `used_today` was therefore
+permanently 0, `allowed` permanently true — **including for `free` and its 100/day
+cap, which is the anonymous-abuse surface.**
+
+🚨 **The reason this survived is the reason it is now guarded twice: a limiter
+that never fires is INDISTINGUISHABLE from a limiter nobody has hit.** The request
+200s, the quota RPC answers `allowed:true`, nothing is logged. It is the `?? 0`
+shape one level up — the guard fails **open** and publishes the failure as a
+measured "within quota". So both new tests assert `used_today` **rising**, never a
+200 coming back.
+
+**Shipped:** `mcp_log_tool_call` now writes TWO rows per call — the per-tool row
+(observability, shape unchanged) and the `mcp_query` row (the counter, tool name
+kept in metadata). `v_mcp_usage_today` gained `feature_name <> 'mcp_query'`,
+because `'mcp_query'` matches its own `mcp\_%` filter and every per-tool number
+would otherwise **double**; `security_invoker=on` re-asserted in the `WITH` clause.
+⚠ Collapsing to one row keyed `mcp_query` was the alternative and was **rejected**:
+the view would have to group on `metadata->>'tool'`, i.e. RENAME a column, which
+`CREATE OR REPLACE VIEW` cannot do (42P16).
+
+**Verified LIVE, not just locally:** two `mcp_log_tool_call` calls on a probe
+wallet → 4 rows, `used_today` **0 → 2**, `daily_limit` 100, `within_quota`; the
+view showed **2** tool calls, not 4, and **zero** `mcp_query` rows; `reloptions`
+still `{security_invoker=on}`; uppercase wallet lowercased onto one address. Probe
+rows deleted afterwards — `usage_events` back to **0** rows matching `mcp%`.
+
+**Guards, and each was made to FAIL before being trusted.** `supabase/tests/mcp_log_tool_call.sql`
+(registered in the drift-guard PINS, 184/184 DB-invariant files green locally):
+reverting the body to the shipped single insert reds on *"a tool call is COUNTED
+by the quota"* with **got [0], want [1]** — the live pre-fix value; dropping the
+view exclusion reds with **6 vs 3**; dropping `security_invoker` reds on
+`reloptions`. The TS guard's `mcp_query` suppression was **re-justified rather than
+deleted**: the write is `plpgsql`, so a TypeScript literal scan is blind to it by
+construction. ⛔ **Deliberately NOT fixed by teaching that scan to read migrations
+— they are append-only, so a literal in any superseded migration would bank credit
+for a property that had stopped holding.**
+
+⚠ **Timing, stated because it departs from the written preference.** CLAUDE.md says
+prefer a low-traffic window for `apply_migration` (a ~10–20 s user-facing
+`PGRST002` burst). Applied at ~09:45 PT instead, deliberately: `usage_events`
+carries ~138 page-views/day ≈ 6/hour, so the expected affected requests are ~0.03,
+and two other migrations landed in daylight today (`20260903134528`,
+`20260903142035`). The alternative was leaving a verified fix as a handoff, which
+the WORKING STYLE rule forbids more strongly than the timing rule prefers. **This
+is a judgement call, not a precedent — on a busier day the window wins.**
+
+**Revert:** `git revert` the commit (find by message: `git log --grep='writes the quota key'`),
+then re-apply the prior definitions — both are quoted verbatim in the migration's
+own header and in `supabase/migrations/20260512155009_mcp_phase1_api_keys_and_quotas.sql`.
+Reverting restores the inert cap; it does not lose data.
+
 ### 2026-09-03 · ✅ SHIPPED — the sentinel gains an ACK with a reason and an expiry, and Detector Health is acked to 2026-10-03: the fleet alarm stops paging CRITICAL every hour for a red only Trevor can clear · Claude Code (cloud)
 
 - **What shipped:** migration `20260903163248_audit_20260903_sentinel_threshold_config_ack_with_reason_and_expiry` (applied 16:32Z) adds `ack_reason text` + `ack_expires_at timestamptz` to `sentinel_threshold_config`, a pair CHECK (`(ack_reason IS NULL) = (ack_expires_at IS NULL)` — half an ack is no ack), column comments, and ONE row: `Detector Health (GitHub Actions)` acked to **2026-10-03T07:00Z** (midnight PT) with `warn_at`/`crit_at` NULL so the arm keeps its hardcoded 3/7. `app/api/sentinel/route.ts` reads the two columns and, AFTER evaluation, downgrades a **critical** check with an unexpired ack to **warn** (never ok), prefixing `[ACKNOWLEDGED until <date> — <reason>]`; an EXPIRED ack leaves the check critical and prefixes `[ACK EXPIRED <date> — <reason>]`, so the red comes back on its own and a reader can tell "it came back" from "nobody looked". Five tests in `api-sentinel-branches.test.ts`: control pages CRITICAL, unexpired ack → warn with the finding still in the detail and exactly one name leaving the critical SET, expired ack → critical + annotated, an ack never touches a warn or ok check, and a reason without a date / an unparsable date / a blank reason does not downgrade.
