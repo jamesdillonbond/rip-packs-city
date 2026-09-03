@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — the unbounded-read class had a ban at zero for PAGES and no instrument at all for API ROUTES; 131 of 131 now under a ratchet
+
+Found by closing an unasserted claim rather than by a sweep. The sniper-feed filing said `/api/sniper-feed` was *"very likely another instance of the guard-scope class"* and explicitly declined to assert it. Running the guard settles it:
+
+```
+[unbounded-server-reads] 183 page/layout file(s); 82 async server; 0 unbounded (ceiling 0)
+```
+
+⭐ **It walks PAGE and LAYOUT files and no API routes at all** — so the route is outside it, and **not because a glob was drawn too narrowly**. That guard is about server *pages*, it is doing that job perfectly, and the real gap is bigger and simpler: **the same class has a ban at zero for pages and NO instrument for API routes.**
+
+Sized, comment-stripped: **499** route files · **359** read Supabase · **273** carry no budget primitive at all.
+
+**Shipped a ratchet over the subset whose failure answer is already settled**, derived from each route's own code rather than a path list: a route that calls `apiErrorResponse()` or `boardUnavailable()` **has already decided it owes the caller an honest answer on a failed read** — and unbounded it cannot deliver one, because the platform kills the function before the degraded branch three lines below can run. **131 routes** in that population.
+
+**🚨 AND THE PREDICATE WAS WRONG ONCE, IN A WAY THAT VOUCHED FOR THE MOTIVATING CASE.** The first draft counted `AbortSignal.timeout` as a bound, and `/api/sniper-feed` — the route this exists because of — **passed on the strength of a 6,000 ms bound on an HTTP call at line 550**, with four Supabase RPCs unbounded beside it. That is exactly the trap `lib/pack-dist/fetchers.ts` records against itself (*"one bounded read vouching for thirteen bare siblings"*), reproduced in the guard written after reading it. The pattern is now DB-specific: `withBoardBudget` / `withPagedBoardBudget` / `rpcWithRetry` / supabase-js's own `.abortSignal()`.
+
+⛔ **With the correct predicate the number is not 129, it is 131 of 131 — not one route in the population bounds the read it has promised to degrade on.** The 129 was the wrong predicate flattering the tree by two.
+
+⚠ **The non-vacuity case had to be built the other way round.** "Some route in the population IS bounded" is unavailable when none is, and asserting it would make the guard fail on the state it describes — the rule that *a not-vacuous check must be satisfiable at a population of zero*. The detector is proved live from OUTSIDE the population instead: **28 `lib/` modules use a DB budget primitive**, so a dead pattern fails loudly.
+
+⭐ **And the motivating route is OUTSIDE this ratchet, asserted as a test rather than buried in prose.** `/api/sniper-feed` never calls an honest-error helper, so the premise does not apply to it; the wider set (reads Supabase, no honest helper) is ~228 routes with no instrument at all. A green run here does not cover the route that prompted it, and the file says so in a case that fails if that ever changes.
+
+Mutation-checked both ways: re-adding `AbortSignal.timeout` to the pattern fails the no-slack assertion (it flatters two routes), and breaking the honest-helper pattern fails non-vacuity AND no-slack.
+
+4 tests, tsc and eslint clean. Test-only — no runtime change.
+
+**Revert.** `git revert <this sha>` — removes a guard; nothing executable changes.
+
 ### 2026-09-03 · ✅ SHIPPED — the per-route wall map, and a first fleet sweep that diagnoses its own mapping errors
 
 Unblocks **step 1 of the three** the 08:00Z filing specified. `classifyKillRecord` needs `duration_ms` against **the route's own** `maxDuration` to see a tick the platform killed after its terminal row landed — and no per-route wall existed anywhere in code.
