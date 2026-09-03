@@ -88,3 +88,31 @@ That is Trevor's call.
 detector whose red is fully acknowledged. Same effect on the sentinel, no change to `edge-fn-drift` —
 but it moves the suppression one level up rather than removing it, which is worse in one specific way:
 the sentinel would then be asserting something about a script it does not read.
+
+---
+
+## ⛔ CORRECTION, same session, ~20 minutes later — I checked the two warns and BOTH are benign
+
+Above I wrote that the two `warn` checks sitting under the pinned CRITICAL *"both look like real
+work"*. **That was an inference from the alert text, not a measurement, and it is wrong on both.**
+
+**`allday-pack-opens-backfill` silent 205m — SELF-CLEARED.** Its last run is **2026-09-03 03:46:02Z**,
+about twenty minutes before this correction and well inside its 90-minute window. Over the 73 h
+`pipeline_runs` retains: **71 runs, 65 ok, 63 wrote rows.** The 00:31Z reading was a transient gap,
+not a stalled pipeline.
+
+**The unmapped backlog — `info`, and DRAINING HARD.** `check_unmapped_backlog_growth()` returns
+severity **`info`** for both collections. All Day: **outflow 4,672 against inflow 41 in 24 h**,
+drain_ratio **113.95**, **net −4,631/day**, ~**9.2 days** to clear 42,590 actionable rows (of 100,009
+open, the other 57,419 being multi-NFT gross rows frozen by design). UFC: 1,070 open, zero flow both
+ways.
+
+⚠ **The `Trust Health` arm's `unmapped_resolution_backlog_max = 209` is a DIFFERENT metric from the
+growth checker's**, and this correction does not claim the arm is wrong — only that the backlog it
+gestures at is shrinking fast, so "real work" was the wrong description.
+
+⭐ **The finding of this filing is UNAFFECTED and is arguably strengthened.** The structural point was
+never that something is currently masked — the filing says so explicitly — but that **a pinned badge
+cannot signal a new critical.** Both warns being benign is exactly what a healthy fleet under a stuck
+alarm looks like, and it is why *"read the LOG, not the badge"* had to be the first thing checked.
+
