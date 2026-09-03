@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ⏸ PARKED, NOT SHIPPED — `/api/profile/top-movers` gets a total budget, written and unverified because the tooling went down mid-change
+
+**⛔ NOTHING RUNTIME CHANGED. The patch is committed to `docs/overnight/handoffs/`, the working tree was reverted, and `main` is untouched by it.**
+
+**The defect, and it is structural rather than a slow query.** `get_top_movers` runs **once per saved wallet, sequentially**, with no bound on the calls and no ceiling on their number — a collector with more wallets simply waits longer, without limit. The failure mode is a **platform kill**: the function dies with no body, so `TopMoversCard` — which correctly discriminates on `res.ok` — gets a bare 5xx, and every honest branch this route so carefully builds is unreachable. It took **2 × 5xx in the 24 h to 2026-09-03 08:00Z**.
+
+**The fix, in the patch:** ONE total deadline, with each read bounded by **what is left of it**. ⚠ A per-read bound of N still lets ten wallets run 10N — the quantity with no ceiling is the SUM, and the deadline is checked BEFORE each call so the total is a real ceiling rather than "the last read may start with 1 ms left". Five test cases including a **total-is-not-per-read** case (six wallets × 10 s must STOP, not finish) and a no-change control that six *fast* wallets still return 200.
+
+**⭐ Sized so it cannot degrade a request that works today.** The largest SUCCESSFUL `get_top_movers` in `pg_stat_statements` is **8,801 ms** (a ~19k-moment whale), so 25,000 ms sits well above anything this route has been seen to complete. ⚠ **Two numbers are missing and the budget is deliberately loose because of it:** the route declares no `maxDuration`, so its real wall is a platform default this sandbox cannot read; and `pg_stat_statements` holds only two organic calls, both against the same whale, so there is no representative per-call latency. **Do not tighten it to a tidy number** — re-derive both first.
+
+**🚨 WHY IT IS PARKED RATHER THAN SHIPPED.** The Bash safety classifier went unavailable mid-change and stayed down, so `tsc`, `vitest` and the mutation check could not run. The last successful `tsc` predates the loop bound, the whole test file and a harness change — **the parts most likely to fail on first run**. Shipping it would have put an unverified change on `main` overnight with nobody watching, where a red gate blocks the next session's unrelated work. ⭐ **An unverified change on `main` overnight is worse than no change**, and parking costs one docs commit and loses nothing.
+
+**To finish it** (`docs/overnight/handoffs/README.md` carries the same list): `git apply` the patch · `npx tsc --noEmit` · run `__tests__/api-profile-top-movers.test.ts` · mutation-check by deleting the pre-call deadline check, which the six-wallet case must catch · **and in the SAME commit lower `BUDGET` 131 → 130** in `__tests__/api-routes-that-degrade-honestly-also-bound-their-reads.test.ts`, which asserts `.toBe()` — **CI goes red if the conversion lands without it.**
+
+⚠ **The patch can go stale.** It is a diff against the tree as of this entry; if either file has moved on, re-derive rather than force it. Retire the file in whichever commit ships or abandons the work — a patch left there after shipping reads as outstanding work.
+
+**Revert.** `git revert <this sha>` — deletes a docs directory. Nothing executable is affected.
+
 ### 2026-09-03 · ⏳ OWED — three of tonight's ships are unverified IN PRODUCTION, all three traffic-gated rather than broken, each closable in one query
 
 Recorded here rather than only in the session log, because the ledger is what the next pass reads first. **The site was quiet from ~00:40 PT**, so none of these is evidence of a problem — they are verifications that could not be taken.
