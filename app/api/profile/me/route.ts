@@ -55,8 +55,16 @@ export async function GET() {
   // signup — or anyone who renamed their handle in /profile/edit — answered
   // `username: null` here while `/profile/<u>` existed, and the owner-only
   // share block on their own profile never rendered (QA walkthrough, finding #2).
-  // The Top Shot-name fallbacks below are kept for callers that still key on
-  // them, but a real handle wins.
+  //
+  // ⚠ AND THE TOP SHOT NAME IS NOT A FALLBACK FOR IT (2026-09-02, second QA
+  // account). Both consumers of `username` — ProfileClient's "is this MY page"
+  // compare and the rewards page's share link — mean the PUBLIC HANDLE. With
+  // the fallback, a collector who saved Trevor's wallet by Top Shot username
+  // answered `username: "jamesdillonbond"` with no handle of their own, so
+  // on /profile/jamesdillonbond they were treated as the OWNER and their share
+  // link pointed at someone else's profile. The Top Shot name now travels as
+  // `topshot_username`, separately; `username` is the handle or null.
+  let topshotUsername: string | null = null
   {
     const { data: bio, error: bioError } = await (supabaseAdmin as any)
       .from("profile_bio")
@@ -82,7 +90,7 @@ export async function GET() {
       identityDegraded = true
       console.error(`[profile/me] allow_list read failed: ${error.message ?? String(error)}`)
     }
-    username = username ?? data?.username ?? null
+    topshotUsername = topshotUsername ?? data?.username ?? null
     walletAddr = data?.wallet_addr ?? null
   }
 
@@ -106,7 +114,7 @@ export async function GET() {
       console.error(`[profile/me] saved_wallets read failed: ${savedError.message ?? String(savedError)}`)
     }
     walletAddr = saved?.wallet_addr ?? null
-    username = username ?? saved?.username ?? null
+    topshotUsername = topshotUsername ?? saved?.username ?? null
   }
 
   const resolved = await resolveDisplayName({
@@ -122,6 +130,9 @@ export async function GET() {
         email: user.email ?? null,
         created_at: user.created_at ?? null,
         username,
+        // The Top Shot username the collector's wallet was saved under, when
+        // any. NOT the public handle — do not compare it against /profile/<u>.
+        topshot_username: topshotUsername,
         wallet_addr: walletAddr,
         display_name: resolved.display_name,
         display_name_source: resolved.source,

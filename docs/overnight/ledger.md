@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — `/api/profile/me` no longer hands a collector someone else's handle: `username` is the public handle or null, the Top Shot name travels separately · Cowork (device VM)
+
+Found while verifying #1 (the cache-aware username resolver) live as the second QA account: `POST /api/profile/resolve-and-associate {username:"jamesdillonbond"}` answered **200 in 981 ms** (it was a 502 in the walkthrough) — good — and then `/api/profile/me` for that account answered `username: "jamesdillonbond"` with **no handle of its own**. The route's saved-wallets fallback returned the Top Shot name the wallet was saved under, and both consumers of `username` mean the PUBLIC HANDLE: `ProfileClient` compares it to `/profile/<u>` to decide the viewer OWNS the page (so this account was the "owner" of Trevor's profile, share block and `&ref=` included), and `/rewards` builds its share link from it (pointing at someone else's profile). Pre-existing fallback; `3b60113` made the handle primary but left it.
+
+- `app/api/profile/me/route.ts`: `username` = `profile_bio.username` or null; the allow_list / saved_wallets names now ship as `topshot_username` (no consumer yet; kept so nothing that keyed on the name loses it). Four tests that pinned the fallback are INVERTED with the reason, plus one new case. tsc clean; 24 related files (427 tests) green. Transferred as a diff against the recorded base.
+- **#1 verified by the real caller:** the username path resolves a cached handle in under a second for a fresh account.
+
+**Revert.** `git revert <this sha>`.
+
 ### 2026-09-02 · ✅ SHIPPED — two user-facing image proxies threw a 500 instead of answering, and the reason they were missed is the third instance of one shape
 
 **⛔ FOUND IN THE LIVE ERROR TABLE, not by a grep.** Vercel runtime errors for the 24 h to

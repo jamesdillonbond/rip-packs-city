@@ -83,12 +83,16 @@ describe("GET /api/profile/me — profile_bio.username is the handle", () => {
     expect(body.user.identity_degraded).toBe(false)
   })
 
-  it("a blank handle does not mask the fallbacks", async () => {
+  it("a blank handle is null, and the Top Shot name never stands in for it", async () => {
+    // 2026-09-02, second QA account: with the fallback, a collector who saved
+    // Trevor's wallet by Top Shot username answered username "jamesdillonbond"
+    // and was treated as the OWNER of /profile/jamesdillonbond.
     state.user = { id: "h3", email: "a@b.com" }
     state.bio = { data: { username: "   " }, error: null }
     state.saved = { data: { wallet_addr: "0xsaved", username: "topshotname" }, error: null }
     const body = await (await GET()).json()
-    expect(body.user.username).toBe("topshotname")
+    expect(body.user.username).toBeNull()
+    expect(body.user.topshot_username).toBe("topshotname")
   })
 
   it("a failed profile_bio read is degraded, not a known absence", async () => {
@@ -116,7 +120,11 @@ describe("GET /api/profile/me", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.user.id).toBe("u1")
-    expect(body.user.username).toBe("trevor")
+    // ⚠ INVERTED 2026-09-02: allow_list.username is the TOP SHOT name, not the
+    // public handle. It now travels as topshot_username; username is null
+    // until a profile_bio handle exists (see the describe block above).
+    expect(body.user.username).toBeNull()
+    expect(body.user.topshot_username).toBe("trevor")
     expect(body.user.wallet_addr).toBe("0xabc")
     expect(body.user.display_name).toBe("Trevor")
     expect(body.user.display_name_source).toBe("profile_bio")
@@ -132,7 +140,9 @@ describe("GET /api/profile/me", () => {
     const res = await GET()
     const body = await res.json()
     expect(body.user.wallet_addr).toBe("0xsaved")
-    expect(body.user.username).toBe("savedname")
+    // ⚠ INVERTED 2026-09-02: the saved_wallets name is the Top Shot name.
+    expect(body.user.username).toBeNull()
+    expect(body.user.topshot_username).toBe("savedname")
   })
 
   it("keeps the allow_list username but takes wallet_addr from saved_wallets when the allow_list wallet is null", async () => {
@@ -141,7 +151,8 @@ describe("GET /api/profile/me", () => {
     state.saved = { data: { wallet_addr: "0xfromsaved", username: "savedbackup" }, error: null }
     const res = await GET()
     const body = await res.json()
-    expect(body.user.username).toBe("allowuser") // username ?? saved keeps the left side
+    expect(body.user.username).toBeNull()
+    expect(body.user.topshot_username).toBe("allowuser") // allow ?? saved keeps the left side
     expect(body.user.wallet_addr).toBe("0xfromsaved")
   })
 
@@ -155,7 +166,8 @@ describe("GET /api/profile/me", () => {
     const body = await res.json()
     expect(body.user.email).toBeNull()
     expect(body.user.wallet_addr).toBe("0xnoemail")
-    expect(body.user.username).toBe("noemail")
+    expect(body.user.username).toBeNull()
+    expect(body.user.topshot_username).toBe("noemail")
   })
 
   it("resolves wallet_addr and username to null when neither allow_list nor saved_wallets has one", async () => {
