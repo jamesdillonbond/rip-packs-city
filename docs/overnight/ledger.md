@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — the IPFS proxy classifies its own timeout off the SIGNAL, not off the error's name
+
+Follow-up to the two-phase-budget fix an hour earlier, and it came out of verifying that one live rather than from a grep.
+
+A deliberately unresolvable CID probed against the new deploy returned **502 in 7,800 ms** and logged `reason=transport name=Error`. Two readings, and they need opposite responses: a genuine upstream fault 200 ms inside our deadline, or **our own abort with its reason discarded by the runtime**, in which case every timeout this route takes had just started reporting itself as somebody else's problem.
+
+**The timing says it is the first** — every real abort in the preceding logs sits at **7,982–7,999 ms**, hard against the 8,000 ms wall, and 7,800 is distinctly early. But the question should not have been decidable only by eyeballing a distribution.
+
+⚠ **The name was never a safe discriminator once the code stopped using `AbortSignal.timeout`.** That helper rejects with a `DOMException` named `TimeoutError`; a manual `controller.abort(reason)` only preserves the reason **in some runtimes** — verified surviving in Node, and this route ships to the **edge** runtime, which is a different implementation. A name-sniffing classifier that meets a bare `Error` relabels our own timeout as a transport fault, and *"raise the timeout"* is then the wrong fix for a problem that no longer looks like ours. This route's header already records what that blindness costs: its 502 path was unreachable dead code for months and it took a hand count of 504s to notice.
+
+**Shipped.** The catch reads `controller.signal.aborted` — the route's own state, which no runtime can reinterpret — and keeps `name=` as a forensic field so the two can still be told apart later.
+
+**Also rewritten, and this is the part worth keeping:** the existing "names an ABORT distinctly" test stubbed a rejection with a `TimeoutError`-named error and **never aborted anything**, so it pinned the old implementation's SPELLING rather than the property — it would have gone green on a route that called every failure an abort. It now drives the route's real timer under fake timers with a fetch that hangs until its own signal fires, plus a new case where the runtime **discards the reason** and the classification must still hold. Mutation-checked: putting the name sniff back fails that case.
+
+19 tests green in the file, 32 across the three ipfs/image-proxy files, tsc clean.
+
+**Revert.** `git revert <this sha>`.
+
 ### 2026-09-03 · ✅ SHIPPED — the IPFS proxy was killing transfers it had already won: one abort budget governed both the headers AND the body
 
 **⛔ FOUND IN THE LIVE LOG, and the giveaway is that the success line and the failure are the SAME REQUEST.** Straight from production:
