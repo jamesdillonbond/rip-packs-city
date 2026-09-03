@@ -29,6 +29,26 @@ export async function GET(_req: NextRequest) {
   let rows: any[] = [];
   let sealed = 0;
   let editions = 0;
+  // 🚨 THE SUM MUST BE PAGED, AND THE COUNT NEXT TO IT IS WHY.
+  //
+  // This used to read `.select("sealed_fmv_exposure_usd", { count: "exact" })`
+  // with no bound and sum the returned rows in JS. PostgREST caps an unbounded
+  // `.select()` at 1,000 rows and returns no error, while `count: "exact"` is a
+  // real COUNT(*) over the whole view — so the card paired an EXACT edition count
+  // with a sum over the first 1,000 rows in PHYSICAL order.
+  //
+  // Measured live 2026-09-03: the view holds 4,813 rows totalling $2,358,840,
+  // and the card was publishing **$143,849 — 16.4x low — beside "4,813 editions"**.
+  // ⛔ The pairing is what makes it worse than either half: an exact count sitting
+  // next to a truncated sum reads as one coherent measurement, and this is a
+  // SOCIAL CARD, so the number travels without the page around it.
+  //
+  // ⚠ `complete` is not decoration. supabase-js RETURNS errors rather than
+  // throwing, so the `catch` below cannot see a failed page — a partial sum would
+  // otherwise render as a real total, which is the same defect one order smaller.
+  // A sum we could not finish is withheld: `editions` stays 0 and the card falls
+  // back to its tagline, exactly as it does for a failed read.
+  const AGG_PAGE = 1000;
   try {
     const top = await (supabaseAdmin as any)
       .from("panini_squeeze_board")
@@ -37,11 +57,33 @@ export async function GET(_req: NextRequest) {
       .order("fmv_usd", { ascending: false })
       .limit(3);
     rows = top.data ?? [];
-    const agg = await (supabaseAdmin as any)
-      .from("panini_squeeze_board")
-      .select("sealed_fmv_exposure_usd", { count: "exact" });
-    editions = agg.count ?? 0;
-    sealed = (agg.data ?? []).reduce((s: number, r: any) => s + (Number(r.sealed_fmv_exposure_usd) || 0), 0);
+
+    let total = 0;
+    let seen = 0;
+    let complete = false;
+    let expected: number | null = null;
+    for (let page = 0; page < 25; page++) {
+      // ⚠ A `.range()` needs a deterministic order on a UNIQUE key or the pages
+      // overlap and omit in equal measure — the duplicates and omissions cancel,
+      // so every count-based check still passes while the SUM is wrong. `id` is
+      // the view's key.
+      const { data, count, error } = await (supabaseAdmin as any)
+        .from("panini_squeeze_board")
+        .select("sealed_fmv_exposure_usd", { count: page === 0 ? "exact" : undefined })
+        .order("id", { ascending: true })
+        .range(page * AGG_PAGE, page * AGG_PAGE + AGG_PAGE - 1);
+      if (error) break;
+      if (page === 0 && typeof count === "number") expected = count;
+      const batch = (data ?? []) as Array<{ sealed_fmv_exposure_usd: number | null }>;
+      for (const r of batch) total += Number(r.sealed_fmv_exposure_usd) || 0;
+      seen += batch.length;
+      if (batch.length < AGG_PAGE) { complete = true; break; }
+    }
+    // Only publish when the walk covered the population the count reports.
+    if (complete && expected != null && seen === expected) {
+      editions = expected;
+      sealed = total;
+    }
   } catch {
     /* fall through to a generic card */
   }
