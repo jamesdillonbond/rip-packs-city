@@ -118,4 +118,18 @@ describe("a .gitignore rule cannot silently swallow a file under docs/", () => {
       ).toBeGreaterThan(negation)
     }
   })
+
+  it("the overnight-pass lock stays ignored under docs/ — a committed lock reads as HELD", () => {
+    // ⚠ The negation un-ignored `docs/overnight/.lock` the day it landed: a RELEASED
+    // lock surfaced as untracked on 2026-09-03, one `git add -A` from being committed.
+    // The night pass treats a present lock as another run in progress, so a committed
+    // one would block every future pass until someone noticed. Pinned by ORDER, like
+    // the secrets above, and NOT by the `isAddable` probe: that probe WRITES and then
+    // DELETES its path, and this path is a live file on any box mid-pass.
+    const lines = readFileSync(path.join(ROOT, ".gitignore"), "utf8").split("\n")
+    const negation = lines.findIndex((l: string) => l.trim() === "!docs/**")
+    const last = lines.map((l: string) => l.trim()).lastIndexOf("docs/overnight/.lock")
+    expect(last, "docs/overnight/.lock is not in .gitignore at all").toBeGreaterThan(-1)
+    expect(last, "docs/overnight/.lock must be re-asserted AFTER !docs/**").toBeGreaterThan(negation)
+  })
 })

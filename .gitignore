@@ -193,3 +193,8 @@ Rip Packs City/
 *creds*.json
 *-creds.json
 *.pem
+
+# ⚠ And the overnight-pass concurrency guard, re-asserted for the same reason: `!docs/**`
+# un-ignored it (a RELEASED lock surfaced as untracked on 2026-09-03), and a committed lock
+# reads as a HELD lock to the next run. Duplicates the rule above on purpose.
+docs/overnight/.lock
