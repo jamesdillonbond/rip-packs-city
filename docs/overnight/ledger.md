@@ -10,6 +10,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — the per-route wall map, and a first fleet sweep that diagnoses its own mapping errors
+
+Unblocks **step 1 of the three** the 08:00Z filing specified. `classifyKillRecord` needs `duration_ms` against **the route's own** `maxDuration` to see a tick the platform killed after its terminal row landed — and no per-route wall existed anywhere in code.
+
+**Shipped:** `lib/pipeline/route-walls.ts` — walks `app/api/**/route.ts` with comments stripped and takes the wall plus the pipeline name from the three shapes actually in use (`const PIPELINE = "…"`, a CONFIG object's `pipelineName:`, the RPC's own `p_pipeline:`). **116 (pipeline, wall) pairs.** A route whose name cannot be extracted is **returned as unmapped, never dropped** — the same rule the paged-read guard states.
+
+**⭐ THE FIRST SWEEP DIAGNOSES ITSELF, AND THAT IS THE FINDING.** `max(duration_ms)` over the 73 h retention as a fraction of each pipeline's mapped wall:
+
+| pipeline | wall | max | frac | reading |
+|---|---:|---:|---:|---|
+| `topshot-active-listings-ingest` | 60 s | 1,303,432 ms | **21.7** | ⛔ map wrong |
+| `refresh-pack-grail-metrics-mv` | 60 s | 163,382 ms | **2.7** | ⛔ map wrong |
+| `snapshot-institutional-wallets` | 30 s | 73,528 ms | **2.5** | ⛔ map wrong |
+| `allday-badge-ingest` | 60 s | 112,689 ms | **1.9** | ⛔ map wrong |
+| `fmv-recalc` | 300 s | 317,457 ms | 1.058 | ⚠ write raced the wall |
+| `evm-transfers-ingest` | 60 s | 60,464 ms | 1.008 | ⚠ **confirmed kill** |
+| `resolve-topshot-stubs` | 30 s | 29,313 ms | 0.977 | censored max |
+| `allday-lock-refresh` | 300 s | 292,225 ms | 0.974 | censored max |
+| `wallet-backfill` | 300 s | 267,725 ms | 0.892 | censored max |
+
+🚨 **A route cannot record a run much longer than its own wall — the platform terminates it. So a fraction far above 1 says the mapped route is NOT what writes those rows.**
+
+⭐ **Confirmed rather than inferred:** `refresh-pack-grail-metrics-mv` reads 2.7× because migration `20260829235752_audit_20260829_grail_mv_refresh_moves_to_pg_cron_with_catchable_terminal_row.sql` says **by name** that the refresh moved to pg_cron on 2026-08-29. The Vercel route's wall stopped being that pipeline's ceiling that day, and the sweep spotted it without being told.
+
+⚠ **The interesting band is just ABOVE 1, not far above it** — `evm-transfers-ingest` 1.008 is the tick with independent Vercel `Task timed out` confirmation. ⚠ **Just BELOW 1 is the censored-maximum band**, and those maxima are *at least* that close to the ceiling, never *at most*.
+
+⛔ **The map is necessary and NOT sufficient.** It answers *"what is this route's ceiling"*, never *"is this route the writer"* — the standing **name the caller** rule, which needs `pg_proc`, `pg_views`, `cron.job.command`, the edge fleet and a repo grep. Four rows above are that gap showing up.
+
+**Left, and why:** step 2 (carry `duration_ms` into `KillTick`) and step 3 (`wallClipped` as a **separate** counter — never redefine `killed`, the recovery test's null rate depends on it). ⚠ Before either, decide what a wrongly-mapped pipeline does: comparing against the wrong wall would manufacture four clipped pipelines out of nothing, which is worse than no instrument. Candidate rule, in the module: **above ~1.2 of its wall, report UNMAPPABLE rather than clipped.**
+
+9 tests, including one pinning the three walls that refuted the round-number shortcut (800 / 600 / 300 against its guesses of 120 / 30 / 60), one that an unmappable route stays in the population, one that unstripped prose CAN invent a pipeline (so the stripping requirement is demonstrated, not merely asserted), and one that `wallFraction` returns **null** for an unknown wall rather than 0 — the `?? 0` shape, in an instrument. tsc and eslint clean.
+
+**Revert.** `git revert <this sha>` — removes a read-only module and its tests; nothing else reads it yet.
+
 ### 2026-09-03 · ✅ SHIPPED (docs-in-code) — the golazos wall raise has a pre-change baseline now, and it is the clearest censored maximum on the platform
 
 Follow-up to the entry below, measured after it shipped so the falsifier has something to be checked against. `wallet-backfill-golazos`, **1,621 runs** over the 73 h `pipeline_runs` retains, read 2026-09-03 08:15Z, every one of them under the old **60,000 ms** wall:
