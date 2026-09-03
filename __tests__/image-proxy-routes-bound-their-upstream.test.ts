@@ -133,6 +133,83 @@ describe("image proxies bound their upstream, and the wider class only shrinks",
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 🚨 BAN AT ZERO: A ROUTE THAT STREAMS AN UPSTREAM BODY MAY NOT BOUND IT WITH
+// `AbortSignal.timeout`.
+//
+// That helper's signal starts at fetch time and STAYS LIVE FOR THE RESPONSE
+// BODY, and it cannot be rescheduled. So a proxy that returns `upstream.body`
+// under one aborts transfers it has already won — the headers arrived inside
+// the budget, and the stream is killed part-way through with a 200 and its
+// headers already on the wire, where no catch in the handler can see it.
+//
+// ⭐ MEASURED: `/api/public/ipfs-media/[cid]` did exactly this and produced
+// **426 uncaught TimeoutErrors across 60 users in the 24 h to 2026-09-03**, with
+// one request logging `ok … elapsedMs=6037` and then four of them. Both
+// streaming proxies in the tree now use a manual `AbortController` re-armed once
+// the headers are in, so the population is ZERO and this is a ban, not a ratchet.
+//
+// ⚠ THE WALK IS THE PROPERTY, NOT A LIST OF THE TWO FILES THAT HAD THE BUG.
+// This repo has now had THREE cases of a guard whose glob excluded the next
+// instance of its own class (see this file's header). "Returns an upstream body
+// as a Response" is the shape where the defect is possible, so that is what is
+// searched — anywhere under app/ or lib/, whatever it is called.
+// ─────────────────────────────────────────────────────────────────────────────
+function sourceFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry)
+    if (statSync(full).isDirectory()) sourceFiles(full, out)
+    else if (/\.tsx?$/.test(entry)) out.push(full)
+  }
+  return out
+}
+
+/** `new NextResponse(upstream.body …)` / `new Response(res.body …)`, comments stripped. */
+const STREAMS_UPSTREAM = /new (?:Next)?Response\(\s*[A-Za-z_$][\w$]*\.body\b/
+
+const STREAMING_PROXIES = [
+  ...sourceFiles(path.join(ROOT, "app")),
+  ...sourceFiles(path.join(ROOT, "lib")),
+]
+  .map((full) => ({
+    rel: path.relative(ROOT, full).split(path.sep).join("/"),
+    code: stripComments(readFileSync(full, "utf8")),
+  }))
+  .filter((f) => STREAMS_UPSTREAM.test(f.code))
+
+describe("a route that streams an upstream body bounds it with a RESCHEDULABLE controller", () => {
+  it("is not vacuous — the walk found streaming proxies", () => {
+    // If this ever reads 0, the shape regex stopped matching (a rename, a
+    // helper, a different Response constructor) and every case below is
+    // silently passing on an empty set.
+    expect(
+      STREAMING_PROXIES.length,
+      "no file returns an upstream body — STREAMS_UPSTREAM probably stopped matching",
+    ).toBeGreaterThan(0)
+  })
+
+  it("BAN AT ZERO: none of them uses AbortSignal.timeout", () => {
+    const offenders = STREAMING_PROXIES.filter((f) => /AbortSignal\.timeout\s*\(/.test(f.code))
+    expect(
+      offenders.map((f) => f.rel),
+      `AbortSignal.timeout cannot be rescheduled, so its deadline governs the RESPONSE BODY as ` +
+        `well as the headers — the transfer is aborted mid-flight after the 200 has gone out, ` +
+        `where no catch can see it. Use a manual AbortController, re-armed once the headers ` +
+        `arrive (see app/api/public/ipfs-media/[cid]/route.ts).`,
+    ).toEqual([])
+  })
+
+  it("and each still bounds the fetch at all", () => {
+    // The lazy way to satisfy the ban is to delete the bound. Assert the
+    // replacement is present, not merely that the banned spelling is absent.
+    for (const f of STREAMING_PROXIES) {
+      expect(/new AbortController\s*\(/.test(f.code), `${f.rel} streams an upstream body with no bound`).toBe(
+        true,
+      )
+    }
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 // The behavioural half. The source check above cannot tell a bound that is
 // ATTACHED from one that is HONOURED, and it cannot see what the route answers
 // when the upstream never responds.

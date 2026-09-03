@@ -148,4 +148,70 @@ describe("failure falls through to the monogram", () => {
     await GET(req(OK_SRC))
     expect((fn.mock.calls[0] as unknown[])[1]).toHaveProperty("signal")
   })
+
+  it("names its own bound apart from a transport fault, instead of 502ing silently", async () => {
+    // ⚠ This route inherited ipfs-media's TIMEOUT lesson and not its
+    // OBSERVABILITY one: it returned this 502 with no log, so "our bound fired"
+    // and "the host answered" were spelled identically. That ambiguity is what
+    // left ipfs-media's soft-fail path unreachable dead code for months.
+    const logs: string[] = []
+    vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => void logs.push(a.join(" ")))
+    stubUpstream({ throws: true })
+    expect((await GET(req(OK_SRC))).status).toBe(502)
+    const line = logs.find((l) => l.includes("[avatar-media] upstream fetch failed"))
+    expect(line, "the failure must be logged at all").toBeTruthy()
+    // The stub throws without ever aborting the signal, so this is a transport
+    // fault and must not be labelled as our deadline.
+    expect(line).toContain("reason=transport")
+    expect(line).not.toContain("reason=abort_timeout")
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ⚠ THE BODY MUST NOT INHERIT THE HEADERS DEADLINE.
+//
+// `AbortSignal.timeout` starts at fetch time and stays live for the response
+// body, and this route returns `upstream.body`. So a transfer whose headers
+// arrived at 5s and was still sending at 6s was aborted MID-FLIGHT, after the
+// 200 had gone out, with no catch able to see it.
+//
+// ⓘ Measured on the sibling, not here: `/api/public/ipfs-media/[cid]` had the
+// identical shape and produced 426 uncaught TimeoutErrors across 60 users in
+// 24 h (2026-09-03). Avatars are ≤4 MB and usually far less, so this route's
+// window is much narrower and no live instance is claimed — the shape was found
+// by grepping the EXPRESSION rather than the file.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("the transfer gets its own budget", () => {
+  /** Every delay the route schedules, in order. */
+  async function scheduledDelays(): Promise<number[]> {
+    const delays: number[] = []
+    const real = globalThis.setTimeout
+    vi.stubGlobal("setTimeout", ((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (typeof ms === "number") delays.push(ms)
+      return real(fn, ms, ...(rest as []))
+    }) as typeof setTimeout)
+    stubUpstream()
+    await GET(req(OK_SRC))
+    return delays
+  }
+
+  it("🚨 schedules TWO deadlines, the second only after the headers are in", async () => {
+    const delays = await scheduledDelays()
+    expect(
+      delays.length,
+      "only one timeout was scheduled, so the body is still inheriting the headers deadline",
+    ).toBeGreaterThanOrEqual(2)
+    expect(delays[1], "the body budget must be its own, not a repeat of the headers one").toBeGreaterThan(
+      delays[0],
+    )
+  })
+
+  it("keeps the HEADERS deadline well under the platform's 25s initial-response cutoff", async () => {
+    // The property the 6s value exists for, asserted rather than the constant:
+    // at the platform limit the platform wins the race and kills the function
+    // before the catch can return its 502, so the monogram fallback never fires.
+    const delays = await scheduledDelays()
+    expect(delays[0]).toBeLessThan(25_000)
+    expect(delays[0]).toBeLessThanOrEqual(10_000)
+  })
 })
