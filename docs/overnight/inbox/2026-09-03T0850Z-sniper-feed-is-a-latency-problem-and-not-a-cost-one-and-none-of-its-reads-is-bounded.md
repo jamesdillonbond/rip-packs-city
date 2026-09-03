@@ -76,3 +76,47 @@ route, which nothing currently records.
 - ⛔ **Do not raise `maxDuration` first.** The reads are unbounded; a bigger wall makes a slow page
   slower rather than turning it into an honest one, and the 30 s statement timeout still cuts the read.
 - ⛔ **Do not tune `get_allday_sniper_deals` before §5 is answered.**
+
+---
+
+## ⓘ ADDENDUM, same session — I ran the guard, and §4's guess was the RIGHT ANSWER FOR THE WRONG REASON
+
+§4 said `/api/sniper-feed` is *"very likely another instance of the guard-scope class"* and explicitly
+did not assert it. Run:
+
+```
+[unbounded-server-reads] 183 page/layout file(s); 82 async server; 0 unbounded (ceiling 0)
+[unbounded-server-reads] ok
+```
+
+⭐ **It walks PAGE and LAYOUT files — 183 of them — and no API routes at all.** So `/api/sniper-feed`
+is outside it, but **not because a glob was drawn too narrowly**: the guard is about server *pages* by
+design, and it is doing that job perfectly (ban at zero, holding).
+
+⛔ **The real gap is bigger and simpler than the one I guessed: the same class has a ban at zero for
+PAGES and NO INSTRUMENT AT ALL for API ROUTES.**
+
+Sized, comment-stripped, 2026-09-03:
+
+| | count |
+|---|---:|
+| `app/api/**/route.ts(x)` | **499** |
+| …that read Supabase (`.rpc("…")` / `.from("…")`) | **359** |
+| …with **no** budget primitive anywhere in the file (`withBoardBudget`, `withPagedBoardBudget`, `rpcWithRetry`, `AbortSignal`, `AbortController`) | **273** |
+
+⚠ **273 is an UPPER BOUND on the population and NOT a defect count**, for two reasons stated so nobody
+quotes it as one. (1) A cron/ingest route that hangs produces a loud, watched failure — an absent or
+`ok:false` `pipeline_runs` row — which is a completely different blast radius from a user-facing 504.
+(2) File-level presence is a coarse test in both directions: a route with one bounded read and six bare
+ones passes, exactly the asymmetry `lib/pack-dist/fetchers.ts` records for itself (*"ONE read here was
+already bounded and THIRTEEN were not"*).
+
+⭐ **So the ratchet, if one is written, must be scoped by BLAST RADIUS rather than by count** — ban at
+zero on the routes a human waits for, ratchet the rest — which is precisely the shape
+`image-proxy-routes-bound-their-upstream` already uses. That is the same conclusion the guard-scope
+lesson reaches from the other direction: *ask what the widest set is where the property is meaningful,
+then split it by whether the failure answer is settled.*
+
+ⓘ And CLAUDE.md already predicted this exact hole: *"an exclusion justified by ANOTHER instrument is a
+claim about it — two guards skipped `app/api` as 'in the primary gate'; coverage sees whether lines RUN,
+not whether `error` is handled."*
