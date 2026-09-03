@@ -220,3 +220,54 @@ feature-flag disabled ×2, retired data lane, static table, extraction artifact 
 remember the next time a "N pipelines have no runs" list appears: **it is a reading list.** The two
 cheap discriminators that did all the work were (a) query the table the pipeline WRITES, and (b) read
 the route's actual `log_pipeline_run` call. Neither requires understanding the pipeline.
+
+---
+
+## ✅ CONFIRMATION PASS — 2026-09-02 ~20:15 PT (2026-09-03 03:15Z), Claude Code
+
+Two rows of §2 confirmed still dark, the routes cleared, and **one severity number in my own first
+reading corrected before it was written down.**
+
+**`wallet-username-resolver` and `topshot-deal-floor-serials` are BOTH still stopped.**
+`pipeline_runs_daily` (indefinite) has nothing after **2026-08-30** for either — 754 runs over 33
+days and 1,012 over 33 days respectively, then silence — and `pipeline_runs` (73 h) holds zero rows
+for both. **Neither is on the active `pipeline_cadence_watchlist`, so nothing alerts and nothing will.**
+
+⛔ **THE ROUTES ARE NOT THE PROBLEM.** Both are deployed and answering on the live production alias:
+`/api/cron/resolve-wallet-usernames` → **401** with `{"error":"Unauthorized"}` (auth works, so the
+route exists and runs), `/api/cron/topshot-deal-floor-serials` → **200** with
+`{"ok":true,"editionsWithFloorSerial":1479}`. **Something stopped CALLING them**, which is
+cron-job.org — invisible from this sandbox and therefore Trevor's to look at.
+
+⚠ **A TEMPTING CAUSAL STORY THAT DOES NOT SURVIVE READING THE DIFF.** Both routes were changed on
+**2026-08-29**, one day before they stopped (`8fd80727e`, `f8d8f90fc`), and both changes were of the
+form *"a run where everything failed is not a success"*. The obvious inference is that they now
+report failure, and cron-job.org auto-disabled them. **It does not hold: both diffs change only the
+`p_ok` / `p_error` written to `pipeline_runs`. Neither touches the HTTP status**, and the GET above
+still answers 200 today. The coincidence of dates is recorded because the next reader will notice it
+too; it is not a mechanism.
+
+### ⛔ CORRECTION to my own severity, made before it was filed
+
+My first reading was *"`wallet_usernames` last written 2026-08-30 15:59:50Z and **1,295 rows
+unresolved** — so 1,295 wallets render as raw `0x…` addresses."* **That is wrong.** Those rows are
+mostly a CACHE OF NEGATIVE RESULTS: an address that was looked up and has no Top Shot handle is
+stored with `username IS NULL`, which is the cache doing its job.
+
+Re-derived from the queue the resolver actually reads (`wallet_usernames_unresolved`'s own tier-0
+definition — seen in `sales`/`pack_purchases` in the last 2 days with **no `wallet_usernames` row at
+all**):
+
+| | count |
+|---|---:|
+| distinct addresses active in the last 2 days | 666 |
+| of those, **never looked up** — the real user-visible backlog | **41** |
+| rows past their 14-day retry window (mostly genuine "no handle") | 1,071 |
+
+**So the honest severity is 41 addresses in the live window and a slow tail, not 1,295.** ⭐ *A NULL
+in a cache is not a miss — it is a stored answer, and counting stored answers as backlog inflated
+this by 30×.*
+
+**Still open, and needing someone who can see cron-job.org:** why two jobs at ~23/day and ~31/day
+both stopped on 2026-08-30 while their routes stayed healthy.
+

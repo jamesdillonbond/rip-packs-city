@@ -10,6 +10,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ main was RED for ~35 min on the component gate — covered the tour's anchoring half, and confirmed two pipelines dark since 08-30
+
+**Two unrelated things in one entry because they landed in the same window.**
+
+**1. ⛔ MAIN WENT RED and it was not mine.** `5ab2d3ba0` (concurrent session) missed the component
+coverage ratchet by a hair — **lines 93.72% vs 93.75%, statements 90.78% vs 90.85%** — and every push
+after it inherited the failure. Reproduced locally, then fixed by covering the block that caused it:
+`components/onboarding/FirstRunTour.tsx`'s POSITIONING path, which the existing suite never reached
+because **every one of its cases runs with no `[data-tour-anchor]` in the DOM**. `FirstRunTour.tsx`
+**72.72% → 100% lines, 52.5% → 95% branch**; both gates clear (`EXIT=0`).
+
+⚠ **Two things the first draft of that test file got wrong, both recorded IN it:**
+- Anchors appended to `document.body` **survive `cleanup()`**, so they accumulated and a case
+  measured a rect a PREVIOUS case had installed — visible as a spotlight at the far-right clamp
+  case's coordinates inside the anchor-removed case.
+- 🚨 **jsdom reports `offsetHeight` 0, and the component's `node?.offsetHeight ?? 200` fallback does
+  NOT rescue it** — `??` catches null/undefined, not a real `0`. Every case was measuring a
+  ZERO-HEIGHT popover, so *"fits below"* was true for an anchor 38 px off the bottom of the screen
+  and **three of four placement assertions were wrong**. The popover's own box is now stubbed too.
+  ⭐ *A documented default is not the value in force — check whether the environment can even reach it.*
+
+**Verified by mutation:** restoring the centred fallback for a viewport-taller anchor — the exact
+defect the component's own comment records — reddens the case that names it, and nothing else.
+
+**REVERT:** `git revert 8747cbb66` (test-only; reverting re-reds the component gate).
+
+**2. ⓘ CONFIRMED, not shipped — two pipelines dark since 2026-08-30.**
+`wallet-username-resolver` (1,012 runs / 33 days) and `topshot-deal-floor-serials` (754 / 33) both
+stop dead at **2026-08-30** in `pipeline_runs_daily` (indefinite) with zero rows in `pipeline_runs`.
+**Neither is on the active watchlist, so nothing alerted and nothing will.** ⛔ **The routes are
+healthy** — `/api/cron/resolve-wallet-usernames` answers **401** and
+`/api/cron/topshot-deal-floor-serials` **200 with `editionsWithFloorSerial: 1479`** on the live
+alias — so the SCHEDULER stopped calling them. That is cron-job.org, invisible from here: **Trevor's
+to look at.**
+
+⚠ **A tempting causal story that does not survive the diff:** both routes were changed on **08-29**
+(`8fd80727e`, `f8d8f90fc`), one day before, and both changes were *"a run where everything failed is
+not a success"*. Both touch **only** the `p_ok`/`p_error` written to `pipeline_runs` — **neither
+changes the HTTP status**, and the GET still answers 200 today. Recorded because the next reader will
+notice the dates too.
+
+⛔ **AND I CORRECTED MY OWN SEVERITY BEFORE FILING IT.** First reading: *"1,295 wallets render as raw
+`0x…`"*. Wrong — those rows are a **cache of NEGATIVE results** (looked up, no Top Shot handle). From
+the queue the resolver actually reads: **666** addresses active in 2 days, **41 never looked up** (the
+real backlog), 1,071 past their 14-day retry. ⭐ *A NULL in a cache is a stored answer, not a miss —
+counting stored answers as backlog inflated this 30×.* Appended to the 2026-09-02T2015Z filing.
+
 ### 2026-09-02 · ✅ SHIPPED (DB) — the cadence watcher could say a pipeline had gone silent and could not say whether anything was firing
 
 Closes register **R11**'s structural residual, open since 2026-08-15: *"`detect_stalled_pipelines()`
