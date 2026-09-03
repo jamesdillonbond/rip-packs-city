@@ -111,3 +111,8 @@ out of data; this one has no lower bound, so it walks off the edge of what its u
 keeps going. And ⛔ **when the upstream signals "I cannot serve this" with a 200, `res.ok` is not a
 liveness check** — the discriminator has to be the *body* (`execution !== "Success"`, or zero events),
 which would also have made this self-reporting from day one.
+
+---
+## ✅ RESOLVED — options (1) and (2) were shipped in the stated order on 2026-09-02, and the second pass is recovering (annotated 2026-09-03 15:35 PT, Claude Code)
+
+The floor landed as a DB-side bound rather than a worker deploy: `claim_sales_counterparty_batch` now reads `sales_counterparty_backfill_state.floor_sold_at` (**2023-11-08 17:00Z**, the spork wall bracketed above) and only claims `sold_at >= floor`; a cursor stranded BELOW the floor is treated as invalid state and self-heals to NULL (migration `20260902042214`), which is what restarted the newest-first walk without a manual reset. The worker itself was not redeployed — the bound lives where the cursor lives, so `wrangler` was not needed. **Measured 2026-09-03 22:3xZ:** cursor at **2024-04-19**, walking down; `pipeline_runs_daily` `rows_written` **0 / 0 / 0** on 08-30/31/09-01 (the zero-yield grind this filing describes) → **22,399** on 09-02 and **18,472** on 09-03; 3-day window 864 runs, 862 ok, 89,735 claimed, 40,871 written. The 433k above-floor population is being re-attempted at the designed ~34.5k/day. Nothing further to do here; option (3) (Dune) stays unpriced and unneeded while this converges.
