@@ -48,14 +48,37 @@ and the identical query is a **merge** semi-join at 152,869 buffers. There is no
 literal-list entry anywhere near 1.33M. ⚠ **A benchmark arm 38× worse than the same query issued the
 production way is measuring the harness.**
 
-**What survives, and it is most of the filing:** the site list; `get_editions_latest_fmv` as the
-drop-in; "widen the RPC deliberately, every column is carried per id"; "enumerate consumers by the
-OBJECT, not by the language the first instances were written in" — which is exactly the rule that
-would have caught the two sites this filing cleared. **What changes is the RANKING.** At ~50–70
-buffers/edition the remaining sites are worth fixing in proportion to their id-list SIZE, not
-uniformly: `wallet-search` on a 5,000-moment wallet is ~350k buffers where ~20k would do;
-`recent-sales` is capped at 50 ids and is not worth touching. The exit condition should be
-"large-list sites converted, each with its own before/after", not "the `.in()` count reaches zero".
+**What survives:** the site list; `get_editions_latest_fmv` as the drop-in; "widen the RPC
+deliberately, every column is carried per id"; and "enumerate consumers by the OBJECT, not by the
+language the first instances were written in" — which is exactly the rule that would have caught the
+two sites this filing cleared.
+
+**⛔ WHAT DOES NOT SURVIVE IS THE PREMISE THAT THE SIXTEEN ARE WORTH A PASS.** Ranked by what they
+actually cost in production — `pg_stat_statements` since its 2026-08-12 reset, every PostgREST read of
+`fmv_current`:
+
+| shape | calls | total blocks | per call |
+|---|---|---|---|
+| **collection-scoped** (the sniper All Day read, fixed) | **43** | **31,052,866** | 722,160 |
+| id list, 5 cols (`wallet-search` / `cache-refresh`) | 3,786 | 7,731,152 | 2,042 |
+| id list, 2 cols | 614 | 445,851 | 726 |
+| id list, 3 cols | 13 | 424,578 | 32,660 |
+| id list, other | 30 | 89,925 | ~3,000 |
+
+⭐ **One shape, in ONE file, out-read every id-list call in the product combined by 3.6× — from 1% of
+the calls.** 31.05M blocks against 8.69M over 4,443. **A file count is not a cost model, and "sixteen
+routes" was a file count.**
+
+⚠ And 2,042 blocks/call is **~29 editions**, not thousands. The tail is real — over 1,165 wallets,
+distinct editions run p50 50 · p90 3,196 · p99 7,674 · max 11,349, with 223 over 1,000 — so a p90
+wallet-search does cost ~224k buffers on the view. But that is a tail, not the common call. **Revised
+exit condition: convert an id-list site when a wider helper exists for another reason, or when its
+large-list tail becomes the common case — NOT "until the `.in()` count reaches zero".**
+`recent-sales` is capped at 50 ids and should be left alone.
+
+⚠ Caveat on both readings: `pg_stat_statements` is at 4,905 of 5,000 entries and therefore evicting,
+so every total above is a LOWER BOUND. It is the right instrument for reading what a client sends; it
+is not one for concluding a query never ran.
 
 ⚠ The LATERAL is still the better shape everywhere (~4 buffers/edition against ~70) — a **17×** win,
 not the 249× the concierge entry recorded. That correction is in `docs/reference/database.md`.

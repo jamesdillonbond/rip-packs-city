@@ -1242,11 +1242,36 @@ view, because it needs `wap_usd / floor_price_usd / days_since_sale / sales_coun
 `get_editions_latest_fmv` returns four columns. **15 `.in("edition_id", …)` reads of `fmv_current`
 remain across 13 files** (2026-09-02 count — re-derive; ⚠ a naive grep counts 16, because
 `lib/concierge/fmv-distribution.ts` names the shape in a *comment* telling you not to use it). Nine
-of them select only columns the helper
-already returns; the other five (`fetchFmvBatch`, `api/fmv`, `wallet-search` ×2, `cache-refresh`)
-need a WIDER helper first. The ones that matter are the ones whose id list is large —
-`wallet-search` on a 5,000-moment wallet is ~350k buffers where ~20k would do; `recent-sales` is
-capped at 50 ids and is not worth touching.
+select only columns the helper already returns; five (`fetchFmvBatch`, `api/fmv`, `wallet-search` ×2,
+`cache-refresh`) would need a WIDER helper.
+
+### ⛔ …AND THEY ARE NOT WORTH A MIGRATION. RANK BY OBSERVED TOTAL, NOT BY PER-CALL WORST CASE.
+
+`pg_stat_statements` since its 2026-08-12 reset, all PostgREST reads of `fmv_current`:
+
+| shape | calls | total blocks | per call |
+|---|---|---|---|
+| **collection-scoped** (the sniper All Day read, now fixed) | **43** | **31,052,866** | 722,160 |
+| id list, 5 cols (`wallet-search` / `cache-refresh`) | 3,786 | 7,731,152 | 2,042 |
+| id list, 2 cols | 614 | 445,851 | 726 |
+| id list, 3 cols | 13 | 424,578 | 32,660 |
+| id list, other | 30 | 89,925 | ~3,000 |
+
+⭐ **One shape, 43 calls, out-read every id-list call in the product combined by 3.6×** (31.05M against
+8.69M over 4,443 calls). **The thing worth fixing was never the shape that appears in thirteen files;
+it was the one that appears in one and materialises the view. A file count is not a cost model.**
+
+⚠ **And 2,042 blocks/call is ~29 editions — this file previously said "`wallet-search` on a
+5,000-moment wallet is ~350k buffers" as though that were a measurement. It was a projection, and the
+observed average is two orders of magnitude smaller.** The tail is real but is not what the route
+mostly does: over 1,165 wallets, distinct editions run **p50 50 · p90 3,196 · p99 7,674 · max
+11,349**, with 223 wallets over 1,000 and 52 over 5,000 — so a p90 wallet does cost ~224k buffers on
+the view. **Convert these when a wider helper exists for another reason, or if the large-wallet tail
+becomes the common case; not before.** `recent-sales` is capped at 50 ids and should be left alone.
+
+⚠ Both readings above carry one caveat: `pg_stat_statements` sits at **4,905 of 5,000 entries**, so it
+is evicting and every total here is a LOWER BOUND. It is the right instrument for reading what a
+client actually sends; it is not one for concluding a query never ran.
 
 ### ⭐ THIS IS NOW THREE INSTANCES — treat it as a root cause, not a coincidence
 

@@ -142,15 +142,37 @@ precisely what would have caught the two it cleared. ⭐ **Three sessions measur
 and produced 249x, "fixed cost", and 17x. The two wrong answers came from harnesses; the tell in both
 was an arm far worse than the same query issued the production way.**
 
-**Still open, sized:** 15 `.in("edition_id", …)` reads of `fmv_current` across 13 files. Nine select
-only columns `get_editions_latest_fmv` already returns; five (`fetchFmvBatch`, `api/fmv`,
-`wallet-search` ×2, `cache-refresh`) need a WIDER helper first — `wallet-search` on a 5,000-moment
-wallet is ~350k buffers where ~20k would do. The function's own `COMMENT ON FUNCTION` still says
-249×; fix it on the next migration that touches FMV rather than burning a `PGRST002` burst on a
-comment.
+**✅ VERIFIED LIVE.** `c280d337b` → `dpl_9mZ7x8afRAngBrtATMhbNrcybKvZ`, READY, aliased to www,
+`lambdaRuntimeStats` present. All **12 CI jobs green**. Production log on the new deployment:
+**`[sniper-feed] AD FMV map size: 6190`** — the RPC returns the FULL All Day catalogue, so the 500-id
+chunking hits no row cap, and no `allday-fmv` appears in `sourcesFailed`, so the service-role RPC
+resolves. The only error on the route is the pre-existing All Day GraphQL 403, which the response
+names honestly (`degraded: true`, `sourcesFailed: ["allday-marketplace"]`). ⚠ Egress from this
+sandbox to www is a proxy POLICY DENIAL (403 on CONNECT), so the probe went through Vercel's fetch
+tool, not curl — not retried.
+
+**⛔ AND THE REMAINING SITES ARE NOT WORTH A MIGRATION — the ranking was the last thing left to
+measure, and it inverts the framing.** `pg_stat_statements` since its 2026-08-12 reset, every
+PostgREST read of `fmv_current`:
+
+| shape | calls | total blocks |
+|---|---|---|
+| **collection-scoped** (the sniper All Day read, fixed above) | **43** | **31,052,866** |
+| every id-list shape COMBINED | 4,443 | 8,691,506 |
+
+⭐ **One shape, in one file, out-read every `.in("edition_id", …)` call in the product by 3.6× — from
+1% of the calls. A file count is not a cost model, and "sixteen routes" was a file count.** The hot
+id-list shape averages **2,042 blocks/call ≈ 29 editions**. ⚠ **I had written "`wallet-search` on a
+5,000-moment wallet is ~350k buffers" as if measured; it was a projection** — the tail is real (1,165
+wallets: p50 50 · p90 3,196 · p99 7,674 · max 11,349, 223 over 1,000) so a p90 wallet costs ~224k, but
+that is a tail, not the common call. Convert an id-list site when a wider helper exists for another
+reason or its tail becomes the common case — not to drive a count to zero. Corrected in the inbox
+filing and INDEX.md. ⚠ `pg_stat_statements` is at 4,905/5,000 and evicting: every total is a LOWER
+BOUND. The function's own `COMMENT ON FUNCTION` still says 249×; fix it on the next migration that
+touches FMV rather than burning a `PGRST002` burst on a comment.
 
 **Revert.** Code: `git revert <this sha>` restores all three reads and reverts the guards with them.
-DB: nothing — no migration in this change, and the two scratch functions used for the measurements
+DB: nothing — no migration in this change, and the three scratch functions used for the measurements
 were dropped (`pg_proc` LIKE `_scratch%` = 0).
 
 ### 2026-09-02 · ✅ SHIPPED — the concierge's FMV lookup read 10.4 GB to price 500 editions, and the question that exposed it was timing out in production
