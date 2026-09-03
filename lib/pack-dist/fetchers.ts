@@ -79,6 +79,24 @@ import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 // separate, already-argued decision.
 const PACK_READ_TIMEOUT_MS = 5_000
 
+// ── ⭐ RE-MEASURED 2026-09-03. THE BOUND WORKED, AND THE NUMBERS ABOVE ARE NOW
+// ── THE *PRE-FIX* ONES — do not read them as today's severity.
+// Vercel runtime errors, 24 h to 2026-09-03 05:43Z, same grouping:
+//   pack_realized_ev  124 users (08-23)  ->    6 users
+//   pack_lifecycle     86 users (08-23)  ->   13 users
+//   ev_contributors    26 users (08-23)  ->    1 user
+// A 7-20x drop, and what remains is the honest-degradation path FIRING, not the
+// hang it replaced. That is the intended end state, not a residual defect.
+//
+// ⛔ AND DO NOT TUNE THESE RPCs — the overruns are not the queries being slow.
+// Measured 2026-09-03 over a deterministic hash sample (never physical order),
+// warm: `get_pack_lifecycle` runs **5-32 ms** across 8 packs, and 53 ms /
+// 3,683 buffers on the newest one. Against a 5,000 ms budget that is three
+// orders of magnitude of headroom, so an overrun is the INSTANCE under
+// contention (the documented ~22 MB/s IO ceiling, register R46 — a capacity
+// decision already made: stay on Small), not this function. Re-derive before
+// believing either half.
+
 /**
  * Bound one read, RESOLVING with a synthetic `error` rather than rejecting.
  *
