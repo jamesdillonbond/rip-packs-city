@@ -1959,6 +1959,8 @@ deployments API. The estate catches regressions well; the defects were in the SE
     the ratchet is applied once, at the merge, and `coverage-gates-are-wired-to-ci.test.ts` pins that shape
     (a bare `npm run test:coverage` match would be satisfied by the shard script's name as a substring).
   - *`rpc-call` composite for the ~19 curl copies* — they just received their `cat`/401 fixes in
-    place; re-plumbing is verifiable only on shed schedules. *SHA-pinning actions* — the sandbox
+    place; re-plumbing is verifiable only on shed schedules. **✅ SHIPPED 2026-09-03 (pass 3):**
+    `.github/actions/rpc-call` now serves the ten single-call sites; loops and body-parsing steps keep
+    their own curl. Verified by a local stub-server harness (nine cases) and by `workflow_dispatch`. *SHA-pinning actions* — the sandbox
     cannot resolve shas and Dependabot is configured never to move them. *Retiring one of three
     `/api/smoke-test` concierge callers* — cron-job.org console.

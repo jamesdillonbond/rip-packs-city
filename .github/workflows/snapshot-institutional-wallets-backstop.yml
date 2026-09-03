@@ -45,15 +45,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # The composite below is local, so the tree must be checked out first.
+      - uses: actions/checkout@v4
       - name: Snapshot institutional wallets (backstop trigger)
         continue-on-error: true
-        run: |
-          STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 60 -o /tmp/snap.json -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/cron/snapshot-institutional-wallets) || STATUS=""
-          echo "snapshot-institutional-wallets status: $STATUS"
-          cat /tmp/snap.json || true
-          echo ""
-          if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
-            echo "::warning::snapshot-institutional-wallets returned $STATUS"
-          fi
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/snapshot-institutional-wallets
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: snapshot-institutional-wallets
+          accept: "200,202"
+          retries: "3"
+          max-time: "60"
+          fail-on-auth: "false"

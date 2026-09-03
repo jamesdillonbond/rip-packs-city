@@ -56,39 +56,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
+      # The composite below is local, so the tree must be checked out first.
+      - uses: actions/checkout@v4
       - name: Top Shot badge sync (also chains AllDay + Golazos seed)
-        run: |
-          STATUS=$(curl -s -o /tmp/badge-sync.json -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            --max-time 600 \
-            https://www.rippackscity.com/api/badge-sync) || STATUS=""
-          echo "Badge sync status: $STATUS"
-          cat /tmp/badge-sync.json 2>/dev/null || echo "<no body>"
-          case "$STATUS" in 401|403)
-            echo "::error::Badge sync returned $STATUS -- auth rejected. This is the only caller of the route, so a rotated INGEST_SECRET_TOKEN would otherwise read as a green warning on every tick. An auth failure is never transient."
-            exit 1 ;;
-          esac
-          if [ "$STATUS" != "200" ]; then
-            echo "::warning::Badge sync returned $STATUS"
-          fi
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/badge-sync
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: Badge sync
+          max-time: "600"
   badge-catalog-sweep:
     needs: upstream-probe
     if: needs.upstream-probe.outputs.alive == 'true' && (github.event.schedule == '45 2,8,14,20 * * *' || (github.event_name == 'workflow_dispatch' && inputs.catalog == true))
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
+      # The composite below is local, so the tree must be checked out first.
+      - uses: actions/checkout@v4
       - name: Top Shot badge catalog-walk sweep (cursored full-catalog)
-        run: |
-          STATUS=$(curl -s -o /tmp/badge-catalog.json -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            --max-time 600 \
-            "https://www.rippackscity.com/api/badge-sync?mode=catalog") || STATUS=""
-          echo "Badge catalog sweep status: $STATUS"
-          cat /tmp/badge-catalog.json 2>/dev/null || echo "<no body>"
-          case "$STATUS" in 401|403)
-            echo "::error::Badge catalog sweep returned $STATUS -- auth rejected. This is the only caller of the route, so a rotated INGEST_SECRET_TOKEN would otherwise read as a green warning on every tick. An auth failure is never transient."
-            exit 1 ;;
-          esac
-          if [ "$STATUS" != "200" ]; then
-            echo "::warning::Badge catalog sweep returned $STATUS"
-          fi
+        uses: ./.github/actions/rpc-call
+        with:
+          url: "https://www.rippackscity.com/api/badge-sync?mode=catalog"
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: Badge catalog sweep
+          max-time: "600"

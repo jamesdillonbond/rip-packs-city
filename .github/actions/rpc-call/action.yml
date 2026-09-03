@@ -1,0 +1,120 @@
+name: RPC call
+description: >-
+  One authenticated HTTP call to a Rip Packs City route or edge function, with
+  the status captured under bash -e, the body printed even when curl wrote no
+  file, and 401/403 fatal. Replaces ~10 hand-copied curl blocks across the ops
+  workflows (2026-09-03) that disagreed on exactly those three points.
+#
+# WHY A COMPOSITE. The 2026-09-02 CI audit found the same curl-and-check block
+# pasted ~25 times, and the copies disagreed on the details that matter:
+#   - a bare `cat /tmp/x.json` after a connection-level curl failure (DNS, TLS,
+#     reset) exits 1 because curl's -o wrote NO file, and `bash -e` then kills
+#     the step BEFORE the ::warning:: that names the failure — so a 504 was a
+#     green warning and a DNS failure an unnamed red;
+#   - a 401/403 from a route whose ONLY caller is this workflow was a warning
+#     forever (a rotated INGEST_SECRET_TOKEN read as transient);
+#   - some copies had --max-time, some did not.
+# Two comments in the tree already recorded the first trap as having "bitten
+# twice". One copy, asserted here, stops the next paste re-introducing it.
+#
+# WHAT IT DOES NOT DO. It does not parse the body, and it does not decide
+# whether a non-accepted status fails the job: the caller keeps its
+# `continue-on-error` / warn-only posture and reads `outputs.status`. Steps
+# that loop over cohorts or pages (wallet-backfill-backstop, offer-fill-backfill)
+# and steps that parse JSON (ops-monitor, pipeline-sentinel, smoke-tests) keep
+# their own curl; rpc-pipeline.yml is pinned by a test that parses its `run:`
+# bodies and stays as-is.
+inputs:
+  url:
+    description: Full URL to call.
+    required: true
+  token:
+    description: Bearer token (the caller passes the secret; it is never echoed).
+    required: true
+  label:
+    description: Short name used in log lines and annotations.
+    required: true
+  method:
+    description: HTTP method.
+    required: false
+    default: POST
+  max-time:
+    description: curl --max-time in seconds. Size it under the job's timeout-minutes.
+    required: false
+    default: "300"
+  accept:
+    description: Comma-separated statuses that count as success (e.g. "200" or "200,202").
+    required: false
+    default: "200"
+  fail-on-auth:
+    description: Exit 1 on 401/403. An auth failure is never transient; only set false for a route with another caller.
+    required: false
+    default: "true"
+  fail-on-status:
+    description: Exit 1 on any status outside `accept`. Default false keeps the warn-only posture of the backstop triggers.
+    required: false
+    default: "false"
+  retries:
+    description: curl --retry count (with --retry-all-errors). Keep 0 for synchronous routes that hold no lock; a retry after a client timeout re-invokes them while the first call may still be running.
+    required: false
+    default: "0"
+  body-file:
+    description: Where the response body is written.
+    required: false
+    default: /tmp/rpc-call-body.json
+outputs:
+  status:
+    description: The HTTP status, or 000 when curl got no response.
+    value: ${{ steps.call.outputs.status }}
+  body-path:
+    description: Path of the response body file (may be absent after a connection failure).
+    value: ${{ steps.call.outputs.body-path }}
+runs:
+  using: composite
+  steps:
+    - id: call
+      shell: bash
+      env:
+        RPC_URL: ${{ inputs.url }}
+        RPC_TOKEN: ${{ inputs.token }}
+        RPC_LABEL: ${{ inputs.label }}
+        RPC_METHOD: ${{ inputs.method }}
+        RPC_MAX_TIME: ${{ inputs.max-time }}
+        RPC_ACCEPT: ${{ inputs.accept }}
+        RPC_FAIL_ON_AUTH: ${{ inputs.fail-on-auth }}
+        RPC_FAIL_ON_STATUS: ${{ inputs.fail-on-status }}
+        RPC_BODY: ${{ inputs.body-file }}
+        RPC_RETRIES: ${{ inputs.retries }}
+      run: |
+        set -uo pipefail
+        rm -f "$RPC_BODY"
+        # ⚠ `bash -e` shape: the capture never aborts the step; the tests below decide.
+        RETRY_ARGS=""
+        if [ "${RPC_RETRIES:-0}" != "0" ]; then RETRY_ARGS="--retry ${RPC_RETRIES} --retry-all-errors"; fi
+        # shellcheck disable=SC2086
+        STATUS=$(curl -s $RETRY_ARGS -o "$RPC_BODY" -w "%{http_code}" -X "$RPC_METHOD" \
+          -H "Authorization: Bearer ${RPC_TOKEN}" \
+          --max-time "$RPC_MAX_TIME" \
+          "$RPC_URL") || STATUS=""
+        echo "${RPC_LABEL} status: ${STATUS:-<no response>}"
+        # curl writes no file on a connection-level failure; a bare cat would exit 1 here.
+        cat "$RPC_BODY" 2>/dev/null || echo "<no body>"
+        echo ""
+        echo "status=${STATUS:-000}" >> "$GITHUB_OUTPUT"
+        echo "body-path=${RPC_BODY}" >> "$GITHUB_OUTPUT"
+        case "$STATUS" in
+          401|403)
+            if [ "$RPC_FAIL_ON_AUTH" = "true" ]; then
+              echo "::error::${RPC_LABEL} returned ${STATUS} — auth rejected (INGEST_SECRET_TOKEN rotated?). An auth failure is never transient, and a warn-only tick would read green forever."
+              exit 1
+            fi
+            ;;
+        esac
+        ok=false
+        for a in $(printf '%s' "$RPC_ACCEPT" | tr ',' ' '); do
+          [ "${STATUS:-000}" = "$a" ] && ok=true
+        done
+        if [ "$ok" != "true" ]; then
+          echo "::warning::${RPC_LABEL} returned ${STATUS:-<no response>} (accepted: ${RPC_ACCEPT})"
+          if [ "$RPC_FAIL_ON_STATUS" = "true" ]; then exit 1; fi
+        fi
