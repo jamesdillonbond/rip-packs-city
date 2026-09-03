@@ -1196,3 +1196,72 @@ uses. A guessed list silently blanks whichever host it forgot, and a blank slab 
 rather than deleted:** a trailing CRLF is `.trim()`ed to a valid path, and a SPACE is not a control
 character (it cannot split a header and a browser percent-encodes it). Banning either rejects a valid
 redirect for no gain.
+
+---
+
+## The SEVENTH shape (2026-09-03): a GUARD that fails OPEN is silent IN THE DIRECTION OF PERMISSION
+
+Every shape above is a read that publishes its failure as a fact. This one is a **check** that
+publishes its failure as **permission**, and it is worse to detect because *nothing anywhere goes red*.
+
+`check_feature_quota(wallet, feature)` counts `usage_events WHERE feature_name = p_feature` over 24 h
+and returns `allowed = used_today < daily_limit`. The MCP worker gates every authed request on
+`p_feature = 'mcp_query'`. **Two independent defects, either one alone sufficient:**
+
+1. **The quota was keyed to plan names the database FORBIDS.** The seed wrote rows for plans `pro` and
+   `partner`; `pro_users_plan_check` permits only `founding | moments_payment | pro_grandfather |
+   pro_paid | pro_trial | admin`, and `get_user_plan` reads `pro_users.plan`. **So the two rows
+   carrying the real caps were unreachable BY CONSTRUCTION — provable from the schema, not argued** —
+   and every paid wallet took the `NOT FOUND` branch, which answers
+   `allowed:true, daily_limit:NULL, reason:'no_quota_configured_failing_open'`.
+2. **The counted key was written by NOTHING.** `mcp_log_tool_call` wrote `'mcp_' || p_tool_name`, so a
+   call landed as `mcp_get_fmv`. `used_today` was pinned at 0 for every plan, `free` included.
+
+🚨 **WHY IT SURVIVED, AND THE DURABLE PART: a limiter that never fires is INDISTINGUISHABLE FROM A
+LIMITER NOBODY HAS HIT.** The request 200s, the quota RPC answers `allowed:true`, `pipeline_runs` is
+untouched, nothing is logged. **The two observations an operator naturally makes cannot tell the two
+outcomes apart** — the same structure as the `.gitignore` swallow. So the guards assert
+**`used_today` RISING**, never a 200 coming back.
+
+⚠ **NOT EVERY CHECKED FEATURE IS EVENT-COUNTED, and assuming so makes the guard wrong the other way.**
+`saved_wallets_max` reads only `quota.daily_limit` as a max-at-any-time cap and counts rows itself; it
+never needed a writer. `api_requests` and `custom_alerts_max` have no call site at all. **One instance
+of three, not three of three** — check which half of the result each caller consumes.
+
+⚠ **`?? 0` ONE LEVEL UP.** `count ?? 0` publishes a measured zero; a fail-open quota publishes a
+measured *"within quota"*. Same defect, different noun.
+
+Guards: `__tests__/a-quota-that-counts-events-has-a-writer-for-them.test.ts` (every checked feature has
+a writer; `concierge_messages` the positive control; suppressions two-way) and
+`supabase/tests/mcp_log_tool_call.sql`. Ledger 2026-09-03; register R85.
+
+---
+
+## ⭐ REMOVING A FALSE CLAIM IS NOT THE WHOLE FIX — the remaining true facts can carry the same wrong inference (2026-09-03)
+
+**The most transferable thing this canon has learned in a while, and it was nearly missed.**
+
+`days_to_drain` published *"~32.6d to clear the actionable pile"* from a rate that had stopped. The fix
+withheld the ETA — correct, and the alert's existing `COALESCE` dropped the sentence cleanly with no
+`"~d"` artifact. **It looked done.** What remained read:
+
+> *"Live inflow 1/24h vs outflow 1263/24h; a further 0 arrived from historical backfill."*
+
+Every number there is TRUE. **And read alone it says the pile is draining briskly** — while the current
+drain was 10 rows per 3 h. **The reader arrives at the same false conclusion from facts instead of from
+a claim.**
+
+⛔ **So "we stopped saying the wrong thing" is not the exit condition. The exit condition is "a reader
+cannot conclude the wrong thing."** There are THREE states — draining · **stalled** · never-flowed —
+and the middle one has to be **SAID**, not left as an absence:
+
+> *"NO ETA: the drain has STALLED — 10 rows resolved in the last 3h against 1263/24h, so the 24h rate
+> is stale and an ETA divided by it would be wrong."*
+
+⚠ **This is the empty-state rule inverted.** The canon already bans an empty state that *concludes*
+("your moments are priced at or below market"). This is the same error with the polarity flipped: a
+surface that **withholds** and lets the surrounding numbers conclude. **Silence is not neutrality when
+the remaining context is directional.**
+
+⚠ **AND A STALL IS NOT IDLENESS.** `ufc_strike` has always reported a null ETA with zero outflow;
+folding it into "stalled" would have invented a regression. The pin asserts both directions.

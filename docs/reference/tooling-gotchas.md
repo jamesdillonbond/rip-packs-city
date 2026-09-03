@@ -905,3 +905,50 @@ applied to a corpus instead of a code path.
 - **The artifact service refuses wake subscriptions from a cloud session** (`subscribing requires a session credential`, HTTP 403) — comments on a published report will not wake the session; re-read on demand.
 - **`api.github.com` is 403 through the agent proxy; `github.com` anonymous git is served.** So `git ls-remote --tags` / `git clone --depth 1` of a public action repo works where the releases API does not. `console.cron-job.org`, `api.cron-job.org` and `www.rippackscity.com` are unreachable (000) — verify a deploy through the Vercel MCP and a route through a `workflow_dispatch` that calls it.
 - **Vercel `list_deployments` `since` is epoch MILLISECONDS** — a seconds value returns an empty page, which reads as "no deploy was triggered".
+---
+
+## Concurrent-session hazards that a CLEAN rebase does not surface (2026-09-03)
+
+Three distinct traps from one session, all in the same afternoon, none of which produced a merge
+conflict at the point where the mistake was made.
+
+### 1. Two sessions can take the same "next free" ID and git will merge both
+
+Both sessions appended a register row numbered **`R84`** — different lines, different table sections,
+so **there is nothing for git to conflict on.** The clash is *semantic*, and only
+`register-integrity-guard` sees it. ⛔ **The local run before the push is worthless here**, because at
+that moment the other row does not exist in your tree yet.
+
+⚠ **AND THE RED DOES NOT NAME YOU.** It surfaced on the OTHER session's commit — the first CI run after
+the duplicate landed — so a reader following the failing commit blames the wrong change.
+
+➡ **Claim an ID against `origin/main` at the moment you PUSH, and re-run the guard AFTER the rebase.**
+Resolution rule: **the row pushed FIRST keeps the number** (every reference to it is already public);
+the later one renumbers and says so, because its own earlier commit messages now cite a stale ID.
+Recorded as cheap-check 11 in `docs/audits/deep-audit-register.md`.
+
+### 2. A stash-pop conflict will happily offer you a STALE copy of someone else's row
+
+Resolving the conflict by "taking my side" would have reverted **667 characters** of the other
+session's update to a row I had not touched. **Both sides looked like "the R78 row".**
+
+➡ **Never take a side wholesale on a shared append-a-row file. DIFF the two sides first**, and if the
+upstream side is longer/newer on a row you did not edit, keep upstream's and re-apply only your own
+delta. Verify after with `diff <(grep '^| R78 ' file) <(git show origin/main:file | grep '^| R78 ')`.
+
+⚠ **The length comparison itself nearly misled me: `awk length()` counts BYTES, python `len()` counts
+CODE POINTS.** On a file full of em-dashes and emoji the same line measured 3,672 and 3,620. This is
+the *same* byte-vs-code-point trap CLAUDE.md records for the memory-file limit — **it also applies to
+comparing two versions of one line.** Compare like with like.
+
+### 3. `git add -A` sweeps ALREADY-STAGED files into whatever you commit next
+
+A stash pop left the pin, the guard registration and the register **staged**. The next
+`git add docs/overnight/ledger.md && git commit` therefore shipped all four in a commit whose message
+said `docs(ledger):`. **Nothing was lost and the tree was clean afterwards — which is exactly why it is
+easy to miss.**
+
+➡ **`git show --stat HEAD` after every commit**, and treat a file count higher than what you staged as
+a stop. The fix while unpushed is `git reset --soft origin/main && git reset`, then re-stage
+deliberately. (Same family as the `.gitignore` swallow: *a clean `git status` afterwards is consistent
+with both outcomes.*)

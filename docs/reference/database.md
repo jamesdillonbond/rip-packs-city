@@ -1415,3 +1415,47 @@ WHERE schemaname = 'public' AND definition ILIKE '%DISTINCT ON%';
 
 The 1000-row cap lands on `editions` instead, so that read has to be paged in the same change or the
 fix trades one silent truncation for another.
+
+---
+
+## A TRAILING-WINDOW rate LAGS a collapsed process, and the figure derived from it drifts in the REASSURING direction (2026-09-03)
+
+Filed under measurement discipline because it generalises past the one alert it was found in.
+
+`refresh_unmapped_backlog_growth` computed `days_to_drain = actionable_pile / outflow_24h`, where
+`outflow_24h` is a **trailing 24-hour count**. When a drain stops, that count keeps reporting the burst
+for a full day.
+
+🚨 **THE TELL, AND IT IS COUNTER-INTUITIVE: the published ETA went UP while the true rate went DOWN.**
+25.1 days at 14:30Z, **32.6 days** three hours later — because the numerator barely moves and the stale
+burst ages out slowly, so the quotient *rises* as the window empties. **On a decaying series the number
+therefore looks plausible at every single refresh, and it errs toward reassurance.** Measured against
+the same table and the same column over a shorter window: **`outflow_3h` = 10** against 1,263/24h,
+where steady state gives ~158 — **6% of the 24h average**, and an honest ETA nearer **526 days**.
+
+**The remedy that does not need a second instrument:** compare the metric to ITSELF over two windows.
+Steady state puts an eighth of a 24h count in any 3h window, so `outflow_3h * 16 < outflow_24h` says
+the current rate is below **half** the trailing average. ⚠ **Same table, same column, two windows —
+this is one instrument compared against itself, NOT the banned pairing of a count from one table with a
+property from another.**
+
+⚠ **THE SUPPRESSION SELF-HEALS, AND THAT WILL LOOK LIKE A REGRESSION.** It fires only while the two
+windows DISAGREE. Once the burst ages out, they converge and a large, honest figure is published again.
+**Do not read a reappearing ETA as the fix failing, and do not widen the predicate. Sanity-check the
+SHORT-window number, never the derived one.**
+
+⭐ **Generalisation: any figure of the form `stock / trailing-window-flow` inherits this.** Before
+quoting one, ask what the flow looked like in the last fraction of its own window. A snapshot cannot
+answer it; a distribution can — hourly `rows_written` for the resolver fell **1,031 → 17** candidates
+per hour with nearly all returning `onchain_nil`, which is what established *healthy and out of
+tractable work* rather than *broken*.
+
+Ledger 2026-09-03; register R83; migrations `20260903174421` + `20260903174608`.
+
+## ⚠ Re-reading the mixed-return-shape rule the hard way (2026-09-03)
+
+`check_cursor_stall_threshold_drift()` returns **one row**, which under the SETOF convention reads as a
+finding. It is the **jsonb-array** shape and that row holds `[]`. `pg_get_function_result` says `jsonb`;
+`jsonb_array_length` says **0**; it is CLEAN. **Read the return TYPE before interpreting the count — a
+row count is not a finding count for half of these functions**, and the misreading direction here is
+toward a false incident report.

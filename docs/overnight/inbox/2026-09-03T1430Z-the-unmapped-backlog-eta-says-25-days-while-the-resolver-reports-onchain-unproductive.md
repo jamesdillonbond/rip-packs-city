@@ -1,3 +1,12 @@
+> ✅ **RESOLVED 2026-09-03 — do not re-work this filing.** Both halves shipped as migrations
+> `20260903174421` (withhold the ETA when `outflow_3h * 16 < outflow_24h`; adds `outflow_3h` and
+> `drain_stalled`) and `20260903174608` (the alert now SAYS the stall instead of going quiet).
+> Verified by the real caller: the pg_cron tick at 18:29:00.064Z wrote `drain_stalled true`,
+> `days_to_drain null`. Register **R83** is in RESOLVED; full working in the ledger entries of that
+> date. ⚠ **The ETA will REAPPEAR as the burst ages out of the 24h window — that is the fix working,
+> not a regression.** ⚠ The severity question (`info` for a stalled 42k backlog) is a PRODUCT call and
+> is still open.
+
 # `days_to_drain` says 25 days while the resolver's own telemetry says `onchain_unproductive: true` — the AllDay unmapped pile is at its floor, not draining
 
 **Filed 2026-09-03 ~07:30 PT (14:30Z) by Claude Code. NOTHING SHIPPED.** The fix is an alert-semantics
