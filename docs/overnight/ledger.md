@@ -10,6 +10,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ DATA MUTATION + SHIPPED — the three QA test accounts are deleted; the saved-wallets cap check stays fail-open but now LOGS its failure · Cowork (cloud)
+
+**Test accounts deleted (Trevor delegated the call: "do what you think is best … for RPC long term and our userbase").** `tdillonbond+qa0903@gmail.com` (handle `qa0903`, 3 pinned trophies), `+qa0903b` (handle `qa0903b`), `+qa0903c` (no handle) were real public-flow signups whose profile pages carried `robots: index, follow` and re-published Trevor's wallet under invented collector names — a fake collector duplicating the founder's holdings is the wrong thing for a visitor or a crawler to find. `public.*` carries NO FK to `auth.users` (verified via `referential_constraints`), so the rows were enumerated across every `user_id uuid` column first (19 tables; 4 non-empty) and deleted in ONE transaction scoped by exact email: `trophy_moments` 3 · `saved_wallets` 15 · `points_ledger` 5 · `profile_bio` 3 · `auth.users` 3 (identities/sessions cascade inside auth). `follows` 0 both directions. `/api/public/profile/qa0903` → 404 verified. **Not reversible** (no backup of test data was warranted); to demo the empty-case and claim-card states, sign up a fresh `+tag` — the whole path takes two minutes with the Resend MCP.
+
+**`app/api/profile/saved-wallets` POST cap check.** Decision re-affirmed: FAIL-OPEN stays — a transient count failure must not block a collector's save, and the downside is one extra free-plan wallet during an outage while monetization is tabled. But it was fail-open AND SILENT (`{ data: addrRows }` with the error dropped, so a null read counted as 0 with no trace). Now binds `error` and logs at error level with the code, so an outage that lets the cap slip is measurable. No behaviour change; 23 route tests green; both read ratchets green.
+
+**Revert.** Code: `git revert <sha>`. Data: n/a (deliberate).
+
 ### 2026-09-03 · ⏳ OWED — the CI-audit session archives with two reads it could not wait for, written down here because a scheduled check-in dies with its session · Claude Code (cloud)
 
 - **Session summary:** `docs/sessions/2026-09.md`, entry "the CI estate audit, drained in five passes". Lessons promoted to `testing-and-ci.md` (sharded gate, composite, pins, "wait for the render, not the call", register-id collisions), `tooling-gotchas.md` (GitHub MCP output cap, `get_job_logs` 404-until-complete, session-bound check-ins, `since` in milliseconds) and `cron-and-schedulers.md` (sentinel acknowledgements). Register rows R64/R71/R78 re-read against today's logs; R84 and R86 shipped; R61's falsifier armed.
