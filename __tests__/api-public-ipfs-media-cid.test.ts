@@ -14,6 +14,23 @@ const req = {} as any
 // A syntactically valid CIDv0 (Qm + 44 base58 chars — the regex allowlist).
 const GOOD_CID = "Qm" + "A".repeat(44)
 
+/**
+ * ⚠ A REAL `ReadableStream`, not a string. `Response.body` is a stream in every
+ * runtime this route ships to, and the route now pipes it through a counting
+ * transform so a mid-flight abort is distinguishable from a completed transfer.
+ * A string body made these stubs pass while exercising a shape production never
+ * sees — `"binarydata".pipeThrough` does not exist, and the first version of
+ * that pipe was caught by exactly this mismatch.
+ */
+function streamOf(text: string): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(ctl) {
+      ctl.enqueue(new TextEncoder().encode(text))
+      ctl.close()
+    },
+  })
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -33,7 +50,7 @@ describe("GET /api/public/ipfs-media/[cid]", () => {
       vi.fn(async () => ({
         ok: true,
         status: 200,
-        body: "binarydata",
+        body: streamOf("binarydata"),
         headers: { get: () => "image/png" },
       })),
     )
@@ -97,7 +114,7 @@ describe("GET /api/public/ipfs-media/[cid]", () => {
       vi.fn(async () => ({
         ok: true,
         status: 200,
-        body: "binarydata",
+        body: streamOf("binarydata"),
         headers: headersFor({ "content-type": "image/png", "content-length": String(4 * 1024 * 1024) }),
       })),
     )
@@ -114,7 +131,7 @@ describe("GET /api/public/ipfs-media/[cid]", () => {
       vi.fn(async () => ({
         ok: true,
         status: 200,
-        body: "binarydata",
+        body: streamOf("binarydata"),
         headers: headersFor({ "content-type": "image/png" }),
       })),
     )
@@ -122,26 +139,94 @@ describe("GET /api/public/ipfs-media/[cid]", () => {
     expect(res.status).toBe(200)
   })
 
-  it("aborts well before the platform's own 25s initial-response cutoff", async () => {
-    // The timeout used to be exactly 25_000 — the platform limit — so the
-    // platform always won and killed the function with a 504 before the catch
-    // could return its 502, making the <img onError> fallback unreachable for
-    // the slow-gateway case it exists for (205 such 504s in 40 min, 2026-07-27).
-    const timeoutSpy = vi.spyOn(AbortSignal, "timeout")
+  /**
+   * Collect every timeout the route schedules, in order. ⚠ This replaced a spy
+   * on `AbortSignal.timeout`, which the route no longer calls — the assertion
+   * is on the PROPERTY (how long the route waits before aborting), not on the
+   * helper it happened to use to get there.
+   */
+  async function scheduledDelays(): Promise<number[]> {
+    const delays: number[] = []
+    const real = globalThis.setTimeout
+    vi.stubGlobal("setTimeout", ((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (typeof ms === "number") delays.push(ms)
+      return real(fn, ms, ...(rest as []))
+    }) as typeof setTimeout)
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({
         ok: true,
         status: 200,
-        body: "x",
+        body: streamOf("x"),
         headers: headersFor({ "content-type": "image/png" }),
       })),
     )
     await GET(req, ctx(GOOD_CID))
-    const ms = timeoutSpy.mock.calls[0][0] as number
-    expect(ms).toBeLessThan(25_000)
-    expect(ms).toBeLessThanOrEqual(10_000)
-    timeoutSpy.mockRestore()
+    return delays
+  }
+
+  it("aborts well before the platform's own 25s initial-response cutoff", async () => {
+    // The timeout used to be exactly 25_000 — the platform limit — so the
+    // platform always won and killed the function with a 504 before the catch
+    // could return its 502, making the <img onError> fallback unreachable for
+    // the slow-gateway case it exists for (205 such 504s in 40 min, 2026-07-27).
+    const delays = await scheduledDelays()
+    expect(delays.length, "the route scheduled no abort at all").toBeGreaterThan(0)
+    const headersPhase = delays[0]
+    expect(headersPhase).toBeLessThan(25_000)
+    expect(headersPhase).toBeLessThanOrEqual(10_000)
+  })
+
+  it("🚨 the BODY gets its own budget — the headers deadline must not govern the transfer", async () => {
+    // The defect this pins: `AbortSignal.timeout(8_000)` stays live for the
+    // response body, so a transfer whose headers arrived at 6s was aborted at 8s
+    // MID-FLIGHT, after a 200 and the success log had already gone out. Measured
+    // 2026-09-03: 426 uncaught TimeoutErrors across 60 users in 24 h, including
+    // one request that logged `ok … elapsedMs=6037` and then four of them.
+    //
+    // ⚠ Asserted as TWO timers with the second scheduled AFTER the fetch
+    // resolved, not as a raised constant — raising the single timeout would give
+    // a dead gateway 20s before <img onError> can advance, which is the
+    // regression the 8s value exists to prevent.
+    const delays = await scheduledDelays()
+    expect(
+      delays.length,
+      "only one timeout was scheduled, so the body is still inheriting the headers deadline",
+    ).toBeGreaterThanOrEqual(2)
+    expect(delays[1], "the body budget must be its own, not a repeat of the headers one").toBeGreaterThan(
+      delays[0],
+    )
+    // Both phases together still leave room under a 25s function lifetime.
+    expect(delays[0] + delays[1]).toBeLessThan(25_000)
+  })
+
+  it("logs the transfer's OUTCOME, not just the decision to stream", async () => {
+    // The `ok` line is written before a byte is pumped, which is why 426 aborted
+    // transfers sat behind 200s that all logged success. The second line is
+    // written from the stream's own flush, so `ok` with no `streamed` is the
+    // signal that a transfer died mid-flight — read by correlation, exactly like
+    // the pipeline heartbeat marker.
+    const logs: string[] = []
+    vi.spyOn(console, "log").mockImplementation((m?: unknown) => void logs.push(String(m)))
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        body: streamOf("binarydata"),
+        headers: headersFor({ "content-type": "image/png" }),
+      })),
+    )
+    const res = await GET(req, ctx(GOOD_CID))
+    // Draining the response is what runs the transform — without this the flush
+    // never fires and the case would pass on a route that logs nothing.
+    const body = await res.text()
+    expect(body).toBe("binarydata")
+    expect(logs.some((l) => l.includes("[ipfs-media] ok "))).toBe(true)
+    const streamed = logs.find((l) => l.includes("[ipfs-media] streamed "))
+    expect(streamed, "no completion line — a reader cannot tell a finished transfer from an aborted one").toBeDefined()
+    // The BYTES ACTUALLY DELIVERED, which is the number the `ok` line cannot know.
+    expect(streamed).toContain("bytes=10")
   })
 })
 
