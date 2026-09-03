@@ -438,6 +438,40 @@ Adding **`source: ["serverless"]`** surfaced the `warn` lines:
 section above; warn IS indexed and it was `level:["warning"]` that read zero. `get_runtime_errors` route
 attribution IS still SMEARED — re-group on `requestPath`.
 
+### 🚨 `group_by` MATCHES THE REQUEST PATH, NOT THE LOG BODY — so a grouped query for a LOG LINE reads zero forever (2026-09-03)
+
+**It nearly produced a false finding about a change made the same day.** Verifying a new
+`[ipfs-media] streamed` completion line, three grouped queries over a 6 h window all returned an empty
+table:
+
+```
+query: "ipfs-media streamed"  →  (no rows)
+query: "ipfs-media ok"        →  (no rows)
+query: "ipfs-media upstream"  →  (no rows)
+```
+
+Read naively, the first says *"the new line is not firing"*. ⛔ **All three are meaningless.** The third
+is the control that exposes it: the same window carries **33 × 502**, every one of which logs
+`[ipfs-media] upstream fetch failed`. A query that cannot find a line that MUST be there cannot be
+used to conclude a line is absent.
+
+⭐ **Only the UNGROUPED form returns a function's own output.** An ungrouped result renders each request
+followed by its `console` lines, and the text query still appears to match the PATH — so the practical
+recipe for "did this log line fire" is:
+
+```
+get_runtime_logs  query: "<path fragment>"  statusCode: "200"  since: "6h"  limit: 8
+```
+
+⚠ **`statusCode` is doing real work there, not tidying.** Without it the ungrouped query times out under
+daytime traffic (measured: 12 m, 45 m, 2 h and 3 h windows all *"did not finish within the time
+budget"*, while the same 6 h window with `statusCode: "200"` returned in one shot). Narrowing the WINDOW
+is the documented advice and it was the narrowing that did **not** help.
+
+⚠ **And a 200 with no output lines is a CACHE HIT, not a silent success.** Grouping by `statusCode`
+counted 27 × 200 on a route whose successes all log two lines; the function was never invoked for most
+of them. Do not read a status count as an invocation count.
+
 ---
 
 ## Driving Chromium from a Claude Code web sandbox (2026-08-22)

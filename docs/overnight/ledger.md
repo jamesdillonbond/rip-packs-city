@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ VERIFIED IN PRODUCTION — all three owed verifications close, and the `streamed` instrument earned its keep on its first day
+
+Closes the ⏳ OWED entry from ~03:00 PT. All three were traffic-gated; daytime traffic arrived and answered them.
+
+**1. `[ipfs-media] streamed` — WORKS, and two clean pairs prove it.** `bafybeifh2ef…` 6,211,907 bytes: `ok` at 506 ms, then `streamed … bytes=6211907 declared=6211907` at 2,911 ms. `bafybeifrfqx…` 2,233,832 bytes: 191 ms → 525 ms. **Delivered bytes equal declared in both** — which is the assertion the unit test could only make against a stub.
+
+**⭐ AND IT IMMEDIATELY FOUND WHAT IT WAS BUILT FOR.** In the same burst, `bafybeigwzef…` logged `ok … bytes=7735665 elapsedMs=1291` and **no `streamed` line** — instead `Error: TimeoutError: ipfs-media body timeout after 12000ms`. That is the correlation working exactly as designed on real traffic: **`ok` with no `streamed` is a transfer that died mid-flight**, and the error names the phase and the budget because the abort reason says so. Filed as `2026-09-03T1400Z-two-in-seven-…`: **2 of 7 cache-MISS transfers die mid-body**, and ⛔ the size hypothesis is refuted by the same seven rows (the other failure is **2.7 MB** while a **6.2 MB** object finished in 2.4 s), so a `MAX_PROXY_BYTES` change would have prevented neither.
+
+**2. `wallet-backfill-golazos-heartbeat` — 142 markers against 142 terminal rows** (12:46–13:28Z), `duration_ms` **0** on every marker, which is the pinned `finished_at === started_at` contract holding live.
+
+⚠ **But the WALL RAISE is unexercised, and saying so matters.** Max in that burst was **38,778 ms** — 65% of the old 60,000 ms wall — and **zero ticks exceeded it**, so no tick was demonstrably saved yet. The pre-change distribution had its max at 59,801 ms (99.7%), so the band is real; this burst just did not reach it. ⭐ The falsifier (*"if ticks now run past ~300 s the work is pathological"*) is **not triggered** — 38.8 s is well inside.
+
+**3. `panini-ingest-heartbeat` — 652 markers against 654 terminal rows**, and ⭐ **the 2-row difference is the designed behaviour, not a gap.** The marker is written inside `after()`; the empty-payload path returns EARLY with its own terminal row and no marker, exactly as that route's comment states. Two empty-payload ticks in the window.
+
+**ⓘ A control that came free:** `evm-transfers-ingest` — 34 markers, 34 terminal rows, **max 27,736 ms and zero runs over 60 s** in 5.5 h. The 60,464 ms wall-clipped tick found overnight has not recurred, which is consistent with the instance-contention reading rather than a systematic overrun.
+
+**🚨 AND A TOOLING TRAP FOUND WHILE VERIFYING — it nearly produced a false finding about my own work.** `mcp__Vercel__get_runtime_logs` with `group_by` matches the **request path, not the log body**. Grouped queries for `"ipfs-media streamed"`, `"ipfs-media ok"` and `"ipfs-media upstream"` all returned **zero** — while 33 × 502 in the same window must have logged `upstream fetch failed`. ⛔ **Three empty results said nothing**, and read naively they said *"the streamed line is not firing"*. The control is what caught it: a query for a line that MUST exist also read zero. **Only the UNGROUPED form returns the function's output lines** — and it needs `statusCode` plus a narrow window or it times out under daytime traffic. Recorded in `docs/reference/tooling-gotchas.md`.
+
+Nothing shipped in this entry; it records verification and one filing.
+
 ### 2026-09-03 · ✅ SHIPPED — `.gitignore` can no longer swallow a file under `docs/`, and `*.patch` was one of SIX live traps
 
 **My own defect from earlier today, fixed at the mechanism rather than at the advice.** The parking commit (`220d834`) wrote `docs/overnight/handoffs/<name>.patch`, a README pointing at it and a ledger entry saying *"the patch is committed"* — and `.gitignore`'s `*.patch` dropped the file silently. `git show --stat 220d834` carries only the README and the ledger. The next session followed the pointer and found a promise; it re-derived the work from the ledger spec and shipped it (`fe1375ff8`), which is the right outcome and cost it a re-derivation it should not have needed.
