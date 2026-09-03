@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the first visit no longer renders the add-wallet form twice; and a 48 h watch is scheduled on the reconcile trade-off · Cowork (device VM)
+
+- **Dashboard, first visit:** the hero's `SignInBanner` and the "Saved Wallets" section both rendered the add-wallet form — two "Load my collection" buttons on one screen driving DIFFERENT input state (the test file's own header warned about it). The section now shows "Use the form above to load your first wallet, or add one here" (the link reveals the section form, so the advanced 0x path stays one click away). The hero form's own condition (`!walletsFailed && wallets.length === 0`) is hoisted to `heroFormShown` and drives both, so they cannot drift; a failed wallets read still shows the section form (no hero to point at). Tests: the five section-form sites reveal first; two new cases pin one-form-on-first-visit and the failed-read branch. Component gate 94.00 / 91.06.
+- **Transfer discipline after the `87a173c` clobber:** this batch travelled as a `diff -u` against the clone's recorded base sha and was applied with `git apply` on fresh `main` — the five `apiErrorMessage` sites are still there (`grep -c` = 5).
+- **48 h watch, scheduled:** one-shot cloud task `trig_01HLeH3uVXQEFdmWhSjvW9fA` fires 2026-09-05 04:00Z with the exact query, the exit condition (ok-rate ≥ ~92%, no `truncated` streak, per-wallet elapsed not doubled) and the function-body-only revert recipe; it writes its own ledger entry (paste-ready to the project if it cannot push).
+- **Not a bug, filed for the record:** `wallet_moments_cache.fmv_confidence` lags `edition_fmv_current` by design (it is paired with the snapshot `fmv_usd` was written from, per the 08-12 column comment); on the QA wallet that is 260 NULL + 69 rows whose label moved. Readers: support-chat, market, Pinnacle moment detail — per-Moment labels, not portfolio totals. Left as is.
+
+**Revert.** `git revert <this sha>`; `delete_trigger trig_01HLeH3uVXQEFdmWhSjvW9fA` to cancel the watch.
+
 ### 2026-09-02 · ✅ SHIPPED — #4 closed in the Supabase dashboard (the first-time signup email is branded and links to our own domain), and the branded link exposed that the device-key clear never ran on that path · Cowork (device VM)
 
 Third and last drain of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md`. Chrome came back (a screenshot wakes the hidden tab; `innerText` stays empty until one is taken).

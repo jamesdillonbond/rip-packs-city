@@ -177,6 +177,16 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+/**
+ * First visit: the wallets section no longer duplicates the hero's add-wallet
+ * form (2026-09-02); its copy is behind an "add one here" link. Reveal it when
+ * present so the section-form tests keep exercising the section's callbacks.
+ */
+async function revealSectionForm() {
+  const link = await screen.findByRole("button", { name: /add one here/i }).catch(() => null)
+  if (link) fireEvent.click(link)
+}
+
 // ─── The signed-in claim ─────────────────────────────────────────────────────
 
 describe("DashboardClient — a failed /me must not say 'Not signed in'", () => {
@@ -581,11 +591,13 @@ describe("DashboardClient — adding a wallet", () => {
    * clicking the wrong one submits an empty field. Return the input AND the
    * button that belongs to it, found by walking up to their shared container.
    */
-  async function openAddForm(over: Record<string, unknown> = {}) {
+  
+async function openAddForm(over: Record<string, unknown> = {}) {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     Object.assign(routes, over)
     render(<DashboardClient />)
+    await revealSectionForm()
     const box = await screen.findByPlaceholderText("Dapper username")
     const row = box.closest("div")!
     const submit = Array.from(row.querySelectorAll("button")).find(
@@ -1107,6 +1119,7 @@ describe("DashboardClient — the advanced add-wallet form", () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
+    await revealSectionForm()
     await screen.findByPlaceholderText("Dapper username")
     fireEvent.click(screen.getAllByRole("button", { name: "Advanced: enter wallet address directly" })[0])
     const addr = (await screen.findAllByPlaceholderText("0x… wallet address"))[0]
@@ -1239,6 +1252,10 @@ describe("DashboardClient — stats retry and the indexing poll", () => {
         json(200, { walletAddress: "0xbd94cade097e50ac", associatedCollections: ["a"] })
       render(<DashboardClient />)
       await vi.advanceTimersByTimeAsync(50)
+      {
+        const reveal = screen.queryByRole("button", { name: /add one here/i })
+        if (reveal) fireEvent.click(reveal)
+      }
       const box = screen.getAllByPlaceholderText("Dapper username")[0]
       const submit = box.closest("div")!.querySelector("button")!
       fireEvent.change(box, { target: { value: "collector" } })
@@ -1274,6 +1291,10 @@ describe("DashboardClient — stats retry and the indexing poll", () => {
       // rather than as a timing problem.
       await vi.advanceTimersByTimeAsync(50)
       await vi.advanceTimersByTimeAsync(50)
+      {
+        const reveal = screen.queryByRole("button", { name: /add one here/i })
+        if (reveal) fireEvent.click(reveal)
+      }
       const box = screen.getAllByPlaceholderText("Dapper username")[0]
       fireEvent.change(box, { target: { value: "collector" } })
       fireEvent.click(box.closest("div")!.querySelector("button")!)
@@ -1568,6 +1589,7 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
     routes["/api/profile/resolve-and-associate"] = () =>
       json(200, { walletAddress: "0xbd94cade097e50ac", associatedCollections: ["a"] })
     render(<DashboardClient />)
+    await revealSectionForm()
     const box = (await screen.findAllByPlaceholderText("Dapper username"))[0]
     fireEvent.change(box, { target: { value: "collector" } })
     fireEvent.keyDown(box, { key: "Enter" })
@@ -1580,6 +1602,7 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
+    await revealSectionForm()
     const box = (await screen.findAllByPlaceholderText("Dapper username"))[0]
     fireEvent.change(box, { target: { value: "collector" } })
     fireEvent.keyDown(box, { key: "a" })
@@ -1590,6 +1613,7 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
+    await revealSectionForm()
     await screen.findByPlaceholderText("Dapper username")
     fireEvent.click(screen.getAllByRole("button", { name: "Advanced: enter wallet address directly" })[0])
     const save = (await screen.findAllByPlaceholderText("0x… wallet address"))[0].closest("div")!.querySelector("button")!
@@ -1603,6 +1627,7 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
+    await revealSectionForm()
     await screen.findByPlaceholderText("Dapper username")
     fireEvent.click(screen.getAllByRole("button", { name: "Advanced: enter wallet address directly" })[0])
     const addr = (await screen.findAllByPlaceholderText("0x… wallet address"))[0]
@@ -1828,6 +1853,7 @@ describe("DashboardClient — recovery affordances", () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
+    await revealSectionForm()
     const box = (await screen.findAllByPlaceholderText("Dapper username"))[0]
     fireEvent.change(box, { target: { value: "63p1oKqkAQ9sQD55iApNRkVL2XzYtASwKjCdSSNEGEhY" } })
     fireEvent.click(box.closest("div")!.querySelector("button")!)
@@ -2185,5 +2211,28 @@ describe("DashboardClient — device keys follow the signed-in account", () => {
     const link = await screen.findByRole("link", { name: /^sniper$/i })
     expect(link.getAttribute("data-tour-anchor")).toBe("sniper-nav-link")
     expect(link.getAttribute("href")).toBe("/nba-top-shot/sniper")
+  })
+})
+
+// 2026-09-02 (onboarding QA #9): the first visit rendered the add-wallet form
+// TWICE — the hero's and the wallets section's, driving different input state.
+describe("DashboardClient — one add-wallet form on the first visit", () => {
+  it("renders the hero form only, with the section's copy behind a link", async () => {
+    routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
+    routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
+    render(<DashboardClient />)
+    await screen.findByRole("button", { name: /add one here/i })
+    expect(screen.queryByPlaceholderText("Dapper username")).toBeNull()
+    expect(screen.getAllByRole("button", { name: /load my collection/i })).toHaveLength(1)
+    fireEvent.click(screen.getByRole("button", { name: /add one here/i }))
+    expect(await screen.findByPlaceholderText("Dapper username")).toBeTruthy()
+  })
+
+  it("does NOT point at a hero form that is not there — a failed wallets read shows the section form", async () => {
+    routes["/api/profile/saved-wallets"] = () => json(503, {})
+    routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
+    render(<DashboardClient />)
+    expect(await screen.findByPlaceholderText("Dapper username")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /add one here/i })).toBeNull()
   })
 })

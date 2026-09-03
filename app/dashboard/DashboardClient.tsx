@@ -778,6 +778,10 @@ function ProfilePageInner() {
   // Group saved_wallets by physical wallet address — one card per unique
   // wallet, with sub-cards from collection-stats inside.
   const groupedWallets = useMemo(() => groupWalletsByAddress(wallets), [wallets]);
+  // The hero's own add-wallet form (SignInBanner) renders exactly when the
+  // wallets read succeeded and returned nothing — the same condition the hero
+  // branch below uses, so the two cannot drift.
+  const heroFormShown = !walletsFailed && wallets.length === 0;
 
   if (loading) {
     return (
@@ -958,7 +962,7 @@ function ProfilePageInner() {
               Retry
             </button>
           </div>
-        ) : wallets.length === 0 ? (
+        ) : heroFormShown ? (
           <SignInBanner
             usernameInput={usernameInput}
             setUsernameInput={setUsernameInput}
@@ -1126,7 +1130,23 @@ function ProfilePageInner() {
             </div>
           ) : null}
 
-          {groupedWallets.length === 0 || showAddWallet ? (
+          {/* First visit: the hero above already carries the add-wallet form
+              (SignInBanner), and this section used to render a SECOND copy of
+              it — two "Load my collection" buttons on one screen, reading
+              different input state (2026-09-02 onboarding QA #9). Point at the
+              hero instead; the form here is one click away for the advanced
+              path. */}
+          {heroFormShown && !showAddWallet ? (
+            <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
+              Use the form above to load your first wallet, or{" "}
+              <button onClick={() => setShowAddWallet(true)} style={linkBtnStyle}>
+                add one here
+              </button>
+              .
+            </div>
+          ) : null}
+
+          {(groupedWallets.length === 0 && !heroFormShown) || showAddWallet ? (
           <>
           <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
             Add a wallet by entering your Dapper username — we'll associate it with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike automatically.
