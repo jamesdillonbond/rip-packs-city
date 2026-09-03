@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — `TopMoversCard` concluded "FMV history building — check back in a few days" in the SERVER RENDER, before any read; `PriceAlertsCard` concluded "No price alerts set" beside its own error · Cowork (cloud)
+
+**Found in the post-deploy anonymous smoke, not by a guard.** The SSR HTML of `/profile/qa0903` (fetched 12:33Z, deploy `dpl_4XVGrK9BNtuprtzmqghPorfp68ed`) carried the Top Movers panel as *"FMV history building — check back in a few days."* — the state of a component that has not fetched yet. `empty` was `!loading && !failed && (!data || …)`, and on the server `loading` is `false`, `failed` is `false`, `data` is `null`: the conclusion, with no read behind it. Same on the client for the beat before the effect fires, and **forever** when `ownerKey` is empty (the effect returns early and nothing ever flips `loading`). This is the copy the 08-2x sweep called *"the sharpest instance found in either pass"* because it explains a blank as pipeline progress and sends the reader away for days — and it is what a crawler, an OG scraper and a first paint all read. `fetchJson` + `res.ok` were already right; the missing state was the THIRD one: **not read yet**.
+
+**Fix.** `pending = loading || (!failed && data === null)` drives the skeleton; `empty` requires `data !== null`. Pinned by SSR (`renderToString`, the only harness a mount effect cannot rescue) and by an empty-`ownerKey` mount, both asserting the ABSENCE of the conclusion. Positive control: both new cases fail on the old component (2 failed | 3 passed), pass on the new.
+
+**Second instance, same grep.** `PriceAlertsCard`'s catch wrote `setAlerts([])`, so a 500 rendered *"Failed to load alerts"* AND *"No price alerts set. Visit any collection page…"* together. Its test asserted the PRESENCE of the error string — the vacuous shape — and now also asserts the absence of the conclusion. Fix: the catch no longer writes an empty list. `CostBasisCard` was checked and left: its not-yet-read copy is *"Cost basis unavailable."*, which reports rather than concludes.
+
+**Verified.** `tsc` clean · component coverage gate 251 files / 3,161 tests, 94.0 lines / 91.08 stmts (thresholds 93.75 / 90.85) · the seven client honesty ratchets green. Full primary suite not run here (10-min sandbox cap) — CI is the gate.
+
+**Revert.** `git revert <code sha>`; nothing in the DB.
+
 ### 2026-09-03 · ✅ SHIPPED — CI audit drain, pass 3: the primary coverage gate runs as two shards plus a merge, taking ~3 min off every code push's wall clock · Claude Code (cloud)
 
 - **What shipped:** `unit-tests` (5.8–8.5 min, the job that set the whole CI wall) is now `unit-tests-shard` (matrix 1/2, 2/2, `npm run test:coverage:shard -- --shard=N/2`, blob reporter, each uploads `blob-N-2.json`) and `unit-tests` (merge: downloads both blobs, **asserts exactly 2 are present**, then `npm run test:coverage:merge` = `vitest run --merge-reports --coverage`, which applies vitest.config.ts's thresholds to the MERGED coverage). ⚠ **The shards zero their thresholds on purpose** — a half suite reads 55–59% and that is not a number about the codebase; the ratchet is applied once, at the merge, and only there. Job name `unit-tests` kept, so the ops-monitor `ci-status` reader and every "Unit tests (vitest)" reference still resolve.
