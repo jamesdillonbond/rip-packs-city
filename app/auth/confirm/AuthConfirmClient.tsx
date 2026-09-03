@@ -18,6 +18,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { safeRedirectPath } from "@/lib/auth/safe-redirect"
 import { getSupabaseBrowser } from "@/lib/auth/supabase-client"
 import { trackFunnelEvent } from "@/lib/track-funnel"
 
@@ -103,7 +104,26 @@ export default function AuthConfirmClient() {
         trackFunnelEvent({ eventType: "account_created", surface: "auth_confirm" })
         if (!cancelled) {
           setMessage("Signed in. Redirecting…")
-          router.replace("/")
+          // ⚠ HONOURS ?redirect=, which this page previously ignored entirely.
+          // `/api/auth/request-magic-link` already carries the login page's
+          // `next` into the emailed callback URL, so the value arrives here —
+          // and was then dropped on the floor by a hard-coded "/". It only
+          // LOOKED fine because "/" bounces a signed-in user to /dashboard, so
+          // the common case worked and every deep link (a campaign's
+          // /dashboard#trophy) silently lost its destination.
+          //
+          // 🚨 SANITISED ON READ, NOT TRUSTED. This is an auth callback: an
+          // unchecked value here is an open redirect that hands someone a link
+          // which really is ours, really signs them in, and then drops them on
+          // an attacker's page already authenticated.
+          // ⚠ `params` in this effect is the HASH (Supabase's implicit flow puts
+          // the token in the fragment); `?redirect=` is a QUERY param, so it is
+          // read from location.search. Reading it here rather than via
+          // useSearchParams also avoids adding a Suspense boundary this page
+          // does not have.
+          const requested = new URLSearchParams(window.location.search).get("redirect")
+          const target = safeRedirectPath(requested) ?? "/"
+          router.replace(target)
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error"

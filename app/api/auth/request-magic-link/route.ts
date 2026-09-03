@@ -21,6 +21,7 @@
 // from client code.
 
 import { NextRequest, NextResponse } from "next/server"
+import { safeRedirectPath } from "@/lib/auth/safe-redirect"
 import { createClient } from "@supabase/supabase-js"
 import { supabaseAdmin } from "@/lib/supabase"
 
@@ -28,8 +29,11 @@ function buildCallbackUrl(req: NextRequest, redirect?: string | null): string {
   const envOrigin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? ""
   const reqOrigin = new URL(req.url).origin
   const origin = envOrigin || reqOrigin
-  const safeRedirect =
-    typeof redirect === "string" && redirect.startsWith("/") ? redirect : null
+  // ⚠ `startsWith("/")` was NOT a same-origin test: `//evil.example/x` passes
+  // it and resolves to an absolute URL, so the emailed link itself carried the
+  // open redirect. Sanitised with the shared helper on both sides — the value
+  // written here and the value read in /auth/confirm.
+  const safeRedirect = safeRedirectPath(redirect)
   return (
     `${origin}/auth/confirm` +
     (safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : "")
