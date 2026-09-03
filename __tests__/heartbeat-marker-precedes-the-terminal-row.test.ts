@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
+import { NextRequest } from "next/server"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE INVOCATION MARKER MUST BE WRITTEN BEFORE THE WORK — behaviourally, not by
@@ -114,6 +115,8 @@ beforeEach(() => {
   deferred = []
   process.env.INGEST_SECRET_TOKEN = "tok"
   process.env.CRON_SECRET = "tok"
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://x.test"
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "k"
 })
 
 function mockAfter() {
@@ -131,6 +134,12 @@ async function runDeferred() {
 
 const authed = (url: string) =>
   new Request(url, { method: "POST", headers: { authorization: "Bearer tok" } })
+
+/** ⚠ Some of these handlers read `req.nextUrl`, which a plain `Request` does not
+ *  have — it throws `Cannot read properties of undefined (reading 'searchParams')`
+ *  before the marker is ever written, which reads like a missing call. */
+const authedNext = (url: string, method = "POST") =>
+  new NextRequest(url, { method, headers: new Headers({ authorization: "Bearer tok" }) })
 
 describe("cron/allday-lock-refresh-batch writes its marker first", () => {
   it("marker precedes the terminal row, under the suffixed name", async () => {
@@ -194,5 +203,98 @@ describe("cron/populate-pinnacle-wmc-fmv writes its marker first", () => {
     expect(res.status).toBe(401)
     await runDeferred()
     expect(rec.events).toEqual([])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The 2026-09-02 second batch, selected on margin against each route's OWN wall
+// rather than on watchlist membership — the watchlisted tier no longer holds the
+// routes at risk.
+//
+// ⚠ Two of these build their OWN supabase client with `createClient` instead of
+// importing `lib/supabase`, so the helper's `db` argument is passed explicitly.
+// That is a real failure mode, not a style point: the helper's DEFAULT would
+// write through a different connection, and a test that only mocked
+// `@/lib/supabase` would see no marker and could not tell that from a missing
+// call. Each case below mocks the module the route actually uses.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("cron/resolve-topshot-stubs writes its marker first", () => {
+  it("marker precedes the terminal row — the smallest wall in the fleet, 30s", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200, text: async () => "{}", json: async () => ({ ok: true }),
+    })))
+    const { POST } = await import("@/app/api/cron/resolve-topshot-stubs/route")
+
+    // ⓘ 200, not 202 — this route answers OK and does its work in after()
+    //   anyway, which is precisely why a kill here is invisible.
+    const res = await POST(authedNext("https://t/api/cron/resolve-topshot-stubs") as never)
+    expect(res.status).toBe(200)
+    await runDeferred()
+
+    assertMarkerContract(rec, "resolve-topshot-stubs")
+    vi.unstubAllGlobals()
+  })
+})
+
+describe("check-alerts writes its marker first", () => {
+  it("🚨 the ALERTING route — a killed tick's output is silence, so the marker is the only evidence", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200, text: async () => "{}", json: async () => ({ ok: true }),
+    })))
+    // ⚠ This route exports GET, not POST — cron-job.org pings it with a GET.
+    const { GET } = await import("@/app/api/check-alerts/route")
+
+    const res = await GET(authedNext("https://t/api/check-alerts", "GET") as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    assertMarkerContract(rec, "check-alerts")
+    vi.unstubAllGlobals()
+  })
+})
+
+describe("cron/alerts-send writes its marker first — through its OWN client", () => {
+  it("marker precedes the terminal row when the route builds its own createClient", async () => {
+    const rec = recorder()
+    mockAfter()
+    // ⚠ THE POINT OF THIS CASE. The route never imports `@/lib/supabase`, so the
+    // helper is called with an explicit `db`. Mock the module it DOES use; if the
+    // explicit argument were dropped, the marker would go to a client this test
+    // never sees and `rec.events` would be empty.
+    vi.doMock("@supabase/supabase-js", () => ({ createClient: () => rec.db }))
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true, status: 200, text: async () => "{}", json: async () => ({ ok: true }),
+    })))
+    const { POST } = await import("@/app/api/cron/alerts-send/route")
+
+    // ⚠ NextRequest, because the handler reads `req.nextUrl.searchParams`.
+    const res = await POST(authedNext("https://t/api/cron/alerts-send") as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    assertMarkerContract(rec, "alerts-send")
+    vi.unstubAllGlobals()
+  })
+})
+
+describe("cron/refresh-conflated-editions writes its marker first — through its OWN client", () => {
+  it("marker precedes the terminal row on a 120s wall the job already runs two thirds of", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@supabase/supabase-js", () => ({ createClient: () => rec.db }))
+    const { POST } = await import("@/app/api/cron/refresh-conflated-editions/route")
+
+    const res = await POST(authedNext("https://t/api/cron/refresh-conflated-editions") as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    assertMarkerContract(rec, "refresh-conflated-editions")
   })
 })

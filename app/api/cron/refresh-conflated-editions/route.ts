@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 
 // Refreshes public.topshot_conflated_editions — the interim parallel-conflation
 // guard (handoff-2026-06-20-parallel-conflation-phase0-verified). TopShot
@@ -38,6 +39,27 @@ async function run(request: NextRequest) {
   // into after(), and we return immediately so the entry is never auto-disabled
   // on a timeout. pipeline_runs is the real signal.
   after(async () => {
+    // Invocation heartbeat, written BEFORE the work and awaited.
+    //
+    // ⚠ `try/catch` CANNOT catch a `maxDuration` kill: the platform terminates
+    // the function and takes the terminal row with it, while the 202 above has
+    // already told cron-job.org this succeeded. The comment above explains the
+    // 202 exists so the cron entry is "never auto-disabled on a timeout" — that
+    // protects the SCHEDULE and does nothing for the observability, which is
+    // what this marker is for.
+    //
+    // ⭐ SELECTED ON MEASURED MARGIN: this route aggregates 365 days of Top Shot
+    // sales, and over the 73 h retained (read 2026-09-02) its 3 recorded ticks
+    // run **77,621 ms at p90 and 79,059 ms at maximum — 66% of the 120,000 ms
+    // wall.** It is a daily job, so three samples are the whole population
+    // available, and all three sit two thirds of the way to the ceiling.
+    //
+    // ⚠ The db argument is explicit because this route builds its OWN client
+    // rather than importing `lib/supabase`.
+    await writeInvocationHeartbeat(
+      { pipeline: PIPELINE_NAME, startedAtMs: Date.parse(startedAt) },
+      supabaseAdmin,
+    );
     const startedMs = Date.now();
     let ok = true;
     let errMsg: string | null = null;

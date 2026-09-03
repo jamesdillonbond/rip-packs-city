@@ -242,7 +242,29 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   (the sixth entry above), so these are UPPER bounds — which is the direction
 //   that matters here, because the question is whether a tick can reach the wall.
 //   ⚠ Read off the failing no-slack assertion (40 -> 37), not by subtracting three.
-const BUDGET = 37
+// 2026-09-02 (ninth): 37 -> 33. FOUR more, and the selection rule shifted from
+//   "watchlisted" to "closest to its own wall", because the watchlisted tier no
+//   longer contains the routes at risk — the tightest margin left among them is
+//   `topshot-listing-cache` at 4% of a 300 s wall. All four figures below are
+//   `max(duration_ms)` over the 73 h `pipeline_runs` retains, read 2026-09-02:
+//     `cron/resolve-topshot-stubs`  29,313 ms of a **30,000 ms** wall — 97.7%,
+//       the smallest wall in the fleet, with three more ticks in the 21.8–25.2 s
+//       band. ⭐ AND THE MAXIMUM IS CENSORED AT THE WALL BY CONSTRUCTION: a tick
+//       that crossed 30 s wrote nothing, so it is ABSENT from the distribution
+//       rather than at the top of it, and the recorded max can never exceed the
+//       ceiling however often the ceiling is hit. Not watchlisted, so a kill
+//       here is not misread — it is unobserved by anything.
+//     `check-alerts`               37,415 ms of 60,000 — 62%, and it is the
+//       ALERTING route: a killed tick sends no mail, no Telegram and writes no
+//       row, so its failure mode is SILENCE. Worst case on the fleet.
+//     `cron/refresh-conflated-editions` 79,059 ms of 120,000 — 66%, on all
+//       three of the ticks a daily job leaves inside the retention window.
+//     `cron/alerts-send`           23,067 ms of 60,000 — 38%, on a 10-minute
+//       cadence, so the tail is sampled often; output is outbound mail.
+//   ⚠ The last two build their OWN supabase client, so the helper's `db`
+//   argument is passed explicitly — its default would be a different connection.
+//   ⚠ Read off the failing no-slack assertion (37 -> 33), not by subtracting four.
+const BUDGET = 33
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

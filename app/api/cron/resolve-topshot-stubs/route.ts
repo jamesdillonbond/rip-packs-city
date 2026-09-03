@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 30
@@ -85,6 +86,30 @@ export async function POST(req: NextRequest) {
   const startedAtIso = new Date().toISOString()
 
   after(async () => {
+    // Invocation heartbeat, written BEFORE the work and awaited.
+    //
+    // ⚠ `try/catch` CANNOT catch a `maxDuration` kill, and this route has the
+    // SMALLEST WALL in the fleet at **30 s**. Over the 73 h `pipeline_runs`
+    // retains (read 2026-09-02) its 146 recorded ticks reach **29,313 ms —
+    // 97.7% of the wall** — with three more in the 21.8–25.2 s band.
+    //
+    // ⭐ AND THE OBSERVED MAXIMUM IS CENSORED AT THE WALL BY CONSTRUCTION: a tick
+    // that CROSSED 30 s wrote nothing, so it is absent from that distribution
+    // rather than at the top of it. The recorded max can therefore never exceed
+    // the ceiling no matter how often the ceiling is hit, which is exactly the
+    // shape a marker exists to make visible.
+    //
+    // ⚠ This pipeline is NOT on `pipeline_cadence_watchlist`, so a kill here is
+    // not merely misread — it is unobserved by anything at all.
+    //
+    // ⓘ Deliberately NOT claimed: a 90-minute gap on 2026-09-01 04:39Z looks like
+    // two killed ticks and is not — it falls inside a correlated band where 28
+    // scheduled pipelines each skipped a tick (see R77), so it is a scheduler
+    // event, not this route dying.
+    await writeInvocationHeartbeat({
+      pipeline: "resolve-topshot-stubs",
+      startedAtMs: Date.parse(startedAtIso),
+    })
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const ingestToken = process.env.INGEST_SECRET_TOKEN
     if (!supabaseUrl || !ingestToken) {

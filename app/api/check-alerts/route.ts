@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import crypto from "crypto";
 
 export const maxDuration = 60;
@@ -328,6 +329,25 @@ export async function GET(req: NextRequest) {
   // after(). The email/Telegram sends and the pipeline_runs row are the real
   // signal, not the HTTP status. Returns 202 immediately.
   after(async () => {
+    // Invocation heartbeat, written BEFORE the work and awaited.
+    //
+    // 🚨 THIS IS THE ALERTING ROUTE, WHICH MAKES A KILL THE WORST CASE ON THE
+    // FLEET. `try/catch` cannot catch a `maxDuration` kill; the 202 has already
+    // told cron-job.org this succeeded; and the OUTPUT of a killed tick is
+    // SILENCE — no email, no Telegram, no `pipeline_runs` row. An alerting
+    // pipeline that fails by going quiet is unfalsifiable from the outside,
+    // which is precisely the class CLAUDE.md names as the worst honesty
+    // sub-shape. The marker is the only thing that can say it started.
+    //
+    // ⭐ SELECTED ON MEASURED MARGIN: over the 73 h retained (read 2026-09-02)
+    // the p90 is a quiet 2,242 ms but the maximum is **37,415 ms — 62% of this
+    // route's 60,000 ms wall.** The route's own comment already says the sweep
+    // "can exceed cron-job.org's 30s client cap under DB saturation"; the wall
+    // is the next ceiling up, and the tail is over half of it.
+    await writeInvocationHeartbeat({
+      pipeline: "check-alerts",
+      startedAtMs: Date.parse(startedAt),
+    });
    try {
     const pipelineAlerts = await processPipelineAlerts();
 

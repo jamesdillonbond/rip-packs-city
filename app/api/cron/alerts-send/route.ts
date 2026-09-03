@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import {
   claimPendingDeliveries,
   markDeliverySent,
@@ -188,6 +189,25 @@ async function run(req: NextRequest) {
   const startedAt = new Date().toISOString();
 
   after(async () => {
+    // Invocation heartbeat, written BEFORE the work and awaited.
+    //
+    // 🚨 THE OUTPUT OF THIS PIPELINE IS OUTBOUND MAIL AND TELEGRAM, so a killed
+    // tick fails by SENDING NOTHING — no delivery, no `pipeline_runs` row, and a
+    // 202 already returned. `try/catch` cannot catch a `maxDuration` kill, and a
+    // notifier that dies quietly is indistinguishable from a quiet queue.
+    //
+    // ⭐ SELECTED ON MEASURED MARGIN: over the 73 h retained (read 2026-09-02)
+    // p90 is 677 ms and the maximum is **23,067 ms — 38% of this route's
+    // 60,000 ms wall** — on a pipeline that fires every 10 minutes, so the tail
+    // is sampled often.
+    //
+    // ⚠ The db argument is explicit because this route builds its OWN client
+    // rather than importing `lib/supabase`; the helper's default would be a
+    // different connection.
+    await writeInvocationHeartbeat(
+      { pipeline: PIPELINE_NAME, startedAtMs: Date.parse(startedAt), extra: { channels } },
+      supabaseAdmin,
+    );
     const startedMs = Date.now();
     let ok = true;
     let errMsg: string | null = null;
