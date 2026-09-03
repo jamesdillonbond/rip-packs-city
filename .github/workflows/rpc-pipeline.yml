@@ -1,4 +1,12 @@
 name: RPC Data Pipeline
+# ⚠ SCHEDULE COLLISION, acknowledged (CI audit 2026-09-02): the fmv-recalc step
+# here fires at 5,25,45 and cron-job.org's "RPC FMV Recalc Force Stale" calls
+# the SAME route (/api/fmv-recalc?force_stale=true) at 8,28,48 — three minutes
+# behind, every tick (docs/operations/cron-schedule.md). Harmless today because
+# GitHub sheds this schedule to ~5–7 fires/day (R61), so the pair coincides
+# only a handful of times daily and the route is idempotent; it would matter
+# if either side stopped being shed. Do not "fix" by moving this cron alone —
+# the cron-job.org side is the one Trevor operates.
 on:
   schedule:
     - cron: "5,25,45 * * * *"

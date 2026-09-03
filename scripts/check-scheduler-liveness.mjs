@@ -37,6 +37,16 @@
  *    a visible number even though it is not the failure condition. A rate is
  *    reported; only silence is red.
  *
+ * 🧪 EXPERIMENT ARMED 2026-09-03 05:56Z (R61's falsifier): allday-ingest.yml,
+ *    72 asks/day that produced nothing, was deleted. If the shedding is a
+ *    per-REPO budget, the seven remaining high-frequency workflows should
+ *    collectively RISE (09-02 window: 7,7,7,6,7,8,6 = 48 observed); if it is a
+ *    per-WORKFLOW cap they stay ~5–8 each. The 09-03 report (29% post-deletion)
+ *    read 6,7,7,7,7,8,6 = 48 — inconclusive by construction. Read the 09-04
+ *    report and later ones; one day is one sample and day-to-day noise
+ *    (39 → 48 between 09-01 and 09-02 with nothing changed) is as large as the
+ *    effect being looked for.
+ *
  * THE BOUND. MAX_SILENT_HOURS is 24 — 1.9x the worst gap ever observed (12.7h).
  * ⚠ It is deliberately loose and it is derived, not chosen: re-measure before
  * tightening it. If the high-frequency crons move off GitHub (the actual fix),
