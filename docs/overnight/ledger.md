@@ -10,6 +10,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED (prod DB) — the MCP daily cap was configured against a plan vocabulary the database FORBIDS, so every pro wallet fell through the fail-open branch
+
+`check_feature_quota(wallet,'mcp_query')` gates every authed request to the MCP
+worker, and `workers/rpc-mcp-proxy/README.md` says so ("returns `429 Retry-After`
+when the daily cap is hit"). It cannot fire for a pro wallet, for a reason the
+schema settles rather than an argument: the 20260512 seed wrote quota rows for
+plans **`pro`** and **`partner`**, and `pro_users_plan_check` CHECKs
+`plan IN (founding, moments_payment, pro_grandfather, pro_paid, pro_trial, admin)`.
+`get_user_plan` reads `pro_users.plan`, so it can never return either string —
+the two rows carrying the actual caps (5000/day and unlimited) were unreachable
+by construction, and `check_feature_quota`'s `NOT FOUND` branch answers
+`allowed:true, daily_limit:NULL, reason:'no_quota_configured_failing_open'`.
+**20 active `pro_grandfather` wallets — every paid user but one — were uncapped.**
+
+Fixed as DATA, not DDL, so no `apply_migration` and no `PGRST002` burst: five rows
+added (`pro_paid` / `pro_grandfather` / `moments_payment` 5000, `pro_trial` 1000,
+`admin` NULL) and the two CHECK-forbidden rows deleted. Cross-product over the
+CHECK's own vocabulary × all five features is now **0 gaps**, and the detector is
+not vacuous — an injected `__control_never_configured__` reports 7 of 7.
+
+⚠ **The cap is STILL inert, for a SECOND and independent reason, and that half is
+NOT fixed** — filed, not shipped, because it needs a `wrangler deploy` this
+sandbox has no credentials for. `mcp_log_tool_call` writes
+`feature_name = 'mcp_' || p_tool_name` (`mcp_get_fmv`, `mcp_lookup_wallet`, …)
+while `check_feature_quota` counts `feature_name = p_feature` exactly, i.e.
+`'mcp_query'` — **a key nothing in the repo or the DB ever writes.** So
+`used_today` is pinned at 0 for every plan including `free`, whose 100/day cap is
+the anonymous-abuse surface. Do NOT read this entry as "the cap now works".
+
+⛔ **Both halves are UNEXERCISED, and the first measurement of that was itself
+taken on the wrong key.** `usage_events` holds **zero** rows matching `mcp%`
+all-time — so no user has been over-served, and the second defect masks the first
+rather than compounding it. One API key exists, on no pro plan.
+
+Not an instance, checked rather than assumed: `saved_wallets_max` reads only
+`quota.daily_limit` and counts rows itself, so it never needed a writer;
+`api_requests` and `custom_alerts_max` have no `checkFeatureQuota` call site at all.
+The class is one instance of three, not three of three.
+
+**Revert:** `delete from feature_quotas where feature_name='mcp_query' and plan in
+('pro_paid','pro_grandfather','moments_payment','pro_trial','admin');` then
+re-insert `('pro','mcp_query',5000,…)` and `('partner','mcp_query',null,…)` —
+both verbatim in `supabase/migrations/20260512155009_mcp_phase1_api_keys_and_quotas.sql`.
+No code shipped in this half; the guard and the README correction ship alongside.
+
 ### 2026-09-03 · ✅ SHIPPED — re-QA, three more: the empty trophy case offered SHARE ON X and told its owner to "build your own"; the tour spotlit the same box for two steps; the profile share copy invited posting an empty case · Cowork (cloud)
 
 **All three found walking the 09-02 onboarding path again as `qa0903b`** (a fresh handle, nothing pinned) — the surfaces the night's work built, seen by their first real empty-state user.
