@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — the same "bound that only wraps the fetch" shape in the two sibling image proxies, found by grepping the SHAPE
+
+Direct follow-on from the ipfs-media fix, and it is the rule CLAUDE.md states outright: **when you find one, grep for the EXPRESSION, not the file.**
+
+The abort signal attached to a `fetch` stays live for the RESPONSE BODY. `app/api/badge-image` and `app/api/moment-thumbnail` — both bounded and caught yesterday — read theirs with `await upstream.arrayBuffer()` **after the `try/catch` closes**. So a deadline elapsing, or a connection reset, DURING that read rejected outside every catch in the handler and escaped as a **500**: exactly the failure the bound was added to remove, one statement later.
+
+⚠ **No live instance is claimed for these two.** They BUFFER rather than stream and the objects are small SVG/JPEG, so the window is far narrower than ipfs-media's — where the same shape produced 426 uncaught `TimeoutError`s across 60 users in 24 h. This is the shape being closed before it is measured, and it says so in the code rather than implying a count it does not have. A transport reset mid-body is the likelier trigger of the two here.
+
+**Shipped.** Both body reads wrapped, answering **502** with a log line naming `abort_body` vs `transport_body` — distinct from the existing `abort_timeout`/`transport` at the headers stage, so the four failure modes are four spellings.
+
+**Four behavioural pins** in `image-proxy-routes-bound-their-upstream.test.ts`, because the file's source-level ratchet **cannot see the difference between a guarded body read and an unguarded one** — it only sees that a bound is attached somewhere. Includes a no-change control that a body which reads fine is still served with its content-type (without it, a catch that swallowed everything would pass the other three). Mutation-checked: reverting either read to a bare `await` fails three of them.
+
+12 tests green in that file, 8 in the two route files, tsc clean.
+
+**Revert.** `git revert <this sha>`.
+
 ### 2026-09-03 · ✅ SHIPPED — the IPFS proxy classifies its own timeout off the SIGNAL, not off the error's name
 
 Follow-up to the two-phase-budget fix an hour earlier, and it came out of verifying that one live rather than from a grep.
