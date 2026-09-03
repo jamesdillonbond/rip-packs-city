@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — re-QA, three more: the empty trophy case offered SHARE ON X and told its owner to "build your own"; the tour spotlit the same box for two steps; the profile share copy invited posting an empty case · Cowork (cloud)
+
+**All three found walking the 09-02 onboarding path again as `qa0903b`** (a fresh handle, nothing pinned) — the surfaces the night's work built, seen by their first real empty-state user.
+
+1. **`/profile/<u>/trophy-case` with nothing pinned** rendered *No trophies pinned yet.* → **SHARE ON X · COPY LINK** → **BUILD YOUR OWN TROPHY CASE →** to the OWNER. Now: no share buttons until something is pinned (and none on a failed read — a case we could not read is not shareable; the old test asserting share buttons render with `trophyCount 0` on failure is inverted); the owner (viewer's `username` from `/api/profile/me` equals the page's — never the Top Shot name) gets *Pin your first trophy from your dashboard →* under the empty state and **EDIT YOUR TROPHY CASE →** as the footer CTA; visitors keep the build-your-own copy.
+2. **Tour steps 2 and 3 both spotlit the saved-wallets card** — the 09-02 fix moved step 2 off the (absent) collection switcher onto the same box step 3 uses. Step 2 now anchors `portfolio-stats` (the Total Moments · Portfolio FMV · Collections tiles, which are what "one wallet, every collection" is about; new `data-tour-anchor` on the dashboard's stat tiles). **New guard** `first-run-tour-anchors-exist-and-do-not-repeat`: every anchored step must be minted by the dashboard tree (`DashboardClient` + `SupportChat`) and no two consecutive steps may share an anchor — both historical defects re-introduced as mutations, each caught.
+3. **Profile "SHARE YOUR COLLECTION" copy** read *Post your trophy case on X or Discord.* with 0 slabs; now *Post your portfolio on X or Discord — or pin a trophy first from your dashboard.* when nothing is pinned (the portfolio is still worth posting; the share stays).
+
+**Verified.** `tsc` clean · component gate 251 files / 3,167 tests, 94.01 lines / 91.10 stmts · the 4 tour suites (28) + share-client (30) + ProfileClient no-rewards (9) green.
+
+**Not changed.** The 6-step flow, the persisted completion (re-verified: finishing the tour as qa0903b and reloading `/dashboard` did not re-show it), the claim-handle → `/profile/edit` → save → `/profile/qa0903b` path (all worked on the walkthrough).
+
+**Revert.** `git revert <code sha>`; nothing in the DB.
+
 ### 2026-09-03 · ✅ SHIPPED — re-QA finding: the public profile's COLLECTION BREAKDOWN summed to ~2× the PORTFOLIO FMV headline above it; rows now show total − stale with a stale caption (migration `20260903142035`) · Cowork (cloud)
 
 **Found by re-running the onboarding walkthrough as `qa0903b`** (tour 6/6 · claim handle → `/profile/edit` URL preview → save → `/profile/qa0903b`): the headline read **$48.0K** (+ $46.1K across 369 stale-priced — the 09-02 split) while the breakdown panel one screen below listed **NBA Top Shot $87.8K**, NFL All Day $4.0K, UFC Strike $1.3K … — the raw wmc sum, stale included. Same page, two totals, ~2× apart. The dashboard's saved-wallet cards were already on the split (UFC Strike **$11.68** = $1,322 − $1,310); the breakdown was the last surface on the old number.
