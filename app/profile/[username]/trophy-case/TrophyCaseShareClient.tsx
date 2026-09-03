@@ -44,6 +44,12 @@ export default function TrophyCaseShareClient({
   // viewers stay null; the ref is only meaningful for the owner sharing their
   // own case, and the server ignores self-referral anyway.
   const [viewerId, setViewerId] = useState<string | null>(null);
+  // The viewer's PUBLIC handle (profile_bio.username, or null — never the Top
+  // Shot name; see /api/profile/me 2026-09-02). Used only to tell the owner
+  // apart from a visitor for copy: an owner looking at their own EMPTY case
+  // should be sent to pin a trophy, not invited to "build your own" or to
+  // share a page with nothing on it (re-QA 2026-09-03, qa0903b).
+  const [viewerUsername, setViewerUsername] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     if (typeof fetch !== "function") return;
@@ -58,6 +64,8 @@ export default function TrophyCaseShareClient({
           if (cancelled) return;
           const id = data?.user?.id;
           setViewerId(typeof id === "string" && id ? id : null);
+          const handle = data?.user?.username;
+          setViewerUsername(typeof handle === "string" && handle ? handle : null);
         })
         .catch(() => {});
     } catch {
@@ -71,6 +79,10 @@ export default function TrophyCaseShareClient({
   const slabs = trophies
     .filter((t) => t && t.moment_id)
     .slice(0, 6) as unknown as TrophySlabData[];
+  const isOwner = !!viewerUsername && viewerUsername.toLowerCase() === username.toLowerCase();
+  // Nothing to share until something is pinned — and never a case we could
+  // not read.
+  const shareable = !readFailed && slabs.length > 0;
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
@@ -174,6 +186,17 @@ export default function TrophyCaseShareClient({
             }}
           >
             No trophies pinned yet.
+            {isOwner && (
+              <div style={{ marginTop: 14 }}>
+                <Link
+                  href="/dashboard"
+                  data-owner-empty-cta
+                  style={{ color: accent, textDecoration: "underline", textUnderlineOffset: 4, fontSize: 12 }}
+                >
+                  Pin your first trophy from your dashboard →
+                </Link>
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -206,13 +229,15 @@ export default function TrophyCaseShareClient({
             gap: 14,
           }}
         >
-          <ShareProfileButtons
-            username={username}
-            trophyCount={slabs.length}
-            surface="trophy-case"
-            referrerId={viewerId}
-            compact
-          />
+          {shareable && (
+            <ShareProfileButtons
+              username={username}
+              trophyCount={slabs.length}
+              surface="trophy-case"
+              referrerId={viewerId}
+              compact
+            />
+          )}
           <Link
             href="/dashboard"
             className="rpc-btn-primary"
@@ -224,7 +249,7 @@ export default function TrophyCaseShareClient({
               borderColor: accent,
             }}
           >
-            BUILD YOUR OWN TROPHY CASE →
+            {isOwner ? "EDIT YOUR TROPHY CASE →" : "BUILD YOUR OWN TROPHY CASE →"}
           </Link>
         </div>
       </main>

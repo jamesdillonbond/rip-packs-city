@@ -97,7 +97,7 @@ function mountAnchor(
   return { el, scrollSpy }
 }
 
-/** Walk to step 2 — anchored on `saved-wallets-card` since 2026-09-02 (the collection switcher is not on the dashboard, where the tour runs). */
+/** Walk to step 2 — anchored on `portfolio-stats` since 2026-09-03 (the collection switcher is not on the dashboard; the wallets card is step 3’s). */
 function renderAtAnchoredStep() {
   const view = render(<FirstRunTour enabled onDismiss={() => {}} />)
   fireEvent.click(view.getByRole("button", { name: /show me/i }))
@@ -126,7 +126,7 @@ describe("FirstRunTour — it points AT the anchor, never over it", () => {
   })
 
   it("an anchor with room below places the popover BELOW it and cuts a spotlight around it", () => {
-    mountAnchor("saved-wallets-card", { top: 100, left: 400, width: 200, height: 40 })
+    mountAnchor("portfolio-stats", { top: 100, left: 400, width: 200, height: 40 })
     const { container } = renderAtAnchoredStep()
 
     const spot = container.querySelector<HTMLElement>("[data-tour-spotlight]")
@@ -146,7 +146,7 @@ describe("FirstRunTour — it points AT the anchor, never over it", () => {
 
   it("an anchor near the BOTTOM flips the popover above it rather than off-screen", () => {
     // bottom = 730, so below would need 730 + 12 + 200 = 942 > 768.
-    mountAnchor("saved-wallets-card", { top: 690, left: 400, width: 200, height: 40 })
+    mountAnchor("portfolio-stats", { top: 690, left: 400, width: 200, height: 40 })
     const { container } = renderAtAnchoredStep()
     const { top } = popoverBox(container)
     // 690 - 200 - 12 = 478: fully above the anchor, fully on screen.
@@ -160,7 +160,7 @@ describe("FirstRunTour — it points AT the anchor, never over it", () => {
     // The recorded defect: a whole dashboard section fits neither above nor
     // below, and the old fallback drew the popover across the middle of the
     // thing the tour was pointing at.
-    mountAnchor("saved-wallets-card", { top: 0, left: 0, width: VIEWPORT_W, height: 900 })
+    mountAnchor("portfolio-stats", { top: 0, left: 0, width: VIEWPORT_W, height: 900 })
     const { container } = renderAtAnchoredStep()
     const { top, transform } = popoverBox(container)
     expect(transform).not.toContain("translate(-50%, -50%)")
@@ -170,13 +170,13 @@ describe("FirstRunTour — it points AT the anchor, never over it", () => {
   })
 
   it("a far-left and a far-right anchor both clamp inside the viewport", () => {
-    mountAnchor("saved-wallets-card", { top: 100, left: -50, width: 40, height: 40 })
+    mountAnchor("portfolio-stats", { top: 100, left: -50, width: 40, height: 40 })
     const left = popoverBox(renderAtAnchoredStep().container).left
     expect(left).toBeGreaterThanOrEqual(16)
     cleanup()
     clearAnchors()
 
-    mountAnchor("saved-wallets-card", { top: 100, left: VIEWPORT_W - 20, width: 40, height: 40 })
+    mountAnchor("portfolio-stats", { top: 100, left: VIEWPORT_W - 20, width: 40, height: 40 })
     const right = popoverBox(renderAtAnchoredStep().container).left
     expect(right).toBeLessThanOrEqual(VIEWPORT_W - POPOVER_W - 16)
   })
@@ -185,7 +185,7 @@ describe("FirstRunTour — it points AT the anchor, never over it", () => {
     // Without the scroll the anchor's rect is off the bottom of the viewport,
     // nothing fits, and the popover lands on the fallback — "anchored" to
     // something the reader cannot see.
-    const offscreen = mountAnchor("saved-wallets-card", { top: 2000, left: 400, width: 200, height: 40 })
+    const offscreen = mountAnchor("portfolio-stats", { top: 2000, left: 400, width: 200, height: 40 })
     renderAtAnchoredStep()
     expect(offscreen.scrollSpy).toHaveBeenCalled()
     cleanup()
@@ -193,7 +193,7 @@ describe("FirstRunTour — it points AT the anchor, never over it", () => {
 
     // NO-CHANGE CONTROL, and it is the half that would silently regress: an
     // anchor already in view must NOT be scrolled, or every step yanks the page.
-    const onscreen = mountAnchor("saved-wallets-card", { top: 100, left: 400, width: 200, height: 40 })
+    const onscreen = mountAnchor("portfolio-stats", { top: 100, left: 400, width: 200, height: 40 })
     renderAtAnchoredStep()
     expect(onscreen.scrollSpy).not.toHaveBeenCalled()
   })
@@ -201,7 +201,7 @@ describe("FirstRunTour — it points AT the anchor, never over it", () => {
   it("a repositioning event does not throw when the anchor has been removed mid-tour", () => {
     // The anchor lives on a page the tour does not own, so it can disappear
     // between steps. The listener must survive that and fall back to centred.
-    const { el } = mountAnchor("saved-wallets-card", { top: 100, left: 400, width: 200, height: 40 })
+    const { el } = mountAnchor("portfolio-stats", { top: 100, left: 400, width: 200, height: 40 })
     const { container } = renderAtAnchoredStep()
     expect(container.querySelector("[data-tour-spotlight]")).not.toBeNull()
     el.remove()

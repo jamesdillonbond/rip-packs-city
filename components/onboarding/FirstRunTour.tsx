@@ -45,11 +45,15 @@ const STEPS: TourStep[] = [
   {
     id: "collection-switcher",
     title: "One wallet, every collection",
-    body: "We cover NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike. Add a wallet once and it shows up here as a card per collection you hold Moments in.",
-    // ⚠ Anchored to the wallets card, not "collection-switcher": that element
-    // lives on collection pages, and the tour runs on the dashboard, where the
-    // step was centred over nothing (2026-09-02 QA).
-    anchor: "saved-wallets-card",
+    body: "We cover NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike. Add a wallet once and every collection you hold Moments in rolls up here — one portfolio, one count.",
+    // ⚠ Anchored to the portfolio stat tiles (Total Moments · Portfolio FMV ·
+    // Collections), not "collection-switcher": that element lives on
+    // collection pages, and the tour runs on the dashboard, where the step was
+    // centred over nothing (2026-09-02 QA). It was then re-anchored to the
+    // wallets card — the SAME box the next step spotlights, so the tour sat on
+    // one box for two steps (re-QA 2026-09-03). The stat tiles are the thing
+    // this step is about, and they are distinct from step 3's card.
+    anchor: "portfolio-stats",
     cta: "Got it",
   },
   {

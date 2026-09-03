@@ -1006,7 +1006,7 @@ function ProfilePageInner() {
         )}
 
         {/* ── Stats Tiles ── */}
-        <section style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
+        <section data-tour-anchor="portfolio-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
           <StatTile
             label="Total Moments"
             value={totalMoments.toLocaleString()}

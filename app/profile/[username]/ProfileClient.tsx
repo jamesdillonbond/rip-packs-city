@@ -539,7 +539,13 @@ export default function ProfileClient(props: {
                 Do not reinstate any Status/credits language on a public surface
                 until the rewards program actually ships. */}
             <div style={{ fontSize: 12, fontFamily: monoFont, color: "var(--rpc-text-secondary)", letterSpacing: "0.04em", maxWidth: 440 }}>
-              Post your trophy case on X or Discord.
+              {/* Copy follows the case: with nothing pinned, "post your trophy
+                  case" invites sharing an empty one (re-QA 2026-09-03). The
+                  portfolio is still worth posting — say that instead, and
+                  point at the dashboard to pin. */}
+              {filledCount > 0
+                ? "Post your trophy case on X or Discord."
+                : "Post your portfolio on X or Discord — or pin a trophy first from your dashboard."}
             </div>
             <ShareProfileButtons username={username} fmv={totalFmv} moments={totalMoments} trophyCount={filledCount} referrerId={myUserId} />
           </section>

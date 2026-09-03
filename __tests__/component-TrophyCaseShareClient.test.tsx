@@ -89,11 +89,22 @@ describe("TrophyCaseShareClient", () => {
     expect(screen.getByTestId("share-buttons").getAttribute("data-surface")).toBe("trophy-case")
   })
 
-  it("does not claim a trophy count when the read failed", () => {
+  it("renders NO share buttons when the read failed — a case we could not read is not shareable", () => {
+    // Was: share buttons rendered with trophyCount 0. A tweet about a case we
+    // failed to read would claim something about it either way.
     render(<TrophyCaseShareClient {...base} readFailed />)
-    expect(screen.getByTestId("share-buttons").getAttribute("data-count")).toBe("0")
-    // and nothing on the page states a number
+    expect(screen.queryByTestId("share-buttons")).toBeNull()
     expect(screen.queryByText(/\b0 trophy/i)).toBeNull()
+  })
+
+  // Re-QA 2026-09-03 (qa0903b, a fresh handle with nothing pinned): the page
+  // offered SHARE ON X for an empty case and told the OWNER to "build your
+  // own". Nothing to share until something is pinned; the owner is sent to
+  // pin, the visitor is invited to build.
+  it("renders no share buttons for an empty case", () => {
+    render(<TrophyCaseShareClient {...base} />)
+    expect(screen.queryByTestId("share-buttons")).toBeNull()
+    expect(screen.getByText(/No trophies pinned yet/i)).toBeTruthy()
   })
 
   it("links back to the full profile", () => {
@@ -126,5 +137,29 @@ describe("TrophyCaseShareClient — the viewer's ref", () => {
     render(<TrophyCaseShareClient {...base} trophies={[trophy("m1", "A")]} />)
     await new Promise((r) => setTimeout(r, 20))
     expect(screen.getByTestId("share-buttons").getAttribute("data-ref")).toBe("")
+  })
+})
+
+describe("TrophyCaseShareClient — owner vs visitor copy", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("sends the OWNER of an empty case to pin, and labels the CTA as editing", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ user: { id: "u-1", username: "Trevor" } }) })))
+    const { container } = render(<TrophyCaseShareClient {...base} />)
+    await waitFor(() => expect(container.querySelector("[data-owner-empty-cta]")).not.toBeNull())
+    expect(container.querySelector("[data-owner-empty-cta]")?.getAttribute("href")).toBe("/dashboard")
+    expect(container.textContent).toMatch(/EDIT YOUR TROPHY CASE/)
+    expect(container.textContent).not.toMatch(/BUILD YOUR OWN/)
+  })
+
+  it("keeps the visitor copy for anyone else — including a viewer whose Top Shot name is not a handle", async () => {
+    // /api/profile/me ships username: null for a signed-in collector with no
+    // handle (and the Top Shot name separately as topshot_username); that
+    // viewer is NOT the owner of anyone's page.
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ user: { id: "u-2", username: null, topshot_username: "trevor" } }) })))
+    const { container } = render(<TrophyCaseShareClient {...base} />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(container.querySelector("[data-owner-empty-cta]")).toBeNull()
+    expect(container.textContent).toMatch(/BUILD YOUR OWN TROPHY CASE/)
   })
 })

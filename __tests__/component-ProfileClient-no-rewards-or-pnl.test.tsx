@@ -86,12 +86,24 @@ describe("public profile makes no rewards promise", () => {
     render(<ProfileClient />)
     await waitFor(() => expect(screen.getByText(/SHARE YOUR COLLECTION/i)).toBeTruthy())
     const text = document.body.textContent ?? ""
-    // Sharing is real — it stays.
-    expect(text).toMatch(/Post your trophy case/i)
+    // Sharing is real — it stays. The copy follows the case: "trophy case"
+    // when something is pinned, "portfolio … pin a trophy first" when not
+    // (re-QA 2026-09-03), so either reading proves the block is there.
+    expect(text).toMatch(/Post your (trophy case|portfolio) on X or Discord/i)
     // The promise is not.
     expect(text).not.toMatch(/\+50/)
     expect(text).not.toMatch(/Status/i)
     expect(text).not.toMatch(/when a friend joins/i)
+  })
+
+  it("with nothing pinned, invites posting the PORTFOLIO and pinning first — not sharing an empty case (re-QA 2026-09-03)", async () => {
+    // The fixture's trophy-slabs is `{ slabs: [] }`.
+    render(<ProfileClient />)
+    await waitFor(() => expect(screen.getByText(/SHARE YOUR COLLECTION/i)).toBeTruthy())
+    const text = document.body.textContent ?? ""
+    expect(text).toMatch(/Post your portfolio on X or Discord/i)
+    expect(text).toMatch(/pin a trophy first/i)
+    expect(text).not.toMatch(/Post your trophy case/i)
   })
 
   it("renders no achievements section", async () => {
