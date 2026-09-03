@@ -10,6 +10,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — topshot squeeze boards: latest FMV from `edition_fmv_current`, and the set board no longer re-joins `editions` (−50% buffers, 1,097 → 119 ms warm) · Cowork (cloud)
+
+**Why this one.** `public_board_liveness_history`, 3 days to 13:30Z: `topshot_set_squeeze_board` is the slowest public board — p50 **5,207 ms**, max **8,006 ms** against the 8,300 ms budget (12 samples, 0 over, 0 errors). Same disease as R50: `topshot_squeeze_board` priced every one of 9,470 editions with a per-row LATERAL `ORDER BY computed_at DESC LIMIT 1` over `fmv_snapshots` (walking the 2026 partition index and the empty 2027 one), and the set board then re-joined `editions` by PK just to reach `set_id`.
+
+**Measured warm, the page's real 15-column SELECT (`ORDER BY avg_squeeze_pct DESC NULLS LAST, total_buyable LIMIT 100`):** before **89,208 hit + 816 read / 1,097 ms** (56,820 in the LATERAL, 28,413 in the re-join) → after **45,369 hit / 119 ms**. The part that balloons under IO saturation is gone entirely; what remains is a PK probe into a small hot table. Edition board default page (`squeeze_pct >= 50 LIMIT 200`) was already 6,819 buffers (LATERAL ran only for the 200 output rows) — unchanged in shape; its `sort=fmv` path gets the same relief.
+
+**Equivalence, proven over the population in one statement (efc 43 min old):** 9,471 editions · old_priced 9,300 = new_priced 9,300 · null flips **0** · fmv differs 49 (max |Δ| $69.92) · confidence differs 5 — the hourly lag, same source the sniper / series / allday boards already show. `low_ask` NULL-gate and `low_ask_disconnected` read the same value; display flags, not filter predicates.
+
+**Shipped.** Migration `20260903134528_audit_20260903_topshot_squeeze_boards_latest_fmv_from_edition_fmv_current.sql`, applied live 13:45Z: inner view `LEFT JOIN edition_fmv_current` (casts keep `fmv_usd numeric(12,4)` / `confidence text`), **one column APPENDED — `set_id uuid`** (the only shape `CREATE OR REPLACE VIEW` allows); outer view joins `sets` on `b.set_id`. `security_invoker=on` re-asserted on both; anon/authenticated SELECT unchanged. Post-apply: 259 sets / 9,471 editions (identical), `get_insights_hub_stats().insights.setSqueezeSets = 259`, `get_team_squeeze` returns an array, `get_edition_insight_links` returns `squeeze_pct` — the three function readers all answer. Migration guards (security-invoker, anon-exec, parity logic) green.
+
+**Callers enumerated (six sources):** views → `topshot_set_squeeze_board`; functions → `get_edition_insight_links`, `get_insights_hub_stats`, `get_team_squeeze`; cron → none; triggers → none; repo → `lib/insights/squeeze-board.ts`, `lib/insights/set-squeeze-board.ts`, `/api/public/insights/{squeeze,set-squeeze}`, `/insights/{squeeze,set-squeeze}`, edition page. All select named columns.
+
+**Watch:** the liveness probe's `count(*)` CAN see the set board (an aggregate cannot be pruned) — the next `public_board_liveness_history` samples for `topshot_set_squeeze_board` are the production readout.
+
+**Revert (DB).** Re-create with the previous bodies; the appended `set_id` cannot be removed by `CREATE OR REPLACE` (DROP … CASCADE + re-create both + re-grant if it must go). Previous inner body, verbatim:
+
+```sql
+CREATE OR REPLACE VIEW public.topshot_squeeze_board WITH (security_invoker = on) AS
+ SELECT e.id AS edition_id, e.external_id, COALESCE(e.player_name, be.player_name) AS player_name, COALESCE(e.set_name, be.set_name) AS set_name,
+    COALESCE(e.tier::text, replace(be.tier, 'MOMENT_TIER_'::text, ''::text)) AS tier, COALESCE(e.circulation_count, be.circulation_count) AS circulation, be.locked, be.burned,
+    round(100.0 * COALESCE(be.locked, 0)::numeric / NULLIF(COALESCE(e.circulation_count, be.circulation_count, 0), 0)::numeric, 1) AS lock_pct,
+    round(100.0 * COALESCE(be.burned, 0)::numeric / NULLIF(COALESCE(e.circulation_count, be.circulation_count, 0), 0)::numeric, 1) AS burn_pct,
+    round(100.0 * (COALESCE(be.locked, 0) + COALESCE(be.burned, 0))::numeric / NULLIF(COALESCE(e.circulation_count, be.circulation_count, 0), 0)::numeric, 1) AS squeeze_pct,
+    GREATEST(COALESCE(e.circulation_count, be.circulation_count, 0) - COALESCE(be.locked, 0) - COALESCE(be.burned, 0), 0) AS effectively_buyable,
+    CASE WHEN fs.fmv_usd IS NULL THEN NULL::numeric ELSE be.low_ask END AS low_ask, fs.fmv_usd, fs.confidence, e.game_date, e.thumbnail_url,
+    fs.fmv_usd IS NOT NULL AND fs.fmv_usd > 0::numeric AND be.low_ask IS NOT NULL AND be.low_ask > (10::numeric * fs.fmv_usd) AS low_ask_disconnected
+   FROM badge_editions be JOIN editions e ON e.external_id::text = be.external_id AND e.collection_id = be.collection_id
+     LEFT JOIN LATERAL (SELECT fs2.fmv_usd, fs2.confidence::text AS confidence FROM fmv_snapshots fs2 WHERE fs2.edition_id = e.id ORDER BY fs2.computed_at DESC LIMIT 1) fs ON true
+  WHERE e.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid AND COALESCE(e.circulation_count, be.circulation_count) IS NOT NULL AND COALESCE(e.circulation_count, be.circulation_count) > 0;
+```
+Previous outer body differs from the new one only in `FROM topshot_squeeze_board b JOIN editions e ON e.id = b.edition_id JOIN sets s ON s.id = e.set_id`. **Revert (repo):** `git revert <code sha>`.
+
 ### 2026-09-03 · ✅ VERIFIED IN PRODUCTION — all three owed verifications close, and the `streamed` instrument earned its keep on its first day
 
 Closes the ⏳ OWED entry from ~03:00 PT. All three were traffic-gated; daytime traffic arrived and answered them.
