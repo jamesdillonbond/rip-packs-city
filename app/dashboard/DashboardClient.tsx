@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiErrorMessage } from "@/lib/api-error-message"
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import MobileNav from "@/components/MobileNav";
@@ -305,7 +306,7 @@ function ProfilePageInner() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `HTTP ${res.status}`);
+        throw new Error(apiErrorMessage(data, res.status));
       }
       pushToast("Trophy removed", "info");
     } catch (err) {
@@ -356,7 +357,7 @@ function ProfilePageInner() {
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || `HTTP ${res.status}`);
+          throw new Error(apiErrorMessage(data, res.status));
         }
         return true;
       } catch (err) {
@@ -643,7 +644,7 @@ function ProfilePageInner() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.error || `HTTP ${res.status}`);
+        throw new Error(apiErrorMessage(data, res.status));
       }
       const addr = data.walletAddress as string;
       const count = Array.isArray(data.associatedCollections) ? data.associatedCollections.length : 0;
@@ -698,7 +699,7 @@ function ProfilePageInner() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `HTTP ${res.status}`);
+        throw new Error(apiErrorMessage(data, res.status));
       }
       setWalletForm({ addr: "", nickname: "", collectionId: "nba-top-shot" });
       pushToast(`Added ${truncateAddress(addr)}`, "success");
@@ -2198,7 +2199,7 @@ function HeroEditModal({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `HTTP ${res.status}`);
+        throw new Error(apiErrorMessage(data, res.status));
       }
       onPicked();
     } catch (err: any) {
