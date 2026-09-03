@@ -1966,5 +1966,9 @@ deployments API. The estate catches regressions well; the defects were in the SE
     premise was wrong — `git ls-remote --tags` over the anonymous proxy resolves them. 57 refs pinned
     to the sha each major tag pointed at that day; `github-actions-are-sha-pinned.test.ts` bans a
     floating ref. The majors themselves are old (checkout v4 vs v7 upstream, Node 20 deprecation
-    warnings in every log) — a bump is a separate, dispatch-verified pass. *Retiring one of three
+    warnings in every log) — a bump is a separate, dispatch-verified pass. **✅ DONE the same day (pass 4, R82):** all five bumped to current
+    releases (checkout v7.0.1, setup-node v7.0.0, upload-artifact v7.0.1, download-artifact v8.0.1,
+    cache v6.1.0), breaking changes read from each repo first — none applied — and verified by CI plus
+    three dispatches. ⭐ Read the changelog from the action's own repo over `git clone --depth 1`; the
+    GitHub releases page is API-gated from the sandbox but the repo is not. *Retiring one of three
     `/api/smoke-test` concierge callers* — cron-job.org console.
