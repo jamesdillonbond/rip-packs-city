@@ -872,6 +872,21 @@ jobs:
       # .ts extension) — this cleared the _shared "Cannot find module" error class.
       # --node-modules-dir=auto is retained for the SDK's transitive npm type deps;
       # it is not what makes the import map resolve (see the job header).
+      # TEMPORARY (2026-09-02): capture the graph Deno actually resolves, so a
+      # deno.lock can be committed. jsr.io / deno.land / esm.sh are all blocked
+      # from the dev sandbox, so CI is the only place the lock can be generated.
+      # This step is removed in the commit that adds the lockfile.
+      - name: lockfile (diagnostic)
+        if: always()
+        run: |
+          if [ -f supabase/functions/deno.lock ]; then
+            echo "LOCK_B64_BEGIN"
+            base64 -w0 supabase/functions/deno.lock
+            echo ""
+            echo "LOCK_B64_END"
+          else
+            echo "no lockfile was written"
+          fi
       - name: deno check (type + import resolution)
         run: deno check --config supabase/functions/deno.json --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
       - name: deno lint (informational)
