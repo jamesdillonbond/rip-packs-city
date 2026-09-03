@@ -7,84 +7,6 @@ not touched — see "Why this is filed rather than fixed" at the bottom.
 
 ---
 
-## ⛔ CORRECTION, 2026-09-03 ~00:1x UTC — DO NOT ACT ON THE TABLE BELOW. IT IS REFUTED, TITLE INCLUDED.
-
-Left in full because the refutation is the useful part, and because the site list and the drop-in RPC
-are still right. **Re-measured, same view, same session, both the literal-`IN` form and the bound
-`= ANY($1)` form PostgREST actually emits:**
-
-| ids | buffers (literal IN) | buffers (`= ANY($1)`) |
-|---|---|---|
-| 1 | 6 | 10 |
-| 3 | **23** | **23** |
-| 10 | 311 | 311 |
-| 100 | 5,312 | 5,312 |
-| 500 | 25,330 | 25,330 |
-
-⭐ **The cost is PROPORTIONAL, ~50–70 buffers per edition. It is not fixed, and a three-id call costs
-23 buffers, not 1,331,405.** The single-key number (8) is the only figure in the original table that
-reproduces — and it sits on the same straight line as the rest, which is the tell: a genuinely fixed
-cost would not pass through 8 at n=1.
-
-**⛔ THE DISCRIMINATOR IS WRONG IN THE DIRECTION THAT DOES HARM.** *"`.eq("edition_id", x)` is fine,
-`.in("edition_id", [...])` is not"* clears the two sites that were genuinely pathological and
-redirects a morning's work at thirteen that are cheap. Both "safe, need nothing" sites were measured
-warm within the hour and are **now fixed** (see the ledger entry for 2026-09-02):
-
-| site the filing cleared | actual, warm | now |
-|---|---|---|
-| `/api/overview-stats` `.eq(collection_id).eq(confidence)` | **1,331,923 buffers / 14,085 ms** | `edition_fmv_current` — 909 / 39 ms |
-| `/api/support-chat` `.eq("editions.external_id", k)` via `editions!inner` | **933,871 buffers / 1,390 ms** | `.eq("edition_id", edition.id)` — 6 / 0.06 ms |
-
-Neither is a single-key predicate on the view. `.eq` on **some other column** — or on an EMBEDDED
-table's column — is the pathological shape; `.eq` vs `.in` was never the axis. **The axis is whether
-the qual is on `edition_id` at all.** That property is now a ban at zero:
-`__tests__/fmv-current-reads-are-keyed-on-edition-id.test.ts`.
-
-**Where 1.33M actually comes from.** Every entry in `pg_stat_statements` near that figure is a
-collection-wide qual, a JOIN, or `IN (SELECT … FROM a CTE ordered by external_id)` — the last of which
-the planner serves as a **hash** semi-join over the fully materialised view. Reorder that CTE by `id`
-and the identical query is a **merge** semi-join at 152,869 buffers. There is no bound-array or
-literal-list entry anywhere near 1.33M. ⚠ **A benchmark arm 38× worse than the same query issued the
-production way is measuring the harness.**
-
-**What survives:** the site list; `get_editions_latest_fmv` as the drop-in; "widen the RPC
-deliberately, every column is carried per id"; and "enumerate consumers by the OBJECT, not by the
-language the first instances were written in" — which is exactly the rule that would have caught the
-two sites this filing cleared.
-
-**⛔ WHAT DOES NOT SURVIVE IS THE PREMISE THAT THE SIXTEEN ARE WORTH A PASS.** Ranked by what they
-actually cost in production — `pg_stat_statements` since its 2026-08-12 reset, every PostgREST read of
-`fmv_current`:
-
-| shape | calls | total blocks | per call |
-|---|---|---|---|
-| **collection-scoped** (the sniper All Day read, fixed) | **43** | **31,052,866** | 722,160 |
-| id list, 5 cols (`wallet-search` / `cache-refresh`) | 3,786 | 7,731,152 | 2,042 |
-| id list, 2 cols | 614 | 445,851 | 726 |
-| id list, 3 cols | 13 | 424,578 | 32,660 |
-| id list, other | 30 | 89,925 | ~3,000 |
-
-⭐ **One shape, in ONE file, out-read every id-list call in the product combined by 3.6× — from 1% of
-the calls.** 31.05M blocks against 8.69M over 4,443. **A file count is not a cost model, and "sixteen
-routes" was a file count.**
-
-⚠ And 2,042 blocks/call is **~29 editions**, not thousands. The tail is real — over 1,165 wallets,
-distinct editions run p50 50 · p90 3,196 · p99 7,674 · max 11,349, with 223 over 1,000 — so a p90
-wallet-search does cost ~224k buffers on the view. But that is a tail, not the common call. **Revised
-exit condition: convert an id-list site when a wider helper exists for another reason, or when its
-large-list tail becomes the common case — NOT "until the `.in()` count reaches zero".**
-`recent-sales` is capped at 50 ids and should be left alone.
-
-⚠ Caveat on both readings: `pg_stat_statements` is at 4,905 of 5,000 entries and therefore evicting,
-so every total above is a LOWER BOUND. It is the right instrument for reading what a client sends; it
-is not one for concluding a query never ran.
-
-⚠ The LATERAL is still the better shape everywhere (~4 buffers/edition against ~70) — a **17×** win,
-not the 249× the concierge entry recorded. That correction is in `docs/reference/database.md`.
-
----
-
 ## The measurement
 
 `fmv_current` is `SELECT DISTINCT ON (edition_id) … FROM fmv_snapshots ORDER BY edition_id,
@@ -103,11 +25,50 @@ before the semi-join. The list length only changes the join and output work on t
 ⛔ **So "we only ask for a few editions" is not a defence.** A three-id call is **166,000× the
 buffers of the one-id call** that returns the same kind of row.
 
-## The discriminator, in one line
+## The discriminator — ⛔ CORRECTED 23:50Z, my first version was too generous
 
-**`.eq("edition_id", x)` is FINE. `.in("edition_id", [...])` is not.** A single-key predicate pushes
-into the view and becomes a bounded index scan per partition; a list does not push and forces the
-materialisation. That is the whole rule, and it is cheap to grep for.
+**Only a SINGLE-KEY predicate on `edition_id` pushes down. Everything else forces the
+materialisation, including `.eq()` on another column.**
+
+| predicate | buffers | time |
+|---|---|---|
+| `edition_id = <one id>` | **8** | 4 ms |
+| `edition_id = ANY(<3 ids>)` | 1,331,405 | 2,131 ms |
+| `edition_id = ANY(<500 ids>)` | 1,334,789 | 16,736 ms |
+| `collection_id = <uuid> AND fmv_usd > 0 ORDER BY edition_id LIMIT 1000` | **87,389** | **13,523 ms** |
+| `count(*) WHERE collection_id = <uuid> AND confidence = 'HIGH'` | — | **>60 s, timed out** |
+
+⚠ **I first wrote "`.eq(…)` is fine, `.in(…)` is not" and used it to mark
+`app/api/overview-stats/route.ts:105` as safe. That was wrong** — `collection_id` is not the
+`DISTINCT ON` key, so filtering on it cannot push down either. The count shape at that site did not
+even complete inside a 60 s statement timeout. **The rule is about the KEY, not the operator.**
+
+That site is also a case of the same pattern as the concierge one: its `Promise.allSettled` carries a
+comment saying each count is isolated *"so a slow/failed FMV-HIGH count over a huge collection's
+fmv_snapshots never zeroes the edition count too"* — somebody already noticed it was slow and
+defended against it FAILING rather than asking what it cost.
+
+## ⛔ The measured ranking (`pg_stat_statements`, window since 2026-08-12 — 21 days)
+
+I said the honest next step was "rank these routes by actual traffic". Here it is, and it changes the
+priority order:
+
+| queryid | shape | calls | blks/call | total |
+|---|---|---|---|---|
+| `-1952502405956513007` | `edition_id = ANY($1)` (+`sales_count_30d`,`computed_at`) | **3,786** | 2,042 | **25,872,016 ms — 7.19 HOURS of exec time** |
+| `-1392060427258362435` | `collection_id = $1 AND fmv_usd > $2 ORDER BY edition_id LIMIT/OFFSET` | 43 | **722,159** | **31,052,866 blocks** |
+
+⚠ **Two honest gaps in this ranking, both worth more than a guess:**
+1. The `= ANY` row averages only 2,042 blks/call over 3,786 calls — **far too few for every call to be
+   doing the full pass**, so most of those calls must be single-element arrays (which collapse to the
+   cheap `= x` plan) with a minority doing the expensive one. The 6.8 s/call average is not explained
+   by its buffer count and I did not chase it. **Do not quote 6.8 s as the per-call cost of the bad
+   shape.**
+2. **I could not identify the caller of the 722k-blocks/call shape from the repo.** It is a paged read
+   (`ORDER BY edition_id` + `LIMIT`/`OFFSET`) with a `collection_id` filter, and no `from("fmv_current")`
+   site in `app/`, `lib/`, `workers/`, `scripts/` or `supabase/functions/` matches it. Catch it live:
+   `select query, state from pg_stat_activity where query ilike '%fmv_current%'`, or match
+   `queryid = -1392060427258362435`.
 
 ## The sites
 
@@ -130,8 +91,16 @@ following 8 lines. **Sixteen carry the `.in("edition_id", …)` shape:**
 | `app/api/wallet/seed/route.ts` | 177 |
 | `lib/market-sources.ts` | 214 |
 
-Two are the safe single-key shape and need nothing: `app/api/overview-stats/route.ts:105` and
-`app/api/support-chat/route.ts:2237` (both filter an embedded/other column for one edition).
+⛔ **And the list above is SHORT BY TWO** — `app/api/profile/watchlist/route.ts:74` and
+`app/api/watchlist/route.ts:67` reach the view through `selectInChunks(supabase, "fmv_current", …,
+"edition_id", ids)`, which my `from("fmv_current")` grep could not see. **Eighteen, not sixteen.**
+⚠ That is the enumeration lesson recursing on itself within one filing: grepping for the literal
+`from("<table>")` misses every call site that passes the table name to a helper. Grep the bare
+quoted table name.
+
+⛔ `app/api/overview-stats/route.ts:105` is **NOT safe** — see the corrected discriminator above; its
+`count exact head` over `collection_id` + `confidence` did not finish in 60 s. Only
+`app/api/support-chat/route.ts:2237` is genuinely fine (single embedded-key lookup, `.limit(1)`).
 `lib/concierge/fmv-distribution.ts` no longer reads the view at all — it was the seventeenth, and it
 is fixed (`f7aae9c5`).
 
