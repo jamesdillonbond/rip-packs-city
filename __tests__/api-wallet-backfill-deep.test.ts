@@ -459,3 +459,100 @@ describe("wallet-backfill — input resolution", () => {
     expect(state.resolveCalls).toHaveLength(0)
   })
 })
+
+describe("wallet-backfill — the invocation marker", () => {
+  // ⚠ `after-route-heartbeat-ratchet` only sees that this route CALLS
+  // writeInvocationHeartbeat. The contract is the ORDERING — a marker written
+  // after the walk cannot survive the `maxDuration` kill it exists to record —
+  // and a static read is structurally blind to it. Asserted here off ONE
+  // interleaved event log, because two separate recorders cannot see an order
+  // between them.
+  //
+  // ⭐ Why this route: `wallet-backfill` is one of the few watchlist rows at
+  // severity HIGH, and its longest recorded tick (2026-09-02, 73 h window) is
+  // 261,273 ms against a 300,000 ms wall — 87%, one second past its own soft
+  // deadline. The median wallet is nowhere near it; the whale is.
+  function withOrdering(sb: any) {
+    const events: string[] = []
+    const rows: Record<string, unknown>[] = []
+    const baseFrom = sb.from.bind(sb)
+    const baseRpc = sb.rpc.bind(sb)
+    sb.from = (table: string) => {
+      const b = baseFrom(table)
+      const baseInsert = b.insert?.bind(b)
+      if (baseInsert) {
+        b.insert = (r: unknown, o?: unknown) => {
+          events.push(`insert:${table}`)
+          rows.push(r as Record<string, unknown>)
+          return baseInsert(r, o)
+        }
+      }
+      return b
+    }
+    sb.rpc = (name: string, args?: unknown) => {
+      events.push(`rpc:${name}`)
+      return baseRpc(name, args)
+    }
+    return { events, rows }
+  }
+
+  it("writes the marker BEFORE the walk, suffixed, with a zero duration and NULL counters", async () => {
+    state.ownedIds = [1]
+    state.metadataById = { "1": meta({ serial: "12" }) }
+    const spy = install({ "rpc:upsert_wmc_batch": { data: { written: 1 }, error: null } })
+    const seen = withOrdering(spy.fixture)
+
+    const res = await POST(post({ wallet: WALLET, skip_cached: false }))
+    // The 202 is already returned — which is exactly why the marker matters:
+    // the caller has been told this succeeded before any work has happened.
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    const firstMarker = seen.events.indexOf("insert:pipeline_runs")
+    const firstLog = seen.events.indexOf("rpc:log_pipeline_run")
+    expect(firstMarker, "no marker row was written at all").toBeGreaterThanOrEqual(0)
+    expect(firstLog, "no terminal row was written, so this tick proves nothing").toBeGreaterThanOrEqual(0)
+    expect(
+      firstMarker,
+      `marker at event ${firstMarker}, terminal row at ${firstLog}`,
+    ).toBeLessThan(firstLog)
+    // ⚠ And before the WALK, not merely before the terminal row: the lock claim
+    // is the first thing runBackfill does, so a marker after it would already
+    // have missed a kill inside the claim.
+    // ⚠ NOT written `if (firstWalk >= 0) expect(...)`. A conditional assertion is
+    // vacuous the moment the fixture stops reaching the walk, and it would still
+    // read as coverage — so the walk's presence is asserted first.
+    const firstWalk = seen.events.findIndex((e) => e.startsWith("rpc:upsert_wmc_batch"))
+    expect(firstWalk, "the fixture never reached the walk, so this arm proves nothing").toBeGreaterThanOrEqual(0)
+    expect(firstMarker).toBeLessThan(firstWalk)
+
+    const marker = seen.rows[0]
+    expect(marker.pipeline).toBe("wallet-backfill-heartbeat")
+    expect(marker.pipeline).not.toBe("wallet-backfill")
+    expect(marker.finished_at).toBe(marker.started_at)
+    expect(marker.rows_found).toBeNull()
+    expect(marker.rows_written).toBeNull()
+    expect(marker.rows_skipped).toBeNull()
+    expect(marker.ok).toBe(true)
+    // ⚠ The wallet is load-bearing HERE and nowhere else in the fleet: this
+    // pipeline is keyed per wallet, and the correlation query matches a marker
+    // to its terminal row on `started_at`. Several wallets can be in flight in
+    // the same second, so a marker with no wallet cannot be correlated at all.
+    expect((marker.extra as Record<string, unknown>).wallet).toBe(WALLET)
+  })
+
+  it("POSITIVE CONTROL — an unauthorized call writes no marker", async () => {
+    const spy = install({})
+    const seen = withOrdering(spy.fixture)
+    const res = await POST(
+      new NextRequest("https://t/api/wallet-backfill", {
+        method: "POST",
+        headers: new Headers({ "content-type": "application/json" }),
+        body: JSON.stringify({ wallet: WALLET }),
+      }),
+    )
+    expect(res.status).toBe(401)
+    await runDeferred()
+    expect(seen.events).toEqual([])
+  })
+})

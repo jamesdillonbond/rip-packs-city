@@ -18,6 +18,7 @@ import {
   upsertWmcChunkWithRetry,
 } from "@/lib/chains/flow/wmc-chunk-upsert"
 import { claimPipelineLockDetailed, releasePipelineLock, skippedReasonFor, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -632,6 +633,36 @@ export async function POST(req: NextRequest) {
   // wallet has 30k+ moments. Vercel's after() inherits maxDuration, so the
   // soft deadline above keeps the walk under that ceiling.
   after(async () => {
+    // Invocation heartbeat, written BEFORE the work and awaited.
+    //
+    // ⚠ `try/catch` CANNOT catch a `maxDuration` kill: the platform terminates the
+    // function and takes `logRun()` with it, while the 202 below has already told
+    // cron-job.org / seed-wallet-refresh this succeeded. Without a marker written
+    // first, a killed tick is indistinguishable from a cron that never fired.
+    //
+    // ⭐ SELECTED ON SEVERITY AND MEASURED MARGIN. `wallet-backfill` is one of the
+    // few `pipeline_cadence_watchlist` rows at severity **high** (800 min), and
+    // over the 73 h `pipeline_runs` retains (read 2026-09-02) its longest recorded
+    // tick is **261,273 ms against this route's 300,000 ms wall — 87%**, one
+    // second past SOFT_DEADLINE_MS. p90 is a comfortable 48,222 ms, so the risk is
+    // not the typical wallet: it is the whale, where the deadline is what stops
+    // the walk and the terminal write has ~39 s to land. 30 of 1,556 ticks already
+    // record `ok=false`; a killed one records nothing at all.
+    //
+    // ⚠ `extra.wallet` matters more here than on a cron route. This pipeline is
+    // keyed per wallet, so a marker with no wallet cannot be correlated against
+    // the terminal row `logRun()` writes — the correlation query matches on
+    // `started_at`, and several wallets can be in flight in the same second.
+    //
+    // ⚠ The `-heartbeat` suffix is added by the helper, never by the caller: a
+    // marker under the REAL name would refresh `last_run` on every tick and
+    // silence `detect_stalled_pipelines()` on exactly the outage it exposes.
+    await writeInvocationHeartbeat({
+      pipeline: "wallet-backfill",
+      startedAtMs: startedMs,
+      collectionSlug: "nba_top_shot",
+      extra: { wallet, skip_cached: skipCached, soft_deadline_ms: SOFT_DEADLINE_MS },
+    })
     const { rowsFound } = await runBackfill(startedAtIso, startedMs, wallet, skipCached)
     await recordScan(wallet, rowsFound)
   })

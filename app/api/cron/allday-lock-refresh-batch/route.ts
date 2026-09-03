@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { refreshAllDayWalletLocks } from "@/lib/allday-lock"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 // Scheduled All Day lock-refresh batch.
 //
@@ -48,6 +49,36 @@ function handle(req: NextRequest) {
   }
   const startedAtIso = new Date().toISOString()
   after(async () => {
+    // Invocation heartbeat, written BEFORE the work and awaited.
+    //
+    // ⚠ `try/catch` CANNOT catch a `maxDuration` kill: the platform terminates
+    // the function and takes the terminal `log_pipeline_run` below with it, while
+    // the 202 has already told the caller this succeeded. Without a marker written
+    // first, a killed tick is indistinguishable from a cron that never fired — and
+    // the catch below is NOT a backstop for it.
+    //
+    // ⭐ SELECTED ON MEASURED KILL RISK, and this route has the tightest margin
+    // in the fleet. Over the 73 h `pipeline_runs` retains (read 2026-09-02):
+    // **71 of 73 ticks finish between 270,077 ms and 292,225 ms against this
+    // route's 300,000 ms wall** — every normal tick lands in the top decile of its
+    // own budget, the worst at **97.4%**. That is by construction: SOFT_DEADLINE_MS
+    // is 270,000, so the loop stops with 30 s left and the terminal write plus the
+    // in-flight Cadence chunk have to fit in what remains. Measured, that tail has
+    // already consumed 22.2 s of the 30. A tick whose tail runs long is killed and
+    // writes nothing, and `allday-lock-refresh` sits on
+    // `pipeline_cadence_watchlist` at 120 min — so the kill does not merely go
+    // unlogged, it is read as "the schedule stopped firing", which needs the
+    // opposite response.
+    //
+    // ⚠ The marker's name carries the `-heartbeat` suffix (added by the helper,
+    // never by the caller). A marker under the REAL name would refresh `last_run`
+    // every tick and silence `detect_stalled_pipelines()` on exactly the outage it
+    // exists to expose.
+    await writeInvocationHeartbeat({
+      pipeline: PIPELINE_NAME,
+      startedAtMs: Date.parse(startedAtIso),
+      extra: { wallet_fetch: WALLET_FETCH, soft_deadline_ms: SOFT_DEADLINE_MS },
+    })
     try {
       await runBatch(startedAtIso)
     } catch (e) {

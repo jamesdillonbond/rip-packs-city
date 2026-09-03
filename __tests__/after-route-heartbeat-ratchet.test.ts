@@ -224,7 +224,25 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 // logged two SUB-steps and never its own outcome, so `pipeline='ingest'` returned
 // zero rows over 48 h on the fleet's highest-volume endpoint; it now writes both
 // the heartbeat and a terminal row under its own name.
-const BUDGET = 40
+// 2026-09-02 (eighth): 40 -> 37. THREE conversions, chosen on measured MARGIN
+//   against each route's own wall rather than on convenience, and read from
+//   `pipeline_runs` (73 h retention) on 2026-09-02:
+//     `cron/allday-lock-refresh-batch` (allday-lock-refresh, watchlist 120 min) —
+//       the tightest margin in the fleet: **71 of 73 ticks finish between
+//       270,077 ms and 292,225 ms against a 300,000 ms wall**, worst 97.4%. That
+//       is structural, not a spike: SOFT_DEADLINE_MS is 270,000, so every tick
+//       stops with 30 s left and the measured tail already eats 22.2 of them.
+//     `wallet-backfill` (watchlist severity HIGH, 800 min) — p90 is a quiet
+//       48,222 ms but the maximum is 261,273 ms, 87% of the wall and one second
+//       past its own soft deadline. The risk is the whale, not the median.
+//     `cron/populate-pinnacle-wmc-fmv` (watchlist 180 min) — max 230,416 ms, 77%
+//       of the wall, and the tick is ONE RPC call: nothing to break out of, so a
+//       slow pass either returns or is killed with nothing written.
+//   ⚠ `duration_ms` on an after() route absorbs the terminal write's own latency
+//   (the sixth entry above), so these are UPPER bounds — which is the direction
+//   that matters here, because the question is whether a tick can reach the wall.
+//   ⚠ Read off the failing no-slack assertion (40 -> 37), not by subtracting three.
+const BUDGET = 37
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {
