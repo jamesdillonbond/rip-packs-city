@@ -264,7 +264,33 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   ⚠ The last two build their OWN supabase client, so the helper's `db`
 //   argument is passed explicitly — its default would be a different connection.
 //   ⚠ Read off the failing no-slack assertion (37 -> 33), not by subtracting four.
-const BUDGET = 33
+// 2026-09-02 (tenth): 33 -> 31. TWO, and the pass STOPPED at two on purpose —
+//   below these the wall-margin tier is exhausted and the rule stops
+//   discriminating. `max(duration_ms)` over the 73 h `pipeline_runs` retains,
+//   read 2026-09-02, against each route's own `maxDuration`:
+//     `cron/panini-ingest`        40,097 ms of a **60,000 ms** wall — 67%, the
+//       worst margin left in the fleet, over 3,501 runs. Its caller is the
+//       residential runner on Trevor's box, which is one of the caller sources
+//       this sandbox cannot see, so a killed tick and a runner that never posted
+//       are the same observation without the marker.
+//     `cron/evm-transfers-ingest` 26,195 ms of **60,000** — 44%, and the p90 is
+//       25,536 ms over 49 runs, so the tail is where this route NORMALLY sits
+//       rather than a spike. Its internal BUDGET_MS is 25 s; a pass that
+//       overruns that has nothing left to break out of.
+//   ⚠ Both maxima are CENSORED AT THE WALL BY CONSTRUCTION — a tick that crossed
+//   wrote no terminal row, so it is absent from the distribution rather than at
+//   the top of it, and the observed max can never exceed the ceiling however
+//   often the ceiling is hit.
+//   ⛔ THE NEXT-RANKED CANDIDATE WAS REJECTED ON RE-DERIVATION, and it is the
+//   trap in this selection rule: `admin/backfill-offer-fill-sales` reads 82,045
+//   ms of a 300,000 ms wall (27%), but its `after()` path is the LEGACY one —
+//   the route's own comment says the ~235 s tail is served by a synchronous GHA
+//   path instead. So the measured maximum almost certainly belongs to the path
+//   that CANNOT be killed at the wall, and citing it here would have been a
+//   number measured on the wrong caller. Everything below it is ≤20% of its own
+//   wall. Rank by margin, then CHECK WHICH PATH PRODUCED THE NUMBER.
+//   ⚠ Read off the failing no-slack assertion (33 -> 31), not by subtracting two.
+const BUDGET = 31
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

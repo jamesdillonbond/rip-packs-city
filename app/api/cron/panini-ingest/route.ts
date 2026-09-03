@@ -37,6 +37,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { toEditionRow, toFmvRow, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc } from "@/lib/chains/panini/ingest-normalize";
 
 export const dynamic = "force-dynamic";
@@ -101,6 +102,23 @@ export async function POST(req: NextRequest) {
   }
 
   after(async () => {
+    // ⚠ THE INVOCATION MARKER, and this route is the fleet's worst remaining
+    // margin: max(duration_ms) is 40,097 ms against a 60,000 ms wall — 67% —
+    // over 3,501 runs in the 73 h `pipeline_runs` retains (measured 2026-09-02).
+    // `try/catch` cannot catch a `maxDuration` kill, so without this row a tick
+    // that crosses the wall is indistinguishable from the residential runner
+    // never posting. ⚠ And the recorded 40 s max is CENSORED BY CONSTRUCTION: a
+    // tick that crossed 60 s wrote nothing, so it is absent from the
+    // distribution rather than at the top of it.
+    //
+    // Written INSIDE after(), not above it: the pre-`after` section is body
+    // parsing only, and the empty-payload path returns early with its own
+    // terminal row — a marker there would be an invocation that did no work.
+    await writeInvocationHeartbeat({
+      pipeline: PIPELINE,
+      startedAtMs: Date.parse(startedAtIso),
+      extra: { found, cards: cards.length, packs: packs.length, serials: serials.length, sales: sales.length },
+    });
     let written = 0;
     try {
       const nowIso = new Date().toISOString();

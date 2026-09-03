@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import {
   getLogs,
   getBlockByNumber,
@@ -549,6 +550,22 @@ export async function POST(req: NextRequest) {
   const startedMs = Date.now();
 
   after(async () => {
+    // ⚠ THE INVOCATION MARKER. Second-worst margin left in the fleet:
+    // max(duration_ms) is 26,195 ms against a 60,000 ms wall — 44% — with a p90
+    // of 25,536 ms over 49 runs, so the tail is not a spike, it is where this
+    // route normally sits (measured 2026-09-02). The internal BUDGET_MS of 25 s
+    // is what keeps it there, and a pass that overruns it has nothing to break
+    // out of before the wall.
+    //
+    // ⚠ The recorded max is CENSORED AT THE WALL BY CONSTRUCTION: a tick that
+    // crossed 60 s wrote no terminal row, so it is ABSENT from the distribution
+    // rather than at the top of it, and the observed maximum can never exceed
+    // the ceiling however often the ceiling is hit. `try/catch` cannot catch the
+    // kill — the catch below sees fatals, never the wall.
+    await writeInvocationHeartbeat({
+      pipeline: PIPELINE,
+      startedAtMs: startedMs,
+    });
     try {
       await runIngest(startedAtIso, startedMs);
     } catch (err) {

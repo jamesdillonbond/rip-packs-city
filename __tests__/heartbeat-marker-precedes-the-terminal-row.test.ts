@@ -45,10 +45,23 @@ function recorder() {
   const rpcArgs: Record<string, Record<string, unknown> | undefined> = {}
   const db = {
     from(table: string) {
+      // ⚠ The chainable methods are a SUPERSET of what any one route calls, on
+      // purpose. A builder missing one throws mid-`after()` — which reads as
+      // "the route wrote no terminal row", i.e. exactly the failure these tests
+      // exist to detect, from a defect in the harness rather than the route.
+      // (`evm-transfers-ingest` uses `.order()`; that is how this was found.)
+      // Every one returns the builder, so adding a method can only ever remove
+      // a false failure, never mask a real one.
       const b: {
         insert: (r: unknown) => Promise<{ error: null }>
         select: () => typeof b
         eq: () => typeof b
+        order: () => typeof b
+        limit: () => typeof b
+        in: () => typeof b
+        is: () => typeof b
+        gte: () => typeof b
+        lte: () => typeof b
         then: (resolve: (v: unknown) => unknown) => unknown
       } = {
         insert: async (r: unknown) => {
@@ -58,6 +71,12 @@ function recorder() {
         },
         select: () => b,
         eq: () => b,
+        order: () => b,
+        limit: () => b,
+        in: () => b,
+        is: () => b,
+        gte: () => b,
+        lte: () => b,
         then: (resolve: (v: unknown) => unknown) => resolve({ data: [], error: null }),
       }
       return b
@@ -296,5 +315,82 @@ describe("cron/refresh-conflated-editions writes its marker first — through it
     await runDeferred()
 
     assertMarkerContract(rec, "refresh-conflated-editions")
+  })
+})
+
+describe("cron/panini-ingest writes its marker first — the worst wall margin left in the fleet", () => {
+  it("marker precedes the terminal row on a 60s wall the route already runs 67% of", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { POST } = await import("@/app/api/cron/panini-ingest/route")
+
+    const req = new NextRequest("https://t/api/cron/panini-ingest", {
+      method: "POST",
+      headers: new Headers({ authorization: "Bearer tok", "content-type": "application/json" }),
+      body: JSON.stringify({ cards: [{ external_id: "x1", name: "A" }] }),
+    })
+    const res = await POST(req as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    assertMarkerContract(rec, "panini-ingest")
+    // ⚠ The marker must NOT land under the sibling enum pipeline. Both names
+    // live in this file and the two are one suffix apart, which is the exact
+    // shape this repo records as yielding opposite conclusions.
+    expect(rec.rows[0].pipeline).not.toBe("panini-ingest-enum-heartbeat")
+    // The payload size is readable off the marker, so a killed tick still says
+    // how much it was carrying.
+    expect((rec.rows[0].extra as Record<string, unknown>).found).toBe(1)
+  })
+
+  it("NO-CHANGE CONTROL — an EMPTY payload returns early and writes NO marker", async () => {
+    // The empty path never enters after(), so it cannot be killed at the wall.
+    // A marker there would be an invocation that did no work, and it would
+    // outnumber the real ones on a runner that posts empty walks.
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { POST } = await import("@/app/api/cron/panini-ingest/route")
+
+    const req = new NextRequest("https://t/api/cron/panini-ingest", {
+      method: "POST",
+      headers: new Headers({ authorization: "Bearer tok", "content-type": "application/json" }),
+      body: JSON.stringify({ cards: [] }),
+    })
+    const res = await POST(req as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    expect(rec.events.some((e) => e.kind === "insert" && e.name === "pipeline_runs")).toBe(false)
+  })
+})
+
+describe("cron/evm-transfers-ingest writes its marker first", () => {
+  it("marker precedes the terminal row on a 60s wall whose p90 already sits at 25.5s", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { POST } = await import("@/app/api/cron/evm-transfers-ingest/route")
+
+    const res = await POST(authedNext("https://t/api/cron/evm-transfers-ingest") as never)
+    expect(res.status).toBe(200)
+    await runDeferred()
+
+    assertMarkerContract(rec, "evm-transfers-ingest")
+  })
+
+  it("POSITIVE CONTROL — an unauthorized call writes NO marker", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { POST } = await import("@/app/api/cron/evm-transfers-ingest/route")
+
+    const res = await POST(
+      new NextRequest("https://t/api/cron/evm-transfers-ingest", { method: "POST" }) as never,
+    )
+    expect(res.status).toBe(401)
+    await runDeferred()
+    expect(rec.events.some((e) => e.kind === "insert" && e.name === "pipeline_runs")).toBe(false)
   })
 })
