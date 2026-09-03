@@ -10,6 +10,77 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED (prod DB, migrations `20260903174421` + `20260903174608`) — R83 closed: the backlog alert published an ETA off a rate that had stopped, and then read healthy when the ETA was removed
+
+**Re-derived before acting, and the finding got STRONGER rather than stale** — which is the
+only reason it was shipped rather than re-filed. R83 recorded 25.1 days off outflow 1,718/24h
+at 14:30Z. Three hours later the same alert published **32.6 days** off outflow 1,263/24h.
+
+🚨 **THE NUMBER WENT UP WHILE THE TRUE RATE WENT DOWN.** `days_to_drain` divides the
+actionable pile by `outflow_24h`, a **trailing** count, so a burst keeps being reported for a
+full day after it stops; the numerator barely moves and the stale burst ages out slowly.
+⚠ **On a decaying series that makes the alert read plausible at every single refresh, and it
+drifts in the REASSURING direction.** Measured on the same table and column as the 24h figure
+(so one instrument against itself, not two paired): **outflow_3h = 10** against 1,263/24h,
+where steady state would put ~158 in that window — **6% of the 24h average**. The honest ETA
+is nearer **526 days**, ~16× the published figure.
+
+⭐ **The resolver is HEALTHY and out of tractable work, confirmed by a DISTRIBUTION not a
+snapshot.** Hourly candidates fell **1,031 → 911 → 197 → 33 → 20 → 2 → 46 → 17**, and nearly
+all of the remainder come back `onchain_nil` (17 of 17 in the last hour). The last 8 hours
+total 24 rows ≈ 3/h. **So this was never a broken pipeline to fix — it was an alert making a
+claim its data cannot support.**
+
+**Shipped, two migrations.** (1) `refresh_unmapped_backlog_growth` gains `outflow_3h` and
+`drain_stalled`, and withholds `days_to_drain` when stalled. Predicate: `outflow_3h * 16 <
+outflow_24h`, i.e. the current rate is below **half** the 24h average — production clears it
+by a wide margin (160 vs 1,263), not a borderline call. (2) `get_pipeline_alerts_core` now
+SAYS the stall.
+
+⚠ **THE SECOND MIGRATION IS THE HALF THAT NEARLY GOT MISSED.** With the ETA nulled, the
+existing `COALESCE` simply drops the sentence and the alert read *"Live inflow 1/24h vs
+outflow 1263/24h"* — which on its own says the pile is draining briskly. **Removing a false
+claim and leaving the reader to infer the same wrong thing from what remains is not honesty.**
+Three states, and the middle one has to be SAID: it now renders *"NO ETA: the drain has
+STALLED — 10 rows resolved in the last 3h against 1263/24h, so the 24h rate is stale and an
+ETA divided by it would be wrong."*
+
+⚠ **A STALL IS NOT IDLENESS, and conflating them would have invented a regression.**
+`ufc_strike` has always reported `days_to_drain: null` with zero outflow; `0*16 < 0` is false,
+so it stays `drain_stalled: false` and nothing about it changes. Pinned in both directions.
+
+⛔ **The renderer was a SURGICAL replace, not a restated body** — `get_pipeline_alerts_core`
+is 12,231 chars of a dozen load-bearing alert arms and is **not** drift-pinned, so a
+transcription error would be caught by nothing. A `DO` block asserts the fragment occurs
+**exactly once** and RAISEs otherwise. ⭐ **It earned its keep immediately:** the first attempt
+died on `column reference "oid" is ambiguous` and changed nothing. A redacted probe ran first
+(`has_credential_shape` false, does not read `cron.job`/`command`) before the source was
+touched at all.
+
+**Guards, each made to FAIL before being trusted** (pin re-registered — the three-file change:
+pin + migration + `db-invariants-drift-guard` registration row; pin==live md5 proven both
+before and after, `09d5558d…`, 184/184 DB-invariant files green): dropping the stall guard
+reds *"and NO ETA is published"*; `<` → `<=` reds *"a collection that never drained is NOT
+stalled, it is idle"*; widening the short window to 24h reds *"but nothing has drained
+recently"*.
+
+**Verified live:** `nfl_all_day` now `outflow_3h 10 · drain_stalled true · days_to_drain null`
+(was 32.6); `ufc_strike` unchanged; `get_pipeline_alerts_core` still returns its single `info`
+alert through both it and the `get_pipeline_alerts` wrapper; anon EXECUTE **false** on both
+functions; `check_secdef_anon_exec_drift()` **0** (read by array length) and
+`check_anon_write_surface()` **0**.
+
+⚠ **R83's open PRODUCT question is deliberately still open and was NOT decided here** —
+whether a stalled 42k backlog deserves severity above `info`. A reading, not a decision: this
+arm's severity keys on `inflow_24h_fresh > outflow_24h`, i.e. backlog **growth**, and a pile
+that is stalled but not growing is arguably not this arm's job. **Trevor's call.**
+
+**Revert:** (1) re-apply the body from
+`supabase/migrations/20260831133323_audit_20260831_unmapped_backlog_growth_fence_comment_correct_function_level_numbers.sql`,
+then revert the pin and the guard registration to name it. (2) re-run that migration's `DO`
+block with `v_old` and `v_rep` exchanged. Reverting restores the stale-ETA behaviour; no data
+is lost.
+
 ### 2026-09-03 · ✅ SHIPPED — the public profile's "ANALYZE <handle>'S WALLET →" searched Top Shot for the RPC HANDLE, a namespace Top Shot has never heard of · Cowork (cloud)
 
 **Seen on `/profile/qa0903b` during the re-QA:** the header link was `/nba-top-shot/collection?q=qa0903b`. `?q=` is the collection page's Top Shot username / Flow address search; `qa0903b` is a `profile_bio.username`. It resolved only when a collector's handle happened to equal their Top Shot name (Trevor's does — which is why it never looked wrong). For every campaign signup who picks a handle, the most prominent button on their public page led to a wallet search for a collector who does not exist.
