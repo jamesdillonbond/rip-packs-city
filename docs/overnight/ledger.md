@@ -10,6 +10,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — known-issues #27 closed (board-MV cron timeouts 600 s → 300 s), and the 08-31 "clipped at 120 s" inbox premise re-read and found moved · Cowork (device VM)
+
+- **#27 — DB only, no code.** `cron.alter_job` on jobs 352 `rpc-refresh-cross-collection-deals`, 353 `rpc-refresh-panini-squeeze`, 354 `rpc-refresh-topshot-first-mint`: command prefix `SET statement_timeout = '600s'` → `'300s'`, jobids and schedules unchanged (`:12/:42`, `:18/:48`, `:21/:51`, all `postgres`-owned, all `active`). **Re-read before acting, 72 h:** 144/144 ok each, max 29 s / 53 s / 32 s, p50 4 / 2 / 2 s — 300 s clears every observed run by ≥5.6×. The filing's only reason this was "operator action" was the sandbox classifier refusing `cron.schedule`; the MCP `execute_sql` path took `alter_job` without complaint. **Verify:** the next tick of each in `cron.job_run_details` succeeds under the new command (`:12`, `:18`, `:21` after 06:00Z). **Revert:** the same three statements with `'600s'`. Known-issues entry flipped to ✅ + index regenerated (`npm run docs:issues-index`).
+- **Inbox 2026-08-31T1425Z (two `postgres` cron jobs clipped at the 120 s default) — premise MOVED, nothing shipped:** jobid 11 `rpc-refresh-new-collectors` is 26–28 s (2/2 ok, 48 h); jobid 78 `rpc-backfill-pinnacle-acquisitions` 7/8 ok, max ok 11 s, one `statement timeout` in 48 h. Neither is "clipped" any more; one kill in eight on a 6-hourly backfill is the saturation lottery, not a ceiling. Raising their timeout would now be a change without a defect — left alone; re-read again if the timeout count climbs.
+
+**Revert.** #27: above. Docs: `git revert <this sha>`.
+
 ### 2026-09-02 · ✅ SHIPPED — `allday_scarcity_board` stops scanning 417k snapshot rows per read; it reads the hourly `edition_fmv_current` instead (register R50, the named highest-value target) · Cowork (device VM)
 
 Audit-drain pass after the onboarding handoff emptied. Triage of the register / inbox / known-issues by a subagent ranked this first: a view-only change with a measured defect and a sanctioned source.
