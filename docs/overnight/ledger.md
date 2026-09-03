@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ⏳ OWED — three of tonight's ships are unverified IN PRODUCTION, all three traffic-gated rather than broken, each closable in one query
+
+Recorded here rather than only in the session log, because the ledger is what the next pass reads first. **The site was quiet from ~00:40 PT**, so none of these is evidence of a problem — they are verifications that could not be taken.
+
+**1. `[ipfs-media] streamed` — the transfer-completion line.** Needs one SUCCESSFUL cache-MISS transfer. The route took two organic requests after deploy and both took non-streaming branches (a 429 from ipfs.io at 08:01:20Z, correctly passed through). Close with:
+
+```
+Vercel runtime logs, query "ipfs-media streamed"
+```
+
+⭐ Then read it as a PAIR: `ok` + `streamed` is a whole object, `ok` with **no** `streamed` is a transfer that died mid-flight. That absence IS the signal.
+
+**2. `wallet-backfill-golazos-heartbeat`.** Its last burst was 07:39Z, ~25 min BEFORE the deploy, and it runs in bursts rather than on a clock. Close with:
+
+```sql
+SELECT pipeline, count(*), max(started_at) FROM pipeline_runs
+WHERE pipeline LIKE 'wallet-backfill-golazos%' AND started_at > '2026-09-03 08:05Z' GROUP BY 1;
+```
+
+⭐ **And the same query answers the wall raise:** any `duration_ms` above 60,000 is a tick that the old 60 s wall would have KILLED and lost. ⛔ Past ~300,000 the falsifier fires — the work is pathological and the fix moves inside `runAllDayDetailsBackfill`.
+
+**3. `panini-ingest-heartbeat`.** Its caller is the residential runner on Trevor's box, idle overnight. Same query shape.
+
+**✅ Already verified live, so the mechanism itself is not in doubt:** `evm-transfers-ingest-heartbeat` wrote **11 markers in two hours**, every one correlating to a terminal row — and 28 heartbeated pipelines were writing markers fleet-wide in the same window.
+
+Nothing to revert; this entry records state, not a change.
+
 ### 2026-09-03 · ✅ SHIPPED — the unbounded-read class had a ban at zero for PAGES and no instrument at all for API ROUTES; 131 of 131 now under a ratchet
 
 Found by closing an unasserted claim rather than by a sweep. The sniper-feed filing said `/api/sniper-feed` was *"very likely another instance of the guard-scope class"* and explicitly declined to assert it. Running the guard settles it:
