@@ -297,6 +297,33 @@ first — a `cron_heavy`-owned job cannot be rescheduled from any session-reacha
   would have raised `invalid transaction termination` on the first COMMIT and taken the watchdog **fully
   dark** — worse than the one-tick-in-eight it was meant to fix.
 
+### ⚠ `get_advisors` WILL KEEP TELLING YOU TO MAKE THIS EXACT MISTAKE (2026-09-03)
+
+**The Supabase security advisor reports `function_search_path_mutable` on both of the routines that
+must NOT be pinned**, and its remediation link says to pin them. Acting on it repeats the 08-23 outage.
+
+⭐ **The equivalence is provable over the population rather than a coincidence.** `public` holds **three**
+procedures; all three contain the word *commit*; and the two the advisory flags are **exactly** the two
+with real `COMMIT;` statements and no `SET` clause:
+
+| procedure | `proconfig` | real `COMMIT;` | advisory |
+|---|---|---:|---|
+| `reconcile_all_saved_wallet_stats` | none | **3** | ⚠ flagged |
+| `rpc_trust_health_precompute_refresh_p` | none | **8** | ⚠ flagged |
+| `reconcile_all_seeded_wallet_stats` | `search_path=public, pg_temp` | **0** | clean |
+
+**So the advisory's WARN list IS the "cannot be pinned" list.** ⓘ Both are also `prosecdef = false` with
+`has_function_privilege('anon'/'authenticated', …) = false`, so there is no escalation path either way —
+and ⓘ `prosecdef AND proconfig IS NULL` is **0** across all of `public`: every SECURITY DEFINER function
+already carries a pinned `search_path`, which is the population that actually matters.
+
+⚠ **A word-count on `prosrc` nearly turned this into an incident report.** `prosrc ~* '\mcommit\M'`
+matches `ON COMMIT`, prose and comments, and it said all three procedures COMMIT — which reads as *"one
+of them is in the broken state RIGHT NOW."* Counting statements instead — `(^|;|\s)commit\s*;` — split
+them 3 / 0 / 8. **Count the statement, never the word.** ⚠ And note the two `reconcile_all_*_wallet_stats`
+names are one word apart (`saved` vs `seeded`), the shape this repo records as having produced opposite
+conclusions from two objects one suffix apart.
+
 ⭐ **The check that settles it in one query, and it is a SHAPE, not a rule to remember:** every routine on
 this database that actually commits reads **`prokind='p'`, `prosecdef=false`, `proconfig=null`**
 (`reconcile_all_saved_wallet_stats`, `rpc_trust_health_precompute_refresh_p` — both, 2026-08-26). **If a

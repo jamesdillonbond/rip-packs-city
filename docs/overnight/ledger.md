@@ -10,6 +10,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED (prod DB) — a full advisor sweep: zero ERRORs, every WARN explained, and one real find — `net._http_response` had never been analysed and reported ZERO live rows
+
+**The sweep.** `get_advisors` both types, read by level rather than by count: **security 230 lints — 0 ERROR, 9 WARN, 221 INFO**; **performance 335 lints — 0 ERROR, 0 WARN, 335 INFO**.
+
+**⛔ THE 2 `function_search_path_mutable` WARNS ARE NOT THE ESCALATION SHAPE THEY LOOK LIKE, and this is the durable part.** `reconcile_all_saved_wallet_stats` and `rpc_trust_health_precompute_refresh_p` both read:
+
+```
+prosecdef = false   anon EXECUTE = false   authenticated EXECUTE = false   owner = postgres
+```
+
+A mutable `search_path` is an escalation vector when a function runs as its OWNER (`SECURITY DEFINER`) or is reachable by an untrusted role. **Neither holds for either one** — both are `SECURITY INVOKER` and callable only by privileged roles. ⚠ **The advisory does not distinguish DEFINER from INVOKER, and says nothing about grants**, so it reads identically for a live escalation vector and for a postgres-only helper.
+
+**🚨 AND IT IS WORSE THAN "UNNECESSARY" — FOR BOTH OF THEM THE REMEDIATION IS IMPOSSIBLE, AND DOING IT HAS ALREADY CAUSED AN OUTAGE HERE.** Both are **PROCEDUREs that genuinely `COMMIT`** (3 and 8 real `COMMIT;` statements). A routine carrying an attached `SET` clause **cannot** `COMMIT` — it raises `2D000 invalid transaction termination` at the first one — and `database.md` records that a `search_path`-hardening pass did exactly this to `reconcile_all_saved_wallet_stats` on **2026-08-23** and took the hourly saved-wallet cache dark until it was reverted.
+
+⭐ **The equivalence is provable over the population, not a coincidence: `public` holds THREE procedures, all three mention "commit", and the two the advisory flags are exactly the two with real `COMMIT` statements and no `SET` clause.** The third, `reconcile_all_seeded_wallet_stats`, **carries `search_path=public, pg_temp` and has ZERO real `COMMIT`s** — its single "commit" hit is prose. So the advisory's WARN list *is* the "cannot be pinned" list. ⓘ And `prosecdef AND proconfig IS NULL` is **0** across all of `public`: every SECURITY DEFINER function already has a pinned `search_path`.
+
+⚠ **A word-count on `prosrc` nearly made this an incident report.** `prosrc ~* '\mcommit\M'` said all three COMMIT, which reads as *"one procedure is in the broken state right now"*. Counting real statements (`(^|;|\s)commit\s*;`) against the bare word split 3 / 0 / 8 and dissolved it. **The control is what kept a false alarm out of this ledger** — and the two `reconcile_all_*_wallet_stats` names are one word apart, which is the shape CLAUDE.md records as having yielded opposite conclusions before.
+
+**✅ The 7 `*_security_definer_function_executable` WARNS are all deliberate.** `check_secdef_anon_exec_drift()` returns an **empty jsonb array → zero drift**. ⚠ Read by ARRAY LENGTH, not row count, exactly as CLAUDE.md requires for the jsonb-array `check_*` shape — one row containing `[]` is CLEAN, and counting rows would have read it as one finding.
+
+**⭐ THE ONE REAL FIND, and the reason it matters is not disk.** `net._http_response` — 66 MB total, **57 MB heap for 639 rows** — carried:
+
+```
+n_live_tup = 0    n_dead_tup = 1    last_vacuum = NULL    last_analyze = NULL    reltuples = 703
+```
+
+🚨 **`n_live_tup = 0` on a table holding 639 rows is a null instrument, the same class this repo tracks in telemetry.** Anyone reading `pg_stat_all_tables` would have concluded the table was empty — and the PLANNER reads exactly that, so every query against it was planned for a table with no rows. ⚠ And `net._http_response` is not incidental: CLAUDE.md names it as the instrument that *"splits dispatched / killed / answered with NO deploy"* for pg_cron `net.http_get` pipelines.
+
+**Shipped:** `VACUUM (ANALYZE) net._http_response`. After: total **66 MB → 58 MB**, `reltuples` 703 → **639**, `n_live_tup` **639**, `n_dead_tup` **0**, both timestamps stamped.
+
+⛔ **The 57 MB heap is deliberately NOT reclaimed.** Only `VACUUM FULL` returns it, and that takes `ACCESS EXCLUSIVE` on a table pg_net's background worker writes to continuously — a dispatch stall for a table whose free space is now REUSABLE, so it will not grow further. Operator call, and the index (`_http_response_created_idx`) means the practical read cost of the remaining heap is small. ⓘ Also note plain `VACUUM` ran fine through `execute_sql`, which is worth knowing: it is not one of the statements that needs the one-statement pg_cron path.
+
+**ⓘ The remaining INFO, stated so nobody re-derives it:** 221 × `rls_enabled_no_policy` are the audit scratch tables already filed 2026-09-02 (106 of them, 221 MB of 14 GB); 274 × `unused_index` is the class the 09-02 `wmc` filing warns about — *scan counts lie about which are cold*; 59 × `no_primary_key`; and 1 × `auth_db_connections_absolute` (Auth capped at 10 connections, absolute). ⛔ **That last one is a non-issue here and should not be passed on as a recommendation** — monetization is tabled until 50+ weekly actives, so 10 Auth connections is not a bound anything is hitting.
+
+**Revert.** None applicable. `VACUUM` has no inverse and changed no data; the statistics it wrote are a correction, not a mutation.
+
 ### 2026-09-03 · ✅ SHIPPED — topshot squeeze boards: latest FMV from `edition_fmv_current`, and the set board no longer re-joins `editions` (−50% buffers, 1,097 → 119 ms warm) · Cowork (cloud)
 
 **Why this one.** `public_board_liveness_history`, 3 days to 13:30Z: `topshot_set_squeeze_board` is the slowest public board — p50 **5,207 ms**, max **8,006 ms** against the 8,300 ms budget (12 samples, 0 over, 0 errors). Same disease as R50: `topshot_squeeze_board` priced every one of 9,470 editions with a per-row LATERAL `ORDER BY computed_at DESC LIMIT 1` over `fmv_snapshots` (walking the 2026 partition index and the empty 2027 one), and the set board then re-joined `editions` by PK just to reach `set_id`.
