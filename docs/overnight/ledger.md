@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — swept the whole tree for the streaming-abort shape, found a third instance, and made it a BAN AT ZERO
+
+The rule this repo keeps re-learning, applied on purpose this time: **when you find one, grep for the EXPRESSION, not the file** — and *"a guard scoped to where the bug was found is scoped to the past"* (recorded 2026-09-02 as the third instance of that shape).
+
+**The sweep.** 146 files under `app/`, `lib/` and `workers/` attach a bound to a `fetch`; the subset where this defect is even possible is much narrower — a route that returns an upstream `.body` **as** a Response. A comment-stripped walk finds **exactly two** such files in the tree:
+
+| file | before |
+|---|---|
+| `app/api/public/ipfs-media/[cid]/route.ts` | fixed earlier tonight |
+| `app/api/public/avatar-media/route.ts` | **third instance — same shape, unfixed** |
+
+`avatar-media` streamed `upstream.body` under a single 6,000 ms `AbortSignal.timeout`, so a transfer whose headers landed at 5 s and was still sending at 6 s was aborted mid-flight after the 200 had gone out. ⚠ **No live instance is claimed for it** — avatars are ≤4 MB and usually far less, so the window is much narrower than ipfs-media's 426-across-60-users. This is the shape closed before it is measured, and the code says so.
+
+⭐ **And a second defect in the same file, of a different class:** every one of its failure branches returned **502 with no log at all** — so *"our bound fired"* and *"the host answered"* were spelled identically. That is the exact ambiguity that left ipfs-media's soft-fail path unreachable dead code for months. This route had inherited that file's TIMEOUT lesson (its constant even cites it) and not its OBSERVABILITY one. Named now, and classified off `controller.signal.aborted` rather than the error's name.
+
+⛔ **Deliberately NOT copied over: the `ok`/`streamed` correlation pair.** It costs a log line per request on a decorative, high-volume route and there are no measured instances here. ⭐ Recorded with a **falsifier** so it is a decision rather than an omission: *if uncaught `TimeoutError`s ever appear on `/api/public/avatar-media`, add the counting TransformStream.*
+
+**The population is now ZERO, so it is a ban.** `image-proxy-routes-bound-their-upstream.test.ts` gains a tree walk over `app/` + `lib/` for the shape "returns an upstream body as a Response" and asserts none of them uses `AbortSignal.timeout` — which **cannot be rescheduled**, and that is the property, not the spelling. Plus a non-vacuity case (the walk found some) and a companion asserting each still carries `new AbortController` — because the lazy way to satisfy a ban is to delete the bound.
+
+Mutation-checked in both directions: putting `AbortSignal.timeout` back in a streaming proxy fails the ban; removing a controller fails the companion **and** the wider unbounded-fetch ratchet.
+
+15 tests in the guard file, 62 across the six related files, tsc clean, eslint unchanged (5,593 errors / 371 warnings before and after, counted identically).
+
+**Revert.** `git revert <this sha>`.
+
 ### 2026-09-03 · ✅ SHIPPED — the same "bound that only wraps the fetch" shape in the two sibling image proxies, found by grepping the SHAPE
 
 Direct follow-on from the ipfs-media fix, and it is the rule CLAUDE.md states outright: **when you find one, grep for the EXPRESSION, not the file.**
