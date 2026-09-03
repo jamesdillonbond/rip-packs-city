@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the pack-detail bound WORKED: re-measured the errors it was written for, and recorded that the RPCs are NOT the slow part
+
+`lib/pack-dist/fetchers.ts`'s budget header quoted **124 users / 86 users / 26 users** from Vercel's 24 h window on 2026-08-23. Those are the numbers that justified the 5 s bound — and they have been sitting in the file as if they were TODAY's severity ever since. Re-measured on the same grouping, 24 h to 2026-09-03 05:43Z:
+
+| group | 08-23 (pre-fix) | today |
+|---|---|---|
+| `pack_realized_ev` | 124 users | **6** |
+| `pack_lifecycle` | 86 users | **13** |
+| `ev_contributors` | 26 users | **1** |
+
+A **7–20× drop**, and what remains is the honest-degradation path *firing*, not the hang it replaced. The header now says so in the file, because a stale severity figure reads as an open incident to the next session.
+
+**⛔ AND THE OBVIOUS FOLLOW-UP IS MEASURED DEAD — do not tune these RPCs.** Warm, over a deterministic hash sample (`abs(hashtext(pack_nft_id)) % 5000 = 0`, never physical order), `get_pack_lifecycle` runs **5–32 ms** across 8 packs and **53 ms / 3,683 buffers** on the newest one — three orders of magnitude inside the 5,000 ms budget. So an overrun is the INSTANCE under contention (the ~22 MB/s IO ceiling, register R46 — a capacity decision already made: stay on Small), not the function. Tuning the query would have been an afternoon spent on a measurement nobody took.
+
+Comment-only change; no runtime behaviour touched. `npx tsc --noEmit` clean, `lib-pack-dist-fetchers` + `pack-dist-contents-not-streamed` + `lib-pack-dist-odds` (72 tests) and both guards that read this file (47 tests) green.
+
+**Revert.** `git revert <this sha>` — restores the pre-fix figures as the header's only numbers.
+
 ### 2026-09-02 · ✅ SHIPPED — `/api/profile/me` no longer hands a collector someone else's handle: `username` is the public handle or null, the Top Shot name travels separately · Cowork (device VM)
 
 Found while verifying #1 (the cache-aware username resolver) live as the second QA account: `POST /api/profile/resolve-and-associate {username:"jamesdillonbond"}` answered **200 in 981 ms** (it was a 502 in the walkthrough) — good — and then `/api/profile/me` for that account answered `username: "jamesdillonbond"` with **no handle of its own**. The route's saved-wallets fallback returned the Top Shot name the wallet was saved under, and both consumers of `username` mean the PUBLIC HANDLE: `ProfileClient` compares it to `/profile/<u>` to decide the viewer OWNS the page (so this account was the "owner" of Trevor's profile, share block and `&ref=` included), and `/rewards` builds its share link from it (pointing at someone else's profile). Pre-existing fallback; `3b60113` made the handle primary but left it.
