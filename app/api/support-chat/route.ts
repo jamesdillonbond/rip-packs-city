@@ -50,6 +50,7 @@ import {
 } from "@/lib/concierge/edition-listings";
 import { closedMarket } from "@/lib/market-closed";
 import { safeApiError } from "@/lib/api-error";
+import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 import { classifySerial } from "@/lib/serials/fun-patterns";
 
@@ -1398,12 +1399,23 @@ async function executeTool(
       // and maxPrice filters AFTER that — limiting the SQL to the top-N by
       // value_ratio made every cheap-pack query ("best EV under $2") return
       // nothing when the top-N were all pricier. 2026-07-11.
+      // 2026-09-03: `primary_available` / `secondary_available` / `secondary_ask` are
+      // columns on the pack_ev_latest SNAPSHOT, exactly as fresh as
+      // `ev_snapshotted_at`. Without the bound below, "buyable" here included
+      // packs whose availability was last observed months ago (654 of 1,210 Top
+      // Shot rows over three days old still said secondary_available, the oldest
+      // 135 days), and the tool told the model they were buyable +EV NOW. Same
+      // 72 h bar as the pack page, the deals surface, the OG card and
+      // /api/packs/grails; a null stamp is excluded — "buyable" is an affirmative
+      // claim and an undatable availability cannot back one.
+      const evFreshCutoff = new Date(Date.now() - EV_SNAPSHOT_MAX_AGE_HOURS * 3600 * 1000).toISOString();
       let query = (supabase as any)
         .from("pack_table_rows")
-        .select("collection_slug, collection_name, title, tier, retail_price_usd, primary_price, secondary_ask, price_source, pack_ev, value_ratio, ev_margin_pct, is_positive_ev, primary_available, secondary_available, fmv_coverage_pct")
+        .select("collection_slug, collection_name, title, tier, retail_price_usd, primary_price, secondary_ask, price_source, pack_ev, value_ratio, ev_margin_pct, is_positive_ev, primary_available, secondary_available, fmv_coverage_pct, ev_snapshotted_at")
         .not("pack_ev", "is", null)
         .not("value_ratio", "is", null)
         .or("primary_available.eq.true,secondary_available.eq.true")
+        .gte("ev_snapshotted_at", evFreshCutoff)
         .order("value_ratio", { ascending: false })
         .limit(200);
       if (toolInput.collectionId) query = query.eq("collection_slug", toolInput.collectionId);
@@ -1429,18 +1441,22 @@ async function executeTool(
             ev_vs_current_price_ratio: evVsPrice,
             positive_ev_at_current_price: evVsPrice != null ? evVsPrice > 1 : null,
             site_value_ratio_retail_based: p.value_ratio != null ? Number(p.value_ratio) : null,
+            // When the availability + ask were last observed. Every row here is
+            // inside the 72 h bar by construction; the stamp lets the model say
+            // "as of" instead of "now".
+            ev_as_of: p.ev_snapshotted_at ?? null,
             packs_page: `https://www.rippackscity.com/${p.collection_slug}/packs`,
           };
         })
         .filter((p: any) => (maxPrice == null ? true : p.current_price != null && p.current_price <= maxPrice))
         .slice(0, wantLimit);
       if (!rows.length) {
-        return JSON.stringify({ status: "no_results", message: "No buyable packs with computed EV match those filters right now." });
+        return JSON.stringify({ status: "no_results", message: "No buyable packs with computed EV match those filters right now (only packs whose availability and ask were observed in the last 72 hours are considered)." });
       }
       return JSON.stringify({
         status: "ok",
         ordered_by: "site value ratio (retail-based), best first",
-        note: "pack_ev is the site's calibrated estimate. Judge 'worth buying now' by ev_vs_current_price_ratio / positive_ev_at_current_price — the retail-based site ratio can look great on a pack that's only buyable at a higher secondary ask. Cite as estimates, never guarantees.",
+        note: "pack_ev is the site's calibrated estimate. Judge 'worth buying now' by ev_vs_current_price_ratio / positive_ev_at_current_price — the retail-based site ratio can look great on a pack that's only buyable at a higher secondary ask. Only packs whose availability and ask were observed within the last 72 hours are listed; ev_as_of is that observation time — say 'as of', not 'now'. Cite as estimates, never guarantees.",
         packs: rows,
       });
     } catch (err: any) {

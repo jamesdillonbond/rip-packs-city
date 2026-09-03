@@ -95,6 +95,7 @@ conflation is exactly what this file's header warns about.
   88 in older CLAUDE.md prose — the count drifts upward as tables are added; treat the exact number as
   informational, the invariant below is the fact that matters). Public views: **136**. Public
   materialized views: **34**.
+  ⓘ 2026-09-03: **+1 since this stamp** — `mv_candy_scarcity_board` (behind the `candy_scarcity_board` wrapper, anon/authenticated REVOKED, migration `20260903221326`). Re-measure; do not add to the 34 by hand.
   ⚠ The 2026-08-25 data-quality sweep reported **367** base tables; a live read the same day returns
   **372**. Neither is wrong — they are two dated samples of a moving count. **Re-measure; quote neither.**
 - ✅ **Tables with `rowsecurity=false`: 0 as of 2026-08-25 — the invariant holds again.** The 08-22 red

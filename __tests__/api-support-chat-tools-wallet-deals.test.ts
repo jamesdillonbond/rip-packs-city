@@ -368,3 +368,67 @@ describe("search_serial_deals", () => {
     expect(String((toolResult() as { message?: string }).message ?? "")).not.toContain("board down")
   })
 })
+
+// ── 2026-09-03: "buyable" is freshness-gated, and the row says when it was seen ──
+//
+// primary_available / secondary_available / secondary_ask are columns on the
+// pack_ev_latest snapshot, exactly as fresh as ev_snapshotted_at. Measured the
+// day this landed: 654 of 1,210 Top Shot rows over three days old still said
+// secondary_available, the oldest 135 days — and this tool told the model they
+// were buyable +EV now. The fixture returns whatever it is given, so the gate
+// is a claim about the QUERY and is pinned by recording what was asked.
+describe("compare_pack_value — the buyable filter is freshness-gated", () => {
+  it("applies an ev_snapshotted_at lower bound inside the 72 h bar and reports ev_as_of on each row", async () => {
+    install({
+      pack_table_rows: {
+        data: [
+          {
+            collection_slug: "nba-top-shot",
+            collection_name: "NBA Top Shot",
+            title: "Fresh Pack",
+            tier: "common",
+            retail_price_usd: 50,
+            primary_price: 50,
+            secondary_ask: 40,
+            price_source: "secondary",
+            pack_ev: 80,
+            value_ratio: 1.6,
+            is_positive_ev: true,
+            primary_available: false,
+            secondary_available: true,
+            ev_snapshotted_at: "2026-09-03T20:00:00.000Z",
+          },
+        ],
+        error: null,
+      },
+    })
+    // Record the filters the route applies to pack_table_rows. The harness
+    // builder chains every method silently, so wrap the one this test is about.
+    const recorded: Array<[string, ...unknown[]]> = []
+    const sb = A.sb as { from: (t: string) => Record<string, unknown> }
+    const origFrom = sb.from
+    sb.from = (t: string) => {
+      const b = origFrom(t)
+      if (t === "pack_table_rows") {
+        const gte = b.gte as (...a: unknown[]) => unknown
+        b.gte = (...a: unknown[]) => { recorded.push(["gte", ...a]); return gte(...a) }
+      }
+      return b
+    }
+    const before = Date.now()
+    script("compare_pack_value", {})
+    await POST(post("best pack to buy?"))
+    const r = toolResult()
+    expect(r).toMatchObject({ status: "ok" })
+
+    const gte = recorded.find((c) => c[0] === "gte" && c[1] === "ev_snapshotted_at")
+    expect(gte, "no ev_snapshotted_at bound was applied to pack_table_rows").toBeDefined()
+    const cutoff = Date.parse(String(gte![2]))
+    expect(before - cutoff).toBeGreaterThan(71 * 3600 * 1000)
+    expect(before - cutoff).toBeLessThan(73 * 3600 * 1000)
+
+    const pack = (r.packs as Array<Record<string, unknown>>)[0]
+    expect(pack.ev_as_of).toBe("2026-09-03T20:00:00.000Z")
+    expect(String(r.note)).toContain("72 hours")
+  })
+})
