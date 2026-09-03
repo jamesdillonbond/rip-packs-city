@@ -47,7 +47,17 @@ begin
 end;
 $function$;
 
-revoke all on function public.mcp_log_tool_call(text, text, jsonb) from public;
+-- ⚠ ALL THREE ROLES IN ONE STATEMENT. The 2026-05 original said `from public`
+-- alone, and this migration copied it verbatim before
+-- `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts`
+-- caught it: this DB carries a PUBLIC default AND `ALTER DEFAULT PRIVILEGES`
+-- grants, so a PUBLIC-only revoke can leave the explicit anon/authenticated
+-- rows in place. Corrected here after the apply and re-run against prod;
+-- `has_function_privilege` reads anon=false, authenticated=false,
+-- service_role=true both before and after, so this closed the ACL explicitly
+-- rather than fixing a live exposure — `CREATE OR REPLACE FUNCTION` does not
+-- reset a function ACL, so the 2026-05 grants carried through untouched.
+revoke all on function public.mcp_log_tool_call(text, text, jsonb) from public, anon, authenticated;
 grant execute on function public.mcp_log_tool_call(text, text, jsonb) to service_role;
 
 -- ⚠ `security_invoker=on` is re-asserted in the WITH clause. A bare
