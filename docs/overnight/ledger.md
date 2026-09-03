@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — the public-profile bundle dropped the trophies and wallets read ERRORS, so a database error rendered "No trophies pinned yet" on the profile page, the trophy-case page and both OG cards · Cowork (cloud)
+
+**Found reading the empty branch I had just been QAing.** `lib/profile/public-profile.ts` destructured `error` from the bio read only: `[{ data: bio, error: bioErr }, { data: trophyData }, { data: wallets }]`. supabase-js RETURNS errors, so a failed `get_trophy_slab_data_by_username` resolved `{ data: null, error }`, became `trophies = []`, and every consumer — `/profile/[username]`, `/profile/[username]/trophy-case`, `/api/og/profile`, `/api/og/trophy-case`, `/api/public/profile` — published the genuinely-empty copy ("No trophies pinned yet" / "NO TROPHIES PINNED YET") out of the failure. Same shape on `saved_wallets` → wallets `[]` → "0 moments · $0". The bundle's OWN timeout (503) and the bio error (500) were already honest; the two reads beside them were not. This is the empty state that CONCLUDES, about a collector's own case, on the page they share.
+
+**Fix.** All three reads destructure `error`; a trophies or wallets error fails the bundle with `ok:false, 500` (the canon's "throw" option — `complete:false` is not available to consumers that discriminate on `ok`, and every one of them already renders `ok:false` as "couldn't load", never as an empty case). New `__tests__/public-profile-failed-trophies-read-is-not-an-empty-case.test.ts`: trophies error → 500 (and not 404) · wallets error → 500 · **control**: a genuinely empty case is still `ok:true` with `trophies: []`. Both failure cases fail on the old module; the control passes on both.
+
+**Not swept.** `const { data } = await …` with no `error` occurs ~200× across `app/` + `lib/` (a count — re-derive). The two on public surfaces were read: `/api/og/edition` falls to a generic card with no figure (a fallback, not a claim); `special-serial-owners` drops only a name enrichment. The class stays under the existing `consequential-read-binds-its-error` ratchet.
+
+**Revert.** `git revert <code sha>`; nothing in the DB.
+
 ### 2026-09-03 · ✅ CORRECTION (prod ACL + repo) — the new migration's REVOKE named only `public`, and a guard I had not looked for caught it
 
 ⚠ **A defect in MY OWN change, found by CI, not by me.** The `mcp_log_tool_call`
