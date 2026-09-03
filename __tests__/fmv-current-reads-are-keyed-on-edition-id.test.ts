@@ -65,7 +65,11 @@ function callSites(): Array<{ file: string; line: number; stmt: string }> {
           const seg = src.slice(i, i + 800)
           const end = seg.search(/;\s*\n/)
           sites.push({
-            file: path.relative(process.cwd(), file),
+            // ⚠ Forward slashes regardless of platform: the `startsWith("app/")`
+            // and exact-path assertions below matched nothing against the
+            // backslash paths `path.relative` emits on Windows (Trevor's box,
+            // 2026-09-03) while CI (Linux) was green.
+            file: path.relative(process.cwd(), file).split(path.sep).join("/"),
             line: src.slice(0, i).split("\n").length,
             stmt: end > 0 ? seg.slice(0, end) : seg,
           })

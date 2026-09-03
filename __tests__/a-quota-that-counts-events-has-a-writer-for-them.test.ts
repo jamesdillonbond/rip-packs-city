@@ -164,7 +164,12 @@ describe("a quota that counts usage_events has something that writes them", () =
     // The canary for the recorded blind-strip failures. Checked on the files
     // that actually carry call sites, because those are the ones whose silence
     // would be read as "no quota checks here".
-    const carriers = SOURCES.filter((abs) => /pro-tier\.ts$|support-chat\/route\.ts$|rpc-mcp-proxy\/index\.ts$/.test(abs))
+    // ⚠ Normalised to forward slashes before the regex: `path.join` emits
+    // backslashes on Windows, so `support-chat\/route\.ts$` matched 1 of 3 on
+    // Trevor's box (2026-09-03) while CI (Linux) was green.
+    const carriers = SOURCES.filter((abs) =>
+      /pro-tier\.ts$|support-chat\/route\.ts$|rpc-mcp-proxy\/index\.ts$/.test(abs.replace(/\\/g, "/")),
+    )
     expect(carriers.length, "the three known call-site files were not found by the walk").toBe(3)
     for (const abs of carriers) {
       const raw = readFileSync(abs, "utf8")

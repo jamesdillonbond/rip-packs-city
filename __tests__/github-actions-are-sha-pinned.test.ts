@@ -20,13 +20,18 @@ import { join } from "node:path"
 // ⚠ Non-vacuity: the walk must find a non-trivial number of `uses:` lines across
 // BOTH roots (workflows and composite actions), or a broken walk would pass.
 
-const ROOT = process.cwd()
+// ⚠ Paths are normalised to forward slashes: `join` emits backslashes on Windows,
+// and the `/.github/actions/` root check below (plus the `ROOT + "/"` strip) then
+// matched NOTHING on Trevor's box — the non-vacuity assertion this file exists for
+// read 0 composites and went red locally on 2026-09-03 while CI (Linux) was green.
+const posix = (p: string) => p.replace(/\\/g, "/")
+const ROOT = posix(process.cwd())
 const WORKFLOWS = join(ROOT, ".github", "workflows")
 const ACTIONS = join(ROOT, ".github", "actions")
 
 const files = [
-  ...readdirSync(WORKFLOWS).filter((f) => f.endsWith(".yml")).map((f) => join(WORKFLOWS, f)),
-  ...readdirSync(ACTIONS).map((d) => join(ACTIONS, d, "action.yml")),
+  ...readdirSync(WORKFLOWS).filter((f) => f.endsWith(".yml")).map((f) => posix(join(WORKFLOWS, f))),
+  ...readdirSync(ACTIONS).map((d) => posix(join(ACTIONS, d, "action.yml"))),
 ]
 
 type Use = { file: string; line: number; ref: string }

@@ -53,6 +53,11 @@ Rotation surfaces and which worker carries which secret: see the three-rotation-
 
 ---
 
+### ⚠ A guard written in a Linux sandbox can be RED ONLY on this box — backslash paths vs forward-slash prefixes (2026-09-03)
+
+Three tree-walking guards landed green on CI and red on Trevor's Windows box the same day: `github-actions-are-sha-pinned` (`files.filter(f => f.includes("/.github/actions/"))` read **0**), `fmv-current-reads-are-keyed-on-edition-id` (`s.file.startsWith("app/")` never true) and `a-quota-that-counts-events-has-a-writer-for-them` (`/support-chat\/route\.ts$/` matched **1 of 3**). Same mechanism each time: `path.join` / `path.relative` emit `\` on Windows and the assertion compares against `/`. ⭐ **The tell is the non-vacuity assertion firing** — "found 0 of N" on a walk that plainly has files. **Fix at the walker, once:** normalise to POSIX right where the path is built (`.split(path.sep).join("/")` or `.replace(/\/g, "/")`), never at each assertion. ⚠ `npm test 2>&1 | tail` reports **tail's** exit code — the 3-failed run printed `exited with code 0` and a push went out on it; read the `Tests` summary line, not the status.
+
+
 ## Vercel tool behavior
 
 - MCP tools are READ-ONLY for env vars.
