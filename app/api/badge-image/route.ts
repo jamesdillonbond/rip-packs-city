@@ -23,6 +23,15 @@ const TOPSHOT_SLUGS = new Set([
   'challengeReward','codenameMercury',
 ])
 
+// Upstream fetch timeout, and the reason it is 8s rather than "the platform
+// limit". `app/api/public/ipfs-media/[cid]` learned this the expensive way: its
+// bound was set to the platform's own 25s initial-response cutoff, so the
+// platform always won the race and killed the function BEFORE the catch could
+// run — making the soft-fail path unreachable dead code for exactly the slow-
+// upstream case it was written for (205 such 504s in one 40-minute window,
+// 2026-07-27). A bound only helps if it fires FIRST.
+const UPSTREAM_TIMEOUT_MS = 8_000
+
 const ALLDAY_SLUGS = new Set([
   'all-day-debut','rookie-year','rookie-mint','challenge-reward',
   'championship-year','dynamic-moment','hall-of-fame','crafted-reward',
@@ -50,8 +59,44 @@ export async function GET(request: NextRequest) {
     return new NextResponse(null, { status: 400 })
   }
 
-  const upstream = await fetch(upstreamUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+  // ⚠ THIS FETCH WAS UNBOUNDED AND UNCAUGHT until 2026-09-03, and both halves
+  // mattered. Live runtime errors for the 24h to 2026-09-03 05:43Z carry a group
+  // of **463 `TimeoutError: The operation was aborted due to timeout` across 69
+  // users** whose routes include this one — the bare rejection escaping the
+  // handler, which is a 500 rather than a status an `<img onError>` can act on.
+  //
+  // ⭐ THE POINT IS NOT THAT THIS FILE WAS MISSED — IT IS *WHY*.
+  // `__tests__/og-fetches-are-bounded.test.ts` drove exactly this class to zero
+  // on 2026-08-29 (30 bare calls across 28 files) and then froze the ban to the
+  // files where the class had been found: `app/api/og/**` and `lib/og/**`. This
+  // route is `app/api/badge-image`, so it was outside that walk BY CONSTRUCTION
+  // — the third time in this repo a guard's glob has excluded the next instance
+  // (see `scripts/check-unbounded-server-reads.mjs`, which records the same
+  // shape for the Supabase-read class).
+  let upstream: Response
+  try {
+    upstream = await fetch(upstreamUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    })
+  } catch (err) {
+    // 502, never a throw: the badge is decorative, and a status lets the caller's
+    // `onError` fall back to no badge instead of rendering a broken image.
+    //
+    // ⚠ NAMING WHICH FAILURE IT WAS is the whole value of the log line —
+    // `AbortSignal.timeout` rejects with a DOMException named "TimeoutError",
+    // anything else is a genuine transport fault, and raising the bound only
+    // helps the first kind.
+    const name = err instanceof Error ? err.name : 'unknown'
+    console.log(
+      `[badge-image] upstream fetch failed src=${src} name=${name} reason=${name === 'TimeoutError' ? 'abort_timeout' : 'transport'}`,
+    )
+    return new NextResponse(null, { status: 502 })
+  }
   if (!upstream.ok) {
+    // Distinct from the branch above: the CDN ANSWERED and said no. Its status
+    // is passed through unchanged, because it is the CDN's answer and no timeout
+    // change can move it.
     return new NextResponse(null, { status: upstream.status })
   }
   // Binary passthrough — both sources are SVG now; served through as-is by
