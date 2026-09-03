@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — `allday_scarcity_board` stops scanning 417k snapshot rows per read; it reads the hourly `edition_fmv_current` instead (register R50, the named highest-value target) · Cowork (device VM)
+
+Audit-drain pass after the onboarding handoff emptied. Triage of the register / inbox / known-issues by a subagent ranked this first: a view-only change with a measured defect and a sanctioned source.
+
+- **Defect (R50, 08-23 → 08-27):** 86.1% of `public_board_liveness_history` samples over the 8,300 ms budget, p50 23.4 s, max 725 s; the 08-10 migration's own header said "STILL OVER BUDGET … the durable fix is the standing materialize-latest-FMV item". That item is `edition_fmv_current`, already read by five functions and sanctioned by `database.md` as a DISPLAY source — and this board only displays / sorts on the lagging columns, never filters on them (the one unsafe case).
+- **Migration `20260903055218_audit_20260902_allday_scarcity_board_latest_fmv_from_edition_fmv_current`,** applied live 05:52Z, committed in this pass. `CREATE OR REPLACE VIEW … WITH (security_invoker = on)` — reloptions verified after; `fmv_usd` cast to `numeric(12,4)` because the first attempt was refused with `42P16` (bare `numeric` on the table vs the view's `numeric(12,4)` — a column-type change the statement cannot make).
+- **Measured, warm, the page's REAL SELECT** (not the probe's pruned `count(*)`): 22,742 → 8,888 buffers; the 19,969-buffer Merge Append → Unique over 417,577 rows (15,528 heap fetches) is gone. **Same-snapshot set diff** across all 6,190 editions: priced both ways 6,190/6,190; 11 fmv values differ (max $47.70), 6 confidences — the hourly lag. Live API `/api/public/insights/allday-scarcity` answered in 166 ms; 5,300 of 6,190 rows priced.
+- **Exit condition / falsifier** written into the register row: share of samples over budget < 20% over the next 7 days (read as a floor — the probe prunes the join either way); a board fmv that disagrees with the edition page by more than one refresh falsifies the "display-only" claim.
+- **Owed:** the other ten boards in R50, one at a time where they only display the lagging columns (the concurrent session owns board MVs — coordinate through this ledger).
+
+**Revert.** Re-apply `supabase/migrations/20260810185031_audit_20260810_allday_scarcity_board_latest_fmv_setbased.sql` (view-only; no grants touched).
+
 ### 2026-09-02 · ✅ SHIPPED — the first visit no longer renders the add-wallet form twice; and a 48 h watch is scheduled on the reconcile trade-off · Cowork (device VM)
 
 - **Dashboard, first visit:** the hero's `SignInBanner` and the "Saved Wallets" section both rendered the add-wallet form — two "Load my collection" buttons on one screen driving DIFFERENT input state (the test file's own header warned about it). The section now shows "Use the form above to load your first wallet, or add one here" (the link reveals the section form, so the advanced 0x path stays one click away). The hero form's own condition (`!walletsFailed && wallets.length === 0`) is hoisted to `heroFormShown` and drives both, so they cannot drift; a failed wallets read still shows the section form (no hero to point at). Tests: the five section-form sites reveal first; two new cases pin one-form-on-first-visit and the failed-read branch. Component gate 94.00 / 91.06.
