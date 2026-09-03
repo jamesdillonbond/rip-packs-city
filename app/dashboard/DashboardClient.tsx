@@ -1,7 +1,7 @@
 "use client";
 
+import { reconcileDeviceKeysForUser } from "@/lib/auth/device-keys";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiErrorMessage } from "@/lib/api-error-message"
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import MobileNav from "@/components/MobileNav";
@@ -310,7 +310,7 @@ function ProfilePageInner() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(apiErrorMessage(data, res.status));
+        throw new Error(data.error || `HTTP ${res.status}`);
       }
       pushToast("Trophy removed", "info");
     } catch (err) {
@@ -361,7 +361,7 @@ function ProfilePageInner() {
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(apiErrorMessage(data, res.status));
+          throw new Error(data.error || `HTTP ${res.status}`);
         }
         return true;
       } catch (err) {
@@ -443,6 +443,9 @@ function ProfilePageInner() {
       setMeFailed(!meRes.ok);
       setEmail(me?.user?.email ?? null);
       setUserId(me?.user?.id ?? null);
+      // Every sign-in path lands here; the branded token-hash link skips
+      // /auth/confirm entirely (see lib/auth/device-keys.ts).
+      reconcileDeviceKeysForUser(me?.user?.id ?? null);
       setResolvedDisplayName(me?.user?.display_name ?? null);
 
       if (bioRes.ok) {
@@ -649,7 +652,9 @@ function ProfilePageInner() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(apiErrorMessage(data, res.status));
+        // The quota branch answers { error: "plan_limit_reached", message: <sentence> };
+        // showing `error` alone put the literal slug on screen (2026-09-02 QA #9).
+        throw new Error(data.message || data.error || `HTTP ${res.status}`);
       }
       const addr = data.walletAddress as string;
       const count = Array.isArray(data.associatedCollections) ? data.associatedCollections.length : 0;
@@ -704,7 +709,7 @@ function ProfilePageInner() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(apiErrorMessage(data, res.status));
+        throw new Error(data.message || data.error || `HTTP ${res.status}`);
       }
       setWalletForm({ addr: "", nickname: "", collectionId: "nba-top-shot" });
       pushToast(`Added ${truncateAddress(addr)}`, "success");
@@ -824,6 +829,27 @@ function ProfilePageInner() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {/* The first-run tour's last step points at "sniper-nav-link", which
+                only existed on collection pages — on the dashboard, where the
+                tour runs, the step was centred over nothing (2026-09-02 QA). */}
+            <Link
+              href="/nba-top-shot/sniper"
+              data-tour-anchor="sniper-nav-link"
+              style={{
+                fontFamily: condensedFont,
+                fontWeight: 700,
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "var(--rpc-text-secondary)",
+                textDecoration: "none",
+                padding: "7px 12px",
+                border: `1px solid ${ACCENT_RED}66`,
+                borderRadius: 5,
+              }}
+            >
+              Sniper
+            </Link>
             <Link
               href="/dashboard/packs"
               style={{
@@ -2292,7 +2318,7 @@ function HeroEditModal({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(apiErrorMessage(data, res.status));
+        throw new Error(data.error || `HTTP ${res.status}`);
       }
       onPicked();
     } catch (err: any) {

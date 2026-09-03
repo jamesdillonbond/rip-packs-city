@@ -44,9 +44,12 @@ const STEPS: TourStep[] = [
   },
   {
     id: "collection-switcher",
-    title: "Switch collections any time",
-    body: "We cover NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike. Your wallet auto-loads in any of them where you have moments.",
-    anchor: "collection-switcher",
+    title: "One wallet, every collection",
+    body: "We cover NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike. Add a wallet once and it shows up here as a card per collection you hold Moments in.",
+    // ⚠ Anchored to the wallets card, not "collection-switcher": that element
+    // lives on collection pages, and the tour runs on the dashboard, where the
+    // step was centred over nothing (2026-09-02 QA).
+    anchor: "saved-wallets-card",
     cta: "Got it",
   },
   {

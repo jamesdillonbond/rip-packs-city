@@ -33,9 +33,16 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({}),
 }))
 vi.mock("next/link", () => ({
-  default: ({ children, href }: { children?: React.ReactNode; href?: string } & Record<string, unknown>) => (
-    <a href={typeof href === "string" ? href : "#"}>{children}</a>
-  ),
+  default: ({ children, href, ...rest }: { children?: React.ReactNode; href?: string } & Record<string, unknown>) => {
+    // Keep data-* attributes (the tour anchors on them); drop Next-only props.
+    const data: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(rest)) if (k.startsWith("data-")) data[k] = v
+    return (
+      <a href={typeof href === "string" ? href : "#"} {...data}>
+        {children}
+      </a>
+    )
+  },
 }))
 vi.mock("@/components/MobileNav", () => ({ default: () => null }))
 vi.mock("@/components/SupportChatConnected", () => ({ default: () => null }))
@@ -2140,5 +2147,43 @@ describe("DashboardClient — claim-your-handle card", () => {
     await new Promise((r) => setTimeout(r, 30))
     expect(screen.queryByText(/claim your handle/i)).toBeNull()
     expect(screen.queryByText(/rippackscity\.com\/profile\//)).toBeNull()
+  })
+})
+
+// 2026-09-02: the branded token-hash magic link lands on /api/auth/callback
+// and redirects straight here, never touching /auth/confirm — so the dashboard
+// is where a changed account has to drop the previous one's device keys.
+describe("DashboardClient — device keys follow the signed-in account", () => {
+  it("clears the previous account's wallet keys when /api/profile/me answers a different user", async () => {
+    // The file-level localStorage stub is a no-op; this case needs a real store.
+    const store = new Map<string, string>([
+      ["rpc_session_user", "someone-else"],
+      ["rpc_owner_key", "0xtheirs"],
+      ["rpc_owned_0xtheirs", "[]"],
+    ])
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => void store.set(k, String(v)),
+        removeItem: (k: string) => void store.delete(k),
+        clear: () => store.clear(),
+        key: (i: number) => Array.from(store.keys())[i] ?? null,
+        get length() {
+          return store.size
+        },
+      },
+    })
+    render(<DashboardClient />)
+    await waitFor(() => expect(store.get("rpc_session_user")).toBe(ME.user.id))
+    expect(store.has("rpc_owner_key")).toBe(false)
+    expect(store.has("rpc_owned_0xtheirs")).toBe(false)
+  })
+
+  it("exposes a Sniper link the tour can anchor to", async () => {
+    render(<DashboardClient />)
+    const link = await screen.findByRole("link", { name: /^sniper$/i })
+    expect(link.getAttribute("data-tour-anchor")).toBe("sniper-nav-link")
+    expect(link.getAttribute("href")).toBe("/nba-top-shot/sniper")
   })
 })

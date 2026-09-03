@@ -1,39 +1,20 @@
 # Supabase auth email templates — Rip Packs City
 
-**Why this file exists.** The 2026-09-02 onboarding walkthrough read the real signup email out of the Resend log: subject **"Confirm Your Signup"**, body *"Follow this link to confirm your user: Confirm your mail"* — Supabase's stock template, unbranded, and contradicting the `/login` page that had just promised a "magic link". Templates live in the Supabase dashboard (Authentication → Email Templates), not in this repo, so this file is the source of truth to paste from and to diff against. Sender is already correct (`Rip Packs City <noreply@rippackscity.com>` via Resend SMTP).
+**Status (2026-09-02 evening PT): DONE, live.** Both sign-in templates are branded and link to our own domain. This file is the record of what is in the Supabase dashboard (Authentication → Emails → Templates), which is not in this repo.
 
-Two templates matter for the sign-in flow. A brand-new address hits **Confirm signup** (because `signInWithOtp` runs with `shouldCreateUser: true`); a returning address hits **Magic Link**. Both must say the same thing, because the user cannot tell which one they will get.
+**What was wrong.** The 2026-09-02 onboarding walkthrough read the real *first-time* signup email out of the Resend log: subject **"Confirm Your Signup"**, body *"Follow this link to confirm your user: Confirm your mail"* — Supabase's stock template — while `/login` had just promised a "magic link". The *Magic link or OTP* template (returning addresses) had already been branded earlier, with a link to `{{ .SiteURL }}/api/auth/callback?token_hash=…&type=magiclink`; only *Confirm signup* was stock. A brand-new address hits *Confirm signup* (because `signInWithOtp` runs with `shouldCreateUser: true`), so every campaign signup got the stock one.
 
-Variables Supabase substitutes: `{{ .ConfirmationURL }}` (the link — keep it exactly), `{{ .Email }}`, `{{ .SiteURL }}`. Do not add the token to any other URL.
+**What is live now.**
 
-## Confirm signup
+| Template | Subject | Link |
+|---|---|---|
+| Confirm signup | `Sign in to Rip Packs City` | `{{ .SiteURL }}/api/auth/callback?token_hash={{ .TokenHash }}&type=signup` |
+| Magic link or OTP | `Sign in to Rip Packs City` | `{{ .SiteURL }}/api/auth/callback?token_hash={{ .TokenHash }}&type=magiclink` |
 
-**Subject:** `Your Rip Packs City sign-in link`
+The two bodies are byte-identical apart from `type=`: dark table layout, RPC logo, "Tap the button below to sign in. This link expires in 1 hour and can only be used once.", red "Sign in to RPC" button, the URL in plain text under it, the "didn't request this?" line, footer with rippackscity.com · @rippackscity. `app/api/auth/callback/route.ts` accepts both `signup` and `magiclink` (`verifyOtp` with `token_hash`) and redirects to `/dashboard`.
 
-```html
-<div style="background:#0a0a0a;padding:32px 16px;font-family:Menlo,Consolas,'Courier New',monospace;color:#e7e7e7">
-  <div style="max-width:520px;margin:0 auto;background:#121212;border:1px solid #2a2a2a;border-radius:12px;padding:28px">
-    <div style="font-size:11px;letter-spacing:0.22em;color:#E03A2F;text-transform:uppercase;margin-bottom:14px">Rip Packs City · Sign in</div>
-    <h1 style="font-family:'Arial Black',Impact,Arial,sans-serif;font-size:26px;line-height:1.1;letter-spacing:0.02em;text-transform:uppercase;color:#ffffff;margin:0 0 14px">Tap to sign in</h1>
-    <p style="font-size:13px;line-height:1.7;color:#b8b8b8;margin:0 0 22px">This link signs you in on the device you open it on. It works once and expires in 1 hour.</p>
-    <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#E03A2F;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;letter-spacing:0.16em;text-transform:uppercase;padding:14px 24px;border-radius:6px">Sign in to Rip Packs City →</a>
-    <p style="font-size:11px;line-height:1.7;color:#7a7a7a;margin:24px 0 0">Didn't ask for this? Ignore it — nothing happens unless the link is opened. If the button doesn't work, copy this into your browser:<br><span style="word-break:break-all;color:#9a9a9a">{{ .ConfirmationURL }}</span></p>
-  </div>
-  <div style="max-width:520px;margin:14px auto 0;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#5a5a5a;text-align:center">Rip Packs City · Collector intelligence · Flow blockchain</div>
-</div>
-```
+**Verified 2026-09-02:** requested a link for a fresh `+tag` address on `/login` → Resend shows subject `Sign in to Rip Packs City`, branded HTML, link on `www.rippackscity.com/api/auth/callback?…&type=signup`; opening it signed the new account in and landed on `/dashboard` (`/api/profile/me` answered the new user).
 
-## Magic Link
+**Not changed, on purpose.** *Change email / Reset password / Invite / Reauthentication* — not on the sign-in path; the product has no password and no invites. A custom auth domain is not needed: the link is already on our domain via the token-hash flow.
 
-**Subject:** `Your Rip Packs City sign-in link`
-
-Body: identical to *Confirm signup* above (same HTML). The two exist as separate templates in Supabase only because Supabase distinguishes first-time from returning addresses; the product does not.
-
-## Not changed, on purpose
-
-- **Link hostname.** `{{ .ConfirmationURL }}` points at `bxcqstmqfzmuolpuynti.supabase.co/auth/v1/verify`. A custom auth domain (link on `rippackscity.com`) is a paid Supabase add-on — declined under the cost-flat gate unless deliverability data says otherwise. The branded body and sender are what recipients actually read.
-- **Change email / Reset password / Invite templates.** Not on the sign-in path; the product has no password and no invites.
-
-## Verify after pasting
-
-Request a link for a fresh `+tag` address on `/login`, then read it back from the Resend log (`list-emails` → `get-email`): subject and the red button should appear; the plain-text part should still carry the URL.
+**If a template ever reverts** (the dashboard has a "Reset template" button): copy the *Magic link or OTP* body, replace `type=magiclink` with `type=signup`, paste into *Confirm signup*, set the subject above.

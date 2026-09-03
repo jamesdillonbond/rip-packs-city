@@ -133,7 +133,7 @@ describe("FirstRunTourMount", () => {
 describe("FirstRunTour — spotlight", () => {
   it("renders no spotlight on the centred welcome step, and one over the anchor once a step has one", () => {
     const anchor = document.createElement("div")
-    anchor.setAttribute("data-tour-anchor", "collection-switcher")
+    anchor.setAttribute("data-tour-anchor", "saved-wallets-card")
     anchor.getBoundingClientRect = () => ({ top: 40, left: 20, width: 200, height: 30, bottom: 70, right: 220, x: 20, y: 40, toJSON() {} }) as DOMRect
     document.body.appendChild(anchor)
     try {
@@ -153,7 +153,7 @@ describe("FirstRunTour — spotlight", () => {
 
   it("scrolls an off-screen anchor into view and pins the popover to the bottom edge when the anchor is taller than the room", () => {
     const anchor = document.createElement("div")
-    anchor.setAttribute("data-tour-anchor", "collection-switcher")
+    anchor.setAttribute("data-tour-anchor", "saved-wallets-card")
     const scrollIntoView = vi.fn()
     anchor.scrollIntoView = scrollIntoView
     // Taller than the viewport: neither above nor below fits.

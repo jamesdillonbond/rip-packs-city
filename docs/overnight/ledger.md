@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — #4 closed in the Supabase dashboard (the first-time signup email is branded and links to our own domain), and the branded link exposed that the device-key clear never ran on that path · Cowork (device VM)
+
+Third and last drain of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md`. Chrome came back (a screenshot wakes the hidden tab; `innerText` stays empty until one is taken).
+
+**#4 · Supabase auth email templates — done, live, not in the repo.** The *Magic link or OTP* template turned out to be ALREADY branded (RPC logo, table layout, link on `{{ .SiteURL }}/api/auth/callback?token_hash=…&type=magiclink`); only *Confirm signup* — the one a brand-new address gets, i.e. every campaign signup — was stock. Pasted the magic-link body into *Confirm signup* with `type=signup` (which `app/api/auth/callback/route.ts` already accepts) and the same subject, `Sign in to Rip Packs City`. Record + revert recipe: `docs/operations/auth-email-templates.md`. **Proved end-to-end:** fresh `tdillonbond+qa0903b@gmail.com` on `/login` → Resend shows the branded subject/body and a `www.rippackscity.com/api/auth/callback?…&type=signup` link → opening it signed the new account in and landed on `/dashboard`; the first-run tour fired for it (server authority working).
+
+**And what that walkthrough caught:** the second account arrived on the dashboard with the FIRST account's `rpc_owner_key` / `rpc_last_wallet` / `rpc_owned_0xbd94…` still in localStorage — the clear I put in `AuthConfirmClient` on `3b60113` never ran, because the token-hash link lands on the SERVER route `/api/auth/callback` and redirects straight to `/dashboard`. Moved it to `lib/auth/device-keys.ts` (`reconcileDeviceKeysForUser`, keyed on `rpc_session_user`), called from `DashboardClient` on the first `/api/profile/me` answer (every sign-in path reaches it) and still from `/auth/confirm`. Keeps `rpc_theme`, `rpc_admin_token`, collection filters. Unit-tested (4 cases) + a dashboard case with a real store (the file's localStorage stub is a no-op).
+
+**Tour anchors, measured on the dashboard with the new account:** only `saved-wallets-card` and `chatbot-launcher` exist there — `collection-switcher` and `sniper-nav-link` live on collection pages, so steps 2 and 6 were always centred over nothing (that is what the walkthrough saw, not a spotlight bug). Step 2 now anchors on the wallets card with copy to match ("One wallet, every collection … a card per collection"); the dashboard header gains a **Sniper** link carrying `sniper-nav-link`. Step 4 (`trophy-case`) anchors only once a wallet exists — correct for a zero-wallet user, whose case does not render yet.
+
+**Verified before push:** `tsc` clean; 14 related files (430 tests) + the component-coverage gate (93.99 lines / 91.06 statements, thresholds 93.75 / 90.85) green in a clean `npm ci`.
+
+**Revert.** Code: `git revert <this sha>`. Templates: Supabase dashboard → Authentication → Emails → *Confirm signup* → "Reset template" (returns to the stock one — do not).
+
+**Handoff status: nothing left on the list.** Deferred, named: the dashboard's duplicate first-visit form (pinned by five test sites; layout work), and the sandbox disk (88%, 153 leaked session dirs — vhdx rename due).
+
 ### 2026-09-02 · ✅ SHIPPED — four more `after()` heartbeats, chosen on wall margin because the watchlist tier no longer contains the routes at risk
 
 **E5: BUDGET 37 → 33.** ⚠ **The selection RULE changed, and that is the part worth recording.** Every
