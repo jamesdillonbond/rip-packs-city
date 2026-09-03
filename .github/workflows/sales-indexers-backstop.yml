@@ -60,10 +60,17 @@ on:
   schedule:
     - cron: "18,48 * * * *"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   sales-indexers:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Sized from the steps: 3 x (--retry 3 --max-time 60 = 4 attempts + backoff)
+    # is ~12.4 min worst case. At the old 5 the Golazos step could never fire
+    # on a hung site.
+    timeout-minutes: 14
     steps:
       - name: TopShot Sales Indexer (on-chain) — backstop trigger
         continue-on-error: true
@@ -72,7 +79,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/sales-indexer) || STATUS=""
           echo "TopShot sales-indexer status: $STATUS"
-          cat /tmp/ts-sales.json
+          cat /tmp/ts-sales.json 2>/dev/null || echo "<no body>"
           if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
             echo "::warning::TopShot sales-indexer returned $STATUS"
           fi
@@ -83,7 +90,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/allday-sales-indexer) || STATUS=""
           echo "AllDay sales-indexer status: $STATUS"
-          cat /tmp/allday-sales.json
+          cat /tmp/allday-sales.json 2>/dev/null || echo "<no body>"
           if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
             echo "::warning::AllDay sales-indexer returned $STATUS"
           fi
@@ -94,7 +101,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/golazos-sales-indexer) || STATUS=""
           echo "Golazos sales-indexer status: $STATUS"
-          cat /tmp/golazos-sales.json
+          cat /tmp/golazos-sales.json 2>/dev/null || echo "<no body>"
           if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
             echo "::warning::Golazos sales-indexer returned $STATUS"
           fi

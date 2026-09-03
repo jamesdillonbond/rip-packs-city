@@ -14,7 +14,8 @@ name: Top Shot Listing Cache
 #      That contradicts the deliberate 2026-06-07 anti-pile-up stagger
 #      (docs/operations/cron-schedule.md), which flagged this file with
 #      "same minutes as rpc-pipeline" and never got the follow-up move.
-#   2. Backstop value. rpc-pipeline.yml ALREADY calls this same route as its
+#   2. Backstop value. ⚠ THIS PREMISE WAS ALREADY FALSE WHEN WRITTEN (see the
+#      2026-09-02 correction below). rpc-pipeline.yml ALREADY calls this same route as its
 #      step #5, so on 5,25,45 the two triggers were redundant *in the same
 #      minute* — which defeats the entire point of the 2026-06-25 split. At
 #      +10 minutes this workflow becomes a genuine temporal fallback: when the
@@ -35,10 +36,21 @@ name: Top Shot Listing Cache
 # documented below and in docs/operations/cron-schedule.md is unchanged — only the
 # scheduler swapped. The route learned to accept CRON_SECRET (Vercel cron cannot
 # send INGEST_SECRET_TOKEN) in the same commit.
-# rpc-pipeline.yml step #5 still calls the same route, so the temporal backstop
-# described below survives. Keep this dispatch trigger for manual refreshes.
+# ⛔ CORRECTION 2026-09-02: rpc-pipeline.yml does NOT call this route. Its own
+# header records the listing-cache step was REMOVED on 2026-06-25, and its six
+# steps (pinned by EXPECTED_STEPS: "6" and __tests__/rpc-pipeline-workflow-can-
+# fail.test.ts) contain no listing-cache call. So /api/topshot-listing-cache has
+# exactly ONE trigger, the Vercel cron at 15,35,55, and no temporal backstop —
+# the previous sentence here claimed one that did not exist. The feed behind
+# cached_listings -> badge_editions.low_ask -> ASK-derived FMV is single-trigger;
+# if a backstop is wanted, add the route as a seventh rpc-pipeline step and bump
+# EXPECTED_STEPS with it. Keep this dispatch trigger for manual refreshes.
 on:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   listing-cache:
     runs-on: ubuntu-latest
@@ -50,7 +62,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/topshot-listing-cache) || STATUS=""
           echo "TopShot listing cache status: $STATUS"
-          cat /tmp/ts-cache.json
+          cat /tmp/ts-cache.json 2>/dev/null || echo "<no body>"
           if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
             echo "::warning::TopShot listing cache returned $STATUS"
           fi

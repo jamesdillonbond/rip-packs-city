@@ -7,7 +7,9 @@ on:
     # Catalog-walk sweep (audit 2026-06-09, handoff 2026-06-10 Item 4): drains
     # badge_editions coverage 3,138 -> ~9,136 canonical TS editions via the
     # cursored ?mode=catalog pass. 4 ticks/day at :45 (off the :00/:20/:40
-    # anchors and off this workflow's own :15 tag sweep). The route runs up to
+    # anchors and off this workflow's own :15 tag sweep; it DOES share :45 with
+    # rpc-pipeline's 5,25,45, a 4-way landing four times a day -- see
+    # topshot-listing-cache.yml). The route runs up to
     # ~300s synchronously, so it lives here (GHA curl --max-time 600), NOT on
     # cron-job.org (30s client cap would mark every run failed + risk
     # auto-disable). Once coverage converges this becomes the continuous
@@ -19,6 +21,10 @@ on:
         description: "Run the catalog-walk sweep instead of the tag sweep"
         type: boolean
         default: false
+
+permissions:
+  contents: read
+
 jobs:
   # 2026-08-30: public-api.nbatopshot.com has answered Cloudflare 530/1033 (origin tunnel down) since
   # 2026-08-28 ~17Z; every tick of both jobs below spent its full run on 530s and logged a failed
@@ -57,7 +63,11 @@ jobs:
             --max-time 600 \
             https://www.rippackscity.com/api/badge-sync) || STATUS=""
           echo "Badge sync status: $STATUS"
-          cat /tmp/badge-sync.json
+          cat /tmp/badge-sync.json 2>/dev/null || echo "<no body>"
+          case "$STATUS" in 401|403)
+            echo "::error::Badge sync returned $STATUS -- auth rejected. This is the only caller of the route, so a rotated INGEST_SECRET_TOKEN would otherwise read as a green warning on every tick. An auth failure is never transient."
+            exit 1 ;;
+          esac
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Badge sync returned $STATUS"
           fi
@@ -74,7 +84,11 @@ jobs:
             --max-time 600 \
             "https://www.rippackscity.com/api/badge-sync?mode=catalog") || STATUS=""
           echo "Badge catalog sweep status: $STATUS"
-          cat /tmp/badge-catalog.json
+          cat /tmp/badge-catalog.json 2>/dev/null || echo "<no body>"
+          case "$STATUS" in 401|403)
+            echo "::error::Badge catalog sweep returned $STATUS -- auth rejected. This is the only caller of the route, so a rotated INGEST_SECRET_TOKEN would otherwise read as a green warning on every tick. An auth failure is never transient."
+            exit 1 ;;
+          esac
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Badge catalog sweep returned $STATUS"
           fi

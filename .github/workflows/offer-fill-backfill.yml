@@ -23,17 +23,29 @@ on:
         description: "max bounded calls this run (default 15)"
         type: string
         default: ""
+
+permissions:
+  contents: read
+
+# The route drains behind its own event_cursor and holds no lock, so two
+# overlapping drains (a manual dispatch during a scheduled tick) would walk the
+# same block range twice. Serialise; never cancel a drain mid-loop.
+concurrency:
+  group: offer-fill-backfill
+  cancel-in-progress: false
+
 jobs:
   backfill:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Drain loop
+        env:
+          RANGE: ${{ github.event.inputs.range }}
+          START_BLOCK: ${{ github.event.inputs.start_block }}
+          MAX_ITERS: ${{ github.event.inputs.max_iters }}
         run: |
           BASE="https://www.rippackscity.com/api/admin/backfill-offer-fill-sales"
-          RANGE="${{ github.event.inputs.range }}"
-          START_BLOCK="${{ github.event.inputs.start_block }}"
-          MAX_ITERS="${{ github.event.inputs.max_iters }}"
           if [ -z "$MAX_ITERS" ]; then MAX_ITERS=15; fi
           OVERALL=0
           for i in $(seq 1 "$MAX_ITERS"); do
@@ -47,7 +59,7 @@ jobs:
               --max-time 280 \
               "$URL") || STATUS=""
             echo "HTTP $STATUS"
-            cat /tmp/offer-fill.json; echo ""
+            cat /tmp/offer-fill.json 2>/dev/null || echo "<no body>"; echo ""
             if [ "$STATUS" != "200" ]; then
               echo "::warning::Offer-fill backfill call $i returned $STATUS"
               OVERALL=1

@@ -101,17 +101,21 @@ describe("live concierge answer probe", () => {
     }).toThrow()
   })
 
-  it("the scheduled workflow arms it, and push events deliberately do NOT", () => {
-    // ⚠ This workflow also triggers on every push to main. With concurrent
-    // sessions pushing every couple of minutes, an unconditional ?concierge=1
-    // would be ~720 real Anthropic calls/day — the cost that makes a check
-    // optional, and an optional check is not a monitor.
+  it("the scheduled workflow arms it, and deploy events deliberately do NOT", () => {
+    // ⚠ This workflow also triggers on every production deploy (2026-09-02:
+    // `deployment_status`, previously every push). With concurrent sessions
+    // pushing every couple of minutes, an unconditional ?concierge=1 would be
+    // hundreds of real Anthropic calls/day — the cost that makes a check
+    // optional, and an optional check is not a monitor. The probe is armed by
+    // an ALLOWLIST of the two human-paced events, so a new trigger cannot arm
+    // it by accident.
     const wf = readFileSync(WORKFLOW, "utf8")
     expect(wf).toContain("concierge=1")
     expect(
-      /github\.event_name\s*\}\}"?\s*!=\s*"push"/.test(wf),
-      "the live probe must be gated OFF for push events",
+      /\[ "\$EVT" = "schedule" \] \|\| \[ "\$EVT" = "workflow_dispatch" \]/.test(wf),
+      "the live probe must be armed only for schedule/workflow_dispatch",
     ).toBe(true)
+    expect(wf).toMatch(/EVT: \$\{\{ github\.event_name \}\}/)
     // And it must still be reachable on the daily schedule.
     expect(wf).toMatch(/schedule:/)
   })

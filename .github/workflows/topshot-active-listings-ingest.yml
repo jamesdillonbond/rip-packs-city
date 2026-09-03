@@ -38,6 +38,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
 jobs:
   # 2026-08-30. This workflow had failed 12/12 scheduled runs: Dapper Atlas WAF-blocks
   # the GitHub-runner IP, so every tick burned ~90s, wrote an `egress_blocked`

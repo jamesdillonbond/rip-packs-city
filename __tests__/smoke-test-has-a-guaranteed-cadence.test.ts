@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs"
 
 // ⚠ WHY THIS GUARD EXISTS.
 //
-// `.github/workflows/smoke-tests.yml` triggers on `push: [main]` plus ONE daily
-// schedule (12:11 UTC). So for most of the day the smoke suite's cadence was
+// `.github/workflows/smoke-tests.yml` triggered on `push: [main]` (now on the
+// deploy's `deployment_status`) plus ONE daily schedule (12:11 UTC). So for most of the day the smoke suite's cadence was
 // whatever the humans happened to be doing. Measured 2026-08-16 over a 7-day
 // window of `support_conversations` smoke rows (the degradation check writes
 // exactly one per tick, so they are a complete census of smoke runs):
@@ -83,9 +83,18 @@ describe("the smoke suite has a guaranteed cadence, not a developer-driven one",
     expect(routeSrc).toMatch(/export async function GET\s*\(/)
   })
 
-  it("leaves the GHA workflow as the one paid concierge caller, off for push", () => {
+  // 2026-09-02: the workflow fires on `deployment_status` (Vercel's GitHub
+  // Deployment reaching success), not on `push`. The push-time run slept 45 s
+  // against a 110-124 s build and smoked the PREVIOUS deploy every time. The
+  // cost property is unchanged: only the scheduled/dispatch run may spend a
+  // paid concierge call, never a deploy-triggered one.
+  it("leaves the GHA workflow as the one paid concierge caller, off for deploys", () => {
     expect(workflowSrc).toContain("?concierge=1")
-    expect(workflowSrc).toMatch(/github\.event_name.*!=.*"push"/)
+    expect(workflowSrc).toMatch(/\[ "\$EVT" = "schedule" \] \|\| \[ "\$EVT" = "workflow_dispatch" \]/)
+    expect(workflowSrc).toMatch(/^  deployment_status:/m)
+    // A bare push trigger would smoke the previous deploy again.
+    expect(workflowSrc).not.toMatch(/^  push:/m)
+    expect(workflowSrc).not.toMatch(/run: sleep/)
   })
 
   // guards the guard: the hour parser must actually discriminate, or every

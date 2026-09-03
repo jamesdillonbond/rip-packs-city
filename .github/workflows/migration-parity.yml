@@ -82,7 +82,7 @@ on:
     # is two ~30s read-only runs a day.
     #
     # ⚠ Minutes chosen to dodge the busy slots, not by taste: ops-monitor runs at
-    # :13/:43 every hour and e2e-smoke at :41 every 6h (...,17:41,23:41), so :50
+    # :13/:43 every hour and e2e-smoke at :41 every 6h (00:41,06:41,12:41,18:41), so :50
     # clears both with room either side. Re-check that list before adding a fourth.
     - cron: '50 15 * * *'
     - cron: '50 23 * * *'
@@ -100,6 +100,7 @@ jobs:
   migration-parity:
     name: Prod migrations vs committed files
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

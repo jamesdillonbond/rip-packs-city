@@ -36,6 +36,10 @@ on:
   schedule:
     - cron: "29 7 * * *"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   snapshot-institutional-wallets:
     runs-on: ubuntu-latest

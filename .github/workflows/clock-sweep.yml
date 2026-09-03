@@ -37,6 +37,9 @@ on:
     - cron: "20 8 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   clock-sweep:
     name: Run the suite at four UTC hours and diff the failures

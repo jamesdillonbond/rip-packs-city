@@ -1816,3 +1816,52 @@ It read *"This repo does not run eslint in CI and ci.yml says so."* Raw eslint i
 **ratchet job is blocking and it runs eslint**. That sentence is part of why the local number looked
 authoritative. Corrected in place. **A comment that mis-describes what runs a guard is a defect in
 the guard.**
+
+## The CI estate audit of 2026-09-02 — three gaps every gate was structurally blind to
+
+Measured over the last 40 CI runs on main (32 green, 8 red, every red a real catch, zero flakes), a
+local run of all three coverage gates (0.2–0.65 pt of slack on all twelve numbers), and the Vercel
+deployments API. The estate catches regressions well; the defects were in the SEAMS between tools.
+
+- ⚠ **The push-time smoke measured the PREVIOUS deploy.** `smoke-tests.yml` slept 45 s after a
+  push; a production build takes **110–124 s** `buildingAt → ready` and the job's median wall clock was
+  75 s, so every push-triggered run hit `/api/smoke-test` about a minute before the new build went live.
+  A push that broke production read green, and the red landed on the NEXT push under the wrong sha.
+  **Fixed by triggering on `deployment_status` (Production + success)** — Vercel's GitHub integration
+  posts one per deploy (`githubDeployment: "1"` on every deploy's meta) — no secret, no polling.
+  Falsifier: a run with event `deployment_status` must appear within a day of a code push.
+  ⭐ **The rule: a check that runs at a fixed delay after a push is measuring whatever was live at
+  push time, not the push.** Size waits from a measured distribution, or key on the deploy event.
+- ⚠ **`workers/**` was type-checked by nothing.** The root tsconfig `exclude`s it, and the worker
+  coverage job runs vitest, which strips types with esbuild. Four worker packages each carried a
+  `typecheck` script that no workflow ran. Same gap the edge functions had until `edge-deno` (08-01).
+  Now a `workers-typecheck` job walks `workers/*/tsconfig.json` against the root `node_modules`
+  (the workers have no lockfiles) and asserts it found ≥ 3. **Coverage is not a type check** — a
+  gate that RUNS code says nothing about whether it compiles.
+- ⚠ **`scripts/run-db-tests.sh` passed at zero test files.** It printed the count and never asserted
+  it. Now fails under 90 (183 on 2026-09-02). Same shape as the tree-corruption job's 1000 floor.
+- ⚠ **Ten ops workflows `cat` curl's `-o` file bare under `bash -e`.** On a connection-level failure
+  curl writes NO file (reproduced: exit 7, no file), `cat` exits 1, and the step dies BEFORE the
+  `::warning::` that names the failure — so a 504 was a green warning and a DNS failure an unnamed
+  red, and under `continue-on-error` it vanished entirely. Spelling that works:
+  `cat "$F" 2>/dev/null || echo "<no body>"`.
+- ⚠ **A warn-only GHA-only caller reads a rotated token as a transient.** badge-sync, the backward
+  owner-discovery scan and the Top Shot sales-history backfill have no other trigger and return before
+  writing `pipeline_runs`; a 401 on every tick was a green warning forever. Now `401|403 → exit 1`.
+  **An auth failure is never transient.**
+- ⚠ **A load-bearing redundancy claim was false for 68 days.** `topshot-listing-cache.yml` and
+  `cron-schedule.md` said rpc-pipeline still called the route as step 5; that step was removed
+  2026-06-25 (`EXPECTED_STEPS: "6"`). The route is single-trigger. Same shape as the sales-indexers
+  header corrected 08-27: **re-derive a "backstop exists" claim from the caller's file, not the callee's.**
+- Also that day: `allday-ingest.yml` (72 asks/day into a route that returns `skipped` unconditionally)
+  deleted; `rpc-pipeline`'s six synchronous POSTs lost `--retry 2` (a retry after a client timeout
+  re-invoked an unlocked 300 s route while it was still running, under the saturation that made it
+  slow); `migration-autorecover` now fails on a stopped rebase and asserts `ls-remote == HEAD` after
+  push instead of logging "Pushed" over "Everything up-to-date"; `timeout-minutes` on every ci.yml job
+  and the eight secret-bearing sweeps (the default is 6 h); `permissions: contents: read` everywhere.
+- **Deliberately not shipped** (each a decision, not an oversight): a docs-only path filter for CI
+  (58% of the last 500 commits are docs-only and run all 14 jobs; the guard jobs must stay
+  unconditional, so it needs a `changes` job), a pre-push hook (CI verdicts arrive ~6 min after the
+  deploy is live), sharding the 7-minute unit-tests job, a composite `rpc-call` action for the ~25
+  curl-and-check copies, SHA-pinning actions (Dependabot is told never to move them), and retiring
+  one of the THREE `/api/smoke-test` concierge callers (cron-job.org console).

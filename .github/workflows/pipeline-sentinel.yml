@@ -5,6 +5,9 @@ on:
     - cron: '34 * * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   sentinel:
     runs-on: ubuntu-latest

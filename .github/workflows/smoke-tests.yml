@@ -1,32 +1,66 @@
 name: Smoke Tests
 
+# ⚠ TRIGGERED BY THE DEPLOY, NOT THE PUSH (2026-09-02).
+#
+# This workflow used to run on every push to main after `sleep 45`. A production
+# build takes 110-124 s from `buildingAt` to `ready` (Vercel deployments API, two
+# READY deploys sampled 2026-09-02) and this job's median wall clock was 75 s, so
+# the push-time run hit /api/smoke-test roughly a minute BEFORE the new build went
+# live. It smoked the PREVIOUS deploy, every time: a push that broke production
+# read green here, and the red arrived on the next push, attributed to the wrong
+# commit. That is the "byte-identical response is as much a cache hit as a fix"
+# class from CLAUDE.md, one level up.
+#
+# Vercel's GitHub integration creates a GitHub Deployment per commit and posts a
+# deployment_status when the build finishes (every production deploy's meta
+# carries `githubDeployment: "1"`). `on: deployment_status` fires on each status
+# transition; the job-level `if` keeps only Production + success, so a docs-only
+# commit (Vercel cancels those builds through vercel.json's ignoreCommand) and a
+# failed build never smoke. No new secret and no polling loop.
+#
+# ⚠ FALSIFIER: if no run of this workflow carries event `deployment_status`
+# within a day of a code push, the integration is not posting statuses. Then the
+# push trigger must come back WITH a wait sized from the measured build time,
+# never a bare `sleep 45`.
+
 on:
-  push:
-    branches: [main]
+  deployment_status:
   schedule:
     - cron: '11 12 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Every deployment_status transition (pending, in_progress, failure, ...) fires
+    # the workflow; only a finished PRODUCTION deploy is worth smoking. Preview
+    # deploys (Dependabot branches) are skipped by the environment test.
+    if: >-
+      github.event_name != 'deployment_status' ||
+      (github.event.deployment_status.state == 'success' &&
+       (github.event.deployment.environment == 'Production' ||
+        github.event.deployment.environment == 'production'))
     steps:
       # Needed for scripts/smoke-gate.py (the response gate).
       - uses: actions/checkout@v4
 
-      - name: Wait for deployment
-        run: sleep 45
-
       - name: Run smoke tests
+        env:
+          EVT: ${{ github.event_name }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+          DEPLOY_URL: ${{ github.event.deployment_status.environment_url }}
+          INGEST_SECRET_TOKEN: ${{ secrets.INGEST_SECRET_TOKEN }}
         run: |
           # ⚠ THE LIVE CONCIERGE PROBE RUNS ONLY ON THE SCHEDULED/DISPATCH RUN,
-          # NEVER ON PUSH. This workflow also triggers on every push to main, and
-          # with concurrent sessions pushing every couple of minutes `?concierge=1`
-          # there would mean ~720 real Anthropic calls/day. That is precisely the
-          # cost that gets a check made optional, and an optional check is not a
-          # monitor — the reason the concierge could die for fourteen days with
-          # every instrument green.
+          # NEVER ON A DEPLOY. With concurrent sessions pushing every couple of
+          # minutes `?concierge=1` here would mean hundreds of real Anthropic
+          # calls/day. That is precisely the cost that gets a check made optional,
+          # and an optional check is not a monitor — the reason the concierge
+          # could die for fourteen days with every instrument green.
           #
           # Why pin it here at all: the route's own fallback window is ~09:00–09:24
           # UTC and fires only if some caller happens to tick inside it, so the
@@ -34,15 +68,17 @@ jobs:
           # caller, runs at 12:11 UTC and missed it entirely. One scheduled call a
           # day makes it deterministic for fractions of a cent.
           URL="https://www.rippackscity.com/api/smoke-test"
-          if [ "${{ github.event_name }}" != "push" ]; then
+          if [ "$EVT" = "schedule" ] || [ "$EVT" = "workflow_dispatch" ]; then
             URL="${URL}?concierge=1"
-            echo "Live concierge probe ENABLED (event=${{ github.event_name }})"
+            echo "Live concierge probe ENABLED (event=${EVT})"
           else
-            echo "Live concierge probe skipped (push event — see comment above)"
+            echo "Live concierge probe skipped (event=${EVT}, deploy ${DEPLOY_SHA:-?} at ${DEPLOY_URL:-?} — see comment above)"
           fi
 
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$URL" \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+          # --max-time so a hung edge answers as a named curl failure inside the
+          # 5-minute job wall, not as a job timeout with no error line.
+          RESPONSE=$(curl -s --max-time 120 -w "\n%{http_code}" -X POST "$URL" \
+            -H "Authorization: Bearer ${INGEST_SECRET_TOKEN}" \
             -H "Content-Type: application/json") || RESPONSE=""
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)

@@ -36,8 +36,8 @@ name: Edge function deploy drift
 
 on:
   schedule:
-    # 06:40 UTC daily — off the top of the hour, clear of the Monday 07:20
-    # db-pin-staleness sweep.
+    # 06:40 UTC daily — off the top of the hour, clear of the daily 07:20
+    # db-pin-staleness sweep (weekly -> daily 2026-08-10).
     - cron: '40 6 * * *'
   workflow_dispatch:
 
@@ -48,6 +48,7 @@ jobs:
   edge-drift:
     name: Compare deployed edge functions against repo source
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

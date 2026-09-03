@@ -146,12 +146,11 @@ Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `
 | rpc-topshot-pack-opens-history | 56 | `9,24,39,54 * * * *` | `ingest-topshot-pack-opens-history?mode=backfill&key=…tsopenhist` (120s timeout) | Successor to deleted cron-job.org job 8070439 (failed every tick at the 30s client cap while the fn succeeded server-side). pg_cron has no cap. Cursor descending toward spork floor 27341470. Revert: `SELECT cron.unschedule('rpc-topshot-pack-opens-history');` |
 | rpc-allday-pack-opens-backfill | 55 | `6,16,26,36,46,56 * * * *` | `ingest-allday-pack-opens?mode=backfill&key=…alldayopen` (90s timeout) | Successor to unscheduled pg_cron jobid 21. No cron-job.org entry exists for this fn. Cursor descending toward AllDay genesis (floor 35000000), spork-routed below 137390146. Revert: `SELECT cron.unschedule('rpc-allday-pack-opens-backfill');` |
 
-## GitHub Actions  ·  16 (verified 2026-07-21)
+## GitHub Actions  ·  re-derive the count with `ls .github/workflows` (last verified 2026-09-02; allday-ingest.yml deleted that day — its route was an unconditional `skipped` stub)
 
 | Workflow | Schedule | Notes |
 |---|---|---|
-| rpc-pipeline.yml | 5,25,45 | Steps: ingest, fmv-recalc, fmv-backfill, backfill-player-names, topshot-listing-cache (GHA-ONLY trigger — do not remove), backfill, price-snapshots. |
-| allday-ingest.yml | 10,30,50 | /api/allday-ingest only |
+| rpc-pipeline.yml | 5,25,45 | Steps (6, pinned by `EXPECTED_STEPS`): ingest, fmv-recalc, fmv-backfill, backfill-player-names, backfill, price-snapshots. ⚠ The listing-cache step was REMOVED 2026-06-25; this row claimed it as a GHA-only backstop until 2026-09-02. `/api/topshot-listing-cache` is single-trigger (Vercel cron 15,35,55). |
 | pinnacle-owner-discovery.yml | 6,26,46 | |
 | topshot-listing-cache.yml | ~~15,35,55~~ **dispatch-only** | ⚠ **MOVED TO VERCEL CRON 2026-08-01, same minutes (15,35,55).** GHA fired only **10–13 runs/day against the 72/day** this schedule implies (measured from GHA run history 07-27→08-01, so not a DB/`after()` artifact) — ~83% silent tick loss on the feed behind `cached_listings` → `badge_editions.low_ask` → ASK-derived FMV. Its watchlist row (`max_silent_minutes` 360) could never see it: even at ~17% delivery it still fired about every 2h, so it never breached 6h. **A cadence watchlist keyed on SILENCE cannot detect partial tick loss.** rpc-pipeline.yml step #5 remains a real caller — do not remove it. |
 | topshot-sales-history-backfill.yml | 7,22,37,52 | |

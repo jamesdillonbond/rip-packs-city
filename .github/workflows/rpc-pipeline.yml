@@ -3,6 +3,10 @@ on:
   schedule:
     - cron: "5,25,45 * * * *"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   pipeline:
     runs-on: ubuntu-latest
@@ -49,7 +53,13 @@ jobs:
           # ⚠ `bash -e`: a fallible command in an ASSIGNMENT aborts the step there,
           # so every capture is written `X=$(…) || X=""` and the explicit test
           # below is what decides. curl exits non-zero on a connection failure.
-          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/ingest.json -w "%{http_code}" -X POST \
+          # ⚠ NO --retry on these six (removed 2026-09-02). They are synchronous
+          # POSTs to routes that hold no claim_pipeline_lock and run up to 300 s,
+          # so a retry after a client-side timeout re-invoked the route WHILE the
+          # first call was still running -- doubling load under exactly the disk-IO
+          # saturation that made it slow. And --retry 2 x 180 s could never fit the
+          # 4-minute step wall anyway. One attempt, one wall, one status.
+          STATUS=$(curl -s --max-time 200 -o /tmp/ingest.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/ingest) || STATUS=""
           echo "Ingest status: ${STATUS:-<no response>}"
@@ -63,7 +73,7 @@ jobs:
         timeout-minutes: 4
         continue-on-error: true
         run: |
-          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/recalc.json -w "%{http_code}" -X POST \
+          STATUS=$(curl -s --max-time 200 -o /tmp/recalc.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/fmv-recalc) || STATUS=""
           echo "FMV recalc status: ${STATUS:-<no response>}"
@@ -77,7 +87,7 @@ jobs:
         timeout-minutes: 5
         continue-on-error: true
         run: |
-          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/fmv-backfill.json -w "%{http_code}" -X POST \
+          STATUS=$(curl -s --max-time 200 -o /tmp/fmv-backfill.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"batchSize":100}' \
@@ -95,7 +105,7 @@ jobs:
         run: |
           # ⚠ This step captured STATUS and NEVER TESTED IT until 2026-08-29 — a
           # latent-green shape: the variable read like a check to anyone skimming.
-          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/player-names.json -w "%{http_code}" -X POST \
+          STATUS=$(curl -s --max-time 200 -o /tmp/player-names.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/backfill-player-names) || STATUS=""
           echo "Player names backfill status: ${STATUS:-<no response>}"
@@ -115,7 +125,7 @@ jobs:
           # so a 200 here is NOT proof it worked. That half is only visible in
           # `pipeline_runs` (pipeline='backfill', ok=false), which is why the route
           # was given a terminal row in the same change.
-          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/backfill.json -w "%{http_code}" -X POST \
+          STATUS=$(curl -s --max-time 200 -o /tmp/backfill.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/backfill) || STATUS=""
           echo "Backfill status: ${STATUS:-<no response>}"
@@ -133,7 +143,7 @@ jobs:
           # printed the body and moved on, so a 504 under pooler saturation (the
           # documented failure for this endpoint) was indistinguishable from a
           # healthy hour.
-          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/price-snapshots.json -w "%{http_code}" -X POST \
+          STATUS=$(curl -s --max-time 200 -o /tmp/price-snapshots.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
             https://www.rippackscity.com/api/cron/price-snapshots) || STATUS=""

@@ -21,19 +21,25 @@ on:
         description: "setID:playID — required only for dryRun"
         type: string
         default: ""
+
+permissions:
+  contents: read
+
 jobs:
   backfill:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
       - name: Tick
+        env:
+          MODE: ${{ github.event.inputs.mode }}
+          EDITION: ${{ github.event.inputs.edition }}
         run: |
-          MODE="${{ github.event.inputs.mode }}"
           if [ -z "$MODE" ]; then MODE="drain"; fi
           BASE="https://www.rippackscity.com/api/cron/topshot-sales-history-backfill"
           case "$MODE" in
             seed)   URL="$BASE?seed=true" ;;
-            dryRun) URL="$BASE?dryRun=true&edition=${{ github.event.inputs.edition }}" ;;
+            dryRun) URL="$BASE?dryRun=true&edition=${EDITION}" ;;
             *)      URL="$BASE" ;;
           esac
           echo "mode=$MODE url=$URL"
@@ -42,8 +48,12 @@ jobs:
             --max-time 600 \
             "$URL") || STATUS=""
           echo "HTTP $STATUS"
-          cat /tmp/ts-sales-backfill.json
+          cat /tmp/ts-sales-backfill.json 2>/dev/null || echo "<no body>"
           echo ""
+          case "$STATUS" in 401|403)
+            echo "::error::TopShot sales-history backfill returned $STATUS -- auth rejected. This is the only caller of the route, so a rotated INGEST_SECRET_TOKEN would otherwise read as a green warning on every tick. An auth failure is never transient."
+            exit 1 ;;
+          esac
           if [ "$STATUS" != "200" ]; then
             echo "::warning::TopShot sales-history backfill returned $STATUS"
           fi

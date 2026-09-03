@@ -9,10 +9,16 @@ on:
   pull_request:
     branches: [main]
 
+# Nothing here writes to the repo; the cadence jobs read secrets.GITHUB_TOKEN only
+# to authenticate the Flow CLI version lookup, which `contents: read` covers.
+permissions:
+  contents: read
+
 jobs:
   typecheck:
     name: TypeScript
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,7 +35,8 @@ jobs:
       # regrows a hardcoded #E03A2F / 'Barlow Condensed' / 'Share Tech Mono'
       # literal instead of the var(--rpc-*) tokens. Pure node, no deps.
       - run: node scripts/check-brand-tokens.mjs
-        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
+        # ⚠ Runs even when an EARLIER step in this job failed (the five guards below
+        # carry a one-line pointer to this note). These six guards sit
         # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
         # so ANY type error silently switched all six OFF — observed 2026-08-28, run
         # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
@@ -49,14 +56,7 @@ jobs:
       # which are frozen history CLAUDE.md forbids rewriting — gating those
       # would make this permanently red and therefore unreadable.
       - run: node scripts/check-memory-doc-links.mjs
-        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
-        # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
-        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
-        # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
-        # shows all six `skipped`. Nothing said the guards had not run; the job simply
-        # named the tsc error. They are independent of tsc and of each other, and are
-        # pure node with no deps, so there is no reason to gate them on it.
-        # `!cancelled()` rather than `always()`: a cancelled run should stop.
+        # Runs even if tsc failed — same reason as check-brand-tokens above.
         if: ${{ !cancelled() }}
       # Driver-message leak guard — fails if an UNGATED route handler returns a
       # raw `err.message` to the client. lib/api-error.ts exists because
@@ -67,14 +67,7 @@ jobs:
       # ⚠ The exclusion is PER HANDLER, not per file: a gated POST does not vouch
       # for the ungated GET beside it. That exact shape was 4 live handlers.
       - run: node scripts/check-driver-message-leaks.mjs
-        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
-        # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
-        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
-        # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
-        # shows all six `skipped`. Nothing said the guards had not run; the job simply
-        # named the tsc error. They are independent of tsc and of each other, and are
-        # pure node with no deps, so there is no reason to gate them on it.
-        # `!cancelled()` rather than `always()`: a cancelled run should stop.
+        # Runs even if tsc failed — same reason as check-brand-tokens above.
         if: ${{ !cancelled() }}
       # Unhandled-third-state guard — bans `if (error) {…} else if (data) {…}`
       # with no final else. A read returning NEITHER an error nor a payload then
@@ -85,14 +78,7 @@ jobs:
       # positive AND a negative control on synthetic fixtures before reporting, and
       # fails if it inspected nothing.
       - run: node scripts/check-unhandled-third-state.mjs
-        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
-        # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
-        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
-        # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
-        # shows all six `skipped`. Nothing said the guards had not run; the job simply
-        # named the tsc error. They are independent of tsc and of each other, and are
-        # pure node with no deps, so there is no reason to gate them on it.
-        # `!cancelled()` rather than `always()`: a cancelled run should stop.
+        # Runs even if tsc failed — same reason as check-brand-tokens above.
         if: ${{ !cancelled() }}
       # Responsive flex-basis guard — fails if an inline `flex: "1 1 300px"`
       # sits in a file that also uses a class whose flex-direction CHANGES at a
@@ -111,14 +97,7 @@ jobs:
       # vacuously if the CSS parser stops seeing anything — the first cut
       # reported 3 in-scope files when the real number was 32.
       - run: node scripts/check-responsive-flex-basis.mjs
-        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
-        # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
-        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
-        # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
-        # shows all six `skipped`. Nothing said the guards had not run; the job simply
-        # named the tsc error. They are independent of tsc and of each other, and are
-        # pure node with no deps, so there is no reason to gate them on it.
-        # `!cancelled()` rather than `always()`: a cancelled run should stop.
+        # Runs even if tsc failed — same reason as check-brand-tokens above.
         if: ${{ !cancelled() }}
       # Unbounded-server-read RATCHET — the count of async server page/layout
       # files under app/** that can reach a Supabase read with no budget
@@ -134,14 +113,7 @@ jobs:
       # bounding those turns a slow page into an error boundary). Lower the
       # ceiling in the commit that bounds a page; never raise it. Pure node.
       - run: node scripts/check-unbounded-server-reads.mjs
-        # ⚠ Runs even when an EARLIER step in this job failed. These six guards sit
-        # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
-        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
-        # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
-        # shows all six `skipped`. Nothing said the guards had not run; the job simply
-        # named the tsc error. They are independent of tsc and of each other, and are
-        # pure node with no deps, so there is no reason to gate them on it.
-        # `!cancelled()` rather than `always()`: a cancelled run should stop.
+        # Runs even if tsc failed — same reason as check-brand-tokens above.
         if: ${{ !cancelled() }}
 
   # Cadence type-check harness for the purchase-moment transaction (canonical
@@ -156,6 +128,7 @@ jobs:
   eslint-ratchet:
     name: ESLint ratchet
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -191,6 +164,7 @@ jobs:
   cadence-lint:
     name: Cadence lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -283,6 +257,7 @@ jobs:
   cadence-escrow-tests:
     name: Cadence escrow tests (flow test)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install Flow CLI
@@ -333,6 +308,7 @@ jobs:
   unit-tests:
     name: Unit tests (vitest)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -354,6 +330,7 @@ jobs:
   component-tests:
     name: Component coverage (vitest jsdom)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -381,6 +358,7 @@ jobs:
   worker-tests:
     name: Worker coverage (Cloudflare workers/)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -389,6 +367,50 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:coverage:workers
+
+  # Worker TYPE-check. The root tsconfig EXCLUDES `workers` and the worker
+  # coverage job above runs vitest, which strips types with esbuild and never
+  # checks them — so until 2026-09-02 the worker tree was type-checked by
+  # NOTHING in CI, the same gap the edge functions had until edge-deno landed.
+  # Each worker dir with a tsconfig is checked against the ROOT node_modules
+  # (the worker package.jsons have no lockfile, so `npm ci` there is not
+  # reproducible); @cloudflare/workers-types is a root devDependency for this.
+  # ⚠ The count is asserted so a walk that matches nothing cannot pass.
+  workers-typecheck:
+    name: Worker typecheck (tsc per workers/*/tsconfig.json)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: tsc --noEmit in every worker that has a tsconfig
+        run: |
+          set -uo pipefail
+          checked=0
+          failed=0
+          for cfg in workers/*/tsconfig.json; do
+            [ -f "$cfg" ] || continue
+            dir=$(dirname "$cfg")
+            checked=$((checked + 1))
+            echo "::group::tsc $dir"
+            if npx tsc --noEmit -p "$dir"; then
+              echo "ok  $dir"
+            else
+              echo "::error::type errors in $dir"
+              failed=$((failed + 1))
+            fi
+            echo "::endgroup::"
+          done
+          echo "worker tsconfigs checked: $checked, failed: $failed"
+          if [ "$checked" -lt 3 ]; then
+            echo "::error::expected at least 3 worker tsconfigs (3 on 2026-09-02), found $checked — the walk is wrong, not the tree clean."
+            exit 1
+          fi
+          [ "$failed" -eq 0 ]
 
   # DB-invariant tests (supabase/tests/*.sql). Each test file is self-contained —
   # it creates minimal fixtures + a VERBATIM copy of the committed function DDL,
@@ -410,6 +432,7 @@ jobs:
   db-tests:
     name: DB invariants (SQL)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Provision a throwaway Postgres from the runner's binaries
@@ -443,6 +466,7 @@ jobs:
   ledger-guard:
     name: Ledger no-clobber guard
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
@@ -584,6 +608,7 @@ jobs:
   register-guard:
     name: Register integrity guard
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
@@ -652,6 +677,7 @@ jobs:
   inbox-guard:
     name: Inbox no-clobber guard
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
@@ -803,6 +829,7 @@ jobs:
   tree-corruption:
     name: Tree corruption (NUL / truncation)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Audit every tracked file for NUL bytes and truncation
@@ -827,6 +854,7 @@ jobs:
   edge-deno:
     name: Edge functions (deno check + lint)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2

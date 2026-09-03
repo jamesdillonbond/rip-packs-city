@@ -6,9 +6,13 @@ on:
     - cron: '41 6 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   fmv-staleness:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check FMV staleness
         run: |
@@ -56,6 +60,7 @@ jobs:
   # badge freshness), so a green scheduled run is expected.
   data-integrity:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.event.schedule == '41 6 * * *' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Check data integrity
@@ -106,6 +111,7 @@ jobs:
   # cannot touch anything: the permissions block below is read-only.
   ci-status:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       actions: read
       contents: read

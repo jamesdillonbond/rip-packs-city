@@ -45,4 +45,11 @@ for f in "$DIR"/*.sql; do
 done
 
 echo "── ran $count DB-invariant test file(s)"
+# ⚠ ASSERT THE COUNT INSPECTED. An emptied supabase/tests/ (or a glob matching
+# only _helpers.sql) used to exit 0 here — a pass by inspecting nothing. 90 is
+# half of the 183 files present on 2026-09-02 and far above the 0 of that shape.
+if [ "$count" -lt 90 ]; then
+  echo "::error::ran only $count DB-invariant test file(s); 90 is the floor (183 on 2026-09-02). The walk is wrong, not the DB clean."
+  exit 1
+fi
 exit $fail

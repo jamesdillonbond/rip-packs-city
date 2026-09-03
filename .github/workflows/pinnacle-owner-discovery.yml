@@ -26,6 +26,9 @@ on:
         required: false
         default: "25"
 
+permissions:
+  contents: read
+
 concurrency:
   group: pinnacle-owner-discovery
   cancel-in-progress: false
@@ -33,30 +36,37 @@ concurrency:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Two steps at --max-time 300 each; 10 cut the resolver at the job wall.
+    timeout-minutes: 12
     steps:
       - name: Owner Discovery — scan Pinnacle.Deposit events backward
+        env:
+          BLOCKS: ${{ github.event.inputs.blocks_per_run || '2000' }}
         run: |
-          BLOCKS="${{ github.event.inputs.blocks_per_run || '2000' }}"
           STATUS=$(curl -s -o /tmp/owner-discovery.json -w "%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/pinnacle-owner-discovery?blocks=${BLOCKS}" \
             --max-time 300) || STATUS=""
           echo "Owner discovery status: $STATUS"
-          cat /tmp/owner-discovery.json
+          cat /tmp/owner-discovery.json 2>/dev/null || echo "<no body>"
+          case "$STATUS" in 401|403)
+            echo "::error::Owner discovery returned $STATUS -- auth rejected. This is the only caller of the route, so a rotated INGEST_SECRET_TOKEN would otherwise read as a green warning on every tick. An auth failure is never transient."
+            exit 1 ;;
+          esac
           if [ "$STATUS" != "200" ]; then
             echo "::warning::Owner discovery returned $STATUS"
           fi
 
       - name: NFT Resolver — resolve (nft_id, owner) pairs into edition_keys
+        env:
+          BATCH: ${{ github.event.inputs.resolver_batch_size || '25' }}
         run: |
-          BATCH="${{ github.event.inputs.resolver_batch_size || '25' }}"
           STATUS=$(curl -s -o /tmp/nft-resolver.json -w "%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/pinnacle-nft-resolver?batch=${BATCH}" \
             --max-time 300) || STATUS=""
           echo "NFT resolver status: $STATUS"
-          cat /tmp/nft-resolver.json
+          cat /tmp/nft-resolver.json 2>/dev/null || echo "<no body>"
           if [ "$STATUS" != "200" ]; then
             echo "::warning::NFT resolver returned $STATUS"
           fi

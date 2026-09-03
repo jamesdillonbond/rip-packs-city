@@ -10,9 +10,13 @@ name: Allow-list Reconcile
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   reconcile:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Run allow-list reconciliation
         run: |

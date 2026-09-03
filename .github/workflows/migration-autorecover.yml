@@ -115,6 +115,9 @@ jobs:
   autorecover:
     name: Recover fileless migrations and commit them
     runs-on: ubuntu-latest
+    # Was the 6 h default; with cancel-in-progress: false one hung install queued
+    # the next two daily slots behind it, on the job whose purpose is bounding a window.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -252,8 +255,25 @@ jobs:
           # conflict with a hand-recovery of the same migration, in which case the
           # rebase drops ours and there is nothing left to push.
           for attempt in 1 2; do
-            git pull --rebase --quiet origin "${GITHUB_REF_NAME}" || true
+            # ⚠ A rebase that STOPS (any conflict, a fetch error mid-pull) leaves
+            # the checkout mid-rebase with HEAD at upstream's tip. `|| true` then
+            # let `git push HEAD:main` print "Everything up-to-date", exit 0, and
+            # log "Pushed" with nothing pushed -- and the verify step below runs
+            # against the LOCAL tree, where the file still exists, so it stayed
+            # green. Abort and fail instead; the fileless migration is still
+            # reported by migration-parity, which is the honest state.
+            if ! git pull --rebase --quiet origin "${GITHUB_REF_NAME}"; then
+              git rebase --abort 2>/dev/null || true
+              echo "::error::rebase onto origin/${GITHUB_REF_NAME} failed on attempt $attempt; not pushing a checkout in an unknown state."
+              exit 1
+            fi
             if git push --quiet origin "HEAD:${GITHUB_REF_NAME}"; then
+              # Assert the push landed the commit, not "Everything up-to-date".
+              REMOTE=$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | cut -f1) || REMOTE=""
+              if [ "$REMOTE" != "$(git rev-parse HEAD)" ]; then
+                echo "::error::push reported success but origin/${GITHUB_REF_NAME} is ${REMOTE:-unreadable}, not $(git rev-parse HEAD)."
+                exit 1
+              fi
               echo "Pushed on attempt $attempt."
               exit 0
             fi
