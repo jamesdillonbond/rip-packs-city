@@ -46,8 +46,11 @@ describe("every third-party GitHub Action is pinned to a commit sha", () => {
     expect(files.length).toBeGreaterThan(20)
     expect(uses.length).toBeGreaterThan(40)
     expect(external.length).toBeGreaterThan(30)
-    // The second root must contribute: composites carry uses: lines too.
-    expect(uses.some((u) => u.file.startsWith(".github/actions/"))).toBe(true)
+    // The second root must be IN the walk. Today's composites carry no `uses:`
+    // of their own (they are pure `run:` steps), so the assertion is on the file
+    // list, not on findings — a composite that later `uses:` something is then
+    // inside the ban the day it lands.
+    expect(files.filter((f) => f.includes("/.github/actions/")).length).toBeGreaterThanOrEqual(2)
   })
 
   it("POSITIVE CONTROL — a floating tag is rejected, a sha with a version comment is accepted", () => {
