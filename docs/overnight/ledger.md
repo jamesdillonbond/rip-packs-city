@@ -10,6 +10,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — the public profile's "ANALYZE <handle>'S WALLET →" searched Top Shot for the RPC HANDLE, a namespace Top Shot has never heard of · Cowork (cloud)
+
+**Seen on `/profile/qa0903b` during the re-QA:** the header link was `/nba-top-shot/collection?q=qa0903b`. `?q=` is the collection page's Top Shot username / Flow address search; `qa0903b` is a `profile_bio.username`. It resolved only when a collector's handle happened to equal their Top Shot name (Trevor's does — which is why it never looked wrong). For every campaign signup who picks a handle, the most prominent button on their public page led to a wallet search for a collector who does not exist.
+
+**Fix.** The link carries the first saved wallet's Top Shot `username` from the public payload (the per-row **LOAD →** chips already did exactly this); the address is deliberately stripped from that payload, so when no wallet has a known Top Shot name the header link is not rendered rather than pointed somewhere dishonest. Two cases in `component-ProfileClient-no-rewards-or-pnl`: `?q=jamesdillonbond` (and never the handle) · no link when no username is known. Component gate 251 / 3,169, 94.01 lines.
+
+**Revert.** `git revert <code sha>`.
+
 ### 2026-09-03 · ✅ SHIPPED — three board-interaction component tests asserted the re-render BEFORE the refetch resolved; one reddened `main` at 17:46Z on a commit that touched no component · Claude Code (cloud)
 
 - **What happened:** CI on `6d60e1789` (workflow comments + a script header + register text) failed the component gate: `component-insights-boards-interactions.test.tsx › RookiesBoardClient refetches on a sort-pill change` — *Unable to find an element with the text /Zaccharie Risacher/*, DOM dump reading `Loading…`. The neighbouring commit one minute earlier passed the same file, and the diff between them contains no `.tsx`. **Not a flake to re-run: a race in the test.** It `await waitFor`s until `fetch` was CALLED with `sort=lock`, then asserts the rows synchronously — but the rows render after the mocked response RESOLVES and React re-renders, one tick later. On a loaded runner the assertion landed in between. Locally it passed 3 of 3.
