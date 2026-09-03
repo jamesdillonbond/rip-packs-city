@@ -38,3 +38,62 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 ---
 
+
+---
+
+## Flow EVM — the second data plane is LIVE (2026-09-02)
+
+The note above ("a parallel EVM data plane (Base/Beezie, `evm_*` registry) already exists outside
+`collections.chain_type`") was true but read as more than it was: **that plane had never run.**
+`evm_nft_transfers` held **0 rows** and no `%evm%` pipeline had a single recorded start. It is now
+ingesting NBA Top Shot's bridged ERC-721 on Flow EVM.
+
+⚠ **This is a SECOND data plane, deliberately outside `collections.chain_type`.** All 5 published
+collections remain `chain='flow'`; nothing here changes that, and Top Shot is not "a flow_evm
+collection". The EVM tables are a parallel index keyed by `(chain_id, contract_address, token_id)`.
+
+**What runs:** `app/api/cron/evm-transfers-ingest` (Vercel cron `4,14,24,34,44,54 * * * *`) →
+`evm_nft_transfers` (month-partitioned) + `evm_nft_current_owners`, cursor in `evm_indexer_cursors`.
+⛔ **It writes NOTHING to `sales`** — no FMV risk, no edition resolution, and no new `source` tag, so
+`flow-ecosystem-watch`'s "no new source tag vs baseline" check is untouched by this lane.
+
+**Constants, all verified by direct on-chain read:**
+
+| | |
+|---|---|
+| contract | `0x84c6a2e6765e88427c41bb38c82a78b570e24709` (`BridgedTopShotMoments`) |
+| chain | **747** (`eth_chainId` → `0x2eb`) |
+| RPC | `https://mainnet.evm.nodes.onflow.org` — **public, keyless, no proxy** |
+| `start_block` | **18,620,723** — first block with code, by binary search on `eth_getCode` (26 calls), 2025-02-24T22:08:07Z |
+
+🔑 **The ERC-721 `tokenId` IS the Cadence momentID**, proven on live rows and not just one sample:
+ingested tokenIds join directly to `wallet_moments_cache.moment_id`. **No mapping table.**
+⚠ The join needs a cast — `w.moment_id = t.token_id::text` (`token_id` numeric, `moment_id` text).
+
+**Two blockers had kept the plane dark, both fixed in `e41e9c5`:**
+1. `lib/evm-rpc.ts` threw unless a proxy **URL *and* secret** were both set, and
+   `EVM_PROXY_URL_FLOW_EVM_MAINNET` is present-but-blank (2 chars). It now falls back to the public
+   keyless endpoint. ⚠ **`base_mainnet` deliberately still fails closed** — its proxy carries a
+   rate-limit quota, so silently hammering a public endpoint would be wrong there.
+2. `evm_nft_contracts` held one row: a **Base/Beezie** contract, `is_active = false`, and Beezie is
+   retired. There was no active work on any chain.
+
+🚨 **And two defects were found in the never-run route, the first of which was silent data loss:**
+- **No head clamp.** The cursor advanced a flat `BLOCKS_PER_WINDOW` per tick and never read the chain
+  tip. Correct only while behind head — on catching up it would run PAST the tip forever and every
+  transfer mined behind it would never be scanned, **logging `ok=true, rows_found=0`**. Now
+  `min(window, head)`.
+- **One window per tick** = 11,726 windows ≈ a **4-month** backfill. Now walks windows until
+  `BUDGET_MS`, committing the cursor per window, and **breaks for the rest of the tick if a window was
+  halved by a 429** rather than re-provoking the limit.
+
+⚠ **A third bit after deploy:** Vercel cron sends `Bearer $CRON_SECRET`, and the route accepted only
+`INGEST_SECRET_TOKEN`, so its first scheduled tick **401'd** — and a 401 returns before any
+`pipeline_runs` row, so it read as dormant rather than broken. Fixed in `59458c2`. **This trap is
+recorded in `cron-and-schedulers.md`; check a route's auth before adding a `vercel.json` entry.**
+
+**Not built: the sales/trade lane** (step 1 of `docs/handoff-2026-09-02-topshot-flow-evm-opensea-ingest.md`).
+Read that file's **CORRECTIONS** section first — `sales.edition_id` and `sales.price_usd` are
+**NOT NULL**, `sales.moment_id` is a **uuid** (the numeric tokenId belongs in `nft_id`), and the right
+home for an unresolved EVM sale is the existing `unmapped_sales` + `promote_unmapped_sales()`
+machinery, not a second resolver.
