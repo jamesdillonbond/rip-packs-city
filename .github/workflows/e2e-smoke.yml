@@ -38,6 +38,14 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      # Browser binaries cached across runs (keyed on the lockfile, so a Playwright
+      # bump re-downloads). `install --with-deps` still installs the OS packages
+      # each run; only the ~150 MB Chromium download is skipped on a hit.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Run DOM smoke

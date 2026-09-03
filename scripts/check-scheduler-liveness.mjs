@@ -58,6 +58,8 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 
 export const MAX_SILENT_HOURS = 24
+/** A never-fired workflow younger than this is PENDING (first fire delayed by GitHub), not dead. */
+export const NEW_WORKFLOW_GRACE_HOURS = 48
 
 /**
  * Expand the minute and hour fields of a 5-field cron into firings per day.
@@ -144,7 +146,7 @@ export function scheduledWorkflows(dir) {
 /**
  * @param {{
  *   workflows: {path: string, file: string, crons: string[]}[],
- *   observed: Record<string, {lastScheduledRunAt: string|null, scheduledRuns: number}>,
+ *   observed: Record<string, {lastScheduledRunAt: string|null, scheduledRuns: number, createdAt?: string|null}>,
  *   now: number,
  *   maxSilentHours?: number,
  *   windowHours?: number,
@@ -158,6 +160,7 @@ export function classifyLiveness({
   maxSilentHours = MAX_SILENT_HOURS,
   windowHours = 24,
   selfFile = null,
+  newWorkflowGraceHours = NEW_WORKFLOW_GRACE_HOURS,
 }) {
   const rows = []
   const configErrors = []
@@ -192,6 +195,15 @@ export function classifyLiveness({
       seen.lastScheduledRunAt === null
         ? Infinity
         : (now - Date.parse(seen.lastScheduledRunAt)) / 3600000
+    // ⚠ A workflow that has NEVER fired is dead — unless it is NEW. GitHub delays
+    // a fresh schedule's first fire by hours (daily workflows here measured 0/73
+    // on time), so a workflow added within the last NEW_WORKFLOW_GRACE_HOURS and
+    // still unfired is PENDING, reported as such, and not failed on. Older than
+    // that and still unfired is the "cron that never matches" shape below, which
+    // stays red. `createdAt` comes from the workflows API; without it (older
+    // callers, tests) the grace does not apply and never-fired is dead as before.
+    const ageHours = seen.createdAt ? (now - Date.parse(seen.createdAt)) / 3600000 : Infinity
+    const pending = seen.lastScheduledRunAt === null && ageHours < newWorkflowGraceHours
 
     rows.push({
       file: wf.file,
@@ -199,8 +211,9 @@ export function classifyLiveness({
       expectedInWindow: Number(expected.toFixed(1)),
       observedInWindow: seen.scheduledRuns,
       silentHours: silentHours === Infinity ? null : Number(silentHours.toFixed(1)),
+      pending,
       // A rate is REPORTED, never failed on — see the header. Only silence is red.
-      dead: silentHours > maxSilentHours,
+      dead: silentHours > maxSilentHours && !pending,
     })
   }
 
@@ -231,7 +244,7 @@ export function livenessExitCode({ dead, configErrors }) {
  *   since: string, selfFile?: string|null,
  *   fetchImpl?: (url: string, init?: object) => Promise<any>,
  * }} args
- * @returns {Promise<Record<string, {lastScheduledRunAt: string|null, scheduledRuns: number}>>}
+ * @returns {Promise<Record<string, {lastScheduledRunAt: string|null, scheduledRuns: number, createdAt?: string|null}>>}
  */
 export async function fetchObserved({ repo, token, workflows, since, selfFile = null, fetchImpl = fetch }) {
   const observed = {}
@@ -258,7 +271,16 @@ export async function fetchObserved({ repo, token, workflows, since, selfFile = 
         last = b2.workflow_runs?.[0]?.created_at ?? null
       }
     }
-    observed[wf.file] = { lastScheduledRunAt: last, scheduledRuns: runs.length }
+    // Never fired at all: ask when the workflow was CREATED, so classifyLiveness
+    // can tell a brand-new schedule (first fire pending) from a dead one.
+    let createdAt = null
+    if (last === null) {
+      const r3 = await get(`https://api.github.com/repos/${repo}/actions/workflows/${wf.file}`)
+      if (!r3.ok && r3.status !== 404) throw new ApiError(`GitHub API ${r3.status} for ${wf.file} (created-at probe).`)
+      if (r3.ok) createdAt = (await r3.json()).created_at ?? null
+    }
+    // `createdAt` only when it was probed, so the shape of a normal entry is unchanged.
+    observed[wf.file] = { lastScheduledRunAt: last, scheduledRuns: runs.length, ...(createdAt ? { createdAt } : {}) }
   }
   return observed
 }
@@ -270,7 +292,7 @@ export function renderReport(result, { maxSilentHours = MAX_SILENT_HOURS, window
   for (const r of [...result.rows].sort((a, b) => (b.silentHours ?? 1e9) - (a.silentHours ?? 1e9))) {
     const pct = r.expectedInWindow ? Math.round((100 * r.observedInWindow) / r.expectedInWindow) : 0
     lines.push(
-      `  ${r.dead ? "✗" : "·"} ${r.file.padEnd(46)} ` +
+      `  ${r.dead ? "✗" : r.pending ? "⏳" : "·"} ${r.file.padEnd(46)} ` +
         `${String(r.observedInWindow).padStart(3)}/${String(r.expectedInWindow).padStart(5)} (${String(pct).padStart(3)}%)  ` +
         `last ${r.silentHours === null ? "NEVER" : r.silentHours + "h ago"}`,
     )

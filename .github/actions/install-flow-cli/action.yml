@@ -1,0 +1,59 @@
+name: Install Flow CLI
+description: >-
+  Installs the Flow CLI with a retry loop and verifies the binary landed. Used by
+  both Cadence jobs in ci.yml, which carried this block twice, verbatim, until
+  2026-09-02; a fix to one copy had to be remembered for the other.
+#
+# The installer is fetched over the network; a transient reset (curl 35
+# "Connection reset by peer", seen on main 2026-07-31) previously left `flow`
+# uninstalled while the `sh -ci "$(curl …)"` wrapper still exited 0 (empty
+# command string → no-op success), so the NEXT step failed with a confusing
+# `flow: command not found` (exit 127). Retry the fetch with backoff, and verify
+# `flow` is actually on PATH so a real install failure fails HERE, loudly.
+#
+# 🚨 GITHUB_TOKEN (added 2026-08-27) is NOT about the fetch above — it fixes a
+# failure the retry loop is STRUCTURALLY UNABLE to help with. install.sh
+# resolves "latest" via api.github.com, which is UNAUTHENTICATED at 60 req/hr
+# shared across the whole runner IP pool; once that limit is hit no retry can
+# clear it (the loop's budget is ~168 s, the window an hour). ⭐ A retry loop
+# only helps a TRANSIENT failure; it converts a deterministic one into a slower
+# deterministic one. install.sh reads GITHUB_TOKEN and sends it as an auth
+# header (falling back to unauthenticated on a 403, so it cannot make things
+# worse); the per-run token raises the limit to 1,000/hr scoped to this repo.
+#
+# ⓘ The alternative is pinning a version (install.sh takes it as arg 1 and then
+# skips the API call entirely). Deliberately NOT done: it would stop these jobs
+# testing against the Flow CLI users actually get, trading a CI-reliability
+# problem for a coverage one.
+#
+# The loop runs 7 attempts with the LAST iteration an ATTEMPT, not a wait: an
+# earlier shape ran 6 and then slept 48 s before giving up, spending 168 s of
+# wall time to buy 120 s of coverage. DO NOT re-add a trailing sleep. (Use `if`,
+# not `[ … ] && break`: under `set -e` a false test as the last statement in
+# the loop body can take the whole step down.)
+inputs:
+  github-token:
+    description: Token forwarded to install.sh as GITHUB_TOKEN (see the header).
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install Flow CLI (7 attempts, verified on PATH)
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        for attempt in 1 2 3 4 5 6 7; do
+          if sh -ci "$(curl -fsSL --retry 3 --retry-connrefused --connect-timeout 10 https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)" && command -v flow >/dev/null 2>&1; then
+            break
+          fi
+          if [ "$attempt" -eq 7 ]; then break; fi
+          echo "flow-cli install attempt $attempt failed; retrying in $((attempt * 8))s"
+          export PATH="$HOME/.local/bin:$PATH"
+          sleep $((attempt * 8))
+        done
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        export PATH="$HOME/.local/bin:$PATH"
+        command -v flow >/dev/null 2>&1 || { echo "::error::Flow CLI failed to install after retries"; exit 1; }
+        flow version 2>/dev/null | head -1 || true

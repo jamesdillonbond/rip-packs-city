@@ -15,9 +15,139 @@ permissions:
   contents: read
 
 jobs:
+  # ── What changed ──────────────────────────────────────────────────────────
+  # 58% of the last 500 commits (measured 2026-09-02: 288 of 500) touched only
+  # docs/** or *.md, and every one of them ran all 14 jobs — six npm installs,
+  # two Flow CLI installs, a throwaway Postgres and a Deno cache, for a ledger
+  # entry. Vercel already skips those builds (vercel.json's ignoreCommand, the
+  # SAME exclusion list). This job classifies the push once; the CODE jobs gate
+  # on it with `needs: changes` + `if:`, and the DOCS guards never do.
+  #
+  # ⚠ FAIL-SAFE BY CONSTRUCTION. The only path to code=false is a resolvable
+  # base commit AND a non-empty diff whose every path matches the docs pattern.
+  # An unresolvable base (force push, first commit, a `before` sha the shallow
+  # checkout cannot fetch), an empty diff, a pull_request event, or an error in
+  # this script all leave code=true and run everything. Skipping must be earned.
+  # ⚠ `github.event.before`, not HEAD~1: a push of N commits has N-1 commits
+  # HEAD~1 cannot see, and one of them can carry code under a docs tip.
+  #
+  # ⚠ What a docs-only push STILL runs: ledger-guard, register-guard,
+  # inbox-guard, tree-corruption, memory-docs, and docs-tests — every vitest
+  # file that reads docs/, CLAUDE.md or .github/ (107 on 2026-09-02, floor 60),
+  # because the register, ledger, inbox and memory-limit pins live in the unit
+  # suite and a docs push must not blind them. The full suite is skipped because
+  # the docs guards run without it, not because docs are unguarded.
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: classify
+        env:
+          BEFORE: ${{ github.event.before }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          code=true
+          reason="fail-safe default"
+          changed=""
+          if [ "$EVENT" = "push" ]; then
+            base=""
+            if [ -n "${BEFORE:-}" ] && ! printf '%s' "$BEFORE" | grep -qE '^0+$'; then
+              if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+                # GitHub serves a reachable sha by want, so fetch the base itself
+                # rather than guessing a depth.
+                git fetch --quiet --depth=200 origin "$BEFORE" 2>/dev/null || true
+              fi
+              if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then base="$BEFORE"; fi
+            fi
+            if [ -n "$base" ]; then
+              changed=$(git diff --name-only "$base" HEAD) || changed=""
+              if [ -z "$changed" ]; then
+                reason="empty diff against ${base} — cannot classify"
+              else
+                nondocs=$(printf '%s\n' "$changed" | grep -vE '^docs/|\.md$|\.mdx$' || true)
+                if [ -z "$nondocs" ]; then
+                  code=false
+                  reason="docs-only: $(printf '%s\n' "$changed" | grep -c .) path(s), every one under docs/ or *.md"
+                else
+                  reason="code: $(printf '%s\n' "$nondocs" | head -3 | tr '\n' ' ')"
+                fi
+              fi
+            else
+              reason="base ${BEFORE:-<none>} not resolvable — running everything"
+            fi
+          else
+            reason="event=${EVENT} — running everything"
+          fi
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          echo "classification: code=${code} (${reason})"
+          printf '%s\n' "$changed" | head -40
+
+  # Memory-doc link guard, ALWAYS ON. It reads CLAUDE.md and docs/reference/**,
+  # so a docs-only push is exactly when it must run; it used to sit inside the
+  # typecheck job, which docs-only pushes now skip. Pure node, no deps.
+  memory-docs:
+    name: Memory-doc links
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # Memory-doc link guard — fails if a relative link in CLAUDE.md or
+      # docs/reference/**.md stops resolving. The 2026-08-17 restructure bet the
+      # memory architecture on those pointers: detail was moved OUT of CLAUDE.md
+      # and replaced with one-line links, so a dead pointer reads as "never
+      # written" rather than "broken". Ban at population zero (the gated set was
+      # brought to 0 in the commit that added this). Pure node, no deps.
+      # ⚠ Deliberately NOT tree-wide: 558 of 919 relative links under docs/ are
+      # broken, almost all in docs/sessions, docs/overnight and docs/archive,
+      # which are frozen history CLAUDE.md forbids rewriting — gating those
+      # would make this permanently red and therefore unreadable.
+      - run: node scripts/check-memory-doc-links.mjs
+
+  # The docs half of the unit suite, on docs-only pushes ONLY (a code push runs
+  # the whole suite in unit-tests, so this would be a duplicate there). The
+  # population is a TREE WALK over __tests__ for files that read docs/, CLAUDE.md
+  # or .github/, never a curated list, so a new docs guard is covered the day it
+  # lands. No --coverage: thresholds are global and a subset cannot meet them.
+  docs-tests:
+    name: Docs-guard tests (docs-only pushes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: changes
+    if: needs.changes.outputs.code == 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Run every test file that reads docs/, CLAUDE.md or .github/
+        run: |
+          set -uo pipefail
+          files=$(grep -lE 'docs/|CLAUDE\.md|\.github/' __tests__/*.ts __tests__/*.tsx || true)
+          n=$(printf '%s\n' "$files" | grep -c . || true)
+          echo "docs-reading test files: ${n}"
+          # ⚠ ASSERT THE COUNT. With no file arguments `vitest run` runs EVERYTHING
+          # (slow, not wrong); with a handful it is the vacuous-pass shape.
+          if [ "${n:-0}" -lt 60 ]; then
+            echo "::error::only ${n:-0} test files read docs (107 on 2026-09-02, floor 60) — the walk is wrong, not the docs clean."
+            exit 1
+          fi
+          # shellcheck disable=SC2086
+          npx vitest run $files
+
   typecheck:
     name: TypeScript
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -35,28 +165,16 @@ jobs:
       # regrows a hardcoded #E03A2F / 'Barlow Condensed' / 'Share Tech Mono'
       # literal instead of the var(--rpc-*) tokens. Pure node, no deps.
       - run: node scripts/check-brand-tokens.mjs
-        # ⚠ Runs even when an EARLIER step in this job failed (the five guards below
-        # carry a one-line pointer to this note). These six guards sit
+        # ⚠ Runs even when an EARLIER step in this job failed (the four guards below
+        # carry a one-line pointer to this note). These five guards sit
         # after `npx tsc --noEmit`, and GitHub skips every later step when one fails,
-        # so ANY type error silently switched all six OFF — observed 2026-08-28, run
+        # so ANY type error silently switched all six OFF (memory-doc-links has since
+        # moved to its own always-on job) — observed 2026-08-28, run
         # 33142460652: one unused `@ts-expect-error` reddened tsc and the job report
         # shows all six `skipped`. Nothing said the guards had not run; the job simply
         # named the tsc error. They are independent of tsc and of each other, and are
         # pure node with no deps, so there is no reason to gate them on it.
         # `!cancelled()` rather than `always()`: a cancelled run should stop.
-        if: ${{ !cancelled() }}
-      # Memory-doc link guard — fails if a relative link in CLAUDE.md or
-      # docs/reference/**.md stops resolving. The 2026-08-17 restructure bet the
-      # memory architecture on those pointers: detail was moved OUT of CLAUDE.md
-      # and replaced with one-line links, so a dead pointer reads as "never
-      # written" rather than "broken". Ban at population zero (the gated set was
-      # brought to 0 in the commit that added this). Pure node, no deps.
-      # ⚠ Deliberately NOT tree-wide: 558 of 919 relative links under docs/ are
-      # broken, almost all in docs/sessions, docs/overnight and docs/archive,
-      # which are frozen history CLAUDE.md forbids rewriting — gating those
-      # would make this permanently red and therefore unreadable.
-      - run: node scripts/check-memory-doc-links.mjs
-        # Runs even if tsc failed — same reason as check-brand-tokens above.
         if: ${{ !cancelled() }}
       # Driver-message leak guard — fails if an UNGATED route handler returns a
       # raw `err.message` to the client. lib/api-error.ts exists because
@@ -128,6 +246,8 @@ jobs:
   eslint-ratchet:
     name: ESLint ratchet
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -164,6 +284,8 @@ jobs:
   cadence-lint:
     name: Cadence lint
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -172,66 +294,13 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      # Flow CLI install lives in .github/actions/install-flow-cli (retry loop,
+      # PATH verification, authenticated version lookup — the header there has
+      # the full history). Both Cadence jobs use the one copy.
       - name: Install Flow CLI
-        # The installer is fetched over the network; a transient reset (curl 35
-        # "Connection reset by peer", seen on main 2026-07-31) previously left
-        # `flow` uninstalled while the `sh -ci "$(curl …)"` wrapper still exited 0
-        # (empty command string → no-op success), so the NEXT step failed with a
-        # confusing `flow: command not found` (exit 127). Retry the fetch with
-        # backoff, and verify `flow` is actually on PATH so a real install
-        # failure fails HERE, loudly, instead of masquerading downstream.
-        #
-        # 🚨 GITHUB_TOKEN added 2026-08-27, and it is NOT about the fetch above —
-        # it fixes a failure the retry loop is STRUCTURALLY UNABLE to help with.
-        #
-        # Two CI runs failed this step that night. The log shows all SEVEN
-        # attempts failing ~65ms in, each at "Getting version of latest stable
-        # release ..." — i.e. not a download at all. install.sh resolves "latest"
-        # via `curl "https://api.github.com/repos/onflow/flow-cli/releases/latest"`,
-        # which is UNAUTHENTICATED at 60 req/hr shared across the whole runner
-        # IP pool. Once that limit is hit, more retries cannot clear it: the
-        # loop's entire budget is ~168s and the rate-limit window is an hour.
-        # ⭐ A retry loop only helps a TRANSIENT failure; it converts a
-        # deterministic one into a slower deterministic one.
-        #
-        # install.sh reads GITHUB_TOKEN and sends it as an auth header (and falls
-        # back to unauthenticated on a 403, so this cannot make things worse).
-        # `secrets.GITHUB_TOKEN` is minted automatically per run — no new secret —
-        # and raises the limit to 1,000/hr scoped to this repo rather than 60/hr
-        # shared with every other project on the runner.
-        #
-        # ⓘ The alternative is pinning a version (install.sh takes it as arg 1 and
-        # then skips the API call entirely). Deliberately NOT done: it would stop
-        # these jobs testing against the Flow CLI users actually get, trading a
-        # CI-reliability problem for a coverage one.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3 4 5 6 7; do
-            if sh -ci "$(curl -fsSL --retry 3 --retry-connrefused --connect-timeout 10 https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)" && command -v flow >/dev/null 2>&1; then
-              break
-            fi
-            # A transient GitHub-raw/CDN reset can outlast a short budget (seen
-            # 2026-07-31: a ~50s window failed a 4x/30s retry; again 2026-08-09,
-            # a ~169s window that reddened main on an unrelated insights commit).
-            #
-            # The loop used to run 6 attempts and then SLEEP 48s before giving up,
-            # so it spent 168s of wall time to buy only 120s of real coverage —
-            # the last 48s bought nothing. The 7th attempt fires after that final
-            # sleep instead: same worst-case duration, coverage 120s -> 168s.
-            # DO NOT re-add a trailing sleep — the last iteration must be an
-            # ATTEMPT, not a wait. (Use `if`, not `[ … ] && break`: under
-            # `set -e` a false test as the last statement in the loop body can
-            # take the whole step down.)
-            if [ "$attempt" -eq 7 ]; then break; fi
-            echo "flow-cli install attempt $attempt failed; retrying in $((attempt * 8))s"
-            export PATH="$HOME/.local/bin:$PATH"
-            sleep $((attempt * 8))
-          done
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.local/bin:$PATH"
-          command -v flow >/dev/null 2>&1 || { echo "::error::Flow CLI failed to install after retries"; exit 1; }
+        uses: ./.github/actions/install-flow-cli
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       # Populates the gitignored imports/ directory with the mainnet contract
       # sources (NFTStorefrontV2, FungibleToken, NonFungibleToken,
       # MetadataViews, ViewResolver) declared in flow.test.json. Without this,
@@ -257,45 +326,18 @@ jobs:
   cadence-escrow-tests:
     name: Cadence escrow tests (flow test)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      # Flow CLI install lives in .github/actions/install-flow-cli (retry loop,
+      # PATH verification, authenticated version lookup — the header there has
+      # the full history). Both Cadence jobs use the one copy.
       - name: Install Flow CLI
-        # See the cadence-lint job above: retry the network fetch and verify the
-        # binary landed so a transient reset fails here instead of downstream.
-        #
-        # ⚠ GITHUB_TOKEN is required here for the SAME reason as that job, and
-        # both copies must carry it — this is the job that actually went red on
-        # 2026-08-27 (twice), on the unauthenticated GitHub API rate limit during
-        # "Getting version of latest stable release", which no retry can clear.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3 4 5 6 7; do
-            if sh -ci "$(curl -fsSL --retry 3 --retry-connrefused --connect-timeout 10 https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)" && command -v flow >/dev/null 2>&1; then
-              break
-            fi
-            # A transient GitHub-raw/CDN reset can outlast a short budget (seen
-            # 2026-07-31: a ~50s window failed a 4x/30s retry; again 2026-08-09,
-            # a ~169s window that reddened main on an unrelated insights commit).
-            #
-            # The loop used to run 6 attempts and then SLEEP 48s before giving up,
-            # so it spent 168s of wall time to buy only 120s of real coverage —
-            # the last 48s bought nothing. The 7th attempt fires after that final
-            # sleep instead: same worst-case duration, coverage 120s -> 168s.
-            # DO NOT re-add a trailing sleep — the last iteration must be an
-            # ATTEMPT, not a wait. (Use `if`, not `[ … ] && break`: under
-            # `set -e` a false test as the last statement in the loop body can
-            # take the whole step down.)
-            if [ "$attempt" -eq 7 ]; then break; fi
-            echo "flow-cli install attempt $attempt failed; retrying in $((attempt * 8))s"
-            export PATH="$HOME/.local/bin:$PATH"
-            sleep $((attempt * 8))
-          done
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.local/bin:$PATH"
-          command -v flow >/dev/null 2>&1 || { echo "::error::Flow CLI failed to install after retries"; exit 1; }
+        uses: ./.github/actions/install-flow-cli
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Fetch test contract dependencies
         run: bash scripts/fetch-cadence-escrow-test-deps.sh
       - name: Run RPCTradeEscrow test suite
@@ -308,6 +350,8 @@ jobs:
   unit-tests:
     name: Unit tests (vitest)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -330,6 +374,8 @@ jobs:
   component-tests:
     name: Component coverage (vitest jsdom)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -358,6 +404,8 @@ jobs:
   worker-tests:
     name: Worker coverage (Cloudflare workers/)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -379,6 +427,8 @@ jobs:
   workers-typecheck:
     name: Worker typecheck (tsc per workers/*/tsconfig.json)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -432,6 +482,8 @@ jobs:
   db-tests:
     name: DB invariants (SQL)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -854,6 +906,8 @@ jobs:
   edge-deno:
     name: Edge functions (deno check + lint)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

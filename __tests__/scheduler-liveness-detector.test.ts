@@ -139,6 +139,43 @@ describe("the liveness decision", () => {
     expect(livenessExitCode(r)).toBe(1)
   })
 
+  // 2026-09-02: a scheduled workflow added within the last 48 h that has not
+  // fired yet is PENDING, not dead — GitHub delays a fresh schedule's first fire
+  // by hours (daily workflows measured 0/73 on time), so every new workflow
+  // used to red the next morning's sweep exactly once. The grace is keyed on the
+  // workflows API's created_at; without it the never-fired case above stands.
+  it("reports a never-fired workflow created 2h ago as PENDING, not dead", () => {
+    const r = classifyLiveness({
+      workflows: wf,
+      observed: { "x.yml": { lastScheduledRunAt: null, scheduledRuns: 0, createdAt: hoursAgo(2) } },
+      now: NOW,
+    })
+    expect(r.dead).toHaveLength(0)
+    expect(r.rows[0].pending).toBe(true)
+    expect(r.rows[0].silentHours).toBeNull()
+    expect(livenessExitCode(r)).toBe(0)
+  })
+
+  it("still fails a never-fired workflow once it is older than the grace window", () => {
+    const r = classifyLiveness({
+      workflows: wf,
+      observed: { "x.yml": { lastScheduledRunAt: null, scheduledRuns: 0, createdAt: hoursAgo(72) } },
+      now: NOW,
+    })
+    expect(r.dead.map((d) => d.file)).toEqual(["x.yml"])
+    expect(r.rows[0].pending).toBe(false)
+    expect(livenessExitCode(r)).toBe(1)
+  })
+
+  it("the grace never covers a workflow that HAS fired and then went silent", () => {
+    const r = classifyLiveness({
+      workflows: wf,
+      observed: { "x.yml": { lastScheduledRunAt: hoursAgo(30), scheduledRuns: 0, createdAt: hoursAgo(2) } },
+      now: NOW,
+    })
+    expect(r.dead.map((d) => d.file)).toEqual(["x.yml"])
+  })
+
   it("clears the worst gap ever measured, so it is green on today's shedding", () => {
     // The bound is DERIVED: 24h against a measured maximum of 12.7h (Pipeline
     // Sentinel, 2026-08-29, contiguous pages). A guard that is red on day one

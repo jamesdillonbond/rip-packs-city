@@ -1900,3 +1900,42 @@ deployments API. The estate catches regressions well; the defects were in the SE
   deploy is live), sharding the 7-minute unit-tests job, a composite `rpc-call` action for the ~25
   curl-and-check copies, SHA-pinning actions (Dependabot is told never to move them), and retiring
   one of the THREE `/api/smoke-test` concierge callers (cron-job.org console).
+
+## CI audit drain, pass 2 (2026-09-02, overnight) — what a docs-only push runs now, and three measurements
+
+- **Docs-only pushes skip the ten code jobs.** `ci.yml`'s `changes` job classifies the push from
+  `github.event.before..HEAD` (⚠ never `HEAD~1` — a push of N commits hides code under a docs tip);
+  typecheck, eslint-ratchet, both cadence jobs, unit/component/worker coverage, workers-typecheck,
+  db-tests and edge-deno gate on `needs.changes.outputs.code == 'true'`. **Fail-safe by construction:**
+  an unresolvable base, an empty diff, a `pull_request` event or a script error all leave `code=true`.
+  ⚠ **What still runs on a docs push:** ledger/register/inbox guards, tree-corruption, the always-on
+  `memory-docs` job (the link guard left `typecheck`, which docs pushes skip), and `docs-tests` — a
+  TREE WALK over `__tests__` for files reading `docs/`, `CLAUDE.md` or `.github/` (107 files / 1,406
+  tests / 37 s on 2026-09-02, floor 60). The register, ledger, inbox and memory-limit pins live in the
+  unit suite; a docs push must never blind them, and this is what makes the skip honest.
+  Falsifier: a code push reporting `code=false` is a classifier bug — delete the `changes` job first.
+- **The Flow CLI install is one composite** (`.github/actions/install-flow-cli`); ci.yml carried it
+  twice verbatim, and a fix to one copy had to be remembered for the other.
+- **scheduler-liveness: a never-fired workflow younger than 48 h is `⏳ pending`, not `✗ dead`.**
+  GitHub delays a fresh schedule's first fire by hours (daily workflows measured 0/73 on time), so
+  every new scheduled workflow reddened the next 08:17 sweep exactly once. `createdAt` is probed from
+  the workflows API only when no run exists; older-and-unfired stays red (the cron-that-never-matches shape).
+- **vitest config prose displaced** — 17 comment blocks, 1,600 lines, verbatim to
+  [vitest-config-notes.md](vitest-config-notes.md); the thresholds had sat at line 905 of a 913-line
+  file. Each config keeps the block's first line and a §-pointer. (CLAUDE.md's index had 28 chars of
+  headroom, so the file is reachable from here, not from there.)
+- **Measured and NOT shipped, with the number:**
+  - *Pre-push hook.* Of the 8 CI reds in the last 40 runs, **0 were tsc/guard-class** (2 vitest
+    regressions, 3 coverage-ratchet dips, 1 DB pin, 2 vitest mocks). A tsc+guards hook catches none of
+    them and `vitest --changed` cannot see a ratchet dip; the cost lands on ~100 agent pushes/day.
+  - *Sharding the 7-minute unit-tests job.* Two shards measured **258 s / 192 s under contention**
+    (415 s clean single-run), merge 6 s, and **the merged coverage is byte-identical to the single run**
+    (92.15 / 80.05 / 94.13 / 94.24) — fidelity inside the 0.2-pt ratchet is NOT the risk. Per-shard
+    coverage reads 55–59% and fails thresholds by design, so shards run with thresholds zeroed and a
+    merge job applies them; `coverage-gates-are-wired-to-ci.test.ts` pins `npm run test:coverage`.
+    Recipe: `vitest run --coverage --reporter=blob --shard=N/2 --coverage.thresholds.{lines,functions,branches,statements}=0`,
+    then `vitest run --merge-reports --coverage`. ~3 min off the wall for three jobs; Trevor's call.
+  - *`rpc-call` composite for the ~19 curl copies* — they just received their `cat`/401 fixes in
+    place; re-plumbing is verifiable only on shed schedules. *SHA-pinning actions* — the sandbox
+    cannot resolve shas and Dependabot is configured never to move them. *Retiring one of three
+    `/api/smoke-test` concierge callers* — cron-job.org console.
