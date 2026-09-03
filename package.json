@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:coverage:shard": "vitest run --coverage --reporter=blob --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0",
+    "test:coverage:shard": "vitest run --coverage --reporter=blob --reporter=default --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0",
     "test:coverage:merge": "vitest run --merge-reports --coverage",
     "test:coverage:components": "vitest run --coverage --config vitest.components.config.ts",
     "test:coverage:workers": "vitest run --coverage --config vitest.workers.config.ts",

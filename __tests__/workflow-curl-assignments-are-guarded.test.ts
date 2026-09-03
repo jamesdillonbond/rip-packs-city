@@ -27,12 +27,22 @@
 // 9 of the 24 sites were already guarded (`rpc-pipeline`, `ops-monitor`,
 // `pipeline-sentinel`); the other 15 were fixed in the same commit as this test,
 // so this is a BAN AT ZERO rather than a ratchet.
+//
+// ⚠ 2026-09-03: ten of those sites moved into ONE composite action,
+// `.github/actions/rpc-call`, and this guard's non-vacuity floor (> 15 sites in
+// workflows/) went red on the commit that shipped it — the guard punished its
+// own success, exactly the CLAUDE.md shape "a not-vacuous check must be
+// satisfiable at a population of ZERO". The walk now covers BOTH roots
+// (workflows/*.yml and actions/*/action.yml), the floor is re-derived from the
+// population as it stands, and the composite root must CONTRIBUTE, so a future
+// move in either direction stays inside the guard.
 
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
-const DIR = join(process.cwd(), ".github", "workflows")
+const WORKFLOWS = join(process.cwd(), ".github", "workflows")
+const ACTIONS = join(process.cwd(), ".github", "actions")
 
 /** Assignment sites and whether the command substitution's closing line has a `||` fallback. */
 export function findCurlAssignments(src: string): { line: number; varName: string; guarded: boolean }[] {
@@ -60,15 +70,28 @@ export function findCurlAssignments(src: string): { line: number; varName: strin
 }
 
 describe("GitHub Actions: curl assignments cannot abort the step under bash -e", () => {
-  const files = readdirSync(DIR).filter((f) => f.endsWith(".yml"))
+  const workflowFiles = readdirSync(WORKFLOWS)
+    .filter((f) => f.endsWith(".yml"))
+    .map((f) => ({ label: `workflows/${f}`, path: join(WORKFLOWS, f) }))
+  const actionFiles = readdirSync(ACTIONS).map((d) => ({
+    label: `actions/${d}/action.yml`,
+    path: join(ACTIONS, d, "action.yml"),
+  }))
+  const files = [...workflowFiles, ...actionFiles]
   const all = files.flatMap((f) =>
-    findCurlAssignments(readFileSync(join(DIR, f), "utf8")).map((s) => ({ ...s, file: f })),
+    findCurlAssignments(readFileSync(f.path, "utf8")).map((s) => ({ ...s, file: f.label })),
   )
 
-  it("inspected a non-trivial number of workflows and sites", () => {
+  it("inspected a non-trivial number of workflows and sites, from BOTH roots", () => {
     // A walk that silently finds nothing exits clean and reads as coverage.
-    expect(files.length).toBeGreaterThan(10)
-    expect(all.length).toBeGreaterThan(15)
+    expect(workflowFiles.length).toBeGreaterThan(10)
+    // Floor re-derived 2026-09-03: 16 sites across both roots (workflows 15 +
+    // composite 1) after the ten-site move into .github/actions/rpc-call.
+    expect(all.length).toBeGreaterThanOrEqual(10)
+    // ⚠ The SECOND root must contribute: the composite holds the curl that ten
+    // workflows used to carry, so a walk that only saw workflows/ would miss the
+    // one copy that now matters most.
+    expect(all.filter((s) => s.file.startsWith("actions/")).length).toBeGreaterThanOrEqual(1)
   })
 
   it("POSITIVE CONTROL — an unguarded assignment is detected", () => {
