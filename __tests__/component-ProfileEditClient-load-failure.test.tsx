@@ -420,3 +420,25 @@ describe("ProfileEditClient — the live preview must agree with the form", () =
     expect(body.tagline).toBeNull()
   })
 })
+
+// 2026-09-02 (onboarding QA #9): the "Public URL" preview echoed whatever was
+// typed — `qa 0903!` previewed as a URL that could never save.
+describe("ProfileEditClient — the public URL preview only promises a handle that would save", () => {
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it("previews a valid handle, states the rule for an invalid one, and the placeholder for none", async () => {
+    installFetch({})
+    render(<ProfileEditClient />)
+    const box = (await screen.findByLabelText(/username/i)) as HTMLInputElement
+    fireEvent.change(box, { target: { value: "qa 0903!" } })
+    expect(screen.getByText(/lowercase letters, numbers/i)).toBeTruthy()
+    fireEvent.change(box, { target: { value: "qa0903" } })
+    expect(screen.getAllByText(/rippackscity\.com\/profile\/qa0903/).length).toBeGreaterThan(0)
+    fireEvent.change(box, { target: { value: "" } })
+    expect(screen.getByText(/set a username to enable/i)).toBeTruthy()
+  })
+})

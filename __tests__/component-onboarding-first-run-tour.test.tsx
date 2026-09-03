@@ -126,3 +126,49 @@ describe("FirstRunTourMount", () => {
     expect(await findByRole("dialog")).toBeTruthy()
   })
 })
+
+// 2026-09-02 (onboarding QA #9): anchored steps spotlight the element instead
+// of blurring the whole page; the anchor is scrolled into view first, and a
+// section taller than the room left pins the popover to the viewport edge.
+describe("FirstRunTour — spotlight", () => {
+  it("renders no spotlight on the centred welcome step, and one over the anchor once a step has one", () => {
+    const anchor = document.createElement("div")
+    anchor.setAttribute("data-tour-anchor", "collection-switcher")
+    anchor.getBoundingClientRect = () => ({ top: 40, left: 20, width: 200, height: 30, bottom: 70, right: 220, x: 20, y: 40, toJSON() {} }) as DOMRect
+    document.body.appendChild(anchor)
+    try {
+      const { container, getByText } = render(<FirstRunTour enabled onDismiss={() => {}} />)
+      expect(container.querySelector("[data-tour-spotlight]")).toBeNull()
+      fireEvent.click(getByText("Show me around"))
+      const spot = container.querySelector("[data-tour-spotlight]") as HTMLElement
+      expect(spot).toBeTruthy()
+      // 6px of padding around the anchor rect
+      expect(spot.style.top).toBe("34px")
+      expect(spot.style.left).toBe("14px")
+      expect(spot.style.width).toBe("212px")
+    } finally {
+      anchor.remove()
+    }
+  })
+
+  it("scrolls an off-screen anchor into view and pins the popover to the bottom edge when the anchor is taller than the room", () => {
+    const anchor = document.createElement("div")
+    anchor.setAttribute("data-tour-anchor", "collection-switcher")
+    const scrollIntoView = vi.fn()
+    anchor.scrollIntoView = scrollIntoView
+    // Taller than the viewport: neither above nor below fits.
+    anchor.getBoundingClientRect = () => ({ top: 900, left: 0, width: 800, height: 2000, bottom: 2900, right: 800, x: 0, y: 900, toJSON() {} }) as DOMRect
+    document.body.appendChild(anchor)
+    try {
+      const { container, getByText } = render(<FirstRunTour enabled onDismiss={() => {}} />)
+      fireEvent.click(getByText("Show me around"))
+      expect(scrollIntoView).toHaveBeenCalled()
+      const dialog = container.querySelector('[role="dialog"]') as HTMLElement
+      // pinned (a concrete top), not centred (translate(-50%,-50%))
+      expect(dialog.style.transform).toBe("")
+      expect(container.querySelector("[data-tour-spotlight]")).toBeTruthy()
+    } finally {
+      anchor.remove()
+    }
+  })
+})

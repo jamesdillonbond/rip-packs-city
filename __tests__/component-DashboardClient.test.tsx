@@ -2112,3 +2112,33 @@ describe("DashboardClient — slot is read from the slab, never from array posit
     expect(occupantOfSlot(packed, 2)).toBeNull()
   })
 })
+
+// 2026-09-02 (onboarding QA #2): an address-path signup has a wallet but no
+// public handle, so the "Your public profile" card never rendered and nothing
+// pointed at /profile/edit. The claim card fills that hole — but only once the
+// bio read has ANSWERED; a failed read shows neither card.
+describe("DashboardClient — claim-your-handle card", () => {
+  it("renders the claim card when a wallet exists but the bio has no username", async () => {
+    routes["/api/profile/bio"] = () => json(200, { bio: { display_name: "Collector", username: null } })
+    render(<DashboardClient />)
+    expect(await screen.findByText(/claim your handle to get a shareable url/i)).toBeTruthy()
+    const link = screen.getByRole("link", { name: /claim handle/i })
+    expect(link.getAttribute("href")).toBe("/profile/edit")
+    expect(screen.queryByText(/rippackscity\.com\/profile\/collector/)).toBeNull()
+  })
+
+  it("renders the public-profile card instead when a handle exists", async () => {
+    render(<DashboardClient />)
+    expect(await screen.findByText(/rippackscity\.com\/profile\/collector/)).toBeTruthy()
+    expect(screen.queryByText(/claim your handle/i)).toBeNull()
+  })
+
+  it("renders NEITHER card when the bio read failed — unknown is not 'no handle'", async () => {
+    routes["/api/profile/bio"] = () => json(503, {})
+    render(<DashboardClient />)
+    await screen.findByText(/trophy case/i)
+    await new Promise((r) => setTimeout(r, 30))
+    expect(screen.queryByText(/claim your handle/i)).toBeNull()
+    expect(screen.queryByText(/rippackscity\.com\/profile\//)).toBeNull()
+  })
+})

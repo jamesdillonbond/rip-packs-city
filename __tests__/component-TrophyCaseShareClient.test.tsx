@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, cleanup, screen } from "@testing-library/react"
+import { render, cleanup, screen, waitFor } from "@testing-library/react"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The shareable trophy-case page.
@@ -15,8 +15,8 @@ import { render, cleanup, screen } from "@testing-library/react"
 vi.mock("next/link", () => ({ default: ({ children, ...p }: any) => <a {...p}>{children}</a> }))
 vi.mock("@/components/RpcLogo", () => ({ default: () => <div /> }))
 vi.mock("@/components/profile/ShareProfileButtons", () => ({
-  default: ({ trophyCount, surface }: { trophyCount?: number; surface?: string }) => (
-    <div data-testid="share-buttons" data-count={String(trophyCount)} data-surface={String(surface)} />
+  default: ({ trophyCount, surface, referrerId }: { trophyCount?: number; surface?: string; referrerId?: string | null }) => (
+    <div data-testid="share-buttons" data-count={String(trophyCount)} data-surface={String(surface)} data-ref={String(referrerId ?? "")} />
   ),
 }))
 vi.mock("@/components/TrophySlab", () => ({
@@ -106,5 +106,25 @@ describe("TrophyCaseShareClient", () => {
     const { container } = render(<TrophyCaseShareClient {...base} username="a b" />)
     const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
     expect(hrefs.some((h) => h?.includes("a%20b"))).toBe(true)
+  })
+})
+
+// 2026-09-02 (QA #3): a share from this page carries the viewer's id as &ref=,
+// read from /api/profile/me — and a failed read leaves it null rather than
+// inventing one.
+describe("TrophyCaseShareClient — the viewer's ref", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("passes the signed-in viewer's id to the share buttons", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ user: { id: "u-77" } }) })))
+    render(<TrophyCaseShareClient {...base} trophies={[trophy("m1", "A")]} />)
+    await waitFor(() => expect(screen.getByTestId("share-buttons").getAttribute("data-ref")).toBe("u-77"))
+  })
+
+  it("leaves the ref empty when the read fails or the viewer is anonymous", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => ({}) })))
+    render(<TrophyCaseShareClient {...base} trophies={[trophy("m1", "A")]} />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.getByTestId("share-buttons").getAttribute("data-ref")).toBe("")
   })
 })
