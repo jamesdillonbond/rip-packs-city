@@ -46,7 +46,7 @@ jobs:
     timeout-minutes: 5
     steps:
       # The composite below is local, so the tree must be checked out first.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Snapshot institutional wallets (backstop trigger)
         continue-on-error: true
         uses: ./.github/actions/rpc-call

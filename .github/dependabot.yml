@@ -35,6 +35,10 @@ updates:
       - "security"
       - "dependabot"
 
+  # 2026-09-03: every action is SHA-pinned with a `# vX.Y.Z` comment
+  # (__tests__/github-actions-are-sha-pinned.test.ts bans a floating tag). Dependabot
+  # reads that comment, so a security advisory still surfaces as a PR that moves
+  # the sha; the ignore block below keeps routine bumps out, as before.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

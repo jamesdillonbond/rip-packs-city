@@ -1962,5 +1962,9 @@ deployments API. The estate catches regressions well; the defects were in the SE
     place; re-plumbing is verifiable only on shed schedules. **✅ SHIPPED 2026-09-03 (pass 3):**
     `.github/actions/rpc-call` now serves the ten single-call sites; loops and body-parsing steps keep
     their own curl. Verified by a local stub-server harness (nine cases) and by `workflow_dispatch`. *SHA-pinning actions* — the sandbox
-    cannot resolve shas and Dependabot is configured never to move them. *Retiring one of three
+    cannot resolve shas and Dependabot is configured never to move them. **✅ SHIPPED 2026-09-03 (pass 3):** the
+    premise was wrong — `git ls-remote --tags` over the anonymous proxy resolves them. 57 refs pinned
+    to the sha each major tag pointed at that day; `github-actions-are-sha-pinned.test.ts` bans a
+    floating ref. The majors themselves are old (checkout v4 vs v7 upstream, Node 20 deprecation
+    warnings in every log) — a bump is a separate, dispatch-verified pass. *Retiring one of three
     `/api/smoke-test` concierge callers* — cron-job.org console.
