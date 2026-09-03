@@ -52,15 +52,25 @@ const SUPPRESSED: Record<string, string> = {
   // so there is nothing for a writer to feed.
   saved_wallets_max: "cardinality cap — consumes daily_limit only, never allowed/used_today",
 
-  // ⛔ THE OPEN DEFECT. The counter and the writer disagree on the key, so the
-  // cap is inert for every plan. The fix is in the Cloudflare Worker
-  // (`workers/rpc-mcp-proxy/index.ts` must also record a `mcp_query` usage row
-  // alongside `mcp_log_tool_call`), and a Worker ships by `wrangler deploy`,
-  // which the sandbox has no credentials for — so it is an operator handoff,
-  // not something a session can close. See the ledger entry dated 2026-09-03
-  // ("the MCP daily cap was configured against a plan vocabulary the database
-  // FORBIDS") for the other half, which IS fixed.
-  mcp_query: "OPEN — writer/counter key mismatch; needs a wrangler deploy (operator)",
+  // ⚠ WRITTEN, BUT FROM SQL — so this scan cannot see it, and that is the ONLY
+  // reason it is here. `mcp_log_tool_call` writes the `mcp_query` row (migration
+  // `20260903164254`, applied and verified live the same day: two tool calls took
+  // `used_today` 0 → 2). It is a `plpgsql` INSERT, not a `recordFeatureUsage`
+  // call, so a TypeScript literal scan is blind to it BY CONSTRUCTION.
+  //
+  // ⛔ Do NOT "fix" this by teaching the scan to read migrations. Migrations are
+  // append-only history: a literal in ANY past migration would count as a live
+  // writer, so the scan would bank credit from DDL that has since been replaced —
+  // exactly the shape that lets a guard pass on a property that stopped holding.
+  // The DB half has its own instrument, which runs against a real Postgres and
+  // asserts the property rather than the spelling:
+  // `supabase/tests/mcp_log_tool_call.sql` fails if `used_today` stays 0.
+  //
+  // Until 2026-09-03 this entry read "OPEN — needs a wrangler deploy". That was
+  // the right call for a Worker-side fix and the wrong diagnosis: the Worker
+  // already calls `mcp_log_tool_call` on every tool call, so the write belonged
+  // in the function it was already calling, and no deploy was needed at all.
+  mcp_query: "written from plpgsql, invisible to a TS scan — pinned by supabase/tests/mcp_log_tool_call.sql",
 }
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -166,12 +176,20 @@ describe("a quota that counts usage_events has something that writes them", () =
     }
   })
 
-  it("⛔ the MCP logger still composes its feature name, which is why a literal scan cannot see it", () => {
-    // Pins the mechanism against the shipped DDL rather than only describing it
-    // above. `'mcp_' || p_tool_name` is a writer this guard is blind to, and the
-    // day it becomes a literal is the day `mcp_query` should leave SUPPRESSED.
+  it("the MCP logger writes BOTH keys — the suppression's justification, pinned against the DDL", () => {
+    // ⚠ The suppression above claims `mcp_query` IS written, just not from
+    // TypeScript. A claim in a comment is worth nothing, so it is asserted here
+    // against the migration that is actually live: the logger must still compose
+    // the per-tool key (`'mcp_' || p_tool_name`, the breakdown
+    // `v_mcp_usage_today` groups on) AND write the literal `'mcp_query'` the
+    // quota counts. If a later change drops the second insert, this reds — and so
+    // does `supabase/tests/mcp_log_tool_call.sql`, which asserts the behaviour
+    // rather than the text.
     const ddl = readFileSync(
-      path.join(ROOT, "supabase/migrations/20260512155009_mcp_phase1_api_keys_and_quotas.sql"),
+      path.join(
+        ROOT,
+        "supabase/migrations/20260903164254_audit_20260903_mcp_log_tool_call_writes_the_quota_key.sql",
+      ),
       "utf8",
     )
     expect(ddl).toMatch(/'mcp_'\s*\|\|\s*p_tool_name/)
@@ -180,14 +198,24 @@ describe("a quota that counts usage_events has something that writes them", () =
     // file-wide `includes` reads those as proof the logger writes the key, which
     // is the exact confusion this whole test exists to pin. The claim is about
     // what lands in `usage_events`, so it has to be asserted where that INSERT is.
-    const start = ddl.indexOf("function public.mcp_log_tool_call")
+    // ⚠ Scoped to the FUNCTION BODY, not the file. A file-wide `includes` would
+    // also match the `feature_quotas` seed rows keyed `'mcp_query'` in the 2026-05
+    // migration — that is quota CONFIG, and reading it as proof the logger writes
+    // the key is the exact confusion this whole test exists to pin. The claim is
+    // about what lands in `usage_events`, so it has to be asserted where the
+    // INSERT is. (That mistake was made once while writing this file.)
+    const start = ddl.indexOf("FUNCTION public.mcp_log_tool_call")
     expect(start, "mcp_log_tool_call is no longer defined in this migration").toBeGreaterThan(-1)
-    const body = ddl.slice(start, ddl.indexOf("$fn$;", start))
-    expect(body).toMatch(/insert into public\.usage_events/)
+    const body = ddl.slice(start, ddl.indexOf("$function$;", start))
+    const inserts = body.match(/insert into public\.usage_events/g) ?? []
+    expect(inserts.length, "the logger must write BOTH the per-tool row and the quota row").toBe(2)
+    expect(body, "the per-tool breakdown key is still composed from the tool name").toMatch(
+      /'mcp_'\s*\|\|\s*p_tool_name/,
+    )
     expect(
       body.includes("'mcp_query'"),
-      "the logger now writes 'mcp_query' literally — the counted key and the written key finally agree, " +
-        "so drop mcp_query from SUPPRESSED (the suppression case will already be failing too)",
-    ).toBe(false)
+      "the logger no longer writes the key the quota counts — used_today goes back to being pinned at 0 " +
+        "and the cap stops firing for every plan",
+    ).toBe(true)
   })
 })

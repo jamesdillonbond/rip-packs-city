@@ -48,6 +48,22 @@ const PINS = [
     migration: "supabase/migrations/20260811003456_audit_20260810_board_liveness_history_decoupled_capture.sql",
   },
   {
+    // Added 2026-09-03. The MCP worker's per-call usage writer. Pinned because
+    // this function is HALF of a two-sided invariant that neither side states:
+    // `check_feature_quota` counts `usage_events WHERE feature_name = p_feature`
+    // exactly, and the worker gates on `'mcp_query'`. This function wrote only
+    // `'mcp_' || p_tool_name`, so the counted key was written by NOTHING and the
+    // daily cap could not fire for any plan — a rate limiter failing SILENTLY IN
+    // THE DIRECTION OF PERMISSION, which no instrument distinguishes from a cap
+    // nobody has hit. If its body drifts back to a single insert the pin's own
+    // SQL test reds on `used_today` staying 0, which is the property, not the
+    // spelling.
+    fn: "mcp_log_tool_call",
+    test: "supabase/tests/mcp_log_tool_call.sql",
+    migration:
+      "supabase/migrations/20260903164254_audit_20260903_mcp_log_tool_call_writes_the_quota_key.sql",
+  },
+  {
     fn: "allday_sales_cross_source_dedup",
     test: "supabase/tests/allday_sales_cross_source_dedup.sql",
     migration: "supabase/migrations/20260702130000_audit_20260702_allday_cross_source_dedup_writer_trigger.sql",
