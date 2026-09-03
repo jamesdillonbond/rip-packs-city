@@ -24,6 +24,8 @@ Third and last drain of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md`. 
 
 **Revert.** Code: `git revert <this sha>`. Templates: Supabase dashboard → Authentication → Emails → *Confirm signup* → "Reset template" (returns to the stock one — do not).
 
+**⚠ And the clobber I caused with it.** `87a173c` carried `DashboardClient.tsx` as a whole file from the cloud working copy, whose base predated `f3f1b5c` — so it silently reverted the concurrent session's `apiErrorMessage()` at all five throw sites. The "any commits to these files since my last push?" check passed because the copy was older than my last push. The unit-test pin `api-error-copy-reaches-the-user-not-the-code` caught it (14/14 → 13/14); `4c6353c` restores the five sites (14/14). Rule, now in memory: before extracting a transferred file over the clone, `git log <copy's base>..origin/main -- <files>` must be empty, or re-apply as a diff.
+
 **Handoff status: nothing left on the list.** Deferred, named: the dashboard's duplicate first-visit form (pinned by five test sites; layout work), and the sandbox disk (88%, 153 leaked session dirs — vhdx rename due).
 
 ### 2026-09-02 · ✅ SHIPPED — four more `after()` heartbeats, chosen on wall margin because the watchlist tier no longer contains the routes at risk
