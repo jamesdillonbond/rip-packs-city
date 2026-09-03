@@ -10,6 +10,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ WATCH CLOSED (R83) — the stall suppression is confirmed by the REAL CALLER, and here is the trajectory that will make it look broken later
+
+The pg_cron tick `rpc-refresh-unmapped-backlog-growth` (jobid 261, `29 * * * *`)
+wrote at **18:29:00.064Z**, unattended: `nfl_all_day` → `outflow_24h 1203 ·
+outflow_3h 4 · drain_stalled true · days_to_drain null`; `ufc_strike` unchanged at
+`0 · 0 · false · null`. **Not my manual run** — the cache row's own
+`refreshed_at` is the cron's. Downstream consumers re-checked in the same pass:
+`get_pipeline_alerts()`, `rpc_ops_snapshot()` and
+`check_cursor_stall_threshold_drift()` all still answer.
+
+⭐ **The 40-minute-later reading is itself more evidence:** the drain fell **10 → 4**
+per 3h while `outflow_24h` fell **1263 → 1203** as the burst ages out. Had nothing
+shipped, `days_to_drain` would now read **~35 days** — *higher again* — off a
+current rate of ~32/day.
+
+🚨 **PREDICTED, SO NOBODY RE-DIAGNOSES IT: the ETA WILL COME BACK, and that is the
+fix working, not failing.** The suppression fires only while the two windows
+DISAGREE. As the burst ages out of the 24h window over the next ~20 h,
+`outflow_24h` falls toward the true rate; once `outflow_3h * 16 >= outflow_24h`
+the windows agree, `drain_stalled` goes false and an ETA is published again — but
+now a **large, honest one** (order 500–900 days) computed from a rate that is
+actually current. ⚠ **Do not read a reappearing `days_to_drain` as a regression,
+and do not "fix" it by widening the predicate.** The number to sanity-check is
+`outflow_3h`, never the ETA.
+
+**Exit condition (met):** a cron-written cache row carrying `drain_stalled true`
+and `days_to_drain null` while `outflow_3h` is a small fraction of `outflow_24h`. ✅
+**Standing falsifier:** `drain_stalled true` on a collection whose `outflow_3h` is
+at or above an eighth of its `outflow_24h` — that would mean the predicate is
+firing on a HEALTHY drain and suppressing a legitimate ETA. Nothing has shown that
+shape; `ufc_strike` is the standing no-change control the fix cannot move.
+
+⚠ **A near-miss worth recording, because the shape has bitten here before:**
+`check_cursor_stall_threshold_drift()` returns **one row**, which reads as a
+finding under the SETOF convention. It is the **jsonb-array** shape and that row
+holds `[]` — `pg_get_function_result` says `jsonb`, `jsonb_array_length` says **0**,
+i.e. CLEAN. **Check the return TYPE before interpreting the count**; a row count is
+not a finding count for half of these functions.
+
 ### 2026-09-03 · ✅ SHIPPED (prod DB, migrations `20260903174421` + `20260903174608`) — R83 closed: the backlog alert published an ETA off a rate that had stopped, and then read healthy when the ETA was removed
 
 **Re-derived before acting, and the finding got STRONGER rather than stale** — which is the
