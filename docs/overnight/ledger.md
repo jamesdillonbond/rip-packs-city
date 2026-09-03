@@ -10,6 +10,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — `/login?error=` rendered whatever was in the query string, so a crafted link was a phishing message wearing our own UI
+
+Drains part of finding **#9** of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md`, which filed it
+as polish (*"raw error slugs reach users"*). ⚠ **The slug half is polish. The other half is not, and
+the filing did not name it.**
+
+**⛔ THE DEFECT.** `LoginClient` mapped two known values and **fell through to the raw query-string
+value for everything else**:
+
+1. Real slugs reached people. The auth chain sets `auth_failed`, `missing_token`, `session_failed`
+   (`AuthConfirmClient`) and `missing_code` (`api/auth/callback`) — so somebody whose magic link
+   expired was shown the string **"session_failed"**.
+2. 🚨 **The value is ATTACKER-SUPPLIED.** Any text in `?error=` rendered inside our own error banner,
+   in our voice, on our login page. React escapes it, so this is not XSS — it is worse in the way that
+   matters for a login form: `/login?error=Your+account+was+locked.+Call+555-0100+to+restore+it` is a
+   phishing message wearing Rip Packs City's UI, on the one page where a user expects to be told
+   about their account.
+
+⭐ **The defect was never the ugly slug — it was that an UNKNOWN value was rendered at all.** So the
+fix is an allowlist with a generic fallback (`lib/auth/login-error-copy.ts`), not a prettifier: a
+future slug nobody adds degrades to honest generic copy, and can never degrade to echoing itself.
+
+⚠ **`access_revoked` deliberately returns null** — it has a dedicated banner above the form so the
+closed-beta messaging survives a resubmit, and copy here would render it twice.
+
+**Guards.** `login-error-slugs-are-mapped-not-echoed` asserts the ABSENCE: each real slug's copy does
+not contain the slug, and the injected phone number does not survive. Plus a source walk over
+`AuthConfirmClient` and `api/auth/callback` that extracts every `?error=` value they set and fails if
+one is missing from the map (asserting the walk found ≥3, so it cannot pass vacuously), a no-change
+control on the pre-existing `allowlist_unavailable` wording, and a pin that the CLIENT calls the
+mapper. Four mutants — client falls through again, unknown values echo themselves, a real slug drops
+out of the map, `access_revoked` gains copy — **all killed**.
+
+⭐ **AND AN EXISTING TEST WAS PINNING THE DEFECT.** `component-LoginClient`'s *"forwards an
+/auth/confirm failure code into the inline error"* asserted `getByText("session_failed")` — it
+required the raw slug to reach the user — **while the case directly above it had been asserting the
+opposite property for `allowlist_unavailable` since it was written** (*"translated, never echoed as a
+raw code"*). Inverted rather than deleted, per the standing rule: the property it is named for is
+unchanged, only the spelling moved. A second case was added for the crafted-link value.
+
+**Still open from #9:** `/auth/confirm` ignores its `?redirect=`; `DashboardClient` throws
+`data.error` so a capped user sees `plan_limit_reached` instead of `data.message`; the first-run tour
+device flag; stale `rpc_*` localStorage across accounts; display name defaults to the raw email local
+part; `/profile/edit` polish.
+
+**Revert.** `git revert <this sha>`. DB: nothing.
+
 ### 2026-09-02 · ✅ SHIPPED — trophy art is allowlisted and serials come from the moment index; and the filing that prompted it was ~80% wider than the defect
 
 Drains finding **#7 (P1)** of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md`. ⭐ **The
