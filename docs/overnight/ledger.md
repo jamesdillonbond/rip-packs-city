@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — the IPFS proxy was killing transfers it had already won: one abort budget governed both the headers AND the body
+
+**⛔ FOUND IN THE LIVE LOG, and the giveaway is that the success line and the failure are the SAME REQUEST.** Straight from production:
+
+```
+06:43:52 GET /api/public/ipfs-media/Qmbeyu7oxhX…  200
+  [ipfs-media] ok cid=Qmbeyu7oxhX… type=image/png hasLength=true bytes=3777843 elapsedMs=6037
+  TimeoutError: The operation was aborted due to timeout   (×4)
+```
+
+`AbortSignal.timeout(8_000)` starts at fetch time and **stays live for the response body**. The route returns `upstream.body` — a stream still governed by that signal — so a transfer whose headers arrived at 6.0 s and was still sending bytes at 8.0 s was **aborted mid-flight, after the 200 and the success log had already gone out**. The `catch` cannot see any of it: the handler has already returned. **426 uncaught `TimeoutError`s across 60 users in the 24 h to 2026-09-03 06:00Z**, every one a load this route had already won at the headers stage and then killed while delivering.
+
+⚠ **And it was invisible at the one place that looks.** The `[ipfs-media] ok` line is written *before* a single byte is pumped, so it reports the DECISION to stream, not the OUTCOME of streaming. That is this repo's own honesty class one layer down — 426 aborted transfers sitting behind 200s that all logged success.
+
+⚠ **Route attribution had to be re-derived, per the standing warning.** The unfiltered 12 h error table smears this group across `/api/og/collection` and `/api/public/ipfs-media/[cid]`. Filtered: og/collection at 3 h returns **nothing**; ipfs-media at 24 h returns the whole 426/60. The group also no longer lists `/api/badge-image` — that half was yesterday's fix, working.
+
+**Shipped.** One manual `AbortController` with **two phases**: `HEADERS_TIMEOUT_MS` 8,000 to first byte (unchanged — it is what keeps the 502 soft-fail reachable ahead of the platform's own 25 s cutoff), then `BODY_TIMEOUT_MS` 12,000 re-armed once headers are in. ⛔ **NOT "raise the one timeout to 20 s"** — that would give a dead gateway 20 s before the `<img onError>` chain can advance, the exact regression the 8 s value was chosen to prevent. The two phases answer different questions.
+
+Plus a counting `TransformStream` so the transfer's outcome is recorded: `[ipfs-media] streamed cid=… bytes=<delivered>` on flush. **Read by correlation, exactly like the pipeline heartbeat marker** — `ok` + `streamed` is a whole object; `ok` with **no** `streamed` is a transfer that died mid-flight. `flush` does not run when a stream errors, and that absence IS the signal, deliberately: a catch-and-log there cannot un-send the 200 already on the wire.
+
+**Known trade-off, stated:** a genuinely hung body now aborts at ~20 s rather than 8 s. The response is already a 200 either way, so this is a slower visible failure, not a new one.
+
+**Also fixed in the tests, and it is the reason the pipe was caught at all:** the stubs used `body: "binarydata"` — a string. `Response.body` is a `ReadableStream` in every runtime this route ships to, so those cases passed while exercising a shape production never sees. A `streamOf()` helper now builds real streams. The old budget case spied on `AbortSignal.timeout`, which the route no longer calls; it is **rewritten to assert the property** (how long the route waits before aborting) rather than deleted.
+
+Both new pins mutation-checked: removing the body-phase re-arm fails the two-timer case, and dropping the counting transform fails the outcome-log case. 18 tests green, tsc clean, eslint unchanged at its 1 pre-existing error.
+
+**Revert.** `git revert <this sha>` — restores the single 8 s budget and the 426/24 h.
+
 ### 2026-09-02 · 🌙 OVERNIGHT PASS CLOSE (Cowork, ~23:00 → 00:10 PT next day) — what shipped, what was verified by the real caller, what got worse, what needs Trevor
 
 **Shipped tonight, in order, all `main` + CI green:** `3b60113`/`c8f292f` (onboarding QA #2/#3/#5/#8/#9) · `5ab2d3b`/`e287c1e` (#6 FMV split, landing block, tour spotlight) · `87a173c`/`4c6353c` (#4 email templates from Chrome, device-key clear on every sign-in path; **the clobber and its restore**) · `c79e9cf` (one first-visit form) · `b67a74a` (R50 allday board → `edition_fmv_current`) · `30f0a86` (#27 cron 600→300 s) · `53c87b8` (`/api/profile/me` handle-only) · `4236daf` (#40 closed, `sets_summary` DDL) · `a214e6b` (#42 re-read) · `d4b912c` (`get_top_movers` false-claim fix + half cost). Migrations applied live and committed: `20260903023012`, `20260903055218`, `20260903064122`, `20260903065142`.
