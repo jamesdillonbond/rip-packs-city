@@ -250,16 +250,72 @@ describe("GET /api/public/ipfs-media/[cid] — failure modes are attributable", 
     })
   })
 
+  /**
+   * A fetch that hangs until the route's OWN signal aborts it, then rejects with
+   * whatever the runtime chooses to surface.
+   *
+   * ⚠ This replaced a stub that simply rejected with a `TimeoutError`-named
+   * error and never aborted anything. That version pinned the old
+   * implementation's SPELLING (`err.name === "TimeoutError"`) rather than the
+   * property, so it would have gone green on a route that classified every
+   * failure as an abort. Driving the route's real timer is what makes the case
+   * about the classification.
+   */
+  function hangingFetch(rejectWith?: Error) {
+    return vi.fn(
+      (_u: string, init: RequestInit) =>
+        new Promise((_res, rej) => {
+          init.signal!.addEventListener("abort", () =>
+            rej(rejectWith ?? (init.signal!.reason as Error)),
+          )
+        }),
+    )
+  }
+
   it("names an ABORT distinctly from an upstream answer", async () => {
-    const timeout = Object.assign(new Error("The operation timed out."), { name: "TimeoutError" })
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(timeout))
-    const res = await GET(req, ctx(GOOD_CID))
-    expect(res.status).toBe(502)
-    const line = logs.find((l) => l.includes("[ipfs-media]"))
-    expect(line, "the abort must be logged at all").toBeTruthy()
-    expect(line).toContain("reason=abort_timeout")
-    // The discriminator: an abort must NOT be reported as an upstream answer.
-    expect(line).not.toContain("upstreamStatus=")
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal("fetch", hangingFetch())
+      const p = GET(req, ctx(GOOD_CID))
+      // Past the headers budget, so the route's own timer is what ends this.
+      await vi.advanceTimersByTimeAsync(9_000)
+      const res = await p
+      expect(res.status).toBe(502)
+      const line = logs.find((l) => l.includes("[ipfs-media]"))
+      expect(line, "the abort must be logged at all").toBeTruthy()
+      expect(line).toContain("reason=abort_timeout")
+      // The discriminator: an abort must NOT be reported as an upstream answer.
+      expect(line).not.toContain("upstreamStatus=")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("🚨 an abort stays an abort even when the runtime discards the reason", async () => {
+    // ⚠ THE REASON THE CLASSIFIER READS `signal.aborted` AND NOT `err.name`.
+    // `AbortSignal.timeout` rejected with a DOMException named "TimeoutError";
+    // a manual `controller.abort(reason)` is only guaranteed to preserve that
+    // reason in some runtimes, and this route ships to the edge runtime, which
+    // is a different implementation from the one the rule was written against.
+    // If the reason is replaced by a bare `Error`, a name-sniffing classifier
+    // silently relabels every one of our own timeouts as a transport fault —
+    // and "raise the timeout" is then the wrong fix for a problem that no
+    // longer looks like ours.
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal("fetch", hangingFetch(new Error("aborted")))
+      const p = GET(req, ctx(GOOD_CID))
+      await vi.advanceTimersByTimeAsync(9_000)
+      const res = await p
+      expect(res.status).toBe(502)
+      const line = logs.find((l) => l.includes("[ipfs-media]"))
+      expect(line).toContain("reason=abort_timeout")
+      // The forensic field still reports what the runtime actually threw, so
+      // the two can be told apart later without reading this file.
+      expect(line).toContain("name=Error")
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("names a TRANSPORT fault distinctly from an abort", async () => {

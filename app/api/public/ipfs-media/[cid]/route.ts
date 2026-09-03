@@ -152,12 +152,24 @@ export async function GET(
     // Gateway timeout/fault — 502 so the <img> onError can advance to the next
     // candidate / placeholder.
     //
-    // The abort reason carries `name: "TimeoutError"` (see `abortAfter`), and
-    // anything else is a genuine transport fault. Naming which one is the whole
-    // point — raising HEADERS_TIMEOUT_MS only helps the first kind.
+    // ⚠ CLASSIFY OFF THE SIGNAL, NOT OFF THE ERROR'S NAME. Naming which of the
+    // two failures happened is the whole point of this line — raising
+    // HEADERS_TIMEOUT_MS only helps the abort kind — and `err.name` is not a
+    // reliable way to ask. `AbortSignal.timeout` used to reject with a
+    // DOMException named "TimeoutError", but a manual `controller.abort(reason)`
+    // is only guaranteed to preserve that reason in SOME runtimes (verified in
+    // Node; the edge runtime is a different implementation). `signal.aborted` is
+    // this route's own state and cannot be reinterpreted by a runtime.
+    //
+    // ⓘ The distinction is live, not theoretical: an unresolvable CID probed on
+    // 2026-09-03 failed at **7,800 ms** with `name=Error` — 200 ms INSIDE the
+    // 8,000 ms deadline — while every real abort in the preceding logs sits at
+    // 7,982–7,999 ms. That one is a genuine transport fault and must not be
+    // relabelled as our timeout just because it happened to land nearby.
     const name = err instanceof Error ? err.name : "unknown";
+    const wasAbort = controller.signal.aborted;
     console.log(
-      `[ipfs-media] upstream fetch failed cid=${cid} reason=${name === "TimeoutError" ? "abort_timeout" : "transport"} name=${name} elapsedMs=${Date.now() - startedMs}`,
+      `[ipfs-media] upstream fetch failed cid=${cid} reason=${wasAbort ? "abort_timeout" : "transport"} name=${name} elapsedMs=${Date.now() - startedMs}`,
     );
     return new NextResponse(null, { status: 502 });
   }
