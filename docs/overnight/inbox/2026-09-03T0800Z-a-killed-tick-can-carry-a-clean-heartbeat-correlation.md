@@ -56,3 +56,33 @@ That route was selected for conversion on a measured `max(duration_ms)` of **26,
 was hidden precisely because killed ticks wrote nothing. **The first hour of observation after the
 marker landed produced a tick at the wall.** The selection rule was right and its own input was
 understated, which is what "censored by construction" means in practice.
+
+---
+
+## ⛔ ADDENDUM, same session — I tried the shortcut and it is REFUTED, three of three
+
+Before filing the "read `maxDuration` from source" work as necessary, I tried the cheap substitute:
+join every terminal row against a set of **known wall values** (30/60/120/300/800 s) and count rows
+landing at or just over one. It produces a big, confident-looking table — and **it is measuring the
+wrong thing.**
+
+| pipeline | rows "at a wall" | the wall it matched | the route's REAL `maxDuration` |
+|---|---:|---:|---:|
+| `wallet-backfill-multicollection-complete` | 1,401 | 120 s | **800 s** |
+| `wallet-backfill-golazos` | 151 | 30 s | **60 s** |
+| `fmv-recalc` | 73 | 60 s | **300 s** |
+
+**Three of three checked, three of three wrong.** The clustering just above a round number is not a
+wall at all — it is the route's **INTERNAL budget** working: `BUDGET_MS`-style guards stop the loop and
+the route then writes its row. So the shortcut systematically flags routes whose self-bounding is
+*healthy*, and it cannot see the actual kills, which by construction **wrote no row at all**.
+
+⭐ **The sharpened rule, worth more than the table:** a duration clustered a few hundred ms above a
+round number is evidence of a **working internal budget**, i.e. the opposite of a kill. A kill is
+either an ABSENT row, or — the case this filing is about — a row sitting near the route's own
+`maxDuration`, which is a DIFFERENT number from its internal budget and is knowable only per route.
+
+⛔ **So the per-route `maxDuration` mapping is not a nice-to-have; it is the only way to ask the
+question at all.** `wallet-backfill-golazos` makes the point twice over: it *does* genuinely hit its
+60 s wall (Vercel logged four `Task timed out after 60 seconds` on it at 07:33–07:34Z tonight), and
+**none of those appear in the 151 rows the heuristic flagged** — those are its healthy 30 s ticks.
