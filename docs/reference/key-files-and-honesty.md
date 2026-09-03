@@ -1153,3 +1153,46 @@ produced the "same full page forever" case it exists for — **a safety belt wit
 indistinguishable from dead code**. And the in-memory re-sort survived because `dailyVolume` and
 `topCategories` sort themselves; `escalatedDetails` was the only one of six outputs that could see
 row order, and it is what now pins it.
+
+## ⭐ `startsWith("/")` IS NOT A SAME-ORIGIN CHECK — two independent instances in one session (2026-09-02)
+
+Not an honesty defect, filed here because it is the same *family*: **an expression that READS like a
+check and is not one**, which is exactly why it survives review. Two instances found hours apart, in
+unrelated code, by two different routes.
+
+| where | the check | what passed it |
+|---|---|---|
+| `POST /api/profile/trophy` → slab art | (none — the body value was stored) | any URL, on a public profile AND server-side-fetched by the OG card |
+| `/api/auth/request-magic-link` → `buildCallbackUrl` | `redirect.startsWith("/")` | `//evil.example/x`, baked into the emailed link |
+
+⛔ **`//evil.example/x` starts with `/` and resolves to `https://evil.example/x`.** It is an absolute
+URL wearing a relative disguise. A browser treats a BACKSLASH the same way in the authority position,
+so `/\evil.example` is the identical attack with different spelling — a checker that handles only
+`//` is still wrong.
+
+🚨 **On an auth callback the consequence is specific and worth stating:** the victim clicks a link
+that really is ours, really signs them in, and lands on someone else's page **already authenticated
+and primed to trust it**. Nothing about the flow looks wrong to them.
+
+👉 **THE RULE. Treat "starts with `/`" as a formatting observation, never as a security boundary.**
+For a redirect, use `lib/auth/safe-redirect.ts` (`safeRedirectPath`) — rooted path, not `//`, not
+`/\`, no control characters. For a URL you will RENDER or FETCH, an allowlist derived from the data
+(`lib/profile/trophy-thumbnail.ts`), never a prefix test.
+
+⚠ **Derive an allowlist from a query, not from memory.** The trophy list came from
+`SELECT regexp_replace(thumbnail_url, …) FROM editions GROUP BY 1` — seven hosts with row counts —
+plus one same-origin proxy path a host-only list would have wrongly rejected and that a live row
+uses. A guessed list silently blanks whichever host it forgot, and a blank slab explains nothing.
+
+⚠ **Two traps in the FIXES, both caught by a test rather than production:**
+- `AuthConfirmClient`'s `params` is the **HASH** (Supabase's implicit flow puts the token in the
+  fragment). `?redirect=` is a QUERY param, so reading it from `params` is silently always-null and
+  the fix is inert with every test green. Read `window.location.search` — which also avoids the
+  Suspense boundary `useSearchParams` would require.
+- The route builds a fresh query **per page**, so a rotation counter scoped inside a mock's `from()`
+  resets every page and a missing-`.order()` mutant survives. Shared state, distinct row values.
+
+ⓘ **Two of my own assertions were wrong and the CODE was right, and both are recorded in the tests
+rather than deleted:** a trailing CRLF is `.trim()`ed to a valid path, and a SPACE is not a control
+character (it cannot split a header and a browser percent-encodes it). Banning either rejects a valid
+redirect for no gain.
