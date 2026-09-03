@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
+import { sanitizeTrophyThumbnail } from "@/lib/profile/trophy-thumbnail";
 
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
@@ -71,6 +72,45 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "slot must be between 1 and 6" }, { status: 400 });
   }
 
+  const resolvedCollectionId = collectionId ?? NBA_TOP_SHOT_UUID;
+
+  // ── What the CLIENT may assert, and what it may not ───────────────────────
+  //
+  // Most display fields here are harmless because `get_trophy_slab_data` renders
+  // public slabs with `COALESCE(e.<field>, tm.<field>)` — the live `editions`
+  // row WINS, so a forged player/tier/FMV/badge is overridden as soon as the
+  // edition resolves. Two stored fields are NOT coalesced and go out as-is:
+  // `serial_number` and `thumbnail_url`. Those are the ones handled below.
+  //
+  // ⚠ Re-derive that COALESCE before trusting this comment — it is the whole
+  // reason this fix is two fields rather than the twelve a reading of this
+  // handler alone would suggest.
+  //
+  // SERIAL: resolved from the user-independent moment index when we have it.
+  // A serial is a claim about a specific NFT ("#1 of 15,000" is the trophy), and
+  // it was taken from the request body. Every moment the picker offers is in
+  // wallet_moments_cache, so this closes the forge for the real path; a manual
+  // pin of a moment we have never indexed keeps the submitted value rather than
+  // losing it, which is the status quo and not a regression.
+  let verifiedSerial: number | null = null;
+  try {
+    const { data: wmcRow } = await supabase
+      .from("wallet_moments_cache")
+      .select("serial_number")
+      .eq("moment_id", momentId)
+      .eq("collection_id", resolvedCollectionId)
+      .not("serial_number", "is", null)
+      .limit(1)
+      .maybeSingle();
+    if (wmcRow && typeof wmcRow.serial_number === "number") {
+      verifiedSerial = wmcRow.serial_number;
+    }
+  } catch (err) {
+    // A failed lookup must not upgrade the client's claim to "verified", and
+    // must not block the pin either. Fall through to the submitted value.
+    console.error("[trophy POST] serial verify failed:", err instanceof Error ? err.message : err);
+  }
+
   const { data, error } = await supabase
     .from("trophy_moments")
     .upsert(
@@ -78,14 +118,20 @@ export async function POST(req: NextRequest) {
         user_id: user.id,
         slot,
         moment_id: momentId,
-        collection_id: collectionId ?? NBA_TOP_SHOT_UUID,
+        collection_id: resolvedCollectionId,
         edition_id: editionId ?? null,
         player_name: playerName ?? null,
         set_name: setName ?? null,
-        serial_number: serialNumber ?? null,
+        serial_number: verifiedSerial ?? serialNumber ?? null,
         circulation_count: circulationCount ?? null,
         tier: tier ?? null,
-        thumbnail_url: thumbnailUrl ?? null,
+        // ART: allowlisted. This URL is rendered on a public profile AND fetched
+        // SERVER-SIDE by /api/og/profile/[username], which inlines trophy art as
+        // data URIs — so an arbitrary value is both an arbitrary image on
+        // someone's public page and a server-side fetch of a host they chose.
+        // Rejected values become null and the slab falls back, rather than 400ing
+        // a pin that is otherwise fine.
+        thumbnail_url: sanitizeTrophyThumbnail(thumbnailUrl),
         video_url: videoUrl ?? null,
         fmv: fmv ?? null,
         badges: badges ?? null,
