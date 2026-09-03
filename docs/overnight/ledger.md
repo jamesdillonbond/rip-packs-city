@@ -10,6 +10,68 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED (DB) — the cadence watcher could say a pipeline had gone silent and could not say whether anything was firing
+
+Closes register **R11**'s structural residual, open since 2026-08-15: *"`detect_stalled_pipelines()`
+is terminal-row-keyed, so a heartbeating-but-killed pipeline oscillates in and out of stalled."*
+
+**⛔ THE DEFECT.** The function keyed on ONE number — `max(started_at)` over the pipeline's own
+terminal rows. Two causes produce an IDENTICAL signature there and need **opposite responses**:
+
+| what happened | the right move | what the watcher said |
+|---|---|---|
+| the schedule stopped firing | fix cron-job.org / pg_cron | *"last run 5h ago"* |
+| it fires and is KILLED at the lambda wall before it can log | fix `maxDuration` / the route | *"last run 5h ago"* |
+
+⚠ `try/catch` cannot catch a `maxDuration` kill, so the killed case writes **nothing at all**. The
+evidence to separate them has existed since 2026-08-20 — `lib/pipeline/heartbeat.ts` writes a
+`<pipeline>-heartbeat` marker BEFORE the work, and **21 of the 87 active watchlist rows now carry
+one** — and nothing read it.
+
+**SHIPPED** (`20260903024204_audit_20260902_detect_stalled_pipelines_says_whether_the_schedule_is_firing`):
+three ADDED fields — `heartbeat_last_run`, `uncorrelated_heartbeats`, `classification`
+(`no_marker` | `invoked_but_never_logged` | `not_invoked`).
+
+⛔ **The `WHERE` is byte-identical and the row set cannot move.** Both added LATERALs are unGROUPed
+aggregates, so each returns exactly one row and a LEFT JOIN to them can neither add nor remove a
+caller-visible row. **This is an enrichment, never a silencer** — a marker must never refresh the
+real pipeline's silence clock, which is the entire reason the helper writes under a suffixed name.
+Proved over the whole population **in one statement**, silence threshold forced so every row
+qualifies: old body **87**, new body **87**, 0 only-in-old, 0 only-in-new.
+
+**🚨 THE PART WORTH KEEPING — THE OBVIOUS SPELLING WAS WRONG AND ONLY LIVE DATA SAID SO.** The first
+version counted a marker as orphaned when `h.started_at > last_run`. Against production that reported
+**3 pipelines with orphaned markers — `allday-listings-retry`, `snapshot-pack-asks`,
+`candy-editions-ingest` — and all three are HEALTHY.** Their marker is written **2–14 ms AFTER** the
+terminal row's `started_at`, because the two timestamps come from different clocks inside the route,
+so **a tick was counting its own heartbeat as evidence of its own death.** Re-measured with the ±5 s
+window the helper already documents: **3 → 0.** ⭐ *A plausible mechanism is not a measurement* — the
+mechanism was right and the spelling manufactured three false kills.
+
+**POSITIVE CONTROL, so the counter is not trusted at zero.** The same correlation over the full 73 h
+retention finds exactly **ONE** uncorrelated marker fleet-wide: **`fmv-recalc` at 2026-09-01
+00:15:52Z** (`extra`: offset 10000, edition_limit 500, max_duration_s 300). **That is a real killed
+tick that no alert on this platform could see, and the counter sees it.**
+
+**COST** (warm, same session): 1,200 → **1,490 buffers**, 5.6 → **6.8 ms**, against the function's own
+8 s `statement_timeout`. Grants unchanged (`service_role`, `postgres`);
+`check_secdef_anon_exec_drift()` **0**; scratch functions dropped (`_scratch%` = **0**).
+
+**PINNED, and the pin was proved to fail.** New `supabase/tests/detect_stalled_pipelines.sql` (7
+fixtures, all three classes, both directions of the ±5 s window) registered in
+`db-invariants-drift-guard`. Three mutations, each reddening exactly its own arm: widen the window
+5 s → 60 s (the 30 s control dies), drop the correlation for a bare `>` (the 14 ms control dies),
+freeze `classification` to a constant (the killed case dies). Live `prosrc` md5 **equals** the
+migration file's body md5, so pin, test copy and production agree.
+
+⚠ The suite was run against a throwaway Postgres started in this sandbox — **183 files, all green** —
+because `npm run db:pins:check` needs a service-role key this session does not have.
+
+**REVERT:** re-apply the body from
+`supabase/migrations/20260812050544_audit_20260812_detect_stalled_pipelines_carry_watchlist_notes.sql`
+(drops the three fields; nothing else in the object changes), and `git revert <this sha>` for the
+test + pin.
+
 ### 2026-09-02 · ✅ SHIPPED — the public profile, its card and the share tweet published a portfolio 80% above the collector's own dashboard; plus the tour spotlight, the landing-page trophy block, and the /profile/edit order (onboarding QA #6, #8, #9) · Cowork (device VM)
 
 Second drain of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md` ("do all you can"). Migration applied live first, code second, all on `main`.
