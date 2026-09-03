@@ -1,12 +1,12 @@
 {
-  "run": "nightly-20260902T0803Z-cloud-NO-PUSH",
-  "captured_at_utc": "2026-09-02T08:04Z",
-  "captured_at_pt": "2026-09-02T01:04 PT",
-  "mode": "GENUINE OVERNIGHT (DB now() 08:02:48Z, app rows 07:56Z, no skew; real local 01:0x PT). CLOUD NO-PUSH: git push --dry-run == 'could not read Username' (no cred in this cloud session; mount has NO remote.origin.pushurl to harvest). DB migrations + artifact repairs would still apply; code/deploys queued. This blocker is specific to THIS cloud session — Trevor's machine and Claude Code push normally.",
+  "run": "nightly-20260903T0803Z-cloud-NO-PUSH",
+  "captured_at_utc": "2026-09-03T08:04Z",
+  "captured_at_pt": "2026-09-03T01:04 PT",
+  "mode": "GENUINE OVERNIGHT (DB now() 08:02:50Z, app rows: max sale ingest 08:01Z / max fmv computed 07:56Z, no skew; real local 01:0x PT). CLOUD NO-PUSH: git push --dry-run == 'could not read Username' (no cred in this cloud session; harvested mount pushurl carries no usable credential). DB migrations + artifact repairs would still apply; code/deploys queued. This blocker is specific to THIS cloud session — Trevor's machine and Claude Code push normally.",
   "genuine_overnight": true,
   "push_available": false,
-  "read_at": "origin/main 51a4d8a2 (fresh clone), static through the pass.",
-  "shipped_to_prod_state": "NOTHING SHIPPED. Quiet, healthy night; every fresh candidate is code/route work (off-limits + NO-PUSH) or already resolved by Claude Code. No DB migration or artifact repair surfaced as clearly-safe + net-positive.",
+  "read_at": "origin/main 949863a6 (fresh clone), static through the pass.",
+  "shipped_to_prod_state": "NOTHING SHIPPED. Quiet, healthy night; every fresh candidate is code/route/measurement work (off-limits + NO-PUSH) or already resolved by the active Claude Code session today. No DB migration or artifact repair surfaced as clearly-safe + net-positive.",
   "security": {
     "invariants": "clean []",
     "anon_write_holes": "clean []",
@@ -14,47 +14,40 @@
     "secdef_anon_violations": "clean []"
   },
   "health_verdict": "GREEN (1 known structural breach)",
-  "db_size_mb": 14639,
+  "db_size_mb": 15157,
+  "db_size_mb_delta": "+518 vs 14639 last night — normal growth.",
   "sentinel_ts_uuid_editions_48h": 0,
   "stalled_pipelines": [],
   "pipeline_alerts": {
-    "count": 1,
+    "count": 2,
     "rows": [
-      "unmapped-sales-nfl_all_day info — 46,339 actionable of 103,758 (57,419 multi-NFT, frozen by design); inflow 8/24h vs outflow 937/24h; ~49.9d to clear; structural, do NOT raise threshold."
+      "unmapped-sales-nfl_all_day info — 42,200 actionable of 99,619 (57,419 multi-NFT, frozen by design); inflow 42/24h vs outflow 4181/24h; ~10.2d to clear; structural, do NOT raise threshold.",
+      "allday-pack-opens-backfill medium — INVESTIGATED, BENIGN. The 2 recent failures (07:26Z, 07:46Z) are scan_err 'events 83314829-83315078 status 0' with extra.transient=true — an upstream Flow event-API status-0 on one block range. Interleaved ok runs before/around write rows (06:06Z +9, 05:56Z +4, 05:46Z +11, 05:26Z +15). The medium alert is a 90-min-window artifact catching only the 2 failing ticks; the forward resolver re-scans the range next tick. Not a defect."
     ]
   },
-  "pipeline_fails_24h_note": "Now classified upstream-vs-own (09-01 evening ship). offers-sweep 36/36 = breaker working; ingest 7/6 upstream. Own-failures small: sync-nba-projections 8 (dead sports proxy #8), wallet-backfill 7, wallet-backfill-golazos 6, wallet-backfill-allday 6 — chronic partial pagination failures, none new.",
+  "pipeline_fails_24h_note": "Classified upstream-vs-own. offers-sweep 36/36 upstream = breaker working; ingest 6/6 upstream; topshot-badge-set-backfill 4/4 upstream. Own-failures small and chronic/known: wallet-backfill 12, sync-nba-projections 8 (dead sports proxy #8), allday-pack-opens-backfill 7 (transient upstream scan, see alert), wallet-backfill-allday 6, wallet-backfill-golazos 6 (60s->600s wall + kill visibility just shipped by Claude Code today, commit 38abae0d). None new.",
   "trust_health": {
     "arms": 38,
     "breaches": 1,
     "rows": [
-      "unmapped_resolution_backlog_max = 209 (breach_at 100) — structural, declining 265->228->225->209. Do NOT raise breach_at.",
-      "public_board_slow_count = 0 — cleared vs prior run's 1 (planner-pruned instrument, noisy)."
-    ],
-    "trust_precompute_max_age_hours": 5.26,
-    "topshot_fmv_pct_stale_30d": 31.7
+      "unmapped_resolution_backlog_max = 209 (breach_at 100) — structural, declining 265->228->225->209->209 (flat vs last night). Do NOT raise breach_at.",
+      "public_board_slow_count = 0; public_board_empty_count = 0 (planner-pruned instruments, noisy — corroborated GREEN by Vercel-side note below).",
+      "trust_precompute_max_age_hours 5.27 (was 5.26) — refresher healthy.",
+      "topshot_fmv_pct_stale_30d 31.7 (flat)."
+    ]
   },
-  "vercel_prod_24h_errors": {
-    "note": "31 groups, all chronic/known. Top: url.parse DeprecationWarning 280 (harmless), TimeoutError on /api/og/collection + /api/public/ipfs-media 258 (OG/IPFS fetch, low-sev), Top Shot GraphQL 530 41 (upstream, breaker), pack-detail/sniper-feed saturation statement-timeouts single-digits, AD GQL 403 4 (dead AD proxy). No new class, no spike.",
-    "500_crashes_new": 0
-  },
-  "editions_by_collection": { "candy_mlb": 125, "ufc_strike": 518, "nfl_all_day": 6190, "nba_top_shot": 19942, "laliga_golazos": 575 },
-  "fmv_by_collection_topshot": { "HIGH": 2161, "MEDIUM": 5761, "LOW": 4949, "STALE": 1700, "NO_DATA": 3378, "ASK_ONLY": 1797, "SALES_ONLY": 25 },
-  "fmv_high_med_deltas": "topshot HIGH+MED 8040->7922 (-118), stale% flat 31.7 — normal re-pricing churn (delete-then-insert cycles editions between buckets), not a staleness regression.",
-  "post_ship_watch_prev_24_48h": {
-    "verdict": "ALL HOLDING — no regressions, nothing auto-reverted",
-    "parity_commit_e376ccae": "docs/file only, no production-behaviour change; nothing to regress.",
-    "ops_snapshot_fails_24h_classifier (09-01 evening)": "WORKING — pipeline_fails_24h now carries upstream field, ranking own-failures above upstream 530s as designed.",
-    "fmv-recalc predicate fix (Claude Code)": "CONVERGED — 37 runs/6h, only 2 transient fallback errors (not 100%), max historical_fallback=54; backlog drained per filing's post-ship watch.",
-    "wmc backfill drain (Claude Code, 152 rows)": "fillable_now=0 per filing; idempotent forward-only fill.",
-    "security": "clean post-ship"
+  "editions_by_collection": { "candy_mlb": 125, "ufc_strike": 518, "nfl_all_day": 6190, "nba_top_shot": 19949, "laliga_golazos": 575 },
+  "fmv_by_collection_topshot": { "HIGH": 2161, "MEDIUM": 5567, "LOW": 5184, "STALE": 1700, "NO_DATA": 3374, "ASK_ONLY": 1768, "SALES_ONLY": 24 },
+  "fmv_high_med_deltas": "topshot HIGH 2161 (flat), MEDIUM 5761->5567 (-194), LOW 4949->5184 (+235): editions cycled MEDIUM->LOW. HIGH+MED 7922->7728 (-194). VERIFIED NOT A REGRESSION: per-day recompute HIGH/MED ratio stable across 5 days (08-30 77%, 08-31 73%, 09-01 70%, 09-02 70%, 09-03 partial 74%), stale% flat 31.7 — normal delete-then-insert churn. FMV pricing is route code = off-limits under NO-PUSH regardless.",
+  "post_ship_watch_prev_pass": {
+    "verdict": "N/A from the pass side — the previous NIGHT PASS (09-02) shipped NOTHING, so no pass-owned change to watch.",
+    "claude_code_ships_today_spot_check": "Today's active Claude Code session shipped ~7 code fixes (ipfs/badge/moment/avatar image-proxy abort budgets, wallet-backfill-golazos 60s->600s wall, heartbeat correlation). Health post-those is GREEN and security clean; no new 500 class. Not pass-owned, so not formally reverted/watched here."
   },
   "needs_trevor": [
-    "Concierge distribution (route/tsx): SupportChatConnected absent from app/insights/layout.tsx + 30 boards, home, /edition, /early-access — 2,704 insights sessions/30d with no launcher. Also signed-in allowance drops 40/hr -> 5/day. 0 real conversations since 08-16. Code change, needs push.",
-    "lock-check-batch fairness DEFECT (open): 48/48 ok, full rate, but serves 12 of 249 hot wallets (69% to one). Tie-break under 1.47M NULL lock_checked_at decides targeting; p_max_age_days inert. Fix = is_user_wallet priority tier. Pipeline-targeting route code, Trevor's call.",
-    "idx_wmc_metadata_fillable now 100% false-positive (admits 63,283, 0 fillable) — ~185 buffers/call no selectivity. Real lever is caller route-code (gate/stop per-wallet backfill call); DROP is destructive + marginal. Decision needed.",
-    "Candy secondary now on OpenSea Solana (Candy a launch partner, ~08-31) — every Candy market surface is Magic-Eden-only; OpenSea Candy trades captured nowhere. New ingest source = route code + gated (chain-two).",
-    "Sentry dark since 08-18 (#34, re-confirmed): client-only failures captured by nothing; E2E DOM Smoke badge is the whole detection surface. Not paying is Trevor's call.",
-    "⛔ REFUTED, DO NOT ACT — was: “Inbox archival backlog: 356 un-archived filings; a push-capable run should git-mv them to inbox/archive/.” It is NOT a backlog and NOT debt; 366 live filings are the intended steady state. docs/overnight/focus.md has carried a DO-NOT-ARCHIVE section since 2026-08-17, and the same instruction was already refuted once (an earlier inbox_archiving_note was corrected in place) — it re-emerged HERE under a NEW key, so correcting a VALUE does not stop the generator re-emitting it. Measured 2026-09-02: of 366 filings, 273 are dated on/after the 08-17 rule and are BANNED from archive/ by __tests__/inbox-is-append-only-since-the-rule.test.ts; the other 93 are UNGUARDED, and 52 of those are cited by exact path from outside inbox/ — including 4 immutable supabase/migrations/*.sql and 2 live routes. Archiving has ALREADY rotted 5 full-path citations, and 4 of the 5 sit in frozen history (docs/sessions/**, ledger-archive) or an immutable migration and can NEVER be repaired. Retire a filing by annotating it in place with a RESOLVED section — never by moving it."
+    "Concierge distribution (route/tsx): SupportChatConnected still absent from insights layout + boards/home/edition/early-access; 0 real conversations. Code change, needs push.",
+    "lock-check-batch fairness DEFECT (open): serves seeded wallets, not users; tie-break under 1.47M NULL lock_checked_at. Fix = is_user_wallet priority tier. Route code, Trevor's call.",
+    "Sentry dark since 08-18 (#34, re-confirmed): client-only failures captured by nothing. Not paying is Trevor's call.",
+    "OPENSEA_API_KEY not set in Vercel (#58): /panini-blockchain/overview + /sniper 502 on load. Env var, Trevor's call.",
+    "INBOX IS NOT A BACKLOG — do NOT archive (refuted twice; 366 live filings are the intended steady state; 52 are cited by exact path from outside inbox/). Retire a filing by annotating RESOLVED in place, never by moving it."
   ]
 }

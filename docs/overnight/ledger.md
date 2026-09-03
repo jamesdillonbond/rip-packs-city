@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED (prod DB, migrations `20260903221326` + `20260903221540`) — both daytime-monitor filings were instruments reading their own echo; the Candy scarcity board is materialised and the parallel-serial healer now runs BEFORE its own trust leg · Claude Code (Trevor's box)
+
+**Caught up first.** Local was 153 commits behind `origin/main` with the 09-03 night pass's continuity (ledger entry, session entry, `metrics-latest.json`, `handoff-2026-09-03-overnight-pass.md`, two daytime filings) sitting UNCOMMITTED on the mount behind a 20-hour-stale `index.lock` + `HEAD.lock`. Locks removed (no git process), continuity stashed, fast-forwarded, re-spliced above the first 2026-09-02 heading (the night entry is the EARLIEST 09-03 entry, so it sits below the day's), headings 1579 → 1580, swallowed = 3, future-dated = 0. ⚠ **`docs/overnight/.lock` had become COMMITTABLE**: the 09-03 `!docs/**` negation un-ignored it and a RELEASED lock surfaced as untracked, one `git add -A` from being committed — and a committed lock reads as HELD to the next pass. Re-asserted AFTER the negation (the secrets pattern), pinned by ORDER in `gitignore-cannot-silently-swallow-a-docs-file.test.ts` (not by the `isAddable` probe, which WRITES and DELETES its path — this path is a live file mid-pass). INDEX.md 377 → 379 with the two filings.
+
+**Filing 2110Z, finding 1 — `topshot_impossible_parallel_serials` = 8 was NOT the writer regression the arm "was built to page on".** Leg 324 reads the arm at `:48 0,6,12,18`; jobid 219 `raise_impossible_parallel_circ()` healed the same predicate at `:52 */6` — four minutes later, same hours. Every inflow was counted, raised away, then published as a BREACH for six hours. The 18:52Z heal raised five editions (eight sales); the leg's own SQL re-run at 22:00Z read **1**, a 21:29Z sale on `252:8919::21` whose nft `52537696` IS subedition 21 per `topshot_moment_subeditions` — the sales-indexer keyed it correctly; the parallel's declared circulation (4) is the stale figure. ⚠ The filing's reconstruction read 0 because it used the strict `^[0-9]+:[0-9]+::[0-9]+$` regex where the leg uses `~ '::'`. **Shipped:** jobid 219 → `43 0,6,12,18 * * *` via `SET LOCAL ROLE cron_heavy; cron.schedule(...)` (jobid, owner and 600 s budget preserved; `cron.job` 106 → 106, no duplicate). The arm now reads the post-heal RESIDUE; the inflow rate lives in `impossible_parallel_circ_raises`. ⚠ The 08-17 cadence-cut's safety ground "its only consumer is already 6-hourly" was true and insufficient — **a consumer on the same cadence still has an ORDER relative to its producer.**
+
+**Filing 2110Z, finding 2 — `allday-pack-opens-backfill` was not wedged.** `scanned_floor` fell 83302579 → 83302079 → 83301829 across three ok ticks after the eight fails — it walks DOWN, so a falling floor is progress. `status 0` is the function's own `AbortSignal.timeout` on the spork proxy, documented in its source as "40 of 42 backfill runs / 72h". 48 h: 98 runs · 56 ok · 41 status-0 · 4,081 rows. Forward lane (`pack-events-ingest`) 32/32 ok. Nothing to ship, and nothing COULD ship: the function is on the do-not-deploy list until its gate secret is set.
+
+**Filing 181027Z — raising `candy_scarcity_board.max_ms` would have hidden a 1,000× regression.** The 3000 ms floor was calibrated from "125 rows / 2 ms"; `public_board_liveness_history` shows p50 2.4–4 s EVERY day since 08-11 and tails of 34 / 46 / 55 / **390 s**. EXPLAIN ANALYZE: 25,375-row index-only scan of `wallet_moments_cache`, **16,662 buffers, 2,230 heap fetches, 1,085 ms quiet**, on every page view and every probe — the last live-scanning Candy board. **Shipped:** `mv_candy_scarcity_board` behind a byte-identical wrapper (the 08-02 holder-board shape; column list from `pg_get_viewdef`; `security_invoker=on` re-asserted after the replace; grants unchanged anon/auth false · service true on both). Read now **4 buffers / 0.12 ms**. Refresh jobid 436 `rpc-refresh-candy-scarcity-board` `26 * * * *` (minute measured free) at 300 s per #27; `REFRESH … CONCURRENTLY` proven by hand; `board_mv_refresh_watchlist` row at 6 h. `max_ms` stays 3000 — near 3 s again now means the wrapper stopped reading the MV.
+
+**Verified:** security snapshot `[] × 4` after both migrations; both repo files md5 == DB `statements` md5 (`9618f2fa…`, `a8253daf…`); `db:pins:check` 193/193 clean; migration-parity logic, drift guard, comment-stripper, candy-board, gitignore, inbox-index, register-integrity and md-links tests green. Docs: `trust-board-and-safety.md` (new 2026-09-03 section), `cron-and-schedulers.md` (jobid 219 + 436), RESOLVED sections appended to both filings.
+
+**Revert.** (1) Scarcity board: re-create `candy_scarcity_board` from the body in `20260903221326` (same column list), `cron.unschedule('rpc-refresh-candy-scarcity-board')`, delete the `board_mv_refresh_watchlist` row, `DROP MATERIALIZED VIEW mv_candy_scarcity_board`. (2) Healer order: `SET LOCAL ROLE cron_heavy; cron.schedule('rpc-selfheal-impossible-parallel-circ','52 */6 * * *','SELECT public.raise_impossible_parallel_circ();'); RESET ROLE`. (3) Code: `git revert <sha>` of the gitignore commit. No data is lost by any of them.
+
 ### 2026-09-03 · ✅ DATA MUTATION + SHIPPED — the three QA test accounts are deleted; the saved-wallets cap check stays fail-open but now LOGS its failure · Cowork (cloud)
 
 **Test accounts deleted (Trevor delegated the call: "do what you think is best … for RPC long term and our userbase").** `tdillonbond+qa0903@gmail.com` (handle `qa0903`, 3 pinned trophies), `+qa0903b` (handle `qa0903b`), `+qa0903c` (no handle) were real public-flow signups whose profile pages carried `robots: index, follow` and re-published Trevor's wallet under invented collector names — a fake collector duplicating the founder's holdings is the wrong thing for a visitor or a crawler to find. `public.*` carries NO FK to `auth.users` (verified via `referential_constraints`), so the rows were enumerated across every `user_id uuid` column first (19 tables; 4 non-empty) and deleted in ONE transaction scoped by exact email: `trophy_moments` 3 · `saved_wallets` 15 · `points_ledger` 5 · `profile_bio` 3 · `auth.users` 3 (identities/sessions cascade inside auth). `follows` 0 both directions. `/api/public/profile/qa0903` → 404 verified. **Not reversible** (no backup of test data was warranted); to demo the empty-case and claim-card states, sign up a fresh `+tag` — the whole path takes two minutes with the Resend MCP.
@@ -810,6 +824,40 @@ Plus a counting `TransformStream` so the transfer's outcome is recorded: `[ipfs-
 Both new pins mutation-checked: removing the body-phase re-arm fails the two-timer case, and dropping the counting transform fails the outcome-log case. 18 tests green, tsc clean, eslint unchanged at its 1 pre-existing error.
 
 **Revert.** `git revert <this sha>` — restores the single 8 s budget and the 426/24 h.
+
+### 2026-09-03 · ⚪ NOTHING SHIPPED — quiet healthy night; CLOUD NO-PUSH; every fresh candidate is code/route/measurement work or already handled
+
+Genuine overnight (DB now() 08:02:50Z, app rows 08:01Z/07:56Z, no skew; real local 01:0x PT).
+**CLOUD NO-PUSH** (`git push --dry-run` == "could not read Username"; harvested mount pushurl carries
+no usable credential — specific to THIS cloud session, Trevor's machine + Claude Code push normally).
+DB migrations + artifact repairs would still have applied; none surfaced as clearly-safe + net-positive.
+
+**Health GREEN.** Security all clean ([] × 4). trust_health 38 arms, 1 breach — the known structural
+`unmapped_resolution_backlog_max` = 209 (declining 265→228→225→209→209; nfl_all_day outflow 4181/24h ≫
+inflow 42/24h, ~10.2d to clear; do NOT raise breach_at). `detect_stalled_pipelines()` []. Sentinel
+ts_uuid_editions_48h = 0. DB 15,157 MB (+518, normal).
+
+**One new `medium` alert investigated + BENIGN:** `allday-pack-opens-backfill` — the 2 recent fails
+(07:26Z, 07:46Z) are `scan_err "events 83314829-83315078 status 0"`, `extra.transient=true` (upstream
+Flow event-API status-0 on one block range). Interleaved ok runs around them write rows (06:06Z +9,
+05:56Z +4, 05:46Z +11, 05:26Z +15). The alert is a 90-min-window artifact catching only the failing
+ticks; the forward resolver re-scans next tick. Not a defect, nothing to ship.
+
+**Accuracy gate verified NOT regressed:** Top Shot HIGH+MED 7922→7728 (−194; MEDIUM→LOW cycle) but
+per-day recompute HIGH/MED ratio is stable across 5 days (77/73/70/70/74%) and stale% flat 31.7 —
+normal delete-then-insert churn. (FMV pricing is route code = off-limits under NO-PUSH regardless.)
+
+**No artifacts flagged broken** in the fresh inbox; per the don't-regenerate rule, left the 11 as-is.
+
+**Post-ship watch:** the previous NIGHT PASS (09-02) shipped nothing, so no pass-owned change to
+watch. Today's active Claude Code session shipped ~7 image-proxy/heartbeat/wall-kill code fixes;
+health post-those is GREEN, security clean, no new 500 class — not pass-owned, not reverted.
+
+**Fresh inbox since last pass** (all code/route/measurement or already handled — QUEUED, not mine
+under NO-PUSH): 45-pipelines-skipped-66-ticks alert gap, R29 pgcron-startup-timeout levers all dead,
+D25 unit-mismatch, two permanently-red workflows, 54 bounded-fetch body-outside-catch, killed-tick
+heartbeat correlation (last two already committed by Claude Code today: 27245cc7/ee709db0 lineage).
+Continuity (metrics/handoff/ledger/this entry) written to the MOUNT, **uncommitted under NO-PUSH**.
 
 ### 2026-09-02 · 🌙 OVERNIGHT PASS CLOSE (Cowork, ~23:00 → 00:10 PT next day) — what shipped, what was verified by the real caller, what got worse, what needs Trevor
 
