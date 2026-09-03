@@ -19,6 +19,14 @@ Deployed at: `https://rpc-mcp.tdillonbond.workers.dev`
 
 Every authed request also passes through `check_feature_quota(wallet, 'mcp_query')` and returns `429 Retry-After` (seconds until UTC midnight) when the daily cap is hit.
 
+> ⛔ **THE CAP DOES NOT CURRENTLY FIRE, for any plan.** `check_feature_quota` counts `usage_events WHERE feature_name = 'mcp_query'`, and **nothing writes that key** — `mcp_log_tool_call` writes `feature_name = 'mcp_' || p_tool_name`, so a call lands as `mcp_get_fmv`, `mcp_lookup_wallet` and so on. `used_today` is therefore pinned at 0 and `allowed` is always true, including for `free` and its 100/day cap. Measured 2026-09-03: `usage_events` holds **zero** rows matching `mcp%` all-time, so nobody has been over-served — the defect is real but unexercised.
+>
+> **The fix is here, not in the database:** `logToolCall` in `index.ts` should also record a `mcp_query` usage row (keeping `mcp_log_tool_call` for the per-tool breakdown that `v_mcp_usage_today` groups on). It needs a `wrangler deploy`, which is why it is an operator item rather than something a sandbox session closed.
+>
+> ⚠ A **second, independent** reason the cap could not fire was fixed on 2026-09-03: the `feature_quotas` seed used plan names (`pro`, `partner`) that `pro_users_plan_check` forbids, so all 20 active `pro_grandfather` wallets took `check_feature_quota`'s `NOT FOUND` branch — `allowed:true, reason:'no_quota_configured_failing_open'`. Rows now exist for every plan the CHECK permits. **Fixing that half did not make the cap work**; see the ledger entry of that date.
+>
+> Pinned by `__tests__/a-quota-that-counts-events-has-a-writer-for-them.test.ts`, which lists `mcp_query` as a suppression and goes red the moment this Worker starts writing the key — so the note above cannot outlive the defect.
+
 ## Tools
 
 | Tool | Backing | Adapter? |
