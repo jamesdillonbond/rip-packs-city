@@ -897,3 +897,11 @@ applied to a corpus instead of a code path.
   store filling; it does not un-log what is there, and on this estate these values are additionally
   burned in public git history (known-issues #22). Rotation is what closes it — but rotating BEFORE
   the relocation lands just re-publishes the new value on the next tick.
+
+## Cloud-session tooling, measured 2026-09-03 (the CI audit session)
+
+- **GitHub MCP `actions_list › list_workflow_runs` exceeds the tool's output cap at ANY `perPage`, including 1** (~60 KB: each run embeds its full head commit). The result lands in a file under `tool-results/`; parse it with `json.loads(raw[raw.index("{"):])` and print `id / head_sha / status / conclusion / created_at`. `list_workflow_jobs` and `get_job_logs` fit. **`get_job_logs` returns HTTP 404 until the job COMPLETES** — a 404 a minute after dispatch is "not yet", not "no logs".
+- **`send_later` / `create_trigger` check-ins are bound to the session and die with it.** A read that must happen after the session archives (tomorrow's liveness report, a re-surfacing ack) belongs in the ledger as ⏳ OWED and in the register row, not in a trigger.
+- **The artifact service refuses wake subscriptions from a cloud session** (`subscribing requires a session credential`, HTTP 403) — comments on a published report will not wake the session; re-read on demand.
+- **`api.github.com` is 403 through the agent proxy; `github.com` anonymous git is served.** So `git ls-remote --tags` / `git clone --depth 1` of a public action repo works where the releases API does not. `console.cron-job.org`, `api.cron-job.org` and `www.rippackscity.com` are unreachable (000) — verify a deploy through the Vercel MCP and a route through a `workflow_dispatch` that calls it.
+- **Vercel `list_deployments` `since` is epoch MILLISECONDS** — a seconds value returns an empty page, which reads as "no deploy was triggered".

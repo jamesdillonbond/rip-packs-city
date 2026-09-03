@@ -10,6 +10,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ⏳ OWED — the CI-audit session archives with two reads it could not wait for, written down here because a scheduled check-in dies with its session · Claude Code (cloud)
+
+- **Session summary:** `docs/sessions/2026-09.md`, entry "the CI estate audit, drained in five passes". Lessons promoted to `testing-and-ci.md` (sharded gate, composite, pins, "wait for the render, not the call", register-id collisions), `tooling-gotchas.md` (GitHub MCP output cap, `get_job_logs` 404-until-complete, session-bound check-ins, `since` in milliseconds) and `cron-and-schedulers.md` (sentinel acknowledgements). Register rows R64/R71/R78 re-read against today's logs; R84 and R86 shipped; R61's falsifier armed.
+- **Owed read 1 — R61 shedding experiment:** the 09-04 ~12:5xZ `scheduler-liveness` report is the first 24 h window fully after `allday-ingest.yml`'s deletion (09-03 05:56Z). Baseline for the seven remaining high-frequency workflows: 39 / 48 / 48 fires across the 09-01/09-02/09-03 windows. Per-repo budget → the seven rise toward ~54+; per-workflow cap → ~48. ⚠ One day is one sample and the 39→48 swing happened with nothing changed — read several days. Record in R61 and the liveness header.
+- **Owed read 2 — R86 positive half:** the `Threshold Config` warn arm has been verified ABSENT on a healthy read (18:07Z); its PRESENCE during a real `PGRST002` window (any `apply_migration` tick collision) shows up in the sentinel's `pipeline_runs.extra` / Telegram. When first seen, note it on R86 and close the row.
+- **Re-surfaces on its own:** Detector Health's ack expires 2026-10-03T07:00Z — `[ACK EXPIRED …]` pages critical again; set the `*_GATE_KEY` secrets (R64/R21) or re-ack with a fresh reason.
+- **Verified before archiving:** a scheduled `RPC Ops Monitor` run at 18:36Z on the new action pins succeeded; CI green at the tip; two self-scheduled check-ins deleted so nothing fires into an archived session.
+
 ### 2026-09-03 · ✅ WATCH CLOSED (R83) — the stall suppression is confirmed by the REAL CALLER, and here is the trajectory that will make it look broken later
 
 The pg_cron tick `rpc-refresh-unmapped-backlog-growth` (jobid 261, `29 * * * *`)

@@ -1303,3 +1303,9 @@ Neither requires understanding what the pipeline does:
 ⚠ **"Renamed driver" was the single most common real cause (3 of 12).** Assume it before assuming a
 defect: `refresh-cross-collection` → `cross-collection-deals-mv`, `sales-serial-backfill-trigger` →
 `sales-serial-backfill`, `compute-laliga-pack-ev` → `compute-golazos-pack-ev`.
+
+## Sentinel acknowledgements — a critical that is KNOWN and OWNED reads warn, never ok (2026-09-03)
+
+`sentinel_threshold_config` carries `ack_reason` + `ack_expires_at` (pair CHECK: half an ack is no ack). After evaluation, `/api/sentinel` downgrades a **critical** check with an UNEXPIRED ack to **warn** and prefixes its detail with `[ACKNOWLEDGED until <date> — <reason>]`; an EXPIRED ack leaves the check critical and prefixes `[ACK EXPIRED <date> — <reason>]`, so the red comes back on its own and a reader can tell "it came back" from "nobody looked". An ack never touches a warn or ok check, and never reaches ok — it says "known and owned", not "fine". ⛔ It is NOT `enabled = false` (permanent, silent, no reason) and NOT a `crit_at` change; both silence a true signal, and the 08-31 inbox filing measured why. **The DECISION to ack a red is Trevor's**, taken 2026-09-03 for `Detector Health (GitHub Actions)` (edge-fn-drift red for functions only an operator can move) with expiry 2026-10-03T07:00Z. When it re-surfaces: set the `*_GATE_KEY` secrets (known-issues #23/#25, R64) or re-ack with a fresh date AND reason.
+
+⚠ A failed read of that table is a visible `Threshold Config` warn arm naming the error and stating that no override and no ack was applied (R86). Before 2026-09-03 the same failure fell every check back to its hardcoded threshold with a report identical to a healthy one.
