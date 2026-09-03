@@ -120,3 +120,14 @@ then split it by whether the failure answer is settled.*
 ⓘ And CLAUDE.md already predicted this exact hole: *"an exclusion justified by ANOTHER instrument is a
 claim about it — two guards skipped `app/api` as 'in the primary gate'; coverage sees whether lines RUN,
 not whether `error` is handled."*
+
+---
+## ✅ §4 SHIPPED — every deal-bearing database read is bounded and RESOLVES into its own degraded branch (2026-09-03 16:00 PT, Claude Code on Trevor's box)
+
+**Re-measured first:** `get_topshot_sniper_deals(10, 0, 'all', 'all', 'discount_desc', 200)` runs in **112 ms / 15,256 buffers** on a quiet instance and returns **1 row** — so the 6,898 ms mean is the instance's disk-IO saturation on a 15k-buffer read, not the plan, and §6's "do not sell this as a cost saving" stands. The function was not touched.
+
+**What shipped (`app/api/sniper-feed/route.ts`):** a `boundedRead(p, label)` envelope (8 s per read, `Promise.race` against a timer, RESOLVES `{ data: null, error }` on overrun — it never rejects, because none of the sites has a try/catch around the read and every one already has an `if (error)` branch that `sink.note`s the source) wrapped around the six reads a human waits for: `ts_listings`, `get_editions_for_sniper`, the All Day `editions` pages, `get_editions_latest_fmv` chunks, `get_allday_sniper_deals`, `get_topshot_sniper_deals`. Budget is per read, not per request: the Top Shot chain is ts_listings → editions RPC → GQL (6 s, already bounded) → deals RPC → enrichment, so 8 s a read stays under the 45 s wall. Overridable via `SNIPER_DB_READ_TIMEOUT_MS` for tests only (non-numeric falls back to 8 s — pinned).
+
+**Proven against the offender, both directions:** `__tests__/api-sniper-feed-bounded-reads.test.ts` drives five reads that NEVER settle; with the route's bound stashed away all five **time out at 30 s** (vitest's own wall), with it they resolve in < 1 s, `sourcesFailed` names the source, `degraded` is true, the degraded build is evicted from cache, and the All Day fallback's `lastRefreshed` stays null. Controls: a read that settles inside the budget is NOT reported failed; a healthy build under the default budget is the no-change shape.
+
+**Left as filed:** the enrichment `Promise.all` (badges / jersey / retired / FMV batch) already `.catch`es to empty maps — a hang there is still a 504 and a rejection there is still an unnamed silent degrade; both are additive data, not deal-bearing, and were out of scope. §5 (the 300× call-count gap and the per-collection request count) is unmeasured. The `api-routes-that-degrade-honestly-also-bound-their-reads` ratchet still excludes this route by design (no `apiErrorResponse`), and says so.

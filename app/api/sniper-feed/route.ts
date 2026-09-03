@@ -383,16 +383,70 @@ async function attachSerialFmvEstimates(supabase: SupabaseClient, deals: SniperD
 // The marketplace/graphql endpoint is Cloudflare-protected from Vercel IPs,
 // so we use the Supabase table as the primary TS feed source.
 
+// ── Bounded database reads (2026-09-03) ──────────────────────────────────────
+//
+// Every deal-bearing read below used to be UNBOUNDED: no `withBoardBudget`, no
+// per-read timeout, nothing between a slow Postgres read and the route's 45 s
+// `maxDuration`. Measured (inbox 2026-09-03T0850Z): `get_topshot_sniper_deals`
+// 6,898 ms MEAN over 6,746 calls with a maximum pinned at the 30 s
+// `statement_timeout`, `get_allday_sniper_deals` 20,145 ms mean, and 3 × 504
+// `Task timed out after 45 seconds` in one day against 455 × 200. Warm the
+// function runs in ~110 ms — the latency is the instance's disk-IO saturation,
+// not the plan — so the fix is not in the function: it is that a read which
+// overruns must RESOLVE into the `if (error)` branch each site already has
+// (which notes the source on the sink and renders "COULDN'T LOAD THE FLOOR"),
+// instead of holding the whole response until Vercel kills it.
+//
+// ⚠ RESOLVES, never rejects. `withBoardBudget` rejects on overrun; the sites here
+// destructure `{ data, error }` and have no try/catch around the read, so a
+// rejection would escape the handler — the pack-detail page's `bounded()`
+// envelope is the same shape for the same reason.
+//
+// The budget is per READ, not per request: the Top Shot path chains
+// ts_listings → editions RPC → GQL (6 s, already bounded) → deals RPC →
+// enrichment, so 8 s a read keeps the worst case under the 45 s wall with room
+// for the serial estimates. Overridable for tests only, so a hanging read can be
+// proven to resolve without waiting eight real seconds.
+const SNIPER_DB_READ_TIMEOUT_MS = 8_000;
+function sniperReadTimeoutMs(): number {
+  const raw = Number(process.env.SNIPER_DB_READ_TIMEOUT_MS ?? "");
+  return Number.isFinite(raw) && raw > 0 ? raw : SNIPER_DB_READ_TIMEOUT_MS;
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ReadEnvelope = { data: any; error: { message: string } | null };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function boundedRead(p: PromiseLike<any>, label: string): Promise<ReadEnvelope> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(p) as Promise<ReadEnvelope>,
+      new Promise<ReadEnvelope>((resolve) => {
+        timer = setTimeout(
+          () => resolve({ data: null, error: { message: `[sniper-feed/${label}] read exceeded ${sniperReadTimeoutMs()}ms` } }),
+          sniperReadTimeoutMs(),
+        );
+      }),
+    ]);
+  } catch (e) {
+    // supabase-js RETURNS Postgrest errors but the transport can still throw;
+    // the sites below expect the envelope either way.
+    const message = e instanceof Error ? e.message : String(e);
+    return { data: null, error: { message } };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function fetchTopShotPool(
   supabase: SupabaseClient,
   sink: SourceFailureSink
 ): Promise<{ listings: RawListing[]; tsCount: number }> {
   try {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await boundedRead((supabase as any)
       .from("ts_listings")
       .select("listing_id, flow_id, set_id, play_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked, listed_at, ingested_at")
       .order("ingested_at", { ascending: false })
-      .limit(200);
+      .limit(200), "ts_listings");
 
     if (error) {
       console.error("[sniper-feed] ts_listings fetch error:", error.message);
@@ -477,8 +531,10 @@ async function resolveEditionKeys(
 
   if (!tuples.size) return result;
 
-  const { data: editionRows, error } = await (supabase as any)
-    .rpc("get_editions_for_sniper", { p_collection_id: null });
+  const { data: editionRows, error } = await boundedRead(
+    (supabase as any).rpc("get_editions_for_sniper", { p_collection_id: null }),
+    "get_editions_for_sniper",
+  );
 
   if (error) {
     // Deal-bearing, not enrichment: without an edition key a listing has no
@@ -1152,7 +1208,7 @@ async function computeAllDaySniperFeed(opts: {
         .order("id", { ascending: true })
         .limit(ED_PAGE);
       if (edCursor) q = q.gt("id", edCursor);
-      const { data: edRows, error: edErr } = await q;
+      const { data: edRows, error: edErr } = await boundedRead(q, "allday-editions");
       if (edErr) {
         console.error(`[sniper-feed] AD editions error @page ${page}: ${edErr.message}`);
         // Deal-bearing: no edition row means no FMV lookup means the listing is
@@ -1178,9 +1234,9 @@ async function computeAllDaySniperFeed(opts: {
     const FMV_RPC_CHUNK = 500;
     for (let i = 0; i < editionIds.length; i += FMV_RPC_CHUNK) {
       const chunk = editionIds.slice(i, i + FMV_RPC_CHUNK);
-      const { data: fmvRows, error: fmvErr } = await (supabase as any).rpc(
+      const { data: fmvRows, error: fmvErr } = await boundedRead(
+        (supabase as any).rpc("get_editions_latest_fmv", { p_edition_ids: chunk }),
         "get_editions_latest_fmv",
-        { p_edition_ids: chunk },
       );
       if (fmvErr) {
         console.error(`[sniper-feed] AD fmv error @chunk ${i / FMV_RPC_CHUNK}: ${fmvErr.message}`);
@@ -1215,14 +1271,17 @@ async function computeAllDaySniperFeed(opts: {
   //    behavior that was shipping before this rewrite.
   if (nodes.length === 0) {
     console.log(`[sniper-feed] AD GQL empty — falling back to get_allday_sniper_deals RPC`);
-    const { data: rows, error } = await (supabase as any).rpc("get_allday_sniper_deals", {
-      p_min_discount: minDiscount,
-      p_max_price: maxPrice,
-      p_rarity: rarity === "all" ? "all" : rarity,
-      p_team: team === "all" ? "all" : team,
-      p_sort_by: opts.sortBy,
-      p_limit: 200,
-    });
+    const { data: rows, error } = await boundedRead(
+      (supabase as any).rpc("get_allday_sniper_deals", {
+        p_min_discount: minDiscount,
+        p_max_price: maxPrice,
+        p_rarity: rarity === "all" ? "all" : rarity,
+        p_team: team === "all" ? "all" : team,
+        p_sort_by: opts.sortBy,
+        p_limit: 200,
+      }),
+      "get_allday_sniper_deals",
+    );
     if (error) {
       console.error(`[sniper-feed] get_allday_sniper_deals error: ${error.message}`);
       sink.note("allday-deals-rpc");
@@ -1545,14 +1604,17 @@ async function computeSniperFeed(opts: {
   let rpcDeals: SniperDeal[] = [];
   if (tsListings.length < TS_GQL_SPARSE_THRESHOLD) {
     console.log(`[sniper-feed] TS GQL sparse (${tsListings.length} listings) — augmenting with get_topshot_sniper_deals RPC`);
-    const { data: rpcRows, error: rpcErr } = await (supabase as any).rpc("get_topshot_sniper_deals", {
-      p_min_discount: minDiscount,
-      p_max_price: maxPrice,
-      p_rarity: rarity === "all" ? "all" : rarity,
-      p_team: team === "all" ? "all" : team,
-      p_sort_by: sortBy,
-      p_limit: 200,
-    });
+    const { data: rpcRows, error: rpcErr } = await boundedRead(
+      (supabase as any).rpc("get_topshot_sniper_deals", {
+        p_min_discount: minDiscount,
+        p_max_price: maxPrice,
+        p_rarity: rarity === "all" ? "all" : rarity,
+        p_team: team === "all" ? "all" : team,
+        p_sort_by: sortBy,
+        p_limit: 200,
+      }),
+      "get_topshot_sniper_deals",
+    );
     if (rpcErr) {
       console.error(`[sniper-feed] get_topshot_sniper_deals error: ${rpcErr.message}`);
       // Reached only when the GQL pool is already sparse, so this failure is
