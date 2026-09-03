@@ -10,6 +10,60 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the profile's "Top Movers" panel published a −$1,999 loss on a Moment the collector never owned; `get_top_movers` now joins editions by collection and costs half · Cowork (device VM)
+
+Started as a cost question (two `57014` timeouts on `/api/profile/top-movers` tonight, both the 19,385-row wallet) and the same-snapshot diff turned up a false claim first.
+
+- **False claim.** `get_top_movers`'s `owned` CTE joined `editions` on `external_id` alone whenever `p_collection_id` is NULL — the panel's call. `external_id` is unique only per collection, so a Top Shot / All Day Moment with edition_key `391` also matched LaLiga Golazos edition 391. Old vs new on that wallet in one statement: **the old body's three biggest losers — Iker Casillas −$1,999.06, Zlatan Ibrahimovic −$408.33, Nemanja Gudelj −$187.00 — are Golazos editions with `owned_same_collection = 0`**; 9,196 vs 9,064 "owned" editions; gainers identical. Live, the route's top loser is now Dylan Harper −$264 (held).
+- **Cost.** Both `latest` and `past` were DISTINCT ON over `fmv_snapshots` merge-joined to the owned set, so the planner walked the whole 2026 partition index twice (1.40M + 1.29M rows) to pick ~9k: **110,495 buffers / 5.5 s warm**. Now `latest` = `edition_fmv_current` (PK probe) and `past` = per-edition LATERAL `ORDER BY computed_at DESC LIMIT 1`: **58,300 buffers / 4.4 s** (−47%; 21k of what remains is the wallet's own wmc scan). Not a cure for 57014 under saturation — halved. Live route as the test account with that wallet: 200 in 8.3 s (cold serverless + one wallet).
+- **Migration `20260903065142_audit_20260902_get_top_movers_own_collection_join_and_lateral_past`** — same signature incl. the `DEFAULT 7` / `DEFAULT NULL` the first attempt dropped (`42P13`); invoker-rights, ACL `{anon, authenticated, service_role}` verified identical before/after, drift check 0. ⚠ The function had **no migration in the repo** — this is its first record (same class as `sets_summary`, fixed earlier tonight). **Revert = the OLD body**, which existed nowhere else, so here it is verbatim:
+
+```sql
+CREATE OR REPLACE FUNCTION public.get_top_movers(p_wallet text, p_days integer DEFAULT 7, p_collection_id uuid DEFAULT NULL::uuid)
+ RETURNS json LANGUAGE plpgsql SET search_path TO 'public', 'pg_temp' AS $function$
+DECLARE
+  v_threshold timestamptz := now() - (p_days || ' days')::interval;
+  v_result json;
+BEGIN
+  WITH owned AS (
+    SELECT DISTINCT e.id AS edition_id, e.player_name, e.set_name, e.external_id
+    FROM wallet_moments_cache wmc
+    JOIN editions e ON e.external_id = wmc.edition_key
+      AND (p_collection_id IS NULL OR e.collection_id = p_collection_id)
+    WHERE wmc.wallet_address = p_wallet
+      AND (p_collection_id IS NULL OR wmc.collection_id = p_collection_id)
+  ),
+  latest AS (
+    SELECT DISTINCT ON (fs.edition_id) fs.edition_id, fs.fmv_usd, fs.computed_at
+    FROM fmv_snapshots fs JOIN owned o ON o.edition_id = fs.edition_id
+    ORDER BY fs.edition_id, fs.computed_at DESC
+  ),
+  past AS (
+    SELECT DISTINCT ON (fs.edition_id) fs.edition_id, fs.fmv_usd, fs.computed_at
+    FROM fmv_snapshots fs JOIN owned o ON o.edition_id = fs.edition_id
+    WHERE fs.computed_at <= v_threshold
+    ORDER BY fs.edition_id, fs.computed_at DESC
+  ),
+  movers AS (
+    SELECT o.edition_id, o.player_name, o.set_name,
+      l.fmv_usd AS current_fmv, p.fmv_usd AS past_fmv, (l.fmv_usd - p.fmv_usd) AS delta,
+      CASE WHEN p.fmv_usd > 0 THEN ((l.fmv_usd - p.fmv_usd) / p.fmv_usd) * 100 ELSE NULL END AS pct_change
+    FROM owned o JOIN latest l ON l.edition_id = o.edition_id JOIN past p ON p.edition_id = o.edition_id
+    WHERE l.fmv_usd IS NOT NULL AND p.fmv_usd IS NOT NULL
+  ),
+  gainers AS (SELECT * FROM movers WHERE delta > 0 ORDER BY delta DESC LIMIT 5),
+  losers AS (SELECT * FROM movers WHERE delta < 0 ORDER BY delta ASC LIMIT 5)
+  SELECT json_build_object(
+    'gainers', COALESCE((SELECT json_agg(row_to_json(g)) FROM gainers g), '[]'::json),
+    'losers',  COALESCE((SELECT json_agg(row_to_json(l)) FROM losers l), '[]'::json)
+  ) INTO v_result;
+  RETURN v_result;
+END;
+$function$;
+```
+
+⚠ **Grep target for the same bug elsewhere:** `editions e ON e.external_id = wmc.edition_key` without `e.collection_id = wmc.collection_id` — the collision is real (Golazos 391/511/575 vs Top Shot/All Day keys). `prosrc` sweep owed.
+
 ### 2026-09-02 · ✅ SHIPPED — the intermittently-red edge-deno job was wall-clock dependent, and the fix overturns a filed decision that had a cost with no number in it
 
 `Edge functions (deno check + lint)` failed once in its last 60 runs — **2026-09-03T06:04:15Z**, self-healing on a re-run with no code change. That shape reads as a flake and is not one.
