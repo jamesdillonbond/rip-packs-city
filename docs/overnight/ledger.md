@@ -10,6 +10,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — the wallet-cap message was written, correct, and never reached anybody; the client threw the machine code instead
+
+Drains the last code item of finding **#9** of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md`
+(*"`DashboardClient.tsx:645,692` throw `data.error`, so a wallet-cap user sees the literal
+`plan_limit_reached` instead of `data.message`"*).
+
+**⛔ THE DEFECT.** `/api/profile/resolve-and-associate` answers a cap rejection with BOTH a machine
+code and human copy:
+
+```
+{ error: "plan_limit_reached",
+  message: "Free plan supports 3 saved wallets. Remove the wallet you have saved, or upgrade to RPC Pro.",
+  upgrade_url: "/pricing" }
+```
+
+`DashboardClient` threw `data.error`. ⭐ **So the sentence somebody wrote for exactly this moment sat
+unused in the same response while the user was shown `plan_limit_reached`** — and the actionable half
+("upgrade to RPC Pro", with an `upgrade_url` beside it) never appeared at the one moment it was
+relevant. **The copy existed and was correct. The client discarded it.**
+
+**⚠ THE HANDOFF NAMED TWO LINE NUMBERS; THE EXPRESSION WAS AT FIVE.** `data.error || \`HTTP
+${res.status}\`` appears five times in that file. Fixing only the two reported is how a class survives
+its own fix — so all five now go through `lib/api-error-message.ts`, and the guard asserts the count
+is **5**, not that "the reported one" changed.
+
+**THE RULE, and why it is not the login one.** `error` is NOT always a slug — most routes put human
+text there ("Couldn't find that Dapper username…"). So this PREFERS `message` and falls back to
+`error`: a strict improvement, with routes that send only `error` behaving exactly as before. ⓘ And
+unlike `/login?error=` (fixed earlier tonight), this body is **our own API's response, not a query
+string** — there is nothing attacker-controlled to allowlist. **The defect is a DISCARDED field, not
+an injected one, and the fixes differ accordingly.** Two superficially identical "raw slug reaches
+the user" findings, two different correct answers.
+
+**Guards.** `api-error-copy-reaches-the-user-not-the-code` asserts the ABSENCE — the machine code must
+not appear in the output — plus a no-change control that an `error`-only route is unaffected (without
+it, this "fix" could have been a downgrade dressed as an improvement), blank/non-string handling, and
+the five-site count. Three mutants — prefer `error` again, let a blank `message` win, revert one of
+the five sites — **all killed**.
+
+**Remaining from #9, all non-code or cosmetic:** the first-run tour device flag; stale `rpc_*`
+localStorage across accounts; display name defaults to the raw email local part; `/profile/edit`
+polish (title, live preview echoing invalid input, 11× bio fetch, form order).
+
+**Revert.** `git revert <this sha>`. DB: nothing.
+
 ### 2026-09-02 · ✅ SHIPPED — the post-sign-in redirect was both dropped and unsafe, and the unsafe half is the SECOND instance of one disguise today
 
 Drains another part of finding **#9** of `docs/handoff-2026-09-02-onboarding-trophy-case-qa.md`
