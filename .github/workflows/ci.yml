@@ -458,7 +458,7 @@ jobs:
           done
           echo "worker tsconfigs checked: $checked, failed: $failed"
           if [ "$checked" -lt 3 ]; then
-            echo "::error::expected at least 3 worker tsconfigs (3 on 2026-09-02), found $checked — the walk is wrong, not the tree clean."
+            echo "::error::expected at least 3 worker tsconfigs (4 on 2026-09-02: pack-events-ingest, rpc-mcp-proxy, sales-counterparty-backfill, topshot-moments-hydrator), found $checked — the walk is wrong, not the tree clean."
             exit 1
           fi
           [ "$failed" -eq 0 ]
