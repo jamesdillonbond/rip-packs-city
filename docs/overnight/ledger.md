@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — the heartbeat ratchet was blind to five routes BY CONSTRUCTION, and the blindest one is the fleet's top wall-kill route
+
+**⛔ FOURTH INSTANCE of the same shape in this repo, and this time in a guard I lowered twice tonight.** `__tests__/after-route-heartbeat-ratchet.test.ts` derived its population from each **route file's own text** — `after(` plus a visible `pipeline_runs` write. A route whose terminal write lives one delegation away in a `lib/` helper therefore never qualified, and a kill there is exactly as invisible as anywhere else. CLAUDE.md records the previous three, one almost word for word: *"one walked `app/api/cron` while the tenth copy sat in the `lib/` module two routes delegate to."*
+
+**Five routes were outside it**, all delegating to `lib/chains/flow/wallet-backfill-helpers.ts`: `wallet-backfill-golazos` · `-allday` · `-pinnacle` · `-ufc` · `profile/verify-challenge`.
+
+**⭐ And it was not a hypothetical gap.** Vercel `Task timed out` counts, 24 h to 2026-09-03 08:00Z, grouped by `requestPath`:
+
+| route | wall kills |
+|---|---:|
+| **`/api/wallet-backfill-golazos`** | **6** |
+| `/api/sniper-feed` | 3 |
+| `/api/cron/evm-transfers-ingest` | 1 |
+| `/api/fmv-recalc` | 1 |
+
+**The fleet's top wall-kill route, more than every other route combined, and every one of those six was recorded by nothing.**
+
+**⭐ Its wall was inherited, not chosen — and the history says so outright.** `1791e9083` (2026-05-06) created all four wallet enrichers at `maxDuration = 60`; `d57349c5a` (2026-05-08) raised AllDay to **600** for *"paginated mega-wallet recovery"* and the others followed — **this one did not**. It was later switched to `runAllDayDetailsBackfill`, **the same runner AllDay uses**, so it took on the heavier work and kept the lighter wall. Siblings today: allday **600**, pinnacle **600**, ufc **300**, and **all three took ZERO wall kills in the same window** — a measurement from an instrument independent of `pipeline_runs`, not an absence of evidence.
+
+**Shipped.** (1) `wallet-backfill-golazos` **60 → 600**, matching the sibling that runs the identical function; a killed tick is 100% waste, so this costs compute only on runs that were being thrown away. (2) Its invocation marker, carrying the wallet, so the next kill says which wallet died. (3) The ratchet predicate now **follows one level of lib delegation** — resolved by walking `lib/` for modules that write a terminal row, collecting their exports, and asking whether the route calls one. One level, deliberately: a route that delegates twice is still invisible, and the comment says so rather than implying completeness.
+
+**⚠ BUDGET 31 → 35, and that is a POPULATION CORRECTION, not banked slack.** The "never raise it" rule bans licensing new *instances*; widening the *walk* is the opposite move — it admits the old number measured a subset. Any future raise must name the predicate change that caused it. Read off the failing no-slack assertion, as always.
+
+⭐ **FALSIFIER recorded in the route:** if ticks now run past ~300 s the work itself is pathological and the fix belongs inside `runAllDayDetailsBackfill`, not in the wall. The marker is what makes that measurable either way.
+
+Mutation-checked both ways: deleting the marker fails the new ordering pin AND the ratchet; narrowing the predicate back fails the no-slack assertion at 35. 24 tests across the two heartbeat files, 147 across six wallet-backfill suites, tsc clean.
+
+**Revert.** `git revert <this sha>` — restores the 60 s wall (and with it the six-a-day kills), the marker, and the narrower predicate.
+
 ### 2026-09-03 · ✅ SHIPPED (docs-in-code) — a KILLED tick can carry a CLEAN heartbeat correlation, measured 90 minutes after converting the route
 
 `lib/pipeline/heartbeat.ts` has said since 2026-08-20 that `heartbeat + terminal row -> ran to completion`. **That is too strong, and the counter-example arrived on a route this session converted ninety minutes earlier.**
