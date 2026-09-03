@@ -176,6 +176,15 @@ describe("/api/og/profile — a failed wallets read must not publish PORTFOLIO F
     expect(text).toContain("30")
   })
 
+  // 2026-09-02 (onboarding QA #6): the card publishes the DASHBOARD's number —
+  // total minus the stale-priced portion — so the tweet and the page agree.
+  it("holds the stale-priced portion out of PORTFOLIO FMV", async () => {
+    mockPostgrest({ wallets: [{ cached_fmv_usd: 88425, cached_fmv_stale_usd: 39553, cached_moment_count: 19381 }] })
+    const text = await renderProfile()
+    expect(text).toContain("$48.9K")
+    expect(text).not.toContain("$88.4K")
+  })
+
   it("WITHHOLDS the portfolio figure when the wallets read fails", async () => {
     mockPostgrest({ fail: "saved_wallets" })
     const text = await renderProfile()

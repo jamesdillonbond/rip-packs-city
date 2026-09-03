@@ -85,6 +85,9 @@ interface BioRow {
 
 interface WalletRow {
   cached_fmv_usd: number | null;
+  /** Stale-priced portion of cached_fmv_usd — held out of the headline, as
+   *  the dashboard does (2026-09-02, QA finding #6). */
+  cached_fmv_stale_usd?: number | null;
   cached_moment_count: number | null;
   cached_badges: string[] | null;
 }
@@ -298,7 +301,7 @@ export async function GET(
     const [walletsRes, trophiesRes, achievementsRes] = await Promise.all([
       uidEnc
         ? fetchJson<WalletRow>(
-            `${SUPABASE_URL}/rest/v1/saved_wallets?user_id=eq.${uidEnc}&select=cached_fmv_usd,cached_moment_count,cached_badges&limit=25`,
+            `${SUPABASE_URL}/rest/v1/saved_wallets?user_id=eq.${uidEnc}&select=cached_fmv_usd,cached_fmv_stale_usd,cached_moment_count,cached_badges&limit=25`,
           )
         : Promise.resolve({ rows: [] as WalletRow[], ok: true }),
       // ⚠ THE RPC, NOT `trophy_moments`. Those rows are PIN-TIME snapshots:
@@ -328,9 +331,15 @@ export async function GET(
     // applies (ProfileClient's Avatar).
     const ringColor = border?.ring ?? accent;
 
-    const totalFmv = wallets.reduce(
-      (s, w) => s + (Number(w.cached_fmv_usd) || 0),
+    // Headline = total minus the stale-priced portion — the dashboard's
+    // definition. The card used to publish the flat total, 80% above the
+    // number the collector had just read on their own dashboard.
+    const totalFmv = Math.max(
       0,
+      wallets.reduce(
+        (s, w) => s + (Number(w.cached_fmv_usd) || 0) - (Number(w.cached_fmv_stale_usd) || 0),
+        0,
+      ),
     );
     const totalMoments = wallets.reduce(
       (s, w) => s + (Number(w.cached_moment_count) || 0),

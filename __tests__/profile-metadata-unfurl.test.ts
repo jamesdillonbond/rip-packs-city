@@ -109,6 +109,15 @@ describe("generateMetadata — the card contract", () => {
     expect(m.twitter.creator).toMatch(/^@/)
   })
 
+  it("describes the portfolio net of stale-priced value, like the page and the card (QA #6)", async () => {
+    getPublicProfile.mockResolvedValue(
+      okPayload({ wallets: [{ cached_fmv: 88425, cached_fmv_stale: 39553, cached_moment_count: 19381 }] }),
+    )
+    const m = await meta()
+    expect(String(m.description)).toContain("$48.9K")
+    expect(String(m.description)).not.toContain("$88.4K")
+  })
+
   it("ships alt text and explicit dimensions on the image", async () => {
     getPublicProfile.mockResolvedValue(okPayload())
     const m = await meta()

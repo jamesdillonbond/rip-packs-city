@@ -117,9 +117,13 @@ export async function generateMetadata({
   let totalFmv = 0
   let momentCount = 0
   for (const w of resolved?.wallets ?? []) {
-    totalFmv += Number(w?.cached_fmv ?? 0) || 0
+    // Headline excludes the stale-priced portion, as the dashboard's does
+    // (2026-09-02, QA finding #6) — the meta description is what X shows
+    // under the card, so it must be the same number as the page.
+    totalFmv += (Number(w?.cached_fmv ?? 0) || 0) - (Number(w?.cached_fmv_stale ?? 0) || 0)
     momentCount += Number(w?.cached_moment_count ?? 0) || 0
   }
+  if (totalFmv < 0) totalFmv = 0
   const trophyCount = resolved?.trophies?.length ?? 0
 
   const canonical = `${BASE_URL}/profile/${encodeURIComponent(key)}`

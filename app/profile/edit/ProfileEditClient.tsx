@@ -275,8 +275,13 @@ export default function ProfileEditClient() {
     }
   }
 
-  const publicUrl = form.username.trim()
-    ? `/profile/${form.username.trim().toLowerCase()}`
+  // Preview only a handle that would actually save; echoing "qa 0903!" as a
+  // URL was a false promise (2026-09-02, QA #9). The regex mirrors the save
+  // guard below.
+  const usernameTrimmed = form.username.trim();
+  const usernameValid = /^[a-z0-9_-]{3,32}$/.test(usernameTrimmed.toLowerCase());
+  const publicUrl = usernameTrimmed && usernameValid
+    ? `/profile/${usernameTrimmed.toLowerCase()}`
     : null;
 
   // Memoize the chip preview list so the display strip below the form stays
@@ -398,7 +403,14 @@ export default function ProfileEditClient() {
                 spellCheck={false}
               />
               <div className="hint">
-                Public URL: {publicUrl ? <code>rippackscity.com{publicUrl}</code> : "set a username to enable"}
+                Public URL:{" "}
+                {publicUrl ? (
+                  <code>rippackscity.com{publicUrl}</code>
+                ) : usernameTrimmed ? (
+                  "3–32 chars, lowercase letters, numbers, _ and - only"
+                ) : (
+                  "set a username to enable"
+                )}
               </div>
             </div>
 
@@ -423,6 +435,30 @@ export default function ProfileEditClient() {
                 maxLength={280}
               />
               <div className="hint">{form.tagline.length}/280</div>
+            </div>
+
+            {/* Socials sit ABOVE the five league pickers (2026-09-02, QA #9): the
+                X handle is what the share card credits, and it was buried under
+                ~90 team options a new collector had to scroll past. */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="field">
+                <label htmlFor="twitter">Twitter / X handle</label>
+                <input
+                  id="twitter"
+                  value={form.twitter}
+                  onChange={(e) => update("twitter", e.target.value)}
+                  placeholder="@handle"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="discord">Discord</label>
+                <input
+                  id="discord"
+                  value={form.discord}
+                  onChange={(e) => update("discord", e.target.value)}
+                  placeholder="username"
+                />
+              </div>
             </div>
 
             {/* Fan Affinity — replaces the old free-text favorite_team field. */}
@@ -505,27 +541,6 @@ export default function ProfileEditClient() {
                 </div>
               )}
               <div className="hint">Pick your team in each league. Primary appears highlighted on your public profile.</div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div className="field">
-                <label htmlFor="twitter">Twitter / X handle</label>
-                <input
-                  id="twitter"
-                  value={form.twitter}
-                  onChange={(e) => update("twitter", e.target.value)}
-                  placeholder="@handle"
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="discord">Discord</label>
-                <input
-                  id="discord"
-                  value={form.discord}
-                  onChange={(e) => update("discord", e.target.value)}
-                  placeholder="username"
-                />
-              </div>
             </div>
 
             <div className="field">

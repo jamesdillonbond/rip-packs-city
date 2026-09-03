@@ -87,6 +87,16 @@ export type PublicProfileWallet = {
   display_name: string | null
   collection_id: string | null
   cached_fmv: number | null
+  /**
+   * Portion of `cached_fmv` whose latest FMV confidence is STALE, and how many
+   * Moments that is. The dashboard holds stale value OUT of its headline
+   * (`get_wallet_collection_stats.fmv_stale_total`); until 2026-09-02 this
+   * payload could not, so the public profile / OG / tweet published a number
+   * 80% above the one the collector's own dashboard showed. Headline =
+   * `cached_fmv - cached_fmv_stale`. Null = not yet reconciled (treat as 0).
+   */
+  cached_fmv_stale: number | null
+  cached_stale_count: number | null
   cached_moment_count: number | null
   cached_top_tier: string | null
   cached_badges: string[] | null
@@ -222,7 +232,7 @@ async function getPublicProfileUncached(
       .select(
         // wallet_addr is selected but NEVER published — it exists only to count
         // distinct addresses below, and is dropped in the mapping step.
-        "wallet_addr, username, display_name, collection_id, cached_fmv_usd, cached_moment_count, cached_top_tier, cached_badges, accent_color, cached_rpc_score, cached_change_24h"
+        "wallet_addr, username, display_name, collection_id, cached_fmv_usd, cached_fmv_stale_usd, cached_stale_count, cached_moment_count, cached_top_tier, cached_badges, accent_color, cached_rpc_score, cached_change_24h"
       )
       .eq("user_id", userId),
       ]) as Promise<
@@ -287,6 +297,8 @@ async function getPublicProfileUncached(
     display_name: w.display_name ?? null,
     collection_id: w.collection_id,
     cached_fmv: w.cached_fmv_usd ?? null,
+    cached_fmv_stale: w.cached_fmv_stale_usd ?? null,
+    cached_stale_count: w.cached_stale_count ?? null,
     cached_moment_count: w.cached_moment_count ?? null,
     cached_top_tier: w.cached_top_tier ?? null,
     cached_badges: w.cached_badges ?? null,

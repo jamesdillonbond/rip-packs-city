@@ -120,6 +120,24 @@ describe("GET /api/public/profile/[username]", () => {
     expect(body.wallets[0].accent_color).toBe("#E03A2F")
     expect(body.wallets[0].cached_fmv).toBe(1234)
   })
+
+  // 2026-09-02 (onboarding QA #6): the stale split the dashboard uses is now
+  // on the payload, so public surfaces can hold stale value out of the headline.
+  it("ships the stale-priced split alongside the total, null when not yet reconciled", async () => {
+    st.idRow = { user_id: "u1" }
+    st.bio = { username: "trevor", display_name: "Trevor" }
+    st.trophy = []
+    st.wallets = [
+      { wallet_addr: "0xabc", collection_id: "c1", cached_fmv_usd: 88425, cached_fmv_stale_usd: 39553, cached_stale_count: 370, accent_color: null },
+      { wallet_addr: "0xabc", collection_id: "c2", cached_fmv_usd: 100, accent_color: null },
+    ]
+    const body = await (await GET(req, ctx("Trevor"))).json()
+    expect(body.wallets[0].cached_fmv).toBe(88425)
+    expect(body.wallets[0].cached_fmv_stale).toBe(39553)
+    expect(body.wallets[0].cached_stale_count).toBe(370)
+    expect(body.wallets[1].cached_fmv_stale).toBeNull()
+    expect(body.wallets[1].cached_stale_count).toBeNull()
+  })
 })
 
 describe("wallet_count counts ADDRESSES, not saved_wallets rows", () => {

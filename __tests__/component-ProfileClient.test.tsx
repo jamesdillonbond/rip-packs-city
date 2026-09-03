@@ -333,3 +333,59 @@ describe("ProfileClient — the avatar a collector gets before they set one", ()
     expect(img.getAttribute("src")).toBe("https://example.com/me.png")
   })
 })
+
+// 2026-09-02 (onboarding QA #6): the headline must be the DASHBOARD's number —
+// total minus the stale-priced portion — with the stale portion as a caption.
+// The page used to sum the flat total, so a collector posted "$88.4K" while
+// their dashboard read "$48,872 + $39,553 across 370 stale-priced".
+describe("ProfileClient — portfolio FMV uses the dashboard's stale split", () => {
+  it("holds stale-priced value out of the headline and shows it as a caption", async () => {
+    installFetch({
+      "/api/public/profile/": {
+        ...PUBLIC_PROFILE,
+        wallets: [
+          { ...PUBLIC_PROFILE.wallets[0], cached_fmv: 88425, cached_fmv_stale: 39553, cached_stale_count: 370, cached_moment_count: 19381 },
+        ],
+      },
+      "/api/profile/trophy-slabs": { slabs: [] },
+      "/api/profile/portfolio-history": { snapshots: [] },
+      "/api/profile/me": { user: null },
+    })
+    render(<ProfileClient />)
+    await waitFor(() => expect(screen.getByText("Main")).toBeTruthy())
+    const text = document.body.textContent ?? ""
+    expect(text).toContain("$48.9K") // 88425 - 39553 = 48872
+    expect(text).not.toContain("$88.4K")
+    expect(text).toMatch(/\+ \$39\.6K across 370 stale-priced/)
+  })
+
+  it("a payload without the split (not yet reconciled) still renders the total, no caption", async () => {
+    installFetch({
+      "/api/public/profile/": PUBLIC_PROFILE,
+      "/api/profile/trophy-slabs": { slabs: [] },
+      "/api/profile/portfolio-history": { snapshots: [] },
+      "/api/profile/me": { user: null },
+    })
+    render(<ProfileClient />)
+    await waitFor(() => expect(screen.getByText("Main")).toBeTruthy())
+    const text = document.body.textContent ?? ""
+    expect(text).toContain("$12.5K")
+    expect(text).not.toMatch(/stale-priced/)
+  })
+
+  it("labels a wallet row by its collection, not 'Wallet N', when it has no name", async () => {
+    installFetch({
+      "/api/public/profile/": {
+        ...PUBLIC_PROFILE,
+        wallets: PUBLIC_PROFILE.wallets.map((w) => ({ ...w, username: null, display_name: null })),
+      },
+      "/api/profile/trophy-slabs": { slabs: [] },
+      "/api/profile/portfolio-history": { snapshots: [] },
+      "/api/profile/me": { user: null },
+    })
+    render(<ProfileClient />)
+    await waitFor(() => expect(screen.getByText("SAVED WALLETS")).toBeTruthy())
+    const text = document.body.textContent ?? ""
+    expect(text).not.toMatch(/Wallet [0-9]/)
+  })
+})

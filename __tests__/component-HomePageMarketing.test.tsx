@@ -67,3 +67,20 @@ describe("HomePageMarketing", () => {
     expect(funnelMock).toHaveBeenCalledWith({ eventType: "signin_click", surface: "home_header" })
   })
 })
+
+// 2026-09-02 (onboarding QA #8): the campaign's ask is "build a trophy case"
+// and the landing page never said the words. The block shows a REAL case (the
+// OG card a share link unfurls into), not a mock-up.
+describe("HomePageMarketing — the trophy-case block", () => {
+  it("names the trophy case, shows a real card, and sends new users to /login", () => {
+    const { container } = render(<HomePageMarketing />)
+    const block = container.querySelector("[data-home-trophy-case]") as HTMLElement
+    expect(block).toBeTruthy()
+    expect(block.textContent).toMatch(/build your trophy case/i)
+    const img = block.querySelector("img") as HTMLImageElement
+    expect(img.getAttribute("src")).toMatch(/^\/api\/og\/trophy-case\//)
+    expect(img.getAttribute("alt")).toMatch(/trophy case/i)
+    const cta = Array.from(block.querySelectorAll("a")).find((a) => /build yours/i.test(a.textContent ?? ""))
+    expect(cta?.getAttribute("href")).toBe("/login")
+  })
+})

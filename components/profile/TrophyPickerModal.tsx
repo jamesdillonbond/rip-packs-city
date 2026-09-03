@@ -861,7 +861,8 @@ function MomentRow({
         )}
         {m.is_locked && (
           <div
-            aria-label="Locked"
+            aria-label="Locked on Top Shot — can still be pinned"
+            title="Locked on Top Shot — can still be pinned"
             style={{
               position: "absolute",
               top: 2,

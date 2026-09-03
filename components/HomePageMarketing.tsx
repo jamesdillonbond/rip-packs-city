@@ -206,6 +206,7 @@ export default function HomePageMarketing() {
         .rpc-home-collection-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
         .rpc-home-how-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;}
         .rpc-home-depth-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:48px;align-items:start;}
+        .rpc-home-trophy-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:48px;align-items:center;}
         .rpc-home-trust-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px;}
         .rpc-home-collection-tile{transition:transform var(--transition-fast),border-color var(--transition-fast),box-shadow var(--transition-fast);}
         .rpc-home-collection-tile:hover{transform:translateY(-4px);}
@@ -218,6 +219,7 @@ export default function HomePageMarketing() {
           .rpc-home-collection-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
           .rpc-home-how-grid{grid-template-columns:1fr;}
           .rpc-home-depth-grid{grid-template-columns:1fr;gap:24px;}
+          .rpc-home-trophy-grid{grid-template-columns:1fr;gap:24px;}
           .rpc-home-trust-grid{grid-template-columns:1fr;gap:14px;}
           .rpc-home-nav a{display:none;}
           .rpc-home-header-inner{padding:0 14px;}
@@ -596,6 +598,90 @@ export default function HomePageMarketing() {
                 renders a real recent sample (FMV + confidence + serial-premium
                 math), with a clearly-labelled SAMPLE fallback. */}
             <HomeFmvPreview />
+          </div>
+        </div>
+      </section>
+
+      {/* TROPHY CASE — the thing the campaign asks people to build, which
+          this page never mentioned (2026-09-02 onboarding QA, finding #8). The
+          example is a REAL case (the OG card the share link unfurls into), not
+          a mock-up, so the promise and the product are the same picture. */}
+      <section className="rpc-home-section" data-home-trophy-case>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div className="rpc-home-trophy-grid">
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, justifyContent: "center" }}>
+              <div className="rpc-home-eyebrow">◈ SHOW OFF YOUR BEST ◈</div>
+              <h2 className="rpc-home-h2">BUILD YOUR TROPHY CASE</h2>
+              <p
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 13,
+                  lineHeight: 1.7,
+                  color: "rgba(255,255,255,0.78)",
+                  margin: 0,
+                  maxWidth: 460,
+                }}
+              >
+                Pin your 6 best Moments from any collection, add a caption to each, and get a page
+                and social card of your own — rippackscity.com/profile/<span style={{ color: "var(--rpc-text-primary)" }}>you</span>/trophy-case.
+                Post it on X or drop it in Discord; the card unfurls with your slabs on it.
+              </p>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <Link
+                  href="/login"
+                  onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_trophy_case" })}
+                  style={{
+                    background: "var(--rpc-red)",
+                    color: "#fff",
+                    padding: "12px 22px",
+                    borderRadius: 6,
+                    fontFamily: "var(--font-mono)",
+                    fontWeight: 700,
+                    fontSize: 12,
+                    letterSpacing: "0.16em",
+                    textTransform: "uppercase",
+                    textDecoration: "none",
+                  }}
+                >
+                  BUILD YOURS — FREE →
+                </Link>
+                <Link
+                  href="/profile/jamesdillonbond/trophy-case"
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: "var(--rpc-text-muted)",
+                    textDecoration: "none",
+                  }}
+                >
+                  See a live case →
+                </Link>
+              </div>
+            </div>
+            <Link
+              href="/profile/jamesdillonbond/trophy-case"
+              aria-label="A real Rip Packs City trophy case"
+              style={{
+                display: "block",
+                borderRadius: 12,
+                overflow: "hidden",
+                border: "1px solid var(--rpc-border)",
+                background: "var(--rpc-surface)",
+                boxShadow: "0 24px 60px rgba(0,0,0,0.45)",
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- the OG route renders a PNG at 1200x630; next/image cannot optimise a dynamic route */}
+              <img
+                src="/api/og/trophy-case/jamesdillonbond"
+                alt="Example trophy case: six slabbed Moments with tier-coloured frames on a Rip Packs City share card"
+                width={1200}
+                height={630}
+                loading="lazy"
+                style={{ display: "block", width: "100%", height: "auto" }}
+              />
+            </Link>
           </div>
         </div>
       </section>

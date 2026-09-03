@@ -171,7 +171,9 @@ describe("the wallet list orders by collection then value", () => {
     expect(container.textContent).not.toContain("00000000-0000")
   })
 
-  it("falls back to a positional label when a wallet has no name", async () => {
+  // 2026-09-02 (QA #6): one address is one row PER COLLECTION, so "Wallet N"
+  // labelled a single wallet "Wallet 1 … Wallet 5". The collection is the label.
+  it("falls back to the collection label when a wallet has no name", async () => {
     installFetch({
       "/api/public/profile/": {
         ...PROFILE,
@@ -183,7 +185,8 @@ describe("the wallet list orders by collection then value", () => {
       "/api/profile/me": { user: null },
     })
     const { container } = render(<ProfileClient />)
-    await waitFor(() => expect(container.textContent).toContain("Wallet 1"))
+    await waitFor(() => expect(container.textContent).toContain("Saved wallet"))
+    expect(container.textContent).not.toContain("Wallet 1")
   })
 })
 

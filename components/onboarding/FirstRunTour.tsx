@@ -90,6 +90,34 @@ const BACKDROP: CSSProperties = {
   WebkitBackdropFilter: "blur(12px)",
 }
 
+// Anchored steps: a transparent click-catcher plus a SPOTLIGHT box over the
+// anchor whose giant box-shadow dims everything else. Until 2026-09-02 every
+// step blurred the whole page, so "Switch collections any time" pointed at
+// nothing the collector could see (onboarding QA walkthrough, step 4).
+const BACKDROP_CLEAR: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 90,
+  background: "transparent",
+}
+
+const SPOTLIGHT: CSSProperties = {
+  position: "fixed",
+  zIndex: 90,
+  borderRadius: 12,
+  border: "2px solid var(--rpc-red, #E03A2F)",
+  boxShadow: "0 0 0 9999px rgba(0,0,0,0.78), 0 0 24px rgba(224,58,47,0.45)",
+  pointerEvents: "none",
+  transition: "top 160ms ease, left 160ms ease, width 160ms ease, height 160ms ease",
+}
+
+interface SpotRect {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
 const POPOVER: CSSProperties = {
   position: "fixed",
   zIndex: 91,
@@ -193,7 +221,10 @@ function computePosition(anchorEl: HTMLElement | null, popoverWidth: number, pop
   } else if (fitsAbove) {
     top = rect.top - popoverHeight - ANCHOR_GAP
   } else {
-    return { top: 0, left: 0, centered: true }
+    // The anchor is taller than the room left for the popover (a whole
+    // dashboard section). Pin the popover to the bottom edge of the viewport
+    // rather than centring it ON TOP of the thing it is pointing at.
+    top = Math.max(16, viewportH - popoverHeight - 16)
   }
   // Horizontally center on the anchor, then clamp to viewport.
   const idealLeft = rect.left + rect.width / 2 - popoverWidth / 2
@@ -209,6 +240,7 @@ interface FirstRunTourProps {
 export default function FirstRunTour({ enabled, onDismiss }: FirstRunTourProps) {
   const [stepIndex, setStepIndex] = useState(0)
   const [pos, setPos] = useState<PopoverPosition>({ top: 0, left: 0, centered: true })
+  const [spot, setSpot] = useState<SpotRect | null>(null)
 
   const step = STEPS[stepIndex]
   const isLast = stepIndex === STEPS.length - 1
@@ -244,6 +276,33 @@ export default function FirstRunTour({ enabled, onDismiss }: FirstRunTourProps) 
       const w = node?.offsetWidth ?? 380
       const h = node?.offsetHeight ?? 200
       setPos(computePosition(anchorEl, w, h))
+      if (anchorEl) {
+        const r = anchorEl.getBoundingClientRect()
+        const pad = 6
+        setSpot({
+          top: r.top - pad,
+          left: r.left - pad,
+          width: r.width + pad * 2,
+          height: r.height + pad * 2,
+        })
+      } else {
+        setSpot(null)
+      }
+    }
+    // Bring the anchor on screen before measuring — a section further down
+    // the dashboard (saved wallets, trophy case) was otherwise "anchored" to a
+    // rect off the bottom of the viewport and the popover fell back to centred.
+    const anchorEl = step.anchor
+      ? document.querySelector<HTMLElement>(`[data-tour-anchor="${step.anchor}"]`)
+      : null
+    if (anchorEl && typeof anchorEl.scrollIntoView === "function") {
+      const r = anchorEl.getBoundingClientRect()
+      const offscreen = r.top < 0 || r.bottom > window.innerHeight
+      if (offscreen) {
+        try {
+          anchorEl.scrollIntoView({ block: r.height > window.innerHeight * 0.6 ? "start" : "center" })
+        } catch { /* older engines */ }
+      }
     }
     reposition()
     window.addEventListener("resize", reposition)
@@ -262,7 +321,8 @@ export default function FirstRunTour({ enabled, onDismiss }: FirstRunTourProps) 
 
   return (
     <>
-      <div style={BACKDROP} aria-hidden onClick={dismiss} />
+      <div style={spot ? BACKDROP_CLEAR : BACKDROP} aria-hidden onClick={dismiss} />
+      {spot && <div style={{ ...SPOTLIGHT, ...spot }} aria-hidden data-tour-spotlight />}
       <div
         ref={popoverRef}
         style={popoverStyle}

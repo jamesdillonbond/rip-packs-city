@@ -35,6 +35,8 @@ interface SavedWalletPublic {
   display_name: string | null;
   collection_id: string | null;
   cached_fmv: number | null;
+  cached_fmv_stale?: number | null;
+  cached_stale_count?: number | null;
   cached_moment_count: number | null;
   cached_top_tier: string | null;
   cached_rpc_score: number | null;
@@ -315,7 +317,15 @@ export default function ProfileClient(props: {
   const accentBorder = hexToRgba(accentColor, 0.4);
   const filledCount = slabs.filter(Boolean).length;
   const publicSlabs = slabs.filter(Boolean) as TrophySlabData[];
-  const totalFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
+  // ⚠ SAME DEFINITION AS THE DASHBOARD. `cached_fmv` is the TOTAL including
+  // stale-priced Moments; the dashboard's headline excludes them and shows the
+  // stale portion as a caption (lib/dashboard/aggregate.ts). Until 2026-09-02
+  // this page summed the total, so the number a collector posted was ~80%
+  // above the one they had just read on their dashboard (QA finding #6).
+  const totalFmvAll = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
+  const staleFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv_stale ?? 0); }, 0);
+  const staleCount = wallets.reduce(function(sum, w) { return sum + (w.cached_stale_count ?? 0); }, 0);
+  const totalFmv = totalFmvAll - staleFmv;
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
   const isOwnProfile =
@@ -558,6 +568,11 @@ export default function ProfileClient(props: {
             <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 24, color: "var(--rpc-text-primary)", lineHeight: 1, margin: "8px 0 4px" }}>
               {totalFmv > 0 ? fmtDollars(totalFmv) : "—"}
             </div>
+            {staleFmv > 0 && (
+              <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em", marginBottom: 4 }}>
+                + {fmtDollars(staleFmv)} across {staleCount.toLocaleString()} stale-priced
+              </div>
+            )}
             {sparkData.length >= 2 && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, marginTop: 4 }}>
                 <Sparkline data={sparkData} width={120} height={24} color={sparkUp ? "#34D399" : "#F87171"} />
@@ -724,18 +739,25 @@ export default function ProfileClient(props: {
             <div style={{ ...labelStyle, marginBottom: 12 }}>SAVED WALLETS</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {sortedWallets.map(function(w, i) {
-                const label = w.display_name || w.username || ("Wallet " + (i + 1));
+                // One address is one row PER COLLECTION, so an index-based
+                // "Wallet N" labelled a single wallet "Wallet 1 … Wallet 5"
+                // under a header that correctly said "1 WALLET". The
+                // collection is the thing that differs row to row.
                 const collectionLabel = walletCollectionLabel(w);
+                const label = w.display_name || w.username || collectionLabel;
+                const subLabel = label === collectionLabel ? "Saved wallet" : collectionLabel;
+                // Per-row value uses the same stale split as the headline.
+                const rowFmv = w.cached_fmv != null ? w.cached_fmv - (w.cached_fmv_stale ?? 0) : null;
                 return (
                   <div key={i} style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 16, padding: "12px 16px" }}>
                     <div style={{ width: 4, height: 28, borderRadius: 2, background: w.accent_color || "var(--rpc-red)", flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "var(--rpc-text-primary)", letterSpacing: "0.04em" }}>{label}</div>
-                      <span style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{collectionLabel}</span>
+                      <span style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em", textTransform: "uppercase" }}>{subLabel}</span>
                     </div>
-                    {w.cached_fmv != null && (
+                    {rowFmv != null && (
                       <div style={{ textAlign: "right" }}>
-                        <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)" }}>{fmtDollars(w.cached_fmv)}</div>
+                        <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)" }}>{fmtDollars(rowFmv)}</div>
                         <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>{w.cached_moment_count ?? 0} MOMENTS</div>
                       </div>
                     )}
