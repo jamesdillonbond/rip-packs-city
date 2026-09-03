@@ -23,9 +23,32 @@ import {
   GET_GOLAZOS_MOMENT_DETAILS,
   GOLAZOS_COLLECTION_UUID,
 } from "@/lib/chains/flow/wallet-backfill-helpers"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 60
+// 🚨 RAISED 60 -> 600 ON 2026-09-03, AND THE 60 WAS INHERITED RATHER THAN CHOSEN.
+//
+// This route was the fleet's top source of wall kills: **6 `Vercel Runtime
+// Timeout Error: Task timed out after 60 seconds` in the 24 h to 2026-09-03
+// 08:00Z, more than every other route on the platform combined** (evm-transfers
+// -ingest 1, fmv-recalc 1, sniper-feed 3). Its three sibling wallet enrichers
+// took ZERO in the same window — and they run at **600 s (allday), 600 s
+// (pinnacle) and 300 s (ufc)**.
+//
+// ⭐ THE HISTORY SAYS OVERSIGHT, NOT DECISION. `1791e9083` (2026-05-06) created
+// all four with `maxDuration = 60`; `d57349c5a` (2026-05-08) raised AllDay to
+// 600 for "paginated mega-wallet recovery" and the others followed. This one did
+// not. It was then switched to `runAllDayDetailsBackfill` — **the same runner
+// AllDay uses**, per this file's header — so it took on the heavier work and
+// kept the lighter wall. 600 matches the sibling running the identical function.
+//
+// ⚠ A killed tick is 100% waste: `after()` is terminated with its terminal row
+// unwritten, so the wallet is neither enriched nor recorded as failed. Raising
+// the wall costs compute only on the runs that were being thrown away.
+// ⭐ FALSIFIER: if ticks now run past ~300 s the work itself is pathological and
+// the fix is inside `runAllDayDetailsBackfill`, not here. The marker below is
+// what makes that measurable — before it, a kill here was recorded nowhere.
+export const maxDuration = 600
 
 // cadenceScript (the ID-only walk) is retained but unused by the details
 // runner — kept so a revert to runIdOnlyBackfill is a one-line change.
@@ -75,6 +98,24 @@ export async function POST(req: NextRequest) {
   const startedAtIso = new Date(startedMs).toISOString()
 
   after(async () => {
+    // ⚠ THE INVOCATION MARKER. Its terminal `pipeline_runs` row is written by
+    // `runAllDayDetailsBackfill` in `lib/chains/flow/wallet-backfill-helpers.ts`,
+    // NOT here — which is exactly why this route was invisible to
+    // `__tests__/after-route-heartbeat-ratchet.test.ts` until 2026-09-03: that
+    // guard derived its population from each ROUTE FILE's own text, so a route
+    // whose terminal write is one delegation away was outside it BY
+    // CONSTRUCTION. Fourth instance of that shape in this repo.
+    //
+    // ⭐ And it was not a hypothetical gap: six wall kills in 24 h landed here,
+    // recorded by NOTHING. `try/catch` cannot catch a `maxDuration` kill, and
+    // without this row a killed tick is indistinguishable from a wallet nobody
+    // ever asked to enrich.
+    await writeInvocationHeartbeat({
+      pipeline: CONFIG.pipelineName,
+      startedAtMs: startedMs,
+      collectionSlug: CONFIG.slug,
+      extra: { wallet, skip_cached: skipCached },
+    })
     const { rowsFound } = await runAllDayDetailsBackfill({
       config: CONFIG,
       startedAtIso,

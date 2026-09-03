@@ -93,6 +93,54 @@ const API = path.join(ROOT, "app", "api")
 /* Shared stripper — the local copy ran the block regex first, so a line comment
  * containing an open-comment swallowed source to the next close anywhere in the file. */
 
+/**
+ * 🚨 THE PREDICATE FOLLOWS ONE LEVEL OF LIB DELEGATION, ADDED 2026-09-03 —
+ * BECAUSE WITHOUT IT THE POPULATION WAS UNDERSTATED BY FIVE ROUTES.
+ *
+ * `logsTerminalRun` used to read only the ROUTE FILE's own text. A route whose
+ * terminal `pipeline_runs` write lives in a shared `lib/` helper therefore had
+ * `after()` and no visible terminal write, so it never qualified — and a kill
+ * there is exactly as invisible as anywhere else. **Fourth instance in this repo
+ * of a guard whose file set excluded the next instance of its own class**;
+ * CLAUDE.md records the previous three, one of them almost word for word: *"one
+ * walked `app/api/cron` while the tenth copy sat in the `lib/` module two routes
+ * delegate to."*
+ *
+ * ⭐ NOT HYPOTHETICAL. All five invisible routes delegate to
+ * `lib/chains/flow/wallet-backfill-helpers.ts`, and one of them —
+ * `wallet-backfill-golazos` — took **6 `Task timed out after 60 seconds` kills
+ * in the 24 h to 2026-09-03 08:00Z, more than every other route on the platform
+ * combined**, recorded by nothing.
+ *
+ * ⚠ ONE LEVEL, DELIBERATELY. The helpers are resolved by walking `lib/` for
+ * modules that themselves write a terminal row, collecting their exported names,
+ * and asking whether the route CALLS one. A full call graph would be better and
+ * is not worth the machinery here; a route that delegates twice is still
+ * invisible, and saying so is better than implying the walk is complete.
+ */
+const TERMINAL_WRITE = /log_pipeline_run|["'`]pipeline_runs["'`]/
+
+function libFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry)
+    if (statSync(full).isDirectory()) libFiles(full, out)
+    else if (/\.tsx?$/.test(entry)) out.push(full)
+  }
+  return out
+}
+
+/** Names exported by a `lib/` module that writes a terminal row. */
+const TERMINAL_HELPERS: string[] = (() => {
+  const names = new Set<string>()
+  for (const full of libFiles(path.join(ROOT, "lib"))) {
+    const code = stripComments(readFileSync(full, "utf8"))
+    if (!TERMINAL_WRITE.test(code)) continue
+    for (const m of code.matchAll(/export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g)) names.add(m[1])
+    for (const m of code.matchAll(/export\s+const\s+([A-Za-z_$][\w$]*)\s*=/g)) names.add(m[1])
+  }
+  return [...names]
+})()
+
 /** Every `route.ts`/`route.tsx` under `app/api`, by walk — never a list. */
 function apiRoutes(dir = API, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -115,7 +163,10 @@ const ROUTES: Route[] = apiRoutes().map((full) => {
   return {
     rel: path.relative(ROOT, full).split(path.sep).join("/"),
     usesAfter: /\bafter\s*\(/.test(code),
-    logsTerminalRun: /log_pipeline_run|["']pipeline_runs["']/.test(code),
+    logsTerminalRun:
+      TERMINAL_WRITE.test(code) ||
+      // …or it hands the work to a lib helper that writes one. See TERMINAL_HELPERS.
+      TERMINAL_HELPERS.some((n) => new RegExp(`\\b${n}\\s*\\(`).test(code)),
     // ⚠ The CALL, not the identifier. Matching the bare name also matches the
     // `import { writeInvocationHeartbeat }` line, so a route that imports the
     // helper and never calls it would be vouched for — caught by mutation on
@@ -290,7 +341,35 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   number measured on the wrong caller. Everything below it is ≤20% of its own
 //   wall. Rank by margin, then CHECK WHICH PATH PRODUCED THE NUMBER.
 //   ⚠ Read off the failing no-slack assertion (33 -> 31), not by subtracting two.
-const BUDGET = 31
+// 🚨 2026-09-03 (eleventh): 31 -> 35, AND THIS IS THE ONE CASE WHERE THE NUMBER
+//   GOES UP LEGITIMATELY. It is a POPULATION CORRECTION, not banked slack: the
+//   predicate above now follows one level of lib delegation, so FIVE routes that
+//   were invisible BY CONSTRUCTION are counted for the first time. Read off the
+//   failing no-slack assertion, as always — 31 + 5 newly visible − 1 converted
+//   below = 35, and the arithmetic agreeing is a coincidence to check, not the
+//   way to derive it.
+//   ⛔ THE "NEVER RAISE IT" RULE STILL HOLDS AND THIS DOES NOT BREAK IT. The ban
+//   is on licensing new INSTANCES. Widening the WALK is the opposite move: it
+//   admits that the old number was measuring a subset. Any future raise must
+//   name the predicate change that caused it, as this one does; a raise with no
+//   such change is the thing the rule forbids.
+//   The five, all delegating to lib/chains/flow/wallet-backfill-helpers.ts:
+//     wallet-backfill-golazos (converted, below) · wallet-backfill-allday ·
+//     wallet-backfill-pinnacle · wallet-backfill-ufc · profile/verify-challenge
+//   ⭐ CONVERTED IN THE SAME COMMIT: `wallet-backfill-golazos`, on the strongest
+//   evidence any route in this workstream has had — **6 `Vercel Runtime Timeout
+//   Error: Task timed out after 60 seconds` in the 24 h to 2026-09-03 08:00Z,
+//   more than every other route on the platform combined** (evm-transfers-ingest
+//   1, fmv-recalc 1, sniper-feed 3), every one recorded by NOTHING.
+//   ⓘ Its wall was also raised 60 -> 600 in the same commit, matching the sibling
+//   that runs the identical function; see that route's own comment for why the
+//   60 was inherited rather than chosen. The marker is what makes the next kill
+//   measurable either way.
+//   ⚠ The other three wallet enrichers took ZERO wall kills in the same window —
+//   a real measurement from an instrument independent of `pipeline_runs`, not an
+//   absence of evidence — so they stay on the queue rather than being converted
+//   speculatively.
+const BUDGET = 35
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

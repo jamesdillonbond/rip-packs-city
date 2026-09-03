@@ -394,3 +394,58 @@ describe("cron/evm-transfers-ingest writes its marker first", () => {
     expect(rec.events.some((e) => e.kind === "insert" && e.name === "pipeline_runs")).toBe(false)
   })
 })
+
+describe("wallet-backfill-golazos writes its marker first — the fleet's top wall-kill route", () => {
+  it("marker precedes the delegated terminal write, under the suffixed name", async () => {
+    // ⚠ THE TERMINAL ROW IS NOT WRITTEN BY THIS ROUTE. It comes from
+    // `runAllDayDetailsBackfill` in lib/chains/flow/wallet-backfill-helpers.ts,
+    // which is exactly why the route was invisible to the static ratchet until
+    // 2026-09-03. The helper is mocked here so the ordering assertion is about
+    // the MARKER landing before the work starts — which is the whole contract —
+    // rather than about the helper's internals.
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    vi.doMock("@/lib/chains/flow/wallet-backfill-helpers", async (importOriginal) => {
+      const actual = await importOriginal<Record<string, unknown>>()
+      return {
+        ...actual,
+        resolveWalletInput: async (input: string) => ({ ok: true, wallet: input }),
+        runAllDayDetailsBackfill: async () => {
+          // Stand in for the helper's own terminal write, so the ordering
+          // assertion has both events in ONE interleaved log.
+          await rec.db.rpc("log_pipeline_run", { p_pipeline: "wallet-backfill-golazos" })
+          return { rowsFound: 3 }
+        },
+      }
+    })
+    const { POST } = await import("@/app/api/wallet-backfill-golazos/route")
+
+    const req = new NextRequest("https://t/api/wallet-backfill-golazos", {
+      method: "POST",
+      headers: new Headers({ authorization: "Bearer tok", "content-type": "application/json" }),
+      body: JSON.stringify({ wallet: "0x1234567890abcdef" }),
+    })
+    const res = await POST(req as never)
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    assertMarkerContract(rec, "wallet-backfill-golazos")
+    // The wallet is readable off the marker, so a killed tick still says which
+    // wallet was being enriched when it died.
+    expect((rec.rows[0].extra as Record<string, unknown>).wallet).toBe("0x1234567890abcdef")
+  })
+
+  it("POSITIVE CONTROL — an unauthorized call writes NO marker", async () => {
+    const rec = recorder()
+    mockAfter()
+    vi.doMock("@/lib/supabase", () => ({ supabaseAdmin: rec.db }))
+    const { POST } = await import("@/app/api/wallet-backfill-golazos/route")
+    const res = await POST(
+      new NextRequest("https://t/api/wallet-backfill-golazos", { method: "POST" }) as never,
+    )
+    expect(res.status).toBe(401)
+    await runDeferred()
+    expect(rec.events.some((e) => e.kind === "insert" && e.name === "pipeline_runs")).toBe(false)
+  })
+})
