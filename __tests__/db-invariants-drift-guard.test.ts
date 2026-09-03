@@ -15,6 +15,22 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-02 with the fields it pins. This function had ONE input —
+    // max(started_at) over the pipeline's own terminal rows — so it could say a
+    // watchlisted pipeline had gone silent and could not say whether the schedule
+    // had stopped or the route was being KILLED at its lambda wall before it could
+    // log. Those need opposite responses, and a `maxDuration` kill writes nothing,
+    // so the terminal row cannot tell them apart. The pinned property is the ±5 s
+    // correlation between a `<pipeline>-heartbeat` marker and its terminal row:
+    // the obvious `started_at > last_run` spelling reported THREE healthy live
+    // pipelines as orphaned, because the marker is written 2–14 ms after the
+    // terminal row of the same tick. Both directions are asserted in the test.
+    fn: "detect_stalled_pipelines",
+    test: "supabase/tests/detect_stalled_pipelines.sql",
+    migration:
+      "supabase/migrations/20260903024204_audit_20260902_detect_stalled_pipelines_says_whether_the_schedule_is_firing.sql",
+  },
+  {
     // Added 2026-08-20. A live deleter with THREE DELETE legs that had NO
     // migration anywhere in the repo — prod carried DDL the repo could not
     // describe. The snapshot migration was created for it in the same pass.
