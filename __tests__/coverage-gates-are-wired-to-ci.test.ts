@@ -84,6 +84,32 @@ describe("coverage gates are wired to CI", () => {
   })
 
   it.each(GATES)("ci.yml runs $script (covering $covers)", (gate) => {
+    if (gate.config === "vitest.config.ts") {
+      // 2026-09-03: the primary gate is SHARDED. Two matrix jobs run
+      // `test:coverage:shard` with the thresholds zeroed (a half-suite coverage
+      // number is not a number about the codebase), and a merge job runs
+      // `test:coverage:merge`, which applies vitest.config.ts's thresholds to
+      // the MERGED coverage. So the ratchet is enforced by the merge script, and
+      // that is what must be wired — a plain `npm run test:coverage` match would
+      // be satisfied by the shard script's name as a substring.
+      const shard: string = pkg.scripts["test:coverage:shard"] ?? ""
+      const merge: string = pkg.scripts["test:coverage:merge"] ?? ""
+      expect(shard, "shard script must emit a blob").toContain("--reporter=blob")
+      expect(shard, "shard script must zero every threshold, or a half suite fails the ratchet").toMatch(
+        /thresholds\.lines=0.*thresholds\.functions=0.*thresholds\.branches=0.*thresholds\.statements=0/,
+      )
+      expect(merge, "merge script must merge the blobs WITH coverage").toContain("--merge-reports")
+      expect(merge).toContain("--coverage")
+      expect(ci, "no CI job runs the shards").toMatch(/npm run test:coverage:shard -- --shard=/)
+      expect(
+        ci,
+        `No CI job runs "npm run test:coverage:merge", so the ${gate.covers} ratchet is ORPHANED — ` +
+          "the shards zero their thresholds by design, and only the merge applies them.",
+      ).toContain("npm run test:coverage:merge")
+      // The merge must not be reachable without both shards.
+      expect(ci).toMatch(/needs: \[changes, unit-tests-shard\]/)
+      return
+    }
     expect(
       ci,
       `No CI job runs "npm run ${gate.script}", so the ${gate.covers} gate is ORPHANED — ` +

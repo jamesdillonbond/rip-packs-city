@@ -55,7 +55,8 @@ describe("the docs-only CI filter — who gates on it, and who must never", () =
 
   it("every code job gates on code == 'true', and every docs-only job on code == 'false'", () => {
     for (const j of CODE_JOBS) {
-      expect(wf.jobs[j].needs, `${j} must need changes`).toBe("changes")
+      const needs = wf.jobs[j].needs
+      expect(Array.isArray(needs) ? needs : [needs], `${j} must need changes`).toContain("changes")
       expect(String(wf.jobs[j].if ?? ""), `${j} must gate on code == 'true'`).toContain(
         "needs.changes.outputs.code == 'true'",
       )

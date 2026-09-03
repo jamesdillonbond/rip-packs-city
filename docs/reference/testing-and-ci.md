@@ -1954,6 +1954,10 @@ deployments API. The estate catches regressions well; the defects were in the SE
     merge job applies them; `coverage-gates-are-wired-to-ci.test.ts` pins `npm run test:coverage`.
     Recipe: `vitest run --coverage --reporter=blob --shard=N/2 --coverage.thresholds.{lines,functions,branches,statements}=0`,
     then `vitest run --merge-reports --coverage`. ~3 min off the wall for three jobs; Trevor's call.
+    **✅ SHIPPED 2026-09-03 (pass 3, R81):** `unit-tests-shard` 1/2 + 2/2 and a `unit-tests` merge job that
+    asserts exactly two blobs before applying the ratchet. ⚠ The shards zero their thresholds ON PURPOSE;
+    the ratchet is applied once, at the merge, and `coverage-gates-are-wired-to-ci.test.ts` pins that shape
+    (a bare `npm run test:coverage` match would be satisfied by the shard script's name as a substring).
   - *`rpc-call` composite for the ~19 curl copies* — they just received their `cat`/401 fixes in
     place; re-plumbing is verifiable only on shed schedules. *SHA-pinning actions* — the sandbox
     cannot resolve shas and Dependabot is configured never to move them. *Retiring one of three
