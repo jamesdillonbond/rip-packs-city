@@ -10,6 +10,58 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-02 · ✅ SHIPPED — three `after()` routes could be killed at the wall with nothing written, and the ratchet that counts them is blind to the property that makes a marker work
+
+Advances register **E5**, the largest open coded item: `after()` routes that write a terminal
+`pipeline_runs` row with no invocation heartbeat. **BUDGET 40 → 37.**
+
+**⛔ WHY THESE THREE, MEASURED rather than convenient** — read from `pipeline_runs` (73 h retention)
+on 2026-09-02, each against its own `maxDuration`:
+
+| route (pipeline) | watchlist | measured margin |
+|---|---|---|
+| `cron/allday-lock-refresh-batch` (`allday-lock-refresh`) | 120 min | **71 of 73 ticks land between 270,077 ms and 292,225 ms against a 300,000 ms wall**, worst **97.4%** |
+| `wallet-backfill` | **severity HIGH**, 800 min | p90 a quiet 48,222 ms, **max 261,273 ms = 87%**, one second past its own soft deadline |
+| `cron/populate-pinnacle-wmc-fmv` | 180 min | **max 230,416 ms = 77%**, and the tick is ONE RPC call |
+
+⭐ **The lock-refresh number is STRUCTURAL, not a spike.** `SOFT_DEADLINE_MS` is 270,000 against a
+300,000 ms wall, so *every* tick stops with 30 s left and the terminal write plus the in-flight
+Cadence chunk must fit in what remains — measured, that tail already consumes **22.2 of the 30**. A
+tick whose tail runs long is killed and writes nothing, and `allday-lock-refresh` is watchlisted, so
+the kill is not merely unlogged: `detect_stalled_pipelines()` reads it as *"the schedule stopped
+firing"*, which needs the opposite response.
+
+⚠ **`duration_ms` on an `after()` route absorbs the terminal write's own latency**, so all three are
+UPPER bounds. That is the direction that matters here — the question is whether a tick can REACH the
+wall, not what it typically costs.
+
+**🚨 THE PART WORTH KEEPING: the ratchet that has driven this workstream since 2026-08-20 cannot see
+the property that makes a heartbeat work.** `after-route-heartbeat-ratchet` is a STATIC read — it
+asserts the route CALLS `writeInvocationHeartbeat`, which is satisfied by a call placed anywhere in
+the callback, **including after the work, where the marker cannot survive the kill it exists to
+record**. The contract is the ORDERING and nothing was asserting it. Fixed with
+`__tests__/heartbeat-marker-precedes-the-terminal-row.test.ts` plus a pin inside
+`api-wallet-backfill-deep`, both reading ONE interleaved event log — ⚠ **two separate recorders
+cannot see an order between them**, which is why the existing `rpcCalls` / `writes` pair in the
+shared route harness could not have been used as-is.
+
+**Both mutations verified, and the first is the finding:**
+- move the call to AFTER `runBatch` → the ordering tests red, **the ratchet stays GREEN**.
+- hand-roll the marker under the REAL pipeline name → ordering test AND ratchet red (the ratchet
+  loses its `writeInvocationHeartbeat(` match, which is the arm working as designed).
+
+⚠ One arm was written `if (firstWalk >= 0) expect(...)` and corrected before commit: **a conditional
+assertion is vacuous the moment the fixture stops reaching that branch, and still reads as coverage.**
+The walk's presence is now asserted first.
+
+**Effect on prod state:** three pipelines begin writing `<name>-heartbeat` marker rows (`ok:true`,
+`rows_* NULL`, `duration_ms` pinned to 0). They do NOT touch the real pipeline names, so
+`detect_stalled_pipelines()` and `v_pipeline_failure_rates` are unaffected.
+
+**REVERT:** `git revert <this sha>` — removes the three calls, the two test pins and the BUDGET
+change. No migration, no data mutation; the marker rows already written are inert and age out with
+`pipeline_runs`' ~73 h retention.
+
 ### 2026-09-02 · ✅ SHIPPED — an inbox correction could be deleted in a rewrite and no guard could see it; the detector took three designs and the two failures are the lesson
 
 **⛔ THE INCIDENT (real, this session).** Two sessions edited
