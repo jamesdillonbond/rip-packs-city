@@ -184,10 +184,19 @@ export async function POST(req: NextRequest) {
       ack: { reason: string; expiresAt: Date } | null;
     }
   > = {};
+  // ⚠ A FAILED CONFIG READ MUST NOT RENDER AS "CONFIG APPLIED". supabase-js RETURNS
+  // its error rather than throwing, so the old `const { data } = …` shape fell
+  // every check back to its hardcoded threshold, dropped every `enabled=false`
+  // and every ack, and said nothing — the report looked identical to a healthy
+  // one with an empty table. The fallback itself is right (a config gap can never
+  // disable a check); the silence was the defect. It is now a visible warn arm.
+  let cfgReadFailure: string | null = null;
   try {
-    const { data: cfgRows } = await supabase
+    const { data: cfgRows, error: cfgErr } = await supabase
       .from("sentinel_threshold_config")
       .select("check_name, warn_at, crit_at, enabled, ack_reason, ack_expires_at");
+    if (cfgErr) cfgReadFailure = cfgErr.message || String(cfgErr);
+    else if (!Array.isArray(cfgRows)) cfgReadFailure = "no payload and no error";
     for (const r of cfgRows || []) {
       // An ack is honoured only when BOTH halves are present and the date parses;
       // half an ack is no ack, so a malformed row can never silence a page.
@@ -212,8 +221,20 @@ export async function POST(req: NextRequest) {
         ack,
       };
     }
-  } catch {
+  } catch (e: any) {
     /* config table unreadable -> every check uses its hardcoded fallback */
+    cfgReadFailure = e?.message ?? String(e);
+  }
+  if (cfgReadFailure !== null) {
+    checks.push({
+      name: "Threshold Config",
+      status: "warn",
+      detail:
+        `[CONFIG READ FAILED: ${cfgReadFailure}] every check in this report ran on its HARDCODED ` +
+        `thresholds — no enabled=false and no acknowledgement was applied, so an acked critical ` +
+        `pages again below and a disabled check may reappear. The fallback is correct; this line is ` +
+        `here so it is not silent.`,
+    });
   }
   // Returns the configured threshold, or `fallback` when the row/value is absent.
   const thr = (

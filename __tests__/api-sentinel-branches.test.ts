@@ -670,3 +670,57 @@ describe("sentinel — an acknowledged critical", () => {
     expect(noReason.status).toBe("critical")
   })
 })
+
+// ── The threshold-config read itself (2026-09-03) ──
+//
+// supabase-js RETURNS its error, so `const { data } = await …select()` on a failed
+// read yields `data: null, error: {…}` and the loop over `data || []` runs zero
+// times: every check falls back to its hardcoded threshold, every `enabled=false`
+// and every ack is dropped — and the report is byte-for-byte what a healthy run
+// with an EMPTY table produces. That is CLAUDE.md's "a failed read must not render
+// as an answer", on the alarm that is supposed to catch it elsewhere. The fallback
+// is right; the silence is the defect. These pin: a failed read is a VISIBLE warn
+// arm that says what was not applied; a healthy read produces no such arm; and an
+// ack that could not be read does not silently downgrade the critical it covered.
+describe("sentinel — a failed threshold-config read is visible, and never silently drops an ack", () => {
+  const GH = "api.github.com"
+  const ARM = "Detector Health (GitHub Actions)"
+  const CFG = "Threshold Config"
+  const streak12 = jsonRoute(GH, { workflow_runs: Array(12).fill({ status: "completed", conclusion: "failure" }) })
+
+  it("a healthy config read adds NO config arm — the arm exists only to name a failure", async () => {
+    const r = await run()
+    expect(r.checks.map((c) => c.name)).not.toContain(CFG)
+  })
+
+  it("a config read that RETURNS an error is a warn arm naming the error and what was not applied", async () => {
+    const r = await run({
+      sentinel_threshold_config: { data: null, error: { message: "canceling statement due to statement timeout" } } as never,
+    })
+    const arm = chk(r, CFG)
+    expect(arm.status).toBe("warn")
+    expect(arm.detail).toContain("CONFIG READ FAILED")
+    expect(arm.detail).toContain("canceling statement due to statement timeout")
+    expect(arm.detail).toContain("no acknowledgement was applied")
+  })
+
+  it("no payload and no error is also a failed read, not an empty table", async () => {
+    const r = await run({ sentinel_threshold_config: { data: null, error: null } as never })
+    expect(chk(r, CFG).status).toBe("warn")
+  })
+
+  it("when the config read fails, a critical that an ack WOULD have covered still pages, and the report says why", async () => {
+    process.env.GITHUB_ACTIONS_READ_TOKEN = "gh-test"
+    try {
+      const r = await run(
+        { sentinel_threshold_config: { data: null, error: { message: "PGRST002 schema cache" } } as never },
+        [sniperOk, telegramOk, resendOk, streak12],
+      )
+      expect(chk(r, ARM).status).toBe("critical")
+      expect(chk(r, ARM).detail).not.toContain("ACKNOWLEDGED")
+      expect(chk(r, CFG).detail).toContain("PGRST002")
+    } finally {
+      delete process.env.GITHUB_ACTIONS_READ_TOKEN
+    }
+  })
+})
