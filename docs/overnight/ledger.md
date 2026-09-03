@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — `.gitignore` can no longer swallow a file under `docs/`, and `*.patch` was one of SIX live traps
+
+**My own defect from earlier today, fixed at the mechanism rather than at the advice.** The parking commit (`220d834`) wrote `docs/overnight/handoffs/<name>.patch`, a README pointing at it and a ledger entry saying *"the patch is committed"* — and `.gitignore`'s `*.patch` dropped the file silently. `git show --stat 220d834` carries only the README and the ledger. The next session followed the pointer and found a promise; it re-derived the work from the ledger spec and shipped it (`fe1375ff8`), which is the right outcome and cost it a re-derivation it should not have needed.
+
+**🚨 WHY "LOOK MORE CAREFULLY" IS NOT AN AVAILABLE FIX.** `git add` does not report what an ignore rule skipped, and a clean `git status` afterwards is **consistent with the file having been added**. The two observations a writer naturally makes cannot tell the two outcomes apart. That is what makes this a rule rather than a note.
+
+**⭐ AND THE FIRST REMEDY WAS TOO NARROW.** The handoff README's original correction said *"park under a name `.gitignore` does not swallow"* — which asks a writer to hold the whole ignore list in their head. Measured today, **`*.patch` was one of six**: `logs/` (swallowing all of `docs/logs/`), `imports/`, `sweep-*.log`, `*.pem` and `*creds*.json` would each have done the same to a differently-named file.
+
+**Shipped.** `!docs/**` in `.gitignore`, so no ordinary artifact rule can hide a file that exists to be read from the repo. ⛔ **With the SECRET patterns re-asserted AFTER it** — `.env*.local`, `*creds*.json`, `*-creds.json`, `*.pem` — because a blanket negation would otherwise make a stray env file or key under `docs/` committable, and this repo has already paid for a credential leak once (the 2026-08-03 `filter-repo` purge). ⚠ Those duplicate patterns above **on purpose**: the duplicate is the mechanism, and deleting one as redundant re-opens the hole.
+
+**Verified as a matrix, not a claim** — `git add --dry-run` on a probe file, eight paths:
+
+| path | result |
+|---|---|
+| `docs/a.patch` · `docs/logs/x.md` · `docs/imports/y.md` · `docs/sweep-1.log` | **ADDABLE** |
+| `docs/.env.local` · `docs/x-creds.json` · `docs/b.pem` | **IGNORED** |
+| `some/x.patch` (outside docs) | **IGNORED** |
+
+⚠ **The directory patterns were the case I expected to fail and it did not.** gitignore's documented rule is that *"it is not possible to re-include a file if a parent directory of that file is excluded"*, so `docs/logs/x.md` under a `logs/` rule looked unrescuable. Measured: addable, because the negation matches `docs/logs` itself before the descent. **Measured rather than assumed, in both the direction I expected and the one I did not.**
+
+**⚠ AND THE OBVIOUS GUARD IS THE WRONG INSTRUMENT, which is worth recording.** `git status --ignored` lists ignored files that exist **on disk**; a CI checkout has none, because they were never committed. A guard built on it would read zero forever and catch nothing — the vacuous-pass shape this repo already records for a staged-only check that *"inspected nothing on a CI checkout and exited 0"*. So the guard asks about the RULES: it writes a probe file and asks `git add --dry-run` whether the file would make it into a commit. ⓘ `git check-ignore` was rejected too — with a negation in play it exits 0 for both *ignored* and *matched a `!` rule*, so it answers a different question than the one being asked.
+
+5 cases, mutation-checked both ways: deleting `!docs/**` fails the three docs cases; moving the secret block ABOVE the negation fails the secrets case. Both also fail the ordering case, which pins the position the behaviour depends on — a reordering would otherwise look like an unrelated failure. Non-vacuity is a `.patch` **outside** `docs/` that must still be ignored, which also proves the fix did not simply delete the rule. tsc and eslint clean; the 24 tests in the three guards that read `.gitignore` or the inbox index green.
+
+The orphan file itself is deleted (its work has shipped) — and it would otherwise have been swept into the NEXT `git add -A`, now that it is no longer ignored.
+
+**Revert.** `git revert <this sha>` — restores the trap. Note the secret patterns appear twice after this commit; a revert removes only the second copy.
+
 ### 2026-09-03 · ✅ SHIPPED — CI audit drain, pass 4: the five GitHub actions move off the deprecated Node 20 majors to their current releases, SHA-pinned · Claude Code (cloud)
 
 - **What shipped:** every `uses:` across 23 workflows + 2 composites re-pinned from the v4/v2 line (Node 20; every job log carried GitHub's "Node.js 20 is deprecated … forced to run on Node.js 24" warning) to the current release of each action, each as `@<sha> # vX.Y.Z`: **checkout v7.0.1** (34 sites), **setup-node v7.0.0** (17), **upload-artifact v7.0.1** (3), **download-artifact v8.0.1** (1), **cache v6.1.0** (1); setup-deno stays v2.0.5 (already current). All five now declare `runs.using: node24`.
