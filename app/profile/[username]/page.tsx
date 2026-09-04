@@ -26,6 +26,7 @@
 // identically while collapsing repeat-crawl cost. `dynamicParams` stays on so
 // an unknown username still renders on demand.
 
+import { notFound } from "next/navigation"
 import ProfileClient from "./ProfileClient"
 import { getPublicProfile } from "@/lib/profile/public-profile"
 
@@ -37,6 +38,15 @@ export default async function PublicProfilePage(props: {
 }) {
   const { username } = await props.params
   const result = await getPublicProfile(username, "ssr")
+  // A 404 is a real answer — there is no such collector — and it is the one
+  // status that must NOT fall through to `initialFailed`: until 2026-09-03 an
+  // unknown handle rendered a full profile shell for "<HANDLE> · COLLECTOR"
+  // with "We couldn't load this portfolio … Refresh to try again" at HTTP 200
+  // — a load failure claimed about a collector who does not exist, on an
+  // unbounded, indexable URL space (the layout's `noindex` was the only thing
+  // standing between that and the crawl). The trophy-case sibling page has
+  // done this since it shipped; a 500/503 still seeds `initialFailed` below.
+  if (!result.ok && result.status === 404) notFound()
   const data = result.ok ? result.data : null
 
   // 🚨 `initialFailed` IS THE PROVENANCE OF THE SEED, AND WITHOUT IT THE SEED
