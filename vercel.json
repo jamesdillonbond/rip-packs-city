@@ -106,6 +106,10 @@
       "schedule": "40 */2 * * *"
     },
     {
+      "path": "/api/cron/topshot-circulation-onchain",
+      "schedule": "5 4 * * *"
+    },
+    {
       "path": "/api/admin/backfill-allday-buyers",
       "schedule": "15 */3 * * *"
     },
