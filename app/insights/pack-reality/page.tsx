@@ -666,7 +666,11 @@ const CSS = `
 
 .rpc-pr-mvr { max-width: 1180px; margin: 0 auto 36px; }
 .rpc-pr-mvr-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
-.rpc-pr-mvr-card { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); border-radius: 2px; padding: 16px; }
+/* min-width: 0 is load-bearing (R60, measured in real Chromium 2026-09-03): a grid item
+   defaults to min-width:auto, so the 5-column table inside the card forced the card to its
+   intrinsic 726px and the PAGE scrolled 336px sideways at 390px — the inner .rpc-scroll-x
+   wrapper can only scroll once the card is allowed to be narrower than its table. */
+.rpc-pr-mvr-card { min-width: 0; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); border-radius: 2px; padding: 16px; }
 .rpc-pr-mvr-h3 { font-family: var(--font-display); font-weight: 800; font-size: 18px; letter-spacing: 0.5px; text-transform: uppercase; margin: 0 0 4px; }
 .rpc-pr-mvr-cap { font-size: 13px; line-height: 1.5; color: var(--rpc-text-secondary); margin: 0 0 12px; }
 .rpc-pr-mvr-cap strong { color: var(--rpc-text-primary); }
