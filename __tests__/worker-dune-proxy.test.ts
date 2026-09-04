@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-// @ts-expect-error — plain worker module imported by explicit .ts path
 import worker from "@/workers/dune-proxy/index.ts"
 
 // Behavioural coverage for the dune-proxy Cloudflare Worker — the 4th auth

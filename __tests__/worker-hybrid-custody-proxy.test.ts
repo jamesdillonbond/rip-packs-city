@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-// @ts-expect-error — plain worker module, no type declarations
 import worker from "@/workers/hybrid-custody-proxy/index.ts"
 
 // Behavioural coverage for the hybrid-custody-proxy Cloudflare Worker — the

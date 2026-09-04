@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-// @ts-expect-error — plain worker module imported by explicit .ts path
 import worker from "@/workers/pinnacle-events-proxy/index.ts"
 
 // Behavioural coverage for the pinnacle-events-proxy Cloudflare Worker — a

@@ -44,7 +44,6 @@ vi.mock("@supabase/supabase-js", () => ({
   SupabaseClient: class {},
 }))
 
-// @ts-expect-error — plain worker module, no type declarations
 import worker from "@/workers/topshot-moments-hydrator/index.ts"
 
 const TOKEN = "ingest-secret"

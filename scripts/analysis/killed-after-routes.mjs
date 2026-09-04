@@ -32,10 +32,48 @@
 // idle, un-heartbeated, or never firing. This script cannot tell those apart,
 // and it does not pretend to: `--json` lists what it saw, not what exists.
 
-import { readFileSync, existsSync } from 'fs'
-import { resolve } from 'path'
+import { readFileSync, existsSync, readdirSync, statSync } from 'fs'
+import { resolve, join, relative, sep } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { correlateRuns } from '../../lib/pipeline/kill-rate.ts'
+import { extractRouteWall } from '../../lib/pipeline/route-walls.ts'
+import { stripComments } from '../lib/strip-comments.mjs'
+
+// ── The per-route wall map (2026-09-03) ─────────────────────────────────────
+// Read from SOURCE: every app/api/**/route.ts(x), comments stripped (the route
+// headers quote pipeline names constantly), `export const maxDuration` and the
+// pipeline-name literals extracted by lib/pipeline/route-walls.ts. A pipeline
+// name that two routes claim with DIFFERENT walls is mapped to null — an
+// ambiguous wall is no wall, and the classifier then reports it `unmapped`
+// rather than reading durations against a guess. ⚠ This describes the tree as
+// committed, not as deployed, and it says nothing about whether the mapped
+// route is the WRITER — the classifier's `unmappable` verdict is what catches
+// that (a duration far above the mapped wall).
+function buildWallMap() {
+  const root = process.cwd()
+  const api = join(root, 'app', 'api')
+  const files = []
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (statSync(full).isDirectory()) walk(full)
+      else if (entry === 'route.ts' || entry === 'route.tsx') files.push(full)
+    }
+  }
+  walk(api)
+  const walls = new Map()
+  const conflicts = new Set()
+  for (const full of files) {
+    const rel = relative(root, full).split(sep).join('/')
+    const w = extractRouteWall(rel, stripComments(readFileSync(full, 'utf8')))
+    for (const p of w.pipelines) {
+      if (walls.has(p) && walls.get(p) !== w.maxDurationSec) conflicts.add(p)
+      else walls.set(p, w.maxDurationSec)
+    }
+  }
+  for (const p of conflicts) walls.set(p, null)
+  return { walls, routes: files.length, mapped: walls.size, conflicts: [...conflicts].sort() }
+}
 
 function loadEnv() {
   const envPath = resolve(process.cwd(), '.env.local')
@@ -75,7 +113,7 @@ async function readAllRuns() {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await db
       .from('pipeline_runs')
-      .select('id,pipeline,started_at')
+      .select('id,pipeline,started_at,duration_ms')
       .order('id', { ascending: true })
       .range(from, from + PAGE - 1)
     // ⚠ A paged read that `break`s on error returns a PARTIAL list no caller
@@ -100,15 +138,37 @@ try {
 // ⚠ The correlation and the verdict both live in lib/pipeline/kill-rate.ts, under
 // test against the real 2026-08-28 record with positive and negative controls.
 // Do NOT re-derive either here — re-deriving it by hand is the documented defect.
-const records = correlateRuns(runs)
+const wallMap = buildWallMap()
+const records = correlateRuns(runs, wallMap.walls)
 
 if (JSON_OUT) {
-  console.log(JSON.stringify({ window: 'pipeline_runs retention, ~73h', records }, null, 2))
+  console.log(
+    JSON.stringify(
+      {
+        window: 'pipeline_runs retention, ~73h',
+        walls: { routes: wallMap.routes, mapped: wallMap.mapped, conflicts: wallMap.conflicts },
+        records,
+      },
+      null,
+      2,
+    ),
+  )
 } else {
   const ICON = { failing: '🚨', intermittent: '⚠ ', recovered: '✅', healthy: '  ' }
-  console.log(`\n${records.length} heartbeated pipelines seen in the ~73h pipeline_runs window\n`)
+  console.log(`\n${records.length} heartbeated pipelines seen in the ~73h pipeline_runs window`)
+  console.log(
+    `walls: ${wallMap.routes} routes read, ${wallMap.mapped} pipeline names mapped` +
+      (wallMap.conflicts.length ? `, ${wallMap.conflicts.length} ambiguous (two routes, two walls): ${wallMap.conflicts.join(', ')}` : '') +
+      '\n',
+  )
   for (const r of records) {
-    console.log(`${ICON[r.verdict]} ${r.verdict.toUpperCase().padEnd(13)} ${r.pipeline}`)
+    const wall =
+      r.wallStatus === 'unmapped'
+        ? 'wall ?'
+        : r.wallStatus === 'unmappable'
+          ? `wall ${r.wallSec}s UNMAPPABLE`
+          : `wall ${r.wallSec}s clipped ${r.wallClipped}`
+    console.log(`${ICON[r.verdict]} ${r.verdict.toUpperCase().padEnd(13)} ${r.pipeline}  [${wall}]`)
     console.log(`   ${r.note}`)
   }
   console.log(

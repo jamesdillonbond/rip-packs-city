@@ -59,12 +59,18 @@
 //
 // ⚠ So a `healthy` verdict is a statement about terminal rows landing, not about
 // invocations surviving, and the under-count is silent. The discriminator that
-// would catch it is `duration_ms` at or beyond the ROUTE'S OWN `maxDuration` —
-// deliberately not added here, because this module has no per-route wall to
-// compare against (they live in `export const maxDuration` in each route file)
-// and inventing a fleet-wide constant would misclassify every short-wall route.
-// Wiring it needs the walls read from source; that is a real piece of work and
-// it is named rather than half-done.
+// catches it is `duration_ms` at or beyond the ROUTE'S OWN `maxDuration`, and
+// since 2026-09-03 the walls ARE read from source (`lib/pipeline/route-walls.ts`)
+// and can be handed to `correlateRuns` as a per-pipeline map. What that adds is
+// a SEPARATE counter, `wallClipped` — never a redefinition of `killed`: the
+// recovery test's null rate depends on `killed` meaning "no terminal row", and
+// folding clipped ticks into it would move every verdict in the fleet at once.
+//
+// ⚠ And a wall map can be WRONG for a pipeline (the route mapped is not the
+// writer — the first fleet sweep found four of those, reading 1.9× to 21.7× their
+// mapped wall). Comparing against a wrong wall would manufacture clipped ticks
+// out of thin air, a worse instrument than none, so above MAP_IS_WRONG_ABOVE the
+// pipeline is reported UNMAPPABLE and its clipped count is null, not a number.
 //
 // ⚠ WHAT THIS DOES NOT DO. It is a description of a record, not a diagnosis.
 // `recovered` means the kills stopped, never that anyone knows why — attribute
@@ -72,13 +78,35 @@
 // an assumption: kills cluster by hour and by deploy, so p is indicative, not
 // a real significance level. It is a discriminator, not a proof.
 
+// ⚠ The `.ts` extension is load-bearing: `scripts/analysis/killed-after-routes.mjs`
+// runs this module under Node's native type stripping, which resolves only
+// explicit paths (no tsx/ts-node here). tsconfig's `allowImportingTsExtensions`
+// lets tsc accept it. Drop the extension and the script dies with
+// ERR_MODULE_NOT_FOUND while every test stays green.
+import { CENSORED_AT, MAP_IS_WRONG_ABOVE, wallFraction } from './route-walls.ts'
+
 /** One tick of a heartbeated route, oldest-first or newest-first — either is fine. */
 export type KillTick = {
   /** When the heartbeat row was written. */
   startedAt: Date
   /** True when no terminal row correlated to this heartbeat: the `after()` body was killed. */
   killed: boolean
+  /**
+   * `duration_ms` of the terminal row that correlated to this heartbeat. `null`
+   * when the tick was killed (there is no terminal row) or the row carried none.
+   * Read only against the route's OWN wall — see `wallClipped`.
+   */
+  durationMs?: number | null
 }
+
+/**
+ * Whether a pipeline's wall is known, and whether it can be trusted.
+ *   unmapped    — no wall was supplied for this pipeline; nothing is said about clipping.
+ *   mapped      — a wall was supplied and every recorded duration is consistent with it.
+ *   unmappable  — a recorded duration exceeds the wall by more than MAP_IS_WRONG_ABOVE:
+ *                 the mapped route is not the writer, so the wall is not this pipeline's ceiling.
+ */
+export type WallStatus = 'unmapped' | 'mapped' | 'unmappable'
 
 export type KillVerdict =
   /** No kill has ever been recorded in the window. */
@@ -106,6 +134,18 @@ export type KillRecord = {
    * is no clean run, or when there are no kills to form a null rate from.
    */
   chanceRunIsLuck: number | null
+  /** The route wall this record was read against, seconds; null when none was supplied. */
+  wallSec: number | null
+  /** See WallStatus. */
+  wallStatus: WallStatus
+  /**
+   * Ticks whose terminal row landed at or beyond CENSORED_AT of the wall — the
+   * "terminal write raced the wall and won" shape (evm-transfers-ingest, 60,464 ms
+   * against 60,000). A SEPARATE counter from `killed`: these ticks stay clean in
+   * the kill record. `null` when the wall is unmapped or unmappable — never 0,
+   * because 0 would read as "measured, none".
+   */
+  wallClipped: number | null
   /** One line naming the evidence, safe to print verbatim. */
   note: string
 }
@@ -114,15 +154,61 @@ export type KillRecord = {
 export const RECOVERY_P_THRESHOLD = 0.05
 
 /**
+ * Read the ticks' terminal durations against the route's wall. Pure; never
+ * touches `killed`. Returns the three wall fields of a KillRecord plus a note
+ * fragment (empty when there is nothing to say).
+ */
+function readWall(
+  ticks: readonly KillTick[],
+  wallSec: number | null | undefined,
+): { wallSec: number | null; wallStatus: WallStatus; wallClipped: number | null; wallNote: string } {
+  if (wallSec == null || wallSec <= 0) {
+    return { wallSec: null, wallStatus: 'unmapped', wallClipped: null, wallNote: '' }
+  }
+  const fractions = ticks
+    .map((t) => wallFraction(t.durationMs ?? null, wallSec))
+    .filter((f): f is number => f !== null)
+  const worst = fractions.length ? Math.max(...fractions) : null
+  if (worst !== null && worst > MAP_IS_WRONG_ABOVE) {
+    return {
+      wallSec,
+      wallStatus: 'unmappable',
+      wallClipped: null,
+      wallNote:
+        ` ⛔ wall UNMAPPABLE: a terminal row ran ${worst.toFixed(2)}× the mapped ${wallSec} s wall, ` +
+        `so the mapped route is not this pipeline's writer — clipped count withheld`,
+    }
+  }
+  const clipped = fractions.filter((f) => f >= CENSORED_AT).length
+  return {
+    wallSec,
+    wallStatus: 'mapped',
+    wallClipped: clipped,
+    wallNote: clipped
+      ? ` ⚠ ${clipped} tick(s) landed at ≥${CENSORED_AT} of the ${wallSec} s wall — terminal writes that RACED the wall; not counted as killed`
+      : '',
+  }
+}
+
+/**
  * Classify one pipeline's tick sequence.
  *
  * ⚠ Pass EVERY tick in the window, not a filtered subset: the clean run is
  * counted from the end of the sequence, so a filtered tail invents a recovery.
+ *
+ * `wallSec` is the route's own `maxDuration` when known. It feeds ONLY the
+ * `wall*` fields; the kill verdict is computed exactly as it was without it.
  */
-export function classifyKillRecord(pipeline: string, ticks: readonly KillTick[]): KillRecord {
+export function classifyKillRecord(
+  pipeline: string,
+  ticks: readonly KillTick[],
+  wallSec: number | null = null,
+): KillRecord {
   const ordered = [...ticks].sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime())
   const total = ordered.length
   const killed = ordered.filter((t) => t.killed).length
+  const wall = readWall(ordered, wallSec)
+  const wallFields = { wallSec: wall.wallSec, wallStatus: wall.wallStatus, wallClipped: wall.wallClipped }
 
   if (total === 0) {
     // ⚠ Not `healthy`. No ticks is an absence of evidence — a route that never
@@ -138,6 +224,7 @@ export function classifyKillRecord(pipeline: string, ticks: readonly KillTick[])
       lastOkAt: null,
       verdict: 'intermittent',
       chanceRunIsLuck: null,
+      ...wallFields,
       note: 'no heartbeats in the window — nothing is known about this pipeline, not even that it is idle',
     }
   }
@@ -161,7 +248,8 @@ export function classifyKillRecord(pipeline: string, ticks: readonly KillTick[])
       lastOkAt,
       verdict: 'healthy',
       chanceRunIsLuck: null,
-      note: `${total} ticks, no kills`,
+      ...wallFields,
+      note: `${total} ticks, no kills` + wall.wallNote,
     }
   }
 
@@ -176,7 +264,8 @@ export function classifyKillRecord(pipeline: string, ticks: readonly KillTick[])
       lastOkAt,
       verdict: 'failing',
       chanceRunIsLuck: null,
-      note: `the most recent tick was KILLED (${killed}/${total} = ${killRatePct}% over the window)`,
+      ...wallFields,
+      note: `the most recent tick was KILLED (${killed}/${total} = ${killRatePct}% over the window)` + wall.wallNote,
     }
   }
 
@@ -193,15 +282,25 @@ export function classifyKillRecord(pipeline: string, ticks: readonly KillTick[])
     lastOkAt,
     verdict: recovered ? 'recovered' : 'intermittent',
     chanceRunIsLuck,
-    note: recovered
-      ? `kills STOPPED — ${cleanTicks} clean ticks after ${killed}/${total} killed; p=${chanceRunIsLuck.toExponential(1)} that this run is luck. ` +
-        `⚠ the ${killRatePct}% pooled rate is HISTORICAL — do not report it as current`
-      : `${killed}/${total} = ${killRatePct}% killed, ${cleanTicks} clean since; p=${chanceRunIsLuck.toFixed(2)} that the run is luck — NOT enough to call it recovered`,
+    ...wallFields,
+    note:
+      (recovered
+        ? `kills STOPPED — ${cleanTicks} clean ticks after ${killed}/${total} killed; p=${chanceRunIsLuck.toExponential(1)} that this run is luck. ` +
+          `⚠ the ${killRatePct}% pooled rate is HISTORICAL — do not report it as current`
+        : `${killed}/${total} = ${killRatePct}% killed, ${cleanTicks} clean since; p=${chanceRunIsLuck.toFixed(2)} that the run is luck — NOT enough to call it recovered`) +
+      wall.wallNote,
   }
 }
 
-/** A `pipeline_runs` row, reduced to the two fields the correlation needs. */
-export type PipelineRunRow = { pipeline: string; started_at: string }
+/**
+ * A `pipeline_runs` row, reduced to what the correlation needs. `duration_ms`
+ * is optional so every existing caller keeps working; without it no wall
+ * reading is possible and every record comes back `unmapped`.
+ */
+export type PipelineRunRow = { pipeline: string; started_at: string; duration_ms?: number | null }
+
+/** Per-pipeline route wall in seconds (null = the route sets no maxDuration). */
+export type WallMap = ReadonlyMap<string, number | null>
 
 /**
  * The suffix `lib/pipeline/heartbeat.ts` appends to form a marker row's name.
@@ -264,9 +363,9 @@ export const CORRELATION_WINDOW_MS = 5_000
  * carries no information: un-heartbeated, idle, and never-firing all look the
  * same here. Do not read a short list as a clean bill of health.
  */
-export function correlateRuns(rows: readonly PipelineRunRow[]): KillRecord[] {
+export function correlateRuns(rows: readonly PipelineRunRow[], walls?: WallMap): KillRecord[] {
   const heartbeats = new Map<string, Date[]>()
-  const terminals = new Map<string, number[]>()
+  const terminals = new Map<string, Array<{ at: number; durationMs: number | null }>>()
 
   // A `-dispatch` name is only a marker when its `-complete` sibling exists.
   // Derived from the data, never from a list of names — see DISPATCH_SUFFIX.
@@ -282,14 +381,16 @@ export function correlateRuns(rows: readonly PipelineRunRow[]): KillRecord[] {
     if (list) list.push(v)
     else m.set(k, [v])
   }
-  const pushMs = (m: Map<string, number[]>, k: string, v: number) => {
-    const list = m.get(k)
+  const pushTerm = (k: string, at: number, durationMs: number | null) => {
+    const list = terminals.get(k)
+    const v = { at, durationMs }
     if (list) list.push(v)
-    else m.set(k, [v])
+    else terminals.set(k, [v])
   }
 
   for (const r of rows) {
     const at = new Date(r.started_at)
+    const durationMs = typeof r.duration_ms === 'number' && Number.isFinite(r.duration_ms) ? r.duration_ms : null
     if (r.pipeline.endsWith(HEARTBEAT_SUFFIX)) {
       push(heartbeats, r.pipeline.slice(0, -HEARTBEAT_SUFFIX.length), at)
       continue
@@ -305,10 +406,10 @@ export function correlateRuns(rows: readonly PipelineRunRow[]): KillRecord[] {
     }
     if (r.pipeline.endsWith(COMPLETE_SUFFIX)) {
       const base = r.pipeline.slice(0, -COMPLETE_SUFFIX.length)
-      pushMs(terminals, base, at.getTime())
+      pushTerm(base, at.getTime(), durationMs)
       continue
     }
-    pushMs(terminals, r.pipeline, at.getTime())
+    pushTerm(r.pipeline, at.getTime(), durationMs)
   }
 
   const rank: Record<KillVerdict, number> = {
@@ -321,11 +422,13 @@ export function correlateRuns(rows: readonly PipelineRunRow[]): KillRecord[] {
   return [...heartbeats.entries()]
     .map(([pipeline, beats]) => {
       const term = terminals.get(pipeline) ?? []
-      const ticks = beats.map((startedAt) => ({
-        startedAt,
-        killed: !term.some((t) => Math.abs(t - startedAt.getTime()) < CORRELATION_WINDOW_MS),
-      }))
-      return classifyKillRecord(pipeline, ticks)
+      const ticks: KillTick[] = beats.map((startedAt) => {
+        const match = term.find((t) => Math.abs(t.at - startedAt.getTime()) < CORRELATION_WINDOW_MS)
+        return { startedAt, killed: !match, durationMs: match ? match.durationMs : null }
+      })
+      // ⚠ `walls.get` returning undefined (pipeline not in the map) and a mapped
+      // null (route sets no maxDuration) both mean "no wall to read against".
+      return classifyKillRecord(pipeline, ticks, walls?.get(pipeline) ?? null)
     })
     .sort((a, b) => rank[a.verdict] - rank[b.verdict] || b.killRatePct - a.killRatePct)
 }

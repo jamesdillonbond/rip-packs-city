@@ -314,3 +314,91 @@ describe('correlateRuns — the second marker convention (-dispatch / -complete)
     expect(byName['wallet-backfill-multicollection'].killed).toBe(1)
   })
 })
+
+describe('the wall reading is a SEPARATE counter — it never redefines `killed` (2026-09-03)', () => {
+  // The measured case: cron/evm-transfers-ingest at 2026-09-03 07:34:26Z. Vercel
+  // logged `Task timed out after 60 seconds`, yet a marker AND a terminal row
+  // (ok=true, duration_ms=60,464) both landed. The correlation scores it clean,
+  // which is correct for `killed`; the wall reading is what says "it raced".
+  const EVM_ROWS = [
+    { pipeline: 'evm-transfers-ingest-heartbeat', started_at: '2026-09-03T07:34:26Z' },
+    { pipeline: 'evm-transfers-ingest', started_at: '2026-09-03T07:34:26.400Z', duration_ms: 60_464 },
+    { pipeline: 'evm-transfers-ingest-heartbeat', started_at: '2026-09-03T08:34:26Z' },
+    { pipeline: 'evm-transfers-ingest', started_at: '2026-09-03T08:34:26.400Z', duration_ms: 4_120 },
+  ]
+  const WALLS = new Map([['evm-transfers-ingest', 60]])
+
+  it('reads the evm tick as CLIPPED while the kill record stays healthy', () => {
+    const [r] = correlateRuns(EVM_ROWS, WALLS)
+    expect(r.killed).toBe(0)
+    expect(r.verdict).toBe('healthy')
+    expect(r.wallStatus).toBe('mapped')
+    expect(r.wallSec).toBe(60)
+    expect(r.wallClipped).toBe(1)
+    expect(r.note).toMatch(/RACED the wall/)
+    expect(r.note).toMatch(/not counted as killed/)
+  })
+
+  it('NEGATIVE CONTROL: the same rows with no wall map read exactly as before — unmapped, clipped null, never 0', () => {
+    const [r] = correlateRuns(EVM_ROWS)
+    expect(r.killed).toBe(0)
+    expect(r.verdict).toBe('healthy')
+    expect(r.wallStatus).toBe('unmapped')
+    expect(r.wallSec).toBeNull()
+    expect(r.wallClipped).toBeNull()
+    expect(r.note).not.toMatch(/wall/)
+  })
+
+  it('a pipeline the map does not name, or maps to null, is unmapped — not clipped 0', () => {
+    const [absent] = correlateRuns(EVM_ROWS, new Map([['some-other-pipeline', 60]]))
+    expect(absent.wallStatus).toBe('unmapped')
+    expect(absent.wallClipped).toBeNull()
+    const [nulled] = correlateRuns(EVM_ROWS, new Map([['evm-transfers-ingest', null]]))
+    expect(nulled.wallStatus).toBe('unmapped')
+    expect(nulled.wallClipped).toBeNull()
+  })
+
+  it('a duration FAR above the wall makes the pipeline UNMAPPABLE and withholds the count', () => {
+    // refresh-pack-grail-metrics-mv read 2.7x its mapped 60 s wall on the first
+    // sweep because the work had moved to pg_cron; the Vercel route's wall stopped
+    // being that pipeline's ceiling. Comparing against it would have invented
+    // clipped ticks out of thin air.
+    const rows = [
+      { pipeline: 'grail-mv-heartbeat', started_at: '2026-09-03T01:00:00Z' },
+      { pipeline: 'grail-mv', started_at: '2026-09-03T01:00:00.300Z', duration_ms: 163_382 },
+      { pipeline: 'grail-mv-heartbeat', started_at: '2026-09-03T02:00:00Z' },
+      { pipeline: 'grail-mv', started_at: '2026-09-03T02:00:00.300Z', duration_ms: 59_900 },
+    ]
+    const [r] = correlateRuns(rows, new Map([['grail-mv', 60]]))
+    expect(r.wallStatus).toBe('unmappable')
+    expect(r.wallClipped).toBeNull()
+    expect(r.note).toMatch(/UNMAPPABLE/)
+    // and the kill record is untouched by any of it
+    expect(r.killed).toBe(0)
+    expect(r.verdict).toBe('healthy')
+  })
+
+  it('a killed tick carries no duration and cannot be clipped — the two counters do not double-count', () => {
+    const rows = [
+      { pipeline: 'p-heartbeat', started_at: '2026-09-03T01:00:00Z' },
+      // no terminal row: killed
+      { pipeline: 'p-heartbeat', started_at: '2026-09-03T02:00:00Z' },
+      { pipeline: 'p', started_at: '2026-09-03T02:00:00.300Z', duration_ms: 59_000 },
+    ]
+    const [r] = correlateRuns(rows, new Map([['p', 60]]))
+    expect(r.ticks).toBe(2)
+    expect(r.killed).toBe(1)
+    expect(r.wallClipped).toBe(1)
+    // 1 kill then 1 clean at a pooled 50% rate: p = 0.5, not a recovery — the
+    // verdict is the kill maths alone; the clipped tick did not move it.
+    expect(r.verdict).toBe('intermittent')
+    expect(r.chanceRunIsLuck).toBeCloseTo(0.5)
+  })
+
+  it('classifyKillRecord keeps its old signature — a caller passing no wall gets unmapped', () => {
+    const r = classifyKillRecord('x', seq('...'))
+    expect(r.wallStatus).toBe('unmapped')
+    expect(r.wallClipped).toBeNull()
+    expect(r.wallSec).toBeNull()
+  })
+})

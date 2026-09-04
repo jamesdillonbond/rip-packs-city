@@ -1,5 +1,7 @@
 # The per-route wall map exists now, and its first fleet sweep diagnoses its own mapping errors
 
+> ✅ **RESOLVED 2026-09-03 (late PT) — steps 2 and 3 SHIPPED** (ledger 2026-09-03, `feat(kills)`): `duration_ms` is carried through `PipelineRunRow` → `KillTick`, `correlateRuns` takes a per-pipeline wall map built from source by the runner, and `wallClipped` is a SEPARATE counter with the UNMAPPABLE rule at 1.2× (count withheld as null, never 0). `killed` is untouched; every prior verdict is byte-identical. First production read: 44 pipelines, 2 clipped (`fmv-recalc` 1/465, `evm-transfers-ingest` 1 — the racing tick this filing was about), 0 unmappable.
+
 **Filed 2026-09-03 ~01:20 PT (08:30Z) by Claude Code. The MODULE is shipped (`lib/pipeline/route-walls.ts`
 + 9 tests); the fleet sweep below is a MEASUREMENT, and no pipeline was changed because of it.**
 

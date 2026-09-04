@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-// @ts-expect-error — plain worker module imported by explicit .ts path
 import worker from "@/workers/spork-proxy/index.ts"
 
 // Behavioural coverage for the spork-proxy Cloudflare Worker — historical Flow

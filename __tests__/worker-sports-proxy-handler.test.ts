@@ -1,5 +1,4 @@
 import { describe, it, expect, afterEach, vi } from "vitest"
-// @ts-expect-error — plain worker module, no type declarations
 import worker from "@/workers/sports-proxy/index.ts"
 
 // ── sports-proxy worker: fetch() ENTRY HANDLER coverage ─────────────────────

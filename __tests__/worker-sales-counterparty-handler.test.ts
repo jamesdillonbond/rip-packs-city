@@ -25,7 +25,6 @@ vi.mock("@supabase/supabase-js", () => ({
 
 // Import AFTER the mock is registered (vi.mock is hoisted, so a static import is
 // fine, but keep it explicit for clarity).
-// @ts-expect-error — plain worker module, no type declarations
 import worker from "@/workers/sales-counterparty-backfill/index.ts"
 
 const TOKEN = "ingest-secret"
