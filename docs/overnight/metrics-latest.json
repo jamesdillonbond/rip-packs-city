@@ -1,69 +1,47 @@
 {
-  "run": "healthcheck-20260904T0430Z-desktop-vm-PUSH",
-  "captured_at_utc": "2026-09-04T04:30Z",
-  "captured_at_pt": "2026-09-03T21:30 PT",
-  "mode": "Trevor-requested full health check + audit (tools, DB, site, onboarding, mobile, skills, scheduled tasks, artifacts, pipelines). Desktop VM session: push via the persisted device-flow cred from a fresh $HOME clone; DB via MCP; Chrome + Playwright(VM) for the site. A Claude Code session on Trevor's box was shipping concurrently (origin/main moved d6c7b35 -> 24924f3 -> fd66faa during the pass).",
-  "genuine_overnight": false,
-  "push_available": true,
-  "read_at": "origin/main fd66faa at ledger splice time",
-  "shipped_to_prod_state": "DB: 20260904041433 + 20260904041544 (get_top_movers: sales-backed current price AND a sale in the window), 20260904041635 (watchlist cron_silent/stalled grace for rows younger than their threshold; lateral window >= threshold). CODE: one commit, 12 files \u2014 WatchEditionButton anon 405 = sign-in; /api/badge-taxonomy POST + /api/profile/me GET public; mobile body padding under the nav; SIGN IN nowrap; header handle 9px; top-sales arweave art via avatar proxy; breakdown header '\u2014' while loading; share-card 'No series'; pack-dist generateMetadata honours ok; e2e-smoke cron :41 -> :51; CLAUDE.md #27; apis-and-cadence decommission note.",
+  "run": "night-20260904T0803Z-cloud-NO-PUSH",
+  "captured_at_utc": "2026-09-04T08:08Z",
+  "captured_at_pt": "2026-09-04T01:08 PT",
+  "mode": "genuine overnight, clock verified vs DB now() (no skew); GIT PUSH UNAVAILABLE (cloud) -> DB + artifacts only, code queued",
+  "genuine_overnight": true,
+  "push_available": false,
+  "read_at": "origin/main d0378dd0",
+  "shipped_to_prod_state": "NONE - no safe autonomous ship in NO-PUSH mode; no regression from last night; no auto-revert",
   "security": {
     "invariants": "clean []",
     "anon_write_holes": "clean []",
     "secdef_anon_violations": "clean []",
-    "secdef_drift": "clean []",
-    "advisor_security": "233 lints: 4 fn mutable search_path (filed), 0 RLS-disabled, 0 secdef views"
+    "rls_off_base_tables": "clean []"
   },
-  "health_verdict": "GREEN with two live defects: allday-pack-opens-backfill not reaching the edge since 02:16Z (filed, edge-fn code) and the Top Movers false-claim (FIXED). Public-board slow arm: 1 (candy_pack_market class, tabulated).",
-  "db_size_mb": 16032,
-  "db_size_mb_delta": "+875 vs 15157 (09-03 08Z)",
-  "stalled_pipelines": [
-    "allday-pack-opens-backfill (real \u2014 see ledger)"
-  ],
-  "pipeline_alerts": {
-    "count": 5,
-    "rows": [
-      "allday-pack-opens-backfill cron_silent + failure_rate 61/103 24h (real)",
-      "topshot-circulation-onchain running_but_not_succeeding (concurrent session's new cron; first tick failed Flow REST 400 on chunk size, they fixed it in 7df740c)",
-      "unmapped-sales-nfl_all_day info (structural)",
-      "golazos_sales resolving_editions (unread)"
-    ]
-  },
-  "pgcron_24h": "4,000 runs / 0 failed / 0 startup timeouts; worker-slot exhaustion ended 2026-09-02 18:17Z",
+  "db_size_mb": 16136,
+  "db_size_mb_delta": "+104 vs 16032 (09-04 04:30Z)",
+  "stalled_pipelines": [],
+  "sentinel_ts_uuid_editions_48h": 0,
   "trust_health": {
     "breaches": [
-      "public_board_slow_count = 1 (candy_pack_market class, ledger-tabulated)",
-      "unmapped_resolution_backlog_max 184 (structural, declining 209 -> 184)"
+      "public_board_slow_count (3 slow public views: v_topshot_parallel_premiums 8.1s, pack_table_rows 5.7s, candy_player_board 5.2s; empty_or_error=0 - slow not down; standing IO class, oscillates 1-3)",
+      "unmapped_resolution_backlog_max 172 (structural AllDay floor, declining 209->184->172)"
     ]
   },
-  "vercel_48h": "pack-detail read exceeded 5000ms: pack_lifecycle 37 hits/31 users, pack_realized_ev 14/14; TimeoutError image proxies 563/93 users (abort budgets shipped 09-03); market-pulse 8000ms 7 users; edition market_bundle 57014 x6; /api/og/insights%5C 500 x4 (bot backslash URL); hero-moment 57014 x3",
-  "users": {
-    "auth_users": 24,
-    "created_7d": 1,
-    "signed_in_7d": 1,
-    "claimed_handles": 22,
-    "saved_wallets": "104 across 22 users",
-    "trophy_moments": "16 across 6 users",
-    "outbound_clicks_30d": 7,
-    "funnel_7d_nonbot_top": [
-      "/nba-top-shot/collection 157",
-      "home 102",
-      "/insights/pack-sniper 98",
-      "/insights/tc-report 89",
-      "/insights/top-sales 86"
-    ],
-    "human_signal_7d": {
-      "wallet_paste": 16,
-      "share_view": 9,
-      "account_created": 2
-    }
+  "pipeline_alerts": {
+    "count": 8,
+    "critical_benign": "pg_net_http_403 (23 Cloudflare bot-challenge 403s from pg_net probes; no correlated pipeline_runs failure; benign)",
+    "high_known": "allday-pack-opens-backfill 65/123 failed (edge-fn code, FILED 09-03, queued)",
+    "running_but_not_succeeding": ["ingest-topshot-challenges","topshot-catalog-backfill","topshot-misattrib-drain (dead host public-api.nbatopshot.com)","topshot-circulation-onchain (known pre-fix 04:05Z tick; fix in HEAD; next real read 09-05 04:05Z)"]
   },
-  "new_user_walk": "PASS end-to-end (front door -> share card ~14s -> magic link -> dashboard tour 6/6 -> wallet saved (stats 0/$0 for ~30s, then filled) -> handle claimed -> public profile -> trophy pinned -> trophy-case page + OG png). Console: no errors on authed pages; anon pages: badge-taxonomy 405 x7 (FIXED), /api/rewards/track 401 on squeeze (open, low).",
-  "mobile_390": "No horizontal overflow on 14/14 pages. Defects: bottom nav covers footer (FIXED), FAB over right column (open), SIGN IN wraps (FIXED), 7px handle (FIXED), /trophy-case/<u> not public (open), arweave art CSP-blocked on top-sales (FIXED), small tap targets on /login + /moment breadcrumbs (open).",
-  "needs_trevor": [
-    "#22 defeated credential purge (unchanged)",
-    "#58 OPENSEA_API_KEY (unchanged)",
-    "Product call: /share/<wallet> headline = total-minus-stale like the profile? (2x disagreement at the activation moment)",
-    "allday-pack-opens deep-history backfill: worth keeping for a sunset collection?"
-  ]
+  "fmv_high_med": {
+    "nba_top_shot": 7945,
+    "nfl_all_day": 1559,
+    "laliga_golazos": 2,
+    "ufc_strike": 0,
+    "disney_pinnacle": "own table (pinnacle_* legs all ok)"
+  },
+  "editions_by_collection": {"candy_mlb": 125, "ufc_strike": 518, "nfl_all_day": 6190, "nba_top_shot": 19988, "laliga_golazos": 575},
+  "post_ship_watch": {
+    "match-topshot-players": "08:00Z tick ok=true gated=true - PASS (as predicted)",
+    "topshot-circulation-onchain": "only the known pre-fix 04:05Z failure; next real read 09-05 04:05Z",
+    "get_top_movers / get_allday_sniper_deals / get_wallet_collection_snapshot / S1 thumbnails / watchlist 40 arms": "present, unreverted, no correlated regression"
+  },
+  "verdict": "GREEN with known-carried items; nothing shipped; no regression",
+  "handoff": "docs/handoff-2026-09-04-overnight-pass.md"
 }
