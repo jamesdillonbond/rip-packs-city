@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (prod DB migration `20260904152154`) — a parallel inherits its base edition's identity: 107 read "Unknown — Clamps" on exactly the rows today's re-key moved collectors onto · Cowork (cloud sandbox)
+
+Found by opening the newly-corrected parallel ladder and reading it the way a collector would. `98:3150::5` — the **Coded** parallel of the Sacramento Kings *Clamps* Moment — displayed **"Unknown — Clamps"**, because its `player_name` was NULL while the base `98:3150` carried "Sacramento Kings".
+
+**A parallel IS the same Moment as its base.** Same play, same player, same team; the only thing a `::N` row differs in is the printing — and the `::N` key is literally built from the base key, so the relationship is not inferred. That is why this copy is safe in a way the wmc name-sync explicitly was **not**: there the two sides disagreed on diacritics in *both* directions (`"Aleksej Pokuševski"` right in wmc, `"Boban Marjanović"` right in editions), so either could be the wrong one and blanket-syncing would have traded one wrong name for another. Here one side is empty and the other is the same row's own base.
+
+**Measured:** 140 of 3,868 Top Shot parallels read "Unknown" or carry no player name; **107 have a base that does**; 537 holder rows sit on them. The shape is unanimous and it is **team Moments** — Top Shot's convention is `player_name = team_name` for a team highlight, the base has it and the parallel was created without it (`98:3130::5` Coded, team "Cleveland Cavaliers", base player "Cleveland Cavaliers", parallel NULL). **The remaining 33 have a base that is also empty and were left alone rather than invented.**
+
+⚠ **THESE ARE ROWS I MOVED TRAFFIC ONTO TODAY.** The parallel re-key sent 67,530 wmc rows from `set:play` to `set:play::N`, so collectors are now reading edition rows that were never on the display path before — **and they are thinner than the base rows they replaced.** That is the same lesson as the `mint_count` entry two above, in a third costume: *after re-pointing readers at a different row, go and read that row.* Two of today's four follow-on defects exist only because a correct re-key changed which row is displayed.
+
+Fill-only in every direction (the parallel's field must be empty, the base's must not), plus a redundant `team_name` agreement check on top of the key relationship. Hourly at `:52` so a future catalog write that creates an identity-less parallel is re-filled rather than persisting — this cannot become a treadmill in the other direction, because it never overwrites.
+
+**Verified:** run 1 filled **107**, run 2 **0** — converged; `98:3150::5` now reads `Clamps | Sacramento Kings | Sacramento Kings | /25`; 33 remain, all with an empty base, by design; `check_secdef_anon_execute_violations()` `[]`; one overload. **Revert:** `UPDATE public.editions e SET player_name = a.old_player_name, team_name = a.old_team_name, name = a.old_name FROM public.audit_20260904_parallel_identity a WHERE a.edition_id = e.id;` then `SELECT cron.unschedule('rpc-topshot-parallel-identity-sync');`
+
 ### 2026-09-04 · ✅ SHIPPED (code + prod DB migration `20260904151427`) — 70 of 104 live Top Shot listings were UNIDENTIFIED NFTs published as Moments: an assumed tier, the NFT id in the serial field, and a valuation that made 9 of them read as discounts · Cowork (cloud sandbox)
 
 Found by finishing the circulation sweep: with the meaning of `circulation_count` settled, I went looking for every other denorm of it. `cached_listings.circulation_count` was NULL on 70 Top Shot rows — and pulling that thread found something worse than a stale denominator.
