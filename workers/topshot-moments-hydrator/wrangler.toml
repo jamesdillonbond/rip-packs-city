@@ -17,6 +17,17 @@ workers_dev = true
 binding = "TOPSHOT_PROXY"
 service = "topshot-proxy"
 
+# ⚠ THE CRON WAS DASHBOARD-SET AND DECLARED NOWHERE (known-issues #21, found
+# 2026-08-22, re-verified 08-24, codified 2026-09-03). `wrangler deploy` reconciles
+# cron triggers FROM THIS FILE, so deploying the worker without this block would
+# silently DELETE the schedule and kill the pipeline — the 2026-08-21 "two configs,
+# one worker" family. The minute pattern is the MEASURED one: every observed
+# `started_at` in pipeline_runs sits at minute ≡ 2 (mod 10). If the dashboard shows
+# a different expression, the dashboard is the truth — make THIS file match it
+# before the next deploy, never the other way round.
+[triggers]
+crons = ["2-52/10 * * * *"]
+
 # Secrets (write-only after creation):
 #   wrangler secret put INGEST_SECRET_TOKEN        --name topshot-moments-hydrator
 #   wrangler secret put SUPABASE_URL                --name topshot-moments-hydrator

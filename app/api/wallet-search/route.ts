@@ -857,7 +857,14 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
       last_seen_at: now,
       tier: r.tier ?? null,
       acquired_at: r.acquiredAt ?? null,
-      player_name: r.playerName ?? null,
+      // ⚠ Never persist the load-failure sentinel as a NAME. "Unknown (error
+      // loading)" is the API's honest per-row degradation label, but written into
+      // wallet_moments_cache it became a collector's moment's player on every
+      // surface that reads the cache, and it blocked rpc_wmc_metadata_selfheal
+      // (COALESCE fill-only, so any non-null string is permanent). 101 rows / 9
+      // editions carried it on 2026-09-03 (known-issues #18). NULL is the honest
+      // store value; the self-heal can fill it later.
+      player_name: r.playerName && r.playerName !== "Unknown (error loading)" ? r.playerName : null,
       set_name: r.setName ?? null,
       series_number: r.series != null ? Number(r.series) || null : null,
       image_url: r.thumbnailUrl ?? null,

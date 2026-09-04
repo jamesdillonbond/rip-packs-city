@@ -43,6 +43,11 @@ const ROUTES = [
   "/nba-top-shot/collection",
   "/nba-top-shot/market",
   "/nba-top-shot/sniper",
+  // R60 (deep-audit register): this page scrolled 336px sideways at 390px because a
+  // grid card kept min-width:auto around a 5-column table. Fixed 2026-09-03
+  // (f2c51ea37) and MEASURED clean on the deployed build in real Chromium at both
+  // 390px and 320px before being pinned here — the order the register insisted on.
+  "/insights/pack-reality",
 ]
 
 test.describe("mobile layout", () => {
