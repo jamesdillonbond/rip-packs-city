@@ -1,22 +1,36 @@
 {
-  "generated_at": "2026-09-04T13:38:29Z",
+  "generated_at": "2026-09-04T14:32:34Z",
   "pass": "2026-09-04 Atlas audit + drain (Cowork, desktop VM)",
   "verdict": "GREEN",
   "security": { "secdef_anon_exec_violations": 0, "stalled_pipelines": 0 },
-  "cron": { "jobs": 116, "runs_24h": 4436, "failed_24h": 2, "failures_explained": "both are unschedules landing on a running tick (jobid 55 retirement; the parallel seeder's own 2-arg->3-arg swap)" },
-  "atlas_editions_refresh": { "sets_total": 266, "sets_complete": 266, "pages_ok": 1625, "pages_err": 66, "err_pct": 3.9, "note": "errors are Cloudflare 403 'Just a moment', all recovered on the set's next cycle; full-catalog refresh cadence ~2.5h" },
-  "badge_editions_topshot": { "rows": 13915, "parallel_rows": 4403, "fresh_within_2h": 13658, "before_this_pass": { "rows": 9471, "parallel_rows": 0, "frozen_since": "2026-08-28T15:16Z" } },
-  "wmc_parallel_keying": { "rekeyed_total": 67530, "wallets_affected": 285, "pending_onchain_resolution": 7919, "queue_cap": 10000 },
-  "wmc_fmv_reconcile": { "saved_wallets": 22, "rows_fixed_last_pass_sum": 3245, "founder_first_pass": 8467 },
+  "cron": { "jobs": 118, "failed_last_hour": 1, "failure_explained": "an unschedule/reschedule landing on a running tick (the metadata reconcile's own 1-arg -> 2-arg swap)" },
+  "atlas_editions_refresh": { "sets_total": 266, "sets_complete": 266, "pages_ok": 1825, "pages_err": 82, "err_pct": 4.3, "note": "errors are Cloudflare 403 'Just a moment', all recovered on the set's next cycle; full-catalog refresh ~2.5h" },
+  "badge_editions_topshot": { "rows": 13915, "parallel_rows": 4403, "fresh_within_3h": 13891, "before_this_pass": { "rows": 9471, "parallel_rows": 0, "frozen_since": "2026-08-28T15:16Z" } },
+  "corrections_this_pass": {
+    "wmc_parallel_rekey_rows": 67530,
+    "wmc_fmv_reconcile_wallets": 22,
+    "edition_tier_corrected": 41,
+    "wmc_metadata_corrected": 77503,
+    "wmc_metadata_cursor": "125:4474",
+    "wmc_metadata_note": "drain in progress; cursor is LEXICOGRAPHIC over editions.external_id, ~3h to a full pass at */10 x 1200"
+  },
+  "topshot_subedition_queue": { "pending": 10000, "cap": 10000, "note": "the parallel seeder is yielding exactly as designed so the newest-series arm is not starved" },
   "atlas_diff_founder_wallet": {
     "topshot_moments": 15183, "allday_moments": 3707,
     "before": { "wmc_fmv_drift": 1299, "circ_badge_vs_minted": 3858, "rpc_badges_atlas_none": 966, "parallel_key_mismatch": 1264, "atlas_badges_rpc_none": 92 },
     "after":  { "wmc_fmv_drift": 21,   "circ_badge_vs_minted": 359,  "rpc_badges_atlas_none": 2,   "parallel_key_mismatch": 352, "atlas_badges_rpc_none": 0 },
-    "allday_after": { "wmc_fmv_drift": 7, "identity_mismatches": 0 }
+    "allday_after": { "wmc_fmv_drift": 7, "identity_mismatches": 0 },
+    "not_defects": [
+      "All Day badge low_ask disagrees with Atlas on 2,863 Moments, but ours matches our own live cached_listings_v2 open-ask minimum exactly — we are the fresher side on a sunset marketplace",
+      "All Day edition ids are a different namespace from Atlas's (constant offset), not a mis-map",
+      "RPC's All Day player names are populated where Atlas's edition metadata is empty"
+    ]
   },
+  "open_product_call": "editions.circulation_count is the chain's all-printings total (284) where Top Shot displays the Standard printing's own mint (249); Atlas's per-printing number is in badge_editions.circulation_count. Not changed unilaterally — see docs/needs-trevor-2026-09-04-after-the-atlas-audit.md",
   "migrations_applied": [
     "20260904041433", "20260904041544", "20260904041635", "20260904045817",
     "20260904052346", "20260904052858", "20260904055030", "20260904055844",
-    "20260904062632", "20260904063544", "20260904133011", "20260904133105"
+    "20260904062632", "20260904063544", "20260904133011", "20260904133105",
+    "20260904141439", "20260904141708", "20260904142428", "20260904142504"
   ]
 }
