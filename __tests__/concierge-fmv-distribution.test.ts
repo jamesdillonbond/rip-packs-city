@@ -358,3 +358,53 @@ describe("fetchUnifiedFmvDistribution — Top Shot's dual key convention", () =>
     expect(res.status).toBe("ok")
   })
 })
+
+// ── 2026-09-03: a FAILED population count on a FULL scan is unknown, never "not truncated" ──
+//
+// The old fallback `populationMatched ?? editions.length` made `truncated` collapse
+// to false whenever the count failed, so the tool stated a capped slice's
+// percentiles as the whole filter's distribution — and dropped the note that says
+// otherwise. A count that fails on a scan SHORT of the cap is still known exactly.
+describe("fetchUnifiedFmvDistribution — the population count fails", () => {
+  const CAP = 500
+  function makeFailingCountClient(nRows: number) {
+    const rows = Array.from({ length: nRows }, (_, i) => ({
+      id: `e${i}`, external_id: `x${i}`, player_name: "P", set_name: "S", tier: "COMMON", collection_id: "c",
+    }))
+    const snaps = rows.map((r, i) => ({ edition_id: r.id, fmv_usd: 10 + i, confidence: "HIGH", computed_at: "2026-01-01T00:00:00Z" }))
+    const client: any = {
+      from(_table: string) {
+        let head = false
+        const b: any = {}
+        for (const m of ["eq", "neq", "in", "order", "limit", "is", "not", "ilike", "gte", "lt"]) b[m] = () => b
+        b.select = (_cols?: unknown, opts?: { head?: boolean }) => { head = opts?.head === true; return b }
+        b.maybeSingle = async () => ({ data: null, error: null })
+        b.then = (resolve: any) =>
+          resolve(head
+            ? { data: null, count: null, error: { message: "canceling statement due to statement timeout" } }
+            : { data: rows, error: null })
+        return b
+      },
+      rpc: async () => ({ data: snaps, error: null }),
+    }
+    return client
+  }
+
+  it("on a FULL scan: truncated is null (unknown) with a note, never false", async () => {
+    const out: any = await fetchUnifiedFmvDistribution(makeFailingCountClient(CAP), { collectionUuid: "c", player: "P" })
+    expect(out.status).toBe("ok")
+    expect(out.mode).toBe("distribution")
+    expect(out.population_matched).toBeNull()
+    expect(out.truncated).toBeNull()
+    expect(out.truncated).not.toBe(false)
+    expect(String(out.truncation_note)).toMatch(/could not be counted|FAILED/)
+  })
+
+  it("on a SHORT scan: the population is known exactly from the rows that fit", async () => {
+    const out: any = await fetchUnifiedFmvDistribution(makeFailingCountClient(5), { collectionUuid: "c", player: "P" })
+    expect(out.status).toBe("ok")
+    expect(out.population_matched).toBe(5)
+    expect(out.truncated).toBe(false)
+    expect(out.truncation_note).toBeUndefined()
+  })
+})

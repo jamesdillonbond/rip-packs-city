@@ -568,11 +568,21 @@ async function handleSweep(req: NextRequest) {
         console.log(`[${PIPELINE_NAME}] activities walk failed (no deactivation): ${e instanceof Error ? e.message : String(e)}`)
       }
 
-      const { count: activeBefore } = await (supabaseAdmin as any)
+      // ⚠ supabase-js RETURNS errors, so a timed-out count resolves `{ count: null,
+      // error }` — and `?? 0` published that as "0 active listings before the
+      // sweep", which made `feed_looks_truncated` read false (a 0-baseline can never
+      // be under-fetched) and `active_before: 0` sit in pipeline_runs as a fact. Its
+      // sibling `ingest/candy-offers` already carries `bookSizeUnknown` for this
+      // exact shape; this was the un-swept twin (2026-09-03). `before` is NULL when
+      // unknown, and the truncation metric says unknown rather than false.
+      const { count: activeBefore, error: activeBeforeErr } = await (supabaseAdmin as any)
         .from("candy_listings")
         .select("pda_address", { count: "exact", head: true })
         .eq("is_active", true)
-      const before = activeBefore ?? 0
+      const before: number | null = activeBeforeErr ? null : (activeBefore ?? null)
+      if (activeBeforeErr) {
+        console.log(`[${PIPELINE_NAME}] active_before count failed (reported as unknown): ${activeBeforeErr.message}`)
+      }
 
       const endedList = [...endedMints]
       for (let i = 0; i < endedList.length; i += 200) {
@@ -607,13 +617,16 @@ async function handleSweep(req: NextRequest) {
 
       // A short listings answer is no longer dangerous — it just refreshes
       // fewer prices — so it is reported as a metric, not a failure.
-      const feedLooksTruncated = before >= 20 && rawSeen < before * 0.5
+      // null = UNKNOWN (the baseline count failed), never false: "not truncated"
+      // is a claim about the feed that a missing baseline cannot support.
+      const feedLooksTruncated: boolean | null = before == null ? null : before >= 20 && rawSeen < before * 0.5
 
       await logRun(startedAtIso, found, written, skipped, true, null, {
         listings_found: found,
         listings_upserted: written,
         raw_listings_seen: rawSeen,
         active_before: before,
+        active_before_error: activeBeforeErr ? String(activeBeforeErr.message ?? activeBeforeErr).slice(0, 200) : null,
         feed_looks_truncated: feedLooksTruncated,
         activities_seen: activitiesSeen,
         listing_ending_mints: endedMints.size,

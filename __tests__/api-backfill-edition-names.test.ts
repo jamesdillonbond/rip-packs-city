@@ -10,14 +10,26 @@ import { NextRequest } from "next/server"
 
 // Chainable, thenable stub: from().select().or().filter().limit() awaits to
 // { data: [], error: null }; the .rpc/.update seams are inert no-ops.
+// 2026-09-03: `failCount` makes ONLY the head:true count read fail (supabase-js
+// returns errors, so a failed count is `{ count: null, error }`), leaving Step 1's
+// row read on the empty path — the shape that used to publish `remaining: 0`.
+const failState = { failCount: false, lastHead: false }
 const sbChain: any = {
-  select: () => sbChain,
+  select: (_cols?: unknown, opts?: { head?: boolean }) => { failState.lastHead = opts?.head === true; return sbChain },
   or: () => sbChain,
   filter: () => sbChain,
   limit: () => sbChain,
   update: () => sbChain,
   eq: () => sbChain,
-  then: (resolve: any) => resolve({ data: [], error: null }),
+  then: (resolve: any) =>
+    resolve(
+      failState.failCount && failState.lastHead
+        ? { data: null, count: null, error: { message: "canceling statement due to statement timeout" } }
+        : failState.failCount
+          // one stub so the route reaches Step 4 (the row read itself is healthy)
+          ? { data: [{ id: "e1", external_id: "1:2", name: "Stub", tier: "COMMON", series: 1 }], error: null }
+          : { data: [], error: null },
+    ),
 }
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { from: () => sbChain, rpc: async () => ({ data: null, error: null }) },
@@ -58,5 +70,24 @@ describe("POST /api/backfill-edition-names", () => {
     expect(body.updated).toBe(0)
     expect(body.failed).toBe(0)
     expect(body.remaining).toBe(0)
+  })
+})
+
+// ── 2026-09-03: a failed remaining-count is unknown, not "done" ──────────────
+//
+// `remaining` is a completion signal — 0 reads as "the backfill is finished".
+// The old `remaining ?? 0` published exactly that off a count that failed.
+describe("POST /api/backfill-edition-names — a failed remaining count is null, never 0", () => {
+  beforeEach(() => { failState.failCount = true; failState.lastHead = false })
+  afterEach(() => { failState.failCount = false })
+
+  it("answers remaining: null with the error named, instead of claiming nothing is left", async () => {
+    const res = await POST(req("Bearer " + TOKEN))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.remaining).toBeNull()
+    expect(body.remaining).not.toBe(0)
+    expect(String(body.remaining_error)).toContain("statement timeout")
   })
 })

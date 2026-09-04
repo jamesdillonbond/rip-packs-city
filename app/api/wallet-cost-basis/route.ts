@@ -86,11 +86,17 @@ export async function GET(req: NextRequest) {
     }
 
     // ── 2. Total wallet acquisition count for sample-size note ───────────────
-    const { count: totalAcq } = await (supabaseAdmin as any)
+    // ⚠ Bound to `error`: supabase-js returns a failed count as `{ count: null, error }`,
+    // and the old `totalAcq ?? trackedCount` turned that into "tracked on 42 of 42" —
+    // a 100 % coverage claim manufactured from a read that never returned, on the
+    // one line whose job is to DISCLOSE sample size (2026-09-03).
+    const { count: totalAcqRaw, error: totalAcqErr } = await (supabaseAdmin as any)
       .from("moment_acquisitions")
       .select("nft_id", { count: "exact", head: true })
       .eq("wallet", wallet)
       .eq("collection_id", TOPSHOT_UUID)
+    const totalAcq: number | null = totalAcqErr ? null : (typeof totalAcqRaw === "number" ? totalAcqRaw : null)
+    if (totalAcqErr) console.warn("[wallet-cost-basis] acquisition count failed:", totalAcqErr.message)
 
     if (acqRows.length === 0) {
       return NextResponse.json(
@@ -191,7 +197,9 @@ export async function GET(req: NextRequest) {
       .reverse()
       .map(({ pnl_usd, ...rest }) => rest)
 
-    const sampleNote = `Cost basis tracked on ${trackedCount} of ${totalAcq ?? trackedCount} moments — only acquisitions with confirmed purchase prices are included`
+    const sampleNote = totalAcq == null
+      ? `Cost basis tracked on ${trackedCount} moments — the wallet's total acquisition count could not be read, so coverage is unknown; only acquisitions with confirmed purchase prices are included`
+      : `Cost basis tracked on ${trackedCount} of ${totalAcq} moments — only acquisitions with confirmed purchase prices are included`
 
     console.log("[wallet-cost-basis]", wallet, collectionSlug, trackedCount)
 

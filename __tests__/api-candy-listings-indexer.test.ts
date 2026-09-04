@@ -540,3 +540,39 @@ describe("candy-listings-indexer — invocation heartbeat", () => {
     expect(heartbeat(spy)).toBeUndefined()
   })
 })
+
+// ── 2026-09-03: a FAILED baseline count is unknown, not zero ─────────────────
+//
+// supabase-js returns a timed-out count as `{ count: null, error }`. The old
+// `activeBefore ?? 0` published `active_before: 0` as a fact and made
+// `feed_looks_truncated` read false — a 0-baseline can never be under-fetched —
+// so the one metric that says "the feed answered short" was silenced by the
+// exact outage that makes a short feed likely. Sibling `ingest/candy-offers`
+// carries `bookSizeUnknown` for the same shape; this was the un-swept twin.
+describe("candy-listings-indexer — a failed active_before count is reported as unknown", () => {
+  it("logs active_before null, feed_looks_truncated null and names the error — and still deactivates nothing", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])
+    const spy = install({
+      candy_listings: [
+        { data: null, error: { message: "canceling statement due to statement timeout" }, count: null },
+        { data: [] },
+      ],
+      candy_pack_listings: [{ data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    const extra = log?.p_extra as Record<string, unknown>
+    // The ABSENCE of the false claims, not merely the presence of the error field.
+    expect(extra.active_before).toBeNull()
+    expect(extra.active_before).not.toBe(0)
+    expect(extra.feed_looks_truncated).toBeNull()
+    expect(extra.feed_looks_truncated).not.toBe(false)
+    expect(String(extra.active_before_error)).toContain("statement timeout")
+    expect(extra.deactivated).toBe(0)
+    expect((spy.writes.candy_listings ?? []).filter((w) => w.method === "update")).toHaveLength(1)
+  })
+})

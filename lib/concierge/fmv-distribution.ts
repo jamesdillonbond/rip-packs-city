@@ -66,10 +66,12 @@ export type FmvDistributionResult =
        * actually matched. When `truncated` is true they are different things
        * and the percentiles describe a SLICE, not the set.
        */
-      population_matched?: number
+      /** null = the population count FAILED (not 0, not "all of them"). */
+      population_matched?: number | null
       scanned?: number
       scan_cap?: number
-      truncated?: boolean
+      /** null = unknown: the scan filled its cap and the population could not be counted. */
+      truncated?: boolean | null
       truncation_note?: string
     }
 
@@ -99,7 +101,12 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-type ScanInfo = { populationMatched: number; scanned: number; cap: number }
+// populationMatched: null = the count read FAILED (supabase-js returns its error,
+// so the count arrives as null). It is not 0 and it is not "everything fit": when
+// the scan hit its cap and the population is unknown, `truncated` is reported as
+// null with a note, never as false — "these percentiles cover the whole filter" is
+// a claim a failed count cannot back (2026-09-03).
+type ScanInfo = { populationMatched: number | null; scanned: number; cap: number }
 
 function buildDistribution(
   rows: Array<DistributionalSampleEdition>,
@@ -149,13 +156,23 @@ function buildDistribution(
           population_matched: scan.populationMatched,
           scanned: scan.scanned,
           scan_cap: scan.cap,
-          truncated: scan.populationMatched > scan.cap,
-          ...(scan.populationMatched > scan.cap
+          // null = unknown: the population count failed AND the scan filled its cap,
+          // so the slice may or may not be the whole filter. Never false on that.
+          truncated:
+            scan.populationMatched == null
+              ? scan.scanned >= scan.cap ? null : false
+              : scan.populationMatched > scan.cap,
+          ...(scan.populationMatched != null && scan.populationMatched > scan.cap
             ? {
                 truncation_note:
                   `These percentiles are computed over ${scan.scanned} editions out of ${scan.populationMatched} that matched — the read is capped at ${scan.cap}. They describe a SLICE of the filter, not the whole thing, and the slice is taken in a fixed catalog order rather than at random, so it is not a representative sample either. Say so and offer to narrow by set or tier (search_catalog lists the matching sets); do not present these as the distribution for the whole filter.`,
               }
-            : {}),
+            : scan.populationMatched == null && scan.scanned >= scan.cap
+              ? {
+                  truncation_note:
+                    `The read is capped at ${scan.cap} editions and the count of how many editions match this filter FAILED, so it is unknown whether these ${scan.scanned} are the whole filter or a slice of it. Treat them as a possibly-partial sample: say the total could not be counted and offer to narrow by set or tier rather than presenting these as the distribution for the whole filter.`,
+                }
+              : {}),
         }
       : {}),
   }
@@ -250,9 +267,16 @@ export async function fetchUnifiedFmvDistribution(
   // 20.8 ms, so it is affordable on every call — and without it the tool
   // cannot tell "500 editions matched" from "5,016 matched and you are
   // seeing a tenth of them".
-  const { count: populationMatched } = await applyCatalogFilters(
+  // ⚠ `error` is bound: a failed count arrives as `{ count: null, error }` (supabase-js
+  // returns errors), and the old fallback `populationMatched ?? editions.length` made
+  // `truncated` collapse to false — the tool then stated a capped 500-edition slice's
+  // percentiles as the distribution for a filter that may have matched 5,000.
+  const { count: populationMatchedRaw, error: populationErr } = await applyCatalogFilters(
     supabase.from("editions").select("id", { count: "exact", head: true })
   )
+  if (populationErr) console.warn("[fmv-distribution] population count failed:", populationErr.message)
+  const populationMatched: number | null =
+    !populationErr && typeof populationMatchedRaw === "number" ? populationMatchedRaw : null
 
   let query = supabase
     .from("editions")
@@ -399,9 +423,13 @@ export async function fetchUnifiedFmvDistribution(
     })
   }
 
+  // When the count failed but the capped scan came back SHORT of the cap, the
+  // population is known exactly anyway (everything that matched fit). Only a
+  // failed count on a FULL scan is genuinely unknown.
+  const scannedCount = editionRows?.length ?? 0
   return buildDistribution(enriched, sampleLimit, {
-    populationMatched: typeof populationMatched === "number" ? populationMatched : editions.length,
-    scanned: editionRows?.length ?? 0,
+    populationMatched: populationMatched ?? (scannedCount < SCAN_CAP ? scannedCount : null),
+    scanned: scannedCount,
     cap: SCAN_CAP,
   })
 }

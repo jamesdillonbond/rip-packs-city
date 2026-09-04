@@ -248,3 +248,31 @@ describe("cache-refresh — diff + enrichment", () => {
     expect(lockedUpdate).toBeUndefined()
   })
 })
+
+// ── 2026-09-03: a failed stale-row count leaves `remaining` UNKNOWN ─────────────
+//
+// The client reads `locked_backfill.remaining` to decide whether to schedule
+// another pass. supabase-js returns a timed-out count as `{ count: null, error }`,
+// and `(Number(null) || 0) - total` clamped that to 0 — "every locked-status row on
+// this wallet is fresh now", manufactured from the outage. null does not fire the
+// client's `> 0` check and does not claim completion either.
+describe("GET /api/cache-refresh — refreshLocked=1 with a FAILED stale count", () => {
+  it("reports remaining: null, not 0", async () => {
+    state.ownedIds = ["101"]
+    install({
+      wallet_moments_cache: [
+        { data: [{ moment_id: "101" }], error: null }, // diff lookup
+        { count: 1, error: null } as never, // last_seen touch
+        // step-7: the count itself failed
+        { data: null, count: null, error: { message: "canceling statement due to statement timeout" } } as never,
+      ],
+    })
+
+    const res = await GET(req(`?wallet=${WALLET}&refreshLocked=1`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.locked_backfill.remaining).toBeNull()
+    expect(body.locked_backfill.remaining).not.toBe(0)
+    expect(body.locked_backfill.total).toBe(0)
+  })
+})

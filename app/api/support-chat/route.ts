@@ -3830,11 +3830,20 @@ async function updateSession(
   playerSearched?: string
 ) {
   try {
-    const { data: existing } = await supabase
+    const { data: existing, error: existingErr } = await supabase
       .from("chat_sessions")
       .select("last_topics, conversation_count")
       .eq("session_id", sessionId)
       .maybeSingle();
+    // ⚠ A FAILED READ MUST NOT BECOME A WRITE. supabase-js returns its error, so a
+    // timed-out read used to arrive as `existing = undefined` and the upsert below
+    // then wrote `conversation_count: 1` and a one-topic history over a returning
+    // user's real row — the read-then-write-back shape CLAUDE.md names as the
+    // worst honesty sub-class. Skip the update instead; the row stays as it was.
+    if (existingErr) {
+      console.warn(`[support-chat] updateSession read failed; session ${sessionId} left untouched: ${existingErr.message}`);
+      return;
+    }
 
     const currentTopics: string[] = existing?.last_topics ?? [];
     const newTopics = [...new Set([category, ...currentTopics])].slice(0, 5);

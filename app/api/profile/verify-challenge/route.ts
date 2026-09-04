@@ -169,11 +169,25 @@ export async function POST(req: NextRequest) {
     // prewarm hasn't run) from a wallet that IS indexed but holds nothing
     // listable. A cold wallet shouldn't dead-end — kick off the backfill and
     // tell the user we're indexing.
-    const { count: wmcCount } = await supabase
+    const { count: wmcCount, error: wmcCountErr } = await supabase
       .from("wallet_moments_cache")
       .select("moment_id", { count: "exact", head: true })
       .eq("wallet_address", wallet)
       .eq("collection_id", TOPSHOT_COLLECTION_ID);
+
+    // ⚠ A FAILED count is not a COLD wallet. supabase-js returns the error, so a
+    // timed-out read used to arrive as `count: null`, fall into `!wmcCount`, fire a
+    // full Cadence wallet walk and tell an already-indexed collector "we're indexing
+    // your collection" (2026-09-03). Say what happened instead, and fire nothing.
+    if (wmcCountErr) {
+      console.warn("[verify-challenge] wmc count failed:", wmcCountErr.message);
+      return NextResponse.json({
+        challenge: null,
+        unavailable: true,
+        reason: "index_unavailable",
+        message: "We couldn't read your indexed collection just now. Try again in a minute.",
+      });
+    }
 
     if (!wmcCount) {
       // Fire-and-forget the TopShot wallet backfill (same Bearer pattern as

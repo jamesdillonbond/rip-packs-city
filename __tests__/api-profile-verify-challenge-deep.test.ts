@@ -470,3 +470,29 @@ describe("PATCH /api/profile/verify-challenge — remaining branches", () => {
     expect(body.resolvedThisPass).toBe(0)
   })
 })
+
+// ── 2026-09-03: a FAILED wmc count is not a cold wallet ─────────────────────────
+//
+// supabase-js returns the error, so a timed-out count arrived as `count: null`,
+// fell into `!wmcCount`, fired a full Cadence wallet walk and told an already-
+// indexed collector "we're indexing your collection".
+describe("verify-challenge — wmc count read fails", () => {
+  it("says the index could not be read (reason index_unavailable) and does NOT claim indexing", async () => {
+    state.user = { id: "u1" }
+    install({
+      saved_wallets: { data: [{ wallet_addr: "0xabc" }], error: null },
+      "rpc:pick_verification_target": { data: [], error: null },
+      wallet_moments_cache: [
+        { data: [], error: null }, // relaxed candidate pick → empty
+        { count: null, error: { message: "canceling statement due to statement timeout" } }, // the count FAILED
+      ],
+    })
+    const res = await POST(postReq({ wallet_addr: "0xABC" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.challenge).toBeNull()
+    expect(body.reason).toBe("index_unavailable")
+    expect(body.reason).not.toBe("indexing")
+    expect(body.message).not.toContain("indexing")
+  })
+})

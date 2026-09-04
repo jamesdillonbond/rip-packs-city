@@ -233,11 +233,17 @@ export async function POST(req: NextRequest) {
   }
 
   // Step 4: Count remaining editions missing metadata
-  const { count: remaining } = await (supabaseAdmin as any)
+  // ⚠ `remaining` is a COMPLETION signal — callers read 0 as "the backfill is
+  // done". supabase-js returns a failed count as `{ count: null, error }`, and the
+  // old `remaining ?? 0` published exactly that: "0 editions still missing
+  // metadata" off a read that never returned. NULL is the honest value for an
+  // unknown remainder (sibling `classify-unknowns` already does `?? null`).
+  const { count: remaining, error: remainingErr } = await (supabaseAdmin as any)
     .from("editions")
     .select("id", { count: "exact", head: true })
     .or("play_category.is.null,circulation_count.is.null,game_date.is.null")
     .filter("external_id", "match", "^\\d+:\\d+$")
+  if (remainingErr) console.warn("[backfill-edition-names] remaining count failed:", remainingErr.message)
 
   return NextResponse.json({
     ok: true,
@@ -245,7 +251,8 @@ export async function POST(req: NextRequest) {
     updated,
     failed,
     tier_backfilled: tierBackfilled,
-    remaining: remaining ?? 0,
+    remaining: remainingErr ? null : (remaining ?? null),
+    remaining_error: remainingErr ? String(remainingErr.message ?? remainingErr).slice(0, 200) : null,
     sample_errors: sampleErrors,
   })
 }

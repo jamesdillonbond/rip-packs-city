@@ -277,3 +277,43 @@ describe("wallet-cost-basis — error + edge legs (the 54%->branch gap)", () => 
     expect(body.summary.tracked_count).toBe(1001) // both pages folded
   })
 })
+
+// ── 2026-09-03: a failed acquisition count must not become a 100 % coverage claim ──
+//
+// `sample_size_note` exists to DISCLOSE sample size. supabase-js returns a failed
+// count as `{ count: null, error }`, and the old `totalAcq ?? trackedCount` rendered
+// "tracked on 2 of 2 moments" — full coverage asserted by the read that failed.
+describe("wallet-cost-basis — a failed total-acquisition count", () => {
+  it("does not claim 'N of N'; it says the total is unknown", async () => {
+    install({
+      moment_acquisitions: [
+        { data: [{ nft_id: "111", buy_price: 10 }, { nft_id: "222", buy_price: 100 }], error: null },
+        { count: null, error: { message: "canceling statement due to statement timeout" } } as never,
+      ],
+      wallet_moments_cache: {
+        data: [
+          { moment_id: "111", edition_key: "3:45", player_name: "Dame", set_name: "Base", tier: "RARE", serial_number: 5 },
+          { moment_id: "222", edition_key: "7:77", player_name: "CJ", set_name: "Base", tier: "COMMON", serial_number: 100 },
+        ],
+        error: null,
+      },
+      editions: {
+        data: [
+          { id: "edA", external_id: "3:45", tier: "RARE", player_name: "Damian", set_name: "Base Set" },
+          { id: "edB", external_id: "7:77", tier: "COMMON", player_name: "CJ", set_name: "Base Set" },
+        ],
+        error: null,
+      },
+      "rpc:get_fmv_for_editions": {
+        data: [{ edition_id: "edA", fmv_usd: 50 }, { edition_id: "edB", fmv_usd: 40 }],
+        error: null,
+      },
+    })
+    const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.summary.tracked_count).toBe(2)
+    expect(body.sample_size_note).not.toContain("2 of 2")
+    expect(body.sample_size_note).toMatch(/unknown|could not|couldn't/i)
+  })
+})

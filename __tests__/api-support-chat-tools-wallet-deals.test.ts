@@ -432,3 +432,23 @@ describe("compare_pack_value — the buyable filter is freshness-gated", () => {
     expect(String(r.note)).toContain("72 hours")
   })
 })
+
+// ── 2026-09-03: a failed chat_sessions read must not become a write ────────────
+//
+// updateSession read `{ data: existing }` without `error`; a timed-out read
+// arrived as undefined and the upsert then wrote conversation_count: 1 and a
+// one-topic history over a returning user's real row.
+describe("updateSession — a failed chat_sessions read leaves the row untouched", () => {
+  it("issues NO chat_sessions upsert when the read errors", async () => {
+    const spy = install({
+      chat_sessions: { data: null, error: { message: "canceling statement due to statement timeout" } },
+    })
+    A.state.script = [{ text: "hello there" }]
+    A.state.cursor = 0
+    const res = await POST(post("hi"))
+    expect(res.status).toBe(200)
+    // Let the fire-and-forget session update settle.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(spy.writes.chat_sessions ?? []).toEqual([])
+  })
+})

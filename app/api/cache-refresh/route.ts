@@ -560,7 +560,8 @@ export async function GET(req: NextRequest) {
     // Step 7: Optional is_locked backfill for ALL cached moments (triggered by refreshLocked=1)
     let lockedBackfillCount = 0
     let lockedBackfillTotal = 0
-    let lockedBackfillRemaining = 0
+    // null = the stale-row count failed, so the remainder is UNKNOWN (never 0).
+    let lockedBackfillRemaining: number | null = 0
     const refreshLocked = sp.get("refreshLocked") === "1"
     if (refreshLocked && collectionSlug === "nba-top-shot") {
       // On-demand lock refresh for the wallet being VIEWED. This is what makes
@@ -587,7 +588,7 @@ export async function GET(req: NextRequest) {
       // One query: stalest CAP rows + exact count of all stale rows (for `remaining`).
       // Only currently-held moments remain in wmc (reconciled earlier in this route),
       // so this is the wallet's live holdings.
-      const { data: staleRows, count: staleTotal } = await supabase
+      const { data: staleRows, count: staleTotal, error: staleErr } = await supabase
         .from("wallet_moments_cache")
         .select("moment_id", { count: "exact" })
         .eq("wallet_address", wallet)
@@ -600,12 +601,20 @@ export async function GET(req: NextRequest) {
         .map(function(r: any) { return String(r.moment_id) })
         .filter(Boolean)
       lockedBackfillTotal = toRefreshLocked.length
-      lockedBackfillRemaining = Math.max(0, (Number(staleTotal) || 0) - lockedBackfillTotal)
+      // ⚠ `remaining` is what the client reads to decide whether to schedule
+      // another pass. supabase-js returns a failed count as `{ count: null, error }`,
+      // and `(Number(null) || 0) - total` clamped to 0 — "every locked-status row on
+      // this wallet is fresh now" manufactured from a timed-out read (2026-09-03).
+      // NULL says unknown; the client's `> 0` check simply does not fire on it.
+      if (staleErr) console.warn("[cache-refresh] stale-row count failed; remaining is unknown:", staleErr.message)
+      lockedBackfillRemaining = staleErr || typeof staleTotal !== "number"
+        ? null
+        : Math.max(0, staleTotal - lockedBackfillTotal)
 
       if (toRefreshLocked.length === 0) {
         console.log("[cache-refresh] is_locked backfill: wallet fresh, nothing to do")
       } else {
-        if (lockedBackfillRemaining > 0) {
+        if ((lockedBackfillRemaining ?? 0) > 0) {
           console.log("[cache-refresh] is_locked backfill: refreshing " + toRefreshLocked.length + " stalest of " + staleTotal + " stale (" + lockedBackfillRemaining + " remain for next view)")
         }
         const nowIso = new Date().toISOString()
