@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — every one of the 370 Top Shot TEAM Moments linked its headline to a `/player/` page that has never existed, on the collection tab, the market table and the public edition page · Cowork (cloud sandbox)
+
+Found by loading the corrected parallel pages in a **plain headless Chromium** and reading the network log — a `404` on `/nba-top-shot/player/sacramento-kings`, linked from the *Clamps* Coded parallel's own page.
+
+**Top Shot's convention for a team highlight is `player_name = team_name`.** A Kings *Clamps* Moment stores "Sacramento Kings" in both fields. Every "who" link was built as `` `/${collection}/player/${slugifyName(playerName)}` ``, so for these it resolves to a player page that does not exist. Verified live, all three legs:
+
+| URL | status |
+|---|---|
+| `/nba-top-shot/player/sacramento-kings` | **404** |
+| `/nba-top-shot/team/sacramento-kings` | **200** ← the page the reader actually wants |
+| `/nba-top-shot/player/domantas-sabonis` | 200 (a real player is unaffected) |
+
+**Measured over the catalog: 370 Top Shot editions are team Moments, and NOT ONE has a `players` row** — so this link has never resolved for any of them, on any surface, ever. That is 370 internal links to a 404 from a public, crawled page type, plus a dead click on the headline of a Moment a collector owns.
+
+⚠ **AND 107 OF THEM ARE MINE, FROM AN HOUR AGO.** 150 of the 370 are parallels, and ~107 of those had no `player_name` at all until `20260904152154` filled it from their base. Filling it was right — "Unknown — Clamps" is worse than a dead link — but it **widened a pre-existing defect**, and I only found that because I went and loaded the pages the migration touched. **Third time today** that correcting a row changed which row a reader sees and the new row was worse in some other way. The pattern is now explicit enough to state as a rule: *a data correction is not finished until you have rendered the surface it changed.*
+
+**Fix:** one shared helper, `lib/entity-href.ts` → `momentSubjectHref(collection, playerName, teamName)`, returning `/team/…` when `playerName === teamName` and `/player/…` otherwise. The rule is entirely local (a team Moment *is* exactly that equality), so no call site needed new data — `team` was already in scope at all three. Applied to the public edition page, both `CollectionMomentTable` sites (the collector's own collection tab, desktop + mobile-expanded) and `MarketClient`.
+
+**Six tests, including a ratchet** that fails on any NEW hand-rolled ``/player/${…playerName…}`` at those three surfaces — because the raw spelling is what produced the 404s and a helper nobody is required to use is a suggestion. **Verified to fail against the unfixed code**; a null/empty name still yields no link at all rather than a link to an empty slug.
+
+**Verified:** `tsc` clean · **431 tests green across all 21 files** referencing the three changed surfaces · the three live status codes above. **Revert:** `git revert <sha>`.
+
 ### 2026-09-04 · ✅ SHIPPED (prod DB migration `20260904152154`) — a parallel inherits its base edition's identity: 107 read "Unknown — Clamps" on exactly the rows today's re-key moved collectors onto · Cowork (cloud sandbox)
 
 Found by opening the newly-corrected parallel ladder and reading it the way a collector would. `98:3150::5` — the **Coded** parallel of the Sacramento Kings *Clamps* Moment — displayed **"Unknown — Clamps"**, because its `player_name` was NULL while the base `98:3150` carried "Sacramento Kings".
