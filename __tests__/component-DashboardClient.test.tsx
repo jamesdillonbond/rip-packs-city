@@ -637,6 +637,29 @@ async function openAddForm(over: Record<string, unknown> = {}) {
     })
   })
 
+  // Measured on the 2026-09-03 new-user walk: after "Add wallet" the tiles read
+  // 0 / $0 / 0 for ~30 s while the indexer walked the wallet — the not-yet-read
+  // state rendered as a zero, on a signed-in surface, about the reader's own
+  // account. `indexing` was already tracked for the hero card; the tiles read it too.
+  it("a just-added wallet says INDEXING on the tiles, never a confident 0 moments / $0", async () => {
+    const { box, submit } = await openAddForm({
+      "/api/profile/resolve-and-associate": () =>
+        json(200, { walletAddress: "0xbd94cade097e50ac", associatedCollections: ["a"] }),
+    })
+    fireEvent.change(box, { target: { value: "0xbd94cade097e50ac" } })
+    fireEvent.click(submit)
+    await waitFor(() => expect(screen.getAllByTestId("stat-tile-pending")).toHaveLength(3))
+    expect(document.body.textContent).toMatch(/Indexing your wallet/)
+    const anchor = document.querySelector('[data-tour-anchor="portfolio-stats"]')!
+    expect(anchor.textContent).not.toMatch(/\$0/)
+  })
+
+  it("NEGATIVE CONTROL: with no add in flight the tiles carry their numbers, not the pending state", async () => {
+    await openAddForm()
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(screen.queryAllByTestId("stat-tile-pending")).toHaveLength(0)
+  })
+
   it("sends a non-address as a USERNAME", async () => {
     const { box, submit } = await openAddForm({
       "/api/profile/resolve-and-associate": () =>
@@ -827,6 +850,20 @@ describe("DashboardClient — the hero card", () => {
     render(<DashboardClient />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
     expect(screen.queryByText("Hero Moment")).toBeNull()
+    // ⚠ And it must not fall through to the onboarding prompt. `hero` is null
+    // for the WRONG reason (a 503, measured 2026-09-03 on a whale wallet), so
+    // "pick a hero Moment" would be a false claim about the reader's own account.
+    await screen.findByTestId("hero-read-failed")
+    expect(document.body.textContent).toMatch(/Couldn.t load your hero Moment/)
+    expect(screen.queryByText(/Pin a moment to your trophy case/)).toBeNull()
+  })
+
+  it("a THROWN hero read is a failed read too — same panel, same absence of the prompt", async () => {
+    routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
+    routes["/api/profile/hero-moment"] = () => { throw new TypeError("network") }
+    render(<DashboardClient />)
+    await screen.findByTestId("hero-read-failed")
+    expect(screen.queryByText(/Pin a moment to your trophy case/)).toBeNull()
   })
 })
 
