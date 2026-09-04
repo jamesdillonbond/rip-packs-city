@@ -25,6 +25,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 const VALID_SORTS = new Set([
   "moments",
@@ -79,17 +80,17 @@ export async function GET(req: NextRequest) {
 
   const [statsRes, cohortRes, setOverlapRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("cross_collection_cohort_stats").select("*").limit(1),
-    cohortQ,
+    boundedRead((supabase as any).from("cross_collection_cohort_stats").select("*").limit(1), "api/public/insights/cross-collection/cross_collection_cohort_stats"),
+    boundedRead(cohortQ, "api/public/insights/cross-collection/cross_collection_cohort_mat"),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    boundedRead((supabase as any)
       .from("cross_collection_ts_set_overlap_mat")
       // computed_at ships so a consumer can age THIS table independently of the
       // cohort stats — they are refreshed by different jobs (ccm step1 vs step2)
       // and step2 has been failing alone. See the page's note.
       .select("set_id, set_name, cohort_holders, moments_in_cohort, computed_at")
       .order("cohort_holders", { ascending: false })
-      .limit(30),
+      .limit(30), "api/public/insights/cross-collection/cross_collection_ts_set_overlap_mat"),
   ]);
 
   if (statsRes.error) {

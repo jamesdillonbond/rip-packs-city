@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import {apiErrorResponse, isUnresolvedIdentifierError, unresolvedIdentifierResponse} from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
@@ -74,7 +75,7 @@ export async function GET(req: NextRequest) {
     type AcqRow = { nft_id: string; buy_price: string | number }
     const acqRows: AcqRow[] = []
     for (let page = 0; page < 50; page++) {
-      const { data, error } = await (supabaseAdmin as any)
+      const { data, error } = await boundedRead((supabaseAdmin as any)
         .from("moment_acquisitions")
         .select("nft_id, buy_price")
         .eq("wallet", wallet)
@@ -82,7 +83,7 @@ export async function GET(req: NextRequest) {
         .not("buy_price", "is", null)
         .gt("buy_price", 0)
         .order("id", { ascending: true })
-        .range(page * PAGE, page * PAGE + PAGE - 1)
+        .range(page * PAGE, page * PAGE + PAGE - 1), "api/wallet-cost-basis/moment_acquisitions")
       if (error) throw new Error(error.message)
       const batch = (data ?? []) as AcqRow[]
       acqRows.push(...batch)
@@ -94,11 +95,11 @@ export async function GET(req: NextRequest) {
     // and the old `totalAcq ?? trackedCount` turned that into "tracked on 42 of 42" —
     // a 100 % coverage claim manufactured from a read that never returned, on the
     // one line whose job is to DISCLOSE sample size (2026-09-03).
-    const { count: totalAcqRaw, error: totalAcqErr } = await (supabaseAdmin as any)
+    const { count: totalAcqRaw, error: totalAcqErr } = await boundedRead((supabaseAdmin as any)
       .from("moment_acquisitions")
       .select("nft_id", { count: "exact", head: true })
       .eq("wallet", wallet)
-      .eq("collection_id", TOPSHOT_UUID)
+      .eq("collection_id", TOPSHOT_UUID), "api/wallet-cost-basis/moment_acquisitions")
     const totalAcq: number | null = totalAcqErr ? null : (typeof totalAcqRaw === "number" ? totalAcqRaw : null)
     if (totalAcqErr) console.warn("[wallet-cost-basis] acquisition count failed:", totalAcqErr.message)
 
@@ -114,12 +115,12 @@ export async function GET(req: NextRequest) {
     const cacheRows: Array<{ moment_id: string; edition_key: string | null; player_name: string | null; set_name: string | null; tier: string | null; serial_number: number | null }> = []
     for (let i = 0; i < nftIds.length; i += 500) {
       const slice = nftIds.slice(i, i + 500)
-      const { data, error } = await (supabaseAdmin as any)
+      const { data, error } = await boundedRead((supabaseAdmin as any)
         .from("wallet_moments_cache")
         .select("moment_id, edition_key, player_name, set_name, tier, serial_number")
         .eq("wallet_address", wallet)
         .eq("collection_id", TOPSHOT_UUID)
-        .in("moment_id", slice)
+        .in("moment_id", slice), "api/wallet-cost-basis/wallet_moments_cache")
       if (error) throw new Error(error.message)
       cacheRows.push(...(data ?? []))
     }
@@ -130,11 +131,11 @@ export async function GET(req: NextRequest) {
     const editionMeta = new Map<string, { id: string; tier: string | null; player_name: string | null; set_name: string | null }>()
     for (let i = 0; i < editionKeys.length; i += 500) {
       const slice = editionKeys.slice(i, i + 500)
-      const { data, error } = await (supabaseAdmin as any)
+      const { data, error } = await boundedRead((supabaseAdmin as any)
         .from("editions")
         .select("id, external_id, tier, player_name, set_name")
         .eq("collection_id", TOPSHOT_UUID)
-        .in("external_id", slice)
+        .in("external_id", slice), "api/wallet-cost-basis/editions")
       if (error) throw new Error(error.message)
       for (const e of data ?? []) editionMeta.set(e.external_id, e)
     }
@@ -143,10 +144,10 @@ export async function GET(req: NextRequest) {
     const editionUuids = Array.from(new Set(Array.from(editionMeta.values()).map((e) => e.id)))
     const fmvByEdition = new Map<string, number>()
     if (editionUuids.length > 0) {
-      const { data, error } = await (supabaseAdmin as any).rpc("get_fmv_for_editions", {
+      const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_fmv_for_editions", {
         p_collection_id: TOPSHOT_UUID,
         p_edition_ids: editionUuids,
-      })
+      }), "api/wallet-cost-basis/get_fmv_for_editions")
       if (error) throw new Error(error.message)
       for (const row of (data ?? []) as Array<{ edition_id: string; fmv_usd: number | string }>) {
         fmvByEdition.set(row.edition_id, Number(row.fmv_usd) || 0)

@@ -68,6 +68,17 @@ export interface BoundedReadResult {
   data: any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   error: any
+  /**
+   * Present on a `{ count: "exact", head: true }` read.
+   *
+   * 🚨 **NULL ON TIMEOUT, NEVER 0**, and this is the one field where the bound
+   * could itself become the defect it exists to prevent. CLAUDE.md names `?? 0`
+   * on a supabase count as one of the two fabricated-number shapes: a failed
+   * count that resolves to zero publishes a MEASURED zero. A bound that filled
+   * in `count: 0` on overrun would manufacture that at every call site at once,
+   * which is strictly worse than the 504 it replaced.
+   */
+  count?: number | null
 }
 
 /**
@@ -123,7 +134,15 @@ export async function boundedRead(
       Promise.resolve(p),
       new Promise<BoundedReadResult>((resolve) => {
         timer = setTimeout(
-          () => resolve({ data: null, error: { message: `[${label}] read exceeded ${timeoutMs}ms` } }),
+          // `count: null` explicitly, not omitted: a caller doing `count ?? 0`
+          // gets the same answer either way, but stating it keeps the contract
+          // readable at the one place someone might be tempted to put a 0.
+          () =>
+            resolve({
+              data: null,
+              error: { message: `[${label}] read exceeded ${timeoutMs}ms` },
+              count: null,
+            }),
           timeoutMs,
         )
       }),
@@ -136,9 +155,9 @@ export async function boundedRead(
     // that one cannot have carried a code to begin with.
     if (e !== null && typeof e === "object" && typeof (e as { message?: unknown }).message === "string") {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return { data: null, error: e as any }
+      return { data: null, error: e as any, count: null }
     }
-    return { data: null, error: { message: String(e) } }
+    return { data: null, error: { message: String(e) }, count: null }
   } finally {
     if (timer) clearTimeout(timer)
   }

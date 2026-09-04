@@ -156,30 +156,37 @@ const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
  * the predicate change that caused it, exactly as the heartbeat ratchet's
  * 31 → 35 does.
  *
- * ⭐ 130 → 72 → 51 on 2026-09-04, in two passes: **80 read-only routes converted**
- * — 76 to `boundedRead`
+ * ⭐ 130 → 42 on 2026-09-04, in three passes: **89 read-only routes converted**
+ * — 84 to `boundedRead`
  * (`lib/api/bounded-read.ts`) and **4 to `withPagedBoardBudget`** — the four
  * paged `/insights` boards, whose `fetchAllPaged` returns the very
  * `{ rows, error }` contract that helper was written to match. Population
- * unchanged at 131 throughout. Two of the 80 are
+ * and **1 to `withBoardBudget`** — `/api/public/special-serial-owners`, whose
+ * read goes through a `lib/` fetcher already inside a try/catch, so the
+ * REJECTING flavour lands exactly where a failed read is handled. Population
+ * unchanged at 131 throughout. Two of the 89 are
  * the ones production actually named — `/api/profile/hero-moment` (three
  * `57014` statement timeouts on `/dashboard`, the primary signed-in surface)
  * and `/api/wallet/pack-lifecycle`.
  *
- * ⛔ THE REMAINING 51 ARE NOT A LEFTOVER, AND THE SPLIT IS DELIBERATE. 42 of
- * them export a POST/PUT/PATCH/DELETE or live under `cron|admin|backfill|
- * badge-sync|seed-|ingest`, and **bounding a WRITE is not the same trade as
+ * 🚨 THE REMAINING 42 ARE NOW *EXACTLY* THE DELIBERATE EXCLUSION SET — every
+ * read-only route in this population is bounded, and the number will not fall
+ * further without a decision. All 42 export a POST/PUT/PATCH/DELETE or live
+ * under `cron|admin|backfill|badge-sync|seed-|ingest`, and **bounding a WRITE
+ * is not the same trade as
  * bounding a read**: this bound abandons the WAIT, not the statement, so a
  * write that overruns would be reported to the caller as failed while Postgres
  * commits it — manufacturing exactly the false claim the honesty canon exists
  * to prevent, in the one direction where the caller cannot re-read to find out.
- * A write needs an idempotency key or a status re-read, not a timer. The rest
- * are **9** read-only routes whose reads sit behind a shape the codemod could
- * not convert mechanically (a `Promise.all` of raw builders, a helper in
- * `lib/`, a client behind a bespoke cast) and which are worth a human read
- * each. **Do not close the gap by wrapping the writes.**
+ * A write needs an idempotency key or a status re-read, not a timer.
+ *
+ * ⛔ **SO DO NOT DRIVE THIS TO ZERO.** A future reader seeing 42 on a ratchet
+ * that only ever falls will be tempted to finish the job; finishing it means
+ * wrapping the writes, which is the one change this file exists to argue
+ * against. If a write route ever does need a bound, it needs a DIFFERENT
+ * mechanism and this budget should be re-derived, not decremented.
  */
-const BUDGET = 51
+const BUDGET = 42
 
 describe("an API route that degrades honestly also bounds the read it degrades on", () => {
   it("is not vacuous — and the check is SATISFIABLE AT A POPULATION OF ZERO", () => {

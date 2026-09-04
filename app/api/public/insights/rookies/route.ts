@@ -30,6 +30,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 const VALID_SORTS = new Set(["gmv", "lock", "avg_price", "sales", "mint_one"]);
 
@@ -60,8 +61,8 @@ export async function GET(req: NextRequest) {
 
   const [statsRes, indexRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("topshot_2025_rookie_cohort_stats").select("*").limit(1),
-    q,
+    boundedRead((supabase as any).from("topshot_2025_rookie_cohort_stats").select("*").limit(1), "api/public/insights/rookies/topshot_2025_rookie_cohort_stats"),
+    boundedRead(q, "api/public/insights/rookies/topshot_2025_rookie_index"),
   ]);
 
   if (statsRes.error) {

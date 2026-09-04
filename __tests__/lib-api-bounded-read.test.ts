@@ -85,6 +85,34 @@ describe("boundedRead", () => {
     expect((error as { message: string }).message).toBe("boom")
   })
 
+  it("🚨 a timed-out COUNT read resolves count NULL, never 0", async () => {
+    // The one way this bound could become the defect it prevents. CLAUDE.md
+    // names `?? 0` on a supabase count as a fabricated-number shape: a failed
+    // count that resolves to zero publishes a MEASURED zero. A bound filling in
+    // `count: 0` would manufacture that at every call site at once.
+    process.env.API_DB_READ_TIMEOUT_MS = "20"
+    const { count, error } = await boundedRead(neverSettles(), "api/test/hung-count")
+    expect(count).toBeNull()
+    expect(count).not.toBe(0)
+    expect(error).not.toBeNull()
+  })
+
+  it("a thrown COUNT read also resolves count NULL", async () => {
+    const { count } = await boundedRead(Promise.reject(new Error("nope")), "api/test/thrown-count")
+    expect(count).toBeNull()
+  })
+
+  it("CONTROL: a real count passes through untouched", async () => {
+    process.env.API_DB_READ_TIMEOUT_MS = "5000"
+    const { count } = await boundedRead(
+      Promise.resolve({ data: null, error: null, count: 0 }),
+      "api/test/real-zero-count",
+    )
+    // A MEASURED zero must survive. Collapsing it to null would be the same
+    // conflation in the other direction.
+    expect(count).toBe(0)
+  })
+
   it("CONTROL: a read that settles inside the budget passes through UNTOUCHED", async () => {
     // The no-change case. Without it, a bound that swallowed every read would
     // pass all three cases above.

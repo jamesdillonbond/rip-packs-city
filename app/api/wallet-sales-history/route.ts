@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import {apiErrorResponse, isUnresolvedIdentifierError, unresolvedIdentifierResponse} from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
@@ -80,12 +81,12 @@ export async function GET(req: NextRequest) {
 
     if (collectionUuid === PINNACLE_UUID) {
       // Pinnacle path — pinnacle_sales joined to pinnacle_editions (text IDs).
-      const { data, error } = await (supabaseAdmin as any)
+      const { data, error } = await boundedRead((supabaseAdmin as any)
         .from("pinnacle_sales")
         .select("sale_price_usd, sold_at, source, serial_number, buyer_address, seller_address, edition_id, pinnacle_editions:edition_id(character_name, set_name, edition_type)")
         .or(`buyer_address.eq.${wallet},seller_address.eq.${wallet}`)
         .order("sold_at", { ascending: false })
-        .limit(limit)
+        .limit(limit), "api/wallet-sales-history/pinnacle_sales")
       if (error) throw new Error(error.message)
       rows = (data ?? []).map((r: any) => {
         const edition = Array.isArray(r.pinnacle_editions) ? r.pinnacle_editions[0] : r.pinnacle_editions
@@ -103,13 +104,13 @@ export async function GET(req: NextRequest) {
       })
     } else {
       // sales joined to editions (uuid IDs).
-      const { data, error } = await (supabaseAdmin as any)
+      const { data, error } = await boundedRead((supabaseAdmin as any)
         .from("sales")
         .select("price_usd, sold_at, marketplace, serial_number, buyer_address, seller_address, edition_id, editions:edition_id(player_name, set_name, tier)")
         .eq("collection_id", collectionUuid)
         .or(`buyer_address.eq.${wallet},seller_address.eq.${wallet}`)
         .order("sold_at", { ascending: false })
-        .limit(limit)
+        .limit(limit), "api/wallet-sales-history/sales")
       if (error) throw new Error(error.message)
       rows = (data ?? []).map((r: any) => {
         const edition = Array.isArray(r.editions) ? r.editions[0] : r.editions

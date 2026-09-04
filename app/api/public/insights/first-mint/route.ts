@@ -28,6 +28,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { readMvAsOf } from "@/lib/insights/mv-freshness";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
@@ -71,8 +72,8 @@ export async function GET(req: NextRequest) {
 
   const [statsRes, trophiesRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("topshot_first_mint_trophy_stats").select("*").limit(1),
-    q,
+    boundedRead((supabase as any).from("topshot_first_mint_trophy_stats").select("*").limit(1), "api/public/insights/first-mint/topshot_first_mint_trophy_stats"),
+    boundedRead(q, "api/public/insights/first-mint/topshot_first_mint_trophies"),
   ]);
 
   if (statsRes.error) {

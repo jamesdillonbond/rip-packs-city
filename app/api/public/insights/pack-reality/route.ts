@@ -38,6 +38,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { safeApiError } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
@@ -47,27 +48,27 @@ export async function GET(req: NextRequest) {
 
   const [statsRes, distRes, topEvRes, realizedRes, rankerStaleRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("topshot_pack_reality_stats").select("*").limit(1),
+    boundedRead((supabase as any).from("topshot_pack_reality_stats").select("*").limit(1), "api/public/insights/pack-reality/topshot_pack_reality_stats"),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("topshot_pack_reality_dist").select("*"),
+    boundedRead((supabase as any).from("topshot_pack_reality_dist").select("*"), "api/public/insights/pack-reality/topshot_pack_reality_dist"),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    boundedRead((supabase as any)
       .from("topshot_pack_reality_top_ev")
       .select(
         "pack_listing_id, dist_id, pack_name, pack_price, gross_ev, pack_ev, value_ratio, fmv_coverage_pct, edition_count, total_unopened, depletion_pct, snapshotted_at, price_source, high_variance, is_reward_pack, retail_price_usd_normalized, secondary_ask, secondary_available"
       )
-      .limit(limit),
+      .limit(limit), "api/public/insights/pack-reality/topshot_pack_reality_top_ev"),
     // Per-dist modeled-EV-vs-realized reality check. Only dists with enough
     // opens to trust the realized side (n_opens >= 10). modeled_pack_price is
     // the clean price column (retail_price_usd carries raw satoshi values).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    boundedRead((supabase as any)
       .from("v_topshot_pack_realized_ev")
       .select(
         "dist_id, title, modeled_pack_price, modeled_gross_ev, modeled_net_ev, price_source, n_opens, realized_mean, realized_median, realized_p10, realized_p90, realized_to_modeled_ratio, calibrated_ev"
       )
       .gte("n_opens", 10)
-      .limit(1000),
+      .limit(1000), "api/public/insights/pack-reality/v_topshot_pack_realized_ev"),
     // Why the +EV ranker is empty, when it is empty. The board's own zero rows
     // cannot distinguish "nothing qualifies" (an honest market answer) from
     // "everything that qualifies is stale" (a claim about OUR pipeline) — and on
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest) {
     // clause. It is DELIBERATELY not fatal: if it fails we simply cannot explain
     // an empty board, which is the status quo, not a regression.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).from("v_topshot_pack_reality_ranker_staleness").select("*").limit(1),
+    boundedRead((supabase as any).from("v_topshot_pack_reality_ranker_staleness").select("*").limit(1), "api/public/insights/pack-reality/v_topshot_pack_reality_ranker_staleness"),
   ]);
 
   // PARTIAL FAILURE IS NOT A 500. Until 2026-08-02 the first three legs were

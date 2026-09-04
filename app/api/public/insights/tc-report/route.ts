@@ -20,6 +20,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 function looksLikeFlowAddress(s: string): boolean {
   return /^0x[a-fA-F0-9]{16}$/.test(s);
@@ -40,9 +41,9 @@ export async function GET(req: NextRequest) {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).rpc("get_wallet_tc_report", {
+  const { data, error } = await boundedRead((supabase as any).rpc("get_wallet_tc_report", {
     p_wallet: wallet,
-  });
+  }), "api/public/insights/tc-report/get_wallet_tc_report");
 
   if (error) {
     return boardUnavailable(error, "insights/tc-report");

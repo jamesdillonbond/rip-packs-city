@@ -29,6 +29,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { boardUnavailable } from "@/lib/insights/board-error"
+import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 import {
   fetchSpecialSerialOwners,
   VALID_TAGS_BY_COLLECTION,
@@ -82,7 +83,17 @@ export async function GET(req: NextRequest) {
 
   let rows
   try {
-    rows = await fetchSpecialSerialOwners(supabase, { tag, tier, player, holder, sort, limit, offset, collection })
+    // withBoardBudget REJECTS on overrun, which is the right flavour HERE and
+    // the wrong one three lines further down: this read already sits inside a
+    // try/catch whose catch is `boardUnavailable`, so a rejection lands exactly
+    // where a failed read is already handled. (`boundedRead` is the resolving
+    // flavour, for the far commoner shape in this tree — a bare destructured
+    // read with no catch at all.) The helper reads through a lib/ fetcher, so
+    // nothing here can see the individual queries; the bound is on the whole.
+    rows = await withBoardBudget(
+      fetchSpecialSerialOwners(supabase, { tag, tier, player, holder, sort, limit, offset, collection }),
+      "special-serial-owners",
+    )
   } catch (e) {
     return boardUnavailable(e, "special-serial-owners")
   }
