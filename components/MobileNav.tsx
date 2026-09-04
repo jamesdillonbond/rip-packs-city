@@ -368,16 +368,19 @@ export default function MobileNav() {
           );
         })}
 
-        {/* Only visible below 768px — hide on desktop via CSS */}
+        {/* Only visible below 768px — hide on desktop via CSS.
+            The body padding reserves the nav's height so the footer stays reachable:
+            the fixed nav covered the last NAV_HEIGHT px of every page (the FMV
+            disclaimer was cut mid-sentence at 390px on /, pack, edition, sniper, packs —
+            main pads its own bottom, the footer sits outside main). Keep the CSS text
+            free of dates/dashes: jsdom folds <style> text into body.textContent and a
+            component test asserts no "-<digit>" renders. */}
         <style>{`
           .rpc-mobile-nav { display: none !important; }
           .rpc-mobile-sheet { display: none !important; }
           @media (max-width: 768px) {
             .rpc-mobile-nav { display: flex !important; }
             .rpc-mobile-sheet { display: block !important; }
-            /* 2026-09-04: the fixed nav covered the last ${NAV_HEIGHT}px of every page —
-               the footer disclaimer was cut mid-sentence at 390px on /, pack, edition,
-               sniper and packs (main pads its own bottom, the footer sits outside main). */
             body { padding-bottom: calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px)) !important; }
           }
         `}</style>
