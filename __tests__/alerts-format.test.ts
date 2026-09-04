@@ -249,3 +249,48 @@ describe("price-only deals (no FMV context)", () => {
     expect(msg).not.toContain("below FMV")
   })
 })
+
+// ── The ask's age is SAID (2026-09-04) ──────────────────────────────────────
+//
+// `ask_updated_at` rode the whole deal-alert chain and was never rendered, so
+// "25% below FMV" could be mailed off an ask last seen 23 hours earlier (inbox
+// 2026-08-29T1605Z). Dropping stale asks is a product threshold; saying their
+// age is not. Pinned on all three channels with a fixed clock, both directions:
+// a stale ask carries the warning, a fresh one does not, an unknown one says
+// nothing (it must not read as fresh, and it must not invent an age).
+describe("deal alerts state how old the ask is", () => {
+  const NOW = new Date("2026-09-04T12:00:00Z")
+  const stale = { ask_usd: 10, ask_updated_at: "2026-09-03T13:00:00Z" } // 23h
+  const fresh = { ask_usd: 10, ask_updated_at: "2026-09-04T11:55:00Z" } // 5m
+  const older = { ask_usd: 10, ask_updated_at: "2026-09-01T12:00:00Z" } // 3d
+
+  it("telegram: a 23h-old ask is named and flagged as possibly gone; a 5m-old one is named without the flag", () => {
+    const s = buildTelegramMessage([dealDelivery(stale)], NOW)
+    expect(s).toContain("ask seen 23h ago — may be gone")
+    const f = buildTelegramMessage([dealDelivery(fresh)], NOW)
+    expect(f).toContain("ask seen 5m ago")
+    expect(f).not.toContain("may be gone")
+    expect(buildTelegramMessage([dealDelivery(older)], NOW)).toContain("ask seen 3d ago — may be gone")
+  })
+
+  it("telegram: an UNKNOWN stamp renders no age at all — not fresh, not invented", () => {
+    const s = buildTelegramMessage([dealDelivery({ ask_usd: 10, ask_updated_at: null })], NOW)
+    expect(s).not.toContain("ask seen")
+    expect(s).not.toContain("may be gone")
+  })
+
+  it("discord: the age is its own field, stale flagged", () => {
+    const embeds = buildDiscordEmbeds([dealDelivery(stale)], NOW)
+    const field = embeds[0].fields.find((f: any) => f.name === "Ask seen")
+    expect(field?.value).toBe("23h ago — may be gone")
+    const none = buildDiscordEmbeds([dealDelivery({ ask_usd: 10, ask_updated_at: null })], NOW)
+    expect(none[0].fields.some((f: any) => f.name === "Ask seen")).toBe(false)
+  })
+
+  it("email: the age line is present when known and absent when not", () => {
+    const withAge = buildEmailMessage([dealDelivery(stale)], NOW)
+    expect(JSON.stringify(withAge)).toContain("ask seen 23h ago — may be gone")
+    const without = buildEmailMessage([dealDelivery({ ask_usd: 10, ask_updated_at: null })], NOW)
+    expect(JSON.stringify(without)).not.toContain("ask seen")
+  })
+})

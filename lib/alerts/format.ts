@@ -8,6 +8,7 @@
 
 import type { Delivery, DealPayload, FmvPayload } from "@/lib/alerts";
 import { marketplaceMomentUrl } from "@/lib/collections";
+import { askAgeHours, fmtAskAge, isAskStale } from "@/lib/market/ask-freshness";
 
 const SITE = "https://www.rippackscity.com";
 
@@ -148,9 +149,35 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// ── The ask's AGE travels with the alert, and is said (2026-09-04) ───────────
+//
+// `ask_updated_at` was SELECTed by every view and function in the deal-alert
+// chain and never used as a predicate or rendered — so "25% below FMV, go buy
+// it" could be computed from an ask last seen 23 hours earlier (inbox
+// 2026-08-29T1605Z: no freshness gate anywhere in the chain; an alert's output
+// is silence, so a wrong one is unfalsifiable). Whether a stale ask should be
+// DROPPED is a product threshold (Trevor's); saying how old it is is not.
+//
+// ⚠ Neutral wording on purpose: the stamp means "verified" on the Top Shot and
+// Pinnacle branches and "listed" on the All Day branch, so a blended "checked N
+// ago" would publish a new falsehood for a third of the board. "Seen" is true
+// of all three. An unknown stamp renders NOTHING — it must not manufacture an
+// age, and it must not read as fresh.
+// Threshold and age formatting are the boards' own (`lib/market/ask-freshness`:
+// 12 h, the marker every ask-age caption on the site already uses) so an alert
+// and the board it points at cannot disagree about what "stale" means.
+function askAgeClause(d: Deal, now: Date): string | null {
+  const hours = askAgeHours(d.ask_updated_at, now.getTime());
+  if (hours === null) return null;
+  const h = Math.max(0, hours);
+  const age = h < 1 ? `${Math.round(h * 60)}m` : fmtAskAge(h);
+  const stale = isAskStale(d.ask_updated_at, now.getTime());
+  return `ask seen ${age} ago${stale ? " — may be gone" : ""}`;
+}
+
 // ── Telegram (HTML parse_mode) ───────────────────────────────────────────────
 
-export function buildTelegramMessage(deliveries: Delivery[]): string {
+export function buildTelegramMessage(deliveries: Delivery[], now: Date = new Date()): string {
   const deals = deliveries.filter(isDeal);
   const fmvs = deliveries.filter(isFmv);
   const lines: string[] = [];
@@ -171,6 +198,7 @@ export function buildTelegramMessage(deliveries: Delivery[]): string {
         `\n<a href="${dealDetailUrl(deal)}">${title}</a>` +
           (sub ? `\n${sub}` : "") +
           `\n${money(dealAsk(deal))} ask${dealFmvClause(deal) ? ` · ${dealFmvClause(deal)}` : ""}` +
+          (askAgeClause(deal, now) ? `\n${esc(askAgeClause(deal, now)!)}` : "") +
           (buyLinks.length ? `\n${buyLinks.join(" · ")}` : "")
       );
     }
@@ -195,7 +223,7 @@ export function buildTelegramMessage(deliveries: Delivery[]): string {
 
 const RPC_RED = 0xe03a2f;
 
-export function buildDiscordEmbeds(deliveries: Delivery[]): any[] {
+export function buildDiscordEmbeds(deliveries: Delivery[], now: Date = new Date()): any[] {
   const embeds: any[] = [];
   for (const d of deliveries.slice(0, 10)) {
     if (isDeal(d)) {
@@ -215,6 +243,10 @@ export function buildDiscordEmbeds(deliveries: Delivery[]): any[] {
         dapper ? `[Dapper ↗](${dapper})` : "",
       ].filter(Boolean);
       if (buyLinks.length) fields.push({ name: "Buy", value: buyLinks.join(" · "), inline: true });
+      // The ask's age, when known — a 23-hour-old ask is a different claim from
+      // a 5-minute-old one, and the reader is about to act on it.
+      const askAge = askAgeClause(deal, now);
+      if (askAge) fields.push({ name: "Ask seen", value: askAge.replace(/^ask seen /, ""), inline: true });
       embeds.push({
         title: dealTitle(deal),
         url: dealDetailUrl(deal),
@@ -242,7 +274,7 @@ export function buildDiscordEmbeds(deliveries: Delivery[]): any[] {
 
 // ── Email (Resend) ───────────────────────────────────────────────────────────
 
-export function buildEmailMessage(deliveries: Delivery[]): {
+export function buildEmailMessage(deliveries: Delivery[], now: Date = new Date()): {
   subject: string;
   html: string;
   text: string;
@@ -283,6 +315,7 @@ export function buildEmailMessage(deliveries: Delivery[]): {
           <td style="padding:12px 0;border-bottom:1px solid #27272a;text-align:right;white-space:nowrap;">
             <div style="color:#34d399;font-weight:800;font-size:15px;">${money(dealAsk(deal))}</div>
             ${dealFmvClause(deal) ? `<div style="color:rgba(255,255,255,0.5);font-size:12px;">${dealFmvClause(deal)}</div>` : ""}
+            ${askAgeClause(deal, now) ? `<div style="color:rgba(255,255,255,0.5);font-size:12px;">${esc(askAgeClause(deal, now)!)}</div>` : ""}
           </td>
         </tr>`;
     })

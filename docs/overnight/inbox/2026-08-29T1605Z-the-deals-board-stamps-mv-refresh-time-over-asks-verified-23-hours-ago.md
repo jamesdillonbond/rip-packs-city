@@ -122,3 +122,8 @@ where one gate would serve both, rather than at either surface.
 subscriptions' own filters — not chased, because it does not change the finding either way.
 Also unchecked: every other reader of `edition_current_ask` (`/api/market`,
 `app/api/support-chat`, the scanners' price-only path) for an undated render.
+
+---
+## ✅ THE ALERT PATH now SAYS the ask's age (2026-09-04 02:4xZ, Claude Code on Trevor's box) — the board half stays Trevor's
+
+The table above was right: `ask_updated_at` reached `lib/alerts/format.ts` and was never rendered. All three channel renderers (Telegram, Discord field, email line) now carry **"ask seen Nm/Nh/Nd ago"**, with **"— may be gone"** from 24 h; an unknown stamp renders nothing (not fresh, not invented). Wording is "seen" on purpose — the stamp means *verified* on the Top Shot/Pinnacle branches and *listed* on All Day, and "seen" is true of all three (the trap this filing recorded). **Not done, deliberately:** dropping stale asks from the chain (a threshold = product call, and with 2 subscriptions / 0 deliveries the reach is latent) and the board's per-collection stamp (§Proposal, Trevor). Tests pin all three channels with a fixed clock, both directions.
