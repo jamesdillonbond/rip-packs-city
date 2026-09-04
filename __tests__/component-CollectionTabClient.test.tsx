@@ -48,6 +48,14 @@ vi.mock("@/components/collection/CollectionMomentTable", () => ({
       data-has-searched={String(p.hasSearched)}
       data-loading={String(p.loading)}
       data-show-debug={String(p.showDebug)}
+      /* The cost-basis map, surfaced so a claim ABOUT it can be asserted. The
+         two pre-existing cost-basis cases below asserted only `data-rows`,
+         which passes identically whether the map arrives, arrives wrong, or
+         never arrives at all — the vacuous shape CLAUDE.md names: a title
+         carrying a claim over an assertion that does not keep it. */
+      data-cost-basis-ids={
+        p.costBasis instanceof Map ? Array.from(p.costBasis.keys()).sort().join(",") : ""
+      }
     >
       <button
         data-testid="expand-first"
@@ -147,6 +155,15 @@ vi.mock("@/lib/telemetry/track", () => ({ track: (...a: unknown[]) => track(...a
 function json(status: number, body: unknown, ok = status < 400) {
   return { ok, status, json: async () => body } as unknown as Response
 }
+
+/** One `/api/cost-basis` acquisition row, keyed by the nft_id the map uses. */
+const ACQUISITION = (nftId: string) => ({
+  nft_id: nftId,
+  buy_price: "20",
+  acquired_date: "2026-01-01",
+  fmv_at_acquisition: "18",
+  acquisition_method: "marketplace",
+})
 
 const MOMENT = (over: Record<string, unknown> = {}) => ({
   moment_id: "9001",
@@ -741,22 +758,70 @@ describe("CollectionTabClient — enrichment", () => {
 
   it("applies cost basis when it loads", async () => {
     searchParams = new URLSearchParams("wallet=0xmine")
-    withRoutes({
-      "/api/cost-basis": () =>
-        json(200, {
-          acquisitions: [
-            {
-              nft_id: "9001",
-              buy_price: "20",
-              acquired_date: "2026-01-01",
-              fmv_at_acquisition: "18",
-              acquisition_method: "marketplace",
-            },
-          ],
-        }),
-    })
+    withRoutes({ "/api/cost-basis": () => json(200, { acquisitions: [ACQUISITION("9001")] }) })
     render(<CollectionTabClient />)
     await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("1"))
+    // The assertion the title promises. Without it this case passed with the
+    // cost-basis read deleted entirely.
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe("9001"),
+    )
+  })
+
+  it("🚨 a FAILED cost-basis read on a NEW wallet must not leave the PREVIOUS wallet's numbers on screen", async () => {
+    // The defect: the effect cleared the map only for the empty-wallet case
+    // (`if (!activeWallet) { setCostBasis(new Map()); return }`), and both a
+    // non-ok response (`r.ok ? r.json() : null`) and a thrown fetch left state
+    // untouched. So switching wallet A -> wallet B while /api/cost-basis is
+    // down kept A's acquisitions in state and rendered them against B's rows —
+    // a cost basis and a P&L attributed to Moments the reader does not own,
+    // which is the worst sub-class in the canon: a false claim about the
+    // reader's own account that is ACTIONABLE.
+    //
+    // Clearing is the honest direction rather than merely the safe one: an
+    // empty map suppresses PortfolioSummary's cost/P&L panel outright and
+    // renders an em dash in the table's Cost column, so the failure understates
+    // instead of asserting.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    let costBasisUp = true
+    withRoutes({
+      "/api/cost-basis": () =>
+        costBasisUp ? json(200, { acquisitions: [ACQUISITION("9001")] }) : json(503, {}),
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe("9001"),
+    )
+
+    costBasisUp = false
+    const box = screen.getByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "0xother" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe(""),
+    )
+  })
+
+  it("CONTROL: a SUCCESSFUL cost-basis read on a new wallet replaces the map rather than clearing it", async () => {
+    // Without this, "clear the map on every wallet change" would pass the case
+    // above by simply never populating it again.
+    searchParams = new URLSearchParams("wallet=0xmine")
+    let nftId = "9001"
+    withRoutes({ "/api/cost-basis": () => json(200, { acquisitions: [ACQUISITION(nftId)] }) })
+    render(<CollectionTabClient />)
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe("9001"),
+    )
+
+    nftId = "9002"
+    const box = screen.getByPlaceholderText(/Top Shot username or wallet address/)
+    fireEvent.change(box, { target: { value: "0xother" } })
+    fireEvent.keyDown(box, { key: "Enter" })
+
+    await waitFor(() =>
+      expect(screen.getByTestId("moment-table").getAttribute("data-cost-basis-ids")).toBe("9002"),
+    )
   })
 
   it("survives a cache-refresh leg that fails", async () => {

@@ -279,8 +279,25 @@ function WalletMomentsBody() {
   }, [activeWallet, collectionSlug])
 
   // ── Fetch cost basis when wallet changes ──────────────────────────────────
+  //
+  // ⚠ THE MAP IS CLEARED ON EVERY WALLET CHANGE, not only when the wallet is
+  // emptied. It used to clear only in the `!activeWallet` case, and BOTH
+  // failure paths below leave state untouched — a non-ok response resolves to
+  // `null` and the `.catch` is bare — so switching wallet A -> wallet B while
+  // `/api/cost-basis` was down kept A's acquisitions in state and rendered them
+  // against B's rows: a cost basis and a P&L attributed to Moments the reader
+  // does not own. That is the canon's worst sub-class, a false claim about the
+  // reader's own account, and it is ACTIONABLE — a wrong P&L is something they
+  // would act on.
+  //
+  // Clearing is the HONEST direction and not merely the safe one: an empty map
+  // makes `PortfolioSummary` suppress its cost/P&L panel outright and makes the
+  // table's Cost column render an em dash, so a failed read understates instead
+  // of asserting. (The row-level `costBasis` on the moments payload is a
+  // separate source and is unaffected — this clears only what THIS read owns.)
   useEffect(function() {
-    if (!activeWallet) { setCostBasis(new Map()); return }
+    setCostBasis(new Map())
+    if (!activeWallet) return
     let cancelled = false
     fetch("/api/cost-basis?wallet=" + encodeURIComponent(activeWallet) + "&collection=" + encodeURIComponent(collectionSlug))
       .then(function(r) { return r.ok ? r.json() : null })
