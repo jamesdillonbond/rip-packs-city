@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (prod DB migration `20260904150428`) — deciding the circulation rule expired a refusal I wrote three hours earlier, and the denorm behind it was 539,596 rows wrong — 66,376 of them by more than 10x · Cowork (cloud sandbox)
+
+The wmc metadata reconcile shipped this morning with a deliberate ⛔ in its own header: *"`mint_count` is not touched at all — `editions.circulation_count` is the chain's all-printings total and that is the open product call; writing 360,422 rows to one side of an undecided question is precisely the mistake to avoid."* That was right at the time. **The entry above decided the question**, so the refusal expired and the denorm has to follow the column it denormalises. Left alone, that comment would have quietly protected stale data forever — an expiry condition nobody re-reads is just a permanent exemption.
+
+**Measured over the 1,910,846 Top Shot wmc rows that join an edition: 539,596 disagree with the corrected catalog value, 539,326 of them OVERSTATED** (270 understated, 211 NULL). Split by key shape, and the parallel half is the severe one:
+
+| shape | rows | editions | mean ratio | >10x |
+|---|---|---|---|---|
+| base `set:play` | 421,618 | 2,039 | 1.24x | 0 |
+| parallel `set:play::N` | 117,708 | 3,540 | **16.5x** | **66,376** |
+
+⚠ **AND THE PARALLEL HALF WAS DEBRIS FROM MY OWN FIX EARLIER TODAY.** `upsert_wmc_batch` was corrected to resolve a Top Shot parallel at write time and 67,530 rows were re-keyed `set:play` → `set:play::N`. That moved `edition_key` and **left `mint_count` holding the BASE edition's count** — so a Jukebox /9 read its serial against a number ~16x too large, and the re-key made the denominator *worse* on exactly the rows it was fixing. First live tick confirms the shape: `102:3510::8` **250 → 10**, `102:3510::5` 250 → 25, 929 of 930 corrections downward. **A fix that leaves a worse number behind than it found is not finished** — the lesson is to re-measure every denorm of a column you have just re-keyed, not only the column you re-keyed.
+
+**Blast radius is narrower than the row count suggests, and I checked rather than assumed.** The main collection tab is already correct: `get_wallet_moments_with_fmv` selects `e.circulation_count` straight from `editions`, so the migrations above fixed it. `wmc.mint_count` is read directly by **`/api/profile/hero-moment`, both `/api/support-chat` Moment lookups, and the trophy picker**, each rendering `#serial/mint`. Those four were the surfaces still lying.
+
+**Design notes.** `circulation_count` must be NOT NULL to overwrite — a catalog gap never *removes* a denominator a collector already sees, and Atlas has not walked ~33 % of the catalog. `mint_count` gets its **own** audit table rather than a column on `audit_20260904_wmc_metadata_reconcile`, because that one is `ON CONFLICT (wmc_id) DO NOTHING` and any row already logged for a set-name fix would have recorded **no old mint at all** — a revert path with holes in it is not a revert path. The function signature is unchanged, so no new overload and no re-granted PUBLIC EXECUTE. The cursor is reset to `''` so the ~40 % of the catalog this cycle had already passed picks up the new column instead of waiting a full wrap; the re-walk is cheap for the four columns that have converged (last ticks 191 and 278 rows, down from 34,071).
+
+**Also converged and self-retired this hour:** `rpc-wmc-parallel-rekey-oneshot` unscheduled itself — **0 base-keyed resolvable parallels remain** in the 1.9 M-row table.
+
+**Verified:** first tick 300 editions / 930 corrections, 929 downward, 1 previously NULL, 0 raised · `check_secdef_anon_execute_violations()` `[]` · one overload of `reconcile_wmc_metadata_from_editions` · `*/10` at 1,200 editions drains the rest. **Revert:** `UPDATE public.wallet_moments_cache w SET mint_count = a.old_mint_count FROM public.audit_20260904_wmc_mint_count a WHERE a.wmc_id = w.id;` then restore the body from `20260904142504`.
+
 ### 2026-09-04 · ✅ SHIPPED (2 prod DB migrations `20260904145331` · `20260904145452`) — the 284-vs-249 question is CLOSED with a measurement, not a preference: `editions.circulation_count` is now this printing's own mint, and 1,761 editions carrying 186,124 holder rows were wrong · Cowork (cloud sandbox)
 
 This is the open product call the migration two entries above deliberately refused to prejudge ("writing 360,422 rows to one side of an undecided question is precisely the mistake to avoid"). The Atlas refresh has since given us a **per-printing mint for every edition**, which turned it from a preference into an arithmetic check.
