@@ -270,11 +270,28 @@ async function runListingCache() {
 
       const seriesStr = traitValue(traits, "SeriesNumber", "seriesNumber", "Series Number")
       const seriesNum = seriesStr !== null ? parseInt(seriesStr, 10) : null
-      const tierRaw = traitValue(traits, "Tier", "Moment Tier", "tier") ?? "COMMON"
+      const tierRaw = traitValue(traits, "Tier", "Moment Tier", "tier")
       const teamName = traitValue(traits, "TeamAtMoment", "Team", "teamAtMoment", "teamName")
       const setName = traitValue(traits, "SetName", "Set Name", "setName")
+      const rawTitle = nft?.card?.title ? String(nft.card.title).trim() : null
+      // ⚠ Flowty answers with a PLACEHOLDER title — literally `TopShot #<nftId>` — for any NFT
+      // whose metadata it has not resolved, and it sends no traits with it. That title is truthy,
+      // so it used to sail through the `!playerName` guard and land a row that looked like a
+      // Moment and was fabricated end to end. Measured 2026-09-04 over the whole population, not a
+      // sample: 70 of 104 live Top Shot rows were placeholders, and for 70 OF 70 —
+      //   • `card.num` was the NFT ID, written into `serial_number` (a serial nobody has),
+      //   • `card.max` was absent, so circulation was NULL,
+      //   • the tier trait was absent and the `?? "COMMON"` default supplied one,
+      //   • Flowty's blended valuation still landed in `fmv`, and on 9 of them the ask was BELOW
+      //     it, so the row rendered as a discount on an NFT we cannot identify.
+      // The published consequence: `/api/profile/market-pulse` groups `cached_listings` by tier and
+      // takes the lowest ask, so the Top Shot "Common floor" a collector saw was **$0.19 from an
+      // assumed tier** — the real resolved COMMON floor is $0.20.
+      // Compared against THIS nft's own id, not a loose `/^TopShot #\d+$/`, so a genuine title
+      // that happens to look like one can never be discarded.
+      const isUnidentified = rawTitle !== null && rawTitle === `TopShot #${nftIdStr}`
       const playerName =
-        (nft?.card?.title ? String(nft.card.title).trim() : null) ||
+        (isUnidentified ? null : rawTitle) ||
         traitValue(
           traits,
           "PlayerKnownName",
@@ -282,24 +299,32 @@ async function runListingCache() {
           "Full Name",
           "Player Name",
           "playerName"
-        )
+        ) ||
+        rawTitle
 
       if (!playerName) {
         stats.skipMissingPlayerName++
         continue
       }
 
-      const serial =
-        toNumber(nft?.card?.num) ??
-        toNumber(traitValue(traits, "serialNumber", "SerialNumber"))
-      const circulation =
-        toNumber(nft?.card?.max) ??
-        toNumber(traitValue(traits, "numMoments", "maxEditionSize"))
+      // On an unidentified NFT every card.* field is unreliable (card.num was the NFT id in 70 of
+      // 70), so the row keeps only what is actually true of it — the listing — and states the rest
+      // as unknown. NULL is a worse-looking cell and a truthful one; a made-up serial is neither.
+      const serial = isUnidentified
+        ? null
+        : toNumber(nft?.card?.num) ??
+          toNumber(traitValue(traits, "serialNumber", "SerialNumber"))
+      const circulation = isUnidentified
+        ? null
+        : toNumber(nft?.card?.max) ??
+          toNumber(traitValue(traits, "numMoments", "maxEditionSize"))
 
       const thumbnail = nft?.card?.images?.[0]?.url ?? null
       const askPrice = toNumber(listedOrder.salePrice) ?? toNumber(listedOrder.usdValue)
       const rawFmv = toNumber(listedOrder.valuations?.blended?.usdValue)
-      const fmv = rawFmv && rawFmv > 0 ? rawFmv : null
+      // A valuation is a claim about a specific Moment. With no identity there is nothing for it
+      // to be a valuation OF, and carrying it is what turned 9 of these rows into "discounts".
+      const fmv = !isUnidentified && rawFmv && rawFmv > 0 ? rawFmv : null
       const storefrontAddress =
         listedOrder.storefrontAddress ?? listedOrder.providerAddress ?? null
       const ts = listedOrder.blockTimestamp
@@ -327,7 +352,7 @@ async function runListingCache() {
         team_name: teamName,
         set_name: setName,
         series_name: seriesName,
-        tier: tierRaw.toUpperCase(),
+        tier: tierRaw ? tierRaw.toUpperCase() : null,
         serial_number: serial,
         circulation_count: circulation,
         ask_price: askPrice,

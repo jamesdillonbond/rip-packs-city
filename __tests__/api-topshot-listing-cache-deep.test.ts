@@ -401,3 +401,118 @@ describe("topshot-listing-cache — degradation + fatal paths", () => {
     expect(log).toMatchObject({ p_rows_found: 1, p_rows_written: 0 })
   })
 })
+
+// ── The unidentified-NFT contract (2026-09-04) ────────────────────────────────
+// Flowty answers with a PLACEHOLDER title `TopShot #<nftId>` and NO traits for any NFT whose
+// metadata it has not resolved. That title is truthy, so it used to pass the `!playerName` guard
+// and land a row that read as a Moment and was fabricated end to end. Measured over the whole live
+// population, not a sample: 70 of 104 Top Shot rows were placeholders, and for 70 OF 70 the serial
+// was the NFT id, the tier was the `?? "COMMON"` default, and Flowty's blended valuation was
+// carried — on 9 of them BELOW the ask, so the row rendered as a discount on an NFT we cannot
+// name. `/api/profile/market-pulse` groups cached_listings by tier and takes the lowest ask, so
+// the published Top Shot "Common floor" was $0.19 from an assumed tier against a real $0.20.
+describe("topshot-listing-cache — an unidentified NFT states unknown instead of guessing", () => {
+  function unidentifiedNft(id: string) {
+    return {
+      id,
+      orders: [
+        {
+          state: "LISTED",
+          listingResourceID: "777" + id,
+          salePrice: "0.19",
+          valuations: { blended: { usdValue: 0.228 } },
+          blockTimestamp: LISTED_AT_MS,
+        },
+      ],
+      // Exactly what Flowty sends: the title is the id, card.num is ALSO the id, no max, no traits.
+      card: { title: `TopShot #${id}`, num: Number(id) },
+      nftView: { traits: [] },
+    }
+  }
+
+  it("keeps the listing but nulls every field it did not actually read", async () => {
+    fetchMock = installFetchMock([
+      flowtyStub([{ nfts: [unidentifiedNft("52313854")] }]),
+      jsonRoute("/api/fmv-recalc", { ok: true }),
+    ])
+    const spy = install({
+      cached_listings: [
+        { error: null, count: 1 } as never,
+        { error: null, count: 0 } as never,
+        { count: 1, error: null } as never,
+      ],
+      "rpc:resolve_wallet_verification_challenges": { data: [], error: null },
+    })
+
+    expect((await GET(req())).status).toBe(200)
+    await runDeferred()
+
+    const rows = (spy.writes.cached_listings ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)
+    expect(rows).toHaveLength(1)
+    const row = rows[0] as Record<string, unknown>
+
+    // The listing itself is real and is kept — dropping it would lose a genuine ask.
+    expect(row.flow_id).toBe("52313854")
+    expect(row.ask_price).toBe(0.19)
+    expect(row.buy_url).toContain("/NFT/52313854?listingResourceID=77752313854")
+
+    // Everything Flowty did not resolve is stated as unknown.
+    expect(row.tier).toBeNull()          // NOT "COMMON" — this is what set the published floor
+    expect(row.serial_number).toBeNull() // card.num was the NFT id, not a serial
+    expect(row.circulation_count).toBeNull()
+    expect(row.fmv).toBeNull()           // no identity => nothing for a valuation to be OF
+    expect(row.moment_id).toBeNull()
+  })
+
+  it("still reads a real title, and a real Moment keeps its tier and serial", async () => {
+    fetchMock = installFetchMock([
+      flowtyStub([{ nfts: [makeNft(1)] }]),
+      jsonRoute("/api/fmv-recalc", { ok: true }),
+    ])
+    const spy = install({
+      cached_listings: [
+        { error: null, count: 1 } as never,
+        { error: null, count: 0 } as never,
+        { count: 1, error: null } as never,
+      ],
+      "rpc:resolve_wallet_verification_challenges": { data: [], error: null },
+    })
+    expect((await GET(req())).status).toBe(200)
+    await runDeferred()
+    const row = (spy.writes.cached_listings ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)[0] as Record<string, unknown>
+    expect(row.player_name).toBe("Player 1")
+    expect(row.tier).toBe("RARE")
+    expect(row.serial_number).toBe(12)
+    expect(row.fmv).toBe(30)
+  })
+
+  it("a title that merely LOOKS like a placeholder but names a different id is kept", async () => {
+    // The guard compares against THIS nft's own id, so a genuine title can never be discarded by
+    // a loose /^TopShot #\d+$/ match.
+    const nft = { ...unidentifiedNft("52313854"), card: { title: "TopShot #99", num: 7, max: 100 } }
+    fetchMock = installFetchMock([
+      flowtyStub([{ nfts: [nft] }]),
+      jsonRoute("/api/fmv-recalc", { ok: true }),
+    ])
+    const spy = install({
+      cached_listings: [
+        { error: null, count: 1 } as never,
+        { error: null, count: 0 } as never,
+        { count: 1, error: null } as never,
+      ],
+      "rpc:resolve_wallet_verification_challenges": { data: [], error: null },
+    })
+    expect((await GET(req())).status).toBe(200)
+    await runDeferred()
+    const row = (spy.writes.cached_listings ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)[0] as Record<string, unknown>
+    expect(row.player_name).toBe("TopShot #99")
+    expect(row.serial_number).toBe(7)
+    expect(row.circulation_count).toBe(100)
+  })
+})
