@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildSeriesBars, closedMarketNote } from "@/lib/share-card-view"
+import { buildSeriesBars, closedMarketNote, shareHeadline } from "@/lib/share-card-view"
 
 describe("share-card-view · buildSeriesBars", () => {
   it("sorts series labels and returns the max for bar scaling", () => {
@@ -46,5 +46,31 @@ describe("share-card-view · closedMarketNote", () => {
     expect(note).toBe(
       "UFC Strike, Golazos markets are closed — their moments are counted but excluded from Total FMV.",
     )
+  })
+})
+
+describe("share-card-view · shareHeadline (front door = total − stale, like the profile; 2026-09-04)", () => {
+  it("headlines total minus stale and names the stale share in the caption", () => {
+    const h = shareHeadline({ totalFmv: 98514.57, staleFmv: 50695.14, staleCount: 367 })
+    expect(h.live).toBeCloseTo(47819.43, 2)
+    expect(h.stale).toBeCloseTo(50695.14, 2)
+    expect(h.caption).toBe("+ $50,695 across 367 stale-priced moments")
+  })
+
+  it("with NO stale split known (older API shape) shows the raw total and no caption — never a fabricated zero-stale claim", () => {
+    const h = shareHeadline({ totalFmv: 1234.5 })
+    expect(h.live).toBeCloseTo(1234.5, 2)
+    expect(h.caption).toBeNull()
+  })
+
+  it("a known zero stale share has no caption; an empty wallet is $0 with no caption", () => {
+    expect(shareHeadline({ totalFmv: 500, staleFmv: 0, staleCount: 0 }).caption).toBeNull()
+    expect(shareHeadline({ totalFmv: 0, staleFmv: 0, staleCount: 0 }).live).toBe(0)
+  })
+
+  it("never goes negative and singularises one stale moment", () => {
+    const h = shareHeadline({ totalFmv: 10, staleFmv: 25, staleCount: 1 })
+    expect(h.live).toBe(0)
+    expect(h.caption).toBe("+ $25 across 1 stale-priced moment")
   })
 })

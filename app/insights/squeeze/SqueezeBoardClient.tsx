@@ -153,15 +153,28 @@ export default function SqueezeBoardClient({
   }, [])
 
   // Rewards: a logged-in user viewing the squeeze board earns view_squeeze_board
-  // (daily_cap 1, enforced server-side). This is a public surface, so anon
-  // viewers hit the auth gate and simply earn nothing — fire-and-forget, the
-  // result is intentionally ignored and never blocks the page.
+  // (daily_cap 1, enforced server-side). This is a public surface: before
+  // 2026-09-04 the earn fired for EVERY visitor and every anonymous load logged
+  // a `POST /api/rewards/track 401` console error (the DB monitor is blind to
+  // this class). `/api/profile/me` is a public read that answers `{ user: null }`
+  // for anon, so ask it first and only fire the earn for a signed-in viewer.
+  // Fire-and-forget either way; nothing here blocks the page.
   useEffect(() => {
-    fetch("/api/rewards/track", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event: "view_squeeze" }),
-    }).catch(() => {})
+    let alive = true
+    ;(async () => {
+      const r = await fetch("/api/profile/me", { cache: "no-store" })
+      // A failed identity read is not "anonymous" — it is unknown, and an earn
+      // is not worth guessing about. Skip; nothing is rendered from this.
+      if (!r.ok) return
+      const me = await r.json()
+      if (!alive || !me?.user) return
+      await fetch("/api/rewards/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "view_squeeze" }),
+      })
+    })().catch(() => {})
+    return () => { alive = false }
   }, [])
 
   // Skip the very first fetch when the params match the server-fetched default

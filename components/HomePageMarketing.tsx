@@ -223,6 +223,8 @@ export default function HomePageMarketing() {
           .rpc-home-trust-grid{grid-template-columns:1fr;gap:14px;}
           .rpc-home-nav a{display:none;}
           .rpc-home-header-inner{padding:0 14px;}
+          .rpc-home-hero{min-height:auto !important;justify-content:flex-start !important;padding-top:40px;padding-bottom:48px;}
+          .rpc-home-stat-label{font-size:11px !important;}
         }
         @media (max-width:380px){
           .rpc-home-h1{font-size:32px;}
@@ -234,7 +236,7 @@ export default function HomePageMarketing() {
 
       {/* HERO */}
       <section
-        className="rpc-home-section"
+        className="rpc-home-section rpc-home-hero"
         style={{
           minHeight: "calc(100vh - 56px)",
           display: "flex",
@@ -299,6 +301,7 @@ export default function HomePageMarketing() {
                 {s.value}
               </div>
               <div
+                className="rpc-home-stat-label"
                 style={{
                   marginTop: 6,
                   fontFamily: "var(--font-mono)",

@@ -16,6 +16,7 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { ogFetch } from "@/lib/og/og-fetch"
+import { shareHeadline } from "@/lib/share-card-view"
 
 export const runtime = "edge"
 
@@ -43,6 +44,8 @@ export async function GET(req: NextRequest) {
   // that is a true statement about an empty wallet.
   let fetched = false
   let totalFmv = 0
+  let staleFmv: number | null = null
+  let staleCount = 0
   let totalMoments = 0
   let topPlayers: string[] = []
 
@@ -54,6 +57,8 @@ export async function GET(req: NextRequest) {
       const data = await res.json()
       fetched = true
       totalFmv = data.totalFmv ?? 0
+      staleFmv = typeof data.staleFmv === "number" ? data.staleFmv : null
+      staleCount = Number(data.staleCount ?? 0) || 0
       totalMoments = data.totalMoments ?? 0
       topPlayers = (data.topMoments ?? []).slice(0, 3).map((m: { playerName: string }) => m.playerName)
     }
@@ -93,8 +98,13 @@ export async function GET(req: NextRequest) {
                 COLLECTION FMV
               </div>
               <div style={{ fontSize: 80, fontWeight: 900, color: "#E03A2F", display: "flex" }}>
-                ${totalFmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${shareHeadline({ totalFmv, staleFmv, staleCount }).live.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
+              {shareHeadline({ totalFmv, staleFmv, staleCount }).caption && (
+                <div style={{ fontSize: 18, color: "#666", fontFamily: fam.mono, display: "flex" }}>
+                  {shareHeadline({ totalFmv, staleFmv, staleCount }).caption}
+                </div>
+              )}
               <div style={{ fontSize: 22, color: "#888", display: "flex" }}>
                 {totalMoments} moments
               </div>

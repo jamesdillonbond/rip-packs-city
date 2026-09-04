@@ -15,11 +15,17 @@ interface CollectionBreakdownRow {
   // this the breakdown summed to ~2× the headline directly above it.
   stale_fmv?: number | null;
   stale_count?: number | null;
+  // Set when the collection's market is closed (route ≥ 2026-09-04): the row
+  // renders "market closed" instead of a dollar figure, like the share card.
+  market_closed_at?: string | null;
   color: string;
 }
 
-/** Live (non-stale) FMV of a row — what the headline calls PORTFOLIO FMV. */
+/** Live (non-stale) FMV of a row — what the headline calls PORTFOLIO FMV.
+ *  A closed market contributes nothing (its moments count, its dollars do not —
+ *  the same rule the share card and the profile headline apply). */
 function liveFmv(r: CollectionBreakdownRow): number {
+  if (r.market_closed_at) return 0;
   return Math.max(0, (Number(r.total_fmv) || 0) - (Number(r.stale_fmv) || 0));
 }
 
@@ -83,7 +89,13 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
                   <span style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.5)" }}>
                     {r.moment_count}
                   </span>
-                  {showFmv && (
+                  {showFmv && r.market_closed_at ? (
+                    <span style={{ minWidth: 64, textAlign: "right" }}>
+                      <span data-market-closed style={{ display: "block", fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
+                        market closed
+                      </span>
+                    </span>
+                  ) : showFmv && (
                     <span style={{ minWidth: 64, textAlign: "right" }}>
                       <span style={{ display: "block", fontSize: 11, fontFamily: monoFont, color: "#fff" }}>
                         {fmtDollars(liveFmv(r))}

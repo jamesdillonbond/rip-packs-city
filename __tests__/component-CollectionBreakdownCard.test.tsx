@@ -23,6 +23,20 @@ afterEach(() => {
 })
 
 describe("CollectionBreakdownCard", () => {
+  it("renders 'market closed' for a closed-market collection instead of a dollar figure (UFC Strike, 2026-09-04)", async () => {
+    fetchMock.mockReturnValue(Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ collections: [
+      { collection_id: "ts", collection_name: "NBA Top Shot", moment_count: 10, total_fmv: 1000, stale_fmv: 100, stale_count: 1, color: "#E03A2F", market_closed_at: null },
+      { collection_id: "ufc", collection_name: "UFC Strike", moment_count: 247, total_fmv: 1322, stale_fmv: 1310, stale_count: 191, color: "#f00", market_closed_at: "2026-05-13T00:00:00Z" },
+    ] }) } as unknown as Response))
+    const { container } = render(<CollectionBreakdownCard ownerKey="qa" />)
+    await waitFor(() => expect(container.querySelector("[data-market-closed]")).not.toBeNull())
+    expect(container.textContent).toContain("market closed")
+    expect(container.textContent).not.toContain("$0.00")
+    expect(container.textContent).not.toContain("$12")
+    // the open collection still renders its live figure
+    expect(container.textContent).toContain("$900")
+  })
+
   it("does not publish '0 moments' in the header while the read is still in flight (2026-09-04)", () => {
     fetchMock.mockReturnValue(new Promise(() => {}))
     const { container } = render(<CollectionBreakdownCard ownerKey="qa" />)

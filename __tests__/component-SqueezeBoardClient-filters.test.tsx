@@ -268,3 +268,30 @@ describe("SqueezeBoardClient — table states + cells", () => {
     expect(chips).toContain("LEGENDARY") // MOMENT_TIER_LEGENDARY collapses to canonical
   })
 })
+
+describe("SqueezeBoardClient — the rewards earn only fires for a signed-in viewer (2026-09-04)", () => {
+  it("anonymous: asks /api/profile/me, sees { user: null }, and never POSTs /api/rewards/track (was a 401 console error per anon load)", async () => {
+    const fn = vi.fn((url: string) => {
+      if (String(url).includes("/api/profile/me")) return Promise.resolve({ ok: true, json: async () => ({ user: null }) } as Response)
+      return Promise.resolve({ ok: true, json: async () => ({ rows: [], meta: { fetched_at: FETCHED, total_rows: 0 } }) } as Response)
+    })
+    vi.stubGlobal("fetch", fn)
+    render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    await waitFor(() => expect(fn.mock.calls.some((c) => String(c[0]).includes("/api/profile/me"))).toBe(true))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fn.mock.calls.some((c) => String(c[0]).includes("/api/rewards/track"))).toBe(false)
+  })
+
+  it("signed in: fires the view_squeeze earn once", async () => {
+    const fn = vi.fn((url: string) => {
+      if (String(url).includes("/api/profile/me")) return Promise.resolve({ ok: true, json: async () => ({ user: { id: "u1" } }) } as Response)
+      return Promise.resolve({ ok: true, json: async () => ({ rows: [], meta: { fetched_at: FETCHED, total_rows: 0 } }) } as Response)
+    })
+    vi.stubGlobal("fetch", fn)
+    render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    await waitFor(() => expect(fn.mock.calls.some((c) => String(c[0]).includes("/api/rewards/track"))).toBe(true))
+    const call = fn.mock.calls.find((c) => String(c[0]).includes("/api/rewards/track")) as unknown as [string, RequestInit]
+    const body = String(call[1].body)
+    expect(body).toContain("view_squeeze")
+  })
+})

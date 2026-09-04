@@ -212,13 +212,20 @@ export async function GET(req: NextRequest) {
     // Look up slugs so we can color-code by slug.
     const ids = Array.from(merged.keys()).filter((id) => id !== "unknown")
     const slugMap = new Map<string, string>()
+    // 2026-09-04: a CLOSED market (UFC Strike, Flow market frozen May 2026) has
+    // no current value — the share card and the dashboard already say "market
+    // closed" for it, while this breakdown rendered "$0.00" beside a stale
+    // caption. Carry market_closed_at so the card can render the note instead
+    // of a dollar figure. Absent (older column shape / test fixtures) → null.
+    const closedMap = new Map<string, string | null>()
     if (ids.length > 0) {
       const { data: cols } = await (supabase as any)
         .from("collections")
-        .select("id, slug")
+        .select("id, slug, market_closed_at")
         .in("id", ids)
-      for (const c of (cols ?? []) as Array<{ id: string; slug: string }>) {
+      for (const c of (cols ?? []) as Array<{ id: string; slug: string; market_closed_at?: string | null }>) {
         if (c.id && c.slug) slugMap.set(c.id, c.slug)
+        if (c.id) closedMap.set(c.id, c.market_closed_at ?? null)
       }
     }
 
@@ -226,6 +233,7 @@ export async function GET(req: NextRequest) {
       .map((c) => ({
         ...c,
         color: COLLECTION_COLOR[slugMap.get(c.collection_id) ?? ""] ?? DEFAULT_COLOR,
+        market_closed_at: closedMap.get(c.collection_id) ?? null,
       }))
       .sort((a, b) => b.total_fmv - a.total_fmv || b.moment_count - a.moment_count)
 

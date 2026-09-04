@@ -313,9 +313,11 @@ export default function LoginClient() {
         }}>
           No password {"·"} Magic-link only
           <br />
-          <Link href="/privacy" style={{ color: "var(--rpc-text-muted)", textDecoration: "none" }}>Privacy</Link>
-          {" · "}
-          <Link href="/terms" style={{ color: "var(--rpc-text-muted)", textDecoration: "none" }}>Terms</Link>
+          {/* 2026-09-04: 10px text on a 44x10 box is not a tap target on a phone —
+              the links get an inline-block hit area of their own. */}
+          <Link href="/privacy" style={{ color: "var(--rpc-text-muted)", textDecoration: "none", fontSize: 11, display: "inline-block", padding: "10px 6px" }}>Privacy</Link>
+          {"·"}
+          <Link href="/terms" style={{ color: "var(--rpc-text-muted)", textDecoration: "none", fontSize: 11, display: "inline-block", padding: "10px 6px" }}>Terms</Link>
         </div>
       </div>
 

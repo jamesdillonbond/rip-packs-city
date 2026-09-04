@@ -11,8 +11,17 @@
 // against a blank div. Keeping the boundary in the server shell is what makes
 // the split testable rather than merely measured.
 
+import type { Metadata } from "next"
 import { Suspense } from "react"
 import LoginClient from "./LoginClient"
+
+// The tab read as the generic site title ("Rip Packs City — The Intelligence
+// Layer…") until 2026-09-04; the root template appends " | Rip Packs City".
+// A sign-in form is not a page to index.
+export const metadata: Metadata = {
+  title: "Sign in",
+  robots: { index: false, follow: true },
+}
 
 export default function LoginPage() {
   return (

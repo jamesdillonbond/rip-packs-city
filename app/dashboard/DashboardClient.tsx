@@ -205,13 +205,6 @@ function ProfilePageInner() {
   // ACTIONABLE: it sends someone who already follows people to go do it again.
   const [activityFailed, setActivityFailed] = useState(false);
   const [hero, setHero] = useState<HeroMoment | null>(null);
-  // Same class, the hero read itself. `if (heroRes.ok) setHero(...)` with no
-  // else is the guarded-setState shape: on a 503 (measured 2026-09-03 —
-  // `/api/profile/hero-moment` 57014 on a whale wallet) `hero` stays null,
-  // `showHero` is false, and the fallback is EmptyHeroState — "pick a hero
-  // Moment" — to a collector who has one. A failed read must render as a
-  // failed read, never as an empty account.
-  const [heroFailed, setHeroFailed] = useState(false);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [statsByWallet, setStatsByWallet] = useState<Record<string, CollectionStat[]>>({});
@@ -490,21 +483,13 @@ function ProfilePageInner() {
       // so an outage leaves the case as it was rather than replacing it with an
       // onboarding prompt.
       if (slabsRes.ok && slabList.length === 0) {
-        let heroOk = false;
-        try {
-          const heroRes = await fetch("/api/profile/hero-moment", { cache: "no-store" });
-          if (heroRes.ok) {
-            const h = await heroRes.json();
-            setHero(h?.hero ?? null);
-            heroOk = true;
-          }
-        } catch {
-          // a thrown fetch is a failed read too — handled by heroOk below
+        const heroRes = await fetch("/api/profile/hero-moment", { cache: "no-store" });
+        if (heroRes.ok) {
+          const h = await heroRes.json();
+          setHero(h?.hero ?? null);
         }
-        setHeroFailed(!heroOk);
       } else {
         setHero(null);
-        setHeroFailed(false);
       }
       if (favRes.ok) {
         const f = await favRes.json();
@@ -778,6 +763,10 @@ function ProfilePageInner() {
   // The totals are just as unknowable there as when a per-wallet stats call
   // fails; the failure simply happened one route earlier.
   const statsIncomplete = statsFailed.length > 0 || walletsFailed;
+  // The just-saved-wallet window: the indexing poll is live, at least one wallet
+  // is saved, and no collection has counted a Moment yet. Not a failure, not an
+  // answer — the tiles render "Indexing…" rather than a zero (2026-09-04).
+  const statsPending = indexing && wallets.length > 0 && totalMoments === 0 && !statsIncomplete;
   const retryStats = useCallback(() => {
     // ⚠ When the WALLETS read is what failed, `wallets` is empty, so retrying
     // stats alone would call refreshStats([]) — which early-returns and changes
@@ -1017,45 +1006,24 @@ function ProfilePageInner() {
               Retry
             </button>
           </div>
-        ) : heroFailed ? (
-          /* ⚠ FOURTH STATE, same rule. The hero read failed (a 503 under DB
-             contention is the measured case). `hero` is null for the wrong
-             reason, so EmptyHeroState's "pick a hero Moment" would be a false
-             claim about the reader's own account. */
-          <div
-            role="status"
-            data-testid="hero-read-failed"
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-              background: "var(--rpc-surface)", border: "1px solid var(--rpc-warning)",
-              borderRadius: 10, padding: "14px 16px",
-            }}
-          >
-            <span style={{ fontSize: 12, fontFamily: monoFont, color: "var(--rpc-text-secondary)", lineHeight: 1.5 }}>
-              Couldn&apos;t load your hero Moment. This is a loading problem, not an
-              empty case — nothing has changed on your profile.
-            </span>
-            <button type="button" onClick={() => { refresh().catch(() => {}); }} style={{ ...secondaryBtnStyle, flexShrink: 0 }}>
-              Retry
-            </button>
-          </div>
         ) : (
           <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
         )}
 
         {/* ── Stats Tiles ── */}
+        {/* ⚠ THREE states, not two: a wallet that was just saved has NO stats yet
+            for up to ~30 s while the indexer warms it (measured 2026-09-04 on a
+            19K-Moment wallet). That is the not-yet-read state, and it rendered
+            as "0 · $0 · 0" — a measured zero out of a read that had not happened.
+            While the indexing poll is live and nothing has counted yet, the
+            tiles say so instead of publishing a number. */}
         <section data-tour-anchor="portfolio-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
-          {/* ⚠ THIRD STATE for the tiles: a wallet that was JUST added has no
-              stats yet — the indexer is still walking it — and the sums reduce
-              to a confident "0 moments / $0" for ~30 s (measured 2026-09-03 on
-              the new-user walk). That is the not-yet-read state rendered as a
-              zero. While `indexing` is true the tiles say so instead. */}
           <StatTile
             label="Total Moments"
             value={totalMoments.toLocaleString()}
             color="var(--rpc-text-primary)"
             unavailable={statsIncomplete}
-            pending={indexing && !statsIncomplete}
+            pending={statsPending}
           />
           <StatTile
             label="Portfolio FMV"
@@ -1063,14 +1031,14 @@ function ProfilePageInner() {
             color="var(--rpc-success)"
             caption={staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString()} stale-priced moments` : undefined}
             unavailable={statsIncomplete}
-            pending={indexing && !statsIncomplete}
+            pending={statsPending}
           />
           <StatTile
             label="Collections"
             value={String(collectionCount)}
             color="#A855F7"
             unavailable={statsIncomplete}
-            pending={indexing && !statsIncomplete}
+            pending={statsPending}
           />
         </section>
 
@@ -2787,26 +2755,15 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 // real 0 / $0 — the collector must be able to tell "we couldn't load this" apart
 // from "you own nothing".
 function StatTile({ label, value, color, caption, unavailable, pending }: { label: string; value: string; color: string; caption?: string; unavailable?: boolean; pending?: boolean }) {
-  // `pending`: the number is not known YET (a just-added wallet is still being
-  // indexed). Distinct from `unavailable` (a read FAILED). Both must beat the
-  // value, because the value is a sum that reduces to a confident zero.
-  if (pending && !unavailable) {
-    return (
-      <div data-testid="stat-tile-pending" style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "12px 16px" }}>
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
-        <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color: "var(--rpc-text-muted)", lineHeight: 1 }}>…</div>
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>
-          Indexing your wallet — this number lands in about a minute
-        </div>
-      </div>
-    );
-  }
+  const muted = unavailable || pending;
   return (
     <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "12px 16px" }}>
       <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color: unavailable ? "var(--rpc-text-muted)" : color, lineHeight: 1 }}>{unavailable ? "—" : value}</div>
+      <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color: muted ? "var(--rpc-text-muted)" : color, lineHeight: 1 }} aria-busy={pending || undefined}>{muted ? "—" : value}</div>
       {unavailable ? (
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Couldn&apos;t load</div>
+      ) : pending ? (
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Indexing your wallet…</div>
       ) : caption ? (
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>{caption}</div>
       ) : null}

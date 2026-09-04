@@ -591,8 +591,8 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
         .rpc-chat-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
         .rpc-hide-scrollbar::-webkit-scrollbar { display: none; }
         @media (max-width: 768px) {
-          .rpc-chat-bubble { bottom: 76px !important; right: 16px !important; }
-          .rpc-chat-panel { bottom: 140px !important; }
+          .rpc-chat-bubble { bottom: 68px !important; right: 10px !important; width: 44px !important; height: 44px !important; font-size: 19px !important; border-radius: 12px !important; }
+          .rpc-chat-panel { bottom: 124px !important; }
         }
       `}</style>
 

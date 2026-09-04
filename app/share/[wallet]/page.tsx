@@ -6,13 +6,15 @@ import FunnelTracker from "@/components/FunnelTracker"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { formatClosedOn } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
-import { buildSeriesBars, closedMarketNote } from "@/lib/share-card-view"
+import { buildSeriesBars, closedMarketNote, shareHeadline } from "@/lib/share-card-view"
 import { OG_INHERITED } from "@/lib/seo"
 
 interface SnapshotData {
   wallet: string
   totalMoments: number
   totalFmv: number
+  staleFmv?: number
+  staleCount?: number
   topMoments: Array<{
     playerName: string
     setName: string
@@ -235,9 +237,22 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
         {/* Total FMV hero */}
         <div style={{ textAlign: "center", marginBottom: 40, padding: "40px 0", border: "1px solid var(--rpc-border)", borderRadius: 12, background: "linear-gradient(180deg, var(--rpc-surface) 0%, var(--rpc-black) 100%)" }}>
           <div style={{ fontSize: 14, letterSpacing: "0.15em", color: "var(--rpc-text-secondary)", marginBottom: 8, textTransform: "uppercase" }}>Total Collection FMV</div>
-          <div style={{ fontSize: 56, fontWeight: 900, color: "var(--rpc-red)", letterSpacing: "0.02em" }}>
-            ${data.totalFmv.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
+          {(() => {
+            // Same rule as the dashboard + profile: headline = total − stale (2026-09-04).
+            const h = shareHeadline({ totalFmv: data.totalFmv, staleFmv: data.staleFmv, staleCount: data.staleCount })
+            return (
+              <>
+                <div style={{ fontSize: 56, fontWeight: 900, color: "var(--rpc-red)", letterSpacing: "0.02em" }}>
+                  ${h.live.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                {h.caption && (
+                  <div style={{ fontSize: 12, fontFamily: "monospace", color: "var(--rpc-text-muted)", marginTop: 4, letterSpacing: "0.04em" }}>
+                    {h.caption}
+                  </div>
+                )}
+              </>
+            )
+          })()}
           <div style={{ fontSize: 16, color: "var(--rpc-text-secondary)", marginTop: 8 }}>
             {data.totalMoments} moments &middot; {data.badgeCount} badges
           </div>

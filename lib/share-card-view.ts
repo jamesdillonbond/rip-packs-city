@@ -8,6 +8,39 @@
 
 export const NO_SERIES_LABEL = "No series"
 
+/**
+ * The share card's headline, on the same rule as the dashboard and the public
+ * profile since 2026-09-02: LIVE FMV = total − stale, with the stale share named
+ * in a caption. Before 2026-09-04 the front door headlined the raw total, so a
+ * collector who pasted a username ($98K) and then signed up ($47K + $52K stale)
+ * watched their number halve at the activation moment.
+ *
+ * Absent stale fields (an older API shape) mean "no split known" — the raw total
+ * is shown with NO caption, never a fabricated zero-stale claim.
+ */
+export interface ShareHeadline {
+  live: number
+  stale: number
+  staleCount: number
+  caption: string | null
+}
+export function shareHeadline(input: {
+  totalFmv: number | null | undefined
+  staleFmv?: number | null
+  staleCount?: number | null
+}): ShareHeadline {
+  const total = Number(input.totalFmv) || 0
+  const staleKnown = input.staleFmv != null && Number.isFinite(Number(input.staleFmv))
+  const stale = staleKnown ? Math.max(0, Number(input.staleFmv)) : 0
+  const staleCount = Math.max(0, Number(input.staleCount) || 0)
+  const live = Math.max(0, total - stale)
+  const caption =
+    staleKnown && stale > 0
+      ? `+ $${stale.toLocaleString("en-US", { maximumFractionDigits: 0 })} across ${staleCount.toLocaleString("en-US")} stale-priced moment${staleCount === 1 ? "" : "s"}`
+      : null
+  return { live, stale, staleCount, caption }
+}
+
 export function buildSeriesBars(
   seriesBreakdown: Record<string, number>,
 ): { entries: Array<[string, number]>; max: number } {

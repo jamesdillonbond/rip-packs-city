@@ -108,7 +108,7 @@ export default function MarketPulseClient({ initialRows, fetchedAt }: { initialR
 function Stat({ label, value, big }: { label: string; value: string; big?: boolean }) {
   return (
     <div>
-      <div style={{ fontSize: 9, color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
+      <div style={{ fontSize: 10, color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
       <div className="rpc-mono" style={{ fontSize: big ? 20 : 16, fontWeight: 800, color: big ? "var(--rpc-text-primary)" : "var(--rpc-text-secondary)" }}>{value}</div>
     </div>
   )

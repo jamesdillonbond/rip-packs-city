@@ -43,6 +43,10 @@ export async function GET(req: NextRequest) {
         totalFmv: snap.totalFmv ?? 0,
         topMoments: Array.isArray(snap.topMoments) ? snap.topMoments : [],
         badgeCount: snap.badgeCount ?? 0,
+        // 2026-09-04: the stale split (editions → edition_fmv_current, STALE) so
+        // the card can headline total − stale like every other public surface.
+        staleFmv: typeof snap.staleFmv === "number" ? snap.staleFmv : Number(snap.staleFmv ?? 0) || 0,
+        staleCount: typeof snap.staleCount === "number" ? snap.staleCount : Number(snap.staleCount ?? 0) || 0,
         seriesBreakdown:
           snap.seriesBreakdown && typeof snap.seriesBreakdown === "object"
             ? snap.seriesBreakdown
