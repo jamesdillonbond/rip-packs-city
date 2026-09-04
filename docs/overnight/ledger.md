@@ -10,31 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
-### 2026-09-04 · 📋 QUEUED (measured, deliberately NOT shipped) — a third of the Top Shot edition catalog is an inert June import in the wrong key namespace: 6,575 rows, 0 holders, 0 badges, 0 art, and 44,321 FMV snapshots being computed for nobody · Cowork (cloud sandbox)
+### 2026-09-04 · ❌ WITHDRAWN BY ITS OWN AUTHOR, two hours later — the "inert June import" I filed as a next-pass item is the **already-named, already-handled `dropTsFossils` class**, and the residual cost is 1.08 % · Cowork (cloud sandbox)
 
-Found by chasing the last red pipeline arm (`topshot-badge-set-backfill`, 0/12 ok on the dead Top Shot GraphQL). Retiring it looked clearly-safe — the Atlas refresh I shipped this morning covers the same ground — until I measured coverage on the trophy sets it exists for: **235 of 299 covered, 64 not.** Chasing those 64 is what surfaced this.
+**This entry replaces the one I wrote at 09:45 PT.** That version led with *"a third of the Top Shot edition catalog is an inert June import in the wrong key namespace … 44,321 FMV snapshots being computed for nobody"* and queued it as the top item for the next pass. **The measurements in it were right and the conclusion was wrong.** Continuing the investigation instead of stopping at the filing is what showed it, so the correction belongs here rather than in a quiet edit.
 
-**`editions.external_id` for Top Shot has TWO key namespaces:**
+**What I actually found, in the order I found it:**
 
-| key shape | editions | with badges | holder rows | circ NULL |
-|---|---|---|---|---|
-| numeric `setID:playID` | 13,391 | 13,291 (99.3 %) | **1,910,846** | 0 |
-| **UUID-prefixed** (`6d299ced-…:…`) | **6,575** | **0** | **0** | 1,093 |
-| other | 22 | 0 | 0 | 22 |
+1. **The rows are real Moments, not junk.** "Josh Richardson — Base Set", "Bennedict Mathurin — 2025 NBA Playoffs: Rare" — keyed `setUUID:playUUID` (Top Shot's GraphQL id shape) instead of on-chain `setID:playID`.
+2. ⭐ **My "they might not be duplicates" caveat was an instrument error.** I had tested `player_name` and found 173 of 300 empty, so I refused to call them duplicates. **`name` is the populated column** (`player_name`/`set_name` are the NULL ones): of the 5,482 fossils carrying a name, **5,429 (99.0 %) have a numeric twin on name + series**, 4,282 match exactly on name+series+tier+circulation, and **only 10 have no name match at all.** They are duplicates. *I withheld a conclusion because I queried the wrong column, then filed the uncertainty as if it were a property of the data.*
+3. **They are already handled, deliberately, and it is written down.** `lib/sitemap-data.ts` has **`dropTsFossils()`**, whose comment says exactly what I "discovered": *"hyphenated external_ids are dedup-merge leftovers with NULL on-chain ids that Google flags 'Duplicate, chose different canonical'."* known-issues #28 closed on a set comparison against that very predicate on 2026-08-24 (segment 1 = 13,241 vs 13,241).
+4. **Verified live, not assumed:** segment 1 of the sitemap holds **13,436 edition URLs and ZERO uuid-keyed ones** (positive control: `edition/2%3A38` present, so the grep works). Requesting one directly returns **404 with `robots: noindex`**, on three separate samples. They carry 0 holder rows *structurally* — `wmc.edition_key` is always `setID:playID`.
+5. **And the one live cost is 1.08 %.** I filed "44,321 FMV snapshots" without a denominator. Over the last 24 h: **163 fossil snapshots out of 15,096 — 1.08 %**, 163 distinct editions of 14,253. By this ledger's own bar (`get_pack_lifecycle` at 0.46 % was explicitly *not* a cost finding) that does not justify a destructive migration over 33 % of the edition table.
 
-`wallet_moments_cache.edition_key` is always `setID:playID`, so **no wmc row can ever join a UUID-keyed edition** — that is why the holder count is exactly zero, not merely low, and why they carry no badges.
+⛔ **THE LESSON, WHICH IS THE ONLY THING HERE WORTH KEEPING: I FILED BEFORE I GREPPED.** The rule *"grep docs/ before designing an experiment"* is already in memory, re-learned on 2026-09-02, and I broke it again — one `grep -rn "fossil" docs/` would have closed this in thirty seconds and I ran it only after writing a 400-word entry. **A queued item is a claim, and it inherits the same evidence bar as a shipped one.** Filing is not a way to defer rigour; an overstated queue entry costs the next session a whole pass.
 
-**The characterisation is unanimous over a 2,000-row sample and says "one-off import", not "organic catalog":** `set_id_onchain` NULL on **all** of them, `play_id_onchain` NULL on **all** of them (so the numeric key is **not derivable**), `thumbnail_url` NULL on **all** of them, and every row created inside a single **40-hour window, 2026-06-04 → 06-06**. On a 300-row sample only 126 have a same-set/player/tier numeric twin and **173 have no `player_name` at all**, so "they're just duplicates" is *not* established — that is precisely why this is queued rather than deleted.
-
-⭐ **AND IT IS NOT FREE.** Dependents: `user_wishlists` **0**, `watchlist_items` **0**, `sales` **0** — but **`fmv_snapshots` 44,321 rows**. The FMV pipeline is pricing 6,575 editions no user can reach, and those snapshots sit inside every catalog-wide FMV aggregate.
-
-⛔ **Not shipped, on purpose.** This is 33 % of the Top Shot edition rows, the "just duplicates" hypothesis is contradicted by 173/300, and the cleanup has a non-empty dependent (44K snapshots) — so it needs its own pass with fresh judgement, not the last twenty minutes of a long one. **It is inert to users today** (zero holders, zero badges, no art), so there is no urgency that would justify a destructive op now.
-
-**For that pass, the queries are:** the shape split above; `set_id_onchain IS NULL` to confirm underivability; the `created_at` window to confirm the single import; and the dependent counts. The likely fix is delete-with-snapshots in one transaction after establishing identity against Atlas (`EditionService/SearchEditions` returns the full catalog per set), **not** a key rewrite — there is no key to rewrite to.
-
-⚠ **This also corrects a line I wrote in `20260904145331` this morning:** I described "the ~33 % of editions Atlas has not walked yet". That number is these rows, and the reason is not that Atlas has not walked them — it is that they are keyed in a namespace Atlas's key space does not use. The circulation heuristic fallback the migration leaves in place is therefore doing nothing for them either.
-
-**Two other red arms, both checked and both correctly quiet:** `offers-sweep` is 108/216 ok, and `docs/operations/cron-schedule.md` already records it as *"dead host … kept ACTIVE behind the upstream circuit breaker (c8ac905)"* — the breaker probes once an hour and skips twice, which is the alternating :02/:42 ok, :22 fail pattern exactly. `public.offers` is fresh (25,478 open, newest 20 min ago) because `rpc-raise-edition-offers-backstop` reads the chain instead. **Neither is an incident**, and I only avoided filing them as one by grepping the ops docs first.
+**Nothing to ship, and that is the finding.** The fossils are named, filtered where it mattered, invisible to users, and cheap. **Do not re-file this.** If anyone revisits it, the only open question is whether trimming 1 % of FMV writes is worth a delete-with-snapshots migration — and the answer today is no.
 
 ### 2026-09-04 · ✅ SHIPPED (2 migration files, comments only) — CI was RED on shard 2/2 and it was mine: the `-- anon-exec:` marker must NAME the function it decides for, and mine named the other one · Cowork (cloud sandbox)
 

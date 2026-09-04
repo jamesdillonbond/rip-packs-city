@@ -35,17 +35,18 @@ It hadn't reached the edge function since 02:16Z — 25 of 25 ticks died at pg_n
 
 #22 defeated credential purge · #58 `OPENSEA_API_KEY` · the alerting secrets.
 
-## 6. 📋 A third of the Top Shot edition catalog is an inert June import — measured, deliberately not deleted
+## 6. ~~A third of the Top Shot edition catalog is an inert June import~~ — ❌ I WITHDREW THIS MYSELF an hour after filing it
 
-Not urgent and not user-visible, but you should know it exists before anyone quotes a catalog count.
+I filed this as a next-pass item and then kept digging, and it does not hold up. Recording it because the mistake is more useful to you than the non-finding.
 
-`editions.external_id` for Top Shot has **two key namespaces**: 13,391 rows on the real `setID:playID` key (carrying all 1,910,846 holder rows and 99.3 % of the badges), and **6,575 rows keyed by a GQL set UUID** (`6d299ced-…:…`) carrying **zero holders, zero badges and no art**. `wallet_moments_cache.edition_key` is always `setID:playID`, so nothing can ever join the UUID ones — the zero is structural, not incidental.
+**What I filed:** 6,575 Top Shot editions keyed `setUUID:playUUID` instead of `setID:playID`, zero holders, zero badges, no art, "44,321 FMV snapshots computed for nobody" — queued as the top item for a dedicated pass.
 
-Every one of them has `set_id_onchain` and `play_id_onchain` NULL (so the right key is **not derivable**), no thumbnail, and a `created_at` inside a single **40-hour window on 2026-06-04/06**. That is a one-off import that used the wrong key, three months ago.
+**Why it was wrong, in three parts:**
 
-**It isn't free:** `sales` 0, wishlists 0, watchlists 0 — but **44,321 `fmv_snapshots`**, i.e. the FMV pipeline prices 6,575 editions nobody can reach, and they land in catalog-wide FMV aggregates.
+1. **They're already named and already handled.** `lib/sitemap-data.ts` has a function called `dropTsFossils()` whose own comment says *"hyphenated external_ids are dedup-merge leftovers with NULL on-chain ids that Google flags 'Duplicate, chose different canonical'."* known-issues #28 closed against that exact predicate on 2026-08-24. One `grep -rn "fossil" docs/` would have told me in thirty seconds — **I ran it only after writing the filing.**
+2. **My "they might not be duplicates" hedge was my own query bug.** I tested `player_name` (mostly NULL on these rows) instead of `name` (populated). On `name`: **5,429 of 5,482 have a numeric twin, and only 10 have no match at all.** They're duplicates.
+3. **The cost had no denominator.** 44,321 is the all-time total. Over the last 24 hours it's **163 fossil snapshots out of 15,096 — 1.08 %.** This project has explicitly declined to call 0.46 % a cost finding before.
 
-**Why I didn't just delete them:** it's 33 % of the Top Shot edition rows; the obvious "they're duplicates" story is contradicted (of a 300-row sample only 126 have a same-set/player/tier twin and **173 have no player name at all**); and the cleanup has a non-empty dependent. That combination wants a dedicated pass, not the tail end of a long one. **Nothing is degraded while it waits** — the rows are inert to users.
+**Verified live rather than assumed:** the sitemap's segment 1 carries 13,436 edition URLs and **zero** uuid-keyed ones; requesting one directly returns **404 with `robots: noindex`** (three samples). They're structurally invisible to wallets because `wmc.edition_key` is always `setID:playID`.
 
-Full measurement and the exact next-pass queries are in the ledger entry dated 2026-09-04.
-
+**Nothing needed from you, and nothing to do.** They're named, filtered where it mattered, invisible to users, and cheap. Don't let a future session re-file them.
