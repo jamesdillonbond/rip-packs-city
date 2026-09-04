@@ -1,0 +1,37 @@
+-- audit_20260904_wmc_metadata_reconcile_walks_in_chunks_under_a_deadline_because_edition_cost_is_holder_rows_not_editions
+-- Applied to prod via MCP apply_migration 2026-09-04 14:24Z (version 20260904142428).
+-- ⚠ SUPERSEDED 36 SECONDS LATER by 20260904142504, which replaces this file's cursor arithmetic with
+--   a rule that needs no argument. The chunked-loop-under-a-deadline design is this migration's
+--   contribution and survives; only the end-of-tick cursor computation was rewritten. **Apply both,
+--   in order.** This file is kept because it is the version prod recorded, and because the finding
+--   below is the reason the shape exists.
+--
+-- MEASURED, from 20260904141708's own first SCHEDULED tick — which FAILED: the first (manual)
+-- window, 400 editions from the start of the catalog, took 2.9 s. The cron then ran 1,200 editions
+-- and hit `canceling statement due to statement timeout` at the function's 110 s wall — a 40x cost
+-- for a 3x window. **The cost of this pass is the number of HOLDER ROWS behind the editions in the
+-- window, not the number of editions**, and that varies by two orders of magnitude across the
+-- catalog (a /60000 Base Set edition against a /10 Ultimate). Sizing by editions sized by the wrong
+-- unit.
+--
+-- Worse, the whole tick was ONE statement, so the timeout rolled back everything it had done and the
+-- cursor did not move: a heavy window would have failed forever, at 110 s of worker time each time.
+-- (`EXCEPTION WHEN OTHERS` cannot save it either — a statement timeout cancels the statement the
+-- handler would have to run in; that trap is recorded in memory.)
+--
+-- FIX: pop the window in CHUNKS of 25 editions inside a LOOP with a wall-clock DEADLINE (45 s,
+-- comfortably inside both the function's timeout and the 60 s MCP call wall). A heavy window now
+-- makes partial progress and stops; the next tick resumes where it stopped. Same corrections, same
+-- audit table, same fill-only rule for names, `mint_count` still untouched.
+-- anon-exec: no — writer; REVOKE/GRANT re-stated (CREATE OR REPLACE keeps the acl). The 1-arg
+--   overload from 20260904141708 is DROPped so nothing un-revoked lingers.
+-- REVERT: the body in 20260904141708 (single-statement, 400 editions).
+--
+-- ⓘ The function body this migration installed is not reproduced here: it is byte-identical to
+--   20260904142504's body EXCEPT for the end-of-tick cursor block, and installing the superseded
+--   arithmetic on a fresh database would be installing a known-worse version. The load-bearing
+--   effects this migration has on a fresh database are the signature change and the ACL, both below;
+--   20260904142504 (applied 36 s later, and required) installs the body.
+
+-- Signature change only: the 2-arg form replaces the 1-arg form. The body arrives in 20260904142504.
+DROP FUNCTION IF EXISTS public.reconcile_wmc_metadata_from_editions(integer);
