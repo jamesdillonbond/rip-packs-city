@@ -320,3 +320,22 @@ describe("proxy() — allow-list ladder", () => {
     expect(res.headers.get("location")).toBeNull()
   })
 })
+
+describe("a backslash in the path is a 404 before anything else runs (2026-09-03)", () => {
+  // Bots requested /api/og/insights%5C and the encoded backslash reached the
+  // pages router as a 500 "Cannot find module" — four hits in one health pass.
+  it("404s the URL-encoded form, on a public path, without touching auth or rate limits", async () => {
+    const res = await proxy(req("/api/og/insights%5C"))
+    expect(res.status).toBe(404)
+  })
+
+  it("404s a decoded backslash in the pathname too", async () => {
+    const res = await proxy(req("/insights/pack-drops" + encodeURIComponent("\\") + "x"))
+    expect(res.status).toBe(404)
+  })
+
+  it("NEGATIVE CONTROL: the same public path without the backslash passes through", async () => {
+    const res = await proxy(req("/api/og/insights"))
+    expect(res.status).not.toBe(404)
+  })
+})

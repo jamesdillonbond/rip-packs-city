@@ -56,6 +56,10 @@ const nextConfig: NextConfig = {
       { source: "/sniper",  destination: "/nba-top-shot/sniper",     permanent: false },
       { source: "/sets",    destination: "/nba-top-shot/sets",       permanent: false },
       { source: "/undefined/:path*", destination: "/nba-top-shot/:path*", permanent: false },
+      // 2026-09-03: the public trophy case lives at /profile/<u>/trophy-case, but
+      // the short form /trophy-case/<u> is what people type and share; it used
+      // to fall through to the auth gate and 307 to /login. Alias, not a page.
+      { source: "/trophy-case/:username", destination: "/profile/:username/trophy-case", permanent: false },
       // Audit 2026-05-20 (F7): canonical UFC route is /ufc; /ufc-strike rendered a broken hybrid.
       { source: "/ufc-strike/:path*", destination: "/ufc/:path*", permanent: true },
       // 2026-07-25: `pinnacle` is NOT a registered collection slug (the

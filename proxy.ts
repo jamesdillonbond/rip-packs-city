@@ -946,6 +946,16 @@ function applyCorsHeaders(request: NextRequest, response: NextResponse, isCorsAp
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl
 
+  // ── A backslash in the path is never a page ──────────────────────────────
+  // Bots request things like `/api/og/insights%5C`; the URL-encoded backslash
+  // decodes to a path segment no route can own and reached the pages router as
+  // a 500 "Cannot find module" (4 hits in the 2026-09-03 health pass). A 404
+  // here costs nothing and keeps the error groups honest. Checked on the raw
+  // URL as well as the decoded pathname so neither encoding slips through.
+  if (pathname.includes("\\") || /%5c/i.test(request.url)) {
+    return new NextResponse(null, { status: 404 })
+  }
+
   // Periodic in-memory rate-limit map cleanup.
   if (Date.now() - lastCleanup > 300_000) {
     cleanupRateLimitMap()
