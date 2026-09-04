@@ -17,6 +17,9 @@
  *
  * Join key VERIFIED 2026-06-16 on edition 26:695 / Atlas 2017
  * (set + play + player + circ + game_date all agree).
+ *   ⚠ 2026-09-04: (set + play) is NOT unique under parallels — the row also carries `parallel`,
+ *   and the DB joins it to editions.subedition_name. Re-run this script after pulling that change;
+ *   a runner without it falls back to "largest printing = Standard" server-side.
  *
  * Atlas egress: public host api.production.atlas.dapperlabs.com, no auth/cookie,
  * needs Origin/Referer/UA + the two Connect headers. It soft-throttles under rapid
@@ -177,6 +180,14 @@ function atlasRowToMap(e) {
     play_id_onchain: Number(e.editionTemplateId),
     num_minted: e.numMinted != null ? Number(e.numMinted) : null,
     tier: e.tier ?? null,
+    // Atlas carries one edition row PER PRINTING — the Standard and every parallel
+    // (Jukebox, Hexwave, …) share (setId, editionTemplateId). Without this field the DB
+    // join could only match on (set, play) and picked an ARBITRARY printing for each RPC
+    // edition: measured 2026-09-04, 1,497 of 9,080 Standard editions were mapped to a
+    // parallel, and 44 of 274 active Underpriced-#1s rows were a parallel's #1 priced
+    // against the Standard's FMV. upsert_topshot_atlas_edition_map (20260904055030)
+    // joins this to editions.subedition_name ('Standard' ⇔ NULL).
+    parallel: e.parallel ?? null,
   };
 }
 
