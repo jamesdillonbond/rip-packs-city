@@ -21,7 +21,13 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? ""
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-const FUNCTION_VERSION = 1
+// v2 (2026-09-04, #54): the RPC now GATES its 17-126 s wallet_moments_cache walk
+// behind its inputs (nba_players count/newest, nba_player_aliases count) and a
+// 7-day ceiling, returning `gated: true` + `gate_reason` in milliseconds when
+// nothing changed. This wrapper forwards those fields so a gated tick reads as
+// "deliberately skipped, here is why" in pipeline_runs.extra, never as a walk
+// that found nothing. rows_found/rows_written are 0 on a gated tick by design.
+const FUNCTION_VERSION = 2
 const PIPELINE = "match-topshot-players"
 const COLLECTION_SLUG = "nba_top_shot"
 
@@ -80,11 +86,16 @@ async function runWork(startedAtIso: string, started: number) {
     return
   }
 
-  const summary = (data ?? {}) as Partial<MatchSummary>
+  const summary = (data ?? {}) as Partial<MatchSummary> & {
+    gated?: boolean
+    gate_reason?: string | null
+    last_full_run_at?: string | null
+  }
   const skipped = Number(summary.skipped ?? 0)
   const autoAliased = Number(summary.auto_aliased ?? 0)
   const totalUnresolved = Number(summary.total_unresolved ?? 0)
   const needsReview = Array.isArray(summary.needs_review) ? summary.needs_review : []
+  const gated = summary.gated === true
 
   await logRun({
     startedAt: startedAtIso,
@@ -94,6 +105,9 @@ async function runWork(startedAtIso: string, started: number) {
     ok: true,
     extra: {
       function_version: FUNCTION_VERSION,
+      gated,
+      gate_reason: gated ? (summary.gate_reason ?? "inputs unchanged") : null,
+      last_full_run_at: summary.last_full_run_at ?? null,
       summary: {
         skipped,
         auto_aliased: autoAliased,
