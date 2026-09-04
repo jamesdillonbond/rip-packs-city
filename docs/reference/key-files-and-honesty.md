@@ -36,6 +36,84 @@ no-success arm can see the next dead host within 12 h.
 sources or collections, ask *"can one lane be 100% dead while the sweep reports ok?"* If yes, the
 answer is a per-lane transport check, not a comment.
 
+## 2026-09-04 — THE BOUND ITSELF CAN BE THE DEFECT: three ways a read-timeout helper manufactures a false claim
+
+Written after converting **89 API routes** to a shared read bound (`lib/api/bounded-read.ts`, ratchet
+`api-routes-that-degrade-honestly-also-bound-their-reads` 130 → 42). The conversion is recorded in the
+ledger; what belongs *here* is that **a helper written to prevent the honesty class introduced three
+instances of it, and two shipped before a test caught them.** All three generalise past this helper to
+any shared "degrade gracefully" primitive.
+
+### 1. Reducing a thrown error to its MESSAGE strips the field the classifier reads
+
+The first draft folded a transport rejection into `{ message: String(e) }`. `apiErrorResponse`
+classifies on **`error.code`** — `57014` becomes a retryable **503**, everything else a hard 500 — so
+the rebuild silently deleted the classification and `/api/collection-snapshot` began answering a
+statement timeout with a **500 telling the caller not to retry.** An honest answer made *less* honest,
+by the helper meant to protect it.
+
+⚠ `tsc` was clean and **1,456 of 1,457 test files passed.** The one that caught it was
+`api-collection-snapshot.test.ts`, which had pinned that 503 months earlier — **a guard written for one
+route catching a defect introduced by a helper written for 58.** That is the argument for the
+failing-first test living on the OFFENDER rather than on the fix.
+
+**Rule: pass a thrown value through INTACT whenever it can carry a code.** Build an envelope only for a
+thrown primitive, which never had one.
+
+### 2. A COUNT envelope's timeout value is a fabricated zero waiting to happen
+
+`{ count: "exact", head: true }` reads resolve `{ data, error, count }`. The shared envelope had no
+`count`, so `tsc` refused the first such call site — and **the obvious repair is to add it with `0` on
+timeout.** That is exactly the shape CLAUDE.md bans (*"`?? 0` on a supabase count … publishes a measured
+zero"*), except a helper does it at **every converted call site at once**, which is strictly worse than
+the 504 it replaced.
+
+`count` is **NULL on timeout and NULL on a thrown error**, stated explicitly rather than omitted. ⚠ And
+the control matters as much as the case: **a MEASURED zero must still survive** — collapsing a real `0`
+to `null` is the same conflation in the other direction, so both directions are pinned.
+
+⭐ The call site that forced the question (`/api/wallet-cost-basis`) already carried a comment about this
+defect in an earlier costume — *"the old `totalAcq ?? trackedCount` turned that into 'tracked on 42 of
+42' — a 100 % coverage claim manufactured from a read that never returned"* (2026-09-03). **It was fixed
+one day before the helper that would have re-broken it arrived.**
+
+### 3. 🚨 NEVER BOUND A WRITE — the trade is not the same one, and it inverts
+
+A read bound abandons the **WAIT**, not the statement: supabase-js has no cancel, so the query keeps
+running server-side. On a READ that is the intended trade — the caller gets an honest 503 instead of
+blocking. **On a WRITE it manufactures the false claim in the one direction the caller cannot check:**
+the response says the write failed while Postgres commits it. A write needs an idempotency key or a
+status re-read, never a timer.
+
+⛔ **This is why the route ratchet stops at 42 rather than 0, and why the guard now ARGUES rather than
+counts.** All 42 remaining routes export a POST/PUT/PATCH/DELETE or are cron/admin/backfill. A number
+that only ever falls invites the next reader to finish the job, and finishing it is the one change that
+guard exists to prevent.
+
+### 4. What the conversion exposed in the routes themselves
+
+Bounding a read turns an overrun from a HANG into a **RETURNED error** — so any route that handles a
+thrown error but silently swallows a returned one has its rare defect promoted to the common path.
+`/api/pinnacle-wallet` was exactly that: its only error handling was a top-level `catch`, so a thrown
+error 500'd while a returned one rendered **`ok: true` with `moments: []`** — *"this wallet holds
+nothing"*, about the reader's own holdings. The honest signal was already on the wire (a per-leg
+`errors` envelope) and nothing obliged the client to read it; the empty array is the more legible of the
+two.
+
+⭐ **So the guard ships in the SAME commit as the bound, never after it.** And its own
+errors-envelope test — which asserted `ok: true` with the MOMENTS leg failed — was **INVERTED, not
+deleted**, per the standing rule: the envelope check is genuinely useful for the ADDITIVE legs, which
+degrade to `null` and make no claim, so it moved to those.
+
+### 5. ⚠ The measurement discipline that made this safe at 89-route width
+
+`boundedRead`'s **typed return makes an early cut a compile error**, which is why a mechanical
+conversion could be run at that width at all: the two chains a balanced-paren codemod cut short (a
+comment line between chained calls) were caught by `tsc`, not by review. But **two live regressions in
+three passes were caught by neither `tsc` nor the touched-file tests — only the full suite**, and both
+by a test belonging to a different route. **Run the whole suite before pushing a change this wide**, and
+prefer a human read per file once the mechanical shapes are exhausted.
+
 ## Key files to always reference
 
 - `lib/collections.ts` — collection registry
