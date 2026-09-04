@@ -1,24 +1,22 @@
 # Needs Trevor — after the 2026-09-04 Atlas audit
 
-Five things. One is a product call I deliberately did not make; the rest are FYI or structural.
+Five things. The product call in §1 is now **made and shipped** — it is recorded here rather than removed, so the reasoning survives. The rest are FYI or structural.
 
-## 1. `#104 / 284` vs Top Shot's `#104/249` — a real product call (the only decision I owe you)
+## 1. ~~`#104 / 284` vs Top Shot's `#104/249`~~ — ✅ DECIDED AND SHIPPED (2026-09-04, migrations `20260904145331` · `20260904145452`)
 
-RPC shows Sabonis `227:7574` as **#104 / 284**. Top Shot shows the same Moment as **#104/249**.
+I left this open because it looked like a preference between two defensible numbers. It wasn't — once the Atlas refresh gave a per-printing mint for **every** edition, it became an arithmetic check, and the arithmetic is one-sided:
 
-Both numbers are correct for different questions, which is why I stopped rather than picking:
+> Across the **9,473** Top Shot base editions with an Atlas number, 8,161 agree with the stored value exactly; **1,312 differ, and every one differs by EXACTLY the sum of its own parallels' mints. Zero unexplained rows.**
 
-- The chain's `getNumMomentsInEdition(set, play)` returns **every printing together**: 249 Standard + 25 Hexwave + 10 Jukebox = **284**. `topshot-circulation-onchain` (Claude Code shipped it this morning) writes that faithfully, and I confirmed on four editions that `editions.circulation_count` equals the sum of the printings every time.
-- Top Shot's own display is the **Standard printing's** mint, 249.
+So the stored value was the all-printings total and Atlas's is the printing's own mint, and option **(a)** — base row = the Standard printing's own mint — is the one the data supports. It is also the one we had already been reaching for by hand: `topshot_normalize_circulation` already subtracted parallel mints from base counts ("Base Set … n % 100 = 99 → n − 99" is the Club Collection /99 being removed), as a heuristic limited to series 8 and a hardcoded set list because no per-parallel count existed. This **completes that design with measured data** rather than replacing it, and the heuristic stays as the fallback for the ~33 % of editions Atlas hasn't walked.
 
-The visible consequence: the moment page's parallel ladder reads "Standard / 284 · Hexwave / 25 · Jukebox / 9" — the 284 already contains the 25 and the 9, so the ladder double-counts, and any collector cross-checking against Top Shot sees a denominator that doesn't match.
+**The rule now: `editions.circulation_count` is this printing's own mint** — the number Top Shot displays. Sabonis `227:7574` is **249**, and the ladder reads **249 / 25 / 9** and sums to the chain's 284 instead of double-counting it. The post-burn number is not lost; `badge_editions.effective_supply` carries it per printing.
 
-**Why I didn't just change it:** the column is owned by a pipeline that shipped hours before I looked, and the denominator feeds serial rarity and FMV serial multipliers across many surfaces. Two clean options:
+**The parallel half was the worse defect and I nearly missed it.** 3,346 of 3,795 parallels already matched Atlas, but 449 did not: **`98:3150::5` stored 1,500 against an actual mint of 25**, and a family of Club Collection `::16` rows carried their *base* edition's total (`258:8988::16` 3,987 → 99). **38 parallels were overstated by 10x or more.** Others undercounted from observed holders (`273:9056::19` 19 → 25). A parallel is the scarcest thing you own; those were the worst numbers on the page.
 
-- **(a)** base row = the Standard printing's own mint (249); the ladder then sums to the chain total. Truest to what a collector sees on Top Shot.
-- **(b)** keep the chain total and relabel that ladder row "All printings" (or show both).
+**Corrected: 1,312 base + 449 parallel editions, carrying 186,124 holder rows.** Both correctors converged to 0. The fix lives in the `editions` BEFORE trigger — every writer passes through it, so nothing can flap — plus an hourly bounded sync at `:47` that is a no-op now that it has drained. Every old value is in `audit_20260904_base_circulation_sync` if you want it back.
 
-Either way **the data is already there and fresh**: Atlas's per-printing `numMinted` now lands in `badge_editions.circulation_count` every ~2.5 h.
+**Nothing needed from you here anymore** — flagged only so you know the number changed and why.
 
 ## 2. Two dead upstreams are now routed around, not repaired
 
