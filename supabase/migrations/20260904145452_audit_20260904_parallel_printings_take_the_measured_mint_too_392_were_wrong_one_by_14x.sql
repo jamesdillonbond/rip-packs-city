@@ -23,8 +23,12 @@
 --     inspected is ours.
 -- The post-burn number is not lost — `badge_editions.effective_supply` carries it per printing, for
 -- any surface that wants burn-adjusted scarcity rather than mint size.
--- anon-exec: n/a for the trigger (not directly callable); the sync writer keeps its existing
---   REVOKE … FROM PUBLIC, anon, authenticated / postgres+service_role+cron_heavy grant.
+-- anon-exec: intentional — trg_topshot_normalize_base_club_circulation is a SNAPSHOT replace (see
+--   the sibling migration 20260904145331): CREATE OR REPLACE does not reset a function ACL, so a
+--   REVOKE here would change production rather than describe it. Verified in prod after applying:
+--   has_function_privilege('anon', …) = false. RETURNS trigger, SECURITY INVOKER.
+--   `sync_topshot_base_circulation_from_atlas` keeps its existing REVOKE … FROM PUBLIC, anon,
+--   authenticated / postgres+service_role+cron_heavy grant.
 -- REVERT: audit_20260904_base_circulation_sync holds every old value (base and parallel);
 --   UPDATE editions e SET circulation_count = a.old_circulation FROM that table WHERE a.edition_id = e.id.
 

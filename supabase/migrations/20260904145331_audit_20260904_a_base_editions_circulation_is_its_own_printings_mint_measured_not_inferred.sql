@@ -31,9 +31,13 @@
 -- count); the Atlas number must be present, > 0, and **≤ the incoming count**, because a single
 -- printing's mint can never exceed the all-printings total, so anything larger is a bad read and
 -- falls back rather than being trusted.
--- anon-exec: n/a for the trigger function (not directly callable); the corrective sync
---   `sync_topshot_base_circulation_from_atlas` is a writer — REVOKE … FROM PUBLIC, anon,
---   authenticated below, postgres/service_role/cron_heavy only.
+-- anon-exec: intentional — trg_topshot_normalize_base_club_circulation is a SNAPSHOT replace of an
+--   existing trigger function, and CREATE OR REPLACE does not reset a function ACL, so a REVOKE
+--   here would CHANGE production rather than describe it. Verified in prod after applying:
+--   proacl = {postgres=X/postgres,service_role=X/postgres}, has_function_privilege('anon', …) =
+--   false. It is also RETURNS trigger (unreachable through PostgREST) and SECURITY INVOKER.
+--   The corrective sync `sync_topshot_base_circulation_from_atlas` IS a new function and takes a
+--   real REVOKE … FROM PUBLIC, anon, authenticated below — postgres/service_role/cron_heavy only.
 -- REVERT: restore the two-line trigger body (it did nothing but call the normaliser), then
 --   UPDATE editions e SET circulation_count = a.old_circulation
 --   FROM audit_20260904_base_circulation_sync a WHERE a.edition_id = e.id;

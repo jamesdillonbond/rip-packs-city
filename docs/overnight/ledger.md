@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (2 migration files, comments only) — CI was RED on shard 2/2 and it was mine: the `-- anon-exec:` marker must NAME the function it decides for, and mine named the other one · Cowork (cloud sandbox)
+
+`Unit tests (vitest) — shard 2/2` failed on `cc6893f`, `7077506` and `47f0b80`. Not the commits' own content — **the red started with the circulation migration files** (`20260904145331` / `145452`) and every later push inherited it. `migration-new-function-states-its-anon-exec-decision` flagged both, for `public.trg_topshot_normalize_base_club_circulation`.
+
+**The marker has a shape, and prose is not it.** The guard accepts a line matching `anon-exec:\s*\S+` **that also contains the function's name as a word** (`__tests__/…:125`). Mine read *"anon-exec: n/a for the trigger function (not directly callable); the corrective sync `sync_topshot_base_circulation_from_atlas` is a writer — REVOKE …"* — a true and complete decision that names **the other function**. The guard has an explicit case for exactly this (`wrongName`), and it was right to fire: a marker that names a different function does not decide anything about this one.
+
+⭐ **PROD WAS NEVER WRONG, and I checked before touching anything.** `proacl = {postgres=X/postgres,service_role=X/postgres}`, `has_function_privilege('anon', …) = false` — because the function already existed with a revoke and **`CREATE OR REPLACE` does not reset a function ACL**. So adding a `REVOKE` to satisfy the guard would have been a change to production dressed as documentation; the guard's own failure text says so and points at the marker instead. It is also `RETURNS trigger` (unreachable through PostgREST) and `SECURITY INVOKER` — which is precisely why `check_secdef_anon_execute_violations()` returned `[]` all day. **The DB-side instrument is structurally blind here and the repo-side test is the only one that can see it.** That is the whole reason this test exists, and it earned its keep.
+
+⚠ **The two migration files now differ from the statement `apply_migration` recorded — by comment text only, deliberately, and this is the note saying so.** The SQL is byte-identical; `migration-parity` matches on NAME, not content. Re-applying to re-sync the comment would have minted a pointless new version for a `CREATE OR REPLACE` of the same body.
+
+**Verified:** the guard green; **shard 2/2 re-run in full: 729 files / 8,292 tests, 0 failures** (it was 1 failed / 8,291 passed). **Revert:** `git revert <sha>` — comments only, no behaviour.
+
 ### 2026-09-04 · ✅ SHIPPED (prod DB migration `20260904154741`) — 95 % of Top Shot Series 1 was missing from its own series page, because the chain's series number is not the catalog's · Cowork (cloud sandbox)
 
 Found by walking the entity pages in the plain headless browser. `/nba-top-shot/series/series-8` 404s — which turned out to be **my bad guess, not a defect**: Top Shot's `collection_series` maps chain → label with an offset, and chain 8 *is* "Series 7". Re-deriving the mapping properly is what surfaced the real hole.
