@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED — `/profile/<unknown-handle>` rendered a full profile shell claiming "We couldn't load this portfolio … Refresh to try again" at HTTP 200; it is now a real 404 · Cowork (cloud)
+
+**Found while confirming the deleted test accounts were gone.** `/profile/definitely-not-a-user-xyz` answered **200** with *DEFINITELY-NOT-A-USER-XYZ · COLLECTOR · PORTFOLIO FMV — · MOMENTS —* and the honest-failure copy *"We couldn't load this portfolio, so the figures above are MISSING, not zero … Refresh to try again."* The page mapped EVERY non-ok result from `getPublicProfile` onto `initialFailed`, so a 404 — a real answer, "no such collector" — was rendered as a load failure about a person who is not on the platform, on an unbounded URL space. The layout's `robots: noindex` on 404 was the only thing between that and the crawl (and `revalidate = 300` cached each one). The trophy-case sibling page has called `notFound()` on 404 since it shipped; the profile page never did.
+
+**Fix.** `if (!result.ok && result.status === 404) notFound()` in `app/profile/[username]/page.tsx` — the site's real 404 (`app/not-found.tsx`) at a real 404 status. A 500/503 still seeds `initialFailed` (that IS the honest-failure path; the new test's control pins it). Verified: the new case fails on the old page (1 failed | 2 passed), passes on the new; server-page ratchets green.
+
+**Left:** the client-side re-fetch inside `ProfileClient` still maps a 404 to `profileError` (reachable only if a profile is deleted between the ISR seed and the mount — a 5-minute window). Noted, not chased.
+
+**Revert.** `git revert <code sha>`.
+
 ### 2026-09-03 · ✅ SHIPPED (code) — the concierge's `compare_pack_value` was the THIRD surface calling a months-old availability "buyable"; it now shares the 72 h EV bar and stamps `ev_as_of` · Claude Code (Trevor's box)
 
 Found by grepping for the EXPRESSION after the OG-card/grails fix, per the standing rule — the pattern had spread by copy-paste: `app/api/support-chat/route.ts` filtered `pack_table_rows` on `primary_available.eq.true,secondary_available.eq.true` with no age check and told the model the pack was buyable +EV **now**, off snapshots the same measurement put at up to 135 days old. Now `.gte("ev_snapshotted_at", now − 72 h)` (null excluded — "buyable" is an affirmative claim), each row carries `ev_as_of`, and the tool's note tells the model to say "as of", not "now"; the no-results copy states the 72 h scope so an empty answer is not read as "no packs exist". Test pins the QUERY (the harness builder chains silently, so the case wraps `gte` on the one table and asserts the cutoff sits 71–73 h back) and the `ev_as_of` field. 58 concierge tool cases green; `tsc` clean; full suite before push. **Revert:** `git revert <sha>`.
