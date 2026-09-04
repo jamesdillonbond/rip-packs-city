@@ -24,6 +24,7 @@
 // so it is already hardened against the NULL-image case that a raw wmc read hits.
 
 import { useEffect, useState } from "react";
+import { useModalA11y } from "@/lib/hooks/useModalA11y";
 
 const MONO = "var(--font-mono)";
 const DISPLAY = "var(--font-display)";
@@ -61,6 +62,8 @@ export default function AvatarMomentPicker({
    * there are none", `loadFailed` means "we could not ask".
    */
   const [loadFailed, setLoadFailed] = useState(false);
+  // Mounted only while open: Escape closes, Tab is trapped, focus is restored.
+  const contentRef = useModalA11y<HTMLDivElement>(true, onClose);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +107,7 @@ export default function AvatarMomentPicker({
       onClick={onClose}
     >
       <div
+        ref={contentRef}
         onClick={(e) => e.stopPropagation()}
         style={{
           background: "var(--rpc-surface)",

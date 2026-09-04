@@ -13,6 +13,7 @@ import Link from "next/link";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
+import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import { borderCosmetic, bannerCosmetic, hasCosmeticStyle } from "@/lib/cosmetics";
 import { tierProgress, tierNameForStatus } from "@/lib/rewards-tier";
 import { redeemSuccessMessage, redeemErrorReason } from "@/lib/rewards-redeem-message";
@@ -1145,6 +1146,8 @@ function ShippingModal({
   onClose: () => void;
   onSubmit: (addr: ShipTo) => Promise<boolean>;
 }) {
+  // Mounted only while open: Escape closes, Tab is trapped, focus is restored.
+  const contentRef = useModalA11y<HTMLDivElement>(true, onClose);
   const [name, setName] = useState("");
   const [line1, setLine1] = useState("");
   const [line2, setLine2] = useState("");
@@ -1205,6 +1208,7 @@ function ShippingModal({
       }}
     >
       <div
+        ref={contentRef}
         onClick={(e) => e.stopPropagation()}
         style={{ width: 420, maxWidth: "94vw", ...cardStyle, maxHeight: "90vh", overflowY: "auto" }}
       >

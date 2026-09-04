@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key";
 import { useProStatus } from "@/lib/hooks/useProStatus";
+import { useModalA11y } from "@/lib/hooks/useModalA11y";
 
 const PRO_ALERTS_CAP = 25;
 const DELETE_CONFIRM_WINDOW_MS = 2000;
@@ -349,6 +350,9 @@ function CreateAlertModal({
   ownerKey: string;
   onClose: (alert: Alert | null, paywallMessage: string | null) => void;
 }) {
+  // Mounted only while open: Escape dismisses (no alert, no paywall message),
+  // Tab is trapped inside the modal, focus is restored to the opener.
+  const contentRef = useModalA11y<HTMLDivElement>(true, () => onClose(null, null));
   const [step, setStep] = useState<"search" | "config">("search");
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<EditionMatch[] | null>(null);
@@ -457,7 +461,7 @@ function CreateAlertModal({
 
   return (
     <div className="rpc-al-modal-backdrop" role="dialog" aria-modal="true" onClick={() => onClose(null, null)}>
-      <div className="rpc-al-modal" onClick={(e) => e.stopPropagation()}>
+      <div ref={contentRef} className="rpc-al-modal" onClick={(e) => e.stopPropagation()}>
         <div className="rpc-al-modal-header">
           <div className="rpc-al-modal-title">New Alert</div>
           <button className="rpc-al-iconbtn" onClick={() => onClose(null, null)}>✕</button>

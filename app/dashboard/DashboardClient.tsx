@@ -3,6 +3,7 @@
 import { apiErrorMessage } from "@/lib/api-error-message"
 import { reconcileDeviceKeysForUser } from "@/lib/auth/device-keys";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import MobileNav from "@/components/MobileNav";
@@ -2687,11 +2688,9 @@ function VerifyByListingModal({
 // ── Modal shell ────────────────────────────────────────────────────────────
 
 function ModalShell({ onClose, title, children }: { onClose: () => void; title: string; children: React.ReactNode }) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Was a hand-rolled Escape listener; the shared hook also traps Tab and
+  // restores focus on close. Mounted only while open, so `true` is the flag.
+  const contentRef = useModalA11y<HTMLDivElement>(true, onClose);
 
   return (
     <div
@@ -2701,6 +2700,7 @@ function ModalShell({ onClose, title, children }: { onClose: () => void; title: 
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}
     >
       <div
+        ref={contentRef}
         onClick={(e) => e.stopPropagation()}
         style={{ width: "100%", maxWidth: 720, maxHeight: "90vh", overflow: "auto", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 12, padding: 20, color: "var(--rpc-text-primary)", boxShadow: "0 30px 80px rgba(0,0,0,0.7)" }}
       >

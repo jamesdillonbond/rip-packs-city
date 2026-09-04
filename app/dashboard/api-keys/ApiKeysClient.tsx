@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
+import { useModalA11y } from "@/lib/hooks/useModalA11y";
 
 interface ApiKey {
   key_id: string;
@@ -601,6 +602,10 @@ function ModalShell({
   children: React.ReactNode;
   onBackdropClick: () => void;
 }) {
+  // ModalShell only mounts while its modal is open, so `true` is the open flag.
+  // The hook adds Escape-to-close, a Tab focus trap and focus restore — the
+  // same behaviour every other dialog gets from it.
+  const contentRef = useModalA11y<HTMLDivElement>(true, onBackdropClick);
   return (
     <div
       role="dialog"
@@ -619,6 +624,7 @@ function ModalShell({
       }}
     >
       <div
+        ref={contentRef}
         onClick={(e) => e.stopPropagation()}
         className="rpc-card"
         style={{

@@ -104,3 +104,22 @@ describe("a failed read is never reported as owning nothing", () => {
     expect(document.body.textContent).toMatch(/Loading your Moments/i)
   })
 })
+
+describe("keyboard", () => {
+  // The picker is a role="dialog" that, until 2026-09-03, only closed by mouse.
+  // It shares lib/hooks/useModalA11y with every other dialog now: Escape closes,
+  // focus lands inside on open.
+  it("Escape closes the picker", async () => {
+    const onClose = vi.fn()
+    render(<AvatarMomentPicker onPick={() => {}} onClose={onClose} />)
+    await waitFor(() => expect(screen.getAllByTestId("avatar-picker-tile").length).toBeGreaterThan(0))
+    fireEvent.keyDown(document, { key: "Escape" })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it("moves focus into the dialog on open", async () => {
+    render(<AvatarMomentPicker onPick={() => {}} onClose={() => {}} />)
+    const dialog = screen.getByTestId("avatar-moment-picker")
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+  })
+})

@@ -249,6 +249,23 @@ describe("DashboardAlertsClient", () => {
     await waitFor(() => expect(f.mock.calls.some((c) => String(c[0]).includes("search-editions"))).toBe(true))
   })
 
+  // Until 2026-09-03 the modal had no keyboard path at all: no Escape, no focus
+  // trap. It now shares lib/hooks/useModalA11y with every other dialog.
+  it("Escape closes the modal without creating anything", async () => {
+    const f = mountModal()
+    await openModal()
+    fireEvent.keyDown(document, { key: "Escape" })
+    await waitFor(() => expect(screen.queryByPlaceholderText(/Player name, set name/)).toBeNull())
+    expect(f.mock.calls.some((c) => (c[1]?.method ?? "GET").toUpperCase() === "POST")).toBe(false)
+  })
+
+  it("moves focus into the modal on open", async () => {
+    mountModal()
+    await openModal()
+    const dialog = screen.getByRole("dialog")
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+  })
+
   // ── The create-alert modal ─────────────────────────────────────────────────
   const EDITION = (over: Record<string, unknown> = {}) => ({
     edition_id: "e1", edition_key: "48:1652", player_name: "Damian Lillard",

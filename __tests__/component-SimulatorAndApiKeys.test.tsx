@@ -473,6 +473,18 @@ describe("ApiKeysClient", () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/only time you.{0,3}ll see this key/i))
   })
 
+  // Until 2026-09-03 this shell closed only by backdrop click. It now shares
+  // lib/hooks/useModalA11y with every other dialog: Escape closes, focus lands inside.
+  it("Escape closes the create-key dialog", async () => {
+    mount({ list: () => json(200, { ok: true, keys: [] }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/No keys yet/))
+    fireEvent.click(screen.getAllByRole("button").find((b) => /create new key/i.test(b.textContent ?? ""))!)
+    const dialog = await waitFor(() => screen.getByRole("dialog"))
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+    fireEvent.keyDown(document, { key: "Escape" })
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
+
   it("copies the raw key and confirms it", async () => {
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
