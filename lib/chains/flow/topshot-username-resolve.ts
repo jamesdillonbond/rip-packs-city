@@ -166,3 +166,38 @@ export async function resolveTopShotUsernameCacheAware(
     dapperId: live.dapperId,
   };
 }
+
+// ⚠ 2026-09-04 — THE DEAD-HOST CLASS, FOUND BY THE HEALTH CHECK'S CHROME SWEEP.
+// `public-api.nbatopshot.com` has answered Cloudflare 530 to every caller since
+// ~2026-08-28, and NINE routes carried their OWN copy of the live
+// `getUserProfileByUsername` resolver with no cache in front of it
+// (collection-moments, wallet-packs, wallet-sales-history, wallet-cost-basis,
+// wallet-hold-time, analytics, allday-sets, allday-wallet-search,
+// lib/chains/flow/flow-resolve). Every username search on the collection tab —
+// the most-visited page — was a 500 in 0.27 s while the same wallet by ADDRESS
+// worked, and the public profile's "ANALYZE <name>'S WALLET →" link sends the
+// USERNAME. `/api/wallet-search` never broke because it goes through the
+// layered resolver above (wallet_usernames → seeded_wallets → saved_wallets →
+// user_profiles → live). This helper is the DB half of that ladder, so a
+// copy-holder can put the cache in FRONT of its live call with one line and
+// keep its own error copy and fallback exactly as they were.
+//
+// Returns the 0x-prefixed wallet, or null when no cached layer knows the
+// username (including on any RPC error — a failed cache read must not become
+// a "not found"; the caller's live path still runs).
+export async function lookupCachedTopShotUsername(
+  supabase: SupabaseClient,
+  rawUsername: string
+): Promise<string | null> {
+  const cleaned = rawUsername.trim().replace(/^@+/, "").trim();
+  if (!cleaned) return null;
+  try {
+    // deno-lint-ignore no-explicit-any
+    const res = await (supabase as any).rpc("resolve_topshot_username", { p_username: cleaned });
+    const j = res?.data;
+    if (res?.error || !j || j.found !== true || typeof j.wallet_address !== "string") return null;
+    return j.wallet_address.startsWith("0x") ? j.wallet_address : `0x${j.wallet_address}`;
+  } catch {
+    return null;
+  }
+}

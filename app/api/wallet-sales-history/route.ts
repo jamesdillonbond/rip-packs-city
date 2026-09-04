@@ -15,6 +15,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { isFlowAddress } from "@/lib/postgrest-safe"
+import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
 
 const TOPSHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const PINNACLE_UUID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
@@ -38,6 +39,9 @@ async function resolveWallet(input: string): Promise<string> {
       }
     }
   `
+  // 2026-09-04: the cached username ladder FIRST (the live host below is dead — see lookupCachedTopShotUsername).
+  const cachedWallet = await lookupCachedTopShotUsername(supabaseAdmin as any, t)
+  if (cachedWallet) return cachedWallet
   const data = await topshotGraphql<UsernameProfileResponse>(query, { username: t.replace(/^@+/, "") })
   const raw = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
   if (!raw) throw new Error("Could not resolve username to wallet address.")

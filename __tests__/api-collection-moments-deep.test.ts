@@ -469,12 +469,16 @@ describe("GET /api/collection-moments — username resolution + collection scopi
     expect(body.total_count).toBe(1)
   })
 
-  it("500s the outer catch when a username cannot be resolved to a wallet", async () => {
-    // Default gqlResolve ({}) → no flowAddress → resolveWalletAddress throws.
+  it("answers the fixed 400 not_found copy (never a 500) when a username cannot be resolved to a wallet — INVERTED 2026-09-04", async () => {
+    // Default gqlResolve ({}) → no flowAddress → resolveWalletAddress throws the
+    // "could not resolve" message. This test used to PIN the 500 "Internal server
+    // error" that told a collector who mistyped a username that the site was broken.
     install({})
     const res = await GET(req("https://t/api/collection-moments?wallet=ghostuser"))
-    expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("Internal server error")
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.code).toBe("not_found")
+    expect(body.error).not.toContain("Internal server error")
   })
 
   it("leaves the wallet unscoped when the collection_config lookup returns no UUID", async () => {

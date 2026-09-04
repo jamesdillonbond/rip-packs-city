@@ -14,6 +14,8 @@ import {
   GET_EDITION_DATA,
   GET_PLAY_DATA,
 } from "@/lib/chains/flow/allday-cadence";
+import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve";
+import { supabaseAdmin } from "@/lib/supabase";
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 
@@ -202,6 +204,9 @@ async function resolveToFlowAddress(input: string): Promise<string> {
   if (cached && cached.expiresAt > Date.now()) return cached.addr;
 
   const cleanedUsername = trimmed.replace(/^@+/, "").trim();
+  // 2026-09-04: the cached username ladder FIRST (see lookupCachedTopShotUsername).
+  const cachedWallet = await lookupCachedTopShotUsername(supabaseAdmin as any, cleanedUsername);
+  if (cachedWallet) { resolveCache.set(cacheKey, { addr: cachedWallet, expiresAt: Date.now() + RESOLVE_TTL_MS }); return cachedWallet; }
   const query = `
     query ResolveUserByUsername($username: String!) {
       getUserProfileByUsername(input: { username: $username }) {

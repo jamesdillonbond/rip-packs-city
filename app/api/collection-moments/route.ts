@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { isUnresolvedIdentifierError, unresolvedIdentifierResponse } from "@/lib/api-error"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { isUpstreamDown, noteUpstreamFailure, noteUpstreamSuccess } from "@/lib/upstream/host-circuit"
 import { getCollection } from "@/lib/collections"
 import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
+import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
 
 /**
  * GET /api/collection-moments
@@ -131,6 +133,9 @@ async function resolveWalletAddress(input: string): Promise<string> {
   if (isWalletAddress(trimmed)) return trimmed
 
   const cleanedUsername = trimmed.replace(/^@+/, "")
+  // 2026-09-04: the cached username ladder FIRST (the live host below is dead — see lookupCachedTopShotUsername).
+  const cachedWallet = await lookupCachedTopShotUsername(supabaseAdmin as any, cleanedUsername)
+  if (cachedWallet) return cachedWallet
   const query = `
     query GetUserProfileByUsername($username: String!) {
       getUserProfileByUsername(input: { username: $username }) {
@@ -138,7 +143,16 @@ async function resolveWalletAddress(input: string): Promise<string> {
       }
     }
   `
-  const data = await topshotGraphql<UsernameProfileResponse>(query, { username: cleanedUsername })
+  let data: UsernameProfileResponse | null = null
+  try {
+    data = await topshotGraphql<UsernameProfileResponse>(query, { username: cleanedUsername })
+  } catch (err) {
+    // The live lookup FAILED — that is not "no such username", and it must not
+    // read as "check the spelling". Tagged so the outer catch can say so.
+    const e = new Error("Username lookup unavailable: " + (err instanceof Error ? err.message : String(err)))
+    e.name = "UsernameLookupUnavailable"
+    throw e
+  }
   const rawWallet = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
   if (!rawWallet) throw new Error("Could not resolve username to wallet address.")
   return rawWallet.startsWith("0x") ? rawWallet : `0x${rawWallet}`
@@ -406,6 +420,19 @@ export async function GET(req: NextRequest) {
     })
   } catch (err) {
     console.log("[collection-moments] error:", err instanceof Error ? err.message : String(err))
+    // 2026-09-04: an unresolvable username is the reader's input, not our
+    // outage — the fixed 400 copy (never a 500 "Internal server error" that
+    // reads as "the site is broken"), the same contract the sibling wallet
+    // routes already publish.
+    if (isUnresolvedIdentifierError(err)) return unresolvedIdentifierResponse()
+    if (err instanceof Error && err.name === "UsernameLookupUnavailable") {
+      // Honest and actionable: we could not ASK, so we do not know. The wallet
+      // address always works (no lookup involved).
+      return NextResponse.json(
+        { error: "Top Shot's username lookup is unavailable right now. Try the wallet address (0x…) instead.", code: "upstream_unavailable", retryable: true },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      )
+    }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

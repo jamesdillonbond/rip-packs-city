@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import {safeApiError, isUnresolvedIdentifierError, unresolvedIdentifierResponse} from "@/lib/api-error";
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
+import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
+import { supabaseAdmin } from "@/lib/supabase"
 
 const STUDIO_GRAPHQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
 
@@ -75,6 +77,9 @@ async function resolveWallet(input: string): Promise<string> {
   if (isWalletAddress(trimmed)) return ensureFlowPrefix(trimmed)
 
   const cleanedUsername = trimmed.replace(/^@+/, "")
+  // 2026-09-04: the cached username ladder FIRST (the live host below is dead — see lookupCachedTopShotUsername).
+  const cachedWallet = await lookupCachedTopShotUsername(supabaseAdmin as any, cleanedUsername)
+  if (cachedWallet) return cachedWallet
   const query = `
     query GetUserProfileByUsername($username: String!) {
       getUserProfileByUsername(input: { username: $username }) {

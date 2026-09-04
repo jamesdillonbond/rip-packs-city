@@ -7,6 +7,7 @@ import { alldayGraphql } from "@/lib/chains/flow/allday"
 import { getOrSetCache } from "@/lib/cache"
 import { supabaseAdmin } from "@/lib/supabase"
 import { GET_OWNED_MOMENT_IDS, GET_MOMENT_METADATA } from "@/lib/chains/flow/allday-cadence"
+import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -134,6 +135,11 @@ async function resolveWalletFromInput(input: string): Promise<string> {
   if (isWalletAddress(trimmed)) return ensureFlowPrefix(trimmed)
   return getOrSetCache(`allday-username:${trimmed.toLowerCase()}`, USERNAME_TTL, async () => {
     const cleanedUsername = trimmed.replace(/^@+/, "")
+    // 2026-09-04: Dapper usernames are one-per-wallet across every collection, so the
+    // Top Shot cache ladder resolves All Day searches too — and the live GQL below is
+    // Cloudflare-blocked server-side (see lookupCachedTopShotUsername).
+    const cachedWallet = await lookupCachedTopShotUsername(supabaseAdmin as any, cleanedUsername)
+    if (cachedWallet) return cachedWallet
     const query = `
       query GetUserProfileByUsername($username: String!) {
         getUserProfileByUsername(input: { username: $username }) {
