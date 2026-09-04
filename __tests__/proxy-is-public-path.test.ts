@@ -168,6 +168,16 @@ const TABLE: Row[] = [
   // ── Per-collection overview + its backing API ───────────────────────────────
   ["/nba-top-shot/overview", "GET", true],
   ["/nba-top-shot/overview", "POST", false, "GET/HEAD only"],
+  // The bare root is a server redirect to /overview; every entity page's
+  // breadcrumb links it, so it must not bounce an anonymous reader to /login.
+  ["/nba-top-shot", "GET", true, "collection root redirects to /overview"],
+  ["/nfl-all-day", "HEAD", true],
+  ["/laliga-golazos", "GET", true],
+  ["/disney-pinnacle", "GET", true],
+  ["/ufc", "GET", true],
+  ["/nba-top-shot", "POST", false, "GET/HEAD only"],
+  ["/candy-mlb", "GET", false, "unpublished chain-two root stays gated"],
+  ["/panini", "GET", false, "unpublished root stays gated"],
   ["/api/collection-stats", "GET", true],
   ["/api/collection-stats", "POST", false],
   ["/api/marketplace-status", "GET", true],
