@@ -149,3 +149,8 @@ one-liner, then watch `wasted_s`.
 `prokind`.** A `CALL` to a committing procedure looks exactly like a `SELECT` to a function in
 `cron.job.command`, and the fix that helps one **errors** on the other — so the check is one column, and
 skipping it turns a working job into a broken one.
+
+---
+## ✅ jobid 78 RESOLVED the other way round; jobid 11 aged out (2026-09-04 02:2xZ, Claude Code on Trevor's box)
+
+§5's ordering was followed — "find out whether it CAN complete before tuning anything" — and the answer changed the fix. **78 `backfill_pinnacle_acquisitions`** (7 d: 28 runs, 23 ok, max ok **118 s**, **5 kills** at the wall): its entire candidate join is **6,573 rows and every one is already in `moment_acquisitions`** — the backfill is complete, and each tick was re-scanning ~2.5 M `wallet_moments_cache` rows to insert nothing. So the prefix was the wrong lever (a bigger ceiling would let a tick waste 600 s on the same nothing — #42's warning verbatim). Shipped instead: a `p_since_days` window (migration `20260904014220`, pin re-pointed, cron passes 14 via `cron.alter_job`) — **297 ms / 15k buffers** for the same statement, semantics pinned unchanged at the default. **11 `refresh_insights_new_collectors`**: 7 d max ok **29 s**, 0 kills at the wall (one `job startup timeout`) — no longer in the §3 shape; left alone. **87**: 1 kill / 7 d, already addressed 09-02. 259 stays as the self-correction says (procedure; arguments are the lever).

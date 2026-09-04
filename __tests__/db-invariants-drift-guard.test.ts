@@ -1302,10 +1302,17 @@ const PINS = [
     // needs their own basis. Adding the mint sibling's NOT EXISTS here — which
     // would look like making the pair consistent — would leave every buyer after
     // the first with no cost basis at all.
+    //
+    // Re-pointed 2026-09-04: the function gained `p_since_days` (NULL = unbounded,
+    // the cron passes 14). Its whole candidate join was 6,573 rows, all already
+    // inserted, re-scanned for up to 120 s four times a day and killed one tick in
+    // five; the window takes that to ~300 ms. Every pinned property above holds
+    // byte-for-byte at the default — the pin's own fixtures prove it — and a new
+    // section pins that the window excludes what it should and admits what it should.
     fn: "backfill_pinnacle_acquisitions",
     test: "supabase/tests/backfill_pinnacle_acquisitions.sql",
     migration:
-      "supabase/migrations/20260816003000_audit_20260816_snapshot_pinnacle_acquisition_backfills.sql",
+      "supabase/migrations/20260904014220_audit_20260904_backfill_pinnacle_acquisitions_gains_a_recency_window.sql",
   },
   {
     // pg_cron `19 * * * *`. The mint half of the same cost-basis pair.

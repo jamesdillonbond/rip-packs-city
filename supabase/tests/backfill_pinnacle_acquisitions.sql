@@ -34,10 +34,12 @@
 -- are; if the exact join is ever found to be missing rows in production that is a
 -- BEHAVIOUR change to make with a measurement, not a tidy-up.
 --
--- The function DDL below is VERBATIM from the committed snapshot migration
--- (supabase/migrations/20260816003000_audit_20260816_snapshot_pinnacle_acquisition_backfills.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-16
--- (md5 8f83d9170e3e025d0b271ae5880589b7).
+-- The function DDL below is VERBATIM from the committed migration
+-- (supabase/migrations/20260904014220_audit_20260904_backfill_pinnacle_acquisitions_gains_a_recency_window.sql),
+-- which added `p_since_days` (NULL = unbounded; the cron passes 14) on 2026-09-04.
+-- Before that it matched the 2026-08-16 snapshot (md5 8f83d9170e3e025d0b271ae5880589b7).
+-- Every section below calls with the DEFAULT, so the pinned properties are exercised
+-- exactly as before; section 5 pins the window itself.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -75,7 +77,7 @@ CREATE TABLE public.moment_acquisitions (
 );
 
 -- >>> BEGIN verbatim backfill_pinnacle_acquisitions (byte-identical to the migration/prod) >>>
-CREATE OR REPLACE FUNCTION public.backfill_pinnacle_acquisitions(p_limit integer DEFAULT 50000)
+CREATE OR REPLACE FUNCTION public.backfill_pinnacle_acquisitions(p_limit integer DEFAULT 50000, p_since_days integer DEFAULT NULL)
  RETURNS json
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -99,6 +101,9 @@ BEGIN
      AND ps.buyer_address = wmc.wallet_address
     WHERE wmc.collection_id = v_pin
       AND ps.sale_price_usd > 0
+      -- Recency window (2026-09-04). NULL = unbounded (the historical backfill);
+      -- the cron passes 14 so a tick scans days of sales, not the whole join.
+      AND (p_since_days IS NULL OR ps.sold_at > now() - make_interval(days => p_since_days))
     LIMIT p_limit
   ),
   ins AS (
@@ -239,6 +244,38 @@ SELECT _assert_eq(
 SELECT _assert_eq(
   (SELECT count(*)::text FROM public.moment_acquisitions), '3',
   'and the table is unchanged'
+);
+
+-- ── 5. THE RECENCY WINDOW (2026-09-04) ───────────────────────────────────────
+-- `p_since_days` bounds `ps.sold_at`; NULL (the default, used by every section
+-- above) is unbounded. The cron passes 14 so a tick scans days of sales, not the
+-- whole join. Pinned both ways: a window that excludes the fixtures' 2026-05/06
+-- sales inserts nothing, and a sale dated now() lands inside a 1-day window.
+INSERT INTO public.wallet_moments_cache (moment_id, wallet_address, collection_id)
+  VALUES ('n9', '0xRECENT', :PIN::uuid);
+INSERT INTO public.pinnacle_sales (id, nft_id, buyer_address, seller_address, sale_price_usd, sold_at)
+  VALUES ('txG_1', 'n9', '0xRECENT', '0xS9', 12.00, now() - interval '1 hour');
+
+SELECT _assert_eq(
+  (SELECT count(*)::text FROM public.pinnacle_sales WHERE sold_at > now() - interval '1 day' AND nft_id <> 'n9'),
+  '0',
+  'control: the pre-existing fixtures all sit OUTSIDE a 1-day window (they are dated 2026-05/06)'
+);
+
+SELECT _assert_eq(
+  (public.backfill_pinnacle_acquisitions(50000, 1) ->> 'inserted'), '1',
+  'a 1-day window admits the sale dated an hour ago and nothing older'
+);
+
+SELECT _assert_eq(
+  (SELECT count(*)::text FROM public.moment_acquisitions WHERE nft_id = 'n9'),
+  '1',
+  'and it is the recent sale that landed'
+);
+
+SELECT _assert_eq(
+  (public.backfill_pinnacle_acquisitions(50000, 1) ->> 'inserted'), '0',
+  'a second windowed run inserts nothing (idempotence still rests on ON CONFLICT)'
 );
 
 ROLLBACK;
