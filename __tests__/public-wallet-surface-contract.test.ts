@@ -37,10 +37,38 @@ function publicReadApis(): string[] {
   return Array.from(m[1].matchAll(/"([^"]+)"/g)).map((x) => x[1])
 }
 
-function publicPageRegexSource(): string {
-  const m = proxySrc.match(/\/\^\\\/\(\?:nba-top-shot\|[^\n]*/)
-  if (!m) throw new Error("public collection-page regex not found in proxy.ts")
-  return m[0]
+/**
+ * EVERY collection-path regex in proxy.ts, not the first one that looks right.
+ *
+ * 🚨 THIS USED TO TAKE THE FIRST MATCH AND IT WENT RED ON A CORRECT CHANGE.
+ * On 2026-09-04 the five collection ROOTS became public, which added a SECOND
+ * regex of the same shape (`…|ufc)$/`) ABOVE the tab one — so `.match()`
+ * returned the roots regex, `toContain("collection")` failed, and the guard
+ * reported a gating regression that had not happened: `/nba-top-shot/collection`
+ * was public before the change and public after it. A guard that names the
+ * wrong cause is worse than one that stays quiet.
+ *
+ * ⭐ THE FIX IS NOT "MATCH THE RIGHT ONE", IT IS "STOP ASSERTING ON SOURCE
+ * SHAPE". The property is *can an anonymous crawler fetch this page*, and
+ * matching the path against the collected regexes answers that question
+ * directly — so adding, splitting or reordering a regex in proxy.ts cannot red
+ * this file again unless the PAGE actually stops being public.
+ */
+function publicPageRegexSources(): string[] {
+  const found = Array.from(proxySrc.matchAll(/\/\^\\\/\(\?:nba-top-shot\|[^\n]*?\/\.test\(pathname\)/g)).map(
+    (m) => m[0],
+  )
+  if (found.length === 0) throw new Error("public collection-page regex not found in proxy.ts")
+  return found
+}
+
+/** Does any of proxy.ts's collection regexes admit this exact path? */
+function pageIsAllowedByARegex(pathname: string): boolean {
+  return publicPageRegexSources().some((src) => {
+    const body = src.match(/^\/(.*)\/\.test\(pathname\)$/)
+    if (!body) return false
+    return new RegExp(body[1].replace(/\/$/, "")).test(pathname)
+  })
 }
 
 describe("public wallet surfaces are reachable end to end", () => {
@@ -52,12 +80,24 @@ describe("public wallet surfaces are reachable end to end", () => {
     expect(apis).not.toContain("/api/wallet-cost-basis")
   })
 
+  it("the page matcher can still say NO (guards the guard)", () => {
+    // Without this, `pageIsAllowedByARegex` returning true unconditionally —
+    // a broken regex reconstruction, say — would make every case above pass
+    // while measuring nothing. Two negatives: a tab that does not exist, and a
+    // collection that is deliberately not published.
+    expect(pageIsAllowedByARegex("/nba-top-shot/not-a-real-tab")).toBe(false)
+    expect(pageIsAllowedByARegex("/panini/collection")).toBe(false)
+    // ...and a positive, so a regex that matches NOTHING is caught too.
+    expect(pageIsAllowedByARegex("/nba-top-shot/collection")).toBe(true)
+  })
+
   for (const { page, api } of WALLET_SURFACES) {
     it(`${page} is public, so ${api} must be too`, () => {
-      const [, collection, tab] = page.split("/")
-      const pageRegex = publicPageRegexSource()
-      expect(pageRegex, `${collection} missing from the public page regex`).toContain(collection)
-      expect(pageRegex, `${tab} tab missing from the public page regex`).toContain(tab)
+      expect(
+        pageIsAllowedByARegex(page),
+        `${page} is not admitted by any public collection-page regex in proxy.ts — ` +
+          `the page itself now bounces an anonymous visitor to /login`,
+      ).toBe(true)
       expect(
         publicReadApis(),
         `${page} renders anonymously but ${api} is gated — the wallet paste will bounce to /login`,
