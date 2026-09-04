@@ -1,6 +1,6 @@
 # Needs Trevor — after the 2026-09-04 Atlas audit
 
-Five things. The product call in §1 is now **made and shipped** — it is recorded here rather than removed, so the reasoning survives. The rest are FYI or structural.
+Six things. The product call in §1 is now **made and shipped** — it is recorded here rather than removed, so the reasoning survives. The rest are FYI or structural.
 
 ## 1. ~~`#104 / 284` vs Top Shot's `#104/249`~~ — ✅ DECIDED AND SHIPPED (2026-09-04, migrations `20260904145331` · `20260904145452`)
 
@@ -34,3 +34,18 @@ It hadn't reached the edge function since 02:16Z — 25 of 25 ticks died at pg_n
 ## 5. Unchanged structural items
 
 #22 defeated credential purge · #58 `OPENSEA_API_KEY` · the alerting secrets.
+
+## 6. 📋 A third of the Top Shot edition catalog is an inert June import — measured, deliberately not deleted
+
+Not urgent and not user-visible, but you should know it exists before anyone quotes a catalog count.
+
+`editions.external_id` for Top Shot has **two key namespaces**: 13,391 rows on the real `setID:playID` key (carrying all 1,910,846 holder rows and 99.3 % of the badges), and **6,575 rows keyed by a GQL set UUID** (`6d299ced-…:…`) carrying **zero holders, zero badges and no art**. `wallet_moments_cache.edition_key` is always `setID:playID`, so nothing can ever join the UUID ones — the zero is structural, not incidental.
+
+Every one of them has `set_id_onchain` and `play_id_onchain` NULL (so the right key is **not derivable**), no thumbnail, and a `created_at` inside a single **40-hour window on 2026-06-04/06**. That is a one-off import that used the wrong key, three months ago.
+
+**It isn't free:** `sales` 0, wishlists 0, watchlists 0 — but **44,321 `fmv_snapshots`**, i.e. the FMV pipeline prices 6,575 editions nobody can reach, and they land in catalog-wide FMV aggregates.
+
+**Why I didn't just delete them:** it's 33 % of the Top Shot edition rows; the obvious "they're duplicates" story is contradicted (of a 300-row sample only 126 have a same-set/player/tier twin and **173 have no player name at all**); and the cleanup has a non-empty dependent. That combination wants a dedicated pass, not the tail end of a long one. **Nothing is degraded while it waits** — the rows are inert to users.
+
+Full measurement and the exact next-pass queries are in the ledger entry dated 2026-09-04.
+

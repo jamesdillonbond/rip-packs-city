@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · 📋 QUEUED (measured, deliberately NOT shipped) — a third of the Top Shot edition catalog is an inert June import in the wrong key namespace: 6,575 rows, 0 holders, 0 badges, 0 art, and 44,321 FMV snapshots being computed for nobody · Cowork (cloud sandbox)
+
+Found by chasing the last red pipeline arm (`topshot-badge-set-backfill`, 0/12 ok on the dead Top Shot GraphQL). Retiring it looked clearly-safe — the Atlas refresh I shipped this morning covers the same ground — until I measured coverage on the trophy sets it exists for: **235 of 299 covered, 64 not.** Chasing those 64 is what surfaced this.
+
+**`editions.external_id` for Top Shot has TWO key namespaces:**
+
+| key shape | editions | with badges | holder rows | circ NULL |
+|---|---|---|---|---|
+| numeric `setID:playID` | 13,391 | 13,291 (99.3 %) | **1,910,846** | 0 |
+| **UUID-prefixed** (`6d299ced-…:…`) | **6,575** | **0** | **0** | 1,093 |
+| other | 22 | 0 | 0 | 22 |
+
+`wallet_moments_cache.edition_key` is always `setID:playID`, so **no wmc row can ever join a UUID-keyed edition** — that is why the holder count is exactly zero, not merely low, and why they carry no badges.
+
+**The characterisation is unanimous over a 2,000-row sample and says "one-off import", not "organic catalog":** `set_id_onchain` NULL on **all** of them, `play_id_onchain` NULL on **all** of them (so the numeric key is **not derivable**), `thumbnail_url` NULL on **all** of them, and every row created inside a single **40-hour window, 2026-06-04 → 06-06**. On a 300-row sample only 126 have a same-set/player/tier numeric twin and **173 have no `player_name` at all**, so "they're just duplicates" is *not* established — that is precisely why this is queued rather than deleted.
+
+⭐ **AND IT IS NOT FREE.** Dependents: `user_wishlists` **0**, `watchlist_items` **0**, `sales` **0** — but **`fmv_snapshots` 44,321 rows**. The FMV pipeline is pricing 6,575 editions no user can reach, and those snapshots sit inside every catalog-wide FMV aggregate.
+
+⛔ **Not shipped, on purpose.** This is 33 % of the Top Shot edition rows, the "just duplicates" hypothesis is contradicted by 173/300, and the cleanup has a non-empty dependent (44K snapshots) — so it needs its own pass with fresh judgement, not the last twenty minutes of a long one. **It is inert to users today** (zero holders, zero badges, no art), so there is no urgency that would justify a destructive op now.
+
+**For that pass, the queries are:** the shape split above; `set_id_onchain IS NULL` to confirm underivability; the `created_at` window to confirm the single import; and the dependent counts. The likely fix is delete-with-snapshots in one transaction after establishing identity against Atlas (`EditionService/SearchEditions` returns the full catalog per set), **not** a key rewrite — there is no key to rewrite to.
+
+⚠ **This also corrects a line I wrote in `20260904145331` this morning:** I described "the ~33 % of editions Atlas has not walked yet". That number is these rows, and the reason is not that Atlas has not walked them — it is that they are keyed in a namespace Atlas's key space does not use. The circulation heuristic fallback the migration leaves in place is therefore doing nothing for them either.
+
+**Two other red arms, both checked and both correctly quiet:** `offers-sweep` is 108/216 ok, and `docs/operations/cron-schedule.md` already records it as *"dead host … kept ACTIVE behind the upstream circuit breaker (c8ac905)"* — the breaker probes once an hour and skips twice, which is the alternating :02/:42 ok, :22 fail pattern exactly. `public.offers` is fresh (25,478 open, newest 20 min ago) because `rpc-raise-edition-offers-backstop` reads the chain instead. **Neither is an incident**, and I only avoided filing them as one by grepping the ops docs first.
+
 ### 2026-09-04 · ✅ SHIPPED (2 migration files, comments only) — CI was RED on shard 2/2 and it was mine: the `-- anon-exec:` marker must NAME the function it decides for, and mine named the other one · Cowork (cloud sandbox)
 
 `Unit tests (vitest) — shard 2/2` failed on `cc6893f`, `7077506` and `47f0b80`. Not the commits' own content — **the red started with the circulation migration files** (`20260904145331` / `145452`) and every later push inherited it. `migration-new-function-states-its-anon-exec-decision` flagged both, for `public.trg_topshot_normalize_base_club_circulation`.
