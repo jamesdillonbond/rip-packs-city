@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — the ipfs-media 502 is a COLD-CACHE MISS, so the first visitor to each CID saw a permanently broken image and nobody after them did · Cowork (cloud sandbox)
+
+Found in the same plain-Chromium sweep as the entry above: three broken 169×169 tiles on `/nba-top-shot/edition/98:3150::5`, `alt` = Coded / Halftone / Bubbled — the **parallel-printing art**, each a `502` from `/api/public/ipfs-media/<cid>`.
+
+⭐ **The 502 is not a dead image. It is the first request, and only the first.** Three requests each, straight against production:
+
+| CID | #1 | #2 | #3 |
+|---|---|---|---|
+| `QmbA28D3qsmYxVg49tXu…` | **502 (8.17 s)** | 200 (0.36 s) | 200 (0.36 s) |
+| `QmdAszc6oKXQjF5hVkBW…` | 200 (0.51 s) | 200 (0.56 s) | 200 (0.60 s) |
+| `QmVa651F84NoFXAV9rE6…` | 200 (0.50 s) | 200 (0.60 s) | 200 (0.48 s) |
+
+A cold CID exceeds the route's deliberate **8 s `HEADERS_TIMEOUT_MS`** and aborts to a 502; everything after it is a sub-second hit. So **the first visitor to each CID is the only person who ever sees the broken tile — and they see it permanently**, because an `<img>` does not retry a 502 on its own. That is the worst possible distribution of a defect: invisible to whoever checks it second, including every previous QA pass on this page.
+
+⭐ **AND THE ROUTE ALREADY SAID SO.** Its header records that the 8 s budget was chosen (down from 25 s) precisely so that *"the 502 fallback — and the `<img onError>` candidate-advance chain it exists to trigger"* could actually run — an earlier 25 s budget let the platform's own cutoff win and made that path dead code. **The budget was fixed; the chain it was fixed for was never built at these call sites.** Verified in a real browser: those three tiles reported `hasOnError: false`. A soft-fail path with no consumer is not a soft-fail path.
+
+**Fix:** `components/entity/IpfsThumb.tsx` — a client thumbnail that retries **once** after 1.2 s, then degrades to a muted label (the same shape `components/packs/PackThumb.tsx` uses for genuinely dead pack art) instead of a broken-image icon. Applied to both IPFS tile grids on the public edition page: the parallel-printing ladder and the parallels grid.
+
+⛔ **The retry deliberately does NOT cache-bust.** The obvious way to force a re-request is `?t=<now>`, and it is wrong here: the second request must be able to hit our edge cache under the same key, and a busted URL would re-run the very cold fetch that just timed out — turning a one-visitor defect into an every-visitor one. The re-request is forced by remounting the `<img>` via `key`, and a test asserts the retried `src` is byte-identical and contains no `?`.
+
+**I did not touch the 8 s budget.** It is measured, documented, and load-bearing against the platform's 25 s cutoff; the missing piece was the consumer, and that is what shipped.
+
+**Verified:** `tsc` clean · **478 tests green across all 28 files** referencing the edition page or the media proxies · 4 new cases pinning retry-once / same-URL / give-up-with-a-label / null-src. **Revert:** `git revert <sha>`.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — every one of the 370 Top Shot TEAM Moments linked its headline to a `/player/` page that has never existed, on the collection tab, the market table and the public edition page · Cowork (cloud sandbox)
 
 Found by loading the corrected parallel pages in a **plain headless Chromium** and reading the network log — a `404` on `/nba-top-shot/player/sacramento-kings`, linked from the *Clamps* Coded parallel's own page.
