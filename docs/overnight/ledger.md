@@ -10,6 +10,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code + prod DB migration `20260904151427`) — 70 of 104 live Top Shot listings were UNIDENTIFIED NFTs published as Moments: an assumed tier, the NFT id in the serial field, and a valuation that made 9 of them read as discounts · Cowork (cloud sandbox)
+
+Found by finishing the circulation sweep: with the meaning of `circulation_count` settled, I went looking for every other denorm of it. `cached_listings.circulation_count` was NULL on 70 Top Shot rows — and pulling that thread found something worse than a stale denominator.
+
+**Flowty answers with a PLACEHOLDER title — literally `TopShot #<nftId>` — and no traits at all for any NFT whose metadata it has not resolved.** That title is truthy, so it sailed straight through `topshot-listing-cache`'s `if (!playerName) continue` guard and landed a row that read as a Moment and was fabricated end to end. **Measured over the whole live population, not a sample: 70 of 104 rows were placeholders, and the failure was unanimous — 70 OF 70 on every axis:**
+
+- `serial_number` = **the NFT ID** (Flowty's `card.num` on an unresolved NFT), so the row published `#52,313,854` as a serial;
+- `tier` = `COMMON`, supplied by the route's `?? "COMMON"` default — **never read**;
+- `set_name` / `series_name` / `circulation_count` / `thumbnail_url` all absent;
+- Flowty's blended valuation still landed in `fmv`, and **on 9 of them the ask was BELOW it, so the row rendered as a discount on an NFT we cannot identify.**
+
+⭐ **AND IT WAS PUBLISHED, with a positive control to prove it.** `/api/profile/market-pulse` groups `cached_listings` by `tier` and takes the lowest ask as the collector's floor:
+
+| | rows | tier | min ask |
+|---|---|---|---|
+| resolved | 34 | COMMON (read) | **$0.20** ← the true floor |
+| unresolved | 70 | COMMON (**assumed**) | **$0.19** ← what we published |
+
+The dollar gap is small only because this book is cheap. **The mechanism is not:** one unresolved LEGENDARY listed at $2 becomes the published COMMON floor. Post-fix the floor reads **$0.20**, from a tier we actually read.
+
+**The fix keeps the listing and drops the guesses.** `flow_id`, `ask_price`, `buy_url` and `listed_at` are real and feed the wallet-search low-ask map, so the row stays; `tier`, `serial_number`, `circulation_count` and `fmv` are written NULL. **NULL is the honest value and the safe one** — market-pulse buckets `String(tier ?? "")`, so a NULL tier can never become a floor, and All Day already carries a NULL-tier row today with nothing downstream breaking, which is what proves the column is nullable *and* tolerated rather than merely nullable. The placeholder is detected by comparing against **this NFT's own id** (`title === \`TopShot #${nftIdStr}\``), never a loose `/^TopShot #\d+$/`, so a genuine title can't be discarded — pinned by a test that feeds `"TopShot #99"` on nft `52313854` and asserts it survives with its serial and mint intact.
+
+**Three tests added, and the first one was verified to FAIL against the old route** with exactly the right assertion (`expected 'COMMON' to be null`) — a test that passes both ways pins nothing.
+
+⚠ **SCOPE, deliberately narrow, and this is the interesting judgement.** `app/api/listing-cache/route.ts` (All Day / Golazos / UFC) carries the **identical** `|| "COMMON"` fabrication. I did **not** touch it, because it is not exposed: across those two live collections exactly **1 of 201** rows arrived without traits, and it already stores a NULL tier from a different writer. I cannot tell from the data whether their 67 COMMON rows were read or defaulted, so "fix it too" would have been a blind change to a route whose defect I could not measure — the mistake this ledger keeps recording. **The instrument for whoever picks it up: `set_name IS NULL` on `cached_listings` means "Flowty sent no traits".** If that count rises above 1 for those collections, the same fix applies.
+
+⚠ **Also found and NOT acted on: `app/api/fmv-recalc/route.ts` carries a stale premise in a comment** — *"Flowty's marketplace shut down ~2026-05-13 … cached_listings now holds only ~24 frozen multi-week-stale rows"*. The table refreshed at **15:06Z today with 305 live rows across 3 collections**. The removed code paths are still correctly removed, so nothing is broken; the comment is simply false now and will mislead the next reader into thinking this whole table is dead. Queued rather than fixed inline because it belongs with a proper re-read of that step.
+
+**Verified:** `tsc` clean · 45 tests across all 5 files referencing the route green · positive control on the pin · 70/70 rows corrected in place, 0 still fabricated, published floor $0.19 → $0.20. **Revert:** `git revert <sha>` plus `UPDATE public.cached_listings cl SET tier = a.old_tier, serial_number = a.old_serial, fmv = a.old_fmv FROM public.audit_20260904_unidentified_listings a WHERE a.flow_id = cl.flow_id AND cl.collection_id = a.collection_id;`
+
 ### 2026-09-04 · ✅ SHIPPED (prod DB migration `20260904150428`) — deciding the circulation rule expired a refusal I wrote three hours earlier, and the denorm behind it was 539,596 rows wrong — 66,376 of them by more than 10x · Cowork (cloud sandbox)
 
 The wmc metadata reconcile shipped this morning with a deliberate ⛔ in its own header: *"`mint_count` is not touched at all — `editions.circulation_count` is the chain's all-printings total and that is the open product call; writing 360,422 rows to one side of an undecided question is precisely the mistake to avoid."* That was right at the time. **The entry above decided the question**, so the refusal expired and the denorm has to follow the column it denormalises. Left alone, that comment would have quietly protected stale data forever — an expiry condition nobody re-reads is just a permanent exemption.
