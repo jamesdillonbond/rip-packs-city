@@ -141,7 +141,24 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Decode & flatten JSON-Cadence response ─────────────────────────────
-  const raw = await res.text();
+  // ⚠ The AbortSignal attached to the fetch stays LIVE for the body read, so
+  // `res.text()` can reject on the same deadline (or a mid-transfer reset)
+  // AFTER the headers arrived — outside the try above, that was an uncaught
+  // throw, i.e. a 500 where this route owes a 502 (the 09-03 body-outside-catch
+  // class; measured on ipfs-media, 426 uncaught TimeoutErrors in 24 h).
+  let raw: string;
+  try {
+    raw = await res.text();
+  } catch (err) {
+    console.log(
+      "[wallet-preflight] Flow REST body read failed:",
+      err instanceof Error ? err.message : String(err)
+    );
+    return NextResponse.json(
+      { error: "Flow REST body read failed" },
+      { status: 502 }
+    );
+  }
   let decoded: string;
   try {
     decoded = Buffer.from(raw.trim().replace(/^"|"$/g, ""), "base64").toString(

@@ -102,6 +102,17 @@ describe("GET /api/wallet-preflight — upstream failure modes", () => {
     expect((await res.json()).error).toMatch(/Flow REST request failed/)
   })
 
+  it("502s when the BODY read rejects after the headers arrived (the signal stays live for the body)", async () => {
+    // The 09-03 body-outside-catch class: an AbortSignal attached to the fetch also
+    // times out the body read. Before the fix this rejected outside the try and the
+    // route threw — a 500 where a 502 was owed.
+    const err = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" })
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, text: async () => { throw err } })) as any)
+    const res = await GET(req(good()))
+    expect(res.status).toBe(502)
+    expect((await res.json()).error).toMatch(/Flow REST body read failed/)
+  })
+
   it("502s on a non-ok HTTP response", async () => {
     stubFlow("upstream error", false, 500)
     const res = await GET(req(good()))

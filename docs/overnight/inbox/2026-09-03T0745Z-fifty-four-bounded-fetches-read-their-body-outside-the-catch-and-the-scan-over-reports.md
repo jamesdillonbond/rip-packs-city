@@ -1,5 +1,7 @@
 # 54 bounded fetches read their response body OUTSIDE the catch — but the scan over-reports, and nobody should act on the list as-is
 
+> 🟠 **RE-RUN 2026-09-03 (late PT) with the blast-radius split §3 asked for — ONE real user-facing instance, FIXED.** TypeScript-AST sweep, same rule, plus a user-facing/pipeline classification by route path: 54 files; 16 user-facing by path, of which 12 are pipelines with unhelpful names (`*-listing-cache`, `*-listings-retry`, `allday-fmv-populate`, `allday-seed-editions`, `bulk-classify`, `pro-payment-scanner`, `smoke-test`, `ufc-wallet-scan`), 2 are this filing’s confirmed false positives (`pack-ev`, `pinnacle-image`), 1 is a REQUEST body (`bots/discord`), and **1 is real: `wallet-preflight` — `res.text()` after the try, a 500 where the route owes a 502. Fixed with a failing-first test (ledger 2026-09-03).** The 38 pipeline files are left as the filing advises: a throw there is loud and recorded. Caller-aware analysis is still not built; the by-path split was enough to find the user-facing residue.
+
 **Filed 2026-09-03 ~00:45 PT (07:45Z) by Claude Code. NOTHING SHIPPED FOR THIS.** Three instances of the
 class were fixed tonight on their own evidence; this filing is the **population sweep** that followed,
 and it is a candidate list produced by a syntactic rule, not a finding.
