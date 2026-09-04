@@ -1,36 +1,77 @@
 {
-  "generated_at": "2026-09-04T14:32:34Z",
-  "pass": "2026-09-04 Atlas audit + drain (Cowork, desktop VM)",
-  "verdict": "GREEN",
-  "security": { "secdef_anon_exec_violations": 0, "stalled_pipelines": 0 },
-  "cron": { "jobs": 118, "failed_last_hour": 1, "failure_explained": "an unschedule/reschedule landing on a running tick (the metadata reconcile's own 1-arg -> 2-arg swap)" },
-  "atlas_editions_refresh": { "sets_total": 266, "sets_complete": 266, "pages_ok": 1825, "pages_err": 82, "err_pct": 4.3, "note": "errors are Cloudflare 403 'Just a moment', all recovered on the set's next cycle; full-catalog refresh ~2.5h" },
-  "badge_editions_topshot": { "rows": 13915, "parallel_rows": 4403, "fresh_within_3h": 13891, "before_this_pass": { "rows": 9471, "parallel_rows": 0, "frozen_since": "2026-08-28T15:16Z" } },
-  "corrections_this_pass": {
-    "wmc_parallel_rekey_rows": 67530,
-    "wmc_fmv_reconcile_wallets": 22,
-    "edition_tier_corrected": 41,
-    "wmc_metadata_corrected": 77503,
-    "wmc_metadata_cursor": "125:4474",
-    "wmc_metadata_note": "drain in progress; cursor is LEXICOGRAPHIC over editions.external_id, ~3h to a full pass at */10 x 1200"
+  "generated_at_utc": "2026-09-04T15:54:42Z",
+  "pass": "2026-09-04 Cowork cloud — circulation decided, its denorm debris, and the surface QA that followed",
+  "migrations_applied": [
+    "20260904145331 base circulation = this printing's own mint (BEFORE trigger + hourly sync)",
+    "20260904145452 parallels take the measured mint too (392 were wrong, one by 14x)",
+    "20260904150428 wmc.mint_count follows the decided rule (539,596 rows wrong, 66,376 by >10x)",
+    "20260904151427 unidentified Flowty listings stop publishing an assumed tier/serial/valuation",
+    "20260904152154 a parallel inherits its base edition's identity (107 read 'Unknown')",
+    "20260904154741 series_chain_numbers: Top Shot chain 0+1 are both catalog Series 1"
+  ],
+  "code_shipped": [
+    "fix(listings) topshot-listing-cache: an unidentified NFT states unknown instead of guessing",
+    "fix(links) momentSubjectHref: a team Moment links to /team, not a /player page that 404s",
+    "fix(media) IpfsThumb: retry once on the cold-cache 502 the proxy's own header expects"
+  ],
+  "circulation": {
+    "rule": "editions.circulation_count = this printing's own mint (the number Top Shot displays)",
+    "deciding_evidence": "of 9,473 base editions with an Atlas number, 1,312 differed and EVERY one differed by exactly the sum of its parallels' mints; zero unexplained",
+    "base_editions_corrected": 1312,
+    "parallel_editions_corrected": 449,
+    "holder_rows_behind_them": 186124,
+    "sabonis_227_7574": 249,
+    "ladder": "249 / 25 / 10 (was 284 / 25 / 9, double-counting)",
+    "base_still_disagreeing": 0,
+    "parallel_still_disagreeing": 0
   },
-  "topshot_subedition_queue": { "pending": 10000, "cap": 10000, "note": "the parallel seeder is yielding exactly as designed so the newest-series arm is not starved" },
-  "atlas_diff_founder_wallet": {
-    "topshot_moments": 15183, "allday_moments": 3707,
-    "before": { "wmc_fmv_drift": 1299, "circ_badge_vs_minted": 3858, "rpc_badges_atlas_none": 966, "parallel_key_mismatch": 1264, "atlas_badges_rpc_none": 92 },
-    "after":  { "wmc_fmv_drift": 21,   "circ_badge_vs_minted": 359,  "rpc_badges_atlas_none": 2,   "parallel_key_mismatch": 352, "atlas_badges_rpc_none": 0 },
-    "allday_after": { "wmc_fmv_drift": 7, "identity_mismatches": 0 },
-    "not_defects": [
-      "All Day badge low_ask disagrees with Atlas on 2,863 Moments, but ours matches our own live cached_listings_v2 open-ask minimum exactly — we are the fresher side on a sunset marketplace",
-      "All Day edition ids are a different namespace from Atlas's (constant offset), not a mis-map",
-      "RPC's All Day player names are populated where Atlas's edition metadata is empty"
+  "wmc_mint_count": {
+    "wrong_at_start": 539596,
+    "overstated_at_start": 539326,
+    "parallel_rows_over_10x": 66376,
+    "corrected_so_far": 49211,
+    "remaining": 490596,
+    "cursor": "192:6860",
+    "drains_via": "rpc-wmc-metadata-reconcile */10 at 1,200 editions"
+  },
+  "listings": {
+    "ts_rows": 103,
+    "unidentified_placeholders": 74,
+    "still_fabricated": 0,
+    "published_common_floor": 0.22,
+    "before": "70 of 104 rows had an assumed COMMON tier, the NFT id in serial_number, and a valuation that made 9 read as discounts; the published Common floor was $0.19 from an assumed tier against a real $0.20"
+  },
+  "parallel_identity": {
+    "filled": 107,
+    "still_unknown": 37,
+    "note": "33 at ship time, 37 now — the Atlas drain creates new identity-less parallels, which is why the corrector is hourly at :52 rather than a one-shot"
+  },
+  "series": {
+    "series1_editions_listed": 500,
+    "series1_editions_listed_before": 63,
+    "series1_rollup_count": "65 until rpc-series-detail-rollup runs at :59 with the fixed refresher",
+    "orphaned_editions_recovered": 1245,
+    "holder_rows_behind_them": 78344
+  },
+  "guards": {
+    "secdef_anon_execute_violations": [],
+    "wmc_base_keyed_resolvable_parallels": 0,
+    "ledger_heading_guards": "swallowed=3 (expected), future-dated=0, clobbered=0 on every commit"
+  },
+  "surface_qa": {
+    "instrument": "$HOME/qa-sweep.mjs on the device VM — a PLAIN headless Chromium, no Claude instrumentation",
+    "why_it_matters": "both Claude browsers hang the route-level Suspense reveal on /moment and /edition pages ('SCANNING THE MARKETPLACE…'); plain Chromium reveals correctly, suspensePlaceholders=0. The recorded false-positive note said this reproduced on no normal-browser axis — it DOES reproduce in Claude in Chrome, so the note was too narrow.",
+    "desktop_1280": "12 + 12 surfaces, all 200, no horizontal scroll, no console errors except the findings above",
+    "mobile_390": "10 surfaces, scrollWidth == clientWidth == 390 on every one — zero horizontal overflow",
+    "checked_and_NOT_defects": [
+      "the Pack Sniper renders fully and its empty state explains why ('the discount is 0% by construction, not a deal') — the honesty canon working",
+      "/insights/parallel-premiums showed its honest failed-read sentence once, then 100 rows on 4 consecutive loads — an intermittent cold read that degraded correctly rather than claiming 'no parallels match'",
+      "a cdn.nba.com team logo reported naturalWidth 0 once via net::ERR_HTTP2_PROTOCOL_ERROR, but curls 200/3.7KB three times and its box still renders 96x96 — a headless artifact, not a product defect"
     ]
   },
-  "open_product_call": "editions.circulation_count is the chain's all-printings total (284) where Top Shot displays the Standard printing's own mint (249); Atlas's per-printing number is in badge_editions.circulation_count. Not changed unilaterally — see docs/needs-trevor-2026-09-04-after-the-atlas-audit.md",
-  "migrations_applied": [
-    "20260904041433", "20260904041544", "20260904041635", "20260904045817",
-    "20260904052346", "20260904052858", "20260904055030", "20260904055844",
-    "20260904062632", "20260904063544", "20260904133011", "20260904133105",
-    "20260904141439", "20260904141708", "20260904142428", "20260904142504"
+  "queued_not_shipped": [
+    "app/api/listing-cache/route.ts carries the identical `|| \"COMMON\"` fabrication for All Day/Golazos/UFC but only 1 of 201 rows there arrives without traits; instrument is `set_name IS NULL` on cached_listings",
+    "app/api/fmv-recalc/route.ts asserts in a comment that Flowty shut down and cached_listings holds ~24 frozen rows; it refreshes every 20 min with ~103 live TS rows. Nothing broken, but the comment will mislead.",
+    "v_topshot_parallel_premiums costs 48,916 buffers for 100 rows (91 ms warm) — the cold-read pressure behind the intermittent failure above"
   ]
 }
