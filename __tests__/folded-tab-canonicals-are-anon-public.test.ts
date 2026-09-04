@@ -43,10 +43,25 @@ describe("folded-tab canonicals point at something an anonymous crawler can fetc
 
   it("the instrument can still see a gated URL (control)", () => {
     // Without this the file passes trivially if `isPublicPath` starts returning
-    // true for everything — and the exact URL the bug pointed at is the most
-    // honest control available, since it is what regressing would produce.
+    // true for everything.
+    //
+    // ⚠ The control USED to be `/<collection>` itself, because that root was the
+    // exact URL the bug canonicalised to. It stopped being a control on
+    // 2026-09-04: the root is a server redirect to the public `/overview`, every
+    // entity breadcrumb links it, and all five roots were 307-ing anonymous
+    // readers (and crawlers) to /login — so the root was made public and the
+    // hazard this file pins was removed at its source rather than routed around.
+    // The control moved to a sibling that is gated BY DESIGN: `/<collection>/badges`
+    // is a signed-in tool, deliberately absent from the public feature-tab list,
+    // and `/dashboard` is the personalisation surface. If either of those ever
+    // goes public this assertion should be re-pointed, not deleted — the file
+    // needs *some* URL it can prove is gated.
+    expect(isPublicPath("/dashboard", "GET"), "/dashboard is auth-gated").toBe(false)
     for (const c of publishedCollections()) {
-      expect(isPublicPath(`/${c.id}`, "GET"), `/${c.id} is the auth-gated root`).toBe(false)
+      expect(
+        isPublicPath(`/${c.id}/badges`, "GET"),
+        `/${c.id}/badges is an auth-gated tab`
+      ).toBe(false)
     }
   })
 

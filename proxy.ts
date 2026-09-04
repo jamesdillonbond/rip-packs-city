@@ -559,20 +559,6 @@ export function isPublicPath(pathname: string, method: string): boolean {
   ) {
     return true
   }
-  // The bare collection root (`/nba-top-shot`) is a server redirect to that
-  // same `/overview` page (app/(collections)/[collection]/page.tsx does nothing
-  // else) — but it was gated here, so the redirect never ran for an anonymous
-  // visitor: every entity page's breadcrumb ("Home › NBA Top Shot › …") and its
-  // BreadcrumbList JSON-LD link the collection name to `/<collection>`, and the
-  // 2026-09-04 sweep measured all five roots 307-ing to /login for the SEO
-  // traffic those pages exist for. Published slugs only, GET/HEAD only — the
-  // same set the feature tabs below open; Panini/Candy roots stay gated.
-  if (
-    (method === "GET" || method === "HEAD") &&
-    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc)$/.test(pathname)
-  ) {
-    return true
-  }
   // /api/collection-stats — GET-only collection-level aggregate (edition
   // count, FMV confidence %, 24h volume, top sales, top sniper deals) backing
   // the public /<collection>/overview landing above. Service-role read, no
@@ -743,6 +729,25 @@ export function isPublicPath(pathname: string, method: string): boolean {
   if (
     (method === "GET" || method === "HEAD") &&
     /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc)\/(?:collection|market|sniper|sets|packs|pack-sniper|challenges|hot-floors|play|analytics)$/.test(pathname)
+  ) {
+    return true
+  }
+  // ⚠ ORDER IS LOAD-BEARING: this block must stay BELOW the feature-tab regex
+  // above. __tests__/public-wallet-surface-contract.test.ts extracts "the public
+  // collection-page regex" by matching the FIRST /^\/(?:nba-top-shot|… literal in
+  // this file, and both regexes open with those five slugs — put this one first
+  // and that test reads the roots as the tab list and fails on a missing tab.
+  // The bare collection root (`/nba-top-shot`) is a server redirect to that
+  // same `/overview` page (app/(collections)/[collection]/page.tsx does nothing
+  // else) — but it was gated here, so the redirect never ran for an anonymous
+  // visitor: every entity page's breadcrumb ("Home › NBA Top Shot › …") and its
+  // BreadcrumbList JSON-LD link the collection name to `/<collection>`, and the
+  // 2026-09-04 sweep measured all five roots 307-ing to /login for the SEO
+  // traffic those pages exist for. Published slugs only, GET/HEAD only — the
+  // same set the feature tabs above open; Panini/Candy roots stay gated.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc)$/.test(pathname)
   ) {
     return true
   }
