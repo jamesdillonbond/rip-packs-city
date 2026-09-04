@@ -1,47 +1,22 @@
 {
-  "run": "night-20260904T0803Z-cloud-NO-PUSH",
-  "captured_at_utc": "2026-09-04T08:08Z",
-  "captured_at_pt": "2026-09-04T01:08 PT",
-  "mode": "genuine overnight, clock verified vs DB now() (no skew); GIT PUSH UNAVAILABLE (cloud) -> DB + artifacts only, code queued",
-  "genuine_overnight": true,
-  "push_available": false,
-  "read_at": "origin/main d0378dd0",
-  "shipped_to_prod_state": "NONE - no safe autonomous ship in NO-PUSH mode; no regression from last night; no auto-revert",
-  "security": {
-    "invariants": "clean []",
-    "anon_write_holes": "clean []",
-    "secdef_anon_violations": "clean []",
-    "rls_off_base_tables": "clean []"
+  "generated_at": "2026-09-04T13:38:29Z",
+  "pass": "2026-09-04 Atlas audit + drain (Cowork, desktop VM)",
+  "verdict": "GREEN",
+  "security": { "secdef_anon_exec_violations": 0, "stalled_pipelines": 0 },
+  "cron": { "jobs": 116, "runs_24h": 4436, "failed_24h": 2, "failures_explained": "both are unschedules landing on a running tick (jobid 55 retirement; the parallel seeder's own 2-arg->3-arg swap)" },
+  "atlas_editions_refresh": { "sets_total": 266, "sets_complete": 266, "pages_ok": 1625, "pages_err": 66, "err_pct": 3.9, "note": "errors are Cloudflare 403 'Just a moment', all recovered on the set's next cycle; full-catalog refresh cadence ~2.5h" },
+  "badge_editions_topshot": { "rows": 13915, "parallel_rows": 4403, "fresh_within_2h": 13658, "before_this_pass": { "rows": 9471, "parallel_rows": 0, "frozen_since": "2026-08-28T15:16Z" } },
+  "wmc_parallel_keying": { "rekeyed_total": 67530, "wallets_affected": 285, "pending_onchain_resolution": 7919, "queue_cap": 10000 },
+  "wmc_fmv_reconcile": { "saved_wallets": 22, "rows_fixed_last_pass_sum": 3245, "founder_first_pass": 8467 },
+  "atlas_diff_founder_wallet": {
+    "topshot_moments": 15183, "allday_moments": 3707,
+    "before": { "wmc_fmv_drift": 1299, "circ_badge_vs_minted": 3858, "rpc_badges_atlas_none": 966, "parallel_key_mismatch": 1264, "atlas_badges_rpc_none": 92 },
+    "after":  { "wmc_fmv_drift": 21,   "circ_badge_vs_minted": 359,  "rpc_badges_atlas_none": 2,   "parallel_key_mismatch": 352, "atlas_badges_rpc_none": 0 },
+    "allday_after": { "wmc_fmv_drift": 7, "identity_mismatches": 0 }
   },
-  "db_size_mb": 16136,
-  "db_size_mb_delta": "+104 vs 16032 (09-04 04:30Z)",
-  "stalled_pipelines": [],
-  "sentinel_ts_uuid_editions_48h": 0,
-  "trust_health": {
-    "breaches": [
-      "public_board_slow_count (3 slow public views: v_topshot_parallel_premiums 8.1s, pack_table_rows 5.7s, candy_player_board 5.2s; empty_or_error=0 - slow not down; standing IO class, oscillates 1-3)",
-      "unmapped_resolution_backlog_max 172 (structural AllDay floor, declining 209->184->172)"
-    ]
-  },
-  "pipeline_alerts": {
-    "count": 8,
-    "critical_benign": "pg_net_http_403 (23 Cloudflare bot-challenge 403s from pg_net probes; no correlated pipeline_runs failure; benign)",
-    "high_known": "allday-pack-opens-backfill 65/123 failed (edge-fn code, FILED 09-03, queued)",
-    "running_but_not_succeeding": ["ingest-topshot-challenges","topshot-catalog-backfill","topshot-misattrib-drain (dead host public-api.nbatopshot.com)","topshot-circulation-onchain (known pre-fix 04:05Z tick; fix in HEAD; next real read 09-05 04:05Z)"]
-  },
-  "fmv_high_med": {
-    "nba_top_shot": 7945,
-    "nfl_all_day": 1559,
-    "laliga_golazos": 2,
-    "ufc_strike": 0,
-    "disney_pinnacle": "own table (pinnacle_* legs all ok)"
-  },
-  "editions_by_collection": {"candy_mlb": 125, "ufc_strike": 518, "nfl_all_day": 6190, "nba_top_shot": 19988, "laliga_golazos": 575},
-  "post_ship_watch": {
-    "match-topshot-players": "08:00Z tick ok=true gated=true - PASS (as predicted)",
-    "topshot-circulation-onchain": "only the known pre-fix 04:05Z failure; next real read 09-05 04:05Z",
-    "get_top_movers / get_allday_sniper_deals / get_wallet_collection_snapshot / S1 thumbnails / watchlist 40 arms": "present, unreverted, no correlated regression"
-  },
-  "verdict": "GREEN with known-carried items; nothing shipped; no regression",
-  "handoff": "docs/handoff-2026-09-04-overnight-pass.md"
+  "migrations_applied": [
+    "20260904041433", "20260904041544", "20260904041635", "20260904045817",
+    "20260904052346", "20260904052858", "20260904055030", "20260904055844",
+    "20260904062632", "20260904063544", "20260904133011", "20260904133105"
+  ]
 }
