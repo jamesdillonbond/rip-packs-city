@@ -34,6 +34,7 @@ import MomentHeroMedia from "@/components/MomentHeroMedia"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import PackThumb from "@/components/packs/PackThumb"
 import { slugifyName } from "@/lib/entity-labels"
+import { momentSubjectHref } from "@/lib/entity-href"
 import { isTopShotFossilSlug, ASK_LABEL, notableTagLabel, fmvDayDelta, sortNotableSerials } from "@/lib/edition-detail-format"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
@@ -533,7 +534,9 @@ export default async function EditionPage(
     ? null
     : dapperMarketEditionUrl(collection, detail.external_id)
   const setHref = detail.set_slug ? `/${collection}/set/${encodeURIComponent(detail.set_slug)}` : null
-  const playerHref = detail.player_name ? `/${collection}/player/${encodeURIComponent(slugifyName(detail.player_name))}` : null
+  // A team Moment stores the team in player_name; momentSubjectHref sends it to /team, which
+  // exists, instead of /player, which 404s for all 370 of them.
+  const playerHref = momentSubjectHref(collection, detail.player_name, detail.team_name)
   const teamHref = detail.team_name ? `/${collection}/team/${encodeURIComponent(slugifyName(detail.team_name))}` : null
 
   // 24h delta from history (latest day vs day prior).

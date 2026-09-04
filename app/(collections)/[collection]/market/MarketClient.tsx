@@ -23,6 +23,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKey } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
+import { momentSubjectHref } from "@/lib/entity-href"
 import { COLLECTION_TIERS } from "@/lib/collection-tiers"
 import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
 import { filterListingsByOwned, collectBadgeOptions, countActiveFilters } from "@/lib/market/filters"
@@ -992,7 +993,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 <td style={{ ...td, color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", fontWeight: 700 }}>
                   {l.playerName ? (
                     <Link
-                      href={`/${collectionUrlSlug}/player/${slugifyName(l.playerName)}`}
+                      href={momentSubjectHref(collectionUrlSlug, l.playerName, l.teamName) ?? "#"}
                       prefetch={false}
                       style={{ color: "inherit", textDecoration: "none" }}
                     >

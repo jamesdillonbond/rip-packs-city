@@ -13,6 +13,7 @@ import { Fragment, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { slugifyName } from "@/lib/entity-labels"
+import { momentSubjectHref } from "@/lib/entity-href"
 import { normalizeSetName, buildEditionScopeKey } from "@/lib/wallet-normalize"
 import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
@@ -171,7 +172,7 @@ export default function CollectionMomentTable(props: {
                       })()}
                       {row.playerName ? (
                         <Link
-                          href={`/${collectionSlug}/player/${slugifyName(row.playerName)}`}
+                          href={momentSubjectHref(collectionSlug, row.playerName, row.team) ?? "#"}
                           prefetch={false}
                           onClick={function(e) { e.stopPropagation() }}
                           className="font-semibold text-[color:var(--rpc-text-primary)] text-sm truncate"
@@ -460,7 +461,7 @@ export default function CollectionMomentTable(props: {
                             <div className="font-semibold text-[color:var(--rpc-text-primary)] text-sm">
                               {row.playerName ? (
                                 <Link
-                                  href={`/${collectionSlug}/player/${slugifyName(row.playerName)}`}
+                                  href={momentSubjectHref(collectionSlug, row.playerName, row.team) ?? "#"}
                                   prefetch={false}
                                   style={{ color: "inherit", textDecoration: "none" }}
                                 >
