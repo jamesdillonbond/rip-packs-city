@@ -724,3 +724,66 @@ describe("sentinel — a failed threshold-config read is visible, and never sile
     }
   })
 })
+
+// ── Pipeline Success — the opt-in long-horizon arm (2026-09-04) ──────────────
+//
+// Pipeline Silence reads max(started_at) with no `ok` filter, so a pipeline that
+// RUNS and FAILS keeps its clock green (measured: ALL CLEAR through a 7-hour
+// outage). This arm reads detect_pipelines_without_success(): the active
+// watchlist rows whose newest ok=true run is older than their own opt-in
+// `max_minutes_without_success`. Same fail-closed contract as Silence — an
+// error or an unreadable payload is a tripwire that did not evaluate, never an
+// "every pipeline succeeds" claim — pinned by the ABSENCE of the healthy copy.
+describe("sentinel — Pipeline Success (no-success arm)", () => {
+  it("an EMPTY ARRAY is an honest ok with the healthy copy (control)", async () => {
+    const r = await run({ "rpc:detect_pipelines_without_success": { data: [], error: null } as never })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("ok")
+    expect(String(c.detail)).toContain("has succeeded inside its own no-success window")
+  })
+
+  it("warns (not pages) when only medium-severity pipelines have not succeeded", async () => {
+    const r = await run({
+      "rpc:detect_pipelines_without_success": {
+        data: [{ pipeline: "topshot-fmv-populate", severity: "medium", minutes_without_success: 1065, max_minutes_without_success: 480 }],
+        error: null,
+      } as never,
+    })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("warn")
+    expect(String(c.detail)).toContain("topshot-fmv-populate 1065m since the last success (>480m, medium)")
+    expect(String(c.detail)).not.toContain("has succeeded inside")
+  })
+
+  it("pages (critical) on a high-severity pipeline, and names a NULL age as beyond retention rather than inventing a number", async () => {
+    const r = await run({
+      "rpc:detect_pipelines_without_success": {
+        data: [{ pipeline: "topshot-sales-indexer", severity: "high", minutes_without_success: null, max_minutes_without_success: 60 }],
+        error: null,
+      } as never,
+    })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("critical")
+    expect(String(c.detail)).toContain("no successful run inside the pipeline_runs retention window")
+    expect(String(c.detail)).not.toMatch(/nullm|NaN/)
+  })
+
+  it("warns on an RPC error and never claims every pipeline succeeds", async () => {
+    const r = await run({ "rpc:detect_pipelines_without_success": { data: null, error: { message: "boom" } } as never })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("warn")
+    expect(String(c.detail)).not.toContain("has succeeded inside")
+  })
+
+  it.each([
+    ["object", { failing: [] }],
+    ["null", null],
+    ["scalar", 0],
+  ])("a non-array payload (%s) warns and never claims every pipeline succeeds", async (_label, payload) => {
+    const r = await run({ "rpc:detect_pipelines_without_success": { data: payload, error: null } as never })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("warn")
+    expect(String(c.detail)).not.toContain("has succeeded inside")
+    expect(String(c.detail)).toContain("unexpected payload shape")
+  })
+})

@@ -940,6 +940,60 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Pipeline Success (long horizon) — the OPT-IN second arm the 2026-08-29T0130Z
+  // filing asked for. Pipeline Silence reads max(started_at) with no `ok` filter,
+  // so a pipeline that RUNS and FAILS keeps its silence clock green: it reported
+  // ALL CLEAR through a 7-hour total outage and hid topshot-fmv-populate at 1,065
+  // minutes without a success. Flipping Silence to last-success was measured and
+  // REFUTED (21 of 83 arms would have breached in 48 h, because max_silent_minutes
+  // was tuned against last-run), so this is a separate per-pipeline threshold,
+  // `pipeline_cadence_watchlist.max_minutes_without_success`, NULL = not armed,
+  // seeded from each pipeline's own measured ok-gap (migration 20260904012510).
+  // Coverage (below) is the 90-minute "zero ok AND zero rows" window; this is the
+  // hours-to-days horizon that only asks "when did this last succeed".
+  //
+  // ⚠ Same fail-closed shape as Silence: an RPC error or a non-array payload is
+  // a tripwire that did not evaluate, never an "all succeeding" claim.
+  try {
+    const { data, error } = await supabase.rpc("detect_pipelines_without_success");
+    if (error || !Array.isArray(data)) {
+      const shape = data === null ? "null" : typeof data;
+      checks.push({
+        name: "Pipeline Success",
+        status: "warn",
+        detail: error
+          ? `RPC error: ${error.message}`
+          : `RPC returned an unexpected payload shape (${shape}, expected array) — the tripwire did not evaluate`,
+      });
+    } else {
+      const failing: any[] = data;
+      const high = failing.filter((s) => s.severity === "high");
+      const status = high.length > 0 ? "critical" : failing.length > 0 ? "warn" : "ok";
+      const detail =
+        failing.length === 0
+          ? "Every armed pipeline has succeeded inside its own no-success window"
+          : failing
+              .map((s) => {
+                // ⚠ NULL `minutes_without_success` means NO ok run inside the ~73 h
+                // pipeline_runs retention — the most severe reading, and not a
+                // number to invent (the "silent nullm" lesson on the arm above).
+                const age =
+                  s.minutes_without_success == null
+                    ? "no successful run inside the pipeline_runs retention window"
+                    : `${s.minutes_without_success}m since the last success`;
+                return `${s.pipeline} ${age} (>${s.max_minutes_without_success}m, ${s.severity})`;
+              })
+              .join("; ");
+      checks.push({ name: "Pipeline Success", status, detail, value: failing.length });
+    }
+  } catch (e: any) {
+    checks.push({
+      name: "Pipeline Success",
+      status: "warn",
+      detail: `Exception: ${e.message}`,
+    });
+  }
+
   // Pipeline Success Coverage — the COMPLEMENT of Pipeline Silence above, and the
   // reason it exists is that the two questions are not the same one.
   //

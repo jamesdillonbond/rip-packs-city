@@ -74,3 +74,8 @@ this instrument should have surfaced it and did not.
 blanket flip, which is the thing being argued against, not a proposal.
 ⛔ **That the 85 arms are individually correct.** Not audited; this filing is about the predicate, not the
 values.
+
+---
+## ✅ SHIPPED AS DESIGNED — the second, opt-in arm (2026-09-04 01:5xZ, Claude Code on Trevor's box)
+
+Exactly the three points of "What a real fix needs", nothing from the refuted section: **(1)** `pipeline_cadence_watchlist.max_minutes_without_success` (NULL = not armed) + `detect_pipelines_without_success()` (same shape and posture as the sibling; service_role only), migration `20260904012510`; **(2)** seeded from data — `GREATEST(3 × each pipeline's own max ok-gap over retention, 2 × max_silent_minutes)`, or `3 × max_silent` with fewer than two ok runs, the rule written into each row's `notes`; pre-seed reading: 0 of 87 past 3× their own max ok-gap, so the function returned `[]` on first call; **(3)** its own channel — a new sentinel check "Pipeline Success" beside "Pipeline Silence" (high severity pages), fail-closed on error/shape like its sibling. `ingest` is the one active arm left NULL (dead host, alert already suppressed). Callers `get_pipeline_alerts_core`, `rpc_ops_snapshot`, `check_pipelines_running_but_not_succeeding` untouched, as this filing insisted. Ledger 2026-09-03.
