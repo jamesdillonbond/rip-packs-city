@@ -8,19 +8,29 @@
 // when available. Re-runs are safe — update_sale_serial only updates if the
 // current value is 0/NULL and the resolved serial is a valid positive integer.
 //
-// Auth: Authorization header must contain INGEST_SECRET_TOKEN (or pass it
-// as ?token=<value>). Same pattern as special-serial-sweep.
+// Auth: `Authorization: Bearer <INGEST_SECRET_TOKEN>`, strict equality, header
+// only. (`?token=` was removed 2026-09-03 — it wrote the token into the edge
+// log store on every call. See known-issues → Deferred hardening.)
 //
 // Input body (all optional):
 //   { collection_id?: string, batch_size?: number }
 //
 // Per-collection paths:
 //
-//   TopShot → topshot-proxy worker /topshot (public-api.nbatopshot.com).
-//             One request per nft_id — getMintedMoment(momentId).data is a
-//             union, requires the `... on MintedMoment` fragment. 50ms
-//             inter-request throttle. Mirrors app/api/sales-indexer/route.ts.
-//             HEALTHY — untouched.
+//   TopShot → ON-CHAIN borrow via TopShot.MomentCollectionPublic.borrowMoment
+//             (2026-09-03 rewrite). The prior path — the topshot-proxy worker in
+//             front of public-api.nbatopshot.com — is dead: that host is
+//             decommissioned (Top Shot moved to Atlas), and every call since
+//             2026-08-06 came back as Cloudflare 530 (error 1033, origin
+//             unreachable) or 429 (error 1015), 3,071 rows filed as `unknown`
+//             with newest failures on every 2-hourly tick. The serial is on
+//             chain (`TopShot.NFT.data.serialNumber`), so this lane now does
+//             exactly what the AllDay lane does: holder from wallet_moments_cache
+//             → else the latest sale buyer (a Top Shot sale's recorded buyer IS
+//             the end-user account, verified against wmc), then borrow at
+//             /public/MomentCollection. Verified on mainnet before shipping:
+//             52356781 @ 0x3795d42c0fc3a373 → serial 41; 52676253 @
+//             0xab2277611893d945 (buyer-only, no wmc row) → serial 15.
 //
 //   AllDay  → ON-CHAIN borrow via AllDay.borrowMomentNFT (2026-07-05 rewrite).
 //             The prior AllDay consumer-GQL path (searchMomentNFTsV2 via the
@@ -51,16 +61,12 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-const TS_PROXY_URL = Deno.env.get("TS_PROXY_URL") ?? "https://topshot-proxy.tdillonbond.workers.dev/topshot";
-const TS_PROXY_SECRET = Deno.env.get("TS_PROXY_SECRET") ?? "";
 const FLOW_REST = Deno.env.get("FLOW_REST_URL") ?? "https://rest-mainnet.onflow.org";
 
-const REQ_THROTTLE_MS = 50;      // ~20 req/s ceiling on TopShot per-id calls.
-const TS_GQL_TIMEOUT_MS = 8_000;
 const DEFAULT_BATCH_SIZE = 100;
 const MAX_BATCH_SIZE = 1000;
 
-// AllDay on-chain borrow tunables (mirror allday-listing-serial-backfill).
+// On-chain borrow tunables, both lanes (mirror allday-listing-serial-backfill).
 const SCRIPT_TIMEOUT_MS = 12_000;
 const CONCURRENCY = 8;            // gentle Flow REST script fan-out
 const MAX_RETRIES = 2;           // bounded retry on transient Flow REST faults
@@ -84,14 +90,33 @@ const INTERMEDIATE_ADDRS = new Set<string>([
   "0xead892083b3e2c6c", // DUC payment
 ]);
 
-const TS_GQL_QUERY = `query($id:ID!){getMintedMoment(momentId:$id){data{...on MintedMoment{flowSerialNumber}}}}`;
+// TopShot borrow — the public capability at /public/MomentCollection is exposed
+// as `&{TopShot.MomentCollectionPublic}` (the interface — the same cast
+// app/api/cron/lock-check-batch uses), whose borrowMoment(id:) returns
+// &TopShot.NFT? and the serial is `data.serialNumber` (UInt32). Verified against
+// 0x0b2a3299cc857e29 on mainnet 2026-09-03; re-verify before any change.
+const BORROW_TOPSHOT_SCRIPT = `
+import TopShot from 0x0b2a3299cc857e29
+access(all) fun main(holder: Address, id: UInt64): {String: String}? {
+  let col = getAccount(holder).capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+  if col == nil { return nil }
+  let nft = col!.borrowMoment(id: id)
+  if nft == nil { return nil }
+  return {
+    "id": nft!.id.toString(),
+    "setID": nft!.data.setID.toString(),
+    "playID": nft!.data.playID.toString(),
+    "serialNumber": nft!.data.serialNumber.toString()
+  }
+}
+`;
 
 // AllDay-typed borrow — verbatim from the healthy allday-listing-serial-backfill
 // / allday-sales-indexer. The public capability at /public/AllDayNFTCollection is
 // `&AllDay.Collection` (concrete), whose borrowMomentNFT(id:) returns &AllDay.NFT?
 // with editionID + serialNumber. Do NOT swap to the generic borrowNFG cast, and
 // re-verify against 0xe4cf4bdc1751c65d before any change (CLAUDE.md AllDay gotcha).
-const BORROW_MOMENT_SCRIPT = `
+const BORROW_ALLDAY_SCRIPT = `
 import AllDay from 0xe4cf4bdc1751c65d
 access(all) fun main(buyer: Address, id: UInt64): {String: String}? {
   let col = getAccount(buyer).capabilities.borrow<&AllDay.Collection>(/public/AllDayNFTCollection)
@@ -118,59 +143,18 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 interface FetchResult {
   serial: number | null;
-  reason: "ok" | "gql_404" | "gql_null_serial" | "timeout" | "unknown"
-        | "no_holder" | "onchain_nil" | "borrow_error";
+  reason: "ok" | "unknown" | "no_holder" | "onchain_nil" | "borrow_error";
   detail: string | null;
 }
 
-// ── TopShot per-id resolver (UNTOUCHED) ──────────────────────────────────────
+// Per-lane borrow script. Both collections resolve the same way — holder, then
+// a typed borrow from that holder's public collection — and differ only here.
+const BORROW_SCRIPT_BY_COLLECTION: Record<string, string> = {
+  [COLLECTION_IDS.topshot]: BORROW_TOPSHOT_SCRIPT,
+  [COLLECTION_IDS.allday]: BORROW_ALLDAY_SCRIPT,
+};
 
-async function fetchSerialTopShot(target: BackfillTarget): Promise<FetchResult> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "User-Agent": "rip-packs-city/sales-serial-backfill",
-  };
-  if (TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
-
-  let res: Response;
-  try {
-    res = await fetch(TS_PROXY_URL, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ query: TS_GQL_QUERY, variables: { id: target.nft_id } }),
-      signal: AbortSignal.timeout(TS_GQL_TIMEOUT_MS),
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("aborted") || msg.toLowerCase().includes("timeout")) {
-      return { serial: null, reason: "timeout", detail: `topshot:${msg.slice(0, 120)}` };
-    }
-    return { serial: null, reason: "unknown", detail: `topshot:${msg.slice(0, 120)}` };
-  }
-
-  if (!res.ok) {
-    let bodySnippet = "";
-    try { bodySnippet = (await res.text()).slice(0, 160).replace(/\s+/g, " "); } catch { /* ignore */ }
-    if (res.status === 404) return { serial: null, reason: "gql_404", detail: `http_404${bodySnippet ? `:${bodySnippet}` : ""}` };
-    return { serial: null, reason: "unknown", detail: `http_${res.status}${bodySnippet ? `:${bodySnippet}` : ""}` };
-  }
-
-  let json: any;
-  try { json = await res.json(); }
-  catch (err) {
-    return { serial: null, reason: "unknown", detail: `json_parse:${err instanceof Error ? err.message.slice(0, 80) : "err"}` };
-  }
-
-  const data = json?.data?.getMintedMoment?.data;
-  if (!data) return { serial: null, reason: "gql_null_serial", detail: "no_minted_moment" };
-  const raw = data.flowSerialNumber;
-  if (raw == null) return { serial: null, reason: "gql_null_serial", detail: null };
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return { serial: null, reason: "gql_null_serial", detail: `raw=${String(raw).slice(0, 40)}` };
-  return { serial: n, reason: "ok", detail: null };
-}
-
-// ── AllDay on-chain resolver ─────────────────────────────────────────────────
+// ── On-chain resolver (both lanes) ───────────────────────────────────────────
 
 // Cadence/JSON unwrapper — copied from allday-listing-serial-backfill.
 function unwrapCdc(node: unknown): unknown {
@@ -225,14 +209,14 @@ function normalizeAddr(a: unknown): string | null {
 
 // Batch-resolve current holders for a set of nft_ids from wallet_moments_cache
 // (the most authoritative CURRENT-ownership source when the wallet is seeded).
-async function resolveHoldersFromWmc(nftIds: string[]): Promise<Map<string, string>> {
+async function resolveHoldersFromWmc(collectionId: string, nftIds: string[]): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   for (let i = 0; i < nftIds.length; i += HOLDER_LOOKUP_CHUNK) {
     const chunk = nftIds.slice(i, i + HOLDER_LOOKUP_CHUNK);
     const { data, error } = await supabase
       .from("wallet_moments_cache")
       .select("moment_id, wallet_address")
-      .eq("collection_id", COLLECTION_IDS.allday)
+      .eq("collection_id", collectionId)
       .in("moment_id", chunk);
     if (error) { console.log(`[backfill] wmc holder lookup err ${error.message.slice(0, 120)}`); continue; }
     for (const r of (data ?? []) as Array<{ moment_id: string; wallet_address: string | null }>) {
@@ -246,11 +230,11 @@ async function resolveHoldersFromWmc(nftIds: string[]): Promise<Map<string, stri
 // Fallback holder: the most-recent non-intermediate sale buyer for this nft_id.
 // May be stale (the moment can have moved on again) — a nil borrow then just
 // leaves the row NULL for a later run, which is correct.
-async function latestSaleBuyer(nftId: string): Promise<string | null> {
+async function latestSaleBuyer(collectionId: string, nftId: string): Promise<string | null> {
   const { data, error } = await supabase
     .from("sales")
     .select("buyer_address, sold_at")
-    .eq("collection_id", COLLECTION_IDS.allday)
+    .eq("collection_id", collectionId)
     .eq("nft_id", nftId)
     .not("buyer_address", "is", null)
     .order("sold_at", { ascending: false })
@@ -265,11 +249,11 @@ async function latestSaleBuyer(nftId: string): Promise<string | null> {
 
 // Borrow the moment from `holder` and read its serial. nil = not in that
 // account's collection (moved/escrowed/burned) → onchain_nil (no write).
-async function borrowSerial(holder: string, nftId: string): Promise<FetchResult> {
+async function borrowSerial(script: string, holder: string, nftId: string): Promise<FetchResult> {
   let lastErr: string | null = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const result = (await runScript(BORROW_MOMENT_SCRIPT, [
+      const result = (await runScript(script, [
         { type: "Address", value: holder },
         { type: "UInt64", value: nftId },
       ])) as Record<string, string> | null;
@@ -290,20 +274,21 @@ async function borrowSerial(holder: string, nftId: string): Promise<FetchResult>
   return { serial: null, reason: "borrow_error", detail: `borrow:${lastErr ?? "unknown"}` };
 }
 
-// Resolve one AllDay target: holder (wmc → latest buyer) then borrow.
-async function fetchSerialAllDay(
+// Resolve one target: holder (wmc → latest buyer) then a typed borrow.
+async function fetchSerialOnChain(
   target: BackfillTarget,
   wmcHolders: Map<string, string>,
+  script: string,
 ): Promise<FetchResult> {
   const n = Number(target.nft_id);
   if (!Number.isFinite(n) || n <= 0) {
     return { serial: null, reason: "unknown", detail: `bad_nft_id:${String(target.nft_id).slice(0, 20)}` };
   }
-  const holder = wmcHolders.get(target.nft_id) ?? (await latestSaleBuyer(target.nft_id));
+  const holder = wmcHolders.get(target.nft_id) ?? (await latestSaleBuyer(target.collection_id, target.nft_id));
   if (!holder) {
     return { serial: null, reason: "no_holder", detail: "escrowed_or_unseeded" };
   }
-  return borrowSerial(holder, target.nft_id);
+  return borrowSerial(script, holder, target.nft_id);
 }
 
 // ── Per-target write path (shared, UNTOUCHED) ────────────────────────────────
@@ -380,11 +365,13 @@ async function runCollection(collectionId: string, batchSize: number): Promise<C
   const targets = (data ?? []) as BackfillTarget[];
   if (targets.length === 0) return stats;
 
-  if (collectionId === COLLECTION_IDS.allday) {
+  const script = BORROW_SCRIPT_BY_COLLECTION[collectionId];
+  if (script) {
     // Batch-resolve holders from wmc once, then a bounded-concurrency pool over
     // per-target on-chain borrows (wmc holder → else latest sale buyer).
+    const lane = SLUG_BY_ID[collectionId] ?? collectionId;
     const t0 = Date.now();
-    const wmcHolders = await resolveHoldersFromWmc(targets.map((t) => t.nft_id));
+    const wmcHolders = await resolveHoldersFromWmc(collectionId, targets.map((t) => t.nft_id));
     let cursor = 0;
     let budgetStopped = false;
     async function worker(): Promise<void> {
@@ -394,13 +381,13 @@ async function runCollection(collectionId: string, batchSize: number): Promise<C
         if (idx >= targets.length) return;
         const t = targets[idx];
         try {
-          const r = await fetchSerialAllDay(t, wmcHolders);
+          const r = await fetchSerialOnChain(t, wmcHolders, script);
           await applyResult(t, r, stats);
         } catch (err) {
           stats.failed += 1;
           stats.failures_by_reason["unknown"] = (stats.failures_by_reason["unknown"] ?? 0) + 1;
           const msg = err instanceof Error ? err.message : String(err);
-          console.log(`[backfill] allday err sale=${t.sale_id} ${msg.slice(0, 200)}`);
+          console.log(`[backfill] ${lane} err sale=${t.sale_id} ${msg.slice(0, 200)}`);
           try {
             await supabase.rpc("record_serial_backfill_failure", {
               p_sale_id: t.sale_id,
@@ -415,30 +402,7 @@ async function runCollection(collectionId: string, batchSize: number): Promise<C
     }
     const pool = Math.max(1, Math.min(CONCURRENCY, targets.length));
     await Promise.all(Array.from({ length: pool }, () => worker()));
-    if (budgetStopped) console.log(`[backfill] allday budget_stopped at processed=${stats.processed}`);
-  } else if (collectionId === COLLECTION_IDS.topshot) {
-    // One GQL call per target with a tiny throttle. UNTOUCHED.
-    for (const t of targets) {
-      try {
-        const r = await fetchSerialTopShot(t);
-        await applyResult(t, r, stats);
-      } catch (err) {
-        stats.failed += 1;
-        stats.failures_by_reason["unknown"] = (stats.failures_by_reason["unknown"] ?? 0) + 1;
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(`[backfill] err sale=${t.sale_id} ${msg.slice(0, 200)}`);
-        try {
-          await supabase.rpc("record_serial_backfill_failure", {
-            p_sale_id: t.sale_id,
-            p_collection_id: t.collection_id,
-            p_nft_id: t.nft_id,
-            p_reason: "unknown",
-            p_detail: msg.slice(0, 200),
-          });
-        } catch { /* swallow — failure-recording is best-effort */ }
-      }
-      await sleep(REQ_THROTTLE_MS);
-    }
+    if (budgetStopped) console.log(`[backfill] ${lane} budget_stopped at processed=${stats.processed}`);
   } else {
     console.log(`[backfill] unsupported collection=${collectionId}`);
   }
@@ -511,10 +475,13 @@ async function runSweep(collectionId: string | null, batchSize: number, startedA
 }
 
 Deno.serve(async (req: Request) => {
-  const url = new URL(req.url);
+  // Strict Bearer equality, header only (steps (a)+(c) of the register's
+  // deferred-hardening item, 2026-09-03). The `?token=` branch is gone: a token
+  // in the URL is written to the edge log store on every call, and the only
+  // caller (app/api/cron/sales-serial-backfill) has sent the header since
+  // 2026-09-02. The substring `.includes()` test is gone with it.
   const auth = req.headers.get("Authorization") ?? "";
-  const tokenParam = url.searchParams.get("token") ?? "";
-  if (!auth.includes(INGEST_TOKEN!) && tokenParam !== INGEST_TOKEN) {
+  if (auth !== `Bearer ${INGEST_TOKEN}`) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
