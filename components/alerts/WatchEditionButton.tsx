@@ -5,7 +5,11 @@
 // "Watch this edition" control for the edition + moment pages. Expands into a
 // small inline form that POSTs to /api/alerts. owner_key is resolved
 // server-side from the session — the client never sends it. Renders for anon
-// users too; on 401 it points them at /login.
+// users too. ⚠ An anonymous POST never reaches this route's 401: the proxy
+// 307s /api/alerts to /login and fetch follows it, so the response the client
+// sees is `POST /login` → 405 with `res.redirected` set (measured 2026-09-04 on
+// every public edition + moment page). Both shapes mean "sign in", not "the
+// save failed" — a visitor was told "Could not save the alert." with no link.
 
 import { useState } from "react";
 
@@ -65,7 +69,7 @@ export default function WatchEditionButton({
           channel,
         }),
       });
-      if (res.status === 401) {
+      if (res.status === 401 || res.status === 405 || res.redirected) {
         setMsg({ kind: "auth", text: "Sign in to set an alert." });
         return;
       }

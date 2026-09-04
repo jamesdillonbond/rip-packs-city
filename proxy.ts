@@ -754,6 +754,12 @@ export function isPublicPath(pathname: string, method: string): boolean {
     "/api/ufc-set-progress", "/api/topshot/challenge-plan", "/api/topshot/challenges",
     "/api/wallet-summary", "/api/seeded-wallets", "/api/owned-flow-ids",
     "/api/wallet/edition-counts", "/api/wallet-cache", "/api/ready",
+    // 2026-09-04: the route itself answers `{ user: null }` for anon by design
+    // ("never 401s — so public pages can call this unconditionally"), but the
+    // proxy 307'd it to /login first, so every anonymous insights/profile/home
+    // load downloaded the login HTML once and `.json()` threw. Session-derived
+    // data only ever leaves for a signed-in caller (getCurrentUser gates it).
+    "/api/profile/me",
   ])
   if ((method === "GET" || method === "HEAD") && PUBLIC_READ_APIS.has(pathname)) {
     return true
@@ -779,11 +785,19 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // read-only. Opening a route here does NOT make its handler read-only —
   // verify every write path in the handler before adding a path to this list,
   // because a confident safety comment is what kept this one from being read.
+  //
+  // 2026-09-04: /api/badge-taxonomy joins the list — a POST that only carries a
+  // `titles[]` body to a service-role read of the static badge taxonomy (module-
+  // cached, no user data, no write path). Anonymous collection/sniper/profile
+  // pages call it for every badge chip; before this line each call was
+  // 307 → POST /login → 405 (7 console errors per anon sniper load, measured),
+  // and the badge art/tooltips never arrived for signed-out visitors.
   if (
     (pathname === "/api/fmv" ||
       pathname === "/api/best-offers" ||
       pathname === "/api/edition-floor" ||
-      pathname === "/api/pack-ev") &&
+      pathname === "/api/pack-ev" ||
+      pathname === "/api/badge-taxonomy") &&
     (method === "GET" || method === "HEAD" || method === "POST")
   ) {
     return true

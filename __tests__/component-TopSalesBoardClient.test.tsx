@@ -121,6 +121,25 @@ describe("TopSalesBoardClient", () => {
     expect(hrefs.some((h) => h?.startsWith("/ufc-strike/"))).toBe(false)
   })
 
+  it("routes arweave-hosted sale art through the same-origin avatar proxy — the CSP img-src blocks it hotlinked (2026-09-04)", () => {
+    const candyRow: Row = {
+      ...nullRow,
+      sale_id: "s4",
+      edition_id: "e4",
+      collection: "candy_mlb",
+      player_name: "Shohei Ohtani",
+      thumbnail_url: "https://arweave.net/-00lKHoPezMrmUSf8RxB1S_TYAiBf3TM1JAD34HJ13Y",
+    }
+    const { container } = render(
+      <TopSalesBoardClient initialRows={[candyRow, fullRow]} initialFetchedAt="2026-07-31T00:00:00Z" />,
+    )
+    const srcs = Array.from(container.querySelectorAll("img")).map((i) => i.getAttribute("src") ?? "")
+    expect(srcs.some((s) => s.startsWith("/api/public/avatar-media?src=https%3A%2F%2Farweave.net%2F"))).toBe(true)
+    expect(srcs.some((s) => s.startsWith("https://arweave.net/"))).toBe(false)
+    // CSP-allowed Top Shot art still hotlinks — the proxy is not applied blindly.
+    expect(srcs.some((s) => s.startsWith("https://assets.nbatopshot.com/"))).toBe(true)
+  })
+
   it("shows the empty state when no rows match", () => {
     const { getByText } = render(
       <TopSalesBoardClient initialRows={[]} initialFetchedAt={null} />,

@@ -70,6 +70,20 @@ describe("WatchEditionButton", () => {
     expect(body.alert_type).toBe("price_below")
   })
 
+  it("treats the proxy's 307→/login→405 shape as sign-in, not as a failed save (anon POST, 2026-09-04)", async () => {
+    // fetch follows the proxy's 307 to /login; the client sees POST /login → 405, redirected.
+    fetchMock.mockReturnValue(
+      Promise.resolve({ ok: false, status: 405, redirected: true, json: () => Promise.reject(new Error("html")) } as unknown as Response),
+    )
+    const { container } = render(<WatchEditionButton {...props} />)
+    open(container)
+    fireEvent.change(container.querySelector("input[type=number]")!, { target: { value: "50" } })
+    fireEvent.click(Array.from(container.querySelectorAll("button")).find((b) => /set alert/i.test(b.textContent ?? ""))!)
+    await waitFor(() => expect(container.textContent).toContain("Sign in to set an alert."))
+    expect(container.textContent).not.toContain("Could not save the alert.")
+    expect(container.querySelector('a[href^="/login"]')).not.toBeNull()
+  })
+
   it("shows the sign-in prompt on 401", async () => {
     fetchMock.mockReturnValue(resp(401))
     const { container, getByText } = render(<WatchEditionButton {...props} />)

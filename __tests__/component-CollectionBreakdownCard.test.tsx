@@ -23,6 +23,13 @@ afterEach(() => {
 })
 
 describe("CollectionBreakdownCard", () => {
+  it("does not publish '0 moments' in the header while the read is still in flight (2026-09-04)", () => {
+    fetchMock.mockReturnValue(new Promise(() => {}))
+    const { container } = render(<CollectionBreakdownCard ownerKey="qa" />)
+    expect(container.textContent).toContain("—")
+    expect(container.textContent).not.toContain("0 moments")
+  })
+
   it("shows the Loading… state before the fetch resolves", () => {
     fetchMock.mockReturnValue(new Promise(() => {})) // never resolves
     const { container } = render(<CollectionBreakdownCard ownerKey="0xabc" />)

@@ -6,6 +6,8 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 
 ### Top Shot GraphQL
 
+> ⛔ **DECOMMISSIONED ~2026-08-28.** `public-api.nbatopshot.com` answers Cloudflare 530 / 1033 for every caller (residential included); the catalog walker, badge-set backfill and `resolve-and-associate` all fail on it, and the circulation field it fed now comes from the chain (`topshot-circulation-onchain`, 2026-09-03). Nothing below this line is a live contract — see `docs/operations/cron-schedule.md` for the dead-host census.
+
 Endpoint: `https://public-api.nbatopshot.com/graphql`. Cloudflare blocks Vercel + Supabase egress, so all server-side calls must go through `topshot-proxy`. `marketplace/graphql` is also Cloudflare-blocked server-side — do not use.
 
 - UUID editions: `searchEditions` via `topshot-proxy` (`bySetIDs` / `byPlayIDs`).

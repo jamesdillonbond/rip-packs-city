@@ -6,10 +6,19 @@
 // plural), which is an HONESTY line — closed-market moments are counted but
 // excluded from Total FMV, and the copy must say so correctly.
 
+export const NO_SERIES_LABEL = "No series"
+
 export function buildSeriesBars(
   seriesBreakdown: Record<string, number>,
 ): { entries: Array<[string, number]>; max: number } {
-  const entries = Object.entries(seriesBreakdown).sort(([a], [b]) => a.localeCompare(b))
+  // get_wallet_collection_snapshot labels a null series_number 'S' || 'Unknown';
+  // the card rendered that literally ("1414 SUnknown" on the founder's wallet,
+  // 2026-09-04). Name it and sort it after the real series.
+  const entries = Object.entries(seriesBreakdown)
+    .map(([k, v]): [string, number] => [k === "SUnknown" || k === "Snull" ? NO_SERIES_LABEL : k, v])
+    .sort(([a], [b]) =>
+      a === NO_SERIES_LABEL ? 1 : b === NO_SERIES_LABEL ? -1 : a.localeCompare(b, undefined, { numeric: true }),
+    )
   const max = Math.max(...entries.map(([, v]) => v), 1)
   return { entries, max }
 }

@@ -16,7 +16,7 @@ name: E2E DOM Smoke
 # merge. Point it at a preview by dispatching with a different SMOKE_BASE_URL.
 on:
   schedule:
-    - cron: '41 */6 * * *' # every 6h, off the top of the hour
+    - cron: '51 */6 * * *' # every 6h, off the top of the hour; :51 is free — :41 collided with ops-monitor's 06:41 data-integrity lambda (2026-09-04)
   workflow_dispatch:
     inputs:
       base_url:

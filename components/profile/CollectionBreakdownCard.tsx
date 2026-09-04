@@ -52,7 +52,7 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <span style={labelStyle}>🎯 Collection Breakdown</span>
         <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>
-          {failed ? "—" : totalMoments + " moments"}
+          {failed || loading ? "—" : totalMoments + " moments"}
         </span>
       </div>
       {loading ? (

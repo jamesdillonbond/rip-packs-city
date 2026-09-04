@@ -71,6 +71,7 @@ export default function SignOutButton() {
           letterSpacing: "0.08em",
           textTransform: "uppercase",
           textDecoration: "none",
+          whiteSpace: "nowrap",
         }}
       >
         Sign In

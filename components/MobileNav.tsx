@@ -375,6 +375,10 @@ export default function MobileNav() {
           @media (max-width: 768px) {
             .rpc-mobile-nav { display: flex !important; }
             .rpc-mobile-sheet { display: block !important; }
+            /* 2026-09-04: the fixed nav covered the last ${NAV_HEIGHT}px of every page —
+               the footer disclaimer was cut mid-sentence at 390px on /, pack, edition,
+               sniper and packs (main pads its own bottom, the footer sits outside main). */
+            body { padding-bottom: calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px)) !important; }
           }
         `}</style>
       </nav>

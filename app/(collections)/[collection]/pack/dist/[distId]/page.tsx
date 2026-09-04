@@ -170,9 +170,17 @@ export async function generateMetadata(
   const metaTitle = `${joinMetaParts([title, tierLabel], " — ")} | ${coll.displayName} | Rip Packs City`
   // AllDay: prefer the odds/median-corrected EV (matches the page headline) so
   // the SEO description never advertises the inflated canonical number.
-  const { data: correctedEv } = await fetchAllDayCorrectedEv(collection, distId)
+  // ⚠ Honour `ok`: a FAILED corrected-EV read used to fall through to the raw
+  // `row.gross_ev` — the exact inflated number the comment above says must not
+  // be advertised — because only `data` was destructured (2026-09-04). A failed
+  // read withholds the EV sentence; the page body reads its own bundle.
+  const correctedEvRes = await fetchAllDayCorrectedEv(collection, distId)
+  const correctedEv = correctedEvRes.data
+  const correctedEvReadFailed = !correctedEvRes.ok
   const useCorrectedEv = correctedEv != null && correctedEv.corrected_gross_ev != null
-  const grossEv = useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : num(row?.gross_ev ?? null)
+  const grossEv = correctedEvReadFailed
+    ? null
+    : useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : num(row?.gross_ev ?? null)
   const price = num(row?.retail_price_usd ?? null)
   // Holding/escrow packs carry sentinel prices ($9,999/$99,999/$999,999) — keep
   // them out of the SEO description so it doesn't advertise a $900K "Gross EV".

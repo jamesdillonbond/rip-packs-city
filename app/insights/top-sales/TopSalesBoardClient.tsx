@@ -28,6 +28,7 @@ import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { avatarDisplayUrl } from "@/lib/media/avatar-proxy"
 import { fromDbSlug } from "@/lib/collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -151,11 +152,21 @@ function tierColor(tier: string | null): string {
 
 // Primary image: TS per-moment media CDN keyed on nft_id; everything else the
 // edition thumbnail. On error, fall back TS→thumbnail_url, then to a gradient.
+// 2026-09-04: chain-two (Candy MLB) sale art lives on arweave.net, which the CSP
+// img-src deliberately does NOT carry — those hosts render through the same-
+// origin avatar proxy (lib/media/avatar-proxy.ts). Two cards per anon load were
+// blocked by CSP and rendered blank; route the URL through the proxy instead.
+function displayImg(url: string | null | undefined): string | null {
+  const viaIpfs = proxyIpfsUrl(url)
+  if (!viaIpfs) return null
+  return avatarDisplayUrl(viaIpfs) || null
+}
+
 function primaryImg(r: Row): string | null {
   if (r.collection === "nba_top_shot" && r.nft_id) {
     return `https://assets.nbatopshot.com/media/${encodeURIComponent(r.nft_id)}/image?width=512`
   }
-  return proxyIpfsUrl(r.thumbnail_url) || null
+  return displayImg(r.thumbnail_url)
 }
 
 // Per-row drill-down: nft_id resolves to the exact serial that sold on the
@@ -190,9 +201,9 @@ function SaleImage({ r, className }: { r: Row; className: string }) {
       className={className}
       loading="lazy"
       onError={() => {
-        if (!triedThumb && r.thumbnail_url && proxyIpfsUrl(r.thumbnail_url) !== src) {
+        if (!triedThumb && r.thumbnail_url && displayImg(r.thumbnail_url) !== src) {
           setTriedThumb(true)
-          setSrc(proxyIpfsUrl(r.thumbnail_url))
+          setSrc(displayImg(r.thumbnail_url))
         } else {
           setSrc(null)
         }

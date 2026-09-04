@@ -8,6 +8,12 @@ describe("share-card-view · buildSeriesBars", () => {
     expect(max).toBe(12)
   })
 
+  it("names the RPC's null-series bucket and sorts it after the real series (was rendered 'SUnknown', 2026-09-04)", () => {
+    const { entries } = buildSeriesBars({ SUnknown: 1414, S9: 132, S10: 3, S2: 2011 })
+    expect(entries.map(([k]) => k)).toEqual(["S2", "S9", "S10", "No series"])
+    expect(entries[3][1]).toBe(1414)
+  })
+
   it("floors the max at 1 so an all-zero breakdown never divides by zero", () => {
     expect(buildSeriesBars({ "Series 1": 0 }).max).toBe(1)
     expect(buildSeriesBars({}).max).toBe(1)
