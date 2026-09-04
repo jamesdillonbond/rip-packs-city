@@ -13,9 +13,9 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: (fn: () => Promise<void>) => { captured = fn } }
 })
 
-const heartbeat = vi.fn(async (_opts: unknown) => true)
+const heartbeat = vi.fn<(opts: unknown) => Promise<boolean>>(async () => true)
 vi.mock("@/lib/pipeline/heartbeat", () => ({ writeInvocationHeartbeat: (opts: unknown) => heartbeat(opts) }))
-const terminal = vi.fn(async (_opts: unknown) => true)
+const terminal = vi.fn<(opts: unknown) => Promise<boolean>>(async () => true)
 vi.mock("@/lib/pipeline/terminal-run", () => ({ logTerminalRun: (opts: unknown) => terminal(opts) }))
 
 // A chainable supabase stub: the editions read resolves `pages` in order; rpc is captured.
@@ -42,7 +42,12 @@ function flowResult(nums: number[]) {
   return JSON.stringify({ value: Buffer.from(JSON.stringify(cadence), "utf8").toString("base64") })
 }
 function stubFlow(nums: number[] | null, ok = true) {
-  const f = vi.fn(async () => ({ ok, status: ok ? 200 : 503, json: async () => JSON.parse(flowResult(nums ?? [])) }))
+  const f = vi.fn(async () => ({
+    ok,
+    status: ok ? 200 : 503,
+    json: async () => JSON.parse(flowResult(nums ?? [])),
+    text: async () => (ok ? flowResult(nums ?? []) : '{ "code": 503, "message": "execution node unavailable" }'),
+  }))
   vi.stubGlobal("fetch", f as any)
   return f
 }

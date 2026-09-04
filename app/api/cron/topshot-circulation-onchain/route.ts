@@ -17,8 +17,9 @@ import { logTerminalRun } from "@/lib/pipeline/terminal-run"
 // only, and the RPC it calls enforces that with its own predicate.
 //
 // HOW. One Cadence script takes arrays of setIDs/playIDs and returns
-// [numMinted, retiredFlag] per pair — 250 pairs per Flow REST call, ~40 calls
-// for the whole base population, well inside the budget. The route does NOT
+// [numMinted, retiredFlag] per pair — PAIRS_PER_SCRIPT pairs per Flow REST
+// call (see the constant for the measured ceiling), a few hundred calls for the
+// whole base population, inside the budget. The route does NOT
 // compare values: `apply_topshot_onchain_circulation(p_rows)` compares each
 // on-chain value against the stored one through the same normaliser the
 // write trigger uses, so only rows the chain actually moved are written (a raw
@@ -41,7 +42,13 @@ const PIPELINE_NAME = "topshot-circulation-onchain"
 const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const FLOW_REST = process.env.FLOW_REST_URL ?? "https://rest-mainnet.onflow.org"
 const SCRIPT_TIMEOUT_MS = 15_000
-const PAIRS_PER_SCRIPT = 250
+// ⚠ MEASURED, not chosen: the first production tick (2026-09-04 04:05Z) sent
+// 250 pairs per script and 38 of 39 calls came back HTTP 400 — Flow error
+// 1110, the execution node's COMPUTATION LIMIT, since every pair is two
+// contract calls. Probed from Trevor's box the same hour: 250 → 400, 100 → 400,
+// 50 → 200 (393 ms), 25 → 200. 40 keeps a margin under the measured ceiling;
+// ~240 calls for the base population at ~0.4 s each fits the budget easily.
+const PAIRS_PER_SCRIPT = 40
 const READ_PAGE = 1000
 const TIME_BUDGET_MS = (maxDuration - 45) * 1000
 
@@ -104,7 +111,12 @@ async function runBatch(pairs: EditionRow[]): Promise<number[]> {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(SCRIPT_TIMEOUT_MS),
   })
-  if (!res.ok) throw new Error(`Flow REST HTTP ${res.status}`)
+  if (!res.ok) {
+    // The body names the Flow error code (1110 = computation limit, 1101 =
+    // runtime error). Without it the first tick's 38 failures read only as "400".
+    const snippet = await res.text().then((t) => t.slice(0, 200).replace(/\s+/g, " ")).catch(() => "")
+    throw new Error(`Flow REST HTTP ${res.status}${snippet ? `: ${snippet}` : ""}`)
+  }
   // ⚠ The signal stays live for the body read — keep it inside the caller's try.
   const json = (await res.json()) as { value?: string } | string
   const raw = typeof json === "string" ? json : String(json.value ?? "")
