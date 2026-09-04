@@ -49,6 +49,7 @@ AS $$
   END
 $$;
 
+-- anon-exec: intentional — RETURNS trigger, fired by the editions write trigger and not callable as an RPC; the default anon grant is closed anyway by the follow-up migration audit_20260904_topshot_normalize_trigger_fn_anon_exec_revoked (trg_topshot_normalize_base_club_circulation)
 CREATE OR REPLACE FUNCTION public.trg_topshot_normalize_base_club_circulation()
 RETURNS trigger
 LANGUAGE plpgsql
