@@ -35,6 +35,7 @@ import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import PackThumb from "@/components/packs/PackThumb"
 import { slugifyName } from "@/lib/entity-labels"
 import { momentSubjectHref } from "@/lib/entity-href"
+import IpfsThumb from "@/components/entity/IpfsThumb"
 import { isTopShotFossilSlug, ASK_LABEL, notableTagLabel, fmvDayDelta, sortNotableSerials } from "@/lib/edition-detail-format"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
@@ -932,12 +933,7 @@ export default async function EditionPage(
                   className="rpc-card"
                   style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block", border: s.is_self ? "1px solid var(--rpc-red)" : "1px solid var(--rpc-border)" }}
                 >
-                  <div style={{ aspectRatio: "1 / 1", background: "rgba(0,0,0,0.3)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
-                    {s.thumbnail_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={proxyIpfsUrl(s.thumbnail_url) ?? undefined} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
-                    ) : null}
-                  </div>
+                  <IpfsThumb src={proxyIpfsUrl(s.thumbnail_url)} alt={name} label={name} />
                   <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, marginBottom: 4 }}>
                     <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: s.is_self ? "var(--rpc-red)" : "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2 }}>{name}</span>
                     {s.is_self && <span className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red)" }}>viewing</span>}
@@ -1137,12 +1133,7 @@ async function EditionBottomSections({
                 className="rpc-card"
                 style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block", border: "1px solid var(--rpc-red)" }}
               >
-                <div style={{ aspectRatio: "1 / 1", background: "rgba(0,0,0,0.3)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
-                  {p.thumbnail_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={proxyIpfsUrl(p.thumbnail_url) ?? undefined} alt={p.set_name ?? "parallel"} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
-                  ) : null}
-                </div>
+                <IpfsThumb src={proxyIpfsUrl(p.thumbnail_url)} alt={p.set_name ?? "parallel"} label={p.set_name ?? "parallel"} />
                 <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
                   {p.set_name ?? "—"}
                 </div>
