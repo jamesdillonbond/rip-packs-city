@@ -315,13 +315,40 @@ describe("GET /api/pinnacle-wallet", () => {
     expect(body.moments[0].is_serialised).toBeNull()
   })
 
-  it("surfaces per-RPC error messages in the errors envelope", async () => {
-    rpcState.get_wallet_moments_with_fmv = { data: [], error: { message: "moments failed" } }
+  it("surfaces per-RPC error messages in the errors envelope (ADDITIVE legs)", async () => {
+    // ⚠ REWRITTEN 2026-09-04, and the reason is the point. This case used to
+    // fail the MOMENTS leg and assert `ok: true` — i.e. it pinned the route
+    // answering "this wallet holds nothing" out of a failed read, with the
+    // truth available only to a client that thought to look in `errors`. Per
+    // CLAUDE.md a test that pins the defect it was named to prevent gets
+    // INVERTED, not deleted: the envelope it checks is genuinely useful for the
+    // ADDITIVE legs, which degrade to `null` and make no claim, so the case
+    // keeps its job and moves to those. The moments leg gets its own case below.
     rpcState.get_pinnacle_wallet_total_fmv = { data: null, error: { message: "total failed" } }
+    rpcState.get_pinnacle_variant_breakdown = { data: null, error: { message: "variants failed" } }
     const body = await (await GET(req("https://t/api/pinnacle-wallet?wallet=0xABC"))).json()
     expect(body.ok).toBe(true)
-    expect(body.errors.moments).toBe("moments failed")
     expect(body.errors.total).toBe("total failed")
+    expect(body.errors.variants).toBe("variants failed")
+    // The additive legs make no claim when they fail: null, never a zero.
+    expect(body.totalFmv).toBeNull()
+  })
+
+  it("a failed MOMENTS read is not an empty wallet", async () => {
+    // `moments` IS the page. `ok: true` with `moments: []` tells a collector
+    // this wallet holds nothing — a false claim about their own holdings, out
+    // of a read that failed. Before 2026-09-04 only a THROWN error reached the
+    // catch; a RETURNED one rendered the empty wallet, and bounding these reads
+    // turns an overrun into exactly that returned error.
+    rpcState.get_wallet_moments_with_fmv = { data: [], error: { message: "moments failed" } }
+    const res = await GET(req("https://t/api/pinnacle-wallet?wallet=0xABC"))
+    expect(res.status).toBeGreaterThanOrEqual(500)
+    const body = await res.json()
+    expect(body.ok).not.toBe(true)
+    expect(body.moments).toBeUndefined()
+    // Anon-reachable route: the driver's own text must not be published.
+    expect(JSON.stringify(body)).not.toContain("moments failed")
+    expect(body.code).toBeTruthy()
   })
 
   it("500s when a data-fetch rejects (top-level catch)", async () => {

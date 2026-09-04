@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
+import { withPagedBoardBudget } from "@/lib/insights/board-page-fetch";
 
 const MIN_OPENS = 5;
 
@@ -49,7 +50,7 @@ export async function GET(_req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // PostgREST caps reads at 1,000 rows and silently CLAMPS a larger .limit(),
   // so the old .limit() served a truncated board with no error. Page it.
-  const { rows: data, error } = await fetchAllPaged<any>(
+  const { rows: data, error } = await withPagedBoardBudget(fetchAllPaged<any>(
     (from, to) =>
       (supabase as any)
         .from("v_allday_pack_realized_ev")
@@ -65,7 +66,7 @@ export async function GET(_req: NextRequest) {
         .order("dist_id", { ascending: true })
         .range(from, to),
     { label: "public/insights/allday-pack-reality" },
-  );
+  ), "allday-pack-reality");
 
   if (error) {
     return boardUnavailable(error, "insights/allday-pack-reality/realized");

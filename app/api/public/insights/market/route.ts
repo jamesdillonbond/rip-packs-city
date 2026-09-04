@@ -38,6 +38,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { boardUnavailable } from "@/lib/insights/board-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
+import { withPagedBoardBudget } from "@/lib/insights/board-page-fetch";
 
 import { boardRowMetaComplete } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set([
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest) {
   // .limit(2000) was a false guarantee. It is not truncating yet (121 days x <=7
   // tiers ~= 847 rows) but the sort is d ASCENDING, so the first overflow would
   // drop the NEWEST days off a market-index chart while keeping stale history.
-  const { rows: data, error } = await fetchAllPaged<any>(
+  const { rows: data, error } = await withPagedBoardBudget(fetchAllPaged<any>(
     (from, to) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let q = (supabase as any)
@@ -89,7 +90,7 @@ export async function GET(req: NextRequest) {
       return q;
     },
     { label: "public/insights/market" },
-  );
+  ), "market");
   if (error) {
     return boardUnavailable(error, "insights/market");
   }

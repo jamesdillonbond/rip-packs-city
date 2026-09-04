@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { readMvAsOf } from "@/lib/insights/mv-freshness";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const COLS =
@@ -63,7 +64,7 @@ export async function GET(req: NextRequest) {
   if (maxMint && Number.isFinite(maxMint)) q = q.lte("mint_cap", maxMint);
   q = q.order(sortKey, { ascending: false, nullsFirst: false }).limit(limit);
 
-  const { data, error } = await q;
+  const { data, error } = await boundedRead(q, "api/public/insights/panini-squeeze/panini_squeeze_board");
   if (error) {
     return boardUnavailable(error, "insights/panini-squeeze");
   }
@@ -75,14 +76,14 @@ export async function GET(req: NextRequest) {
   // Fail-soft: the board is the primary payload, so a coverage error omits the block
   // rather than 500-ing the response.
   let coverage: Record<string, unknown> | null = null;
-  const { data: cov, error: covErr } = await (supabase as any)
+  const { data: cov, error: covErr } = await boundedRead((supabase as any)
     .from("panini_coverage_summary")
     .select(
       "total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families," +
         "best_family_checklist_pct,worst_family_checklist_pct,checklist_players_seen,checklist_players_new_24h," +
         "oldest_family_refresh_h,newest_family_refresh_h"
     )
-    .limit(1);
+    .limit(1), "api/public/insights/panini-squeeze/panini_coverage_summary");
   if (covErr) {
     console.error("[panini-squeeze api] coverage:", covErr.message);
   } else if (cov?.[0]) {
@@ -110,12 +111,12 @@ export async function GET(req: NextRequest) {
   // ~17% -> ~8%. A consumer rendering it as current price coverage would overclaim.
   // panini_sale_feed_status self-measures, so this can never go stale.
   let salePriceFeed: Record<string, unknown> | null = null;
-  const { data: feed, error: feedErr } = await (supabase as any)
+  const { data: feed, error: feedErr } = await boundedRead((supabase as any)
     .from("panini_sale_feed_status")
     .select(
       "last_supplied_on,days_since_last_supplied,total_serials,priced_serials,preserved_fossils,pct_serials_priced,feed_ok"
     )
-    .limit(1);
+    .limit(1), "api/public/insights/panini-squeeze/panini_sale_feed_status");
   if (feedErr) {
     console.error("[panini-squeeze api] sale feed:", feedErr.message);
   } else if (feed?.[0]) {

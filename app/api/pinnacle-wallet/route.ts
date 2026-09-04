@@ -7,6 +7,7 @@ import {
 } from "@/lib/pinnacle/serial-fmv"
 import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // Aggregates the Disney Pinnacle wallet view: moments + totals + variant
 // breakdown + franchise breakdown. Fronts the shared RPCs so the client
@@ -53,10 +54,10 @@ async function fetchEditionTypes(editionKeys: string[]): Promise<Map<string, str
   for (let i = 0; i < keys.length; i += CHUNK) {
     const slice = keys.slice(i, i + CHUNK)
     try {
-      const { data, error } = await (supabaseAdmin as unknown as EditionTypeClient)
+      const { data, error } = await boundedRead((supabaseAdmin as unknown as EditionTypeClient)
         .from("pinnacle_editions")
         .select("edition_key, edition_type")
-        .in("edition_key", slice)
+        .in("edition_key", slice), "api/pinnacle-wallet/pinnacle_editions")
       if (error || !Array.isArray(data)) continue
       for (const row of data as Array<{ edition_key?: unknown; edition_type?: unknown }>) {
         if (typeof row?.edition_key === "string" && typeof row?.edition_type === "string") {
@@ -85,23 +86,39 @@ export async function GET(req: NextRequest) {
 
   try {
     const [momentsRes, totalRes, variantsRes, franchisesRes, bestOfferRes, serialMultRes] = await Promise.all([
-      (supabaseAdmin as any).rpc("get_wallet_moments_with_fmv", {
+      boundedRead((supabaseAdmin as any).rpc("get_wallet_moments_with_fmv", {
         p_wallet: wallet,
         p_collection_id: PINNACLE_COLLECTION_UUID,
         p_limit: 500,
         p_offset: 0,
-      }),
-      (supabaseAdmin as any).rpc("get_pinnacle_wallet_total_fmv", { p_wallet: wallet }),
-      (supabaseAdmin as any).rpc("get_pinnacle_variant_breakdown", { p_wallet: wallet }),
-      (supabaseAdmin as any).rpc("get_pinnacle_franchise_breakdown", { p_wallet: wallet }),
-      (supabaseAdmin as any).rpc("get_pinnacle_wallet_best_offer_total", { p_wallet: wallet }),
+      }), "api/pinnacle-wallet/get_wallet_moments_with_fmv"),
+      boundedRead((supabaseAdmin as any).rpc("get_pinnacle_wallet_total_fmv", { p_wallet: wallet }), "api/pinnacle-wallet/get_pinnacle_wallet_total_fmv"),
+      boundedRead((supabaseAdmin as any).rpc("get_pinnacle_variant_breakdown", { p_wallet: wallet }), "api/pinnacle-wallet/get_pinnacle_variant_breakdown"),
+      boundedRead((supabaseAdmin as any).rpc("get_pinnacle_franchise_breakdown", { p_wallet: wallet }), "api/pinnacle-wallet/get_pinnacle_franchise_breakdown"),
+      boundedRead((supabaseAdmin as any).rpc("get_pinnacle_wallet_best_offer_total", { p_wallet: wallet }), "api/pinnacle-wallet/get_pinnacle_wallet_best_offer_total"),
       // Serial-premium bands. Top Shot and All Day holdings already carry a
       // serial-adjusted value; Pinnacle's fitted model existed and was refreshed
       // weekly but nothing on a wallet surface read it, so a #1 of a 500-mint
       // render was shown at the same value as #487. See lib/pinnacle/serial-fmv.ts.
-      (supabaseAdmin as unknown as TableClient).from("pinnacle_serial_fmv_multipliers").select("band, multiplier, is_reliable"),
+      boundedRead((supabaseAdmin as unknown as TableClient).from("pinnacle_serial_fmv_multipliers").select("band, multiplier, is_reliable"), "api/pinnacle-wallet/pinnacle_serial_fmv_multipliers"),
     ])
 
+    // ⚠ THE MOMENTS READ IS LOAD-BEARING AND ITS FAILURE IS NOT AN EMPTY WALLET.
+    // Every other leg here is additive — a failed total renders `totalFmv: null`,
+    // a failed breakdown renders no chips — but `moments` IS the page, and
+    // answering `ok: true` with `moments: []` tells a collector this wallet holds
+    // nothing. The per-leg `errors` object below has always carried the honest
+    // signal on the wire; nothing obliged the client to read it, and the empty
+    // array is the more legible of the two.
+    //
+    // Until 2026-09-04 this branch was unreachable for a RETURNED error — only a
+    // THROWN one reached the catch below — so the swallow was real but rare.
+    // Bounding these reads makes an overrun RESOLVE with an error rather than
+    // hang, which is precisely the case that would have started rendering empty
+    // wallets, so the guard ships with the bound rather than after it.
+    if (momentsRes?.error) {
+      return apiErrorResponse(momentsRes.error, "pinnacle-wallet", "Wallet data isn't available right now.")
+    }
     const momentsJson = momentsRes?.data ?? {}
     const rawMoments = Array.isArray(momentsJson) ? momentsJson
       : Array.isArray(momentsJson?.moments) ? momentsJson.moments

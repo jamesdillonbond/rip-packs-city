@@ -13,6 +13,7 @@ import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -37,14 +38,14 @@ export async function GET(req: Request) {
   const limit = clamp(parseInt(url.searchParams.get("limit") ?? "60", 10), 1, 200)
 
   const supa = supabaseAdmin as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
-  const { data, error } = await supa.rpc("get_team_checklist", {
+  const { data, error } = await boundedRead(supa.rpc("get_team_checklist", {
     p_collection_id: coll.id,
     p_team_slug: teamSlug,
     p_scope: scope,
     p_wallet: wallet,
     p_limit: limit,
     p_offset: offset,
-  })
+  }), "api/entity/team-checklist/get_team_checklist")
   if (error) return apiErrorResponse(error, "api/entity/team-checklist")
   return NextResponse.json(data ?? [])
 }

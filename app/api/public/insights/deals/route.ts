@@ -65,6 +65,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { readMvAsOf } from "@/lib/insights/mv-freshness";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 // Keep in sync with COLLECTIONS in app/insights/deals/DealsBoardClient.tsx.
@@ -124,7 +125,7 @@ export async function GET(req: NextRequest) {
 
   q = q.limit(limit);
 
-  const { data, error } = await q;
+  const { data, error } = await boundedRead(q, "api/public/insights/deals/cross_collection_deals_board");
   if (error) {
     return boardUnavailable(error, "insights/deals");
   }

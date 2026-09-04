@@ -409,7 +409,7 @@ async function fetchModernListings(
     p_team: filters.team && filters.team !== "all" ? filters.team : "all",
     p_sort_by: rpcSort,
     p_limit: Math.max(filters.limit, 500), // pull enough so downstream pagination has headroom
-  }), "api/market/read")
+  }), `api/market/${rpcName}`)
   if (error) {
     console.log(`[/api/market] modern fetch err (${rpcName}):`, error.message)
     return []

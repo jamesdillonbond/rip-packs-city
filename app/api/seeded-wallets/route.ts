@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
   if (username) query = query.ilike("username", username.trim())
   if (tag) query = query.contains("tags", [tag])
 
-  const { data, error } = await query.order("priority", { ascending: true }).order("cached_fmv_usd", { ascending: false, nullsFirst: false })
+  const { data, error } = await boundedRead(query.order("priority", { ascending: true }).order("cached_fmv_usd", { ascending: false, nullsFirst: false }), "api/seeded-wallets/seeded_wallets")
   if (error) return apiErrorResponse(error, "api/seeded-wallets")
 
   return NextResponse.json(

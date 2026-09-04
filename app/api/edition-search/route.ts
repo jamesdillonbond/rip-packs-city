@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { keepCanonicalEditionRows } from "@/lib/concierge/edition-listings"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
       query = query.ilike("player_name", `%${q}%`)
     }
 
-    const { data, error } = await query
+    const { data, error } = await boundedRead(query, "api/edition-search/editions")
     if (error) {
       console.error("[edition-search]", error.message)
       return apiErrorResponse(error, "api/edition-search");

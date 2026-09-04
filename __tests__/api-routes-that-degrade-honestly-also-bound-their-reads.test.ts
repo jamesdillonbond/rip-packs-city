@@ -156,13 +156,17 @@ const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
  * the predicate change that caused it, exactly as the heartbeat ratchet's
  * 31 → 35 does.
  *
- * ⭐ 130 → 72 on 2026-09-04: **58 read-only routes converted to `boundedRead`**
- * (`lib/api/bounded-read.ts`), population unchanged at 131. Two of the 58 are
+ * ⭐ 130 → 72 → 51 on 2026-09-04, in two passes: **80 read-only routes converted**
+ * — 76 to `boundedRead`
+ * (`lib/api/bounded-read.ts`) and **4 to `withPagedBoardBudget`** — the four
+ * paged `/insights` boards, whose `fetchAllPaged` returns the very
+ * `{ rows, error }` contract that helper was written to match. Population
+ * unchanged at 131 throughout. Two of the 80 are
  * the ones production actually named — `/api/profile/hero-moment` (three
  * `57014` statement timeouts on `/dashboard`, the primary signed-in surface)
  * and `/api/wallet/pack-lifecycle`.
  *
- * ⛔ THE REMAINING 72 ARE NOT A LEFTOVER, AND THE SPLIT IS DELIBERATE. 42 of
+ * ⛔ THE REMAINING 51 ARE NOT A LEFTOVER, AND THE SPLIT IS DELIBERATE. 42 of
  * them export a POST/PUT/PATCH/DELETE or live under `cron|admin|backfill|
  * badge-sync|seed-|ingest`, and **bounding a WRITE is not the same trade as
  * bounding a read**: this bound abandons the WAIT, not the statement, so a
@@ -170,10 +174,12 @@ const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
  * commits it — manufacturing exactly the false claim the honesty canon exists
  * to prevent, in the one direction where the caller cannot re-read to find out.
  * A write needs an idempotency key or a status re-read, not a timer. The rest
- * are read-only routes whose reads sit behind a shape this codemod could not
- * convert mechanically. **Do not close the gap by wrapping the writes.**
+ * are **9** read-only routes whose reads sit behind a shape the codemod could
+ * not convert mechanically (a `Promise.all` of raw builders, a helper in
+ * `lib/`, a client behind a bespoke cast) and which are worth a human read
+ * each. **Do not close the gap by wrapping the writes.**
  */
-const BUDGET = 72
+const BUDGET = 51
 
 describe("an API route that degrades honestly also bounds the read it degrades on", () => {
   it("is not vacuous — and the check is SATISFIABLE AT A POPULATION OF ZERO", () => {

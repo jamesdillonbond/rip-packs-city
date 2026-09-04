@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { boardUnavailable } from "@/lib/insights/board-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const COLS =
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
   if (rainbow) q = q.eq("is_rainbow", true);
   q = q.order(sortKey, { ascending: false, nullsFirst: false }).limit(limit);
 
-  const { data, error } = await q;
+  const { data, error } = await boundedRead(q, "api/public/insights/candy-mlb/candy_secondary_board");
   if (error) {
     return boardUnavailable(error, "insights/candy-mlb");
   }
@@ -65,13 +66,13 @@ export async function GET(req: NextRequest) {
   // block rather than 500-ing. The board must LEAD with typical_pull_ev (Actual EV is chase-inclusive
   // and inflated by a 2/25-priced Rainbow leg on an ultra-thin market).
   let packEv: Record<string, unknown> | null = null;
-  const { data: ev, error: evErr } = await (supabase as any)
+  const { data: ev, error: evErr } = await boundedRead((supabase as any)
     .from("candy_pack_ev_model")
     .select(
       "icon_slots,rainbow_chance,pack_cost_usd,common_slot_ev,common_slot_typical,rainbow_ev," +
         "common_total,common_priced,rainbow_total,rainbow_priced,actual_ev_usd,typical_pull_ev_usd,model_note"
     )
-    .limit(1);
+    .limit(1), "api/public/insights/candy-mlb/candy_pack_ev_model");
   if (evErr) console.error("[candy-mlb api] pack-ev:", evErr.message);
   else if (ev?.[0]) packEv = ev[0];
 
