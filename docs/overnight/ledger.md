@@ -10,6 +10,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-03 · ✅ SHIPPED (test-only follow-up, `962a412`) — the health-check code commit reddened CI on a CSS comment: jsdom folds `<style>` text into `body.textContent`, and an unrelated page's test asserts no `-<digit>` renders · Cowork (desktop VM)
+
+`acb528e` failed **Component coverage** and **Unit shard 1/2** on exactly one case, `component-SimulatorAndApiKeys › renders a future last-used as 'Just now'`, whose `not.toMatch(/-\d/)` runs over the whole `document.body.textContent` — and `MobileNav` (mounted on that page) had just gained a CSS comment carrying "2026-09-04". Under jsdom a `<style>` element's text IS body text. The padding rule is unchanged; its rationale moved to a JSX comment and the CSS string carries no dates or dashes. `962a412`: CI 21/21 green (2 skipped). ⚠ Targeted vitest on the touched files could not have caught this — the assertion lives in another page's test. **Revert:** none needed (`git revert 962a412` would only re-redden CI).
+
 ### 2026-09-03 · ✅ SHIPPED (DB migration) — 40 `info` cadence-watchlist arms seeded for every pipeline that had NONE, each sized from its own 73 h gap profile at apply time; decided under delegation, visibility before pages · Claude Code (Trevor's box)
 
 **The decision.** Inbox `2026-09-04T0220Z` §2 measured ~80 pipelines with no watchlist arm — the gap `sales-serial-backfill` sat in for a month — and said seeding must be a reviewed, data-driven table, not 80 inserts, because the 08-29 measurement found 21 of 83 arms would flap under a naive rule. Trevor delegated. **Chosen:** seed at **`info`** (the sentinel pages only on `high`; `info` stalls show in its WARN list and in `get_pipeline_alerts()`, so a flap costs a line, not a page), sized **from each pipeline's own profile**, with the population derived by rule and the derivation living in the migration text so it can be re-run.
