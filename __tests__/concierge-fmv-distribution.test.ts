@@ -373,7 +373,7 @@ describe("fetchUnifiedFmvDistribution — the population count fails", () => {
     }))
     const snaps = rows.map((r, i) => ({ edition_id: r.id, fmv_usd: 10 + i, confidence: "HIGH", computed_at: "2026-01-01T00:00:00Z" }))
     const client: any = {
-      from(_table: string) {
+      from() {
         let head = false
         const b: any = {}
         for (const m of ["eq", "neq", "in", "order", "limit", "is", "not", "ilike", "gte", "lt"]) b[m] = () => b
