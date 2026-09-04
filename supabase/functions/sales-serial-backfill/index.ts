@@ -73,6 +73,7 @@ const MAX_RETRIES = 2;           // bounded retry on transient Flow REST faults
 const RETRY_BACKOFF_MS = 800;
 const SOFT_BUDGET_MS = 130_000;  // stop borrowing with headroom for the log
 const HOLDER_LOOKUP_CHUNK = 200; // wmc .in() chunk size
+const LANE_DEAD_MIN_PROCESSED = 20; // a lane that fails EVERY one of ≥ this many targets on transport fails the sweep
 
 const COLLECTION_IDS = {
   topshot: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
@@ -429,6 +430,20 @@ async function runSweep(collectionId: string | null, batchSize: number, startedA
     try {
       const s = await runCollection(c, batchSize);
       perCollection[SLUG_BY_ID[c] ?? c] = s;
+      // A lane whose EVERY target failed on TRANSPORT (borrow_error / unknown —
+      // a dead host, a broken script, a failing RPC) is a pipeline failure, not
+      // an expected per-target miss. This is the shape the Top Shot lane wore
+      // for a month (2026-08-06 → 09-03: 100% `unknown`, http_530/429) while
+      // every sweep logged ok=true, so no silence or no-success arm could see it.
+      // Data reasons (onchain_nil / no_holder — escrowed or moved moments) are
+      // NOT counted: the AllDay residual legitimately produces batches of those.
+      // The floor of 20 keeps a one-off target from flipping the sweep.
+      const transportFailures = (s.failures_by_reason["borrow_error"] ?? 0) + (s.failures_by_reason["unknown"] ?? 0);
+      if (s.processed >= LANE_DEAD_MIN_PROCESSED && transportFailures === s.processed) {
+        const laneErr = `${SLUG_BY_ID[c] ?? c}: all ${s.processed} targets failed on transport ${JSON.stringify(s.failures_by_reason)}`;
+        sweepError = sweepError ?? laneErr;
+        console.log(`[backfill] lane_dead ${laneErr}`);
+      }
       totalProcessed += s.processed;
       totalResolved += s.resolved;
       totalNoop += s.noop;
@@ -445,9 +460,11 @@ async function runSweep(collectionId: string | null, batchSize: number, startedA
 
   // Durable visibility: log_pipeline_run so the sweep surfaces in pipeline_runs
   // / detect_stalled (it was console-only before, invisible to health checks).
-  // ok=true when the sweep itself completed — per-target failures are expected
-  // (escrowed/un-borrowable moments) and captured in extra.failures_by_reason,
-  // not treated as a pipeline failure.
+  // ok=true when the sweep itself completed — per-target DATA failures are
+  // expected (escrowed/un-borrowable moments) and captured in
+  // extra.failures_by_reason, not treated as a pipeline failure. A lane that
+  // fails every target on TRANSPORT is (see lane_dead above) — that flips ok
+  // to false so the cadence watchlist's no-success arm can see a dead host.
   try {
     // deno-lint-ignore no-explicit-any
     await (supabase as any).rpc("log_pipeline_run", {
