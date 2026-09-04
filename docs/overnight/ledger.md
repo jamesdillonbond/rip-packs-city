@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (prod DB migration `20260904154741`) — 95 % of Top Shot Series 1 was missing from its own series page, because the chain's series number is not the catalog's · Cowork (cloud sandbox)
+
+Found by walking the entity pages in the plain headless browser. `/nba-top-shot/series/series-8` 404s — which turned out to be **my bad guess, not a defect**: Top Shot's `collection_series` maps chain → label with an offset, and chain 8 *is* "Series 7". Re-deriving the mapping properly is what surfaced the real hole.
+
+| chain series | catalog label | editions |
+|---|---|---|
+| 0 | Series 1 | 65 |
+| **1** | **— no row at all —** | **1,245** |
+| 2 | Series 2 | 1,772 |
+| 3 | **Summer 2021** | 395 |
+| 4–8 | Series 3–7 | 1,465 … 5,027 |
+
+Every series RPC filters `e.series = cs.series_number`, so `/nba-top-shot/series/series-1` listed **65** editions while **1,245 editions carrying 78,344 holder rows sat on no series page at all** — missing from the page, the series index, and the crawlable surface.
+
+⭐ **THE COLLAPSE IS ALREADY THE PRODUCT'S OWN SEMANTICS; this does not invent it.** Two independent confirmations, and I wanted both before touching a public taxonomy:
+
+1. **`get_wallet_moments_with_fmv` already ships `CASE WHEN <top shot> AND e.series = 1 THEN 0 ELSE e.series END`.** A collector's own collection tab files chain-1 Moments under Series 1 — and then clicking through lands on a Series 1 page that does not contain them. **The two surfaces disagreed, and the wallet one was right.**
+2. **The sets prove it.** All **six** of chain 0's sets (Base Set, Denied!, Early Adopters, From the Top, Hometown Showdown: Cali vs. NY, Metallic Gold LE) reappear in chain 1, which adds the rest of the canonical 2019–21 Series 1 catalog — Cosmic, Holo MMXX, 2020 NBA Finals, Rookie Debut, Run It Back, MVP Moves, Throwdowns, The Finals. One series, split by a chain quirk.
+
+**One function, not six predicates.** "Which chain series numbers belong to this catalog series" was spelled `e.series = cs.series_number` in **six places across four functions** (`get_series_editions` ×2, `get_series_detail`, `get_series_rollups` ×2, `refresh_series_detail_rollup`). Patching the page without the rollup refresher would have desynced the count from the list — the page saying 65 above a grid of 500. `public.series_chain_numbers(collection_id, series_number)` is now the single answer and all six call it, via a guarded splice that **RAISEs on the wrong predicate count** at each site rather than silently patching three of four.
+
+⭐ **AND IT COSTS NOTHING, for a reason worth keeping.** The helper is `IMMUTABLE` and its arguments are constants at plan time, so Postgres **constant-folds it into the index condition** rather than calling it per row:
+
+```
+Index Scan using idx_editions_collection_series  (actual time=0.057..3.005 rows=853)
+  Index Cond: ((collection_id = '95f28…') AND (series = ANY ('{0,1}'::integer[])))
+  Buffers: shared hit=751     Execution Time: 3.082 ms
+```
+
+A `STABLE` helper would have become a per-row filter and lost the index. These RPCs carry an 8 s `statement_timeout`, so that distinction is load-bearing, not stylistic.
+
+⛔ **For whoever adds the next one: this is a CATALOG fact, not a formula.** Do not derive the offset arithmetically — chain 3 is "Summer 2021", which breaks any +1/−1 rule. Add to the `CASE` with set-overlap evidence.
+
+**Verified:** the Series 1 editions listing goes 63 → 500 (the page cap) · Series 7 still 5,027, Summer 2021 still 395, All Day Series 1 still 941 — **no other series moved** · `check_secdef_anon_execute_violations()` `[]` · one overload · **zero raw `e.series = …series_number` predicates left in the four functions**. The `edition_count` header still reads 65 until `rpc-series-detail-rollup` runs at `:59` with the fixed refresher — post-ship watch for the next pass. **Revert:** restore the six predicates and `DROP FUNCTION public.series_chain_numbers(uuid, integer)`.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — the ipfs-media 502 is a COLD-CACHE MISS, so the first visitor to each CID saw a permanently broken image and nobody after them did · Cowork (cloud sandbox)
 
 Found in the same plain-Chromium sweep as the entry above: three broken 169×169 tiles on `/nba-top-shot/edition/98:3150::5`, `alt` = Coded / Halftone / Bubbled — the **parallel-printing art**, each a `502` from `/api/public/ipfs-media/<cid>`.
