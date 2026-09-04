@@ -2,6 +2,33 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## 2026-09-03/04 — Top Shot is readable ON CHAIN, and the Flow REST script has a MEASURED batch ceiling
+
+With `public-api.nbatopshot.com` decommissioned, two Top Shot facts that the GraphQL host used to serve
+are on chain and reachable from anywhere (Supabase edge fns and Vercel both hit `rest-mainnet.onflow.org`):
+
+- **serial** — `getAccount(holder).capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)`
+  then `borrowMoment(id:)` -> `.data.serialNumber` (also `.data.setID` / `.data.playID`). ⚠ The public
+  capability is the INTERFACE type, not `&TopShot.Collection`. Verified on mainnet 2026-09-03:
+  `52356781 @ 0x3795d42c0fc3a373 -> 41`; `52676253 @ 0xab2277611893d945 -> 15`.
+- **circulation / retired** — `TopShot.getNumMomentsInEdition(setID:playID:)` and
+  `TopShot.isEditionRetired(setID:playID:)`. ⚠ `isEditionRetired` returns `Bool?` and `Bool` has **no
+  `.toString()`** in Cadence 1.0 — use a ternary. A nil `getNumMomentsInEdition` means the pair is not an
+  edition on chain; the batch script below encodes that as the sentinel `4294967295`.
+
+🚨 **MEASURED BATCH CEILING — a 250-pair script is HTTP 400 (Flow error 1110, computation limit).**
+Each pair is two contract calls. Probed from Trevor's box 2026-09-04: **250 -> 400, 100 -> 400,
+50 -> 200 (393 ms), 25 -> 200**. `topshot-circulation-onchain` ships **40** pairs per script (~239 calls
+for the 9,523-row base population, ~90 s total). ⚠ The first production tick shipped at 250 and lost 38
+of 39 calls — read the ERROR BODY, not just the status: the body names the Flow error code.
+
+⚠ **`npm run test:cadence` does NOT walk `supabase/functions/**`.** `scripts/extract-cadence.mjs` covers
+inline Cadence in `app/` and `lib/` only, so a script embedded in an EDGE FUNCTION (or in a route added
+after the extractor was written) is unlinted and a green gate says nothing about it. **Verify by
+EXECUTING it on mainnet through the Cadence MCP** with a row the function will really process, and record
+the input/output pair in the function header. ⚠ MCP script args are plain strings in an array
+(`["0x…", "52356781"]`), NOT the `"Address:0x…"` form.
+
 ## API contracts
 
 ### Top Shot GraphQL

@@ -2,6 +2,55 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## 2026-09-04 — the no-success arm needs a LOWER BOUND when the threshold exceeds retention
+
+`detect_pipelines_without_success()` (added 09-03) fired on `topshot-circulation-onchain` the moment its
+first — failed — run landed, and by construction would fire EARLY on any arm whose threshold exceeds the
+~73 h `pipeline_runs` retention: **"no ok row in retention" is not "no success"**, and for a 6-day
+threshold it is a 3-day-old fact at best. Same class as the concurrent `20260904041635` fix to the
+silent arms (a row alerting ten minutes after it was added). Migration `20260904044756` adds both halves:
+
+- **(a) grace** — a watchlist row younger than its own threshold cannot have failed it yet;
+- **(b) a lower bound** — with no retained success, the arm fires only when the pipeline's OLDEST
+  RETAINED run is older than the threshold (so a success, had it happened, would still be in retention).
+  Reported as `age_lower_bound_minutes`. A pipeline with NO retained runs at all is the SILENT arm's job.
+
+Live after apply: **0 rows** (was 1, and that 1 was the brand-new pipeline).
+
+## 2026-09-04 — `topshot-circulation-onchain`: the Vercel cron that replaced the dead catalog walker's circulation half
+
+Route `app/api/cron/topshot-circulation-onchain`, `vercel.json` `5 4 * * *` (04:05Z). Reads
+`TopShot.getNumMomentsInEdition` for every Top Shot BASE edition through Flow REST and applies changes via
+`apply_topshot_onchain_circulation()`, which compares against the series-8 normaliser
+(`topshot_normalize_circulation()`, shared with the write trigger) so only rows the chain moved are written.
+Base rows ONLY — parallels (`::`) belong to `backfill-topshot-subedition-circulation`.
+
+**First clean sweep, 2026-09-04 13:20Z (manual trigger after the chunk-size fix):** `ok=true`,
+**9,523 pairs read · 239 script calls · 0 script errors · 25 rows changed · 8,434 retired · 89.7 s**,
+`complete: true`. Spot-check of the changed rows: 8 of 8 were base rows, **0 parallels touched**.
+
+⚠ **The 04:05Z tick before it FAILED HONESTLY and that was the design working:** 250 pairs per Cadence
+script tripped the execution node's **computation limit (Flow error 1110)** — 38 of 39 calls HTTP 400 —
+and the run logged `ok=false` with `script_errors: 38` rather than a quietly smaller sweep. Chunk is
+now 40 (see apis-and-cadence.md for the measured ceiling).
+
+## 2026-09-04 — 40 `info` watchlist arms seeded, derived per pipeline (migration `20260904044417`)
+
+Population by RULE, never a list: >= 12 active days in the last 14, ran yesterday/today, not a
+`-heartbeat` marker, not DB-internal, not already watched, not `sync-nba-projections`. Sizing from each
+pipeline's OWN 73 h profile: `max_silent_minutes = greatest(60, 3x max gap)`;
+`max_minutes_without_success = greatest(2x silent, 3x max OK-gap)`, **NULL where the pipeline had no OK
+run in the window** (arming that would fire at once and stay red). 40 rows, silent 60 -> 4,323 min;
+watchlist 87 -> 127 active. `info` because the sentinel pages only on `high` — visibility first;
+promotion is a human read of the first weeks. ⛔ Do NOT bulk-promote.
+
+## Displaced from CLAUDE.md 2026-09-04 (verbatim) — the `candy-editions-ingest` kill figures
+
+> ⚠ **A kill is ABSENT from `pipeline_runs_daily`, not a failure row — so that rollup reads
+> `runs 1 · ok 1 · failed 0` for every recorded day while the job dies nightly** (`candy-editions-ingest`,
+> 22 days "perfect", ~45% killed). `npm run pipelines:kills` classifies it — do NOT re-derive by hand;
+> a marker row's `rows_*` must be **NULL, not 0**.
+
 ## ⭐ SCHEDULER POPULATION — re-derived live 2026-08-27 20:45 PT (supersedes every count below)
 
 Both figures below are stale and the direction is the same both times — **up**. Count them; never quote them.

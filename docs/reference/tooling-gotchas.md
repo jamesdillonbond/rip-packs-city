@@ -2,6 +2,29 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⛔ 2026-09-04 — the pipe-exit trap in a NEW COSTUME: `grep <log> && git push` gates on grep, not on the run
+
+The known rule is *"a pipe reports the LAST command's exit code"*. The variant that actually cost
+something: the full suite was run in the background with `echo "EXIT=$?" >> log`, and the push was
+written as
+
+```bash
+grep -E "Tests |EXIT=" "$LOG" | tail -3 && git add … && git commit … && git push   # ⛔ WRONG
+```
+
+The suite had **one** failing test. `grep` FOUND its lines, exited 0, and the push went out red.
+**`&&` after a search gates on the search succeeding, never on what it found.** Read the value and
+branch on it:
+
+```bash
+rc=$(grep -o 'EXIT=[0-9]*' "$LOG" | tail -1 | cut -d= -f2)
+[ "$rc" = "0" ] && git push origin main || echo "NOT PUSHED"
+```
+
+⚠ The same shape hides in `npx tsc --noEmit > log 2>&1; echo "TSC_EXIT=$?"; grep -c "error TS" log` —
+that reports **grep's** zero-match exit, which reads as a failure when the file is clean. Either run the
+gating command in the FOREGROUND and capture `$?` immediately, or write the value to the log and parse it.
+
 
 ## Key env vars (displaced VERBATIM from CLAUDE.md 2026-08-25 to restore memory-file headroom)
 

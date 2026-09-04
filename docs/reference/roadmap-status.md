@@ -2,6 +2,19 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## Displaced from CLAUDE.md 2026-09-04 (verbatim) — the one measured-but-unshipped DB fix
+
+> - **The one measured-but-unshipped DB fix is LOW-STAKES now (re-derived 2026-09-02): every caller is
+>   PER-DIST, and a whole 57-dist tick costs 1.75 s / 152,542 buffers** — the 1,046,192-buffer premise is
+>   a bulk-join shape nothing runs. ⭐ Another stated blocker was a MEASUREMENT — **re-read a "blocked"
+>   item's blocker before inheriting it.**
+
+Also displaced the same day, from the "Prioritized next actions" list: the sports-proxy bullet's detail
+(*"ESPN 403s residentially too; the 'no alert' gap is a MYTH"*) — it already lives in full at #8 in
+[known-issues.md](known-issues.md) — and the `fmv-recalc` line's stale wall-kill note, replaced by the
+2026-09-04 sizing: `query_sql` is the database's #1 reader (2,171 calls / 12.1M blocks in 24 h) and
+`fmv-recalc`'s seven inline scans over 153 daily runs own it (inbox `2026-09-04T0500Z`).
+
 ## ⭐ RE-DERIVED 2026-09-02 — the "one measured-but-unshipped DB fix" is LOW-STAKES, because its cost premise is not a production shape
 
 CLAUDE.md carried this for weeks as the single remaining measured DB fix, *"blocked on a DECISION not a

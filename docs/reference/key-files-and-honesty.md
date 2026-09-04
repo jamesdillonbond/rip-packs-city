@@ -2,6 +2,40 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ 2026-09-03/04 — THE NINTH SHAPE: a SWEEP's `ok` means it COMPLETED, not that its LANES worked
+
+`sales-serial-backfill` logged **`ok=true` on 36 of 36 runs** while its Top Shot lane failed **100%
+for a month** — 3,071 rows filed under `failure_reason='unknown'` (Cloudflare 530/1033 and 429/1015
+from `public-api.nbatopshot.com`, decommissioned since ~08-28), newest failure on every 2-hourly tick.
+Three independent layers each said "not my job", and every one of them was individually correct:
+
+1. **Per-target failures are not sweep failures** — and that is right: escrowed/moved moments legitimately
+   produce `onchain_nil` batches on the healthy All Day lane, so failing the sweep on them would cry wolf daily.
+2. **The pipeline was on NO cadence-watchlist arm** — so neither the silence nor the (later) no-success
+   detector could see it. It ran 12x/day, on time, forever.
+3. **The failure bucket was named `unknown`** — a name that reads as "miscellaneous", not as "the host is gone".
+
+⭐ **The tell was not a red anything.** It was one query nobody runs:
+
+```sql
+SELECT failure_reason, count(*), max(last_failed_at)
+FROM <the pipeline's failures table> GROUP BY 1 ORDER BY 2 DESC;
+```
+
+A transport-shaped reason carrying a **newest timestamp on the current tick** is a dead lane, whatever
+`ok` says. The same read on `extra.per_collection.<lane>.resolved` = 0 across ticks says it a second way.
+
+**The fix has two halves and both are needed.** (a) The lane's data source was ported (Top Shot serials
+are on chain: `&{TopShot.MomentCollectionPublic}` at `/public/MomentCollection`, `borrowMoment(id:)`,
+`.data.serialNumber`), and (b) the sweep now **fails itself** when a lane processes >= 20 targets and
+**every one** fails on a TRANSPORT reason (`borrow_error`/`unknown`) — data reasons (`onchain_nil`,
+`no_holder`) deliberately excluded so the All Day residual cannot trip it. Plus a watchlist row, so the
+no-success arm can see the next dead host within 12 h.
+
+⚠ **Generalise the QUESTION, not the pipeline:** for any sweep that fans out over independent lanes,
+sources or collections, ask *"can one lane be 100% dead while the sweep reports ok?"* If yes, the
+answer is a per-lane transport check, not a comment.
+
 ## Key files to always reference
 
 - `lib/collections.ts` — collection registry
