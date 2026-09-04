@@ -1,5 +1,7 @@
 # 45 scheduled pipelines skipped 66 ticks inside one two-hour band, and no alert on this platform could fire
 
+> 🟠 **PARTLY RESOLVED 2026-09-03 (late PT) — the CALIBRATION SERIES this filing said it lacked now exists; the ARM still does not.** Migration `20260904024810`: `pipeline_gap_hourly` + `rollup_pipeline_gaps(3)` on pg_cron jobid 443 (`7 * * * *`) persists, hourly, exactly the derivation in §Reproducing it (the p90/p10 ≤ 1.25 scheduled population, derived; skipped = round(gap/median) − 1 above 1.5× median), per-pipeline rows where something happened plus a `_all_` row every hour. First run: 99 scheduled, ~320 ticks/h expected, 1 skipped/h (`pinnacle-nft-resolver`), 0 silent — the boring baseline. ⛔ Do not write the arm off the first few days; the filing's own point is that one event cannot place the line. Ledger 2026-09-03.
+
 **Filed 2026-09-03 ~03:00Z (2026-09-02 PT) by Claude Code. Measured, not inherited.**
 **Status: MEASUREMENT ONLY — no code shipped for this. The remedy is argued below, not built.**
 
