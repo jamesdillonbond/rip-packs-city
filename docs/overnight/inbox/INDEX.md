@@ -1,4 +1,4 @@
-# Inbox index — 380 live filings
+# Inbox index — 381 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,8 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-09-04 — 1 filing
+## 2026-09-04 — 2 filings
 
+- [**`query_sql` is the database's #1 reader over 24 h (2,171 calls, 12.1 M blocks, 3.4× the next statement) and `fmv-recalc` owns it — seven ad-hoc scans per run × 153 runs/day; invisible by construction because every query through the wrapper shares one queryid** — measured, not shipped; the fix is named functions per scan + a scoped index, a daytime pass](2026-09-04T0500Z-query-sql-is-the-top-reader-and-fmv-recalc-owns-it-seven-ad-hoc-scans-per-run.md) — *(Claude Code, Trevor's box · 2026-09-03 22:00 PT)*
 - [**Three more Top Shot pipelines still hit the decommissioned host every day (`topshot-badge-set-backfill` 4/0, `topshot-catalog-backfill` 1/0, `topshot-misattrib-drain` 1/0 — honest failures, wasted calls, pause-or-port is a decision), and ~80 pipelines with ≥7 active days have NO cadence-watchlist arm (the gap `sales-serial-backfill` sat in for a month) — ⛔ do NOT auto-seed 80 arms from the night pass; a data-driven seed table needs a human read first**](2026-09-04T0220Z-three-more-top-shot-pipelines-hit-the-dead-host-daily-and-most-pipelines-have-no-watchlist-arm.md) — *(Claude Code, Trevor's box · measured, not shipped · 2026-09-03 19:20 PT)*
 
 ## 2026-09-03 — 12 filings
