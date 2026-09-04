@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
@@ -72,14 +73,14 @@ export async function GET(req: NextRequest) {
     const PAGE = 1000
     const rows: Array<{ acquired_date: string }> = []
     for (let page = 0; page < 50; page++) {
-      const { data, error } = await (supabaseAdmin as any)
+      const { data, error } = await boundedRead((supabaseAdmin as any)
         .from("moment_acquisitions")
         .select("acquired_date")
         .eq("wallet", wallet)
         .eq("collection_id", TOPSHOT_UUID)
         .not("acquired_date", "is", null)
         .order("id", { ascending: true })
-        .range(page * PAGE, page * PAGE + PAGE - 1)
+        .range(page * PAGE, page * PAGE + PAGE - 1), "api/wallet-hold-time/moment_acquisitions")
       if (error) throw new Error(error.message)
       const batch = (data ?? []) as Array<{ acquired_date: string }>
       rows.push(...batch)

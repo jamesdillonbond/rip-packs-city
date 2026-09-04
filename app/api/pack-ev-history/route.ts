@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { createClient } from "@supabase/supabase-js"
 
 const supabase: any = createClient(
@@ -15,10 +16,10 @@ export async function GET(req: NextRequest) {
   const daysRaw = Number(req.nextUrl.searchParams.get("days") ?? "14")
   const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(Math.floor(daysRaw), 90) : 14
 
-  const { data, error } = await supabase.rpc("get_pack_ev_history", {
+  const { data, error } = await boundedRead(supabase.rpc("get_pack_ev_history", {
     p_pack_listing_id: packListingId,
     p_days: days,
-  })
+  }), "api/pack-ev-history/get_pack_ev_history")
 
   if (error) {
     console.warn(`[pack-ev-history] rpc error: ${error.message}`)

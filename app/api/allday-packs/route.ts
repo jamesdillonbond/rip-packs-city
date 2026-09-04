@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { createClient } from "@supabase/supabase-js"
 import { normalizePackRetailPrice } from "@/lib/packs/normalize-retail-price"
 
@@ -16,12 +17,12 @@ export async function GET() {
   let from = 0
 
   while (true) {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await boundedRead(supabaseAdmin
       .from("pack_distributions")
       .select("dist_id, title, nft_type, metadata")
       .eq("collection_id", ALLDAY_COLLECTION_ID)
       .order("dist_id", { ascending: true })
-      .range(from, from + pageSize - 1)
+      .range(from, from + pageSize - 1), "api/allday-packs/pack_distributions")
 
     if (error) {
       return apiErrorResponse(error, "api/allday-packs");

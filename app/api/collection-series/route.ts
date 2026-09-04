@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollection } from "@/lib/collections"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 /**
  * GET /api/collection-series?collection=nfl-all-day
@@ -39,11 +40,11 @@ export async function GET(req: NextRequest) {
   // ⚠ The error responses carry `Cache-Control: no-store` (apiErrorResponse),
   // which is what keeps a transient failure from being cached for 15 minutes.
   // The cache header below must stay on the SUCCESS path only.
-  const { data: config, error: configError } = await (supabaseAdmin as any)
+  const { data: config, error: configError } = await boundedRead((supabaseAdmin as any)
     .from("collection_config")
     .select("collection_id")
     .eq("flow_contract_name", contractName)
-    .maybeSingle()
+    .maybeSingle(), "api/collection-series/collection_config")
 
   if (configError) {
     return apiErrorResponse(configError, "collection-series/config", "Series filters are unavailable right now.")
@@ -54,11 +55,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ series: [] })
   }
 
-  const { data: series, error: seriesError } = await (supabaseAdmin as any)
+  const { data: series, error: seriesError } = await boundedRead((supabaseAdmin as any)
     .from("collection_series")
     .select("series_number, display_label, season")
     .eq("collection_id", config.collection_id)
-    .order("series_number", { ascending: true })
+    .order("series_number", { ascending: true }), "api/collection-series/collection_series")
 
   if (seriesError) {
     return apiErrorResponse(seriesError, "collection-series/series", "Series filters are unavailable right now.")

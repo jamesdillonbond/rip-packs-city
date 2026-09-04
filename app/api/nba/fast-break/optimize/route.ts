@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 export const dynamic = "force-dynamic"
 
@@ -43,13 +44,13 @@ export async function GET(req: NextRequest) {
   const asOf = new Date().toISOString()
 
   if (!runId) {
-    const { data: active, error: runErr } = await (supabaseAdmin as any)
+    const { data: active, error: runErr } = await boundedRead((supabaseAdmin as any)
       .from("fast_break_runs")
       .select("id, name, start_date, end_date, lineup_size, has_captain")
       .eq("is_active", true)
       .order("start_date", { ascending: false })
       .limit(1)
-      .maybeSingle()
+      .maybeSingle(), "api/nba/fast-break/optimize/fast_break_runs")
 
     if (runErr) {
       return apiErrorResponse(runErr, "api/nba/fast-break/optimize")
@@ -68,10 +69,10 @@ export async function GET(req: NextRequest) {
     runId = active.id as string
   }
 
-  const { data, error } = await (supabaseAdmin as any).rpc(
+  const { data, error } = await boundedRead((supabaseAdmin as any).rpc(
     "optimize_fast_break_lineup",
     { p_run_id: runId, p_game_date: gameDate }
-  )
+  ), "api/nba/fast-break/optimize/optimize_fast_break_lineup")
   if (error) {
     return apiErrorResponse(error, "api/nba/fast-break/optimize")
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // GET /api/edition-stats?editionKey={setID:playID}
 // Returns day-of-week and hour-of-day sale patterns for an edition,
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
     // undefined and this 404'd — telling a reader that a moment they are looking
     // at does not exist, on a public entity surface. 404 stays for a genuinely
     // absent row; a failed lookup is now a 5xx that says so.
-    const { data: edition, error: editionErr } = await supabaseAdmin
+    const { data: edition, error: editionErr } = await boundedRead(supabaseAdmin
       .from("editions")
       .select("id")
       .eq("external_id", editionKey)
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
       // are already distinct and the guard below needs no exception. Outcomes are
       // unchanged for 0 and 1 rows; a duplicate external_id now surfaces instead
       // of silently 404ing.
-      .maybeSingle()
+      .maybeSingle(), "api/edition-stats/editions")
 
     if (editionErr) {
       return apiErrorResponse(editionErr, "api/edition-stats")
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
     // NOTE: must be query_sql (RETURNS jsonb rows), NOT execute_sql (RETURNS void).
     // With execute_sql `patterns` was always null, so this endpoint always returned
     // empty analysis — the whole "best time to buy" feature was silently dead.
-    const { data: patterns } = await supabaseAdmin.rpc("query_sql", {
+    const { data: patterns } = await boundedRead(supabaseAdmin.rpc("query_sql", {
       query: `
         SELECT
           EXTRACT(dow FROM sold_at)::int AS dow,
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
         GROUP BY dow, hour
         ORDER BY avg_price ASC
       `,
-    })
+    }), "api/edition-stats/query_sql")
 
     const rows = (patterns as { dow: number; hour: number; avg_price: number; sale_count: number }[]) ?? []
 

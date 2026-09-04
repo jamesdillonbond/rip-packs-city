@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 export const dynamic = "force-dynamic"
 
@@ -32,9 +33,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_active_challenges", {
+    const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_active_challenges", {
       p_wallet: wallet || null,
-    })
+    }), "api/topshot/challenges/get_active_challenges")
     if (error) {
       return apiErrorResponse(error, "api/topshot/challenges")
     }

@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 import { supabaseAdmin } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await (supabaseAdmin as any).rpc("is_pro_user", { p_wallet: wallet })
+    const { data, error } = await boundedRead((supabaseAdmin as any).rpc("is_pro_user", { p_wallet: wallet }), "api/pro-status/is_pro_user")
     if (error) {
       return apiErrorResponse(error, "api/pro-status", "Could not check membership status right now.")
     }

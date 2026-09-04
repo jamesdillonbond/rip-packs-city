@@ -30,6 +30,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireUser } from "@/lib/auth/supabase-server"
 
@@ -80,12 +81,12 @@ export async function GET(req: NextRequest) {
   }
 
   // Ownership gate: wallet must be saved on this account (any collection).
-  const { data: owned, error: lookupErr } = await sb
+  const { data: owned, error: lookupErr } = await boundedRead(sb
     .from("saved_wallets")
     .select("wallet_addr")
     .eq("user_id", user.id)
     .eq("wallet_addr", wallet)
-    .limit(1)
+    .limit(1), "api/pin-list/saved_wallets")
 
   if (lookupErr) {
     console.error("[pin-list] saved_wallets lookup", lookupErr.message)
@@ -100,7 +101,7 @@ export async function GET(req: NextRequest) {
 
   let exp: PinExport
   try {
-    const { data, error } = await sb.rpc("get_wallet_ipfs_pin_export", { p_wallet: wallet })
+    const { data, error } = await boundedRead(sb.rpc("get_wallet_ipfs_pin_export", { p_wallet: wallet }), "api/pin-list/get_wallet_ipfs_pin_export")
     if (error) {
       console.error("[pin-list]", error.message)
       return apiErrorResponse(error, "api/pin-list");

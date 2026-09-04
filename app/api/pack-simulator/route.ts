@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,10 +30,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await sb.rpc("get_pack_for_simulator", {
+    const { data, error } = await boundedRead(sb.rpc("get_pack_for_simulator", {
       p_collection_id: collectionId,
       p_dist_id: distId,
-    })
+    }), "api/pack-simulator/get_pack_for_simulator")
     if (error) {
       console.error("[pack-simulator]", error.message)
       return apiErrorResponse(error, "api/pack-simulator");

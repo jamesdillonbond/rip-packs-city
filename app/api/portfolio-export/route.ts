@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 
 const COLLECTION_UUID_MAP: Record<string, string> = {
@@ -31,13 +32,13 @@ export async function GET(req: NextRequest) {
   if (!collectionId) return NextResponse.json({ error: "Unknown collection" }, { status: 400 })
 
   try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_wallet_moments_with_fmv", {
+    const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_wallet_moments_with_fmv", {
       p_wallet: wallet,
       p_sort_by: "fmv_desc",
       p_limit: 99999,
       p_offset: 0,
       p_collection_id: collectionId,
-    })
+    }), "api/portfolio-export/get_wallet_moments_with_fmv")
     if (error) return apiErrorResponse(error, "api/portfolio-export");const moments: any[] = (data?.moments ?? []) as any[]
 
     const headers = [

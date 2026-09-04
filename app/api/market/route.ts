@@ -35,6 +35,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fmv-display-guard"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 export const dynamic = "force-dynamic"
 // AllDay's get_allday_market_listings was rewritten for LIMIT-pushdown (~62ms), but
@@ -182,12 +183,12 @@ async function loadEditionLookup(collectionId: string): Promise<Map<string, Edit
   let complete = true
   try {
     for (let from = 0; from < 60_000; from += PAGE) {
-      const { data, error } = await (supabaseAdmin as any)
+      const { data, error } = await boundedRead((supabaseAdmin as any)
         .from("editions")
         .select("external_id, collection_id, player_name, set_name, set_id_onchain, play_id_onchain, badges")
         .eq("collection_id", collectionId)
         .order("external_id", { ascending: true })
-        .range(from, from + PAGE - 1)
+        .range(from, from + PAGE - 1), "api/market/editions")
       if (error) {
         console.log("[/api/market] editions lookup error: " + error.message)
         complete = false
@@ -323,14 +324,14 @@ async function fetchAllDayMarketEditions(
   else if (filters.sortBy === "discount_desc") rpcSort = "discount_desc"
   else rpcSort = "listed_desc"
 
-  const { data, error } = await (supabaseAdmin as any).rpc("get_allday_market_editions", {
+  const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_allday_market_editions", {
     p_min_discount: 0,
     p_max_price: filters.maxPrice > 0 ? filters.maxPrice : 0,
     p_rarity: filters.tier && filters.tier !== "all" ? filters.tier : "all",
     p_team: filters.team && filters.team !== "all" ? filters.team : "all",
     p_sort_by: rpcSort,
     p_limit: Math.max(filters.limit, 500),
-  })
+  }), "api/market/get_allday_market_editions")
   if (error) {
     console.log("[/api/market] allday editions fetch err:", error.message)
     return []
@@ -401,14 +402,14 @@ async function fetchModernListings(
   else if (filters.sortBy === "discount_desc") rpcSort = "discount_desc"
   else rpcSort = "listed_desc"
 
-  const { data, error } = await (supabaseAdmin as any).rpc(rpcName, {
+  const { data, error } = await boundedRead((supabaseAdmin as any).rpc(rpcName, {
     p_min_discount: 0, // Market should NOT pre-filter by discount; that filter is applied later in-app
     p_max_price: filters.maxPrice > 0 ? filters.maxPrice : 0,
     p_rarity: filters.tier && filters.tier !== "all" ? filters.tier : "all",
     p_team: filters.team && filters.team !== "all" ? filters.team : "all",
     p_sort_by: rpcSort,
     p_limit: Math.max(filters.limit, 500), // pull enough so downstream pagination has headroom
-  })
+  }), "api/market/read")
   if (error) {
     console.log(`[/api/market] modern fetch err (${rpcName}):`, error.message)
     return []

@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { isLeague, type TeamMaster } from "@/lib/teams";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get("league");
@@ -20,9 +21,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const { data, error } = await (supabase as any).rpc("get_teams_for_league", {
+  const { data, error } = await boundedRead((supabase as any).rpc("get_teams_for_league", {
     p_league: league,
-  });
+  }), "api/teams/get_teams_for_league");
 
   if (error) {
     console.error("[api/teams GET]", error);

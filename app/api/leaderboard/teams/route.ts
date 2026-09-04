@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { isLeague, type LeaderboardEntry } from "@/lib/teams";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get("league");
@@ -28,9 +29,9 @@ export async function GET(req: NextRequest) {
     100
   );
 
-  const { data, error } = await (supabase as any).rpc("get_team_fan_leaderboard", {
+  const { data, error } = await boundedRead((supabase as any).rpc("get_team_fan_leaderboard", {
     p_league: league,
-  });
+  }), "api/leaderboard/teams/get_team_fan_leaderboard");
 
   if (error) {
     console.error("[leaderboard/teams GET]", error);

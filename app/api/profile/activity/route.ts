@@ -5,6 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { isFlowAddress } from "@/lib/postgrest-safe";
@@ -18,10 +19,10 @@ export async function GET() {
   }
 
   // 1) Who do I follow?
-  const { data: follows, error: fErr } = await supabase
+  const { data: follows, error: fErr } = await boundedRead(supabase
     .from("follows")
     .select("followee_user_id")
-    .eq("follower_user_id", user.id);
+    .eq("follower_user_id", user.id), "api/profile/activity/follows");
   if (fErr) {
     console.error("[activity follows]", fErr);
     return apiErrorResponse(fErr, "api/profile/activity");
@@ -70,7 +71,7 @@ export async function GET() {
   // the window is a rolling now-7d, so `sales_2026` silently returns empty for
   // the whole feed once the current date rolls into 2027. Postgres prunes to
   // the relevant partition(s) via the sold_at >= sevenDaysAgo predicate anyway.
-  const { data: sales, error: sErr } = await supabase
+  const { data: sales, error: sErr } = await boundedRead(supabase
     .from("sales")
     .select("sold_at, price_usd, collection_id, edition_id, moment_id, seller_address, buyer_address, serial_number")
     .gte("sold_at", sevenDaysAgo)
@@ -78,7 +79,7 @@ export async function GET() {
       `seller_address.in.(${addresses.join(",")}),buyer_address.in.(${addresses.join(",")})`
     )
     .order("sold_at", { ascending: false })
-    .limit(60);
+    .limit(60), "api/profile/activity/sales");
 
   if (sErr) {
     console.error("[activity sales]", sErr);

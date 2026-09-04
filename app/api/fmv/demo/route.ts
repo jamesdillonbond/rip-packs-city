@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { fmvSerialMultiplier as sm } from "@/lib/fmv/serial-multiplier";
 
 // ⚠ This route used to carry its OWN COPY of the serial multiplier, and the copy
@@ -32,11 +33,11 @@ export async function GET() {
 
   // Fetch recent FMV snapshots (confirmed columns: edition_id, fmv_usd, confidence, computed_at)
   const fmvT0 = Date.now();
-  const { data: fmvRows, error: fmvErr } = await supabase
+  const { data: fmvRows, error: fmvErr } = await boundedRead(supabase
     .from("fmv_snapshots")
     .select("edition_id, fmv_usd, confidence, computed_at")
     .order("computed_at", { ascending: false })
-    .limit(20);
+    .limit(20), "api/fmv/demo/fmv_snapshots");
   console.log(`[fmv/demo] fmv_snapshots query elapsedMs=${Date.now() - fmvT0} rows=${fmvRows?.length ?? 0}`);
 
   if (fmvErr) {
@@ -59,10 +60,10 @@ export async function GET() {
   // an HOUR, on the surface whose entire purpose is to show a developer what
   // the API does. The read above already reports its failure honestly; this
   // one has to as well.
-  const { data: editionRows, error: edErr } = await supabase
+  const { data: editionRows, error: edErr } = await boundedRead(supabase
     .from("editions")
     .select("id, external_id")
-    .in("id", internalIds);
+    .in("id", internalIds), "api/fmv/demo/editions");
   console.log(`[fmv/demo] editions query elapsedMs=${Date.now() - edT0} rows=${editionRows?.length ?? 0}`);
 
   if (edErr) {

@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -91,10 +92,10 @@ export async function GET(req: NextRequest) {
   );
   const fmvByEdition = new Map<string, number>();
   if (editionIds.length > 0) {
-    const { data: fmvRows } = await supabase
+    const { data: fmvRows } = await boundedRead(supabase
       .from("fmv_current")
       .select("edition_id, fmv_usd")
-      .in("edition_id", editionIds);
+      .in("edition_id", editionIds), "api/recent-sales/fmv_current");
     for (const f of fmvRows ?? []) {
       const v = Number(f.fmv_usd);
       if (f.edition_id && Number.isFinite(v)) fmvByEdition.set(f.edition_id, v);

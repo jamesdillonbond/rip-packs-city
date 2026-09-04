@@ -18,6 +18,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { COLLECTION_UUID_BY_SLUG, SLUG_TO_DB_SLUG } from "@/lib/collections"
 import { EV_SNAPSHOT_MAX_AGE_HOURS } from "@/lib/pack-dist-verdict"
@@ -109,14 +110,14 @@ export async function GET(req: NextRequest) {
     : "weighted_grail_value_100plus"
 
   try {
-    const { data: grails, error: gErr } = await sb
+    const { data: grails, error: gErr } = await boundedRead(sb
       .from("pack_grail_metrics_mv")
       .select("*")
       .eq("collection_id", collectionUuid)
       .gte("grails_100", minG100)
       .gte("max_pull_fmv", minMP)
       .order(sortColumn, { ascending: false, nullsFirst: false })
-      .limit(limit)
+      .limit(limit), "api/packs/grails/pack_grail_metrics_mv")
 
     if (gErr) {
       console.error("[packs/grails] mv read", gErr.message)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionUuid } from "@/lib/collections"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // ── Tier-pricing benchmarks (sidebar reference table) ─────────────────────────
 //
@@ -24,10 +25,10 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const { data, error } = await supabaseAdmin.rpc(
+  const { data, error } = await boundedRead(supabaseAdmin.rpc(
     "get_tier_pricing_benchmarks",
     { p_collection_id: collectionId }
-  )
+  ), "api/tier-pricing-benchmarks/get_tier_pricing_benchmarks")
   if (error) {
     return apiErrorResponse(error, "api/tier-pricing-benchmarks")
   }

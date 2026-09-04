@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -114,9 +115,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await supabaseAdmin.rpc("get_ufc_set_progress", {
+    const { data, error } = await boundedRead(supabaseAdmin.rpc("get_ufc_set_progress", {
       p_wallet: wallet,
-    });
+    }), "api/ufc-set-progress/get_ufc_set_progress");
     if (error) {
       console.log(`[ufc-set-progress] rpc error: ${error.message}`);
       return apiErrorResponse(error, "api/ufc-set-progress");

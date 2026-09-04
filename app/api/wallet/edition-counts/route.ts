@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionUuid } from "@/lib/collections"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // GET /api/wallet/edition-counts?wallet=0x...&collection=nba-top-shot
 //
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
     const counts = new Map<string, { owned: number; locked: number }>()
     let offset = 0
     while (true) {
-      const { data, error } = await (supabaseAdmin as any)
+      const { data, error } = await boundedRead((supabaseAdmin as any)
         .from("wallet_moments_cache")
         .select("edition_key, is_locked")
         .eq("wallet_address", wallet.toLowerCase())
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
         // edition_key is NOT unique per wallet (many moments share one); moment_id is,
         // via UNIQUE(wallet_address, collection_id, moment_id).
         .order("moment_id", { ascending: true })
-        .range(offset, offset + PAGE - 1)
+        .range(offset, offset + PAGE - 1), "api/wallet/edition-counts/wallet_moments_cache")
       if (error) {
         console.warn("[wallet/edition-counts] query error: " + error.message)
         return apiErrorResponse(error, "api/wallet/edition-counts")

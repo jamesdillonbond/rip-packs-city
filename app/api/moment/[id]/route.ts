@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // GET /api/moment/[id]
 //
@@ -42,9 +43,9 @@ export async function GET(
     )
   }
 
-  const { data, error } = await (supabaseAdmin as any).rpc("get_moment_detail", {
+  const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_moment_detail", {
     p_id: id,
-  })
+  }), "api/moment/[id]/get_moment_detail")
 
   if (error) {
     // Deliberately NOT `{ ok: false, ... }`: this route's `ok: false` is the

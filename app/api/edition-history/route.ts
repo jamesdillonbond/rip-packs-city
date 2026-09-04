@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 export async function GET(req: NextRequest) {
   const edition = req.nextUrl.searchParams.get("edition")
@@ -48,11 +49,11 @@ export async function GET(req: NextRequest) {
   // "unreadable" into the SAME `error` channel and makes them impossible to
   // separate without special-casing a driver code. With `maybeSingle` the two
   // states have their own branch each.
-  const { data: editionRow, error: editionErr } = await (supabase as any)
+  const { data: editionRow, error: editionErr } = await boundedRead((supabase as any)
     .from("editions")
     .select("id")
     .eq("external_id", edition)
-    .maybeSingle()
+    .maybeSingle(), "api/edition-history/editions")
 
   if (editionErr) {
     return apiErrorResponse(editionErr, "api/edition-history")
@@ -65,12 +66,12 @@ export async function GET(req: NextRequest) {
   const since = new Date()
   since.setUTCDate(since.getUTCDate() - days)
 
-  const { data: snapshots, error } = await (supabase as any)
+  const { data: snapshots, error } = await boundedRead((supabase as any)
     .from("fmv_snapshots")
     .select("fmv_usd, wap_usd:asp_usd, wap_without_outliers:asp_without_outliers, floor_price_usd, confidence, liquidity_rating, sales_count_30d, days_since_sale, computed_at")
     .eq("edition_id", editionRow.id)
     .gte("computed_at", since.toISOString())
-    .order("computed_at", { ascending: false })
+    .order("computed_at", { ascending: false }), "api/edition-history/fmv_snapshots")
 
   if (error) {
     return apiErrorResponse(error, "api/edition-history")

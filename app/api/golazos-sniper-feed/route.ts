@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { createClient } from "@supabase/supabase-js"
 import { getClubAbbrev } from "@/lib/laliga-clubs"
 
@@ -53,11 +54,11 @@ export async function GET(req: NextRequest) {
       const playerNames = [...new Set(rows.map(r => r.player_name).filter(Boolean))]
       for (let i = 0; i < playerNames.length; i += 200) {
         const chunk = playerNames.slice(i, i + 200)
-        const { data: eds } = await supabase
+        const { data: eds } = await boundedRead(supabase
           .from("editions")
           .select("id, player_name, set_name, circulation_count, series, tier")
           .eq("collection_id", GOLAZOS_COLLECTION_ID)
-          .in("player_name", chunk)
+          .in("player_name", chunk), "api/golazos-sniper-feed/editions")
         for (const e of eds ?? []) {
           const key = `${String(e.player_name).trim()}|${String(e.set_name).trim()}`
           edByKey.set(key, {
@@ -76,10 +77,10 @@ export async function GET(req: NextRequest) {
       const chunk = editionIds.slice(i, i + 200)
       // fmv_current = DISTINCT-ON latest-per-edition (1 row/edition), avoiding the
       // raw-fmv_snapshots DESC 1000-row-cap drop of cold editions.
-      const { data: snaps } = await supabase
+      const { data: snaps } = await boundedRead(supabase
         .from("fmv_current")
         .select("edition_id, fmv_usd, confidence, computed_at")
-        .in("edition_id", chunk)
+        .in("edition_id", chunk), "api/golazos-sniper-feed/fmv_current")
       for (const s of snaps ?? []) {
         if (!fmvById.has(s.edition_id)) {
           const raw = s.fmv_usd == null ? NaN : Number(s.fmv_usd)

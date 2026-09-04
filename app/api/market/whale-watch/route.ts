@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 
@@ -29,10 +30,10 @@ export async function GET(req: NextRequest) {
   const limitRaw = Number(url.searchParams.get("limit") ?? 10);
   const limit = Math.max(1, Math.min(50, isNaN(limitRaw) ? 10 : Math.floor(limitRaw)));
 
-  const { data, error } = await supabaseAdmin.rpc("get_whale_watch_7d", {
+  const { data, error } = await boundedRead(supabaseAdmin.rpc("get_whale_watch_7d", {
     p_collection_slug: slug,
     p_limit: limit,
-  });
+  }), "api/market/whale-watch/get_whale_watch_7d");
 
   if (error) {
     console.log(`[market/whale-watch] rpc error: ${error.message}`);

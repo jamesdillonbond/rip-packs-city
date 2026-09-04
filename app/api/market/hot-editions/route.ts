@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 
@@ -31,10 +32,10 @@ export async function GET(req: NextRequest) {
   const limitRaw = Number(url.searchParams.get("limit") ?? 10);
   const limit = Math.max(1, Math.min(50, isNaN(limitRaw) ? 10 : Math.floor(limitRaw)));
 
-  const { data, error } = await supabaseAdmin.rpc("get_hot_editions_24h", {
+  const { data, error } = await boundedRead(supabaseAdmin.rpc("get_hot_editions_24h", {
     p_collection_slug: slug,
     p_limit: limit,
-  });
+  }), "api/market/hot-editions/get_hot_editions_24h");
 
   if (error) {
     console.log(`[market/hot-editions] rpc error: ${error.message}`);

@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireUser } from "@/lib/auth/supabase-server"
 
@@ -31,13 +32,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "wallet and packNftId required" }, { status: 400 })
   }
 
-  const { data: matches, error: lookupErr } = await sb
+  const { data: matches, error: lookupErr } = await boundedRead(sb
     .from("saved_wallets")
     .select("wallet_addr")
     .eq("user_id", user.id)
     .eq("wallet_addr", wallet)
     .not("verified_at", "is", null)
-    .limit(1)
+    .limit(1), "api/wallet/pack-lifecycle/saved-wallets")
 
   if (lookupErr) {
     return apiErrorResponse(lookupErr, "api/wallet/pack-lifecycle");
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId })
+    const { data, error } = await boundedRead(sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId }), "api/wallet/pack-lifecycle/get_pack_lifecycle")
     if (error) {
       console.error("[wallet/pack-lifecycle]", error.message)
       return apiErrorResponse(error, "api/wallet/pack-lifecycle");

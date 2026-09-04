@@ -4,6 +4,7 @@ import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -101,10 +102,10 @@ export async function GET(req: NextRequest) {
     const wallet = await resolveWallet(walletInput)
 
     // Acquisition stats via RPC
-    const { data: acqRaw } = await (supabaseAdmin as any).rpc("get_acquisition_stats", {
+    const { data: acqRaw } = await boundedRead((supabaseAdmin as any).rpc("get_acquisition_stats", {
       p_wallet: wallet,
       p_collection_id: collectionId,
-    })
+    }), "api/analytics/get_acquisition_stats")
     const acqResult = (Array.isArray(acqRaw) ? acqRaw[0] : acqRaw) ?? {}
     const acqCounts = bucketAcquisitionCounts(
       acqResult.breakdown as Array<{ method?: string | null; count?: number | null }> | undefined
@@ -114,7 +115,7 @@ export async function GET(req: NextRequest) {
     const PAGE_SIZE = 1000
     const rows: any[] = []
     for (let page = 0; page < 10; page++) {
-      const { data } = await (supabaseAdmin as any).rpc("get_wallet_moments_with_fmv", {
+      const { data } = await boundedRead((supabaseAdmin as any).rpc("get_wallet_moments_with_fmv", {
         p_wallet: wallet,
         p_sort_by: "fmv_desc",
         p_limit: PAGE_SIZE,
@@ -123,7 +124,7 @@ export async function GET(req: NextRequest) {
         p_series: null,
         p_tier: null,
         p_collection_id: collectionId,
-      })
+      }), "api/analytics/get_wallet_moments_with_fmv")
       const result = (Array.isArray(data) ? data[0] : data) as { moments?: any[]; total_count?: number } | null
       const batch = result?.moments ?? []
       rows.push(...batch)

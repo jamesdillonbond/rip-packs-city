@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
@@ -45,11 +46,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_topshot_set_completion_plan", {
+    const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_topshot_set_completion_plan", {
       p_wallet: wallet,
       p_set_id: setId,
       p_limit: limit,
-    })
+    }), "api/topshot/set-plan/get_topshot_set_completion_plan")
     if (error) {
       return apiErrorResponse(error, "api/topshot/set-plan");
     }

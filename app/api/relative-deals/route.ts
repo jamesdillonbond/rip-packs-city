@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionUuid } from "@/lib/collections"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // ── Relative-deals fallback for ASK_ONLY collections ──────────────────────────
 //
@@ -37,11 +38,11 @@ export async function GET(req: NextRequest) {
     return Number.isFinite(n) && n > 0 && n <= 200 ? Math.floor(n) : 50
   })()
 
-  const { data, error } = await supabaseAdmin.rpc("get_relative_deals", {
+  const { data, error } = await boundedRead(supabaseAdmin.rpc("get_relative_deals", {
     p_collection_id: collectionId,
     p_min_discount: minDiscount,
     p_limit: limit,
-  })
+  }), "api/relative-deals/get_relative_deals")
   if (error) {
     return apiErrorResponse(error, "api/relative-deals")
   }

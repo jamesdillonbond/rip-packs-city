@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireUser } from "@/lib/auth/supabase-server"
 import { SLUG_TO_DB_SLUG } from "@/lib/collections"
@@ -72,13 +73,13 @@ export async function GET(req: NextRequest) {
   }
 
   // Wallet ownership check (same shape as /api/wallet/pack-summary).
-  const { data: matches, error: lookupErr } = await sb
+  const { data: matches, error: lookupErr } = await boundedRead(sb
     .from("saved_wallets")
     .select("wallet_addr")
     .eq("user_id", user.id)
     .eq("wallet_addr", wallet)
     .not("verified_at", "is", null)
-    .limit(1)
+    .limit(1), "api/wallet/pack-history/saved_wallets")
 
   if (lookupErr) {
     console.error("[wallet/pack-history] verify lookup", lookupErr.message)
@@ -92,13 +93,13 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await sb.rpc("get_wallet_pack_history", {
+    const { data, error } = await boundedRead(sb.rpc("get_wallet_pack_history", {
       p_wallet: wallet,
       p_collection_slug: collectionSlug,
       p_status: status,
       p_limit: limit,
       p_offset: offset,
-    })
+    }), "api/wallet/pack-history/get_wallet_pack_history")
     if (error) {
       console.error("[wallet/pack-history]", error.message)
       return apiErrorResponse(error, "api/wallet/pack-history");

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 
@@ -65,9 +66,9 @@ export async function GET(req: NextRequest) {
 
   try {
     const rpcStart = Date.now()
-    const { data, error } = await (supabaseAdmin as any).rpc("get_user_profile", {
+    const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_user_profile", {
       p_owner_key: rawOwnerKey,
-    })
+    }), "api/wallet/profile/get_user_profile")
     const rpcMs = Date.now() - rpcStart
     if (error) {
       console.error(

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { derivePackAvailability, packEvBasis } from "@/lib/pack-availability"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // GET /api/packs?collection=<slug>&sort=<key>&tier=<tier>&search=<q>&limit=<n>
 //
@@ -106,13 +107,13 @@ export async function GET(req: NextRequest) {
   // modeled-fallback, so we fetch it whole and map by dist_id. Non-fatal: if it
   // errors the page just shows pure modeled EV.
   if (collection === "nba-top-shot" && rows.length) {
-    const { data: calData, error: calError } = await supabase
+    const { data: calData, error: calError } = await boundedRead(supabase
       .from("v_topshot_pack_ev_calibrated")
       .select(
         "dist_id, calibrated_gross_ev, calibrated_net_ev, calibrated_margin_pct, calibration_applied",
       )
       .eq("calibration_applied", true)
-      .in("dist_id", distIds)
+      .in("dist_id", distIds), "api/packs/v_topshot_pack_ev_calibrated")
     if (calError) {
       console.error("[api/packs] calibrated merge", calError.message)
     } else if (calData?.length) {
@@ -149,10 +150,10 @@ export async function GET(req: NextRequest) {
     // join, whose predicate cannot push below its DISTINCT ON. Per dist this is an
     // index scan (cost 7.54) instead of a 119,591-row scan shared across the page.
     // See migration 20260809170000_audit_20260809_allday_pack_detail_ev_lean_view.
-    const { data: corr, error: corrError } = await supabase
+    const { data: corr, error: corrError } = await boundedRead(supabase
       .from("v_allday_pack_detail_ev")
       .select("dist_id, corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, low_confidence_ev")
-      .in("dist_id", distIds)
+      .in("dist_id", distIds), "api/packs/v_allday_pack_detail_ev")
     if (corrError) {
       console.error("[api/packs] allday corrected merge", corrError.message)
     } else if (corr?.length) {
@@ -188,10 +189,10 @@ export async function GET(req: NextRequest) {
   // TS calibrated + AllDay corrected merges) and attach low_confidence_ev/ev_method
   // for the caveat chip. Non-fatal.
   if (collection === "disney-pinnacle" && rows.length) {
-    const { data: corr, error: corrError } = await supabase
+    const { data: corr, error: corrError } = await boundedRead(supabase
       .from("v_pinnacle_pack_ev_corrected")
       .select("dist_id, corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, low_confidence_ev")
-      .in("dist_id", distIds)
+      .in("dist_id", distIds), "api/packs/v_pinnacle_pack_ev_corrected")
     if (corrError) {
       console.error("[api/packs] pinnacle corrected merge", corrError.message)
     } else if (corr?.length) {

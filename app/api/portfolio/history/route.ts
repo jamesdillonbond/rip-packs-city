@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 
@@ -28,10 +29,10 @@ export async function GET(req: NextRequest) {
   const daysRaw = Number(url.searchParams.get("days") ?? 30);
   const days = Math.max(1, Math.min(365, isNaN(daysRaw) ? 30 : Math.floor(daysRaw)));
 
-  const { data, error } = await supabaseAdmin.rpc("get_portfolio_history", {
+  const { data, error } = await boundedRead(supabaseAdmin.rpc("get_portfolio_history", {
     p_owner_key: ownerKey,
     p_days: days,
-  });
+  }), "api/portfolio/history/get_portfolio_history");
 
   if (error) {
     console.log(`[portfolio/history] rpc error: ${error.message}`);

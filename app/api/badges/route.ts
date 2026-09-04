@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { sanitizeOrIlikeValue } from "@/lib/postgrest-safe"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -196,12 +197,12 @@ export async function GET(req: NextRequest) {
 
     // Last sync timestamp
     const syncT0 = Date.now()
-    const { data: syncData } = await supabase
+    const { data: syncData } = await boundedRead(supabase
       .from("badge_editions")
       .select("updated_at")
       .order("updated_at", { ascending: false })
       .limit(1)
-      .single()
+      .single(), "api/badges/badge_editions")
     console.log(`[badges] sync query elapsedMs=${Date.now() - syncT0}`)
     console.log(`[badges] done elapsedMs=${Date.now() - startedAt}`)
 

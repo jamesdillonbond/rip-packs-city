@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 import { createClient } from "@supabase/supabase-js"
 
 const supabase: any = createClient(
@@ -22,9 +23,9 @@ export async function GET(req: NextRequest) {
   const wallet = walletRaw.trim()
 
   try {
-    const { data, error } = await supabase.rpc("get_wallet_collection_snapshot", {
+    const { data, error } = await boundedRead(supabase.rpc("get_wallet_collection_snapshot", {
       p_wallet: wallet,
-    })
+    }), "api/collection-snapshot/get_wallet_collection_snapshot")
 
     if (error) {
       // apiErrorResponse rather than a hand-rolled 500: it classifies a

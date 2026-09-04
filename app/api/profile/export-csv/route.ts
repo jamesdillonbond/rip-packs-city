@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 
@@ -40,10 +41,10 @@ export async function GET(req: NextRequest) {
   if (gate instanceof Response) return gate
 
   try {
-    const { data: wallets, error: walletsErr } = await supabase
+    const { data: wallets, error: walletsErr } = await boundedRead(supabase
       .from("saved_wallets")
       .select("wallet_addr")
-      .eq("owner_key", ownerKey)
+      .eq("owner_key", ownerKey), "api/profile/export-csv/saved_wallets")
     if (walletsErr) {
       return apiErrorResponse(walletsErr, "api/profile/export-csv");
     }
@@ -68,9 +69,9 @@ export async function GET(req: NextRequest) {
     const lines: string[] = [header.join(",")]
 
     for (const addr of addrs) {
-      const { data, error } = await supabase.rpc("export_wallet_csv", {
+      const { data, error } = await boundedRead(supabase.rpc("export_wallet_csv", {
         p_wallet: addr,
-      })
+      }), "api/profile/export-csv/export_wallet_csv")
       if (error) {
         console.error("[export-csv rpc]", addr, error.message)
         continue

@@ -33,6 +33,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
@@ -64,10 +65,10 @@ export async function GET() {
   }
 
   try {
-    const { data: walletsRaw, error: walletsError } = await (supabase as any).rpc(
+    const { data: walletsRaw, error: walletsError } = await boundedRead((supabase as any).rpc(
       "get_user_saved_wallets",
       { p_user_id: user.id }
-    );
+    ), "api/profile/cost-basis-summary/get_user_saved_wallets");
 
     if (walletsError) {
       console.log(
@@ -104,10 +105,10 @@ export async function GET() {
       if (seenCb.has(addr)) continue;
       seenCb.add(addr);
 
-      const { data: cb, error: cbError } = await (supabase as any).rpc(
+      const { data: cb, error: cbError } = await boundedRead((supabase as any).rpc(
         "get_wallet_cost_basis",
         { p_wallet: addr, p_collection_id: TOPSHOT_COLLECTION_ID }
-      );
+      ), "api/profile/cost-basis-summary/get_wallet_cost_basis");
 
       if (cbError) {
         console.log(

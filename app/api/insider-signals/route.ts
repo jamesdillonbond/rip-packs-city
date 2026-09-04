@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 export const dynamic = "force-dynamic"
 
@@ -40,10 +41,10 @@ export async function GET(req: NextRequest) {
   if (collection) {
     // Public, collection-scoped market intelligence — no session required.
     const dbSlug = KEBAB_TO_DB_SLUG[collection] ?? collection
-    const { data, error } = await (supabaseAdmin as any).rpc(
+    const { data, error } = await boundedRead((supabaseAdmin as any).rpc(
       "get_insider_signals_top_n",
       { p_collection_slug: dbSlug, p_limit: limit }
-    )
+    ), "api/insider-signals/get_insider_signals_top_n")
     if (error) {
       return apiErrorResponse(error, "api/insider-signals")
     }
@@ -57,13 +58,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 })
   }
   const nowIso = new Date().toISOString()
-  const { data, error } = await (supabaseAdmin as any)
+  const { data, error } = await boundedRead((supabaseAdmin as any)
     .from("topshot_insider_alerts")
     .select("id, alert_type, title, summary, evidence_jsonb, severity, generated_at, expires_at")
     .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order("severity", { ascending: false })
     .order("generated_at", { ascending: false })
-    .limit(50)
+    .limit(50), "api/insider-signals/topshot_insider_alerts")
 
   if (error) {
     return apiErrorResponse(error, "api/insider-signals")

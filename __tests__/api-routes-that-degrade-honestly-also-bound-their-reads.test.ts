@@ -111,8 +111,24 @@ const DEGRADES_HONESTLY = /apiErrorResponse\s*\(|boardUnavailable\s*\(/
  * ⛔ `AbortSignal.timeout` and `new AbortController` are deliberately ABSENT.
  * They bound a `fetch`, and including them let `/api/sniper-feed` pass on an
  * HTTP bound while four Supabase RPCs ran unbounded — see the header.
+ *
+ * ⭐ PREDICATE CHANGE 2026-09-04, and it LOWERS the budget rather than raising
+ * it, so it is stated at least as loudly. `boundedRead` (`lib/api/bounded-read.ts`)
+ * is the API-route flavour of `withBoardBudget`: it RESOLVES into the
+ * `{ data, error }` envelope these routes already destructure instead of
+ * rejecting, because — unlike every `/insights` server page — the shape here is
+ * a bare `const { data, error } = await supabase.rpc(…)` with NO try/catch, and
+ * a rejection there converts a slow read into an unhandled 500 that the route's
+ * own honest-error helper never gets to classify.
+ *
+ * ⚠ A NEW SPELLING IN THIS PATTERN IS THE ONE CHANGE THAT CAN LOWER THIS
+ * NUMBER WITHOUT ANY ROUTE IMPROVING, so it is admitted on evidence, not on
+ * naming: `__tests__/lib-api-bounded-read.test.ts` drives reads that NEVER
+ * settle and asserts they resolve into `{ data: null, error }`, and three of its
+ * cases HANG (vitest wall) against the helper with its `Promise.race` removed.
+ * Do not add a fourth spelling here without the equivalent behavioural proof.
  */
-const BOUNDED = /withBoardBudget|withPagedBoardBudget|rpcWithRetry|\.abortSignal\s*\(/
+const BOUNDED = /withBoardBudget|withPagedBoardBudget|rpcWithRetry|boundedRead\s*\(|\.abortSignal\s*\(/
 
 interface Row {
   rel: string
@@ -139,8 +155,25 @@ const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
  * bound one. NEVER raise it — except as a POPULATION CORRECTION, which must name
  * the predicate change that caused it, exactly as the heartbeat ratchet's
  * 31 → 35 does.
+ *
+ * ⭐ 130 → 72 on 2026-09-04: **58 read-only routes converted to `boundedRead`**
+ * (`lib/api/bounded-read.ts`), population unchanged at 131. Two of the 58 are
+ * the ones production actually named — `/api/profile/hero-moment` (three
+ * `57014` statement timeouts on `/dashboard`, the primary signed-in surface)
+ * and `/api/wallet/pack-lifecycle`.
+ *
+ * ⛔ THE REMAINING 72 ARE NOT A LEFTOVER, AND THE SPLIT IS DELIBERATE. 42 of
+ * them export a POST/PUT/PATCH/DELETE or live under `cron|admin|backfill|
+ * badge-sync|seed-|ingest`, and **bounding a WRITE is not the same trade as
+ * bounding a read**: this bound abandons the WAIT, not the statement, so a
+ * write that overruns would be reported to the caller as failed while Postgres
+ * commits it — manufacturing exactly the false claim the honesty canon exists
+ * to prevent, in the one direction where the caller cannot re-read to find out.
+ * A write needs an idempotency key or a status re-read, not a timer. The rest
+ * are read-only routes whose reads sit behind a shape this codemod could not
+ * convert mechanically. **Do not close the gap by wrapping the writes.**
  */
-const BUDGET = 130
+const BUDGET = 72
 
 describe("an API route that degrades honestly also bounds the read it degrades on", () => {
   it("is not vacuous — and the check is SATISFIABLE AT A POPULATION OF ZERO", () => {

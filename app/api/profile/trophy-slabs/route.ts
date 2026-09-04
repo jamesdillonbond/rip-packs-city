@@ -27,6 +27,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase as supabaseAnon, supabaseAdmin } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 export const dynamic = "force-dynamic";
 
@@ -77,9 +78,9 @@ export async function GET(req: NextRequest) {
     // Service-role client — the RPC is SECDEF anyway, but using admin here
     // avoids needing a user-scoped server client for a read.
     const client: any = supabaseAdmin;
-    const { data, error } = await client.rpc("get_trophy_slab_data", {
+    const { data, error } = await boundedRead(client.rpc("get_trophy_slab_data", {
       p_user_id: user.id,
-    });
+    }), "api/profile/trophy-slabs/get_trophy_slab_data");
     if (error) {
       console.error("[trophy-slabs mine]", error);
       return apiErrorResponse(error, "api/profile/trophy-slabs");
@@ -89,10 +90,10 @@ export async function GET(req: NextRequest) {
 
   // Public read — anonymous client so RLS/grants apply normally.
   const client: any = supabaseAnon;
-  const { data, error } = await client.rpc(
+  const { data, error } = await boundedRead(client.rpc(
     "get_trophy_slab_data_by_username",
     { p_username: username }
-  );
+  ), "api/profile/trophy-slabs/get_trophy_slab_data_by_username");
   if (error) {
     console.error("[trophy-slabs public]", error);
     return apiErrorResponse(error, "api/profile/trophy-slabs");

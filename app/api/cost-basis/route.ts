@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { createClient } from "@supabase/supabase-js"
 import { getCollection } from "@/lib/collections"
 
@@ -33,11 +34,11 @@ async function resolveCollectionId(
   const collectionObj = getCollection(slug)
   const contractName = collectionObj?.flowContractName
   if (!contractName) return { id: null, ok: true }
-  const { data, error } = await supabase
+  const { data, error } = await boundedRead(supabase
     .from("collection_config")
     .select("collection_id")
     .eq("flow_contract_name", contractName)
-    .single()
+    .single(), "api/cost-basis/collection_config")
   if (error) return { id: null, ok: false, error }
   return { id: data?.collection_id ?? null, ok: true }
 }
@@ -66,7 +67,7 @@ export async function GET(req: NextRequest) {
   const rpcParams: Record<string, any> = { p_wallet: normalized }
   if (collectionId) rpcParams.p_collection_id = collectionId
 
-  const { data, error } = await (supabase as any).rpc("get_wallet_cost_basis", rpcParams)
+  const { data, error } = await boundedRead((supabase as any).rpc("get_wallet_cost_basis", rpcParams), "api/cost-basis/get_wallet_cost_basis")
 
   // Enrich with acquisition_method from moment_acquisitions
   if (data && Array.isArray(data)) {
@@ -77,10 +78,10 @@ export async function GET(req: NextRequest) {
       // "PACK PULL"/"MINTED" chip is gated on the value being present), so a failed
       // read here degrades a field without making a false claim. It was silent
       // though — logging is what was missing, not a status code.
-      const { data: acqData, error: acqErr } = await (supabase as any).rpc("get_wallet_acquisition_data", {
+      const { data: acqData, error: acqErr } = await boundedRead((supabase as any).rpc("get_wallet_acquisition_data", {
         p_wallet: normalized,
         p_moment_ids: nftIds,
-      })
+      }), "api/cost-basis/get_wallet_acquisition_data")
       if (acqErr) console.error("[api/cost-basis] acquisition enrich:", acqErr.message)
       if (acqData) {
         const acqMap = new Map<string, string>()

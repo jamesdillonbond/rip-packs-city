@@ -32,6 +32,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // Resolve a public ownerKey (username) → user_id the same way the other
 // public ownerKey-driven profile endpoints (teams, portfolio-history) do.
@@ -40,11 +41,11 @@ type OwnerResolution =
   | { ok: false; error: unknown }
 
 async function resolveUserId(ownerKey: string): Promise<OwnerResolution> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await boundedRead((supabase as any)
     .from("profile_bio")
     .select("user_id")
     .ilike("username", ownerKey)
-    .maybeSingle()
+    .maybeSingle(), "api/profile/collection-breakdown/profile_bio")
   if (error) {
     console.log("[collection-breakdown] resolveUserId failed:", error.message)
     // ⚠ This used to `return null`, which the caller spells
@@ -118,10 +119,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data: walletsRaw, error: walletsError } = await (supabase as any).rpc(
+    const { data: walletsRaw, error: walletsError } = await boundedRead((supabase as any).rpc(
       "get_user_saved_wallets",
       { p_user_id: userId }
-    )
+    ), "api/profile/collection-breakdown/get_user_saved_wallets")
 
     if (walletsError) {
       console.log(
@@ -158,9 +159,9 @@ export async function GET(req: NextRequest) {
     >()
 
     for (const addr of addrs) {
-      const { data, error } = await (supabase as any).rpc("get_collection_breakdown", {
+      const { data, error } = await boundedRead((supabase as any).rpc("get_collection_breakdown", {
         p_wallet: addr,
-      })
+      }), "api/profile/collection-breakdown/get_collection_breakdown")
       if (error) {
         console.log(
           "[collection-breakdown] get_collection_breakdown failed for",
@@ -219,10 +220,10 @@ export async function GET(req: NextRequest) {
     // of a dollar figure. Absent (older column shape / test fixtures) → null.
     const closedMap = new Map<string, string | null>()
     if (ids.length > 0) {
-      const { data: cols } = await (supabase as any)
+      const { data: cols } = await boundedRead((supabase as any)
         .from("collections")
         .select("id, slug, market_closed_at")
-        .in("id", ids)
+        .in("id", ids), "api/profile/collection-breakdown/collections")
       for (const c of (cols ?? []) as Array<{ id: string; slug: string; market_closed_at?: string | null }>) {
         if (c.id && c.slug) slugMap.set(c.id, c.slug)
         if (c.id) closedMap.set(c.id, c.market_closed_at ?? null)

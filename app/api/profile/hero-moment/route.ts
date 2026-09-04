@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { COLLECTIONS } from "@/lib/collections";
@@ -77,20 +78,20 @@ async function resolveUserId(ownerKey: string | null): Promise<OwnerResolution> 
   if (ownerKey) {
     const key = ownerKey.trim();
     if (key.startsWith("0x")) {
-      const { data, error } = await supabase
+      const { data, error } = await boundedRead(supabase
         .from("saved_wallets")
         .select("user_id")
         .eq("wallet_addr", key.toLowerCase())
         .limit(1)
-        .maybeSingle();
+        .maybeSingle(), "api/profile/hero-moment/owner-by-wallet");
       if (error) return { ok: false, error };
       if (data?.user_id) return { ok: true, userId: data.user_id as string };
     }
-    const { data: bio, error: bioErr } = await supabase
+    const { data: bio, error: bioErr } = await boundedRead(supabase
       .from("profile_bio")
       .select("user_id")
       .eq("username", key)
-      .maybeSingle();
+      .maybeSingle(), "api/profile/hero-moment/owner-by-username");
     if (bioErr) return { ok: false, error: bioErr };
     if (bio?.user_id) return { ok: true, userId: bio.user_id as string };
   }
@@ -113,9 +114,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ hero: null, reason: "no_user" }, { status: 401 });
   }
 
-  const { data, error } = await supabase.rpc("get_user_hero_moment", {
+  const { data, error } = await boundedRead(supabase.rpc("get_user_hero_moment", {
     p_user_id: userId,
-  });
+  }), "api/profile/hero-moment/get_user_hero_moment");
 
   if (error) {
     console.error("[profile/hero-moment]", error.message);

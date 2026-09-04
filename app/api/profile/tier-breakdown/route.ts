@@ -42,6 +42,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 
 const TIER_ORDER = ["Common", "Fandom", "Rare", "Legendary", "Ultimate"];
 
@@ -56,11 +57,11 @@ type OwnerResolution =
   | { ok: false; error: unknown };
 
 async function resolveUserId(ownerKey: string): Promise<OwnerResolution> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await boundedRead((supabase as any)
     .from("profile_bio")
     .select("user_id")
     .ilike("username", ownerKey)
-    .maybeSingle();
+    .maybeSingle(), "api/profile/tier-breakdown/profile_bio");
   if (error) {
     console.log("[tier-breakdown] resolveUserId failed:", error.message);
     // Was `return null`, which the caller spells `owner_not_found: true` -- a
@@ -101,10 +102,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data: walletsRaw, error: walletsError } = await (supabase as any).rpc(
+    const { data: walletsRaw, error: walletsError } = await boundedRead((supabase as any).rpc(
       "get_user_saved_wallets",
       { p_user_id: userId }
-    );
+    ), "api/profile/tier-breakdown/get_user_saved_wallets");
 
     if (walletsError) {
       console.log(
@@ -139,9 +140,9 @@ export async function GET(req: NextRequest) {
       seenTier.add(addr);
       walletsAttempted += 1;
 
-      const { data, error } = await (supabase as any).rpc("get_wallet_tier_counts", {
+      const { data, error } = await boundedRead((supabase as any).rpc("get_wallet_tier_counts", {
         p_wallet: addr,
-      });
+      }), "api/profile/tier-breakdown/get_wallet_tier_counts");
       if (error) {
         walletsWithRpcError += 1;
         console.log(

@@ -10,6 +10,7 @@ import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { apiErrorResponse } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -48,12 +49,12 @@ export async function GET(req: Request) {
         }
       }
     }
-    const { data, error } = await db
+    const { data, error } = await boundedRead(db
       .from("editions")
       .select("jersey_number, player_birthdate, player_draft_year")
       .eq("collection_id", coll.id)
       .eq("external_id", editionKey)
-      .maybeSingle()
+      .maybeSingle(), "api/entity/edition/editions")
 
     // A failed READ is an error, never an answer — three all-null fields would
     // be indistinguishable from an edition we genuinely hold no bio for, and

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sanitizeOrIlikeValue } from "@/lib/postgrest-safe";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
@@ -30,13 +31,13 @@ export async function GET(req: NextRequest) {
   // grammar metacharacters (`,` pivots columns, `()` injects a nested logic
   // tree) before interpolating — same sanitizer as app/api/admin/feedback.
   const like = `%${sanitizeOrIlikeValue(q)}%`;
-  const { data, error } = await (supabaseAdmin as any)
+  const { data, error } = await boundedRead((supabaseAdmin as any)
     .from("editions")
     .select("id, external_id, player_name, set_name, collection_id")
     .or(`player_name.ilike.${like},set_name.ilike.${like},external_id.ilike.${like}`)
     .not("external_id", "is", null)
     .order("player_name", { ascending: true })
-    .limit(limit);
+    .limit(limit), "api/search-editions/editions");
 
   if (error) {
     console.log(`[search-editions] err: ${error.message}`);

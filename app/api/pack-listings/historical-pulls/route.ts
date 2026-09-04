@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
+import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -12,12 +13,12 @@ export async function GET(req: NextRequest) {
     // moment_acquisitions doesn't have pack_name — look up by pack_dist_id via a join to pack-title map is costly.
     // Workaround: rely on the `source` or find by matching via wallet_moments_cache set_name ilike.
     // Heuristic: join moment_acquisitions (pack_pull) → wallet_moments_cache on moment_id, count by tier, filter set_name matching title loosely.
-    const { data: pulls, error } = await (supabaseAdmin as any)
+    const { data: pulls, error } = await boundedRead((supabaseAdmin as any)
       .from("moment_acquisitions")
       .select("nft_id, acquisition_method, pack_dist_id, collection_id")
       .eq("collection_id", TOPSHOT_COLLECTION_ID)
       .eq("acquisition_method", "pack_pull")
-      .limit(20000)
+      .limit(20000), "api/pack-listings/historical-pulls/moment_acquisitions")
 
     if (error || !pulls) {
       return NextResponse.json({ total: 0, tierBreakdown: {} })
@@ -33,11 +34,11 @@ export async function GET(req: NextRequest) {
     const titleLower = title.toLowerCase()
     for (let i = 0; i < nftIds.length; i += BATCH) {
       const slice = nftIds.slice(i, i + BATCH)
-      const { data: mom } = await (supabaseAdmin as any)
+      const { data: mom } = await boundedRead((supabaseAdmin as any)
         .from("wallet_moments_cache")
         .select("moment_id, tier, set_name")
         .eq("collection_id", TOPSHOT_COLLECTION_ID)
-        .in("moment_id", slice)
+        .in("moment_id", slice), "api/pack-listings/historical-pulls/wallet_moments_cache")
       for (const m of mom ?? []) {
         const sn = (m.set_name ?? "").toLowerCase()
         if (!sn || !titleLower) continue
