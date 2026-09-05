@@ -17,6 +17,8 @@ import { createClient } from "@supabase/supabase-js"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { OgMark } from "@/lib/og/marks"
 import { isEvSnapshotStale } from "@/lib/pack-dist-verdict"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 
 export const runtime = "edge"
 
@@ -89,7 +91,7 @@ async function fetchPack(distId: string, collectionSlug: string | null): Promise
   // render sweep exists to catch. This file's own header promises "never 500";
   // without the catch that held only for the error-return path.
   try {
-    const { data, error } = await q.maybeSingle()
+    const { data, error } = await boundedRead(q.maybeSingle(), "og/pack/pack_table_rows", OG_FETCH_TIMEOUT_MS)
     if (error) return null
     return (data as PackRow | null) ?? null
   } catch {
@@ -108,11 +110,15 @@ async function fetchAllDayCorrectedOg(
   // Lean per-dist view (see migration 20260809170000): same values as
   // v_allday_pack_info without its 1.19M-cost pack_ev_latest join.
   try {
-    const { data, error } = await sb
-      .from("v_allday_pack_detail_ev")
-      .select("corrected_gross_ev, corrected_net_ev, corrected_value_ratio")
-      .eq("dist_id", distId)
-      .maybeSingle()
+    const { data, error } = await boundedRead(
+      sb
+        .from("v_allday_pack_detail_ev")
+        .select("corrected_gross_ev, corrected_net_ev, corrected_value_ratio")
+        .eq("dist_id", distId)
+        .maybeSingle(),
+      "og/pack/v_allday_pack_detail_ev",
+      OG_FETCH_TIMEOUT_MS,
+    )
     if (error) return null
     return data ?? null
   } catch {

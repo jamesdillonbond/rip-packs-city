@@ -18,6 +18,8 @@ import { ogImageDataUri } from "@/lib/og/img-data"
 import { isMarketClosed } from "@/lib/market-closed"
 import { urlSlugForCollection } from "@/lib/moment-detail-format"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -98,9 +100,11 @@ export async function GET(
 
   let detail: MomentDetail | null = null
   try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_moment_detail", {
-      p_id: id,
-    })
+    const { data, error } = await boundedRead(
+      (supabaseAdmin as any).rpc("get_moment_detail", { p_id: id }),
+      "og/moment/get_moment_detail",
+      OG_FETCH_TIMEOUT_MS,
+    )
     if (!error && data && data.ok !== false) {
       detail = data as MomentDetail
     }

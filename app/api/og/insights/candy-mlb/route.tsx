@@ -28,6 +28,8 @@
 import { ImageResponse } from "next/og"
 import { supabaseAdmin } from "@/lib/supabase"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -57,10 +59,14 @@ export async function GET() {
     // genuinely empty board. That is this repo's most-repeated defect class —
     // a failed read rendering as a fact — and on this card the fact asserted
     // was liveness ("Live secondary FMV") that had not been measured.
-    const { data, error } = await sb
-      .from("candy_secondary_board")
-      .select("fmv_usd")
-      .limit(500)
+    const { data, error } = await boundedRead(
+      sb
+        .from("candy_secondary_board")
+        .select("fmv_usd")
+        .limit(500),
+      "og/insights/candy-mlb/candy_secondary_board",
+      OG_FETCH_TIMEOUT_MS,
+    )
     if (error) throw error
     if (Array.isArray(data)) {
       fetched = true

@@ -6,6 +6,8 @@ import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { getCollection } from "@/lib/collections"
 import { renderEntityOg } from "@/lib/og/entity-card"
 import { isMarketClosed } from "@/lib/market-closed"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
   const sb = supabaseAdmin as any
   let detail: Record<string, any> | null = null
   try {
-    const { data } = await sb.rpc("get_edition_detail", { p_collection_id: coll.id, p_route_slug: slug })
+    const { data } = await boundedRead(sb.rpc("get_edition_detail", { p_collection_id: coll.id, p_route_slug: slug }), "og/edition/get_edition_detail", OG_FETCH_TIMEOUT_MS)
     detail = Array.isArray(data) ? (data[0] ?? null) : (data ?? null)
   } catch { /* fall through to default */ }
 

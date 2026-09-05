@@ -22,6 +22,8 @@ import { NextRequest } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { OgMark } from "@/lib/og/marks"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 
 export const runtime = "edge"
 
@@ -89,7 +91,7 @@ async function fetchLifecycle(packNftId: string): Promise<Lifecycle | null> {
   // sweep exists to prevent. This card's own contract is "fall back to a generic
   // card, never 500"; without this it held only for the error-return path.
   try {
-    const { data, error } = await sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId })
+    const { data, error } = await boundedRead(sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId }), "og/pack/lifecycle/get_pack_lifecycle", OG_FETCH_TIMEOUT_MS)
     if (error || !data || typeof data !== "object") return null
     return data as Lifecycle
   } catch {

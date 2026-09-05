@@ -5,6 +5,8 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { getCollection } from "@/lib/collections"
 import { renderEntityOg } from "@/lib/og/entity-card"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -34,8 +36,8 @@ export async function GET(req: NextRequest) {
   let images: string[] = []
   try {
     const [d, eds] = await Promise.all([
-      sb.rpc("get_set_detail", { p_collection_id: coll.id, p_set_slug: slug }),
-      sb.rpc("get_set_editions", { p_collection_id: coll.id, p_set_slug: slug, p_limit: 4, p_offset: 0 }),
+      boundedRead(sb.rpc("get_set_detail", { p_collection_id: coll.id, p_set_slug: slug }), "og/set/get_set_detail", OG_FETCH_TIMEOUT_MS),
+      boundedRead(sb.rpc("get_set_editions", { p_collection_id: coll.id, p_set_slug: slug, p_limit: 4, p_offset: 0 }), "og/set/get_set_editions", OG_FETCH_TIMEOUT_MS),
     ])
     detail = Array.isArray(d.data) ? (d.data[0] ?? null) : (d.data ?? null)
     images = thumbs(eds.data)

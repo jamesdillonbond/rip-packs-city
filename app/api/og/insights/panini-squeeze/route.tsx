@@ -9,6 +9,8 @@ import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts";
+import { boundedRead } from "@/lib/api/bounded-read";
+import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,12 +52,16 @@ export async function GET(_req: NextRequest) {
   // back to its tagline, exactly as it does for a failed read.
   const AGG_PAGE = 1000;
   try {
-    const top = await (supabaseAdmin as any)
-      .from("panini_squeeze_board")
-      .select("player_name,set_name,mint_cap,still_in_packs,fmv_usd")
-      .not("fmv_usd", "is", null)
-      .order("fmv_usd", { ascending: false })
-      .limit(3);
+    const top = await boundedRead(
+      (supabaseAdmin as any)
+        .from("panini_squeeze_board")
+        .select("player_name,set_name,mint_cap,still_in_packs,fmv_usd")
+        .not("fmv_usd", "is", null)
+        .order("fmv_usd", { ascending: false })
+        .limit(3),
+      "og/insights/panini-squeeze/top3",
+      OG_FETCH_TIMEOUT_MS,
+    );
     rows = top.data ?? [];
 
     let total = 0;
@@ -67,11 +73,15 @@ export async function GET(_req: NextRequest) {
       // overlap and omit in equal measure — the duplicates and omissions cancel,
       // so every count-based check still passes while the SUM is wrong. `id` is
       // the view's key.
-      const { data, count, error } = await (supabaseAdmin as any)
-        .from("panini_squeeze_board")
-        .select("sealed_fmv_exposure_usd", { count: page === 0 ? "exact" : undefined })
-        .order("id", { ascending: true })
-        .range(page * AGG_PAGE, page * AGG_PAGE + AGG_PAGE - 1);
+      const { data, count, error } = await boundedRead(
+        (supabaseAdmin as any)
+          .from("panini_squeeze_board")
+          .select("sealed_fmv_exposure_usd", { count: page === 0 ? "exact" : undefined })
+          .order("id", { ascending: true })
+          .range(page * AGG_PAGE, page * AGG_PAGE + AGG_PAGE - 1),
+        "og/insights/panini-squeeze/exposure-page",
+        OG_FETCH_TIMEOUT_MS,
+      );
       if (error) break;
       if (page === 0 && typeof count === "number") expected = count;
       const batch = (data ?? []) as Array<{ sealed_fmv_exposure_usd: number | null }>;

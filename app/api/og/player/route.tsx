@@ -5,6 +5,8 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { getCollection } from "@/lib/collections"
 import { renderEntityOg } from "@/lib/og/entity-card"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -24,8 +26,8 @@ export async function GET(req: NextRequest) {
   let firstThumb: string | null = null
   try {
     const [d, eds] = await Promise.all([
-      sb.rpc("get_player_detail", { p_collection_id: coll.id, p_player_slug: slug }),
-      sb.rpc("get_player_editions", { p_collection_id: coll.id, p_player_slug: slug, p_limit: 1, p_offset: 0 }),
+      boundedRead(sb.rpc("get_player_detail", { p_collection_id: coll.id, p_player_slug: slug }), "og/player/get_player_detail", OG_FETCH_TIMEOUT_MS),
+      boundedRead(sb.rpc("get_player_editions", { p_collection_id: coll.id, p_player_slug: slug, p_limit: 1, p_offset: 0 }), "og/player/get_player_editions", OG_FETCH_TIMEOUT_MS),
     ])
     detail = Array.isArray(d.data) ? (d.data[0] ?? null) : (d.data ?? null)
     if (Array.isArray(eds.data) && eds.data[0]) firstThumb = eds.data[0].thumbnail_url ?? null
