@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
-import { stripSql } from "../scripts/lib/strip-sql.mjs"
+import { stripSqlComments } from "../scripts/lib/strip-sql-comments.mjs"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Every NEW migration that creates a public view must state its security mode.
@@ -93,7 +93,13 @@ const GRANDFATHERED = new Set([
 ])
 
 /**
- * Strip SQL comments before matching.
+ * Comments are stripped with the SHARED SQL stripper (`scripts/lib/strip-sql-comments.mjs`).
+ *
+ * ⚠ It replaced a local two-regex copy on 2026-09-05. The local one closed a NESTED
+ * block comment at the first inner terminator and treated a double dash inside a
+ * string literal as a comment — both of which blank or reveal the wrong text with no
+ * error, which is the failure mode `guards-use-the-shared-comment-stripper` exists to
+ * prevent. Migrating the three SQL guards took that ratchet to zero.
  *
  * ⚠ REQUIRED, NOT TIDINESS. This repo has repeatedly been bitten by source guards
  * that matched their own explanatory comments — `pack-dist-contents-not-streamed`,
@@ -101,17 +107,7 @@ const GRANDFATHERED = new Set([
  * api-fmv-demo docs guard. The migration this guard was written for quotes
  * `CREATE OR REPLACE VIEW public.topshot_deals_vs_fmv` inside its own header
  * comment, so an uncommented scan reports the explanation as the offence.
- *
- * Migrated to the shared SQL lexer 2026-09-05. Literals are deliberately KEPT
- * (no `{ literals: true }`): this guard looks for `CREATE VIEW` and its matching
- * `security_invoker`, and a corpus check over all 909 migrations found the two
- * spellings derive an IDENTICAL view set — so this migration is a change of
- * implementation, not of population. What the lexer adds is that a `--` or an
- * apostrophe inside a string can no longer mis-terminate the scan, and that
- * Postgres NESTS block comments, so a commented-out block closes at its
- * outermost terminator rather than at the first one it contains.
  */
-const stripSqlComments = (sql: string): string => stripSql(sql) as string
 
 type ViewStatement = { file: string; viewName: string; header: string }
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
-import { stripSql } from "../scripts/lib/strip-sql.mjs"
+import { stripSqlComments } from "../scripts/lib/strip-sql-comments.mjs"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Every NEW migration that creates a public table must ENABLE ROW LEVEL SECURITY
@@ -81,35 +81,22 @@ const GRANDFATHERED = new Set([
 ])
 
 /**
- * Strip SQL comments AND single-quoted string literals before matching.
+ * Comments AND single-quoted string literals are stripped with the SHARED SQL
+ * stripper (`scripts/lib/strip-sql-comments.mjs`).
  *
- * ⚠ BOTH HALVES ARE LOAD-BEARING, AND THE SECOND ONE IS WHY AN EARLIER DRAFT OF
- * THIS GUARD WAS WITHHELD RATHER THAN SHIPPED.
+ * ⚠ BOTH HALVES ARE LOAD-BEARING, AND THE SECOND ONE IS WHY AN EARLIER DRAFT OF THIS
+ * GUARD WAS WITHHELD RATHER THAN SHIPPED.
  *   · Comments: this repo has repeatedly been bitten by source guards that matched
- *     their own explanatory prose. This file's own header quotes
- *     `CREATE TABLE IF NOT EXISTS`.
- *   · Single-quoted literals: several migrations build DDL dynamically, e.g.
- *     `format('CREATE TABLE IF NOT EXISTS public.%I PARTITION OF …')`. Scanning
- *     those reports a format STRING as a real declaration — and, because the name
- *     is `%I`, the regex backtracks and reports a table literally called `publi`.
- *     An unvalidated guard is worse than no guard; that draft found 14 "offenders"
- *     of which 2 were parse artifacts, and a later revision found 98 of which 85
- *     were temp tables.
- *
- * 🚨 MIGRATED TO THE SHARED SQL LEXER 2026-09-05, AND THE CHAINED-REGEX VERSION
- * THIS REPLACED WAS BLIND TO A REAL TABLE. It stripped `--` comments BEFORE
- * pairing quotes, so the `--` inside line 26 of
- * `20260811003456_…board_liveness_history_decoupled_capture.sql` —
- * `RAISE EXCEPTION 'state is absent -- refusing to build history …'` — ate that
- * literal's own closing quote. The unpaired opening quote then paired with the
- * next apostrophe in the file, `interval '90 days'` 47 lines later, and
- * everything between them was blanked as string content: the file's real
- * `CREATE TABLE public.public_board_liveness_history` AND its
- * `ENABLE ROW LEVEL SECURITY`. This guard could not see a new public table in a
- * file named after it, and was green. A single left-to-right pass has no
- * ordering to get wrong.
+ *     their own explanatory prose. This file's own header quotes `CREATE TABLE`.
+ *   · String literals: several migrations build DDL dynamically inside `format(...)`.
+ *     Scanning those reports a format TEMPLATE as a real declaration — and, because
+ *     the name is a percent placeholder, the regex backtracks and reports a table
+ *     literally called `publi`. An unvalidated guard is worse than no guard; that
+ *     draft found 14 "offenders" of which 2 were parse artifacts, and a later
+ *     revision found 98 of which 85 were temp tables.
  */
-const stripCommentsAndLiterals = (sql: string): string => stripSql(sql, { literals: true }) as string
+const stripCommentsAndLiterals = (sql: string): string =>
+  stripSqlComments(sql, { blankStringLiterals: true })
 
 /**
  * ⚠ TEMP tables are deliberately NOT matched. `CREATE TEMP TABLE _rwfc_recent …`

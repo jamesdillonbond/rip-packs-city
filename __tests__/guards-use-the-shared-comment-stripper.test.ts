@@ -46,7 +46,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
-// ⚠ RATCHET BASELINE — down only. 25 (2026-08-22) → 2 (2026-08-22, later same day).
+// ⚠ RATCHET BASELINE — down only. 25 (2026-08-22) → 2 (2026-08-22, later same day)
+//    → 0 (2026-09-05, the three SQL guards migrated to scripts/lib/strip-sql-comments.mjs).
 //
 // ⚠ THE NEEDLE CHANGED WITH THIS NUMBER, so the two are not comparable and the
 // old 25 must not be read as "23 files were migrated". Both were measured:
@@ -69,28 +70,25 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // and trains readers to ignore its report. The narrow needle is satisfiable at a
 // population of zero.
 //
-// ✅ REACHED ZERO 2026-09-05, by building the tool this note said was missing.
-// The last three offenders were SQL strippers, not JS ones — all three walked
-// `supabase/migrations/*.sql`, where comments are `--` and `/* */` and bodies are
-// dollar-quoted (`$$ … $$`), and the shared JS stripper has no `--` state and no
-// dollar-quote state. This note used to end "they come off this list when a SQL
-// stripper exists to move them to, not before"; `scripts/lib/strip-sql.mjs` is
-// that stripper, and all three now import it.
+// ✅ THE FLOOR IS GONE — 2 → 0 on 2026-09-05, by building the module this note asked
+// for rather than by loosening anything. The remaining offenders were SQL strippers,
+// not JS ones, and the note above said they "come off this list when a SQL stripper
+// exists to move them to, not before". `scripts/lib/strip-sql-comments.mjs` is that
+// module: a state machine with a `--` state, NESTED block comments (Postgres nests
+// them; a non-greedy regex closes at the first inner terminator), string literals
+// with the doubled-quote escape (a `--` inside one is not a comment), and — the
+// load-bearing one — dollar-quoted bodies that are KEPT and re-scanned, because this
+// repo's real DDL lives inside `DO $mig$ … $mig$` and an opaque-string reading would
+// blind every migration guard to it.
 //
-// 🚨 THE MIGRATION WAS NOT COSMETIC — one of the three was BLIND TO A REAL TABLE.
-// The RLS guard blanked `--` comments BEFORE pairing quotes, so a `--` inside a
-// string literal ate that literal's closing quote and the unpaired opener then
-// paired with the next apostrophe 47 lines later, blanking a real
-// `CREATE TABLE public.public_board_liveness_history` and its
-// `ENABLE ROW LEVEL SECURITY` as if they were string content. That is precisely
-// the failure this ratchet's own message predicts — "a blind stripper still
-// passes and still reports a population" — and it took building the shared
-// implementation to find it.
+// ⚠ A third SQL stripper had just been added (the RLS guard), so the population was
+// briefly 3 and this ratchet is what caught it — in CI, on the commit that added it.
+// That is the ratchet working, and it is why the fix was the shared module rather
+// than an exemption.
 //
-// ⚠ THE CEILING IS 0 AND MUST STAY THERE. There is now a shared stripper for
-// each of the two languages this tree greps, so a NEW local one has no
-// justification left. Import `stripComments` from `scripts/lib/strip-comments.mjs`
-// for JS/TS, or `stripSql` from `scripts/lib/strip-sql.mjs` for SQL.
+// ⚠ A ratchet with a PERMANENT floor punishes its own success and trains readers to
+// ignore its report. That is the argument this file already makes about needle
+// narrowing, and it applied to its own floor too.
 //
 // Measure the population by setting this to 0 and reading the report; never carry
 // a number over from a different instrument — including an earlier version of
