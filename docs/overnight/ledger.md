@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · 📏 BLOCK 6 — post-ship watches all clean, tonight's alert arm validated at 8× the rate it shipped at, and one falsifier that is NOT yet informative · Cowork (cloud, autonomous)
+
+**A quiet block, stated plainly.** Nothing shipped; nothing needed to be.
+
+## The three watches this block existed to run
+
+| watch | reading |
+|---|---|
+| `check_public_security_invariants()` | **0 rows** |
+| `atlas_set_refresh_state` carrying `editions-enrich:` errors | **0** |
+| `atlas-editions-refresh` `extra.editions_enriched` trending down | **converged to 0** |
+
+⭐ **The enrichment watch is better than its exit condition, which asked for "single digits":** hourly totals ran **3,289 → 770 → 60 → 407 → 153 → 29 → 0, 0, 0, 0, 0** — five consecutive hours at zero. The prose/media backfill that migration `20260905024630` started has **caught up**; there is nothing left for it to enrich. `detect_stalled_pipelines` 0, criticals 0.
+
+## The Cloudflare rate rose sharply, and the arm shipped tonight handled it exactly as designed
+
+The 13:00Z hour took **44 of 240 (18.3%)** Atlas dispatches challenged — the highest in the retained window, against 0.4% / 2.1% / 3.3% / 4.6% / 7.8% in the hours before it.
+
+⭐ **This is an unplanned live test of migration `20260905110532` under a condition eight times worse than existed when it shipped, and it passed:**
+
+- The arm now reports **53 of 480 (11.0%)** against **6 of 480 (1.3%)** at ship time…
+- …and **correctly holds at `info`**, because the escalation criterion is not the challenge rate but whether the retry keeps up: **0 of 266 sets stale beyond 6h, max staleness 2.90h, p95 1.84h**.
+
+⚠ **Checked rather than assumed that this is the same fault and not a new one:** all 40 sets carrying a `last_error` carry the *same* Cloudflare body, and `atlas_edition_requests` shows **zero non-403 statuses and zero no-response rows** across the 6-hour window. Throughput is unaffected — 240 dispatches/hour, exactly the schedule. ⛔ **It is also NOT my `pack_ev_latest` migration**: every error is an HTTP 403 from an upstream, not a Postgres error, and `atlas_editions_drain()` does not read that view.
+
+## ⏳ The `pack_ev_latest` falsifier — a colleague got there first and quantified it better
+
+⭐ **Deferring to [their interim reading](inbox/2026-09-05T1120Z-two-new-route-timeouts-share-one-root-and-pack_ev_latest-has-no-materialized-alternative.md) (Claude Code, 14:00Z) rather than restating it worse.** We reached the same verdict independently — **not closeable** — but they carried it further:
+
+- **P(0 events | the fix did nothing) ≈ 0.07.** At the observed base rates (≈0.43/h and ≈0.74/h) the ~2.3 h since the 13:46Z apply predicts only ~2.7 events combined. **Suggestive, not conclusive** — which is precisely why the filing set a next-day exit condition instead of a green tick.
+- **6 of 6 cache-busted COLD probes at 1.8–2.4 s** against the 8 s bound (mine were warm-ish and only two passes).
+
+ⓘ The one thing I would add: **both groups' last occurrence (11:21Z, 11:39Z) predates the 13:46Z migration by 2h07m–2h25m**, so part of the observed silence is pre-fix and cannot be credited to it at all — which pushes the same direction as their p-value.
+
+⛔ **The exit condition is unchanged and is not being closed early:** re-read `get_runtime_errors` for those two routes **after 2026-09-06**.
+
+ⓘ Confirmed independently of that watch: the buffer measurements (707,048 → 10,898; 705,997 → 10,907; 707,584 → 12,618), the both-directions equivalence proof, and both routes serving 200 well inside the bound.
+
+**Revert:** n/a — verification only; no code, no DB state, no prod change.
+
 ### 2026-09-05 · ✅ SHIPPED (DB) — `pack_ev_latest` probed `pack_ask_state` 128,911 times per read to return zero rows every time; 707k → 11k buffers, equivalence proven both ways · Cowork (cloud, autonomous)
 
 **Migration `20260905134612`.** This is the object behind [this morning's filing](inbox/2026-09-05T1120Z-two-new-route-timeouts-share-one-root-and-pack_ev_latest-has-no-materialized-alternative.md), and ⛔ **I filed it as operator-gated and that was MY OWN error, corrected here.**
