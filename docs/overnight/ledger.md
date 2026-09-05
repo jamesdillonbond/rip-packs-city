@@ -10,6 +10,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — every OG card's DATABASE read is bounded (16 sites, 10 files, none of them bounded before) · the gap was between TWO guards that each looked complete · Claude Code (Trevor's box, interactive)
+
+**Found by pulling on the pack-lifecycle filing rather than accepting its conclusion.** Inbox `2026-09-04T1430Z` closes with one actionable proposal — a materialised lifecycle keyed by `pack_nft_id` — and explicitly defers it: *"Not costed, and it needs the caller census first… if the working set is small the MV is cheap; if it is the long tail it is a write amplification. That census is one query and it is the thing to do before anything else."* Doing that census is what turned up something else on the way.
+
+## The census, and it kills the MV proposal outright
+
+`pack_rips` holds **3,682,066 rows and 3,682,066 distinct `pack_nft_id`** — one row per pack, 1,988 MB, growing **1,226 packs/day**. Against that, `get_pack_lifecycle` takes **10,455 calls in 23.5 days ≈ 445/day**.
+
+⛔ **So the MV would materialise 3.68 M packs (more, if keyed per pull) to serve ~445 reads a day, on the instance whose measured ceiling is disk IO.** That is the write-amplification branch the filing named, and it is not close. **§6 is answered: do not build it.**
+
+⚠ **And the filing's route attribution looks wrong, which matters if anyone re-opens this.** It puts the 56 bound-exceeded events on `/[collection]/pack/dist/[distId]` — but that page calls **`get_pack_lifecycle_row(p_dist_id)`**, a different function. The pack-keyed `get_pack_lifecycle` has exactly three callers: the per-pack page, `/api/wallet/pack-lifecycle`, and the OG card. CLAUDE.md already warns that `get_runtime_errors` attribution is SMEARED and must be re-grouped on `requestPath`. **Access here is long-tail by construction — individual shared pack links — which is a second, independent reason the MV is wrong.**
+
+## 🚨 The defect that census walked into
+
+Naming that third caller meant opening `app/api/og/pack/lifecycle/route.tsx`, which calls `get_pack_lifecycle` with **no bound at all** — on a function whose `pg_stat_statements` row reads **3,129 ms mean and a 29,949 ms max over 10,455 calls**, and that max **is** the 30 s `statement_timeout`, i.e. those calls were killed. A card renders while a social crawler holds the connection; the crawler is gone by 10 s. Unbounded, we burn 30 s of lambda rendering nothing for an audience that already left.
+
+⭐ **THE POPULATION IS 10 FILES / 16 READ SITES, AND EVERY ONE WAS UNBOUNDED — and the reason nothing caught it is the part worth keeping.** Two guards cover this ground and each looks complete:
+
+- **`og-fetches-are-bounded`** walks exactly the right directories (`app/api/og/**`, `lib/og/**`) — but matches `fetch`, not `.rpc` / `.from`.
+- **`api-routes-that-degrade-honestly-also-bound-their-reads`** matches exactly the right calls — but its POPULATION is *routes that call `apiErrorResponse()`/`boardUnavailable()`*. **An OG card returns `null` and falls back to a generic card; it calls neither.** So all ten sat outside that population **by construction, not by exemption** — no allowlist entry, nothing to notice.
+
+That is CLAUDE.md's own rule met in the field: *an exclusion justified by ANOTHER instrument is a claim about it — check that one can SEE the property.* Here neither guard ever claimed this ground; the ground simply fell between them.
+
+## What shipped
+
+All 16 sites wrapped in `boundedRead(…, OG_FETCH_TIMEOUT_MS)`. ⚠ **The budget is the OG one (10 s), not `boundedRead`'s 8 s default** — same context, same trade, one number that moves for fetches and DB reads together.
+
+⚠ **No copy changed and no new claim was introduced, and this was checked per call site rather than assumed.** Every site already degraded on `{ data: null, error }` — seven to a generic entity card, `candy-mlb` to `fetched = false`, `panini-squeeze` to a withheld total behind its `complete && seen === expected` gate. `boundedRead` resolves into that same envelope, so a timeout lands exactly where a Postgrest error already landed. **It converts a HANG into the existing honest path; it does not invent one.** ⓘ `panini-squeeze`'s paging loop destructures `count`, and `boundedRead` returns `count: null` on overrun — which fails its `typeof count === "number"` check, so `expected` stays null and the total is withheld. The right direction, for free.
+
+## ⚠ My own detector was wrong first, in the direction that would have published a wrong number
+
+The first census matched a bare `\.from\(` and reported **11** files. `lib/og/img-data.ts` has no database access whatsoever — the match was **`Buffer.from(await res.arrayBuffer())`**. `Array.from` and `Object.fromEntries` are the same trap. A supabase read always names its table as a STRING literal, so requiring the quote separates them exactly; the real population is **10**. **A census that over-counts is still a wrong census**, and this one was one edit away from reaching this file as fact.
+
+⚠ **A second detector error, in the UNSAFE direction, also corrected:** the first pass SKIPPED any file the comment-stripper left in a non-`code` state. That is backwards — `sq`/`dq` mean the stripper KEEPS too much (the fail-safe direction the DEFECT-4 ratchet pins at 7), so skipping under-reports while analysing over-reports. The one file affected (`app/api/og/insights/market-pulse`) turned out to have no DB read, so nothing was hidden — **but that was luck, not design.** The guard now analyses them and says why.
+
+## Proven
+
+New guard `og-cards-bound-their-database-reads`, a **ban at zero, not a ratchet** — the population is drained, so a ratchet would only license the next addition. 5 cases. **Mutation-proven:** un-wrapping `og/edition` and dropping its imports reds the ban. The detector is proved in BOTH directions from pure strings before it is used on the tree (it sees an unbounded read, does not see a bounded one, and does not mistake `Buffer.from`/`Array.from`/`Object.fromEntries` for a table read), it asserts the walker found a real tree (>20 files, >5 with reads) so the ban cannot pass vacuously, and it asserts **the site count it inspected** (≥16) rather than only the offender count.
+
+**Verified:** `tsc` clean · full suite **1,466 files / 16,226 tests, exit 0** (gated on the EXIT code). ⓘ A first full run failed on `component-DashboardClient` — **untouched by this change, passes 3/3 in isolation, green on re-run**. That is the SECOND unrelated flake tonight (the first was `api-allday-listings-indexer`), both `waitFor`-shaped under full-suite concurrency. Recorded, not adopted: *a red run is not automatically yours.*
+
+**Revert:** `git revert <sha>` — the reads go back to unbounded and the ban reds until the revert also removes the guard.
+
 ### 2026-09-04 · ✅ SHIPPED (DB + code) — fmv-recalc Step 5b was being KILLED on 8.3% of runs by the 30 s wrapper timeout, and the planner was running its LEAST selective predicate first over 4,866,318 sales rows · 513,102 → 306,847 buffers · Claude Code (Trevor's box, interactive)
 
 **Found by finishing the measurement instead of stopping at the first fix.** Having merged Step 5's two scans (entry above), I measured the other five rather than assuming the one I had already read was the worst. It was not: **Step 5b alone is 513,102 buffers and 21,113 ms — 2.5× the entire Step 5 pair.**
