@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — 26 of 374 tiles on the PUBLIC collection tab rendered 21 KB of login HTML as an image, and the fix was written down in this file in June · Cowork (cloud sandbox)
+
+Found by rendering the collector-facing surface the day's biggest change lands on — `/nba-top-shot/collection?q=<username>`, signed out — instead of trusting that the API returned the right numbers.
+
+**`/api/moment-thumbnail` 307s to `/login` for anonymous visitors.** Every `<img src="/api/moment-thumbnail?flowId=…">` on that page follows the redirect and receives **21,448 bytes of login HTML where an image should be**. Measured: **26 of 374 tiles broken**.
+
+⭐ **Why only 26, and why that is the dangerous part.** Most tiles carry a direct `assets.nbatopshot.com` URL; this endpoint is the **fallback** for Moments that have none. So the failure is **invisible to a spot check** — 93 % of the grid looks perfect — and **permanent for exactly the Moments that depend on it**. A page that is 93 % right is how this survived.
+
+⭐ **AND THE PRECEDENT IS IN `proxy.ts` ALREADY, WRITTEN IN JUNE.** Ten lines above where the fix goes: *"`/api/badge-image` … without this anon visitors … get 307→/login and a broken image instead of the badge. Same read-only asset-proxy risk profile as /api/og. (2026-06-15)"* — **`moment-thumbnail` is the same shape and was simply missed when its sibling was opened.** It is GET-only, takes no session or cookies, validates `flowId` against `/^[a-zA-Z0-9_-]{1,80}$/` as its SSRF guard, bounds the upstream at 8 s and soft-fails to a 502 an `<img onError>` can act on. Decorative bytes from a public CDN, nothing else. Its other sibling, `/api/public/ipfs-media`, was never affected because it sits under the `/api/public/` prefix that is open by construction — these two were the ones outside it.
+
+⛔ **Opened GET/HEAD only, deliberately unlike the `badge-image` line above it.** That one is method-blind. I did not copy the looseness: *"the route only exports GET so a POST would 405 anyway"* is a claim about the route, not about the gate, and strictness here costs nothing. **The POST control caught my first attempt**, which had copied the method-blind spelling — the test earned its keep inside five minutes.
+
+**Fourth instance of this class today** — after `badge-taxonomy`/`profile-me` (09-03), the Pinnacle sniper feed, and `pack-listings`. So the pairing test grows rather than a new URL assertion: `/nba-top-shot/collection` joins the table, and the invariant stays *an anon-public page must not call an API that is not*. **Verified to fail against the unfixed proxy** with exactly `"/api/moment-thumbnail is called by anon /nba-top-shot/collection but is gated"`.
+
+⚠ **Also seen on that page and NOT filed as a defect: eight `1 / 0` and `2 / 0` strings.** They read as a fabricated divisor, and this repo has a `no-fabricated-divisor-ratchet` for exactly that shape — but in context (`#56 / 99 · 1 / 0 · 45 m`) they are an owned-vs-listed pair, i.e. "1 owned, 0 listed", not a division. Recorded here so the next sweep does not re-file it, and because "it matches a bad shape" is not the same as "it is that bug".
+
+**Verified:** `tsc` clean · **392 tests green across all 19 files** importing `isPublicPath`/`PUBLIC_READ_APIS` · positive control both ways. **Revert:** `git revert <sha>`.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — `/nba-top-shot/challenges` promised that a new challenge "ll show up here" while the ingest that would add one had been dead for eight days; and the dead-host casualty list is SEVEN pipelines, not the three on file · Claude Code (cloud sandbox)
 
 **The census first, because it reframes an open decision.** Inbox `2026-09-04T0220Z` named **three** pipelines still calling the decommissioned `public-api.nbatopshot.com`. Measured tonight from `pipeline_runs_daily` with denominators and change points, it is **seven**, and six share one change point — the host going away around 08-28/29:
