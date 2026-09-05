@@ -10,6 +10,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (tests) — the image gate I added this morning was structurally blind to the outage that happened this afternoon · Claude Code (Trevor's box, interactive)
+
+**The gate did not miss by bad luck; it missed by construction.** Earlier today I added a same-origin broken-image ratio to `assertHealthyPage`. Hours later every UFC Strike image on the site was broken — a 403 from the media proxy, 518 thumbnails and 516 videos — and it was found by a **hand-run sweep of 27 surfaces**, not by the gate. Asking why is the whole entry.
+
+## Two independent reasons it could not see it
+
+1. **The ratio needs ≥ 4 same-origin images. A UFC edition page has THREE.**
+2. ⭐ **Most content art on this site is not same-origin at all.** `assets.nbatopshot.com` and friends are allowed directly by the CSP, so a page's same-origin set is mostly **chrome**. A page's only artwork can break while the ratio reads 33%.
+
+⚠ **I chose that ≥ 4 floor to avoid crying wolf, and it was the right instinct applied to the wrong denominator.**
+
+## Measured, not argued — across 19 public surfaces
+
+```
+pages with >= 1 media-proxy image : 4 / 19
+proxy-image counts on those pages : 1, 1, 3, 17
+pages with ANY blank proxy image  : 0
+pages where ALL proxy art is blank: 0
+```
+
+⭐ **So a ≥ 4 floor misses three of the four pages that carry any proxy art at all** — including exactly the edition pages where UFC broke. And the steady state today is zero blanks, which is what makes a strict check affordable.
+
+## Shipped: a second, narrower assertion
+
+⭐ **THE DISCRIMINATOR IS THE ROUTE, NOT THE COUNT.** An image served by `/api/public/ipfs-media`, `/api/public/avatar-media` or `/api/moment-thumbnail` is always page **content** — nobody proxies a logo through the IPFS gateway. Scoped to those, the check can be strict where the chrome-diluted ratio cannot.
+
+**Fails when ALL media-proxy images on a page are blank** (and there is at least one). With two or more independent CIDs, all-blank is never a cold-cache story. With exactly one, all-blank means the page's only artwork is missing — a broken page for that visitor whatever the cause.
+
+⛔ **The ≤ 50% same-origin ratio STAYS.** It catches broad breakage the proxy scope cannot see (`/disney-pinnacle/market` carries 34 same-origin images and zero proxy ones). The two checks answer different questions and neither subsumes the other.
+
+## Proven, including the control that stops it becoming a flat ban
+
+3 new self-check fixtures: a thin page whose only art is broken (**must FAIL** — the UFC shape, 1-of-3 = 33%, under both the ratio and its floor) · the same page with art intact (**must PASS**) · **some proxy art broken but not all (must PASS)** — the last re-pins, on the stricter check, the same argument the ratio fixture makes, so a future tightening of one cannot silently un-argue the other.
+
+⚠ Also hoisted the 1×1 PNG the fixtures serve into **one** shared constant. Two routes were carrying the same base64 inline, and a control fixture that silently stops decoding reads as a healthy page.
+
+**Verified:** self-check **31/31** · live production smoke **63/63** · `tsc` clean.
+
+⭐ **And the false-positive question was answered by measurement, not by argument: five live runs, ZERO failures from either image assertion.**
+
+ⓘ **Found while doing it, NOT mine, NOT fixed:** `e2e/entity-smoke.spec.ts` is intermittently red on production — 2 failures in 5 runs, both pre-existing content assertions, neither an image check: `/moment/<id> rendered only 25 chars (likely an empty shell)` and `/laliga-golazos/edition/407 is missing expected content /View edition on Dapper/i`. The first is the 200-but-broken class this file exists for. Filed as the next thing to look at rather than folded into this change.
+
+**Revert:** `git revert <sha>` — the gate goes back to being unable to see a thin page whose only artwork is missing.
+
+
 ### 2026-09-05 · ✅ VERIFIED IN PRODUCTION (someone else's fix, and a correction to mine) — UFC art serves 3/3, and my gateway ranking was measured on a sample that could not have found this · Claude Code (Trevor's box, interactive)
 
 **Closes the owed item on `8c9566750`** (Cowork), which added `gateway.pinata.cloud` as a third gateway and stopped a 403 from winning the status pass-through. Its owed check was *"re-probe a UFC CID once the deploy is live — this box's reachability is not Vercel edge's."*
