@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — `/disney-pinnacle/sniper` waited forever for a feed the proxy 307'd to `/login`, and the feed is a one-line alias of a handler already on the public allowlist · Cowork (cloud sandbox)
+
+Found by loading every collection's `/sniper` and `/packs` **signed out** in the plain headless browser and watching for 307s — the sweep the earlier passes did for Top Shot but never for the other four collections.
+
+**`/disney-pinnacle/sniper` is anon-public** (the feature-tab regex in `proxy.ts` opens `/…/sniper` for all five collections). Its one data call, `/api/pinnacle-sniper-feed`, answered **`307 → /login?next=…`**, so a signed-out visitor sat on *"FMV coverage unavailable — discount and FMV show once the feed loads"* **permanently**. That is not a degraded read — it is a page waiting for a response that can never arrive, on a marketplace whose whole point is the feed.
+
+⭐ **AND THE ROUTE IS `export { GET } from "../pinnacle-sniper/route"` — NOTHING ELSE.** Eight lines, an alias. `/api/pinnacle-sniper` was already on `PUBLIC_READ_APIS`, one line above where the fix goes. **The same handler was public under one name and gated under its alias**, which is why no audit of the handler could have found it — the defect lives in the gap between two names for one thing, and only a signed-out page load shows it.
+
+**Second instance, lower severity, same class:** `/api/pack-listings` also 307s for anon on `/nba-top-shot/packs` and `/nfl-all-day/packs`. Those pages still render **500 rows** because the table is server-rendered, so the cost is a wasted login-HTML download and a console error per anonymous load rather than a broken page — the same shape as the `badge-taxonomy` / `profile/me` fixes of 09-03. It is GET-only, takes no session (no `getCurrentUser`, no cookies), validates `collection` against `SUPPORTED_PACK_COLLECTIONS`, and returns 2-minute-cached **public** Dapper marketplace listings: the anon-safety class `/api/sniper-feed` and `/api/market` already occupy.
+
+⚠ **Two more routes 307 and I did NOT open them.** `/api/golazos-sniper-feed` and `/api/allday-pack-listings` both redirect — and neither has an anon-public caller. `/laliga-golazos/sniper` fires **zero** 307s and renders 54 rows, verified live. **Widening an allowlist for a route with no caller is how a public surface grows without anyone deciding to grow it**, and a test now pins both closed so a future "while we're here" doesn't sweep them in.
+
+**The test pins the PAIRING, not the URL** — this is the third instance of the class, so the invariant is *a page that is anon-public must not call an API that is not*, checked over four page→API pairs. Controls both ways: `/api/cost-basis` and `/api/saved-wallets` stay gated, and **POST stays closed on both widened routes** (a write on a read allowlist would be the actual hole). **Verified to fail against the unfixed proxy** on all three widened pairings.
+
+**Verified:** `tsc` clean · **385 tests green across all 18 files** importing `isPublicPath`/`PUBLIC_READ_APIS` (the file whose contract tests reddened CI twice this morning) · 6 new cases · positive control. **Revert:** `git revert <sha>`.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — the cold-cache retry is now a shared hook, and it found the same defect wearing a different costume on `/insights/trophies`: a surface that HAD an onError and gave up on the first one · Cowork (cloud sandbox)
 
 Swept all **31 public `/insights` boards** in the plain headless browser (the reliable instrument — both Claude browsers hang these pages' Suspense reveal). **Every one 200, zero horizontal scroll at 1280 and 390, zero `NaN`/`undefined`, zero `#N / 0`, zero honest-error states, zero broken images.** One console 502: `/api/public/ipfs-media/bafybeifh2efy…` on `/insights/trophies`.
