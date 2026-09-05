@@ -10,6 +10,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — a bounded read that TIMED OUT was published as a NON-RETRYABLE 500 across **86 routes**; the bound's whole purpose was inverted, and I shipped 8 of those routes myself tonight · Claude Code (Trevor's box, interactive)
+
+**Found by sweeping the live site, in a route I had converted three hours earlier.** An anonymous DOM sweep of ten public surfaces returned one `ISSUE`: `/nba-top-shot/overview` timed out at 60 s, with `/api/collection-stats` answering **500**. Probing that route three times settles it immediately:
+
+```
+attempt 1: 500 in 8.208s  {"error":"Collection stats aren't available right now.","code":"internal","retryable":false}
+attempt 2: 200 in 3.999s
+attempt 3: 200 in 0.091s
+```
+
+**8.208 s is my own `boundedRead` bound firing**, to the millisecond. And the answer it produced is wrong in the one way that matters: **`retryable: false`** — while the very next request succeeded.
+
+## The mechanism, and why no test saw it
+
+`boundedRead`'s timeout resolved `{ message: "[route] read exceeded 8000ms" }` **with no `code`**. `safeApiError` classifies as transient on `error.code ∈ TIMEOUT_SQLSTATES` **or** on specific message substrings (`"statement timeout"`, `"canceling statement"`, `"timeout acquiring"`, `"connection pool"`). That message contains **none** of them, so it fell through to the default: `{ code: "internal", retryable: false }` → **500**, and no `Retry-After`.
+
+⛔ **That is the exact inverse of why the bound exists.** It was added so a slow read yields an honest, ACTIONABLE answer instead of a hang. Instead it told every caller the failure was permanent — and it also books the failure against the hard-5xx budget that `statusForSafeError` explicitly routes timeouts away from ("503 + Retry-After, not 500: this is transient capacity, and it keeps the route out of the hard-5xx budget that pages on genuine breakage").
+
+🚨 **BLAST RADIUS: 86 routes** pair `boundedRead` with an honest-error helper. This was introduced by the 2026-09-04 conversion of 58 routes and **extended by my own 8 tonight** — so it is mine to fix in both senses.
+
+⭐ **The reason it survived a careful conversion is worth keeping.** `boundedRead`'s own header already warns about this exact field, for the OTHER path: *"THE THROWN VALUE IS PASSED THROUGH INTACT, NOT REDUCED TO ITS MESSAGE… `apiErrorResponse` classifies on `error.code` — a `57014` becomes a retryable 503 — so rebuilding the error as `{ message }` silently stripped the one field the classification reads."* The author found that trap, fixed it for the **catch** path, and constructed the **timeout** path with the same defect ten lines above. The lesson was learned in one branch and not carried to its sibling — the fourth instance of that shape tonight.
+
+## Shipped
+
+`boundedRead`'s timeout now stamps `code: RPC_READ_TIMEOUT_CODE`, and `safeApiError` admits it to the transient set. Two lines; all 86 routes fixed at once.
+
+⚠ **Deliberately NOT `57014`, and not the words "statement timeout"** — either would have classified correctly by accident and both are **false**: Postgres cancelled nothing. We abandoned the WAIT and the query is still running, as the helper's own header says. This is OUR read timeout and it gets its own honest name. ⚠ The constant is **exported and imported**, not re-typed on each side, because a typo there fails OPEN — straight back to the silent non-retryable 500.
+
+## Proven, and the second mutation is the interesting one
+
+7 new cases. **Mutation A** (drop the code from the classifier) reds immediately.
+
+🚨 **Mutation B — the helper stops stamping the code, i.e. the ORIGINAL BUG — did NOT red.** `lib-api-bounded-read.test.ts` stayed fully green while the defect was restored. **That is exactly why this shipped:** one file proved the classifier handles the code, the other proved the helper resolves on timeout, and **nothing asserted the helper stamps the code the classifier reads.** Two green unit suites, one broken seam.
+
+So the fix includes the missing assertion — an **end-to-end** case that spans both modules (`boundedRead` on a never-settling promise → `safeApiError` → `statusForSafeError` = 503). With it, Mutation B reds twice. Controls: a SUCCEEDING read must carry no timeout code (otherwise a helper stamping it unconditionally would pass), the copy must still leak neither the route label nor the budget, and a real `57014` must be unaffected.
+
+**Verified:** `tsc` clean · full suite **1,467 files / 16,255 tests, exit 0**.
+
+⏳ **OWED:** re-probe `/api/collection-stats` cold after deploy and confirm **503 + `Retry-After: 30`**, not 500. ⚠ It is cache-sensitive — the third attempt above answered in 91 ms — so a warm probe proves nothing; hit it after a gap.
+
+⛔ **This does NOT make the underlying read fast.** `get_collection_stats` genuinely exceeds 8 s cold, and CLAUDE.md already names it as one of the disk-IO saturation symptoms. This entry is about the ANSWER being honest, not about the latency.
+
+**Revert:** `git revert <sha>` — timeouts go back to a non-retryable 500 on all 86 routes.
+
 ### 2026-09-04 · ✅ SHIPPED (DB) — measuring the gap I had just deferred turned it into a live defect: 16 Ultimate 1/1 editions we never had, five of them blank tiles in real collections, one of them a Wembanyama 1/1 · Cowork (cloud, DB live via MCP)
 
 ⚠ **CORRECTION TO THE SECURITY PARAGRAPH BELOW, made ~20 minutes after writing it, and it is wrong in BOTH directions — the exposure was smaller than I claimed and the cause was not what I claimed.** I went looking for why my earlier audit table (`audit_20260904_atlas_drain_prior_src`, created 02:46Z the same night with the identical bare `CREATE TABLE`) was compliant when these two were not, and the answer is a standing mechanism I did not know existed: **`public.selfheal_audit_table_rls()`, pg_cron jobid 232, `47 * * * *`** — it enables RLS and revokes `anon`/`authenticated` on every `public.audit\_%` table, hourly. **(1) The window was ~10 minutes, not "roughly two hours".** The tables were created 06:18:15Z and 06:20:40Z (their own migration versions) and closed by hand at 06:28:49Z; the healer's last run was 22:47 PT and its next was 23:47 PT, so **they would have closed themselves ~28 minutes after creation with no action from me.** The "two hours" was me carrying the earlier table's timeline onto these without checking — a stock-vs-flow slip in the very paragraph claiming to state exposure honestly. **(2) "Not a house style I misread" is false.** It IS the house style: **13 other migrations create a `public` table with no inline `ENABLE ROW LEVEL SECURITY`**, and they are all compliant in production *because the healer runs*, which is exactly why my sibling-table comparison looked like a convention I had broken. What I actually hit is the **gap between creation and the healer's next tick** — and the smoke gate exists to catch precisely that gap on a deploy. ⭐ **So the estate is better designed than my write-up gave it credit for: a self-healer bounds the window to ≤1 h unattended, and a hard smoke check names it immediately when a deploy lands inside the window. The fix I applied by hand was correct but not load-bearing.** ⛔ **The applied migration `20260905062849` is named `..._two_hours_ago` and that name is now wrong; it is NOT being renamed** — an applied migration's version and name are recorded in `supabase_migrations.schema_migrations` and editing history to fix a label is the exact move this ledger forbids. This correction is the record. ⓘ I also drafted a repo guard requiring an inline `ENABLE ROW LEVEL SECURITY` for every `CREATE TABLE` in a migration, and **did not ship it**: my statement scanner was still mis-parsing dynamic `format('CREATE TABLE … %I')` DDL as real declarations, and shipping an unvalidated guard in the same hour as this entry would have been the same mistake twice.
