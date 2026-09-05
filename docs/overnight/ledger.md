@@ -10,6 +10,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — the read-bound ratchet's population is defined by a HELPER, and 28 read-only API routes were outside it; 7 bounded, 21 now COUNTED, and ⛔ the rest must not be bulk-wrapped · Claude Code (Trevor's box, interactive)
+
+**This is the same gap as the OG-card entry above, generalised — and two instances in one evening is what made it worth counting rather than fixing twice.**
+
+`api-routes-that-degrade-honestly-also-bound-their-reads` defines its population as *routes that call `apiErrorResponse()`/`boardUnavailable()`* — "the route has decided it owes the caller an honest answer on a failed read". That is a good population for the ban-shaped argument it makes, and it is why that file can say its remaining 42 are exactly the deliberate write-only exclusion set.
+
+🚨 **But a population defined by a HELPER is a claim about every route that handles errors some other way.** Measured tonight: **360 of 500 route files read Supabase; only 131 are in that population.** The other 229 were never exempted — they were never LOOKED AT. Of them, **28 are read-only and bound nothing at all**, including **`/api/search`** and **`/api/collection-stats`** — the latter one of the saturation symptoms CLAUDE.md names by name.
+
+⭐ **The OG cards were the same shape, discovered an hour earlier: a card returns `null` instead of calling `apiErrorResponse`, so all 16 of its DB reads sat outside that ratchet by construction, not by exemption.** CLAUDE.md's own rule, met twice in one evening: *an exclusion justified by ANOTHER instrument is a claim about it — check that one can SEE the property.*
+
+## ⛔ The part that matters more than the number: this is a RATCHET, and driving it to zero would SHIP a defect
+
+**Bounding a read is only an improvement when the route's error path is honest.** I classified all 28 by what each answers on a failed read before touching any, and several degrade with `?? []` / `?? 0` and **no `if (error)` branch at all**. For those, a bound converts a **HANG into a FABRICATED EMPTY** — strictly worse, because a timeout at least tells the caller something failed while `[]` is a confident false claim, the class this repo is most burned by.
+
+**So only the seven whose error path was ALREADY honest were converted** — each has `if (error)` → an error response, so a timeout lands on a branch that was already there: `/api/search` (2 sites), `/api/collection-stats`, `/api/platform-stats`, `/api/collection-readiness`, `/api/cross-collection-deals`, `/api/public/wallet-intel`, `/api/acquisition-stats`. **8 sites, `boundedRead`'s default 8 s API budget**, matching the 58 converted on 09-04.
+
+⭐ **`/api/search` is the one worth naming, because its own comment had already argued this exact case and could not act on it:** *"503, not a 200 with an empty `results` array. An empty array here would be byte-identical to a legitimate 'nothing matched', so a database outage would render to the user as 'we have no such moment'."* It was right, and unbounded it could not reach that 503 — the platform killed the function first. The bound is what lets the argument it already made actually run.
+
+⚠ **One read deliberately left unbounded, and its route header now says why, because it is a DEFECT and not an exemption.** `/api/acquisition-stats`'s collection-id helper falls back to `TOPSHOT_COLLECTION_ID` on both exits — so a failed lookup for, say, `laliga-golazos` does not degrade; it answers with **Top Shot's stats under the caller's collection label**, a false claim about someone's own wallet. **Bounding it would make that fallback MORE reachable**, so a bound is not the fix and adding one would quietly widen the defect while reading as a hardening commit. Its main RPC was bounded; the helper is filed.
+
+## Proven
+
+New `read-only-api-routes-outside-the-honest-error-population-are-counted` — the sibling's exact COMPLEMENT, its three predicates copied verbatim so the two partition the tree rather than overlapping. **28 → 21**, no slack, down-only. **Mutation-proven:** un-wrapping `/api/platform-stats` reds both the budget and the no-slack case at 22. The detector is proved in both directions from pure strings; three non-vacuity assertions bound the walk from below (>200 route files, >100 readers, >10 in the complement) so it cannot pass on a broken walker; and the failure message carries the ⛔ against bulk-wrapping, because the number alone would invite exactly that.
+
+⚠ **The 184 write/cron/admin routes are excluded on the SIBLING's argument, restated rather than inherited silently**: this bound abandons the WAIT, not the statement, so a write reported failed while Postgres commits it manufactures the one false claim the caller cannot re-read to resolve. ⓘ That exclusion is a regex over `POST|PUT|PATCH|DELETE` and job path segments, so it may over-exclude — **21 is a LOWER bound on the gap, not a census of it.**
+
+**Verified:** `tsc` clean · full suite **1,467 files / 16,230 tests, exit 0** · the sibling ratchet re-run green (4/4) — the two populations still partition without either moving.
+
+**Revert:** `git revert <sha>` — the eight reads go back to unbounded and the new ratchet reds at 28 until the revert also lowers it.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — every OG card's DATABASE read is bounded (16 sites, 10 files, none of them bounded before) · the gap was between TWO guards that each looked complete · Claude Code (Trevor's box, interactive)
 
 **Found by pulling on the pack-lifecycle filing rather than accepting its conclusion.** Inbox `2026-09-04T1430Z` closes with one actionable proposal — a materialised lifecycle keyed by `pack_nft_id` — and explicitly defers it: *"Not costed, and it needs the caller census first… if the working set is small the MV is cheap; if it is the long tail it is a write amplification. That census is one query and it is the thing to do before anything else."* Doing that census is what turned up something else on the way.
