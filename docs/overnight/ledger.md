@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ OWED WATCH DISCHARGED — the first post-change MV refresh reads 15,329 blocks where the view alone used to cost 707,048 · Cowork (cloud, autonomous)
+
+The correction entry above closed with *"the first post-change run of jobid 245 lands at 14:42Z … **not read at time of writing**."* It has now been read, by **snapshotting `pg_stat_statements` before the run and differencing after** — a single-call delta, not a pooled mean, because a pooled mean is exactly what that entry warned about.
+
+**jobid 245 `rpc-refresh-pack-realized-ev`, run 2026-09-05 14:42:00Z (first since the 13:46Z apply):**
+
+| metric | this run | pooled over the 548 prior calls |
+|---|---|---|
+| shared blocks (hit + read) | **15,329** | **707,481** |
+| exec time | **1,734 ms** | 70,259 ms |
+| temp blocks written | **3,967** (~31 MB) | **0** |
+| wall clock | 1.74 s | — |
+
+⭐ **The temp figure is the positive control, not a side note.** It was **0 across all 548 prior calls** and is **3,967 on the first call after the change** — that is the new external merge sort appearing exactly where the migration header predicted it, at the predicted size. The rewrite is demonstrably the code path being exercised, rather than a coincidence of timing.
+
+**jobid 241 `rpc-refresh-pack-reality-top-ev` also ran post-change** (14:34:00Z, 1.66 s) and its pooled `temp_blks_written` has gone non-zero for the same reason.
+
+## ⚠ What this does and does NOT establish
+
+- ⛔ **Wall clock proves nothing here and I am not claiming it does.** 1.74 s sits *inside* the pre-change range of 1.52–9.65 s. **Exactly as predicted** — the migration header says the win is buffers, not milliseconds, because these refreshes were already fast.
+- ⚠ **n = 1**, and the 707,481 comparator is a POOLED average — the very statistic the correction entry cautioned against. It is used here only because **blocks count WORK, not cache luck**, and because it is independently corroborated: a direct `EXPLAIN (ANALYZE, BUFFERS)` measured the pre-change view alone at **707,048** buffers. Two instruments, same magnitude.
+- ✅ What is solid: **this refresh now does ~46× less block work**, and the sort it now pays for is present and the predicted size.
+
+⭐ **The scope correction from the entry above still stands and matters more than the ratio:** these three MV refreshers were already running in **single-digit seconds**, so this is a real reduction in I/O on jobs that were not starving. **It is not the "15.4 hours of database time" that the pooled numbers invite you to claim**, and that remains the thing not to write down.
+
+⏳ **Unchanged and still open:** the public-route falsifier (the two Vercel error groups must stop) is read **after 2026-09-06**, not from this.
+
+**Revert:** n/a — measurement only.
+
 ### 2026-09-05 · ⚠ CORRECTION to this morning's `pack_ev_latest` entry — the caller evidence was misattributed by a SUBSTRING match, and a second pooled statistic nearly became a headline · Cowork (cloud, autonomous)
 
 **The rewrite, its equivalence proof and its measurements all stand. What was wrong is the sentence sizing its concurrency risk.**
