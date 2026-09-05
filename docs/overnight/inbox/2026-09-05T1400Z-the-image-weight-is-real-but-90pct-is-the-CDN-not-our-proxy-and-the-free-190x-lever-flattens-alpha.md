@@ -85,3 +85,33 @@ The CDN serves its own sized variants, and **this codebase already uses that for
 1. **Is losing transparency acceptable on Moment tiles?** If yes, the fix is cheap, free of infra cost, and 190×. Check light mode explicitly.
 2. If no, the options are `next/image` (metered) or a resize in our own proxy — which covers only the 10%.
 3. Either way, **`/insights/trophies` is the surface to fix**; the set pages measured are already fine.
+
+---
+
+## ADDENDUM — the two obvious "surely there's a free way" follow-ups are both REFUTED
+
+Before anyone re-tries them: the alpha-preserving escapes do not exist on this CDN.
+
+**1. Size parameters on the RAW path are IGNORED — not rejected, ignored.**
+
+```
+…_2880_2880_Transparent.png?width=400              200  7,130,685 b  image/png
+…_2880_2880_Transparent.png?w=400                  200  7,130,685 b  image/png
+…_2880_2880_Transparent.png?width=400&format=webp  200  7,130,685 b  image/png
+```
+
+⚠ **Every one returns HTTP 200 with the full 6.8 MB payload.** That is the dangerous shape: a `?width=` that 404'd would announce itself, whereas this looks like it worked. `/editions/<set>/<uuid>/…png` is a plain object store; only `/media/<id>/image` is a transform endpoint.
+
+**2. Dapper does not publish smaller variants at a predictable path.** The filename encodes its dimensions (`_2880_2880_`), which invites substitution — it does not work:
+
+```
+…_512_512_Transparent.png    404
+…_400_400_Transparent.png    404
+…_256_256_Transparent.png    404
+…_640_640_Transparent.png    404
+…_1080_1080_Transparent.png  404
+```
+
+⭐ **So there is no alpha-preserving cheap path.** The `/media/<id>/image` transform is the only CDN-side lever, and it flattens to black. That makes the decision above genuinely a decision — not a search for a cleverer URL — and it is the reason this was filed rather than shipped.
+
+ⓘ One consequence worth stating: because the raw path **ignores** unknown query parameters and returns 200, any future "add `?width=` and measure" attempt will look successful in a status-code check and change nothing. **Measure the BYTES, not the status.**
