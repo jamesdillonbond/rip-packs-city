@@ -21,7 +21,11 @@ So the stored value was the all-printings total and Atlas's is the printing's ow
 ## 2. Two dead upstreams are now routed around, not repaired
 
 - `public-api.nbatopshot.com` (username resolution) — decommissioned. Nine routes now read the 9,370-name cache first; a name nobody has ever resolved gets an honest 503 telling the collector to paste the 0x address. **A brand-new username still cannot be resolved anywhere.**
-- Top Shot GraphQL behind `badge-sync` — 530 on every tick since 08-28. Replaced by Dapper's Atlas API over pg_net. The old route is untouched and would resume if that host ever returns; if it doesn't, `app/api/badge-sync` and its two GitHub workflows are now dead weight worth deleting.
+- Top Shot GraphQL behind `badge-sync` — 530 on every tick since 08-28, re-confirmed live 2026-09-04. Replaced by Dapper's Atlas API over pg_net, which now covers **266 of 266 Top Shot sets** and keeps 13,891 of 13,915 badge rows fresh within 6 h. The old route is untouched and would resume if that host ever returns.
+
+  ⛔ **CORRECTION to what I wrote here this morning — do NOT delete the badge-sync workflow.** I said it and its GitHub workflows were "dead weight worth deleting". **That is wrong, and I only caught it by measuring instead of acting on my own note.** The workflow also drives the All Day and Golazos low-ask refreshes, and those are healthy: over the trailing 3 days `allday-badge-low-ask-refresh` is **144/144 ok with 151,802 rows written**, `golazos-badge-low-ask-refresh` **144/144 with 1,729**, `allday-badge-ingest` **3/3 with 16,800**. Deleting it would have killed three working pipelines to remove one dead leg.
+
+  ⚠ **The workflow is also GREEN while its Top Shot leg fails** — 20 of 20 recent runs "success". That is the *"a sweep's ok means it COMPLETED, not that its LANES worked"* shape CLAUDE.md names, and it is why the dead leg went unnoticed. The dead leg (`/api/admin/backfill-badges-from-sets`, 0 of 12) is now **unscheduled** rather than deleted, with its one-line restore recorded in the route header.
 
 ## 3. jobid 55 (`allday-pack-opens-backfill`) is unscheduled
 
@@ -29,7 +33,9 @@ It hadn't reached the edge function since 02:16Z — 25 of 25 ticks died at pg_n
 
 ## 4. Cosmetic mismatches I left alone (not defects)
 
-`set_name` differs on 1,709 Moments ("Rookie Debut6" vs "Rookie Debut"); team naming on 43 ("Los Angeles Clippers" vs "LA Clippers"); All Day's edition ids are a different namespace from Atlas's (a constant offset, not a mis-map); RPC's All Day player names are populated where Atlas's are empty — we're *better* there. Locked state differs on 1,253 Moments because our lock flag refreshes on a slower cadence than Atlas's live one.
+⛔ **The `set_name` line here is now STALE and I am correcting it rather than leaving it to mislead.** I wrote "differs on 1,709 Moments" this morning, before the wmc metadata reconcile drained. **Re-measured 2026-09-04 over all 1,911,545 joined Top Shot rows: `set_name` differs on 0, blank `player_name` on 0.** (This morning: 91,180 and 14,711.) `tier` differs on **153**, all of them above the reconcile's current cursor and therefore waiting for the walk to reach them — ordinary denorm lag bounded by one ~2 h cycle, not a defect.
+
+Still true and still not defects: team naming on 43 ("Los Angeles Clippers" vs "LA Clippers"); All Day's edition ids are a different namespace from Atlas's (a constant offset, not a mis-map); RPC's All Day player names are populated where Atlas's are empty — we're *better* there. Locked state differs on ~1,253 Moments because our lock flag refreshes on a slower cadence than Atlas's live one.
 
 ## 5. Unchanged structural items
 
