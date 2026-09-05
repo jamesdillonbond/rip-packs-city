@@ -39,6 +39,22 @@ arm cannot see a fairness failure.* The pipeline was 48/48 ok while serving 0 % 
 it is 48/48 ok now — **the arm reads identically in both worlds.** Nothing was added to watch the
 distribution, so this can regress silently again.
 
+### The blocker on adding that watch is now measured, so the next pass need not re-derive it
+
+The reason no distribution arm exists is presumably that nobody knew what one would cost. It is
+**cheap: 24,349 buffers / 464 ms**, on an `Index Only Scan using idx_wmc_lock_wallet_coll`
+(`Heap Fetches: 15,529`) — comfortably inside any board threshold, at hourly or six-hourly cadence.
+The query is the one used for the table above.
+
+⛔ **Deliberately NOT shipped as an arm here**, and the reason is scope rather than cost: the trust
+board is an alerting surface CLAUDE.md already flags as drift-prone and able to time out at 60 s, and
+adding an arm to it is a change to the alerting estate — not something to slip in at 00:15 on the way
+past. **What was blocking it was the number, and the number is now in the file.**
+
+⚠ Whoever adds it: threshold on **checks to user wallets over 24 h being > 0**, not on a ratio. The
+defect state was an exact zero, and a ratio arm would have to encode a fairness policy nobody has
+chosen.
+
 ---
 
 
