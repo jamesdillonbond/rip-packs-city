@@ -1,6 +1,27 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { UFC_COLLECTION_UUID } from "@/lib/chains/flow/wallet-backfill-helpers"
+import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+
+// 🚨 IMPORTED FROM THE CONSTANTS TABLE, NOT FROM `wallet-backfill-helpers`, AND
+// THE REASON IS MEASURED. This route needs exactly one string from that module
+// — but importing it drags in its `@onflow/fcl` + `@onflow/types` chain, and
+// something in that chain calls the deprecated `url.parse()`. Node emits DEP0169
+// once per process, so every cold start of this `maxDuration = 300` cron logged
+// one, and Vercel captured it as a runtime error.
+//
+// ⭐ Measured over 7 days: that single deprecation group is **299 events**, and
+// its `routes` field lists EXACTLY the two routes importing
+// `wallet-backfill-helpers` — this one and `/api/wallet-backfill-ufc` — and NOT
+// `/api/sniper-feed`, which has far more cold starts. That is what makes it the
+// import chain rather than something global.
+//
+// ⚠ It is a WARNING, not a failure: nothing here was broken. What it cost was
+// SIGNAL — in a 12 h window it was **174 of ~250 runtime-error events (70%)**, so
+// anyone asking "why is production erroring" read mostly this.
+//
+// ⛔ `/api/wallet-backfill-ufc` genuinely runs Flow scripts and still needs the
+// SDK, so it will keep emitting this. Only this route's share goes away.
+const UFC_COLLECTION_UUID = COLLECTION_UUID_BY_SLUG.ufc
 
 // UFC wmc enrichment drain (UFC-WMC-NULLKEY fix).
 //
