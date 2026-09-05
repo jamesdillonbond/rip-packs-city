@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (docs) — Atlas is not a complete census, and a future "reconcile to Atlas" would have deleted 100 real editions, 183 holdings and 429 sales · Cowork (cloud)
+
+**Overnight, item 2 of the night queue.** Having closed the Atlas→catalogue direction an hour earlier, I read the reverse direction rather than assuming it was symmetric. ⭐ **It is not, and the asymmetry is load-bearing.**
+
+**Measured: 100 canonical Top Shot editions are in `editions` and absent from Atlas's results — and they are real.** 50 have holders, 59 have sales. The dominant class is **`Club Collection` (30 rows, 183 holder rows, 429 sales)**, a printing Atlas's public `SearchEditions` simply does not return. The rest: Bit 13, Vortex 8, Rippled 8, Explosion 6, Torn 4, one each of Hardcourt/Hexwave/Jukebox/Blockchain, and 27 base rows sharing a single 2026-05-08 seeding date (The Anthology: LeBron/Durant/Curry, the 15 Fit Check team Moments, NBA Cup, Holo Icon, and `152:5366`/`152:5372` from the Honors-Diced set whose Atlas `total_count` reads **0** — the same anomaly recorded in tonight's badge-backfill retirement).
+
+⚠ **This is Atlas omitting editions, not our walk missing them, and that was checked rather than asserted:** in every affected set `atlas_set_refresh_state.total_count` **equals** the rows harvested. Our pagination is complete; the source is not exhaustive.
+
+🚨 **The risk this closes is destructive and entirely plausible.** Tonight's work makes Atlas look like the catalogue's authority, and the obvious next idea — "reconcile `editions` against Atlas" — would **delete 100 real editions, 183 holdings and 429 sales**, with `editions` deletions cascading to `user_wishlists`/`watchlist_items`. **Use Atlas to ADD and to CORRECT, never to REMOVE. An edition absent from Atlas is not evidence the edition is not real.** Written into `docs/reference/database.md` next to the Atlas material, not left in this entry alone.
+
+⚠ **It also qualifies a claim I made an hour ago.** The previous entry says "the Atlas↔catalogue gap is fully closed". That is true in **one direction only** — everything Atlas lists, we now hold. The reverse 100 are correct data, not drift, and closing them would be the defect.
+
+**Revert:** `git revert <sha>` (docs only).
+
 ### 2026-09-04 · ✅ SHIPPED (DB) — the catalogue gap is now CLOSED: 563 parallel printings created, 144 of them one-of-ones, and the count assertion caught my own wrong guard before it excluded every team Moment · Cowork (cloud, DB live via MCP)
 
 **Overnight, Trevor asleep, standing authority.** ⓘ Heading is **PT-dated 09-04** while the migration version reads `20260905…` — the migration timestamp is UTC and PT was still 23:5x on the 4th. The future-dated-heading guard caught my first attempt at `### 2026-09-05`, which is exactly what it is for. This is the half of the Atlas gap I explicitly deferred six hours earlier, and — unlike the 16 Ultimates — the deferral survived its measurement. It just turned out to be worth doing anyway.

@@ -257,6 +257,39 @@ inside the heal window", not "the estate is missing a rule".** Fix it forward wi
 `ALTER TABLE … ENABLE ROW LEVEL SECURITY` + `REVOKE`, and prefer putting those two lines in the
 migration that creates the table so the window never opens at all.
 
+
+### ⛔ Atlas is NOT a complete census of Top Shot editions — never reconcile by deleting
+
+`api.production.atlas.dapperlabs.com` `EditionService/SearchEditions` is the authority this
+platform now uses for tier, badges, mint, prose and CDN media, and as of 2026-09-04 every edition
+it lists is in `editions` (`badge_editions` rows absent from `editions`: **0**). ⚠ **The reverse is
+not true and must not be treated as drift.**
+
+**Measured 2026-09-05: 100 canonical Top Shot editions are in `editions` and NOT in Atlas's
+results — and they are real.** 50 have holders in `wallet_moments_cache`, 59 have sales.
+
+| printing | rows | holder rows | sales |
+|---|---|---|---|
+| **Club Collection** | 30 | **183** | **429** |
+| (base) | 27 | 2 | 0 |
+| Bit | 13 | 0 | 0 |
+| Vortex · Rippled | 16 | 15 | 63 |
+| Explosion · Torn | 10 | 161 | 20 |
+| Hardcourt · Hexwave · Jukebox · Blockchain | 4 | 9 | 47 |
+
+⭐ **The dominant class is `Club Collection`** — a printing Atlas's public search simply does not
+return, with 183 holdings and 429 sales behind it. The 27 base rows share a single seeding date
+(2026-05-08) and are ordinary Moments (The Anthology: LeBron/Durant/Curry, the Fit Check team
+Moments, NBA Cup, Holo Icon, `152:5366`/`152:5372` from the Honors-Diced set whose Atlas
+`total_count` reads **0**).
+
+⚠ **In every one of these sets our walk is COMPLETE** — `atlas_set_refresh_state.total_count`
+equals the rows harvested — so this is Atlas omitting editions, not our pagination missing them.
+
+🚨 **Therefore: a "reconcile `editions` against Atlas" job that deletes anything Atlas does not
+list would destroy 100 real editions, 183 holdings and 429 sales.** Use Atlas to ADD and to
+CORRECT, never to REMOVE. An edition absent from Atlas is not evidence the edition is not real.
+
 ## 🚨 `EXCEPTION WHEN OTHERS` DOES NOT CATCH A STATEMENT TIMEOUT — so an isolation block built on it cannot survive the only failure this instance actually produces (promoted here 2026-08-26)
 
 **PostgreSQL: *"the special condition name `OTHERS` matches every error type EXCEPT `QUERY_CANCELED`
