@@ -108,6 +108,7 @@ const EDITION_META = {
 const QUIET_TAIL = {
   "rpc:query_sql": { data: [], error: null },
   "rpc:fmv_recalc_uncovered_editions": { data: { missing_total: 0, candidates: [] }, error: null },
+  "rpc:fmv_recalc_historical_candidates": { data: [], error: null },
   "rpc:fmv_apply_thin_sale_haircut": { data: [{ rows_examined: 0, rows_haircut: 0, total_dollars_removed: 0 }], error: null },
   "rpc:fmv_apply_thin_sale_haircut_for_editions": { data: [{ rows_examined: 0, rows_haircut: 0, dollars_removed: 0 }], error: null },
   "rpc:apply_fmv_thin_sales_guard": { data: [{ thin_sales_count: 0, stale_count: 0, common_outlier_count: 0, total_caps_applied: 0 }], error: null },
@@ -351,21 +352,25 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
 // QUIET_TAIL above returns [] for every query_sql probe, so their bodies never
 // executed. `rpc:query_sql` is sequence-aware (an ARRAY of payloads is consumed
 // in call order), and the route issues its query_sql calls in a fixed order:
-//   0 historical-fallback  1 edition_offers ASK  2 parallel :: ASK
-//   3 All Day ASK          4 tail probe
+//   0 edition_offers ASK  1 parallel :: ASK  2 All Day ASK  3 tail probe
 // Feeding rows at a given index lights exactly that step.
 //
-// ⚠ THESE INDICES SHIFTED BY TWO ON 2026-09-04 and the shift was NOT loud.
-// Step 5's two query_sql scans (0 = missing-count, 1 = uncovered-editions)
-// became one `fmv_recalc_uncovered_editions` call, so every later step moved
-// down two slots. Four tests went red — but the ASK_ONLY backfill test did NOT:
-// its old index 1 landed on the edition_offers ASK step, which writes the same
-// ASK_ONLY-at-0.90 shape, so it stayed green while testing a different code
-// path entirely. A positional fixture fails silently when the positions move;
-// that is why the backfill test below now names its RPC instead of an index.
+// ⚠ THESE INDICES HAVE NOW SHIFTED TWICE ON 2026-09-04, and the first shift was
+// NOT loud. Step 5's two query_sql scans became one
+// `fmv_recalc_uncovered_editions` call and Step 5b's became
+// `fmv_recalc_historical_candidates`, moving every later step down three slots
+// in total. The first shift reddened four tests — but NOT the ASK_ONLY backfill
+// test: its old index 1 landed on the edition_offers ASK step, which writes the
+// same ASK_ONLY-at-0.90 shape, so it stayed green while testing a different code
+// path entirely.
+//
+// ⛔ A POSITIONAL FIXTURE FAILS SILENTLY WHEN THE POSITIONS MOVE. Both steps that
+// have left query_sql are now keyed by RPC NAME below, which cannot drift; only
+// the ones still going through the wrapper are positional, and every one of
+// those that leaves it should be renamed the same way rather than re-indexed.
 // ---------------------------------------------------------------------------
 
-const QS = (byIndex: Record<number, unknown[]>, len = 5) =>
+const QS = (byIndex: Record<number, unknown[]>, len = 4) =>
   Array.from({ length: len }, (_, i) => ({ data: byIndex[i] ?? [], error: null }))
 
 // The sweep RETURNS EARLY on "no editions found in window", so the fallback
@@ -605,23 +610,30 @@ describe("fmv-recalc ASK-fallback + backfill steps", () => {
   })
 
   it("writes historical-fallback snapshots for editions with sales but no snapshot", async () => {
-    const { inserted } = instrument(
-      fallbackFixtures(
-        QS({
-          0: [
-            {
-              edition_id: "ed-hist-1",
-              collection_id: TOPSHOT,
-              avg_price: "42.00",
-              min_price: "30.00",
-              sales_count: 4,
-              last_sale_at: daysAgo(40),
-              low_ask: null,
-            },
-          ],
-        }),
-      ),
-    )
+    // ⚠ The key is `latest_sold_at`, which is what the route reads. This fixture
+    // said `last_sale_at` until 2026-09-04, so the route was computing
+    // daysSinceSale from `new Date(undefined)` — NaN — and the case still passed
+    // because it only asserted fmv_usd > 0. Naming the RPC and fixing the key
+    // together, since both were ways this test could pass without exercising the
+    // contract it claims.
+    const { inserted } = instrument({
+      ...fallbackFixtures(QS({})),
+      "rpc:fmv_recalc_historical_candidates": {
+        data: [
+          {
+            edition_id: "ed-hist-1",
+            collection_id: TOPSHOT,
+            avg_price: "42.00",
+            min_price: "30.00",
+            sales_count: 4,
+            latest_sold_at: daysAgo(40),
+            prev_confidence: null,
+            low_ask: null,
+          },
+        ],
+        error: null,
+      },
+    })
     await POST(req())
     await runDeferred()
 
@@ -633,7 +645,7 @@ describe("fmv-recalc ASK-fallback + backfill steps", () => {
   it("writes the edition_offers ASK floor for zero-sales NO_DATA editions", async () => {
     const { inserted } = instrument(
       fallbackFixtures(
-        QS({ 1: [{ edition_id: "ed-ask-1", collection_id: TOPSHOT, low_ask: 50 }] }),
+        QS({ 0: [{ edition_id: "ed-ask-1", collection_id: TOPSHOT, low_ask: 50 }] }),
       ),
     )
     await POST(req())
@@ -648,7 +660,7 @@ describe("fmv-recalc ASK-fallback + backfill steps", () => {
   it("writes the parallel (::) ASK floor for STALE/NO_DATA parallel editions", async () => {
     const { inserted } = instrument(
       fallbackFixtures(
-        QS({ 2: [{ edition_id: "ed-par-1", collection_id: TOPSHOT, low_ask: "10.00" }] }),
+        QS({ 1: [{ edition_id: "ed-par-1", collection_id: TOPSHOT, low_ask: "10.00" }] }),
       ),
     )
     await POST(req())
@@ -663,7 +675,7 @@ describe("fmv-recalc ASK-fallback + backfill steps", () => {
     const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
     const { inserted } = instrument(
       fallbackFixtures(
-        QS({ 3: [{ edition_id: "ed-ad-1", collection_id: ALLDAY, floor_ask: 8 }] }),
+        QS({ 2: [{ edition_id: "ed-ad-1", collection_id: ALLDAY, floor_ask: 8 }] }),
       ),
     )
     await POST(req())
@@ -676,7 +688,7 @@ describe("fmv-recalc ASK-fallback + backfill steps", () => {
 
   it("tolerates a query_sql error on a fallback step without failing the run", async () => {
     const qs = QS({})
-    qs[1] = { data: null, error: { message: "ask fallback query blew up" } } as never
+    qs[0] = { data: null, error: { message: "ask fallback query blew up" } } as never
     const { rpcCalls } = instrument(fallbackFixtures(qs))
     await POST(req())
     await runDeferred()

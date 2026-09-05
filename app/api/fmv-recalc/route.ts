@@ -1309,48 +1309,44 @@ export async function POST(req: NextRequest) {
     // confidence of ASK_ONLY/SALES_ONLY/STALE/LOW — never NO_DATA), so the head
     // advances on its own.
     const HIST_CANDIDATE_LIMIT = 200
+    // The staleness bound the candidate filter uses; was an inline SQL literal.
+    const HIST_STALE_AFTER_DAYS = 7
 
+    // 2026-09-04: moved off the generic query_sql into a named SECURITY DEFINER
+    // fn, for BOTH reasons its sibling fmv_recalc_edition_page was moved in July.
+    //
+    // (1) IT WAS BEING KILLED. `extra.historical_fallback_error` over the
+    //     trailing 73 h: 38 of 459 runs (8.3%) died on "canceling statement due
+    //     to statement timeout" — evenly spread, i.e. the steady state, not a
+    //     spike. service_role's PostgREST timeout is 30 s; this query measured
+    //     21 s. The fn declares statement_timeout = 60s, which on the PostgREST
+    //     path RAISES the effective limit (measured 30 -> 60; a LOWER one is
+    //     inert). ⚠ 60 and not the sibling's 120 on purpose: the Supabase gateway
+    //     hard-caps this path at ~120 s, so declaring 120 puts an overrun on the
+    //     cap, where it returns a gateway `504 upstream request timeout` that
+    //     names no statement, instead of an attributable statement timeout.
+    //
+    // (2) THE ORDER WAS BACKWARDS. The planner evaluated the `EXISTS (sales)`
+    //     FIRST, as a Merge Semi Join over 4,866,318 sales rows across all 8
+    //     partitions — and it is the LEAST selective term (18,946 of 26,722
+    //     editions, 71%, have a paid sale). The snapshot-staleness test, which is
+    //     the selective one, then threw away everything that survived. The fn
+    //     puts the selective half in a MATERIALIZED CTE first:
+    //     513,102 -> 306,847 buffers, 21,113 -> 9,061 ms.
+    //     ⚠ MATERIALIZED is load-bearing, not decoration — without it the planner
+    //     re-inlines and reproduces the old plan exactly (measured: 513,184).
+    //
+    // ⚠ The EXISTS still runs BEFORE the LIMIT, which is what the note above
+    // requires; only the order relative to the staleness filter changed. Proven
+    // live on a non-empty population (staleness relaxed to 1 day, 5,060 editions
+    // qualifying): both orders return 5,060 rows, EXCEPT ALL empty both ways.
+    // Migration 20260905040111.
     try {
       const { data: histRows, error: histErr } = await supabaseAdmin
-        .rpc("query_sql", {
-          query: `
-            WITH cand AS (
-              SELECT e.id, e.collection_id, e.external_id, la.confidence::text AS prev_confidence
-              FROM editions e
-              LEFT JOIN LATERAL (
-                SELECT fs.edition_id, fs.algo_version, fs.confidence, fs.computed_at
-                FROM fmv_snapshots fs
-                WHERE fs.edition_id = e.id
-                ORDER BY fs.computed_at DESC
-                LIMIT 1
-              ) la ON true
-              -- Admit editions with no snapshot, or a NO_DATA one, OR one that is
-              -- genuinely STALE. Staleness is tested on computed_at, NOT on the
-              -- algo_version string — see the correction below.
-              -- Scoped to confidence='NO_DATA' ONLY — a broader relax would re-admit
-              -- (and risk re-clobbering) good 1.7.x HIGH/MEDIUM rows, the 2026-05-30
-              -- Step 6 self-perpetuating-cycle class.
-              WHERE (la.edition_id IS NULL OR la.confidence = 'NO_DATA' OR la.computed_at < now() - interval '7 days')
-                AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
-                AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
-                AND EXISTS (SELECT 1 FROM sales s WHERE s.edition_id = e.id AND s.price_usd > 0)
-              LIMIT ${HIST_CANDIDATE_LIMIT}
-            )
-            SELECT
-              c.id AS edition_id,
-              c.collection_id,
-              AVG(s.price_usd)::numeric AS avg_price,
-              MIN(s.price_usd)::numeric AS min_price,
-              COUNT(s.id) AS sales_count,
-              MAX(s.sold_at) AS latest_sold_at,
-              MAX(c.prev_confidence) AS prev_confidence,
-              MAX(be.low_ask) FILTER (WHERE be.low_ask > 0 AND be.low_ask <= 10000) AS low_ask
-            FROM cand c
-            JOIN sales s ON s.edition_id = c.id
-            LEFT JOIN badge_editions be ON be.external_id = c.external_id AND be.collection_id = c.collection_id
-            WHERE s.price_usd > 0
-            GROUP BY c.id, c.collection_id
-          `,
+        .rpc("fmv_recalc_historical_candidates", {
+          p_pinnacle_collection_id: PINNACLE_COLLECTION_ID,
+          p_stale_after: `${HIST_STALE_AFTER_DAYS} days`,
+          p_limit: HIST_CANDIDATE_LIMIT,
         })
 
       if (histErr) {

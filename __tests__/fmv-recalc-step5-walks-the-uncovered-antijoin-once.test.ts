@@ -36,25 +36,30 @@ const REPO = process.cwd()
 const ROUTE = path.join(REPO, "app", "api", "fmv-recalc", "route.ts")
 const RAW = readFileSync(ROUTE, "utf8")
 
-const START = "── Step 5: Backfill editions with zero FMV coverage"
-const END = "── Step 5b: Historical sales fallback"
+const STEP5 = "── Step 5: Backfill editions with zero FMV coverage"
+const STEP5B = "── Step 5b: Historical sales fallback"
+const STEP5C = "── Step 5c: edition_offers ASK fallback"
 
 // ⚠ Both markers sit INSIDE `//` comments, so slicing at the marker TEXT cuts
 // the region mid-comment and leaves the stripper in its "line" state — which is
 // exactly what the endState assertion below caught. Cut on line boundaries.
-function step5Raw(): string {
-  const a = RAW.indexOf(START)
-  const b = RAW.indexOf(END)
-  if (a < 0) throw new Error(`Step 5 marker not found: ${START}`)
-  if (b < 0) throw new Error(`Step 5b marker not found: ${END}`)
-  if (b <= a) throw new Error("Step 5b precedes Step 5 — markers moved")
+function region(startMarker: string, endMarker: string): string {
+  const a = RAW.indexOf(startMarker)
+  const b = RAW.indexOf(endMarker)
+  if (a < 0) throw new Error(`marker not found: ${startMarker}`)
+  if (b < 0) throw new Error(`marker not found: ${endMarker}`)
+  if (b <= a) throw new Error(`markers out of order: ${startMarker} / ${endMarker}`)
   const lineStart = (i: number) => RAW.lastIndexOf("\n", i) + 1
   return RAW.slice(lineStart(a), lineStart(b))
 }
 
-const RAW_REGION = step5Raw()
+const RAW_REGION = region(STEP5, STEP5B)
 const stripped = stripCommentsWithState(RAW_REGION)
 const CODE = stripped.code
+
+const RAW_5B = region(STEP5B, STEP5C)
+const stripped5b = stripCommentsWithState(RAW_5B)
+const CODE_5B = stripped5b.code
 
 describe("fmv-recalc Step 5: one anti-join, not two", () => {
   // ── (0) The instrument, before anything is measured with it ───────────────
@@ -129,5 +134,50 @@ describe("fmv-recalc surfaces the census it already paid for", () => {
       "The census cost a full anti-join and used to reach nobody but a Vercel " +
         "log line. It belongs in extra, where an observer can read it.",
     ).toContain("uncovered_census: uncoveredCensus,")
+  })
+})
+
+// ── Step 5b: the historical fallback stays off the 30 s wrapper ─────────────
+//
+// Its candidate query was killed by "canceling statement due to statement
+// timeout" on 38 of 459 runs (8.3%) over 73 h, because `query_sql` runs as
+// service_role with a 30 s PostgREST limit and this query measured 21 s. It now
+// calls fmv_recalc_historical_candidates, which declares statement_timeout=60s
+// and — the other half — evaluates the SELECTIVE snapshot filter before the
+// EXISTS-over-sales the planner was running first as a 4.87M-row merge semi
+// join (513,102 -> 306,847 buffers).
+//
+// ⚠ Putting this step back on query_sql would silently restore the 8.3% kill
+// rate, and it would LOOK fine: the step already records its failure honestly in
+// extra.historical_fallback_error, so nothing goes red — the rows just stop
+// being written on roughly 1 run in 12.
+describe("fmv-recalc Step 5b: off the 30s wrapper, onto a named function", () => {
+  it("the region is non-trivial and the stripper terminated cleanly", () => {
+    expect(RAW_5B.length).toBeGreaterThan(2000)
+    expect({ endState: stripped5b.endState, tplDepth: stripped5b.tplDepth })
+      .toEqual({ endState: "code", tplDepth: 0 })
+  })
+
+  it("the stripper removes a known offender in THIS region too", () => {
+    // Same self-proving property as Step 5: the region's own prose quotes the
+    // banned string, so the ban below is unsatisfiable unless stripping worked.
+    expect(RAW_5B).toContain("query_sql")
+    expect(CODE_5B).not.toContain("query_sql")
+  })
+
+  it("sends no ad-hoc query_sql (it is what imposes the 30s service_role limit)", () => {
+    expect(CODE_5B.split('.rpc("query_sql"').length - 1).toBe(0)
+  })
+
+  it("takes its candidates from the named function", () => {
+    const calls = [...CODE_5B.matchAll(/\.rpc\(\s*"([^"]+)"/g)].map((m) => m[1])
+    expect(calls).toEqual(["fmv_recalc_historical_candidates"])
+  })
+
+  it("still records a failed candidate read instead of reporting 0 rows written", () => {
+    // The instrument that made the 8.3% kill rate findable at all (added
+    // 2026-08-31): a count of 0 with no error key cannot be told apart from a
+    // step that never ran.
+    expect(CODE_5B).toContain("historicalFallbackError = histErr.message")
   })
 })
