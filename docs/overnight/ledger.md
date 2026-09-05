@@ -10,6 +10,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (tests) — a colleague found the third blind spot in the image gate hours after it shipped: a page can be 90% blank and green · Claude Code (Trevor's box, interactive)
+
+**Not my finding.** Cowork's inbox filing (`2026-09-05T0940Z`) measured `/nfl-all-day/set/genesis` at **47 of 52 images blank** — the entire Genesis set (352 editions, Series 1, every one an ULTIMATE 1/1) has no art at its upstream — and pointed out that **both** arms I shipped tonight sail past it:
+
+- the **ratio** arm, because those images are not same-origin (All Day art comes straight from `media.nflallday.com`, a CSP-allowed CDN);
+- the **proxy** arm, because none of them are media-proxy URLs.
+
+⭐ Their filing deliberately stopped there — *"not an argument to widen the gate reflexively… recorded so whoever revisits that gate knows the shape it does not cover."* **That restraint was right, and the missing ingredient was a measurement.**
+
+## The measurement that makes it non-reflexive
+
+13 pages, ~400 third-party images, grouped **by host**:
+
+```
+assets.nbatopshot.com      0/114     media.nflallday.com   0/31, 0/29, 0/105
+assets.laligagolazos.com   0/31      arweave.net           0/3
+── the one real failure ──
+media.nflallday.com on /nfl-all-day/set/genesis    15/19  =  79%
+```
+
+**Every healthy host reads 0%. The broken one reads 79%.** Healthy and broken are separated by the entire range, so a 50% threshold is nowhere near either population — which is what turns "widen the gate" from a hunch into a decision.
+
+⚠ **PER HOST, NOT PER PAGE.** Pooling would let a page's 114 healthy Top Shot images hide 19 dead All Day ones — exactly the shape on `/insights/trophies`, which serves both hosts at once.
+
+⛔ **"A third-party CDN blip is not our defect" is TRUE AND NOT THE POINT.** A blip does not take out most of one host's images on a page, and when it does the page is visibly broken to the reader whoever's fault it is. **This gate answers "is the page broken", not "is it our fault"** — the fault question decides what to DO, not whether to notice.
+
+## ⚠ What this does NOT do — stated because the obvious reading is wrong
+
+**It does not catch Genesis.** `entity-smoke` picks its `set` page with `.find()` — the FIRST `/set/` URL in sitemap 3, deterministically `/nba-top-shot/set/clamps`. Genesis is in that sitemap exactly once and will never be picked.
+
+⭐ **That cuts both ways, and the second half is why this was safe to ship.** The arm gains no coverage of Genesis — but it also **cannot pin the badge red on an upstream nobody can fix**, which would have been the "alarm whose clearing condition is outside the estate stays red forever" trap. What it does cover is the same failure on pages the smoke *does* visit: `/insights/top-sales` carries **114** Top Shot CDN images and `/nfl-all-day/market` **31**, and that host going dark is currently invisible to every instrument we have.
+
+## Proven
+
+3 fixtures, self-contained and network-free. ⭐ **The "third-party host" is the SAME server under its other name** — the spec serves from `127.0.0.1:<port>` and the fixture points images at `localhost:<port>`, a different host string, so nothing can flake on a real CDN. 5-of-6 blank must **FAIL** · all healthy must **PASS** · **1-of-6 blank must PASS**.
+
+**Mutations, both red, and they pin the threshold from both sides:** raise the image floor so the arm never fires → the 5-of-6 case reds; tighten 50% to a flat ban → the **1-of-6 case** reds. The second is the one that matters — it proves the threshold is load-bearing rather than decorative, and that a future tightening cannot silently turn this into a ban on third-party images.
+
+**Verified:** `tsc` clean · self-check **35/35** · live production **smoke + entity smoke 71/71, zero false failures** · full suite **1,472 files / 16,312 tests, exit 0**.
+
+**Revert:** `git revert <sha>` — a CDN host can go dark on a covered page without the gate noticing.
+
+
 ### 2026-09-05 · ✅ SHIPPED (tests) — the smoke's content assertion read the page BEFORE it rendered, and the false failures were in the only client-side gate this platform has · Claude Code (Trevor's box, interactive)
 
 **Reproduced, then fixed, then mutation-proven.** `assertHealthyPage` navigated with `waitUntil: "domcontentloaded"` and read the body **immediately** — the `waitForLoadState("load")` and the 1.5 s hydration settle came **after** the content assertions. For a streaming App Router route, DCL fires when the SHELL has parsed. The assertion was measuring how fast the server flushed, not whether the page works.
