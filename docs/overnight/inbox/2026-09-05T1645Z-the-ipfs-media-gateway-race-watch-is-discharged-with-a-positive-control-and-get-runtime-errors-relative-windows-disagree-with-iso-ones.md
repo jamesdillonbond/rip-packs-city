@@ -35,7 +35,7 @@
 
 ---
 
-## 2b. 🚨 An instrument defect found while measuring this, and it affects every error-surface number in this repo
+## 2b. ⚠ An instrument defect found while measuring this — real and reproducible, but CONDITIONAL
 
 **`get_runtime_errors` returns different counts for the same window depending on whether `since` is RELATIVE or an explicit ISO timestamp.** Reproduced twice, same route, minutes apart:
 
@@ -46,13 +46,28 @@
 | `since: "12h"` | 20 |
 | `since: "2026-09-05T04:50:00Z"` (the same instant) | 20 |
 
-⭐ **The ISO form is internally consistent and ADDITIVE** — the two sub-windows either side of the deploy return 29 and 15, which sum to exactly the 44 above. **The relative form at 24h does not reconcile with anything**: it is not the lifetime count either (that is 300 since 09-03T00:00). At 12h the two forms agree exactly, so this is not a blanket relative-vs-ISO bug.
+⭐ **The ISO form is internally consistent and ADDITIVE** — the two sub-windows either side of the deploy return 29 and 15, which sum to exactly the 44 above. **The relative form at 24h does not reconcile with anything**: it is not the lifetime count either (that is 300 since 09-03T00:00).
+
+🚨 **CORRECTED after filing — I checked whether it generalises and it DOES NOT, so the original scope claim (“affects every error-surface number in this repo”) was too strong.** Two controls:
+
+| control | relative | ISO, same instant |
+|---|---:|---:|
+| same route, **12 h** | 20 | 20 — **agree** |
+| **different route** (`/[collection]/edition/[slug]`), **24 h** | 7 / 2 / 1 | 7 / 2 / 1 — **agree** |
+
+⚠ **So the disagreement is not a property of the relative form as such** — it is specific to this high-volume group at 24 h (300 lifetime events) and did not reproduce on a low-volume group over the same nominal window on the same day. A sampling/extrapolation path on large groups is the obvious suspect and is **explicitly NOT claimed**.
 
 ⛔ **The cause is NOT established and this filing does not guess at one.** The operational rule is what matters:
 
 👉 **When the number matters, pass an explicit ISO `since`/`until`. Never quote a figure taken with a relative lookback, and never subtract two windows specified differently.**
 
-⚠ **Consequence for existing records:** any "N events in 24h" figure in this repo's history taken with `since: "24h"` may be inflated — including ones I wrote earlier today. The DEP0169 discharge is unaffected (it used an explicit ISO window), and the edition-page figures in inbox `2026-09-05T1626Z` were used only to establish that the counts are *small*, a conclusion an inflated number cannot break.
+✅ **Consequence for existing records — CHECKED, not assumed.** I re-measured my own figures from earlier today rather than leaving them caveated:
+
+- **The edition-page counts in inbox `2026-09-05T1626Z` are CORRECT** — re-run with an explicit ISO window they return **7 / 2 / 1**, identical to the relative call. Nothing to amend there.
+- **The DEP0169 discharge is unaffected** — it used an explicit ISO window throughout, and its positive control came from `pipeline_runs`, not from this tool.
+- **The one figure that WAS affected is the `188/24h` baseline this filing set out to test**, which is why the discharge above is built on ISO windows and a mechanism, not on that number.
+
+⭐ **The transferable point is the one that nearly slipped past me:** having found a real discrepancy, the temptation was to caveat every historical number and move on. **Checking whether it generalised took two calls and turned a broad, unfalsifiable warning into a narrow, testable one** — and incidentally confirmed the filing I had published an hour earlier.
 
 ---
 
