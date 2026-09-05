@@ -28,9 +28,7 @@
 // After the retry, it degrades to a muted label rather than a broken-image icon — the same shape
 // components/packs/PackThumb.tsx uses for permanently dead pack art.
 
-import { useEffect, useState } from "react"
-
-const RETRY_DELAY_MS = 1_200
+import { useIpfsRetry } from "@/lib/media/use-ipfs-retry"
 
 export default function IpfsThumb({
   src,
@@ -44,21 +42,8 @@ export default function IpfsThumb({
   label?: string | null
   marginBottom?: number
 }) {
-  // 0 = first attempt, 1 = the retry, 2 = given up.
-  const [attempt, setAttempt] = useState(0)
-  const [pendingRetry, setPendingRetry] = useState(false)
-
-  useEffect(() => {
-    if (!pendingRetry) return
-    const t = setTimeout(() => {
-      setPendingRetry(false)
-      setAttempt((a) => a + 1)
-    }, RETRY_DELAY_MS)
-    return () => clearTimeout(t)
-  }, [pendingRetry])
-
-  const gaveUp = attempt >= 2
-  const show = Boolean(src) && !gaveUp
+  const { key, onError, failed } = useIpfsRetry()
+  const show = Boolean(src) && !failed
 
   return (
     <div
@@ -76,16 +61,11 @@ export default function IpfsThumb({
       {show ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          key={attempt}
+          key={key}
           src={src as string}
           alt={alt}
           loading="lazy"
-          onError={() => {
-            // One retry, then stop. A CID that fails twice is genuinely unavailable and saying so
-            // is better than a third request the reader is still waiting on.
-            if (attempt === 0) setPendingRetry(true)
-            else setAttempt(2)
-          }}
+          onError={onError}
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
       ) : (

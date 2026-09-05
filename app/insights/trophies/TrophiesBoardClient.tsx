@@ -23,6 +23,7 @@ import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { useIpfsRetry } from "@/lib/media/use-ipfs-retry"
 import { fromDbSlug } from "@/lib/collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -127,7 +128,10 @@ function tierColor(tier: string | null): string {
 }
 
 function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
-  const [imgOk, setImgOk] = useState(true)
+  // ⚠ The ipfs-media 502 is a COLD-CACHE MISS: measured 8.17s/502 then 0.36s/200 on the same CID.
+  // This tile already had an onError, but it gave up on the FIRST one — so the first visitor to
+  // each trophy's CID got the grey fallback where one retry shows the actual art.
+  const { key: imgKey, onError: onImgError, failed: imgFailed } = useIpfsRetry()
   const href = r.external_id
     ? `/${collectionSlug(r.collection)}/edition/${encodeURIComponent(r.external_id)}`
     : `/moment/${r.edition_id}`
@@ -137,14 +141,15 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
   return (
     <Link href={href} className={`rpc-tr-tile ${hero ? "rpc-tr-tile-hero" : ""}`}>
       <div className="rpc-tr-art">
-        {r.thumbnail_url && imgOk ? (
+        {r.thumbnail_url && !imgFailed ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
+            key={imgKey}
             src={proxyIpfsUrl(r.thumbnail_url) ?? undefined}
             alt={title}
             className="rpc-tr-img"
             loading="lazy"
-            onError={() => setImgOk(false)}
+            onError={onImgError}
           />
         ) : (
           <div className="rpc-tr-img-fallback" aria-hidden />
