@@ -42,8 +42,20 @@ They sit **above** the cursor, and the walk only ever looks **below** it, so the
 
 ## The two candidate fixes, and why neither was shipped tonight
 
-- **(a) Teach the walk to terminate / turn around** — worker-side. ⛔ `workers/**` **never auto-deploys**; pushing it to `main` ships nothing, so this needs a manual `wrangler` deploy. It is also the more invasive option: making the claim fall back to the range ABOVE the cursor interacts with `apply_sales_counterparty`, which writes the cursor, and a naive version can oscillate.
+- **(a) Teach the walk to terminate / turn around** — worker-side. ⛔ `workers/**` **never auto-deploys**; pushing it to `main` ships nothing, so this needs a manual `wrangler` deploy.
+
+  ⭐ **The interaction was CHECKED rather than assumed** (I first wrote "a naive version can oscillate", which was speculation). Reading `apply_sales_counterparty`'s `prosrc`: it sets
+
+  ```sql
+  cursor_sold_at = LEAST(COALESCE(cursor_sold_at, v_min_sold), v_min_sold)
+  ```
+
+  — the cursor is **monotonically DECREASING** and can never move up. So a forward fallback would NOT oscillate: rows above the cursor would be processed, their `seller_address` filled, and they would stop matching `seller_address IS NULL` on the next tick. **It would drain the 146.**
+
+  ⛔ **But it would not fix the WEDGE, and would make the cost worse** — the dead backward scan still runs first every tick, and once the forward trickle is drained each tick pays for TWO empty scans instead of one. The forward gap and the wasted scan are separate problems, and only the second is the expensive one.
 - **(b) Nudge the state so the dead range stops being scanned** — DB-side and within reach, but it is a **data mutation to pipeline state with a real downside**: historical sales backfills DO insert rows into past ranges, and a cursor moved past 2023-11→2024-04 strands anything later written there.
+
+⭐ **What the wedge actually needs, now that the mechanism is read:** the cursor must be allowed to move past rows that were **SCANNED and found unclaimable**, not only past rows that were CLAIMED. **No component can express that today** — the worker sees only the rows the claim returned, and the claim returns only matches. That is the change, and it is a design decision about cursor semantics rather than a patch.
 
 ⛔ **And explicitly NOT the fix: adding a partial index to make the dead scan cheap.** It would work — a partial index matching the full predicate returns zero instantly instead of walking 221K entries — and it is optimising a no-op. The scan should stop, not get faster.
 
