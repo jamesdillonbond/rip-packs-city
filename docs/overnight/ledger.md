@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (code) — every UFC Strike image on the site was broken, because the gateway ranking was measured on a sample that contained no UFC CIDs · Cowork (cloud)
+
+**Found by a plain-Chromium sweep of 27 public surfaces**, not by an alert: 3 of 3 sampled UFC pages (`/ufc/edition/…`, `/ufc/set/…`, `/ufc/player/…`) logged a **403 from `/api/public/ipfs-media/<cid>`**, one of them with a visibly broken tile.
+
+⭐ **THE CAUSE IS A SAMPLING ERROR IN A MEASUREMENT I WOULD HAVE TRUSTED.** That route carries a careful five-gateway availability table — `ipfs.dapperlabs.com 8/8 · gateway.pinata.cloud 8/8 · ipfs.filebase.io 7/8 · ipfs.io 2/8 · cloudflare-ipfs.com 0/8` — and it says, in the route's own words, that it was measured against *"8 CIDs taken live off `/nba-top-shot/market`"*. **Every one of those is Dapper-pinned, so Dapper could not lose**, and the list became `[dapperlabs, ipfs.io]` with Pinata passed over for being slower. ⛔ **UFC Strike is the ONLY collection served from `ipfs.io` — 518 thumbnails and 516 videos — and ZERO of its CIDs are on Dapper's gateway.** The ranking generalised from a population that structurally excluded the only collection it would break.
+
+**Measured tonight against a live UFC CID, from two different networks:**
+
+| gateway | result |
+|---|---|
+| `ipfs.dapperlabs.com` | **403 in 0.3–0.5 s** — body: *"The owner of this gateway does not have this content pinned to their Pinata account."* |
+| `ipfs.io` | **no response at all, 25 s** |
+| `gateway.pinata.cloud` | **200 `image/png` 4.72 MB in 5.4 s** |
+
+**So the art was retrievable the whole time.** The primary answered 403 fast, the secondary never answered, and the catch passed the 403 through to the browser.
+
+**Two fixes, and the second is the one worth remembering.** (1) `gateway.pinata.cloud` is added as a third gateway — it was already in the measured table at 8/8 and was rejected only for latency, on a sample where latency was the only axis that could differ; losers are aborted the instant one gateway answers, so a slower third entry costs nothing on a CID the faster ones can serve. (2) ⭐ **A 401/403 is no longer allowed to win the pass-through.** `failures.find(f => f.status !== null)` took the first answered status in gateway order, and **a 403 from a gateway that has not pinned a CID is an answer about the GATEWAY, not about the content** — the route's own justification for pass-through names *"a 404 for a CID that does not exist"*, which is a different thing entirely. Any other answered status now wins; the auth-shaped one is used only when it is the only answer there is.
+
+**CSP updated in the same change** (`img-src` **and** `media-src`), because the oversize path 302s the browser straight at whichever gateway answered — a host in `GATEWAYS` but absent from the CSP fixes the proxy leg and breaks the redirect leg silently. ⭐ **That rule was a comment in the route header; it is now a guard**: a new test parses the `GATEWAYS` list out of the route and asserts every host appears in both CSP directives. **Mutation-proven** — removing the host from `img-src` alone makes it fail and name the host.
+
+**Verified:** 31 tests in the route suite (4 new: the third-gateway UFC case, a 403 not masking another gateway's 404, a control that a 403 IS still passed through when it is the only answer, and the CSP guard) · 56 green across the six IPFS-media/anon-307 suites · `tsc` clean.
+
+⏳ **OWED AFTER DEPLOY, and it is a real question rather than a formality:** this box's reachability is not Vercel edge's — the same caveat the 09-05 gateway entry records. **Re-probe a UFC CID through `/api/public/ipfs-media/` once the deploy is live.** If edge cannot reach Pinata the change is inert, not harmful (the ipfs.io leg still runs and behaviour is no worse), but it would mean the fix has not landed and the next lever is `ipfs.filebase.io` (7/8 on the old sample, untested on UFC).
+
+**Revert:** `git revert <sha>` — removes the third gateway and restores the 403 pass-through, i.e. restores the broken UFC art.
+
 ### 2026-09-05 · ✅ VERIFIED IN PRODUCTION — the IPFS gateway race took `/nba-top-shot/market` from 0 of 14 images serving to 16 of 16, and the success log now names which gateway did it · Claude Code (Trevor's box, interactive)
 
 **Closes the owed re-probe on `dd61aa266`.** Measured by rendered DOM in a fresh browser context, then by direct probe of every distinct CID the page requests, 1.5 s apart.
