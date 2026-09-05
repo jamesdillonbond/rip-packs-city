@@ -158,12 +158,43 @@ unschedule. **The arm self-clears around 2026-09-05 22:00 PT.** ⛔ Do not re-fi
 "fix" it. One grep of the ledger answered it, which is the second time in this pass that grepping
 before filing was the entire job.
 
+## 🚨 I shipped an RLS-off audit table, and the smoke gate caught it in seven minutes
+
+The catalog push went red on GHA `smoke` — the only red in ten consecutive smoke runs —
+at `rpc:check_public_security_invariants`: two audit tables created with a bare
+`CREATE TABLE IF NOT EXISTS` landed with `relrowsecurity = false` and `anon` holding SELECT.
+Closed by `20260905062849` (RLS on, anon/authenticated revoked); invariants re-read **0 rows**,
+and smoke on the fix commit is green.
+
+⚠ **My first write-up of this was wrong in both directions and is corrected in the ledger.**
+Chasing why an earlier audit table the same night was compliant turned up a standing mechanism I
+did not know existed: **`public.selfheal_audit_table_rls()`, pg_cron jobid 232, `47 * * * *`** —
+it enables RLS and revokes `anon` on every `public.audit_%` table, hourly.
+
+- The window was **~10 minutes**, not the "roughly two hours" I first wrote: created 06:18Z/06:20Z,
+  closed by hand 06:28Z, and the healer would have closed them at 06:47Z anyway.
+- It was **not** a convention I broke. **13 other migrations** create a public table with no inline
+  RLS statement and are compliant *because the healer runs* — which is exactly why my
+  sibling-table comparison read like a house style I had missed.
+
+⭐ **The estate is better designed than my write-up credited it:** a self-healer bounds the window to
+≤1 h unattended, and a hard smoke check names the offending objects the moment a deploy lands inside
+it. Documented in `docs/reference/database.md` so the next reader does not re-derive it from a red
+check. ⓘ I drafted a repo guard requiring inline RLS on every migration `CREATE TABLE` and **did not
+ship it** — the scanner was still mis-parsing dynamic `format('CREATE TABLE … %I')` DDL, and shipping
+an unvalidated guard in the same hour as this entry would have been the same mistake twice.
+
 ## Instrument trap found this pass — record it before it misleads someone
 
 `select count(*) from public.check_secdef_anon_execute_violations()` returns **1** on a clean
 estate, because the function returns a **single row containing an empty JSON array**. The same
 holds for `detect_stalled_pipelines()`. **Read the value, never the row count** — a `count(*)`
 here manufactures a violation out of a clean answer. Both read `[]` at close.
+
+⚠ **And its sibling has the OPPOSITE empty shape.** `check_public_security_invariants()` is
+**set-returning**: clean is **zero rows**, so a scalar subquery over it reads `NULL`, not `[]`.
+Two security checks that look interchangeable disagree about what "clean" looks like — read each
+one's shape before believing either. Both were clean at close (0 rows / `[]`).
 
 ## Post-ship watch
 
