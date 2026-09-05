@@ -95,6 +95,45 @@ exports.Response = nodeFetch.Response
 
 ⚠ **It is still not a blind swap.** Native `fetch` (undici) and node-fetch v2 differ in real ways — error types, redirect and body-stream semantics, header casing — and this sits under **every Flow read on the platform**. The probe from §5 stands: alias it in a **preview deploy** and confirm a Flow script round-trips before it goes near production. **What changed is that the shim is now a known 15-line contract rather than a leap.**
 
+## 5c. ADDENDUM 2 — the shim was PROBED LOCALLY against a real Flow read, with a matched control. It works.
+
+⛔ **Still nothing shipped.** But §5's *"wants a probe first"* has now had its cheap half done, so whoever picks this up starts from evidence rather than from a plan.
+
+**Method:** inject a native-`fetch` shim into `require.cache` for `cross-fetch` **before** `@onflow/fcl` loads, wrap `url.parse` with a counter, then perform a **real Flow mainnet read** (`fcl.send([fcl.getBlock(true)])`).
+
+| run | Flow read | `url.parse` calls | DEP0169 |
+|---|---|---:|---|
+| **shim injected** | ✅ **OK** — sealed block **163,559,995** | **0** | **none** |
+| **control, no shim** | ✅ OK — sealed block 163,560,008 | **2** | **emitted** |
+
+⭐ **The control is what makes the zero mean anything.** Without it, "0 `url.parse` calls" is equally consistent with a counter that never worked — the null-result trap this repo has recorded more than once. The control fires the warning and counts 2, so the instrument demonstrably sees the difference.
+
+⚠ **One honesty note on the control:** it still logs `cross-fetch entries shimmed: 1`, because it was derived from the probe by emptying the injection loop while leaving the log line alone. **That line is wrong in the control run** — what proves the control was genuinely unshimmed is DEP0169 firing and the 2 counted calls, not the log.
+
+**The shim under test, in full** — this is the whole contract from §5b:
+
+```js
+const fetchImpl = function (url, options) {
+  if (typeof url === "string" && /^\/\//.test(url)) url = "https:" + url; // schemaless parity
+  return globalThis.fetch.call(this, url, options);
+};
+fetchImpl.ponyfill = true;
+const mod = fetchImpl;
+mod.fetch = fetchImpl;
+mod.Headers = globalThis.Headers;
+mod.Request = globalThis.Request;
+mod.Response = globalThis.Response;
+mod.default = fetchImpl;
+```
+
+### ⛔ What this does NOT establish
+
+1. **It is a LOCAL Node 24 run, not the Vercel runtime.** The bundler resolves `cross-fetch` at build time; a `require.cache` injection is not what a webpack/turbopack alias does, and only a **preview deploy** proves the alias resolves the same way.
+2. **One read path, not all of them.** `getBlock` is a plain GET. It does not exercise script execution with a body, redirects, streaming, or error paths — and node-fetch v2 and undici differ exactly there.
+3. **It says nothing about `@onflow/fcl-wc`'s `cross-fetch@3.2.0`**, which resolves separately; only one entry was shimmable from this process.
+
+👉 **So the remaining work is a preview deploy with the alias configured, exercising a Cadence script execution (POST with a body) rather than a block read.** That is a bounded, well-specified task now, which is the whole point of doing the cheap half first.
+
 ## 6. Falsifiers
 
 1. Re-run the patch probe (`url.parse` wrapper + an fcl network call). If the stack no longer shows `node-fetch`, the chain changed.
