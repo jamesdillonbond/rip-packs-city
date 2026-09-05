@@ -10,6 +10,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (code) — 70% of the production runtime-error surface was ONE deprecation warning, imported into a cron route by a single string constant · Claude Code (Trevor's box, interactive)
+
+**Found by ranking the error groups instead of reading them.** `get_runtime_errors` over 12 h returned 25 groups; sorted by count, one dwarfs everything:
+
+```
+174 events / 72 "users"   /api/cron/ufc-enrichment-drain
+(node:4) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized…
+```
+
+**174 of ~250 events — 70% of everything logged.** The other 24 groups combined are the remaining 30%, and they are the real ones (pack-detail bounds, sniper-feed 403s, the dead Top Shot host).
+
+⚠ **It is a WARNING and nothing was broken.** What it cost is SIGNAL: the surface an operator — or a night pass — reads to answer *"why is production erroring"* was mostly this.
+
+## The cause, and how the attribution was made rather than guessed
+
+The route imports exactly one thing from `lib/chains/flow/wallet-backfill-helpers.ts`: the string `UFC_COLLECTION_UUID`, defined on **line 2036** of that 2,000-line module. The module's own imports include **`@onflow/fcl`** and `@onflow/types`, and something in that chain calls the deprecated `url.parse()`. Node emits DEP0169 **once per process**, so every cold start of this `maxDuration = 300` cron logged one.
+
+⭐ **The attribution is a measurement, not a reading of the import graph.** Over **7 days** the group is **299 events**, and its `routes` field lists **exactly the two routes that import that helper** — this one and `/api/wallet-backfill-ufc` — and **not `/api/sniper-feed`**, which had 254 timeouts in the same window and therefore no shortage of cold starts. A global dependency would have appeared everywhere. This did not.
+
+⛔ **My first hypothesis was weaker than that and I nearly shipped on it.** Grepping `node_modules/@onflow` for `url.parse(` returned only a build-time tailwind file inside `@onflow/fcl-wc`, which is *not* evidence the runtime chain calls it. The route-set correlation is what actually carries the claim; the static grep does not.
+
+## Shipped
+
+`COLLECTION_UUID_BY_SLUG.ufc` from `@/lib/collections` — which imports only `@/lib/safe-lookup` and already carries the identical UUID. The route's live imports are now `next/server`, `@/lib/supabase`, `@/lib/collections`. Nothing else changed.
+
+⛔ **`/api/wallet-backfill-ufc` genuinely executes Flow scripts and still needs the SDK**, so it keeps emitting this. **This removes the larger share (174 of 299), not all of it** — stated because "the deprecation is gone" would be false.
+
+## Proven
+
+New guard, 3 assertions + 3 controls:
+
+- **Ban at zero** on `@onflow` / `wallet-backfill-helpers` in this route's imports.
+- ⚠ **The UUID is pinned to the same value it had before.** The change moves WHERE the constant comes from, not WHICH constant — without this, a silent drift (the whole collection read under the wrong id) would hide behind a green import guard.
+- ⚠ **Parsed from `import … from "…"` statements, never grepped.** The shipped route's header *names* both banned strings in prose to explain the defect, so a substring scan would fire on its own documentation. It also embeds **Cadence** source containing `import NonFungibleToken from 0x1d7e57aa55817448` — an `import` with no quoted specifier — which has its own negative control.
+
+**Mutations, both red on their own assertion:** restore the SDK-dragging import → the ban reds; repoint the UUID at another collection → the value assertion reds.
+
+**Verified:** `tsc` clean · full suite **1,474 files / 16,323 tests, exit 0**.
+
+⏳ **OWED, and it is a clean falsifier:** after this deploys, `/api/cron/ufc-enrichment-drain` must **disappear from that DEP0169 group's `routes` field** while `/api/wallet-backfill-ufc` remains. ⚠ Node emits the warning once per process, so the test is whether NEW events attribute to this route — not whether the group's historical count falls, which it cannot.
+
+**Revert:** `git revert <sha>` — the cron re-imports the SDK chain and the warning returns to every cold start.
+
+
 ### 2026-09-05 · ✅ SHIPPED (code) — one pack-detail read timeout was arriving as TWO Vercel error groups, so the route's measured error rate was DOUBLE its real one · Claude Code (Trevor's box, interactive)
 
 **Found by reading the production error groups rather than a log line.** `get_runtime_errors` over 12 h returned 25 groups, and four of them came in suspiciously exact pairs:
