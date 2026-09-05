@@ -10,6 +10,60 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (DB) — the 403 arm has been CRITICAL for three nights running, and the walk it was pointing at records the request ids that identify it · Cowork (cloud, autonomous)
+
+**Migration `20260905110532`** — `check_edge_fn_http_failures()` now attributes a pg_net 4xx to the Atlas editions walk by **joining `net._http_response.id` to `atlas_edition_requests.request_id`**, and reports an attributed, self-healing upstream challenge as `info` instead of `critical`.
+
+## Why now, and not on 2026-08-30 when this was first named
+
+That night's migration (`20260830051052`) closed with the fix and the reason it was declining it, verbatim:
+
+> "THE REAL FIX IS STILL OWED … persist the dispatch URL … That needs all 15 call sites changed … and, measured 2026-08-30 05:0xZ, `net._http_response` currently holds **683 rows over a ~6h retention window with ZERO 4xx in it**, so the arm is quiet and the wrapper is not justified by present incidence."
+
+⭐ **Both halves of that have since changed, and it is worth being precise about which.**
+
+- **Incidence flipped.** Same ~6h window, measured 11:0xZ: **2,047 responses, 64 of them 4xx.** `atlas_edition_requests` (24h retention, so a real history rather than a snapshot) puts it at **3–30 per hour for every one of the 24 hours it can see** — steady, never zero, and **not escalating** (the 09:00Z hour read 1/240, the 04:00Z hour 30/240).
+- **The "15 call sites" premise was too pessimistic** — one dispatcher already persists its identity. `atlas_editions_dispatch()` writes `atlas_edition_requests(request_id, …)` at dispatch, keyed on the very id pg_net reports back. The join the 08-30 note asked someone to build **already existed** for the estate's highest-volume pg_net caller (8 requests / 2 min = **5,760/day**, which makes every other dispatcher a rounding error). Measured: **6 of 6** 4xx in the live 2h window join to it.
+
+⛔ **The cost being paid was alert fatigue, and the ledger measures it rather than asserting it.** The 09-04 entry reads: *"One `critical` alert `pg_net_http_403` investigated + benign (Cloudflare bot-challenge bodies from pg_net probes, no correlated pipeline failure — **same class benign 09-03**)."* Adding tonight, that is **three consecutive nights** in which a pass opened by re-deriving the same benign conclusion about the same row. That is the concrete form of the cost the 09-05 focus steer names — *a red badge nobody can read hides the next real one*.
+
+## Why this is not the thing 08-30 deliberately refused to do
+
+That migration's own warning:
+
+> "It would be easy to downgrade a 'GraphQL-shaped body' to low **on a heuristic** — and that heuristic would eventually silence a REAL gate-key outage that happened to return JSON."
+
+⭐ **That warning is about inferring identity from CONTENT. This infers nothing.** It reads back a request id we recorded ourselves at dispatch time. **The safety property is kept exactly**: anything that does not join stays on the original text at the original severity, so an edge function 403ing on a stale `?key=` gate — which is not in `atlas_edition_requests` and never will be — is still **CRITICAL, byte-for-byte**.
+
+## Why `info` and not silence — the row is re-aimed, not suppressed
+
+A Cloudflare challenge on a third-party API is not something we can fix. **Whether our retry keeps up with it is**, and that question has an answer.
+
+⭐ **`atlas_editions_drain()` loses nothing to a 403, and this was verified by reading the function rather than assumed**: it `RAISE`s on any non-200, and its handler increments `pages_err` and records `last_error` **without advancing `next_offset`** — so the challenged page is re-dispatched at the same offset on the next cycle.
+
+Measured state at ship: **266 sets, 0 never completed, max staleness 2h04m, p95 1h16m, 0 sets stale beyond 6h**, against a full-cycle time of ~75 min. Every set carrying `pages_err` (190, 106, 116, 271, 60 — 1 to 5 errors each against 16–21 `pages_ok`) had `next_offset = 0` and a completed walk inside the last 2.6 h. **The retry demonstrably works.**
+
+So the row **escalates back to `high` the instant any set crosses 6h without completing a walk** — the only reading under which an upstream challenge actually costs catalog freshness. That threshold sits ~3× above the observed p95 and ~5× above a cycle time.
+
+⚠ **The 12-hour attribution bound is load-bearing, not a round number.** The drain prunes `atlas_edition_requests` at `drained_at < now() - 24h`. Past that retention, absence from the table means *"pruned"*, **not** *"not Atlas"* — and attributing on a pruned row would silence a real outage, which is precisely the failure 08-30 was written to prevent. Attribution is therefore claimed only for windows ≤ 12h; anything wider degrades to the original critical text for everything.
+
+## ✅ Positive controls — both, because a downgrade is only safe if the upgrade path is proven still live
+
+| call | pipeline | severity |
+|---|---|---|
+| `check_edge_fn_http_failures()` | `atlas-editions-upstream-403` | **info** — "6 of 480 … (1.3%)" |
+| `check_edge_fn_http_failures(interval '30 days')` | `pg_net_http_403` | **critical** |
+
+⭐ **The second control is the one that matters:** the *same* rows, pushed past the attribution bound, still page as critical. The critical path is not dead, it is gated.
+
+- `get_pipeline_alerts()`: **1 critical + 6 info → 0 critical**, 1 high (`allday-pack-opens-backfill`, known, self-clears ~22:00 PT tonight), 6 info.
+- ACL re-checked after `CREATE OR REPLACE` (the documented trap): anon `false`, authenticated `false`, service_role `true`, and `pg_proc` holds **exactly one overload** — the signature is unchanged, so no new default-`PUBLIC EXECUTE` overload was created.
+- Repo file `supabase/migrations/20260905110532_….sql` written at the exact recorded version; its function body is **byte-identical to live `pg_proc.prosrc`** (md5 `d53b0da6a90731d455bc5ce869a261d4`, 4,854 chars), compared rather than eyeballed.
+
+⚠ **What this does NOT claim.** The join proves a response belongs to an Atlas dispatch; it does not prove every such 403 is a Cloudflare challenge — the body sample carries that, and all 64 in the window are `Just a moment...` from `server: cloudflare`. And **3.1% is a rate over one 6h window on one upstream**; it is not a prediction about tomorrow.
+
+**REVERT:** restore the prior body from this file's git history (the body applied by `20260830051052` — a single flat `SELECT`, no atlas join, no `bounds`/`atlas`/`denom` CTEs). Nothing else in the estate reads `atlas-editions-upstream-403`; `get_pipeline_alerts` passes rows through untouched, so a revert restores the previous alert text exactly.
+
 ### 2026-09-05 · ✅ SHIPPED (tests) — a colleague found the third blind spot in the image gate hours after it shipped: a page can be 90% blank and green · Claude Code (Trevor's box, interactive)
 
 **Not my finding.** Cowork's inbox filing (`2026-09-05T0940Z`) measured `/nfl-all-day/set/genesis` at **47 of 52 images blank** — the entire Genesis set (352 editions, Series 1, every one an ULTIMATE 1/1) has no art at its upstream — and pointed out that **both** arms I shipped tonight sail past it:
