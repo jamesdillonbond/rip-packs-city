@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { toDbSlug } from "@/lib/collections"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // Thin wrapper around the collection_readiness() Postgres function.
 // Returns the full readiness map by default; pass ?collection=<slug> to narrow
@@ -13,9 +14,9 @@ export async function GET(req: NextRequest) {
 
   try {
     const params = dbSlug ? { p_slug: dbSlug } : {}
-    const { data, error } = await (supabaseAdmin as any).rpc(
-      "collection_readiness",
-      params
+    const { data, error } = await boundedRead(
+      (supabaseAdmin as any).rpc("collection_readiness", params),
+      "api/collection-readiness/collection_readiness",
     )
     if (error) {
       console.log("[collection-readiness] rpc error:", error.message)

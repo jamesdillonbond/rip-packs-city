@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // Backs the wallet-intel overlay on the public /share/<wallet> card. Delegates
 // to get_wallet_intel_summary, a SECURITY DEFINER RPC granted to service_role
@@ -30,9 +31,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { data, error } = await supabase.rpc("get_wallet_intel_summary", {
-      p_wallet: wallet,
-    })
+    const { data, error } = await boundedRead(
+      supabase.rpc("get_wallet_intel_summary", { p_wallet: wallet }),
+      "api/public/wallet-intel/get_wallet_intel_summary",
+    )
 
     if (error) {
       console.log("[wallet-intel] rpc error:", error.message)

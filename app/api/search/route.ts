@@ -48,6 +48,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug, getCollectionByUuid } from "@/lib/collection-slug"
 import { buildSearchHref, type SearchHit } from "@/lib/search/href"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -72,9 +73,12 @@ async function fetchDescriptionCoverage(): Promise<CoverageRow[] | null> {
     const supa = supabaseAdmin as unknown as {
       from: (t: string) => { select: (c: string) => Promise<{ data: unknown; error: unknown }> }
     }
-    const { data, error } = await supa
-      .from("edition_description_coverage")
-      .select("collection_slug, searchable_editions, with_description, pct")
+    const { data, error } = await boundedRead(
+      supa
+        .from("edition_description_coverage")
+        .select("collection_slug, searchable_editions, with_description, pct"),
+      "api/search/edition_description_coverage",
+    )
     if (error || !Array.isArray(data)) return null
     return data as CoverageRow[]
   } catch {
@@ -143,11 +147,10 @@ export async function GET(req: NextRequest) {
   // coverage read must NOT fail the search — it degrades to null and the
   // client simply omits the disclosure rather than showing a wrong number.
   const [{ data, error }, coverage] = await Promise.all([
-    supa.rpc("rpc_search_catalog", {
-      p_q: q,
-      p_collection_id: collectionId,
-      p_limit: limit,
-    }),
+    boundedRead(
+      supa.rpc("rpc_search_catalog", { p_q: q, p_collection_id: collectionId, p_limit: limit }),
+      "api/search/rpc_search_catalog",
+    ),
     fetchDescriptionCoverage(),
   ])
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 export async function GET(req: NextRequest) {
   const limitParam = Number(req.nextUrl.searchParams.get("limit") ?? 50)
@@ -9,10 +10,10 @@ export async function GET(req: NextRequest) {
   const minDiscount = Number.isFinite(minDiscountParam) ? minDiscountParam : 5
 
   try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_cross_collection_deals", {
-      p_limit: limit,
-      p_min_discount: minDiscount,
-    })
+    const { data, error } = await boundedRead(
+      (supabaseAdmin as any).rpc("get_cross_collection_deals", { p_limit: limit, p_min_discount: minDiscount }),
+      "api/cross-collection-deals/get_cross_collection_deals",
+    )
 
     if (error) {
       console.log("[cross-collection-deals] RPC error:", error.message)

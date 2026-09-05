@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { safeApiError, statusForSafeError } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // ── THE HIGH/MEDIUM SHARE COMES FROM get_collection_stats, NOT A SECOND SCAN ──
 //
@@ -74,9 +75,10 @@ export async function GET(req: NextRequest) {
   const normalized = collection.replace(/-/g, "_")
 
   try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_collection_stats", {
-      p_slug: normalized,
-    })
+    const { data, error } = await boundedRead(
+      (supabaseAdmin as any).rpc("get_collection_stats", { p_slug: normalized }),
+      "api/collection-stats/get_collection_stats",
+    )
 
     if (error) {
       return statsUnavailable(error, "rpc_error")

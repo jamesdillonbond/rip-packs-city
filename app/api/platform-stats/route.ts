@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { safeApiError, statusForSafeError } from "@/lib/api-error"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // NOTE (2026-08-09): this route has no runtime consumer in app/, components/ or
 // lib/ — only its own route test and some docs reference it. It is left in place
@@ -25,7 +26,10 @@ function statsUnavailable(err: unknown) {
 
 export async function GET() {
   try {
-    const { data, error } = await (supabaseAdmin as any).rpc("get_platform_stats")
+    const { data, error } = await boundedRead(
+      (supabaseAdmin as any).rpc("get_platform_stats"),
+      "api/platform-stats/get_platform_stats",
+    )
 
     if (error) {
       return statsUnavailable(error)
