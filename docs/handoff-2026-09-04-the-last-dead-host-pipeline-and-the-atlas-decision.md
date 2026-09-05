@@ -75,7 +75,52 @@ deleted route, so the cron list must still be real, the route must survive, the 
 still be printed, the inheritors must still be named, and the on-chain lane must still be
 scheduled.
 
-## ⚠ The one job nothing inherited — open on purpose
+## ⚠ The one job nothing inherited — sized, and it inverted
+
+**I deferred this, then measured it properly, and the measurement turned a chore into a live defect.**
+Against the full walk rather than one sampled page: Atlas knows **13,921** Top Shot editions,
+`editions` carried **13,436**, and of the **579** Atlas rows we lacked, **563 are parallels — and 16
+are BASE rows.** Every one of the 16 is `tier = ULTIMATE, circulation_count = 1`: one-of-one trophy
+Moments, the most valuable class on the platform.
+
+🚨 **Five were held in `wallet_moments_cache` and rendered as blank tiles** — NULL player, set, tier,
+image, mint and FMV — including `140:5141`, **Victor Wembanyama's 1/1 2023 Rookie Ultimate, Atlas ask
+$150,000**. (Also Chet Holmgren, Jovana Nogic, Madina Okot, Kiki Rice.)
+
+⚠ **Not caused by the retirement**, though the timing invites that reading: `searchMarketplaceEditions`
+never surfaced Ultimate 1/1s — the documented reason `backfill-badges-from-sets` was written. And
+`ensure_topshot_edition_stub()` could not have closed it either: it returns NULL when `sets` has no
+row for the set, and sets 140 and 253 have none. ⓘ Separately checked, because that function's comment
+names the retired walker as its hydrator: **all 195 editions created in the trailing 14 days — 120 of
+them after the walker died — are fully hydrated.** The comment is stale; nothing was stranded.
+
+**Shipped `20260905061815`** — the 16 rows, built from `badge_editions` with `series`/`play_type`
+copied from a sibling in the same set (checked against Atlas first: `PlayType` reads `Reel` for all 18
+base rows in both sets). Scope is a **predicate with a count assertion**, not a hand-typed id list: it
+RAISES rather than creating a population it did not measure.
+
+**Shipped `20260905062040`** — the half that is easy to skip. After the rows existed the five tiles were
+**still blank**: `reconcile_wmc_metadata_from_editions` is a **cursor rotation**, not a change feed, and
+its cursor had already swept past these keys lexically. The propagation applies the reconciler's own
+rules verbatim, so it is a no-op on re-run. **All five now read player, team, set, `ULTIMATE`, `#1 / 1`,
+and `/nba-top-shot/edition/140:5141` renders live with Atlas CDN media.**
+
+⛔ **The 563 parallels are still not created** — subedition keying, circulation ladders, series rollups
+and the sitemap all move. ⓘ Also measured and left alone: 100 editions we hold that Atlas no longer
+lists, and 15 sets where our count exceeds Atlas's. Both need their own read.
+
+⭐ **The lesson is about judgement, not data: "left open on purpose" is only honest if the thing was
+SIZED first.** I deferred this on a sampled-page number and a plausible ripple argument. The full
+measurement took one query.
+
+## Enrichment result, four and a half hours in
+
+Description coverage **68.5% (frozen since 08-28) → 95.9%**; NULLs **4,237 → 554**; zero
+`editions-enrich:` errors across the whole walk. ⭐ **And the 16 new rows were their own positive
+control:** created with NULL media and prose on purpose, the enrichment then filled **16/16 thumbnails,
+16/16 videos and 14/16 descriptions** unaided — the two without prose being exactly the two Atlas itself
+has none for (`253:8864`, `253:8865`), an upstream absence rather than a defect.
+
 
 **New-edition creation.** Atlas knows editions we do not carry: **16 of 100** on that same page,
 all parallels (`90:4046::1` "Explosion", `::2` "Torn", …). This is **not** a regression from the

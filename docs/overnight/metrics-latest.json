@@ -1,5 +1,5 @@
 {
- "generated_at_pt": "2026-09-04T20:05:00-07:00",
+ "generated_at_pt": "2026-09-04T23:30:00-07:00",
  "pass": "2026-09-04 Cowork cloud — circulation decided, its denorm debris, and the signed-out surface QA that followed",
  "migrations_applied": [
   "20260904145331 base circulation = this printing's own mint (BEFORE trigger + hourly sync)",
@@ -8,7 +8,9 @@
   "20260904151427 unidentified Flowty listings stop publishing an assumed tier/serial/valuation",
   "20260904152154 a parallel inherits its base edition's identity (107 read 'Unknown')",
   "20260904154741 series_chain_numbers: Top Shot chain 0+1 are both catalog Series 1",
-  "20260905024630 the Atlas walk also writes the prose + CDN media the dead catalog walker used to (splice into atlas_editions_drain)"
+  "20260905024630 the Atlas walk also writes the prose + CDN media the dead catalog walker used to (splice into atlas_editions_drain)",
+  "20260905061815 the 16 Ultimate 1/1 editions Atlas has and we never had (5 were blank tiles in real collections)",
+  "20260905062040 propagate those 16 into the holder denorm now, not on the reconciler's next rotation"
  ],
  "code_shipped": [
   "fix(listings) topshot-listing-cache: an unidentified NFT states unknown instead of guessing",
@@ -38,12 +40,20 @@
   "wmc_base_keyed_resolvable_parallels": 0,
   "secdef_anon_execute_violations": [],
   "topshot_description_coverage_pct_before": 68.5,
-  "topshot_description_coverage_pct_after": 71.4,
-  "topshot_description_coverage_note": "frozen at 68.5% since 2026-08-28 when the dead walker stopped; climbing again on the Atlas walk (~100-160 rows per 2-min tick, 0 errors). Not a constant — re-measure, never quote.",
+  "topshot_description_coverage_pct_after": 95.9,
+  "topshot_description_coverage_note": "68.5% frozen since 2026-08-28 -> 95.9% within ~4.5 h of the Atlas enrichment (NULLs 4,237 -> 554), 0 errors. NOT a constant: re-measure, never quote.",
   "vercel_crons": 35,
   "dead_host_topshot_pipelines_remaining": 0,
   "dead_host_note": "topshot-badge-set-backfill and topshot-catalog-backfill both unscheduled 2026-09-04 (routes kept, one-line restore in each header); topshot-misattrib-drain measured at 215 residual rows = a one-off script, not a pipeline.",
-  "atlas_new_editions_not_created": "16 of 100 on a sampled page of set 90 — parallels Atlas knows and we do not carry. Deliberately NOT auto-created: it ripples into circulation, the sitemap and every entity surface."
+  "atlas_new_editions_not_created": "16 of 100 on a sampled page of set 90 — parallels Atlas knows and we do not carry. Deliberately NOT auto-created: it ripples into circulation, the sitemap and every entity surface.",
+  "canonical_topshot_editions": 13452,
+  "ultimate_1of1_editions_created": 16,
+  "ultimate_1of1_blank_holder_tiles_fixed": 5,
+  "ultimate_1of1_note": "Every one is tier ULTIMATE, mint 1. Five were held in wallet_moments_cache and rendered blank (incl. Victor Wembanyama's 1/1 2023 Rookie Ultimate, Atlas ask $150,000). NOT caused by the catalog retirement -- searchMarketplaceEditions never surfaced Ultimate 1/1s, which is why backfill-badges-from-sets existed.",
+  "atlas_editions_we_still_lack": 563,
+  "atlas_editions_we_still_lack_note": "All parallels. Deliberately NOT created: subedition keying, circulation ladders, series rollups and the sitemap all move. Still a decision.",
+  "editions_we_hold_that_atlas_no_longer_lists": 100,
+  "enrichment_positive_control": "The 16 new rows were created with NULL media/prose on purpose; the Atlas enrichment then filled 16/16 thumbnails, 16/16 videos and 14/16 descriptions unaided. The 2 without prose are the 2 Atlas itself has none for (253:8864, 253:8865) -- an upstream absence, not a defect."
  },
  "verified_live_signed_out": {
   "disney_pinnacle_sniper": "pinnacle-sniper-feed 200 (was 307), 12 rows, 'FMV coverage unavailable' gone",
