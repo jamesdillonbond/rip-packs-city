@@ -49,8 +49,25 @@ export const PROXYABLE_AVATAR_HOSTS: readonly string[] = [
   "raw.seadn.io",
   "openseauserdata.com",
   "i.seadn.io.ipns.dweb.link",
-  // Arweave, common for NFT art that is not on IPFS.
-  "arweave.net",
+  // ⛔ `arweave.net` WAS HERE AND WAS REMOVED 2026-09-04. It is now in the CSP
+  // `img-src` instead, so Arweave art hotlinks like ipfs.io does. Two reasons it
+  // could never work through this proxy, both measured on the live asset:
+  //
+  //   1. **arweave.net ALWAYS 302s** to a content-addressed subdomain, and this
+  //      route refuses redirects as its SSRF guard (see its header). Every
+  //      Arweave URL sent here 502'd.
+  //   2. Even following that redirect, the asset is **6,872,443 bytes** against
+  //      `MAX_AVATAR_BYTES` = 4,194,304. It is full-size NFT ART, not an 80px
+  //      avatar, so this route's size cap, content-type allowlist and redirect
+  //      rule are all correctly sized for a job it is not doing.
+  //
+  // ⚠ Hotlinking does NOT weaken the SVG rule below. That rule exists because
+  // serving an SVG from OUR origin makes it same-origin and navigable — a stored
+  // XSS. A cross-origin `<img src>` does not execute scripts, so this direction
+  // is the safer one.
+  //
+  // ⛔ If you re-add it here, remove it from the CSP in the same commit:
+  // `__tests__/avatar-proxy-hosts.test.ts` asserts the two sets stay DISJOINT.
 ]
 
 /** Image types we will re-serve. */

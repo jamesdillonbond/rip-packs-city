@@ -137,3 +137,47 @@ describe("the allowlist and the CSP stay disjoint", () => {
     expect(imgSrc).toContain("'self'")
   })
 })
+
+// ── ARWEAVE IS A CSP HOST, NOT A PROXYABLE ONE (2026-09-04) ────────────────
+//
+// It was in `PROXYABLE_AVATAR_HOSTS` and it could NEVER work there. Verified in
+// production first: `/insights/top-sales` rendered two `<img>` at
+// `naturalWidth = 0`, and the proxy answered 502.
+//
+//   1. `arweave.net` ALWAYS 302s to a content-addressed subdomain, and
+//      /api/public/avatar-media refuses redirects as its SSRF guard.
+//   2. Following that redirect would not have helped: the asset measured
+//      6,872,443 bytes against MAX_AVATAR_BYTES = 4,194,304.
+//
+// So it moved to the CSP and now hotlinks, exactly as ipfs.io does. The
+// disjointness test above stops the two halves drifting apart; these pin that
+// the move actually HAPPENED, which disjointness alone cannot see — removing it
+// from both lists would satisfy disjointness and leave the art blank.
+describe("Arweave art hotlinks rather than proxying", () => {
+  const imgSrc = () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "proxy.ts"), "utf8")
+    const m = src.match(/"img-src ([^"]+)"/)
+    expect(m, "img-src directive not found in proxy.ts").toBeTruthy()
+    return m![1]
+  }
+
+  it("names arweave.net AND its content subdomains in img-src", () => {
+    // Both, deliberately: the browser follows the 302 itself, and the redirect
+    // target is a per-asset subdomain that an exact host cannot cover.
+    expect(imgSrc()).toContain("https://arweave.net")
+    expect(imgSrc()).toContain("https://*.arweave.net")
+  })
+
+  it("does NOT proxy it — avatarDisplayUrl passes an Arweave URL through unchanged", () => {
+    const src = "https://arweave.net/iKT2pAHeP1QA1jZn_HHigZzs0dPOHrq_5_2KD9xUZjU"
+    expect(isProxyableAvatarUrl(src)).toBe(false)
+    expect(avatarDisplayUrl(src)).toBe(src)
+  })
+
+  it("still proxies the seadn hosts, which the CSP genuinely does not carry", () => {
+    // The control. Without it, deleting the whole allowlist would pass the case
+    // above and silently stop proxying everything.
+    expect(isProxyableAvatarUrl("https://i2c.seadn.io/x/y.png")).toBe(true)
+    expect(imgSrc()).not.toContain("seadn.io")
+  })
+})

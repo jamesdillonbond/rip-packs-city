@@ -121,7 +121,20 @@ describe("TopSalesBoardClient", () => {
     expect(hrefs.some((h) => h?.startsWith("/ufc-strike/"))).toBe(false)
   })
 
-  it("routes arweave-hosted sale art through the same-origin avatar proxy — the CSP img-src blocks it hotlinked (2026-09-04)", () => {
+  // ⚠ INVERTED 2026-09-04 (same day it was written), NOT deleted — the property
+  // it pinned was measured WRONG in production. It asserted that Arweave art is
+  // routed through /api/public/avatar-media, which was the intent; live, both
+  // <img> rendered at naturalWidth 0 and the proxy answered 502. Two independent
+  // reasons it could never work there:
+  //   1. arweave.net ALWAYS 302s to a content-addressed subdomain, and that route
+  //      refuses redirects as its SSRF guard.
+  //   2. Even following the redirect, the asset is 6,872,443 bytes against
+  //      MAX_AVATAR_BYTES = 4,194,304.
+  // The host moved to the CSP img-src instead, so it hotlinks like ipfs.io. This
+  // case now pins the CORRECTED behaviour, and its old form is kept in the title
+  // history rather than removed — a passing test asserting a broken promise is
+  // what holds the breakage in place.
+  it("hotlinks arweave-hosted sale art — the avatar proxy could never serve it (inverted 2026-09-04)", () => {
     const candyRow: Row = {
       ...nullRow,
       sale_id: "s4",
@@ -134,8 +147,8 @@ describe("TopSalesBoardClient", () => {
       <TopSalesBoardClient initialRows={[candyRow, fullRow]} initialFetchedAt="2026-07-31T00:00:00Z" />,
     )
     const srcs = Array.from(container.querySelectorAll("img")).map((i) => i.getAttribute("src") ?? "")
-    expect(srcs.some((s) => s.startsWith("/api/public/avatar-media?src=https%3A%2F%2Farweave.net%2F"))).toBe(true)
-    expect(srcs.some((s) => s.startsWith("https://arweave.net/"))).toBe(false)
+    expect(srcs.some((s) => s.startsWith("https://arweave.net/"))).toBe(true)
+    expect(srcs.some((s) => s.startsWith("/api/public/avatar-media?src=https%3A%2F%2Farweave.net%2F"))).toBe(false)
     // CSP-allowed Top Shot art still hotlinks — the proxy is not applied blindly.
     expect(srcs.some((s) => s.startsWith("https://assets.nbatopshot.com/"))).toBe(true)
   })
