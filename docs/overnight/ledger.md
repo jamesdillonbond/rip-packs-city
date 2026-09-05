@@ -10,6 +10,57 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (DB) — `pack_ev_latest` probed `pack_ask_state` 128,911 times per read to return zero rows every time; 707k → 11k buffers, equivalence proven both ways · Cowork (cloud, autonomous)
+
+**Migration `20260905134612`.** This is the object behind [this morning's filing](inbox/2026-09-05T1120Z-two-new-route-timeouts-share-one-root-and-pack_ev_latest-has-no-materialized-alternative.md), and ⛔ **I filed it as operator-gated and that was MY OWN error, corrected here.**
+
+## The correction that unblocked it
+
+I inherited the 2026-08-30 verdict — *"destructive multi-object SQL on a public read surface is outside what an autonomous pass ships"* — and applied it to this object. **That verdict is about `mv_pack_ev_latest`, a MATERIALIZED view whose rewrite needs `DROP MATERIALIZED VIEW … CASCADE`, two dependents with deliberately divergent ACLs, and a `security_invoker` reloption stripped four times in this repo.**
+
+🚨 **`pack_ev_latest` is `relkind = 'v'` — a PLAIN VIEW.** `CREATE OR REPLACE VIEW` cannot change the column list, so its **68 dependent rewrite rules are untouched by construction**: no drop, no cascade, no ACL loss, no reloption loss. ⭐ **None of the 08-30 blast-radius reasoning applies.** *A sibling's stated blocker turned out to be a blocker for a DIFFERENT OBJECT* — the ledger's own "re-read a blocked item's blocker before inheriting it" lesson, and I needed it twice.
+
+## The defect
+
+```
+SubPlan 3 -> Index Scan pack_ask_state_pkey
+    loops = 128,911     buffers = 382,519     rows = 0 on every loop
+```
+
+**382,519 buffers — 54% of the query — to return nothing, 128,911 times**, because a **correlated** `EXISTS` was evaluated per `pack_ev_history` row *before* the `DISTINCT ON` cut 314,130 rows to 4,642. `pack_ask_state` holds **3,028 rows**; the same `dist_id` was re-probed thousands of times.
+
+## The rewrite, and the two things that make it sound
+
+The correlated `EXISTS` becomes a `LEFT JOIN`. ⚠ **Sound only because `pack_ask_state_pkey` is UNIQUE on `(collection_slug, dist_id)`** — checked, not assumed — so at most one row matches and the join cannot multiply rows.
+
+⚠ **The `COALESCE` is load-bearing, not decoration.** Without it the forms differ on a NULL `gross_ev`: `EXISTS` yields no rows so `NOT(true AND false)` = true and the row is **kept**; the join form yields `NOT(true AND NULL)` = NULL and `WHERE` **drops** it. There are **0 NULL `gross_ev` across 320,171 rows today**, so this guards a future NULL — but it is the difference between equivalent and *equivalent by luck*.
+
+⛔ **Deliberately NOT done: the filters still run BEFORE the `DISTINCT ON`.** Moving them after is a *semantic* change, not an optimisation — filter-then-distinct keeps the newest row *that qualifies*, while distinct-then-filter would drop a `pack_listing_id` entirely whenever its newest row fails but an older one passes. 68 dependents ride on the current meaning.
+
+## ✅ Equivalence proven over the population, both directions, BEFORE applying
+
+`live 4,642 | candidate 4,642 | live EXCEPT candidate 0 | candidate EXCEPT live 0 | INTERSECT 4,642`. **Same rows, not the same count.**
+
+## Measured (warm, same session)
+
+| read | buffers | rows |
+|---|---|---|
+| `SELECT * FROM pack_ev_latest` | **707,048 → 10,898** (65×), 2,762 → 1,549 ms | 4,642 → 4,642 |
+| `v_topshot_pack_reality_ranker_staleness` (public route) | **705,997 → 10,907** (65×) | 3 → 3 |
+| `v_topshot_pack_ev_calibrated` (public route) | **707,584 → 12,618** (56×) | 810 → 810 |
+
+⚠ **The honest cost, stated rather than buried:** the plan trades an index-ordered scan for a Seq Scan + **external merge sort spilling ~28–49 MB to temp** per execution — the hash join destroys the ordering the `DISTINCT ON` was riding. Total I/O still falls ~30× (707k shared vs ~11k shared + ~12k temp blocks). **Sized before shipping rather than hoped:** `pg_stat_statements` shows the callers are the jobid-73 refresher (48/day) plus low-volume routes — **tens of calls per hour, not thousands** — so a per-execution spill is not a concurrency hazard. It would become one if a high-frequency caller were added; it shrinks to nothing if `work_mem` rises.
+
+⚠ **Warm milliseconds barely moved on the ranker (1,320 → 1,319), and I am not claiming a latency win.** **The win is BUFFERS, which govern the COLD path — and cold is where the 8,000 ms bound was being crossed** (a cold read measured **7,441 ms** pre-change).
+
+## Post-apply, confirmed from outside
+
+`pack_ev_latest` 4,642 · `v_topshot_pack_ev_calibrated` 810 · ranker qualifying 3 · `v_topshot_pack_market` 1,842. **`reloptions` still NULL** — this view has never carried `security_invoker` and this migration deliberately does **not** add it (that is a behaviour change on a view with 68 dependents, not a tidy-up). Live viewdef fingerprint `md5 70c6b1800c8ea7542c470034f37cd0d2`, 2,945 chars.
+
+⏳ **THE FALSIFIER, and it is the only thing that closes this:** the two Vercel error groups must **stop**. Re-read `get_runtime_errors` for `/api/public/insights/pack-reality` and `/api/packs` after 2026-09-06 and check `last`. **If they keep firing, the view was not the binding cost** and this was a 65× improvement to something that was not the problem.
+
+**REVERT:** restore the previous definition from the migration file's git history — the same SELECT with the LEFT JOIN removed and the correlated `EXISTS` put back. **A revert is a plain `CREATE OR REPLACE VIEW` — no drop, no cascade.**
+
 ### 2026-09-05 · 📏 BLOCK 5 — tonight's 16 new Ultimates verified end to end, four alarms refuted, and one real mobile-weight finding · Cowork (cloud, autonomous)
 
 ⚠ **Environment: the device bridge dropped mid-block and cloud push is operator-blocked** (`not in this session's authorized repository set`). The bridge returned before close, so this pushed normally. **Trevor's machine and Claude Code are unaffected — commit as usual.**
