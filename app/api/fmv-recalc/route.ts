@@ -1843,23 +1843,87 @@ export async function POST(req: NextRequest) {
         const { data: staleRows, error: staleErr } = await supabaseAdmin
           .rpc("query_sql", {
             query: `
-              WITH latest AS (
-                SELECT DISTINCT ON (fs.edition_id)
-                  fs.edition_id,
-                  fs.collection_id,
-                  fs.fmv_usd,
-                  fs.floor_price_usd,
-                  fs.asp_usd,
-                  fs.asp_without_outliers,
-                  fs.liquidity_rating,
-                  fs.confidence::text AS confidence,
-                  fs.ask_proxy_fmv,
-                  fs.sales_count_7d,
-                  fs.sales_count_30d,
-                  fs.days_since_sale,
-                  fs.computed_at
-                FROM fmv_snapshots fs
-                ORDER BY fs.edition_id, fs.computed_at DESC
+              -- ── STEP 6 JOINS ITS SIBLINGS ON THE LATERAL, 2026-09-05 ──────────
+              -- This was the LAST 'DISTINCT ON' snapshot walk in this route. Steps
+              -- 5c/5d/5e were converted to a per-edition LATERAL on 2026-08-31 (see
+              -- the note above); Step 6 was left behind, and it is the one that runs
+              -- on essentially EVERY tick — 460 of 461 runs in the 73 h to
+              -- 2026-09-05.
+              --
+              -- 🚨 MEASURED, warm-vs-warm, EXPLAIN (ANALYZE, BUFFERS):
+              --   DISTINCT ON CTE : 1,390,030 buffers / 27,248 ms
+              --   LATERAL LIMIT 1 :   138,786 buffers /  2,000 ms     (−90%, 13.6×)
+              --
+              -- ⛔ AND IT WAS BEING KILLED. 27.2 s sits against the 30 s
+              -- statement_timeout, so this query failed with 'canceling statement
+              -- due to statement timeout' on **27 of 460 runs (5.9%)** — under
+              -- 'ok = true', because the step records its failure in
+              -- 'extra.stale_touch_error' and the run still reports success.
+              --
+              -- ⚠ THE OLD SHAPE'S COST WAS ALL WASTE: the 'Unique' node walked
+              -- 1,429,511 rows to emit 27,849, and the filter below then discarded
+              -- 27,844 of those — 1.39 MILLION buffers to return, in the sampled
+              -- run, ZERO rows.
+              --
+              -- ⚠ THE PREDICATE STILL APPLIES TO THE LATEST ROW, WHICH IS THE WHOLE
+              -- POINT. It is tempting to filter 'computed_at < now() - 24h' or
+              -- 'confidence IN (HIGH,MEDIUM)' INSIDE the LATERAL so the index does
+              -- the work — that is WRONG and would silently change the meaning:
+              -- it would pick the newest OLD snapshot for an edition that also has
+              -- a fresh one, reporting a freshly-priced edition as stale and
+              -- re-stamping it. The LATERAL takes the true latest; the filters stay
+              -- outside.
+              --
+              -- ⭐ EQUIVALENCE PROVEN, NOT ARGUED, over the full population:
+              -- both forms return 27,114 rows, EXCEPT-identical in BOTH directions.
+              -- ⚠ The one shape that could legitimately diverge is a TIE on
+              -- computed_at, where 'DISTINCT ON' and 'ORDER BY … LIMIT 1' are each
+              -- free to pick either row — and 12,121 tied groups in this table DO
+              -- carry different values (up to 22 variants at one instant). It does
+              -- not bite here, and that was checked rather than assumed: **0 of
+              -- 27,849 editions have a tie at their LATEST computed_at** (max rows
+              -- at one instant = 1), so "the latest snapshot" is unambiguous.
+              WITH cand AS (
+                SELECT e.id AS edition_id
+                FROM editions e
+                WHERE (e.tier IS NULL OR e.tier <> 'ULTIMATE')
+                  AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
+              ),
+              latest AS (
+                SELECT
+                  c.edition_id,
+                  l.collection_id,
+                  l.fmv_usd,
+                  l.floor_price_usd,
+                  l.asp_usd,
+                  l.asp_without_outliers,
+                  l.liquidity_rating,
+                  l.confidence::text AS confidence,
+                  l.ask_proxy_fmv,
+                  l.sales_count_7d,
+                  l.sales_count_30d,
+                  l.days_since_sale,
+                  l.computed_at
+                FROM cand c
+                CROSS JOIN LATERAL (
+                  SELECT
+                    fs.collection_id,
+                    fs.fmv_usd,
+                    fs.floor_price_usd,
+                    fs.asp_usd,
+                    fs.asp_without_outliers,
+                    fs.liquidity_rating,
+                    fs.confidence,
+                    fs.ask_proxy_fmv,
+                    fs.sales_count_7d,
+                    fs.sales_count_30d,
+                    fs.days_since_sale,
+                    fs.computed_at
+                  FROM fmv_snapshots fs
+                  WHERE fs.edition_id = c.edition_id
+                  ORDER BY fs.computed_at DESC
+                  LIMIT 1
+                ) l
               ),
               recent_traded AS (
                 SELECT edition_id
@@ -1883,7 +1947,6 @@ export async function POST(req: NextRequest) {
                 l.sales_count_30d,
                 l.days_since_sale
               FROM latest l
-              JOIN editions e ON e.id = l.edition_id
               LEFT JOIN recent_traded rt ON rt.edition_id = l.edition_id
               WHERE l.computed_at < now() - interval '24 hours'
                 -- Audit 2026-06-09: only re-stamp HIGH/MEDIUM editions. Touching
@@ -1893,8 +1956,6 @@ export async function POST(req: NextRequest) {
                 -- every freshness metric). LOW/ASK_ONLY/SALES_ONLY/STALE now age
                 -- visibly until a real recompute (Step 1 / Step 5b) reprices them.
                 AND l.confidence IN ('HIGH','MEDIUM')
-                AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
-                AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
                 AND rt.edition_id IS NULL
               LIMIT 1000
             `,
