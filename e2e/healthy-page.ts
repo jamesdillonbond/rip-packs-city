@@ -123,6 +123,64 @@ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<v
   await page.waitForLoadState("load").catch(() => {})
   await page.waitForTimeout(HYDRATION_SETTLE_MS)
 
+  // ── DID THE IMAGES ACTUALLY PAINT? ────────────────────────────────────────
+  //
+  // 🚨 THE CLASS THIS CATCHES, AND WHY NOTHING ELSE COULD. Until 2026-09-04 this
+  // file asserted status, body text, console failures and pageerrors — and
+  // NOTHING about images. So a page could return 200, log not one error, and
+  // still render a grid of blank tiles. Both of the following were live and this
+  // monitor was green through both:
+  //
+  //   * /nba-top-shot/market — **12 of 15** `/api/public/ipfs-media` images
+  //     returned 502 and rendered blank (cold-cache misses at the route's 8s
+  //     headers budget; an <img> never retries a 502 on its own).
+  //   * /insights/top-sales — two Candy MLB cards blank, first because the CSP
+  //     refused arweave.net and then, after a same-day "fix", because the avatar
+  //     proxy 502'd every redirect from that host.
+  //
+  // ⚠ SAME-ORIGIN ONLY, and that is the whole design. A third-party CDN blip is
+  // not our defect and would make this gate cry wolf — which the header above
+  // spends a paragraph explaining we must never do, because this is the only gate
+  // that catches the 200-but-broken-DOM class. An image served from OUR origin
+  // (`/api/public/ipfs-media`, `/api/public/avatar-media`, `/api/moment-thumbnail`)
+  // failing is always ours.
+  //
+  // ⚠ A RATIO, NOT A BAN, and not because a ban is stricter than we can afford —
+  // because a ban would be WRONG. The ipfs-media retry converts a *first-visitor*
+  // failure into a second-request success, so one genuinely cold CID at probe
+  // time can still leave a single tile blank. That is the system working. What is
+  // never working is MOST of them blank: 12 of 15 is a systemic break, 1 of 15 is
+  // a cold cache. The threshold is set where those two separate.
+  //
+  // ⚠ `complete` is load-bearing. A lazy or below-the-fold image has
+  // `naturalWidth === 0` simply because it has not loaded, and asserting on it
+  // measures the probe's patience rather than the page. Only decided images count.
+  const imgStats = await page.evaluate(() => {
+    const origin = window.location.origin
+    const decided = Array.from(document.querySelectorAll("img")).filter(
+      (el) => el.complete && (el.currentSrc || el.src),
+    )
+    const sameOrigin = decided.filter((el) => (el.currentSrc || el.src).startsWith(origin))
+    return {
+      total: sameOrigin.length,
+      broken: sameOrigin.filter((el) => el.naturalWidth === 0).map((el) => (el.currentSrc || el.src).slice(-70)),
+    }
+  })
+
+  // Below this many same-origin images the ratio is noise, not a signal.
+  const MIN_IMAGES_FOR_RATIO = 4
+  if (imgStats.total >= MIN_IMAGES_FOR_RATIO) {
+    const brokenRatio = imgStats.broken.length / imgStats.total
+    expect(
+      brokenRatio,
+      `${check.path}: ${imgStats.broken.length} of ${imgStats.total} SAME-ORIGIN images decided but ` +
+        `painted nothing (naturalWidth 0) — the page returned 200 and logged no error, which is ` +
+        `exactly how 12-of-15 blank Moment tiles went unnoticed on /nba-top-shot/market. These are ` +
+        `our own endpoints, so an upstream blip is not an explanation. Examples: ` +
+        `${imgStats.broken.slice(0, 3).join(" | ")}`,
+    ).toBeLessThanOrEqual(0.5)
+  }
+
   expect(
     consoleFailures,
     `${check.path} logged a client-side failure (hydration mismatch or React invariant). ` +

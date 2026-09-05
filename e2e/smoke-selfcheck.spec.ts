@@ -61,6 +61,40 @@ const ERROR_WITH_CONTENT = `<!doctype html><html><body>
   <div>Application error: a client-side exception has occurred</div>
 </body></html>`
 
+// ── SAME-ORIGIN IMAGE INTEGRITY (2026-09-04) ────────────────────────────────
+// The helper asserted nothing about whether an image PAINTED until 2026-09-04,
+// so a 200 page that logged no error could still render a grid of blank tiles.
+// Both of these were live while the monitor was green:
+//   * /nba-top-shot/market — 12 of 15 /api/public/ipfs-media images 502'd blank
+//   * /insights/top-sales  — two Candy MLB cards blank behind a CSP refusal and
+//     then behind an avatar-proxy 502
+// `img` elements here are deliberately NOT lazy: a lazy image below the fold is
+// never decided, and the helper only counts decided ones.
+const imgTags = (broken: number, ok: number) =>
+  [...Array(broken)].map(() => `<img src="/img/broken.png" alt="">`).join("") +
+  [...Array(ok)].map(() => `<img src="/img/ok.png" alt="">`).join("")
+
+/** 5 of 6 same-origin images fail to paint — a systemic break. MUST FAIL. */
+const BROKEN_IMAGES = `<!doctype html><html><body>
+  <main>${CONTENT}</main>${imgTags(5, 1)}
+</body></html>`
+
+/** All six paint. MUST PASS — the control that keeps the check honest. */
+const HEALTHY_IMAGES = `<!doctype html><html><body>
+  <main>${CONTENT}</main>${imgTags(0, 6)}
+</body></html>`
+
+/**
+ * 1 of 6 fails. MUST PASS, and this is the fixture that earns the RATIO.
+ * ⚠ A flat ban here would be WRONG, not merely strict: the ipfs-media retry
+ * turns a first-visitor 502 into a second-request 200, so one genuinely cold CID
+ * at probe time can leave a single tile blank while the system works exactly as
+ * designed. 12-of-15 is a break; 1-of-6 is a cold cache.
+ */
+const ONE_BROKEN_IMAGE = `<!doctype html><html><body>
+  <main>${CONTENT}</main>${imgTags(1, 5)}
+</body></html>`
+
 const EMPTY_SHELL = `<!doctype html><html><body><div id="__next"></div></body></html>`
 
 // ~130 chars of real content: above a custom 100 floor, below the default 200.
@@ -191,6 +225,15 @@ test.beforeAll(async () => {
     else if (url.startsWith("/not-found-boundary")) html(NOT_FOUND_BOUNDARY)
     else if (url.startsWith("/unhandled-runtime")) html(UNHANDLED_RUNTIME)
     else if (url.startsWith("/error-with-content")) html(ERROR_WITH_CONTENT)
+    else if (url.startsWith("/broken-images")) html(BROKEN_IMAGES)
+    else if (url.startsWith("/healthy-images")) html(HEALTHY_IMAGES)
+    else if (url.startsWith("/one-broken-image")) html(ONE_BROKEN_IMAGE)
+    else if (url.startsWith("/img/ok.png")) {
+      // A real 1x1 PNG, so the browser DECODES it and naturalWidth is 1, not 0.
+      res.writeHead(200, { "Content-Type": "image/png" })
+      res.end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"))
+    }
+    else if (url.startsWith("/img/broken.png")) { res.writeHead(502); res.end() }
     else if (url.startsWith("/empty-shell")) html(EMPTY_SHELL)
     else if (url.startsWith("/short-ok")) html(SHORT_OK)
     else if (url.startsWith("/hydration-throw")) html(HYDRATION_THROW)
@@ -222,6 +265,28 @@ test("PASSES a healthy page (h1 + real content)", async ({ page }) => {
     name: "healthy fixture",
     expectText: /Rip Packs City/,
   })
+})
+
+test("FAILS a page where MOST same-origin images painted nothing", async ({ page }) => {
+  // ⚠ Every other assertion passes: 200, no error boundary, ~590 chars of
+  // content, no console failure. Exactly how 12-of-15 blank Moment tiles sat on
+  // /nba-top-shot/market with this monitor green.
+  await expect(
+    assertHealthyPage(page, { path: `${base}/broken-images`, name: "broken images fixture" }),
+  ).rejects.toThrow(/painted nothing/i)
+})
+
+test("PASSES a page whose same-origin images all paint", async ({ page }) => {
+  await assertHealthyPage(page, { path: `${base}/healthy-images`, name: "healthy images fixture" })
+})
+
+test("PASSES one broken image among six — the RATIO, not a ban", async ({ page }) => {
+  // ⚠ The cry-wolf control for this check. The ipfs-media retry converts a
+  // first-visitor 502 into a second-request 200, so a single cold CID can leave
+  // one tile blank while everything works as designed. A flat ban would red the
+  // monitor on healthy behaviour, and the header above explains at length why
+  // that is worse than no check at all.
+  await assertHealthyPage(page, { path: `${base}/one-broken-image`, name: "one broken image fixture" })
 })
 
 test("FAILS a page that throws a React hydration error (#418) despite a healthy DOM", async ({ page }) => {
