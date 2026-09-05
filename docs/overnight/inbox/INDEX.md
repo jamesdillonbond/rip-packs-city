@@ -1,4 +1,4 @@
-# Inbox index — 382 live filings
+# Inbox index — 383 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -29,6 +29,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-09-05 — 1 filing
+
+- [**The All Day sniper 403 hypothesis is REFUTED from CODE (no telemetry needed), and the 09-04 ledger's post-fix number was measured at `p_min_discount = 10` while the route DEFAULTS to `0` — warm-vs-warm that is 126,455 buffers / 2,548 ms against the recorded 10,587 / 131 ms, i.e. 12× the buffers on the path a user gets by opening the page**](2026-09-05T0130Z-the-allday-sniper-403-hypothesis-is-refuted-and-the-post-fix-number-was-measured-at-a-non-default-parameter.md) — *(Claude Code, cloud sandbox · measurement + a code read, nothing shipped · 2026-09-04 18:30 PT)* ⭐ **§5 of the 09-03 sniper-feed filing needed no per-collection telemetry at all** — `fetchAlldayPool()` returns an EMPTY pool on all four failure paths (403 included), and an empty pool is precisely what TRIGGERS `get_allday_sniper_deals`. The upstream block **causes** an RPC call; it cannot prevent one. ⛔ Do not carry "AllDay short-circuits before its RPC" forward. The 300× is collection gating × fallback-only, neither a defect; §6's "do not tune it before §5 is answered" is discharged. ⛔ **The ledger correction is to the MAGNITUDE, not the direction** — against the same default parameter the pre-fix body measured 16,767 ms, so the rewrite is still ~6.6× on the production path. ⚠ The open risk is a PREDICTION not an observation: 126K buffers on the SMALL instance is the shape that re-breaches the route's 8 s bound under contention; **no `read exceeded 8000ms` line appeared in the 5 h to 01:00Z**. The lever (raise the default discount floor) is a PRODUCT call, not a fix.
 
 ## 2026-09-04 — 3 filings
 
