@@ -287,6 +287,13 @@ export async function GET(
 
   const upstream = winner.res;
   const upstreamBody = winner.body;
+  // ⚠ LOGGED ON EVERY OUTCOME, NOT JUST FAILURES. The whole point of this route
+  // is WHICH gateway serves, and without naming it on the success path nobody can
+  // answer "is the fallback earning its keep, or is the primary carrying it all?"
+  // — and a silent primary outage would fall back, restore the old failure rate,
+  // and leave the logs saying nothing about why. Fixing the behaviour without
+  // fixing the record leaves the incidence unmeasurable.
+  const gateway = new URL(winner.base).host;
   const upstreamUrl = `${winner.base}${cid}`;
 
   // Headers are in. Re-arm the WINNER's controller for the transfer, so the body
@@ -318,7 +325,7 @@ export async function GET(
     clearTimeout(phaseTimer);
     upstreamBody.cancel().catch(() => {});
     console.log(
-      `[ipfs-media] oversize redirect cid=${cid} bytes=${declaredLength} elapsedMs=${Date.now() - startedMs}`,
+      `[ipfs-media] oversize redirect cid=${cid} gateway=${gateway} bytes=${declaredLength} elapsedMs=${Date.now() - startedMs}`,
     );
     return NextResponse.redirect(upstreamUrl, 302);
   }
@@ -334,7 +341,7 @@ export async function GET(
   // file's SIZE CEILING note was written for. It was previously indistinguishable
   // from a small cached image.
   console.log(
-    `[ipfs-media] ok cid=${cid} type=${contentType} hasLength=${rawLength != null} bytes=${rawLength ?? "unknown"} elapsedMs=${Date.now() - startedMs}`,
+    `[ipfs-media] ok cid=${cid} gateway=${gateway} type=${contentType} hasLength=${rawLength != null} bytes=${rawLength ?? "unknown"} elapsedMs=${Date.now() - startedMs}`,
   );
 
   // ⚠ THE `ok` LINE ABOVE RECORDS A DECISION, NOT AN OUTCOME — it is written

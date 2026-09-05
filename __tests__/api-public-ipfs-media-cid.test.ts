@@ -538,6 +538,40 @@ describe("the gateway fallback", () => {
     expect(await res.text()).toBe("found-elsewhere")
   })
 
+  it("🚨 names the WINNING gateway on the SUCCESS path, not only on failure", async () => {
+    // ⚠ FIXING THE BEHAVIOUR WITHOUT FIXING THE RECORD LEAVES THE INCIDENCE
+    // UNMEASURABLE. This route's entire change is about WHICH gateway serves, and
+    // the failure log names them all — but a success logged without a gateway
+    // makes the one question the change raises unanswerable: is the fallback
+    // earning its keep, or is the primary carrying every request?
+    //
+    // ⛔ The case that makes it load-bearing: if the primary silently dies, every
+    // request quietly falls back, the old ~76% failure rate returns the moment the
+    // fallback degrades too, and the logs say nothing about why. A route that
+    // changed WHERE its bytes come from must say where they came from.
+    const logs: string[] = []
+    vi.stubGlobal("console", { ...console, log: (m: string) => logs.push(String(m)) })
+    stubGateways({
+      "ipfs.dapperlabs.com": async () => {
+        throw new Error("connect ETIMEDOUT")
+      },
+      "ipfs.io": async () => ({
+        ok: true,
+        status: 200,
+        body: streamOf("bytes"),
+        headers: { get: (k: string) => (k.toLowerCase() === "content-type" ? "image/png" : null) },
+      }),
+    })
+    const res = await GET(req, ctx(GOOD_CID))
+    await res.text()
+
+    const okLine = logs.find((l) => l.includes("[ipfs-media] ok")) ?? ""
+    expect(okLine).toContain("gateway=ipfs.io")
+    // CONTROL: it names the gateway that actually served, not just the first in
+    // the list — otherwise a hardcoded label would satisfy the line above.
+    expect(okLine).not.toContain("gateway=ipfs.dapperlabs.com")
+  })
+
   it("502s only when EVERY gateway fails at the transport layer", async () => {
     stubGateways({
       "ipfs.dapperlabs.com": async () => {
