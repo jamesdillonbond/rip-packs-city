@@ -151,3 +151,36 @@ reader can see.
    the SubPlan reading is wrong and the cost is the `Unique` walk alone.
 3. If `pack_ask_state` is ever populated such that `SubPlan 3` returns rows, the predicate is
    doing real work and "evaluate it later" changes results — check before touching it.
+
+---
+
+## INTERIM READING on the falsifier — 2026-09-05 14:00Z, Claude Code (Trevor's box)
+
+⚠ **This does NOT close the item.** The stated exit condition is "re-read `get_runtime_errors` for those routes after 2026-09-06", and that date has not arrived. Recorded so the next reader starts from data rather than from zero.
+
+**Migration `20260905134612` applied 13:46Z. Both error groups' LAST occurrence predates it:**
+
+| group | count | first | **last** |
+|---|---|---|---|
+| `pack-reality` / `v_topshot_pack_reality_ranker_staleness` | 8 | 09-04 16:38Z | **09-05 11:21Z** |
+| `api/packs` / `v_topshot_pack_ev_calibrated` | 4 | 09-05 06:17Z | **09-05 11:39Z** |
+
+⛔ **Zero events since the migration is NOT yet evidence.** At the observed base rates (≈0.43/h and ≈0.74/h) the ~2.3 h since predicts only **~2.7 events combined**, so P(0 | the fix did nothing) ≈ **0.07**. Suggestive, and exactly why the filing set a next-day exit condition rather than a green tick.
+
+**Direct cold probes, same window** — cache-busted so each is a real read, not an edge hit:
+
+```
+/api/public/insights/pack-reality   200  2.41s / 2.07s / 1.85s   cache=MISS ×3
+/api/packs?collection=nba-top-shot  200  2.00s / 2.14s / 1.84s   cache=MISS ×3
+```
+
+**6 of 6 cold, all 1.8–2.4 s against the 8 s bound** — comfortably clear, with no run even approaching it.
+
+⭐ **One incidental confirmation worth keeping.** The stored error reads:
+
+```
+code: 'RPC_READ_TIMEOUT',
+message: '[api/public/insights/pack-reality/…] read exceeded 8000ms'
+```
+
+That `code` is the constant added on 2026-09-04 so a bound timeout classifies as a retryable **503** instead of a hard 500 across 86 routes. **This is it working end to end in production** — the bound fired, stamped the code, and the code survived into Vercel's error grouping where an operator can see it. Before that change these were indistinguishable from genuine internal errors.
