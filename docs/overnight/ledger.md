@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · 📏 MOBILE QA at a TRUE 390 px — clean, and two more of my own instrument's artifacts identified · Cowork (cloud, autonomous)
+
+⭐ **Capability note worth carrying: the device-VM headless sweep can do a true 390 px viewport, which the Cowork browser cannot** — `resize_window` bottoms out at ~738 px, and the QA skill tells you to report that as a caveat rather than claim a sub-420 result. Run with `isMobile`, `hasTouch`, `deviceScaleFactor: 3` and an iOS UA, scrolled to force lazy content.
+
+**Six surfaces at 390×844 — `/`, `/nba-top-shot`, `/packs`, `/nfl-all-day/sniper`, `/insights/pack-reality`, a team page:**
+
+✅ **No horizontal page scroll on any of them** — `document.scrollWidth` equals `window.innerWidth` (390) on all six. That is the defect this pass exists to find, and it is absent.
+
+## Both "findings" were my instrument, and both are worth writing down
+
+- 🚨 **`/packs` read `len=1,966` on mobile against `69,990` on desktop** — which looks like the core browse surface rendering nothing on a phone. **It is a settle artifact.** With three scroll passes and ~2.5 s between them it reaches **len 83,753, 1,002 images, 2,000 pack cards**. ⛔ **One scroll pass plus 3.5 s is not enough for a lazy/virtualised list**, and on mobile the shorter viewport means far more passes are needed to reach the same content. Same disease as the 3.5 s blank-art under-report earlier tonight, in a new place.
+- 🚨 **`/insights/pack-reality` reported 36 elements wider than the viewport**, led by `table.rpc-pr-table` at 654 px. **The table is correctly contained:** its immediate parent is a `div` with `overflow-x: auto`, **width 316, scrollWidth 654** — the wide-content-scrolls-in-its-own-container pattern, working exactly as intended. ⛔ **An overflow check must walk the PARENT CHAIN for a scroller, not just test the element's own `overflow-x`** — mine skipped elements that were themselves scrollers, which is the one case that never needed skipping.
+- The `span w=417 right=1476/3289` entries on three pages are the marquee ticker mid-animation (`right` far beyond the viewport is the transform, not layout). Also not a defect.
+
+📋 **One genuine, minor observation, filed as an observation and not a defect:** 4–9 links/buttons per page render under 24 px tall and 44 px wide — below the usual 44 px touch-target guidance. Mostly footer/legend links. ⚠ Not measured against a specific standard and not chased; recorded so it is a known, sized thing rather than a vague worry.
+
+⭐ **Three instrument artifacts in one night** (`cdn.nba.com`, `/packs` settle, the overflow parent chain) **and zero real surface defects.** That ratio is the finding: this sweep's failure mode is false positives, so **every negative result from it needs a control before it becomes a filing** — the real browser, a longer settle, or the parent chain. All three were caught by controls rather than shipped as findings.
+
+**Revert:** n/a — QA + docs only; no code, no DB state, no prod change.
+
 ### 2026-09-05 · ✅ CLOSE-OUT + ⚠ TWO CORRECTIONS TO MY OWN CLAIMS — the overnight handoff, and a coverage percentage whose denominator I never named · Cowork (cloud, autonomous)
 
 Handoff: [docs/handoff-2026-09-05-overnight.md](../handoff-2026-09-05-overnight.md), mirrored to the claude.ai Project. `metrics-latest.json` updated. **Pass shipped one migration (`20260905110532`), three measurement filings, and zero code changes.**
