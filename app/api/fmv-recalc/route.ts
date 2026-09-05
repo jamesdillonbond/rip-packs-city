@@ -1114,38 +1114,40 @@ export async function POST(req: NextRequest) {
     // Null when the step ran; the error string when its candidate query failed.
     // Without this a count of 0 cannot be told apart from a step that never ran.
     let backfillError: string | null = null
+    // The uncovered-edition census, shared with the candidate read below.
+    // null (not 0) when that read failed — see the note at its assignment.
+    let uncoveredCensus: number | null = null
 
     try {
-      // Log how many editions are still missing FMV
-      const { data: missingCount } = await supabaseAdmin
-        .rpc("query_sql", {
-          query: `
-            SELECT COUNT(*) AS cnt
-            FROM editions e
-            LEFT JOIN fmv_snapshots fs ON fs.edition_id = e.id
-            WHERE fs.edition_id IS NULL
-              AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
-              AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
-          `,
-        })
-      const missingEditions = (missingCount as { cnt: number }[] | null)?.[0]?.cnt ?? "unknown"
-      console.log(`[FMV-RECALC] Editions missing FMV snapshots: ${missingEditions}`)
-
-      const { data: uncoveredEditions, error: uncoveredErr } = await supabaseAdmin
-        .rpc("query_sql", {
-          query: `
-            SELECT e.id AS edition_id, e.collection_id, be.low_ask
-            FROM editions e
-            LEFT JOIN fmv_snapshots fs ON fs.edition_id = e.id
-            LEFT JOIN badge_editions be ON be.external_id = e.external_id AND be.collection_id = e.collection_id
-            WHERE fs.edition_id IS NULL
-              AND be.low_ask IS NOT NULL
-              AND be.low_ask > 0
-              AND be.low_ask <= 10000
-              AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
-              AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
-            LIMIT 500
-          `,
+      // ── ONE anti-join, not two ────────────────────────────────────────────
+      // 2026-09-04: this step sent TWO `query_sql` scans over the SAME
+      // `editions` × `fmv_snapshots` anti-join — a COUNT(*) whose only consumer
+      // was the console.log below (101,407 buffers, 2,234 ms) and the candidate
+      // read (106,598 buffers). 208,005 buffers a tick, 151 ticks a day.
+      //
+      // `query_sql` is the database's #1 reader (inbox 2026-09-04T0500Z) AND it
+      // is invisible in pg_stat_statements by construction — `track = top` with
+      // zero non-toplevel rows, so every caller of the wrapper collapses into
+      // one queryid whose text is `%s`. Moving to a named function therefore
+      // buys attribution as well as the buffers, which is what that filing
+      // actually asked for.
+      //
+      // Measured warm, all shapes on the same cache: 208,005 → 101,725 buffers,
+      // −51%. The win is that the badge join stops DRIVING the anti-join: today
+      // `badge_editions` is the outer side and feeds 17,108 probes into
+      // fmv_snapshots_2026; now the anti-join runs once and its 171 survivors
+      // drive an index scan into badge_editions for 342 buffers.
+      //
+      // ⚠ NOT a retirement — the step is rare but real (42 rows converted in 1
+      // of 460 runs over 73 h). ⚠ And do NOT "optimise" it by scoping to
+      // recently-created editions: rows leave this set when a `badge_editions`
+      // row ARRIVES, not when an edition is created — measured, none of the 171
+      // was created in the last 7 days yet 42 converted. Full equivalence
+      // argument in migration 20260905033723.
+      const { data: uncovered, error: uncoveredErr } = await supabaseAdmin
+        .rpc("fmv_recalc_uncovered_editions", {
+          p_pinnacle_collection_id: PINNACLE_COLLECTION_ID,
+          p_limit: 500,
         })
 
       // This read ignored `error` entirely until 2026-08-31 — supabase-js RETURNS
@@ -1153,7 +1155,23 @@ export async function POST(req: NextRequest) {
       // `{data: null, error}`, `?? []` turned it into an empty list, and the step
       // reported `backfill: 0` with not even a console.warn behind it.
       if (uncoveredErr) backfillError = uncoveredErr.message
-      const rows = (uncoveredEditions as { edition_id: string; collection_id: string; low_ask: number }[] | null) ?? []
+
+      const uncoveredPayload = uncovered as {
+        missing_total: number
+        candidates: { edition_id: string; collection_id: string; low_ask: number }[]
+      } | null
+
+      // ⚠ null — never 0 — when the read failed. A census of 0 ("every edition is
+      // priced") is a real and completely different answer from "we could not
+      // count", and `?? 0` on a failed count is the fabricated-number shape this
+      // repo bans. Its failure sibling in `extra` is backfill_error: one read now
+      // produces both keys, so one error covers both.
+      uncoveredCensus = uncoveredPayload?.missing_total ?? null
+      console.log(
+        `[FMV-RECALC] Editions missing FMV snapshots: ${uncoveredCensus ?? "unknown"}`
+      )
+
+      const rows = uncoveredPayload?.candidates ?? []
 
       if (rows.length > 0) {
         console.log(`[FMV-RECALC] Backfill: ${rows.length} editions with no snapshot`)
@@ -2172,6 +2190,11 @@ export async function POST(req: NextRequest) {
           // ⛔ Do NOT add a new step count here without its `_error` sibling.
           backfill: backfillCount,
           backfill_error: backfillError,
+          // The census the backfill read now also returns (one anti-join, not two —
+          // migration 20260905033723). It shares backfill_error deliberately: same
+          // read, same failure. null means that read failed; 0 means every edition
+          // is priced. It was a console.log-only number until 2026-09-04.
+          uncovered_census: uncoveredCensus,
           historical_fallback: historicalBackfillCount,
           historical_fallback_error: historicalFallbackError,
           ask_offers_fallback: askOffersBackfillCount,
