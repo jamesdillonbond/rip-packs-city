@@ -1,30 +1,10 @@
 {
- "generated_at_pt": "2026-09-04T23:30:00-07:00",
- "pass": "2026-09-04 Cowork cloud — circulation decided, its denorm debris, and the signed-out surface QA that followed",
+ "generated_at_pt": "2026-09-05T04:35:00-07:00",
+ "pass": "2026-09-05 Cowork cloud — the 403 critical that had cost three nights is attributed and gone; three measurement filings; and two corrections to my own claims",
  "migrations_applied": [
-  "20260904145331 base circulation = this printing's own mint (BEFORE trigger + hourly sync)",
-  "20260904145452 parallels take the measured mint too (392 wrong, one by 14x)",
-  "20260904150428 wmc.mint_count follows the decided rule (539,596 rows wrong, 66,376 by >10x)",
-  "20260904151427 unidentified Flowty listings stop publishing an assumed tier/serial/valuation",
-  "20260904152154 a parallel inherits its base edition's identity (107 read 'Unknown')",
-  "20260904154741 series_chain_numbers: Top Shot chain 0+1 are both catalog Series 1",
-  "20260905024630 the Atlas walk also writes the prose + CDN media the dead catalog walker used to (splice into atlas_editions_drain)",
-  "20260905061815 the 16 Ultimate 1/1 editions Atlas has and we never had (5 were blank tiles in real collections)",
-  "20260905062040 propagate those 16 into the holder denorm now, not on the reconciler's next rotation"
+  "20260905110532 the 403 arm attributes the Atlas walk by request_id, so a self-healing upstream challenge stops paging as critical (0 criticals on the board)"
  ],
- "code_shipped": [
-  "fix(listings) topshot-listing-cache: an unidentified NFT states unknown instead of guessing",
-  "fix(links) momentSubjectHref: a team Moment links to /team, not a /player page that 404s",
-  "fix(media) IpfsThumb + useIpfsRetry: one retry on the cold-cache 502, shared by two surfaces",
-  "fix(proxy) an anon-public page can reach the feed it calls (pinnacle-sniper-feed, pack-listings)",
-  "fix(ci) the anon-exec marker must name the function it decides for",
-  "fix(media) useIpfsRetry: shared cold-cache retry, /insights/trophies gains a second attempt",
-  "fix(proxy) an anon-public page can reach the feed it calls (pinnacle-sniper-feed, pack-listings)",
-  "docs(fmv-recalc) correct a measurably false premise about cached_listings freshness",
-  "chore(cron) unschedule backfill-badges-from-sets — dead upstream, now redundant at 266/266",
-  "fix(proxy) /api/moment-thumbnail is anon-public — 26 of 374 public collection tiles were serving login HTML",
-  "chore(cron) unschedule topshot-catalog-backfill — dead upstream since 08-28 (7 of 7), retired for redundancy once all three of its jobs had live owners"
- ],
+ "code_shipped": [],
  "converged": {
   "circulation_base_editions_corrected": 1312,
   "circulation_parallel_editions_corrected": 449,
@@ -92,5 +72,39 @@
  "post_ship_watch": [
   "topshot-badge-set-backfill should log NO new pipeline_runs rows after its next former slot (15 3,9,15,21 PT) — the vercel.json entry is removed and deployed in b9f1c07.",
   "the wmc metadata reconcile cursor was rewound to ~103 during the mint_count investigation; it re-walks idempotently and was at 126:4424 at 18:30 PT."
- ]
+ ],
+ "health_at_close": {
+  "pt": "2026-09-05 04:33",
+  "security_invariants_rows": 0,
+  "detect_stalled_pipelines": 0,
+  "secdef_anon_execute_violations": 0,
+  "pipeline_alerts_critical": 0,
+  "pipeline_alerts_total": 7,
+  "trust_breaches": 1,
+  "trust_breach_detail": "unmapped_resolution_backlog_max 148/100 (down from 172 on 09-04)",
+  "atlas_sets_stale_over_6h": 0,
+  "atlas_sets_total": 266,
+  "cron_24h_succeeded": 5658,
+  "cron_24h_failed": 2,
+  "cron_24h_failed_note": "both from jobids no longer present in cron.job; no 'job startup timeout' status",
+  "sentry": "NOT READ — no Sentry MCP in this session (standing 'dark since 08-18' blocker)"
+ },
+ "measured_not_shipped": [
+  "pack_ev_latest is >99.7% of two public routes now crossing their 8s read bound; SubPlan 3 runs 128,712x for 381,922 buffers; mv_pack_ev_latest swap REFUTED (0 of 7 columns). inbox/2026-09-05T1120Z",
+  "unmapped-drain 'STALLED' test fires 45.8% of hours on a working drain; the 12h x2 retune measures WORSE at 60.4%. inbox/2026-09-05T1125Z",
+  "surface QA: 21 pages, all 200, ~900 third-party images, 0 blank"
+ ],
+ "corrections_to_my_own_claims": [
+  "cdn.nba.com 'blank on 4 of 4 NBA team pages' was a headless-Chromium sandbox artifact — real Chrome renders it at naturalWidth 150, 0 blank of 84. My first isolation test was invalid (a data: page cannot load ANY cross-origin image; the control proved it). NEW known false positive.",
+  "'96.4% Top Shot description coverage' had an unstated denominator: it is 96.6% of the 13,915 ATLAS-COVERED editions. A further 6,697 are outside Atlas at 1.1% prose. The topshot-catalog-backfill retirement still stands — those 6,697 were created 2026-05-08..2026-08-20 while that walker was alive and healthy and it was not filling them either — and only 100 of the 6,697 are user-reachable (50 holders, 59 sales), the rest inert."
+ ],
+ "description_coverage_topshot": {
+  "atlas_covered": 13915,
+  "atlas_covered_pct": 96.6,
+  "not_atlas_covered": 6697,
+  "not_atlas_covered_pct": 1.1,
+  "not_covered_user_reachable": 100,
+  "all_editions": 20612,
+  "all_pct": 65.6
+ }
 }

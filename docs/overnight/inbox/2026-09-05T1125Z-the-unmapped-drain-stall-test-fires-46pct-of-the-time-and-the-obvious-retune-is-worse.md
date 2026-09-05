@@ -1,6 +1,6 @@
 # The unmapped-sales "drain has STALLED" test fires 46% of the time on a working drain — and the obvious retune measures WORSE
 
-**Filed 2026-09-05 ~12:15Z (05:15 PT) — Cowork, cloud, autonomous night pass.**
+**Filed 2026-09-05 ~11:25Z (04:25 PT) — Cowork, cloud, autonomous night pass.**
 **Nothing shipped.** The naive fix was measured and is **worse than what is there**; the real fix
 needs a decision about what "stalled" means for a **batch** process, which is not a tuning call.
 
