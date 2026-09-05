@@ -10,6 +10,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (DB + code) — fmv-recalc Step 5b was being KILLED on 8.3% of runs by the 30 s wrapper timeout, and the planner was running its LEAST selective predicate first over 4,866,318 sales rows · 513,102 → 306,847 buffers · Claude Code (Trevor's box, interactive)
+
+**Found by finishing the measurement instead of stopping at the first fix.** Having merged Step 5's two scans (entry above), I measured the other five rather than assuming the one I had already read was the worst. It was not: **Step 5b alone is 513,102 buffers and 21,113 ms — 2.5× the entire Step 5 pair.**
+
+🚨 **THE DEFECT IS NOT THE COST, IT IS THAT THE STEP WAS FAILING.** `pipeline_runs.extra->>'historical_fallback_error'` over the trailing 73 h: **38 of 459 runs (8.3%) died on `canceling statement due to statement timeout`** — first 2026-09-02 03:28Z, last **2026-09-05 01:08Z**, evenly spread. That is the steady state, not a spike. ⭐ **This is the 2026-08-31 `_error` instrumentation paying off**: every step count was paired with an `*_error` sibling precisely because `historical_fallback: 0` cannot be told apart from a step that never ran. It has been recording this for days; nobody had read it.
+
+⛔ **AND MY FIRST READING WAS WRONG, which is the part worth recording.** The EXPLAIN returned **0 rows** with `Rows Removed by Filter: 18946` and a `LIMIT 200` that never binds — the exact shape of a dead scan, and I had begun writing it up as one. The 73 h distribution refutes it: the step wrote **1,383 rows across 110 of 459 runs (24%)**. **One snapshot is not a distribution**, and a single EXPLAIN returning zero is not evidence a step is dead. That is twice in two entries tonight that reading `extra` before acting changed the verdict.
+
+**THE CAUSE: the conjunction was evaluated in the worst possible order.** `EXISTS (SELECT 1 FROM sales WHERE edition_id = e.id AND price_usd > 0)` is the **least** selective term — 18,946 of 26,722 editions, **71%**, have a paid sale — and the planner ran it **first**, as a `Merge Semi Join` over a `Merge Append` of **4,866,318 sales rows across all 8 partitions** (330,567 buffers of the total). The genuinely selective predicate (latest snapshot missing / `NO_DATA` / older than 7 days) then discarded every row that survived.
+
+**MEASURED, warm, same session, buffers not timings:**
+
+| shape | buffers | ms |
+|---|---:|---:|
+| current (planner's order) | 513,102 | 21,113 |
+| CTE **without** `MATERIALIZED` | 513,184 | 17,202 |
+| **CTE with `MATERIALIZED`** | **306,847** | **9,061** |
+
+⚠ **`MATERIALIZED` is the load-bearing keyword, not the CTE — and the middle row is why that had to be measured rather than assumed.** Without it the planner inlines `stale` straight back into the outer query and re-derives the identical bad plan: **513,184 buffers, i.e. no change at all.** A reviewer tidying that keyword away would silently revert the entire fix while the code still read as restructured.
+
+⭐ **And the gain is LARGER on the 24% of runs that do work, not smaller** — the 4.87M-row Merge Append is paid in full however few rows the `LIMIT` wants, whereas the per-row index-only probe can stop as soon as 200 candidates are found.
+
+**Shipped:** `fmv_recalc_historical_candidates(uuid, interval, int)` (migration `20260905040111`). ⚠ **`statement_timeout = 60s`, deliberately NOT the sibling's 120s.** CLAUDE.md's measured result is that a function-local timeout RAISES the PostgREST path (30 → 60 s verified; a lower one is inert) and that the Supabase **gateway hard-caps that path at ~120 s**. Declaring 120 puts an overrun exactly on the cap, where it returns a gateway `504 upstream request timeout` naming no statement — strictly worse to diagnose than the attributable `canceling statement due to statement timeout` it replaces. 60 s is the measured-working value, 6× the observed 9 s cost, and it fails legibly. Grants mirror both siblings (`service_role` only, revoked `FROM PUBLIC, anon, authenticated` in one statement, verified with `has_function_privilege`); `check_secdef_anon_exec_drift()` re-read after — **0** (jsonb-returning, so read the array LENGTH).
+
+⚠ **EQUIVALENCE, and the one thing that could genuinely have broken.** Reordering a conjunction cannot change a result set; the only hazard is **where the `LIMIT` sits**, and the route's own header explains why that is load-bearing — 4,294 of 8,571 qualifying editions have no paid sales at all, and if they could enter the bounded candidate set they would occupy the head of an unordered `LIMIT` forever while the convertible ones were never reached. **The `LIMIT` still sits after the `EXISTS`.** Proven live rather than argued: today's candidate set is empty, so the control was run with staleness relaxed to 1 day — **both orders return 5,060 rows, `EXCEPT ALL` empty in both directions.**
+
+**Proven:** 5 new guard cases (12 in that file now). **Mutation-proven:** putting Step 5b back on `query_sql` reds 3. ⚠ That regression would otherwise be **invisible** — the step records its own failure honestly, so nothing goes red; the rows simply stop being written on 1 run in 12.
+
+⚠ **A test that passed for TWO wrong reasons at once, both fixed.** The historical-fallback case fed its fixture by `query_sql` CALL INDEX (so it silently re-points whenever an earlier step leaves the wrapper — the trap recorded in the entry above, hit here a second time) **and** keyed the sale date `last_sale_at` where the route reads `latest_sold_at`, so the route had been computing `daysSinceSale` from `new Date(undefined)` — `NaN` — and the case still passed because it only asserted `fmv_usd > 0`. It is now keyed by RPC NAME with the correct field. **Both steps that have left `query_sql` are keyed by name; the index map carries a ⛔ saying any step leaving the wrapper should be RENAMED rather than re-indexed.**
+
+**Verified:** `tsc` clean · full suite **1,465 files / 16,221 tests, exit 0** · migration parity 7,250 repo chars vs 7,249 stored (trailing newline only) · live shape test returned 200 well-formed rows, all keyed and priced, 124 carrying an ask.
+
+**Running total across tonight's two entries: `query_sql` call sites in this route 7 → 4, and ~721,000 buffers a tick → ~409,000.**
+
+⏳ **OWED — the falsifier, and it is a FLOW not a snapshot.** `extra.historical_fallback_error` must reach **0 timeouts** over a full day of runs from 2026-09-05. ⚠ Read it as a rate over ≥100 runs, never on the first green tick: the pre-fix rate was 8.3%, so **a dozen clean runs is what the null already predicts** (0.917¹² ≈ 36%). ⚠ And split at the deploy — a rate pooled across it measures the fix's absence.
+
+**Revert:** `git revert <sha>` restores the inline `query_sql` scan; the DB half is `DROP FUNCTION public.fmv_recalc_historical_candidates(uuid, interval, integer)`.
+
 ### 2026-09-04 · ✅ SHIPPED (DB + code) — fmv-recalc Step 5 walked the SAME editions × fmv_snapshots anti-join TWICE a tick, and one of the two walks existed only to feed a `console.log` · 208,005 → 101,725 buffers · Claude Code (Trevor's box, interactive)
 
 **The filed item was `query_sql`, and it survived its own falsifier.** Inbox `2026-09-04T0500Z` measured `query_sql` as the database's #1 reader (12.1 M blocks / 24 h, 3.4× the next statement) and attributed it to `fmv-recalc`'s seven inline scans, filing the fix as "a daytime pass". Re-derived tonight before touching anything: `ops_pgss_delta('24 hours')` still ranks it **#1 at 11,893,325 blocks over 2,131 calls**, and `pipeline_runs` still shows **151 fmv-recalc runs** in the same window. The filing holds.
