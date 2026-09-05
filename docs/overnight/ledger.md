@@ -10,6 +10,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ OWED WATCH DISCHARGED — the `resolve-topshot-stubs` wall fix is confirmed by a single observation the broken version could not have produced · Claude Code (Trevor's box, interactive)
+
+**At 19:09:14Z, post-deploy, a `topshot-stub-resolver` edge run took 30,776 ms — past the old 30,000 ms wall — and it has a matching `resolve-topshot-stubs` terminal row with `ok = true`.**
+
+⭐ **Under the old wall that exact invocation would have been killed**: a Vercel `Task timed out after 30 seconds` plus a MISSING terminal row for work that had completed. It completed and logged instead. Corroborating over the same window: **10 invocations since the 16:19Z deploy, 0 kills** by heartbeat-without-terminal-row correlation.
+
+## Why this closed in hours instead of days, which is the transferable part
+
+The pre-fix kill rate was **2.5% (3 of 121)**. Waiting for the ABSENCE of kills would have needed **~5 clean days** to push `P(0 | the fix did nothing)` under 0.05 — a clean 24 h only reaches **≈ 0.30**, which the null explains easily. ⚠ And `pipeline_runs` retains **~73 h**, so the pre-fix comparison window would have been destroyed before the rate could ever become significant.
+
+👉 **The watch was therefore written around a POSITIVE control instead: the one observation the broken version could not produce.** A run that exceeds the old wall *and* still writes its terminal row is impossible under `maxDuration = 30`. **One of those is proof; a hundred quiet runs are not.**
+
+⚠ **Reusable rule: when a fix targets a RARE condition, do not watch for the absence of the failure — find the single observation the broken version could not have produced.** Counting non-events on a 2.5% base rate is how a watch dies of retention before it can conclude.
+
+**Nothing shipped in this entry** — it discharges the watch opened by the wall fix earlier today. The fix itself, its guard and its revert path are in that entry.
+
+
 ### 2026-09-05 · ⓘ SHIPPED (comment only) — the trophy-thumbnail host allowlist re-derived on its own instruction; SET unchanged · Claude Code (Trevor's box, interactive)
 
 Swept for more copies of the defect `e900d58b5` found (a hand-copy whose comment claimed a test kept it in sync while no test read it). **Four host-list constants exist; none is a second instance.** `CSP_ALLOWED_IMAGE_HOSTS` was the drifted one and is now fixed and genuinely guarded; `PROXYABLE_AVATAR_HOSTS` and `ALLOWED_ORIGIN_HOSTS` serve different purposes (what to proxy, origin checking) and mirror nothing.
