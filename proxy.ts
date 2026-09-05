@@ -769,6 +769,28 @@ export function isPublicPath(pathname: string, method: string): boolean {
     "/api/collection-series", "/api/badges", "/api/relative-deals",
     "/api/tier-pricing-benchmarks", "/api/edition-history", "/api/market-analytics",
     "/api/marketplace-breakdown", "/api/pinnacle-sniper", "/api/pinnacle-wallet",
+    // 2026-09-04: the two remaining anon-307s on anon-public pages, found by loading each
+    // collection's /sniper and /packs signed-out in a real browser.
+    //
+    // `/api/pinnacle-sniper-feed` is LITERALLY `export { GET } from "../pinnacle-sniper/route"` —
+    // the same handler, one line above on this list, gated only under its alias name. Anonymous
+    // /disney-pinnacle/sniper (anon-public by the feature-tab regex below) called it, got 307 →
+    // /login, and rendered "FMV coverage unavailable — discount and FMV show once the feed loads"
+    // permanently. Not a degraded read: a page waiting for a response that can never arrive.
+    //
+    // `/api/pack-listings` is GET-only, takes no session (no getCurrentUser/cookies), validates
+    // `collection` against SUPPORTED_PACK_COLLECTIONS, and returns 2-minute-cached PUBLIC Dapper
+    // marketplace pack listings — the same anon-safety class as /api/sniper-feed and /api/market
+    // already here. /nba-top-shot/packs and /nfl-all-day/packs still render 500 rows without it
+    // (the table is server-rendered), so this one costs a wasted login-HTML download and a console
+    // error per anon load rather than a broken page — the same class as the badge-taxonomy and
+    // profile/me fixes of 2026-09-03.
+    //
+    // ⚠ NOT added: `/api/golazos-sniper-feed` and `/api/allday-pack-listings`. Both also 307, and
+    // both were left alone because no anon-public page calls them — /laliga-golazos/sniper fires
+    // ZERO 307s and renders 54 rows, verified live. Widening the allowlist for a route with no
+    // caller is how the surface grows without anyone deciding to grow it.
+    "/api/pinnacle-sniper-feed", "/api/pack-listings",
     "/api/allday-set-progress",
     "/api/ufc-set-progress", "/api/topshot/challenge-plan", "/api/topshot/challenges",
     "/api/wallet-summary", "/api/seeded-wallets", "/api/owned-flow-ids",
