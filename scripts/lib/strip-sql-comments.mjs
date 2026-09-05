@@ -93,7 +93,26 @@ export function readDollarTag(src, i) {
  */
 export function stripSqlComments(sql, opts = {}) {
   const blankStrings = opts.blankStringLiterals === true
-  const out = Array.from(sql)
+  // 🚨 `split("")` AND NOT `Array.from`, AND THE DIFFERENCE IS MEASURED.
+  // `Array.from` iterates by CODE POINT while every index in this function —
+  // `sql[i]`, `blank(from, to)`, `sql.length` — is a UTF-16 CODE UNIT. An astral
+  // character (an emoji) is one code point and TWO code units, so each one made
+  // the output ONE character shorter than the input and slid every offset after
+  // it. Measured 2026-09-05: `"-- 🚨 alarm\nCREATE TABLE …"` came back at 61
+  // characters from a 62-character input, and **50 of the 909 migrations in this
+  // tree contain astral characters** — this file's own headers use them.
+  //
+  // ⛔ THAT SILENTLY BREAKS THE ONE PROPERTY A CALLER DEPENDS ON.
+  // `migration-new-function-states-its-anon-exec-decision` matches
+  // `REVOKE[\s\S]{0,200}?…public.<fn>\s*\(` — a BOUNDED window — so a drifting
+  // offset can pull a REVOKE and a function name inside a window they were never
+  // within, and the guard vouches for a decision the file does not state. The
+  // suite's offset test passed because its fixture was pure ASCII.
+  //
+  // `split("")` splits by code unit, so a surrogate PAIR becomes two elements
+  // that rejoin byte-identically, and blanking a comment blanks both halves —
+  // two spaces for one emoji, which is exactly the length preservation intended.
+  const out = sql.split("")
   const n = sql.length
   let i = 0
 
@@ -139,10 +158,41 @@ export function stripSqlComments(sql, opts = {}) {
 
     // dollar-quoted body: kept, and its contents re-scanned, because a DO block body
     // is real SQL and the guards need to see the statements in it.
+    //
+    // 🚨 THE BODY IS RE-SCANNED WITHIN ITS OWN BOUNDS, NOT AT TOP LEVEL, and that
+    // distinction is a defect this function had until 2026-09-05. Skipping only
+    // the opening tag and continuing left the body's contents governed by the
+    // outer scan, so an apostrophe inside the body — which is the entire reason
+    // dollar quoting EXISTS, since it removes the need to escape one — opened a
+    // string literal that ran straight past the closing tag. Measured:
+    //
+    //     SELECT $$it's fine$$;
+    //     CREATE TABLE public.still_seen (id int);
+    //     SELECT 'z';
+    //
+    // blanked everything from `it` to the `'z'` on line 3, taking a real
+    // `CREATE TABLE` with it. That is the same phantom-literal failure this whole
+    // module was written to retire, relocated one level down. Recursing on the
+    // slice between the tags bounds it: a literal opened inside a body cannot
+    // reach code outside it, because the outside is not in the string being
+    // scanned.
+    //
+    // ⚠ An UNTERMINATED tag falls back to skipping the opener rather than
+    // swallowing the remainder of the file — a broken migration must degrade to
+    // "treat it as text", never to "hide everything after it", which would be a
+    // silent population shrink in every guard built on this.
     if (c === "$") {
       const tag = readDollarTag(sql, i)
       if (tag) {
-        i += tag.length
+        const bodyStart = i + tag.length
+        const close = sql.indexOf(tag, bodyStart)
+        if (close === -1) {
+          i = bodyStart
+          continue
+        }
+        const inner = stripSqlComments(sql.slice(bodyStart, close), opts)
+        for (let k = 0; k < inner.length; k++) out[bodyStart + k] = inner[k]
+        i = close + tag.length
         continue
       }
     }
