@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ⓘ SHIPPED (comment only) — a Candy-launch landmine recorded at the line that would trigger it, found while verifying tonight's CSP ship · Claude Code (Trevor's box, interactive)
+
+**Verifying a colleague's ship rather than assuming it.** `e900d58b5` removed `cloudflare-ipfs.com` from the CSP and restored four hosts to the avatar-proxy mirror. ✅ **Three of its claims re-derived independently and all hold:** the live `img-src` on production carries `arweave.net` + `*.arweave.net` + `*.supabase.co` + `gateway.pinata.cloud` and **no `cloudflare-ipfs` anywhere**; `cloudflare-ipfs.com` is deliberately **retained** in `IPFS_GATEWAY_RE` (removing it would leave a legacy URL hotlinking a dead host instead of being rewritten onto our proxy); and the sync test its old comment falsely claimed now genuinely exists, reads `proxy.ts` from disk **and asserts the directive parse landed** before comparing, so it cannot pass by matching nothing.
+
+⭐ **What the verification turned up is an asymmetry with no live consumer — and a trap for later.** Those four hosts went into **`img-src` only, not `media-src`**. Measured:
+
+| | |
+|---|---:|
+| Candy MLB editions carrying `video_url` on `arweave.net` | **125 of 125** |
+| `video_url` on arweave/supabase across the four VIDEO-ENABLED collections | **0** of 21,271 |
+
+⛔ **So there is NO defect today, and this is deliberately not filed as one.** Candy MLB is `is_active = false` **and** absent from `VIDEO_ENABLED_SLUGS`, so no `<video src="https://arweave.net/…">` is ever rendered. **A populated column is not a rendered element** — the caller was named before any claim was made.
+
+🚨 **But enabling Candy video later breaks silently.** `proxyIpfsUrl()` returns a non-IPFS URL **unchanged** (`lib/ipfs-media.ts:28`), so an arweave URL reaches the browser as-is and meets a `media-src` that forbids it. ⚠ **The poster still loads** — `thumbnail_url` is also arweave and `img-src` allows it — so the tile looks perfect and merely never plays, and a **CSP violation is client-only**, captured by nothing here since Sentry died 2026-08-18. Nothing would go red.
+
+**Shipped:** that warning as a comment **immediately above `VIDEO_ENABLED_SLUGS`** in `lib/entity-editions-grid-format.ts` — the exact line someone edits to launch Candy — rather than in a doc, because *a comment is only read by someone already in that file* and this is that file. **No behaviour change; no host was added to any directive.**
+
+⛔ **Deliberately did NOT add arweave to `media-src`.** It is a CSP edit in `proxy.ts`, the off-limits auth file, and widening a policy for a collection that renders no video today buys nothing and widens the surface now.
+
+**Verified:** `tsc` clean; the three guards that read the edited file pass (58 tests); full suite run.
+
+**Revert:** `git revert <sha>` — removes a comment. No runtime effect either way.
+
+
 ### 2026-09-05 · ⚠ CORRECTION (migration comment) — my `-- anon-exec:` line was PROSE, and that guard keys the marker PER FUNCTION NAME · Cowork cloud
 
 `20260905163444` shipped with a four-line `-- anon-exec:` paragraph explaining that neither function is anon-executable and that a REVOKE there would be a no-op. **The reasoning was right and production is correct** — both are SECDEF with `{postgres=X,service_role=X}`, both signatures unchanged, and `CREATE OR REPLACE FUNCTION` does not reset a function ACL. But `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` matches a line containing BOTH `anon-exec:` and the function name, **per function**, deliberately, so that "a file hardening function A must not vouch for function B". A paragraph that names neither satisfies nothing. `main` went red on `Unit tests (vitest) — shard 2/2`, 1 failed of 8,370.
