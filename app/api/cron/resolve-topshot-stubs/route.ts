@@ -15,7 +15,23 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 30
+// ⚠ 120, NOT 30 — RAISED 2026-09-05 because the 30 s wall was KILLING REAL WORK.
+//
+// The `after()` body below bounds its own fetch with `AbortSignal.timeout(120_000)`,
+// so the route already DECLARED a 120 s budget — but `maxDuration = 30` killed the
+// whole lambda first, which made that 120 s bound unreachable by a factor of four.
+// Raising the wall aligns it with the bound the code already asks for.
+//
+// ⭐ MEASURED, and only measurable because the heartbeat exists (see below):
+// over 121 invocations from 2026-09-03 03:39Z, **3 were killed** (2.5%) — and each
+// one pairs 1:1 with an edge-function run that crossed 30 s: **30,452 / 31,690 /
+// 34,423 ms**. Matched occurrences, not merely matching counts.
+// ⛔ In every case THE WORK SUCCEEDED — the edge function logs its own
+// `topshot-stub-resolver` row — so the kill produced a Vercel runtime error and a
+// missing terminal row for work that had actually completed.
+// ⚠ Durations are drifting up: p50 11.1 → 15.6 s and p90 15.1 → 25.5 s over
+// 09-02→09-05. Treat 120 as headroom against that drift, not as a tight fit.
+export const maxDuration = 120
 
 function isAuthed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization") ?? ""
@@ -99,8 +115,18 @@ export async function POST(req: NextRequest) {
     // the ceiling no matter how often the ceiling is hit, which is exactly the
     // shape a marker exists to make visible.
     //
-    // ⚠ This pipeline is NOT on `pipeline_cadence_watchlist`, so a kill here is
-    // not merely misread — it is unobserved by anything at all.
+    // 🚨 BOTH HALVES OF THE ORIGINAL NOTE HERE ARE NOW SUPERSEDED (2026-09-05):
+    //   · It said this pipeline is NOT on `pipeline_cadence_watchlist`. It IS —
+    //     seeded 2026-09-04, severity `info`, max_silent 273 min — as is
+    //     `topshot-stub-resolver`. At `info` a kill still pages nobody.
+    //   · It said a kill "is unobserved by anything at all". The heartbeat written
+    //     on the next line is exactly what changed that, and its first row lands
+    //     2026-09-03 03:39Z — AFTER the 09-02 note was written, which is why the
+    //     note was true when it was made and is not true now.
+    // ⭐ The censored distribution can now be UNCENSORED, and that is what sized
+    // the wall above: kills are read by correlation (heartbeat present, terminal
+    // row absent) and the true duration is carried by the edge function's own
+    // `topshot-stub-resolver` row, which no wall of ours truncates.
     //
     // ⓘ Deliberately NOT claimed: a 90-minute gap on 2026-09-01 04:39Z looks like
     // two killed ticks and is not — it falls inside a correlated band where 28

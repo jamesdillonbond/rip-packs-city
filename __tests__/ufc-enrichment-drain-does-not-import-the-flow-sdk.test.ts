@@ -12,11 +12,22 @@
 // every cold start of this `maxDuration = 300` cron logged one and Vercel
 // captured it as a runtime error.
 //
-// ⭐ MEASURED, and the attribution is what makes it actionable. Over 7 days that
-// single group is **299 events**, and its `routes` field lists EXACTLY the two
-// routes importing that helper — this one and `/api/wallet-backfill-ufc` — and
-// NOT `/api/sniper-feed`, which has far more cold starts (254 timeouts in the
-// same window). A global dependency would have shown up everywhere; this did not.
+// 🚨 THE ORIGINAL ATTRIBUTION NOTE HERE WAS WRONG AND IS CORRECTED (2026-09-05).
+// It claimed the group's `routes` field listed "EXACTLY the two routes importing
+// that helper — this one and /api/wallet-backfill-ufc". In fact
+// `/api/wallet-backfill-ufc` imports only `next/server` and `@/lib/supabase`, and
+// a post-deploy window lists `/api/wallet-search` and `/api/sales-indexer`, which
+// import `@/lib/chains/flow/flow` (→ `@onflow/fcl`) directly. Reading one 7-day
+// `routes` sample as the emitter set was the mistake.
+//
+// ⭐ Accurate version: DEP0169 comes from ANY route whose module graph loads
+// `@onflow/fcl`. This route reached it transitively, for one string constant —
+// which is what made it removable HERE and not elsewhere.
+//
+// ⚠ NOTE THE ASSERTIONS BELOW NEVER DEPENDED ON THE WRONG CLAIM. They pin the
+// import graph and the UUID value, both of which are properties of this file.
+// Only the prose was wrong — but a wrong explanation in a test header is how the
+// next author inherits a wrong model, so it is corrected rather than deleted.
 //
 // ⚠ It is a WARNING and nothing was broken. The cost was SIGNAL: in a 12 h window
 // it was **174 of ~250 runtime-error events**, so the surface an operator reads

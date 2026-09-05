@@ -9,18 +9,33 @@ import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 // once per process, so every cold start of this `maxDuration = 300` cron logged
 // one, and Vercel captured it as a runtime error.
 //
-// ⭐ Measured over 7 days: that single deprecation group is **299 events**, and
-// its `routes` field lists EXACTLY the two routes importing
-// `wallet-backfill-helpers` — this one and `/api/wallet-backfill-ufc` — and NOT
-// `/api/sniper-feed`, which has far more cold starts. That is what makes it the
-// import chain rather than something global.
-//
 // ⚠ It is a WARNING, not a failure: nothing here was broken. What it cost was
 // SIGNAL — in a 12 h window it was **174 of ~250 runtime-error events (70%)**, so
 // anyone asking "why is production erroring" read mostly this.
 //
-// ⛔ `/api/wallet-backfill-ufc` genuinely runs Flow scripts and still needs the
-// SDK, so it will keep emitting this. Only this route's share goes away.
+// 🚨 CORRECTED 2026-09-05, same day it shipped. The original note here claimed the
+// group's `routes` field listed "EXACTLY the two routes importing
+// wallet-backfill-helpers — this one and /api/wallet-backfill-ufc". BOTH HALVES
+// ARE WRONG, and the error was reading a 7-day `routes` sample as if it were the
+// emitter set:
+//   · `/api/wallet-backfill-ufc` imports ONLY `next/server` and `@/lib/supabase`.
+//     It has no Flow SDK import at all and cannot have been emitting this.
+//   · A post-deploy window lists `/api/wallet-search` and `/api/sales-indexer`,
+//     which import `@/lib/chains/flow/flow` (→ `@onflow/fcl`) and `@onflow/types`
+//     DIRECTLY — they never went through `wallet-backfill-helpers`.
+//
+// ⭐ The accurate statement is simply: **DEP0169 is emitted by any route whose
+// module graph loads `@onflow/fcl`** — usually via `@/lib/chains/flow/flow`.
+// This route reached it transitively through `wallet-backfill-helpers` for the
+// sake of one string, which is what made it removable here and NOT elsewhere.
+// ⛔ So this fix removes THIS route's share only; the deprecation legitimately
+// continues from every route that actually needs the SDK.
+//
+// ✅ VERIFIED by forward test, which is what carries the claim: over a window
+// starting after the deploy, `get_runtime_errors` filtered to this route returns
+// NOTHING across two confirmed executions (15:07Z and 15:37Z, both logged in
+// `pipeline_runs`). The positive control matters — an absent event proves nothing
+// unless the route actually ran.
 const UFC_COLLECTION_UUID = COLLECTION_UUID_BY_SLUG.ufc
 
 // UFC wmc enrichment drain (UFC-WMC-NULLKEY fix).

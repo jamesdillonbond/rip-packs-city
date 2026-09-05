@@ -86,6 +86,28 @@ describe("SupportChat streaming path", () => {
     vi.stubGlobal("fetch", routeFetch(() => streamRes("Answer via event")))
     render(<SupportChat />)
     window.dispatchEvent(new CustomEvent("rpc-concierge-ask", { detail: { text: "hi from event" } }))
-    await waitFor(() => expect(document.body.textContent).toContain("Answer via event"), { timeout: 2000 })
+    // ⚠ 4000, raised from 2000 on 2026-09-05 — this test is the suite's most
+    // frequent flake and it fails ONLY under full-suite concurrency.
+    //
+    // MEASURED: green in isolation (2 for 2) and red in 2 of 3 full runs, at a
+    // duration (~2,180 ms) that matches the old budget being spent rather than a
+    // hang. On the red runs the PANEL IS RENDERED — the failure dump shows the
+    // "RPC Concierge chat" dialog — so the window event WAS received and
+    // `setIsOpen(true)` ran; only the streamed answer had not arrived yet.
+    //
+    // ⛔ THE ROOT CAUSE IS NOT ESTABLISHED, and this comment does not claim one.
+    // Two hypotheses were tested and DROPPED: (a) a missed listener — refuted,
+    // the panel opens; (b) leaked fake timers stopping the handler's real 80 ms
+    // `setTimeout` — refuted, every `__tests__` file that calls `useFakeTimers`
+    // also calls `useRealTimers`. What is left is that this path costs an extra
+    // 80 ms timer plus a re-render before the fetch even starts, on top of the
+    // stream, and 2 s is simply too tight for it under parallel load.
+    //
+    // ⚠ This RAISES A BUDGET; it does not weaken the assertion. The answer must
+    // still render or this fails. 4000 matches budgets already used elsewhere in
+    // `__tests__` and sits far under the 30 s `testTimeout` in vitest.config.ts.
+    // If it flakes again, the budget is NOT the cause — look at the stale
+    // `sendMessage` the 80 ms timer closes over in components/SupportChat.tsx.
+    await waitFor(() => expect(document.body.textContent).toContain("Answer via event"), { timeout: 4000 })
   })
 })
