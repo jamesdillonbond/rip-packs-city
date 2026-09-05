@@ -10,6 +10,50 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · 🏁 SESSION CLOSE — the overnight pass in full: 2 DB ships, 4 filings, and SIX corrections to my own claims · Cowork (cloud, autonomous)
+
+**Docs updated at close:** `docs/overnight/focus.md` (new STEER, header re-dated to 09-05), `docs/reference/database.md` (four new sections), `docs/overnight/metrics-latest.json`, `docs/handoff-2026-09-05-overnight.md` (mirrored to the Project). **Blocks 7 and 8 of my own scheduled queue were DELETED** — the thread is being archived and they were bound to this session; the two legitimate future triggers (FMV re-baseline 09-08, PAT rotation 11-07) are untouched.
+
+## Shipped
+
+| migration | what | measured |
+|---|---|---|
+| `20260905110532` | the 403 arm attributes the Atlas walk by `request_id` | board went **1 critical → 0**; validated live at **8× its ship-time rate** and correctly held `info` |
+| `20260905134612` | `pack_ev_latest` joins `pack_ask_state` once instead of per history row | **707,048 → 10,898 buffers (65×)**, equivalence proven both directions |
+
+Revert paths are in each entry above. Both are plain `CREATE OR REPLACE` — no drop, no cascade.
+
+## Filed, not shipped
+
+`pack_ev_latest`'s original filing (superseded — it shipped) · the unmapped-drain stall test at **45.8%** with the obvious retune measured **worse** · thumbnail weight (**corrected by a colleague** — 90% is the CDN, not our proxy) · All Day Genesis art dark upstream.
+
+## ⚠ Six corrections to my own claims, listed because the pattern is the finding
+
+1. **"96.4% description coverage"** — true of the *Atlas-covered* population (96.6% of 13,915); a further 6,697 sit outside Atlas at 1.1%. The retirement decision still stands (those rows were created while the walker was healthy and it was not filling them either; only 100 are user-reachable). **Quote coverage as "x% of &lt;named population&gt;", always.**
+2. **`cdn.nba.com` "blank on 4 of 4 NBA team pages"** — headless-sandbox HTTP/2 artifact. Real Chrome: naturalWidth 150, 0 blank of 84.
+3. **My isolation test for it could not have passed** — a `data:` page cannot load any cross-origin image; the control failed too.
+4. **`pack_ev_latest` filed as "operator-gated"** — I inherited a verdict about the *materialized* sibling. A plain view is `CREATE OR REPLACE`-able and all 68 dependents are safe by construction.
+5. **The caller evidence for that ship** — `ILIKE '%pack_ev_latest%'` matched `mv_pack_ev_latest` as a **substring**; the MV is not a caller at all. Conclusion survived, citation did not.
+6. **"43 CIDs × 5.1 MB ≈ 220 MB per page"** — not a page-weight claim; that page is 204 lazy images, 8 in viewport, **0 failed**.
+
+⭐ **Five of the six were caught by a control, not by review.** The transferable rule, now in `focus.md` and `database.md`: **this session's QA instruments fail toward false positives, and any `pg_stat_statements` mean is suspect until split pooled-vs-recent** — which bit **four separate times** in one night.
+
+## Health at close (07:56 PT)
+
+Security invariants **0 rows** · `detect_stalled_pipelines` **0** · secdef violations **0** · `get_pipeline_alerts` **0 critical** · Atlas sets stale >6h **0 of 266** · `editions_enriched` **converged to 0** with **0** enrich errors · pg_cron 24h **5,658 succeeded / 2 failed** (both from jobids no longer in `cron.job`).
+
+**Two trust breaches, both understood:** `unmapped_resolution_backlog_max` **132/100** (improving, 172 → 148 → 132) and `public_board_slow_count` **1** — `topshot_2025_rookie_cohort_stats` at 5,133 ms sampled **11:28Z**, which is **load, not shape** (the same pruned `count(*)` reads 10 ms now) and **predates the 13:46Z migration**. ⚠ Sentry **not read** — no MCP in this session; stated rather than skipped.
+
+## Owed, with dates
+
+⏳ `pack_ev_latest` falsifier — read `get_runtime_errors` for the two routes **after 2026-09-06** · `topshot-catalog-backfill` silence first testable **19:12 PT 09-05** · `allday-pack-opens-backfill` self-clears **~22:00 PT 09-05**.
+
+## Needs Trevor
+
+`sentinel` ack-or-retire (the ack mechanism is **recorded twice as his decision**) · the `mv_pack_ev_latest` rewrite (operator-gated, untouched) · `cloudflare-ipfs.com` still in the CSP for a decommissioned host · the unmapped-drain stall test's **design** call.
+
+**Revert:** n/a — close-out docs only.
+
 ### 2026-09-05 · ✅ OWED WATCH DISCHARGED — the first post-change MV refresh reads 15,329 blocks where the view alone used to cost 707,048 · Cowork (cloud, autonomous)
 
 The correction entry above closed with *"the first post-change run of jobid 245 lands at 14:42Z … **not read at time of writing**."* It has now been read, by **snapshotting `pg_stat_statements` before the run and differencing after** — a single-call delta, not a pooled mean, because a pooled mean is exactly what that entry warned about.
