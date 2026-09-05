@@ -872,11 +872,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Flowty's marketplace shut down ~2026-05-13. The former Step 2b (Flowty
-    // LiveToken FMV blend) and Step 2c (floor-ask proxy) read from
-    // cached_listings, which now holds only ~24 frozen multi-week-stale rows.
-    // FMV is now purely sales-based (outlier-filtered WAP + trimmed-median
-    // fallback). Both code paths were removed 2026-05-24.
+    // The former Step 2b (Flowty LiveToken FMV blend) and Step 2c (floor-ask proxy) read from
+    // `cached_listings`. Both code paths were removed 2026-05-24 and FMV is now purely sales-based
+    // (outlier-filtered WAP + trimmed-median fallback). That removal still stands — nothing here
+    // reads the table.
+    //
+    // ⚠ BUT THE REASON WRITTEN HERE IS NO LONGER TRUE, AND IT MISLEADS. This comment used to say
+    // `cached_listings` "now holds only ~24 frozen multi-week-stale rows". Measured 2026-09-04:
+    // the table holds ~300 rows across THREE collections and is rewritten every 20 minutes by the
+    // Vercel cron on `/api/topshot-listing-cache` (`15,35,55`), with live asks and `buy_url`s. It
+    // is one of the freshest tables in the database, not a fossil.
+    //
+    // Corrected because a future reader — this one nearly did — concludes from the old sentence
+    // that the whole table is dead and reasons on from there. The scope of the claim is now
+    // exactly what was measured: the FRESHNESS of `cached_listings`. Whether Flowty's marketplace
+    // is up, down, or partially retired was NOT measured here, so nothing above asserts it.
 
     // ── Step 3: Delete TODAY's snapshots for these editions only ─────────────
     // History matters: yesterday + earlier rows must persist so we can chart
@@ -965,7 +975,8 @@ export async function POST(req: NextRequest) {
     // ── Step 4: Build and insert fresh snapshots ──────────────────────────────
     // Sales-only FMV: outlier-filtered WAP (LiveToken-style averageWithoutWackos)
     // with trimmed-median fallback. The Flowty LiveToken blend and floor-ask
-    // proxy paths were removed 2026-05-24 (Flowty marketplace shutdown).
+    // proxy paths were removed 2026-05-24. ⚠ Do not re-derive their removal from
+    // "cached_listings is dead" — it is not; see the note at Step 2's end.
     const insertRows: Record<string, unknown>[] = []
     const blendedCount = 0
     const askProxyCount = 0
