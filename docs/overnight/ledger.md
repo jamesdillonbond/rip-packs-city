@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · 📏 MEASURED, ⛔ NOT SHIPPED — two new public-route timeouts share one root, and the obvious fix is refuted by measurement · Cowork (cloud, autonomous)
+
+Vercel runtime errors, 12h, **all 21 groups read**. Nineteen known. The two new ones are also the two newest by `first`, both `boundedRead` `RPC_READ_TIMEOUT` at 8,000 ms, both on **public** routes:
+
+| group | route | n / users | first |
+|---|---|---|---|
+| `v_topshot_pack_reality_ranker_staleness` | `/api/public/insights/pack-reality` | 6 / 2 | 2026-09-04 16:38Z |
+| `v_topshot_pack_ev_calibrated` (calibrated merge) | `/api/packs` | 2 / 1 | 2026-09-05 06:17Z |
+
+⚠ **`public_board_slow_count` read CLEAN the whole time**, and trust health carried only the known `unmapped_resolution_backlog_max` breach (148/100, down from 172 on 09-04). The night-pass skill says in as many words that this probe is not the instrument for public-page health and Vercel runtime logs are — **it held exactly as written**, and nothing DB-side would have surfaced either group.
+
+⭐ **They are ONE finding.** Both views expand `pack_ev_latest`, and that expansion is **>99.7% of each plan**: 705,997 and 707,584 total buffers, of which **705,98x is `pack_ev_latest`** — the calibrated view's own work is 1,591 buffers, the staleness view's is **9**. **706k buffers to answer a question whose answer is three rows.**
+
+🚨 **The half worth naming is not the `DISTINCT ON`.** Inside `pack_ev_latest`, `SubPlan 3` — the `NOT EXISTS` arm on `pack_ask_state` — runs **128,712 times for 381,922 buffers (54% of the query), returning zero rows on every loop**, because it is evaluated per `pack_ev_history` row *before* the `Unique` cuts 313,682 rows to 4,642. ⛔ I did **not** test a reordering: `pack_ev_latest` is shared across surfaces and a change to which rows survive that filter is a data defect, not a speedup.
+
+⛔ **The obvious cheap fix is MEASURED DEAD, recorded so it is not re-proposed.** "Point these at `mv_pack_ev_latest`, it already exists and refreshes every 30 min" fails on the facts: **0 of the 7 needed columns** (`collection_id, dist_id, is_positive_ev, pack_price, depletion_pct, fmv_coverage_pct, snapshotted_at`) and a different grain — **1,858 rows vs 4,642**. Not a drop-in, and never was one.
+
+⛔ **Not shipped, and the 2026-08-30 verdict on the sibling object is not being relitigated.** That entry proved a `mv_pack_ev_latest` rewrite equivalent in both directions and still declined it — `DROP MATERIALIZED VIEW … CASCADE` across two dependent views with deliberately divergent ACLs and a `security_invoker=on` reloption *"silently stripped four times in this repo"*; **"destructive multi-object SQL on a public read surface is outside what an autonomous pass ships."** That still stands.
+
+⭐ **What tonight adds is the one claim that entry explicitly declined to make.** It closed with *"nothing is starved."* Something is now: two public routes are crossing their read bound and the newer began **18 hours ago**. And `pack_ev_latest` is a **different object** from the MV that filing measured — one with **no materialized alternative to switch to**, which is what the refutation above establishes.
+
+⚠ **Quote the buffers, not the milliseconds.** Warm: 1,320 ms and 1,213 ms; one cold-ish first touch **7,441 ms** against the 8,000 ms bound, which is why the failures are intermittent rather than total. **705,987 buffers is identical cold and warm** — this repo published a cold-vs-warm ratio on this very table family once already and corrected it in the 08-30 entry. Also checked and excluded: `pack_ev_history` was VACUUMed and given `autovacuum_vacuum_insert_threshold = 5000` on 08-30, so **this is not the un-vacuumed heap-fetch disease** — the visibility map is current and the cost is real work.
+
+⛔ **Do NOT raise the 8,000 ms bound.** Both legs degrade honestly by design — `20260902032401` deliberately registered the staleness leg outside the board's fatal set so a slow leg renders `ranker_staleness` null instead of a 503. Raising it would hide a regression in exchange for nothing a reader can see.
+
+Filing: [inbox 2026-09-05T1120Z](inbox/2026-09-05T1120Z-two-new-route-timeouts-share-one-root-and-pack_ev_latest-has-no-materialized-alternative.md), with three falsifiers.
+**Revert:** n/a — measurement + docs only; no code, no DB state, no prod change.
+
 ### 2026-09-05 · ✅ SHIPPED (DB) — the 403 arm has been CRITICAL for three nights running, and the walk it was pointing at records the request ids that identify it · Cowork (cloud, autonomous)
 
 **Migration `20260905110532`** — `check_edge_fn_http_failures()` now attributes a pg_net 4xx to the Atlas editions walk by **joining `net._http_response.id` to `atlas_edition_requests.request_id`**, and reports an attributed, self-healing upstream challenge as `info` instead of `critical`.
