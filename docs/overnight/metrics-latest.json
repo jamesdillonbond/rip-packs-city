@@ -1,5 +1,5 @@
 {
-  "generated_at_pt": "2026-09-04T17:20:00-07:00",
+  "generated_at_pt": "2026-09-04T19:05:00-07:00",
   "pass": "2026-09-04 Cowork cloud — circulation decided, its denorm debris, and the signed-out surface QA that followed",
   "migrations_applied": [
     "20260904145331 base circulation = this printing's own mint (BEFORE trigger + hourly sync)",
@@ -14,7 +14,11 @@
     "fix(links) momentSubjectHref: a team Moment links to /team, not a /player page that 404s",
     "fix(media) IpfsThumb + useIpfsRetry: one retry on the cold-cache 502, shared by two surfaces",
     "fix(proxy) an anon-public page can reach the feed it calls (pinnacle-sniper-feed, pack-listings)",
-    "fix(ci) the anon-exec marker must name the function it decides for"
+    "fix(ci) the anon-exec marker must name the function it decides for",
+    "fix(media) useIpfsRetry: shared cold-cache retry, /insights/trophies gains a second attempt",
+    "fix(proxy) an anon-public page can reach the feed it calls (pinnacle-sniper-feed, pack-listings)",
+    "docs(fmv-recalc) correct a measurably false premise about cached_listings freshness",
+    "chore(cron) unschedule backfill-badges-from-sets — dead upstream, now redundant at 266/266"
   ],
   "converged": {
     "circulation_base_editions_corrected": 1312,
@@ -54,8 +58,17 @@
     "app/api/listing-cache/route.ts has the same || \"COMMON\" fabrication but only 1 of 201 rows arrives without traits; instrument is set_name IS NULL",
     "/api/golazos-sniper-feed and /api/allday-pack-listings 307 but have no anon-public caller — deliberately left gated, pinned by a test"
   ],
-  "queued": [
-    "app/api/fmv-recalc/route.ts asserts in a comment that Flowty shut down and cached_listings holds ~24 frozen rows; it refreshes every 20 min with ~103 live TS rows. Nothing broken; the comment will mislead.",
-    "v_topshot_parallel_premiums costs 48,916 buffers for 100 rows (91 ms warm) — the cold-read pressure behind one intermittent honest-failure render"
+  "queued": [],
+  "open_questions_closed_by_measurement": {
+    "wmc_mint_count_treadmill": "NOT a treadmill. The count read 4 then ~170 and the cursor had passed those editions twice, but a rewound tick fixed 168 instantly. My '1.70% regressed' metric compared against the value I WROTE at 08:04 rather than the CURRENT catalog — an expected value captured at time T is not a baseline for a column tracking a moving source. wmc vs catalog is 0 of 1,910,846. Real behaviour: denorm lag bounded by one ~2h reconcile cycle.",
+    "64_uncovered_trophy_editions": "It is 2. 62 of the 64 are dropTsFossils rows. Atlas covers 266 of 266 Top Shot sets; exactly one (152, 2023-24 Honors Diced) returns total_count=0, leaving 152:5366 (2 holders) and 152:5372 (0 holders). The retired route could not serve them either — its upstream is the same 530. Upstream absence, no action.",
+    "v_topshot_parallel_premiums_optimisation": "REFUSED, and measuring is what refused it. Swapping its fmv_snapshots laterals for edition_fmv_current would change 45 of 3,913 rows (1.15%) — with the LATERAL the FRESHER side, since it reads the newest snapshot while the rollup refreshes hourly. That trades a public accuracy board's freshness for buffers. Do not re-propose.",
+    "listing_cache_common_fabrication": "Re-measured: All Day is 1 of 100 rows arriving without traits and that row already stores a NULL tier; Top Shot is 89 of 100 and all 89 correctly NULL since this morning's fix. Still unexposed; decision to leave it stands.",
+    "badge_sync_workflow": "My own needs-trevor note called it 'dead weight worth deleting'. WRONG: it also drives allday-badge-low-ask-refresh (144/144 ok, 151,802 rows in 3 days), golazos-badge-low-ask-refresh (144/144) and allday-badge-ingest (3/3, 16,800). Deleting it would have killed three working pipelines. It is also GREEN while its Top Shot leg fails 0/12 — the 'ok means completed, not that its lanes worked' shape.",
+    "set_name_drift": "needs-trevor said 1,709 Moments. Re-measured over all 1,911,545 joined Top Shot rows: set_name differs on 0, blank player_name 0 (from 91,180 and 14,711 this morning). tier differs on 153, all above the reconcile cursor — lag, not drift."
+  },
+  "post_ship_watch": [
+    "topshot-badge-set-backfill should log NO new pipeline_runs rows after its next former slot (15 3,9,15,21 PT) — the vercel.json entry is removed and deployed in b9f1c07.",
+    "the wmc metadata reconcile cursor was rewound to ~103 during the mint_count investigation; it re-walks idempotently and was at 126:4424 at 18:30 PT."
   ]
 }
