@@ -47,7 +47,34 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
  * so a bound there would make one collection's stats answer under another
  * collection's label MORE often. Its main RPC was bounded; that helper was not.
  *
+ * ── 🚨 THE COUNT IS A CEILING, NOT A CENSUS — IT SEES ONLY CLIENT-SIDE BOUNDS ─
+ * Checked 2026-09-04, hours after this file was written, by reading the DB
+ * instead of trusting the guard: **`BOUNDED` above matches only bounds written
+ * in TypeScript.** A route whose RPC declares its own `statement_timeout` is
+ * bounded — and bounded BETTER, because a function-local timeout CANCELS the
+ * statement, while `boundedRead` only abandons the wait and leaves the query
+ * running. Measured against `pg_proc.proconfig`, 5 of the 25 RPCs these routes
+ * call carry one, and for **two routes that covers every read they make**:
+ *
+ *   • `app/api/profile/collection-stats` → `get_wallet_collection_stats` (20s).
+ *     Its header already documents the pairing: `maxDuration = 30` "MUST stay
+ *     above the RPC's own statement_timeout … or the lambda dies first on a cold
+ *     whale wallet and the caller never sees the 57014 -> 503."
+ *   • `app/api/sets` → `get_topshot_set_detail` + `get_topshot_set_progress`
+ *     (25s each).
+ *
+ * ⛔ **DO NOT "FIX" THOSE TWO.** Wrapping an already-cancelling read in a client
+ * timer adds a second, shorter deadline that abandons the wait before Postgres
+ * cancels the work — strictly worse than what is there.
+ *
+ * ⚠ They are NOT exempted in code, deliberately. An exemption list here would be
+ * a claim about `pg_proc` that a source-level test cannot verify — the exact trap
+ * this file was written about, pointed at itself. So they stay counted, the
+ * budget carries them, and the ceiling is documented instead. ⚠ Those timeout
+ * values are a DATED SAMPLE; re-read `pg_proc.proconfig` before quoting them.
+ *
  * ── WHAT THIS FILE CANNOT SEE, stated so a green run is not over-read ────────
+ *   • A DB-side `statement_timeout` (above) — so the number OVERSTATES the gap.
  *   • Reads reached through a `lib/` helper (the same one-level blindness the
  *     sibling ratchet documents against itself).
  *   • File-level only: a route with one bounded read and three bare ones counts
