@@ -10,6 +10,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — Candy MLB sale art was STILL blank on `/insights/top-sales` after this morning's fix for it, and the obvious next fix was measurably wrong too · Claude Code (Trevor's box, interactive)
+
+**Found by rendered DOM, not by review**, on a board this session had no other reason to open. Playwright against live production: two `<img>` elements at **`naturalWidth = 0`**, and `/api/public/avatar-media` answering **502** — precisely the "two cards per anon load rendered blank" symptom that a change **earlier the same day** set out to remove.
+
+## Two locally-correct changes that do not compose
+
+`TopSalesBoardClient.tsx`, **2026-09-04**: *"chain-two (Candy MLB) sale art lives on arweave.net, which the CSP `img-src` deliberately does NOT carry — those hosts render through the same-origin avatar proxy… Two cards per anon load were blocked by CSP and rendered blank; route the URL through the proxy instead."*
+
+`app/api/public/avatar-media/route.ts`, **2026-08-16**: *"⚠ **REDIRECTS ARE REFUSED, NOT FOLLOWED.** An allowlisted host that 302s is the exact hole an allowlist would otherwise leave open."*
+
+**`arweave.net` ALWAYS 302s** to a content-addressed subdomain. So the morning's change moved the failure from a CSP refusal to a 502 and left the cards blank. ⭐ **Neither author was wrong locally** — refusing redirects is the correct SSRF posture, and routing a non-CSP host through a same-origin proxy is this repo's established pattern. They simply do not compose for this host, and only the rendered page could show it.
+
+## 🚨 The obvious fix was measured and rejected
+
+"Follow one hop and re-validate the target" is the natural move. **It would not have worked:** the asset is **6,872,443 bytes** against `MAX_AVATAR_BYTES` = **4,194,304**. ⛔ And raising that cap is worse than the bug — its 4 MB is the measured edge-cache ceiling (ipfs-media: 4.03 MB caches, 16.75 MB does not), so admitting a 6.87 MB PNG trades a blank card for an **uncacheable** one on every anon load of a public board.
+
+⭐ **The real mismatch:** full-size NFT sale ART was borrowing a proxy built for **80-pixel avatars**. Its size cap, content-type allowlist and redirect refusal are each correctly sized for that job and none of them fits this one.
+
+## Shipped — the host MOVED rather than the guard loosened
+
+`arweave.net` + `*.arweave.net` **into** the CSP `img-src` (alongside `ipfs.io`, `cloudflare-ipfs.com` and the existing wildcard `*.supabase.co`), and **out of** `PROXYABLE_AVATAR_HOSTS`. ⭐ **No board change was needed** — `avatarDisplayUrl` already returns a non-proxyable URL unchanged, so removing the host from the allowlist makes it hotlink by itself. Both subdomain forms are named because the browser follows the 302 itself.
+
+⚠ **The SVG rule was checked, not assumed, before touching this.** The proxy excludes `image/svg+xml` because *"serving one from OUR origin makes it same-origin with the session — a stored XSS delivered through a profile picture."* That reasoning is about **our** origin: a cross-origin `<img src>` does not execute scripts, so hotlinking is the **safer** direction here, not a loosening. The route's own removal comment records this.
+
+## Proven
+
+3 new cases in `avatar-proxy-hosts.test.ts`, **mutation-proven** (removing the CSP entry reds it). ⚠ They pin that the move **HAPPENED**, which the pre-existing disjointness guard structurally cannot see — **deleting the host from BOTH lists satisfies disjointness and leaves the art blank.** Third case is the control: the `seadn.io` hosts must still proxy, or deleting the whole allowlist would pass.
+
+⚠ **A test written this morning asserted the OLD behaviour and was INVERTED, not deleted** — *"routes arweave-hosted sale art through the same-origin avatar proxy"*. It pinned a property measured wrong in production, and this repo's rule is that such a test is inverted so the history stays legible: **a passing test asserting a broken promise is what holds the breakage in place.** Its header now carries both reasons the proxy could never serve this host.
+
+**Verified:** `tsc` clean · full suite **1,467 files / 16,248 tests, exit 0**.
+
+⏳ **OWED:** re-probe the live board after deploy and confirm both `<img>` report a non-zero `naturalWidth`. ⚠ The unit tests assert the URL SHAPE; only the browser can prove the bytes arrive, and the URL shape was exactly what looked right this morning.
+
+⚠ **Scope stated honestly:** 2 cards on one public board. **Zero user avatars are affected** — `profile_bio` + `user_profiles` hold 46 empty and one `seadn.io`. The avatar proxy is doing its own job correctly.
+
+**Revert:** `git revert <sha>` — the host returns to the proxy allowlist and out of the CSP, and the cards go blank again.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — `/api/recent-sales` answered a one-edition request with SOMEONE ELSE'S sales when the edition lookup failed, and the fix was already written ten lines above it · Claude Code (Trevor's box, interactive)
 
 **The one site the census filed two hours earlier as "worth doing next" — and I called it an open behaviour question, which was wrong.** The filing said the choice between a 404 and an empty list was undecided. It is not: **the same file had already decided it for the sibling parameter**, and I had read past that comment while writing the filing. Correcting my own framing here rather than leaving the filing to mislead the next reader.
