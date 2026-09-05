@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · 📏 MEASURED, ⛔ NOT SHIPPED — the unmapped-drain stall test fires 46% of the time on a working drain, and the retune I went in expecting measures WORSE · Cowork (cloud, autonomous)
+
+`get_pipeline_alerts()` renders *"NO ETA: the drain has STALLED — 0 rows resolved in the last 3h against 37/24h"* for `unmapped-sales-nfl_all_day`. The gate is `drain_stalled` in `refresh_unmapped_backlog_growth()`:
+
+```sql
+(p.outflow_3h * 16 < p.outflow_24h) AS drain_stalled
+```
+
+and it **also suppresses the ETA** — `days_to_drain` is computed only `WHEN NOT (outflow_3h * 16 < outflow_24h)`.
+
+⭐ **The function states its own premise in a comment, which is the only reason this was checkable:** *"Steady state puts an eighth of the 24h outflow in any 3h window."*
+
+🚨 **The drain is not steady, it is BATCHED.** Over the span it has actually been resolving (`resolved_at` 2026-08-29 12:01Z → now, **157 h, 5,581 rows**): **busiest single hour 542 rows**, median inter-resolution gap **0.00 h** (they land in bulk within one second), p99 **0.75 h**, max quiet **6.00 h**. A single 542-row burst inflates `outflow_24h` for the following 24 hours, so **every quiet hour after a burst reads "below half the 24h average" — which is true, and is not a stall.**
+
+**Fired at every hour of the 144 evaluable ones, restricted to hours with `outflow_24h > 0`:**
+
+| predicate | fires | rate |
+|---|---|---|
+| **`outflow_3h * 16 < outflow_24h`** (ships today) | 66 / 144 | **45.8%** |
+| `outflow_6h * 8 < outflow_24h` | 50 / 144 | 34.7% |
+| `outflow_12h * 2 < outflow_24h` | 87 / 144 | **60.4%** |
+
+⛔ **THE FIX I WENT IN EXPECTING IS REFUTED, and that is the half worth carrying.** A 12h window reads *zero rows* **0.0%** of the time (against 3.8% for 3h), so `12h × 2` looked obviously safe. **It measures 60.4% — worse than the test it would replace.** Same cause: a longer numerator window is *more* likely to straddle a burst the trailing 24h denominator still carries, not less. ⭐ **"The window is too short" was the intuitive diagnosis and it was wrong. No current-rate-versus-24h-average test can work on a process whose work arrives in large discrete batches** — re-tuning moves the false-positive rate around between 35% and 60% without fixing the shape.
+
+⛔ **Not shipped, because the correct fix is a DESIGN call and not a tuning one.** Three defensible shapes, listed in the filing: quiet-time against the observed maximum (would fire **0 times in 157 h** at 12 h, and never divides by a rate); active-hours-per-day instead of rows-per-hour; or drop the stall test and always publish the ETA with the 24h rate labelled as a trailing average — ⭐ worth real consideration, since **the ETA suppression is the actual cost**, and a rough ETA on a backlog whose oldest open sale is 2025-12-29 beats "NO ETA".
+
+⚠ **Stated rather than glossed:** the false-positive framing assumes the drain was healthy across all 144 hours. That is *supported* (5,581 rows resolved; `unmapped_resolution_backlog_max` fell **172 → 148** since 09-04) but **not proven hour by hour**, so 45.8% is an **upper bound on correctness, not a proof of 66 false alarms**. Measured on **`nfl_all_day` only** — a steadier collection may be served fine by the current predicate, so this is not an argument to change the arm for everyone. Severity is **`info`**; nothing is paged. The cost is a specific, alarming, usually-wrong sentence plus a suppressed ETA — the same alert-fatigue class as tonight's 403 ship, one band down.
+
+Filing: [inbox 2026-09-05T1215Z](inbox/2026-09-05T1215Z-the-unmapped-drain-stall-test-fires-46pct-of-the-time-and-the-obvious-retune-is-worse.md), with a falsifier.
+**Revert:** n/a — measurement + docs only; no code, no DB state, no prod change.
+
 ### 2026-09-05 · 📏 MEASURED, ⛔ NOT SHIPPED — two new public-route timeouts share one root, and the obvious fix is refuted by measurement · Cowork (cloud, autonomous)
 
 Vercel runtime errors, 12h, **all 21 groups read**. Nineteen known. The two new ones are also the two newest by `first`, both `boundedRead` `RPC_READ_TIMEOUT` at 8,000 ms, both on **public** routes:
