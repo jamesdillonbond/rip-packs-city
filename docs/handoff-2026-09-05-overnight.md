@@ -48,7 +48,12 @@ The alert board went **1 critical + 6 info → 0 critical**, 1 high, 6 info.
 
 ## MEASURED, NOT SHIPPED — three filings, each with falsifiers
 
-1. **`pack_ev_latest` is >99.7% of two public routes that are now timing out.**
+1. ✅ **SHIPPED AFTER THIS SECTION WAS WRITTEN — see the ledger entry for `20260905134612`.** My
+   "operator-gated" call below was **my own error**: the 08-30 verdict is about the MATERIALIZED
+   sibling needing `DROP … CASCADE`; `pack_ev_latest` is a **plain view**, so `CREATE OR REPLACE VIEW`
+   left all 68 dependents untouched. Equivalence proven both directions (4,642/4,642, EXCEPT 0 each
+   way); **707,048 → 10,898 buffers (65×)**; both routes now 200 in ~2 s cold.
+   **`pack_ev_latest` is >99.7% of two public routes that were timing out.**
    Two of 21 Vercel error groups are new and are the newest by `first`:
    `v_topshot_pack_reality_ranker_staleness` on `/api/public/insights/pack-reality` (6, from 09-04
    16:38Z) and `v_topshot_pack_ev_calibrated` on `/api/packs` (2, from 09-05 06:17Z) — both

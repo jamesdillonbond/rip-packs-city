@@ -1,3 +1,33 @@
+> # ✅ RESOLVED 2026-09-05 ~06:50 PT — SHIPPED as migration `20260905134612`. Read this banner, not the body.
+>
+> **The body's "not shipped, operator-gated" verdict was MY OWN ERROR and is superseded.**
+> I inherited the 2026-08-30 verdict (*"destructive multi-object SQL on a public read surface is
+> outside what an autonomous pass ships"*) and applied it to the wrong object. That verdict is about
+> **`mv_pack_ev_latest`, a MATERIALIZED view** whose rewrite needs `DROP … CASCADE` across dependents
+> with divergent ACLs. 🚨 **`pack_ev_latest` is `relkind = 'v'` — a PLAIN VIEW.** `CREATE OR REPLACE
+> VIEW` cannot change the column list, so its **68 dependents are untouched by construction**: no drop,
+> no cascade, no ACL or reloption loss. None of the blast-radius reasoning applied.
+>
+> **What shipped:** the correlated `EXISTS` on `pack_ask_state` (128,911 loops, 382,519 buffers, zero
+> rows every loop) became a `LEFT JOIN` on the UNIQUE `(collection_slug, dist_id)` key, with a
+> `COALESCE` guard so a future NULL `gross_ev` cannot change the result. Filters still run **before**
+> the `DISTINCT ON` — moving them would be a semantic change, not an optimisation.
+>
+> **Equivalence proven over the population both directions before applying:** 4,642 / 4,642,
+> `EXCEPT` 0 each way, `INTERSECT` 4,642. **Measured:** `pack_ev_latest` 707,048 → 10,898 buffers (65×);
+> `v_topshot_pack_reality_ranker_staleness` 705,997 → 10,907; `v_topshot_pack_ev_calibrated` 707,584 →
+> 12,618. Live after: `/api/public/insights/pack-reality` **200 in 2.1 s cold / 0.26 s warm**;
+> `/api/packs?collection=nba-top-shot` **200 in 2.2 s, 100 rows**.
+>
+> ⚠ **Still true from the body, and still worth reading:** the `mv_pack_ev_latest` swap is **measured
+> dead** (0 of 7 needed columns, different grain) — do not re-propose it. And the honest new cost is a
+> **~28–49 MB external sort per execution**; sized before shipping at tens of calls/hour, so not a
+> concurrency hazard, but it would become one if a high-frequency caller were added.
+>
+> ⏳ **The falsifier still stands and is the only thing that closes this:** the two Vercel error groups
+> must **stop**. Re-read `get_runtime_errors` for those routes after 2026-09-06. If they keep firing,
+> the view was not the binding cost.
+
 # Two NEW route timeouts appeared in the last 18h, they share ONE root, and the cheap fix is refuted
 
 **Filed 2026-09-05 ~11:20Z (04:20 PT) — Cowork, cloud, autonomous night pass.**
