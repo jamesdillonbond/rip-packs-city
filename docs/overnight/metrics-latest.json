@@ -1,77 +1,86 @@
 {
-  "generated_at_pt": "2026-09-04T19:45:00-07:00",
-  "pass": "2026-09-04 Cowork cloud — circulation decided, its denorm debris, and the signed-out surface QA that followed",
-  "migrations_applied": [
-    "20260904145331 base circulation = this printing's own mint (BEFORE trigger + hourly sync)",
-    "20260904145452 parallels take the measured mint too (392 wrong, one by 14x)",
-    "20260904150428 wmc.mint_count follows the decided rule (539,596 rows wrong, 66,376 by >10x)",
-    "20260904151427 unidentified Flowty listings stop publishing an assumed tier/serial/valuation",
-    "20260904152154 a parallel inherits its base edition's identity (107 read 'Unknown')",
-    "20260904154741 series_chain_numbers: Top Shot chain 0+1 are both catalog Series 1"
-  ],
-  "code_shipped": [
-    "fix(listings) topshot-listing-cache: an unidentified NFT states unknown instead of guessing",
-    "fix(links) momentSubjectHref: a team Moment links to /team, not a /player page that 404s",
-    "fix(media) IpfsThumb + useIpfsRetry: one retry on the cold-cache 502, shared by two surfaces",
-    "fix(proxy) an anon-public page can reach the feed it calls (pinnacle-sniper-feed, pack-listings)",
-    "fix(ci) the anon-exec marker must name the function it decides for",
-    "fix(media) useIpfsRetry: shared cold-cache retry, /insights/trophies gains a second attempt",
-    "fix(proxy) an anon-public page can reach the feed it calls (pinnacle-sniper-feed, pack-listings)",
-    "docs(fmv-recalc) correct a measurably false premise about cached_listings freshness",
-    "chore(cron) unschedule backfill-badges-from-sets — dead upstream, now redundant at 266/266",
-    "fix(proxy) /api/moment-thumbnail is anon-public — 26 of 374 public collection tiles were serving login HTML"
-  ],
-  "converged": {
-    "circulation_base_editions_corrected": 1312,
-    "circulation_parallel_editions_corrected": 449,
-    "holder_rows_behind_them": 186124,
-    "wmc_mint_count_corrected": 539811,
-    "wmc_mint_count_remaining": 4,
-    "parallel_identity_filled": 107,
-    "parallel_identity_remaining": 37,
-    "parallel_identity_remaining_note": "all 37 have a base that is ALSO nameless — 0 fixable; the corrector declines to invent rather than guess",
-    "series1_editions": 1310,
-    "series1_editions_before": 65,
-    "listings_still_fabricated": 0,
-    "wmc_base_keyed_resolvable_parallels": 0,
-    "secdef_anon_execute_violations": []
-  },
-  "verified_live_signed_out": {
-    "disney_pinnacle_sniper": "pinnacle-sniper-feed 200 (was 307), 12 rows, 'FMV coverage unavailable' gone",
-    "nba_top_shot_packs": "0 anon 307s (was /api/pack-listings), 1,002 images, 0 broken, 500 rows",
-    "insights_trophies": "204 images, 0 broken — the retry recovers or falls back cleanly",
-    "edition_98_3150__5": "3 ipfs 200s, 0 502s, 0 broken — the CIDs that 502'd this morning are warm",
-    "edition_227_7574": "Mint 249; ladder Standard /249 · Hexwave /25 2.7x · Jukebox /10 5.2x",
-    "nba_top_shot_collection_tab": "broken images 26 -> 0 of 374 after the fix; /api/moment-thumbnail 307 text/plain -> 200 image/jpeg"
-  },
-  "surface_qa": {
-    "instrument": "$HOME/qa-sweep.mjs on the device VM — a PLAIN headless Chromium, no Claude instrumentation",
-    "why": "both Claude browsers hang the route-level Suspense reveal on /moment and /edition ('SCANNING THE MARKETPLACE…'); plain Chromium reveals correctly. The recorded false-positive note said this reproduced on no normal-browser axis — it DOES reproduce in Claude in Chrome.",
-    "covered": "31 /insights boards, 5 collection overviews + snipers + packs, moment/edition/parallel/set/team/player/series pages, home, pricing, legal — desktop 1280 and mobile 390",
-    "mobile": "zero horizontal overflow on every page swept (scrollWidth == clientWidth == 390)",
-    "insights_boards": "all 31 return 200, no NaN/undefined, no '#N / 0', no honest-error states, no broken images"
-  },
-  "checked_and_correctly_left_alone": [
-    "offers-sweep 108/216 red — the documented circuit breaker probing hourly; public.offers is fresh (25,478 open, newest minutes ago) via the on-chain backstop",
-    "sync-nba-projections 0/26 — known-issue #8, operator-gated behind the sports-proxy; its alert suppression predicate (error = all_upstreams_failed) re-checked live and still holds",
-    "6,575 UUID-keyed 'fossil' editions — the documented dropTsFossils class, excluded from the sitemap (0 of 13,436 urls), 404+noindex, 1.08% of daily FMV writes. I filed this as a finding and then WITHDREW it; see the ledger",
-    "every 404 emits two robots tags plus a canonical — a 404 status dominates any meta tag, so nil impact and the fix means touching root-layout metadata",
-    "a cdn.nba.com logo reported naturalWidth 0 once via ERR_HTTP2_PROTOCOL_ERROR — curls 200 three times, box renders 96x96: a headless artifact",
-    "app/api/listing-cache/route.ts has the same || \"COMMON\" fabrication but only 1 of 201 rows arrives without traits; instrument is set_name IS NULL",
-    "/api/golazos-sniper-feed and /api/allday-pack-listings 307 but have no anon-public caller — deliberately left gated, pinned by a test"
-  ],
-  "queued": [],
-  "open_questions_closed_by_measurement": {
-    "wmc_mint_count_treadmill": "NOT a treadmill. The count read 4 then ~170 and the cursor had passed those editions twice, but a rewound tick fixed 168 instantly. My '1.70% regressed' metric compared against the value I WROTE at 08:04 rather than the CURRENT catalog — an expected value captured at time T is not a baseline for a column tracking a moving source. wmc vs catalog is 0 of 1,910,846. Real behaviour: denorm lag bounded by one ~2h reconcile cycle.",
-    "64_uncovered_trophy_editions": "It is 2. 62 of the 64 are dropTsFossils rows. Atlas covers 266 of 266 Top Shot sets; exactly one (152, 2023-24 Honors Diced) returns total_count=0, leaving 152:5366 (2 holders) and 152:5372 (0 holders). The retired route could not serve them either — its upstream is the same 530. Upstream absence, no action.",
-    "v_topshot_parallel_premiums_optimisation": "REFUSED, and measuring is what refused it. Swapping its fmv_snapshots laterals for edition_fmv_current would change 45 of 3,913 rows (1.15%) — with the LATERAL the FRESHER side, since it reads the newest snapshot while the rollup refreshes hourly. That trades a public accuracy board's freshness for buffers. Do not re-propose.",
-    "listing_cache_common_fabrication": "Re-measured: All Day is 1 of 100 rows arriving without traits and that row already stores a NULL tier; Top Shot is 89 of 100 and all 89 correctly NULL since this morning's fix. Still unexposed; decision to leave it stands.",
-    "badge_sync_workflow": "My own needs-trevor note called it 'dead weight worth deleting'. WRONG: it also drives allday-badge-low-ask-refresh (144/144 ok, 151,802 rows in 3 days), golazos-badge-low-ask-refresh (144/144) and allday-badge-ingest (3/3, 16,800). Deleting it would have killed three working pipelines. It is also GREEN while its Top Shot leg fails 0/12 — the 'ok means completed, not that its lanes worked' shape.",
-    "set_name_drift": "needs-trevor said 1,709 Moments. Re-measured over all 1,911,545 joined Top Shot rows: set_name differs on 0, blank player_name 0 (from 91,180 and 14,711 this morning). tier differs on 153, all above the reconcile cursor — lag, not drift.",
-    "anon_public_page_calls_gated_api": "SYSTEMATIC SCAN, not more one-offs. Enumerated all 175 /api/... paths called from client components and ran each through isPublicPath: 43 are gated, and every one of them is called only from a page that is ITSELF gated (profile/alerts/rewards/cost-basis/watchlist/stripe/mcp-keys, plus panini-blockchain/*, the pack simulator and dashboard/alerts — all four verified 307 live). After the four fixes today the class is CLOSED, bounded by an enumeration rather than by 'the ones I stumbled on'."
-  },
-  "post_ship_watch": [
-    "topshot-badge-set-backfill should log NO new pipeline_runs rows after its next former slot (15 3,9,15,21 PT) — the vercel.json entry is removed and deployed in b9f1c07.",
-    "the wmc metadata reconcile cursor was rewound to ~103 during the mint_count investigation; it re-walks idempotently and was at 126:4424 at 18:30 PT."
-  ]
+ "generated_at_pt": "2026-09-04T20:05:00-07:00",
+ "pass": "2026-09-04 Cowork cloud — circulation decided, its denorm debris, and the signed-out surface QA that followed",
+ "migrations_applied": [
+  "20260904145331 base circulation = this printing's own mint (BEFORE trigger + hourly sync)",
+  "20260904145452 parallels take the measured mint too (392 wrong, one by 14x)",
+  "20260904150428 wmc.mint_count follows the decided rule (539,596 rows wrong, 66,376 by >10x)",
+  "20260904151427 unidentified Flowty listings stop publishing an assumed tier/serial/valuation",
+  "20260904152154 a parallel inherits its base edition's identity (107 read 'Unknown')",
+  "20260904154741 series_chain_numbers: Top Shot chain 0+1 are both catalog Series 1",
+  "20260905024630 the Atlas walk also writes the prose + CDN media the dead catalog walker used to (splice into atlas_editions_drain)"
+ ],
+ "code_shipped": [
+  "fix(listings) topshot-listing-cache: an unidentified NFT states unknown instead of guessing",
+  "fix(links) momentSubjectHref: a team Moment links to /team, not a /player page that 404s",
+  "fix(media) IpfsThumb + useIpfsRetry: one retry on the cold-cache 502, shared by two surfaces",
+  "fix(proxy) an anon-public page can reach the feed it calls (pinnacle-sniper-feed, pack-listings)",
+  "fix(ci) the anon-exec marker must name the function it decides for",
+  "fix(media) useIpfsRetry: shared cold-cache retry, /insights/trophies gains a second attempt",
+  "fix(proxy) an anon-public page can reach the feed it calls (pinnacle-sniper-feed, pack-listings)",
+  "docs(fmv-recalc) correct a measurably false premise about cached_listings freshness",
+  "chore(cron) unschedule backfill-badges-from-sets — dead upstream, now redundant at 266/266",
+  "fix(proxy) /api/moment-thumbnail is anon-public — 26 of 374 public collection tiles were serving login HTML",
+  "chore(cron) unschedule topshot-catalog-backfill — dead upstream since 08-28 (7 of 7), retired for redundancy once all three of its jobs had live owners"
+ ],
+ "converged": {
+  "circulation_base_editions_corrected": 1312,
+  "circulation_parallel_editions_corrected": 449,
+  "holder_rows_behind_them": 186124,
+  "wmc_mint_count_corrected": 539811,
+  "wmc_mint_count_remaining": 4,
+  "parallel_identity_filled": 107,
+  "parallel_identity_remaining": 37,
+  "parallel_identity_remaining_note": "all 37 have a base that is ALSO nameless — 0 fixable; the corrector declines to invent rather than guess",
+  "series1_editions": 1310,
+  "series1_editions_before": 65,
+  "listings_still_fabricated": 0,
+  "wmc_base_keyed_resolvable_parallels": 0,
+  "secdef_anon_execute_violations": [],
+  "topshot_description_coverage_pct_before": 68.5,
+  "topshot_description_coverage_pct_after": 71.4,
+  "topshot_description_coverage_note": "frozen at 68.5% since 2026-08-28 when the dead walker stopped; climbing again on the Atlas walk (~100-160 rows per 2-min tick, 0 errors). Not a constant — re-measure, never quote.",
+  "vercel_crons": 35,
+  "dead_host_topshot_pipelines_remaining": 0,
+  "dead_host_note": "topshot-badge-set-backfill and topshot-catalog-backfill both unscheduled 2026-09-04 (routes kept, one-line restore in each header); topshot-misattrib-drain measured at 215 residual rows = a one-off script, not a pipeline.",
+  "atlas_new_editions_not_created": "16 of 100 on a sampled page of set 90 — parallels Atlas knows and we do not carry. Deliberately NOT auto-created: it ripples into circulation, the sitemap and every entity surface."
+ },
+ "verified_live_signed_out": {
+  "disney_pinnacle_sniper": "pinnacle-sniper-feed 200 (was 307), 12 rows, 'FMV coverage unavailable' gone",
+  "nba_top_shot_packs": "0 anon 307s (was /api/pack-listings), 1,002 images, 0 broken, 500 rows",
+  "insights_trophies": "204 images, 0 broken — the retry recovers or falls back cleanly",
+  "edition_98_3150__5": "3 ipfs 200s, 0 502s, 0 broken — the CIDs that 502'd this morning are warm",
+  "edition_227_7574": "Mint 249; ladder Standard /249 · Hexwave /25 2.7x · Jukebox /10 5.2x",
+  "nba_top_shot_collection_tab": "broken images 26 -> 0 of 374 after the fix; /api/moment-thumbnail 307 text/plain -> 200 image/jpeg"
+ },
+ "surface_qa": {
+  "instrument": "$HOME/qa-sweep.mjs on the device VM — a PLAIN headless Chromium, no Claude instrumentation",
+  "why": "both Claude browsers hang the route-level Suspense reveal on /moment and /edition ('SCANNING THE MARKETPLACE…'); plain Chromium reveals correctly. The recorded false-positive note said this reproduced on no normal-browser axis — it DOES reproduce in Claude in Chrome.",
+  "covered": "31 /insights boards, 5 collection overviews + snipers + packs, moment/edition/parallel/set/team/player/series pages, home, pricing, legal — desktop 1280 and mobile 390",
+  "mobile": "zero horizontal overflow on every page swept (scrollWidth == clientWidth == 390)",
+  "insights_boards": "all 31 return 200, no NaN/undefined, no '#N / 0', no honest-error states, no broken images"
+ },
+ "checked_and_correctly_left_alone": [
+  "offers-sweep 108/216 red — the documented circuit breaker probing hourly; public.offers is fresh (25,478 open, newest minutes ago) via the on-chain backstop",
+  "sync-nba-projections 0/26 — known-issue #8, operator-gated behind the sports-proxy; its alert suppression predicate (error = all_upstreams_failed) re-checked live and still holds",
+  "6,575 UUID-keyed 'fossil' editions — the documented dropTsFossils class, excluded from the sitemap (0 of 13,436 urls), 404+noindex, 1.08% of daily FMV writes. I filed this as a finding and then WITHDREW it; see the ledger",
+  "every 404 emits two robots tags plus a canonical — a 404 status dominates any meta tag, so nil impact and the fix means touching root-layout metadata",
+  "a cdn.nba.com logo reported naturalWidth 0 once via ERR_HTTP2_PROTOCOL_ERROR — curls 200 three times, box renders 96x96: a headless artifact",
+  "app/api/listing-cache/route.ts has the same || \"COMMON\" fabrication but only 1 of 201 rows arrives without traits; instrument is set_name IS NULL",
+  "/api/golazos-sniper-feed and /api/allday-pack-listings 307 but have no anon-public caller — deliberately left gated, pinned by a test"
+ ],
+ "queued": [],
+ "open_questions_closed_by_measurement": {
+  "wmc_mint_count_treadmill": "NOT a treadmill. The count read 4 then ~170 and the cursor had passed those editions twice, but a rewound tick fixed 168 instantly. My '1.70% regressed' metric compared against the value I WROTE at 08:04 rather than the CURRENT catalog — an expected value captured at time T is not a baseline for a column tracking a moving source. wmc vs catalog is 0 of 1,910,846. Real behaviour: denorm lag bounded by one ~2h reconcile cycle.",
+  "64_uncovered_trophy_editions": "It is 2. 62 of the 64 are dropTsFossils rows. Atlas covers 266 of 266 Top Shot sets; exactly one (152, 2023-24 Honors Diced) returns total_count=0, leaving 152:5366 (2 holders) and 152:5372 (0 holders). The retired route could not serve them either — its upstream is the same 530. Upstream absence, no action.",
+  "v_topshot_parallel_premiums_optimisation": "REFUSED, and measuring is what refused it. Swapping its fmv_snapshots laterals for edition_fmv_current would change 45 of 3,913 rows (1.15%) — with the LATERAL the FRESHER side, since it reads the newest snapshot while the rollup refreshes hourly. That trades a public accuracy board's freshness for buffers. Do not re-propose.",
+  "listing_cache_common_fabrication": "Re-measured: All Day is 1 of 100 rows arriving without traits and that row already stores a NULL tier; Top Shot is 89 of 100 and all 89 correctly NULL since this morning's fix. Still unexposed; decision to leave it stands.",
+  "badge_sync_workflow": "My own needs-trevor note called it 'dead weight worth deleting'. WRONG: it also drives allday-badge-low-ask-refresh (144/144 ok, 151,802 rows in 3 days), golazos-badge-low-ask-refresh (144/144) and allday-badge-ingest (3/3, 16,800). Deleting it would have killed three working pipelines. It is also GREEN while its Top Shot leg fails 0/12 — the 'ok means completed, not that its lanes worked' shape.",
+  "set_name_drift": "needs-trevor said 1,709 Moments. Re-measured over all 1,911,545 joined Top Shot rows: set_name differs on 0, blank player_name 0 (from 91,180 and 14,711 this morning). tier differs on 153, all above the reconcile cursor — lag, not drift.",
+  "anon_public_page_calls_gated_api": "SYSTEMATIC SCAN, not more one-offs. Enumerated all 175 /api/... paths called from client components and ran each through isPublicPath: 43 are gated, and every one of them is called only from a page that is ITSELF gated (profile/alerts/rewards/cost-basis/watchlist/stripe/mcp-keys, plus panini-blockchain/*, the pack simulator and dashboard/alerts — all four verified 307 live). After the four fixes today the class is CLOSED, bounded by an enumeration rather than by 'the ones I stumbled on'."
+ },
+ "post_ship_watch": [
+  "topshot-badge-set-backfill should log NO new pipeline_runs rows after its next former slot (15 3,9,15,21 PT) — the vercel.json entry is removed and deployed in b9f1c07.",
+  "the wmc metadata reconcile cursor was rewound to ~103 during the mint_count investigation; it re-walks idempotently and was at 126:4424 at 18:30 PT."
+ ]
 }
