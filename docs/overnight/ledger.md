@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · 📏 BLOCK 5 — tonight's 16 new Ultimates verified end to end, four alarms refuted, and one real mobile-weight finding · Cowork (cloud, autonomous)
+
+⚠ **Environment: the device bridge dropped mid-block and cloud push is operator-blocked** (`not in this session's authorized repository set`). The bridge returned before close, so this pushed normally. **Trevor's machine and Claude Code are unaffected — commit as usual.**
+
+## The 16 new Ultimate 1/1 editions: rendered, not just re-queried
+
+All checks against **served HTML** (immune to the route-level Suspense reveal that makes both Claude browsers a false-positive generator on `/moment` and `/edition`):
+
+- **5 of 5 sampled edition pages: HTTP 200, ~125 KB**, correct titles, **4 JSON-LD blocks**, self-canonical, OG route wired. Meta description carries the migration's derived fields verbatim — *"Tier ULTIMATE. Series 2023-24. Circulation 1."*
+- **Set rollups include them:** `/set/2023-rookie-ultimates` reports **10 editions / 11 circulation** (9 created tonight + 1 pre-existing) and `/set/wnba-rookie-ultimate-2026` **8 editions / 8 circulation** (7 + 1).
+- **Series rollups include them:** chain series 6 → `/series/series-5` (2,547) and chain series 8 → `/series/series-7` (5,396, incl. 325 created tonight).
+- **Player pages** (Wembanyama, Kiki Rice) and **the trophy case** all 200.
+- **Sitemap valid:** 5 shards, **34,214 URLs**, and both sampled new-edition URLs present in shard 1, correctly percent-encoded.
+- ⭐ **The original defect is closed end to end.** All five *held* Ultimates now carry full holder-denorm metadata (player, set, `ULTIMATE`, serial 1 — no more "Unknown") **and their art serves**: two IPFS PNGs at 5.49/5.74 MB and three CDN JPEGs at ~0.84 MB, all 200, and both CIDs also serve **through our own proxy** at byte-identical sizes. **No blank tiles.**
+
+## Four alarms raised and refuted — each by a check, not a hunch
+
+1. **"My migration left `set_id` NULL on the 16."** ⛔ No: **no edition in sets 140 or 253 has a `set_id`, including the pre-existing ones**, and neither set has a row in `sets` at all. The migration inherited the sibling's NULL correctly. (23.3% of Top Shot editions carry a NULL `set_id` — pre-existing and broad.)
+2. **"The edition pages reference the dead host `public-api.nbatopshot.com`."** ⛔ They do, but as **collection-config metadata** (`graphqlUrl`/`gqlEndpoint`) in the RSC payload — **not image URLs**. Nothing on the page fetches art from it.
+3. **"Sets with no `sets` row must 404."** ⛔ Both render **200** with correct titles and full aggregates; the set page derives from editions.
+4. **"Series 8 is the largest series (5,396 editions) and its page 404s."** ⛔ **`/series/series-7` reports exactly 5,396** — the DB stores **chain** series numbers and the pages use **catalog** numbers (chain 0+1 → catalog 1, per `20260904154741`). `/series/series-8` correctly 404s because there is no catalog Series 8. **Nothing is orphaned.**
+
+## The one real finding — and my first framing of it was wrong by an order of magnitude
+
+`editions.thumbnail_url`: **11,668 CDN / 2,334 `ipfs.dapperlabs.com` / 6,597 NULL.** Eight random IPFS thumbs fetched whole came back **2.6–7.7 MB, mean ≈5.1 MB, 8 of 8 PNG**, against a CDN JPEG control at **837 KB** — ~**6×**. Measured display size on `/insights/trophies`: **43 tiles, all 281 CSS px** at DPR 1.25 ≈ **351 device px**.
+
+⭐ **Nothing in the path resizes, and one link is ours:** plain `<img>` (not `next/image`); `ipfs.dapperlabs.com` is **absent from `next.config` `remotePatterns`**; and `/api/public/ipfs-media/[cid]` returned **5,487,319 b — byte-identical to the direct gateway fetch**, with no resize logic in the route. A width parameter and cache there needs no upstream cooperation.
+
+⛔ **My first read — "43 CIDs × 5.1 MB ≈ 220 MB for one public page" — is NOT a page-weight claim, and the real browser is what showed why.** That page: **205 `<img>` tags, painted 1 / failed 0 / pending 204, all 204 `loading="lazy"`, only 8 in the viewport** on a **21,918 px** document. **Lazy loading is working; nothing there is broken.** ⚠ I also briefly read `painted 0` as *"the trophy case renders no art"* — it meant "not requested yet". **`naturalWidth === 0` is a failure only when `complete` is true**, and I had to measure `complete` to tell them apart.
+
+**What survives, at its true size:** ~5 MB per tile *actually scrolled past*, for a 351 px slot — invisible to every instrument we have, because it is not an error, not a 4xx, and not a blank image. Not urgent, degrades gracefully, filed so the size is known. Three falsifiers in the filing; **the wallet and collection grids were NOT measured** and are the likeliest place to show many at once.
+
+Filing: [inbox 2026-09-05T1235Z](inbox/2026-09-05T1235Z-2334-editions-serve-multi-MB-full-resolution-pngs-for-a-281px-tile-and-we-own-the-proxy.md).
+**Revert:** n/a — QA + docs only; no code, no DB state, no prod change.
+
 ### 2026-09-05 · 📏 MOBILE QA at a TRUE 390 px — clean, and two more of my own instrument's artifacts identified · Cowork (cloud, autonomous)
 
 ⭐ **Capability note worth carrying: the device-VM headless sweep can do a true 390 px viewport, which the Cowork browser cannot** — `resize_window` bottoms out at ~738 px, and the QA skill tells you to report that as a caveat rather than claim a sub-420 result. Run with `isMobile`, `hasTouch`, `deviceScaleFactor: 3` and an iOS UA, scrolled to force lazy content.
