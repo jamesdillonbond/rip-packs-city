@@ -34,10 +34,21 @@
 --   is not stationary instead of picking a winner. days_to_drain is retained for
 --   back-compat and now carries the 7d figure (NULL while stalled).
 --
--- anon-exec: neither function is anon/authenticated-executable. Both are SECDEF with
---   acl {postgres=X/postgres,service_role=X/postgres}; signatures are UNCHANGED (both
---   take zero arguments), so CREATE OR REPLACE cannot create a new default-PUBLIC
---   overload here. Re-verified after apply.
+-- ANON-EXECUTE DECISION. Neither function is anon/authenticated-executable. Both are
+--   SECDEF with acl {postgres=X/postgres,service_role=X/postgres}; signatures are
+--   UNCHANGED (both take zero arguments), so CREATE OR REPLACE cannot create a new
+--   default-PUBLIC overload and a REVOKE here would be a no-op that pretends to be a
+--   change. Re-verified after apply. The two machine-readable markers:
+-- anon-exec: intentional — already revoked; CREATE OR REPLACE does not reset a function ACL (refresh_unmapped_backlog_growth)
+-- anon-exec: intentional — already revoked; CREATE OR REPLACE does not reset a function ACL (get_pipeline_alerts_core)
+--
+-- ⚠ THIS FILE DIVERGES FROM supabase_migrations.schema_migrations.statements BY EXACTLY
+--   THIS COMMENT BLOCK, and by nothing else. The applied statement carried a prose
+--   `-- anon-exec:` line that did NOT name either function on its own line, and
+--   `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` keys the
+--   marker PER FUNCTION NAME — so it reded main. The two marker lines above were added
+--   post-apply. Applied-statement md5 78551566e6300612ba060cd146db1791 (14,703 chars);
+--   the executable SQL is untouched.
 --
 -- REVERT:
 --   Restore both function bodies from the prior migrations. Pre-change identities:
