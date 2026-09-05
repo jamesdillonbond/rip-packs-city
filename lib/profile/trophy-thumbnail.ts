@@ -30,6 +30,13 @@
 // ⚠ Re-derive before adding a collection. A guessed allowlist silently drops the
 // art for whichever host it forgot, and the slab renders blank with nothing to
 // explain it — so widen this from the QUERY, never from memory.
+//
+// ✅ RE-DERIVED 2026-09-05: the host SET is unchanged — the same seven, no new
+// arrival. Only the counts moved (assets.nbatopshot.com 11,064 → 11,667,
+// ipfs.dapperlabs.com 2,248 → 2,335; the other five identical).
+// ⭐ Which is the point of re-running it: a COUNT moving while MEMBERSHIP holds
+// is the case where "the numbers changed, so the list must be stale" and "the
+// numbers are the same, so nothing changed" are BOTH wrong. Diff the set.
 const ALLOWED_HOSTS = new Set([
   "assets.nbatopshot.com",
   "media.nflallday.com",
