@@ -35,6 +35,21 @@
 
 7. ⓘ **Trust board carries TWO breaches and neither is new work.** `unmapped_resolution_backlog_max` **132** (breach_at 100) is the known nfl_all_day resolver backlog and it is **still declining** — 172 → 148 → **132** across the last three readings, so the trend is right and the drain is worker-side. The second, **`public_board_slow_count` = 1** (breach_at 1), resolves to exactly one board: **`topshot_2025_rookie_cohort_stats`, 5,133 ms against a 3,000 ms budget** — and it is **NOT a regression**. ⭐ **The history is bimodal and load-dependent**: the same plain view returning the same **1 row** measures 727–1,705 ms on most sweeps and spikes to 3,008 / 3,314 / 3,376 / 4,148 / 5,133 ms on others. Its normal cost sits comfortably inside the budget; it exceeds only when the instance is busy. ⚠ **So this arm is reporting CONTENTION, not a broken board** — which is arguably what an early-warning arm should do, but it means the remedy is not in the view. ⛔ **Deliberately not retuned.** The budget is `3× measured-warm capped at 25 s`, and for a view whose high-normal is already 1,705 ms a 3,000 ms budget is ~1.06× that — tight enough to fire on load alone. **Widening a trust-board threshold is exactly how a real breach gets hidden, and the board is Trevor's**, so this is recorded, not changed. ⓘ Read it with the cadence in mind: the sweep runs **4×/day** (`28 0,6,11,20`) and the metric that consumes it runs at `48 2,8,14,20`, so a breach can reflect a reading up to ~6 h old — the 11:28Z sample is what the 14:48Z metric published. **Not a stall; by design.**
 
+8. ⏳ **OWED WATCH (new, from tonight's `resolve-topshot-stubs` wall fix) — and it needs PATIENCE, not a quick look.** The forward test is that **no `Task timed out after 30 seconds` event attributes to `/api/cron/resolve-topshot-stubs` again**, and that its terminal-row count stops falling short of its heartbeat count. ⚠ **Do NOT read this early and call it fixed.** The pre-fix kill rate was **3 in 121 invocations (2.5%)**, so at 48 runs/day a clean 24 h is only ~1.2 expected kills — **P(0 | the fix did nothing) ≈ 0.30**, which the null explains easily. **~5 days of clean running gets that under 0.05.** This is the same trap the Step 6 watch fell into and is written here to avoid repeating it. ⭐ **A much faster POSITIVE control is available and is the one to use:** the fix only matters when the edge function crosses 30 s, so watch for a `topshot-stub-resolver` run with `duration_ms > 30000` that **now has a matching `resolve-topshot-stubs` terminal row**. **One** such pair proves the wall change works — a single positive beats waiting out a rate. ⓘ Query: heartbeats vs terminal rows since the deploy, joined against the edge fn's own duration:
+    ```sql
+    SELECT e.started_at, e.duration_ms,
+           EXISTS (SELECT 1 FROM pipeline_runs t
+                   WHERE t.pipeline='resolve-topshot-stubs'
+                     AND t.started_at BETWEEN e.started_at - interval '10 s'
+                                          AND e.started_at + interval '150 s') AS terminal_row_present
+    FROM pipeline_runs e
+    WHERE e.pipeline='topshot-stub-resolver'
+      AND e.started_at > '2026-09-05 16:20:00+00'   -- the deploy
+      AND e.duration_ms > 30000
+    ORDER BY e.started_at;
+    ```
+    ⚠ **`pipeline_runs` retains ~73 h**, so if nobody looks within three days the pre-fix comparison window is gone — the *rate* becomes unrecoverable even though the positive control above stays valid.
+
 6. ✅ **Verified, not mine:** Cowork's `pack_ev_latest` rewrite holds — 6 cold cache-busted probes of the two affected routes return **200 in 1.8–2.4 s** against the 8 s bound, and both error groups' last occurrence **predates** the 13:46Z migration. ⚠ Not closeable: at the observed base rates the elapsed window predicts only ~2.7 events, so P(0 | no change) ≈ 0.07 — the filing's next-day exit condition stands. ⭐ Incidentally it confirms the 09-04 `RPC_READ_TIMEOUT` work end-to-end: the stored error carries that `code`, so a bound timeout is now classifiable in production instead of looking like a generic 500.
 
 
