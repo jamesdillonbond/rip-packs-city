@@ -4,8 +4,11 @@ import path from "node:path"
 import {
   PROXYABLE_AVATAR_HOSTS,
   PROXY_CONTENT_TYPES,
+  CSP_ALLOWED_IMAGE_HOSTS,
+  CSP_ALLOWED_IMAGE_HOST_SUFFIXES,
   isProxyableAvatarUrl,
   avatarDisplayUrl,
+  canDisplayAvatarUrl,
 } from "@/lib/media/avatar-proxy"
 
 // The host allowlist IS the SSRF guard for /api/public/avatar-media, exactly as
@@ -179,5 +182,71 @@ describe("Arweave art hotlinks rather than proxying", () => {
     // above and silently stop proxying everything.
     expect(isProxyableAvatarUrl("https://i2c.seadn.io/x/y.png")).toBe(true)
     expect(imgSrc()).not.toContain("seadn.io")
+  })
+})
+
+
+// ── THE MIRROR IS NOW ACTUALLY MIRRORED (2026-09-05) ───────────────────────
+//
+// `CSP_ALLOWED_IMAGE_HOSTS` carried a comment saying this file kept it in sync
+// with proxy.ts. It did not — no test in the repo read that constant at all,
+// and the list had drifted FOUR hosts behind the real `img-src`
+// (gateway.pinata.cloud, *.supabase.co, arweave.net, *.arweave.net). Every one
+// of those renders fine in a browser while `canDisplayAvatarUrl()` reported it
+// undisplayable, which swaps a real avatar for the monogram default. The
+// Arweave pair is the one with teeth: it was moved INTO the CSP on 2026-09-04
+// specifically so that art would hotlink, and this file went on hiding it.
+//
+// The disjointness test above could never have caught this. Disjointness is
+// satisfied by a mirror that is EMPTY.
+describe("CSP_ALLOWED_IMAGE_HOSTS mirrors the real img-src", () => {
+  const imgSrcHosts = (): string[] => {
+    const src = fs.readFileSync(path.join(process.cwd(), "proxy.ts"), "utf8")
+    const m = src.match(/"img-src ([^"]+)"/)
+    expect(m, "img-src directive not found in proxy.ts").toBeTruthy()
+    return [...m![1].matchAll(/https:\/\/(\S+)/g)].map((x) => x[1])
+  }
+
+  it("reconstructs the CSP host set exactly — no host missing, none invented", () => {
+    // Wildcards are stored as suffixes WITH the leading dot, so `*.arweave.net`
+    // round-trips to `.arweave.net` and back. Comparing sorted sets means a host
+    // added to proxy.ts and forgotten here fails, and so does the reverse.
+    const fromCsp = imgSrcHosts()
+      .map((h) => (h.startsWith("*.") ? h.slice(1) : h))
+      .sort()
+    const fromMirror = [...CSP_ALLOWED_IMAGE_HOSTS, ...CSP_ALLOWED_IMAGE_HOST_SUFFIXES].sort()
+    expect(fromMirror).toEqual(fromCsp)
+  })
+
+  it("every wildcard entry keeps its leading dot", () => {
+    // Without the dot, `arweave.net` as a suffix also matches `evilarweave.net`,
+    // which anyone can register — the same bypass the SSRF block above pins.
+    for (const suffix of CSP_ALLOWED_IMAGE_HOST_SUFFIXES) {
+      expect(suffix.startsWith("."), suffix).toBe(true)
+    }
+    expect(canDisplayAvatarUrl("https://evilarweave.net/a.png")).toBe(false)
+    expect(canDisplayAvatarUrl("https://notsupabase.co/a.png")).toBe(false)
+  })
+
+  it("says YES to the four hosts the stale mirror was hiding", () => {
+    // The regression fixtures. Each of these is named in the live img-src, so a
+    // browser paints it; before this change canDisplayAvatarUrl() said false.
+    for (const good of [
+      "https://gateway.pinata.cloud/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+      "https://arweave.net/iKT2pAHeP1QA1jZn_HHigZzs0dPOHrq_5_2KD9xUZjU",
+      "https://abc123.arweave.net/x.png",
+      "https://bxcqstmqfzmuolpuynti.supabase.co/storage/v1/object/public/avatars/a.png",
+    ]) {
+      expect(canDisplayAvatarUrl(good), good).toBe(true)
+    }
+  })
+
+  it("says NO to the decommissioned gateway that left the CSP with it", () => {
+    // cloudflare-ipfs.com fails DNS (0/8 CIDs). It is out of img-src, so a
+    // browser would refuse it before the dead lookup — the monogram is the
+    // honest render, not a broken-image icon.
+    expect(canDisplayAvatarUrl("https://cloudflare-ipfs.com/ipfs/QmAAA")).toBe(false)
+    const src = fs.readFileSync(path.join(process.cwd(), "proxy.ts"), "utf8")
+    expect(src).not.toContain("cloudflare-ipfs.com")
   })
 })

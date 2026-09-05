@@ -47,8 +47,12 @@ const CID_RE = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{40,})$/;
 // whichever gateway answered, so a gateway absent from the CSP would fix the
 // proxy leg and break the redirect leg in the same change.
 //
-// ⛔ `cloudflare-ipfs.com` is in that CSP and is NOT in this list on purpose:
-// the host is decommissioned and now fails DNS instantly (0/8 CIDs, <0.1 s).
+// ⛔ `cloudflare-ipfs.com` is NOT in this list, and as of 2026-09-05 it is no
+// longer in that CSP either: the host is decommissioned and fails DNS instantly
+// (0/8 CIDs, <0.1 s), so both the upstream slot and the redirect target were
+// dead surface. A legacy cloudflare URL still reaches this route, because
+// lib/ipfs-media.ts keeps matching it and rewrites it onto this proxy — where
+// the CID is served from a gateway below that actually answers.
 //
 // ⚠ EACH ENTRY IS AN SSRF-RELEVANT CONSTANT. CID_RE has already validated the
 // CID, and these bases are literals — never build one from request input.

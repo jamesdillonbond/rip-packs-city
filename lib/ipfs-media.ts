@@ -10,8 +10,15 @@
 // slow/flaky gateways whose bare `/ipfs/<cid>` art we proxy: ipfs.io (UFC /
 // legacy) and ipfs.dapperlabs.com (pre-2022 Top Shot Series-1 moments). Both
 // serve the same content-addressed CID, so the same-origin proxy (which fetches
-// upstream from ipfs.io) resolves either. cloudflare-ipfs.com is included for
-// parity with the proxy.ts CSP allow-list.
+// upstream from ipfs.io) resolves either.
+//
+// ⚠ cloudflare-ipfs.com STAYS IN THIS REGEX even though it was dropped from the
+// proxy.ts CSP on 2026-09-05. The original reason given was "parity with the CSP"
+// and that reason is now dead, but the entry earns its place on its own: matching
+// it REWRITES a legacy cloudflare URL onto our same-origin proxy, which resolves
+// the CID from a gateway that is still alive. Deleting it would leave such a URL
+// hotlinking a decommissioned host — i.e. removing it makes the failure WORSE,
+// which is the opposite of what "keep it in sync with the CSP" would suggest.
 const IPFS_GATEWAY_RE =
   /^https?:\/\/(?:ipfs\.io|ipfs\.dapperlabs\.com|cloudflare-ipfs\.com)\/ipfs\/([A-Za-z0-9]+)/;
 

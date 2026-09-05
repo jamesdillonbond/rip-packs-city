@@ -123,11 +123,22 @@ export function avatarDisplayUrl(raw: string | null | undefined): string {
 /**
  * Image hosts our CSP `img-src` already permits, so they render hotlinked.
  *
- * ⚠ A MIRROR OF `proxy.ts`, NOT THE SOURCE OF TRUTH — and it is kept in sync by
- * `__tests__/avatar-proxy-hosts.test.ts`, which parses the real directive out of
- * that file and fails if the two disagree. It is duplicated rather than
- * imported because `proxy.ts` is middleware: importing from it would drag
- * middleware code into any client bundle that asks whether a URL will render.
+ * ⚠ A MIRROR OF `proxy.ts`, NOT THE SOURCE OF TRUTH — and as of 2026-09-05 it is
+ * genuinely kept in sync by `__tests__/avatar-proxy-hosts.test.ts`, which parses
+ * the real `img-src` directive out of that file and fails if the two disagree.
+ *
+ * ⛔ THAT TEST DID NOT EXIST WHEN THIS COMMENT FIRST CLAIMED IT DID, and the
+ * mirror had silently drifted four hosts behind the CSP: `gateway.pinata.cloud`,
+ * `*.supabase.co`, `arweave.net` and `*.arweave.net` were all permitted by the
+ * real policy and all reported UNDISPLAYABLE here. That is not cosmetic —
+ * `canDisplayAvatarUrl()` returning false swaps a perfectly renderable avatar
+ * for the monogram default, so the Arweave art that was deliberately moved INTO
+ * the CSP on 2026-09-04 (so it would hotlink) was still hidden by this file.
+ * A comment asserting a guard is not a guard.
+ *
+ * It is duplicated rather than imported because `proxy.ts` is middleware:
+ * importing from it would drag middleware code into any client bundle that asks
+ * whether a URL will render.
  */
 export const CSP_ALLOWED_IMAGE_HOSTS: readonly string[] = [
   "assets.nbatopshot.com",
@@ -141,11 +152,38 @@ export const CSP_ALLOWED_IMAGE_HOSTS: readonly string[] = [
   "asset-preview.disneypinnacle.com",
   "asset-preview.ufcstrike.com",
   "ipfs.dapperlabs.com",
+  "gateway.pinata.cloud",
   "ipfs.io",
-  "cloudflare-ipfs.com",
   "storage.googleapis.com",
   "cdn.nba.com",
   "cdn.wnba.com",
+  "arweave.net",
+  // ⛔ `cloudflare-ipfs.com` WAS HERE AND WAS REMOVED 2026-09-05, together with
+  // its two entries in the proxy.ts CSP. The host is DECOMMISSIONED — it fails
+  // DNS instantly, measured 0/8 CIDs in under 0.1 s — and nothing references it:
+  // zero rows across every url/image/avatar/media/art/thumbnail column of every
+  // live public table (the audit_* snapshot tables were excluded and are not
+  // read by any route). A CSP entry for a host that cannot answer is not a
+  // fallback, it is a wider policy that buys nothing.
+]
+
+/**
+ * Wildcard `img-src` entries, as SUFFIXES INCLUDING THE LEADING DOT.
+ *
+ * ⚠ THE LEADING DOT IS THE WHOLE SAFETY ARGUMENT. `*.arweave.net` in a CSP
+ * matches subdomains only, so the suffix must be `.arweave.net` — matching on
+ * `arweave.net` would also admit `evilarweave.net`, which anyone can register.
+ * That is the exact bypass class `__tests__/avatar-proxy-hosts.test.ts` already
+ * pins for the proxy allowlist; the same rule has to hold here.
+ *
+ * (This predicate only decides whether to paint an <img> or fall back to the
+ * monogram — it is not an SSRF boundary, nothing is fetched by us on its say-so.
+ * It is written to the stricter standard anyway, because the next reader will
+ * not know which of the two lists they are looking at.)
+ */
+export const CSP_ALLOWED_IMAGE_HOST_SUFFIXES: readonly string[] = [
+  ".supabase.co",
+  ".arweave.net",
 ]
 
 /** Our own origin — `'self'`, so always renderable. */
@@ -173,5 +211,6 @@ export function canDisplayAvatarUrl(raw: string | null | undefined): boolean {
   }
   if (url.protocol !== "https:") return false
   const host = url.hostname.toLowerCase()
-  return OWN_HOSTS.includes(host) || CSP_ALLOWED_IMAGE_HOSTS.includes(host)
+  if (OWN_HOSTS.includes(host) || CSP_ALLOWED_IMAGE_HOSTS.includes(host)) return true
+  return CSP_ALLOWED_IMAGE_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix))
 }
