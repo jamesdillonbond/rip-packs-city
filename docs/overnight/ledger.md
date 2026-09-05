@@ -10,6 +10,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (DB + code) — fmv-recalc Step 5 walked the SAME editions × fmv_snapshots anti-join TWICE a tick, and one of the two walks existed only to feed a `console.log` · 208,005 → 101,725 buffers · Claude Code (Trevor's box, interactive)
+
+**The filed item was `query_sql`, and it survived its own falsifier.** Inbox `2026-09-04T0500Z` measured `query_sql` as the database's #1 reader (12.1 M blocks / 24 h, 3.4× the next statement) and attributed it to `fmv-recalc`'s seven inline scans, filing the fix as "a daytime pass". Re-derived tonight before touching anything: `ops_pgss_delta('24 hours')` still ranks it **#1 at 11,893,325 blocks over 2,131 calls**, and `pipeline_runs` still shows **151 fmv-recalc runs** in the same window. The filing holds.
+
+⭐ **And its central claim — "invisible by construction" — was TESTED rather than inherited, because if it were false the whole restructure would be unnecessary.** `pg_stat_statements.track = top` and `select toplevel, count(*) from pg_stat_statements group by 1` returns **exactly one row, `toplevel = true`**. So the inner `EXECUTE`s really do get no queryid of their own and every caller of the wrapper collapses into one row whose text is `%s`. Confirmed, not assumed.
+
+**What the seven scans actually are, once read instead of counted.** Five (5b historical, 5c `edition_offers` ASK, 5e parallel ASK, 5d All Day ASK, Step 6 stale-touch) are load-bearing, carry prior measurement history in their own headers — including a falsified rewrite the header explicitly says not to re-try — and are untouched here. **Step 5 sent the other two, and they scan the same population:**
+
+| | buffers | what it produces |
+|---|---:|---|
+| scan 1 `COUNT(*)` | 101,407 | 🚨 **one `console.log` line. Nothing else.** |
+| scan 2 candidates | 106,598 | the backfill's candidate list |
+| | **208,005 / tick** | ×151 ticks/day |
+
+⛔ **Not a retirement, and I checked before assuming.** `pipeline_runs.extra->>'backfill'` over the trailing 73 h: **42 rows converted, all in ONE of 460 runs.** Rare, but real — so the step is kept in full, at half the cost. A "0 rows, 106K buffers" reading is an argument for making a step cheap, never on its own for deleting it.
+
+⛔ **The obvious optimisation is WRONG and is recorded so nobody re-tries it.** Scoping the scan to recently-created editions would have been far cheaper than what shipped. It is also incorrect: the missing population is **171 rows, all `nba_top_shot`, created 2026-06-21..2026-08-20 — none in the last 7 days** — yet 42 converted on 09-04, and **0 of the 171 have a `badge_editions` row at all**. Editions do not ENTER this set by being created; they LEAVE it when a badge row ARRIVES for one already in it. A `created_at` scope would drop exactly the conversions the step exists to make. *Scoping an aggregate is an equivalence claim* — this one does not hold, and a plan comparison would only have shown "faster".
+
+**Shipped:** `fmv_recalc_uncovered_editions(uuid, int)` (migration `20260905033723`), one MATERIALIZED anti-join answering both questions and returning **jsonb, not a row set** — a bare row set cannot carry the census, because zero rows would conflate "no candidates" with "the read failed". **101,725 buffers, −51.1%.** ⭐ The win is not the deduplicated count: it is that **the badge join stops DRIVING the anti-join.** Today `badge_editions` is the outer side and feeds 17,108 probes into `fmv_snapshots_2026` (38,362 buffers of merge join + 66,071 of probing); now the anti-join runs once and its **171 survivors drive an index scan into `badge_editions` for 342 buffers**. Same sibling shape as `fmv_recalc_edition_page` (2026-07-11): `SECURITY DEFINER`, `statement_timeout = 120s`, `search_path = public`, revoked `FROM PUBLIC, anon, authenticated` in one statement, `service_role` only — verified with `has_function_privilege`, not acl text, and `check_secdef_anon_exec_drift()` re-read after (**jsonb-returning, so read the ARRAY LENGTH — 0**).
+
+**The census stopped being write-only.** It cost a full anti-join and reached nobody but a Vercel log; it now rides in `pipeline_runs.extra` as `uncovered_census`, **null — never 0 — when the read failed**, sharing `backfill_error` because it is now literally one read. `?? 0` there would publish "every edition is priced" out of a read that never answered.
+
+**Equivalence, proven over a population rather than argued.** The census half: both formulations return **171**. The badge-join half cannot be proven on today's data (the candidate set is empty), so it was run with the anti-join **inverted** to `EXISTS` — the same join shape over ~27 K editions instead of 171 — and compared with `EXCEPT ALL` in both directions: **17,100 rows each, 0 differing, multiplicity included.**
+
+**Proven:** 8 new cases across 2 files. **Mutation-proven three ways** — re-adding a second `query_sql` COUNT(\*) to Step 5 reds 3 assertions; `?? null` → `?? 0` reds the source guard AND, separately, the behavioural deep-loop case. ⚠ **The guard's comment-strip is load-bearing and proves itself**: the route's own prose in that region quotes `query_sql` and `?? 0` verbatim, so every ban is unsatisfiable unless `stripCommentsWithState` actually stripped — a broken stripper turns this guard RED, not green. ⓘ Two of my own assertions were wrong first: the region slice cut mid-`//` comment (caught by asserting `endState`), and a "no inline SQL naming both tables" ban could never pass because the replacement function is itself named `fmv_recalc_uncovered_editions`. The second was **removed rather than weakened**, with a note saying why.
+
+⚠ **A positional fixture failed SILENTLY and that is the durable lesson.** `api-fmv-recalc-deep-loop.test.ts` feeds `query_sql` by CALL INDEX. Removing two calls shifted every later step down two slots: four tests went red — but **the ASK_ONLY backfill test stayed GREEN**, because its old index 1 landed on the `edition_offers` ASK step, which writes the same ASK_ONLY-at-0.90 shape. It passed while testing a different code path entirely. That test now names its RPC instead of a position, and the index map carries the warning.
+
+**Verified:** `tsc` clean · full suite **1,465 files / 16,216 tests, exit 0** (gated on the EXIT code, not a grep) · migration parity by character count — repo file 5,741 chars vs the stored statement's 5,740, the trailing newline only. ⓘ `api-allday-listings-indexer` failed once in an earlier full run and passed in isolation both with and without this change, and did not recur in the green run — recorded as a flake, not adopted.
+
+**Revert:** `git revert <sha>` restores both `query_sql` scans; the DB half is `DROP FUNCTION public.fmv_recalc_uncovered_editions(uuid, integer)` — nothing else calls it.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — the team page's Sets section carries its seed's PROVENANCE, and a failed read now says so instead of silently vanishing · ⚠ LATENT, not a live defect — I nearly filed it as one · Claude Code (cloud sandbox)
 
 **Found by walking the canon's FIFTH layer** (a server-seeded prop arriving as `[]` with no provenance) out from the live Vercel error table, where all five open error groups sit on `/[collection]/edition/[slug]` and two say *"degrading to empty"*.
