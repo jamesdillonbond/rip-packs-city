@@ -62,10 +62,38 @@ The alert board went **1 critical + 6 info → 0 critical**, 1 high, 6 info.
    test works on a **batch** process. A design call, not a tuning one. `inbox/2026-09-05T1125Z-…`
 3. **Surface QA: 21 pages, all 200, ~900 third-party images, zero blank** — and the one "defect" was
    my own instrument (below).
+4. **2,334 editions serve 2.6–7.7 MB full-resolution PNGs for a 281 px tile** (mean ≈5.1 MB vs an
+   837 KB CDN JPEG control, 8 of 8 sampled). Nothing in the path resizes — plain `<img>`, host absent
+   from `next.config` `remotePatterns`, and **our own `/api/public/ipfs-media` passes bytes through
+   byte-identically** (5,487,319 b both ways), so the fixable link is one we control.
+   ⛔ **My first framing was wrong by an order of magnitude** and the correction is in the filing:
+   "43 CIDs × 5.1 MB ≈ 220 MB per page" is *not* a page-weight claim — that page is **204 lazy images
+   with 8 in viewport and 0 failed**. Lazy loading works. What survives is ~5 MB per tile *scrolled
+   past*. `inbox/2026-09-05T1235Z-…`
+
+## Block 5 — tonight's data changes, verified in the rendered product
+
+The 16 new Ultimate 1/1 editions were **rendered, not just re-queried** (served HTML, which sidesteps
+the Suspense-reveal false positive on `/moment` and `/edition`):
+
+- 5 of 5 sampled edition pages **200**, correct titles, 4 JSON-LD blocks, self-canonical, OG wired;
+  meta description carries the migration's derived fields — *"Tier ULTIMATE. Series 2023-24. Circulation 1."*
+- Set rollups count them (**10/11** and **8/8**); series rollups count them (chain 6 → `/series/series-5`
+  2,547; chain 8 → `/series/series-7` 5,396, incl. 325 created tonight).
+- Player pages and the trophy case **200**. Sitemap **valid: 5 shards, 34,214 URLs**, new-edition URLs present.
+- ⭐ **The original blank-tile defect is closed end to end:** all five *held* Ultimates carry full holder
+  metadata (no more "Unknown") **and their art serves** — 200 on every thumbnail, including through our proxy.
+
+⛔ **Four further alarms raised and refuted**, each by a check rather than a hunch: the 16's NULL `set_id`
+(the whole set family has none — inherited correctly); the dead host `public-api.nbatopshot.com` on those
+pages (**config metadata, not image URLs**); sets with no `sets` row (**both render 200**); and
+"series 8 is the largest and 404s" (**the DB stores chain numbers, pages use catalog numbers** — chain 8
+*is* `/series/series-7`, per `20260904154741`; nothing is orphaned).
+
 
 ---
 
-## ⚠ TWO CORRECTIONS TO MY OWN WORK
+## ⚠ CORRECTIONS TO MY OWN WORK (five alarms of mine were refuted by controls tonight)
 
 ### 1. I nearly filed a false defect, and the control caught it
 
