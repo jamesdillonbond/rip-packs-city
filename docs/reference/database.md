@@ -237,6 +237,26 @@ Has (verified live 2026-07-16): player_name, series_number, tier, parallel_id, p
 
   ⚠ **ALSO DISPLACED VERBATIM FROM that same rule (2026-08-23), to make room for the production-caller control below — two fragments, in full:** *"(8 artifact-only views; a sweep without it breaks 3 live boards)"* (i.e. when enumerating callers, the Cowork artifacts' HTML is a source outside BOTH the repo and the catalogue, and a sweep that omits it breaks three live boards) and, on the seventh source, *"; the 08-22 canary greps ZERO callers, runs every 30 min"* (an EDGE function invisible to all six sources *and* to `cron.job`, because cron-job.org drives it).
 
+
+### Audit tables self-heal their RLS — hourly, and you should still not rely on it
+
+`public.selfheal_audit_table_rls()` (pg_cron **jobid 232**, `47 * * * *`) walks every
+`public.audit\_%` table and, for any that is missing it, runs `ALTER TABLE … ENABLE ROW LEVEL
+SECURITY` and `REVOKE ALL … FROM anon, authenticated`. **This is why the great majority of
+migrations that create an `audit_*` table carry no inline RLS statement and are still compliant in
+production** — 13 such files as of 2026-09-04, all clean.
+
+⚠ **It bounds the window; it does not remove it.** A table created at `:50` is anon-readable until
+`:47` the next hour. On 2026-09-04 two audit tables were created at 06:18Z/06:20Z and the GHA
+`smoke` check's `rpc:check_public_security_invariants` went **red** on them at 06:25Z — correctly,
+because a deploy landed inside the gap. They were closed by hand at 06:28Z (`20260905062849`); the
+healer would have closed them at 06:47Z regardless.
+
+⭐ **So the honest reading of a red `rls_off_base_table` on an `audit_*` table is "a deploy landed
+inside the heal window", not "the estate is missing a rule".** Fix it forward with an
+`ALTER TABLE … ENABLE ROW LEVEL SECURITY` + `REVOKE`, and prefer putting those two lines in the
+migration that creates the table so the window never opens at all.
+
 ## 🚨 `EXCEPTION WHEN OTHERS` DOES NOT CATCH A STATEMENT TIMEOUT — so an isolation block built on it cannot survive the only failure this instance actually produces (promoted here 2026-08-26)
 
 **PostgreSQL: *"the special condition name `OTHERS` matches every error type EXCEPT `QUERY_CANCELED`
