@@ -56,3 +56,31 @@ day        arrived  resolved      day        arrived  resolved
 2. **Answer (3) with one query before deciding**: is `mv_topshot_misattrib_candidates` at 20,128 growing, flat, or below its pre-08-29 level? If flat, retire it with the others; if growing, it needs an Atlas-shaped replacement, and memory records that **pg_net reaches Atlas**.
 
 ⓘ Also visible in the same sentinel payload, unrelated and NOT actioned: `Trust Health` warns `unmapped_resolution_backlog_max=148` (breach at 100), and Golazos sales ingest reads `0/24h (last 120.8 h ago)`.
+
+---
+
+## ADDENDUM, same session — the open sub-question is now ANSWERED: the backlog is STATIC, not growing
+
+The filing above said the deciding question for `topshot-misattrib-drain` was whether its 20,128 candidates are growing, and explicitly did **not** claim they were. Measured:
+
+| | |
+|---|---|
+| candidate nft_ids | **20,128** |
+| **with no sale newer than 90 days** | **17,795 — 88.4%** |
+| traded in the last 30 days | 1,136 (5.6%) |
+| traded in the last 7 days | 281 (1.4%) |
+| oldest last-sale / newest | **2021-01-08** / 2026-09-04 |
+
+⭐ **The pool is overwhelmingly HISTORICAL** — a five-year accumulation of mis-keyed rows, not an accruing hole. And its main feed is measurably closed: the sentinel's own `TS Edition Writer Leak (48h)` check reads **0 inert UUID-keyed TS edition rows created in the last 48 h**, which is exactly the condition that populates `set_a` of the MV.
+
+⚠ **What this does NOT prove.** The MV is a UNION of three data-driven sets with no timestamp of its own, so I dated it through the sales beneath it. That shows the POOL is old; it cannot show whether a given moment became a candidate recently — a new colliding sale can add an nft_id to `set_b` at any time. The 281 recent traders may have been candidates already. **So: the pool is static in origin and its principal feed is at zero, which is enough to decide with — but it is not a proof that the count never moves.**
+
+## What that makes the decision
+
+**All three pipelines can be retired or acknowledged together**, and the urgency is low:
+
+- `topshot-catalog-backfill` — superseded by the Atlas drain (measured: catalog current without it).
+- `ingest-topshot-challenges` — wrote 0 rows even on its healthy days.
+- `topshot-misattrib-drain` — was working a **static, five-year-old backlog** whose feed is at zero. ⛔ Its death is a **paused cleanup**, not an escalating defect. Nothing degrades further while it stays off.
+
+⭐ **The one thing that IS costing something every day is the alarm**, not the backlog: `pipeline-sentinel` has been CRITICAL for 8 days on this, so a genuinely new critical would be invisible. **Acking or retiring the three is worth doing for the alarm's sake alone**, independent of whether anyone ever restarts the misattribution cleanup.
