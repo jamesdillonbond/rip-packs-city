@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — the last permanently-red arm is unscheduled: `backfill-badges-from-sets` has been 0-of-12 on a dead host for a week and is now redundant, measured 266/266 · Cowork (cloud sandbox)
+
+The one item from the "work everything unresolved" sweep that was genuinely actionable rather than a mismeasurement.
+
+`/api/admin/backfill-badges-from-sets` ran **4× daily and logged 0 ok of 12** over the trailing 7 days. Its upstream is `public-api.nbatopshot.com/graphql`, **re-confirmed 530 live today** — the same decommissioned host that took `badge-sync` out on 08-28. **A permanently red arm is worse than no arm**, because it trains the next reader to skip this pipeline's failures; that is the same reasoning that retired jobid 55 this morning.
+
+⭐ **AND IT IS NOW REDUNDANT, WHICH IS THE PART THAT NEEDED MEASURING.** Earlier today I nearly retired it, stopped, and found that of the 299 Supernova/Skyline/Kingmaker/Honors editions it exists to serve, **235 had badge rows and 64 did not** — so retiring looked like abandoning 64 editions. Running that down: **62 of the 64 are `dropTsFossils` rows** (not real editions), and the Atlas refresh shipped this morning covers **266 of 266 Top Shot sets**, keeping 13,891 of 13,915 badge rows fresh within 6 hours.
+
+⚠ **The residual gap is 2 rows, and this route could not close it either.** Set **152** (*2023-24 Honors (Diced)*) is the single set for which Atlas returns `total_count = 0` — dispatched every cycle, 14 clean pages, zero editions — leaving `152:5366` (2 holders) and `152:5372` (0 holders) without badge rows, their 23 siblings frozen at 2026-06-15 from the dead GraphQL. **This route's own upstream is the 530, so it cannot serve them.** An upstream absence on 2 rows is not a reason to keep a red arm, and it is emphatically not a reason to invent badge rows.
+
+**The schedule goes; the handler stays.** The `vercel.json` entry is removed (36 crons remain, JSON re-parsed) and the route file gains a header recording the measurement, the 2-row gap, and **the exact one-line entry to paste back** if that host ever returns. Reversible in a single line, and nothing is deleted — the same shape as renaming the worker fossil rather than deleting it (2026-08-20).
+
+**Verified:** `tsc` clean · `vercel.json` re-parsed as JSON with the entry provably absent · **425 tests green across all 19 files** that read `vercel.json`, the cron config, or this route. **Revert:** re-add `{"path": "/api/admin/backfill-badges-from-sets", "schedule": "15 3,9,15,21 * * *"}` to `vercel.json`.
+
 ### 2026-09-04 · ✅ SHIPPED (comment-only) + 📋 THREE OPEN QUESTIONS CLOSED BY MEASUREMENT — the mint_count "treadmill" was denorm lag, the "64 uncovered trophy editions" are 2, and the parallel-premiums view must NOT be optimised · Cowork (cloud sandbox)
 
 A sweep back through everything this session left unresolved. **Three of the four turned out to be non-defects, and each was only settled by a measurement that contradicted my first reading.** Recorded so nobody re-opens them.
