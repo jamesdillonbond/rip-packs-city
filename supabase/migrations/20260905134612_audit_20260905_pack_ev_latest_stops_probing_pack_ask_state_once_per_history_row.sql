@@ -59,6 +59,34 @@
 -- per hour, not thousands** -- so a per-execution spill is not a concurrency
 -- hazard here. It would become one if a high-frequency caller were added, and it
 -- shrinks to nothing if work_mem is ever raised.
+--
+-- ⚠⚠ CORRECTION TO THE LINE ABOVE, added after applying: the CALLER EVIDENCE was
+-- misattributed, though the CONCLUSION it supports is unchanged and if anything
+-- conservative. I sized this with `pg_stat_statements WHERE query ILIKE
+-- '%pack_ev_latest%'` and read the top hit -- `refresh_mv_pack_ev_latest()`, 1,081
+-- calls -- as this view's dominant caller. **It is not a caller at all: that LIKE
+-- matches `mv_pack_ev_latest` as a SUBSTRING, and `mv_pack_ev_latest` does not
+-- reference this view** (checked: `position('pack_ev_latest' in
+-- pg_get_viewdef('mv_pack_ev_latest')) = 0`; it has its own DISTINCT ON straight
+-- over pack_ev_history, with no pack_ask_state and no EXISTS, so the rewrite in
+-- this file does not apply to it and the 2026-08-30 queued MV lever stands
+-- untouched).
+--
+-- THE REAL CALLERS are the nine direct dependents, of which three are MVs whose
+-- REFRESH reads this view in full:
+--     jobid 245  rpc-refresh-pack-realized-ev      42 * * * *     (hourly)
+--     jobid 241  rpc-refresh-pack-reality-top-ev   34 */2 * * *   (2-hourly)
+--     jobid 65   rpc-allday-ev-corrected-refresh   47 */6 * * *   (6-hourly)
+-- plus the low-volume public routes. That is ~1.2 refreshes/hour -- so
+-- "tens of calls per hour, not thousands" REMAINS TRUE and the spill is still not
+-- a concurrency hazard. The error made the sizing safer, not riskier.
+--
+-- ⛔ AND DO NOT READ jobid 245's POOLED pg_stat_statements NUMBERS AS HEADROOM.
+-- It shows 548 calls / 70,259 ms mean / 707,481 blocks per call, which looks like
+-- hours of reclaimable time. Its LAST FIVE RUNS are **1.52, 8.58, 6.65, 9.65 and
+-- 6.92 seconds**. The mean is pooled since the 2026-08-12 stats reset and is
+-- dominated by a slower era; the recent split refutes it. Same trap the ledger
+-- records for jobid 73 and for the cron waste triage.
 -- ⚠ Warm milliseconds barely moved on the ranker (1,320 -> 1,319). **The win is
 -- BUFFERS, which is what governs the COLD path** -- and cold is where the 8 s
 -- bound was being crossed (a cold read measured 7,441 ms pre-change).
