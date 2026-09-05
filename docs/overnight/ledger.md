@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · 📏 SURFACE QA — 21 surfaces clean, and the one defect I found was my own instrument (a NEW known false positive, recorded so nobody re-chases it) · Cowork (cloud, autonomous)
+
+Headless-Chromium sweep from the device VM, rebuilt tonight with **scroll-to-force-lazy-images + a 5 s settle** (the 3.5 s settle in the older script is the one that under-reported blank art 4-of-74 where the truth was 47-of-52). Reports **per third-party HOST**, matching the semantics of the smoke gate's new third arm.
+
+**21 surfaces, all HTTP 200, and image health is excellent** — hubs, `/packs`, both snipers, `/insights/pack-reality`, a moment, an edition, a set, a player, a team, a series, and six team pages. Zero blank images across **~900 third-party images**: `asset-preview.nbatopshot.com` 0/482, `assets.nbatopshot.com` 0/105 · 0/91 · 0/113, `ipfs.dapperlabs.com` 0/5, and so on. ⭐ The one exception below is the whole finding.
+
+## 🚨 NEW KNOWN FALSE POSITIVE — `cdn.nba.com` / `cdn.wnba.com` fail in the sandboxed headless browser and are FINE for real users
+
+The sweep reported `cdn.nba.com 1/1 blank` with `net::ERR_HTTP2_PROTOCOL_ERROR` on **4 of 4 NBA team pages** (Thunder, Lakers, Celtics, Warriors) — a systematic, host-specific, same-page-controlled failure. Every other host on those same page loads was perfect. It looked like ~30 team pages shipping a broken team logo.
+
+⛔ **It is not real. Verified in Trevor's actual Chrome:** `/nba-top-shot/team/boston-celtics` renders `cdn.nba.com` at **naturalWidth 150, 0 blank of 84 images**, whole page clean.
+
+⚠ **Also checked and NOT the cause, so nobody re-derives them:** `cdn.nba.com` **is already in `proxy.ts` `img-src`** (not a CSP block), and the asset itself serves **200 `image/svg+xml`, 31,426 bytes** by `curl` from the same VM over *both* HTTP/2 and HTTP/1.1. The failure is the sandboxed Chromium's HTTP/2 negotiation with that CDN, nothing of ours.
+
+⭐ **The methodological half is the part worth keeping.** My first isolation test — load the SVG on a `data:` page — returned ERROR and looked like confirmation. **The control refuted it: `assets.nbatopshot.com`, which loads 105/105 on the real site, ALSO failed from the `data:` page.** A `data:` origin cannot load any cross-origin image, so that test could only ever return ERROR and proved nothing. **An isolation test that cannot produce a passing result is not evidence.** The valid comparison was always the within-page one (other hosts load, this one does not), and even that only narrowed it — **only the real browser settled it.**
+
+⛔ **Do NOT file a `cdn.nba.com`/`cdn.wnba.com` blank-logo defect from a headless sweep.** Confirm in a real browser first; this is now the second entry in this repo's browser-instrument false-positive class, after the Cowork-browser `SCANNING THE MARKETPLACE…` reveal artifact.
+
+## ✅ Two things verified CORRECT that look broken at a glance
+
+- **`/nba-top-shot/sniper` renders zero deals, and that is right.** The API is healthy — **200 deals, `sourcesFailed: []`, `degraded: false`** — but its whole pool is `stale` 155 / `low` 27 / `ask_only` 18, **not one at `medium` or better** (All Day, which renders 100 rows, has 20 `medium`). Spot-checked the ground truth rather than trusting the label: edition `20:275` (Tyler Herro — 2020 NBA Finals) really is `STALE`, FMV **$2,813.14** computed 2026-09-02 with **`sales_count_30d = 0`**, against a **$449** ask — so the "84% discount" is a stale-FMV artifact, not a deal. ⭐ **Hiding it is the honesty canon working**, and the page already says so in as many words ("their FMV is derived from the ask itself — the 'discount' is 0% by construction, not a deal"), counts the hidden rows, offers `SHOW ASK-PRICED LISTINGS`, distinguishes filtered-empty from failed-read, and beacons `/api/public/log/empty-sniper`. **I nearly filed a UX gap that the code had already closed.** ⚠ Platform Top Shot FMV is NOT stale in general — latest-per-edition is 5,529 MEDIUM / 5,387 LOW / 2,097 HIGH / 1,549 STALE.
+- **`/insights/pack-reality` renders fully** (48 rows, 86,481 rips, full distribution) despite its `v_topshot_pack_reality_ranker_staleness` leg timing out — confirming in production that `20260902032401`'s deliberate non-fatal registration does what it claims. That is the positive control for tonight's other filing.
+
+**Revert:** n/a — QA + docs only; no code, no DB state, no prod change.
+
 ### 2026-09-05 · 📏 MEASURED, ⛔ NOT SHIPPED — the unmapped-drain stall test fires 46% of the time on a working drain, and the retune I went in expecting measures WORSE · Cowork (cloud, autonomous)
 
 `get_pipeline_alerts()` renders *"NO ETA: the drain has STALLED — 0 rows resolved in the last 3h against 37/24h"* for `unmapped-sales-nfl_all_day`. The gate is `drain_stalled` in `refresh_unmapped_backlog_growth()`:
