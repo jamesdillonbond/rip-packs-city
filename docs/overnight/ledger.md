@@ -10,6 +10,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — 12 of 15 Moment images on the PUBLIC `/nba-top-shot/market` page were blank, and the retry that fixes it already existed on two other surfaces · Claude Code (Trevor's box, interactive)
+
+**Found by asking what the E2E monitor structurally cannot see.** `e2e/healthy-page.ts` asserts HTTP status, body text, console failures and pageerrors — and **nothing about whether an image painted.** So a page can return 200, log no error, and still show a grid of blank tiles. A sweep of 18 public pages for `img.complete && naturalWidth === 0` found it immediately.
+
+## Measured, live
+
+**`/nba-top-shot/market`: 15 `/api/public/ipfs-media/` images, 12 returned 502 and rendered blank — an 80% failure rate on a public page.**
+
+The same CID, three requests:
+
+```
+try 1: 502   8.161s      try 2: 502   8.134s      try 3: 200   0.487s (2,582,279 B)
+ipfs.io directly:  504 after 28.590s
+```
+
+⭐ **So the art is fine and the failure is a COLD-CACHE MISS.** The upstream gateway is slow; our route's deliberate ~8 s headers budget aborts to a 502; the content lands anyway and every later request is sub-second. **An `<img>` never retries a 502 on its own, so the first visitor to each cold CID sees a permanently broken tile.**
+
+## 🚨 The fix already existed — on two surfaces, not this one
+
+`lib/media/use-ipfs-retry.ts` was written on **2026-09-04** for exactly this, with the same measurement in its header, and wired into `components/entity/IpfsThumb.tsx` → the **edition page** and **`/insights/trophies`**. The collection **market** page — the one rendering *fifteen* of these at once — kept a bare `<img>` with no `onError` at all.
+
+⭐ And `/api/public/ipfs-media`'s own header says its 8 s budget was chosen so that "the 502 fallback — and the `<img onError>` candidate-advance chain it exists to trigger" could run. On this page there was no chain to trigger. **Fourth instance tonight of a fix present in the codebase and applied to one surface but not its sibling.**
+
+## Shipped
+
+`components/media/IpfsImg.tsx` — the same hook in a wrapper that **keeps the caller's markup**. ⚠ Deliberately NOT `IpfsThumb`: that component owns its layout (square wrapper, fixed `aspectRatio`, `marginBottom`, text fallback), and the market page's two sites are an `objectFit: cover` fill inside an existing aspect box and an 80×80 table cell. Reusing it would have **changed the page's layout in order to fix a broken image**. Both sites converted; sizing preserved exactly.
+
+⛔ **The retry does not cache-bust**, and the hook's header says why: the second request must hit our edge cache under the SAME key, or it re-runs the cold upstream fetch that just timed out — turning a one-visitor defect into an every-visitor one. The `key` remount is what re-requests.
+
+## Proven
+
+4 new cases, **and the mutation testing changed the test file rather than confirming it**. Removing `key={key}` — the entire mechanism — left every case GREEN, because a React key is invisible in the DOM. Without a remount React reuses the same `<img>` node and the browser never re-requests, so the "retry" retries nothing.
+
+**The fix: assert the DOM node IDENTITY changes** (`expect(second).not.toBe(first)`), which a remount produces and a prop-only update does not. With it, that mutation reds. Second mutation (never give up) reds the give-up case. Controls: the URL must be **byte-identical** across the retry, and the caller's `width`/`height`/`borderRadius`/`objectFit`/`loading` must pass through untouched — the guard against a "fix" that silently restyles the page.
+
+⚠ **A rot-guard caught an omission I would have shipped:** `component-gate-include-completeness` failed because `components/media/` was a NEW subtree in neither the coverage gate nor its allowlist. Resolved the way it intends — **added to the gate**, since it ships with tests, not to the unmeasured allowlist. Components coverage holds at **91.12%** statements.
+
+**Verified:** `tsc` clean · full suite **16,259 tests, exit 0** · components gate green.
+
+⏳ **OWED:** re-probe `/nba-top-shot/market` after deploy and confirm the blank count falls. ⚠ **It will not reach zero and that is expected** — the retry converts a *first-visitor* failure into a second-request success, so a CID cold at probe time still shows one 502 before it recovers. The honest measure is **blank `<img>` after settle**, not 502 count.
+
+⛔ **This does not make ipfs.io faster**, and it is not a fix for the 8 s budget — both are upstream facts. It stops the first visitor paying for them permanently.
+
+**Revert:** `git revert <sha>` — the market page goes back to a bare `<img>` with no retry.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — the RLS guard I withheld four hours ago, now validated: a migration that creates a public table must enable RLS in the same file · Cowork (cloud)
 
 **This is the guard I drafted after tonight's own RLS incident and deliberately did NOT ship**, because the scanner was mis-parsing dynamic DDL and I was not going to make the same mistake twice in one hour. It is shipped now because it is validated, and the validation is the entry.
