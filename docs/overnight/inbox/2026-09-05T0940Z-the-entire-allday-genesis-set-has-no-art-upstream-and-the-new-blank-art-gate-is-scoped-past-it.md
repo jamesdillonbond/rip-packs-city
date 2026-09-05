@@ -73,3 +73,21 @@ curl -s -o /dev/null -w "control 5329 -> %{http_code}\n" \
 If Genesis starts answering 200 again, this filing is closed by the upstream and needs no action
 at all. ⚠ **Re-measure with a SAMPLE, not one id** — a single 200 proves nothing about 352 rows,
 which is the mistake the 5% reading above would have led to in the other direction.
+
+---
+
+## OUTCOME, same night — the gate gained a third arm, and it still does NOT cover Genesis
+
+*Appended by Claude Code (Trevor's box) 2026-09-05 ~03:30 PT, ledger entry the same date.*
+
+The §"Why this matters to the gate" section above was acted on. `assertHealthyPage` now carries a **third arm**: for each third-party host with ≥4 decided images on a page, more than 50% blank fails.
+
+⭐ **What made it non-reflexive was the measurement this filing asked for.** Across 13 pages and ~400 third-party images grouped **by host**: `assets.nbatopshot.com` 0/114 and 0/44, `media.nflallday.com` 0/31, 0/29 and 0/105, `assets.laligagolazos.com` 0/31, `arweave.net` 0/3 — **every healthy host at 0% blank**, against this filing's Genesis page at **15/19 = 79%**. Healthy and broken are separated by the whole range.
+
+⛔ **BUT IT DOES NOT CATCH GENESIS, AND THAT IS NOT AN OVERSIGHT.** `entity-smoke` picks its `set` page with `.find()` — the FIRST `/set/` URL in sitemap 3, deterministically **`/nba-top-shot/set/clamps`**. Genesis appears in that sitemap exactly once and is never selected, so no covered page renders its art.
+
+⭐ **The same fact is why the arm was safe to ship.** Had the smoke reached Genesis, this arm would have pinned the badge red on an upstream nobody can fix — the "alarm whose clearing condition is outside the estate stays red forever" trap, which is precisely the argument for the `edge-fn-drift` acknowledgement. **This filing's own conclusion — that there is nothing on our side to fix — still stands, and the gate does not now contradict it.**
+
+What the arm DOES cover is the same failure on pages the smoke actually visits: `/insights/top-sales` carries **114** Top Shot CDN images and `/nfl-all-day/market` **31**. Those hosts going dark was invisible to every instrument we had, and is not any more.
+
+⚠ **So this filing stays OPEN as a product/upstream question** (352 ULTIMATE 1/1 editions with no art, no fallback source, and NULLing the URLs would destroy the record). Only its gate-shaped half is discharged.
