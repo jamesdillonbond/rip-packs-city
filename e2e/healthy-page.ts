@@ -94,6 +94,39 @@ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<v
   const status = resp!.status()
   expect(status, `${check.path} returned HTTP ${status}`).toBeLessThan(400)
 
+  // ── WAIT FOR THE PAGE TO ACTUALLY RENDER BEFORE READING IT ────────────────
+  //
+  // 🚨 THIS WAIT USED TO COME *AFTER* THE CONTENT ASSERTIONS, AND THAT MADE THEM
+  // FIRE ON PAGES THAT WERE PERFECTLY HEALTHY. `goto` above uses
+  // `waitUntil: "domcontentloaded"`, which for a streaming App Router route fires
+  // when the SHELL has parsed — the content is still arriving. Reading the body
+  // at that instant measures how fast the server flushed, not whether the page
+  // works, and a user never sees that state because a user waits.
+  //
+  // ⭐ REPRODUCED, not theorised. `/moment/0632adf8-…` read at exactly the old
+  // moment, three times:
+  //
+  //     chars@DCL = 2061   chars@settle = 2061
+  //     chars@DCL =   25   chars@settle = 2061   <-- the smoke failed here
+  //     chars@DCL = 2061   chars@settle = 2061
+  //
+  // **25 is the same number the failing run reported**, and the content was
+  // there 1.5 s later. Same cause for the sibling flake: the Golazos edition
+  // page's Dapper CTA is present in 575 of 575 rows and rendered 9/9 when the
+  // read waited, so `missing expected content` was the read arriving early.
+  //
+  // ⚠ WHY IT TOOK 37 PROBES TO FIND: every earlier probe waited for `load` plus a
+  // settle before reading — differing from the harness in the ONE dimension that
+  // decides the answer. That is this repo's own rule about a probe whose harness
+  // differs from production, applied to an investigation of the harness itself.
+  //
+  // ⛔ THIS IS NOT A LOOSENING. A page that never fills still fails: the floor,
+  // the error-sign scan and `expectText` are unchanged, and the fixtures pin both
+  // directions. What changed is WHEN we look — after the page has rendered
+  // instead of before.
+  await page.waitForLoadState("load").catch(() => {})
+  await page.waitForTimeout(HYDRATION_SETTLE_MS)
+
   const bodyText = (await page.locator("body").innerText().catch(() => "")) || ""
 
   for (const sign of ERROR_SIGNS) {
@@ -107,7 +140,8 @@ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<v
   const floor = check.minContentChars ?? DEFAULT_MIN_CONTENT
   expect(
     bodyText.trim().length,
-    `${check.path} rendered only ${bodyText.trim().length} chars (likely an empty shell)`,
+    `${check.path} rendered only ${bodyText.trim().length} chars (likely an empty shell) — ` +
+      `read after load + ${HYDRATION_SETTLE_MS}ms, so this is not a streaming race`,
   ).toBeGreaterThanOrEqual(floor)
 
   if (check.expectText) {
@@ -116,12 +150,6 @@ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<v
       `${check.path} is missing expected content ${check.expectText}`,
     ).toBe(true)
   }
-
-  // Give the bundle time to execute and hydrate, THEN read what it logged. This
-  // is last on purpose: a page that fails a content assertion should report that
-  // clearer failure rather than a console symptom of it.
-  await page.waitForLoadState("load").catch(() => {})
-  await page.waitForTimeout(HYDRATION_SETTLE_MS)
 
   // ── DID THE IMAGES ACTUALLY PAINT? ────────────────────────────────────────
   //

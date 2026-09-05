@@ -151,6 +151,37 @@ const THIN_PAGE_SOME_ART_BROKEN = `<!doctype html><html><body>
   <main>${CONTENT}</main>${imgTags(0, 2)}${proxyImgTags(1, 2)}
 </body></html>`
 
+/**
+ * A STREAMING page: the shell parses (DOMContentLoaded fires), and the real
+ * content arrives shortly after. MUST PASS.
+ *
+ * 🚨 THIS IS THE FALSE FAILURE THAT WAS LIVE UNTIL 2026-09-05. The helper read
+ * the body immediately after `goto({ waitUntil: 'domcontentloaded' })` and only
+ * waited for `load` + the hydration settle AFTERWARDS, so on a slow flush it
+ * measured the shell. Reproduced against production — the same page, read at
+ * exactly that moment, three times:
+ *
+ *     chars@DCL = 2061   chars@settle = 2061
+ *     chars@DCL =   25   chars@settle = 2061   <-- the smoke failed here
+ *     chars@DCL = 2061   chars@settle = 2061
+ *
+ * 25 is the same number the failing run reported. The page was never broken.
+ *
+ * ⚠ The delay is well under HYDRATION_SETTLE_MS so the fixture is not itself a
+ * race: it must be LATER than DOMContentLoaded and EARLIER than the settle, and
+ * `EMPTY_SHELL` below still pins the case where content never arrives at all.
+ */
+const LATE_CONTENT = `<!doctype html><html><body>
+  <div id="__next"></div>
+  <script>
+    setTimeout(function () {
+      var m = document.createElement('main')
+      m.textContent = '${CONTENT}'
+      document.body.appendChild(m)
+    }, 400)
+  </script>
+</body></html>`
+
 const EMPTY_SHELL = `<!doctype html><html><body><div id="__next"></div></body></html>`
 
 // ~130 chars of real content: above a custom 100 floor, below the default 200.
@@ -299,6 +330,7 @@ test.beforeAll(async () => {
     }
     else if (url.startsWith("/img/broken.png")) { res.writeHead(502); res.end() }
     else if (url.startsWith("/empty-shell")) html(EMPTY_SHELL)
+    else if (url.startsWith("/late-content")) html(LATE_CONTENT)
     else if (url.startsWith("/short-ok")) html(SHORT_OK)
     else if (url.startsWith("/hydration-throw")) html(HYDRATION_THROW)
     else if (url.startsWith("/hydration-console")) html(HYDRATION_CONSOLE)
@@ -446,6 +478,18 @@ test("FAILS an error state even when the page is content-rich (detection is not 
   await expect(
     assertHealthyPage(page, { path: `${base}/error-with-content`, name: "error with content" }),
   ).rejects.toThrow(/error state/)
+})
+
+test("🚨 PASSES a page whose content arrives AFTER DOMContentLoaded — the streaming race", async ({ page }) => {
+  // The regression this pins: the helper used to read the body at DCL and wait
+  // for load + the settle only afterwards, so a streaming page that flushed its
+  // shell first was reported as `rendered only 25 chars (likely an empty shell)`.
+  // Reproduced against production 1 time in 3 on /moment/<id>, at exactly 25
+  // chars, with 2061 chars present 1.5s later.
+  //
+  // ⛔ Fixing it is NOT a loosening, and EMPTY_SHELL is the proof: a page that
+  // never fills still fails. What changed is when the read happens.
+  await assertHealthyPage(page, { path: `${base}/late-content`, name: "late content" })
 })
 
 test("FAILS a near-empty streaming shell (HTTP 200 but no content)", async ({ page }) => {
