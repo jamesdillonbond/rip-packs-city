@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 
 // Route integration test for /api/profile/me.
 // getCurrentUser()-gated but deliberately fail-SOFT: unauthenticated returns
@@ -243,6 +243,68 @@ describe("GET /api/profile/me — a failed lookup is not a known absence", () =>
     state.saved = { data: null, error: null }
     const body = await (await GET()).json()
     expect(body.user.wallet_addr).toBe("0xabc")
+    expect(body.user.identity_degraded).toBe(false)
+  })
+})
+
+// ── A SLOW read must degrade the same way a FAILED one does ─────────────────
+//
+// 2026-09-04. All three reads here already set `identity_degraded` on an ERROR,
+// which is the honest distinction between "you have no wallet on file" and "we
+// could not read whether you do". None of them was BOUNDED, so a read that
+// merely HUNG never reached that branch — the platform killed the function and
+// the caller got a 504 instead.
+//
+// ⭐ That mattered more here than the 504 suggests, and the route's own header
+// says why: it deliberately answers 200 with the user object on a degraded
+// enrichment, because "returning 5xx would make a signed-in reader render as
+// ANON on every public board that calls this unconditionally". Unbounded, a slow
+// read produced exactly the 5xx that argument rejects. The bound is what makes
+// the route's stated design reachable.
+//
+// ⚠ These cases HANG against an unbounded route: the fixture never settles.
+// That is deliberate — it is the only shape that can tell a bound from its
+// absence, and it is why API_DB_READ_TIMEOUT_MS exists.
+describe("/api/profile/me — a hanging read degrades, it does not 504", () => {
+  const HANG = () => new Promise<never>(() => {})
+
+  beforeEach(() => {
+    process.env.API_DB_READ_TIMEOUT_MS = "50"
+    state.user = { id: "u1", email: "t@example.com", created_at: "2026-01-01" }
+  })
+
+  afterEach(() => {
+    delete process.env.API_DB_READ_TIMEOUT_MS
+  })
+
+  it("marks identity_degraded when the profile_bio read never settles", async () => {
+    state.bio = HANG() as never
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.user.identity_degraded).toBe(true)
+    // The signed-in FACT is still known — that is the whole point of the 200.
+    expect(body.user.id).toBe("u1")
+  })
+
+  it("marks identity_degraded when the saved_wallets read never settles", async () => {
+    state.saved = HANG() as never
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.user.identity_degraded).toBe(true)
+    // ⚠ And wallet_addr stays NULL rather than being invented. `identity_degraded`
+    // is what tells a consumer that null means UNKNOWN here, not known-absent —
+    // ProBadge withholds on it, which is correct for unknown.
+    expect(body.user.wallet_addr).toBeNull()
+  })
+
+  it("does NOT mark identity_degraded when every read simply returns empty", async () => {
+    // The control, and it is the one that matters: a genuinely empty profile must
+    // not read as degraded, or the flag means nothing.
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
     expect(body.user.identity_degraded).toBe(false)
   })
 })

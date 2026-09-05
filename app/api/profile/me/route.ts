@@ -14,6 +14,7 @@ import { NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { resolveDisplayName } from "@/lib/user/resolveDisplayName"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 export async function GET() {
   const user = await getCurrentUser()
@@ -44,6 +45,16 @@ export async function GET() {
   // (getCurrentUser succeeded); only the enrichment is unknown. Returning 5xx
   // would make a signed-in reader render as ANON on every public board that
   // calls this unconditionally — trading a quiet false claim for a louder one.
+  //
+  // ⭐ 2026-09-04: all three reads below are now BOUNDED, and that is what makes
+  // the paragraph above actually reachable. Setting `identity_degraded` on an
+  // ERROR was never enough, because a read that merely HUNG reached no branch at
+  // all — the platform killed the function and the caller got the 5xx this route
+  // explicitly rejects. `boundedRead` resolves into the same `{ data, error }`
+  // these reads already destructure, so a timeout lands on the degrade path that
+  // was already here. Behaviourally proven: the cases in
+  // `api-profile-me.test.ts` TIME OUT against the unbounded route and pass
+  // against this one.
   let identityDegraded = false
 
   // ⚠ THE PUBLIC HANDLE COMES FIRST. `profile_bio.username` is the handle the
@@ -66,11 +77,14 @@ export async function GET() {
   // `topshot_username`, separately; `username` is the handle or null.
   let topshotUsername: string | null = null
   {
-    const { data: bio, error: bioError } = await (supabaseAdmin as any)
-      .from("profile_bio")
-      .select("username")
-      .eq("user_id", user.id)
-      .maybeSingle()
+    const { data: bio, error: bioError } = await boundedRead(
+      (supabaseAdmin as any)
+        .from("profile_bio")
+        .select("username")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      "api/profile/me/profile_bio",
+    )
     if (bioError) {
       identityDegraded = true
       console.error(`[profile/me] profile_bio read failed: ${bioError.message ?? String(bioError)}`)
@@ -80,12 +94,15 @@ export async function GET() {
   }
 
   if (user.email) {
-    const { data, error } = await (supabaseAdmin as any)
-      .from("allow_list")
-      .select("username, wallet_addr")
-      .ilike("email", user.email)
-      .limit(1)
-      .maybeSingle()
+    const { data, error } = await boundedRead(
+      (supabaseAdmin as any)
+        .from("allow_list")
+        .select("username, wallet_addr")
+        .ilike("email", user.email)
+        .limit(1)
+        .maybeSingle(),
+      "api/profile/me/allow_list",
+    )
     if (error) {
       identityDegraded = true
       console.error(`[profile/me] allow_list read failed: ${error.message ?? String(error)}`)
@@ -102,13 +119,16 @@ export async function GET() {
   // on 2026-08-08 when the wallet-connect surfaces were removed and client code
   // stopped having fcl.currentUser to read an address from.
   if (!walletAddr) {
-    const { data: saved, error: savedError } = await (supabaseAdmin as any)
-      .from("saved_wallets")
-      .select("wallet_addr, username")
-      .eq("user_id", user.id)
-      .order("pinned_at", { ascending: true })
-      .limit(1)
-      .maybeSingle()
+    const { data: saved, error: savedError } = await boundedRead(
+      (supabaseAdmin as any)
+        .from("saved_wallets")
+        .select("wallet_addr, username")
+        .eq("user_id", user.id)
+        .order("pinned_at", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      "api/profile/me/saved_wallets",
+    )
     if (savedError) {
       identityDegraded = true
       console.error(`[profile/me] saved_wallets read failed: ${savedError.message ?? String(savedError)}`)

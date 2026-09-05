@@ -101,17 +101,30 @@ for (const full of ALL) {
 const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
 
 /**
- * Measured 2026-09-04: **28**, lowered to **21** in the same commit by bounding
- * the seven whose error path was already honest (`/api/search`,
- * `/api/collection-stats`, `/api/platform-stats`, `/api/collection-readiness`,
- * `/api/cross-collection-deals`, `/api/public/wallet-intel`,
- * `/api/acquisition-stats`).
+ * Measured 2026-09-04: **28**.
+ *
+ * → **21** by bounding the seven whose error path was already honest:
+ *   `/api/search`, `/api/collection-stats`, `/api/platform-stats`,
+ *   `/api/collection-readiness`, `/api/cross-collection-deals`,
+ *   `/api/public/wallet-intel`, `/api/acquisition-stats`.
+ * → **20** by `/api/profile/me`.
+ *
+ * ⭐ `/api/profile/me` is the worked example of the RIGHT way to take one off
+ * this list, and it needed no error-path fix at all: it already set
+ * `identity_degraded` on every read error — the honest distinction between "you
+ * have no wallet on file" and "we could not read whether you do". What it could
+ * not do was REACH that branch on a read that merely hung, and its own header
+ * argues at length that a 5xx here is worse than a degraded 200 (it renders a
+ * signed-in reader as ANON on every public board that calls this
+ * unconditionally). Bounding it made the design it already documented reachable.
+ * Proven behaviourally, not structurally: the new cases in
+ * `api-profile-me.test.ts` TIME OUT against the unbounded route.
  *
  * ⚠ DOWN ONLY, and ⛔ **only behind a per-route reading of what that route
  * answers on a failed read** — see the header. Raising it is a POPULATION
  * CORRECTION and must name the predicate change that caused it.
  */
-const BUDGET = 21
+const BUDGET = 20
 
 describe("read-only API routes outside the honest-error population are counted", () => {
   it("is not vacuous — the walk found a real tree and a real complement", () => {
