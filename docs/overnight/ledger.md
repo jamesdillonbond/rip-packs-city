@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (code) — my own guard turned CI red, and the fix was to build the module the repo had been asking for since August: a shared SQL stripper, and a ratchet floor of 2 → 0 · Cowork (cloud)
+
+**`259a02e` went red on `Unit tests — shard 1/2`, and the failing test was `guards-use-the-shared-comment-stripper`: "RATCHET: the local-stripper population does not grow".** The RLS guard I had just shipped grew its own SQL comment stripper, taking that population 2 → 3. ⭐ **The ratchet caught it in CI, on the commit that introduced it** — which is the argument for the fix being the shared module rather than an exemption.
+
+⛔ **Two wrong fixes were available and both were refused.** Raising `MAX_LOCAL_STRIPPERS` to 3 is forbidden by that file in capitals — *"THIS NUMBER MAY ONLY EVER GO DOWN. NEVER raise it to make a build pass."* And migrating to the existing JS stripper is a **documented DEFECT**, not a fix: it has no line-comment state for a double dash and no dollar-quote state, so it would leave every SQL line comment standing and mis-parse a dollar-quoted body.
+
+⭐ **The third option was written into the ratchet's own header as its exit condition, and had been sitting unclaimed since 2026-08-22:** *"They come off this list when a SQL stripper exists to move them to, not before."* **`scripts/lib/strip-sql-comments.mjs` is that module**, and all three SQL guards — the `security_invoker` view guard, the `anon-exec` guard, and the new RLS guard — now import it. **Population 3 → 0; `MAX_LOCAL_STRIPPERS` 2 → 0.**
+
+**Why a state machine, with each case a defect a regex copy actually had.** (1) **Postgres block comments NEST** — a non-greedy regex ends at the first inner terminator, leaving the tail of the comment live. (2) **A double dash inside a string literal is not a comment** — the tail is lost, and the doubled-quote escape mis-pairs a naive scan. (3) ⭐ **Dollar-quoted bodies must SURVIVE and be re-scanned** — this repo's real DDL lives inside `DO` blocks, so a stripper treating them as opaque strings blinds every migration guard to the statements most worth checking. Comments blank to spaces so offsets and line numbers survive; a parameter placeholder is correctly not a dollar quote; unterminated comments and quotes terminate rather than loop.
+
+⚠ **The migration made one guard STRICTER, and it is stated rather than glossed:** the `anon-exec` guard's local stripper only blanked a line comment that **started a line**, so an inline trailing comment stayed visible to every check built on it. **Both it and the view guard still pass with their grandfather lists UNCHANGED**, so the stricter reading moved no finding — the result that makes this migration safe to assert rather than hope for.
+
+**Verified:** 13 new tests for the module (every case a defect one of the three guards had, or would have had) · 32 green across the five affected suites · `tsc` clean · the RLS guard's mutation proof re-run AFTER the migration, still failing on a non-compliant probe table and passing once the `ALTER` is added.
+
+**Revert:** `git revert <sha>` — restores the three local strippers and the floor of 2. ⚠ It also disables the RLS guard, which imports the module.
+
 ### 2026-09-05 · ✅ SHIPPED (tests/tooling) — `main` was RED; fixing it properly meant building the SQL stripper the ratchet had been asking for, and the first thing it found was a guard blind to a real table · Claude Code (Trevor's box, interactive)
 
 **The red:** `guards-use-the-shared-comment-stripper` failed with *"Local comment strippers grew to 3 (ceiling 2)"*, from a concurrent session's `259a02e68` (`migration-new-public-table-enables-rls`). Not my commit, and my own pending work sat behind it.
