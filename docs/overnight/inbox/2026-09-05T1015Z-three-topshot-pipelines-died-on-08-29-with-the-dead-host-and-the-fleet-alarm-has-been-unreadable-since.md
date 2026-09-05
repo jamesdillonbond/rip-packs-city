@@ -84,3 +84,39 @@ The filing above said the deciding question for `topshot-misattrib-drain` was wh
 - `topshot-misattrib-drain` — was working a **static, five-year-old backlog** whose feed is at zero. ⛔ Its death is a **paused cleanup**, not an escalating defect. Nothing degrades further while it stays off.
 
 ⭐ **The one thing that IS costing something every day is the alarm**, not the backlog: `pipeline-sentinel` has been CRITICAL for 8 days on this, so a genuinely new critical would be invisible. **Acking or retiring the three is worth doing for the alarm's sake alone**, independent of whether anyone ever restarts the misattribution cleanup.
+
+---
+
+## ADDENDUM 2 — a FOURTH pipeline of the same shape, found while fixing something else: `ufc-enrichment-drain`
+
+Not one of the three above, and it belongs here because the shape is identical: **green on every run, and its work is being done by something else.**
+
+```
+day        runs  ok  rows_written        day        runs  ok  rows_written
+09-05        25  25            0         08-30        48  48          436
+09-04        48  48            0         08-29        47  46        2,321
+09-03        48  48            0         08-28        48  47          888
+09-02        48  48            0         08-27        47  47          498
+09-01        47  47            0         08-26        47  47        2,175
+08-31        48  48            0         08-25        48  46        1,857
+```
+
+**A clean step change on 2026-08-31**: 436–4,676 rows/day before, **exactly 0 on every one of ~280 runs since**, all `ok = true` at ~430–490 ms.
+
+⚠ **`rows_written = 0` is the documented null instrument, so it was not read alone.** The drain's queue is literally *"UFC `wallet_moments_cache` rows with a NULL `edition_key`"*, and that queue is measured:
+
+| | |
+|---|---|
+| UFC rows total | **5,457** |
+| still NULL `edition_key` (the queue) | **2** |
+| enriched | 5,455 — **99.96%** |
+
+⭐ **And it is not idle because UFC is dead: 900 new UFC rows arrived in the last 30 days**, the newest **today at 04:35Z**. They are arriving *already enriched* — the drain never sees them. **Something other than this pipeline is now doing its job.**
+
+⛔ **What is NOT established: why.** The obvious candidate is write-time keying (`20260904062632` made `upsert_wmc_batch` key a resolved parallel at write time), but **that shipped 09-04 and the step change is 08-31** — the dates do not match, so I am not claiming it. **The cause of the 08-31 change is unidentified.**
+
+**The residual queue is 2 permanently-unresolvable rows** — same wallet `0x6d1f8c18412c6abc`, created 2026-05-07, moment ids `516620` and `225189`, both with images and **0 matching rows in `editions`**. They are a catalogue-coverage gap, not a drain failure, and the pipeline retries them **48×/day forever**.
+
+⚠ **Cost is trivial** — ~22 s of compute a day, no writes — so this is not urgent, and it is a **weaker** retire candidate than the three above. What makes it worth recording is the pattern: **four pipelines in one night that report success while their work is done elsewhere.** The instrument that finds them is not `ok`, and not `rows_written` — it is *asking what the queue actually contains*.
+
+ⓘ Connected: this is the same route whose import chain was emitting **70% of the runtime-error surface** (fixed separately today). Retiring it would have removed that too — worth knowing before anyone spends more effort on it.
