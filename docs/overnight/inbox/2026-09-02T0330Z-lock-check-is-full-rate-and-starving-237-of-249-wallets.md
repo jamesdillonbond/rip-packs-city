@@ -1,5 +1,47 @@
 # `lock-check-batch` is at full rate, fully green, and starving 237 of 249 wallets
 
+---
+
+## ✅ RESOLVED AND VERIFIED — 2026-09-04 23:55 PT (Claude Code, Trevor's box)
+
+**The `is_user_wallet` tier this filing recommended was SHIPPED, and the per-class verification it
+asked for had never been run.** `get_lock_check_batch`'s live `prosrc` now carries
+`is_user_wallet` through `hot` → `cand` → `dedup` → `ranked` and orders
+`is_priority DESC, is_user_wallet DESC, lock_checked_at ASC NULLS FIRST` — exactly the change
+below. ⚠ **Re-derived before acting: I came here to implement it and found it already in place.**
+
+**Measured on rows written per wallet CLASS, which is what this filing insisted on** (24 h to
+2026-09-05 05:40Z):
+
+| | at filing (2026-09-02) | now | |
+|---|---:|---:|---|
+| checks to **user** wallets | **0** | **70,098** | — |
+| distinct user wallets served | **0** | **27** | — |
+| checks to seeded wallets | 9,590 | 379,429 | |
+| **distinct wallets served (total)** | **12 of 249** | **276** | ⭐ the starvation is gone |
+| total checks / day | 9,590 | **449,527** | **47×** |
+
+⚠ **The 47× is NOT explained by the tiering** — a priority order redistributes work, it does not
+create it. Something else also changed (cadence or batch size); **that is unattributed and this
+entry does not claim it.**
+
+**User-wallet freshness, the number that matters:** 274,490 user rows, **109,424 fresh within 7 days
+(39.9 %)**, 126,752 never checked, newest check seconds before measurement. At 70 K/day the
+never-checked remainder clears in **~1.8 days** — so this is converging, not merely non-zero.
+
+⛔ **The arithmetic caveat below still stands and is NOT resolved**: keeping all 1.9 M rows fresh
+within 7 days needs ~271 K checks/day. At 449 K/day that target is now arithmetically reachable for
+the first time, but it has not been demonstrated over a full cycle — re-read `pct_fresh_7d` in a
+week before claiming it.
+
+⭐ **The reusable lesson survives intact and is why this took three days to notice:** *a throughput
+arm cannot see a fairness failure.* The pipeline was 48/48 ok while serving 0 % of user wallets, and
+it is 48/48 ok now — **the arm reads identically in both worlds.** Nothing was added to watch the
+distribution, so this can regress silently again.
+
+---
+
+
 **Filed 2026-09-02 03:30Z (2026-09-01 20:30 PT) · cloud autonomous pass**
 **Nothing shipped. The one change worth making is Trevor's call, not an optimisation.**
 
