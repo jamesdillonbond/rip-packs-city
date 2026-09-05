@@ -290,6 +290,53 @@ equals the rows harvested — so this is Atlas omitting editions, not our pagina
 list would destroy 100 real editions, 183 holdings and 429 sales.** Use Atlas to ADD and to
 CORRECT, never to REMOVE. An edition absent from Atlas is not evidence the edition is not real.
 
+### ⛔ `atlas_set_refresh_state.total_count` is NOT a per-set census — do not build a completeness check on it
+
+Measured 2026-09-05. A naive "are we complete?" query — our `editions` count per set against
+`atlas_set_refresh_state.total_count` — reports **20 sets where we exceed Atlas (124 rows) and 2
+where Atlas exceeds us (30 rows)**. Both directions are artifacts.
+
+**The 2 "Atlas exceeds us" sets are one finding, and it is an Atlas quirk.** Sets **241** and **260**
+are both named *Signature Series*, and `SearchEditions` with `setId: ["241"]` returns **30 rows
+spanning BOTH sets** — 15 with `setId 241` and 15 with `setId 260` — reporting
+`totalCount: 30, hasMore: false`. The drain stores that 30 against each set, so each looks 15 short
+forever. **Nothing is missing:** all 30 are in `badge_editions` and all 30 are in `editions`, 15
+under each set id. ⚠ A completeness check built on `total_count` would report a permanent phantom
+gap here and send the next reader hunting for editions that already exist.
+
+**The other direction is the `Club Collection` class above, plus set 152**, whose `total_count`
+reads **0** while we hold 23 of its rows.
+
+⭐ **The reliable completeness instrument is the row-level anti-join, not the reported total:**
+
+```sql
+-- 0 means every edition Atlas lists is in our catalogue.
+SELECT count(*) FROM public.badge_editions be
+ WHERE be.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+   AND NOT EXISTS (SELECT 1 FROM public.editions e
+                    WHERE e.collection_id = be.collection_id AND e.external_id = be.external_id);
+```
+
+### ⚠ The four health checks disagree about what "clean" looks like — read the VALUE, not the row count
+
+`count(*)` over these is wrong for three of the four, and it manufactures a finding out of a clean
+answer. Verified against `pg_proc.proretset` on 2026-09-05:
+
+| function | shape | clean reads |
+|---|---|---|
+| `check_public_security_invariants()` | **set-returning** `TABLE(kind, object_name)` | **0 rows** (a scalar subquery over it reads `NULL`, not `[]`) |
+| `detect_stalled_pipelines()` | scalar `jsonb` | **one row containing `[]`** — so `count(*)` = **1** |
+| `check_secdef_anon_execute_violations()` | scalar `jsonb` | **one row containing `[]`** — so `count(*)` = **1** |
+| `get_pipeline_alerts()` | scalar `jsonb` | one row containing a `[]`/array |
+
+⚠ This has caught the same reader twice in one night. The safe form:
+
+```sql
+SELECT (SELECT count(*) FROM public.check_public_security_invariants()) AS sec_violations, -- 0 = clean
+       jsonb_array_length(public.detect_stalled_pipelines())            AS stalled,        -- 0 = clean
+       jsonb_array_length(public.check_secdef_anon_execute_violations()) AS secdef;        -- 0 = clean
+```
+
 ## 🚨 `EXCEPTION WHEN OTHERS` DOES NOT CATCH A STATEMENT TIMEOUT — so an isolation block built on it cannot survive the only failure this instance actually produces (promoted here 2026-08-26)
 
 **PostgreSQL: *"the special condition name `OTHERS` matches every error type EXCEPT `QUERY_CANCELED`

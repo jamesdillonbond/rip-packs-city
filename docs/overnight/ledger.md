@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (docs) — the "2 sets where Atlas has more than us" was a PHANTOM, and the four health checks disagree about what clean looks like · Cowork (cloud)
+
+**Overnight block 2, closing the last half of queue item 2.** A completeness check comparing our per-set `editions` count against `atlas_set_refresh_state.total_count` reads **20 sets where we exceed Atlas (124 rows) and 2 where Atlas exceeds us (30 rows)**. ⭐ **Both directions are artifacts of the instrument, and the second one is a genuine Atlas quirk worth knowing.**
+
+**Sets 241 and 260 are BOTH named *Signature Series*, and `SearchEditions` with `setId: ["241"]` returns 30 rows spanning BOTH of them** — 15 carrying `setId 241` and 15 carrying `setId 260` — reporting `totalCount: 30, hasMore: false`. The drain stores that 30 against each set, so each reads 15 short **forever**. ⚠ **Nothing is missing:** all 30 are in `badge_editions` AND all 30 are in `editions`, 15 under each set id — which the row-level anti-join said all along (`badge_editions` rows absent from `editions`: **0**). I chased it because the aggregate disagreed with the anti-join, and the aggregate was wrong.
+
+⛔ **So `total_count` must not be used for a completeness check.** It over-counts on shared set names and under-counts elsewhere (set 152 reads **0** while we hold 23 of its rows). The reliable instrument is the row-level anti-join, and it is now written into `docs/reference/database.md` as a copy-paste.
+
+⚠ **Second thing recorded, because it has now caught the same reader TWICE in one night: the four health checks do not agree about what "clean" looks like.** Verified against `pg_proc.proretset`: `check_public_security_invariants()` is **set-returning**, so clean is **0 rows** and a scalar subquery over it reads `NULL`; `detect_stalled_pipelines()`, `check_secdef_anon_execute_violations()` and `get_pipeline_alerts()` are **scalar `jsonb`**, so clean is **one row containing `[]`** and `count(*)` reads **1**. I wrote `count(*)` into my own status query hours after documenting the trap, read `stalled: 1`, and went looking for a stalled pipeline that did not exist. The table and the safe copy-paste form are now in `database.md` next to the other instrument traps, rather than only in a dated handoff.
+
+ⓘ Also read this block, no action needed: trust health carries exactly one breach — `unmapped_resolution_backlog_max` **148 against a 100 threshold**, the known AllDay floor, and it is **down from 172** on 09-04. Declining, known-carried.
+
+**Revert:** `git revert <sha>` (docs only).
+
 ### 2026-09-05 · ✅ SHIPPED (tooling) — two sessions independently built the same SQL stripper; comparing them as implementations found two defects in the survivor, one of them live on 50 migrations · Claude Code (Trevor's box, interactive)
 
 **A collision, resolved by measurement rather than by seniority.** Both this session and the concurrent one hit the same red ratchet, read the same note in its header — *"they come off this list when a SQL stripper exists to move them to, not before"* — and independently built a single-pass SQL lexer. Mine landed as `scripts/lib/strip-sql.mjs` (`3f5f60cf4`); theirs as `scripts/lib/strip-sql-comments.mjs` (`62cae798f`), pushed on top, with the three guards re-pointed at it.
