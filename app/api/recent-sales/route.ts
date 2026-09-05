@@ -44,6 +44,22 @@ export async function GET(req: NextRequest) {
   }
 
   // If editionKey is provided, resolve to edition_id first (scoped to collection when possible).
+  //
+  // 🚨 THE SAME DEFECT THE COMMENT TEN LINES ABOVE DESCRIBES, one parameter over
+  // — fixed 2026-09-04. This resolve used to be `const { data: editionRow } =
+  // await q.maybeSingle()`, discarding `error` entirely, and then
+  // `if (editionRow) editionIdFilter = editionRow.id`. When the lookup failed or
+  // missed, `editionIdFilter` stayed null, the `.eq("edition_id", …)` below was
+  // SKIPPED, and the route answered **200 with collection-wide (or global)
+  // recent sales for a request that asked for ONE edition** — the wrong data
+  // presented as the right data, which is worse than the empty list the
+  // collection branch above already returns for exactly this reason.
+  //
+  // The two cases are NOT the same and are no longer conflated:
+  //   • the read FAILED  → an honest error; we do not know what this edition sold
+  //     for, and must not answer as though we do.
+  //   • the read SUCCEEDED and matched nothing → an unknown edition has no sales.
+  //     Empty, matching the collection branch's precedent verbatim.
   let editionIdFilter: string | null = null;
   if (editionKeyParam) {
     let q = supabase
@@ -52,8 +68,18 @@ export async function GET(req: NextRequest) {
       .eq("external_id", editionKeyParam)
       .limit(1);
     if (collectionUuid) q = q.eq("collection_id", collectionUuid);
-    const { data: editionRow } = await q.maybeSingle();
-    if (editionRow) editionIdFilter = editionRow.id;
+    const { data: editionRow, error: editionErr } = await boundedRead(
+      q.maybeSingle(),
+      "api/recent-sales/edition_lookup",
+    );
+    if (editionErr) return apiErrorResponse(editionErr, "api/recent-sales/edition_lookup");
+    if (!editionRow) {
+      return NextResponse.json(
+        { sales: [], collectionId },
+        { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=30" } }
+      );
+    }
+    editionIdFilter = editionRow.id;
   }
 
   // Scope by collection via sales.collection_id directly (NOT an editions

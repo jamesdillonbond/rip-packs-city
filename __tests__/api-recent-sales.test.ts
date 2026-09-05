@@ -238,3 +238,54 @@ describe("GET /api/recent-sales", () => {
     expect(body.sales[0].editionKey).toBeNull()
   })
 })
+
+// ── AN UNRESOLVED editionKey MUST NOT ANSWER WITH SOMEONE ELSE'S SALES ──────
+//
+// 2026-09-04. The resolve was `const { data: editionRow } = await q.maybeSingle()`
+// — `error` discarded — followed by `if (editionRow) editionIdFilter = …`. On a
+// failed or missed lookup the filter stayed null, the `.eq("edition_id", …)` was
+// SKIPPED, and the route answered 200 with collection-wide (or global) recent
+// sales for a request that asked for ONE edition.
+//
+// ⭐ That is the exact shape the comment TEN LINES ABOVE it already forbids for
+// the sibling `collectionId` param — "the response looks authoritative. That is a
+// fabricated-data shape. Return empty instead." It was understood, and applied to
+// one parameter of the two.
+//
+// ⚠ Wrong data is worse than no data, which is why these cases assert the sales
+// query was never ISSUED rather than merely that the body is empty: a response
+// that is empty by luck would pass a body-only check.
+describe("GET /api/recent-sales — an editionKey that does not resolve", () => {
+  it("returns an honest error when the edition lookup FAILED", async () => {
+    state.edition = { data: null, error: { message: "boom", code: "57014" } } as never
+    const res = await GET(req("https://t/api/recent-sales?editionKey=73:2785&collectionId=nba-top-shot"))
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    const body = await res.json()
+    expect(body.sales).toBeUndefined()
+    // We never fell through to the sales query at all. ⚠ NOT asserted via
+    // eqCalls: the edition LOOKUP itself filters on collection_id, so that check
+    // fails for a legitimate reason. `state.table` records the last `from()`.
+    expect(state.table).toBe("editions")
+  })
+
+  it("returns an EMPTY list when the lookup succeeded and matched nothing", async () => {
+    // Distinct from the failure above: this read worked, and an unknown edition
+    // genuinely has no sales. Matches the collectionId branch's precedent.
+    state.edition = { data: null, error: null } as never
+    const res = await GET(req("https://t/api/recent-sales?editionKey=nope&collectionId=nba-top-shot"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.sales).toEqual([])
+    expect(body.collectionId).toBe("nba-top-shot")
+    expect(state.table).toBe("editions")
+  })
+
+  it("still filters on edition_id when the lookup DOES resolve", async () => {
+    // The control. Without it the two cases above are satisfied by a route that
+    // simply never queries anything.
+    state.edition = { data: { id: "ed-1" }, error: null } as never
+    const res = await GET(req("https://t/api/recent-sales?editionKey=73:2785&collectionId=nba-top-shot"))
+    expect(res.status).toBe(200)
+    expect(state.eqCalls).toContainEqual(["edition_id", "ed-1"])
+  })
+})
