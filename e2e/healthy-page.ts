@@ -161,9 +161,16 @@ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<v
       (el) => el.complete && (el.currentSrc || el.src),
     )
     const sameOrigin = decided.filter((el) => (el.currentSrc || el.src).startsWith(origin))
+    // Images served by OUR OWN media proxies. Always page CONTENT, never chrome.
+    const MEDIA_ROUTES = ["/api/public/ipfs-media", "/api/public/avatar-media", "/api/moment-thumbnail"]
+    const proxied = sameOrigin.filter((el) => MEDIA_ROUTES.some((r) => (el.currentSrc || el.src).includes(r)))
     return {
       total: sameOrigin.length,
       broken: sameOrigin.filter((el) => el.naturalWidth === 0).map((el) => (el.currentSrc || el.src).slice(-70)),
+      proxied: proxied.length,
+      proxiedBroken: proxied
+        .filter((el) => el.naturalWidth === 0)
+        .map((el) => (el.currentSrc || el.src).slice(-70)),
     }
   })
 
@@ -179,6 +186,50 @@ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<v
         `our own endpoints, so an upstream blip is not an explanation. Examples: ` +
         `${imgStats.broken.slice(0, 3).join(" | ")}`,
     ).toBeLessThanOrEqual(0.5)
+  }
+
+  // ── AND A SECOND CHECK, BECAUSE THE RATIO ABOVE IS STRUCTURALLY BLIND TO A
+  //    THIN PAGE — WHICH IS WHERE THE NEXT BREAKAGE ACTUALLY HAPPENED ────────
+  //
+  // 🚨 THE RATIO MISSED A REAL SITE-WIDE OUTAGE, and this is the repair. On
+  // 2026-09-05 every UFC Strike image on the site was broken (403 from the media
+  // proxy, 518 thumbnails + 516 videos) and it was found by a hand-run sweep, not
+  // by this file. Two independent reasons the check above could not see it:
+  //
+  //   1. It needs >= 4 same-origin images, and a UFC edition page has THREE.
+  //   2. Most content art on this site is NOT same-origin — it is served from
+  //      assets.nbatopshot.com and friends, which the CSP allows directly — so a
+  //      page's same-origin set is mostly CHROME. Measured across 19 public
+  //      surfaces: page-chrome dilutes the ratio badly enough that a page's ONLY
+  //      artwork can break while the ratio reads 33%.
+  //
+  // ⭐ THE DISCRIMINATOR IS THE ROUTE, NOT THE COUNT. An image served by our own
+  // media proxy is always CONTENT — nobody proxies a logo through
+  // /api/public/ipfs-media. So this check scopes to those routes and can afford
+  // to be strict where the diluted ratio cannot.
+  //
+  // ⚠ THE THRESHOLD IS "ALL OF THEM", AND IT IS MEASURED RATHER THAN CHOSEN.
+  // Across those 19 surfaces the proxy-image counts are 1, 1, 3 and 17 — so a
+  // >= 4 floor would miss three of the four pages that carry any at all. With two
+  // or more independent CIDs, all-blank is never a cold-cache story. With exactly
+  // one, all-blank means the page's only artwork is missing, which is a broken
+  // page for that visitor whatever the cause.
+  //
+  // ⚠ Calibrated against production before shipping: at the time of writing,
+  // 0 of 19 surfaces had even ONE blank proxy image, so this fires on breakage
+  // rather than on the steady state. A gate that cries wolf is one people learn
+  // to ignore, and this file is the only client-side detection surface there is.
+  if (imgStats.proxied > 0) {
+    expect(
+      imgStats.proxiedBroken.length,
+      `${check.path}: ALL ${imgStats.proxied} image(s) served by our own media proxy ` +
+        `decided and painted nothing (naturalWidth 0). These are our endpoints, so an ` +
+        `upstream blip is not an explanation, and with more than one CID it cannot be a ` +
+        `cold cache either. This is the check that would have caught the 2026-09-05 UFC ` +
+        `outage, which the same-origin ratio missed because an edition page carries only ` +
+        `three same-origin images and most of them are chrome. Broken: ` +
+        `${imgStats.proxiedBroken.slice(0, 3).join(" | ")}`,
+    ).toBeLessThan(imgStats.proxied)
   }
 
   expect(

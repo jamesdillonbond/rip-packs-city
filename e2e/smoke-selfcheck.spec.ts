@@ -95,6 +95,62 @@ const ONE_BROKEN_IMAGE = `<!doctype html><html><body>
   <main>${CONTENT}</main>${imgTags(1, 5)}
 </body></html>`
 
+/**
+ * A real 1x1 PNG, shared by every image route below.
+ *
+ * ⚠ It must be REAL bytes. The assertion reads `naturalWidth`, so the browser
+ * has to actually DECODE the image for a healthy fixture to read as healthy —
+ * a 200 carrying junk measures 0 and would fail every control for the wrong
+ * reason. Hoisted to ONE constant so the two routes cannot drift apart.
+ */
+const PNG_1x1 = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+)
+
+/**
+ * Images served through a MEDIA-PROXY route, which the helper treats as page
+ * CONTENT rather than chrome.
+ *
+ * ⚠ The PATH is what makes them content, so these fixtures must use a real
+ * proxy path — nobody proxies a logo through /api/public/ipfs-media.
+ */
+const proxyImgTags = (broken: number, ok: number) =>
+  [...Array(broken)].map((_, i) => `<img src="/api/public/ipfs-media/bad${i}" alt="">`).join(``) +
+  [...Array(ok)].map((_, i) => `<img src="/api/public/ipfs-media/good${i}" alt="">`).join(``)
+
+/**
+ * A THIN page whose ONLY artwork is a single broken proxy image. MUST FAIL.
+ *
+ * 🚨 THIS IS THE UFC CASE, AND THE RATIO CHECK CANNOT SEE IT. Two chrome images
+ * plus one broken proxy image is 1-of-3 = 33% — under the 50% ratio, and under
+ * its 4-image floor as well. Every UFC Strike image on the site was broken on
+ * 2026-09-05 (403 from the media proxy, 518 thumbnails + 516 videos) and this
+ * file was green throughout; it was found by a hand-run sweep instead.
+ */
+const THIN_PAGE_ONLY_ART_BROKEN = `<!doctype html><html><body>
+  <main>${CONTENT}</main>${imgTags(0, 2)}${proxyImgTags(1, 0)}
+</body></html>`
+
+/**
+ * The same thin page with its artwork intact. MUST PASS.
+ * Without this control the check above could pass by failing on every page.
+ */
+const THIN_PAGE_ART_OK = `<!doctype html><html><body>
+  <main>${CONTENT}</main>${imgTags(0, 2)}${proxyImgTags(0, 1)}
+</body></html>`
+
+/**
+ * SOME proxy art broken, not all. MUST PASS.
+ *
+ * ⚠ This is what stops the new check becoming the flat ban the ratio fixture
+ * already argues against: one cold CID among several is the retry working, not
+ * a break. Only ALL-blank is a break.
+ */
+const THIN_PAGE_SOME_ART_BROKEN = `<!doctype html><html><body>
+  <main>${CONTENT}</main>${imgTags(0, 2)}${proxyImgTags(1, 2)}
+</body></html>`
+
 const EMPTY_SHELL = `<!doctype html><html><body><div id="__next"></div></body></html>`
 
 // ~130 chars of real content: above a custom 100 floor, below the default 200.
@@ -228,10 +284,18 @@ test.beforeAll(async () => {
     else if (url.startsWith("/broken-images")) html(BROKEN_IMAGES)
     else if (url.startsWith("/healthy-images")) html(HEALTHY_IMAGES)
     else if (url.startsWith("/one-broken-image")) html(ONE_BROKEN_IMAGE)
-    else if (url.startsWith("/img/ok.png")) {
-      // A real 1x1 PNG, so the browser DECODES it and naturalWidth is 1, not 0.
+    else if (url.startsWith("/thin-art-some-broken")) html(THIN_PAGE_SOME_ART_BROKEN)
+    else if (url.startsWith("/thin-art-broken")) html(THIN_PAGE_ONLY_ART_BROKEN)
+    else if (url.startsWith("/thin-art-ok")) html(THIN_PAGE_ART_OK)
+    // The media-proxy fixtures: "good" CIDs serve the real PNG, "bad" ones 502.
+    else if (url.startsWith("/api/public/ipfs-media/good")) {
       res.writeHead(200, { "Content-Type": "image/png" })
-      res.end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"))
+      res.end(PNG_1x1)
+    }
+    else if (url.startsWith("/api/public/ipfs-media/bad")) { res.writeHead(502); res.end() }
+    else if (url.startsWith("/img/ok.png")) {
+      res.writeHead(200, { "Content-Type": "image/png" })
+      res.end(PNG_1x1)
     }
     else if (url.startsWith("/img/broken.png")) { res.writeHead(502); res.end() }
     else if (url.startsWith("/empty-shell")) html(EMPTY_SHELL)
@@ -287,6 +351,44 @@ test("PASSES one broken image among six — the RATIO, not a ban", async ({ page
   // monitor on healthy behaviour, and the header above explains at length why
   // that is worse than no check at all.
   await assertHealthyPage(page, { path: `${base}/one-broken-image`, name: "one broken image fixture" })
+})
+
+test("🚨 FAILS when EVERY media-proxy image on a THIN page is blank — the ratio cannot see this", async ({ page }) => {
+  // 🚨 THE CASE THAT ESCAPED. On 2026-09-05 every UFC Strike image on the site
+  // was broken — 403 from the media proxy, 518 thumbnails and 516 videos — and
+  // the smoke was green through all of it. Two independent reasons the ratio
+  // check above could not see it:
+  //
+  //   1. It needs >= 4 same-origin images, and a UFC edition page has THREE.
+  //   2. Most content art on this site is NOT same-origin (assets.nbatopshot.com
+  //      and friends are allowed directly by the CSP), so a page's same-origin
+  //      set is mostly CHROME. This fixture is exactly that shape: two healthy
+  //      chrome images and one broken proxy image is 1-of-3 = 33%, under the
+  //      50% ratio AND under its 4-image floor.
+  //
+  // ⭐ The discriminator is the ROUTE, not the count: nobody proxies a logo
+  // through /api/public/ipfs-media, so an image on that path is always content.
+  await expect(
+    assertHealthyPage(page, { path: `${base}/thin-art-broken`, name: "thin page, art broken" }),
+  ).rejects.toThrow(/media proxy/i)
+})
+
+test("PASSES when the thin page's art paints — the control that keeps it honest", async ({ page }) => {
+  // Without this, a check that failed on every page would satisfy the case above.
+  await assertHealthyPage(page, { path: `${base}/thin-art-ok`, name: "thin page, art ok" })
+})
+
+test("PASSES when SOME proxy art is broken but not all — one cold CID is not a break", async ({ page }) => {
+  // ⚠ This is the fixture that stops the new check from becoming a flat ban.
+  // The ipfs-media retry turns a first-visitor 502 into a second-request 200, so
+  // one genuinely cold CID among several is the system working as designed.
+  // ALL-blank is a break; 1-of-3 is a cold cache. Same argument the ratio
+  // fixture makes, re-pinned on the stricter check so a future tightening of
+  // one cannot silently un-argue the other.
+  await assertHealthyPage(page, {
+    path: `${base}/thin-art-some-broken`,
+    name: "thin page, some art broken",
+  })
 })
 
 test("FAILS a page that throws a React hydration error (#418) despite a healthy DOM", async ({ page }) => {
