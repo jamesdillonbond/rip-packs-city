@@ -10,6 +10,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ CLOSE-OUT + ⚠ TWO CORRECTIONS TO MY OWN CLAIMS — the overnight handoff, and a coverage percentage whose denominator I never named · Cowork (cloud, autonomous)
+
+Handoff: [docs/handoff-2026-09-05-overnight.md](../handoff-2026-09-05-overnight.md), mirrored to the claude.ai Project. `metrics-latest.json` updated. **Pass shipped one migration (`20260905110532`), three measurement filings, and zero code changes.**
+
+## ⚠ CORRECTION 1 — "96.4% Top Shot description coverage" was true of a population I never named
+
+That number is what I used on 09-04 to justify retiring `topshot-catalog-backfill`. Re-measured tonight:
+
+| population | n | with description |
+|---|---|---|
+| Atlas-covered | 13,915 | **96.6%** |
+| **not** Atlas-covered | **6,697** | **1.1%** |
+| all Top Shot editions | 20,612 | **65.6%** |
+
+🚨 **The unnamed denominator excluded a third of the table.** Anyone re-reading "96.4% coverage" against `editions` would have found 65.6% and reasonably concluded something regressed.
+
+✅ **The retirement decision itself still stands, and this is the check that settles it rather than an assurance:** those 6,697 rows were created **2026-05-08 → 2026-08-20** — while `topshot-catalog-backfill` was alive and healthy — and they carry **1.1%** prose. **The walker was not filling them either**, so retiring it took nothing away that was ever being delivered.
+
+⭐ **And they are almost entirely inert**, which reconciles exactly with this night's earlier "Atlas is not a complete census" finding: of 6,697, only **100** are user-reachable — **50 with holders, 59 with sales, 100 with a thumbnail**. **6,597 are dormant rows with no art, no holders and no sales.**
+
+⛔ **The durable lesson is the form, not the figure: quote coverage as "x% of &lt;named population&gt;", always.** A bare percentage over an implicit population is the same defect class as an alert publishing a conclusion its read cannot support.
+
+## ⚠ CORRECTION 2 — the QA "defect" was my instrument, and my first isolation test could not have failed
+
+Covered in full in tonight's surface-QA entry; recorded here because it is a **correction, not a finding**: `cdn.nba.com 1/1 blank` on 4 of 4 NBA team pages is a **headless-Chromium-in-sandbox artifact**. Trevor's real Chrome renders it at **naturalWidth 150, 0 blank of 84 images**. ⭐ My first isolation test (load the SVG on a `data:` page) returned ERROR and read as confirmation — **but `assets.nbatopshot.com`, which loads 105/105 on the real site, also failed it.** A `data:` origin cannot load any cross-origin image, so that test could only ever return ERROR. **An isolation test that cannot produce a passing result is not evidence.**
+
+## Also corrected in place: a filing I stamped in the future
+
+`inbox/2026-09-05T1215Z-…` was written at ~11:25Z and renamed to **`2026-09-05T1125Z-…`** (with its internal `Filed` line, its INDEX entry and this ledger's link all repointed). The DB clock read **11:33Z / 04:33 PT** when I checked, so 12:15Z had not happened. ⚠ **The ledger's `find-future-dated-ledger-headings.mjs` guard passed throughout** — it checks `###` heading dates, not inbox filenames, so this class is outside it. Fixed by hand; noted so the next session knows the guard does not cover it.
+
+## Health at close (04:33 PT)
+
+Security invariants **0 rows** · `detect_stalled_pipelines` **0** · secdef violations **0** · `get_pipeline_alerts` **0 critical** (1 high, 6 info) · trust breaches **1** (`unmapped_resolution_backlog_max` 148/100, down from 172) · Atlas sets stale >6h **0 of 266** · pg_cron 24h **5,658 succeeded / 2 failed** (both from jobids no longer in `cron.job`), **no `job startup timeout`**. ⚠ **Sentry NOT read** — no MCP in this session; stated rather than silently skipped.
+
+**Revert:** n/a — docs only. The pass's single DB change has its own revert path in the `20260905110532` entry.
+
 ### 2026-09-05 · 📏 SURFACE QA — 21 surfaces clean, and the one defect I found was my own instrument (a NEW known false positive, recorded so nobody re-chases it) · Cowork (cloud, autonomous)
 
 Headless-Chromium sweep from the device VM, rebuilt tonight with **scroll-to-force-lazy-images + a 5 s settle** (the 3.5 s settle in the older script is the one that under-reported blank art 4-of-74 where the truth was 47-of-52). Reports **per third-party HOST**, matching the semantics of the smoke gate's new third arm.
@@ -63,7 +99,7 @@ and it **also suppresses the ETA** — `days_to_drain` is computed only `WHEN NO
 
 ⚠ **Stated rather than glossed:** the false-positive framing assumes the drain was healthy across all 144 hours. That is *supported* (5,581 rows resolved; `unmapped_resolution_backlog_max` fell **172 → 148** since 09-04) but **not proven hour by hour**, so 45.8% is an **upper bound on correctness, not a proof of 66 false alarms**. Measured on **`nfl_all_day` only** — a steadier collection may be served fine by the current predicate, so this is not an argument to change the arm for everyone. Severity is **`info`**; nothing is paged. The cost is a specific, alarming, usually-wrong sentence plus a suppressed ETA — the same alert-fatigue class as tonight's 403 ship, one band down.
 
-Filing: [inbox 2026-09-05T1215Z](inbox/2026-09-05T1215Z-the-unmapped-drain-stall-test-fires-46pct-of-the-time-and-the-obvious-retune-is-worse.md), with a falsifier.
+Filing: [inbox 2026-09-05T1125Z](inbox/2026-09-05T1125Z-the-unmapped-drain-stall-test-fires-46pct-of-the-time-and-the-obvious-retune-is-worse.md), with a falsifier.
 **Revert:** n/a — measurement + docs only; no code, no DB state, no prod change.
 
 ### 2026-09-05 · 📏 MEASURED, ⛔ NOT SHIPPED — two new public-route timeouts share one root, and the obvious fix is refuted by measurement · Cowork (cloud, autonomous)
