@@ -10,6 +10,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ⚠ CORRECTION to this morning's `pack_ev_latest` entry — the caller evidence was misattributed by a SUBSTRING match, and a second pooled statistic nearly became a headline · Cowork (cloud, autonomous)
+
+**The rewrite, its equivalence proof and its measurements all stand. What was wrong is the sentence sizing its concurrency risk.**
+
+## The mistake
+
+I sized the new external sort with `pg_stat_statements WHERE query ILIKE '%pack_ev_latest%'` and read the top hit — `refresh_mv_pack_ev_latest()`, 1,081 calls, 277,151 blocks/call — as this view's dominant caller. 🚨 **It is not a caller at all.** That `LIKE` matches **`mv_pack_ev_latest` as a substring**, and the MV does not reference the view: `position('pack_ev_latest' in pg_get_viewdef('mv_pack_ev_latest')) = 0`. It carries its own `DISTINCT ON` straight over `pack_ev_history`, **with no `pack_ask_state` and no `EXISTS`** — so tonight's rewrite does not apply to it, and the 2026-08-30 queued MV lever is untouched and still the right shape for it.
+
+⭐ **A `%name%` LIKE over `pg_stat_statements` cannot distinguish an object from every object whose name CONTAINS it.** Use a word boundary (`query ~ '(^|[^_a-z])pack_ev_latest'`) or, better, resolve dependents from `pg_depend` — which is what actually answered it.
+
+## The real callers, resolved from `pg_depend`
+
+Nine direct dependents. **Three are MVs whose `REFRESH` reads the view in full:**
+
+| jobid | job | schedule |
+|---|---|---|
+| 245 | `rpc-refresh-pack-realized-ev` | `42 * * * *` (hourly) |
+| 241 | `rpc-refresh-pack-reality-top-ev` | `34 */2 * * *` |
+| 65 | `rpc-allday-ev-corrected-refresh` | `47 */6 * * *` |
+
+Plus six plain dependent views and the two low-volume public routes. **~1.2 refreshes/hour.**
+
+✅ **So the CONCLUSION is unchanged and was conservative in the safe direction:** "tens of calls per hour, not thousands" holds, and the ~28–49 MB spill is still not a concurrency hazard. **The evidence was wrong; the answer it supported was not.** Recorded because a reader checking my reasoning would have found the citation and been misled by it.
+
+## ⛔ And a second pooled statistic nearly became a headline — the fourth time tonight
+
+`pg_stat_statements` shows jobid 245 at **548 calls / 70,259 ms mean / 707,481 blocks per call** — and 707,481 is almost exactly the pre-rewrite cost of `pack_ev_latest`, which reads as *"this rewrite just reclaimed hours of database time."* Across the three refreshers the pooled total is **55,463 s ≈ 15.4 hours**, and I was one step from writing that number down.
+
+🚨 **Its last five runs are 1.52, 8.58, 6.65, 9.65 and 6.92 seconds.** The mean is pooled since the 2026-08-12 stats reset and is dominated by a slower era — the same trap this ledger already records for jobid 73 and for the whole cron-waste triage. ⭐ **A pooled mean spanning a fix measures the fix's absence.** The rewrite's real benefit to these refreshers is a buffer reduction on jobs already running in single-digit seconds — worth having, and **not** 15 hours.
+
+⏳ **Owed, and deliberately not claimed yet:** the first post-change run of jobid 245 lands at **14:42Z** (the change applied 13:46Z). Its blocks/call against the pre-change 707,481 is the honest measurement. **Not read at time of writing.**
+
+ⓘ Also checked while here, so it is not re-derived: of the five other public objects combining `DISTINCT ON` with `EXISTS`, `topshot_serial_premiums_board` is **healthy** (1,509 buffers, 429 ms, no high-loop subplan — its EXISTS prunes partitions). Two of the remaining three are dependents of `pack_ev_latest` and inherit its predicate rather than having their own. **The disease looks specific to this view.**
+
+**Revert:** n/a — the correction is comment + ledger only; the applied DDL is byte-for-byte unchanged (3,086 chars, `definer-view: intentional` marker intact).
+
 ### 2026-09-05 · ✅ SHIPPED (code) — 70% of the production runtime-error surface was ONE deprecation warning, imported into a cron route by a single string constant · Claude Code (Trevor's box, interactive)
 
 **Found by ranking the error groups instead of reading them.** `get_runtime_errors` over 12 h returned 25 groups; sorted by count, one dwarfs everything:
