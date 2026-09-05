@@ -163,7 +163,9 @@ describe("GET /api/public/ipfs-media/[cid]", () => {
     vi.stubGlobal("fetch", vi.fn(async () => big))
     const res = await ipfsGET(nreq("https://t/x"), { params: p({ cid: validCid }) })
     expect(res.status).toBe(302)
-    expect(res.headers.get("location")).toBe(`https://ipfs.io/ipfs/${validCid}`)
+    // The gateway that ANSWERED, not a hardcoded host: since 2026-09-05 this
+    // route races a gateway list and must redirect to whichever one replied.
+    expect(res.headers.get("location")).toBe(`https://ipfs.dapperlabs.com/ipfs/${validCid}`)
   })
 
   it("streams an in-budget object with the immutable cache header", async () => {

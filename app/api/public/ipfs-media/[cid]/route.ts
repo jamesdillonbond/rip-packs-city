@@ -41,7 +41,18 @@ export const runtime = "edge";
 // echoed into the upstream path, so this allowlist regex is the SSRF guard —
 // alnum only, no slashes/dots/query that could redirect the fetch elsewhere.
 const CID_RE = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{40,})$/;
-const UPSTREAM = "https://ipfs.io/ipfs/";
+// ⭐ ORDERED BY MEASURED AVAILABILITY, primary first — see the note in GET().
+// Both hosts are ALREADY in proxy.ts CSP `img-src` AND `media-src`, which is why
+// this list is these two: the oversize path below 302s the browser straight at
+// whichever gateway answered, so a gateway absent from the CSP would fix the
+// proxy leg and break the redirect leg in the same change.
+//
+// ⛔ `cloudflare-ipfs.com` is in that CSP and is NOT in this list on purpose:
+// the host is decommissioned and now fails DNS instantly (0/8 CIDs, <0.1 s).
+//
+// ⚠ EACH ENTRY IS AN SSRF-RELEVANT CONSTANT. CID_RE has already validated the
+// CID, and these bases are literals — never build one from request input.
+const GATEWAYS = ["https://ipfs.dapperlabs.com/ipfs/", "https://ipfs.io/ipfs/"] as const;
 
 // Objects at or below this stream through us and cache at the edge; above it we
 // redirect. 8 MB sits between the largest size proven to cache (4.03 MB) and the
@@ -105,7 +116,6 @@ export async function GET(
     return new NextResponse(null, { status: 400 });
   }
 
-  const upstreamUrl = `${UPSTREAM}${cid}`;
   const startedMs = Date.now();
 
   // ⚠ OBSERVABILITY, added 2026-08-24. This route returned its 502 SILENTLY, and
@@ -115,13 +125,31 @@ export async function GET(
   // "Our 8 s abort fired" and "ipfs.io answered 5xx" are different problems with
   // different fixes and they were spelled identically.
   //
+  // ⭐ THAT 76% IS NOW EXPLAINED, AND IT WAS NEVER OUR TIMEOUT (2026-09-05).
+  // Both readings above blamed the same thing — a slow gateway — and neither
+  // asked whether a DIFFERENT gateway would answer. Measured against 8 CIDs
+  // taken live off `/nba-top-shot/market`, HEAD, from a residential box:
+  //
+  //     ipfs.dapperlabs.com   8/8   0.2–1.9 s
+  //     gateway.pinata.cloud  8/8   3.5–7.0 s
+  //     ipfs.filebase.io      7/8   0.0–0.9 s
+  //     ipfs.io               2/8   (six 12 s timeouts)
+  //     cloudflare-ipfs.com   0/8   (DNS gone — the host is decommissioned)
+  //
+  // ⛔ SO THE ART IS FINE AND ALWAYS WAS. A prior entry concluded these were
+  // COLD-CACHE MISSES that a retry would warm, on the strength of one CID
+  // answering 200 on a third try. That does not generalise: re-probed 2026-09-05,
+  // one CID returned **502 on four consecutive attempts, every one at 8.1 s with
+  // `x-vercel-cache: MISS`**, while `ipfs.io` itself answered **504 after 28 s**.
+  // Nothing was warming, because ipfs.io could not serve the object at all.
+  //
   // ⚠ This route has ALREADY been bitten by exactly that blindness: its header
   // records that the 502 path was unreachable DEAD CODE for the slow-gateway
   // case it exists for, because the old 25 s timeout lost the race to the
   // platform's own 25 s cutoff. That went unnoticed until someone counted 504s
   // by hand. A soft-fail nobody can see is indistinguishable from one that works.
   //
-  // ⓘ Measured against ipfs.io from a residential box the same day, so the
+  // ⓘ Measured against ipfs.io from a residential box 2026-08-24, so the
   // instrumentation has a baseline to be read against: three sampled CIDs
   // returned **HTTP 504 from the gateway itself after ~28 s** on a full-object
   // GET, and one was a 36 MB object with a 0.07 s TTFB that was still streaming
@@ -132,61 +160,142 @@ export async function GET(
   // abort reason keeps `name: "TimeoutError"` so the branch below, and every
   // reader of these logs, still discriminates a timeout from a transport fault
   // exactly as before.
-  const controller = new AbortController();
-  const abortAfter = (ms: number, phase: "headers" | "body") =>
-    setTimeout(() => {
-      const e = new Error(`ipfs-media ${phase} timeout after ${ms}ms`);
-      e.name = "TimeoutError";
-      controller.abort(e);
-    }, ms);
+  const timeoutError = (ms: number, phase: "headers" | "body") => {
+    const e = new Error(`ipfs-media ${phase} timeout after ${ms}ms`);
+    e.name = "TimeoutError";
+    return e;
+  };
 
-  let phaseTimer: ReturnType<typeof setTimeout> = abortAfter(HEADERS_TIMEOUT_MS, "headers");
-  let upstream: Response;
+  // One controller PER GATEWAY. The headers deadline aborts them all; once a
+  // winner is chosen only the winner's is re-armed for the transfer, and the
+  // losers' are aborted immediately so no bytes are pulled for a race we lost.
+  const controllers = GATEWAYS.map(() => new AbortController());
+  let phaseTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
+    const e = timeoutError(HEADERS_TIMEOUT_MS, "headers");
+    for (const c of controllers) c.abort(e);
+  }, HEADERS_TIMEOUT_MS);
+
+  /** A gateway that did not give us a streamable 2xx, and why. */
+  type GatewayFailure = {
+    base: string;
+    /** The status it ANSWERED with, or null when it never answered at all. */
+    status: number | null;
+    reason: "abort_timeout" | "transport" | "not_ok";
+    name: string;
+  };
+
+  const attempts = GATEWAYS.map(async (base, i) => {
+    let res: Response;
+    try {
+      res = await fetch(`${base}${cid}`, {
+        headers: { "User-Agent": "rip-packs-city/ipfs-media" },
+        signal: controllers[i].signal,
+      });
+    } catch (err) {
+      // ⚠ CLASSIFY OFF THE SIGNAL, NOT OFF THE ERROR'S NAME. Naming which of the
+      // two failures happened is the whole point of this line — raising
+      // HEADERS_TIMEOUT_MS only helps the abort kind — and `err.name` is not a
+      // reliable way to ask. `AbortSignal.timeout` used to reject with a
+      // DOMException named "TimeoutError", but a manual `controller.abort(reason)`
+      // is only guaranteed to preserve that reason in SOME runtimes (verified in
+      // Node; the edge runtime is a different implementation). `signal.aborted` is
+      // this route's own state and cannot be reinterpreted by a runtime.
+      //
+      // ⓘ The distinction is live, not theoretical: an unresolvable CID probed on
+      // 2026-09-03 failed at **7,800 ms** with `name=Error` — 200 ms INSIDE the
+      // 8,000 ms deadline — while every real abort in the preceding logs sits at
+      // 7,982–7,999 ms. That one is a genuine transport fault and must not be
+      // relabelled as our timeout just because it happened to land nearby.
+      const failure: GatewayFailure = {
+        base,
+        status: null,
+        reason: controllers[i].signal.aborted ? "abort_timeout" : "transport",
+        name: err instanceof Error ? err.name : "unknown",
+      };
+      throw failure;
+    }
+    if (!res.ok || !res.body) {
+      // Distinct from the branch above: the gateway ANSWERED and said no. A 504
+      // here is the gateway's own, not ours, and no timeout change can move it.
+      res.body?.cancel().catch(() => {});
+      const failure: GatewayFailure = { base, status: res.status, reason: "not_ok", name: "not_ok" };
+      throw failure;
+    }
+    // `body` is returned NARROWED, not re-read downstream: the check above is
+    // what proves it non-null, and carrying the proof is cheaper than an
+    // unreachable re-check that would read as a real branch.
+    return { base, res, body: res.body, index: i };
+  });
+
+  let winner: { base: string; res: Response; body: ReadableStream<Uint8Array>; index: number };
   try {
-    upstream = await fetch(upstreamUrl, {
-      headers: { "User-Agent": "rip-packs-city/ipfs-media" },
-      signal: controller.signal,
-    });
-  } catch (err) {
+    // ⚠ RACED, NOT TRIED IN SEQUENCE, and the reason is the platform's 25 s
+    // initial-response cutoff. Sequential fallback costs the SUM of the budgets:
+    // two gateways at HEADERS_TIMEOUT_MS each is 16 s, and adding BODY_TIMEOUT_MS
+    // puts the worst case past the cutoff — reviving precisely the dead-502 bug
+    // this route's header documents. Raced, the headers phase still costs at most
+    // HEADERS_TIMEOUT_MS no matter how many gateways are listed, so the fallback
+    // is free in the dimension that was already tight.
+    //
+    // ⚠ `Promise.any` and not `Promise.race`: a gateway answering 504 must not
+    // win the race and end the request. Each attempt REJECTS on a non-ok answer,
+    // so only a streamable 2xx can settle this.
+    winner = await Promise.any(attempts);
+  } catch (agg) {
     clearTimeout(phaseTimer);
-    // Gateway timeout/fault — 502 so the <img> onError can advance to the next
-    // candidate / placeholder.
+    // `AggregateError.errors` preserves the input order, so `failures[0]` is the
+    // PRIMARY gateway's outcome.
+    const failures: GatewayFailure[] = (agg as AggregateError)?.errors ?? [];
+    const answered = failures.find((f) => f.status !== null);
+    const detail = failures
+      .map((f) => `${new URL(f.base).host}=${f.reason}${f.status === null ? "" : `:${f.status}`}`)
+      .join(" ");
+    // ⚠ THE FIELD NAMES ARE DELIBERATELY THE OLD ONES. This used to be two log
+    // lines — `reason=`/`name=` for a fetch that threw, `upstreamStatus=` for a
+    // gateway that answered no — and with a fallback chain there is only one
+    // outcome to report. Renaming the fields would have silently emptied every
+    // existing operator query against this route rather than changing what they
+    // returned, which is the worse of the two failure modes: a dashboard that
+    // reads zero looks like a route that stopped failing.
     //
-    // ⚠ CLASSIFY OFF THE SIGNAL, NOT OFF THE ERROR'S NAME. Naming which of the
-    // two failures happened is the whole point of this line — raising
-    // HEADERS_TIMEOUT_MS only helps the abort kind — and `err.name` is not a
-    // reliable way to ask. `AbortSignal.timeout` used to reject with a
-    // DOMException named "TimeoutError", but a manual `controller.abort(reason)`
-    // is only guaranteed to preserve that reason in SOME runtimes (verified in
-    // Node; the edge runtime is a different implementation). `signal.aborted` is
-    // this route's own state and cannot be reinterpreted by a runtime.
+    // ⚠ `reason`/`name` describe the PRIMARY gateway specifically, `upstreamStatus`
+    // the first gateway that answered at all, and `detail` carries every one of
+    // them — so the single-gateway reading stays true and the fan-out is visible.
     //
-    // ⓘ The distinction is live, not theoretical: an unresolvable CID probed on
-    // 2026-09-03 failed at **7,800 ms** with `name=Error` — 200 ms INSIDE the
-    // 8,000 ms deadline — while every real abort in the preceding logs sits at
-    // 7,982–7,999 ms. That one is a genuine transport fault and must not be
-    // relabelled as our timeout just because it happened to land nearby.
-    const name = err instanceof Error ? err.name : "unknown";
-    const wasAbort = controller.signal.aborted;
+    // ⚠ `upstreamStatus` is OMITTED ENTIRELY when no gateway answered, rather than
+    // printed as `none`. An abort is not an upstream status, and a field that is
+    // always present teaches a reader to treat its absence as impossible — the
+    // route test pins this by asserting the token does not appear on an abort.
     console.log(
-      `[ipfs-media] upstream fetch failed cid=${cid} reason=${wasAbort ? "abort_timeout" : "transport"} name=${name} elapsedMs=${Date.now() - startedMs}`,
+      `[ipfs-media] every gateway failed cid=${cid} gateways=${GATEWAYS.length} ` +
+        `reason=${failures[0]?.reason ?? "unknown"} name=${failures[0]?.name ?? "unknown"} ` +
+        `${answered === undefined ? "" : `upstreamStatus=${answered.status} `}detail=${detail} elapsedMs=${Date.now() - startedMs}`,
     );
-    return new NextResponse(null, { status: 502 });
+    // ⚠ THE ANSWERED STATUS IS STILL PASSED THROUGH, in gateway order. When a
+    // gateway actually replied — a 404 for a CID that does not exist, a 504 it
+    // generated itself — that status is more informative than a blanket 502 and
+    // this route has always surfaced it. Only when NO gateway answered at all
+    // (every one aborted or faulted at the transport layer) is 502 the honest
+    // summary: "we could not reach any of them" is not a status any of them gave.
+    return new NextResponse(null, { status: answered?.status ?? 502 });
   }
-  // Headers are in. Re-arm the SAME controller for the transfer, so the body
+
+  // Won. Stop the losers before they stream anything to us.
+  for (let i = 0; i < controllers.length; i += 1) {
+    if (i !== winner.index) controllers[i].abort(new Error("ipfs-media: another gateway answered first"));
+  }
+
+  const upstream = winner.res;
+  const upstreamBody = winner.body;
+  const upstreamUrl = `${winner.base}${cid}`;
+
+  // Headers are in. Re-arm the WINNER's controller for the transfer, so the body
   // gets its own budget instead of inheriting the remainder of the headers one.
   clearTimeout(phaseTimer);
-  phaseTimer = abortAfter(BODY_TIMEOUT_MS, "body");
-
-  if (!upstream.ok || !upstream.body) {
-    clearTimeout(phaseTimer);
-    // Distinct from the branch above: the gateway ANSWERED and said no. A 504
-    // here is ipfs.io's own, not ours, and no timeout change can move it.
-    console.log(
-      `[ipfs-media] upstream not ok cid=${cid} upstreamStatus=${upstream.status} hasBody=${!!upstream.body} elapsedMs=${Date.now() - startedMs}`,
-    );
-    return new NextResponse(null, { status: upstream.status || 502 });
-  }
+  phaseTimer = setTimeout(
+    () => controllers[winner.index].abort(timeoutError(BODY_TIMEOUT_MS, "body")),
+    BODY_TIMEOUT_MS,
+  );
 
   // Oversize: hand the client straight to the gateway. Cancel our own body so
   // the bytes are never pulled through this function. A missing/unparseable
@@ -207,7 +316,7 @@ export async function GET(
   const declaredLength = Number(rawLength ?? "");
   if (Number.isFinite(declaredLength) && declaredLength > MAX_PROXY_BYTES) {
     clearTimeout(phaseTimer);
-    upstream.body.cancel().catch(() => {});
+    upstreamBody.cancel().catch(() => {});
     console.log(
       `[ipfs-media] oversize redirect cid=${cid} bytes=${declaredLength} elapsedMs=${Date.now() - startedMs}`,
     );
@@ -256,7 +365,7 @@ export async function GET(
     },
   });
 
-  return new NextResponse(upstream.body.pipeThrough(counted), {
+  return new NextResponse(upstreamBody.pipeThrough(counted), {
     headers: {
       "Content-Type": contentType,
       // CID is immutable — cache hard at the edge + browser.
