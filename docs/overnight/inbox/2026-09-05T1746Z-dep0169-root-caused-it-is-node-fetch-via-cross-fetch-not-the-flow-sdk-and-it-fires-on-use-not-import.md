@@ -134,6 +134,24 @@ mod.default = fetchImpl;
 
 👉 **So the remaining work is a preview deploy with the alias configured, exercising a Cadence script execution (POST with a body) rather than a block read.** That is a bounded, well-specified task now, which is the whole point of doing the cheap half first.
 
+## 5d. How to run the remaining probe WITHOUT a branch and without touching production
+
+⚠ Worth stating because the obvious reading of *"preview deploy"* collides with a non-negotiable rule — **never create a feature branch** — and a config change committed to `main` auto-deploys to **production**, which is exactly what must not happen for an SDK transport swap.
+
+👉 **The Vercel CLI is installed on Trevor's box** (the session-start hook claiming otherwise is stale — verified 2026-09-05). `vercel deploy` builds the **current working directory**, so the probe runs off a **dirty tree** with nothing committed:
+
+1. add the `cross-fetch` → native-shim alias to the Next config **locally, uncommitted**;
+2. `vercel deploy` (no `--prod`) → a preview URL, production untouched;
+3. hit a route that performs a **Cadence script execution** (a POST with a body — *not* a block read, which §5c already covered);
+4. confirm the script round-trips **and** that DEP0169 stops appearing for that deployment;
+5. `git checkout` the config change away.
+
+**No branch, no PR, no production deploy, nothing committed until it is proven.**
+
+⛔ **Keep it read-only.** Exercise a *script execution*, never a transaction — the Cadence service payer wallet is off-limits, and a transport swap is precisely the change you would not want to first exercise against a signing path.
+
+ⓘ **Not done here on purpose.** §5 of this filing says this belongs to a deliberate session rather than the end of a long one, and that judgment was written before the shim probe made the idea attractive. Recording the recipe so the next session starts at step 1 instead of re-deriving whether a probe is even reachable.
+
 ## 6. Falsifiers
 
 1. Re-run the patch probe (`url.parse` wrapper + an fcl network call). If the stack no longer shows `node-fetch`, the chain changed.
