@@ -1,6 +1,6 @@
 # `sales-counterparty-backfill` finished its walk 40 hours ago and has been re-scanning a dead range ever since — 470 of 470 ticks, ~40 min of DB time a day, as the platform's #3 reader
 
-**Filed 2026-09-05 05:10Z (2026-09-04 22:10 PT) · Claude Code on Trevor's box, interactive · MEASURED, NOTHING SHIPPED — the durable fix is in a Cloudflare Worker, which [never auto-deploys](../reference/tooling-gotchas.md), and the DB-side alternative changes cursor semantics. This is a decision, not a chore.**
+**Filed 2026-09-05 05:10Z (2026-09-04 22:10 PT) · Claude Code on Trevor's box, interactive · MEASURED, NOTHING SHIPPED — the durable fix is in a Cloudflare Worker, which [never auto-deploys](../../reference/tooling-gotchas.md), and the DB-side alternative changes cursor semantics. This is a decision, not a chore.**
 
 ## How it was found, which matters because every alarm is green
 
