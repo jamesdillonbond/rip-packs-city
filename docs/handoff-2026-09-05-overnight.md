@@ -170,16 +170,39 @@ Stated rather than silently skipped.
   tonight: **48 runs, 0 failed, avg 5.8 s, max 9.5 s.** The watermark gate + `pack_ev_history` vacuum
   held. Not my ship — recording the confirmation.
 
-## Needs Trevor
+## Needs Trevor — ⭐ ALL FOUR ITEMS ARE NOW DECIDED AND SHIPPED
 
-1. **`sentinel` — ack or retire the three dead Top Shot pipelines.** ⛔ Deliberately **not** done here:
-   migration `20260903163248` records twice that using the ack mechanism is **Trevor's decision**
-   ("Trevor decided 2026-09-03: build it and ack…"; the 08-31 filing "said the DECISION to use it is
-   Trevor's"). The measurement is complete in `inbox/2026-09-05T1015Z-…`.
-2. **`pack_ev_latest`** — the rewrite is operator-gated by the 08-30 precedent, and it now has
-   user-facing cost. See filing 1 above.
-3. **`cloudflare-ipfs.com` is still in the `proxy.ts` CSP and the host is decommissioned** — inert, but
-   a CSP reads as a claim about which gateways exist. Carried from 09-04, still open.
+⛔ **This section is superseded.** Trevor delegated the four open items later the same day
+(*"address the issues that were unresolved, and make decisions on those open items based upon what's
+best for RPC long term and for our users"*), so they were decided rather than re-queued.
+
+**Full write-up: `docs/needs-trevor-2026-09-05-after-the-delegated-decisions.md`.** In brief:
+
+1. **Three dead Top Shot pipelines → SUPPRESSED with predicates** (`20260905162923`). Each is
+   redundant, not broken, and the replacement was measured (Atlas 6,967 editions/24h · jobid 87
+   `rpc-refresh-challenge-costs` at 2026-09-05 07:20Z · 410 open of 20,128 = 98.0% mapped). Each
+   reason carries the **runnable SQL, the threshold and the apply-time value**, and says a predicate
+   returning false makes the suppression WRONG — delete it, do not renew. ⚠ Deliberately **not** the
+   `sentinel_threshold_config` ack, which `20260903163248` records as Trevor's call.
+2. **`mv_pack_ev_latest` rewrite → DECLINED.** Benefit gone (jobid 73: 48/48 ok, avg 5.8 s), cost real
+   (`DROP … CASCADE`, 68 dependents). Filed as a normal dated ledger entry — **the
+   "Declined — do not re-suggest" heading is Trevor's to edit and I did not write into it.**
+3. **`cloudflare-ipfs.com` → REMOVED** from `img-src` and `media-src` (`e900d58`). 0/8 CIDs, DNS dead;
+   zero rows reference it anywhere in the live schema. ⭐ **It exposed the real finding:**
+   `CSP_ALLOWED_IMAGE_HOSTS` in `lib/media/avatar-proxy.ts` claimed in a comment that a test kept it in
+   sync with that CSP. **No test read the constant.** It had drifted four hosts behind — including the
+   Arweave pair moved INTO the CSP on 09-04 *so that art would hotlink* — and
+   `canDisplayAvatarUrl()` was swapping those renderable avatars for the monogram. Fixed, and the
+   sync test now genuinely exists. *Disjointness is satisfied by a mirror that is empty.*
+4. **Unmapped-drain stall test → REPLACED** (`20260905163444`). The ratio read TRUE 45.8% of the
+   resolver's life and my own retune measured **worse** (60.4%). Now a 12 h liveness test calibrated
+   on 5,571 gaps whose max is 6.00 h — zero historical firings. And the ETA stopped being a point
+   estimate: 24 h and 7 d disagree 50× because the resolver works in bulk sweeps, so both are
+   published and the alert prints the range.
+
+🚨 **One watch that must not be dismissed:** `drain_quiet_hours` for `nfl_all_day` read **9.64 h** at
+close — already longer than any gap this resolver has ever *closed* — against the new 12 h threshold.
+This arm has never fired correctly before. **Its first firing is a true positive.**
 
 ## Areas deliberately untouched
 
