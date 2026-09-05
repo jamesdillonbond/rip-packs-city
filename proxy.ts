@@ -427,6 +427,27 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // logged out) get 307→/login and a broken image instead of the badge. Same
   // read-only asset-proxy risk profile as /api/og. (2026-06-15)
   if (pathname === "/api/badge-image") return true
+  // /api/moment-thumbnail — the SAME shape as /api/badge-image above, missed when that one was
+  // opened on 2026-06-15. GET-only edge proxy of `assets.nbatopshot.com` (a public CDN), no
+  // session, no cookies, `flowId` validated against /^[a-zA-Z0-9_-]{1,80}$/ as its SSRF guard,
+  // 8 s bound, soft-fails to 502 for an <img onError>. Decorative image bytes, nothing else.
+  //
+  // ⚠ MEASURED 2026-09-04 on the PUBLIC collection tab (/nba-top-shot/collection?q=<user>, which
+  // the feature-tab regex below opens to anon): **26 of 374 tiles were broken**, every one an
+  // `<img src="/api/moment-thumbnail?...">` that 307'd to /login and rendered **21 KB of login
+  // HTML as an image**. Only 26 because most tiles carry a direct CDN URL and this endpoint is
+  // the fallback for Moments that do not — so the failure is invisible on a spot check and
+  // permanent for the Moments that need it.
+  //
+  // Fourth instance of this class today after badge-taxonomy/profile-me, the Pinnacle sniper feed
+  // and pack-listings. The pairing test is the ratchet: an anon-public page must not call an API
+  // that is not.
+  //
+  // ⛔ GET/HEAD ONLY, unlike the badge-image line above. That one is method-blind; this is not,
+  // because there is no reason for a read-only asset proxy to accept a POST through the gate and
+  // "the route only exports GET so a POST would 405 anyway" is a claim about the route, not about
+  // the gate. Strict here costs nothing.
+  if ((method === "GET" || method === "HEAD") && pathname === "/api/moment-thumbnail") return true
   // /api/health — uptime/smoke probes hit this anonymously
   if (pathname === "/api/health") return true
   // /api/bots/* — the Telegram + Discord bot webhooks. They authenticate every

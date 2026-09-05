@@ -21,6 +21,11 @@ describe("anon-public pages can reach the APIs they actually call", () => {
     ["/nba-top-shot/sniper", ["/api/sniper-feed"]],
     ["/nba-top-shot/packs", ["/api/pack-listings"]],
     ["/nfl-all-day/packs", ["/api/pack-listings"]],
+    // 2026-09-04, fourth instance: 26 of 374 tiles on the public collection tab were broken —
+    // each an <img src="/api/moment-thumbnail?…"> that 307'd and rendered 21 KB of login HTML.
+    // Only 26 because most tiles carry a direct CDN URL and this is the fallback, so the failure
+    // is invisible on a spot check and permanent for the Moments that need it.
+    ["/nba-top-shot/collection", ["/api/moment-thumbnail", "/api/collection-moments"]],
   ]
 
   it.each(PAGE_TO_APIS)("%s is anon-public and so are its feeds", (page, apis) => {
@@ -37,6 +42,7 @@ describe("anon-public pages can reach the APIs they actually call", () => {
     expect(isPublicPath("/api/saved-wallets", "GET")).toBe(false)
     expect(isPublicPath("/api/pack-listings", "POST")).toBe(false)
     expect(isPublicPath("/api/pinnacle-sniper-feed", "POST")).toBe(false)
+    expect(isPublicPath("/api/moment-thumbnail", "POST")).toBe(false)
   })
 
   // ⚠ Deliberately NOT opened: both also 307, and neither has an anon-public caller.
