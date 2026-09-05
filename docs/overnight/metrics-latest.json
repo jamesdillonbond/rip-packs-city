@@ -1,9 +1,9 @@
 {
-  "generated_at_utc": "2026-09-04T15:54:42Z",
-  "pass": "2026-09-04 Cowork cloud — circulation decided, its denorm debris, and the surface QA that followed",
+  "generated_at_pt": "2026-09-04T17:20:00-07:00",
+  "pass": "2026-09-04 Cowork cloud — circulation decided, its denorm debris, and the signed-out surface QA that followed",
   "migrations_applied": [
     "20260904145331 base circulation = this printing's own mint (BEFORE trigger + hourly sync)",
-    "20260904145452 parallels take the measured mint too (392 were wrong, one by 14x)",
+    "20260904145452 parallels take the measured mint too (392 wrong, one by 14x)",
     "20260904150428 wmc.mint_count follows the decided rule (539,596 rows wrong, 66,376 by >10x)",
     "20260904151427 unidentified Flowty listings stop publishing an assumed tier/serial/valuation",
     "20260904152154 a parallel inherits its base edition's identity (107 read 'Unknown')",
@@ -12,66 +12,50 @@
   "code_shipped": [
     "fix(listings) topshot-listing-cache: an unidentified NFT states unknown instead of guessing",
     "fix(links) momentSubjectHref: a team Moment links to /team, not a /player page that 404s",
-    "fix(media) IpfsThumb: retry once on the cold-cache 502 the proxy's own header expects"
+    "fix(media) IpfsThumb + useIpfsRetry: one retry on the cold-cache 502, shared by two surfaces",
+    "fix(proxy) an anon-public page can reach the feed it calls (pinnacle-sniper-feed, pack-listings)",
+    "fix(ci) the anon-exec marker must name the function it decides for"
   ],
-  "circulation": {
-    "rule": "editions.circulation_count = this printing's own mint (the number Top Shot displays)",
-    "deciding_evidence": "of 9,473 base editions with an Atlas number, 1,312 differed and EVERY one differed by exactly the sum of its parallels' mints; zero unexplained",
-    "base_editions_corrected": 1312,
-    "parallel_editions_corrected": 449,
+  "converged": {
+    "circulation_base_editions_corrected": 1312,
+    "circulation_parallel_editions_corrected": 449,
     "holder_rows_behind_them": 186124,
-    "sabonis_227_7574": 249,
-    "ladder": "249 / 25 / 10 (was 284 / 25 / 9, double-counting)",
-    "base_still_disagreeing": 0,
-    "parallel_still_disagreeing": 0
-  },
-  "wmc_mint_count": {
-    "wrong_at_start": 539596,
-    "overstated_at_start": 539326,
-    "parallel_rows_over_10x": 66376,
-    "corrected_so_far": 49211,
-    "remaining": 490596,
-    "cursor": "192:6860",
-    "drains_via": "rpc-wmc-metadata-reconcile */10 at 1,200 editions"
-  },
-  "listings": {
-    "ts_rows": 103,
-    "unidentified_placeholders": 74,
-    "still_fabricated": 0,
-    "published_common_floor": 0.22,
-    "before": "70 of 104 rows had an assumed COMMON tier, the NFT id in serial_number, and a valuation that made 9 read as discounts; the published Common floor was $0.19 from an assumed tier against a real $0.20"
-  },
-  "parallel_identity": {
-    "filled": 107,
-    "still_unknown": 37,
-    "note": "33 at ship time, 37 now — the Atlas drain creates new identity-less parallels, which is why the corrector is hourly at :52 rather than a one-shot"
-  },
-  "series": {
-    "series1_editions_listed": 500,
-    "series1_editions_listed_before": 63,
-    "series1_rollup_count": "65 until rpc-series-detail-rollup runs at :59 with the fixed refresher",
-    "orphaned_editions_recovered": 1245,
-    "holder_rows_behind_them": 78344
-  },
-  "guards": {
-    "secdef_anon_execute_violations": [],
+    "wmc_mint_count_corrected": 539811,
+    "wmc_mint_count_remaining": 4,
+    "parallel_identity_filled": 107,
+    "parallel_identity_remaining": 37,
+    "parallel_identity_remaining_note": "all 37 have a base that is ALSO nameless — 0 fixable; the corrector declines to invent rather than guess",
+    "series1_editions": 1310,
+    "series1_editions_before": 65,
+    "listings_still_fabricated": 0,
     "wmc_base_keyed_resolvable_parallels": 0,
-    "ledger_heading_guards": "swallowed=3 (expected), future-dated=0, clobbered=0 on every commit"
+    "secdef_anon_execute_violations": []
+  },
+  "verified_live_signed_out": {
+    "disney_pinnacle_sniper": "pinnacle-sniper-feed 200 (was 307), 12 rows, 'FMV coverage unavailable' gone",
+    "nba_top_shot_packs": "0 anon 307s (was /api/pack-listings), 1,002 images, 0 broken, 500 rows",
+    "insights_trophies": "204 images, 0 broken — the retry recovers or falls back cleanly",
+    "edition_98_3150__5": "3 ipfs 200s, 0 502s, 0 broken — the CIDs that 502'd this morning are warm",
+    "edition_227_7574": "Mint 249; ladder Standard /249 · Hexwave /25 2.7x · Jukebox /10 5.2x"
   },
   "surface_qa": {
     "instrument": "$HOME/qa-sweep.mjs on the device VM — a PLAIN headless Chromium, no Claude instrumentation",
-    "why_it_matters": "both Claude browsers hang the route-level Suspense reveal on /moment and /edition pages ('SCANNING THE MARKETPLACE…'); plain Chromium reveals correctly, suspensePlaceholders=0. The recorded false-positive note said this reproduced on no normal-browser axis — it DOES reproduce in Claude in Chrome, so the note was too narrow.",
-    "desktop_1280": "12 + 12 surfaces, all 200, no horizontal scroll, no console errors except the findings above",
-    "mobile_390": "10 surfaces, scrollWidth == clientWidth == 390 on every one — zero horizontal overflow",
-    "checked_and_NOT_defects": [
-      "the Pack Sniper renders fully and its empty state explains why ('the discount is 0% by construction, not a deal') — the honesty canon working",
-      "/insights/parallel-premiums showed its honest failed-read sentence once, then 100 rows on 4 consecutive loads — an intermittent cold read that degraded correctly rather than claiming 'no parallels match'",
-      "a cdn.nba.com team logo reported naturalWidth 0 once via net::ERR_HTTP2_PROTOCOL_ERROR, but curls 200/3.7KB three times and its box still renders 96x96 — a headless artifact, not a product defect"
-    ]
+    "why": "both Claude browsers hang the route-level Suspense reveal on /moment and /edition ('SCANNING THE MARKETPLACE…'); plain Chromium reveals correctly. The recorded false-positive note said this reproduced on no normal-browser axis — it DOES reproduce in Claude in Chrome.",
+    "covered": "31 /insights boards, 5 collection overviews + snipers + packs, moment/edition/parallel/set/team/player/series pages, home, pricing, legal — desktop 1280 and mobile 390",
+    "mobile": "zero horizontal overflow on every page swept (scrollWidth == clientWidth == 390)",
+    "insights_boards": "all 31 return 200, no NaN/undefined, no '#N / 0', no honest-error states, no broken images"
   },
-  "queued_not_shipped": [
-    "app/api/listing-cache/route.ts carries the identical `|| \"COMMON\"` fabrication for All Day/Golazos/UFC but only 1 of 201 rows there arrives without traits; instrument is `set_name IS NULL` on cached_listings",
-    "app/api/fmv-recalc/route.ts asserts in a comment that Flowty shut down and cached_listings holds ~24 frozen rows; it refreshes every 20 min with ~103 live TS rows. Nothing broken, but the comment will mislead.",
-    "v_topshot_parallel_premiums costs 48,916 buffers for 100 rows (91 ms warm) — the cold-read pressure behind the intermittent failure above"
+  "checked_and_correctly_left_alone": [
+    "offers-sweep 108/216 red — the documented circuit breaker probing hourly; public.offers is fresh (25,478 open, newest minutes ago) via the on-chain backstop",
+    "sync-nba-projections 0/26 — known-issue #8, operator-gated behind the sports-proxy; its alert suppression predicate (error = all_upstreams_failed) re-checked live and still holds",
+    "6,575 UUID-keyed 'fossil' editions — the documented dropTsFossils class, excluded from the sitemap (0 of 13,436 urls), 404+noindex, 1.08% of daily FMV writes. I filed this as a finding and then WITHDREW it; see the ledger",
+    "every 404 emits two robots tags plus a canonical — a 404 status dominates any meta tag, so nil impact and the fix means touching root-layout metadata",
+    "a cdn.nba.com logo reported naturalWidth 0 once via ERR_HTTP2_PROTOCOL_ERROR — curls 200 three times, box renders 96x96: a headless artifact",
+    "app/api/listing-cache/route.ts has the same || \"COMMON\" fabrication but only 1 of 201 rows arrives without traits; instrument is set_name IS NULL",
+    "/api/golazos-sniper-feed and /api/allday-pack-listings 307 but have no anon-public caller — deliberately left gated, pinned by a test"
+  ],
+  "queued": [
+    "app/api/fmv-recalc/route.ts asserts in a comment that Flowty shut down and cached_listings holds ~24 frozen rows; it refreshes every 20 min with ~103 live TS rows. Nothing broken; the comment will mislead.",
+    "v_topshot_parallel_premiums costs 48,916 buffers for 100 rows (91 ms warm) — the cold-read pressure behind one intermittent honest-failure render"
   ]
 }
