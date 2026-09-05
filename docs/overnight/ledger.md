@@ -10,6 +10,80 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (DB) — three Top Shot pipelines that fire and write nothing are redundant, not broken, and each suppression now carries a predicate that can prove itself wrong · Cowork cloud
+
+`check_pipelines_running_but_not_succeeding()` opened every pass with the same three `running_but_not_succeeding` rows — `topshot-catalog-backfill`, `ingest-topshot-challenges`, `topshot-misattrib-drain` — each **3 runs / 0 ok / 0 rows in 30 days**. Three passes read them, called them benign, and left them. An arm that is dismissed every time is an arm nobody reads.
+
+**Each was chased to the thing that took its job over, and the replacement was MEASURED, not assumed:**
+
+| pipeline | why it writes nothing | proof the work still happens |
+|---|---|---|
+| `topshot-catalog-backfill` | the Dapper Atlas walk keeps the catalog current | **6,967** Top Shot editions with `updated_at` inside 24 h |
+| `ingest-topshot-challenges` | pg_cron **jobid 87 `rpc-refresh-challenge-costs`** (`20 7 * * *`) maintains it | all 31 `challenges` rows touched in 30 d, newest `updated_at` **2026-09-05 07:20:00Z** — which matches jobid 87's schedule to the minute |
+| `topshot-misattrib-drain` | the backlog it drains is nearly empty | **410 open of 20,128 candidates (98.0% mapped)** |
+
+⛔ **THE REASON TEXT CARRIES A RUNNABLE PREDICATE, NOT A CONCLUSION — and that is the whole point.** `pipeline_alert_suppression` has no predicate column, so the discipline has to live in the text. This repo has already paid for the alternative: a free-text label got a **24-hour silent outage dismissed five consecutive times**. Each row therefore embeds the exact SQL, the threshold, and the value measured at apply time (≥500/24h vs 6,967 · `max(updated_at)` within 7 d vs 2026-09-05 07:20Z · ≤500 open vs 410), and says in words that **a predicate returning false makes the suppression WRONG — delete it, do not renew it.** All three verified TRUE after apply.
+
+Each also carries a forcing `expires_at` of **2026-12-05**, so silence expires even if nobody reads the predicate.
+
+⚠ **What this does NOT claim.** These pipelines are still scheduled and still firing; nothing was disabled. This suppresses the ALERT, which was reporting a true fact (zero rows written) that had stopped meaning anything. `topshot-catalog-backfill`'s predicate is deliberately the same fact the `atlas-editions-upstream-403` arm escalates on — if Atlas stops maintaining the catalog, both arms speak at once, and this pipeline is the fallback to un-suppress and repair.
+
+**Revert:** `DELETE FROM public.pipeline_alert_suppression WHERE pipeline IN ('topshot-catalog-backfill','ingest-topshot-challenges','topshot-misattrib-drain') AND added_at >= '2026-09-05'::date;`
+**Migration:** `supabase/migrations/20260905162923_audit_20260905_suppress_three_top_shot_pipelines_that_are_redundant_not_broken_each_with_a_self_invalidating_predicate.sql`
+**Metric:** `get_pipeline_alerts()` 7 → 4 rows; `check_pipelines_running_but_not_succeeding()` 1 → 0 rows.
+
+
+### 2026-09-05 · ✅ SHIPPED (DB) — the unmapped-drain "stall" test was a ratio that read TRUE half the resolver's life, and the ETA it suppressed was itself divided by a window too narrow to be stationary · Cowork cloud
+
+`drain_stalled` was `outflow_3h * 16 < outflow_24h` — one trailing count divided by another, so it fires whenever the 24 h window carries a burst the last 3 h did not. **Measured over the resolver's entire 171 h life it is TRUE 45.8% of the time.** Its only effect is to null out `days_to_drain`, so the ETA was being suppressed half the time by an alarm carrying no information.
+
+⛔ **I tested my own first fix and it is WORSE.** The obvious retune — widen to `12h × 2` — measures **60.4%**. Refuted before shipping, not after.
+
+**What replaces it — liveness, which never divides by a rate.** `drain_stalled := last resolution older than 12 h (or none ever)`. Calibrated against the real gap distribution: **5,571 consecutive gaps, max 6.00 h, p99 0.74 h, ZERO gaps over 6 h**, so a 12 h threshold would have fired **zero** times historically. ⭐ At apply time the live quiet period is **9.56 h — already longer than any gap this resolver has ever closed** and still correctly below the threshold; if it crosses 12 h that firing will be the first true positive this arm has ever produced.
+
+⭐ **AND THE ETA STOPPED PRETENDING TO BE A POINT ESTIMATE, WHICH IS THE BIGGER FIX.** Both windows are honest arithmetic over the same table and they disagree by **50×**:
+
+    24h net = 33 − 17 = 16/day   →  ~2,627 d
+    7d  net = (5572 − 126)/7     →  ~54 d
+
+because this resolver works in **intermittent bulk sweeps** — 4,297 rows on 09-02, 899 on 09-03, 43 on 09-04, 8 on 09-05, against a ~60–110/day baseline before that. Publishing either number alone is a failed read rendered as an answer. The payload now carries `days_to_drain_24h` AND `days_to_drain_7d` (plus `drain_quiet_hours`, `last_resolved_at`, `outflow_7d`, `inflow_7d_fresh`), and when the two disagree by more than 3× the alert prints **the range and says the rate is not stationary** instead of picking a winner. Live text now reads *"NO SINGLE ETA — the drain rate is NOT STATIONARY. The 24h window projects ~2627.5d and the 7d window ~54.0d…"*.
+
+⚠ **Both functions changed in ONE transaction on purpose** — `refresh_unmapped_backlog_growth()` writes the payload and `get_pipeline_alerts_core()` is its only reader, so shipping them apart would render `drain_stalled` under the old prose. The reader was edited by a **guarded splice** that asserts the pre-change `prosrc` md5 and both anchors and RAISEs rather than half-editing.
+
+⚠ The `OFFSET 0` optimization fence and its full rationale are preserved byte-for-byte. Signatures unchanged (both zero-arg), so no new default-PUBLIC overload; ACLs re-verified `{postgres=X,service_role=X}`, `check_public_security_invariants()` 0 rows, `check_secdef_anon_execute_violations()` 0.
+
+**Revert:** restore both bodies from the prior migrations — pre-change `prosrc` md5 `1ed85b363483d0dfc84ff856b6bb7ff3` (5,925 chars) and `cd6f8de962e140d2b681fd1f29b6e2c4` (13,003 chars).
+**Migration:** `supabase/migrations/20260905163444_audit_20260905_drain_stall_becomes_a_liveness_test_and_the_eta_stops_pretending_to_be_a_point_estimate.sql`
+**Metric:** false-positive rate of the stall arm 45.8% → 0% against the historical gap distribution; ETA no longer suppressed by it.
+
+
+### 2026-09-05 · ✅ SHIPPED (code) — a decommissioned gateway left the CSP, and doing it exposed a "mirror" of that CSP that had drifted four hosts behind while a comment claimed a test kept it in sync · Cowork cloud
+
+**The item as filed** was small: `cloudflare-ipfs.com` sits in `proxy.ts` `img-src` and `media-src`, and the host is **decommissioned — it fails DNS instantly, measured 0/8 CIDs in under 0.1 s**. Verified nothing references it: **zero rows across every `url`/`image`/`avatar`/`media`/`art`/`thumbnail` text column of every live public table** (enumerated from `information_schema`, `audit_*` snapshot tables excluded — no route reads them). A CSP entry for a host that cannot answer is not a fallback; it is a wider policy that buys nothing. Removed from both directives.
+
+⭐ **THE ACTUAL FINDING IS THE SECOND ONE.** `lib/media/avatar-proxy.ts` keeps `CSP_ALLOWED_IMAGE_HOSTS`, a hand-copy of that `img-src`, and its comment said *"kept in sync by `__tests__/avatar-proxy-hosts.test.ts`, which parses the real directive out of that file and fails if the two disagree."* **No test in the repo read that constant at all.** The mirror had drifted **four hosts** behind the live policy — `gateway.pinata.cloud`, `*.supabase.co`, `arweave.net`, `*.arweave.net`.
+
+⛔ **That is user-visible, not cosmetic.** `canDisplayAvatarUrl()` returning false swaps a perfectly renderable avatar for the monogram default. **The Arweave pair is the one with teeth: it was moved INTO the CSP on 2026-09-04 specifically so that art would hotlink, and this file went on hiding it.** The existing disjointness test could never have caught it — **disjointness is satisfied by a mirror that is EMPTY.**
+
+**Shipped:** mirror corrected to the real host set; `CSP_ALLOWED_IMAGE_HOST_SUFFIXES` added for the two wildcard entries as suffixes **with the leading dot** (matching on bare `arweave.net` would also admit `evilarweave.net`, which anyone can register — the same bypass class the SSRF block in that test already pins); and **the sync test the comment falsely claimed now genuinely exists**, parsing `img-src` out of `proxy.ts` and comparing sorted sets both directions, so a host added to one and forgotten in the other fails.
+
+⚠ **`cloudflare-ipfs.com` STAYS in `IPFS_GATEWAY_RE` (`lib/ipfs-media.ts`) and in `isBareIpfsGatewayUrl` (`components/MomentMedia.tsx`), deliberately.** The stated reason there was "parity with the CSP" and that reason is now dead — but matching it **rewrites** a legacy cloudflare URL onto our same-origin proxy, which resolves the CID from a gateway that still answers. Deleting it would leave such a URL hotlinking a dead host, i.e. removing it makes the failure **worse**. The comments now say that instead.
+
+**Verified:** `tsc --noEmit` clean; the 7 CSP-adjacent unit files **109/109 pass** (20 in `avatar-proxy-hosts`, up from 16).
+**Revert:** `git revert <sha>` — restores the dead gateway to both directives and the stale mirror.
+**Metric:** `img-src`/`media-src` each one dead host narrower; four hosts that the browser paints stop reporting as undisplayable.
+
+
+### 2026-09-05 · ❌ DECLINED — rewriting `pack_ev_latest` as a materialized view: the benefit evaporated when the actual refresh cost was measured, and the change is destructive to a public read surface · Cowork cloud
+
+Carried as an open item since the 09-04 pass. **Declining on the evidence, not on caution.**
+
+**The benefit is gone.** The proposal rested on jobid 73's refresh being expensive. Measured now: **48 runs / 0 failed / avg 5.8 s.** There is nothing left to win. Separately, `pack_ev_latest` itself was rewritten earlier tonight (**707,048 → 10,898 buffers**, both public routes 200 in ~2.3 s), which is where the cost actually was.
+
+**The cost is real and destructive.** `mv_pack_ev_latest` is `relkind = 'm'`, so changing it needs `DROP … CASCADE` across a **public read surface with 68 dependents**. ⚠ Note the trap that already caught me once tonight: `pack_ev_latest` (relkind `v`) and `mv_pack_ev_latest` (relkind `m`) are different objects, and an `ILIKE '%pack_ev_latest%'` caller search matches the MV as a **substring** — which is how a verdict about the MV got inherited by the view. Callers must be resolved from `pg_depend`.
+
+⛔ **Filed as a normal dated entry, NOT under "Declined — do not re-suggest".** That heading is **Trevor's to edit** and I will not write into it. **Trevor: if you agree this should never be raised again, move this entry there.** Until then a future pass may legitimately re-derive it — and if it does, the numbers above are the ones to re-check first.
+
 ### 2026-09-05 · ✅ SHIPPED (e2e monitor) — the sole client-side detection surface could inspect ZERO pages and still report success · Claude Code (Trevor's box, interactive)
 
 `e2e/entity-smoke.spec.ts` probes the slug-keyed entity/detail pages by discovering a live URL per type from the app's own sitemap. Every arm is **fail-soft by design** — `test.skip(!path)`, because a thin catalogue segment must not red a monitor. That is right per type, and it left one hole.
