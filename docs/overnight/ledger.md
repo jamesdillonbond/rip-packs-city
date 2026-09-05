@@ -10,6 +10,158 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (tooling) — two sessions independently built the same SQL stripper; comparing them as implementations found two defects in the survivor, one of them live on 50 migrations · Claude Code (Trevor's box, interactive)
+
+**A collision, resolved by measurement rather than by seniority.** Both this session and the concurrent one hit the same red ratchet, read the same note in its header — *"they come off this list when a SQL stripper exists to move them to, not before"* — and independently built a single-pass SQL lexer. Mine landed as `scripts/lib/strip-sql.mjs` (`3f5f60cf4`); theirs as `scripts/lib/strip-sql-comments.mjs` (`62cae798f`), pushed on top, with the three guards re-pointed at it.
+
+⛔ **Two shared strippers is exactly the duplication the ratchet exists to prevent**, so one had to go.
+
+## How the choice was made
+
+Not by whose was later. **Both were run over all 909 migrations** and compared on the DERIVED OUTPUT of all three guards — the table set, the view set, the function set:
+
+```
+files=909   table-diffs=0   view-diffs=0   fn-diffs=0
+```
+
+Byte-for-byte identical, including on the `public_board_liveness_history` defect that motivated mine. So there was no correctness argument between them, and theirs stays — it is what the guards already import, and adopting it is zero churn. Mine is deleted.
+
+## 🚨 But the comparison was not wasted — my test suite failed the survivor twice
+
+⭐ **This is the case for keeping an independently-derived specification even after its implementation is discarded.** Re-pointing my 14 cases at their helper turned two of them red, and both were real:
+
+**1. An apostrophe inside a dollar-quoted body escaped the body.** Their dollar branch skipped only the OPENING tag and kept lexing at top level, so the body's contents were still governed by the outer scan. Given:
+
+```sql
+SELECT $$it's fine$$;
+CREATE TABLE public.still_seen (id int);
+SELECT 'z';
+```
+
+the `'` in `it's` opened a literal that ran past the closing `$$` to the `'z'` on line 3 — blanking a real `CREATE TABLE` in between. ⭐ **That is the same phantom-literal failure this whole module was written to retire, relocated one level down** — and dollar quoting exists precisely so an apostrophe needs no escaping, so the trigger is the normal case, not an exotic one. Fixed by recursing on the slice between the tags: a literal opened inside a body cannot reach code outside it, because the outside is not in the string being scanned.
+
+**2. 🚨 Offsets drifted on any astral character — and 50 of the 909 migrations contain one.** The buffer was built with `Array.from(sql)`, which iterates by CODE POINT, while every index used against it — `sql[i]`, `blank(from, to)`, `sql.length` — is a UTF-16 CODE UNIT. An emoji is one code point and two code units, so each one made the output a character SHORTER than the input and slid every offset after it:
+
+```
+input length : 62      output length: 61
+```
+
+⛔ **That silently breaks the single property a caller depends on.** `migration-new-function-states-its-anon-exec-decision` matches `REVOKE[\s\S]{0,200}?…public.<fn>\s*\(` — a **bounded window** — so drifting offsets can pull a REVOKE and a function name inside a window they were never within, and the guard vouches for a decision the file does not state. Fixed with `sql.split("")`, which splits by code unit, so a surrogate pair becomes two elements that rejoin byte-identically and a blanked emoji becomes two spaces.
+
+⚠ **THE EXISTING OFFSET TEST DID NOT CATCH IT BECAUSE ITS FIXTURE WAS ASCII**, and that is the transferable lesson: **an offset assertion over ASCII proves nothing about offsets.** This tree's migration headers are full of 🚨 and ⛔.
+
+## Shipped
+
+`scripts/lib/strip-sql.mjs` deleted. `scripts/lib/strip-sql-comments.mjs` keeps both fixes. My suite survives as `__tests__/strip-sql-shared-helper.test.ts`, re-pointed at the surviving helper and re-headed to say what it now is: **a second, independently derived specification** of the same contract. It is not redundant with the sibling suite — it holds the cases that one lacks: the apostrophe-inside-a-COMMENT direction, CRLF line endings, an apostrophe inside a dollar body, an UNTERMINATED dollar tag, the astral-offset case, and the negative control that **commentary-free SQL comes back byte-identical** (without which a stripper that blanked its entire input would satisfy every other assertion in the file).
+
+**Proven:** both fixes mutation-tested by reverting each in turn — restoring `Array.from` reds the astral case and nothing else; restoring the unbounded dollar body reds the phantom-literal case and nothing else. Ratchet holds at **0**.
+
+**Verified:** `tsc` clean · full suite **1,471 files / 16,300 tests, exit 0**.
+
+⚠ **Process note worth keeping:** the collision was only visible because the second session pushed while mine was mid-flight, and my push then failed `(non-fast-forward)`. **Neither session was wrong to build it** — the ratchet asked both of them, in writing, for exactly this. What made the duplication cheap rather than wasteful was comparing the two as *implementations over the real corpus* instead of picking one and deleting the other unread.
+
+**Revert:** `git revert <sha>` — restores the duplicate stripper and un-fixes both defects above.
+
+
+### 2026-09-05 · ✅ SHIPPED (code) — 76% of IPFS media loads were failing, and it was never our timeout: the route was single-sourced on the worst gateway available · Claude Code (Trevor's box, interactive)
+
+**Found by re-probing a claim I made six hours earlier and discovering it was wrong.** The owed re-check on `/nba-top-shot/market` after the retry deploy showed the retry firing correctly (14 image requests became 28) and no broken tiles left in the DOM — and **still not one Moment image painted.**
+
+## ⛔ The correction: "cold-cache miss, the art is fine" was refuted
+
+That earlier entry concluded these were cold-cache misses a retry would warm, on the strength of one CID answering **200 on a third try**. Re-probed 2026-09-05, one CID through our own route:
+
+```
+attempt 1: 502  8.152s   x-vercel-cache: MISS
+attempt 2: 502  8.104s   x-vercel-cache: MISS
+attempt 3: 502  8.095s   x-vercel-cache: MISS
+attempt 4: 502  8.125s   x-vercel-cache: MISS
+ipfs.io directly: 504 after 28.187s
+```
+
+**Nothing was warming, because ipfs.io could not serve the object at all.** A cache cannot fix a read that always fails.
+
+## ⭐ The measurement nobody had taken: try a different gateway
+
+Eight CIDs pulled live off the page, HEAD, from this box:
+
+| gateway | ok | latency |
+|---|---|---|
+| **`ipfs.dapperlabs.com`** | **8/8** | **0.2–1.9 s** |
+| `gateway.pinata.cloud` | 8/8 | 3.5–7.0 s |
+| `ipfs.filebase.io` | 7/8 | 0.0–0.9 s |
+| `ipfs.io` | **2/8** | six 12 s timeouts |
+| `cloudflare-ipfs.com` | 0/8 | DNS gone — host decommissioned |
+
+🚨 **So the art really is fine — and `ipfs.io`, our only upstream, is the single worst source for it.** The route's own header already recorded **99 × 502 against 26 × 200 over 72 h (~76% of uncached loads failing)** and attributed it to a slow gateway. Two fixes followed — a longer budget, then a client-side retry — and **both treated the gateway as a given.** `const UPSTREAM = "https://ipfs.io/ipfs/"` had never been questioned.
+
+## Shipped
+
+`GATEWAYS = [ipfs.dapperlabs.com, ipfs.io]`, ordered by measured availability, **raced**.
+
+⚠ **RACED, NOT TRIED IN SEQUENCE, and the reason is a constraint this route has already been burned by.** Sequential fallback costs the SUM of the budgets: two gateways at 8 s each is 16 s, plus the 12 s body budget puts the worst case past the platform's 25 s initial-response cutoff — reviving exactly the dead-502 bug the header documents (the old 25 s timeout lost the race to the platform's own, making the soft-fail path unreachable dead code). Raced, the headers phase costs at most `HEADERS_TIMEOUT_MS` no matter how many gateways are listed. **The fallback is free in the dimension that was already tight.**
+
+⚠ **`Promise.any`, not `Promise.race`** — a gateway answering 504 must not win and end the request. Each attempt REJECTS on a non-ok answer, so only a streamable 2xx can settle it.
+
+⚠ **`ipfs.dapperlabs.com` was chosen partly because it is ALREADY in `proxy.ts` CSP** (`img-src` and `media-src`). The oversize path 302s the browser straight at whichever gateway answered, so a gateway absent from the CSP would have fixed the proxy leg and broken the redirect leg in the same change. **No CSP edit was needed, and `proxy.ts` is on the do-not-auto-ship list** — Pinata and Filebase are better on paper and are deliberately NOT here for that reason.
+
+⚠ **The log's FIELD NAMES were deliberately preserved.** This used to be two lines (`reason=`/`name=` for a throw, `upstreamStatus=` for a refusal) and there is now one outcome to report. Renaming would have silently **emptied** every existing operator query rather than changing what it returned — a dashboard reading zero looks like a route that stopped failing. `reason`/`name` now describe the primary gateway, `upstreamStatus` the first that answered, and a new `detail=` carries all of them. ⚠ `upstreamStatus` is **omitted entirely** when nothing answered, because an abort is not an upstream status — pinned by a pre-existing test that asserts the token is absent on an abort.
+
+## Proven, and the fifth mutation is the one worth reading
+
+8 new cases. Five mutations, and **four red immediately**: single gateway again · `Promise.race` for `Promise.any` · gateway order reversed · flatten every all-failed outcome to 502.
+
+🚨 **The fifth — delete the loser-abort loop entirely — left all 26 cases GREEN.** Every one of them asserts on what the CLIENT receives, and the client receives the winner's bytes whether or not the loser is cancelled. **The cost of not aborting is invisible from the response:** the loser's stream keeps being pulled into the function, so every image is fetched twice from upstream. ⛔ That is not hypothetical — this route's own header records the Fast Data Transfer incident that came from exactly this class, bytes moving through the function nobody needed. A fan-out that forgot to cancel would have quietly reintroduced it at N×.
+
+**The fix: assert the SIGNAL, not the payload** — the loser's `AbortSignal.aborted` is `true` and the **winner's is `false`** (the second half is the control; without it, a mutation aborting everything would pass). With it, that mutation reds.
+
+⚠ **Two separate files pinned the oversize redirect target**, and I found one and missed the sibling — the full suite caught it. Both now assert the redirect goes to the gateway that ANSWERED, since redirecting to a host we never heard from would hand the client to the one that just failed us.
+
+**Verified:** `tsc` clean · full suite **1,470 files / 16,286 tests, exit 0**.
+
+⏳ **OWED:** re-probe `/nba-top-shot/market` after deploy. ⚠ **This box's reachability is not Vercel edge's** — CLAUDE.md's own rule is that an egress allow-list is PER-PROVIDER, so the 8/8 above does not prove the edge runtime can reach Dapper. The race makes that safe to find out: if Dapper is unreachable from edge, the ipfs.io leg still runs and behaviour is no worse than today. **The post-deploy probe is the real measurement.**
+
+ⓘ **Filed, not fixed:** `cloudflare-ipfs.com` is still in the CSP and is 0/8 with instant DNS failure. Removing it means editing `proxy.ts`, which is off-limits for autonomous shipping — it is Trevor's call.
+
+**Revert:** `git revert <sha>` — the route goes back to ipfs.io alone, and with it the 76% failure rate.
+
+
+### 2026-09-05 · ✅ SHIPPED (tests) — the E2E monitor now asserts that images actually PAINTED, which is the one thing it structurally could not see · Claude Code (Trevor's box, interactive)
+
+**Found by asking what the only client-side detection surface is blind to.** `e2e/healthy-page.ts` asserted HTTP status, body text, console failures and pageerrors — and **nothing about whether an image rendered.** So a page could return 200, log not one error, and still show a grid of blank tiles, with every gate green.
+
+⚠ That gate is not one of several. CLAUDE.md records that **Sentry has dropped every event since 08-18** and no `window.onerror` exists, so the scheduled `E2E DOM Smoke` badge is the ENTIRE client-side detection surface. A blind spot in it is a blind spot everywhere.
+
+## Two live defects rode under it
+
+- `/nba-top-shot/market` — **12 of 15** `/api/public/ipfs-media` images returned 502 and rendered blank.
+- `/insights/top-sales` — two Candy MLB cards blank, first because the CSP refused `arweave.net`, then (after a same-day "fix") because the avatar proxy 502'd every redirect from that host.
+
+## Shipped
+
+A same-origin broken-image assertion in `assertHealthyPage`, so every page the smoke already visits is now also checked for images that decided and painted nothing.
+
+⚠ **SAME-ORIGIN ONLY, and that is the design, not a shortcut.** A third-party CDN blip is not our defect, and a gate that cries wolf is one people learn to ignore — which this file's own header spends a paragraph forbidding, precisely because it is the only gate for the 200-but-broken-DOM class. An image served from OUR origin failing is always ours.
+
+⚠ **A RATIO (≤ 50%), NOT A BAN — and not because a ban is stricter than we can afford, but because a ban would be WRONG.** The `ipfs-media` retry converts a *first-visitor* failure into a second-request success, so one genuinely cold CID can still leave a single tile blank; that is the system working. What is never working is MOST of them blank. **12 of 15 is a systemic break; 1 of 15 is a cold cache.** The threshold sits where those two separate.
+
+⚠ `complete` is load-bearing. A lazy or below-the-fold image has `naturalWidth === 0` simply because it has not loaded yet, so asserting on it would measure the probe's patience rather than the page. Only decided images count, and below 4 same-origin images the ratio is noise and is not evaluated.
+
+## Proven
+
+3 fixtures in `e2e/smoke-selfcheck.spec.ts`, served by real routes (`/img/ok.png` is a genuine 1×1 PNG; `/img/broken.png` 502s):
+
+- **BROKEN_IMAGES** — 5 of 6 broken, must **FAIL**. Without it the assertion could be vacuous.
+- **HEALTHY_IMAGES** — must **PASS**. The negative control.
+- **ONE_BROKEN_IMAGE** — 1 of 6, must **PASS**. This is the one that pins the *ratio* rather than a ban, and it is what stops a future tightening from turning a cold CID into a red badge.
+
+**Verified:** self-check **28/28** · live production smoke **63/63 with zero false failures** — which is the assertion that matters most, since a new gate's first job is not to break the existing green.
+
+⛔ **This detects; it fixes nothing.** The market-page blanks are addressed separately.
+
+**Revert:** `git revert <sha>` — the smoke goes back to being unable to see a blank image.
+
+
 ### 2026-09-05 · ✅ SHIPPED (code) — my own guard turned CI red, and the fix was to build the module the repo had been asking for since August: a shared SQL stripper, and a ratchet floor of 2 → 0 · Cowork (cloud)
 
 **`259a02e` went red on `Unit tests — shard 1/2`, and the failing test was `guards-use-the-shared-comment-stripper`: "RATCHET: the local-stripper population does not grow".** The RLS guard I had just shipped grew its own SQL comment stripper, taking that population 2 → 3. ⭐ **The ratchet caught it in CI, on the commit that introduced it** — which is the argument for the fix being the shared module rather than an exemption.
