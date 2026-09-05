@@ -1,4 +1,4 @@
-# The upstream cause of the fabricated-empty is now COUNTED — 197 sites, of which 28 can reach a reader, and the hit rate inside those is roughly 1 in 3
+# The upstream cause of the fabricated-empty is now COUNTED — 197 sites, of which 28 can reach a reader, and the hit rate inside those is about 1 in 9
 
 **Filed 2026-09-05 05:55Z (2026-09-04 22:50 PT) · Claude Code on Trevor's box, interactive · MEASUREMENT, nothing shipped from it — ⛔ the population is NOT bulk-fixable and the spot-check is what shows why**
 
@@ -40,7 +40,14 @@ Three sites read at filing time, and they land in three different places:
 | `recent-sales:95` — `fmvRows` hydration | prices are simply absent from the rows | ⚠ understates; honest by omission |
 | `badges:200` — `syncData` last-synced stamp | the freshness stamp is absent | ⚠ understates; honest by omission |
 
-**Roughly one in three is a real false claim, and the severities are not comparable** — one produces a *wrong* answer, two produce a *quieter* one. ⛔ **So this cannot be swept.** A mechanical "add `error` to every destructure" pass would touch 197 sites to fix perhaps a third of 28, and would have to invent an error policy per call site to do it — exactly the shape that ships a defect while reading as hardening. The same argument the complement ratchet's header already makes about bounding.
+**⚠ CORRECTED after a larger sample the same evening — it is closer to 1 in 9, and that STRENGTHENS the conclusion.** The three sites above gave "1 in 3"; reading the whole of `app/api/support-chat/context` (the largest single entry on the list, 6 sites) added **six more with ZERO defects**. That file is honest *by construction*: every branch that makes a claim requires a POSITIVE value to fire, so a failed read produces **silence**, not a false statement —
+
+```ts
+const { deals_below_20, deals_below_30, total_tracked } = pulse?.[0] ?? {};
+if (deals_below_30 && deals_below_30 > 0) { … }        // a failed read fires nothing
+```
+
+⭐ **That is the pattern worth copying, and it is why the destructure alone is not the defect.** Discarding `error` is only dangerous where a null can still REACH a claim. Sample so far: **9 sites read, 1 real false claim** — and the severities are not comparable, since that one produced a *wrong* answer while the others produce a *quieter* one. ⛔ **So this cannot be swept.** A mechanical "add `error` to every destructure" pass would touch 197 sites to fix perhaps a third of 28, and would have to invent an error policy per call site to do it — exactly the shape that ships a defect while reading as hardening. The same argument the complement ratchet's header already makes about bounding.
 
 ⚠ ~~**`recent-sales:55` is the one worth doing next**~~ — ✅ **FIXED the same evening (ledger 2026-09-04), and my framing here was WRONG.** I called it an undecided behaviour question. It was already decided: the SAME FILE, ten lines above, forbids exactly this shape for the sibling `collectionId` parameter (*"the response looks authoritative. That is a fabricated-data shape. Return empty instead."*). I had read past that comment while writing this filing. A failed lookup now returns an honest error; a lookup that succeeded and matched nothing returns an empty list, matching that precedent.
 
