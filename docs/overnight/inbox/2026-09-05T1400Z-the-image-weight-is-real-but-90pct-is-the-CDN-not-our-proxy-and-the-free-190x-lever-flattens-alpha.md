@@ -115,3 +115,50 @@ Before anyone re-tries them: the alpha-preserving escapes do not exist on this C
 ⭐ **So there is no alpha-preserving cheap path.** The `/media/<id>/image` transform is the only CDN-side lever, and it flattens to black. That makes the decision above genuinely a decision — not a search for a cleverer URL — and it is the reason this was filed rather than shipped.
 
 ⓘ One consequence worth stating: because the raw path **ignores** unknown query parameters and returns 200, any future "add `?width=` and measure" attempt will look successful in a status-code check and change nothing. **Measure the BYTES, not the status.**
+
+---
+
+## ADDENDUM 2 — trophies is a **10× outlier**, the house pattern already solves this at scale, and the lever DOES reach edition-grained boards
+
+Widened the measurement, because "trophies is the surface to fix" rested on too few pages. On-load image bytes, 390 px, each URL counted once:
+
+| page | `<img>` | loaded | **MB on load** | largest |
+|---|---|---|---|---|
+| **`/insights/trophies`** | 205 | 21 | **75.06** | 7.59 |
+| `/insights/top-sales` | 118 | 23 | 7.41 | 6.55 |
+| **`/insights/serial-premiums`** | **106** | 19 | **0.60** | 0.09 |
+| `/insights/underpriced-serials` | 39 | 15 | 0.61 | 0.09 |
+| first-mint · parallel-premiums · set-completers · nba-top-shot/collection | 1–2 | 1 | 0.09 | 0.09 |
+
+⭐ **Trophies is a 10× outlier, and `serial-premiums` is the proof the problem is solvable: 106 moment tiles in 0.60 MB.** Two boards of comparable size differ by **125×** in transferred bytes.
+
+**The difference is one line of URL construction:**
+
+```ts
+// serial-premiums (0.60 MB / 106 tiles) — SerialPremiumsBoardClient.tsx:107
+if (r.nft_id) return `https://assets.nbatopshot.com/media/${r.nft_id}/image?width=512`
+return r.thumbnail_url || null          // sized when keyed, raw as fallback
+
+// trophies (75 MB / 205 tiles) — TrophiesBoardClient.tsx:148
+src={proxyIpfsUrl(r.thumbnail_url) ?? undefined}   // always the raw stored URL
+```
+
+## ⛔ And a correction to Addendum 1's scope
+
+The "free 190× lever" is real but I implied it applies here directly. **It does not, as written:** the sized form is keyed on a numeric **moment** id, and the trophies `Row` is **edition-grained — it carries no `nft_id`** (`thumbnail_url`, `circulation_count`, `is_one_of_one`; the API supplies none either). The raw *edition* URLs it does carry have **no sized variant at all** — proven above: query params ignored (200 + full 6.8 MB), predictable sizes 404.
+
+⭐ **But the lever IS reachable for an edition-grained surface, and this repo already does it.** `app/(collections)/[collection]/edition/[slug]/page.tsx:559` derives a **representative** nft_id from any sale of that edition and uses exactly this form:
+
+```ts
+const repNftId = repSales.find(s => s.nft_id && /^\d+$/.test(s.nft_id))?.nft_id ?? null
+const tsHeroImg = isTopShotColl && repNftId
+  ? `https://assets.nbatopshot.com/media/${repNftId}/image?width=1080` : null
+```
+
+So the shape of the fix is **not new code**, it is the pattern from two existing surfaces: **have `/api/public/insights/trophies` return a representative `nft_id` per row**, and prefer the sized URL with `thumbnail_url` as the fallback that already exists on both boards.
+
+## The one open cost, and why this still was not shipped
+
+⚠ **Supplying `rep_nft_id` means joining `sales` (or `moments`) inside a public read that is already under a bound, on an IO-bound instance.** That cost is unmeasured, and this route is one of the surfaces that has been crossing its read bound today. **Measure the join before adding it** — a fix that trades 75 MB of image transfer for a route timeout is not a fix.
+
+⛔ Still unchanged: the sized form **flattens transparency to black**. ⓘ The precedent is now stronger than Addendum 1 implied — `serial-premiums`, `underpriced-serials` and the **edition hero** all ship the flattened form on public surfaces today — but trophies is a showcase board, so it remains a look-at-it-in-light-mode call rather than an obvious yes.
