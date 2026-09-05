@@ -10,6 +10,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ⓘ SHIPPED (comment only) — the trophy-thumbnail host allowlist re-derived on its own instruction; SET unchanged · Claude Code (Trevor's box, interactive)
+
+Swept for more copies of the defect `e900d58b5` found (a hand-copy whose comment claimed a test kept it in sync while no test read it). **Four host-list constants exist; none is a second instance.** `CSP_ALLOWED_IMAGE_HOSTS` was the drifted one and is now fixed and genuinely guarded; `PROXYABLE_AVATAR_HOSTS` and `ALLOWED_ORIGIN_HOSTS` serve different purposes (what to proxy, origin checking) and mirror nothing.
+
+The fourth, `lib/profile/trophy-thumbnail.ts`'s `ALLOWED_HOSTS`, is **derived rather than copied** — its comment carries the query and the row counts it came from — and it **instructs the reader to re-derive**. So I ran it: **the host set is identical**, the same seven with no new arrival, while counts moved (`assets.nbatopshot.com` 11,064 → 11,667, `ipfs.dapperlabs.com` 2,248 → 2,335).
+
+⭐ **Recorded because that combination is the instructive one:** a count moving while membership holds is exactly the case where *"the numbers changed, so the list is stale"* and *"the numbers match, so nothing changed"* are **both wrong**. Only a SET diff answers it. Stamped with the date so the next reader knows when it was last true.
+
+**No behaviour change. Revert:** `git revert <sha>` — removes a comment.
+
+
 ### 2026-09-05 · ⓘ SHIPPED (comment only) — a Candy-launch landmine recorded at the line that would trigger it, found while verifying tonight's CSP ship · Claude Code (Trevor's box, interactive)
 
 **Verifying a colleague's ship rather than assuming it.** `e900d58b5` removed `cloudflare-ipfs.com` from the CSP and restored four hosts to the avatar-proxy mirror. ✅ **Three of its claims re-derived independently and all hold:** the live `img-src` on production carries `arweave.net` + `*.arweave.net` + `*.supabase.co` + `gateway.pinata.cloud` and **no `cloudflare-ipfs` anywhere**; `cloudflare-ipfs.com` is deliberately **retained** in `IPFS_GATEWAY_RE` (removing it would leave a legacy URL hotlinking a dead host instead of being rewritten onto our proxy); and the sync test its old comment falsely claimed now genuinely exists, reads `proxy.ts` from disk **and asserts the directive parse landed** before comparing, so it cannot pass by matching nothing.
