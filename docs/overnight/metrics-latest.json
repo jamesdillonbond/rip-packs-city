@@ -1,6 +1,6 @@
 {
- "generated_at_pt": "2026-09-05T06:55:00-07:00",
- "pass": "2026-09-05 Cowork cloud — the 403 critical cleared, pack_ev_latest rewritten (65x), tonight's new editions verified in the product, and five of my own alarms refuted by controls",
+ "generated_at_pt": "2026-09-05T08:05:00-07:00",
+ "pass": "2026-09-05 Cowork cloud overnight — 2 DB ships (403 attribution, pack_ev_latest 65x), 4 filings, and SIX corrections to my own claims",
  "migrations_applied": [
   "20260905110532 the 403 arm attributes the Atlas walk by request_id, so a self-healing upstream challenge stops paging as critical (0 criticals on the board)",
   "20260905134612 pack_ev_latest joins pack_ask_state once instead of probing it per history row (128,911 loops / 382,519 buffers returning zero rows every loop) — 707,048 -> 10,898 buffers, equivalence proven both directions"
@@ -75,19 +75,18 @@
   "the wmc metadata reconcile cursor was rewound to ~103 during the mint_count investigation; it re-walks idempotently and was at 126:4424 at 18:30 PT."
  ],
  "health_at_close": {
-  "pt": "2026-09-05 06:55",
+  "pt": "2026-09-05 07:56",
   "security_invariants_rows": 0,
   "detect_stalled_pipelines": 0,
   "secdef_anon_execute_violations": 0,
   "pipeline_alerts_critical": 0,
   "pipeline_alerts_total": 7,
-  "trust_breaches": 1,
-  "trust_breach_detail": "unmapped_resolution_backlog_max 148/100 (down from 172 on 09-04)",
+  "trust_breaches": 2,
+  "trust_breach_detail": "unmapped_resolution_backlog_max 132/100 (improving 172 -> 148 -> 132); public_board_slow_count 1 = topshot_2025_rookie_cohort_stats at 5,133ms sampled 11:28Z — LOAD not shape (same pruned count(*) shape reads 10ms now), and the probe's sweep was 209 min stale",
   "atlas_sets_stale_over_6h": 0,
   "atlas_sets_total": 266,
-  "cron_24h_succeeded": 5658,
-  "cron_24h_failed": 2,
-  "cron_24h_failed_note": "both from jobids no longer present in cron.job; no 'job startup timeout' status",
+  "editions_enriched_trend": "3289 -> 770 -> 60 -> 407 -> 153 -> 29 -> 0,0,0,0,0 (converged; backfill caught up)",
+  "editions_enrich_errors": 0,
   "sentry": "NOT READ — no Sentry MCP in this session (standing 'dark since 08-18' blocker)"
  },
  "measured_not_shipped": [
@@ -128,5 +127,16 @@
   "honest_cost": "trades index-ordered scan for Seq Scan + external merge sort spilling ~28-49MB temp per execution; sized at tens of calls/hour so not a concurrency hazard",
   "live_after": "/api/public/insights/pack-reality 200 in 2.1s cold / 0.26s warm; /api/packs?collection=nba-top-shot 200 in 2.2s, 100 rows",
   "falsifier": "the two Vercel error groups must STOP — re-read get_runtime_errors for those routes after 2026-09-06"
- }
+ },
+ "owed_watches": [
+  "pack_ev_latest falsifier: the two Vercel error groups (/api/public/insights/pack-reality, /api/packs) must STOP. Read get_runtime_errors AFTER 2026-09-06. Interim: 0 events since the 13:46Z apply, but P(0 | fix did nothing) ~= 0.07 — suggestive, not closed. Both groups were already quiet 2h+ BEFORE the apply.",
+  "topshot-catalog-backfill silence: first testable 19:12 PT 2026-09-05",
+  "allday-pack-opens-backfill 56.6% alert: self-clears ~22:00 PT 2026-09-05"
+ ],
+ "needs_trevor": [
+  "sentinel — ack or retire the three dead Top Shot pipelines. NOT done autonomously: migration 20260903163248 records twice that using the ack mechanism is Trevor's decision. Measurement complete in inbox 2026-09-05T1015Z.",
+  "mv_pack_ev_latest rewrite — still operator-gated by the 2026-08-30 verdict (DROP ... CASCADE). Untouched by tonight's work; it is a different object with a different disease.",
+  "cloudflare-ipfs.com is still in the proxy.ts CSP and the host is decommissioned — inert, but a CSP reads as a claim about which gateways exist.",
+  "unmapped-drain stall test fires 45.8% of hours on a working drain; the obvious retune measures WORSE (60.4%). Needs a design call, not a tune. inbox 2026-09-05T1125Z."
+ ]
 }

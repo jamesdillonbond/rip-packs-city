@@ -1559,3 +1559,67 @@ finding. It is the **jsonb-array** shape and that row holds `[]`. `pg_get_functi
 `jsonb_array_length` says **0**; it is CLEAN. **Read the return TYPE before interpreting the count — a
 row count is not a finding count for half of these functions**, and the misreading direction here is
 toward a false incident report.
+
+
+## 🚨 A correlated `EXISTS` evaluated BEFORE a `DISTINCT ON` (2026-09-05) — 128,911 probes to return zero rows every time
+
+`pack_ev_latest` filtered on `NOT (collection_id = <ts> AND EXISTS (SELECT 1 FROM pack_ask_state a WHERE … AND h.gross_ev > 3 * a.lowest_ask))`. Because the predicate is **correlated on the outer row's `gross_ev`**, the planner cannot hash it, so it ran once per `pack_ev_history` row — **before** the `DISTINCT ON` reduced 314,130 rows to 4,642:
+
+```
+SubPlan 3 -> Index Scan pack_ask_state_pkey
+    loops = 128,911     buffers = 382,519     rows = 0 on every loop
+```
+
+**382,519 buffers — 54% of the query — for nothing**, against a `pack_ask_state` of 3,028 rows in which the same `dist_id` was re-probed thousands of times.
+
+### The rewrite, and the two things that make it sound
+
+A `LEFT JOIN`. ⚠ **Sound ONLY because `pack_ask_state_pkey` is UNIQUE on `(collection_slug, dist_id)`** — with a non-unique key the join multiplies rows and the counts silently change.
+
+```
+EXISTS (... AND h.gross_ev > 3 * a.lowest_ask)
+  ==  a.dist_id IS NOT NULL AND COALESCE(h.gross_ev > 3 * a.lowest_ask, false)
+```
+
+⚠ **THE `COALESCE` IS LOAD-BEARING.** On a NULL `gross_ev` the two forms DIVERGE: the subquery returns no rows so `NOT(true AND false)` = true and the row is **KEPT**; the join yields `NOT(true AND NULL)` = NULL and `WHERE` **DROPS** it. There are 0 NULLs today — which is exactly why this would have shipped as equivalent-by-luck.
+
+⛔ **What must NOT change: the filters still run BEFORE the `DISTINCT ON`.** Moving them after is a *semantic* change — filter-then-distinct keeps the newest row *that qualifies*; distinct-then-filter drops a key entirely when its newest row fails but an older one passes.
+
+**Measured:** 707,048 → 10,898 buffers (65×). ⚠ **The honest cost:** it trades the index-ordered scan for a Seq Scan + **external merge sort spilling ~28–49 MB** per execution, because the hash join destroys the ordering the `DISTINCT ON` was riding. Total I/O still falls ~30×. Size the caller rate before accepting that trade.
+
+## 🚨 `pg_stat_statements WHERE query ILIKE '%name%'` cannot tell an object from every object CONTAINING its name (2026-09-05)
+
+Sizing the change above, `ILIKE '%pack_ev_latest%'` returned `refresh_mv_pack_ev_latest()` as the top hit and it was read as the dominant caller. **It is not a caller at all** — the pattern matched **`mv_pack_ev_latest`**, which does not reference the view (`position('pack_ev_latest' in pg_get_viewdef('mv_pack_ev_latest')) = 0`).
+
+- Use a word boundary: `query ~ '(^|[^_a-z])pack_ev_latest'`.
+- Better, for "who consumes this object": **resolve it from `pg_depend`**, not from query text.
+
+```sql
+SELECT DISTINCT dc.relname, dc.relkind
+FROM pg_depend d
+JOIN pg_rewrite r ON r.oid = d.objid
+JOIN pg_class dc ON dc.oid = r.ev_class
+JOIN pg_class sc ON sc.oid = d.refobjid
+JOIN pg_namespace n ON n.oid = sc.relnamespace
+WHERE n.nspname = 'public' AND sc.relname = '<object>' AND dc.oid <> sc.oid;
+```
+
+⭐ The conclusion happened to survive; **the citation did not**, and a wrong citation in a shipped migration header is worse than no citation.
+
+## ⭐ Measuring a post-change effect: a SINGLE-CALL DELTA, never a pooled mean (2026-09-05)
+
+Three MV refreshers showed **55,463 s ≈ 15.4 hours** pooled and **707,481 blocks/call** — which reads as enormous reclaimable headroom. Their **recent runs are 1.5–9.7 seconds**: the mean is pooled since the 2026-08-12 stats reset and dominated by a slower era. **A pooled mean spanning a fix measures the fix's absence.**
+
+The instrument that works:
+
+1. Snapshot `calls, shared_blks_hit, shared_blks_read, total_exec_time, temp_blks_written` for the exact `queryid`.
+2. Wait for **one** scheduled run.
+3. Difference, and divide by `calls_after - calls_before`.
+
+Result for jobid 245: **15,329 blocks / 1,734 ms for that one call.** ⭐ And the positive control that matters more than the ratio: `temp_blks_written` was **0 across all 548 prior calls and 3,967 on the first post-change call** — the new external sort appearing exactly where predicted, proving the new path is the one running rather than inferring it from timing.
+
+## ⚠ `public_board_slow_count`'s probe is `count(*)`, which PRUNES (2026-09-05)
+
+The board-liveness probe times `SELECT count(*) FROM <view>`, and the planner drops CTEs the count does not need — on `topshot_2025_rookie_cohort_stats` the `player_editions` CTE reads **`never executed`**. So the probe's number is **not what a real caller pays**, in either direction. It is only comparable **to itself**: 5,133 ms at 11:28Z vs 10 ms later, same pruned shape, is evidence of **load, not structure**.
+
+⚠ Also check `sweep_age_min` from `public_board_liveness_probe()` before acting — the probe reads `public_board_liveness_state`, whose sweep was **209 minutes stale** when this breach was investigated, so the breach described a window that had already passed.
