@@ -10,6 +10,55 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ VERIFIED IN PRODUCTION — the IPFS gateway race took `/nba-top-shot/market` from 0 of 14 images serving to 16 of 16, and the success log now names which gateway did it · Claude Code (Trevor's box, interactive)
+
+**Closes the owed re-probe on `dd61aa266`.** Measured by rendered DOM in a fresh browser context, then by direct probe of every distinct CID the page requests, 1.5 s apart.
+
+```
+RENDERED DOM  : sameOriginDecided=10  sameOriginBlank=0  ipfsImgs=8  ipfsBlank=0
+                natural sizes 2880x2880
+ipfs-media HTTP: {"200": 16}     ← every request, no 502s at all
+
+DIRECT PROBE of 16 distinct CIDs:   SERVED 16/16
+  200  0.65s  2,582,279 B  cache=HIT
+  200  0.20s  2,462,918 B  cache=HIT
+  …  (14 more, 0.17–0.43 s, 2.2–2.8 MB each, every one cache=HIT)
+```
+
+**The before, from the same page hours earlier:** 12 of 15 blank; then, after the client-side retry shipped, **14 requests → 14 × 502, and on a second visit 28 → 28 × 502**, with zero images painting. One CID returned 502 on **four consecutive** direct attempts at 8.1 s each.
+
+⭐ **The `cache=HIT` on every row is the second result.** The route was designed so "the first request warms the Vercel edge and every subsequent load is a fast, cached same-origin hit" — and with a gateway that answered ~24% of the time, the edge had almost nothing to cache. The amortisation the route always intended is now actually happening.
+
+⭐ **And it settles the egress question the ledger flagged as open.** CLAUDE.md's rule is that an egress allow-list is PER-PROVIDER, so 8/8 from this box did **not** prove the Vercel edge runtime could reach `ipfs.dapperlabs.com`. It can. The race was chosen precisely so that finding out was safe.
+
+## Shipped alongside: the success path now names the gateway
+
+⚠ **Fixing the behaviour without fixing the record leaves the incidence unmeasurable.** The failure log named every gateway and its outcome; the SUCCESS log named none. So the one question this change raises — *is the fallback earning its keep, or is the primary carrying every request?* — was unanswerable from the logs. ⛔ And the case that makes it load-bearing: **if the primary silently dies, every request quietly falls back, the old ~76% failure rate returns the moment the fallback degrades too, and nothing says why.**
+
+`gateway=<host>` now appears on the ok line, the oversize-redirect line and the failure line. **Two mutations, both red:** drop the field, and hardcode the primary as the label rather than reading the winner (the second is why the case carries a `not.toContain` control).
+
+**Verified:** `tsc` clean · full suite **1,471 files / 16,301 tests, exit 0**.
+
+## ⏳ Also closed tonight: the Step 5b timeout falsifier, and my first instrument for it was wrong
+
+The owed watch was *"0 timeouts over ≥100 runs, split at the 04:13Z deploy"*. First attempt read `pipeline_runs.error` and returned **0 timeouts in BOTH eras** — including a window the original filing measured at 38. ⭐ **A zero that contradicts a known non-zero is a broken instrument, not a result.** They are recorded in `extra`, with `ok = true`: 52 runs in 73 h carry a `canceling statement` inside that column and every one of them reports a green pipeline.
+
+Re-measured on the right column, **with a no-change control**:
+
+| step | before deploy | after deploy |
+|---|---|---|
+| `historical_fallback_error` (Step 5b — the one fixed) | **37 / 437 = 8.47%** | **0 / 24 = 0%** |
+| `stale_touch_error` (untouched — the control) | 26 / 437 = 5.95% | 1 / 24 = 4.17% |
+
+⚠ **NOT YET EVIDENCE, and the exit condition stands.** P(0 timeouts in 24 runs \| the rate is unchanged) ≈ **0.12** — the null already predicts this outcome one time in eight. At ~6 runs/hour, ≥100 runs lands about 16 h out.
+
+⭐ **But the control is what makes even the interim reading worth anything.** `stale_touch_error` — a step this fix never touched — is **still timing out after the deploy**. Without it, "0 timeouts" would be indistinguishable from "the instrument stopped recording", which is exactly the mistake the first query made.
+
+ⓘ **New, unfiled, found by building that control:** `stale_touch_error` times out on ~6% of `fmv-recalc` runs and has done so continuously across the window, under `ok = true`. It is a sibling of the defect already fixed, in the same route, and nothing alerts on it.
+
+**Revert:** `git revert <sha>` — the logs stop naming the gateway. The gateway race itself reverts separately (`dd61aa266`).
+
+
 ### 2026-09-05 · ✅ SHIPPED (docs) — the "2 sets where Atlas has more than us" was a PHANTOM, and the four health checks disagree about what clean looks like · Cowork (cloud)
 
 **Overnight block 2, closing the last half of queue item 2.** A completeness check comparing our per-set `editions` count against `atlas_set_refresh_state.total_count` reads **20 sets where we exceed Atlas (124 rows) and 2 where Atlas exceeds us (30 rows)**. ⭐ **Both directions are artifacts of the instrument, and the second one is a genuine Atlas quirk worth knowing.**
