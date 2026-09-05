@@ -31,6 +31,7 @@ import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollectionUuid } from "@/lib/collections"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import IpfsImg from "@/components/media/IpfsImg"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
 import PackMarketView from "@/components/packs/PackMarketView"
@@ -829,11 +830,9 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
     >
       <div style={{ aspectRatio: "1 / 1", background: "var(--rpc-surface)", position: "relative", overflow: "hidden" }}>
         {hasThumb ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <IpfsImg
             src={proxyIpfsUrl(listing.thumbnailUrl) ?? undefined}
             alt={listing.playerName ?? ""}
-            loading="lazy"
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           />
         ) : (
@@ -986,8 +985,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
               >
                 <td style={td}>
                   {l.thumbnailUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={proxyIpfsUrl(l.thumbnailUrl) ?? undefined} alt="" loading="lazy" width={80} height={80} style={{ borderRadius: 8, objectFit: "cover" }} />
+                    <IpfsImg src={proxyIpfsUrl(l.thumbnailUrl) ?? undefined} alt="" width={80} height={80} style={{ borderRadius: 8, objectFit: "cover" }} />
                   ) : null}
                 </td>
                 <td style={{ ...td, color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", fontWeight: 700 }}>

@@ -34,6 +34,12 @@ export default defineConfig({
         "components/profile/**/*.tsx",
         "components/packs/**/*.tsx",
         "components/entity/**/*.tsx",
+        // Added 2026-09-04 with its first component. `components/media/IpfsImg`
+        // carries the one-shot retry for /api/public/ipfs-media cold-cache 502s
+        // (12 of 15 images blank on /nba-top-shot/market, measured live), and it
+        // ships WITH tests — so it joins the gate rather than the unmeasured
+        // allowlist. The rot-guard is what caught the omission.
+        "components/media/**/*.tsx",
         "components/sniper/**/*.tsx",
         "components/collection/**/*.tsx",
         "components/pinnacle/**/*.tsx",
