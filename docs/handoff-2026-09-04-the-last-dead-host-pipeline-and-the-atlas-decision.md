@@ -84,6 +84,35 @@ created in the trailing 14 days by the Cadence stub path, so the lane is not dar
 open because creating `editions` rows ripples into circulation, the sitemap and every entity
 surface. **That is a decision for Trevor, not a chore to slip into a retirement commit.**
 
+## ⚠ Correction to this document's own title, made the same hour
+
+**"The last dead-host Top Shot pipeline" is wrong — there is a fourth, `ingest-topshot-challenges`.**
+Identical shape (`Top Shot GQL HTTP 530: error code: 1033`, last success 2026-08-28, then 7 of 7
+daily ticks failed); I missed it only because the filing I worked from listed three.
+
+⭐ **Its disposition is the opposite of the other three, which is why finding it matters rather
+than merely embarrassing.** `lib/challenges/hub-fetchers.ts` reads *this pipeline's own
+`pipeline_runs` history* to decide whether `/challenges` may keep promising that new challenges
+will appear (`CHALLENGE_FEED_STALE_DAYS = 3`). **The dead cron is the instrument that makes that
+page honest** — unscheduling it would freeze `lastOkDay` and remove the only thing that could ever
+notice the host coming back. One run a day. **It stays.**
+
+ⓘ Two Atlas service names were probed as a possible replacement
+(`ChallengeService/SearchChallenges`, `/ListChallenges`); both returned **404 page not found**.
+That is two guesses, not a survey — the Atlas service catalog is not known to us, so the honest
+statement is *"not found on two probed names"*, never *"Atlas has no challenges"*.
+
+## ⚠ A high-severity alert that needs no action
+
+`get_pipeline_alerts()` reads `allday-pack-opens-backfill` at **64/113 runs failed (56.6%),
+severity high**. It is a **window artifact of a deliberate decision, not a regression**: pg_cron
+jobid 55 was unscheduled earlier the same day (AllDay is sunset; its ticks were dying at pg_net's
+90 s wall and queueing every other pg_net request behind them). Its last run — 2026-09-03 21:56 PT
+— was `ok=true` with 104 rows written, and every failure in the arm's 2-day window predates the
+unschedule. **The arm self-clears around 2026-09-05 22:00 PT.** ⛔ Do not re-file it and do not
+"fix" it. One grep of the ledger answered it, which is the second time in this pass that grepping
+before filing was the entire job.
+
 ## Instrument trap found this pass — record it before it misleads someone
 
 `select count(*) from public.check_secdef_anon_execute_violations()` returns **1** on a clean
