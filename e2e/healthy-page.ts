@@ -192,6 +192,26 @@ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<v
     // Images served by OUR OWN media proxies. Always page CONTENT, never chrome.
     const MEDIA_ROUTES = ["/api/public/ipfs-media", "/api/public/avatar-media", "/api/moment-thumbnail"]
     const proxied = sameOrigin.filter((el) => MEDIA_ROUTES.some((r) => (el.currentSrc || el.src).includes(r)))
+    // Images from a THIRD-PARTY host, grouped BY HOST. Most of this site's art
+    // is served straight from a CSP-allowed CDN, so it is invisible to both
+    // checks above — see the comment on the assertion below.
+    const byHost: Record<string, { total: number; blank: number; sample: string }> = {}
+    for (const el of decided) {
+      const src = el.currentSrc || el.src
+      let host = ""
+      try {
+        host = new URL(src, window.location.href).host
+      } catch {
+        continue
+      }
+      if (host === window.location.host) continue
+      byHost[host] = byHost[host] || { total: 0, blank: 0, sample: "" }
+      byHost[host].total += 1
+      if (el.naturalWidth === 0) {
+        byHost[host].blank += 1
+        if (!byHost[host].sample) byHost[host].sample = src.slice(-70)
+      }
+    }
     return {
       total: sameOrigin.length,
       broken: sameOrigin.filter((el) => el.naturalWidth === 0).map((el) => (el.currentSrc || el.src).slice(-70)),
@@ -199,6 +219,7 @@ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<v
       proxiedBroken: proxied
         .filter((el) => el.naturalWidth === 0)
         .map((el) => (el.currentSrc || el.src).slice(-70)),
+      byHost,
     }
   })
 
@@ -258,6 +279,45 @@ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<v
         `three same-origin images and most of them are chrome. Broken: ` +
         `${imgStats.proxiedBroken.slice(0, 3).join(" | ")}`,
     ).toBeLessThan(imgStats.proxied)
+  }
+
+  // ── AND A THIRD ARM: A CDN HOST WHOSE ART IS MOSTLY GONE ──────────────────
+  //
+  // 🚨 THE TWO CHECKS ABOVE SHARE A BLIND SPOT AND A COLLEAGUE FOUND IT THE SAME
+  // NIGHT THEY SHIPPED. `/nfl-all-day/set/genesis` renders **47 of 52 images
+  // blank** — the whole Genesis set (352 editions, every one an ULTIMATE 1/1) has
+  // no art at its upstream — and it passes BOTH: the ratio arm because those
+  // images are not same-origin, and the proxy arm because none of them are proxy
+  // URLs. **A page can be 90% blank and green.**
+  //
+  // ⚠ THIS IS DELIBERATELY *NOT* A REFLEXIVE WIDENING, and the distinction is a
+  // measurement rather than an intention. Across 13 pages and ~400 third-party
+  // images, every healthy host reads **0% blank** — `assets.nbatopshot.com` 0/114
+  // and 0/44, `media.nflallday.com` 0/31, 0/29 and 0/105,
+  // `assets.laligagolazos.com` 0/31, `arweave.net` 0/3 — while the broken one
+  // reads **15 of 19 (79%)**. Healthy and broken are separated by the whole range,
+  // so a 50% threshold is nowhere near either population.
+  //
+  // ⚠ PER HOST, NOT PER PAGE. Pooling would let a page with 114 good Top Shot
+  // images hide 19 dead All Day ones — which is exactly the shape here, since
+  // `/insights/trophies` serves both hosts at once.
+  //
+  // ⛔ "A third-party CDN blip is not our defect" is TRUE AND NOT THE POINT. A
+  // transient blip does not take out MOST of one host's images on a page; and
+  // when it does, the page is visibly broken to the reader whoever's fault it is.
+  // This gate answers "is the page broken", not "is it our fault" — the fault
+  // question decides what to DO about it, not whether to notice.
+  const MIN_HOST_IMAGES = 4
+  for (const [host, st] of Object.entries(imgStats.byHost)) {
+    if (st.total < MIN_HOST_IMAGES) continue
+    expect(
+      st.blank / st.total,
+      `${check.path}: ${st.blank} of ${st.total} images from ${host} decided and painted ` +
+        `nothing. Healthy CDN hosts on this site measure 0% blank; the one measured ` +
+        `failure was 79% (the NFL All Day Genesis set, whose art is gone upstream). ` +
+        `A blip does not take out most of one host's images — if this is upstream, the ` +
+        `page is still broken for the reader. Example: ${st.sample}`,
+    ).toBeLessThanOrEqual(0.5)
   }
 
   expect(

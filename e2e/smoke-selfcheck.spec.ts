@@ -182,6 +182,43 @@ const LATE_CONTENT = `<!doctype html><html><body>
   </script>
 </body></html>`
 
+/**
+ * Pages whose art comes from a THIRD-PARTY host.
+ *
+ * ⚠ `localhost:<port>` and `127.0.0.1:<port>` are the same server and DIFFERENT
+ * hosts. The spec's base is `127.0.0.1`, so images pointed at `localhost` are
+ * third-party to the helper while the fixture stays entirely self-contained —
+ * no network, no real CDN, nothing that can flake.
+ *
+ * 🚨 THE CASE THIS COVERS WAS FOUND IN PRODUCTION THE NIGHT THE OTHER TWO ARMS
+ * SHIPPED: `/nfl-all-day/set/genesis` renders 47 of 52 images blank (the whole
+ * Genesis set's art is gone upstream) and passed BOTH of them — the ratio arm
+ * because the images are not same-origin, the proxy arm because they are not
+ * proxy URLs. A page could be 90% blank and green.
+ */
+const cdnImgs = (host: string, broken: number, ok: number) =>
+  [...Array(broken)].map((_, i) => `<img src="http://${host}/img/broken.png?cdn=${i}" alt="">`).join(``) +
+  [...Array(ok)].map((_, i) => `<img src="http://${host}/img/ok.png?cdn=${i}" alt="">`).join(``)
+
+/** 5 of 6 images from ONE cdn host are blank — the Genesis shape. MUST FAIL. */
+const cdnMostlyBlank = (host: string) => `<!doctype html><html><body>
+  <main>${CONTENT}</main>${imgTags(0, 2)}${cdnImgs(host, 5, 1)}
+</body></html>`
+
+/** The same page with the cdn art intact. MUST PASS — the negative control. */
+const cdnHealthy = (host: string) => `<!doctype html><html><body>
+  <main>${CONTENT}</main>${imgTags(0, 2)}${cdnImgs(host, 0, 6)}
+</body></html>`
+
+/**
+ * 1 of 6 from the cdn host is blank. MUST PASS.
+ * ⚠ The arm that keeps this from becoming a ban on third-party images: a real
+ * CDN blip is partial, and healthy hosts on this site measure 0% blank against
+ * the one measured failure at 79%. The threshold sits in the empty middle.
+ */
+const cdnOneBlank = (host: string) => `<!doctype html><html><body>
+  <main>${CONTENT}</main>${imgTags(0, 2)}${cdnImgs(host, 1, 5)}
+</body></html>`
 const EMPTY_SHELL = `<!doctype html><html><body><div id="__next"></div></body></html>`
 
 // ~130 chars of real content: above a custom 100 floor, below the default 200.
@@ -286,6 +323,8 @@ const SITEMAP_BY_ID: Record<string, string> = {
 
 let server: http.Server
 let base: string
+let altHostValue: string
+const altHost = () => altHostValue
 
 // ⚠ The sitemap memo in entity-urls.ts is MODULE-level and Playwright reuses a
 // worker PROCESS across spec files, so a live entity-smoke run in this same
@@ -331,6 +370,9 @@ test.beforeAll(async () => {
     else if (url.startsWith("/img/broken.png")) { res.writeHead(502); res.end() }
     else if (url.startsWith("/empty-shell")) html(EMPTY_SHELL)
     else if (url.startsWith("/late-content")) html(LATE_CONTENT)
+    else if (url.startsWith("/cdn-mostly-blank")) html(cdnMostlyBlank(altHost()))
+    else if (url.startsWith("/cdn-healthy")) html(cdnHealthy(altHost()))
+    else if (url.startsWith("/cdn-one-blank")) html(cdnOneBlank(altHost()))
     else if (url.startsWith("/short-ok")) html(SHORT_OK)
     else if (url.startsWith("/hydration-throw")) html(HYDRATION_THROW)
     else if (url.startsWith("/hydration-console")) html(HYDRATION_CONSOLE)
@@ -349,6 +391,9 @@ test.beforeAll(async () => {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   const port = (server.address() as AddressInfo).port
   base = `http://127.0.0.1:${port}`
+  // The SAME server under a different host string, so a fixture can serve
+  // "third-party" images without touching the network.
+  altHostValue = `localhost:${port}`
 })
 
 test.afterAll(async () => {
@@ -478,6 +523,38 @@ test("FAILS an error state even when the page is content-rich (detection is not 
   await expect(
     assertHealthyPage(page, { path: `${base}/error-with-content`, name: "error with content" }),
   ).rejects.toThrow(/error state/)
+})
+
+test("🚨 FAILS when MOST of one CDN host's images are blank — neither other arm can see this", async ({ page }) => {
+  // 🚨 FOUND IN PRODUCTION THE SAME NIGHT THE OTHER TWO ARMS SHIPPED.
+  // /nfl-all-day/set/genesis renders 47 of 52 images blank — the whole Genesis
+  // set (352 editions, every one an ULTIMATE 1/1) has no art at its upstream —
+  // and it passed BOTH: the ratio arm because the images are not same-origin,
+  // the proxy arm because they are not proxy URLs. A page could be 90% blank
+  // and green.
+  //
+  // ⚠ The threshold is not a guess. Across 13 production pages and ~400
+  // third-party images, every healthy host measures 0% blank
+  // (assets.nbatopshot.com 0/114, media.nflallday.com 0/105, ...) and the one
+  // real failure measured 79%. 50% sits in the empty middle.
+  await expect(
+    assertHealthyPage(page, { path: `${base}/cdn-mostly-blank`, name: "cdn mostly blank" }),
+  ).rejects.toThrow(/painted\s+nothing/i)
+})
+
+test("PASSES when the CDN host's images are fine — the control", async ({ page }) => {
+  // Without this, an arm that failed on ANY third-party image would satisfy the
+  // case above while making every page on the site red.
+  await assertHealthyPage(page, { path: `${base}/cdn-healthy`, name: "cdn healthy" })
+})
+
+test("PASSES when ONE of six CDN images is blank — a blip is not a break", async ({ page }) => {
+  // ⚠ This is what keeps the new arm from becoming a ban on third-party images.
+  // A real CDN blip is partial and is not our defect; a host that is MOSTLY dark
+  // is a broken page for the reader whoever's fault it is. The same argument the
+  // other two arms make, re-pinned here so tightening one cannot silently
+  // un-argue the others.
+  await assertHealthyPage(page, { path: `${base}/cdn-one-blank`, name: "cdn one blank" })
 })
 
 test("🚨 PASSES a page whose content arrives AFTER DOMContentLoaded — the streaming race", async ({ page }) => {
