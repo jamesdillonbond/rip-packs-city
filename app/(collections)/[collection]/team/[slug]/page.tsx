@@ -99,8 +99,13 @@ async function fetchActivity(collectionId: string, slug: string, limit: number):
   return sectionRowsResult<ActivityRow>("team activity", "get_team_activity", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: 0 })
 }
 
-async function fetchSets(collectionId: string, slug: string): Promise<SetRow[]> {
-  return sectionRows<SetRow>("team sets", "get_team_sets", { p_collection_id: collectionId, p_team_slug: slug, p_wallet: null })
+async function fetchSets(collectionId: string, slug: string): Promise<{ rows: SetRow[]; ok: boolean }> {
+  // ⚠ `sectionRowsResult`, not `sectionRows` — TeamSets' empty copy CONCLUDES
+  // ("No sets yet."), so it needs the third state. `sectionRows` drops `ok` on
+  // the floor, which forced this section to publish "none" for "we could not
+  // look": `get_team_sets` degrades a failed RPC to `[]` by policy, and the
+  // component could not tell that from a team with no sets.
+  return sectionRowsResult<SetRow>("team sets", "get_team_sets", { p_collection_id: collectionId, p_team_slug: slug, p_wallet: null })
 }
 
 async function fetchSqueeze(collectionId: string, slug: string, limit: number): Promise<SqueezeRow[]> {
@@ -183,7 +188,15 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   // One roster timeout cost the reader the hero, the stat strip, the activity
   // feed, the sets, the squeeze list and the next game, none of which had
   // failed. `structuralSection` absorbs the throw so each leg reports for
-  // itself, which is what the other five already do via their own `ok`.
+  // itself, which is what the others do via their own `ok`.
+  //
+  // ⚠ CORRECTED 2026-09-04: this comment used to say "the other five already do
+  // via their own `ok`", and TWO of them did not — `teamSets` and `squeeze` were
+  // bare arrays. Only `teamSets` needed fixing: its component's empty copy
+  // CONCLUDES ("No sets yet."), so a degraded read published a false claim about
+  // the catalogue. `squeeze` is rendered under `squeeze.length > 0`, so a failed
+  // read OMITS the section — understating, which is the safe direction, and it
+  // is left alone deliberately.
   //
   // ⚠ The outer try is a LAST RESORT, not the rung-2 catch it replaced. Five of
   // these six cannot throw by policy and `structuralSection` absorbs the sixth —
@@ -193,7 +206,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
   let rosterRes: { rows: PlayerTile[]; ok: boolean } = { rows: [], ok: false }
   let topEditions: Awaited<ReturnType<typeof fetchTopEditions>> = { rows: [], ok: false }
   let activityRes: Awaited<ReturnType<typeof fetchActivity>> = { rows: [], ok: false }
-  let teamSets: Awaited<ReturnType<typeof fetchSets>> = []
+  let teamSets: Awaited<ReturnType<typeof fetchSets>> = { rows: [], ok: false }
   let squeeze: Awaited<ReturnType<typeof fetchSqueeze>> = []
   let nextGame: Awaited<ReturnType<typeof fetchNextGame>> = null
   try {
@@ -298,10 +311,21 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
         </Section>
       )}
 
-      {/* ── Sets featuring the team ──────────────────────────────────────── */}
-      {teamSets.length > 0 && (
+      {/* ── Sets featuring the team ──────────────────────────────────────────
+          ⚠ THE GATE USED TO BE `teamSets.length > 0` ALONE, and that made it
+          LOAD-BEARING FOR HONESTY BY ACCIDENT. A failed `get_team_sets`
+          degrades to `[]` by policy, so the whole section VANISHED — omission,
+          which is the safe direction, and the reason "No sets yet." was never
+          actually published out of a failed read. But a section that silently
+          disappears tells a reader nothing, and it left the component's empty
+          copy unreachable: the day someone drops the length gate to "always
+          show the section", the false claim ships with it.
+          Now the section also renders when the read FAILED, where TeamSets says
+          so in the shared `sectionEmptyCopy` wording. A genuinely empty result
+          still omits it, exactly as before. */}
+      {(teamSets.rows.length > 0 || !teamSets.ok) && (
         <Section title={`Sets featuring ${detail.team_name}`}>
-          <TeamSets collectionUrlSlug={collection} teamSlug={slug} initial={teamSets} />
+          <TeamSets collectionUrlSlug={collection} teamSlug={slug} initial={teamSets.rows} initialOk={teamSets.ok} />
         </Section>
       )}
 

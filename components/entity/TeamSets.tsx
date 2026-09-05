@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { EM_DASH, fmtCount, fmtUsd } from "./_shared"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 
 export interface SetRow {
   set_slug: string
@@ -22,8 +23,29 @@ export interface SetRow {
 const LS_KEY = "rpc_checklist_wallet"
 const WALLET_RE = /^0x[0-9a-f]{16}$/
 
-export default function TeamSets({ collectionUrlSlug, teamSlug, initial }: { collectionUrlSlug: string; teamSlug: string; initial: SetRow[] }) {
+export default function TeamSets({
+  collectionUrlSlug,
+  teamSlug,
+  initial,
+  // ⚠ `initialOk` is the SEED'S PROVENANCE, and without it this component was
+  // structurally unable to be honest. `initial` arrives as `[]` from BOTH "this
+  // team has no sets" and "get_team_sets failed" — `sectionRows` degraded a
+  // failed RPC to an empty array by policy and dropped `ok` on the floor — so
+  // "No sets yet." was published out of a timeout on a public SEO page.
+  //
+  // ⚠ Defaults TRUE so an omitted prop cannot silently mark a healthy section
+  // degraded; the page passes it explicitly.
+  initialOk = true,
+}: {
+  collectionUrlSlug: string
+  teamSlug: string
+  initial: SetRow[]
+  initialOk?: boolean
+}) {
   const [rows, setRows] = useState<SetRow[]>(initial)
+  // A SUCCESSFUL client refetch proves the read works, so it clears a degraded
+  // seed rather than leaving the warning up next to real rows.
+  const [ok, setOk] = useState(initialOk)
   const [tracking, setTracking] = useState(false)
 
   useEffect(() => {
@@ -37,12 +59,22 @@ export default function TeamSets({ collectionUrlSlug, teamSlug, initial }: { col
     const p = new URLSearchParams({ collection: collectionUrlSlug, slug: teamSlug, wallet })
     fetch(`/api/entity/team-sets?${p.toString()}`, { cache: "no-store" })
       .then(r => (r.ok ? r.json() : null))
-      .then((next: SetRow[] | null) => { if (Array.isArray(next) && next.length) setRows(next) })
+      .then((next: SetRow[] | null) => {
+        if (Array.isArray(next)) {
+          // The read succeeded — even an empty answer is now a MEASURED empty.
+          setOk(true)
+          if (next.length) setRows(next)
+        }
+      })
       .catch(() => { /* keep the no-wallet list */ })
   }, [collectionUrlSlug, teamSlug])
 
   if (!rows || rows.length === 0) {
-    return <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No sets yet.</div>
+    return (
+      <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+        {sectionEmptyCopy(ok, "Sets", "No sets yet.")}
+      </div>
+    )
   }
 
   return (
