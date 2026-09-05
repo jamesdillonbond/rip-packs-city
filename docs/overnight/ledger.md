@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — the cold-cache retry is now a shared hook, and it found the same defect wearing a different costume on `/insights/trophies`: a surface that HAD an onError and gave up on the first one · Cowork (cloud sandbox)
+
+Swept all **31 public `/insights` boards** in the plain headless browser (the reliable instrument — both Claude browsers hang these pages' Suspense reveal). **Every one 200, zero horizontal scroll at 1280 and 390, zero `NaN`/`undefined`, zero `#N / 0`, zero honest-error states, zero broken images.** One console 502: `/api/public/ipfs-media/bafybeifh2efy…` on `/insights/trophies`.
+
+⭐ **AND THAT SURFACE ALREADY HAD THE onError I SHIPPED TWO HOURS AGO — which is why it looked fine.** `brk: 0`, no broken-image icon: the tile falls back to a grey `rpc-tr-img-fallback` div. But it flips `setImgOk(false)` on the **first** error, and the measurement from this morning says the first error is a **cold-cache miss that succeeds on retry** (8.17 s/502, then 0.36 s/200, same CID). So the first visitor to each trophy's CID got a grey box where one retry shows the actual art — **a correct-looking fallback hiding a recoverable failure**. A surface having an error handler is not the same as it having the right one.
+
+**Extracted `lib/media/use-ipfs-retry.ts`** rather than duplicating the state machine: `{ key, onError, failed }`, one retry after 1.2 s, then give up. `IpfsThumb` (shipped earlier today) is refactored onto it — one implementation, not two — and the trophies tile keeps its own fallback markup while gaining the retry. The `key` remount is what forces the re-request; **it still does not cache-bust**, because a `?t=` would miss our edge cache and re-run the cold fetch that just timed out, turning a one-visitor defect into an every-visitor one.
+
+⚠ **Scoped to the two surfaces where the 502 was actually MEASURED**, not blanket-applied. **19 files render `proxyIpfsUrl` media**, and at least one of them — `components/entity/EditionsGridPaginated.tsx` — already has a *correct* multi-candidate advance chain that I verified rather than assumed (the team/player/set/series tiles reported 0 broken across 115 images). Editing 19 files on two measurements is the mistake this ledger keeps recording.
+
+**Five tests, and the ratchet is the one that matters:** it asserts both measured surfaces import the hook AND that neither carries the `onError={() => setX(false)}` give-up-first spelling, since that one line is what produced the defect and is one edit away from returning. **Verified to fail against the unfixed surface** (`must use the shared retry`).
+
+**Also checked and NOT filed:** every 404 page emits two robots tags (`noindex` then `index, follow` from the root layout) plus a canonical to the collection root. Ugly, and it looks like the documented *"noindex, not a canonical"* rule being broken — but a **404 status dominates any meta tag** for every crawler, so the practical impact is nil and the fix means touching root-layout metadata for zero measured gain. Left alone deliberately.
+
+**Verified:** `tsc` clean · **726 tests green across all 37 files** touching the changed surfaces · positive control on the ratchet · the board sweep above. **Revert:** `git revert <sha>`.
+
 ### 2026-09-04 · ❌ WITHDRAWN BY ITS OWN AUTHOR, two hours later — the "inert June import" I filed as a next-pass item is the **already-named, already-handled `dropTsFossils` class**, and the residual cost is 1.08 % · Cowork (cloud sandbox)
 
 **This entry replaces the one I wrote at 09:45 PT.** That version led with *"a third of the Top Shot edition catalog is an inert June import in the wrong key namespace … 44,321 FMV snapshots being computed for nobody"* and queued it as the top item for the next pass. **The measurements in it were right and the conclusion was wrong.** Continuing the investigation instead of stopping at the filing is what showed it, so the correction belongs here rather than in a quiet edit.
