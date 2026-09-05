@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — the collection Analytics tab rendered "No data" for EIGHT panels whose query had FAILED, and the awareness was already in the file · Claude Code (Trevor's box, interactive)
+
+**A live user-facing instance of the platform's top defect class, found by walking the unbounded-read list instead of stopping at the count.** `/api/market-analytics` was on the new complement ratchet as an unbounded read; reading it to decide whether a bound was safe is what surfaced the real defect, which is not the bound at all.
+
+## The defect
+
+The route fans out **twelve detail RPCs** and published every one as `res.data ?? []`, sending the error to `console.log` and nowhere else:
+
+```ts
+if (topSalesRes.error) console.log("[market-analytics] get_top_sales:", …)
+body.topSales = topSalesRes.data ?? []
+```
+
+supabase-js **RETURNS** errors rather than throwing, so a failed leg resolves `{ data: null, error }`, `?? []` turns it into an empty array, and the response is a confident **200** carrying an empty panel. The client then rendered the literal **"No data"** — a positive claim about the MARKET manufactured from a query that never ran, across **eight panels** (top sales, top editions, tier analytics, two daily-tier charts, badge premium, series analytics, daily series volume).
+
+⭐ **The awareness was already there, which is the part worth recording.** Someone had added a per-leg `console.log` for exactly these failures. **A lambda console line is not an instrument** — nothing alerts on it, and no consumer can see it. The response shape simply had nowhere to put the fact, so it went to the one place that could not act on it.
+
+⭐ **And this is the SAME defect the file's own guard header describes, one level deeper.** `collection-analytics-failed-vs-empty-guard.test.ts` was written because five sections rendered their empty state on a failed fetch, and it notes the tell: *"the market-analytics section in the SAME FILE already carried a `marketFailed` flag with a comment explaining exactly this distinction. It was understood, and applied to one section out of six."* Tonight's instance is the next layer of that: `marketFailed` covers the whole CALL failing; it could not cover a **200 whose individual legs failed**, because the response had no way to say so.
+
+## Shipped, both halves
+
+**API.** A `panel(key, res)` helper replaces twelve hand-written log-and-default pairs, and the body gains `degraded: string[]` naming the panels whose read failed. ⚠ The arrays deliberately **stay `?? []`** so the response shape is unchanged for every existing consumer — this ADDS a distinction rather than moving one. ⚠ `degraded` is **always present**, so `degraded.length === 0` is a POSITIVE statement that every attempted panel was read, not merely the absence of a key. ⛔ **Pinnacle's badge/series panels are NOT listed** — those analytics genuinely do not exist for it, and marking them would replace a true *"there is none"* with *"we could not load this"*, the same defect pointed the other way.
+
+**Client.** All eight empty states now go through `<PanelEmpty degraded={panelFailed(marketData, "<key>")} />`, which renders **"Couldn't load this panel"** on a failed read and keeps **"No data"** for a measured empty.
+
+## Proven
+
+**9 new cases across two files, both halves mutation-proven.**
+
+- API: reverting one panel to the silent `?? []` reds the case. Controls both ways — an all-success response asserts `degraded` is **empty** (without that, the field could be meaningless), Pinnacle's structurally-absent panels must NOT appear, and an **unsearched** player panel is absent rather than degraded.
+- Client (source guard, because this tab is a `page.tsx` that NEITHER coverage gate measures — the existing header explains why): a **ban at zero** on the bare `>No data</div>` literal, plus a check that every key matches the vocabulary the route actually emits.
+
+⚠ **That second client assertion earned its keep immediately.** A typo in a panel key fails **OPEN** — the panel silently never reports degraded, and everything still compiles and renders. Mutating `"badgePremium"` → `"badgePremiums"` reds it with *"panel key(s) the route never emits"*. A guard that only counted the call sites would have passed.
+
+**Verified:** `tsc` clean · full suite **1,467 files / 16,242 tests, exit 0**.
+
+⚠ **What this does NOT do, stated rather than implied:** it does not bound the route's reads. `/api/market-analytics` calls 16 RPCs of which only 2 declare a `statement_timeout`, so it stays on the complement ratchet at its current count — bounding it is a separate change, and the honesty fix had to land first anyway, since a bound on a route that renders a failure as "No data" only makes that claim MORE frequent.
+
+**Revert:** `git revert <sha>` — the panels go back to publishing a failed read as an empty one, and both guards red.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — `/api/profile/me` could not REACH its own `identity_degraded` branch on a slow read, so a signed-in reader rendered as ANON · ratchet 21 → 20 · Claude Code (Trevor's box, interactive)
 
 **The first route taken off the new complement ratchet, and it is the worked example of doing it the right way** — the entry above argues at length that these 21 must not be bulk-wrapped, so the one that moves first should show what a per-route reading looks like.
