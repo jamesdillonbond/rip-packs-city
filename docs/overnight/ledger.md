@@ -10,6 +10,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ VERIFIED IN PRODUCTION (someone else's fix, and a correction to mine) — UFC art serves 3/3, and my gateway ranking was measured on a sample that could not have found this · Claude Code (Trevor's box, interactive)
+
+**Closes the owed item on `8c9566750`** (Cowork), which added `gateway.pinata.cloud` as a third gateway and stopped a 403 from winning the status pass-through. Its owed check was *"re-probe a UFC CID once the deploy is live — this box's reachability is not Vercel edge's."*
+
+**Probed through the production route, three live UFC Strike CIDs:**
+
+```
+QmYuAvBZNJ9tcn…  200  2.39s  1,781,154 B  cache=MISS
+QmRnYLpmxHYdG7…  200  5.19s  3,673,242 B  cache=MISS
+QmWN4Q7P313C3K…  200  6.77s  3,756,696 B  cache=MISS
+```
+
+**Rendered DOM** (not HTTP 200 — the streaming shell always returns 200): `/ufc/edition/00e42ccd…` shows **1 IPFS image, 0 blank, painting at 1080×1080**; zero blank same-origin images across three UFC surfaces.
+
+⭐ **`cache=MISS` on all three is what makes this a real answer** — these were served fresh by the edge runtime, not replayed from a cache someone else warmed. So **Pinata is reachable from Vercel edge**, which was the open question, and the fix has landed rather than being inert.
+
+## ⛔ And the correction to my own work, which is the part worth keeping
+
+That entry's finding is a criticism of the measurement I shipped hours earlier, and it is correct. My five-gateway availability table was measured against **8 CIDs taken live off `/nba-top-shot/market`** — every one of them Dapper-pinned by construction, so **`ipfs.dapperlabs.com` could not lose.** UFC Strike is the only collection served from `ipfs.io` (518 thumbnails, 516 videos, zero Dapper-pinned) and **was absent from my sample entirely.** I generalised a ranking from a population that structurally excluded the only collection it would break.
+
+⚠ **This is CLAUDE.md's own rule, and I had read it:** *"a probe whose HARNESS differs from production in the ONE dimension the answer depends on is not a measurement of production"*, and *"a directional claim needs a DISTRIBUTION, not a snapshot."* I sampled one collection's page and published a per-gateway rate as if it were a property of the gateways.
+
+⭐ **The one thing that made it recoverable was writing down HOW it was measured.** The route header said, in its own words, *"8 CIDs taken live off `/nba-top-shot/market`"* — and that sentence is what let the next session see the sampling error without re-deriving it. A number recorded without its population would have read as settled.
+
+**Shipped here:** the caveat now sits **at the table**, not only in the file header. The correction was already written up at the top of the route, but a reader landing on a five-row availability table inside `GET()` has no reason to scroll up — and the failure mode is precisely "a reader trusts the table". It now says the sample is Top-Shot-only, that Dapper could not lose on it, and that **a per-gateway rate is only as general as the CIDs it was measured on.**
+
+⛔ **Not changed: the gateway ORDER.** Pinata is now third and answers UFC; Dapper stays first and answers Top Shot in 0.2–1.9 s. Losers are aborted the instant one gateway answers, so a slower entry costs nothing on a CID a faster one can serve. Re-ordering on a UFC-only sample would repeat my mistake with the collections reversed.
+
+**Verified:** `tsc` clean · route suite **32 tests** green.
+
+**Revert:** `git revert <sha>` — removes a comment only; no behaviour.
+
+
 ### 2026-09-05 · ✅ SHIPPED (code) — the last `DISTINCT ON` snapshot walk in `fmv-recalc`: 1.39 MILLION buffers and 27.2 s to return ZERO rows, killed by the 30 s timeout on 5.9% of runs, silently · Claude Code (Trevor's box, interactive)
 
 **Found by building a CONTROL, not by looking for it.** Verifying the Step 5b timeout fix needed a step the fix could not have moved, so I split the timeout rate by `extra` key. `stale_touch_error` — Step 6 — came back at **26/437 before the deploy and still firing after it**. It did its job as a control, and then turned out to be a defect of its own.
