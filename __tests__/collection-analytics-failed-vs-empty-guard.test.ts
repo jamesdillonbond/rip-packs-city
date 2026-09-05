@@ -252,3 +252,61 @@ describe("collection analytics — a failed section read is not an empty market"
     expect(SRC, "a genuinely empty search must still say so").toContain("{pickEmpty()}")
   })
 })
+
+// ── THE SUB-PANEL CASE, 2026-09-04 ─────────────────────────────────────────
+//
+// The sections above own their fetch, so `marketFailed`-style flags were enough.
+// The market-analytics panels do NOT: they share ONE fetch of
+// /api/market-analytics, and that route published each panel as `res.data ?? []`
+// with the error going only to a lambda `console.log`. supabase-js RETURNS
+// errors, so a failed leg became an empty array inside a confident 200 — and all
+// EIGHT panels rendered the literal "No data", a positive claim about the market
+// manufactured from a query that never ran.
+//
+// ⭐ Same defect as the header of this file describes, one level DEEPER, and the
+// same tell: `marketFailed` already existed for the whole call. It was
+// understood, and applied to the call but not to its legs.
+//
+// The route now returns `degraded: string[]` naming the panels it could not read,
+// and every empty state goes through `PanelEmpty degraded={panelFailed(...)}`.
+describe("market-analytics sub-panels distinguish a failed panel from an empty one", () => {
+  const src = stripComments(SRC)
+
+  it("is not vacuous — the source is the real file", () => {
+    expect(SRC.length).toBeGreaterThan(20000)
+  })
+
+  it("routes every empty state through PanelEmpty (ban at zero on the bare literal)", () => {
+    // The literal may exist ONLY inside PanelEmpty, where it is the branch for a
+    // MEASURED empty. A bare one anywhere else is a panel that cannot tell a
+    // failed read from a quiet market.
+    const bare = src.split(">No data</div>").length - 1
+    expect(
+      bare,
+      "a market-analytics panel renders a bare \"No data\" — it cannot tell a failed " +
+        "read from a genuinely empty one. Use <PanelEmpty degraded={panelFailed(marketData, \"<key>\")} />.",
+    ).toBe(0)
+  })
+
+  it("declares both halves of the split", () => {
+    expect(src).toContain("function PanelEmpty(")
+    expect(src).toContain("function panelFailed(")
+    // "No data" survives as the MEASURED-empty branch — saying "couldn't load"
+    // when the market is merely quiet is the same defect pointed the other way.
+    expect(src).toContain('"No data"')
+  })
+
+  it("keys every panel to the name the route actually reports", () => {
+    const keys = [...src.matchAll(/panelFailed\(marketData,\s*"([^"]+)"\)/g)].map((m) => m[1])
+    expect(keys.length, "expected one keyed empty state per market-analytics panel").toBeGreaterThanOrEqual(8)
+    // ⚠ These strings must match the keys app/api/market-analytics/route.ts pushes
+    // into `degraded`. A typo here fails OPEN — the panel silently never reports
+    // degraded — so the vocabulary is pinned rather than trusted.
+    const KNOWN = new Set([
+      "topSales", "tierAnalytics", "topEditions", "dailyTierVolume",
+      "badgePremium", "seriesAnalytics", "dailySeriesVolume", "playerSearch",
+    ])
+    const unknown = [...new Set(keys)].filter((k) => !KNOWN.has(k))
+    expect(unknown, `panel key(s) the route never emits: ${unknown.join(", ")}`).toEqual([])
+  })
+})

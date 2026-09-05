@@ -157,6 +157,12 @@ type MarketAnalyticsResponse = {
   seriesAnalytics?: SeriesAnalyticsRow[]
   dailySeriesVolume?: DailySeriesRow[]
   playerSearch?: PlayerSearchRow[]
+  /**
+   * Panel keys whose READ FAILED, from /api/market-analytics. Always present on
+   * a 200 from that route, so an empty array is a POSITIVE statement that every
+   * panel it attempted was read — not merely the absence of a key.
+   */
+  degraded?: string[]
   periodComparison?: {
     current?: { volume?: number; sales?: number; avgPrice?: number; uniqueEditions?: number }
     previous?: { volume?: number; sales?: number; avgPrice?: number; uniqueEditions?: number }
@@ -245,6 +251,35 @@ const SERIES_COLORS = ["#14B8A6", "#A855F7", "#F59E0B", "#3B82F6", "#EF4444", "#
 // pivotDailyTier extracted to @/lib/analytics-pivot (imported below).
 
 // ── Reusable atoms ──────────────────────────────────────────────────────────
+
+/**
+ * The failed-vs-empty split for a /api/market-analytics SUB-panel.
+ *
+ * 🚨 Every one of these panels rendered the literal string "No data" when its
+ * array was empty — and until 2026-09-04 that array was ALSO empty when the
+ * panel's RPC had FAILED, because the route published `res.data ?? []` with the
+ * error going only to a lambda `console.log`. So a failed read asserted "No
+ * data" about a query that never ran.
+ *
+ * ⚠ This is the SUB-panel case of the same defect deep-audit D12 fixed one level
+ * up: `marketFailed` already covers the whole call failing. It could not cover a
+ * 200 whose individual legs failed, because the response had no way to say so.
+ *
+ * ⛔ "No data" must stay the copy for a MEASURED empty. Saying "couldn't load"
+ * when the market is merely quiet is the same defect pointed the other way.
+ */
+function PanelEmpty({ degraded }: { degraded?: boolean }) {
+  return (
+    <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
+      {degraded ? "Couldn't load this panel" : "No data"}
+    </div>
+  )
+}
+
+/** True only when the route NAMED this panel as one it could not read. */
+function panelFailed(md: MarketAnalyticsResponse | null | undefined, key: string): boolean {
+  return Array.isArray(md?.degraded) && md.degraded.includes(key)
+}
 
 function ChangeBadge({ pct }: { pct: number | null | undefined }) {
   if (pct == null || !Number.isFinite(pct) || pct === 0) {
@@ -1201,7 +1236,7 @@ function AnalyticsInner() {
               {marketLoading && !marketData ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : volumeByTier.length === 0 ? (
-                <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
+                <PanelEmpty degraded={panelFailed(marketData, "tierAnalytics")} />
               ) : (
                 <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                   <ResponsiveContainer>
@@ -1230,7 +1265,7 @@ function AnalyticsInner() {
               {marketLoading && !marketData ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : !marketData?.topSales || marketData.topSales.length === 0 ? (
-                <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
+                <PanelEmpty degraded={panelFailed(marketData, "topSales")} />
               ) : (
                 <div className="overflow-x-auto">
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
@@ -1282,7 +1317,7 @@ function AnalyticsInner() {
               {marketLoading && !marketData ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : !marketData?.topEditions || marketData.topEditions.length === 0 ? (
-                <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
+                <PanelEmpty degraded={panelFailed(marketData, "topEditions")} />
               ) : (
                 <div className="overflow-x-auto">
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
@@ -1332,7 +1367,7 @@ function AnalyticsInner() {
               {marketLoading && !marketData ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : avgPricePivot.tiers.length === 0 ? (
-                <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
+                <PanelEmpty degraded={panelFailed(marketData, "dailyTierVolume")} />
               ) : (
                 <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                   <ResponsiveContainer>
@@ -1359,7 +1394,7 @@ function AnalyticsInner() {
               {marketLoading && !marketData ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : saleCountPivot.tiers.length === 0 ? (
-                <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
+                <PanelEmpty degraded={panelFailed(marketData, "dailyTierVolume")} />
               ) : (
                 <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                   <ResponsiveContainer>
@@ -1391,7 +1426,7 @@ function AnalyticsInner() {
                 {marketLoading && !marketData ? (
                   <div className="h-40 animate-pulse rounded bg-[var(--rpc-surface)]" />
                 ) : !marketData?.badgePremium || marketData.badgePremium.length === 0 ? (
-                  <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
+                  <PanelEmpty degraded={panelFailed(marketData, "badgePremium")} />
                 ) : (
                   <div className="flex flex-wrap gap-3" style={{ fontFamily: "var(--font-mono)" }}>
                     {marketData.badgePremium.map((b) => {
@@ -1430,7 +1465,7 @@ function AnalyticsInner() {
                 {marketLoading && !marketData ? (
                   <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
                 ) : seriesVolumeBars.length === 0 ? (
-                  <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
+                  <PanelEmpty degraded={panelFailed(marketData, "seriesAnalytics")} />
                 ) : (
                   <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                     <ResponsiveContainer>
@@ -1474,7 +1509,7 @@ function AnalyticsInner() {
                 {marketLoading && !marketData ? (
                   <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
                 ) : dailySeriesPivot.length === 0 ? (
-                  <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
+                  <PanelEmpty degraded={panelFailed(marketData, "dailySeriesVolume")} />
                 ) : (
                   <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                     <ResponsiveContainer>

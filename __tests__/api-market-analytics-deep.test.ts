@@ -268,3 +268,82 @@ describe("GET /api/market-analytics — fatal catch", () => {
     expect((await res.json()).error).toBe("Internal server error")
   })
 })
+
+// ── A PANEL WE COULD NOT READ IS NOT AN EMPTY PANEL ────────────────────────
+//
+// 2026-09-04. Every detail panel was published as `res.data ?? []` with its
+// error sent to `console.log` and nowhere else. supabase-js RETURNS errors
+// rather than throwing, so a failed leg resolves `{ data: null, error }`, `?? []`
+// makes it an empty array, and the response is a confident 200 asserting "no top
+// sales in this period" about a query that never ran — twelve times in one route,
+// on the collection analytics page.
+//
+// ⚠ The arrays deliberately STAY `[]` so the response shape is unchanged for
+// every existing consumer. `degraded` ADDS the distinction; it does not move one.
+describe("GET /api/market-analytics — degraded panels are named, not silently emptied", () => {
+  const base = {
+    "rpc:get_daily_marketplace_volume": {
+      data: [{ day: "2026-07-15", marketplace: "topshot", sale_count: 1, volume_usd: 1 }],
+      error: null,
+    },
+  }
+  const url = "https://t/api/market-analytics?collection=nba-top-shot&period=30d&detail=full"
+
+  it("names a failed panel in `degraded` while keeping its array empty", async () => {
+    install({ ...base, "rpc:get_top_sales": { data: null, error: { message: "boom" } } })
+    const body = await (await GET(req(url))).json()
+    expect(body.degraded).toContain("topSales")
+    // Shape unchanged — an existing consumer still gets an array.
+    expect(body.topSales).toEqual([])
+  })
+
+  it("reports an EMPTY degraded list when every panel read succeeded", async () => {
+    // The control that gives `degraded` meaning. Always present, so
+    // `degraded.length === 0` is a positive statement that every panel we
+    // attempted was read — not merely the absence of a key.
+    install(base)
+    const body = await (await GET(req(url))).json()
+    expect(body.degraded).toEqual([])
+    expect(Array.isArray(body.topSales)).toBe(true)
+  })
+
+  it("does NOT mark Pinnacle's structurally-absent panels as degraded", async () => {
+    // ⛔ The defect pointed the other way. Pinnacle has no badge or NBA-style
+    // series analytics at all, so those arrays are a MEASURED empty. Listing them
+    // would replace a true "there is none" with "we could not load this".
+    install({
+      "rpc:get_daily_marketplace_volume_pinnacle": {
+        data: [{ day: "2026-07-15", marketplace: "pinnacle", sale_count: 1, volume_usd: 1 }],
+        error: null,
+      },
+    })
+    const body = await (
+      await GET(req("https://t/api/market-analytics?collection=disney-pinnacle&period=30d&detail=full"))
+    ).json()
+    expect(body.badgePremium).toEqual([])
+    expect(body.seriesAnalytics).toEqual([])
+    expect(body.dailySeriesVolume).toEqual([])
+    expect(body.degraded).not.toContain("badgePremium")
+    expect(body.degraded).not.toContain("seriesAnalytics")
+    expect(body.degraded).not.toContain("dailySeriesVolume")
+  })
+
+  it("lists a failed period comparison too, so one field answers what we could not read", async () => {
+    install({ ...base, "rpc:get_period_comparison": { data: null, error: { message: "boom" } } })
+    const body = await (
+      await GET(req("https://t/api/market-analytics?collection=nba-top-shot&period=30d&comparison=true"))
+    ).json()
+    // null was already honest on its own — a null is not a number. It joins
+    // `degraded` so a caller need not know this panel signals failure differently.
+    expect(body.periodComparison).toBeNull()
+    expect(body.degraded).toContain("periodComparison")
+  })
+
+  it("does not mark an UNSEARCHED player panel as degraded", async () => {
+    // Absent is not failed: with no `player` param the RPC is never issued.
+    install(base)
+    const body = await (await GET(req(url))).json()
+    expect(body.degraded).not.toContain("playerSearch")
+    expect(body.playerSearch).toBeUndefined()
+  })
+})

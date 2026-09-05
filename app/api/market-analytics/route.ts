@@ -108,6 +108,45 @@ export async function GET(req: NextRequest) {
       daily,
     }
 
+    // ── Which panels we could not READ, as opposed to which are empty ────
+    //
+    // 🚨 Every detail panel below used to be published as `res.data ?? []` with
+    // its error sent to `console.log` and nowhere else. supabase-js RETURNS
+    // errors rather than throwing, so a failed leg resolves `{ data: null,
+    // error }`, `?? []` turns it into an empty array, and the response is a
+    // confident 200 asserting **"no top sales in this period"** about a query
+    // that never ran. That is this repo's most-repeated defect class, twelve
+    // times in one route, on the collection analytics page.
+    //
+    // ⚠ The awareness was already here — someone added a per-leg `console.log`.
+    // A lambda console line is not an instrument: nothing alerts on it and no
+    // consumer can see it. The response shape simply had nowhere to put the
+    // fact, so it went to the one place that could not act on it.
+    //
+    // `degraded` carries the panel keys whose read FAILED. The arrays stay
+    // `?? []` so the response shape is unchanged for every existing consumer —
+    // this ADDS a distinction rather than moving one.
+    //
+    // ⛔ A key appears here ONLY when the read errored. Pinnacle's badge/series
+    // panels are legitimately empty (those analytics do not exist for it) and
+    // must NOT be listed, or "we could not load this" would replace a true
+    // "there is none" — the same defect pointed the other way.
+    //
+    // ⚠ HALF THE FIX, stated rather than implied. This makes the failure
+    // OBSERVABLE; it does not yet change what the reader sees. The client still
+    // renders an errored panel as an empty one, because its per-panel copy needs
+    // a panel-by-panel reading of which empty states CONCLUDE ("no top sales")
+    // versus merely omit. Filed with the panel list rather than guessed at.
+    const degraded: string[] = []
+    function panel(key: string, res: { data?: unknown; error?: unknown } | null | undefined): unknown[] {
+      const err = res?.error as { message?: string } | null | undefined
+      if (err) {
+        console.log(`[market-analytics] ${key}:`, err.message ?? String(err))
+        degraded.push(key)
+      }
+      return (res?.data as unknown[]) ?? []
+    }
+
     // ── Detail breakdowns (full analytics page) ──────────────────────────
     if (detail === "full") {
       if (isPinnacle) {
@@ -128,16 +167,12 @@ export async function GET(req: NextRequest) {
           }),
         ])
 
-        if (topSalesRes.error) console.log("[market-analytics] pinnacle_top_sales:", topSalesRes.error.message)
-        if (tierRes.error) console.log("[market-analytics] pinnacle_tier_analytics:", tierRes.error.message)
-        if (topEdRes.error) console.log("[market-analytics] pinnacle_top_editions:", topEdRes.error.message)
-        if (dailyTierRes.error) console.log("[market-analytics] pinnacle_daily_tier_volume:", dailyTierRes.error.message)
-
-        body.topSales = topSalesRes.data ?? []
-        body.tierAnalytics = tierRes.data ?? []
-        body.topEditions = topEdRes.data ?? []
-        body.dailyTierVolume = dailyTierRes.data ?? []
+        body.topSales = panel("topSales", topSalesRes)
+        body.tierAnalytics = panel("tierAnalytics", tierRes)
+        body.topEditions = panel("topEditions", topEdRes)
+        body.dailyTierVolume = panel("dailyTierVolume", dailyTierRes)
         // Pinnacle has no badges or NBA-style series — keep shape stable.
+        // ⛔ NOT `degraded`: these are MEASURED empties, not failed reads.
         body.badgePremium = []
         body.seriesAnalytics = []
         body.dailySeriesVolume = []
@@ -184,23 +219,16 @@ export async function GET(req: NextRequest) {
             : Promise.resolve({ data: null, error: null }),
         ])
 
-        if (topSalesRes.error) console.log("[market-analytics] get_top_sales:", topSalesRes.error.message)
-        if (tierRes.error) console.log("[market-analytics] get_tier_analytics:", tierRes.error.message)
-        if (topEdRes.error) console.log("[market-analytics] get_top_editions:", topEdRes.error.message)
-        if (dailyTierRes.error) console.log("[market-analytics] get_daily_tier_volume:", dailyTierRes.error.message)
-        if (badgeRes.error) console.log("[market-analytics] get_badge_premium:", badgeRes.error.message)
-        if (seriesRes.error) console.log("[market-analytics] get_series_analytics:", seriesRes.error.message)
-        if (dailySeriesRes.error) console.log("[market-analytics] get_daily_series_volume:", dailySeriesRes.error.message)
-        if (playerRes?.error) console.log("[market-analytics] search_player_analytics:", playerRes.error.message)
-
-        body.topSales = topSalesRes.data ?? []
-        body.tierAnalytics = tierRes.data ?? []
-        body.topEditions = topEdRes.data ?? []
-        body.dailyTierVolume = dailyTierRes.data ?? []
-        body.badgePremium = badgeRes.data ?? []
-        body.seriesAnalytics = seriesRes.data ?? []
-        body.dailySeriesVolume = dailySeriesRes.data ?? []
-        if (player) body.playerSearch = playerRes?.data ?? []
+        body.topSales = panel("topSales", topSalesRes)
+        body.tierAnalytics = panel("tierAnalytics", tierRes)
+        body.topEditions = panel("topEditions", topEdRes)
+        body.dailyTierVolume = panel("dailyTierVolume", dailyTierRes)
+        body.badgePremium = panel("badgePremium", badgeRes)
+        body.seriesAnalytics = panel("seriesAnalytics", seriesRes)
+        body.dailySeriesVolume = panel("dailySeriesVolume", dailySeriesRes)
+        // ⚠ Only when a player was actually searched — an unsearched panel is
+        // absent, not failed, and `playerRes` is undefined in that case.
+        if (player) body.playerSearch = panel("playerSearch", playerRes)
       }
     }
 
@@ -215,11 +243,20 @@ export async function GET(req: NextRequest) {
           })
       if (cmpRes.error) {
         console.log("[market-analytics] period_comparison:", cmpRes.error.message)
+        // Already honest on its own — `null` is not a number, so no consumer can
+        // read a failed comparison as a measured one. Listed in `degraded` too so
+        // one field answers "what could we not read", rather than a caller having
+        // to know that this panel signals failure differently from the others.
         body.periodComparison = null
+        degraded.push("periodComparison")
       } else {
         body.periodComparison = cmpRes.data ?? null
       }
     }
+
+    // Always present, so `degraded.length === 0` is a POSITIVE statement that
+    // every panel we attempted was read — not merely the absence of a key.
+    body.degraded = degraded
 
     const response = NextResponse.json(body)
 
