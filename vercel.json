@@ -138,10 +138,6 @@
       "schedule": "35 */3 * * *"
     },
     {
-      "path": "/api/cron/topshot-catalog-backfill",
-      "schedule": "12 2 * * *"
-    },
-    {
       "path": "/api/cron/evm-transfers-ingest",
       "schedule": "4,14,24,34,44,54 * * * *"
     }

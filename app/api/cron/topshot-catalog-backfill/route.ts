@@ -32,6 +32,39 @@
 // nothing is a 200. Since 2026-08-13 `sets_faulted` makes that self-evident
 // (every set faulting also flips `ok` false), but the habit still matters.
 
+// ⛔ UNSCHEDULED 2026-09-04 — THE ROUTE IS KEPT, ITS CRON IS NOT.
+//
+// The walker this wrapper calls reads `public-api.nbatopshot.com`, which has answered
+// **HTTP 530 (Cloudflare 1033, origin decommissioned) on every request since 2026-08-28**.
+// Measured 2026-09-04 from `pipeline_runs_daily`: **last success 2026-08-28, then 7 of 7
+// ticks failed** (`page 0: HTTP 530: error code: 1033`). A daily arm that is red every day
+// is worse than no arm — it teaches the next reader to skip this pipeline's failures.
+//
+// ⚠ IT IS UNSCHEDULED BECAUSE IT IS REDUNDANT, NOT MERELY BECAUSE IT IS BROKEN. All three
+// jobs it owned now have live owners, and each was verified before this line was written:
+//   • circulation → `topshot-circulation-onchain` (Vercel cron `5 4 * * *`, on-chain
+//     `TopShot.getNumMomentsInEdition`), shipped 2026-09-03.
+//   • tier + badges → the Atlas edition walk (`atlas_editions_dispatch`/`_drain`, pg_cron).
+//     0 of 13,436 canonical Top Shot editions have a NULL tier; 13,312 carry an Atlas map row.
+//   • prose + media → the same Atlas walk as of migration `20260905024630`. Atlas serves the
+//     identical text at `editionTemplate.metadata.Description` — on a live 100-row page of
+//     set 90, **64 rows would be FILLED and 0 CHANGED**, i.e. byte-identical where we already
+//     hold it — and the CDN media at `assets[]` (`hero`, `video-square`), filled only where
+//     NULL so an on-chain-resolved IPFS CID is never overwritten. First live tick after the
+//     splice: `editions_enriched: 141`, 0 errors.
+//
+// ⚠ THE ONE JOB NOTHING INHERITED: creating editions rows Atlas knows and we do not (16 of
+// 100 on that same page, all parallels such as `90:4046::1 "Explosion"`). That is NOT a
+// regression from this change — the walker has created nothing since 08-28 — and it is left
+// open deliberately: new-edition creation ripples into circulation, the sitemap and every
+// entity surface, so it is a decision, not a chore. 195 Top Shot editions were still created
+// in the trailing 14 days by the Cadence stub path, so the lane is not dark.
+//
+// The handler below is untouched and still works by hand (Bearer CRON_SECRET or
+// INGEST_SECRET_TOKEN). **To restore: re-add**
+// `{"path": "/api/cron/topshot-catalog-backfill", "schedule": "12 2 * * *"}`
+// **to `vercel.json` — one line, nothing else.** It will 530 until the upstream returns.
+
 import { NextRequest, NextResponse } from "next/server";
 import { GET as runCatalogBackfill } from "@/app/api/admin/backfill-topshot-catalog/route";
 
