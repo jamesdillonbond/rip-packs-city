@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 
 // Route integration test for /api/public/ipfs-media/[cid] (edge). Dynamic route:
 // 2nd arg is { params: Promise<{ cid }> }. The CID regex is the SSRF guard, so
@@ -697,5 +699,113 @@ describe("the gateway fallback", () => {
     })
     const res = await GET(req, ctx(GOOD_CID))
     expect(await res.text()).toBe("winner")
+  })
+
+  // ── The UFC gateway gap, 2026-09-05 ─────────────────────────────────────────
+  // The gateway ranking this route carries was measured on 8 CIDs taken off
+  // /nba-top-shot/market — all Dapper-pinned. UFC Strike is the ONLY collection
+  // served from ipfs.io (518 thumbnails, 516 videos) and NONE of its CIDs are on
+  // Dapper's gateway, which 403s them with "The owner of this gateway does not
+  // have this content pinned to their Pinata account". With ipfs.io answering
+  // nothing at all, every UFC edition page served a broken image while
+  // gateway.pinata.cloud returned the bytes in 5.4 s.
+
+  it("🚨 serves a CID only a THIRD gateway has — the UFC case", async () => {
+    const calls = stubGateways({
+      "ipfs.dapperlabs.com": async () => ({
+        ok: false,
+        status: 403,
+        body: { cancel: async () => {} },
+        headers: headersOf({}),
+      }),
+      "ipfs.io": async () => {
+        throw new Error("connect ETIMEDOUT")
+      },
+      "gateway.pinata.cloud": async () => okResponse("ufc-bytes"),
+    })
+    const res = await GET(req, ctx(GOOD_CID))
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe("ufc-bytes")
+    expect(calls).toContain("gateway.pinata.cloud")
+  })
+
+  it("a 403 does not MASK another gateway's answered status", () => {
+    // ⚠ The defect this encodes: a 403 is an answer about the GATEWAY, not the
+    // content, and `failures.find(f => f.status !== null)` in gateway order made
+    // it win the pass-through. A caller then read 403 for an object that another
+    // gateway would have said 404 about — or, worse, could have served.
+    return (async () => {
+      stubGateways({
+        "ipfs.dapperlabs.com": async () => ({
+          ok: false,
+          status: 403,
+          body: { cancel: async () => {} },
+          headers: headersOf({}),
+        }),
+        "gateway.pinata.cloud": async () => ({
+          ok: false,
+          status: 404,
+          body: { cancel: async () => {} },
+          headers: headersOf({}),
+        }),
+        "ipfs.io": async () => {
+          throw new Error("connect ETIMEDOUT")
+        },
+      })
+      const res = await GET(req, ctx(GOOD_CID))
+      expect(res.status).toBe(404)
+    })()
+  })
+
+  it("CONTROL — a 403 IS passed through when it is the only answer there is", async () => {
+    // The de-prioritisation must not become a suppression: if 403 is all any
+    // gateway said, that is still more informative than a blanket 502.
+    stubGateways({
+      "ipfs.dapperlabs.com": async () => ({
+        ok: false,
+        status: 403,
+        body: { cancel: async () => {} },
+        headers: headersOf({}),
+      }),
+      "gateway.pinata.cloud": async () => {
+        throw new Error("connect ETIMEDOUT")
+      },
+      "ipfs.io": async () => {
+        throw new Error("connect ETIMEDOUT")
+      },
+    })
+    const res = await GET(req, ctx(GOOD_CID))
+    expect(res.status).toBe(403)
+  })
+})
+
+describe("every ipfs-media gateway is in the CSP", () => {
+  // ⚠ The route's own header states the rule and the reason: the oversize path
+  // 302s the browser straight at whichever gateway answered, so a host present in
+  // GATEWAYS but absent from the CSP fixes the proxy leg and breaks the redirect
+  // leg in the same change. That is a silent, media-only failure — exactly the
+  // kind this repo makes a guard for rather than a comment.
+  it("img-src and media-src both allow every gateway host", () => {
+    const routeSrc = readFileSync(
+      join(process.cwd(), "app/api/public/ipfs-media/[cid]/route.ts"),
+      "utf8",
+    )
+    const proxySrc = readFileSync(join(process.cwd(), "proxy.ts"), "utf8")
+
+    const listMatch = routeSrc.match(/const GATEWAYS = \[([\s\S]*?)\] as const;/)
+    expect(listMatch, "GATEWAYS list not found — did the declaration move?").toBeTruthy()
+    const hosts = [...listMatch![1].matchAll(/https:\/\/([a-z0-9.-]+)\//g)].map((m) => m[1])
+    // Not vacuous: the list must actually have been parsed.
+    expect(hosts.length).toBeGreaterThanOrEqual(2)
+
+    const imgSrc = proxySrc.match(/"img-src [^"]*"/)?.[0] ?? ""
+    const mediaSrc = proxySrc.match(/"media-src [^"]*"/)?.[0] ?? ""
+    expect(imgSrc.length).toBeGreaterThan(50)
+    expect(mediaSrc.length).toBeGreaterThan(50)
+
+    for (const host of hosts) {
+      expect(imgSrc, `img-src is missing ${host}`).toContain(`https://${host}`)
+      expect(mediaSrc, `media-src is missing ${host}`).toContain(`https://${host}`)
+    }
   })
 })

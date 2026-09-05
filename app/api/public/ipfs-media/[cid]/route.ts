@@ -52,7 +52,45 @@ const CID_RE = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{40,})$/;
 //
 // ⚠ EACH ENTRY IS AN SSRF-RELEVANT CONSTANT. CID_RE has already validated the
 // CID, and these bases are literals — never build one from request input.
-const GATEWAYS = ["https://ipfs.dapperlabs.com/ipfs/", "https://ipfs.io/ipfs/"] as const;
+// 🚨 THIRD GATEWAY ADDED 2026-09-05 (overnight) — AND THE REASON IS THAT THE
+// RANKING ABOVE WAS MEASURED ON A SAMPLE THAT CONTAINED NONE OF THE COLLECTION
+// IT BROKE.
+//
+// The five-gateway table in GET() was measured against "8 CIDs taken live off
+// `/nba-top-shot/market`" — i.e. entirely Top Shot, whose art IS pinned to
+// Dapper's own Pinata account. On that sample `ipfs.dapperlabs.com` is 8/8 and
+// fastest, so the list became [dapperlabs, ipfs.io] and that was right FOR TOP
+// SHOT. ⭐ It is wrong for the one collection that is not on Dapper's gateway.
+//
+// **UFC Strike is the only collection served from ipfs.io — 518 thumbnails and
+// 516 videos, and ZERO of its CIDs are Dapper-pinned.** Measured 2026-09-05
+// against a live UFC CID (`QmWyFrRvjBEnCgbP2rNnyR2ktyLP5QnPBkwjCvh6XdtW9f`):
+//
+//     ipfs.dapperlabs.com   403 in 0.3-0.5 s — body: "The owner of this gateway
+//                           does not have this content pinned to their Pinata
+//                           account." A statement about the GATEWAY, not the CID.
+//     ipfs.io               no response at all, 25 s, from two different networks
+//     gateway.pinata.cloud  200 image/png 4.72 MB in 5.4 s
+//
+// So every UFC edition page served a broken image: the primary answered 403 fast,
+// the secondary never answered, and the catch below passed the 403 through as if
+// it were news about the content. A live QA sweep found it on 3 of 3 sampled UFC
+// surfaces (`/ufc/edition/…`, `/ufc/set/…`, `/ufc/player/…`).
+//
+// ⚠ `gateway.pinata.cloud` was ALREADY in the measured table at 8/8, 3.5-7.0 s —
+// it was passed over for being slower than Dapper, on a sample where Dapper could
+// not lose. Losers are aborted the moment one gateway answers, so a slower third
+// entry costs nothing on a CID the faster ones can serve.
+//
+// ⚠ EACH ENTRY IS AN SSRF-RELEVANT CONSTANT. CID_RE has already validated the
+// CID, and these bases are literals — never build one from request input.
+// ⚠ Adding a host here REQUIRES adding it to proxy.ts CSP `img-src` AND
+// `media-src`, because the oversize path 302s the browser straight at it.
+const GATEWAYS = [
+  "https://ipfs.dapperlabs.com/ipfs/",
+  "https://gateway.pinata.cloud/ipfs/",
+  "https://ipfs.io/ipfs/",
+] as const;
 
 // Objects at or below this stream through us and cache at the edge; above it we
 // redirect. 8 MB sits between the largest size proven to cache (4.03 MB) and the
@@ -246,7 +284,15 @@ export async function GET(
     // `AggregateError.errors` preserves the input order, so `failures[0]` is the
     // PRIMARY gateway's outcome.
     const failures: GatewayFailure[] = (agg as AggregateError)?.errors ?? [];
-    const answered = failures.find((f) => f.status !== null);
+    // ⚠ A 401/403 IS NOT AN ANSWER ABOUT THE CONTENT — it is an answer about the
+    // GATEWAY, and passing it through is what hid a retrievable object. Dapper's
+    // gateway 403s every CID it has not pinned, with a body that says exactly
+    // that, so a UFC CID would surface "403" to the caller even when another
+    // gateway had the bytes. Prefer any other answered status; fall back to the
+    // auth-shaped one only when it is the only answer there is.
+    const answered =
+      failures.find((f) => f.status !== null && f.status !== 401 && f.status !== 403) ??
+      failures.find((f) => f.status !== null);
     const detail = failures
       .map((f) => `${new URL(f.base).host}=${f.reason}${f.status === null ? "" : `:${f.status}`}`)
       .join(" ");
