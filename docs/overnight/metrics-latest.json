@@ -80,7 +80,7 @@
   "the wmc metadata reconcile cursor was rewound to ~103 during the mint_count investigation; it re-walks idempotently and was at 126:4424 at 18:30 PT."
  ],
  "health_at_close": {
-  "pt": "2026-09-05 10:00",
+  "pt": "2026-09-05 10:18",
   "security_invariants_rows": 0,
   "detect_stalled_pipelines": 1,
   "detect_stalled_pipelines_detail": "topshot-badge-set-backfill, severity info, no_marker — the 2026-09-04 seeded row, expected",
@@ -91,7 +91,9 @@
   "check_pipelines_running_but_not_succeeding_rows": 0,
   "atlas_sets_stale_over_6h": 0,
   "atlas_sets_total": 266,
-  "sentry": "NOT READ — no Sentry MCP in this session (standing 'dark since 08-18' blocker)"
+  "sentry": "NOT READ — no Sentry MCP in this session (standing 'dark since 08-18' blocker)",
+  "drain_quiet_hours_nfl_all_day": 0.04,
+  "ci_on_main": "28f6876 — 19 success / 1 skipped / 0 failures. ⚠ e900d58 went RED first: my anon-exec line was prose and that guard keys the marker PER FUNCTION NAME; fixed in 1a0c739, ledger correction in ebaee48."
  },
  "measured_not_shipped": [
   "pack_ev_latest is >99.7% of two public routes now crossing their 8s read bound; SubPlan 3 runs 128,712x for 381,922 buffers; mv_pack_ev_latest swap REFUTED (0 of 7 columns). inbox/2026-09-05T1120Z",
@@ -168,7 +170,7 @@
    "decision": "REPLACED the ratio with a liveness test, and separately stopped the ETA pretending to be a point estimate.",
    "why": "outflow_3h*16 < outflow_24h reads TRUE 45.8% of the resolver's life; my own first retune (12h x 2) measures 60.4%, WORSE, and was refuted before shipping. The replacement never divides one window by another: 12h since the last resolution, calibrated on 5,571 consecutive gaps with max 6.00h and p99 0.74h — zero historical firings.",
    "the_bigger_half": "24h and 7d windows disagree 50x (2,627d vs 54d) because this resolver works in intermittent bulk sweeps (4,297 rows 09-02, 899 09-03, 43 09-04, 8 09-05, vs a ~60-110/day baseline). Publishing either alone is a failed read rendered as an answer, so both are published and the alert prints the range.",
-   "live_reading_at_close": "drain_quiet_hours 9.64 — already longer than any gap this resolver has ever CLOSED, and still correctly under the 12h threshold. If it crosses, that firing is the first true positive this arm has produced."
+   "live_reading_at_close": "drain_quiet_hours 9.64 at ship (16:29Z) — already longer than any gap this resolver has ever CLOSED, and still correctly under the 12h threshold. POSTSCRIPT 17:18Z: it fell to 0.04 — the resolver resumed on its own, so the longest quiet in its history self-healed, the new arm stayed silent through it, and the old ratio arm was firing the whole time. First live test of the calibration, passed."
   }
  }
 }

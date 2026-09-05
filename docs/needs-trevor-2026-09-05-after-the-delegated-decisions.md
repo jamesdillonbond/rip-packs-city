@@ -20,6 +20,12 @@ The unmapped-drain alarm has a new arm, and it has **never fired correctly befor
 
 ⛔ **If you see "the resolver is QUIET" on that pipeline, that is a true positive.** The old arm cried wolf 45.8% of the time and three passes learned to skim past it; the new one is calibrated to fire zero times against the entire historical gap distribution. Its first firing means the `nfl_all_day` resolver genuinely stopped.
 
+⭐ **POSTSCRIPT, 40 minutes later — and it is the calibration's first live test, passed.** The
+resolver resumed on its own: `drain_quiet_hours` fell from **9.64 h to 0.04 h**. So the longest
+quiet this drain has ever had self-healed, the new arm **correctly stayed silent through it**, and
+the old ratio arm was firing the whole time. That is exactly the behaviour the 12 h threshold was
+chosen for — and it means the first firing you do see will not be this.
+
 ---
 
 ## What was decided, and why
