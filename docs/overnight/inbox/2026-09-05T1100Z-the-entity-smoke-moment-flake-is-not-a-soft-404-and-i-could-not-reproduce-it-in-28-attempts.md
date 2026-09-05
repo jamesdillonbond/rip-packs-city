@@ -50,3 +50,66 @@ The obvious mechanism, and it is recorded in memory as a real shape on this code
 The failure message already carries the two facts needed (`path`, `chars`), but not the ones that discriminate: **`x-vercel-cache`, the HTTP status, and whether the content arrived a moment later.** Capturing those *at failure time* — rather than re-probing minutes afterwards, warm, from a different network — is the cheap next step, and it is a change to the assertion's **reporting**, not to its threshold.
 
 ⓘ The sibling failure (`/laliga-golazos/edition/407` missing the Dapper CTA) is likely a different and more tractable question: `entity-smoke`'s header records that `edition_golazos` exists as a separate arm *because* it is "the only instrument in the repo that can see the edition page's outbound Dapper CTA". A missing CTA on one Golazos edition may be data (that edition genuinely has no Dapper link) rather than breakage — **check the row before touching the assertion.**
+
+---
+
+## ADDENDUM, same session — the SECOND hypothesis is refuted too, and the "check the row first" advice above is now DISCHARGED
+
+The filing closed by suggesting the sibling failure (`/laliga-golazos/edition/407` missing the Dapper CTA) was probably **data** — that edition genuinely having no Dapper link — and said to *"check the row before touching the assertion."* Checked. **It is not data.**
+
+**The CTA's two gates, read from source:**
+
+```ts
+const dapperEditionUrl = marketClosed ? null : dapperMarketEditionUrl(collection, detail.external_id)
+// dapperMarketEditionUrl returns null unless:
+//   · the collection is in DAPPER_MARKET_EDITION_SEG  { laliga-golazos, nfl-all-day }
+//   · external_id is present
+//   · external_id is PURELY NUMERIC  ( /^[0-9]+$/ )
+```
+
+**Both gates measured, not argued:**
+
+| gate | result |
+|---|---|
+| `isMarketClosed("laliga-golazos")` | **false** — `CLOSED_MARKETS` holds only `ufc` / `ufc-strike` |
+| Golazos editions with a null external_id | **0** of 575 |
+| Golazos editions with a NON-numeric external_id | **0** of 575 |
+| **Golazos editions that would legitimately hide the CTA** | **0 of 575 — 0.00%** |
+
+**And the page itself, probed directly:** `/laliga-golazos/edition/407` (the exact URL that failed) plus two others, three loads each — **9 of 9 rendered the CTA**, on both the cold pass (`x-vercel-cache: MISS`) and the warm one, with a real `dapper.market` href present in the DOM each time.
+
+## Where that leaves it
+
+⛔ **Both plausible mechanisms are now refuted by measurement, and neither flake reproduces.** 37 probes across the two failures:
+
+- `/moment/` empty shell — **0 of 28**; the soft-404-at-200 mechanism is refuted (`/moment/<bogus-uuid>` hard-404s in 0.4 s).
+- Golazos missing CTA — **0 of 9**, plus a 0-of-575 population check that rules the data explanation out entirely.
+
+⭐ **So the remaining explanation is a TRANSIENT** — a cold function instance, a momentary saturation spell, or a render that lost a race — and that is a claim about the environment, not about either page. ⚠ **It is also the explanation that is hardest to falsify, which is exactly why it should not be asserted confidently.** What is established is narrower and worth stating plainly: **the two specific defects a reader would reach for first are both ruled out, so do not spend the time re-deriving them.**
+
+⛔ **Still do not "fix" this by loosening either assertion.** Both assert real, always-present properties: every Golazos edition page carries a Dapper CTA (0 of 575 exceptions), and a moment page renders 1,371–3,119 chars (0 of 28 exceptions). **An assertion that is right about the world and occasionally loses a race is a REPORTING problem, not a threshold problem** — the fix is to capture `x-vercel-cache`, the HTTP status and a re-read AT FAILURE TIME, so the next occurrence arrives with the evidence attached instead of sending someone on this same 37-probe walk.
+
+---
+
+## ✅ RESOLVED, same session — and the advice in the two sections above was WRONG
+
+**Both flakes were one defect in the HARNESS, and it is fixed.** `assertHealthyPage` navigated with `waitUntil: "domcontentloaded"` and read the body **immediately**; the `waitForLoadState("load")` and the 1.5 s hydration settle ran **after** the content assertions. For a streaming App Router route DCL fires when the SHELL has parsed, so the assertion measured how fast the server flushed rather than whether the page works.
+
+**Reproduced by reading at exactly the helper's moment** — same page, three times:
+
+```
+chars@DCL = 2061   chars@settle = 2061
+chars@DCL =   25   chars@settle = 2061   <-- the smoke failed here
+chars@DCL = 2061   chars@settle = 2061
+```
+
+**25 is the same number the failing run reported.** The Golazos CTA failure is the same cause: the read arrived before the content.
+
+## ⛔ Two things this filing told the next reader, both wrong
+
+1. **"The remaining explanation is a TRANSIENT."** It was not. It was deterministic given the timing, and reproducible in three attempts once the probe stopped waiting.
+2. **"Do not 'fix' it by making the content assertion POLL — that converts slow into passing."** ⛔ **That argument was built on a wrong model of the code.** It assumed the settle already ran before the read. It did not. The fix *is* to read after the wait, and it is not a loosening — `EMPTY_SHELL`, a page that never fills, still fails, and that pair is now pinned by fixtures.
+
+⭐ **The lesson worth keeping is about the 37 probes, not the fix.** Every earlier probe here waited for `load` and a settle before reading — **differing from the harness in the ONE dimension that decides the answer.** The repo's rule about a probe whose harness differs from production applies to investigations *of the harness* too, and the 0-of-37 result read as "cannot reproduce" when it actually meant "not measuring the same thing."
+
+Shipped with a fixture whose content arrives 400 ms after DCL (must PASS), `EMPTY_SHELL` unchanged (must FAIL), and a mutation that restores the old ordering and reds the new fixture. Live: entity smoke 6 runs, 6 clean.

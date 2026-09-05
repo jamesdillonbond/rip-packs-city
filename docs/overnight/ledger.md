@@ -10,6 +10,51 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (tests) — the smoke's content assertion read the page BEFORE it rendered, and the false failures were in the only client-side gate this platform has · Claude Code (Trevor's box, interactive)
+
+**Reproduced, then fixed, then mutation-proven.** `assertHealthyPage` navigated with `waitUntil: "domcontentloaded"` and read the body **immediately** — the `waitForLoadState("load")` and the 1.5 s hydration settle came **after** the content assertions. For a streaming App Router route, DCL fires when the SHELL has parsed. The assertion was measuring how fast the server flushed, not whether the page works.
+
+## The reproduction
+
+Reading at exactly the helper's moment, same page, three times:
+
+```
+chars@DCL = 2061   chars@settle = 2061
+chars@DCL =   25   chars@settle = 2061   <-- the smoke failed here
+chars@DCL = 2061   chars@settle = 2061
+```
+
+⭐ **25 is the same number the failing run reported** (`/moment/… rendered only 25 chars (likely an empty shell)`), and the content was there 1.5 s later. **The page was never broken.**
+
+Same cause for the sibling failure. `/laliga-golazos/edition/407 is missing expected content /View edition on Dapper/i` — the CTA is present in **575 of 575** Golazos rows (`isMarketClosed("laliga-golazos")` is false, 0 null and 0 non-numeric `external_id`, the only things that hide it) and the page rendered it **9/9** when the read waited. The read was arriving early.
+
+## ⚠ Why it took 37 probes, and the rule I broke finding it
+
+I first probed this 37 times and could not reproduce either failure — 8 warm, 8 cold from random DB ids, 12 from the sitemap, 9 on the Golazos page. **Every one of those probes waited for `load` plus a settle before reading**, differing from the harness in the ONE dimension that decides the answer. That is this repo's own rule — *"a probe whose HARNESS differs from production in the ONE dimension the answer depends on is not a measurement of production"* — and I walked into it while investigating the harness itself.
+
+⛔ **And I twice argued in writing against making the assertion wait**, on the grounds that it *"would convert slow into passing"*. That reasoning was built on a wrong model of the code: I believed the settle already ran before the read. It did not. **The filing carrying that argument has been corrected rather than quietly superseded.**
+
+## Shipped
+
+The content assertions now run **after** `load` + `HYDRATION_SETTLE_MS`. The console check stays last, which was the ordering the old comment was actually defending.
+
+⛔ **NOT a loosening, and the fixtures pin both directions.** The floor, the error-sign scan and `expectText` are unchanged; a page that never fills still fails. What changed is WHEN the read happens — after the page has rendered instead of before.
+
+## Proven
+
+New fixture: a page whose content is injected **400 ms after DCL** — later than DOMContentLoaded, earlier than the settle — which **must PASS**. The existing `EMPTY_SHELL` fixture, which never fills, **must still FAIL**, and does; that pair is what makes "not a loosening" a test rather than a claim.
+
+**Mutation:** remove the wait, restoring the original ordering → the new fixture reds. Restored → both it and `EMPTY_SHELL` pass.
+
+**Live:** the entity smoke ran **6 times, 6 clean** (8 pages each). ⚠ On its own that is weak — at the previous 2-in-5 rate, P(0 in 6) ≈ 0.05 — so **the load-bearing evidence is the reproduction and the mutation, not the six green runs.** The runs corroborate; they do not establish.
+
+**Verified:** `tsc` clean · self-check **32/32** · live production smoke **63/63** · full suite **1,472 files / 16,312 tests, exit 0**.
+
+⭐ **Why this mattered more than a flaky test usually does:** CLAUDE.md records that Sentry has dropped every event since 08-18 and no `window.onerror` exists, so the `E2E DOM Smoke` badge is the **entire** client-side detection surface. A gate that fails on healthy pages trains its readers to re-run instead of to look — and that is how the real UFC image outage earlier today got found by a hand-run sweep instead of by this file.
+
+**Revert:** `git revert <sha>` — the smoke goes back to reading streamed pages before they have streamed.
+
+
 ### 2026-09-05 · ✅ SHIPPED (tests) — the image gate I added this morning was structurally blind to the outage that happened this afternoon · Claude Code (Trevor's box, interactive)
 
 **The gate did not miss by bad luck; it missed by construction.** Earlier today I added a same-origin broken-image ratio to `assertHealthyPage`. Hours later every UFC Strike image on the site was broken — a 403 from the media proxy, 518 thumbnails and 516 videos — and it was found by a **hand-run sweep of 27 surfaces**, not by the gate. Asking why is the whole entry.
