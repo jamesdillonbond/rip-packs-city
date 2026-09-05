@@ -10,6 +10,62 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (tests/tooling) — `main` was RED; fixing it properly meant building the SQL stripper the ratchet had been asking for, and the first thing it found was a guard blind to a real table · Claude Code (Trevor's box, interactive)
+
+**The red:** `guards-use-the-shared-comment-stripper` failed with *"Local comment strippers grew to 3 (ceiling 2)"*, from a concurrent session's `259a02e68` (`migration-new-public-table-enables-rls`). Not my commit, and my own pending work sat behind it.
+
+## Why the cheap fix was the wrong one
+
+The ratchet offers two resolutions in its own message — migrate, or lower the ceiling. Raising it to 3 was available and would have been a **loosening of a down-only instrument on someone else's behalf**. Its header already said what the real answer was:
+
+> *"THE REMAINING 2 ARE SQL STRIPPERS, NOT JS ONES… The shared stripper is a JavaScript state machine — it has no `--` state and no dollar-quote state. **They come off this list when a SQL stripper exists to move them to, not before.**"*
+
+All three offenders were SQL strippers. So I built the missing tool: **`scripts/lib/strip-sql.mjs`**, migrated all three, and dropped `MAX_LOCAL_STRIPPERS` to **0** — satisfiable at zero, which is the end state the ratchet's own header argues for.
+
+## 🚨 The migration was NOT cosmetic — one of the three was blind to a real table
+
+The RLS guard's stripper blanked `--` comments **before** pairing quotes. Line 26 of `20260811003456_…board_liveness_history_decoupled_capture.sql` is:
+
+```sql
+RAISE EXCEPTION 'public_board_liveness_state is absent -- refusing to build history for a table that does not exist';
+```
+
+That `--` ate the literal's own **closing quote**. The now-unpaired opening quote then paired with the next apostrophe in the file — `interval '90 days'`, **47 lines later** — and everything between them was blanked as "string content", including the file's real
+
+```sql
+CREATE TABLE IF NOT EXISTS public.public_board_liveness_history …
+ALTER TABLE public.public_board_liveness_history ENABLE ROW LEVEL SECURITY;
+```
+
+⭐ **A guard whose entire job is to notice a new public table could not see one, in a file named after it, and was green.** That is verbatim the failure its own ratchet message predicts — *"a blind stripper still passes and still reports a population"* — and it took building the shared implementation to surface it. The table is correctly hardened; it was the INSTRUMENT that was blind, not production.
+
+## Shipped
+
+A **single left-to-right character lexer**, not a chain of `.replace()` calls, because chained regexes are blind in both directions: comment-first destroys a `--` inside a literal (above), literal-first lets an apostrophe inside a comment (`-- the edition's name`) open a string that runs to the next quote anywhere later. A single pass has no ordering to get wrong — whichever construct OPENS first consumes the others, which is Postgres's own rule. ⭐ It is also why the helper contains **no regex of the shape the ratchet hunts for**: the tool that retires a defect must not be an instance of it.
+
+Also handled, each with its own case: **nested block comments** (Postgres nests; a non-greedy regex closes at the first terminator and hands the rest back as live code), **CRLF** (`.` does not match `\r`, so a `--.*$` strip silently no-ops on a CRLF file), `''` escapes, double-quoted identifiers, and dollar-quoted bodies — **recognised but deliberately not hidden**, since these guards scan function bodies on purpose (the RLS guard's header is written around a `CREATE TEMP TABLE` inside one).
+
+⚠ **Offsets are preserved and that is load-bearing, not tidiness.** The anon-exec guard matches `REVOKE[\s\S]{0,200}?…public.<fn>\s*\(` — a **bounded window**. Collapsing a 300-char comment to one space would pull a REVOKE and a function name inside a window they were never within, and the guard would vouch for a decision the file does not state.
+
+## Proven — and the corpus check is the control that matters
+
+⭐ **A test that the stripper "works" would not have been enough**, because a stripper's failure mode is silent: it returns a string, the caller greps it, finds nothing, and reports a clean population that is clean only because the source was hidden. So the real control was run over the **whole corpus**: for each of the **909** migrations, compare each guard's **DERIVED OUTPUT** (function set, decision verdict, table set, view set) under the old stripper vs the new one.
+
+**Result: 909 files, 4 derived outputs, exactly ONE difference** — the `public_board_liveness_history` table above, which the new lexer sees and the old one hid. Every other verdict is identical, so this is a change of implementation and not a silent change of population.
+
+Plus 14 unit cases, of which 2 are the negative controls the rest need: SQL containing no commentary is returned **byte-identical** (without it, a stripper that blanked everything passes every absence assertion), and `$1` is not read as a dollar quote.
+
+**Mutations, all four red:** re-introduce a local SQL stripper → the ratchet reds; disable the single-quote state, i.e. **restore the original defect** → 3 helper cases AND **2 cases in the RLS guard itself** red, which is the proof that the guard genuinely depends on the fix rather than merely importing it; stop counting block-comment depth → 4 red; blank everything → 13 red.
+
+⚠ **A trap worth recording:** my mutation harness restored files with `git checkout --`, which **cannot restore an untracked file**. The new helper was untracked, so three mutations stacked instead of reverting and the "restored" baseline came back red. Caught by re-running the baseline at the end — which is the only reason it was caught. **`git add` a new file before mutating it, and always re-assert the baseline after the last mutation.**
+
+**Verified:** `tsc` clean · full suite **1,470 files / 16,278 tests, exit 0** · corpus equivalence re-run after restore and byte-identical to the pre-mutation run.
+
+⛔ **This ships no production behaviour.** It is tests and a build-time helper; nothing in `app/`, `lib/` or `supabase/` changed, and no migration was applied.
+
+**Revert:** `git revert <sha>` — the three guards go back to their own strippers and the ceiling to 2. ⚠ Reverting restores the blindness described above, so the RLS guard would again miss `public.public_board_liveness_history`.
+
+
 ### 2026-09-05 · ✅ SHIPPED (DB) — a parallel inherits its base edition's PROSE too, and the justification is a total positive control: 4,137 of 4,137 pairs are byte-identical · Cowork (cloud)
 
 **Overnight, item 3 of the night queue: the description residual, measured rather than waited out.** The Atlas enrichment took Top Shot prose coverage from a frozen 68.5% to ~95%. The remaining **663 NULLs were then checked against the thing that would explain them** — and **every one is in a set the Atlas walk has COMPLETED since the enrichment shipped.** So the walk is not behind; Atlas has no `Description` for those rows. ⓘ 100 are editions Atlas does not carry at all (the `Club Collection` class documented an hour earlier), which this source can never fill.
