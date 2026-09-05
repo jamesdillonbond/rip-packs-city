@@ -21,6 +21,7 @@
 // a human can act on. Never pass a driver message through.
 
 import { NextResponse } from "next/server";
+import { RPC_READ_TIMEOUT_CODE } from "@/lib/api/bounded-read";
 
 /** A response body shape safe to serialize to any client. */
 export interface SafeApiError {
@@ -32,12 +33,31 @@ export interface SafeApiError {
   retryable: boolean;
 }
 
-/** Postgres/PostgREST codes that mean "the database gave up", not "you asked wrong". */
-const TIMEOUT_SQLSTATES = new Set([
+/**
+ * Codes that mean "the read gave up", not "you asked wrong".
+ *
+ * 🚨 `RPC_READ_TIMEOUT` was ADDED 2026-09-04 and it is not a SQLSTATE — it is the
+ * code `lib/api/bounded-read.ts` stamps when OUR client-side bound fires. Until
+ * it was here, a bound timeout matched nothing in this function: its message is
+ * "[route] read exceeded 8000ms", which contains none of the substrings below.
+ * So it fell through to the generic branch and all **86 routes** pairing
+ * `boundedRead` with `apiErrorResponse` answered a timeout as
+ * `{ code: "internal", retryable: false }` at status **500**, with no
+ * `Retry-After` — telling the caller a transient failure was permanent.
+ *
+ * ⭐ Measured live on `/api/collection-stats` before the fix: **500 at 8.2 s,
+ * then 200 at 4.0 s on the very next request.** The one thing the caller should
+ * have done was the one thing the response told it not to do.
+ *
+ * ⚠ The import is deliberate — the string is not re-typed here, because a typo
+ * on either side fails OPEN (back to a silent non-retryable 500).
+ */
+const TIMEOUT_SQLSTATES = new Set<string>([
   "57014", // query_canceled — statement_timeout
   "57P01", // admin_shutdown
   "57P02", // crash_shutdown
   "57P03", // cannot_connect_now
+  RPC_READ_TIMEOUT_CODE, // our own client-side read bound
 ]);
 
 function readCode(err: unknown): string | null {

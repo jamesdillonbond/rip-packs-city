@@ -3,7 +3,9 @@ import {
   boundedRead,
   apiReadTimeoutMs,
   API_DB_READ_TIMEOUT_MS,
+  RPC_READ_TIMEOUT_CODE,
 } from "../lib/api/bounded-read"
+import { safeApiError, statusForSafeError } from "../lib/api-error"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The behavioural half of the API-route read bound.
@@ -168,5 +170,53 @@ describe("apiReadTimeoutMs", () => {
   it("a valid env value is honoured", () => {
     process.env.API_DB_READ_TIMEOUT_MS = "250"
     expect(apiReadTimeoutMs()).toBe(250)
+  })
+})
+
+// ── THE TWO HALVES MUST CONNECT (2026-09-04) ───────────────────────────────
+//
+// Neither unit test could see this on its own, and that is why it shipped:
+// `api-error.test.ts` proves the CLASSIFIER handles the code, and the cases
+// above prove the HELPER resolves on timeout — but nothing asserted the helper
+// actually STAMPS the code the classifier reads. Removing it from the helper
+// left every test in this file green while restoring the original bug.
+//
+// 🚨 The bug: a bound timeout carried no `code`, its message ("read exceeded
+// 8000ms") matches none of the classifier's substrings, and so all **86 routes**
+// pairing this helper with `apiErrorResponse` answered a transient timeout as
+// `{ code: "internal", retryable: false }` at **500** with no `Retry-After`.
+// Measured live on /api/collection-stats: 500 at 8.2 s, then 200 at 4.0 s on the
+// very next request — the one action the caller should have taken was the one
+// the response told it not to.
+describe("a timeout carries the code the error classifier reads", () => {
+  afterEach(() => { delete process.env.API_DB_READ_TIMEOUT_MS })
+
+  it("stamps RPC_READ_TIMEOUT on the resolved error", async () => {
+    process.env.API_DB_READ_TIMEOUT_MS = "20"
+    const { error, data, count } = await boundedRead(new Promise(() => {}), "api/x/never-settles")
+    expect(error?.code).toBe(RPC_READ_TIMEOUT_CODE)
+    expect(String(error?.message)).toContain("read exceeded")
+    // The rest of the envelope is unchanged — null, never a fabricated 0/[].
+    expect(data).toBeNull()
+    expect(count).toBeNull()
+  })
+
+  it("END TO END: a hanging read becomes a RETRYABLE 503, not a hard 500", async () => {
+    // The assertion that would have caught this. It spans both modules, which is
+    // exactly where the defect lived.
+    process.env.API_DB_READ_TIMEOUT_MS = "20"
+    const { error } = await boundedRead(new Promise(() => {}), "api/x/never-settles")
+    const safe = safeApiError(error)
+    expect(safe.code).toBe("timeout")
+    expect(safe.retryable).toBe(true)
+    expect(statusForSafeError(safe)).toBe(503)
+  })
+
+  it("a read that SUCCEEDS carries no timeout code", async () => {
+    // The control: without it, a helper that stamped the code unconditionally
+    // would pass the two cases above and mark every success as a timeout.
+    const { error, data } = await boundedRead(Promise.resolve({ data: [1], error: null }), "api/x/ok")
+    expect(error).toBeNull()
+    expect(data).toEqual([1])
   })
 })

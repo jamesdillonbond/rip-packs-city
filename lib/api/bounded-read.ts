@@ -89,6 +89,16 @@ export interface BoundedReadResult {
  * A non-numeric or non-positive value falls back to the default rather than
  * disabling the bound — an env typo must not silently un-bound production.
  */
+/**
+ * The `code` this helper stamps on a timeout, so `safeApiError` can classify it
+ * as transient (503 + `Retry-After`) rather than as a hard internal 500.
+ *
+ * ⚠ Exported so the classifier imports the STRING rather than re-typing it —
+ * a typo on either side fails OPEN, silently restoring the non-retryable 500
+ * this constant exists to prevent, with nothing red to show for it.
+ */
+export const RPC_READ_TIMEOUT_CODE = "RPC_READ_TIMEOUT"
+
 export const API_DB_READ_TIMEOUT_MS = 8_000
 
 export function apiReadTimeoutMs(): number {
@@ -137,10 +147,35 @@ export async function boundedRead(
           // `count: null` explicitly, not omitted: a caller doing `count ?? 0`
           // gets the same answer either way, but stating it keeps the contract
           // readable at the one place someone might be tempted to put a 0.
+          //
+          // 🚨 `code` IS LOAD-BEARING AND IT WAS MISSING UNTIL 2026-09-04.
+          // `safeApiError` classifies on `error.code` (or on specific message
+          // substrings like "statement timeout"). This timeout carried NEITHER —
+          // its message is "read exceeded 8000ms" — so it fell through to the
+          // generic branch and every one of the **86 routes** that pair this
+          // helper with `apiErrorResponse` answered a timeout as
+          // `{ code: "internal", retryable: false }` with status **500** and no
+          // `Retry-After`.
+          //
+          // ⛔ That is the precise OPPOSITE of why the bound exists. The point is
+          // to turn a hang into an honest, ACTIONABLE answer; instead it told the
+          // caller the failure was permanent and not worth retrying, when a
+          // retry is exactly what works. Observed live on
+          // `/api/collection-stats`: 500 at 8.2 s, then **200 at 4.0 s on the
+          // very next request**.
+          //
+          // ⚠ Deliberately NOT `57014` and NOT the words "statement timeout",
+          // either of which would have classified correctly by accident. Both
+          // would be FALSE: Postgres cancelled nothing. We abandoned the WAIT and
+          // the query is still running — the helper's own header says so. This is
+          // OUR read timeout and it gets its own honest name.
           () =>
             resolve({
               data: null,
-              error: { message: `[${label}] read exceeded ${timeoutMs}ms` },
+              error: {
+                code: RPC_READ_TIMEOUT_CODE,
+                message: `[${label}] read exceeded ${timeoutMs}ms`,
+              },
               count: null,
             }),
           timeoutMs,

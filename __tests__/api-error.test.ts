@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { safeApiError, statusForSafeError } from "@/lib/api-error"
+import { RPC_READ_TIMEOUT_CODE } from "@/lib/api/bounded-read"
 
 // deep-audit D3. The rule this pins: a driver message never reaches a response
 // body. /api/sets returned err.message, the sets page renders body.error verbatim
@@ -67,5 +68,52 @@ describe("safeApiError", () => {
 
   it("gives the user an action rather than a diagnosis", () => {
     expect(safeApiError({ code: "57014" }).error).toMatch(/try again/i)
+  })
+})
+
+// ── A BOUND TIMEOUT IS RETRYABLE (2026-09-04) ──────────────────────────────
+//
+// 🚨 The bug this pins, found in production and not by review. `boundedRead`'s
+// timeout resolved `{ message: "[route] read exceeded 8000ms" }` with NO `code`.
+// `safeApiError` matches on `code` or on specific message substrings, and that
+// message contains none of them — so a bound timeout fell through to the generic
+// branch and all **86 routes** pairing the helper with `apiErrorResponse`
+// answered `{ code: "internal", retryable: false }` at status **500**, with no
+// `Retry-After`.
+//
+// ⛔ Precisely the OPPOSITE of the bound's purpose: it exists to turn a hang into
+// an honest, ACTIONABLE answer, and instead it told the caller the failure was
+// permanent. Measured live on /api/collection-stats: **500 at 8.2 s, then 200 at
+// 4.0 s on the very next request.**
+describe("a client-side read bound classifies as transient, not internal", () => {
+  it("maps the bound's own timeout code to a retryable 503", () => {
+    const err = { code: RPC_READ_TIMEOUT_CODE, message: "[api/x/y] read exceeded 8000ms" }
+    const safe = safeApiError(err)
+    expect(safe.code).toBe("timeout")
+    expect(safe.retryable).toBe(true)
+    expect(statusForSafeError(safe)).toBe(503)
+  })
+
+  it("would NOT classify on the message alone — the code is what carries it", () => {
+    // The control, and the whole point: strip the code and the exact same
+    // timeout goes back to a non-retryable 500. This is the pre-fix behaviour,
+    // pinned so nobody "simplifies" the code away again.
+    const safe = safeApiError({ message: "[api/x/y] read exceeded 8000ms" })
+    expect(safe.code).toBe("internal")
+    expect(safe.retryable).toBe(false)
+    expect(statusForSafeError(safe)).toBe(500)
+  })
+
+  it("still leaks no internal detail in the retryable case", () => {
+    const safe = safeApiError({ code: RPC_READ_TIMEOUT_CODE, message: "[api/secret-table] read exceeded 8000ms" })
+    expect(safe.error).not.toContain("secret-table")
+    expect(safe.error).not.toContain("8000")
+  })
+
+  it("a real Postgres statement timeout is unaffected", () => {
+    // The no-change control: the pre-existing SQLSTATE path must still work.
+    const safe = safeApiError({ code: "57014", message: "canceling statement due to statement timeout" })
+    expect(safe.code).toBe("timeout")
+    expect(statusForSafeError(safe)).toBe(503)
   })
 })
