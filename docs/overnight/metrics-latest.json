@@ -1,8 +1,9 @@
 {
- "generated_at_pt": "2026-09-05T04:35:00-07:00",
- "pass": "2026-09-05 Cowork cloud — the 403 critical that had cost three nights is attributed and gone; three measurement filings; and two corrections to my own claims",
+ "generated_at_pt": "2026-09-05T06:55:00-07:00",
+ "pass": "2026-09-05 Cowork cloud — the 403 critical cleared, pack_ev_latest rewritten (65x), tonight's new editions verified in the product, and five of my own alarms refuted by controls",
  "migrations_applied": [
-  "20260905110532 the 403 arm attributes the Atlas walk by request_id, so a self-healing upstream challenge stops paging as critical (0 criticals on the board)"
+  "20260905110532 the 403 arm attributes the Atlas walk by request_id, so a self-healing upstream challenge stops paging as critical (0 criticals on the board)",
+  "20260905134612 pack_ev_latest joins pack_ask_state once instead of probing it per history row (128,911 loops / 382,519 buffers returning zero rows every loop) — 707,048 -> 10,898 buffers, equivalence proven both directions"
  ],
  "code_shipped": [],
  "converged": {
@@ -74,7 +75,7 @@
   "the wmc metadata reconcile cursor was rewound to ~103 during the mint_count investigation; it re-walks idempotently and was at 126:4424 at 18:30 PT."
  ],
  "health_at_close": {
-  "pt": "2026-09-05 04:33",
+  "pt": "2026-09-05 06:55",
   "security_invariants_rows": 0,
   "detect_stalled_pipelines": 0,
   "secdef_anon_execute_violations": 0,
@@ -96,7 +97,9 @@
  ],
  "corrections_to_my_own_claims": [
   "cdn.nba.com 'blank on 4 of 4 NBA team pages' was a headless-Chromium sandbox artifact — real Chrome renders it at naturalWidth 150, 0 blank of 84. My first isolation test was invalid (a data: page cannot load ANY cross-origin image; the control proved it). NEW known false positive.",
-  "'96.4% Top Shot description coverage' had an unstated denominator: it is 96.6% of the 13,915 ATLAS-COVERED editions. A further 6,697 are outside Atlas at 1.1% prose. The topshot-catalog-backfill retirement still stands — those 6,697 were created 2026-05-08..2026-08-20 while that walker was alive and healthy and it was not filling them either — and only 100 of the 6,697 are user-reachable (50 holders, 59 sales), the rest inert."
+  "'96.4% Top Shot description coverage' had an unstated denominator: it is 96.6% of the 13,915 ATLAS-COVERED editions. A further 6,697 are outside Atlas at 1.1% prose. The topshot-catalog-backfill retirement still stands — those 6,697 were created 2026-05-08..2026-08-20 while that walker was alive and healthy and it was not filling them either — and only 100 of the 6,697 are user-reachable (50 holders, 59 sales), the rest inert.",
+  "I filed pack_ev_latest as operator-gated by inheriting the 2026-08-30 verdict — which is about mv_pack_ev_latest, a MATERIALIZED view needing DROP ... CASCADE. pack_ev_latest is relkind='v', a plain view: CREATE OR REPLACE keeps the column list and all 68 dependents. Re-read a blocked item's blocker before inheriting it — it may be a blocker for a DIFFERENT OBJECT.",
+  "cdn.nba.com 'blank on 4 of 4 NBA team pages' (headless artifact, real Chrome fine); /packs 'renders nothing on mobile' (settle artifact — 83,753 chars after 3 scroll passes); '36 over-wide elements on pack-reality' (table correctly inside overflow-x:auto); 'the trophy case renders no art' (204 lazy images pending, 0 failed); '43 CIDs x 5.1MB = 220MB per page' (lazy loading means only what is scrolled past is fetched). Five alarms, five controls."
  ],
  "description_coverage_topshot": {
   "atlas_covered": 13915,
@@ -106,5 +109,24 @@
   "not_covered_user_reachable": 100,
   "all_editions": 20612,
   "all_pct": 65.6
+ },
+ "pack_ev_latest_rewrite": {
+  "before_buffers": 707048,
+  "after_buffers": 10898,
+  "factor": "65x",
+  "ranker_staleness_route": {
+   "before": 705997,
+   "after": 10907,
+   "rows": "3 -> 3"
+  },
+  "calibrated_route": {
+   "before": 707584,
+   "after": 12618,
+   "rows": "810 -> 810"
+  },
+  "equivalence": "live 4642 / cand 4642, EXCEPT 0 both directions, INTERSECT 4642",
+  "honest_cost": "trades index-ordered scan for Seq Scan + external merge sort spilling ~28-49MB temp per execution; sized at tens of calls/hour so not a concurrency hazard",
+  "live_after": "/api/public/insights/pack-reality 200 in 2.1s cold / 0.26s warm; /api/packs?collection=nba-top-shot 200 in 2.2s, 100 rows",
+  "falsifier": "the two Vercel error groups must STOP — re-read get_runtime_errors for those routes after 2026-09-06"
  }
 }
