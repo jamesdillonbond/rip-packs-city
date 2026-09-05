@@ -122,12 +122,19 @@ here manufactures a violation out of a clean answer. Both read `[]` at close.
 
 ## Post-ship watch
 
-- `topshot-catalog-backfill` must log **no new `pipeline_runs` row** after its former 02:12Z
-  slot. A row there means the `vercel.json` edit did not deploy.
+✅ **CLOSED before this session ended — `topshot-badge-set-backfill`.** Its former Vercel slot
+`15 3,9,15,21` UTC = 20:15 PT fell inside this session. At 20:18 PT its newest `pipeline_runs` row
+was still **14:15 PT** (the 21:15Z slot, which predates the deploy) — **no new row at the retired
+slot**, so that retirement is confirmed deployed and effective, not merely committed.
+
+⏳ **Still owed — `topshot-catalog-backfill`.** Its former slot is 02:12Z = 19:12 PT; the last row
+is 19:12 PT **today**, which predates this deploy, so the first real test is **2026-09-05 19:12
+PT**. A row there means the `vercel.json` edit did not deploy.
+
 - `atlas-editions-refresh` `extra.editions_enriched` should trend **down toward single digits**
   as the backlog drains, and `atlas_set_refresh_state.last_error` must never carry an
   `editions-enrich:` prefix. One appearing is a bug in the spliced block, not an upstream fault.
-- Description coverage is a **moving number** — re-measure it, never quote this document's 71.4%.
+- Description coverage is a **moving number** — re-measure it, never quote a figure from this document. It read 68.5% frozen, 71.4% eleven minutes after the splice, and **77.9% (2,973 NULL) ninety minutes later**; `/api/search`'s live `meta.note` had already picked it up at 72.3%.
 
 ## Housekeeping note for Trevor's box
 
