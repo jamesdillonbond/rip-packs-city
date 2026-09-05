@@ -42,7 +42,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Verified:** `tsc` clean · full suite **1,467 files / 16,248 tests, exit 0**.
 
-⏳ **OWED:** re-probe the live board after deploy and confirm both `<img>` report a non-zero `naturalWidth`. ⚠ The unit tests assert the URL SHAPE; only the browser can prove the bytes arrive, and the URL shape was exactly what looked right this morning.
+✅ **VERIFIED IN PRODUCTION after deploy, by rendered DOM.** The served CSP now carries `https://arweave.net https://*.arweave.net`; `/api/public/avatar-media` answers **400** for an Arweave URL (no longer allowlisted, so it is refused before any fetch — the intended new behaviour, not the old 502); the browser follows the redirect itself (**302 → 200** on the content subdomain) and the art **paints at 2160×3240** with **ZERO CSP violations**.
+
+⚠ **Stated precisely rather than rounded up: 2 of 3 `<img>` painted inside the probe window.** The third is below the fold and was never *requested* in that run (lazy) — its asset is independently valid on a direct fetch (200, `image/png`, 7,371,702 bytes). So it is not evidence of a failure, and it is not evidence of a success either.
+
+⭐ **AND THE SCOPE WAS UNDERSTATED IN MY OWN FILING — corrected here.** I wrote "2 cards on one public board". Measured after: **all 125 Candy MLB editions carry an `arweave.net` thumbnail, and it is the ONLY thumbnail any of them has.** Every surface rendering Candy art was blank, not just top-sales.
+
+🚨 **NEW FOLLOW-UP THIS FIX CREATES, named rather than left to be discovered:** these assets are **6.9–7.4 MB PNGs, now hotlinked to every visitor** of a public board. That is strictly better than blank and it is not good — one card can outweigh the rest of the page. The proxy could not have solved it either (that is why its 4 MB cap rejected them). The real answer is a resizing/CDN step for chain-two art; ⛔ do NOT solve it by putting the host back in the avatar proxy.
 
 ⚠ **Scope stated honestly:** 2 cards on one public board. **Zero user avatars are affected** — `profile_bio` + `user_profiles` hold 46 empty and one `seadn.io`. The avatar proxy is doing its own job correctly.
 
