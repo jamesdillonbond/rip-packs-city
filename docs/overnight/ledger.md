@@ -10,6 +10,91 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (test) — the suite's most frequent flake, red in 2 of 3 full runs, stabilised so the push gate means something again · Claude Code (Trevor's box, interactive)
+
+`__tests__/component-SupportChat-stream.test.tsx` → *"opens and answers on the rpc-concierge-ask window event"* was failing **2 of 3 full-suite runs** while passing **2 of 2 in isolation**. ⛔ **It is not mine** — it failed in a run started before any of tonight's files existed — but a test that reds two thirds of full runs makes `npm test` useless as a gate, and this repo has already pushed a red suite once (09-04) by working around exactly that.
+
+**Measured before touching it:** the failure lands at **~2,180 ms against its hand-set `{ timeout: 2000 }`** — the budget being spent, not a hang — and on the red runs **the panel IS rendered** (the dump shows the "RPC Concierge chat" dialog), so the window event was received and `setIsOpen(true)` ran. Only the streamed answer was late.
+
+⛔ **Two hypotheses were tested and DROPPED rather than shipped as the story.** (a) *A missed listener* — refuted, the panel opens. (b) *Leaked fake timers stopping the handler's real 80 ms `setTimeout`* — refuted: every `__tests__` file calling `useFakeTimers` also calls `useRealTimers`, so nothing leaks. ⚠ **The root cause is therefore NOT established and the comment in the file says so.** What is left is that this path pays an extra 80 ms timer plus a re-render before the fetch even begins.
+
+**Shipped:** that one `waitFor` budget **2000 → 4000 ms**, with the evidence and both dropped hypotheses recorded inline, plus a pointer to the next thing to suspect (the stale `sendMessage` the 80 ms timer closes over in `components/SupportChat.tsx`) if it flakes again.
+
+⚠ **This RAISES A BUDGET; it does not weaken an assertion.** The answer must still render or the test fails. 4000 matches budgets already used elsewhere in `__tests__` and sits far under the 30 s `testTimeout`. ⛔ **Explicitly not done:** `.skip`, a retry wrapper, or loosening the matcher — any of those would have hidden a real regression in the concierge stream.
+
+**Revert:** `git revert <sha>` — restores the 2 s budget and the flake.
+
+
+### 2026-09-05 · ✅ SHIPPED (code) — `resolve-topshot-stubs` was losing 2.5% of its ticks to a wall four times smaller than the budget its own code declares · Claude Code (Trevor's box, interactive)
+
+**Found while taking an unrelated owed reading.** The route bounds its edge-function fetch with `AbortSignal.timeout(120_000)` and declared `maxDuration = 30` — **the lambda died at 30 s, so the 120 s bound the author asked for was unreachable by 4×**, and the tick was hard-killed instead of breaking out.
+
+## Measured, not inferred
+
+Over **121 invocations since 2026-09-03 03:39Z, 3 were killed (2.5%)** — and each pairs **1:1** with an edge-function run that crossed 30 s: **30,452 / 31,690 / 34,423 ms**. ⭐ Matched occurrences, not merely matching counts (each edge run starts ~0.4 s after its own heartbeat).
+
+⛔ **The work SUCCEEDED in all three.** The edge function logs its own `topshot-stub-resolver` row, so a kill produced a Vercel runtime error (`Task timed out after 30 seconds`) **and a missing terminal row for work that had completed** — the pipeline's run count under-reports while nothing is actually broken. ⚠ Kills are readable **only by correlation** (heartbeat present, terminal row absent); `try/catch` cannot catch a `maxDuration` kill.
+
+⭐ **Why nobody could see this before 09-03, and it is a general lesson:** the route's own recorded maximum is **CENSORED AT ITS WALL BY CONSTRUCTION** — a tick that crossed 30 s wrote no row, so it is *absent* from the distribution rather than at the top of it. A 09-02 note in `after-route-heartbeat-ratchet` correctly flagged it at "29,313 ms of a 30,000 ms wall — 97.7%" and concluded a kill here "is unobserved by anything at all". **That was true when written.** The heartbeat landed 09-03 and the *uncensored* duration was available all along under the edge function's own pipeline name — **when a distribution is censored at a wall, look for the same work recorded by something the wall does not bound.**
+
+⚠ **Durations are also drifting up** — p50 11.1 → 15.6 s, p90 15.1 → 25.5 s across 09-02→09-05 — so 120 is headroom against drift, not a tight fit. ⓘ Stated as suggestive only: 4 days, two of them partial, on an IO-bound instance where load varies.
+
+## Shipped
+
+- `maxDuration` **30 → 120** on `app/api/cron/resolve-topshot-stubs/route.ts`, aligning the wall with the 120 s bound the route already declares. ⓘ Well under the 800 s Pro cap; the work runs inside `after()`, so cron-job.org's 30 s client cap is not involved.
+- **Two superseded claims in that route's header corrected**: it said the pipeline is *not* on `pipeline_cadence_watchlist` (it is — seeded 09-04, severity `info`, as is `topshot-stub-resolver`) and that a kill is *unobserved by anything* (the heartbeat on the next line is what changed that).
+
+## Proven
+
+New guard `a-declared-budget-larger-than-its-own-wall-is-unreachable` — a **tree walk**, not a curated list: 455 route files, **181 declaring an explicit wall**, comparing each against its own `AbortSignal.timeout` / `*_BUDGET_MS` / `*_DEADLINE_MS`.
+
+- **Ban at zero** on new offenders · **not-vacuous assertion** (population + inspected count) · **positive control** · **negative control** (the shipped header now quotes both `maxDuration = 30` and `120_000` in prose, so an unstripped scan would fire on the explanation).
+- ⚠ **The strip-landed check counts NON-WHITESPACE, not length** — the shared stripper blanks comments *in place* to preserve offsets, so `length` is unchanged and a length check reports a strip failure on every commented file. It silently skipped **444 of 455** routes while this was being written, which is the third time this repo has recorded that trap.
+- ⚠ **A RATCHET, not a bare ban:** the walk finds exactly two of this shape. The second, `candy-listings-indexer` (`SWEEP_BUDGET_MS` 600 s under a 300 s wall), is **LATENT — 25 runs, avg 20.6 s, max 38.8 s, approaching neither bound** — so there is no measured harm and nothing to size a change from. It is **pinned, deliberately unfixed**, and the pin is written to stay satisfiable at a population of zero so that fixing it later cannot red the guard.
+
+**Mutation:** wall back to 30 → the ban and the route-specific assertion both red, the other four stay green; restored and re-verified by **md5 against the pre-mutation baseline**.
+
+**Verified:** `tsc` clean · full suite **1,474 files / 16,323 passed, exit 0**, run on a tree diffed as unchanged for the duration (an earlier run was taken while these docs were being edited and was discarded for that reason).
+
+**Revert:** `git revert <sha>` — restores `maxDuration = 30` and the 2.5% kill rate. No DB, schedule or schema change.
+
+
+### 2026-09-05 · ⚠ CORRECTION (code comments + a filing addendum) — my own DEP0169 attribution was wrong, and the two "unresolvable" UFC rows are phantom holdings, not a catalogue gap · Claude Code (Trevor's box, interactive)
+
+**Two claims I published earlier today were re-tested and did not survive. The SHIPS both still stand; only the reasoning was wrong, and wrong reasoning in a header is how the next author inherits a wrong model.**
+
+## 1. The DEP0169 attribution — refuted by its own forward test
+
+The ✅ ship (`/api/cron/ufc-enrichment-drain` no longer imports the Flow SDK chain for one string) **is verified working**: over a window starting after the ~14:40Z deploy, `get_runtime_errors` filtered to that route returns **nothing**, across **two confirmed executions** (15:07Z, 15:37Z — positive control taken from `pipeline_runs`, because an absent event proves nothing unless the route ran).
+
+⛔ **But the attribution I wrote into the route header, the test header and the ship entry was wrong on both halves.** I claimed the group's `routes` field listed *"EXACTLY the two routes importing `wallet-backfill-helpers` — this one and `/api/wallet-backfill-ufc`"*:
+
+- `/api/wallet-backfill-ufc` imports **only** `next/server` and `@/lib/supabase` — no Flow SDK at all, so it cannot have been emitting it, and my note that it "genuinely runs Flow scripts and still needs the SDK" is false.
+- A post-deploy window lists `/api/wallet-search` and `/api/sales-indexer`, which import `@/lib/chains/flow/flow` (→ `@onflow/fcl`) and `@onflow/types` **directly**, never via that helper.
+
+⭐ **Accurate version: DEP0169 is emitted by any route whose module graph loads `@onflow/fcl`.** This route reached it *transitively*, for one constant — which is what made it removable here and not elsewhere. **The mistake was reading one 7-day `routes` sample as the emitter set**; `routes` is cumulative over the query window, so it is a description of that window, not of causation.
+
+**Shipped:** comment-only corrections in `app/api/cron/ufc-enrichment-drain/route.ts` and `__tests__/ufc-enrichment-drain-does-not-import-the-flow-sdk.test.ts`. ⚠ **No assertion changed — none of them ever depended on the wrong claim** (they pin the import graph and the UUID value, both properties of the file itself).
+
+## 2. The two residual UFC rows are PHANTOM HOLDINGS — filed as ADDENDUM 3
+
+Re-derived this morning's ADDENDUM 2 independently while taking the owed reading, agreed with its conclusion (retire candidate, queue of 2) and **disagreed with its cause**. It records the two rows as *"0 matching rows in `editions`… a catalogue-coverage gap."*
+
+⛔ **The catalogue never gets consulted.** Across **149 retained runs** the drain is invariant: `rows_found=2 · rows_written=0 · ok=true · cadence_errors=2 · no_edition_name=0 · enriched=0`. A `getMeta` rejection `continue`s before the `editions` join; `no_edition_name=0` every run proves nothing reached it.
+
+⭐ **Measured on mainnet** (non-panicking mirror of the route's own `GET_META` preamble): `{hasCollection: true, total: 0, hasA: false, hasB: false}` — **the wallet's UFC collection exists and is EMPTY.** The drain force-unwraps `borrowNFT(id)!`, so a missing NFT panics as the opaque `1101`. ⚠ `hasCollection: true` means a capability or status check reads *healthy*; only the ID set shows the holding is gone.
+
+⭐ **Why they can never age out — both cleanup paths miss them.** The writer (`upsert_wmc_batch`) only upserts what exists, so a vanished moment is untouched rather than removed; and `prune_stale_wmc()` (jobid 199, Sundays, last run 08-30 succeeded) deletes at 14 days **only** `AND NOT EXISTS (… seeded_wallets … is_active)` — and this wallet **is** active, legitimately so (1,178 rows, `max(last_seen_at)` = 09-03). **General defect: an ACTIVE wallet that fully exits ONE collection keeps its final holdings there forever**, and wmc feeds portfolio totals and the anon-public `/share/[wallet]`. **Prevalence deliberately UNMEASURED** — no index on `last_seen_at`, so it is a seq scan of 3,360 MB on an IO-bound instance; the filing carries the query for a quiet window, plus a note that my first prevalence detector was confounded (it flags paginated syncs, not phantoms).
+
+## 3. ⛔⛔ The obvious fix was ENUMERATED AND REJECTED — it would page Trevor hourly, forever
+
+`ok: !writeError` (route.ts:330) is a textbook fabricated green — `writeError` is null when `updates` is empty, so **0-of-2-converted reports success** — and CLAUDE.md's own canon says *"fail the sweep when a lane fails EVERY target on TRANSPORT."* **Applying that rule here would have been a mistake**, and the escalation path was traced before touching it: sentinel **Pipeline Success** fires at **T+4 h** (`max_minutes_without_success=240`) ⇒ Telegram + email 4–6×/day; `failure_rate` crosses **50% ⇒ `high` at T+~24–30 h** ⇒ `/api/check-alerts` ⇒ **~24 emails + ~24 Telegrams per day, indefinitely**. Its window is **3 calendar days**, so at 100% failure the alert **can never age out**. There is **no `pipeline_alert_suppression` row** for this pipeline, and the sentinel's Success-Coverage arm is **already at `critical`** (3 dead vs a hardcoded `crit_at=3`).
+
+👉 **Correct order, recorded so a future session does not invert it: clean the two rows FIRST** (then the drain finds 0 candidates, logs "no null-edition_key UFC rows", and is green because it is genuinely idle), **then** tighten `ok`. Doing it the other way buys a permanent pager. **The DELETE is 2 rows and is Trevor's** — statement in the filing, with a re-verify-on-chain-first warning.
+
+**Revert:** `git revert <sha>` — restores the incorrect comments. **Nothing executable changed**; no DB writes, no migration, no schedule change. **Verified:** the 4 guards that read this route pass (27 tests), inbox append-only + INDEX guards pass, full suite run before push.
+
+
 ### 2026-09-05 · 🏁 SESSION CLOSE — the overnight pass in full: 2 DB ships, 4 filings, and SIX corrections to my own claims · Cowork (cloud, autonomous)
 
 **Docs updated at close:** `docs/overnight/focus.md` (new STEER, header re-dated to 09-05), `docs/reference/database.md` (four new sections), `docs/overnight/metrics-latest.json`, `docs/handoff-2026-09-05-overnight.md` (mirrored to the Project). **Blocks 7 and 8 of my own scheduled queue were DELETED** — the thread is being archived and they were bound to this session; the two legitimate future triggers (FMV re-baseline 09-08, PAT rotation 11-07) are untouched.

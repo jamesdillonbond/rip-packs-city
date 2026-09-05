@@ -120,3 +120,85 @@ day        runs  ok  rows_written        day        runs  ok  rows_written
 ⚠ **Cost is trivial** — ~22 s of compute a day, no writes — so this is not urgent, and it is a **weaker** retire candidate than the three above. What makes it worth recording is the pattern: **four pipelines in one night that report success while their work is done elsewhere.** The instrument that finds them is not `ok`, and not `rows_written` — it is *asking what the queue actually contains*.
 
 ⓘ Connected: this is the same route whose import chain was emitting **70% of the runtime-error surface** (fixed separately today). Retiring it would have removed that too — worth knowing before anyone spends more effort on it.
+
+---
+
+## ADDENDUM 3 — the two residual rows are NOT a catalogue gap, and the obvious fix would page Trevor forever
+
+**Filed 2026-09-05 ~08:50 PT (15:50Z), Claude Code (Trevor's box, interactive).** Re-derived ADDENDUM 2 independently while taking an unrelated owed reading on this same route, and reached its conclusion — *retire candidate, residual queue of 2* — by a different path. Two things came out differently, and both matter.
+
+### 1. 🚨 CORRECTION: the failure is on-chain, not in `editions`
+
+ADDENDUM 2 says the two rows have *"0 matching rows in `editions`… a catalogue-coverage gap, not a drain failure."* **The catalogue is not what stops them.** The drain never reaches the `editions` join:
+
+```
+149 retained runs (2026-09-02 13:07Z → 2026-09-05 15:07Z), ALL of them:
+  rows_found = 2 · rows_written = 0 · ok = true
+  extra: cadence_errors = 2 · no_edition_name = 0 · enriched = 0
+  sample_errors: "Flow 400: [Error Code: 1101] failed to execute script"
+```
+
+In `runDrain`, a `getMeta` rejection does `cadenceErrors++; continue` **before** `editionMap.get()` is ever consulted. `no_edition_name = 0` on every run is the proof: not one row got far enough to fail a catalogue lookup. **One distinct value of `rows_found` across 149 runs (always 2), one failure mode, zero variance.**
+
+### 2. ⭐ Why the Cadence read fails — measured on mainnet, not inferred
+
+Running a **non-panicking** mirror of the drain's own `GET_META` preamble against the same account and path (`UFC_NFT.CollectionPublicPath`):
+
+```
+{ "hasCollection": true, "total": 0, "hasA": false, "hasB": false }
+```
+
+**The wallet still has a UFC collection and it is EMPTY.** Neither `225189` nor `516620` is in it. The drain force-unwraps `ref.borrowNFT(id)!`, so a missing NFT panics — which is exactly the opaque `1101`. ⚠ Note the shape: `hasCollection: true` means a status-code or capability check would have looked *healthy*; only reading the ID set shows the holding is gone.
+
+👉 **So these are PHANTOM HOLDINGS — rows for moments the wallet no longer owns** — not unresolvable catalogue entries. That changes the remedy from "improve catalogue coverage" to "delete two stale cache rows."
+
+### 3. ⭐ Why they can never age out — BOTH cleanup paths miss them
+
+- **The writer never deletes.** `upsert_wmc_batch` is `INSERT … ON CONFLICT DO UPDATE`; a moment absent from a wallet's on-chain set is simply not in the payload, so its row is untouched, not removed.
+- **The prune deliberately exempts this wallet.** `prune_stale_wmc()` (pg_cron jobid **199**, `rpc-weekly-wmc-prune`, Sundays 10:20, last run 08-30 **succeeded**) deletes at `last_seen_at < now() - 14 days` **but only** `AND NOT EXISTS (SELECT 1 FROM seeded_wallets sw WHERE sw.wallet_address = w.wallet_address AND sw.is_active = true)`. `0x6d1f8c18412c6abc` **is** an active seeded wallet.
+
+⚠ **And the exemption is not misfiring — the wallet is genuinely live**: 1,178 wmc rows across collections, `max(last_seen_at)` = **2026-09-03 07:37Z**. Only its *UFC* rows sit at 2026-05-13, because a sync that finds no UFC holdings has nothing to write.
+
+👉 **The general defect, which is bigger than this pipeline:** *an **active** wallet that fully exits **one** collection keeps its final holdings in that collection forever.* Neither path can reach them — the writer because it only upserts what exists, the prune because the wallet is exempt as a whole. wmc feeds portfolio totals and the anon-public `/share/[wallet]`, so phantom rows overstate holdings.
+
+⛔ **PREVALENCE IS UNMEASURED, deliberately.** There is **no index on `last_seen_at`** (17 indexes, none on it), so the population query is a seq scan of a **3,360 MB / 2.53 M-row** table — my first attempt timed out — and this instance is IO-bound. ⚠ My first prevalence detector was also **confounded** and is not worth re-running: "row older than its own wallet's newest row" flags any *paginated* sync, not just a phantom (it returned 571 UFC rows across **1** wallet, which is a pagination artifact, not 571 phantoms). **Run this in a quiet window instead, and treat the result as an upper bound until sampled against chain:**
+```sql
+-- phantom-row upper bound: rows on ACTIVE seeded wallets that the wallet's own
+-- latest sync did not refresh. Confirm a sample on-chain before deleting anything.
+SELECT w.collection_id, count(*) AS suspect_rows, count(DISTINCT w.wallet_address) AS wallets
+FROM wallet_moments_cache w
+JOIN seeded_wallets sw ON sw.wallet_address = w.wallet_address AND sw.is_active
+WHERE w.last_seen_at < now() - interval '30 days'
+GROUP BY 1 ORDER BY 2 DESC;
+```
+
+### 4. ⛔⛔ DO NOT "fix" this by making the drain report `ok = false`. It would page Trevor hourly, forever.
+
+This is the trap, and it is well disguised: the route's `ok: !writeError` (route.ts:330) is a textbook **fabricated green** — `writeError` stays null when `updates` is empty, so **0-of-2-converted reports success**, and CLAUDE.md's own canon says *"fail the sweep when a lane fails EVERY target on TRANSPORT."* Applying that rule here is the wrong move, because the escalation path was enumerated and it is severe:
+
+| when | arm | effect |
+|---|---|---|
+| T + ~2 h | `check_pipelines_running_but_not_succeeding()` | fires — but `medium`, filtered at `check-alerts:239`. Silent. |
+| **T + 4 h** | sentinel **Pipeline Success** (`max_minutes_without_success = 240`) | ⚠ `warn` ⇒ **Telegram + email**, ~4–6 digests/day, forever |
+| **T + ~24–30 h** | `failure_rate` crosses **50% ⇒ `high`** | 🚨 `/api/check-alerts` ⇒ **~24 emails + ~24 Telegrams per day, indefinitely** |
+
+The `failure_rate` window is **3 calendar days** (`day >= current_date - 2`), so once the pipeline is 100% failing the alert **can never age out** — the numerator grows with the denominator. `ufc-enrichment-drain` has **no `pipeline_alert_suppression` row**, and it is on the active `pipeline_cadence_watchlist` (`severity=medium`, `max_silent_minutes=120`, `max_minutes_without_success=240`). ⚠ Also relevant: the sentinel's **Success Coverage** arm is **already at `critical`** (exactly 3 dead pipelines against a hardcoded `crit_at=3`), so this route would become a 4th name on an alarm that is already saturated — the very cost the main filing above is about.
+
+**Nothing was changed.** The honest `ok` derivation is still the right end state, but **only after** the two rows are gone (then `nullRows.length === 0`, the drain logs *"no null-edition_key UFC rows"*, and it is green because it is genuinely idle — no suppression needed, no permanent red). **Order matters: clean the data first, then tighten `ok`.** Doing it the other way round buys a permanent pager.
+
+### 5. 👉 The remedy, needing Trevor (two statements, both small)
+
+```sql
+-- 1. Verify still-absent on-chain immediately before deleting (a wallet can re-acquire).
+--    Then remove the two phantom rows:
+DELETE FROM wallet_moments_cache
+WHERE wallet_address = '0x6d1f8c18412c6abc'
+  AND collection_id  = '9b4824a8-736d-4a96-b450-8dcc0c46b023'
+  AND moment_id IN ('225189','516620');
+```
+⚠ **Re-run the on-chain check in the same sitting** — memory [[re-stat-destructive-target-after-any-pause]]: a live writer or a re-acquisition can change the target between diagnosis and action.
+
+**Then** either retire the drain (its queue is empty and something else has been enriching UFC since 08-31 — ADDENDUM 2), or keep it as the regression net and tighten `ok` to derive from the work. ⛔ Retiring needs the **cron-job.org** entry removed, which is operator-side.
+
+⭐ **Transferable, and the reason this addendum exists:** ADDENDUM 2 and I agreed on the *conclusion* (2 rows, retire candidate) and disagreed on the *cause* — catalogue gap vs. phantom holding. Only the second one implies a remedy that works. **Agreeing conclusions can hide disagreeing mechanisms, and the mechanism is what you act on.**
+
