@@ -71,6 +71,41 @@
 
 ---
 
+## 🚨 CORRECTION, 2026-09-05 21:20Z — THE "90%" IS WRONG. Falsifier #1 fired, on my own re-check.
+
+**§1's headline does not survive.** I ran this filing's own falsifier #1 (*"repeat with matched hours on the next pair of days"*) and got the opposite answer from a second window on the SAME pair of days:
+
+| matched window | 09-04 | 09-05 | direction |
+|---|---:|---:|---|
+| **08:05 → 16:50** (8.75 h) — the one §1 used | 154 (17.6/h) | 15 (1.71/h) | **90% better** |
+| **16:50 → 21:14** (4.4 h) — the one §1 did not use | 18 (4.09/h) | **58 (13.2/h)** | **223% WORSE** |
+
+⛔ **Two matched-hours windows, same two days, same method, OPPOSITE SIGNS.** Whichever you pick is the answer you report, and §1 picked the flattering one — not deliberately, but that is exactly why the result is worthless as stated.
+
+### Why: the series is BURST-dominated, and a rate cannot describe it
+
+Today's events arrive in tight clusters with long silences: **26 events inside ~3 minutes** (16:50–16:52:43), then nothing for over three hours, then **32 events between 20:00 and 20:45:51**, then nothing for ~29 minutes. 09-04 is bursty too — **154 of its 194 daily events fall inside that one 8.75 h window**. ⚠ **A matched-hours control is standard good practice and it was NOT sufficient here**: it corrects for time-of-day traffic, and it does nothing about bursts that land in one window and not the other.
+
+### The only summary that does not depend on window choice
+
+| | events | per hour |
+|---|---:|---:|
+| **09-04, full day** | **194** | 8.08 |
+| **09-05, 00:00 → 21:14 (21.2 h)** | **84** | **3.96** |
+
+⇒ **≈ 51% fewer, not 90%.** ⚠ And even that is soft: 09-05 contains ~8 h of pre-fix time, and both days are burst-dominated, so **the honest statement is a RANGE and a direction, not a percentage.**
+
+### ✅ What still stands, and it is the part that mattered
+
+⭐ **§2's positive control is untouched: 100% of post-fix served requests come from `ipfs.dapperlabs.com`, not one from `ipfs.io`, at 52–1,210 ms.** The race demonstrably changed which upstream serves. **The MECHANISM claim holds; only the MAGNITUDE was overstated** — which is the third time today a magnitude of mine has moved while its mechanism survived.
+
+### ⚠ Not established — two candidates for the bursts, neither claimed
+
+1. **Deploy-driven cold cache.** Today saw an unusual number of production pushes (mine and a second session's); a deploy invalidates the edge cache and produces a wave of cold IPFS fetches — the documented cold-cache-miss class. The 20:00–20:45 burst does coincide with four of my own pushes. ⚠ **Suggestive only:** those four builds all show `CANCELED`, and the 16:50 burst PRECEDES the CSP deploy rather than following it.
+2. **Upstream (gateway) hiccups**, which the race mitigates but cannot eliminate.
+
+👉 **The right instrument for this is not another rate: it is per-event timestamps or a burst count.** Until then, treat any "N per hour" figure on this route — including the ones above — as a description of the window it came from.
+
 ## 3. Falsifiers
 
 1. **§1** — repeat with matched hours on the next pair of days, ISO ranges only. If the post-fix rate climbs back toward 17/h, the improvement was the upstream, not the race.
