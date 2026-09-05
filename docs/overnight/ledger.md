@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — `/api/profile/me` could not REACH its own `identity_degraded` branch on a slow read, so a signed-in reader rendered as ANON · ratchet 21 → 20 · Claude Code (Trevor's box, interactive)
+
+**The first route taken off the new complement ratchet, and it is the worked example of doing it the right way** — the entry above argues at length that these 21 must not be bulk-wrapped, so the one that moves first should show what a per-route reading looks like.
+
+**Chosen by naming the callers, not by position on a list.** Of the 21, **11 have an in-repo caller** and 4 do not (`/api/overview-stats`, `/api/market-pulse`, `/api/top-sales`, `/api/fast-break/today`). ⓘ `/api/overview-stats` looked like the obvious target — it carries `?? 0` fallbacks — but **its own header already records that it has no caller and logged ZERO production requests in 72 h**, and the previous session had already fixed its counts on exactly that basis. Landmine removal is not where an hour goes. `/api/profile/me` has **three** callers (`DashboardClient` plus two `/insights` boards) and is a **signed-in** surface, which CLAUDE.md names as the worst sub-class: a false claim about the reader's OWN account.
+
+⭐ **AND IT NEEDED NO HONESTY FIX AT ALL — the honesty was already there and was simply unreachable.** All three reads already set `identity_degraded` on an error, with a long header explaining the distinction between *"you have no wallet on file"* and *"we could not read whether you do"*, and why that matters concretely: `wallet_addr` is what the header's Pro badge and the concierge key on, so a failed read takes the Pro badge from a paying member.
+
+**The gap was that a read which merely HUNG reached no branch at all.** The platform killed the function and the caller got a 5xx — and the route's own header explicitly rejects that outcome: *"Deliberately still 200 with the user object… Returning 5xx would make a signed-in reader render as ANON on every public board that calls this unconditionally — trading a quiet false claim for a louder one."* Unbounded, a slow read produced precisely the 5xx that paragraph argues against. **The bound is what makes the design the route already documented actually reachable.** Same shape as `/api/search` in the entry above, whose own comment had argued for a 503 it could not reach either.
+
+**Shipped:** the three reads (`profile_bio`, `allow_list`, `saved_wallets`) wrapped in `boundedRead` at the default 8 s API budget. A timeout now resolves `{ data: null, error }` → `identityDegraded = true` → **200 with the honest flag**, which is strictly better than the 504 it replaces.
+
+**Proven BEHAVIOURALLY, not structurally — and that distinction is the point.** 3 new cases in `api-profile-me.test.ts` drive a fixture that **never settles**. ⚠ **They TIME OUT against the unbounded route** — measured, not asserted: reverting the `profile_bio` bound fails the case with `Test timed out in 4000ms` at 4,016 ms, and restoring it passes. A structural "does the file contain boundedRead" check could not tell those apart. Controls: `wallet_addr` stays **null** rather than being invented on a hang, and a genuinely empty profile must NOT read as degraded — without that control the flag would mean nothing.
+
+⚠ **The new ratchet caught its own author, which is the best evidence it works.** Lowering the count without lowering `BUDGET` reds the no-slack case: *"BUDGET is 21 but the live count is 20 — lower it now rather than banking the slack."* 21 → 20 in the same commit.
+
+⚠ **A second guard also caught me, on `main`.** The `sales-counterparty-backfill` filing pushed an hour earlier linked `../reference/tooling-gotchas.md`; from `docs/overnight/inbox/` the reference directory is **two** levels up, so the pointer resolved nowhere and `live-docs-md-links-resolve` went red on main. Fixed in its own commit within the same session — recorded because the guard's message is right that *a dead pointer reads as "never written", not as an error*, and because it means main was briefly red on a docs commit of mine.
+
+**Verified:** `tsc` clean · full suite **1,467 files / 16,233 tests, exit 0**.
+
+**Revert:** `git revert <sha>` — the three reads go back to unbounded, the new test cases hang, and the ratchet reds at 21 until the revert also raises it.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — the read-bound ratchet's population is defined by a HELPER, and 28 read-only API routes were outside it; 7 bounded, 21 now COUNTED, and ⛔ the rest must not be bulk-wrapped · Claude Code (Trevor's box, interactive)
 
 **This is the same gap as the OG-card entry above, generalised — and two instances in one evening is what made it worth counting rather than fixing twice.**
