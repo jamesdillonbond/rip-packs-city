@@ -58,6 +58,43 @@ Over an 8 h ISO window it is **112 events of ~190 — 59% of the entire runtime-
 
 👉 **My read: (2) is the only one with a real payoff, and it is not worth doing blind.** It wants a probe first — alias it in a preview deploy and confirm a Flow script round-trips — which is exactly the kind of thing to do deliberately rather than at the end of a long session.
 
+## 5b. ADDENDUM — the cheap option is foreclosed, and the expensive one is smaller than it looked
+
+Two follow-up checks, both changing the decision.
+
+### ⛔ A version bump does NOT fix it
+
+`@onflow/fcl` installed **1.21.9**, latest **1.21.11**, and **the latest still declares `cross-fetch: ^4.0.0`**. There is **no 2.x line** — the published versions end at 1.21.11. **So "just upgrade the SDK" is not available**, and anyone who reaches for it first (as I would have) should stop here.
+
+### ⭐ `cross-fetch` never checks for native `fetch` — and its whole surface is 15 lines
+
+`cross-fetch@4.1.0`'s node entry (`dist/node-ponyfill.js`) opens with an **unconditional** require:
+
+```js
+const nodeFetch = require('node-fetch')
+const realFetch = nodeFetch.default || nodeFetch
+const fetch = function (url, options) {
+  if (/^\/\//.test(url)) { url = 'https:' + url }   // schemaless-URI parity with the browser
+  return realFetch.call(this, url, options)
+}
+module.exports = exports = fetch
+exports.fetch = fetch
+exports.Headers = nodeFetch.Headers
+exports.Request = nodeFetch.Request
+exports.Response = nodeFetch.Response
+```
+
+**There is no native-fetch branch.** On `engines.node = 24.x`, where `fetch` has been global since 18, every Flow call still goes through node-fetch v2 purely because this file says so.
+
+👉 **This makes option (2) much more tractable than §5 implied.** A replacement shim has an **enumerable** contract — it must preserve exactly four things:
+
+1. the **schemaless-URI rewrite** (`//host` → `https://host`) — the one behaviour cross-fetch adds;
+2. `Headers`, `Request`, `Response` as named exports;
+3. both the **default** export and the `.fetch` named export (callers use both shapes);
+4. `this`-binding on the call (`realFetch.call(this, …)`).
+
+⚠ **It is still not a blind swap.** Native `fetch` (undici) and node-fetch v2 differ in real ways — error types, redirect and body-stream semantics, header casing — and this sits under **every Flow read on the platform**. The probe from §5 stands: alias it in a **preview deploy** and confirm a Flow script round-trips before it goes near production. **What changed is that the shim is now a known 15-line contract rather than a leap.**
+
 ## 6. Falsifiers
 
 1. Re-run the patch probe (`url.parse` wrapper + an fcl network call). If the stack no longer shows `node-fetch`, the chain changed.
