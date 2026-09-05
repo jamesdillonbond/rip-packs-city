@@ -48,6 +48,33 @@ WHERE pipeline = 'topshot-badge-set-backfill';
 
 **Optional companion (not required):** when `topshot-catalog-backfill` / `topshot-misattrib-drain` / `ingest-topshot-challenges` are fully unscheduled, deactivate their arms the same way — or, better, make the seeding/suppression mechanisms aware of each other so unscheduling a pipeline retires its cadence arm in the same migration. Left as a note, not filed as an action.
 
+## ✅ PREDICATE VERIFIED — 2026-09-05 20:05Z, Claude Code (Trevor's box)
+
+**Not my filing.** Committed on its author's behalf (it could not push) and then its predicate was **re-derived rather than inherited**, so the night pass can act without re-doing this. **Both clauses hold — the suggested `UPDATE` is safe.**
+
+| clause | filed | verified |
+|---|---|---|
+| watchlist row | `is_active=true`, `max_silent_minutes=1083` | ✅ exactly |
+| last run | 2026-09-04 21:15:39Z | ✅ exactly |
+| alert suppression present | expires 2026-09-13 | ✅ exactly |
+| **no live scheduler** | asserted | ✅ **GHA: none · `vercel.json` crons: none · `pg_cron`: 0** |
+| **coverage inherited** | 13,891/13,915 fresh ≤6 h | ✅ **18,139 / 19,740 fresh ≤6 h (91.9%)**, 98.8% ≤24 h, newest **20:05Z** (minutes old) |
+
+⚠ **The population grew** (19,740 rows vs the filed 13,915), so quote the new numbers, not the old ones. The *property* — badges are being kept fresh by something other than this pipeline — holds strongly.
+
+### 🚨 One supporting sentence in this filing is WRONG, and it is the one that would stop a careful reader
+
+> *"its GHA `badge-sync.yml` schedule was stopped"*
+
+**`badge-sync.yml` is still scheduled (`cron: "15 */6 * * *"`) and ran FOUR times today** — 10:37, 12:02, 15:16 and 16:55Z, all `schedule`, all `success`. I hit this and briefly believed the predicate was false.
+
+⭐ **It resolves in favour of the filing, via the route names:**
+
+- `badge-sync.yml` calls **`/api/badge-sync`**, which logs pipeline **`topshot-badge-catalog`** (`route.ts:160`);
+- the pipeline in question, **`topshot-badge-set-backfill`**, is logged by a **different route** — `app/api/admin/backfill-badges-from-sets/route.ts:52` — and **nothing calls that one** (GHA/`vercel.json`/pg_cron all zero).
+
+👉 **So the CONCLUSION is right and only that sentence is wrong.** ⚠ Two similarly-named pipelines (`topshot-badge-catalog` vs `topshot-badge-set-backfill`) behind two different routes, one live and one retired, is exactly the shape this repo's *"name the caller, never infer it from the name"* rule exists for. **Verify by the route that writes `p_pipeline`, not by the workflow filename.**
+
 ## Everything else this sweep saw was healthy or already filed (not re-raised)
 
 - Security invariants / anon-write-holes / RLS-off base tables / SECDEF-anon: all `[]` (clean).
