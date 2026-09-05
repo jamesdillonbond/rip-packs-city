@@ -10,6 +10,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (code) — the last `DISTINCT ON` snapshot walk in `fmv-recalc`: 1.39 MILLION buffers and 27.2 s to return ZERO rows, killed by the 30 s timeout on 5.9% of runs, silently · Claude Code (Trevor's box, interactive)
+
+**Found by building a CONTROL, not by looking for it.** Verifying the Step 5b timeout fix needed a step the fix could not have moved, so I split the timeout rate by `extra` key. `stale_touch_error` — Step 6 — came back at **26/437 before the deploy and still firing after it**. It did its job as a control, and then turned out to be a defect of its own.
+
+## ⚠ The first instrument was wrong, and that is the part worth keeping
+
+The owed falsifier was *"0 timeouts over ≥100 runs"*. My first query read `pipeline_runs.error` and returned **0 timeouts in BOTH eras** — including a window the original filing had measured at 38. ⭐ **A zero that contradicts a known non-zero is a broken instrument, not a result.** They are recorded in `extra`, under `ok = true`: **52 runs in 73 h carry a `canceling statement` in that column and every one reports a green pipeline.**
+
+## Measured
+
+```
+DISTINCT ON CTE : 1,390,030 buffers / 27,248 ms
+LATERAL LIMIT 1 :   138,788 buffers /  2,055 ms      (−90%, 13.3×)
+```
+
+⛔ **The cost was almost entirely waste.** The `Unique` node walked **1,429,511 rows to emit 27,849**, and the outer filter then discarded **27,844 of those** — 1.39 million buffers to return, in the sampled run, **zero rows**. It runs on **460 of 461 ticks**, roughly every 8 minutes, and refreshed 2,759 editions total across 73 h (~6 per run).
+
+⛔ **And 27.2 s sits against the 30 s `statement_timeout`**, which is exactly why it died on **27 of the 460 executing runs (5.9%)** — invisibly, because the step records its failure in `extra.stale_touch_error` while the run still reports `ok = true`.
+
+## ⭐ Fourth instance of the same defect in one file
+
+The route's own header records that Steps **5c/5d/5e** had this identical shape and were converted to a per-edition LATERAL on **2026-08-31**, with the same equivalence methodology. **Step 6 was left behind** — and it is the one that runs every tick. Same shape as three other findings tonight: a fix applied to its siblings and not to one more.
+
+## Equivalence PROVEN, not argued
+
+⚠ Scoping an aggregate is an equivalence claim, and a plan comparison only shows *faster*. Over the full population both forms return **27,114 rows, EXCEPT-identical in BOTH directions**.
+
+⭐ **The one shape that could legitimately diverge was checked rather than assumed.** `DISTINCT ON` and `ORDER BY … LIMIT 1` are each free to pick either row on a tie, and this table has **12,121 tied groups whose rows genuinely differ** (up to 22 variants at one instant) — so the tie-break is a real decision, not a formality. It does not bite here: **0 of 27,849 editions have a tie at their LATEST `computed_at`** (max rows at one instant = 1), so "the latest snapshot" is unambiguous.
+
+⚠ **The filters stay OUTSIDE the LATERAL, deliberately.** Pushing `computed_at < now() - 24h` or `confidence IN (HIGH,MEDIUM)` inside it would let the index do more work and would silently change the MEANING — picking the newest *old* snapshot for an edition that also has a fresh one, i.e. reporting a freshly-priced edition as stale and re-stamping it.
+
+⚠ **The plan was re-measured against the SHIPPED text**, extracted from the route file with its interpolation substituted — 138,788 buffers / 2,055 ms — not against the version I typed into a probe.
+
+## The guard, and two drafts of it that were wrong
+
+New **ban at zero**: no query reading `fmv_snapshots` in this route may use `DISTINCT ON`. Four authors wrote this defect in this one file, and a comment is only read by someone already in the file.
+
+🚨 **Draft one was wrong for exactly the reason the guard exists.** A naive backtick scan to find template literals **desynchronises on a backtick inside a `//` comment** — and the route has one, in the note explaining the 08-31 conversion. Every literal boundary after it was off by one, and the guard reported an offender that was pure prose. Fixed by stripping JS comments first — **and asserting the strip actually landed**, because CLAUDE.md records that stripper being trusted blind three times.
+
+⚠ **Draft two pinned a SPELLING.** It required `CROSS JOIN LATERAL`; 5c/5d/5e use `LEFT JOIN LATERAL` and are equally correct, so it reported three correct queries as missing. Now it asserts the **property** — every snapshot query uses a LATERAL — which survives a step being added or retired, rather than a count that dies on the next refactor.
+
+**Mutations, both red:** restore the `DISTINCT ON` walk → the ban reds; **delete the LATERAL entirely → the ban stays GREEN and the replacement assertion reds**, which is the whole reason that second assertion exists — a ban alone cannot tell a fix from a deletion.
+
+**Verified:** `tsc` clean · full suite **1,472 files / 16,308 tests, exit 0**.
+
+⏳ **OWED:** the timeout rate for `stale_touch_error` split at this deploy, over ≥100 executing runs. ⚠ The pre-fix rate is **5.9%**, so P(0 timeouts in N runs | unchanged) = 0.941^N — it takes ~50 runs to get under 5% and ~100 to be convincing. A clean dozen is what the null already predicts.
+
+**Revert:** `git revert <sha>` — Step 6 goes back to the 1.39M-buffer walk and its 5.9% silent kill rate.
+
+
 ### 2026-09-05 · ✅ SHIPPED (code) — every UFC Strike image on the site was broken, because the gateway ranking was measured on a sample that contained no UFC CIDs · Cowork (cloud)
 
 **Found by a plain-Chromium sweep of 27 public surfaces**, not by an alert: 3 of 3 sampled UFC pages (`/ufc/edition/…`, `/ufc/set/…`, `/ufc/player/…`) logged a **403 from `/api/public/ipfs-media/<cid>`**, one of them with a visibly broken tile.
