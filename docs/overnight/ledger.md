@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ⚠ CORRECTION (migration comment) — my `-- anon-exec:` line was PROSE, and that guard keys the marker PER FUNCTION NAME · Cowork cloud
+
+`20260905163444` shipped with a four-line `-- anon-exec:` paragraph explaining that neither function is anon-executable and that a REVOKE there would be a no-op. **The reasoning was right and production is correct** — both are SECDEF with `{postgres=X,service_role=X}`, both signatures unchanged, and `CREATE OR REPLACE FUNCTION` does not reset a function ACL. But `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` matches a line containing BOTH `anon-exec:` and the function name, **per function**, deliberately, so that "a file hardening function A must not vouch for function B". A paragraph that names neither satisfies nothing. `main` went red on `Unit tests (vitest) — shard 2/2`, 1 failed of 8,370.
+
+**Fixed** by adding the two machine-readable marker lines, one per function, keeping the prose above them.
+
+⛔ **AND THE FILE NOW DIVERGES FROM WHAT RAN — SAID OUT LOUD RATHER THAN QUIETLY.** The migration was already applied, so the marker lines exist only in the repo copy. The file header records that, names the divergence as exactly that comment block, and pins the applied-statement md5 `78551566e6300612ba060cd146db1791` (14,703 chars). **The executable SQL is untouched**, and I did not edit `supabase_migrations.schema_migrations.statements` to paper over it — a migration log that is rewritten to match a later file is worse than a documented divergence.
+
+⚠ **The general shape:** a guard that reads a MARKER is reading a spelling, and prose does not satisfy a spelling however correct the prose is. The same file's header records this failing a correct decision twice before over its wording. Read the matcher, not the docstring.
+
+**Revert:** `git revert <sha>` — restores the prose-only header and the red.
+
 ### 2026-09-05 · ✅ SHIPPED (DB) — three Top Shot pipelines that fire and write nothing are redundant, not broken, and each suppression now carries a predicate that can prove itself wrong · Cowork cloud
 
 `check_pipelines_running_but_not_succeeding()` opened every pass with the same three `running_but_not_succeeding` rows — `topshot-catalog-backfill`, `ingest-topshot-challenges`, `topshot-misattrib-drain` — each **3 runs / 0 ok / 0 rows in 30 days**. Three passes read them, called them benign, and left them. An arm that is dismissed every time is an arm nobody reads.
