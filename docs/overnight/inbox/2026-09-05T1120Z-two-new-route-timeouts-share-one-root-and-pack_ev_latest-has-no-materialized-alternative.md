@@ -165,6 +165,25 @@ reader can see.
 | `pack-reality` / `v_topshot_pack_reality_ranker_staleness` | 8 | 09-04 16:38Z | **09-05 11:21Z** |
 | `api/packs` / `v_topshot_pack_ev_calibrated` | 4 | 09-05 06:17Z | **09-05 11:39Z** |
 
+## SECOND INTERIM READING — 2026-09-05 20:00Z, Claude Code (Trevor's box)
+
+⚠ **Still does NOT close the item** — the stated exit condition is *"after 2026-09-06"* and that date has not arrived. But the evidence is now an order of magnitude stronger than the 14:00Z reading, and it was nearly recorded WRONG.
+
+🚨 **THE FIRST ATTEMPT AT THIS READING WAS A FALSE ALL-CLEAR, caught only by a control.** Filtering `get_runtime_errors` on `routes: "/insights/pack-reality"` returned **"No runtime errors found"** — which reads as good news and is in fact **a filter that matched nothing**. The real route is **`/api/public/insights/pack-reality`**. ⭐ **The control that caught it:** run the SAME filter over a window where events are known to exist. It returned zero there too, which is impossible if the filter works — so the filter, not the platform, was the thing that had gone quiet.
+
+**With the corrected paths, the control passes and the reading means something:**
+
+| window (UTC) | `/api/public/insights/pack-reality` | `/api/packs` |
+|---|---:|---:|
+| 09:45 → 13:46 (pre-migration, **positive control**) | **2** (last 11:21:26Z) | **2** (last 11:39:06Z) |
+| **13:46 → 20:00 (post-migration, 6.23 h)** | **0** | **0** |
+
+**Freshly measured pre-migration rate: 4 events / 4.0 h ≈ 1.0/h combined** — close to the 1.17/h this filing estimated, so the base rate is stable and not an artifact of the earlier window.
+
+**P(0 in 6.23 h | the fix did nothing) = e^(−6.23 × 1.0) ≈ 0.002** (≈ 0.0007 at the filing's own 1.17/h). Against ≈0.07 at 14:00Z.
+
+⛔ **Why this still is not a close.** The exit condition was set as a DATE, not a p-value, and dates are how this repo avoids talking itself into an early close on a statistic that has not finished moving — a trap it fell into twice today on a different watch. **Re-read after 2026-09-06 with the routes above, and note the route strings, because the obvious ones are wrong.**
+
 ⛔ **Zero events since the migration is NOT yet evidence.** At the observed base rates (≈0.43/h and ≈0.74/h) the ~2.3 h since predicts only **~2.7 events combined**, so P(0 | the fix did nothing) ≈ **0.07**. Suggestive, and exactly why the filing set a next-day exit condition rather than a green tick.
 
 **Direct cold probes, same window** — cache-busted so each is a real read, not an edge hit:
