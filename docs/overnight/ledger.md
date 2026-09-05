@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (e2e monitor) — the sole client-side detection surface could inspect ZERO pages and still report success · Claude Code (Trevor's box, interactive)
+
+`e2e/entity-smoke.spec.ts` probes the slug-keyed entity/detail pages by discovering a live URL per type from the app's own sitemap. Every arm is **fail-soft by design** — `test.skip(!path)`, because a thin catalogue segment must not red a monitor. That is right per type, and it left one hole.
+
+🚨 **`fetchSitemapLocs` returns `[]` on ANY non-200, parse failure or 20 s timeout — its own docstring says so — so if sitemap discovery breaks, ALL EIGHT arms skip and the workflow reports SUCCESS having rendered nothing.** ⚠ **That matters more here than almost anywhere:** Sentry has dropped every event since 2026-08-18, so the scheduled `E2E DOM Smoke` is the **entire** client-side detection surface, and a monitor silently inspecting nothing is indistinguishable from a healthy one at the badge — the exact shape CLAUDE.md warns about in *"ask what a passing guard is structurally SILENT about"*.
+
+⚠ **Not hypothetical.** The sitemap has already served PARTIAL data under a 200 (known-issues #28: `/sitemap/3.xml` returned 24k of 27.2k URLs because a paged read `break`-ed on error), and a saturation spell produces the same `[]` via the 20 s timeout.
+
+## Shipped
+
+One test: **discovery must resolve at least one live entity URL**, plus a `console.log` naming exactly which types resolved so the run log shows *what was inspected*, not merely that something passed.
+
+⛔ **Deliberately a BAN AT ZERO, not a floor.** "At least N of 8" would red whenever a segment legitimately thins out, and this repo has recorded what a cry-wolf arm does to the board it sits on. **Zero resolved cannot be a thin catalogue** — the sitemap carries ~27k URLs — so it is discovery breaking or the catalogue being empty, and both are things this monitor exists to say out loud.
+
+## Proven — both directions, against the real site
+
+- ✅ **Green against production: 8/8 resolved**, log line `edition=/nba-top-shot/edition/85%3A2898 · edition_golazos=/laliga-golazos/edition/407 · moment=… · set=… · player=… · team=… · series=… · pack=…`
+- ✅ **Red on a base URL with no sitemap: 0/8**, failing with the actionable message and the unresolved list — **the "prove a watcher can see a FAILURE" control, run rather than assumed.**
+
+⚠ **Verification scope, stated because it is not the usual one:** `vitest` includes only `__tests__/**`, so an `e2e/*.spec.ts` is **not** in `npm test` and a full-suite run would prove nothing about it. `tsc` clean; the two Playwright runs above are the real gate. Its only consumer is `.github/workflows/e2e-smoke.yml` (`51 */6 * * *`, confirmed firing ~4×/day, delayed but present).
+
+**Revert:** `git revert <sha>` — restores the state where a broken sitemap reads as a green monitor.
+
+
 ### 2026-09-05 · ✅ SHIPPED (test) — the suite's most frequent flake, red in 2 of 3 full runs, stabilised so the push gate means something again · Claude Code (Trevor's box, interactive)
 
 `__tests__/component-SupportChat-stream.test.tsx` → *"opens and answers on the rpc-concierge-ask window event"* was failing **2 of 3 full-suite runs** while passing **2 of 2 in isolation**. ⛔ **It is not mine** — it failed in a run started before any of tonight's files existed — but a test that reds two thirds of full runs makes `npm test` useless as a gate, and this repo has already pushed a red suite once (09-04) by working around exactly that.
