@@ -64,3 +64,27 @@ curl -sL -o /dev/null -w '%{size_download}\n' https://arweave.net/iKT2pAHeP1QA1j
 ```
 
 ⚠ **Scope check before anyone sizes this as a user-facing outage:** it is **2 cards on one public board**, and **zero user avatars are affected** — `profile_bio` + `user_profiles` hold 46 empty and exactly 1 avatar, on `seadn.io`. The avatar proxy is doing its actual job fine; this is chain-two sale art borrowing it.
+
+---
+
+## ADDENDUM 2026-09-05 07:30Z — a second `proxy.ts` media-host item, found while fixing the IPFS gateway, and it is the same kind of decision
+
+⛔ **Not the same defect, and it is not urgent — but it belongs in the same edit**, because it is one line in the same CSP directive and Trevor is the only one who can make it.
+
+**`https://cloudflare-ipfs.com` is in both `img-src` and `media-src`, and the host no longer exists.** Measured 2026-09-05 against 8 CIDs taken live off `/nba-top-shot/market`:
+
+```
+ipfs.dapperlabs.com   8/8   0.2–1.9 s
+gateway.pinata.cloud  8/8   3.5–7.0 s
+ipfs.filebase.io      7/8   0.0–0.9 s
+ipfs.io               2/8   (six 12 s timeouts)
+cloudflare-ipfs.com   0/8   DNS failure in <0.1 s — decommissioned
+```
+
+⚠ **This causes no user-facing failure today**, because nothing in the tree emits a `cloudflare-ipfs.com` URL — `app/api/public/ipfs-media/[cid]/route.ts` only ever redirects to a gateway it just heard from, and both of those (`ipfs.dapperlabs.com`, `ipfs.io`) are separately allowed. So the entry is inert, not broken.
+
+⭐ **The cost is that it is MISLEADING, and a CSP is read as a claim.** A future session sizing "which gateways may we redirect to?" reads five hosts in `img-src` and reasonably concludes it has five options; two of them (`cloudflare-ipfs.com`, and `ipfs.io` at 2/8) cannot serve. That is how the single-gateway assumption survived for months in the first place — the route's own header attributed a **~76% failure rate** to "a slow gateway" and never asked whether another one would answer.
+
+**Suggested edit (Trevor's call, `proxy.ts` is off-limits for autonomous shipping):** delete `https://cloudflare-ipfs.com` from `img-src` and `media-src`. Nothing references it, so this is a pure narrowing.
+
+ⓘ **Deliberately NOT suggested: adding Pinata or Filebase.** Both outperform `ipfs.io` and both are absent from the CSP, which is exactly why they were left out of the gateway list that shipped — the oversize path 302s the browser at whichever gateway answered, so adding one to the fetch list without adding it to the CSP would fix the proxy leg and break the redirect leg in the same change. `ipfs.dapperlabs.com` was chosen *because* it was already allowed. If the CSP is being edited anyway, adding Filebase is a reasonable second fallback — but it is a widening, and it should be a separate decision from the deletion above.
