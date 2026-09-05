@@ -23,6 +23,27 @@ import { supabaseAdmin } from "@/lib/supabase"
 // Editions whose set has no recoverable GQL UUID (7 sets / ~45 editions) are
 // reported as unreachableNoSetUuid — they need the getMintedMoment(moment_id)
 // fallback (a follow-up pass), not this route.
+// ⛔ UNSCHEDULED 2026-09-04 — THE ROUTE IS KEPT, ITS CRON IS NOT.
+//
+// This route reads `public-api.nbatopshot.com/graphql`, which has answered **530 on every request
+// since 2026-08-28** (re-confirmed live 2026-09-04). It ran 4x daily and logged **0 ok of 12** over
+// the trailing 7 days — a permanently red arm, which is worse than no arm because it trains the
+// next reader to ignore this pipeline's failures.
+//
+// It is not merely broken, it is now REDUNDANT. The Atlas edition refresh
+// (`atlas_editions_dispatch`/`_drain`, shipped 2026-09-04) walks the same per-set catalog through
+// Dapper's own backend and writes the same `badge_editions` rows: measured, **266 of 266 Top Shot
+// sets are in that walk**, and it keeps 13,891 of 13,915 badge rows fresh within 6 hours.
+//
+// ⚠ THE ONE GAP IS NOT ONE THIS ROUTE COULD CLOSE. Exactly one set — 152, *2023-24 Honors (Diced)*
+// — returns `total_count = 0` from Atlas (dispatched every cycle, 14 clean pages, zero editions),
+// leaving **2 editions** without badge rows: `152:5366` (2 holders) and `152:5372` (0 holders).
+// This route cannot serve them either, because its own upstream is the 530. That is an upstream
+// absence on 2 rows, and inventing badges for it is exactly what must not happen.
+//
+// The handler is untouched and its GET/POST still work by hand. **To restore: re-add
+// `{"path": "/api/admin/backfill-badges-from-sets", "schedule": "15 3,9,15,21 * * *"}` to
+// vercel.json** — one line, if that host ever returns.
 export const maxDuration = 300
 export const dynamic = "force-dynamic"
 

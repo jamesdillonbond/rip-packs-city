@@ -122,10 +122,6 @@
       "schedule": "10 8 * * *"
     },
     {
-      "path": "/api/admin/backfill-badges-from-sets",
-      "schedule": "15 3,9,15,21 * * *"
-    },
-    {
       "path": "/api/ingest/candy-editions",
       "schedule": "10 1 * * *"
     },
