@@ -174,6 +174,14 @@ export async function GET(
   //     ipfs.io               2/8   (six 12 s timeouts)
   //     cloudflare-ipfs.com   0/8   (DNS gone — the host is decommissioned)
   //
+  // 🚨 READ THE HEADER BEFORE TRUSTING THIS TABLE — THE SAMPLE IS TOP-SHOT-ONLY.
+  // All 8 CIDs came off `/nba-top-shot/market`, whose art IS pinned to Dapper's
+  // Pinata account, so `ipfs.dapperlabs.com` COULD NOT LOSE. UFC Strike is the
+  // only collection not on that gateway and it is absent from this sample
+  // entirely; ranking on it broke every UFC image until 2026-09-05. The numbers
+  // below are real and the ORDER they imply does not generalise — a per-gateway
+  // rate is only as general as the CIDs it was measured on.
+  //
   // ⛔ SO THE ART IS FINE AND ALWAYS WAS. A prior entry concluded these were
   // COLD-CACHE MISSES that a retry would warm, on the strength of one CID
   // answering 200 on a third try. That does not generalise: re-probed 2026-09-05,
