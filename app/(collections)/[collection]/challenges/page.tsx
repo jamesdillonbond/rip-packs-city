@@ -9,7 +9,7 @@
 
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
-import { fetchActiveChallenges } from "@/lib/challenges/hub-fetchers"
+import { fetchActiveChallenges, fetchChallengeFeed } from "@/lib/challenges/hub-fetchers"
 
 export const revalidate = 300
 
@@ -56,6 +56,10 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
   // read which merely HANGS can now reach it.
   const { challenges, ok } = await fetchActiveChallenges()
   const errored = !ok
+  // ⚠ Only read the feed's health when we are actually about to claim there are
+  // none. A page that HAS challenges makes no promise about future ones, so the
+  // probe would be a read taken for a caption nobody sees.
+  const feed = !errored && challenges.length === 0 ? await fetchChallengeFeed() : null
 
   return (
     <div style={{ padding: "8px 0 40px" }}>
@@ -75,9 +79,29 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
         </div>
       )}
 
+      {/*
+        THREE empty states, not one. The read succeeding and returning nothing
+        does NOT license the promise that a new challenge will appear here —
+        that depends on the INGEST, which is a different question and has been
+        answering HTTP 530 since 2026-08-29. See `fetchChallengeFeed`.
+          • current  — the feed is working, so the promise is keepable.
+          • stale    — the feed is down; say so instead of promising.
+          • unknown  — we could not check; state the fact, make no promise.
+      */}
       {!errored && challenges.length === 0 && (
         <div style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 13, padding: 16, border: "1px solid var(--rpc-border)", borderRadius: 10 }}>
-          No active challenges are being tracked right now. When Top Shot runs a Set-Locking or Crafting Challenge, it&rsquo;ll show up here with its cost-to-complete and whether finishing is +EV.
+          {feed?.state === "current" ? (
+            <>No active challenges are being tracked right now. When Top Shot runs a Set-Locking or Crafting Challenge, it&rsquo;ll show up here with its cost-to-complete and whether finishing is +EV.</>
+          ) : feed?.state === "stale" ? (
+            <>
+              No active challenges are being tracked right now — but our challenge feed is behind
+              {feed.lastOkDay ? <> (last updated {feed.lastOkDay})</> : null}, so a challenge Top Shot
+              has started since then would <strong style={{ color: "var(--rpc-text-primary)" }}>not</strong> be
+              listed here yet. We&rsquo;re working on the connection. Check Top Shot directly if you&rsquo;re mid-challenge.
+            </>
+          ) : (
+            <>No active challenges are being tracked right now.</>
+          )}
         </div>
       )}
 

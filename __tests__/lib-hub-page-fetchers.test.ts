@@ -20,7 +20,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { fetchHotFloors } from "@/lib/hot-floors/fetchers"
-import { fetchActiveChallenges } from "@/lib/challenges/hub-fetchers"
+import {
+  fetchActiveChallenges,
+  fetchChallengeFeed,
+  CHALLENGE_FEED_STALE_DAYS,
+} from "@/lib/challenges/hub-fetchers"
 
 /** An rpc that resolves with `payload`. */
 const okDb = (payload: unknown) => ({ rpc: async () => ({ data: payload, error: null }) })
@@ -184,5 +188,81 @@ describe("loadWalletDirectory", () => {
 
     expect(res.ok).toBe(false)
     expect(logs.join("\n")).toContain("unexpected payload shape")
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// fetchChallengeFeed — THE THIRD STATE the read cannot see.
+//
+// The page already separated "the read failed" from "there are genuinely none".
+// Both are about the READ. Neither can see that the thing which FEEDS the table
+// is dead — `ingest-topshot-challenges` has answered HTTP 530 on every run since
+// 2026-08-29 — while the table still looks fresh, because
+// `refresh_challenge_costs` re-prices the existing rows on its own cadence.
+//
+// ⚠ The defect was a FORWARD-LOOKING promise: "When Top Shot runs a Set-Locking
+// or Crafting Challenge, it'll show up here." With the ingest dead that cannot
+// be kept, and it is the canon's "empty state that CONCLUDES rather than
+// reports".
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A `from()` chain resolving to `rows`, matching supabase-js's builder shape. */
+function fromDb(rows: unknown, error: { message: string } | null = null) {
+  const b: Record<string, unknown> = {}
+  for (const m of ["select", "eq", "gt", "order", "limit"]) b[m] = () => b
+  ;(b as { then: unknown }).then = (res: (v: unknown) => unknown) => res({ data: rows, error })
+  return { from: () => b }
+}
+/** A `from()` chain that never settles. */
+function fromHangDb() {
+  const b: Record<string, unknown> = {}
+  for (const m of ["select", "eq", "gt", "order", "limit"]) b[m] = () => b
+  ;(b as { then: unknown }).then = () => {}
+  return { from: () => b }
+}
+
+const NOW = new Date("2026-09-05T01:30:00Z")
+
+describe("fetchChallengeFeed", () => {
+  it("a feed that succeeded TODAY is current", async () => {
+    const res = await fetchChallengeFeed(fromDb([{ day: "2026-09-05" }]), 500, NOW)
+    expect(res).toEqual({ state: "current", lastOkDay: "2026-09-05" })
+  })
+
+  it("🚨 a feed whose last success is the REAL one (2026-08-28) is stale", async () => {
+    // The production value at the time of writing: eight days dead.
+    const res = await fetchChallengeFeed(fromDb([{ day: "2026-08-28" }]), 500, NOW)
+    expect(res.state).toBe("stale")
+    expect(res.lastOkDay).toBe("2026-08-28")
+  })
+
+  it("the boundary is CHALLENGE_FEED_STALE_DAYS, and one missed daily tick is NOT stale", async () => {
+    // A 1-day bar would flip the page's copy on ordinary noise. Pin both sides
+    // of the threshold rather than the spelling of the constant.
+    const inside = new Date(NOW.getTime() - (CHALLENGE_FEED_STALE_DAYS - 1) * 86_400_000)
+    const outside = new Date(NOW.getTime() - (CHALLENGE_FEED_STALE_DAYS + 1) * 86_400_000)
+    const day = (d: Date) => d.toISOString().slice(0, 10)
+    expect((await fetchChallengeFeed(fromDb([{ day: day(inside) }]), 500, NOW)).state).toBe("current")
+    expect((await fetchChallengeFeed(fromDb([{ day: day(outside) }]), 500, NOW)).state).toBe("stale")
+  })
+
+  it("a feed that has NEVER succeeded is stale, not unknown", async () => {
+    // The strongest form of dead must not hide behind the softest copy.
+    const res = await fetchChallengeFeed(fromDb([]), 500, NOW)
+    expect(res).toEqual({ state: "stale", lastOkDay: null })
+  })
+
+  it("a FAILED freshness read is unknown — never current", async () => {
+    // Returning "current" here would restore the promise out of a failed read,
+    // which is the defect this function exists to remove, one level up.
+    const res = await fetchChallengeFeed(fromDb(null, { message: "boom" }), 500, NOW)
+    expect(res.state).toBe("unknown")
+  })
+
+  it("a HUNG freshness read is unknown, and does not hang the page", async () => {
+    // Bounded like every other read here: a probe taken for a caption must not
+    // be able to take the page down.
+    const res = await fetchChallengeFeed(fromHangDb(), 200, NOW)
+    expect(res.state).toBe("unknown")
   })
 })

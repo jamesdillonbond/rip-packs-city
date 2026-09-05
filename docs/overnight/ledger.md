@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — `/nba-top-shot/challenges` promised that a new challenge "ll show up here" while the ingest that would add one had been dead for eight days; and the dead-host casualty list is SEVEN pipelines, not the three on file · Claude Code (cloud sandbox)
+
+**The census first, because it reframes an open decision.** Inbox `2026-09-04T0220Z` named **three** pipelines still calling the decommissioned `public-api.nbatopshot.com`. Measured tonight from `pipeline_runs_daily` with denominators and change points, it is **seven**, and six share one change point — the host going away around 08-28/29:
+
+| pipeline | last OK day | runs/day |
+|---|---|---:|
+| `ingest` | **none in 12 d** | 6–7 |
+| `ingest-topshot-challenges` | 2026-08-28 | 1 |
+| `topshot-catalog-backfill` | 2026-08-28 | 1 |
+| `topshot-badge-set-backfill` | 2026-08-28 | 4 |
+| `topshot-pack-supply-backfill` | 2026-08-29 | 1 |
+| `topshot-subedition-circulation-backfill` | 2026-09-01 | 1 |
+| `topshot-misattrib-drain` | 2026-08-27 | 1 |
+
+⚠ **Re-verified at splice time, AFTER a concurrent session touched this same area, and the two do not conflict:** that session unscheduled **`backfill-badges-from-sets`**, a **pg_cron** job. **`topshot-badge-set-backfill` is a different caller** — GitHub Actions `badge-sync.yml` — and it still ran **4× on 09-04**, so it is not covered by that unschedule. Of the seven above, **none is driven by an active pg_cron job**; they run from GHA, `vercel.json` and cron-job.org, which is why a pg_cron sweep does not see them.
+
+⭐ **And for the ones I could check, the answer is RETIRE, not PORT — because the data is already served.** ⛔ Do not read seven dead pipelines as seven data gaps:
+- **`topshot-subedition-circulation-backfill`** reports `needed_triples: 3913`, which reads like a backlog. It is not: Top Shot has **3,913 parallels, 0 missing circulation, 0 with no source**, and 3,840 carry an Atlas value in `badge_editions`. The live chain (pg_cron 448/449 Atlas → `badge_editions` → 457 → `editions`) covers parallels — ⚠ **despite being named `sync_topshot_base_circulation_from_atlas`; its body matches `(::[0-9]+)?` and comments the parallel direction explicitly.** Read the body, not the name.
+- **`ingest`** has written nothing for 12 days and **every table it feeds is current** — newest Top Shot sale 19 min old, newest FMV 1 min, 120 editions added in 7 d.
+- **`topshot-pack-supply-backfill`** — `pack_distributions` is **5,529 / 5,529** with supply and touched an hour ago.
+
+🚨 **The one that IS a live defect is user-facing, and it is a promise rather than a number.** `/[collection]/challenges` correctly separates *"Couldn't load challenges right now"* from *"No active challenges are being tracked right now"* — both claims about the READ. Neither can see the **third state**: the read succeeds against a healthy table, returns zero, **and the feed is dead**. The old copy then continued *"When Top Shot runs a Set-Locking or Crafting Challenge, **it'll show up here**"* — a forward-looking claim that had been false since 08-29. The canon's *empty state that CONCLUDES rather than reports*.
+
+⚠ **The table hides it, which is why review would not catch this:** all 31 rows carry an `updated_at` inside 7 days because `refresh_challenge_costs` re-prices them on its own cadence, while the newest `ends_at` is **2026-07-16** and **zero are open**. **Freshness of the ROWS is not freshness of the FEED.** Writers enumerated over `pg_proc` (nothing in the repo writes the table directly): only `upsert_challenge_from_gql` — fed by the dead ingest — and a manual `upsert_challenge` can ADD one.
+
+**Shipped:** `fetchChallengeFeed()` in `lib/challenges/hub-fetchers.ts` reads the ingest's last OK day (⚠ from `pipeline_runs_daily`, indefinite — `pipeline_runs` retains ~73 h and would report "never succeeded" for a pipeline that worked a fortnight ago; ⚠ its column is `pipeline`), **bounded** by the same `withBoardBudget` as its sibling so a probe taken for a caption cannot take the page down. Three empty states replace one: **current** keeps the promise (true then) · **stale** names the date and says a new challenge would not be listed yet · **unknown** states the fact and promises nothing. ⚠ A failed freshness read returns `"unknown"`, **never `"current"`** — that would restore the promise out of a failed read, the same defect one level up. A feed that never succeeded is `"stale"`, not `"unknown"` — the strongest form of dead must not hide behind the softest copy.
+
+**Proven:** 11 new cases. The page half is asserted by **SSR (`renderToString`), not a mount** — this is a server component and a jsdom mount would test something the reader never sees. The load-bearing assertion is the **ABSENCE of the false claim**, not the presence of a warning. **Mutation-proven both halves:** forcing `state: "current"` reds 2 fetcher cases; restoring the single unconditional promise reds 2 SSR cases. Controls: a healthy feed still keeps the promise, and the probe is **not taken at all** when there are challenges to show. **Verified:** `tsc` clean · `check-unbounded-server-reads` still 0/0 · full suite **1,462 files / 16,201 tests**. **Revert:** `git revert <sha>` — the page falls back to the single promise.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — the last permanently-red arm is unscheduled: `backfill-badges-from-sets` has been 0-of-12 on a dead host for a week and is now redundant, measured 266/266 · Cowork (cloud sandbox)
 
 The one item from the "work everything unresolved" sweep that was genuinely actionable rather than a mismeasurement.
