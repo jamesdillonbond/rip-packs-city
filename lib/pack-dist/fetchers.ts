@@ -124,7 +124,24 @@ async function bounded(
     )
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
-    console.error(`[pack-detail] ${label} bound`, message)
+    // 🚨 DELIBERATELY SILENT — the CALLER logs this, and logging here too made ONE
+    // failure arrive as TWO. Measured in Vercel's error groups, 12 h to
+    // 2026-09-05: `pack_lifecycle bound` count=6 and `pack_lifecycle error`
+    // count=6; `pack_realized_ev bound` count=4 and `pack_realized_ev error`
+    // count=4 — identical counts because they are the same six and four events.
+    // The pack-detail route looked like it had six distinct problems when it had
+    // three, and any observer counting occurrences read 2x the real incidence.
+    //
+    // ⚠ THE CALLER'S LOG IS THE ONE TO KEEP, not this one, and the reason is
+    // COVERAGE not preference: this catch only fires on the REJECT path (a
+    // `withBoardBudget` timeout), while every call site's `if (error)` branch also
+    // catches a real PostgREST error, which never reaches here. Keeping this one
+    // instead would have silently dropped every non-timeout failure.
+    //
+    // ⛔ Safe only because ALL 13 call sites log on their error branch — checked,
+    // not assumed, and now pinned by
+    // `__tests__/pack-dist-bounded-reads-are-logged-exactly-once.test.ts` so a
+    // 14th site cannot quietly go unlogged.
     return { data: null, count: null, error: { message } }
   }
 }
