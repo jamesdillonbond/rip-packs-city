@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (DB) — a parallel inherits its base edition's PROSE too, and the justification is a total positive control: 4,137 of 4,137 pairs are byte-identical · Cowork (cloud)
+
+**Overnight, item 3 of the night queue: the description residual, measured rather than waited out.** The Atlas enrichment took Top Shot prose coverage from a frozen 68.5% to ~95%. The remaining **663 NULLs were then checked against the thing that would explain them** — and **every one is in a set the Atlas walk has COMPLETED since the enrichment shipped.** So the walk is not behind; Atlas has no `Description` for those rows. ⓘ 100 are editions Atlas does not carry at all (the `Club Collection` class documented an hour earlier), which this source can never fill.
+
+⭐ **But 160 were PARALLELS whose BASE row does carry the prose** — fillable without inventing anything, because a description describes the **play**, and a parallel is the same play in a different printing.
+
+⭐ **THE POSITIVE CONTROL IS TOTAL, and it is why this is a copy rather than a guess:** of the **4,137** base/parallel pairs where both rows already carried a description, **4,137 are byte-identical and ZERO differ.** Atlas serves the same text for a printing as for its base. Re-checked after the fill: **4,297 pairs, still 0 different.**
+
+**Shipped into the function that already exists for exactly this relationship** — `sync_topshot_parallel_identity_from_base()`, which makes a parallel inherit its base's name/player/team, already runs hourly on pg_cron, is already fill-only and already audited. ⛔ Deliberately NOT put in `atlas_editions_drain`: that would add a self-join to the shared page loop feeding badges for the whole catalogue, for a 160-row tail.
+
+⚠ **The original predicate is preserved exactly, not relaxed** — the identity arm still carries its `COALESCE(b.player_name,'') <> ''` guard and the prose arm is OR-ed alongside, so **a row that qualifies only for prose cannot pull identity it was previously refused**. The redundant team-agreement check still applies to every candidate, and both arms remain fill-only.
+
+**Verified:** one manual invocation filled **141** rows (129 prose + 12 identity, which reconciles exactly); parallels still fillable from their base: **0**; coverage **96.4%** (from 68.5% frozen on 08-28). ⚠ **One honest caveat on the revert path:** the audit insert is `ON CONFLICT (edition_id) DO NOTHING`, so a parallel already logged by an earlier identity fill would not get its `old_description` recorded. The numbers reconcile for this run, but the guarantee is not structural — and the reason that is acceptable rather than sloppy is that **the value written is the value Atlas itself serves**, so an unaudited row is indistinguishable from one the drain would have filled anyway.
+
+**Revert:** restore the prior function body (unchanged apart from the description arm), then `UPDATE public.editions e SET description = NULL FROM public.audit_20260904_parallel_identity a WHERE e.id = a.edition_id AND a.old_description IS NULL AND a.description_filled_at IS NOT NULL;`
+
 ### 2026-09-04 · ✅ SHIPPED (code) — 12 of 15 Moment images on the PUBLIC `/nba-top-shot/market` page were blank, and the retry that fixes it already existed on two other surfaces · Claude Code (Trevor's box, interactive)
 
 **Found by asking what the E2E monitor structurally cannot see.** `e2e/healthy-page.ts` asserts HTTP status, body text, console failures and pageerrors — and **nothing about whether an image painted.** So a page can return 200, log no error, and still show a grid of blank tiles. A sweep of 18 public pages for `img.complete && naturalWidth === 0` found it immediately.
