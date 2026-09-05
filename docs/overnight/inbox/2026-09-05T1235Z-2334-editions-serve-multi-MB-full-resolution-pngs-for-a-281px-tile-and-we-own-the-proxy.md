@@ -1,3 +1,30 @@
+> # ⚠ CORRECTED 2026-09-05 ~07:00 PT by inbox [`2026-09-05T1400Z`](2026-09-05T1400Z-the-image-weight-is-real-but-90pct-is-the-CDN-not-our-proxy-and-the-free-190x-lever-flattens-alpha.md) — read that one with this. Not superseded; **relocated**.
+>
+> A colleague ran all three falsifiers this filing named. **The finding survives and is real. Two of my
+> numbers and — the important part — my LOCATION were wrong.**
+>
+> - ✅ **Falsifier 1 survives:** 0 of 39 pseudo-randomly sampled CIDs are under 1 MB. ⚠ But my
+>   **mean of ~5.1 MB overstated it by ~36%** (true **3.75 MB**, median 3.55), and my 7.65 MB max is
+>   above anything in their wider sample.
+> - ✅ **Falsifier 2 discharged:** nothing resizes — byte-identical direct, proxy-cold and proxy-warm.
+> - 🚨 **Falsifier 3 relocates the problem, and this is the correction that matters.** Measured as
+>   **bytes actually transferred** at 390×844 dpr 2, `/insights/trophies` moves **75.06 MB on load and
+>   135.12 MB after three screens** — worse than I showed. But by host: **`assets.nbatopshot.com`
+>   67.58 MB = 90.0%**, our IPFS proxy **7.26 MB = 9.7%**. ⛔ **So "the proxy that could fix it is ours"
+>   — this filing's headline — addresses about 10% of the weight.** The dominant cost is a host we do
+>   not own, reached by a plain `<img>`.
+> - ⚠ **My CDN "control" was not what these pages request.** I measured `?type=hero` at 837 KB; the
+>   page actually requests `…_capture_Hero_2880_2880_Transparent.png`.
+>
+> ⭐ **The method lesson is mine to take:** I fell back to arithmetic (CID count × sampled mean) after
+> the browser's resource-timing buffer came back empty, and labelled it an estimate — but an estimate
+> of the wrong host is not a smaller version of the right answer, it is a different answer. **They
+> measured transferred bytes per host; that is the measurement this filing should have made.**
+>
+> ⭐ Their filing also finds a **free 190× lever** already used at 8 call sites in this codebase
+> (`/media/<id>/image?width=400`, no metered Vercel transforms) — and then shows it **flattens alpha to
+> opaque black** on genuinely RGBA source art. Read their filing before acting on either.
+
 # 2,334 Top Shot editions serve 2.6–7.7 MB full-resolution PNGs for a 281 px tile — and the proxy that could fix it is ours
 
 **Filed 2026-09-05 ~12:35Z (05:35 PT) — Cowork, cloud, autonomous night pass (block 5).**
