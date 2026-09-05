@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-05 · ✅ SHIPPED (code) — one pack-detail read timeout was arriving as TWO Vercel error groups, so the route's measured error rate was DOUBLE its real one · Claude Code (Trevor's box, interactive)
+
+**Found by reading the production error groups rather than a log line.** `get_runtime_errors` over 12 h returned 25 groups, and four of them came in suspiciously exact pairs:
+
+```
+[pack-detail] pack_lifecycle bound      count=6      [pack-detail] pack_lifecycle error      count=6
+[pack-detail] pack_realized_ev bound    count=4      [pack-detail] pack_realized_ev error    count=4
+```
+
+⭐ **The identical counts are the tell — they are the same six and four events.** `lib/pack-dist/fetchers.ts`'s local `bounded()` helper logged `"<label> bound"` in its catch, and every call site *also* logs `"<label> error"` in the `if (error)` branch the helper is explicitly designed to feed. One timeout, two `console.error` lines, two groups.
+
+## Why it matters more than tidiness
+
+**`/[collection]/pack/dist/[distId]` looked like it had six distinct problems when it had three**, and anyone counting occurrences — a dashboard, an alert threshold, a night pass triaging "what is erroring" — read **2× the real incidence** for this route. That is the same class CLAUDE.md records for the saturation breakers that logged `extra: {}`: *"Fix the guard AND the field an observer keys on."* A route that over-reports its own failures is as misleading as one that under-reports; it just fails in the direction that wastes attention rather than hiding it.
+
+## The fix, and why the CALLER's log is the one kept
+
+`bounded()`'s catch is now deliberately silent.
+
+⚠ **The choice of which log to delete is about COVERAGE, not preference, and getting it backwards would have been a real defect.** The helper's catch fires only on the REJECT path — a `withBoardBudget` timeout. A genuine PostgREST error resolves normally, never reaches that catch, and arrives at the call site's `if (error)` branch. **Keeping the helper's log and dropping the callers' would have silently stopped logging every non-timeout failure on all thirteen reads.**
+
+⛔ It is safe only because **all 13 call sites log on their error branch** — checked line by line, not assumed.
+
+## Proven
+
+New guard `pack-dist-bounded-reads-are-logged-exactly-once`, three assertions and two controls:
+
+- **Every** `bounded(...)` site has a logging error branch (a 14th added without one would now fail *invisibly*, which is strictly worse than the double-logging this replaced).
+- **Ban at zero:** the helper does not log — scoped to the helper body and **comment-stripped first**, since the comments explaining the removed log name it verbatim.
+- ⚠ **A negative control for a renamed identifier.** One site destructures `{ data: poolRows, error: poolErr }`; a naive `if (error)` match would have read it as silent and fired on correct code. The detector accepts any identifier ending `rr`/`rror`, and the control pins that.
+
+**Mutations, both red on exactly their own assertion:** restore the helper's log → the ban reds; strip one call site's `console.error` → the coverage assertion reds.
+
+**Verified:** `tsc` clean · full suite **1,473 files / 16,317 tests, exit 0**.
+
+⚠ **One red run on the way, and it was NOT mine:** `api-allday-listings-indexer` failed a full-suite pass, then passed **3/3 in isolation** and green on the next full run. It is the flake the 2026-09-04 steer §7 already names, and it references nothing in `pack-dist`. *A red run is not automatically yours — read the failing job first.*
+
+⛔ **This changes no behaviour and fixes no timeout.** The pack-detail reads still exceed their 5 s bound at the same rate; they now say so once instead of twice. The underlying slowness is inbox `2026-09-04T1430Z`, which measured it and found it is not a plan defect.
+
+**Revert:** `git revert <sha>` — the helper logs again and the route's error count doubles.
+
+
 ### 2026-09-05 · 📏 BLOCK 6 — post-ship watches all clean, tonight's alert arm validated at 8× the rate it shipped at, and one falsifier that is NOT yet informative · Cowork (cloud, autonomous)
 
 **A quiet block, stated plainly.** Nothing shipped; nothing needed to be.
