@@ -10,6 +10,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-04 · ✅ SHIPPED (code) — `/api/recent-sales` answered a one-edition request with SOMEONE ELSE'S sales when the edition lookup failed, and the fix was already written ten lines above it · Claude Code (Trevor's box, interactive)
+
+**The one site the census filed two hours earlier as "worth doing next" — and I called it an open behaviour question, which was wrong.** The filing said the choice between a 404 and an empty list was undecided. It is not: **the same file had already decided it for the sibling parameter**, and I had read past that comment while writing the filing. Correcting my own framing here rather than leaving the filing to mislead the next reader.
+
+## What it did
+
+```ts
+const { data: editionRow } = await q.maybeSingle();   // `error` discarded
+if (editionRow) editionIdFilter = editionRow.id;
+```
+
+When the lookup failed **or** matched nothing, `editionIdFilter` stayed null, the `.eq("edition_id", …)` below was **skipped**, and the route answered **200 with collection-wide (or global) recent sales for a request that asked for ONE edition**.
+
+🚨 **That is worse than the empty list this repo usually fixes.** An empty list understates; this returns *the wrong data presented as the right data*, on a public panel, under a request that names the edition it wants.
+
+⭐ **And the file already forbids exactly this shape, ten lines up**, for the `collectionId` parameter: *"the route would answer 200 with the globally-newest sales — overwhelmingly Top Shot — while echoing the bogus slug back as `collectionId`, so the response looks authoritative. That is a fabricated-data shape. Return empty instead."* **It was understood, and applied to one parameter of the two.** Third time tonight that the fix for a defect was already present in the same file, one branch over — the OG cards had it in `proxy.ts`, the Analytics tab had `marketFailed`, this has its own comment.
+
+## Shipped
+
+The two cases are no longer conflated, because they are not the same claim:
+
+- **the read FAILED** → `apiErrorResponse` (bounded via `boundedRead`, so a hang lands there too). We do not know what this edition sold for and must not answer as though we do.
+- **the read SUCCEEDED and matched nothing** → `{ sales: [], collectionId }`, matching the collection branch's precedent verbatim. An unknown edition has no sales.
+
+## Proven
+
+3 new cases, **mutation-proven** — restoring the silent fall-through reds two of them.
+
+⚠ **They assert the sales query was never ISSUED, not merely that the body is empty**, because a response that is empty *by luck* would satisfy a body-only check. ⓘ My first attempt asserted that via `eqCalls` not containing `collection_id` and **failed for a legitimate reason**: the edition LOOKUP itself filters on `collection_id`. Re-pointed at the harness's `state.table`, which records the last `from()` — `"editions"` proves we returned before reaching `sales`. The intent survived; the mechanism was wrong. Third assertion is the control: a lookup that DOES resolve must still filter on `edition_id`, without which the other two are satisfied by a route that queries nothing at all.
+
+**Verified:** `tsc` clean · full suite **16,245 tests, exit 0**.
+
+**Revert:** `git revert <sha>` — an unresolved editionKey goes back to answering with another edition's sales.
+
 ### 2026-09-04 · ✅ SHIPPED (code) — the collection Analytics tab rendered "No data" for EIGHT panels whose query had FAILED, and the awareness was already in the file · Claude Code (Trevor's box, interactive)
 
 **A live user-facing instance of the platform's top defect class, found by walking the unbounded-read list instead of stopping at the count.** `/api/market-analytics` was on the new complement ratchet as an unbounded read; reading it to decide whether a bound was safe is what surfaced the real defect, which is not the bound at all.

@@ -42,7 +42,7 @@ Three sites read at filing time, and they land in three different places:
 
 **Roughly one in three is a real false claim, and the severities are not comparable** — one produces a *wrong* answer, two produce a *quieter* one. ⛔ **So this cannot be swept.** A mechanical "add `error` to every destructure" pass would touch 197 sites to fix perhaps a third of 28, and would have to invent an error policy per call site to do it — exactly the shape that ships a defect while reading as hardening. The same argument the complement ratchet's header already makes about bounding.
 
-⚠ **`recent-sales:55` is the one worth doing next**, and it is a behaviour question rather than a mechanical one: should an unresolvable edition slug return an error, or an empty list? Today it returns *someone else's data*, which is neither.
+⚠ ~~**`recent-sales:55` is the one worth doing next**~~ — ✅ **FIXED the same evening (ledger 2026-09-04), and my framing here was WRONG.** I called it an undecided behaviour question. It was already decided: the SAME FILE, ten lines above, forbids exactly this shape for the sibling `collectionId` parameter (*"the response looks authoritative. That is a fabricated-data shape. Return empty instead."*). I had read past that comment while writing this filing. A failed lookup now returns an honest error; a lookup that succeeded and matched nothing returns an empty list, matching that precedent.
 
 ## Why this is filed rather than ratcheted
 
