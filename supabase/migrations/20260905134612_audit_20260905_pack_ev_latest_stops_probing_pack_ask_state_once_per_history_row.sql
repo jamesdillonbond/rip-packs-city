@@ -78,6 +78,28 @@
 --
 -- Live viewdef fingerprint after this migration: md5 70c6b1800c8ea7542c470034f37cd0d2 (2,945 chars).
 --
+-- ── SECURITY MODE: definer-view: intentional ─────────────────────────────────
+-- `pack_ev_latest` is INTENTIONALLY a SECURITY DEFINER view and this migration
+-- deliberately does NOT add `security_invoker = on`. Adding it would be a
+-- behaviour change on a view with 68 dependents, not a tidy-up.
+--
+-- ⚠ CI caught the omission of this marker, not the decision -- and it was right to.
+-- `migration-view-security-invoker-guard` requires every CREATE VIEW to STATE a
+-- security mode, because `CREATE OR REPLACE VIEW ... AS` with no WITH clause
+-- RESETS reloptions and silently strips `security_invoker` from an already-hardened
+-- view, with byte-identical output either way. That guard's own header records
+-- **this very view** as one of the four prior instances of that defect.
+--
+-- ✅ BOTH HALVES VERIFIED LIVE before adding this marker, rather than trusting the
+-- guard's comment (the guard's message says the two halves are independent on
+-- purpose):
+--   · `security_definer_view_allowlist` contains `pack_ev_latest`
+--     (added 2026-06-29, "baseline 2026-06-28: pre-existing intentional definer view")
+--   · anon SELECT = false, authenticated SELECT = false -- no anon exposure
+--   · `check_public_security_invariants()` returns 0 rows
+--   · `pg_class.reloptions` for this view is NULL both BEFORE and AFTER this
+--     migration -- nothing was stripped, because there was nothing to strip.
+--
 -- anon-exec: n/a -- no function is created or replaced.
 --
 -- REVERT: restore the previous definition from this file's git history. It is the
