@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
+import { stripSql } from "../scripts/lib/strip-sql.mjs"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Every NEW migration that creates a public view must state its security mode.
@@ -100,12 +101,17 @@ const GRANDFATHERED = new Set([
  * api-fmv-demo docs guard. The migration this guard was written for quotes
  * `CREATE OR REPLACE VIEW public.topshot_deals_vs_fmv` inside its own header
  * comment, so an uncommented scan reports the explanation as the offence.
+ *
+ * Migrated to the shared SQL lexer 2026-09-05. Literals are deliberately KEPT
+ * (no `{ literals: true }`): this guard looks for `CREATE VIEW` and its matching
+ * `security_invoker`, and a corpus check over all 909 migrations found the two
+ * spellings derive an IDENTICAL view set — so this migration is a change of
+ * implementation, not of population. What the lexer adds is that a `--` or an
+ * apostrophe inside a string can no longer mis-terminate the scan, and that
+ * Postgres NESTS block comments, so a commented-out block closes at its
+ * outermost terminator rather than at the first one it contains.
  */
-function stripSqlComments(sql: string): string {
-  return sql
-    .replace(/\/\*[\s\S]*?\*\//g, " ") // block comments
-    .replace(/--[^\n]*/g, " ") // line comments
-}
+const stripSqlComments = (sql: string): string => stripSql(sql) as string
 
 type ViewStatement = { file: string; viewName: string; header: string }
 

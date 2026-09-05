@@ -69,18 +69,33 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // and trains readers to ignore its report. The narrow needle is satisfiable at a
 // population of zero.
 //
-// ⚠ THE REMAINING 2 ARE SQL STRIPPERS, NOT JS ONES, and migrating them would be a
-// DEFECT rather than a fix: both walk `supabase/migrations/*.sql`, where comments
-// are `--` and `/* */` and bodies are dollar-quoted (`$$ … $$`). The shared
-// stripper is a JavaScript state machine — it has no `--` state and no
-// dollar-quote state, so it would leave every `--` comment standing and could
-// mis-parse a `$$` body. They come off this list when a SQL stripper exists to
-// move them to, not before.
+// ✅ REACHED ZERO 2026-09-05, by building the tool this note said was missing.
+// The last three offenders were SQL strippers, not JS ones — all three walked
+// `supabase/migrations/*.sql`, where comments are `--` and `/* */` and bodies are
+// dollar-quoted (`$$ … $$`), and the shared JS stripper has no `--` state and no
+// dollar-quote state. This note used to end "they come off this list when a SQL
+// stripper exists to move them to, not before"; `scripts/lib/strip-sql.mjs` is
+// that stripper, and all three now import it.
+//
+// 🚨 THE MIGRATION WAS NOT COSMETIC — one of the three was BLIND TO A REAL TABLE.
+// The RLS guard blanked `--` comments BEFORE pairing quotes, so a `--` inside a
+// string literal ate that literal's closing quote and the unpaired opener then
+// paired with the next apostrophe 47 lines later, blanking a real
+// `CREATE TABLE public.public_board_liveness_history` and its
+// `ENABLE ROW LEVEL SECURITY` as if they were string content. That is precisely
+// the failure this ratchet's own message predicts — "a blind stripper still
+// passes and still reports a population" — and it took building the shared
+// implementation to find it.
+//
+// ⚠ THE CEILING IS 0 AND MUST STAY THERE. There is now a shared stripper for
+// each of the two languages this tree greps, so a NEW local one has no
+// justification left. Import `stripComments` from `scripts/lib/strip-comments.mjs`
+// for JS/TS, or `stripSql` from `scripts/lib/strip-sql.mjs` for SQL.
 //
 // Measure the population by setting this to 0 and reading the report; never carry
 // a number over from a different instrument — including an earlier version of
 // THIS one.
-const MAX_LOCAL_STRIPPERS = 2
+const MAX_LOCAL_STRIPPERS = 0
 
 const SHARED = "scripts/lib/strip-comments"
 

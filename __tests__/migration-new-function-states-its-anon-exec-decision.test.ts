@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { stripSql } from "../scripts/lib/strip-sql.mjs"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Every NEW migration that creates a function in `public` must STATE its
@@ -75,11 +76,25 @@ const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations")
 /** Applies to migrations from this version forward. Everything earlier is history. */
 const CUTOFF = "20260817000000"
 
-/** Blank comment bodies, preserving offsets. */
-function stripComments(sql: string): string {
-  const blanks = (s: string) => s.replace(/[^\n]/g, " ")
-  return sql.replace(/\/\*[\s\S]*?\*\//g, blanks).replace(/^\s*--.*$/gm, (m) => " ".repeat(m.length))
-}
+/**
+ * Blank comment bodies, preserving offsets.
+ *
+ * ⚠ OFFSET PRESERVATION IS LOAD-BEARING HERE SPECIFICALLY, which is why this
+ * guard passes no options: `statesDecision` matches
+ * `REVOKE[\s\S]{0,200}?…public.<fn>\s*\(` — a BOUNDED window. A stripper that
+ * collapsed a 300-character comment to one space would pull a REVOKE and a
+ * function name inside a window they were never within, and this guard would
+ * vouch for a decision the file does not state.
+ *
+ * ⚠ LITERALS ARE DELIBERATELY KEPT. Unlike the RLS guard, this one is looking
+ * for REVOKE statements, not for DDL that a `format()` string could fake.
+ *
+ * Migrated to the shared SQL lexer 2026-09-05. The local version it replaced
+ * stripped only LINE-START `--` comments (`/^\s*--.*$/gm`), so a trailing
+ * comment after code was invisible to it, and `.` does not match `\r` so the
+ * strip no-opped entirely on a CRLF file.
+ */
+const stripComments = (sql: string): string => stripSql(sql) as string
 
 /** Function names created in `public` by this SQL (comments already stripped). */
 export function createdPublicFunctions(code: string): string[] {

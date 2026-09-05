@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
+import { stripSql } from "../scripts/lib/strip-sql.mjs"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Every NEW migration that creates a public table must ENABLE ROW LEVEL SECURITY
@@ -94,13 +95,21 @@ const GRANDFATHERED = new Set([
  *     An unvalidated guard is worse than no guard; that draft found 14 "offenders"
  *     of which 2 were parse artifacts, and a later revision found 98 of which 85
  *     were temp tables.
+ *
+ * 🚨 MIGRATED TO THE SHARED SQL LEXER 2026-09-05, AND THE CHAINED-REGEX VERSION
+ * THIS REPLACED WAS BLIND TO A REAL TABLE. It stripped `--` comments BEFORE
+ * pairing quotes, so the `--` inside line 26 of
+ * `20260811003456_…board_liveness_history_decoupled_capture.sql` —
+ * `RAISE EXCEPTION 'state is absent -- refusing to build history …'` — ate that
+ * literal's own closing quote. The unpaired opening quote then paired with the
+ * next apostrophe in the file, `interval '90 days'` 47 lines later, and
+ * everything between them was blanked as string content: the file's real
+ * `CREATE TABLE public.public_board_liveness_history` AND its
+ * `ENABLE ROW LEVEL SECURITY`. This guard could not see a new public table in a
+ * file named after it, and was green. A single left-to-right pass has no
+ * ordering to get wrong.
  */
-function stripCommentsAndLiterals(sql: string): string {
-  return sql
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/--[^\n]*/g, " ")
-    .replace(/'(?:[^']|'')*'/g, " '' ")
-}
+const stripCommentsAndLiterals = (sql: string): string => stripSql(sql, { literals: true }) as string
 
 /**
  * ⚠ TEMP tables are deliberately NOT matched. `CREATE TEMP TABLE _rwfc_recent …`
