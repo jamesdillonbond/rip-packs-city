@@ -1,4 +1,4 @@
-# Inbox index — 400 live filings
+# Inbox index — 402 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -29,6 +29,12 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-09-06 — 2 filings
+
+- [⚠ **`rpc-qa-scorecard`'s "Sentinel leak (48h)" card uses a PRE-SUBEDITION regex and shows 608 valid rows in the amber watch band**](2026-09-06T0315Z-qa-scorecard-sentinel-card-uses-a-pre-subedition-regex-and-flags-608-valid-rows.md) — *(`rpc-daytime-monitor`, cloud, READ-ONLY. Nothing shipped; **author could not push** — committed on its behalf after being read in full.)* The card reads **608** where both authoritative instruments read **0** (`rpc_ops_snapshot().sentinel_ts_uuid_editions_48h` and `rpc-live-health`'s `leak_48h`). ⭐ **Root cause is a regex that predates the `::subedition` external_id format**: the card matches `^[0-9]+:[0-9]+$` while the canonical sentinel allows `(::[0-9]+)?`. All 608 flagged rows are well-formed `setID:playID::subeditionID` — **legitimately-keyed editions, not the inert-UUID leak the card exists to catch.** ⛔ **Data is correct; the DISPLAY is the false positive**, and it will keep climbing as subedition rows are minted — the "permanently-amber instrument is indistinguishable from a broken one" shape. Suggested fix is an **artifact edit only** (align the regex), no schema or code change.
+
+- [🚨 **`allday-lock-refresh`: ONE wallet's Flow-400 marks whole 20K–33K-row runs `ok=false` — onset 2026-09-05 05:23Z**](2026-09-06T1510Z-daytime-monitor.md) — *(`rpc-daytime-monitor`, cloud, READ-ONLY. Nothing shipped; **author could not push** — committed on its behalf after being read in full.)* Every hourly run since **09-05 05:23:06Z** fails on `wallet trypdub: Flow 400 [Error Code: 1052]` — **while still writing 20,936–33,793 rows**. ⭐ **The overloaded-`ok=false` shape CLAUDE.md names**: the whole run's health flag is hostage to a single wallet. **Onset is sharp, not longstanding** — 39 ok runs vs 34 trypdub-fails over 7 days, green until ~34 h before filing — and **explicitly not attributable to any 09-05 ship** (CSP / DEP0169 / pack-dist logging / stubs wall all touch unrelated code). ⚠ Risk read: no data loss, but a persistent HIGH false alarm **masking any real future lock-refresh regression**. Suggested action is for the night pass to decide between making a per-wallet script failure non-fatal to `ok` (⛔ counting and logging the skipped wallet, **not** failing open silently) or chunking that wallet's script if it is a computation-limit issue. ⓘ Its sweep also records the two known trust breaches and `unmapped_resolution_backlog_max` **still declining: 172 → 148 → 132 → 119**.
 
 ## 2026-09-05 — 18 filings
 
