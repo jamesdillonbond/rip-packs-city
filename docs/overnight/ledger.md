@@ -10,6 +10,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-06 · 🏁 SESSION CLOSE — 3 code ships, 2 watches closed, 4 orphaned filings rescued, and FOUR corrections to my own published numbers · Claude Code (Trevor's box, interactive)
+
+**Everything is committed, pushed, CI-green and verified. Nothing is left dirty and no owed item is left unstated.**
+
+## Shipped (all deployed + verified holding 25 h later)
+
+| ship | verification |
+|---|---|
+| `resolve-topshot-stubs` wall 30 → 120 s | **48 invocations, 0 kills**; 1 edge run >30 s that would have died before |
+| `ufc-enrichment-drain` off the Flow SDK | **51 runs, zero DEP0169** |
+| sitemap-discovery ban at zero (`entity-smoke`) | dispatched run: **124 passed**, arm logged `8/8` |
+| suite flake stabilised | full suite **1,475 files / 16,333 passed** |
+| + a guard banning "declared budget > lambda wall" | tree walk, 455 routes, mutation-proven |
+
+## Closed
+
+- **Step 6**: 198 runs, 0 timeouts, null excluded at every plausible baseline.
+- **pack-reality / api/packs**: 0 events over 26.3 h, positive control re-run at close.
+
+## ⭐ The four corrections, which are the session's real output
+
+**Every one was caught by running a control, none by review.** (1) A **"90% reduction"** that was window-selected — the same method on a second window of the same two days said **223% worse**; the series is burst-dominated and full-day says **≈51%**. (2) A **p-value against one day's baseline** (3.25–8.67% by day), corrected *weaker*. (3) An **attribution read off a smeared `routes` field** — one named route imports no SDK at all. (4) A **units error**, `read+hit` vs physical reads, which made a well-cached page look like the platform's top reader.
+
+⭐ **The through-line: MAGNITUDES MOVED, MECHANISMS HELD.** Every fix stayed correct; only its size was wrong. Prefer a claim about *which mechanism now runs* over *how much better it is*.
+
+## Root-caused, not shipped
+
+**DEP0169 = `@onflow/fcl → cross-fetch@4 → node-fetch@2`**, firing on **use, not import**. Native-fetch shim probed locally with a matched control (0 vs 2 `url.parse` calls, real Flow read OK both ways). ⛔ Not shipped — it sits under every Flow read and the probe covered one plain GET. Recipe for the remaining preview-deploy probe is in inbox `2026-09-05T1746Z` §5d.
+
+## Left for others, deliberately
+
+- **The #1 physical reader** (`reconcile_wmc_metadata_from_editions`, ~8.3M reads/day) **finished its corrective work 20 h before I measured it** and still runs `*/10` — a cadence call for its owner (inbox `2026-09-05T1630Z`).
+- **Two phantom `wmc` rows** (proven absent on-chain) need a 2-row DELETE — Trevor's, with the re-verify-first warning.
+- **Four daytime-monitor / night-pass filings** committed on their behalf; their suggested actions are addressed to the night pass and were **not** actioned by me.
+
+**Nothing here needs Trevor tonight.**
+
+
 ### 2026-09-06 · ✅ TWO OWED WATCHES CLOSED — fmv-recalc Step 6 (198 runs, 0 timeouts) and the pack-reality/api-packs pair (0 events, 26.3 h) · Claude Code (Trevor's box, interactive)
 
 **Both exit conditions met on their own stated terms, not on a judgement call.**
