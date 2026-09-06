@@ -134,6 +134,18 @@ export function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string
   // UFC moments store slow ipfs.io URLs on the edition — route them through the
   // edge-cached same-origin proxy so they paint reliably (P3).
   if (collectionSlug === "ufc") return proxyIpfsUrl(row.thumbnailUrl) ?? null
+  // ⚠ `/api/moment-thumbnail` is `assets.nbatopshot.com/media/<flowId>` — a TOP
+  // SHOT resource keyed on a TOP SHOT moment id. Measured 2026-09-06 on the
+  // founder's wallet, real Chromium: on /laliga-golazos/collection 45 of 47
+  // tiles 404'd through it (Golazos ids are not Top Shot ids), and on
+  // /nfl-all-day/collection every tile loaded — WRONG: All Day moment 1652251
+  // rendered Top Shot moment 1652251's art, an id collision across two
+  // collections that no 404 could ever surface. Any collection that is not Top
+  // Shot renders its own edition art; only Top Shot goes through the proxy.
+  if (collectionSlug && collectionSlug !== "nba-top-shot") {
+    if (!row.thumbnailUrl) return null
+    return proxyIpfsUrl(row.thumbnailUrl) ?? row.thumbnailUrl
+  }
   // Always route through the proxy — the CDN returns non-error responses for
   // hotlink blocks, so <img onError> fallbacks never fire.
   if (row.momentId) {

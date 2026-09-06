@@ -14,6 +14,12 @@ const tableState: Record<string, { data: unknown; error: unknown }> = {}
 // catch (Promise.all rejects → 500).
 const control: { throwRpc: string | null } = { throwRpc: null }
 
+const resolver = { result: null as string | null, calls: [] as string[] }
+vi.mock("@/lib/chains/flow/topshot-username-resolve", async (orig) => {
+  const real = await orig<typeof import("@/lib/chains/flow/topshot-username-resolve")>()
+  return { ...real, lookupCachedTopShotUsername: async (_c: unknown, u: string) => { resolver.calls.push(u); return resolver.result } }
+})
+
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async (name: string) => {
@@ -60,9 +66,22 @@ describe("GET /api/pinnacle-wallet", () => {
     expect((await res.json()).error).toBe("wallet param required")
   })
 
-  it("400s when the wallet does not start with 0x", async () => {
+  // 2026-09-06: a USERNAME is not a malformed wallet — the front door tells
+  // readers to paste one. It resolves through the cached ladder; unresolved is
+  // a 404 with actionable copy, never `400 wallet param required` on screen.
+  it("resolves a Top Shot username through the cached ladder before reading", async () => {
+    resolver.result = "0xb5081692483c2336"
+    rpcState.get_wallet_moments_with_fmv = { data: [{ moment_id: "m1" }], error: null }
+    const res = await GET(req("https://t/api/pinnacle-wallet?wallet=jamesdillonbond"))
+    expect(res.status).toBe(200)
+    expect(resolver.calls).toEqual(["jamesdillonbond"])
+  })
+
+  it("404s (not 400) when a username does not resolve — and never reads the RPCs", async () => {
+    resolver.result = null
     const res = await GET(req("https://t/api/pinnacle-wallet?wallet=abc123"))
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe("unresolved")
   })
 
   it("aggregates the four RPCs for a valid wallet", async () => {

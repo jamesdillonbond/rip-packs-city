@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
   pinnacleSerialFmv,
@@ -79,9 +80,30 @@ function num(v: unknown): number | null {
 }
 
 export async function GET(req: NextRequest) {
-  const wallet = req.nextUrl.searchParams.get("wallet")?.trim().toLowerCase() ?? ""
-  if (!wallet.startsWith("0x")) {
+  let wallet = req.nextUrl.searchParams.get("wallet")?.trim().toLowerCase() ?? ""
+  if (!wallet) {
     return NextResponse.json({ error: "wallet param required" }, { status: 400 })
+  }
+  // 2026-09-06: the front door says "paste a Top Shot username"; this route
+  // answered a username with `400 wallet param required`, which the Pinnacle
+  // tab rendered verbatim as its error banner. Resolve through the same cached
+  // ladder the Collection tab uses (a Flow address is chain-wide, so a Top Shot
+  // username identifies the Pinnacle wallet too); an unresolved name is a 404
+  // with copy a collector can act on, never a 400 that reads as our bug.
+  if (!wallet.startsWith("0x")) {
+    let resolved: string | null = null
+    try {
+      resolved = await lookupCachedTopShotUsername(supabaseAdmin as any, wallet)
+    } catch (e) {
+      return apiErrorResponse(e, "api/pinnacle-wallet/resolve-username")
+    }
+    if (!resolved) {
+      return NextResponse.json(
+        { error: "unresolved", message: "That Top Shot username is not in our index yet — try the 0x wallet address." },
+        { status: 404, headers: { "Cache-Control": "no-store" } }
+      )
+    }
+    wallet = resolved.toLowerCase()
   }
 
   try {

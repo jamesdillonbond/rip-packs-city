@@ -342,6 +342,12 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
   // cached secondary_ask from pack_table_rows — the table still renders,
   // sorts still work, just with stale prices.
   const liveListingsFetcher = useCallback(async (): Promise<LiveListingsResponse | null> => {
+    // Only Top Shot + All Day have a Dapper Studio sealed-pack market. Asking
+    // the route for any other collection is a guaranteed 400 — one console
+    // error per /packs load on Golazos and Pinnacle (measured 2026-09-06) for
+    // an answer we already know. Skip the request; the table renders from
+    // pack_table_rows exactly as it does on a network blip.
+    if (collection !== 'nba-top-shot' && collection !== 'nfl-all-day') return null
     const res = await fetch('/api/pack-listings?collection=' + encodeURIComponent(collection))
     if (!res.ok) {
       // Don't throw — degrade gracefully to cached. The 400 case

@@ -181,7 +181,9 @@ function PinnacleCollectionPageInner() {
         const res = await fetch(`/api/pinnacle-wallet?wallet=${encodeURIComponent(activeWallet)}`)
         const json = await res.json()
         if (cancelled) return
-        if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`)
+        // `message` is the collector-facing copy (e.g. an unresolved username);
+        // `error` is the machine code. Never show the code when copy exists.
+        if (!res.ok) throw new Error(json?.message ?? json?.error ?? `HTTP ${res.status}`)
         setRows(Array.isArray(json.moments) ? json.moments : [])
         setTotalFmv(json.totalFmv ?? null)
         setMomentCount(json.momentCount ?? (json.moments?.length ?? 0))

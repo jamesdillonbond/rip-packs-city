@@ -233,6 +233,36 @@ describe("proxy() — unauthenticated gate", () => {
   })
 })
 
+describe("proxy() — an anonymous fetch() to a gated API path gets 401, a navigation still gets the redirect (2026-09-06)", () => {
+  it("answers 401 JSON to a signed-out fetch (sec-fetch-dest: empty) on /api/*", async () => {
+    st.user = null
+    const res = await proxy(req("/api/profile/saved-wallets?ownerKey=0xabc", { headers: { "sec-fetch-dest": "empty" } }))
+    expect(res.status).toBe(401)
+    expect(res.headers.get("location")).toBeNull()
+    expect(res.headers.get("cache-control")).toContain("no-store")
+    expect(await res.json()).toMatchObject({ error: "unauthorized" })
+  })
+
+  it("a signed-out NAVIGATION to a gated API path keeps the /login?next= redirect", async () => {
+    st.user = null
+    const res = await proxy(req("/api/profile/saved-wallets?ownerKey=0xabc", { headers: { "sec-fetch-dest": "document" } }))
+    expect(res.status).toBe(307)
+    expect(res.headers.get("location") ?? "").toContain("/login")
+  })
+
+  it("a signed-out fetch to a gated PAGE (not /api) keeps the redirect — pages are for navigations", async () => {
+    st.user = null
+    const res = await proxy(req("/dashboard/watchlist", { headers: { "sec-fetch-dest": "empty" } }))
+    expect(res.status).toBe(307)
+  })
+
+  it("a fetch WITHOUT the header (old client) keeps the redirect", async () => {
+    st.user = null
+    const res = await proxy(req("/api/profile/saved-wallets?ownerKey=0xabc"))
+    expect(res.status).toBe(307)
+  })
+})
+
 describe("proxy() — allow-list ladder", () => {
   it("fails CLOSED on an RPC error → /login?error=allowlist_unavailable", async () => {
     st.user = { email: "member@x.com" }

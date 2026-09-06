@@ -128,6 +128,23 @@ describe("proxyTopShotThumb / getThumbnailUrl", () => {
   it("getThumbnailUrl returns null when nothing is available", () => {
     expect(getThumbnailUrl(row({}))).toBeNull()
   })
+
+  // 2026-09-06: /api/moment-thumbnail is a TOP SHOT resource keyed on a Top Shot
+  // moment id. Golazos ids 404'd through it (45/47 tiles on the founder's wallet)
+  // and All Day ids COLLIDED with Top Shot ids and rendered another sport's art.
+  it("a non-Top-Shot collection renders its OWN edition art, never the Top Shot media proxy", () => {
+    const allday = row({ momentId: "1652251", thumbnailUrl: "https://media.nflallday.com/editions/675/media/image?width=512" })
+    expect(getThumbnailUrl(allday, "nfl-all-day")).toBe("https://media.nflallday.com/editions/675/media/image?width=512")
+    const golazos = row({ momentId: "737217859", thumbnailUrl: "https://assets.laligagolazos.com/editions/x/play_x.png" })
+    expect(getThumbnailUrl(golazos, "laliga-golazos")).toBe("https://assets.laligagolazos.com/editions/x/play_x.png")
+    expect(getThumbnailUrl(golazos, "laliga-golazos")).not.toContain("moment-thumbnail")
+    // no edition art → honest null (the tile shows its placeholder), not a wrong picture
+    expect(getThumbnailUrl(row({ momentId: "737217859" }), "laliga-golazos")).toBeNull()
+    // Top Shot keeps the proxy
+    expect(getThumbnailUrl(row({ momentId: "999" }), "nba-top-shot")).toBe("/api/moment-thumbnail?flowId=999&width=180")
+    // ipfs-hosted art (UFC-style) on any collection still goes through the ipfs proxy
+    expect(getThumbnailUrl(row({ momentId: "1", thumbnailUrl: "https://ipfs.io/ipfs/QmABC" }), "disney-pinnacle")).toBe("/api/public/ipfs-media/QmABC")
+  })
 })
 
 describe("getBestAsk", () => {

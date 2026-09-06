@@ -126,7 +126,7 @@ export default function CollectionMomentTable(props: {
         {/* Main table / mobile cards */}
         {isMobile ? (
           <div className="flex flex-col gap-2">
-            {filteredRows.length === 0 ? (
+            {filteredRows.length === 0 && hasSearched && !loading ? (
               // The desktop table carries these two messages; the mobile branch
               // was a bare .map(), so an empty result rendered a BLANK area with
               // no explanation — on the primary phone surface. The two strings

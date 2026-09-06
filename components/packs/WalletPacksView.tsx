@@ -188,7 +188,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
         <div style={{ fontSize: 30, color: "var(--rpc-text-ghost)" }}>📦</div>
         <div className="rpc-heading" style={{ fontSize: 16 }}>Your sealed packs</div>
         <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
-          Search a wallet on the <strong>Moments</strong> tab to see its pack buys, rips,
+          Search a wallet on the <strong>Moments</strong>{" "}tab to see its pack buys, rips,
           flips, and realized P&amp;L for {getCollection(collection)?.label ?? "this collection"}.
         </div>
         <Link href="/dashboard/packs" className="rpc-chip" style={{ marginTop: 4, color: accent, borderColor: accent }}>

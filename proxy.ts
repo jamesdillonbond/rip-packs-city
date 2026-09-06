@@ -1163,6 +1163,27 @@ export async function proxy(request: NextRequest) {
   const user = userData?.user
 
   if (!user) {
+    // ── An anonymous fetch() to a gated /api/* path gets a 401, not a 307 ──
+    // A redirect to /login is right for a NAVIGATION (the reader sees the
+    // sign-in page with ?next=). It is wrong for a programmatic fetch: the
+    // browser FOLLOWS the 307, `POST /login` answers 405, `GET /login` answers
+    // the login page's HTML as if it were JSON, and the caller — which is
+    // waiting for a 401 to know it should ask the reader to sign in — waits
+    // forever. Measured 2026-09-06 on public pages, signed out, real Chromium:
+    // `/api/profile/saved-wallets`, `/api/wallet/profile`, `/api/wallet-cache`,
+    // `/api/cost-basis`, `/api/cache-refresh` all 307→405 (a console error per
+    // page, and the WatchEditionButton-class "wait for 401" bug on every one).
+    // `sec-fetch-dest: empty` is what every fetch()/XHR sends and no navigation
+    // does, so the split is exact; an old client without the header keeps the
+    // redirect. Uncacheable so the CDN never replays a 401 to a signed-in reader.
+    if (pathname.startsWith("/api/") && request.headers.get("sec-fetch-dest") === "empty") {
+      const unauth = NextResponse.json(
+        { error: "unauthorized", message: "Sign in to use this." },
+        { status: 401, headers: { "Cache-Control": "no-store", "WWW-Authenticate": "Session" } }
+      )
+      carryCookies(unauth, response)
+      return applySecurityHeaders(unauth)
+    }
     const loginUrl = new URL("/login", request.url)
     loginUrl.searchParams.set("next", pathname + search)
     const redirectResp = NextResponse.redirect(loginUrl)
