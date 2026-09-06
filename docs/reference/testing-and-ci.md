@@ -934,7 +934,11 @@ this file** (`## LAYOUT is a defect class no gate in this repo can see` and
 > ⚠ **NOTHING here measures LAYOUT** — jsdom returns a ZERO box for every element, so a band shipped
 > **350px** tall against the ~100px it specified for four weeks with every gate green.
 > `e2e/mobile-layout.spec.ts` (scheduled e2e monitor) is the only instrument; a layout claim needs a real
-> browser. ⚠ **Nor the BUILT BUNDLE** — turbopack constant-folded a `+`-joined template and DROPPED a
+> browser. **The broad-sweep instrument (added 2026-09-06): `scripts/qa/mobile-sweep.mjs`** — real Chromium at
+> 390 × 844 from the Cowork device VM, one measured JSONL record + one PNG per page; the session stages
+> the PNGs and READS them. It measures, it does not assert — recipe + how to read it honestly in
+> `scripts/qa/README.md`. ⚠ The Cowork/Chrome-extension window bottoms out at ~738 px, so every
+> sub-420 claim made through it before 09-06 was a desktop layout squinted at. ⚠ **Nor the BUILT BUNDLE** — turbopack constant-folded a `+`-joined template and DROPPED a
 > quasi, so production rendered a sentence the source does not contain while vitest and `tsc` read it
 > correctly.
 

@@ -483,3 +483,7 @@ better"* is bounded by market depth, and Golazos/UFC's zeros are the honest labe
 queue. ⚠ **Pinnacle is read from `pinnacle_catalog.fmv_confidence`, NOT `fmv_snapshots`, and its sales are
 in `pinnacle_sales`** — querying the usual tables for all five returns NULL/0 for Pinnacle and reads as
 "Pinnacle is broken".
+
+## Displaced from CLAUDE.md 2026-09-06 (verbatim; the self-link re-pointed to this file so the link guard resolves it)
+
+- **The one measured-but-unshipped DB fix is LOW-STAKES** (numbers: [roadmap-status.md](roadmap-status.md)). ⭐ Another stated blocker was itself a MEASUREMENT — **re-read a "blocked" item's blocker before inheriting it.**

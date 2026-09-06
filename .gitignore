@@ -205,3 +205,6 @@ docs/overnight/.lock
 !.env.example
 *.pkey
 *.pem
+
+# Cowork QA scratch on the device mount (screenshots, patch bundles) — never part of the tree
+_to_delete/
