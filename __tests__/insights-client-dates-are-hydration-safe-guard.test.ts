@@ -488,7 +488,14 @@ describe("client date formatting is hydration-safe site-wide", () => {
     // Rule A only: this file also carries a bare `n.toLocaleString()` number
     // format (Rule B), which is inside the site-wide ratchet, not this ban.
     expect(findUnsafeLocaleCalls(stripComments(panini)).filter(isRuleA)).toHaveLength(0)
-    expect(panini).toContain('timeZone: "UTC"')
+    // 2026-09-06: the PANINI_NEWS block that carried the pinned date was REMOVED
+    // (fabricated provenance copy). The property this test holds is "no Rule-A
+    // call in the file", asserted above; the `timeZone: "UTC"` pin is asserted
+    // only while the module still renders a module-constant date, so its
+    // removal cannot be mistaken for an escape.
+    if (/new Date\([^)]*\)\.toLocaleDateString/.test(stripComments(panini))) {
+      expect(panini).toContain('timeZone: "UTC"')
+    }
 
     for (const f of [
       "components/sniper/SniperStatsBar.tsx",

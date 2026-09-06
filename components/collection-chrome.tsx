@@ -50,7 +50,7 @@ const TICKER_ITEMS: Record<string, string[]> = {
     "⚡ ANALYTICS — portfolio tracking",
   ],
   "candy-mlb": [
-    "⚾ CANDY MLB ON SOLANA — 125 editions, every one priced",
+    "⚾ CANDY MLB ON SOLANA — every edition priced from real sales",
     "⚾ FMV FROM REAL SALES — the highest sales-backed share on the platform",
     "⚾ LIVE BOARD — floors, asks and 24h sales on the Candy MLB insights board",
     "⚾ WALLET + PACK TOOLS — coming behind this overview",

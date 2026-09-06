@@ -17,26 +17,10 @@ interface MarketStats {
 
 // ── Static data ───────────────────────────────────────────────────────────────
 
-const PANINI_NEWS = [
-  {
-    title: "Ethereum Bridge Goes Live",
-    date: "2026-03-30",
-    summary:
-      "Panini Blockchain cards can now be bridged to Ethereum and traded on OpenSea. The bridge supports all sports: basketball, football, soccer, WNBA, and racing.",
-  },
-  {
-    title: "Bridge Announcement & Roadmap",
-    date: "2025-09-15",
-    summary:
-      "Panini America announces partnership with Immutable to bring digital trading cards to Ethereum via a trustless bridge, with full metadata preservation.",
-  },
-  {
-    title: "Record Sales Month for Digital Panini",
-    date: "2025-10-20",
-    summary:
-      "October 2025 sees the highest monthly volume for Panini Blockchain cards since launch, driven by NFL and NBA season openers.",
-  },
-]
+// 2026-09-06: the hardcoded PANINI_NEWS block (three undated-source claims, one a
+// "record sales month" nobody measured) is gone — fabricated provenance on a
+// launch surface. Trevor's delegated decision names the WC Prizm plane as the
+// Panini collection; the squeeze board below is the real data.
 
 const BRIDGE_STEPS = [
   {
@@ -308,53 +292,19 @@ export default function PaniniOverviewClient() {
           </div>
         </section>
 
-        {/* Platform News */}
+        {/* Where the real Panini data lives */}
         <section className="rpc-card" style={{ padding: "16px 20px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: ACCENT }} />
-            <span className="rpc-label">Platform News</span>
+            <span className="rpc-label">Panini squeeze board</span>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {PANINI_NEWS.map((item, i) => (
-              <div key={i} className="rpc-card" style={{ padding: "10px 14px" }}>
-                <div className="rpc-label" style={{ marginBottom: 4 }}>
-                  {/* timeZone is REQUIRED, not cosmetic. PANINI_NEWS carries
-                      date-only ISO strings, which `new Date()` parses as UTC
-                      MIDNIGHT — so west of UTC this renders the PREVIOUS day.
-                      Vercel's server is UTC and the visitor's browser is not,
-                      which is both React #418 (server "Mar 30" / client
-                      "Mar 29") and a plainly wrong date for every US reader.
-                      This is a module constant, so it renders at SSR on every
-                      load — there is no post-mount gate to make it safe. */}
-                  {new Date(item.date).toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    timeZone: "UTC",
-                  })}
-                </div>
-                <div
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontWeight: 700,
-                    fontSize: "var(--text-base)",
-                    color: "var(--rpc-text-primary)",
-                    letterSpacing: "0.02em",
-                    marginBottom: 4,
-                    lineHeight: 1.3,
-                  }}
-                >
-                  {item.title}
-                </div>
-                <div
-                  className="rpc-mono"
-                  style={{ color: "var(--rpc-text-muted)", lineHeight: 1.6 }}
-                >
-                  {item.summary}
-                </div>
-              </div>
-            ))}
+          <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", lineHeight: 1.6, marginBottom: 12 }}>
+            RPC&apos;s Panini intelligence is the WC Prizm catalogue — thousands of editions with sales-backed
+            FMV and squeeze scoring — on the public board. This bridge overview is monitor-only.
           </div>
+          <Link href="/insights/panini-squeeze" className="rpc-heading" style={{ display: "inline-block", padding: "10px 18px", background: ACCENT, color: "#0B0B0D", borderRadius: 6, fontSize: "var(--text-sm)", letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none" }}>
+            Open the Panini squeeze board →
+          </Link>
         </section>
       </div>
 
