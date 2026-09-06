@@ -31,6 +31,7 @@ vi.mock("@/lib/auth/supabase-client", () => ({
 }))
 
 import TopNav from "@/components/TopNav"
+import { publishedCollections } from "@/lib/collections"
 
 const labels = (container: HTMLElement) =>
   Array.from(container.querySelectorAll("a")).map((a) => a.textContent)
@@ -53,7 +54,12 @@ describe("TopNav — auth-gated links", () => {
     expect(ls).toContain("Blog")
     expect(ls).not.toContain("My Teams")
     expect(ls).not.toContain("Alerts")
-    expect(ls.length).toBe(7)
+    // 2026-09-06: the collection links are DERIVED from publishedCollections()
+    // (the hand-written list omitted Candy MLB the day it published) — one link
+    // per published collection + Analytics + Blog. UFC keeps its nav label.
+    expect(ls).toContain("Candy")
+    expect(ls).toContain("UFC")
+    expect(ls.length).toBe(publishedCollections().length + 2)
   })
 
   it("adds My Teams + Alerts once the user is signed in", async () => {
@@ -64,7 +70,7 @@ describe("TopNav — auth-gated links", () => {
     })
     const ls = labels(container)
     expect(ls).toContain("Alerts")
-    expect(ls.length).toBe(9)
+    expect(ls.length).toBe(publishedCollections().length + 4)
   })
 
   it("reacts to a later auth-state change (sign-in after mount)", async () => {

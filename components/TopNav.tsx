@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { getSupabaseBrowser } from "@/lib/auth/supabase-client"
+import { publishedCollections } from "@/lib/collections"
 
 interface TopNavLink {
   label: string
@@ -11,12 +12,16 @@ interface TopNavLink {
   matchPrefix?: string
 }
 
+// The collection links are DERIVED from the registry (2026-09-06) — this list
+// was hand-written and silently omitted Candy MLB the day it published, while
+// the switcher, footer and mobile sheet (all registry-driven) carried it.
 const LINKS: TopNavLink[] = [
-  { label: "Top Shot", href: "/nba-top-shot/overview", matchPrefix: "/nba-top-shot" },
-  { label: "All Day", href: "/nfl-all-day/overview", matchPrefix: "/nfl-all-day" },
-  { label: "Golazos", href: "/laliga-golazos/overview", matchPrefix: "/laliga-golazos" },
-  { label: "Pinnacle", href: "/disney-pinnacle/overview", matchPrefix: "/disney-pinnacle" },
-  { label: "UFC", href: "/ufc/overview", matchPrefix: "/ufc" },
+  ...publishedCollections().map((c) => ({
+    // "Strike" is the switcher chip; the top nav has always said UFC.
+    label: c.id === "ufc" ? "UFC" : c.shortLabel,
+    href: `/${c.id}/overview`,
+    matchPrefix: `/${c.id}`,
+  })),
   { label: "Analytics", href: "/analytics", matchPrefix: "/analytics" },
   { label: "Blog", href: "/blog", matchPrefix: "/blog" },
 ]

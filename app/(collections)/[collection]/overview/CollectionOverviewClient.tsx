@@ -257,7 +257,13 @@ export default function CollectionOverviewClient({ collection }: { collection: s
   // UFC Strike's Flow market is frozen by design (Aptos migration) — its FMV is
   // legitimately stale, so don't flash a red OUTDATED pipeline-broken pill.
   const frozenMarket = collection === "ufc"
-  const freshness = freshnessFromAge(fmvAge, showLoading, frozenMarket)
+  // Thin, non-Flow collections (Candy MLB): FMV is recomputed on each sale, the
+  // sniper + insider detectors have no arm for the chain, and the tabs those
+  // panels link to do not exist. Each panel below asks for what it needs.
+  const saleDrivenFmv = collection === "candy-mlb"
+  const hasSniperTab = enabledPages.has("sniper" as never)
+  const hasInsiderDetectors = (collectionObj?.dbChain ?? "flow") === "flow"
+  const freshness = freshnessFromAge(fmvAge, showLoading, frozenMarket, saleDrivenFmv ? "sale-driven" : "continuous")
 
   // ── Failed read vs empty result (deep-audit R1) ──────────────────────────
   // The KPI band above already distinguishes these correctly (D11), but the
@@ -383,7 +389,9 @@ export default function CollectionOverviewClient({ collection }: { collection: s
       {/* ── Sniper Deals + Pipeline Status ── */}
       <div className="rpc-ov-2col">
 
-        {/* Top 5 Sniper Deals */}
+        {/* Top 5 Sniper Deals — only where a sniper arm exists; "No deals right
+            now" on a collection with no sniper is a market claim we made up. */}
+        {hasSniperTab && (
         <section className="rpc-card" style={{ padding: "16px 20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: accent }} />
@@ -443,6 +451,7 @@ export default function CollectionOverviewClient({ collection }: { collection: s
             </div>
           )}
         </section>
+        )}
 
         {/* Pipeline Status */}
         <section className="rpc-card" style={{ padding: "16px 20px" }}>
@@ -495,7 +504,7 @@ export default function CollectionOverviewClient({ collection }: { collection: s
       </div>
 
       {/* ── Insider Signals (anomaly detection across sales activity) ── */}
-      <InsiderSignalsPanel collection={collection} basePath={basePath} />
+      {hasInsiderDetectors && <InsiderSignalsPanel collection={collection} basePath={basePath} />}
 
       {/* ── Recent Top Sales + About the Community ── */}
       <div className="rpc-ov-2col">
@@ -505,7 +514,7 @@ export default function CollectionOverviewClient({ collection }: { collection: s
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--tier-legendary)" }} />
             <span className="rpc-label">Recent Top Sales</span>
-            <Link href={basePath + "/sniper"} className="rpc-mono" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
+            <Link href={hasSniperTab ? basePath + "/sniper" : collection === "candy-mlb" ? "/insights/candy-mlb" : basePath + "/overview"} className="rpc-mono" style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", textDecoration: "none" }}>
               View all {"\u2192"}
             </Link>
           </div>

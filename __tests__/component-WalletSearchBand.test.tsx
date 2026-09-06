@@ -87,6 +87,15 @@ describe("WalletSearchBand", () => {
     expect(container.querySelector("[data-rpc-wallet-band='collection']")).toBeTruthy()
   })
 
+  it("renders NOTHING on a non-Flow collection — /share is a Flow wallet card (Candy MLB, 2026-09-06)", () => {
+    const { container } = render(<WalletSearchBand scope="collection" collectionId="candy-mlb" />)
+    expect(container.querySelector("input")).toBeNull()
+    expect(container.querySelector("[data-rpc-wallet-band]")).toBeNull()
+    // …and the Flow placement is untouched by the same guard.
+    const flow = render(<WalletSearchBand scope="collection" collectionId="nfl-all-day" />)
+    expect(flow.container.querySelector("input")).toBeTruthy()
+  })
+
   it("is present on the FIRST render pass so it ships in the server HTML", () => {
     // A wallet in localStorage must NOT remove the band before hydration —
     // the deferred check is what keeps the entry point in the delivered HTML.

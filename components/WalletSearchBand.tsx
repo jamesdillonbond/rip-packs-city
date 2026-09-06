@@ -59,6 +59,7 @@ import { useEffect, useState, type ReactNode } from "react"
 import { usePathname } from "next/navigation"
 import WalletSearch from "@/components/WalletSearch"
 import { getSupabaseBrowser } from "@/lib/auth/supabase-client"
+import { getCollection } from "@/lib/collections"
 
 // Kill switch. Absent/anything-but-"off" = on, so no env var is required to
 // ship; setting NEXT_PUBLIC_WALLET_BAND=off in Vercel disables both placements
@@ -195,6 +196,14 @@ export default function WalletSearchBand({
 
   if (DISABLED || hasWallet || signedIn) return null
   if (pathname && SUPPRESSED.has(pathname)) return null
+  // 2026-09-06: the band submits to /share/<addr>, a FLOW wallet card. On a
+  // non-Flow collection (Candy MLB, Solana, published thin) it would invite a
+  // base58 address into a Cadence lookup and answer with an empty card — a
+  // "0 moments" claim we manufactured. No band until that chain has a wallet tool.
+  if (scope === "collection" && collectionId) {
+    const chain = getCollection(collectionId)?.dbChain
+    if (chain && chain !== "flow") return null
+  }
 
   const copy =
     scope === "insights" ? COPY.__insights : COPY[collectionId ?? ""] ?? COPY.__default

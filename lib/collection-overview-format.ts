@@ -42,8 +42,22 @@ export type Freshness = { color: string; label: string; loading?: boolean }
 /** Freshness pill state. Loading and frozen-market (ARCHIVED) short-circuit
  * before the age buckets: < 30m LIVE, < 60m DELAYED, else OUTDATED; unknown age
  * (null) → UNKNOWN. */
-export function freshnessFromAge(minutes: number | null, loading: boolean, frozenMarket = false): Freshness {
+export function freshnessFromAge(
+  minutes: number | null,
+  loading: boolean,
+  frozenMarket = false,
+  cadence: "continuous" | "sale-driven" = "continuous",
+): Freshness {
   if (loading) return { color: "var(--rpc-text-muted)", label: "Loading…", loading: true }
+  // Sale-driven FMV (Candy MLB, 2026-09-06): snapshots are written when a sale
+  // lands, not on a clock — measured gaps of 14 h between recomputes on a
+  // 125-edition catalogue that trades a few times a day. Against the 30/60-min
+  // buckets that reads as a broken pipeline for most of every day; it is not.
+  // Report the cadence, keep the age visible, never colour it as a fault.
+  if (cadence === "sale-driven" && !frozenMarket) {
+    if (minutes == null) return { color: "var(--rpc-text-ghost)", label: "UNKNOWN" }
+    return { color: "var(--rpc-text-muted)", label: "ON SALE" }
+  }
   // Frozen-by-design markets (UFC Strike migrated to Aptos; the Flow market has
   // been frozen since 2026-05-13) have legitimately stale FMV — a red "OUTDATED"
   // pill reads as a broken pipeline to a public visitor. Show a neutral archival
