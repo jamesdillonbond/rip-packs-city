@@ -329,6 +329,15 @@ edge-function deploy** — so it is available even when a function is behind a d
 `status_code`, `timed_out`, `error_msg`, `content` and `created`. Retention is short (**~6 h measured
 2026-08-21**), so sample it while the window is open.
 
+🚨 **pg_net SENDS ONLY AFTER THE ENQUEUING TRANSACTION COMMITS (measured 2026-09-06).** A `net.http_post`
+issued and then polled for inside ONE transaction — a migration's `DO` block, a single "post-then-await"
+SQL function called over PostgREST — is never answered: the queue row is invisible to the worker until
+commit, and rolls back with the transaction (the probe's row was gone from `net.http_request_queue`
+afterwards). The same call answered in 4 s when the post and the poll were separate `execute_sql` calls.
+So no synchronous wrapper exists: split every live read into `*_begin` (returns the request id, caller
+commits) and `*_collect` (a fresh transaction polls `net._http_response`) — `lib/chains/flow/atlas.ts` —
+and never put a pg_net positive control inside the migration that creates the function.
+
 **What it settles that `pipeline_runs` cannot.** A pg_cron pipeline that leaves no terminal row is
 ambiguous three ways; this table splits them:
 

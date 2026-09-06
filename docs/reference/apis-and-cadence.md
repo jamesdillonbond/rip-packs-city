@@ -31,6 +31,46 @@ the input/output pair in the function header. ⚠ MCP script args are plain stri
 
 ## API contracts
 
+### Atlas — THE live Top Shot / All Day source (2026-09-06)
+
+`https://api.production.atlas.dapperlabs.com/public/atlas.v1.<Service>/<Method>` — the Connect-RPC backend
+nbatopshot.com and nflallday.com themselves call. POST JSON; headers `content-type: application/json`,
+`connect-protocol-version: 1`, `origin`/`referer` = the product site, a browser UA (`atlas_market_headers(p)`).
+**Unauthenticated.** ⚠ **Reachable from Supabase pg_net ONLY** — Vercel and Cloudflare Workers are
+WAF-blocked (known-issues #20), so every read is DB-side; from Next.js use `lib/chains/flow/atlas.ts`.
+
+| method | body | answers |
+|---|---|---|
+| `MarketplaceService/SearchMarketplaceTransactions` | `{product:'nba'\|'nfl', limit≤200, offset}` | the platform-wide FIREHOSE, newest `listedAt` first: listings (`completed=false`), sales (`completed`+`purchased`, `purchasedAt`, buyer+seller, `marketplaceFeeCents`, `sellerProceedsCents`), offers (`offerType` EDITION\|PARALLEL\|SERIAL, `buyerAddress`), filled offers. ~4–7 events/min on nba (a dated sample). |
+| same | `+ {editionId}` | that edition's OPEN listings, price ascending, with serial + nftId + seller (= the site's Listings tab) |
+| same | `+ {editionId, completed:true}` | that edition's sales history |
+| same | `+ {nftId}` | one Moment's listing + sale history — the verification-by-listing check |
+| same | `+ {sellerAddress}` | a wallet's listings (0x optional) |
+| `ProfileService/SearchUserProfiles` | `{product:'nba', username}` | `userProfiles[0].flowAddress` (+ `username`, `profileImageUrl`, `favoriteTeamIds`, `createdAt`); `flow_addresses` is the reverse lookup |
+| `EditionService/SearchEditions` | `{product, setId:[…], limit, offset}` | the edition catalogue (the badge lane, `atlas_editions_*`) |
+
+⚠ **Unknown keys are IGNORED, no error** — a misspelled filter silently returns the firehose; assert on the
+answer's shape, never on the request having been accepted. Pagination: `pagination.hasMore`.
+
+**What is built on it (migration `20260906203504`):** `topshot_atlas_market_events` (one row per Atlas
+uuid, both products, anon-readable) fed by `atlas_market_dispatch()` / `atlas_market_drain()` on pg_cron
+every 2 min (pipeline `atlas-market-feed`), and the two-phase RPCs `atlas_resolve_username_{begin,collect}`
+/ `atlas_verify_listing_{begin,collect}` (service_role). ⚠ **Delistings are NOT in the firehose** — a
+listing that vanishes without a sale is only seen by re-reading `{editionId}`; open-listing truth for the
+sniper needs a per-edition refresher, not the firehose alone.
+
+🚨 **pg_net SENDS ONLY AFTER THE ENQUEUING TRANSACTION COMMITS** (measured 09-06: a request posted and
+polled inside one transaction is never answered and rolls back with it — a migration's in-transaction
+positive control timed out on a call that answers in 4 s from `execute_sql`). A "synchronous" post+await
+function is structurally impossible; every live read is TWO rpc() calls, and a migration cannot prove an
+Atlas read — verify after apply.
+
+⚠ **Cloudflare's managed challenge on this egress is BURST-SENSITIVE.** Base rate on the badge lane
+~5–15 % `403 Just a moment…` (independent singles); a 60-request A/B burst pushed it to **100 % for ~4 min**
+and every header variant (browser UA, honest UA, no origin, bare) 403'd identically — from this egress the
+challenge is rate-shaped, not header-shaped. Total Atlas traffic today ≈ 5 req/min (editions + market);
+never probe in bursts, and read `topshot_atlas_market_requests.error` before blaming the code.
+
 ### Top Shot GraphQL
 
 > ⛔ **DECOMMISSIONED ~2026-08-28.** `public-api.nbatopshot.com` answers Cloudflare 530 / 1033 for every caller (residential included); the catalog walker, badge-set backfill and `resolve-and-associate` all fail on it, and the circulation field it fed now comes from the chain (`topshot-circulation-onchain`, 2026-09-03). Nothing below this line is a live contract — see `docs/operations/cron-schedule.md` for the dead-host census.
