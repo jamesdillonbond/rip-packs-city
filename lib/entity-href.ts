@@ -1,4 +1,4 @@
-import { slugifyName } from "@/lib/entity-labels"
+import { slugifyName, slugifyPlayerName } from "@/lib/entity-labels"
 
 /**
  * The destination for a Moment's "who" link.
@@ -23,5 +23,29 @@ export function momentSubjectHref(
   if (!playerName) return null
   const isTeamMoment = Boolean(teamName) && playerName.trim() === (teamName as string).trim()
   const kind = isTeamMoment ? "team" : "player"
-  return `/${collectionUrlSlug}/${kind}/${encodeURIComponent(slugifyName(playerName))}`
+  const slug = isTeamMoment ? slugifyName(playerName) : slugifyPlayerName(playerName)
+  return `/${collectionUrlSlug}/${kind}/${encodeURIComponent(slug)}`
+}
+
+/**
+ * The display name for a Moment's "who". Top Shot stores a team highlight as
+ * `player_name = NULL, team_name = <franchise>` (151 canonical editions on
+ * 2026-09-06, 151/151 with a team_name), so a bare `player_name ?? "Unknown"`
+ * publishes the word "Unknown" as if it were the subject — it rendered on the
+ * pack page's "Top chases" strip ("Unknown · Squad Goals · $3.74"). The subject
+ * is the team, then the set, and only then an honest dash. Never "Unknown":
+ * that reads as a fact about the Moment, and it is a fact about our join.
+ */
+export function momentSubjectName(
+  playerName: string | null | undefined,
+  teamName: string | null | undefined,
+  setName?: string | null,
+): string {
+  const p = playerName?.trim()
+  if (p) return p
+  const t = teamName?.trim()
+  if (t) return t
+  const s = setName?.trim()
+  if (s) return s
+  return "—"
 }

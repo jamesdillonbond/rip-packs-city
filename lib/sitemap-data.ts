@@ -58,7 +58,7 @@ import type { MetadataRoute } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import { publishedCollections } from '@/lib/collections'
 import { getCollectionByDbSlug, getCollectionByUuid } from '@/lib/collection-slug'
-import { slugifyName } from '@/lib/entity-labels'
+import { slugifyName, slugifyPlayerName } from '@/lib/entity-labels'
 import { isExhibitionTeamSlug } from '@/lib/team-denylist'
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from '@/lib/launch-flags'
 import { PUBLIC_TAB_PAGES } from '@/lib/seo'
@@ -565,8 +565,15 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
         const prev = setMap.get(k)
         if (!prev || ts > prev) setMap.set(k, ts)
       }
-      if (e.player_name) {
-        const k = `${coll.urlSlug}|${slugifyName(e.player_name)}`
+      // ⚠ A TEAM Moment stores its franchise in player_name (Squad Goals, Season
+      // Rewind, WNBA Skyline: 44 distinct names / 431 editions on 2026-09-06).
+      // No `players` row exists for a franchise, so `/player/<franchise>` is a
+      // guaranteed 404 — and `/team/<franchise>` already resolves and is already
+      // emitted from teamMap below. Same rule as lib/entity-href.ts. Measured:
+      // 57 of the 1,413 Top Shot player URLs in the sitemap 404'd; 44 were this.
+      const isTeamMoment = !!e.player_name && !!e.team_name && e.player_name.trim() === e.team_name.trim()
+      if (e.player_name && !isTeamMoment) {
+        const k = `${coll.urlSlug}|${slugifyPlayerName(e.player_name)}`
         const prev = playerMap.get(k)
         if (!prev || ts > prev) playerMap.set(k, ts)
       }

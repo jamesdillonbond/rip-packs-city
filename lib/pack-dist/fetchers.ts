@@ -301,7 +301,10 @@ export interface PackSaleRow {
 
 export interface HeroEdition {
   route_slug: string | null
+  /** Already coalesced to team_name by get_pack_detail_bundle for team Moments (2026-09-06). */
   player_name: string | null
+  /** Franchise for a team Moment; null on a player Moment. */
+  team_name?: string | null
   set_name: string | null
   tier: string | null
   thumbnail_url: string | null

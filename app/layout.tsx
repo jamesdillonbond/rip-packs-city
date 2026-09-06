@@ -9,6 +9,7 @@ import WalletPreloader from "@/components/WalletPreloader"
 import ConsoleGreeting from "@/components/visual/ConsoleGreeting"
 import TelemetryPageView from "@/components/TelemetryPageView"
 import RefCapture from "@/components/RefCapture"
+import DeadImageGuard from "@/components/media/DeadImageGuard"
 
 export const metadata: Metadata = rootMetadata
 
@@ -73,6 +74,7 @@ export default function RootLayout({
         <ConsoleGreeting />
         <TelemetryPageView />
         <RefCapture />
+        <DeadImageGuard />
         <WarmupProvider>
             <WalletPreloader />
             {children}

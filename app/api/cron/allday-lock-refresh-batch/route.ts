@@ -139,17 +139,36 @@ async function runBatch(startedAtIso: string): Promise<void> {
     }
   }
 
+  // ⚠ `ok` means THE BATCH DID ITS JOB, not "every wallet succeeded". From
+  // 2026-09-05 05:23Z one wallet (a whale whose Flow script exceeds the
+  // execution budget, error 1052) failed on EVERY hourly tick while the same
+  // ticks stamped 20,936–33,793 rows each — and because this flag was
+  // `errors.length === 0`, the pipeline read 52.5% FAILED for 34 hours with
+  // nothing actually wrong. That is the CLAUDE.md "a SWEEP whose ok means it
+  // COMPLETED, not that its LANES worked" shape inverted: a sweep whose ok
+  // meant one lane worked. The rule there: fail the sweep when a lane fails
+  // EVERY target on transport, i.e. when nothing at all was refreshed.
+  //
+  // So: ok = at least one wallet refreshed, or there was nothing to do. The
+  // per-wallet failures are NOT hidden — they stay in `p_error` (first one,
+  // verbatim) and `p_extra.errors` / `wallets_failed`, so an observer keying
+  // on the failing wallet still sees it, and a wallet that fails forever is
+  // visible as a constant `wallets_failed: 1` rather than a red pipeline.
+  const attempted = walletsProcessed + errors.length
+  const ok = attempted === 0 || walletsProcessed > 0
+
   await (supabaseAdmin as any).rpc("log_pipeline_run", {
     p_pipeline: PIPELINE_NAME,
     p_started_at: startedAtIso,
     p_rows_found: candidates.length,
     p_rows_written: rowsStamped,
     p_rows_skipped: candidates.length - walletsProcessed,
-    p_ok: errors.length === 0,
+    p_ok: ok,
     p_error: errors[0] ? `wallet ${errors[0].wallet}: ${errors[0].error}`.slice(0, 300) : null,
     p_extra: {
       duration_ms: Date.now() - started,
       wallets_processed: walletsProcessed,
+      wallets_failed: errors.length,
       wallets_candidate: candidates.length,
       lock_flips: marked,
       errors: errors.slice(0, 5),
@@ -157,6 +176,6 @@ async function runBatch(startedAtIso: string): Promise<void> {
   })
 
   console.log(
-    `[allday-lock-refresh] done ok=${errors.length === 0} wallets=${walletsProcessed}/${candidates.length} stamped=${rowsStamped} flips=${marked} ms=${Date.now() - started}`
+    `[allday-lock-refresh] done ok=${ok} wallets=${walletsProcessed}/${candidates.length} failed=${errors.length} stamped=${rowsStamped} flips=${marked} ms=${Date.now() - started}`
   )
 }

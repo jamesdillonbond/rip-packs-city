@@ -106,3 +106,37 @@ describe("hasAuthCookie — signed-in exemption from the anonymous cap", () => {
     expect(hasAuthCookie(reqWithCookies(["_vercel_jwt", "sb-provider-token-hint"]))).toBe(false)
   })
 })
+
+// ── 2026-09-06: media proxies and signed-in readers get their own API budget ──
+// A 510-page QA sweep from one IP spent the 60/min API budget on per-page
+// chrome (/api/profile/me, /api/telemetry, /api/track-funnel) and on proxied
+// IMAGES (/api/public/pinnacle-image → 429 → a blank tile nothing reports).
+import { apiRateLimitFor, isMediaProxyPath } from "@/proxy"
+
+describe("apiRateLimitFor — images are tiles, not API calls; a signed-in reader is not a crawler", () => {
+  it("routes every media proxy to the media bucket at a 10× ceiling", () => {
+    for (const p of [
+      "/api/public/pinnacle-image/OEV1-CARS-GUID-S2",
+      "/api/public/ipfs-media/bafy123",
+      "/api/public/avatar-media",
+      "/api/badge-image",
+      "/api/moment-thumbnail",
+      "/api/og/profile/x",
+    ]) {
+      expect(isMediaProxyPath(p)).toBe(true)
+      expect(apiRateLimitFor(p, false)).toEqual({ max: 600, bucket: "media" })
+      expect(apiRateLimitFor(p, true)).toEqual({ max: 600, bucket: "media" })
+    }
+  })
+
+  it("a prefix match must be on a path boundary — /api/ogx is not /api/og", () => {
+    expect(isMediaProxyPath("/api/ogx")).toBe(false)
+    expect(isMediaProxyPath("/api/public/pinnacle-imagery")).toBe(false)
+  })
+
+  it("keeps the anonymous 60/min for ordinary API calls and gives a signed-in reader 240", () => {
+    expect(apiRateLimitFor("/api/profile/me", false)).toEqual({ max: 60, bucket: "api" })
+    expect(apiRateLimitFor("/api/profile/me", true)).toEqual({ max: 240, bucket: "api" })
+    expect(apiRateLimitFor("/api/telemetry", false).max).toBe(60)
+  })
+})

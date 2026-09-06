@@ -19,7 +19,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
-import { slugifyName } from "@/lib/entity-labels"
+import { slugifyName, slugifyPlayerName } from "@/lib/entity-labels"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import type {
   NewCollectorsBoard,
@@ -81,7 +81,7 @@ function cohortLabel(month: string): string {
 const SET_HUB = (name: string) =>
   `/nba-top-shot/set/${encodeURIComponent(slugifyName(name))}`
 const PLAYER_HUB = (name: string) =>
-  `/nba-top-shot/player/${encodeURIComponent(slugifyName(name))}`
+  `/nba-top-shot/player/${encodeURIComponent(slugifyPlayerName(name))}`
 
 const SPEND_BUCKETS: { key: keyof NCSpendRow; label: string }[] = [
   { key: "b_lt5", label: "< $5" },

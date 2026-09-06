@@ -160,6 +160,44 @@ const RATE_LIMIT_MAX_REQUESTS = 60
 // nothing in front of it).
 const PAGE_RATE_LIMIT_MAX_REQUESTS = 120
 
+// ── API budget shaping (2026-09-06) ──────────────────────────────────────────
+// Measured on a 510-page QA sweep from ONE IP: the 60/min API budget was spent
+// by `/api/profile/me` (17× 429), `/api/telemetry` (7×), `/api/track-funnel`
+// (5×) and `/api/public/pinnacle-image` (3×) — i.e. by the per-page chrome
+// and by IMAGES, not by anything a person types. A Pinnacle render page alone
+// issues 4–5 proxied images + 3 chrome calls, so a collector opening ~6 such
+// pages in a minute would start seeing blank art and a dead profile pill —
+// and a SIGNED-IN dashboard user, whose page polls, was under the same 60.
+//
+//   • Media proxies get their own counter and a 10× ceiling: an image is one
+//     tile, not one API call, and a 429 there renders as a broken thumbnail
+//     that no error surface reports (the client-only failure class, #34/#37).
+//   • A signed-in reader gets 4× the anonymous API ceiling, mirroring the page
+//     limiter's "a signed-in reader is never throttled" posture without going
+//     fully unmetered on a mutable surface.
+// Still per-lambda, still a burst cap, still not a global limit (see above).
+const MEDIA_PROXY_PREFIXES = [
+  "/api/public/pinnacle-image",
+  "/api/public/ipfs-media",
+  "/api/public/avatar-media",
+  "/api/badge-image",
+  "/api/moment-thumbnail",
+  "/api/og",
+] as const
+const mediaRateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const MEDIA_RATE_LIMIT_MAX_REQUESTS = 600
+const SIGNED_IN_API_RATE_LIMIT_MAX_REQUESTS = 240
+
+export function isMediaProxyPath(pathname: string): boolean {
+  return MEDIA_PROXY_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))
+}
+
+/** The API burst ceiling that applies to this request (exported for the test). */
+export function apiRateLimitFor(pathname: string, signedIn: boolean): { max: number; bucket: "media" | "api" } {
+  if (isMediaProxyPath(pathname)) return { max: MEDIA_RATE_LIMIT_MAX_REQUESTS, bucket: "media" }
+  return { max: signedIn ? SIGNED_IN_API_RATE_LIMIT_MAX_REQUESTS : RATE_LIMIT_MAX_REQUESTS, bucket: "api" }
+}
+
 // Page routes worth metering: DB-backed public surfaces that render server-side.
 // Keyed on the SECOND path segment for /<collection>/<page> (segment 0 is the
 // collection slug), plus three top-level surfaces matched by prefix.
@@ -219,7 +257,7 @@ function isRateLimited(
 
 function cleanupRateLimitMap() {
   const now = Date.now()
-  for (const map of [rateLimitMap, pageRateLimitMap]) {
+  for (const map of [rateLimitMap, pageRateLimitMap, mediaRateLimitMap]) {
     for (const [key, entry] of map) {
       if (now > entry.resetAt) {
         map.delete(key)
@@ -1070,10 +1108,11 @@ export async function proxy(request: NextRequest) {
       !pathname.startsWith("/api/ingest")
     ) {
       const clientKey = getRateLimitKey(request)
-      if (isRateLimited(clientKey)) {
+      const { max, bucket } = apiRateLimitFor(pathname, hasAuthCookie(request))
+      if (isRateLimited(clientKey, bucket === "media" ? mediaRateLimitMap : rateLimitMap, max)) {
         return NextResponse.json(
-          { error: "Rate limit exceeded. Max 60 requests per minute." },
-          { status: 429, headers: { "Retry-After": "60" } }
+          { error: `Rate limit exceeded. Max ${max} requests per minute.` },
+          { status: 429, headers: { "Retry-After": "60", "Cache-Control": "no-store" } }
         )
       }
     }

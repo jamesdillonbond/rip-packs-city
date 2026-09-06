@@ -56,3 +56,20 @@ export function getEntityLabels(collectionUrlSlug: string): EntityLabels {
 export function slugifyName(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-")
 }
+
+/**
+ * Player-URL slug: `slugifyName` after stripping combining marks (NFD), so
+ * "Vít Krejčí" becomes `vit-krejci` rather than `v-t-krej-`.
+ *
+ * ⚠ PLAYER URLs ONLY. Measured 2026-09-06: 4 of the sitemap's 1,413 Top Shot
+ * player URLs 404'd because `editions.player_name` carries diacritics the
+ * `players` row lacks (or vice versa), and the accented slug matches neither
+ * side. The three player RPCs (`get_player_detail` / `_editions` / `_top_sales`,
+ * migration `audit_20260906_player_slugs_resolve_unaccented…`) now ALSO match
+ * `extensions.unaccent(p.name)`, so this slug resolves for every spelling.
+ * Set and team resolvers do NOT unaccent — keep using `slugifyName` for those,
+ * or an accented set/team name that resolves today stops resolving.
+ */
+export function slugifyPlayerName(name: string): string {
+  return slugifyName(name.normalize("NFD").replace(/\p{M}/gu, ""))
+}

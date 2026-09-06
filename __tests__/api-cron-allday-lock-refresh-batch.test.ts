@@ -79,15 +79,35 @@ describe("allday-lock-refresh-batch", () => {
     expect(log.p_extra).toMatchObject({ wallets_processed: 2, lock_flips: 4 })
   })
 
-  it("a per-wallet failure is non-fatal and counted", async () => {
+  it("a per-wallet failure is non-fatal and counted — the batch stays ok=true because the other wallet refreshed", async () => {
+    // 2026-09-06: one over-budget whale failed EVERY hourly tick from 09-05
+    // 05:23Z while each tick still stamped 20K–33K rows; `ok = errors.length
+    // === 0` published that as a 52.5% failure rate for 34 hours. ok now means
+    // "the batch refreshed something"; the failure is still fully recorded.
     const spy = install({})
     state.refresh.mockImplementationOnce(async () => { throw new Error("whale over budget") })
     await POST(req())
     await runDeferred()
     const log = terminalLog(spy.rpcCalls)
-    expect(log.p_ok).toBe(false)
+    expect(log.p_ok).toBe(true)
     expect(log.p_extra.wallets_processed).toBe(1)
+    expect(log.p_extra.wallets_failed).toBe(1)
     expect(String(log.p_error)).toContain("whale over budget")
+    expect(log.p_extra.errors[0]).toMatchObject({ wallet: expect.any(String), error: "whale over budget" })
+  })
+
+  it("EVERY wallet failing is still ok=false — a transport-class failure must not hide behind the per-wallet rule", async () => {
+    const spy = install({})
+    state.refresh
+      .mockImplementationOnce(async () => { throw new Error("Flow 400 execution node") })
+      .mockImplementationOnce(async () => { throw new Error("Flow 400 execution node") })
+    await POST(req())
+    await runDeferred()
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok).toBe(false)
+    expect(log.p_extra.wallets_processed).toBe(0)
+    expect(log.p_extra.wallets_failed).toBe(2)
+    expect(String(log.p_error)).toContain("Flow 400")
   })
 
   it("a wallet-fetch error logs a wallet_fetch ok=false row", async () => {

@@ -265,6 +265,24 @@ describe("segment 3 — set/player/team entities + top moments", () => {
     expect(teams[0].priority).toBe(0.55)
   })
 
+  it("routes a TEAM Moment (player_name === team_name) to /team/ only, never /player/ — and unaccents player slugs", async () => {
+    // Measured 2026-09-06: 57 of 1,413 sitemap player URLs 404'd; 44 were
+    // franchises stored as player_name (Squad Goals / Season Rewind / WNBA
+    // Skyline) with no `players` row, 4 were diacritics ("Vít Krejčí" → the
+    // slug "v-t-krej-" resolves nothing). Assert the ABSENCE of the 404 URL.
+    h.t.editions = ok([
+      { id: "t1", external_id: "3:3", collection_id: TS_ID, updated_at: null, player_name: "Dallas Wings", set_name: "WNBA Skyline", team_name: "Dallas Wings" },
+      { id: "t2", external_id: "4:4", collection_id: TS_ID, updated_at: null, player_name: "Vít Krejčí", set_name: "Base Set", team_name: "Atlanta Hawks" },
+    ])
+    const s = await buildSitemapSegment(3)
+    const players = s.filter((x) => x.url.includes("/player/")).map((x) => x.url)
+    const teams = s.filter((x) => x.url.includes("/team/")).map((x) => x.url).sort()
+    expect(players).not.toContain(`${BASE}/nba-top-shot/player/dallas-wings`)
+    expect(players).not.toContain(`${BASE}/nba-top-shot/player/v-t-krej-`)
+    expect(players).toEqual([`${BASE}/nba-top-shot/player/vit-krejci`])
+    expect(teams).toEqual([`${BASE}/nba-top-shot/team/atlanta-hawks`, `${BASE}/nba-top-shot/team/dallas-wings`])
+  })
+
   it("dedupes entity slugs keeping the most-recent lastModified", async () => {
     h.t.editions = ok([
       { id: "x1", external_id: "1:1", collection_id: TS_ID, updated_at: "2026-06-01T00:00:00.000Z", player_name: null, set_name: "Shared Set", team_name: null },

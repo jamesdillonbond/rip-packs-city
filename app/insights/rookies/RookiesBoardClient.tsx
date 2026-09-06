@@ -15,7 +15,7 @@ import Link from "next/link"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { DegradedSummary } from "@/lib/insights/board-status"
-import { slugifyName } from "@/lib/entity-labels"
+import { slugifyPlayerName } from "@/lib/entity-labels"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -236,7 +236,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
                   <td>
                     <div className="rpc-rk-player-cell">
                       <Link
-                        href={`/nba-top-shot/player/${encodeURIComponent(slugifyName(r.player_name))}`}
+                        href={`/nba-top-shot/player/${encodeURIComponent(slugifyPlayerName(r.player_name))}`}
                         className="rpc-rk-player-link"
                         title={`${r.player_name} on NBA Top Shot`}
                       >

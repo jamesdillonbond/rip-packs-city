@@ -15,6 +15,7 @@
 
 import type { Metadata } from "next"
 import { Suspense } from "react"
+import { momentSubjectName } from "@/lib/entity-href"
 import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -1476,7 +1477,7 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={tsTileImg(collection, e.rep_nft_id, e.thumbnail_url) as string}
-                    alt={e.player_name ?? "Edition"}
+                    alt={momentSubjectName(e.player_name, e.team_name, e.set_name)}
                     loading={i < 5 ? "eager" : "lazy"}
                     decoding="async"
                     style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
@@ -1509,7 +1510,7 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
                 )}
               </div>
               <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, color: "#fff", lineHeight: 1.15 }}>
-                {e.player_name ?? "Unknown"}
+                {momentSubjectName(e.player_name, e.team_name, e.set_name)}
               </div>
               {e.set_name && (
                 <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "rgba(255,255,255,0.5)", marginTop: 1 }}>

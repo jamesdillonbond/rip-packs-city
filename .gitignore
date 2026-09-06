@@ -198,3 +198,10 @@ Rip Packs City/
 # un-ignored it (a RELEASED lock surfaced as untracked on 2026-09-03), and a committed lock
 # reads as a HELD lock to the next run. Duplicates the rule above on purpose.
 docs/overnight/.lock
+
+# 2026-09-06 CISO pass: `.env.staging` / `.env.development` (no `.local` suffix) and any
+# `*.pkey` beyond the one named above were NOT ignored. Broaden; keep the example file.
+.env*
+!.env.example
+*.pkey
+*.pem

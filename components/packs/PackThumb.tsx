@@ -6,12 +6,44 @@
 // pack images 404) — without an onError handler the tile renders a broken
 // image icon. On load failure (or a null src) it falls back to a muted "Pack"
 // placeholder, matching the server-rendered placeholder it replaces.
+//
+// ⚠ TWO ways a dead URL survived the onError handler, both measured 2026-09-06
+// on a real 390px Chromium across 60 AllDay + 25 Golazos edition pages:
+//
+//  1. THE ERROR FIRED BEFORE HYDRATION. This component is server-rendered, so
+//     the browser starts (and, for a CSP-blocked or 404 host, FINISHES) the
+//     image load before React attaches `onError`. The event is gone by the time
+//     the handler exists, `errored` never flips, and the broken-image glyph
+//     stays on the page forever. The mount effect below reads the DOM's own
+//     verdict — `complete && naturalWidth === 0` is the browser saying "I tried
+//     and failed" — and catches up. (`naturalWidth === 0` alone means "not
+//     requested yet" on a lazy image — see headless-qa-fails-toward-false-
+//     positives — which is why `complete` is part of the test.)
+//
+//  2. THE SRC IS NOT AN IMAGE. Five AllDay distributions carry an `.mp4` in
+//     `image_url` (HoloIcon3_Pack_Reward.mp4, a Launch Codes rip video); an
+//     <img> cannot render it, and the error fires the same way. A non-image
+//     src is treated as no src at all.
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
+
+const NON_IMAGE_SRC = /\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i
+
+export function isRenderablePackArtSrc(src: string | null | undefined): src is string {
+  return !!src && !NON_IMAGE_SRC.test(src)
+}
 
 export default function PackThumb({ src, alt }: { src: string | null; alt: string }) {
   const [errored, setErrored] = useState(false)
-  const show = !!src && !errored
+  const imgRef = useRef<HTMLImageElement | null>(null)
+  const show = isRenderablePackArtSrc(src) && !errored
+
+  useEffect(() => {
+    // Catch an error that fired before hydration (case 1 above).
+    const el = imgRef.current
+    if (el && el.complete && el.naturalWidth === 0) setErrored(true)
+  }, [src])
+
   return (
     <div
       style={{
@@ -28,8 +60,11 @@ export default function PackThumb({ src, alt }: { src: string | null; alt: strin
       {show ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          ref={imgRef}
           src={src as string}
           alt={alt}
+          loading="lazy"
+          decoding="async"
           onError={() => setErrored(true)}
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
