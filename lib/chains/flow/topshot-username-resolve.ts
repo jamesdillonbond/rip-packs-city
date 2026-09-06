@@ -228,9 +228,15 @@ export async function resolveTopShotUsernameCacheAware(
 // copy-holder can put the cache in FRONT of its live call with one line and
 // keep its own error copy and fallback exactly as they were.
 //
-// Returns the 0x-prefixed wallet, or null when no cached layer knows the
-// username (including on any RPC error — a failed cache read must not become
-// a "not found"; the caller's live path still runs).
+// Returns the 0x-prefixed wallet, or null when neither the cached ladder nor
+// the live Atlas resolver knows the username (including on any RPC or Atlas
+// read error — a failed read must not become a "not found"; the caller's own
+// live path still runs and owns the error copy).
+//
+// 2026-09-06: after the cache miss this now also asks ATLAS (the live source —
+// `atlasResolveUsername`, two RPCs on the same service-role client) and writes
+// a hit back through `cache_topshot_username`, so the nine copy-holders above
+// resolve live usernames again without touching their own dead-host fallback.
 export async function lookupCachedTopShotUsername(
   supabase: SupabaseClient,
   rawUsername: string
@@ -241,8 +247,25 @@ export async function lookupCachedTopShotUsername(
     // deno-lint-ignore no-explicit-any
     const res = await (supabase as any).rpc("resolve_topshot_username", { p_username: cleaned });
     const j = res?.data;
-    if (res?.error || !j || j.found !== true || typeof j.wallet_address !== "string") return null;
-    return j.wallet_address.startsWith("0x") ? j.wallet_address : `0x${j.wallet_address}`;
+    if (!res?.error && j && j.found === true && typeof j.wallet_address === "string") {
+      return j.wallet_address.startsWith("0x") ? j.wallet_address : `0x${j.wallet_address}`;
+    }
+  } catch {
+    /* a failed cache read is a miss here; the live layer below still runs */
+  }
+  try {
+    const a = await atlasResolveUsername(supabase as unknown as AtlasDb, cleaned);
+    if (!a.ok || !a.found || !a.flowAddress) return null;
+    try {
+      await (supabase as unknown as AtlasDb).rpc("cache_topshot_username", {
+        p_username: a.username ?? cleaned,
+        p_wallet_address: a.flowAddress,
+        p_source: "atlas",
+      });
+    } catch {
+      /* the answer is real even if the writeback is not */
+    }
+    return a.flowAddress;
   } catch {
     return null;
   }

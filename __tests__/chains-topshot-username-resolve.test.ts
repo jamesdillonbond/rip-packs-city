@@ -42,6 +42,7 @@ const atlasFailed = { ok: false, error: "atlas_timeout", status: null }
 
 import {
   isWalletAddress,
+  lookupCachedTopShotUsername,
   resolveTopShotUsername,
   resolveTopShotUsernameCacheAware,
 } from "@/lib/chains/flow/topshot-username-resolve"
@@ -285,5 +286,72 @@ describe("resolveTopShotUsernameCacheAware", () => {
     const out = await resolveTopShotUsernameCacheAware(client, "boomuser")
     expect(out).toMatchObject({ found: false, reason: "topshot_gql_error" })
     expect((out as { detail?: string }).detail).toMatch(/atlas: .*; gql: proxy 503/)
+  })
+})
+
+describe("lookupCachedTopShotUsername (the nine copy-holders' one-line ladder)", () => {
+  function makeSupabase(handlers: Record<string, (args: unknown) => unknown>) {
+    const rpc = vi.fn(async (name: string, args: unknown) => {
+      const h = handlers[name]
+      return h ? h(args) : { data: null, error: null }
+    })
+    return { client: { rpc } as never, rpc }
+  }
+
+  it("returns the cached wallet without asking Atlas", async () => {
+    const { client, rpc } = makeSupabase({
+      resolve_topshot_username: () => ({ data: { found: true, wallet_address: "bd94cade097e50ac" }, error: null }),
+    })
+    expect(await lookupCachedTopShotUsername(client, "@jamesdillonbond")).toBe("0xbd94cade097e50ac")
+    expect(rpc.mock.calls.map((c) => c[0])).toEqual(["resolve_topshot_username"])
+  })
+
+  it("on a cache miss asks Atlas on the SAME client, writes the hit back with source 'atlas', and returns it", async () => {
+    const { client, rpc } = makeSupabase({
+      resolve_topshot_username: () => ({ data: { found: false }, error: null }),
+      atlas_resolve_username_begin: () => ({ data: 12, error: null }),
+      atlas_resolve_username_collect: () => ({ data: atlasFound("0xdeadbeefdeadbeef", "liveuser"), error: null }),
+      cache_topshot_username: () => ({ data: null, error: null }),
+    })
+    expect(await lookupCachedTopShotUsername(client, "liveuser")).toBe("0xdeadbeefdeadbeef")
+    expect(rpc.mock.calls.map((c) => c[0])).toEqual([
+      "resolve_topshot_username",
+      "atlas_resolve_username_begin",
+      "atlas_resolve_username_collect",
+      "cache_topshot_username",
+    ])
+    expect(rpc).toHaveBeenCalledWith("cache_topshot_username", { p_username: "liveuser", p_wallet_address: "0xdeadbeefdeadbeef", p_source: "atlas" })
+    expect(adminRpc).not.toHaveBeenCalled()
+  })
+
+  it("a failed cache read is a miss, not a stop — Atlas still runs", async () => {
+    const { client } = makeSupabase({
+      resolve_topshot_username: () => ({ data: null, error: { message: "timeout" } }),
+      atlas_resolve_username_begin: () => ({ data: 12, error: null }),
+      atlas_resolve_username_collect: () => ({ data: atlasFound("0xdeadbeefdeadbeef", "u"), error: null }),
+    })
+    expect(await lookupCachedTopShotUsername(client, "u")).toBe("0xdeadbeefdeadbeef")
+  })
+
+  it("returns null on an Atlas read failure AND on a clean not-found (the caller's own live path decides the copy), never throws", async () => {
+    const failed = makeSupabase({
+      resolve_topshot_username: () => ({ data: { found: false }, error: null }),
+      atlas_resolve_username_begin: () => ({ data: 12, error: null }),
+      atlas_resolve_username_collect: () => ({ data: atlasFailed, error: null }),
+    })
+    expect(await lookupCachedTopShotUsername(failed.client, "u")).toBeNull()
+    const ghost = makeSupabase({
+      resolve_topshot_username: () => ({ data: { found: false }, error: null }),
+      atlas_resolve_username_begin: () => ({ data: 12, error: null }),
+      atlas_resolve_username_collect: () => ({ data: atlasNotFound, error: null }),
+    })
+    expect(await lookupCachedTopShotUsername(ghost.client, "ghost")).toBeNull()
+    expect(ghost.rpc).not.toHaveBeenCalledWith("cache_topshot_username", expect.anything())
+  })
+
+  it("returns null for a blank username without any RPC", async () => {
+    const { client, rpc } = makeSupabase({})
+    expect(await lookupCachedTopShotUsername(client, " @ ")).toBeNull()
+    expect(rpc).not.toHaveBeenCalled()
   })
 })
