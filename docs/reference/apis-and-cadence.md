@@ -65,6 +65,12 @@ positive control timed out on a call that answers in 4 s from `execute_sql`). A 
 function is structurally impossible; every live read is TWO rpc() calls, and a migration cannot prove an
 Atlas read — verify after apply.
 
+⚠ **Probing from a session? RECORD THE REQUEST ID** in `topshot_atlas_market_requests` (`product`, `offset_at -1`,
+`drained_at now()`, `error '__probe__ <what>'`) — the 403 arm attributes by that join, and an unrecorded probe
+pages as an unknown edge-function failure (CRITICAL) for two hours. **All Day:** `{product:'nfl', nftId}` returns
+the edition (`editionId` = our `editions.external_id`, exact) + serial for ANY holder state — the ownerless read
+the unmapped-sales resolver never had (`allday_resolve_unmapped_via_atlas`, 20260906214103).
+
 ⚠ **Cloudflare's managed challenge on this egress is BURST-SENSITIVE.** Base rate on the badge lane
 ~5–15 % `403 Just a moment…` (independent singles); a 60-request A/B burst pushed it to **100 % for ~4 min**
 and every header variant (browser UA, honest UA, no origin, bare) 403'd identically — from this egress the
