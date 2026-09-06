@@ -396,3 +396,37 @@ describe("static-extension suffix must not bypass the gate", () => {
     })
   }
 })
+
+// 2026-09-06: a THIN collection (overview only) has no feature tabs, and the
+// proxy cannot import the registry (edge bundle) — so the tab set it redirects
+// is a literal. This pins the literal against lib/collections.ts in BOTH
+// directions: every published collection with `pages: ["overview"]` is in the
+// alternation, and nothing in the alternation has grown a real tab.
+describe("THIN_COLLECTION_MISSING_TABS agrees with the registry", () => {
+  it("names exactly the published overview-only collections", async () => {
+    const { THIN_COLLECTION_MISSING_TABS } = await import("@/proxy")
+    const { publishedCollections } = await import("@/lib/collections")
+    const thin = publishedCollections().filter((c) => c.pages.length === 1 && c.pages[0] === "overview").map((c) => c.id).sort()
+    const src = THIN_COLLECTION_MISSING_TABS.source
+    const alt = /^\^\\\/\(([^)]+)\)/.exec(src)?.[1]?.split("|").sort()
+    expect(alt).toEqual(thin)
+    expect(thin.length).toBeGreaterThan(0)
+  })
+  it("redirect-shape rows: a missing tab matches, the overview and entity routes do not", async () => {
+    const { THIN_COLLECTION_MISSING_TABS } = await import("@/proxy")
+    for (const p of ["/candy-mlb/sniper", "/candy-mlb/collection", "/candy-mlb/packs/", "/candy-mlb/market?x=1".split("?")[0]]) {
+      expect(THIN_COLLECTION_MISSING_TABS.test(p), p).toBe(true)
+    }
+    for (const p of ["/candy-mlb/overview", "/candy-mlb", "/candy-mlb/edition/foo", "/nba-top-shot/sniper", "/candy-mlb/sniperx"]) {
+      expect(THIN_COLLECTION_MISSING_TABS.test(p), p).toBe(false)
+    }
+  })
+  it("every tab a thin collection lacks is in the alternation (a Flow collection's tab set is the reference)", async () => {
+    const { THIN_COLLECTION_MISSING_TABS } = await import("@/proxy")
+    const { getCollection } = await import("@/lib/collections")
+    const flowTabs = (getCollection("nba-top-shot")?.pages ?? []).filter((p) => p !== "overview")
+    for (const tab of flowTabs) {
+      expect(THIN_COLLECTION_MISSING_TABS.test(`/candy-mlb/${tab}`), tab).toBe(true)
+    }
+  })
+})

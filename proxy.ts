@@ -312,6 +312,12 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // anon-reachable (or a launch flag silently no-op'd) is a bug in THIS function.
 // Next.js middleware only consumes the `proxy` + `config` exports, so an extra
 // named export changes no runtime behaviour.
+// Thin collections (overview only) × the feature tabs a Flow collection has.
+// Kept literal (no registry import at the edge). Extend the alternation when a
+// second thin collection publishes; shrink it when Candy gains a real tab.
+export const THIN_COLLECTION_MISSING_TABS =
+  /^\/(candy-mlb)\/(collection|packs|sniper|market|sets|analytics|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
+
 export function isPublicPath(pathname: string, method: string): boolean {
   // ── Panini WC Prizm surfaces — gated iff `PANINI_PUBLIC` is false (live since 2026-08-01) ──
   // Gates the page (/insights/panini-squeeze), its public JSON
@@ -1057,6 +1063,22 @@ export async function proxy(request: NextRequest) {
   // URL as well as the decoded pathname so neither encoding slips through.
   if (pathname.includes("\\") || /%5c/i.test(request.url)) {
     return new NextResponse(null, { status: 404 })
+  }
+
+  // ── Thin collections: a tab that does not exist redirects to the overview ──
+  // Candy MLB (published 2026-09-06, `pages: ["overview"]`) is the first
+  // collection whose feature tabs are NOT built — they are Flow-dispatched
+  // components with no Solana arm. The mobile bottom bar and old links still
+  // form `/candy-mlb/sniper` etc.; without this, anon 307s to /login and a
+  // signed-in reader gets a FLOW sniper rendered for a Solana collection. The
+  // registry is not imported here (edge bundle), so the thin set is literal —
+  // `__tests__/proxy-is-public-path.test.ts` pins it against lib/collections.
+  const thinTab = THIN_COLLECTION_MISSING_TABS.exec(pathname)
+  if (thinTab && (request.method === "GET" || request.method === "HEAD")) {
+    const url = request.nextUrl.clone()
+    url.pathname = `/${thinTab[1]}/overview`
+    url.search = ""
+    return NextResponse.redirect(url, 307)
   }
 
   // Periodic in-memory rate-limit map cleanup.

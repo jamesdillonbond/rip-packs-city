@@ -99,3 +99,19 @@ describe("MobileNav", () => {
     cafSpy.mockRestore()
   })
 })
+
+describe("MobileNav — thin collections (2026-09-06)", () => {
+  it("renders the tabs a thin collection lacks as INERT, never as links to a page that does not exist", () => {
+    nav.pathname = "/candy-mlb/overview"
+    const { container } = render(<MobileNav />)
+    const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
+    const links = Array.from(bar.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(links).toContain("/profile")
+    for (const dead of ["/candy-mlb/sniper", "/candy-mlb/packs", "/candy-mlb/collection"]) {
+      expect(links, dead).not.toContain(dead)
+    }
+    const inert = Array.from(bar.querySelectorAll("[aria-disabled='true']"))
+    expect(inert.length).toBe(3)
+    nav.pathname = "/nba-top-shot/collection"
+  })
+})

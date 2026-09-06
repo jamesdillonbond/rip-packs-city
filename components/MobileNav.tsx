@@ -361,6 +361,27 @@ export default function MobileNav() {
             );
           }
 
+          // 2026-09-06: a tab the active collection does not HAVE (Candy MLB is
+          // overview-only) renders inert rather than linking to a page that
+          // does not exist — the proxy would redirect it to the overview, but a
+          // tap that silently goes nowhere reads as a broken app.
+          const tabPage = tab.key === "wallet" ? "collection" : tab.key;
+          const activeCollection = getCollection(collection);
+          const isCollectionTab = tab.href.startsWith(`/${collection}/`);
+          const missing = isCollectionTab && !!activeCollection && !activeCollection.pages.includes(tabPage as never);
+          if (missing) {
+            return (
+              <span
+                key={tab.key}
+                aria-disabled="true"
+                title={`${activeCollection!.shortLabel} does not have a ${tab.label.toLowerCase()} page yet`}
+                style={{ ...baseStyle, opacity: 0.35, cursor: "default" }}
+              >
+                {inner}
+              </span>
+            );
+          }
+
           return (
             <Link key={tab.key} href={tab.href} style={baseStyle}>
               {inner}
