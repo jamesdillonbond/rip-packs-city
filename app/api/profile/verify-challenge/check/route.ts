@@ -8,9 +8,10 @@
 //
 // Design (2026-06-07): RPC picks the target Moment at mint time and stores it
 // on the challenge (target_moment_id). The user lists THAT Moment at the
-// challenge amount via a deep link. This check confirms, through Top Shot's
-// own API, that the target is currently for-sale at exactly the challenge
-// amount — proof-of-control (only the owner can list it at that unique price).
+// challenge amount via a deep link. This check confirms, through Dapper's own
+// Atlas backend (read from the DB — lib/chains/flow/atlas.ts, 2026-09-06; the
+// GQL host it used before is dead), that the target is currently listed BY
+// THAT WALLET at exactly the challenge amount — proof-of-control.
 //
 //   POST { wallet_addr }
 //
@@ -114,19 +115,22 @@ export async function POST(req: NextRequest) {
   const amount = Number(challenge.challenge_amount);
   const targetMomentId = String(challenge.target_moment_id);
 
-  // Live GQL: is the target moment for-sale at exactly the challenge amount?
+  // Live (Atlas, via the DB — 2026-09-06): is the target Moment listed BY THIS
+  // WALLET at exactly the challenge amount? Seller-matched, so a stranger's
+  // listing at the same price can no longer verify someone else's wallet.
   let state;
   try {
-    state = await fetchMomentListingState(targetMomentId);
+    state = await fetchMomentListingState(targetMomentId, { wallet, priceCents: Math.round(amount * 100) });
   } catch (err) {
-    console.error("[verify-challenge/check] GQL:", err instanceof Error ? err.message : String(err));
+    console.error("[verify-challenge/check] Atlas:", err instanceof Error ? err.message : String(err));
     return NextResponse.json(
       { ok: false, matched: false, error: "gql_unavailable", hint: "Top Shot's API didn't respond — try again in a moment." },
       { status: 502 }
     );
   }
 
-  if (!state.forSale || !priceMatchesCents(state.price, amount)) {
+  const listedByWallet = state.matchedForWallet ?? (state.forSale && priceMatchesCents(state.price, amount));
+  if (!listedByWallet) {
     return NextResponse.json({
       ok: false,
       matched: false,
@@ -138,7 +142,7 @@ export async function POST(req: NextRequest) {
   const { data: resolved, error: resErr } = await supabase.rpc("resolve_wallet_challenge_match", {
     p_challenge_id: challenge.id,
     p_matched_moment_id: targetMomentId,
-    p_source: "gql_on_demand",
+    p_source: "atlas_on_demand",
     p_referrer: referrer,
   });
   if (resErr) {

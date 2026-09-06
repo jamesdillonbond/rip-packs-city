@@ -191,7 +191,7 @@ describe("POST /api/profile/verify-challenge/check — confirmed match", () => {
     expect(state.lastRpc?.args).toMatchObject({
       p_challenge_id: "c1",
       p_matched_moment_id: "m1",
-      p_source: "gql_on_demand",
+      p_source: "atlas_on_demand",
       p_referrer: ref,
     })
   })

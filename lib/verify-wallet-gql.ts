@@ -1,73 +1,80 @@
 // lib/verify-wallet-gql.ts
 //
-// Shared Top Shot GQL helper for the wallet-verification listing challenge.
-// Both the mint route (picks a target, confirms it's unlocked + unlisted) and
-// the check route (confirms the target is now listed at the challenge amount)
-// read a single moment's live listing state through this helper.
+// Shared live listing-state helper for the wallet-verification listing
+// challenge. Both the mint route (picks a target, confirms it's not already
+// listed) and the check route (confirms the target is now listed BY THAT WALLET
+// at the challenge amount) read a single Moment's live listing state here.
 //
-// Top Shot GraphQL MUST be reached through the topshot-proxy worker —
-// Cloudflare blocks Vercel/Supabase egress to public-api.nbatopshot.com.
-// In production TS_PROXY_URL points at the proxy; the literal is a dev
-// fallback only. X-Proxy-Secret = TS_PROXY_SECRET.
+// 2026-09-06 — REWIRED FROM THE DEAD HOST TO ATLAS. `public-api.nbatopshot.com`
+// (the GQL this file was named for, via topshot-proxy) has answered Cloudflare
+// 530 to every caller since ~2026-08-28, which left verification-by-listing
+// with no data source at all (known-issues #59). Dapper's own Atlas backend
+// answers `MarketplaceService/SearchMarketplaceTransactions {nftId}` — the
+// Moment's listing + sale history, seller and price included — from the
+// database's pg_net egress, so the read now goes through
+// `lib/chains/flow/atlas.ts` (two RPCs; see that file for why two). The file
+// keeps its name so the two routes and their tests keep their imports.
+//
+// What changed in the SHAPE: Atlas returns the listing book, not the Moment
+// record, so `found` no longer means "the Moment exists" (the mint route's
+// on-chain getIDs gate is the ownership authority) — it means the READ
+// SUCCEEDED. `isLocked` is not observable here (locked Moments cannot be
+// listed; wmc's `is_locked` filter in the picker is the authority) and is
+// always false. New: `matchedForWallet` — when `wallet` is given, whether THAT
+// wallet holds an open listing (at `priceCents`, when given). The check route
+// keys on it, which is STRICTER than the old "someone listed it at that price".
+//
+// Throws on a failed read so callers surface "couldn't check", never a verdict.
 
-const TS_GQL = process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql";
-const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || "";
+import { atlasVerifyListing, type AtlasDb } from "@/lib/chains/flow/atlas";
 
 export type MomentListingState = {
   momentId: string;
-  forSale: boolean;
-  price: number | null;
-  isLocked: boolean;
+  /** The live read succeeded (NOT "the Moment exists" — see header). */
   found: boolean;
+  /** Any seller has an open listing on this Moment. */
+  forSale: boolean;
+  /** Price (USD) of the matched/open listing, when one is known. */
+  price: number | null;
+  /** Always false: lock state is not observable on the listing book. */
+  isLocked: boolean;
+  /** `wallet` holds an open listing (at `priceCents`, when given). Null when no wallet was asked about. */
+  matchedForWallet: boolean | null;
+  openListings: number;
 };
 
-// Per-moment listing-state lookup (the proven getMintedMoment shape used by
-// app/api/wallet-search). Throws on transport/GQL error so callers can surface
-// a clean "try again" hint.
-export async function fetchMomentListingState(momentId: string): Promise<MomentListingState> {
-  const query = `
-    query VerifyMoment($id: ID!) {
-      getMintedMoment(momentId: $id) {
-        data { ... on MintedMoment { forSale price isLocked } }
-      }
-    }
-  `;
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (TS_PROXY_SECRET) headers["x-proxy-secret"] = TS_PROXY_SECRET;
+export type ListingStateOptions = {
+  /** Restrict the match to this seller (0x-prefixed or not). */
+  wallet?: string | null;
+  /** Restrict the match to this exact price, in cents. */
+  priceCents?: number | null;
+  /** DB handle for the Atlas two-phase RPCs; defaults to the service-role client. */
+  db?: AtlasDb;
+};
 
-  const res = await fetch(TS_GQL, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ query, variables: { id: momentId } }),
-    cache: "no-store",
-    signal: AbortSignal.timeout(15_000),
-  });
+async function defaultDb(): Promise<AtlasDb> {
+  const mod = await import("@/lib/supabase");
+  return mod.supabaseAdmin as unknown as AtlasDb;
+}
 
-  const raw = await res.text();
-  if (!res.ok) {
-    throw new Error(`Top Shot GQL HTTP ${res.status}: ${raw.slice(0, 160)}`);
+// Per-moment live listing state. Throws on transport/read error so callers can
+// surface a clean "try again" hint — a failed read must not render as a verdict.
+export async function fetchMomentListingState(momentId: string, opts: ListingStateOptions = {}): Promise<MomentListingState> {
+  const db = opts.db ?? (await defaultDb());
+  const wallet = opts.wallet ?? null;
+  const priceCents = opts.priceCents ?? null;
+  const r = await atlasVerifyListing(db, momentId, wallet, priceCents);
+  if (!r.ok) {
+    throw new Error(`Atlas listing read failed${r.status != null ? ` (HTTP ${r.status})` : ""}: ${r.error}`);
   }
-  let json: {
-    data?: { getMintedMoment?: { data?: { forSale?: unknown; price?: unknown; isLocked?: unknown } | null } | null };
-    errors?: Array<{ message?: string }>;
-  };
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    throw new Error("Top Shot GQL returned non-JSON");
-  }
-  if (Array.isArray(json.errors) && json.errors.length) {
-    throw new Error(json.errors.map((e) => e?.message).filter(Boolean).join("; ").slice(0, 200) || "GQL error");
-  }
-
-  const node = json.data?.getMintedMoment?.data ?? null;
-  const rawPrice = node && node.price != null ? Number(node.price) : null;
   return {
     momentId,
-    found: !!node,
-    forSale: !!node?.forSale,
-    price: Number.isFinite(rawPrice as number) ? (rawPrice as number) : null,
-    isLocked: !!node?.isLocked,
+    found: true,
+    forSale: r.openListings > 0,
+    price: r.priceCents != null ? r.priceCents / 100 : null,
+    isLocked: false,
+    matchedForWallet: wallet ? r.matched : null,
+    openListings: r.openListings,
   };
 }
 

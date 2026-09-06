@@ -1,16 +1,44 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 // lib/chains/flow/topshot-username-resolve.ts — username → Flow wallet resolver.
-// The live GraphQL layer (@/lib/topshot topshotGraphql) is mocked so no network
-// fires. Pins: isWalletAddress regex, resolveTopShotUsername (@/whitespace
-// stripping, first-try hit, 0x-prefix normalization, lowercased retry, null
-// fallbacks) and resolveTopShotUsernameCacheAware (empty guard, RPC cache hit +
-// 0x normalization, cache-miss → live → cache-writeback, GQL throw, not-found).
+// Both live layers are mocked so no network fires: Atlas (the two-phase RPCs on
+// the service-role client, 2026-09-06) and the legacy GraphQL fallback
+// (@/lib/chains/flow/topshot topshotGraphql). Pins: isWalletAddress regex,
+// resolveTopShotUsername (@/whitespace stripping, ATLAS FIRST — a clean Atlas
+// "not found" is final and never falls through to GQL; an Atlas READ FAILURE
+// does; 0x-prefix normalization; the GQL lowercased retry; the combined throw
+// when both live layers fail) and resolveTopShotUsernameCacheAware (empty
+// guard, RPC cache hit + 0x normalization, cache-miss → Atlas → writeback with
+// source "atlas", cache-miss → Atlas failure → GQL → writeback "topshot_gql",
+// not-found, both-failed error detail).
 
 const topshotGraphql = vi.fn()
 vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: (...args: unknown[]) => topshotGraphql(...args),
 }))
+
+// The DEFAULT Atlas handle (used when no `atlas` option is passed) is the
+// service-role client — stubbed here so resolveTopShotUsername() never reaches
+// the real module.
+const adminRpc = vi.fn()
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: { rpc: (...args: unknown[]) => adminRpc(...args) },
+  supabase: { rpc: (...args: unknown[]) => adminRpc(...args) },
+}))
+
+// Atlas two-phase scripting: `begin` returns a request id, `collect` the envelope.
+function atlasAnswers(rpc: ReturnType<typeof vi.fn>, collectEnvelope: unknown, beginId: number | { error: string } = 4242) {
+  rpc.mockImplementation(async (name: string) => {
+    if (name === "atlas_resolve_username_begin") {
+      return typeof beginId === "number" ? { data: beginId, error: null } : { data: null, error: { message: beginId.error } }
+    }
+    if (name === "atlas_resolve_username_collect") return { data: collectEnvelope, error: null }
+    return { data: null, error: null }
+  })
+}
+const atlasFound = (flow = "0xBD94CADE097E50AC", username = "Jamesdillonbond") => ({ ok: true, found: true, flow_address: flow, username })
+const atlasNotFound = { ok: true, found: false, flow_address: null, username: null }
+const atlasFailed = { ok: false, error: "atlas_timeout", status: null }
 
 import {
   isWalletAddress,
@@ -25,6 +53,8 @@ function profile(publicInfo: Record<string, unknown> | null) {
 
 beforeEach(() => {
   topshotGraphql.mockReset()
+  adminRpc.mockReset()
+  adminRpc.mockResolvedValue({ data: null, error: null })
 })
 
 describe("isWalletAddress", () => {
@@ -40,39 +70,36 @@ describe("isWalletAddress", () => {
 })
 
 describe("resolveTopShotUsername", () => {
-  it("returns null for a blank / @-only username without hitting GraphQL", async () => {
+  it("returns null for a blank / @-only username without hitting Atlas or GraphQL", async () => {
     expect(await resolveTopShotUsername("   ")).toBeNull()
     expect(await resolveTopShotUsername("@@@")).toBeNull()
+    expect(adminRpc).not.toHaveBeenCalled()
     expect(topshotGraphql).not.toHaveBeenCalled()
   })
 
-  it("resolves on the first try, strips @, lowercases the flowAddress", async () => {
-    topshotGraphql.mockResolvedValueOnce(
-      profile({ flowAddress: "0xBD94CADE097E50AC", username: "jamesdillonbond", dapperID: "d-1" })
-    )
+  it("resolves through Atlas first (two RPCs on the default service-role handle), strips @, lowercases the address, and never touches GraphQL", async () => {
+    atlasAnswers(adminRpc, atlasFound())
     const out = await resolveTopShotUsername("@jamesdillonbond")
     expect(out).toEqual({
       walletAddress: "0xbd94cade097e50ac",
-      username: "jamesdillonbond",
-      dapperId: "d-1",
+      username: "Jamesdillonbond",
+      dapperId: null,
+      source: "atlas",
     })
-    // the cleaned (already-lowercase) name doesn't trigger a second attempt
-    expect(topshotGraphql).toHaveBeenCalledTimes(1)
-    expect(topshotGraphql.mock.calls[0][1]).toEqual({ username: "jamesdillonbond" })
+    expect(adminRpc.mock.calls.map((c) => c[0])).toEqual(["atlas_resolve_username_begin", "atlas_resolve_username_collect"])
+    expect(adminRpc.mock.calls[0][1]).toEqual({ p_username: "jamesdillonbond" })
+    expect(adminRpc.mock.calls[1][1]).toMatchObject({ p_request_id: 4242 })
+    expect(topshotGraphql).not.toHaveBeenCalled()
   })
 
-  it("prepends 0x when the flowAddress lacks it, and falls back to cleaned username / null dapperId", async () => {
-    topshotGraphql.mockResolvedValueOnce(
-      profile({ flowAddress: "bd94cade097e50ac", username: null, dapperID: null })
-    )
-    const out = await resolveTopShotUsername("someUser")
-    expect(out?.walletAddress).toBe("0xbd94cade097e50ac")
-    // first try succeeds, so username falls back to the cleaned (original-case) input
-    expect(out?.username).toBe("someUser")
-    expect(out?.dapperId).toBeNull()
+  it("a clean Atlas 'no such user' is FINAL — null, and the dead GraphQL host is not consulted", async () => {
+    atlasAnswers(adminRpc, atlasNotFound)
+    expect(await resolveTopShotUsername("ghost")).toBeNull()
+    expect(topshotGraphql).not.toHaveBeenCalled()
   })
 
-  it("retries with a lowercased username when the first (mixed-case) try misses", async () => {
+  it("an Atlas READ FAILURE falls through to the GraphQL ladder (cleaned, then lowercased)", async () => {
+    atlasAnswers(adminRpc, atlasFailed)
     topshotGraphql
       .mockResolvedValueOnce(profile({ flowAddress: null })) // MixedCase miss
       .mockResolvedValueOnce(profile({ flowAddress: "0xdeadbeefdeadbeef", username: "mixedcase", dapperID: null }))
@@ -80,21 +107,39 @@ describe("resolveTopShotUsername", () => {
     expect(topshotGraphql).toHaveBeenCalledTimes(2)
     expect(topshotGraphql.mock.calls[0][1]).toEqual({ username: "MixedCase" })
     expect(topshotGraphql.mock.calls[1][1]).toEqual({ username: "mixedcase" })
-    expect(out?.walletAddress).toBe("0xdeadbeefdeadbeef")
+    expect(out).toMatchObject({ walletAddress: "0xdeadbeefdeadbeef", source: "topshot_gql" })
   })
 
-  it("returns null when neither try yields a flowAddress", async () => {
+  it("an Atlas begin() RPC error is a read failure too (GraphQL runs)", async () => {
+    atlasAnswers(adminRpc, atlasFound(), { error: "permission denied for function" })
+    topshotGraphql.mockResolvedValueOnce(profile({ flowAddress: "bd94cade097e50ac", username: null, dapperID: null }))
+    const out = await resolveTopShotUsername("someUser")
+    expect(out?.walletAddress).toBe("0xbd94cade097e50ac")
+    expect(out?.username).toBe("someUser")
+    expect(out?.dapperId).toBeNull()
+  })
+
+  it("throws with BOTH layers' errors when Atlas failed the read and GraphQL threw — never a silent null", async () => {
+    atlasAnswers(adminRpc, atlasFailed)
+    topshotGraphql.mockRejectedValueOnce(new Error("HTTP 530"))
+    await expect(resolveTopShotUsername("anyone")).rejects.toThrow(/atlas: atlas_timeout; gql: HTTP 530/)
+  })
+
+  it("GraphQL-only ladder when the Atlas layer is explicitly disabled (atlas: null)", async () => {
     topshotGraphql
       .mockResolvedValueOnce(profile({ flowAddress: null }))
       .mockResolvedValueOnce(profile(null))
-    expect(await resolveTopShotUsername("MixedCase")).toBeNull()
+    expect(await resolveTopShotUsername("MixedCase", { atlas: null })).toBeNull()
     expect(topshotGraphql).toHaveBeenCalledTimes(2)
+    expect(adminRpc).not.toHaveBeenCalled()
   })
 
-  it("returns null when publicInfo is absent (already-lowercase, single try)", async () => {
-    topshotGraphql.mockResolvedValueOnce(profile(null))
-    expect(await resolveTopShotUsername("ghost")).toBeNull()
-    expect(topshotGraphql).toHaveBeenCalledTimes(1)
+  it("uses an injected Atlas handle instead of the default client", async () => {
+    const own = vi.fn()
+    atlasAnswers(own, atlasFound("0x0000000000000001", "someone"))
+    const out = await resolveTopShotUsername("someone", { atlas: { rpc: own } })
+    expect(out?.walletAddress).toBe("0x0000000000000001")
+    expect(adminRpc).not.toHaveBeenCalled()
   })
 })
 
@@ -156,10 +201,39 @@ describe("resolveTopShotUsernameCacheAware", () => {
     })
   })
 
-  it("on cache miss, resolves live then writes back via cache_topshot_username", async () => {
+  it("on cache miss, resolves live through Atlas ON THE SAME CLIENT, then writes back with source 'atlas'", async () => {
     const cacheWrite = vi.fn(() => ({ data: null, error: null }))
     const { client, rpc } = makeSupabase({
       resolve_topshot_username: () => ({ data: { found: false }, error: null }),
+      atlas_resolve_username_begin: () => ({ data: 77, error: null }),
+      atlas_resolve_username_collect: () => ({ data: atlasFound("0xdeadbeefdeadbeef", "liveuser"), error: null }),
+      cache_topshot_username: cacheWrite,
+    })
+    const out = await resolveTopShotUsernameCacheAware(client, "liveuser")
+    expect(out).toEqual({
+      found: true,
+      walletAddress: "0xdeadbeefdeadbeef",
+      username: "liveuser",
+      source: "atlas",
+      cacheLayer: "atlas_live",
+      dapperId: null,
+    })
+    expect(rpc).toHaveBeenCalledWith("cache_topshot_username", {
+      p_username: "liveuser",
+      p_wallet_address: "0xdeadbeefdeadbeef",
+      p_source: "atlas",
+    })
+    expect(topshotGraphql).not.toHaveBeenCalled()
+    // the DEFAULT admin handle is NOT used — the caller's client is
+    expect(adminRpc).not.toHaveBeenCalled()
+  })
+
+  it("on cache miss + Atlas read failure, resolves through GraphQL and writes back with source 'topshot_gql'", async () => {
+    const cacheWrite = vi.fn(() => ({ data: null, error: null }))
+    const { client, rpc } = makeSupabase({
+      resolve_topshot_username: () => ({ data: { found: false }, error: null }),
+      atlas_resolve_username_begin: () => ({ data: 78, error: null }),
+      atlas_resolve_username_collect: () => ({ data: atlasFailed, error: null }),
       cache_topshot_username: cacheWrite,
     })
     topshotGraphql.mockResolvedValueOnce(
@@ -174,7 +248,6 @@ describe("resolveTopShotUsernameCacheAware", () => {
       cacheLayer: "topshot_gql_live",
       dapperId: "dap-9",
     })
-    // writeback fired with the resolved wallet + username
     expect(rpc).toHaveBeenCalledWith("cache_topshot_username", {
       p_username: "liveuser",
       p_wallet_address: "0xdeadbeefdeadbeef",
@@ -203,16 +276,14 @@ describe("resolveTopShotUsernameCacheAware", () => {
     expect(out).toEqual({ found: false, reason: "username_not_found_on_topshot" })
   })
 
-  it("returns topshot_gql_error with detail when the live resolver throws", async () => {
+  it("returns topshot_gql_error carrying BOTH layers' detail when every live layer failed to read", async () => {
     const { client } = makeSupabase({
       resolve_topshot_username: () => ({ data: { found: false }, error: null }),
+      // no atlas_* handlers → begin() returns no request id → Atlas read failure
     })
     topshotGraphql.mockRejectedValueOnce(new Error("proxy 503"))
     const out = await resolveTopShotUsernameCacheAware(client, "boomuser")
-    expect(out).toEqual({
-      found: false,
-      reason: "topshot_gql_error",
-      detail: "proxy 503",
-    })
+    expect(out).toMatchObject({ found: false, reason: "topshot_gql_error" })
+    expect((out as { detail?: string }).detail).toMatch(/atlas: .*; gql: proxy 503/)
   })
 })

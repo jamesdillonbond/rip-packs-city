@@ -1,12 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { priceMatchesCents, topShotMomentUrl } from "@/lib/verify-wallet-gql"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 
-// lib/verify-wallet-gql.ts — Top Shot GQL helper backing the wallet
+const adminRpc = vi.fn()
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: { rpc: (...args: unknown[]) => adminRpc(...args) },
+  supabase: { rpc: (...args: unknown[]) => adminRpc(...args) },
+}))
+
+import { fetchMomentListingState, priceMatchesCents, topShotMomentUrl } from "@/lib/verify-wallet-gql"
+
+// lib/verify-wallet-gql.ts — live listing-state helper backing the wallet
 // listing-challenge. Pure helpers (priceMatchesCents / topShotMomentUrl) are
-// pinned statically; fetchMomentListingState is exercised over a stubbed fetch
-// with a freshly-imported module per env config so the x-proxy-secret header
-// branch, the found/not-found parse, and the HTTP/non-JSON/GQL-error throws are
-// all covered.
+// pinned statically; fetchMomentListingState is exercised over a stubbed Atlas
+// DB handle (the two-phase RPCs, 2026-09-06 — the GQL host it replaced is dead):
+// the seller+price-matched answer, the "listed by someone else" answer, the
+// no-wallet call, the default service-role handle, and the throw on a failed
+// read (a failed read must surface as "couldn't check", never as a verdict).
 
 // ── pure helpers ───────────────────────────────────────────────────────────
 describe("priceMatchesCents", () => {
@@ -35,114 +43,85 @@ describe("topShotMomentUrl", () => {
   })
 })
 
-// ── fetchMomentListingState (stubbed fetch) ────────────────────────────────
-const fetchMock = vi.fn()
-
-function res(body: string, ok = true, status = 200) {
-  return { ok, status, text: async () => body }
-}
-
-// Re-import the module with a controlled env so the module-level TS_GQL /
-// TS_PROXY_SECRET consts capture the values under test.
-async function load(opts: { url?: string; secret?: string | undefined }) {
-  vi.resetModules()
-  if (opts.url === undefined) delete process.env.TS_PROXY_URL
-  else process.env.TS_PROXY_URL = opts.url
-  if (opts.secret === undefined) delete process.env.TS_PROXY_SECRET
-  else process.env.TS_PROXY_SECRET = opts.secret
-  return await import("@/lib/verify-wallet-gql")
+// ── fetchMomentListingState (stubbed Atlas handle) ─────────────────────────
+function atlasHandle(collect: unknown, beginId: number | { error: string } = 91) {
+  const rpc = vi.fn<(name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }>>(async (name) => {
+    if (name === "atlas_verify_listing_begin") {
+      return typeof beginId === "number" ? { data: beginId, error: null } : { data: null, error: { message: beginId.error } }
+    }
+    if (name === "atlas_verify_listing_collect") return { data: collect, error: null }
+    return { data: null, error: null }
+  })
+  return { db: { rpc }, rpc }
 }
 
 beforeEach(() => {
-  vi.stubGlobal("fetch", fetchMock)
-  fetchMock.mockReset()
-})
-
-afterEach(() => {
-  vi.unstubAllGlobals()
+  adminRpc.mockReset()
 })
 
 describe("fetchMomentListingState", () => {
-  it("POSTs to the configured proxy with the x-proxy-secret header and parses a found+for-sale moment", async () => {
-    const { fetchMomentListingState } = await load({
-      url: "https://proxy.example/gql",
-      secret: "sekret",
+  it("asks Atlas about THIS nft, THIS seller and THIS price, and reports the seller-matched open listing", async () => {
+    const { db, rpc } = atlasHandle({
+      ok: true, matched: true, open_listings: 1, listed_at: "2026-09-06T20:00:00Z",
+      price_cents: 1250, serial_number: 42, listing_resource_id: "r-1",
     })
-    fetchMock.mockResolvedValueOnce(
-      res(JSON.stringify({ data: { getMintedMoment: { data: { forSale: true, price: "12.5", isLocked: false } } } }))
-    )
-    const out = await fetchMomentListingState("abc")
+    const out = await fetchMomentListingState("123456", { wallet: "0xabc", priceCents: 1250, db })
     expect(out).toEqual({
-      momentId: "abc",
+      momentId: "123456",
       found: true,
       forSale: true,
       price: 12.5,
       isLocked: false,
+      matchedForWallet: true,
+      openListings: 1,
     })
-
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe("https://proxy.example/gql")
-    expect(init.method).toBe("POST")
-    const headers = init.headers as Record<string, string>
-    expect(headers["Content-Type"]).toBe("application/json")
-    expect(headers["x-proxy-secret"]).toBe("sekret")
-    const payload = JSON.parse(init.body as string)
-    expect(payload.variables).toEqual({ id: "abc" })
-    expect(payload.query).toContain("getMintedMoment")
+    expect(rpc.mock.calls.map((c) => c[0])).toEqual(["atlas_verify_listing_begin", "atlas_verify_listing_collect"])
+    expect(rpc.mock.calls[0][1]).toEqual({ p_nft_id: "123456" })
+    expect(rpc.mock.calls[1][1]).toMatchObject({ p_request_id: 91, p_wallet: "0xabc", p_price_cents: 1250 })
   })
 
-  it("omits the x-proxy-secret header when no secret is configured", async () => {
-    const { fetchMomentListingState } = await load({ url: "https://proxy.example/gql", secret: undefined })
-    fetchMock.mockResolvedValueOnce(
-      res(JSON.stringify({ data: { getMintedMoment: { data: { forSale: false, price: null, isLocked: true } } } }))
-    )
-    await fetchMomentListingState("m1")
-    const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>
-    expect(headers["x-proxy-secret"]).toBeUndefined()
-  })
-
-  it("returns found=false with defaulted fields when the moment node is null", async () => {
-    const { fetchMomentListingState } = await load({ url: "https://proxy.example/gql", secret: "s" })
-    fetchMock.mockResolvedValueOnce(
-      res(JSON.stringify({ data: { getMintedMoment: { data: null } } }))
-    )
-    const out = await fetchMomentListingState("gone")
-    expect(out).toEqual({
-      momentId: "gone",
-      found: false,
-      forSale: false,
-      price: null,
-      isLocked: false,
-    })
-  })
-
-  it("coerces a non-finite / missing price to null", async () => {
-    const { fetchMomentListingState } = await load({ url: "https://proxy.example/gql", secret: "s" })
-    fetchMock.mockResolvedValueOnce(
-      res(JSON.stringify({ data: { getMintedMoment: { data: { forSale: true, price: "not-a-number", isLocked: false } } } }))
-    )
-    const out = await fetchMomentListingState("x")
-    expect(out.found).toBe(true)
+  it("a listing by SOMEONE ELSE is forSale but NOT matchedForWallet — the verdict the check route keys on", async () => {
+    const { db } = atlasHandle({ ok: true, matched: false, open_listings: 2, price_cents: null })
+    const out = await fetchMomentListingState("5", { wallet: "0xabc", priceCents: 1250, db })
+    expect(out.forSale).toBe(true)
+    expect(out.matchedForWallet).toBe(false)
     expect(out.price).toBeNull()
   })
 
-  it("throws on a non-2xx proxy response, embedding the status", async () => {
-    const { fetchMomentListingState } = await load({ url: "https://proxy.example/gql", secret: "s" })
-    fetchMock.mockResolvedValueOnce(res("upstream boom", false, 502))
-    await expect(fetchMomentListingState("x")).rejects.toThrow("Top Shot GQL HTTP 502: upstream boom")
+  it("with no wallet asked about, matchedForWallet is null and forSale reflects the open-listing count", async () => {
+    const { db, rpc } = atlasHandle({ ok: true, matched: false, open_listings: 0 })
+    const out = await fetchMomentListingState("5", { db })
+    expect(out).toMatchObject({ found: true, forSale: false, matchedForWallet: null, openListings: 0, isLocked: false })
+    expect(rpc.mock.calls[1][1]).toMatchObject({ p_wallet: "", p_price_cents: null })
   })
 
-  it("throws when the body is not valid JSON", async () => {
-    const { fetchMomentListingState } = await load({ url: "https://proxy.example/gql", secret: "s" })
-    fetchMock.mockResolvedValueOnce(res("<html>blocked</html>"))
-    await expect(fetchMomentListingState("x")).rejects.toThrow("Top Shot GQL returned non-JSON")
-  })
-
-  it("throws with the joined message list when GQL returns errors", async () => {
-    const { fetchMomentListingState } = await load({ url: "https://proxy.example/gql", secret: "s" })
-    fetchMock.mockResolvedValueOnce(
-      res(JSON.stringify({ errors: [{ message: "bad id" }, { message: "again" }] }))
+  it("uses the service-role client when no db is injected", async () => {
+    adminRpc.mockImplementation(async (name: string) =>
+      name === "atlas_verify_listing_begin" ? { data: 7, error: null } : { data: { ok: true, matched: false, open_listings: 0 }, error: null },
     )
-    await expect(fetchMomentListingState("x")).rejects.toThrow("bad id; again")
+    const out = await fetchMomentListingState("9")
+    expect(out.found).toBe(true)
+    expect(adminRpc).toHaveBeenCalledTimes(2)
+  })
+
+  it("THROWS on a failed read — an Atlas timeout is not 'not listed'", async () => {
+    const { db } = atlasHandle({ ok: false, error: "atlas_timeout", status: null })
+    await expect(fetchMomentListingState("5", { wallet: "0xabc", priceCents: 100, db })).rejects.toThrow(/Atlas listing read failed: atlas_timeout/)
+  })
+
+  it("THROWS on an HTTP-level failure, embedding the status (a Cloudflare 403 challenge is not a verdict)", async () => {
+    const { db } = atlasHandle({ ok: false, error: "<!DOCTYPE html>…Just a moment", status: 403 })
+    await expect(fetchMomentListingState("5", { db })).rejects.toThrow(/HTTP 403/)
+  })
+
+  it("THROWS when the begin RPC itself errors", async () => {
+    const { db } = atlasHandle({ ok: true, matched: false, open_listings: 0 }, { error: "permission denied" })
+    await expect(fetchMomentListingState("5", { db })).rejects.toThrow(/permission denied/)
+  })
+
+  it("THROWS on a malformed nft id before any RPC fires", async () => {
+    const { db, rpc } = atlasHandle({ ok: true, matched: false, open_listings: 0 })
+    await expect(fetchMomentListingState("not-an-id", { db })).rejects.toThrow(/bad_nft_id/)
+    expect(rpc).not.toHaveBeenCalled()
   })
 })

@@ -11,16 +11,24 @@
 //   2. seeded_wallets / saved_wallets / user_profiles fallback layers in the
 //      `resolve_topshot_username` RPC, which opportunistically populates the
 //      wallet_usernames cache when those tables hit.
-//   3. Live Top Shot GraphQL (`getUserProfileByUsername`) via topshot-proxy.
-//      Hits get written back via `cache_topshot_username`.
+//   3. LIVE: Dapper's Atlas `ProfileService/SearchUserProfiles`, reached from
+//      the DATABASE in two phases (`lib/chains/flow/atlas.ts`) — the only live
+//      resolver since `public-api.nbatopshot.com` died ~2026-08-28.
+//   4. Live Top Shot GraphQL (`getUserProfileByUsername`) — kept as the
+//      fallback when Atlas fails a read; it is the DEAD host, so today it
+//      answers 530 in ~0.3 s and only its error text reaches the caller.
+//      Hits from either live layer get written back via `cache_topshot_username`.
 
 import { topshotGraphql } from "@/lib/chains/flow/topshot";
+import { atlasResolveUsername, type AtlasDb } from "@/lib/chains/flow/atlas";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ResolvedUser = {
   walletAddress: string;
   username: string;
   dapperId: string | null;
+  /** Which live layer answered. */
+  source?: "atlas" | "topshot_gql";
 };
 
 type TopShotUserProfileResponse = {
@@ -49,16 +57,51 @@ export function isWalletAddress(value: string): boolean {
   return /^0x[a-fA-F0-9]{16}$/.test(value.trim());
 }
 
-// Resolves a Dapper/Top Shot username to a Flow wallet address. Tries the
-// cleaned username first, then a lowercased fallback. Returns null if not
-// found.
+// The DB handle the Atlas layer posts through. Lazily required so a test that
+// mocks `@/lib/supabase` — or passes its own `atlas` — never touches the real
+// module; `null` disables the Atlas layer (GQL only), which is the pre-09-06 ladder.
+async function defaultAtlasDb(): Promise<AtlasDb | null> {
+  try {
+    const mod = await import("@/lib/supabase");
+    return (mod.supabaseAdmin as unknown as AtlasDb) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Resolves a Dapper/Top Shot username to a Flow wallet address. Atlas first
+// (Dapper's own profile search is case-insensitive, so one call covers the
+// mixed-case and lowercase spellings); on an Atlas READ FAILURE only — never on
+// a clean "no such user" — the legacy GQL ladder runs (cleaned, then lowercased).
+// Returns null when not found; THROWS when every live layer failed to read, so
+// a caller can tell "unknown username" from "could not look".
 export async function resolveTopShotUsername(
-  rawUsername: string
+  rawUsername: string,
+  opts?: { atlas?: AtlasDb | null }
 ): Promise<ResolvedUser | null> {
   const cleaned = rawUsername.trim().replace(/^@+/, "").trim();
   if (!cleaned) return null;
 
-  let info = await tryOnce(cleaned);
+  const atlas = opts && "atlas" in opts ? opts.atlas ?? null : await defaultAtlasDb();
+  let atlasError: string | null = null;
+  if (atlas) {
+    const a = await atlasResolveUsername(atlas, cleaned);
+    if (a.ok) {
+      if (!a.found || !a.flowAddress) return null;
+      return { walletAddress: a.flowAddress, username: a.username ?? cleaned, dapperId: null, source: "atlas" };
+    }
+    atlasError = a.error;
+  }
+
+  let info: Awaited<ReturnType<typeof tryOnce>>;
+  try {
+    info = await tryOnce(cleaned);
+  } catch (e) {
+    if (atlasError) {
+      throw new Error(`atlas: ${atlasError}; gql: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    throw e;
+  }
   if (!info?.flowAddress && cleaned.toLowerCase() !== cleaned) {
     info = await tryOnce(cleaned.toLowerCase());
   }
@@ -72,6 +115,7 @@ export async function resolveTopShotUsername(
     walletAddress,
     username: info.username ?? cleaned,
     dapperId: info.dapperID ?? null,
+    source: "topshot_gql",
   };
 }
 
@@ -88,7 +132,7 @@ export type ResolveOutcome =
       walletAddress: string;
       username: string;
       source: string;
-      cacheLayer: "wallet_usernames" | "seeded_wallets" | "saved_wallets" | "user_profiles" | "topshot_gql_live";
+      cacheLayer: "wallet_usernames" | "seeded_wallets" | "saved_wallets" | "user_profiles" | "topshot_gql_live" | "atlas_live";
       dapperId?: string | null;
     }
   | {
@@ -132,11 +176,12 @@ export async function resolveTopShotUsernameCacheAware(
     };
   }
 
-  // Layer 5: live Top Shot GQL fallback. resolveTopShotUsername already
-  // strips @ prefixes and tries lowercased fallbacks.
+  // Layer 5: live — Atlas through THIS service-role client, then the GQL
+  // fallback. resolveTopShotUsername already strips @ prefixes and tries
+  // lowercased fallbacks.
   let live: ResolvedUser | null = null;
   try {
-    live = await resolveTopShotUsername(cleaned);
+    live = await resolveTopShotUsername(cleaned, { atlas: supabase as unknown as AtlasDb });
   } catch (err) {
     return {
       found: false,
@@ -151,18 +196,19 @@ export async function resolveTopShotUsernameCacheAware(
 
   // Write back to wallet_usernames so subsequent hits short-circuit at layer 1.
   // deno-lint-ignore no-explicit-any
+  const liveSource = live.source ?? "topshot_gql";
   await (supabase as any).rpc("cache_topshot_username", {
     p_username: live.username ?? cleaned,
     p_wallet_address: live.walletAddress,
-    p_source: "topshot_gql",
+    p_source: liveSource,
   });
 
   return {
     found: true,
     walletAddress: live.walletAddress,
     username: live.username ?? cleaned,
-    source: "topshot_gql",
-    cacheLayer: "topshot_gql_live",
+    source: liveSource,
+    cacheLayer: liveSource === "atlas" ? "atlas_live" : "topshot_gql_live",
     dapperId: live.dapperId,
   };
 }
