@@ -32,6 +32,10 @@
 
 BEGIN;
 
+-- 2026-09-06 (20260906165511): the slug match also tries the UNACCENTED name.
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA extensions;
+
 -- ── minimal fixtures ─────────────────────────────────────────────────────────
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
 CREATE TABLE public.players (
@@ -256,6 +260,16 @@ SELECT _assert_eq((public.get_player_detail(:TS::uuid,'traded-player') ->> 'id')
 -- show a retired player's final-season team instead of the one they are known for.
 SELECT _assert_eq((public.get_player_detail(:TS::uuid,'retired-player') ->> 'team'), 'Iconic Team', 'retired player keeps the most-moments team, not the final-season team');
 SELECT _assert_eq((public.get_player_detail(:TS::uuid,'retired-player') ->> 'id'), '66666666-6666-6666-6666-666666666666', 'retired player resolves to the iconic-team row');
+
+-- ── 7. DIACRITICS (20260906165511): the sitemap emits ASCII slugs ("nikola-jokic")
+-- while the players row carries the accented name ("Nikola Jokić"). Before the
+-- splice that slug 404'd — 57 sitemap player URLs on the 09-06 audit. The exact
+-- slug still resolves; the unaccented slug now resolves too; a wrong slug is NULL.
+INSERT INTO public.players (id, collection_id, name, team, is_active, headshot_url, external_id, first_name, last_name, jersey_number, position, player_tier) VALUES
+  ('99999999-9999-4999-8999-999999999901', :TS::uuid, 'Nikola Jokić', 'Nuggets', true, 'h7', 'PL7', 'Nikola', 'Jokić', 15, 'C', 'star');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'nikola-jokic') ->> 'id'), '99999999-9999-4999-8999-999999999901', 'an ASCII slug resolves an accented player name');
+SELECT _assert_eq((public.get_player_detail(:TS::uuid,'nikola-joki-') ->> 'id'), '99999999-9999-4999-8999-999999999901', 'the pre-fix slug shape (accent stripped to a dash) still resolves via the exact-name branch');
+SELECT _assert((public.get_player_detail(:TS::uuid,'nikola-jokicc')) IS NULL, 'a slug that matches neither spelling is still NULL');
 
 SELECT '✓ get_player_detail: all assertions passed' AS result;
 
