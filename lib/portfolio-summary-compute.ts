@@ -51,6 +51,13 @@ export type WalletStatRowValues = {
   /** Stale-priced share excluded from walletFmv (0 when unknown). */
   staleFmv: number
   staleCount: number
+  /**
+   * 2026-09-06: true when walletFmv is a RAW total (the wallet-summary read did
+   * not arrive, so the stale split is unknown and could not be subtracted). The
+   * tile must SAY so — a raw total on one load and total − stale on the next is
+   * the four-numbers-for-one-wallet defect at the scale of a single reader.
+   */
+  staleUnknown: boolean
 }
 
 // Adapter for <WalletStatRow/>: prefer the authoritative walletSummary when
@@ -80,7 +87,11 @@ export function computeWalletStatRow(input: {
     ? Math.max(0, walletSummary.wallet_fmv - staleFmv)
     : walletTotalFmv !== null && walletTotalFmv > 0
       ? walletTotalFmv
-      : totals.totalFmv > 0
+      : totals.totalFmv > 0 && totals.totalCount >= paginatedTotal
+        // ⚠ `totals` is the sum of the rows LOADED SO FAR. Publishing it as the
+        // wallet's FMV while pages are still unloaded is a partial sum rendered
+        // as a total (2026-09-06 — both server reads failed, 50 of 15,290 rows
+        // summed under "WALLET FMV"). Only a complete row set may stand in.
         ? totals.totalFmv
         : null
   const unlockedFmv: number | null = walletSummary
@@ -114,10 +125,12 @@ export function computeWalletStatRow(input: {
   const spreadGap: number | null =
     walletFmv !== null && bestOfferTotal !== null ? walletFmv - bestOfferTotal : null
   const momentCount: number | null = paginatedTotal || totals.totalCount || null
+  const staleUnknown = !walletSummary && walletFmv !== null
 
   return {
     staleFmv,
     staleCount,
+    staleUnknown,
     walletFmv,
     unlockedFmv,
     unlockedCount,

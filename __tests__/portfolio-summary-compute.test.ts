@@ -279,5 +279,27 @@ describe("computeWalletStatRow — headline is total − stale when the summary 
     })
     expect(r.walletFmv).toBe(500)
     expect(r.staleFmv).toBe(0)
+    expect(r.staleUnknown).toBe(false) // a summary arrived — the split is known (and zero)
+  })
+  it("with NO summary the raw-total fallback is FLAGGED as unknown-stale, so the tile can say so", () => {
+    const r = computeWalletStatRow({
+      walletSummary: null, walletTotalFmv: 87786.31, totals, paginatedTotal: 15290, collectionSlug: "nba-top-shot",
+    })
+    expect(r.walletFmv).toBe(87786.31)
+    expect(r.staleUnknown).toBe(true)
+  })
+  it("with NO summary and NO server total, a PARTIAL row sum is NOT published as the wallet FMV", () => {
+    const partial = { totalFmv: 1234.5, totalCount: 50, unlockedFmv: 0, unlockedCount: 0, lockedFmv: 0, lockedCount: 0, totalBestOffer: 0 } as any
+    const r = computeWalletStatRow({ walletSummary: null, walletTotalFmv: null, totals: partial, paginatedTotal: 15290, collectionSlug: "nba-top-shot" })
+    expect(r.walletFmv).toBeNull()
+    // …but a COMPLETE row set may stand in (every row loaded).
+    const complete = computeWalletStatRow({ walletSummary: null, walletTotalFmv: null, totals: { ...partial, totalCount: 50 }, paginatedTotal: 50, collectionSlug: "nba-top-shot" })
+    expect(complete.walletFmv).toBe(1234.5)
+    expect(complete.staleUnknown).toBe(true)
+  })
+  it("with NO summary and NO total there is nothing to flag (the tile renders an em-dash)", () => {
+    const r = computeWalletStatRow({ walletSummary: null, walletTotalFmv: null, totals, paginatedTotal: 0, collectionSlug: "nba-top-shot" })
+    expect(r.walletFmv).toBeNull()
+    expect(r.staleUnknown).toBe(false)
   })
 })

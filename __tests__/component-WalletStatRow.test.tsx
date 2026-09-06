@@ -94,4 +94,28 @@ describe("WalletStatRow", () => {
     // The plain "N moments" caption is replaced by the progress UI.
     expect(txt).not.toContain("12 moments")
   })
+
+  // 2026-09-06: the headline is total − stale with the split disclosed. When the
+  // split is KNOWN, the caption carries it; when the summary never arrived and the
+  // tile is a raw total, the caption must SAY so — never a bare number that reads
+  // as the same basis as the dashboard's.
+  it("captions the stale split when it is known", () => {
+    const { container } = render(<WalletStatRow {...props({ walletFmv: 46638.96, staleFmv: 41243.97, staleCount: 93 })} />)
+    const txt = container.textContent ?? ""
+    expect(txt).toContain("$46,638.96")
+    expect(txt).toContain("+ $41,243.97 across 93 stale-priced")
+    expect(txt).not.toContain("split unavailable")
+  })
+  it("labels a raw total whose stale split never arrived, and does NOT invent a split", () => {
+    const { container } = render(<WalletStatRow {...props({ walletFmv: 87786.31, staleUnknown: true })} />)
+    const txt = container.textContent ?? ""
+    expect(txt).toContain("$87,786.31")
+    expect(txt).toContain("raw total — stale-priced split unavailable")
+    expect(txt).not.toMatch(/across \d+ stale-priced/)
+  })
+  it("a known ZERO split is silent — no caption, no 'unavailable'", () => {
+    const { container } = render(<WalletStatRow {...props({ walletFmv: 500, staleFmv: 0, staleCount: 0, staleUnknown: false })} />)
+    const txt = container.textContent ?? ""
+    expect(txt).not.toContain("stale")
+  })
 })

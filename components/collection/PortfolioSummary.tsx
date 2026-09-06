@@ -116,6 +116,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
             momentCount,
             staleFmv,
             staleCount,
+            staleUnknown,
           } = computeWalletStatRow({ walletSummary, walletTotalFmv, totals, paginatedTotal, collectionSlug })
           return (
           <div className="mb-5 space-y-3">
@@ -130,6 +131,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
               spreadGap={spreadGap}
               staleFmv={staleFmv}
               staleCount={staleCount}
+              staleUnknown={staleUnknown}
               collectionSlug={collectionSlug}
               loading={walletSummaryLoading}
               walletFmvAccessory={

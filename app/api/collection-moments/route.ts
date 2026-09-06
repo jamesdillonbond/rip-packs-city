@@ -230,10 +230,13 @@ export async function GET(req: NextRequest) {
     const totalFmvPromise = (supabaseAdmin as any)
       .rpc("get_wallet_total_fmv", totalFmvRpcParams)
       .then(function (res: any) {
-        if (res.error) { console.log("[collection-moments] total_fmv error:", res.error.message); return 0 }
-        return res.data ?? 0
+        // ⚠ A failed total is NULL, never 0 — `?? 0` on a failed read is the
+        // fabricated-number shape (CLAUDE.md), and the client treats a numeric
+        // total as a fact about the wallet (2026-09-06).
+        if (res.error) { console.log("[collection-moments] total_fmv error:", res.error.message); return null }
+        return res.data ?? null
       })
-      .catch(function () { return 0 })
+      .catch(function () { return null })
 
     // ⚠ STARTED HERE, NOT AT ITS USE SITE, and that is the whole point. The
     // comment at the use site said "Fire get_acquisition_stats in parallel
@@ -407,7 +410,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       moments,
       total_count: totalCount,
-      total_fmv: Number(totalFmv),
+      total_fmv: totalFmv === null ? null : Number(totalFmv),
       page,
       limit,
       total_pages: Math.ceil(totalCount / limit),

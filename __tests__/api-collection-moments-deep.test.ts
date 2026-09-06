@@ -140,6 +140,22 @@ describe("GET /api/collection-moments — row shaping", () => {
     expect(body.total_count).toBe(120)
     expect(body.total_pages).toBe(3) // ceil(120/50)
   })
+
+  // 2026-09-06: a FAILED get_wallet_total_fmv used to resolve to 0, and the
+  // Collection tab treats any numeric total as a fact about the wallet. A failed
+  // read is null — the tile then renders an em-dash instead of "$0".
+  it("a failed get_wallet_total_fmv is total_fmv: null — never 0", async () => {
+    install({
+      "rpc:get_wallet_moments_with_fmv": { data: { moments: [], total_count: 7 }, error: null },
+      "rpc:get_wallet_total_fmv": { data: null, error: { message: "canceling statement due to statement timeout" } },
+      "rpc:get_acquisition_stats": { data: null, error: null },
+    })
+    const res = await GET(req(`https://t/api/collection-moments?wallet=${WALLET}&limit=50`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.total_fmv).toBeNull()
+    expect(body.total_count).toBe(7)
+  })
 })
 
 describe("GET /api/collection-moments — GQL player-name backfill", () => {
@@ -493,7 +509,9 @@ describe("GET /api/collection-moments — username resolution + collection scopi
     expect((await res.json()).total_count).toBe(0)
   })
 
-  it("treats a total-FMV RPC error as $0 without failing the page", async () => {
+  // INVERTED 2026-09-06: this test used to pin `total_fmv: 0` on an RPC error —
+  // the fabricated-number shape. The page still must not fail; the total is null.
+  it("a total-FMV RPC error does not fail the page, and the total is NULL, never $0", async () => {
     install({
       "rpc:get_wallet_moments_with_fmv": {
         data: { moments: [{ moment_id: "1", player_name: "P", thumbnail_url: "http://x" }], total_count: 1 },
@@ -504,6 +522,9 @@ describe("GET /api/collection-moments — username resolution + collection scopi
     })
     const res = await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))
     expect(res.status).toBe(200)
-    expect((await res.json()).total_fmv).toBe(0)
+    const body = await res.json()
+    expect(body.total_fmv).toBeNull()
+    expect(body.total_fmv).not.toBe(0)
+    expect(body.moments).toHaveLength(1)
   })
 })

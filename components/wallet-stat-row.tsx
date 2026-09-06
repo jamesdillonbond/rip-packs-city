@@ -34,6 +34,8 @@ export type WalletStatRowProps = {
   /** Stale-priced share excluded from walletFmv; disclosed under the headline when > 0. */
   staleFmv?: number
   staleCount?: number
+  /** The headline is a raw total because the stale split never arrived — say so. */
+  staleUnknown?: boolean
   collectionSlug: string
   loading?: boolean
   loadProgress?: { loaded: number; total: number; pct: number } | null
@@ -81,6 +83,7 @@ export default function WalletStatRow(props: WalletStatRowProps) {
     spreadGap,
     staleFmv,
     staleCount,
+    staleUnknown,
     collectionSlug,
     loading,
     loadProgress,
@@ -164,6 +167,10 @@ export default function WalletStatRow(props: WalletStatRowProps) {
             {typeof staleFmv === "number" && staleFmv > 0 ? (
               <span style={{ display: "block", opacity: 0.8 }}>
                 + {formatCurrency(staleFmv)} across {formatCount(staleCount ?? 0)} stale-priced
+              </span>
+            ) : staleUnknown && walletFmv !== null ? (
+              <span style={{ display: "block", opacity: 0.8 }}>
+                raw total — stale-priced split unavailable
               </span>
             ) : null}
           </div>
