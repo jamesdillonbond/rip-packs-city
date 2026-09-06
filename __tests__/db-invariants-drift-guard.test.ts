@@ -28,7 +28,7 @@ const PINS = [
     fn: "detect_stalled_pipelines",
     test: "supabase/tests/detect_stalled_pipelines.sql",
     migration:
-      "supabase/migrations/20260903024204_audit_20260902_detect_stalled_pipelines_says_whether_the_schedule_is_firing.sql",
+      "supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
   },
   {
     // Added 2026-08-20. A live deleter with THREE DELETE legs that had NO
@@ -480,12 +480,12 @@ const PINS = [
   {
     fn: "get_player_detail",
     test: "supabase/tests/get_player_detail.sql",
-    migration: "supabase/migrations/20260801220000_audit_20260801_get_player_detail_current_team_tiebreak.sql",
+    migration: "supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
   },
   {
     fn: "get_wallet_collection_snapshot",
     test: "supabase/tests/get_wallet_collection_snapshot.sql",
-    migration: "supabase/migrations/20260806000100_audit_20260806_snapshot_get_wallet_collection_snapshot_market_closed.sql",
+    migration: "supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
   },
   {
     fn: "get_pack_detail_bundle",
@@ -493,7 +493,7 @@ const PINS = [
     // re-pointed 2026-08-09: the AllDay leg now reads the lean v_allday_pack_detail_ev
     // instead of v_allday_pack_info (identical output, without the 1.19M-cost
     // pack_ev_latest join that was 500ing every AllDay pack page under contention).
-    migration: "supabase/migrations/20260822211000_audit_20260822_snapshot_get_pack_detail_bundle_partition_prune.sql",
+    migration: "supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
   },
   {
     fn: "holdings_summary",
@@ -1250,7 +1250,7 @@ const PINS = [
     // buffers against a 9,296-page table. Fenced: 9,296 buffers. Equivalence proven
     // both directions before ship.
     migration:
-      "supabase/migrations/20260903174421_audit_20260903_unmapped_backlog_growth_no_eta_from_a_stalled_drain.sql",
+      "supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql",
   },
   {
     // pg_cron `25 9 * * *`. One of only TWO scheduled SECDEF functions that

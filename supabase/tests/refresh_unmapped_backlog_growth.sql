@@ -19,7 +19,7 @@
 --      negative or enormous one reads as a real estimate.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260810030734_audit_20260809_unmapped_backlog_growth_precompute_cache.sql),
+-- (supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql),
 -- whose body was verified byte-identical to live prod via prosrc md5 on
 -- 2026-08-15. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
@@ -51,11 +51,11 @@ CREATE TABLE public.unmapped_backlog_growth_cache (
 
 -- >>> BEGIN verbatim refresh_unmapped_backlog_growth (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.refresh_unmapped_backlog_growth()
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-SET statement_timeout TO '90s'
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '90s'
 AS $function$
 DECLARE
   v_payload jsonb;
@@ -65,7 +65,7 @@ BEGIN
     -- multi-NFT tx; those rows' price cannot be attributed per-NFT because
     -- decodeV1SaleTx returns a single gross DUC total for the whole transaction.
     --
-    -- ⚠ THE `OFFSET 0` IS AN OPTIMIZATION FENCE AND IS LOAD-BEARING. DO NOT REMOVE IT.
+    -- THE `OFFSET 0` IS AN OPTIMIZATION FENCE AND IS LOAD-BEARING. DO NOT REMOVE IT.
     -- It blocks subquery pull-up so this scan is planned on its own, coming out as
     -- Seq Scan + HashAggregate instead of an Index Scan on unmapped_sales_dedup_idx
     -- (transaction_hash, nft_id, collection_id) that walks ~105k open rows in INDEX
@@ -75,7 +75,7 @@ BEGIN
     -- 2026-08-31, by DO-block + clock_timestamp() with a RAISE to roll the write back:
     --     unfenced  1,550 ms   ->   fenced  560 ms     (2.8x)
     --
-    -- 🚨 DO NOT SIZE THIS FROM AN INLINE `EXPLAIN`, AND THAT IS THE REAL LESSON HERE.
+    -- DO NOT SIZE THIS FROM AN INLINE `EXPLAIN`, AND THAT IS THE REAL LESSON HERE.
     -- Run as standalone SQL the unfenced CTE plans as that Index Scan and costs
     -- 102,550 buffers / 9,816 ms -- but the FUNCTION does not use that plan, and the
     -- production ticks it produces are ~2 s, not ~10 s. Both numbers are real; only the
@@ -115,6 +115,15 @@ BEGIN
                          AND u.sold_at   <= now() - interval '7 days')              AS inflow_24h_backfill,
       count(*) FILTER (WHERE u.resolved_at  > now() - interval '24 hours')          AS outflow_24h,
       count(*) FILTER (WHERE u.resolved_at  > now() - interval '3 hours')           AS outflow_3h,
+      -- 7-DAY WINDOW (added 2026-09-05). Wide enough to contain a bulk sweep AND the
+      -- quiet stretch after it, which is the only way to see that the two disagree.
+      count(*) FILTER (WHERE u.resolved_at  > now() - interval '7 days')            AS outflow_7d,
+      count(*) FILTER (WHERE u.ingested_at > now() - interval '7 days'
+                         AND u.sold_at     > u.ingested_at - interval '7 days')     AS inflow_7d_fresh,
+      -- LIVENESS. This is the one fact the ratio test could never report: when did this
+      -- resolver last actually do something. It is a timestamp, not a rate, so no window
+      -- choice can distort it.
+      max(u.resolved_at)                                                            AS last_resolved_at,
       min(u.sold_at) FILTER (WHERE u.resolved_at IS NULL)                           AS oldest_open_sold_at
     FROM public.unmapped_sales u
     GROUP BY u.collection_id
@@ -130,20 +139,40 @@ BEGIN
       p.inflow_24h_backfill,
       p.outflow_24h,
       p.outflow_3h,
-      -- ⚠ THE 24h OUTFLOW IS A TRAILING COUNT AND IT LAGS A COLLAPSED DRAIN.
-      -- Steady state puts an eighth of the 24h outflow in any 3h window, so
-      -- `outflow_3h * 16 < outflow_24h` says the CURRENT rate is below HALF the
-      -- 24h average — the window is still carrying a burst that has stopped.
-      -- Same table and same column as outflow_24h, so this is one instrument
-      -- compared against itself over two windows, not two instruments paired.
-      (p.outflow_3h * 16 < p.outflow_24h) AS drain_stalled,
+      p.outflow_7d,
+      p.inflow_7d_fresh,
+      p.last_resolved_at,
+      CASE WHEN p.last_resolved_at IS NOT NULL
+           THEN round((extract(epoch FROM (now() - p.last_resolved_at)) / 3600.0)::numeric, 2)
+      END AS drain_quiet_hours,
+      -- REPLACED 2026-09-05. Was `outflow_3h * 16 < outflow_24h`, a ratio of two
+      -- trailing counts that read TRUE 45.8% of the resolver's life and whose only
+      -- effect was to null the ETA. This is a liveness test: has the resolver resolved
+      -- ANYTHING in 12h. Calibrated on 5,571 consecutive gaps -- max 6.00h, p99 0.74h,
+      -- zero gaps over 6h -- so it would have fired zero times historically.
+      (p.last_resolved_at IS NULL
+       OR p.last_resolved_at < now() - interval '12 hours')       AS drain_stalled,
       p.inflow_24h - p.outflow_24h AS net_24h,
       CASE WHEN p.inflow_24h > 0
            THEN round(p.outflow_24h::numeric / p.inflow_24h, 4) END AS drain_ratio,
+      -- TWO ETAs, DELIBERATELY. They disagree by ~50x on nfl_all_day at apply time
+      -- because this resolver works in intermittent bulk sweeps. The reader compares
+      -- them and prints a range rather than a number when they diverge.
       CASE WHEN p.outflow_24h > p.inflow_24h_fresh
-            AND NOT (p.outflow_3h * 16 < p.outflow_24h)
            THEN round((p.open_rows - COALESCE(x.open_gross_unsplittable_rows,0))::numeric
-                      / (p.outflow_24h - p.inflow_24h_fresh), 1) END AS days_to_drain,
+                      / (p.outflow_24h - p.inflow_24h_fresh), 1)
+      END AS days_to_drain_24h,
+      CASE WHEN p.outflow_7d > p.inflow_7d_fresh
+           THEN round((p.open_rows - COALESCE(x.open_gross_unsplittable_rows,0))::numeric
+                      / ((p.outflow_7d - p.inflow_7d_fresh)::numeric / 7.0), 1)
+      END AS days_to_drain_7d,
+      -- Back-compat key. Now the 7d figure, and NULL while the resolver is quiet.
+      CASE WHEN NOT (p.last_resolved_at IS NULL
+                     OR p.last_resolved_at < now() - interval '12 hours')
+            AND p.outflow_7d > p.inflow_7d_fresh
+           THEN round((p.open_rows - COALESCE(x.open_gross_unsplittable_rows,0))::numeric
+                      / ((p.outflow_7d - p.inflow_7d_fresh)::numeric / 7.0), 1)
+      END AS days_to_drain,
       p.oldest_open_sold_at,
       CASE
         WHEN (p.open_rows - COALESCE(x.open_gross_unsplittable_rows,0)) >= 10000
@@ -179,21 +208,24 @@ INSERT INTO public.collections (id, slug) VALUES
 
 -- AllDay: 1,200 open rows. 100 of them sit in 50 multi-NFT transactions with a
 -- zero price → UNSPLITTABLE. The rest are single-NFT and unpriced → actionable.
+-- Ingested 10 days ago (2026-09-05 repoint: outside BOTH the 24h and the 7d
+-- fresh-inflow windows, so the ETA arithmetic below sees a pile that is not
+-- still arriving).
 INSERT INTO public.unmapped_sales (collection_id, transaction_hash, price_usd, sold_at, ingested_at, resolved_at)
 SELECT 'dee28451-5d62-409e-a1ad-a83f763ac070',
        'multi-' || ((g + 1) / 2)::text, 0,
-       now() - interval '2 days', now() - interval '2 days', NULL
+       now() - interval '10 days', now() - interval '10 days', NULL
 FROM generate_series(1, 100) g;                                  -- 50 txs x 2 rows
 INSERT INTO public.unmapped_sales (collection_id, transaction_hash, price_usd, sold_at, ingested_at, resolved_at)
 SELECT 'dee28451-5d62-409e-a1ad-a83f763ac070',
        'single-' || g::text, 0,
-       now() - interval '2 days', now() - interval '2 days', NULL
+       now() - interval '10 days', now() - interval '10 days', NULL
 FROM generate_series(1, 1100) g;
 
 -- Golazos: only 10 open rows → below the >= 1000 reporting floor.
 INSERT INTO public.unmapped_sales (collection_id, transaction_hash, price_usd, sold_at, ingested_at, resolved_at)
 SELECT '06248cc4-b85f-47cd-af67-1855d14acd75', 'g-' || g::text, 0,
-       now() - interval '2 days', now() - interval '2 days', NULL
+       now() - interval '10 days', now() - interval '10 days', NULL
 FROM generate_series(1, 10) g;
 
 SELECT public.refresh_unmapped_backlog_growth();
@@ -231,10 +263,15 @@ SELECT _assert_eq(
 -- ⚠ days_to_drain is NULL unless the backlog is genuinely draining ─────────
 -- Nothing has been resolved, so outflow is 0 and the ETA is undefined. Emitting
 -- a number here would be an invented measurement, and with fresh inflow above
--- outflow the arithmetic would produce a NEGATIVE one.
+-- outflow the arithmetic would produce a NEGATIVE one. (2026-09-05: with no
+-- resolution EVER, the liveness test also reads stalled — see below.)
 SELECT _assert(
   (SELECT payload -> 0 -> 'days_to_drain' FROM public.unmapped_backlog_growth_cache WHERE id=1) = 'null'::jsonb,
   'days_to_drain is NULL while nothing is draining, never a negative ETA');
+SELECT _assert(
+  (SELECT payload -> 0 -> 'days_to_drain_24h' FROM public.unmapped_backlog_growth_cache WHERE id=1) = 'null'::jsonb
+  AND (SELECT payload -> 0 -> 'days_to_drain_7d' FROM public.unmapped_backlog_growth_cache WHERE id=1) = 'null'::jsonb,
+  'both window ETAs are NULL while nothing is draining');
 
 -- Now drain some and re-check: with outflow above fresh inflow it becomes real.
 UPDATE public.unmapped_sales SET resolved_at = now() - interval '1 hour'
@@ -244,60 +281,97 @@ SELECT public.refresh_unmapped_backlog_growth();
 SELECT _assert(
   (SELECT (payload -> 0 ->> 'days_to_drain')::numeric FROM public.unmapped_backlog_growth_cache WHERE id=1) > 0,
   'once outflow exceeds fresh inflow, a positive ETA is published');
+-- 2026-09-05: TWO ETAs, deliberately. 100 resolved in the last hour with zero
+-- fresh inflow: 1,100 open − 98 unsplittable = 1,002 actionable; the 24h figure
+-- is 1,002 / 100 per day = 10.0d; the 7d figure spreads the same 100 over a
+-- week = 70.1d. Both are honest; the
+-- reader prints a range when they disagree. days_to_drain carries the 7d one.
+SELECT _assert_eq(
+  (SELECT payload -> 0 ->> 'days_to_drain_24h' FROM public.unmapped_backlog_growth_cache WHERE id=1),
+  '10.0', 'days_to_drain_24h = actionable / (outflow_24h - inflow_24h_fresh)');
+SELECT _assert_eq(
+  (SELECT payload -> 0 ->> 'days_to_drain_7d' FROM public.unmapped_backlog_growth_cache WHERE id=1),
+  '70.1', 'days_to_drain_7d = actionable / ((outflow_7d - inflow_7d_fresh) / 7)');
+SELECT _assert_eq(
+  (SELECT payload -> 0 ->> 'days_to_drain' FROM public.unmapped_backlog_growth_cache WHERE id=1),
+  '70.1', 'the back-compat days_to_drain is the 7d figure');
 SELECT _assert_eq(
   (SELECT payload -> 0 ->> 'outflow_24h' FROM public.unmapped_backlog_growth_cache WHERE id=1),
   '100', 'outflow_24h counts rows resolved in the window');
 
--- ⚠ ...AND THE ETA IS ONLY PUBLISHED WHILE THE DRAIN IS STILL RUNNING ───────
--- Positive control first: the 100 rows above were resolved an hour ago, so the
--- short window still sees them and the ETA above is legitimate.
+-- ⚠ ...AND THE ETA IS ONLY PUBLISHED WHILE THE DRAIN IS STILL LIVE ──────────
+-- Positive control first: the 100 rows above were resolved an hour ago.
 SELECT _assert_eq(
   (SELECT payload -> 0 ->> 'outflow_3h' FROM public.unmapped_backlog_growth_cache WHERE id=1),
   '100', 'outflow_3h sees a drain that is still running');
 SELECT _assert_eq(
   (SELECT payload -> 0 ->> 'drain_stalled' FROM public.unmapped_backlog_growth_cache WHERE id=1),
   'false', 'a running drain is not stalled');
+SELECT _assert(
+  (SELECT (payload -> 0 ->> 'drain_quiet_hours')::numeric FROM public.unmapped_backlog_growth_cache WHERE id=1) BETWEEN 0.9 AND 1.1,
+  'drain_quiet_hours reports how long since the last resolution');
 
--- ⭐ THE DEFECT THIS PINS, 2026-09-03. `outflow_24h` is a TRAILING count, so it
--- keeps reporting a burst for a full day after the burst stops, and
--- `days_to_drain` divides by it. Production published "~32.6d to clear the
--- actionable pile" off 1,263 resolved/24h while the CURRENT rate was 10 per 3h
--- — a real ETA nearer 526 days. ⚠ The published number had gone UP from 25.1d
--- three hours earlier while the true rate went DOWN, because the numerator
--- barely moves and the stale burst ages out slowly: **a decaying series makes
--- this read plausible and wrong, in the reassuring direction.**
+-- ⭐ THE DEFECT THIS PINNED ON 2026-09-03, AND WHAT REPLACED IT ON 2026-09-05.
+-- `outflow_24h` is a TRAILING count, so it keeps reporting a burst for a full
+-- day after the burst stops. Production published "~32.6d to clear" off 1,263
+-- resolved/24h while the CURRENT rate was 10 per 3h. The 09-03 fix flagged a
+-- stall by RATIO (outflow_3h * 16 < outflow_24h) — measured over the resolver's
+-- whole life that was TRUE 45.8% of the time, so it suppressed the ETA half
+-- the time and carried no information. 2026-09-05 replaced it with LIVENESS:
+-- stalled := last resolution older than 12h, or none ever. Calibrated on 5,571
+-- consecutive gaps (max 6.00h, p99 0.74h) it would have fired zero times.
 --
--- Moving the SAME resolved rows out of the 3h window reproduces it exactly:
--- nothing about the pile changes, only the recency of the drain.
+-- Move the SAME resolved rows to 10 hours ago: the 3h window empties, the 24h
+-- window still carries them — and under the liveness rule this is NOT a stall.
 UPDATE public.unmapped_sales SET resolved_at = now() - interval '10 hours'
  WHERE resolved_at IS NOT NULL;
 SELECT public.refresh_unmapped_backlog_growth();
 SELECT _assert_eq(
   (SELECT payload -> 0 ->> 'outflow_24h' FROM public.unmapped_backlog_growth_cache WHERE id=1),
-  '100', 'the 24h window still counts them — this is what makes the stale ETA look real');
+  '100', 'the 24h window still counts them');
 SELECT _assert_eq(
   (SELECT payload -> 0 ->> 'outflow_3h' FROM public.unmapped_backlog_growth_cache WHERE id=1),
-  '0', 'but nothing has drained recently');
+  '0', 'but nothing has drained in the last 3h');
 SELECT _assert_eq(
   (SELECT payload -> 0 ->> 'drain_stalled' FROM public.unmapped_backlog_growth_cache WHERE id=1),
-  'true', 'so the drain is flagged stalled');
+  'false', 'a 10h quiet spell is inside the 12h liveness bar — the ratio test would have (wrongly) called this a stall');
+SELECT _assert(
+  (SELECT (payload -> 0 ->> 'days_to_drain')::numeric FROM public.unmapped_backlog_growth_cache WHERE id=1) > 0,
+  'so the ETA is still published');
+
+-- 13 hours: past the bar. Stalled, and the back-compat ETA is withheld — an
+-- ETA off a rate that has stopped is a fabricated measurement.
+UPDATE public.unmapped_sales SET resolved_at = now() - interval '13 hours'
+ WHERE resolved_at IS NOT NULL;
+SELECT public.refresh_unmapped_backlog_growth();
+SELECT _assert_eq(
+  (SELECT payload -> 0 ->> 'drain_stalled' FROM public.unmapped_backlog_growth_cache WHERE id=1),
+  'true', 'no resolution for 13h is a stall');
+SELECT _assert(
+  (SELECT (payload -> 0 ->> 'drain_quiet_hours')::numeric FROM public.unmapped_backlog_growth_cache WHERE id=1) BETWEEN 12.9 AND 13.1,
+  'and the payload says how long it has been quiet');
 SELECT _assert(
   (SELECT payload -> 0 -> 'days_to_drain' FROM public.unmapped_backlog_growth_cache WHERE id=1) = 'null'::jsonb,
-  'and NO ETA is published — an ETA off a rate that has stopped is a fabricated measurement, '
-  'which is exactly what the 24h-only arithmetic published in production');
+  'NO back-compat ETA is published while stalled');
+SELECT _assert(
+  (SELECT (payload -> 0 ->> 'days_to_drain_7d')::numeric FROM public.unmapped_backlog_growth_cache WHERE id=1) > 0,
+  'the raw 7d figure is still carried for the reader that prints the range');
 
--- ⚠ A STALL IS NOT THE SAME STATE AS NO FLOW AT ALL, and the flag has to keep
--- them apart: `ufc_strike` has always reported days_to_drain NULL with zero
--- outflow, and reading THAT as a stall would invent a regression. With no
--- outflow at all the predicate is 0*16 < 0, which is false.
+-- ⚠ NO RESOLUTION EVER is a stall under the liveness definition (last_resolved_at
+-- IS NULL). Before 2026-09-05 the ratio test read this as "idle, not stalled"
+-- (0*16 < 0 is false) — which is why a never-draining resolver could never
+-- trip the alert. That was the gap the liveness rule closes on purpose.
 UPDATE public.unmapped_sales SET resolved_at = NULL;
 SELECT public.refresh_unmapped_backlog_growth();
 SELECT _assert_eq(
   (SELECT payload -> 0 ->> 'drain_stalled' FROM public.unmapped_backlog_growth_cache WHERE id=1),
-  'false', 'a collection that never drained is NOT stalled, it is idle');
+  'true', 'a collection that has NEVER resolved anything is stalled — liveness, not a ratio');
+SELECT _assert(
+  (SELECT payload -> 0 -> 'drain_quiet_hours' FROM public.unmapped_backlog_growth_cache WHERE id=1) = 'null'::jsonb,
+  'with no resolution ever there is no quiet-hours figure to report');
 SELECT _assert(
   (SELECT payload -> 0 -> 'days_to_drain' FROM public.unmapped_backlog_growth_cache WHERE id=1) = 'null'::jsonb,
-  'and it still publishes no ETA, for the original reason');
+  'and it publishes no ETA');
 
 -- ── The inflow split: fresh vs backfill ───────────────────────────────────
 -- The severity rule keys on inflow_24h_FRESH, not total inflow, precisely so a

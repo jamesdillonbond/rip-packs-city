@@ -25,7 +25,7 @@
 -- the output no matter what its markers say.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260903024204_audit_20260902_detect_stalled_pipelines_says_whether_the_schedule_is_firing.sql).
+-- (supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -37,7 +37,11 @@ CREATE TABLE public.pipeline_cadence_watchlist (
   max_silent_minutes integer,
   severity           text,
   notes              text,
-  is_active          boolean
+  is_active          boolean,
+  -- 2026-09-04 (20260904041635): a row younger than its own threshold cannot be
+  -- stalled yet. Fixture rows are created "long ago" so the grace does not mask
+  -- the cases below; the grace itself is asserted at the bottom.
+  created_at         timestamptz not null default now() - interval '30 days'
 );
 
 -- duration_ms is GENERATED in prod and irrelevant here, so the fixture stays
@@ -92,6 +96,8 @@ AS $function$
                                              AND h.started_at + interval '5 s')
   ) orp ON true
   WHERE w.is_active
+    -- 2026-09-04: a row younger than its own threshold cannot be stalled yet (grace for new pipelines)
+    AND w.created_at < now() - (w.max_silent_minutes * interval '1 minute')
     AND (lr.last_run IS NULL OR (extract(epoch from (now()-lr.last_run))/60) > w.max_silent_minutes);
 $function$;
 -- <<< END verbatim detect_stalled_pipelines <<<
@@ -184,6 +190,20 @@ BEGIN
   PERFORM _assert_eq(o->>'uncorrelated_heartbeats', '1',
     'a marker 30s past its terminal row is outside the window and MUST count — without this the '
     'tolerance could be widened to infinity and every assertion above would still pass');
+
+  -- ── created_at grace (20260904041635) ────────────────────────────────────
+  -- A watchlist row younger than its own max_silent_minutes has not yet had a
+  -- chance to run once; reporting it as stalled would be the "silent 2769m" class
+  -- of noise on a pipeline that simply has not ticked yet.
+  INSERT INTO public.pipeline_cadence_watchlist (pipeline, max_silent_minutes, severity, notes, is_active, created_at)
+  VALUES ('brand-new', 60, 'medium', NULL, true, now() - interval '10 minutes');
+  v := public.detect_stalled_pipelines();
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v) e WHERE e->>'pipeline' = 'brand-new'),
+    'a row 10 min old with a 60 min threshold is inside its grace and must not be reported');
+  UPDATE public.pipeline_cadence_watchlist SET created_at = now() - interval '2 hours' WHERE pipeline = 'brand-new';
+  v := public.detect_stalled_pipelines();
+  PERFORM _assert(EXISTS (SELECT 1 FROM jsonb_array_elements(v) e WHERE e->>'pipeline' = 'brand-new'),
+    'once older than its threshold with no run at all, the same row IS stalled — the grace is a delay, not an exemption');
 END $$;
 
 ROLLBACK;

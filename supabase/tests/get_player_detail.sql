@@ -25,7 +25,7 @@
 --   * Pinnacle branch aggregates by character_name via the FMV-collapse helper.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260801220000_audit_20260801_get_player_detail_current_team_tiebreak.sql);
+-- (supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -80,7 +80,8 @@ BEGIN
            AND e.team_name IS NOT DISTINCT FROM p.team) AS team_edition_count
     FROM players p
     WHERE p.collection_id = p_collection_id
-      AND regexp_replace(lower(trim(p.name)), '[^a-z0-9]+', '-', 'g') = p_player_slug
+      AND (regexp_replace(lower(trim(p.name)), '[^a-z0-9]+', '-', 'g') = p_player_slug
+           OR regexp_replace(lower(trim(extensions.unaccent(p.name))), '[^a-z0-9]+', '-', 'g') = p_player_slug)
   ),
   recent AS (
     SELECT e.team_name, e.game_date

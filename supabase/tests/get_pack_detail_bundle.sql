@@ -19,7 +19,7 @@
 --     which is the whole reason that expression carries a LEAST().
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260809170000_audit_20260809_allday_pack_detail_ev_lean_view.sql);
+-- (supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -34,7 +34,10 @@ CREATE TABLE public.pack_drop_pool (
   collection_id uuid, dist_id text, edition_id uuid, drop_weight numeric);
 CREATE TABLE public.editions (
   id uuid PRIMARY KEY, external_id text, player_name text, set_name text,
-  tier text, thumbnail_url text);
+  tier text, thumbnail_url text,
+  -- 2026-09-06 (20260906165511): the hero subject falls back to team_name when
+  -- player_name is blank (team Moments, "Unknown · Squad Goals" packs).
+  team_name text);
 CREATE TABLE public.fmv_snapshots (edition_id uuid, fmv_usd numeric, computed_at timestamptz);
 CREATE TABLE public.wallet_moments_cache (
   collection_id uuid, edition_key text, moment_id text);
@@ -156,7 +159,8 @@ begin
     into v_hero
   from (
     select coalesce(e.external_id, e.id::text) as route_slug,
-           e.player_name, e.set_name, e.tier::text as tier, e.thumbnail_url,
+           coalesce(nullif(trim(e.player_name), ''), e.team_name) as player_name,
+           e.team_name, e.set_name, e.tier::text as tier, e.thumbnail_url,
            (select w.moment_id from public.wallet_moments_cache w
               where w.collection_id = p_collection_id and w.edition_key = e.external_id
                 and w.moment_id ~ '^[0-9]+$' limit 1) as rep_nft_id,
@@ -297,6 +301,28 @@ SELECT _assert_eq(
    WHERE h ->> 'player_name' = 'Ant'),
   '50',
   'and Ant keeps its LATEST NON-FUTURE fmv (50), not the future 5000');
+
+-- ── 5. hero subject falls back to team_name (20260906165511) ─────────────────
+-- A team Moment has no player_name. Before the splice it rendered as an empty
+-- hero name ("Unknown · Squad Goals" on the public pack page). player_name
+-- blank/whitespace → team_name; a real player_name still wins over team_name.
+INSERT INTO public.editions (id, external_id, player_name, set_name, tier, thumbnail_url, team_name) VALUES
+  ('00000000-0000-0000-0000-00000000aaa1', '9:9', '  ', 'Squad Goals', 'COMMON', 'tT', 'Portland Trail Blazers'),
+  ('00000000-0000-0000-0000-00000000aaa2', '9:8', 'Dame', 'Squad Goals', 'COMMON', 'tU', 'Portland Trail Blazers');
+INSERT INTO public.pack_drop_pool (collection_id, dist_id, edition_id, drop_weight) VALUES
+  (:TS::uuid, 'd-team', '00000000-0000-0000-0000-00000000aaa1', 1),
+  (:TS::uuid, 'd-team', '00000000-0000-0000-0000-00000000aaa2', 1);
+INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, computed_at) VALUES
+  ('00000000-0000-0000-0000-00000000aaa1', 20, now() - interval '1 hour'),
+  ('00000000-0000-0000-0000-00000000aaa2', 10, now() - interval '1 hour');
+SELECT _assert_eq(
+  (public.get_pack_detail_bundle(:TS::uuid,'d-team','nba-top-shot') -> 'hero_editions' -> 0 ->> 'player_name'),
+  'Portland Trail Blazers',
+  'a blank player_name falls back to team_name — the hero is never nameless');
+SELECT _assert_eq(
+  (public.get_pack_detail_bundle(:TS::uuid,'d-team','nba-top-shot') -> 'hero_editions' -> 1 ->> 'player_name'),
+  'Dame',
+  'a real player_name still wins over team_name');
 
 SELECT '✓ get_pack_detail_bundle: all assertions passed' AS result;
 

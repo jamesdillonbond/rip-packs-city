@@ -13,7 +13,7 @@
 --   * an empty wallet -> zeros / '[]' / NULL rarest, never an error.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260729000100_audit_20260729_snapshot_read_rpc_ddl_batch2.sql);
+-- (supabase/migrations/20260906215343_audit_20260906_snapshot_five_spliced_functions_so_their_pins_can_be_repointed.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -27,6 +27,10 @@ CREATE TABLE public.wallet_moments_cache (
   fmv_usd numeric, mint_count int, collection_id uuid);
 CREATE TABLE public.badge_editions (external_id text);
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text, name text, market_closed_at timestamptz);
+-- 2026-09-04/06 (20260904045817, 20260906174634): the stale split reads each
+-- holding's CURRENT FMV confidence through editions → edition_fmv_current.
+CREATE TABLE public.editions (id uuid PRIMARY KEY, external_id text, collection_id uuid);
+CREATE TABLE public.edition_fmv_current (edition_id uuid, confidence text);
 
 -- >>> BEGIN verbatim get_wallet_collection_snapshot (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_collection_snapshot(p_wallet text)
@@ -77,11 +81,31 @@ AS $function$
                -- market has no current value). market_closed_at lets the UI
                -- render a "count + note" instead of a figure.
                'fmv', round(COALESCE(sum(w.fmv_usd), 0)::numeric, 2),
+               -- 2026-09-06: same basis as the headline (total − stale). The card
+               -- printed NBA Top Shot $87,785 raw beside a $50,223 headline.
+               'stale_fmv', round(COALESCE(sum(w.fmv_usd) FILTER (WHERE l.confidence = 'STALE'), 0)::numeric, 2),
+               'stale_count', count(*) FILTER (WHERE l.confidence = 'STALE'),
                'market_closed_at', c.market_closed_at
              ) AS pc
       FROM w JOIN collections c ON c.id = w.collection_id
+      LEFT JOIN LATERAL (
+        SELECT l.confidence FROM editions e JOIN edition_fmv_current l ON l.edition_id = e.id
+         WHERE e.external_id = w.edition_key AND e.collection_id = w.collection_id LIMIT 1
+      ) l ON true
       GROUP BY c.slug, c.name, c.market_closed_at
     ) x
+  ),
+  -- 2026-09-04: stale split, so the front door can headline total − stale like the profile
+  stale AS (
+    SELECT
+      round(COALESCE(sum(w.fmv_usd) FILTER (
+        WHERE w.collection_id NOT IN (SELECT id FROM collections WHERE market_closed_at IS NOT NULL)
+      ), 0)::numeric, 2) AS stale_fmv,
+      count(*)::int AS stale_count
+    FROM w
+    JOIN editions e ON e.external_id = w.edition_key AND e.collection_id = w.collection_id
+    JOIN edition_fmv_current l ON l.edition_id = e.id
+    WHERE l.confidence = 'STALE'
   ),
   rarest AS (
     SELECT to_jsonb(r) AS obj FROM (
@@ -112,7 +136,9 @@ AS $function$
     'badgeCount', COALESCE((SELECT c FROM badges), 0),
     'seriesBreakdown', COALESCE((SELECT obj FROM series), '{}'::jsonb),
     'perCollection', COALESCE((SELECT arr FROM per_coll), '[]'::jsonb),
-    'rarest', (SELECT obj FROM rarest)
+    'rarest', (SELECT obj FROM rarest),
+    'staleFmv', COALESCE((SELECT stale_fmv FROM stale), 0),
+    'staleCount', COALESCE((SELECT stale_count FROM stale), 0)
   );
 $function$;
 -- <<< END verbatim get_wallet_collection_snapshot <<<
@@ -132,6 +158,15 @@ INSERT INTO public.wallet_moments_cache (wallet_address, player_name, set_name, 
 
 -- badges match k1 + k3 only.
 INSERT INTO public.badge_editions (external_id) VALUES ('k1'), ('k3');
+
+-- Current FMV confidence per holding: Ant (k2, $50) is STALE; Dame (k1) HIGH; k3/k4 unknown.
+INSERT INTO public.editions (id, external_id, collection_id) VALUES
+  ('00000000-0000-0000-0000-0000000000e1', 'k1', :TS::uuid),
+  ('00000000-0000-0000-0000-0000000000e2', 'k2', :TS::uuid),
+  ('00000000-0000-0000-0000-0000000000e4', 'k4', :TS::uuid);
+INSERT INTO public.edition_fmv_current (edition_id, confidence) VALUES
+  ('00000000-0000-0000-0000-0000000000e1', 'HIGH'),
+  ('00000000-0000-0000-0000-0000000000e2', 'STALE');
 
 -- ── 1. totals ────────────────────────────────────────────────────────────────
 SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'totalMoments'), '4', 'totalMoments = 4');
@@ -161,6 +196,17 @@ SELECT _assert_eq((public.get_wallet_collection_snapshot('none') ->> 'totalMomen
 SELECT _assert_eq((public.get_wallet_collection_snapshot('none') -> 'topMoments')::text, '[]', 'empty wallet -> [] topMoments');
 SELECT _assert_eq((public.get_wallet_collection_snapshot('none') ->> 'badgeCount'), '0', 'empty wallet -> 0 badges');
 SELECT _assert((public.get_wallet_collection_snapshot('none') -> 'rarest') = 'null'::jsonb OR (public.get_wallet_collection_snapshot('none') ->> 'rarest') IS NULL, 'empty wallet -> null rarest');
+
+-- ── 7b. stale split (2026-09-04/06): the headline can be rendered as total − stale,
+--      and each perCollection entry carries the SAME basis so the share card's
+--      per-collection figure cannot exceed the headline (NBA Top Shot printed
+--      $87,785 raw beside a $50,223 headline before 20260906174634).
+SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'staleFmv'), '50.00', 'staleFmv = Ant''s 50 (the one STALE holding)');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'staleCount'), '1', 'staleCount = 1');
+SELECT _assert_eq((SELECT pc ->> 'stale_fmv' FROM jsonb_array_elements(public.get_wallet_collection_snapshot('W') -> 'perCollection') pc WHERE pc ->> 'slug' = 'nba_top_shot'), '50.00', 'perCollection Top Shot stale_fmv = 50.00');
+SELECT _assert_eq((SELECT pc ->> 'stale_count' FROM jsonb_array_elements(public.get_wallet_collection_snapshot('W') -> 'perCollection') pc WHERE pc ->> 'slug' = 'nba_top_shot'), '1', 'perCollection Top Shot stale_count = 1');
+SELECT _assert_eq((SELECT pc ->> 'stale_fmv' FROM jsonb_array_elements(public.get_wallet_collection_snapshot('W') -> 'perCollection') pc WHERE pc ->> 'slug' = 'disney_pinnacle'), '0.00', 'a collection with no STALE holding reports 0.00, not null');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('none') ->> 'staleFmv'), '0.00', 'empty wallet -> staleFmv 0.00');
 
 -- ── 8. closed-market exclusion (2026-08-03): a closed collection's moments still
 --      COUNT (real holdings) but its dead-market value is excluded from totalFmv,
