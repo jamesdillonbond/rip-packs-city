@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach, vi } from "vitest"
+import { describe, it, expect, afterEach } from "vitest"
 import { render, cleanup, act } from "@testing-library/react"
 import DeadImageGuard, { DEAD_ART_PIXEL, neutraliseDeadImage, sweepDeadImages } from "@/components/media/DeadImageGuard"
 

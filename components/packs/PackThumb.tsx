@@ -39,9 +39,10 @@ export default function PackThumb({ src, alt }: { src: string | null; alt: strin
   const show = isRenderablePackArtSrc(src) && !errored
 
   useEffect(() => {
-    // Catch an error that fired before hydration (case 1 above).
+    // Catch an error that fired before hydration (case 1 above) by REPLAYING
+    // the event the handler missed, so the one onError path owns the state.
     const el = imgRef.current
-    if (el && el.complete && el.naturalWidth === 0) setErrored(true)
+    if (el && el.complete && el.naturalWidth === 0) el.dispatchEvent(new Event("error"))
   }, [src])
 
   return (
