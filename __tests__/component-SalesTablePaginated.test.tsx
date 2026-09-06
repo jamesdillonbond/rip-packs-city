@@ -175,12 +175,17 @@ describe("SalesTablePaginated — loadMore + cell branches", () => {
     expect(container.textContent).toContain("—")
   })
 
-  it("prefixes a bare (no-0x) wallet with 0x in the profile link", () => {
+  it("prefixes a bare (no-0x) wallet with 0x and links it to the WALLET ANALYZER, nofollow — never /profile/<address>", () => {
     const { container } = render(
       <SalesTablePaginated {...base([sale({ buyer_address: "abc123def456", seller_address: null })])} />,
     )
-    const link = container.querySelector('a[href="/profile/0xabc123def456"]')
+    // 2026-09-06 (Search Console): /profile/<address> does not exist — the route
+    // resolves RPC usernames only — so these cells were dead links for readers
+    // and 302 "Not found" + 865 noindex URLs for Googlebot.
+    const link = container.querySelector('a[href="/nba-top-shot/collection?wallet=0xabc123def456"]')
     expect(link).toBeTruthy()
+    expect(link!.getAttribute("rel")).toBe("nofollow")
+    expect(container.querySelectorAll('a[href^="/profile/"]').length).toBe(0)
   })
 
   it("shows @username from initialNames when the resolver has no live entry", () => {

@@ -545,13 +545,15 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
   if (id === 3) {
     const editions = dropTsFossils(await getEditionRows())
 
-    // /moment/[id] — top 200 by last_updated_at as a coarse popularity proxy.
-    const momentPages: MetadataRoute.Sitemap = editions.slice(0, 200).map((e) => ({
-      url: `${BASE_URL}/moment/${e.id}`,
-      lastModified: e.last_updated_at ? new Date(e.last_updated_at) : now,
-      changeFrequency: 'daily' as const,
-      priority: 0.65,
-    }))
+    // /moment/<edition uuid> is NO LONGER LISTED (2026-09-06, Search Console).
+    // Every one of those URLs canonicalises to /<collection>/edition/<slug>
+    // (lib/moment-detail-seo.ts) and, since the same day, 301s there — so a
+    // sitemap entry for it was a URL that told Google "index me" while the page
+    // said "index the other one". GSC counted 6,462 of the family as
+    // "Alternate page with proper canonical tag" and 4,448 as "Crawled -
+    // currently not indexed": crawl budget spent on duplicates of pages this
+    // file already lists. The edition pages themselves are in segment 2.
+    const momentPages: MetadataRoute.Sitemap = []
 
     const setMap = new Map<string, Date>()
     const playerMap = new Map<string, Date>()

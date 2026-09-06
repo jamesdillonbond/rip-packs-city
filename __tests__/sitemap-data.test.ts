@@ -251,12 +251,11 @@ describe("segment 3 — set/player/team entities + top moments", () => {
     const players = s.filter((x) => x.url.includes("/player/"))
     const teams = s.filter((x) => x.url.includes("/team/"))
 
-    // One /moment/<id> per edition, priority 0.65.
-    expect(moments.map((m) => m.url).sort()).toEqual([
-      `${BASE}/moment/m1`,
-      `${BASE}/moment/m2`,
-    ])
-    expect(moments.every((m) => m.priority === 0.65)).toBe(true)
+    // 2026-09-06 (Search Console): NO /moment/<edition uuid> entries. Every one
+    // canonicalises to — and now 301s to — the edition page segment 2 already
+    // lists; GSC had 6,462 of them as "Alternate page with proper canonical".
+    // Asserted as the ABSENCE of the URL family, not a count of something else.
+    expect(moments).toEqual([])
 
     expect(sets.map((x) => x.url)).toEqual([`${BASE}/nba-top-shot/set/a-set`])
     expect(sets[0].priority).toBe(0.6)
@@ -296,15 +295,18 @@ describe("segment 3 — set/player/team entities + top moments", () => {
     expect((sets[0].lastModified as Date).toISOString()).toBe("2026-07-10T00:00:00.000Z")
   })
 
-  it("caps moment pages at 200", async () => {
+  it("emits no /moment/ URL at any population size (the 200-cap block is gone, not merely capped)", async () => {
     h.t.editions = ok(
       Array.from({ length: 250 }, (_, i) => ({
         id: `m${i}`, external_id: `${i}:0`, collection_id: TS_ID, updated_at: null,
-        player_name: null, set_name: null, team_name: null,
+        player_name: null, set_name: "A Set", team_name: null,
       }))
     )
     const s = await buildSitemapSegment(3)
-    expect(s.filter((x) => x.url.includes("/moment/"))).toHaveLength(200)
+    expect(s.filter((x) => x.url.includes("/moment/"))).toHaveLength(0)
+    // …while the segment still emits SOMETHING for those rows (a walk that
+    // found nothing would pass the assertion above vacuously).
+    expect(s.length).toBeGreaterThan(0)
   })
 })
 

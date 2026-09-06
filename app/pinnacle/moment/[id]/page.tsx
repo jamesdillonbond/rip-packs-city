@@ -325,8 +325,8 @@ export default async function PinnacleMomentPage({
                     <td>{fmtDate(s.sold_at)}</td>
                     <td className="rpc-pm-num">{s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "—"}</td>
                     <td className="rpc-pm-num">{fmtUsd(s.sale_price_usd)}</td>
-                    <td><WalletLink address={s.buyer_address} name={s.buyer_address ? nameByAddr[s.buyer_address.toLowerCase()] : null} /></td>
-                    <td><WalletLink address={s.seller_address} name={s.seller_address ? nameByAddr[s.seller_address.toLowerCase()] : null} /></td>
+                    <td><WalletLink address={s.buyer_address} name={s.buyer_address ? nameByAddr[s.buyer_address.toLowerCase()] : null} collectionUrlSlug="disney-pinnacle" /></td>
+                    <td><WalletLink address={s.seller_address} name={s.seller_address ? nameByAddr[s.seller_address.toLowerCase()] : null} collectionUrlSlug="disney-pinnacle" /></td>
                   </tr>
                 ))}
               </tbody>

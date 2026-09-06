@@ -1249,7 +1249,7 @@ async function EditionBottomSections({
                     <span className="rpc-mono" style={{ fontSize: 11, color: r.last_sale_usd != null ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)" }}>
                       {r.last_sale_usd != null ? `${fmtUsd(r.last_sale_usd)} · ${relTime(r.last_sold_at)}` : "never sold"}
                     </span>
-                    {owner ? <WalletLink address={owner} name={ownerNames.get(owner.toLowerCase()) ?? null} /> : <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", textAlign: "right" }}>owner —</span>}
+                    {owner ? <WalletLink address={owner} name={ownerNames.get(owner.toLowerCase()) ?? null} collectionUrlSlug={collection} /> : <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", textAlign: "right" }}>owner —</span>}
                   </div>
                 )
               })}
@@ -1288,7 +1288,7 @@ async function EditionBottomSections({
             {topOwners.map((t, i) => (
               <div key={t.owner_address} style={{ display: "grid", gridTemplateColumns: "26px 1fr 96px", gap: 12, alignItems: "center", padding: "8px 10px", border: "1px solid var(--rpc-border)", borderRadius: 4 }}>
                 <span className="rpc-mono" style={{ fontSize: 12, fontWeight: 700, color: i === 0 ? "var(--rpc-red)" : "var(--rpc-text-muted)" }}>{i + 1}</span>
-                <WalletLink address={t.owner_address} name={ownerNames.get(t.owner_address.toLowerCase()) ?? null} />
+                <WalletLink address={t.owner_address} name={ownerNames.get(t.owner_address.toLowerCase()) ?? null} collectionUrlSlug={collection} />
                 <span className="rpc-mono" style={{ fontSize: 12, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>
                   {fmtCount(t.moment_count)}<span style={{ color: "var(--rpc-text-muted)", fontWeight: 400 }}> owned</span>
                 </span>

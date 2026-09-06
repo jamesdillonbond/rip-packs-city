@@ -64,16 +64,31 @@ const TD: React.CSSProperties = {
   whiteSpace: "nowrap",
 }
 
-function WalletCell({ address, name }: { address: string | null; name?: string | null }) {
+function WalletCell({ address, name, collectionUrlSlug }: { address: string | null; name?: string | null; collectionUrlSlug?: string | null }) {
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>{EM_DASH}</span>
   const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
+  // 2026-09-06 (Search Console): this linked to /profile/<address>, a URL that
+  // does NOT EXIST — /profile/<handle> resolves an RPC username only, so every
+  // buyer/seller/owner link on every sales table was a 404 for the reader and
+  // for Googlebot (GSC: 302 "Not found" + 865 "noindex" profile URLs, all
+  // /profile/0x…). The page a collector actually wants behind a wallet is the
+  // wallet analyzer, /<collection>/collection?wallet=<addr> — anon-public, and
+  // robots-disallowed via `?wallet=` so it costs no crawl budget. rel=nofollow
+  // says the same thing at the link. Without a collection to route to, the
+  // address is plain text with the full value in the title.
+  const label = name ? `@${name}` : truncWallet(address)
+  if (!collectionUrlSlug) {
+    return <span title={lower} style={{ color: "var(--rpc-text-primary)", }}>{label}</span>
+  }
+  const href = `/${collectionUrlSlug}/collection?wallet=${lower}`
   return (
     <Link
-      href={`/profile/${lower}`}
+      href={href}
+      rel="nofollow"
       title={name ? `${name} · ${lower}` : lower}
       style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}
     >
-      {name ? `@${name}` : truncWallet(address)}
+      {label}
     </Link>
   )
 }
@@ -174,8 +189,8 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
                     </td>
                   )}
                   <td style={TD}>{fmtUsd(s.price_usd)}</td>
-                  <td style={TD}><WalletCell address={s.buyer_address} name={nameFor(s.buyer_address)} /></td>
-                  <td style={TD}><WalletCell address={s.seller_address} name={nameFor(s.seller_address)} /></td>
+                  <td style={TD}><WalletCell address={s.buyer_address} name={nameFor(s.buyer_address)} collectionUrlSlug={collectionUrlSlug} /></td>
+                  <td style={TD}><WalletCell address={s.seller_address} name={nameFor(s.seller_address)} collectionUrlSlug={collectionUrlSlug} /></td>
                   <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}><RelTime iso={s.sold_at} /></td>
                 </tr>
               )

@@ -111,13 +111,26 @@ describe("_shared formatters", () => {
     expect(container.textContent).toBe("LEG")
   })
 
-  it("WalletLink em-dashes a missing address and links a present one to /profile", () => {
+  it("WalletLink em-dashes a missing address and links a present one to the WALLET ANALYZER, nofollow — never to /profile/<address>", () => {
     expect(render(<WalletLink address={null} />).container.textContent).toBe(EM_DASH)
     cleanup()
-    const { container } = render(<WalletLink address="0xAbC1234567890000" name="ripper" />)
+    const { container } = render(<WalletLink address="0xAbC1234567890000" name="ripper" collectionUrlSlug="nba-top-shot" />)
     const a = container.querySelector("a")!
-    expect(a.getAttribute("href")).toBe("/profile/0xabc1234567890000")
+    // 2026-09-06: /profile/<address> is a URL that does not exist (the route
+    // resolves RPC usernames only); GSC counted 302 "Not found" + 865 noindex
+    // profile URLs from these cells. The analyzer is the page a wallet click means.
+    expect(a.getAttribute("href")).toBe("/nba-top-shot/collection?wallet=0xabc1234567890000")
+    expect(a.getAttribute("rel")).toBe("nofollow")
+    expect(a.getAttribute("href")).not.toContain("/profile/")
     expect(a.textContent).toBe("@ripper")
+  })
+
+  it("WalletLink with no collection to route to renders plain text (the address in the title), not a link to nothing", () => {
+    const { container } = render(<WalletLink address="0xAbC1234567890000" />)
+    expect(container.querySelector("a")).toBeNull()
+    const span = container.querySelector("span")!
+    expect(span.getAttribute("title")).toBe("0xabc1234567890000")
+    expect(span.textContent).toMatch(/0xabc1/i)
   })
 
   // ── SectionUnavailable ──────────────────────────────────────────────────

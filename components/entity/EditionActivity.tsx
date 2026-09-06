@@ -78,21 +78,36 @@ const TD: React.CSSProperties = {
   whiteSpace: "nowrap",
 }
 
-function WalletCell({ address, name }: { address: string | null; name?: string | null }) {
+function WalletCell({ address, name, collectionUrlSlug }: { address: string | null; name?: string | null; collectionUrlSlug?: string | null }) {
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>{EM_DASH}</span>
   const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
+  // 2026-09-06 (Search Console): this linked to /profile/<address>, a URL that
+  // does NOT EXIST — /profile/<handle> resolves an RPC username only, so every
+  // buyer/seller/owner link on every sales table was a 404 for the reader and
+  // for Googlebot (GSC: 302 "Not found" + 865 "noindex" profile URLs, all
+  // /profile/0x…). The page a collector actually wants behind a wallet is the
+  // wallet analyzer, /<collection>/collection?wallet=<addr> — anon-public, and
+  // robots-disallowed via `?wallet=` so it costs no crawl budget. rel=nofollow
+  // says the same thing at the link. Without a collection to route to, the
+  // address is plain text with the full value in the title.
+  const label = name ? `@${name}` : truncWallet(address)
+  if (!collectionUrlSlug) {
+    return <span title={lower} style={{ color: "var(--rpc-text-primary)", }}>{label}</span>
+  }
+  const href = `/${collectionUrlSlug}/collection?wallet=${lower}`
   return (
     <Link
-      href={`/profile/${lower}`}
+      href={href}
+      rel="nofollow"
       title={name ? `${name} · ${lower}` : lower}
       style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}
     >
-      {name ? `@${name}` : truncWallet(address)}
+      {label}
     </Link>
   )
 }
 
-function OffersTable({ offers, initialNames, ok = true }: { offers: OfferRow[]; initialNames?: Record<string, string>; ok?: boolean }) {
+function OffersTable({ offers, initialNames, ok = true, collectionUrlSlug }: { offers: OfferRow[]; initialNames?: Record<string, string>; ok?: boolean; collectionUrlSlug?: string | null }) {
   const addrs = useMemo(() => offers.map(o => o.buyer_address).filter((a): a is string => !!a), [offers])
   const names = useResolveUsernames(addrs)
   const nameFor = (a: string | null) =>
@@ -124,7 +139,7 @@ function OffersTable({ offers, initialNames, ok = true }: { offers: OfferRow[]; 
               {/* edition/subedition offers have no serial (any serial fills) */}
               <td style={TD}>{o.serial_number != null && o.serial_number > 0 ? `#${o.serial_number}` : EM_DASH}</td>
               <td style={TD}>{fmtUsd(o.price_usd)}</td>
-              <td style={TD}><WalletCell address={o.buyer_address} name={nameFor(o.buyer_address)} /></td>
+              <td style={TD}><WalletCell address={o.buyer_address} name={nameFor(o.buyer_address)} collectionUrlSlug={collectionUrlSlug} /></td>
               <td style={{ ...TD, color: "var(--rpc-text-secondary)", textTransform: "capitalize" }}>{o.offer_type ?? EM_DASH}</td>
               <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}><RelTime iso={o.made_at} /></td>
             </tr>
@@ -186,7 +201,7 @@ export default function EditionActivity({
           serverOk={salesOk}
         />
       ) : (
-        <OffersTable offers={offers} initialNames={initialNames} ok={offersOk} />
+        <OffersTable offers={offers} initialNames={initialNames} ok={offersOk} collectionUrlSlug={collectionUrlSlug} />
       )}
     </div>
   )

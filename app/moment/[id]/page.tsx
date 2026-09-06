@@ -24,7 +24,7 @@
 //     the hero and Recent Activity, with linked Team.
 
 import type { Metadata } from "next"
-import { notFound, redirect } from "next/navigation"
+import { notFound, redirect, permanentRedirect } from "next/navigation"
 import Link from "next/link"
 // The data-access layer moved to lib/ (2026-08-13) so it lands inside the primary
 // coverage gate — `app/**/page.tsx` is measured by neither — and so a failed read
@@ -66,7 +66,7 @@ import {
 } from "@/lib/moment-detail-format"
 import { resolveUsernames } from "@/lib/flowty-username"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
-import { marketplaceMomentUrl, dapperMarketMomentUrl, dapperMarketEditionUrl } from "@/lib/collections"
+import { marketplaceMomentUrl, dapperMarketMomentUrl, dapperMarketEditionUrl, fromDbSlug } from "@/lib/collections"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
@@ -442,7 +442,32 @@ export default async function MomentPage(
     notFound()
   }
 
+  // 2026-09-06 (Search Console): an EDITION-grain /moment/<edition uuid> is the
+  // same page as /<collection>/edition/<slug> — same data, same components,
+  // and (since 2026-06-05) a canonical pointing there. Google agreed and still
+  // spent crawl budget on ~11,000 of them ("Alternate page with proper
+  // canonical tag" 6,462; "Crawled - currently not indexed" 4,448; a further
+  // 61 "Duplicate without user-selected canonical"). A 301 consolidates the
+  // signal faster than a canonical hint and stops the re-crawls. Only the
+  // aggregate form redirects: a SERIAL-specific /moment/<nft id | moment uuid>
+  // shows serial-level facts the edition page does not (#serial, its holder,
+  // its own listing/offer) and stays, canonical-tagged, as the shareable URL.
+  // The self-canonical fallback (no resolvable slug) never redirects.
+  if (detail.resolved?.kind === "edition") {
+    const target = momentCanonicalPath({
+      collectionSlug: detail.edition.collection_slug,
+      editionId: detail.edition.id,
+      externalId: detail.edition.external_id,
+      momentUrlId: id,
+    })
+    if (target !== `/moment/${encodeURIComponent(id)}`) {
+      permanentRedirect(target)
+    }
+  }
+
   const e = detail.edition
+  // Route key for the wallet-analyzer links in the tables below (see OwnerLink).
+  const walletSlug = e.collection_slug ? fromDbSlug(e.collection_slug) : null
   const f = detail.fmv
   const r = detail.resolved
   const ss = detail.serial_specific
@@ -1262,7 +1287,7 @@ export default async function MomentPage(
               gap: 12,
             }}
           >
-            <StatCell label="Owner" value={<OwnerLink address={ss.owner_address} name={nameFor(ss.owner_address)} />} />
+            <StatCell label="Owner" value={<OwnerLink address={ss.owner_address} name={nameFor(ss.owner_address)} collectionUrlSlug={walletSlug} />} />
             {/* Listed (Bug 13, 2026-07-03): restored off cached_listings_v2 — the
                 live on-chain listing feed — instead of the dead ts_listings source.
                 Shows the cheapest active ask for this serial's nft_id, or a dash
@@ -1356,7 +1381,7 @@ export default async function MomentPage(
                       </Td>
                       <Td>
                         {n.holder_address ? (
-                          <OwnerLink address={n.holder_address} name={nameFor(n.holder_address)} />
+                          <OwnerLink address={n.holder_address} name={nameFor(n.holder_address)} collectionUrlSlug={walletSlug} />
                         ) : (
                           <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
                         )}
@@ -1429,8 +1454,8 @@ export default async function MomentPage(
                     <Td>
                       <span title={fmtAbsDate(s.sold_at)}>{fmtRelDate(s.sold_at)}</span>
                     </Td>
-                    <Td><OwnerLink address={s.buyer_address} name={nameFor(s.buyer_address)} /></Td>
-                    <Td><OwnerLink address={s.seller_address} name={nameFor(s.seller_address)} /></Td>
+                    <Td><OwnerLink address={s.buyer_address} name={nameFor(s.buyer_address)} collectionUrlSlug={walletSlug} /></Td>
+                    <Td><OwnerLink address={s.seller_address} name={nameFor(s.seller_address)} collectionUrlSlug={walletSlug} /></Td>
                   </tr>
                   )
                 })}
@@ -1807,17 +1832,32 @@ function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-function OwnerLink({ address, name }: { address: string | null | undefined; name?: string | null }) {
+function OwnerLink({ address, name, collectionUrlSlug }: { address: string | null | undefined; name?: string | null; collectionUrlSlug?: string | null }) {
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
   const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
   const trunc = address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
+  // 2026-09-06 (Search Console): this linked to /profile/<address>, a URL that
+  // does NOT EXIST — /profile/<handle> resolves an RPC username only, so every
+  // buyer/seller/owner link on every sales table was a 404 for the reader and
+  // for Googlebot (GSC: 302 "Not found" + 865 "noindex" profile URLs, all
+  // /profile/0x…). The page a collector actually wants behind a wallet is the
+  // wallet analyzer, /<collection>/collection?wallet=<addr> — anon-public, and
+  // robots-disallowed via `?wallet=` so it costs no crawl budget. rel=nofollow
+  // says the same thing at the link. Without a collection to route to, the
+  // address is plain text with the full value in the title.
+  const label = name ? `@${name}` : trunc
+  if (!collectionUrlSlug) {
+    return <span title={lower} style={{ color: "var(--rpc-text-primary)", }}>{label}</span>
+  }
+  const href = `/${collectionUrlSlug}/collection?wallet=${lower}`
   return (
     <Link
-      href={`/profile/${lower}`}
+      href={href}
+      rel="nofollow"
       title={name ? `${name} · ${address}` : address}
       style={{ color: "var(--rpc-text-primary)", textDecoration: "none" }}
     >
-      {name ? `@${name}` : trunc}
+      {label}
     </Link>
   )
 }

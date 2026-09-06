@@ -20,7 +20,16 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: '*',
-        allow: ['/'],
+        // 2026-09-06 (Search Console): `/_next/` was blocked wholesale, which
+        // put every JS/CSS chunk in GSC's "Blocked by robots.txt" bucket
+        // (1,449 URLs) and — the part that matters — kept Googlebot from
+        // RENDERING the client-hydrated parts of every page. Google's own
+        // guidance is never to block the resources a page needs to render.
+        // `/_next/static/` (immutable, hashed chunks) and `/_next/image` (the
+        // optimized-image endpoint) are allowed; `/_next/data/` and the rest
+        // stay blocked. A more specific Allow beats a shorter Disallow in
+        // Google's robots.txt precedence (longest match wins).
+        allow: ['/', '/_next/static/', '/_next/image'],
         disallow: [
           '/api/',
           '/_next/',
