@@ -58,7 +58,7 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <span style={labelStyle}>🎯 Collection Breakdown</span>
         <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>
-          {failed || loading ? "—" : totalMoments + " moments"}
+          {failed || loading ? "—" : totalMoments.toLocaleString("en-US") + " moments"}
         </span>
       </div>
       {loading ? (
@@ -87,7 +87,7 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
                     {r.collection_name}
                   </span>
                   <span style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.5)" }}>
-                    {r.moment_count}
+                    {(Number(r.moment_count) || 0).toLocaleString("en-US")}
                   </span>
                   {showFmv && r.market_closed_at ? (
                     <span style={{ minWidth: 64, textAlign: "right" }}>

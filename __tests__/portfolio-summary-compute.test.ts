@@ -257,3 +257,27 @@ describe("computeCostBasisSummary", () => {
     expect(s!.plPct).toBe(-40)
   })
 })
+
+// 2026-09-06: the Collection tab was the last surface headlining the RAW sum
+// ($87,812) while the dashboard/profile/share card for the same wallet said
+// $50,234 + $44,039 stale. One basis everywhere: total − stale, stale disclosed.
+describe("computeWalletStatRow — headline is total − stale when the summary carries the split", () => {
+  const totals = { totalFmv: 0, totalCount: 0, unlockedFmv: 0, unlockedCount: 0, lockedFmv: 0, lockedCount: 0, totalBestOffer: 0 } as any
+  it("subtracts stale_fmv from wallet_fmv and exposes the split", () => {
+    const r = computeWalletStatRow({
+      walletSummary: { wallet_fmv: 87726.65, stale_fmv: 41200, stale_count: 93, unlocked_fmv: 1, unlocked_count: 1, locked_fmv: 1, locked_count: 1, cost_basis: 0, current_fmv: 0, pnl: 0 },
+      walletTotalFmv: null, totals, paginatedTotal: 15290, collectionSlug: "nba-top-shot",
+    })
+    expect(r.walletFmv).toBeCloseTo(46526.65, 2)
+    expect(r.staleFmv).toBe(41200)
+    expect(r.staleCount).toBe(93)
+  })
+  it("an older summary without the split renders the total unchanged (no NaN, stale 0)", () => {
+    const r = computeWalletStatRow({
+      walletSummary: { wallet_fmv: 500, unlocked_fmv: 1, unlocked_count: 1, locked_fmv: 1, locked_count: 1, cost_basis: 0, current_fmv: 0, pnl: 0 },
+      walletTotalFmv: null, totals, paginatedTotal: 3, collectionSlug: "nba-top-shot",
+    })
+    expect(r.walletFmv).toBe(500)
+    expect(r.staleFmv).toBe(0)
+  })
+})

@@ -30,6 +30,10 @@ interface SnapshotData {
     name: string
     moments: number
     fmv: number
+    // 2026-09-06: the STALE share of `fmv`, same test as the headline's staleFmv,
+    // so this tile can render total − stale on the same basis as the headline.
+    stale_fmv?: number | null
+    stale_count?: number | null
     // ISO date the market closed, or null/absent for a live market. When set,
     // this collection is counted but excluded from Total Collection FMV.
     market_closed_at?: string | null
@@ -427,9 +431,24 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                       <span style={{ fontWeight: 400, opacity: 0.8 }}>{formatClosedOn(String(c.market_closed_at).slice(0, 10))}</span>
                     </div>
                   ) : (
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--rpc-red)", fontFamily: "monospace" }}>
-                      ${c.fmv.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                    </div>
+                    // Same basis as the headline: total − stale, with the stale
+                    // share disclosed. The card printed Top Shot $87,785 (raw)
+                    // under a $50,223 headline for the same wallet (2026-09-06).
+                    (() => {
+                      const h = shareHeadline({ totalFmv: c.fmv, staleFmv: c.stale_fmv, staleCount: c.stale_count })
+                      return (
+                        <>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--rpc-red)", fontFamily: "monospace" }}>
+                            ${h.live.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                          </div>
+                          {h.stale > 0 ? (
+                            <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", fontFamily: "monospace", marginTop: 2 }}>
+                              + ${h.stale.toLocaleString("en-US", { maximumFractionDigits: 0 })} stale
+                            </div>
+                          ) : null}
+                        </>
+                      )
+                    })()
                   )}
                 </div>
               ))}

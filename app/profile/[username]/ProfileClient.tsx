@@ -16,6 +16,7 @@ import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
 import { getCollectionByUuid } from "@/lib/collections";
+import { isMarketClosed } from "@/lib/market-closed";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface ProfileBio {
@@ -767,6 +768,12 @@ export default function ProfileClient(props: {
                 const subLabel = label === collectionLabel ? "Saved wallet" : collectionLabel;
                 // Per-row value uses the same stale split as the headline.
                 const rowFmv = w.cached_fmv != null ? w.cached_fmv - (w.cached_fmv_stale ?? 0) : null;
+                // 2026-09-06: the row's own collection — the UFC Strike row read
+                // "$0.00" beside a breakdown that said "market closed", and every
+                // row's LOAD → went to /nba-top-shot regardless of collection.
+                const rowCollection = w.collection_id ? getCollectionByUuid(w.collection_id) : undefined;
+                const rowClosed = rowCollection ? isMarketClosed(rowCollection.id) : false;
+                const loadHref = "/" + (rowCollection?.id ?? "nba-top-shot") + "/collection?wallet=" + encodeURIComponent(w.username ?? "");
                 return (
                   <div key={i} style={{ ...cardStyle, display: "flex", alignItems: "center", gap: 16, padding: "12px 16px" }}>
                     <div style={{ width: 4, height: 28, borderRadius: 2, background: w.accent_color || "var(--rpc-red)", flexShrink: 0 }} />
@@ -776,13 +783,15 @@ export default function ProfileClient(props: {
                     </div>
                     {rowFmv != null && (
                       <div style={{ textAlign: "right" }}>
-                        <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)" }}>{fmtDollars(rowFmv)}</div>
-                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>{w.cached_moment_count ?? 0} MOMENTS</div>
+                        <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 14, color: rowClosed ? "var(--rpc-text-secondary)" : "var(--rpc-text-primary)" }}>
+                          {rowClosed ? "market closed" : fmtDollars(rowFmv)}
+                        </div>
+                        <div style={{ fontSize: 8, fontFamily: monoFont, color: "var(--rpc-text-ghost)" }}>{(w.cached_moment_count ?? 0).toLocaleString("en-US")} MOMENTS</div>
                       </div>
                     )}
                     {w.username && (
                       <Link
-                        href={"/nba-top-shot/collection?q=" + encodeURIComponent(w.username)}
+                        href={loadHref}
                         className="rpc-chip"
                         style={{ textDecoration: "none", flexShrink: 0 }}
                       >

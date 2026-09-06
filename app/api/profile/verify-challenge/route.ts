@@ -223,7 +223,7 @@ export async function POST(req: NextRequest) {
       challenge: null,
       unavailable: true,
       reason: "no_verifiable_moments",
-      message: "Verification by listing isn't available for this wallet (no displayable Moment to list). Owner attestation or Dapper sign-in can be used instead.",
+      message: "Verification by listing isn't available for this wallet (no displayable Top Shot Moment to list). Your wallet still loads read-only.",
     });
   }
 
@@ -270,17 +270,43 @@ export async function POST(req: NextRequest) {
   }
 
   let target: TargetCandidate | null = null;
+  let checkErrors = 0;
+  let checkNotFound = 0;
+  let lastCheckError = "";
   for (const c of liveCandidates) {
     try {
       const state = await fetchMomentListingState(c.moment_id);
+      if (!state.found) checkNotFound += 1;
       if (state.found && !state.isLocked && !state.forSale) {
         target = c;
         break;
       }
-    } catch {
-      // GQL hiccup on this candidate — try the next.
+    } catch (e) {
+      // GQL hiccup on this candidate — try the next, but COUNT it: when every
+      // candidate throws, the outage is ours, not the collector's Moments.
+      checkErrors += 1;
+      lastCheckError = e instanceof Error ? e.message : String(e);
       continue;
     }
+  }
+  // ⚠ 2026-09-06: `public-api.nbatopshot.com` has been decommissioned since
+  // ~2026-08-28 (docs/reference/apis-and-cadence.md). Every candidate check
+  // above threw, and this route answered "Your cheapest Moments look locked or
+  // already listed" — a false claim about the collector's own holdings, on
+  // the step that gates Pack History and Transaction History for every new
+  // account — and pointed at "owner attestation", which does not exist. Say
+  // what is true: the listing check itself is unavailable.
+  if (!target && liveCandidates.length > 0 && checkErrors + checkNotFound === liveCandidates.length) {
+    console.log(
+      `[verify-challenge] listing check unavailable wallet=${wallet} candidates=${liveCandidates.length} errors=${checkErrors} notFound=${checkNotFound} last=${lastCheckError.slice(0, 160)}`,
+    );
+    return NextResponse.json({
+      challenge: null,
+      unavailable: true,
+      reason: "listing_check_unavailable",
+      message:
+        "Verification by listing is temporarily unavailable — our live Top Shot listing check is offline, not anything about your Moments. Your wallet still loads read-only; we'll re-enable verification when the check is back.",
+    });
   }
   if (!target) {
     // Self-heal instead of dead-ending: every widened candidate was found but
@@ -312,7 +338,7 @@ export async function POST(req: NextRequest) {
       unavailable: true,
       reason: "no_listable_target",
       message:
-        "Your cheapest Moments look locked or already listed right now — we're refreshing your collection state. Try again in ~10 minutes, or use owner attestation.",
+        "Your cheapest Moments look locked or already listed right now — we're refreshing your collection state. Try again in ~10 minutes.",
     });
   }
 

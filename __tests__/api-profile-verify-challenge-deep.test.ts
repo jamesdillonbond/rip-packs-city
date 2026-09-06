@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   user: null as null | { id: string },
   ownedIds: [] as string[],
   throwOnChain: false,
+  listingThrows: false,
   listingState: { found: true, isLocked: false, forSale: false, price: null as number | null },
 }))
 
@@ -41,7 +42,10 @@ vi.mock("@/lib/auth/supabase-server", () => ({
   },
 }))
 vi.mock("@/lib/verify-wallet-gql", () => ({
-  fetchMomentListingState: async () => state.listingState,
+  fetchMomentListingState: async () => {
+    if (state.listingThrows) throw new Error("Top Shot GQL HTTP 530: origin unreachable")
+    return state.listingState
+  },
   topShotMomentUrl: (id: string) => `https://nbatopshot.com/moment/${id}`,
 }))
 vi.mock("@/lib/chains/flow/wallet-backfill-helpers", () => ({
@@ -302,6 +306,34 @@ describe("POST /api/profile/verify-challenge — guard + fallback + error branch
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.reason).toBe("no_listable_target")
+  })
+
+  // 2026-09-06: public-api.nbatopshot.com is decommissioned. Every candidate
+  // check threw and the route told the collector their Moments "look locked or
+  // already listed" — and pointed at "owner attestation", a feature that does
+  // not exist. Pin the honest classification: our check is down, not their bag.
+  it("every candidate check THROWING (dead listing host) is listing_check_unavailable, never a claim about the collector's Moments", async () => {
+    state.user = { id: "u1" }
+    state.ownedIds = ["m1", "m2"]
+    state.listingThrows = true
+    install({
+      saved_wallets: { data: [{ wallet_addr: "0xabc" }], error: null },
+      "rpc:pick_verification_target": {
+        data: [
+          { moment_id: "m1", edition_key: "3:45", serial_number: 5, player_name: "Dame", set_name: "Base", image_url: "http://img", fmv_usd: 0.5 },
+          { moment_id: "m2", edition_key: "3:46", serial_number: 6, player_name: "Dame", set_name: "Base", image_url: "http://img", fmv_usd: 0.6 },
+        ],
+        error: null,
+      },
+    })
+    const res = await POST(postReq({ wallet_addr: "0xABC" }))
+    state.listingThrows = false
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.reason).toBe("listing_check_unavailable")
+    expect(body.unavailable).toBe(true)
+    expect(String(body.message)).not.toMatch(/locked|already listed|attestation/i)
+    expect(String(body.message)).toMatch(/unavailable|offline/i)
   })
 
   it("a Flow read failure (getIDs throws) falls through to the GQL-only path and still mints", async () => {

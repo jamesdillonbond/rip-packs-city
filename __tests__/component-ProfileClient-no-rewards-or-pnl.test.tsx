@@ -202,3 +202,26 @@ describe("public profile — the ANALYZE link carries a Top Shot username, never
     expect(screen.queryByText(/ANALYZE/i)).toBeNull()
   })
 })
+
+// 2026-09-06: the SAVED WALLETS rows. The UFC Strike row printed "$0.00" under a
+// breakdown that said "market closed" for the same wallet, and every row's
+// LOAD → went to /nba-top-shot regardless of the row's own collection.
+describe("public profile — saved-wallet rows are honest about closed markets and load their OWN collection", () => {
+  it("a closed-market row says 'market closed' instead of a dollar figure, and LOAD → targets the row's collection", async () => {
+    installFetch({
+      ...PROFILE,
+      wallets: [
+        { ...PROFILE.wallets[0], username: "jamesdillonbond", collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023", cached_fmv: 0, cached_moment_count: 247 },
+        { ...PROFILE.wallets[0], username: "jamesdillonbond", collection_id: "7dd9dd11-e8b6-45c4-ac99-71331f959714", cached_fmv: 878.69, cached_moment_count: 186 },
+      ],
+    })
+    render(<ProfileClient />)
+    await waitFor(() => expect(screen.getByText(/SAVED WALLETS/i)).toBeTruthy())
+    expect(document.body.textContent).toMatch(/market closed/i)
+    expect(document.body.textContent).not.toMatch(/\$0\.00/)
+    const loads = screen.getAllByText(/LOAD/).map((el) => el.closest("a")!.getAttribute("href"))
+    expect(loads).toContain("/ufc/collection?wallet=jamesdillonbond")
+    expect(loads).toContain("/disney-pinnacle/collection?wallet=jamesdillonbond")
+    expect(loads.some((h) => h?.startsWith("/nba-top-shot/collection?wallet="))).toBe(false)
+  })
+})

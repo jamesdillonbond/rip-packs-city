@@ -1024,6 +1024,7 @@ function ProfilePageInner() {
             color="var(--rpc-text-primary)"
             unavailable={statsIncomplete}
             pending={statsPending}
+            empty={!walletsFailed && wallets.length === 0}
           />
           <StatTile
             label="Portfolio FMV"
@@ -1032,6 +1033,7 @@ function ProfilePageInner() {
             caption={staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString()} stale-priced moments` : undefined}
             unavailable={statsIncomplete}
             pending={statsPending}
+            empty={!walletsFailed && wallets.length === 0}
           />
           <StatTile
             label="Collections"
@@ -1039,6 +1041,7 @@ function ProfilePageInner() {
             color="#A855F7"
             unavailable={statsIncomplete}
             pending={statsPending}
+            empty={!walletsFailed && wallets.length === 0}
           />
         </section>
 
@@ -2754,8 +2757,12 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 // the underlying read FAILED, so a partial/unknown total can never masquerade as a
 // real 0 / $0 — the collector must be able to tell "we couldn't load this" apart
 // from "you own nothing".
-function StatTile({ label, value, color, caption, unavailable, pending }: { label: string; value: string; color: string; caption?: string; unavailable?: boolean; pending?: boolean }) {
-  const muted = unavailable || pending;
+function StatTile({ label, value, color, caption, unavailable, pending, empty }: { label: string; value: string; color: string; caption?: string; unavailable?: boolean; pending?: boolean; empty?: boolean }) {
+  // FOUR states: unavailable (read failed) · pending (read not yet happened) ·
+  // empty (nothing to read — no wallet saved yet) · a value. 2026-09-06: a
+  // fresh account with no wallet rendered "0 · $0 · 0" as if measured; "$0"
+  // is a claim about a collection that has not been named yet.
+  const muted = unavailable || pending || empty;
   return (
     <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "12px 16px" }}>
       <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
@@ -2764,6 +2771,8 @@ function StatTile({ label, value, color, caption, unavailable, pending }: { labe
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Couldn&apos;t load</div>
       ) : pending ? (
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Indexing your wallet…</div>
+      ) : empty ? (
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Add a wallet above</div>
       ) : caption ? (
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>{caption}</div>
       ) : null}

@@ -466,6 +466,19 @@ describe("DashboardClient — wallets", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
   })
 
+  // 2026-09-06: a fresh account with no wallet rendered "0 · $0 · 0" in the stat
+  // tiles as if measured. Nothing has been read yet, so the tiles must not
+  // publish a number — "—" plus "Add a wallet above" is the honest state.
+  it("stat tiles show — and 'Add a wallet above', never $0, when no wallet is saved", async () => {
+    routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
+    routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
+    render(<DashboardClient />)
+    await waitFor(() => expect(screen.getAllByText(/Add a wallet above/i).length).toBeGreaterThanOrEqual(3))
+    const stats = document.querySelector('[data-tour-anchor="portfolio-stats"]')!
+    expect(stats.textContent).not.toMatch(/\$0\b/)
+    expect(stats.textContent).toMatch(/—/)
+  })
+
   it("treats an unverified wallet differently from a verified one", async () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [WALLET({ verified_at: null })] })
     render(<DashboardClient />)

@@ -31,6 +31,9 @@ export type WalletStatRowProps = {
   unlockedCount: number | null
   lockedCount: number | null
   spreadGap: number | null
+  /** Stale-priced share excluded from walletFmv; disclosed under the headline when > 0. */
+  staleFmv?: number
+  staleCount?: number
   collectionSlug: string
   loading?: boolean
   loadProgress?: { loaded: number; total: number; pct: number } | null
@@ -76,6 +79,8 @@ export default function WalletStatRow(props: WalletStatRowProps) {
     unlockedCount,
     lockedCount,
     spreadGap,
+    staleFmv,
+    staleCount,
     collectionSlug,
     loading,
     loadProgress,
@@ -154,7 +159,14 @@ export default function WalletStatRow(props: WalletStatRowProps) {
             </div>
           </div>
         ) : (
-          <div className="rpc-stat-caption">{formatCount(momentCount)} {noun}</div>
+          <div className="rpc-stat-caption">
+            {formatCount(momentCount)} {noun}
+            {typeof staleFmv === "number" && staleFmv > 0 ? (
+              <span style={{ display: "block", opacity: 0.8 }}>
+                + {formatCurrency(staleFmv)} across {formatCount(staleCount ?? 0)} stale-priced
+              </span>
+            ) : null}
+          </div>
         )}
       </div>
 

@@ -74,3 +74,26 @@ describe("share-card-view · shareHeadline (front door = total − stale, like t
     expect(h.caption).toBe("+ $25 across 1 stale-priced moment")
   })
 })
+
+// 2026-09-06: the "Across Flow Collections" tiles reuse shareHeadline per
+// collection so every figure on the card sits on ONE basis (total − stale).
+// The founder's card printed NBA Top Shot $87,785 raw under a $50,223 headline.
+describe("shareHeadline — per-collection tile basis", () => {
+  it("renders a collection's live share and discloses its stale share", () => {
+    const h = shareHeadline({ totalFmv: 87785, staleFmv: 42729, staleCount: 315 })
+    expect(h.live).toBe(45056)
+    expect(h.stale).toBe(42729)
+    expect(h.caption).toContain("315 stale-priced moments")
+  })
+  it("a collection with no stale share renders its full total and no caption", () => {
+    const h = shareHeadline({ totalFmv: 4013, staleFmv: 0, staleCount: 0 })
+    expect(h.live).toBe(4013)
+    expect(h.stale).toBe(0)
+    expect(h.caption).toBeNull()
+  })
+  it("a tile with an unknown stale split (older API) still renders the total, never NaN", () => {
+    const h = shareHeadline({ totalFmv: 879 })
+    expect(h.live).toBe(879)
+    expect(Number.isFinite(h.live)).toBe(true)
+  })
+})

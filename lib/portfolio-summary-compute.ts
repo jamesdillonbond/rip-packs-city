@@ -7,6 +7,9 @@
 // Authoritative wallet-wide summary from /api/wallet-summary (null until loaded).
 export type WalletSummary = {
   wallet_fmv: number
+  /** 2026-09-06: the STALE share of wallet_fmv (get_wallet_summary.stale_fmv); the headline is wallet_fmv − stale_fmv. */
+  stale_fmv?: number
+  stale_count?: number
   unlocked_fmv: number
   unlocked_count: number
   locked_fmv: number
@@ -45,6 +48,9 @@ export type WalletStatRowValues = {
   bestOfferTotal: number | null
   spreadGap: number | null
   momentCount: number | null
+  /** Stale-priced share excluded from walletFmv (0 when unknown). */
+  staleFmv: number
+  staleCount: number
 }
 
 // Adapter for <WalletStatRow/>: prefer the authoritative walletSummary when
@@ -64,8 +70,14 @@ export function computeWalletStatRow(input: {
 }): WalletStatRowValues {
   const { walletSummary, walletTotalFmv, totals, paginatedTotal, collectionSlug } = input
 
+  // Headline = total − stale, stale disclosed — the same basis as the dashboard,
+  // the public profile and the share card (2026-09-03/04/06). Before this the
+  // Collection tab was the one surface still printing the raw sum ($87,812 vs
+  // the dashboard's $50,234 + $44,039 stale for the same wallet).
+  const staleFmv = walletSummary ? Math.max(0, Number(walletSummary.stale_fmv) || 0) : 0
+  const staleCount = walletSummary ? Math.max(0, Number(walletSummary.stale_count) || 0) : 0
   const walletFmv: number | null = walletSummary
-    ? walletSummary.wallet_fmv
+    ? Math.max(0, walletSummary.wallet_fmv - staleFmv)
     : walletTotalFmv !== null && walletTotalFmv > 0
       ? walletTotalFmv
       : totals.totalFmv > 0
@@ -104,6 +116,8 @@ export function computeWalletStatRow(input: {
   const momentCount: number | null = paginatedTotal || totals.totalCount || null
 
   return {
+    staleFmv,
+    staleCount,
     walletFmv,
     unlockedFmv,
     unlockedCount,

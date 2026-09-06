@@ -128,6 +128,10 @@ function WalletMomentsBody() {
     cost_basis: number
     current_fmv: number
     pnl: number
+    // 2026-09-06: the stale split get_wallet_summary now carries, so the headline
+    // tile can read total − stale like the dashboard and the share card.
+    stale_fmv?: number
+    stale_count?: number
   } | null>(null)
   const [walletSummaryLoading, setWalletSummaryLoading] = useState(false)
   const [acquisitionStats, setAcquisitionStats] = useState<{
@@ -702,6 +706,8 @@ function WalletMomentsBody() {
           if (!json || json.error) return
           setWalletSummary({
             wallet_fmv: Number(json.wallet_fmv) || 0,
+            stale_fmv: Number(json.stale_fmv) || 0,
+            stale_count: Number(json.stale_count) || 0,
             unlocked_fmv: Number(json.unlocked_fmv) || 0,
             unlocked_count: Number(json.unlocked_count) || 0,
             locked_fmv: Number(json.locked_fmv) || 0,
