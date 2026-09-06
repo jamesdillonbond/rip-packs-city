@@ -24,7 +24,11 @@
 > **~28–49 MB external sort per execution**; sized before shipping at tens of calls/hour, so not a
 > concurrency hazard, but it would become one if a high-frequency caller were added.
 >
-> ⏳ **The falsifier still stands and is the only thing that closes this:** the two Vercel error groups
+> ✅ **CLOSED 2026-09-06 16:05Z — the falsifier was RUN and both routes are silent.** Zero events on `/api/public/insights/pack-reality` and `/api/packs` across **26.3 h** since migration `20260905134612`, against a measured pre-migration **~1.0/h** ⇒ `P(0) ≈ 4e-12`. The stated exit date ("after 2026-09-06") has arrived and the condition is met.
+> ⚠ **The positive control was re-run AT CLOSE rather than assumed** — the same filter over the pre-migration window still returns **2 and 2**. That is not ceremony: this exact query produced a **false all-clear** on 09-05 because `routes: "/insights/pack-reality"` matched nothing (the real path is `/api/public/insights/pack-reality`), and *"No runtime errors found"* reads as good news either way.
+> ⭐ **The DATE is what made this close trustworthy.** At 14:00Z on 09-05 it already sat at p≈0.07 and looked closeable; setting a date instead of a p-value is what stopped an early close on a statistic that had not finished moving.
+>
+> *(Original exit condition, for the record:)* ⏳ **The falsifier still stands and is the only thing that closes this:** the two Vercel error groups
 > must **stop**. Re-read `get_runtime_errors` for those routes after 2026-09-06. If they keep firing,
 > the view was not the binding cost.
 

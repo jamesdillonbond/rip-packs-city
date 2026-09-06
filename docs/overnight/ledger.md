@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-06 · ✅ TWO OWED WATCHES CLOSED — fmv-recalc Step 6 (198 runs, 0 timeouts) and the pack-reality/api-packs pair (0 events, 26.3 h) · Claude Code (Trevor's box, interactive)
+
+**Both exit conditions met on their own stated terms, not on a judgement call.**
+
+## 1. `fmv-recalc` Step 6 stale-touch timeout rate — CLOSED
+
+| era | executing runs | timeouts |
+|---|---:|---:|
+| post-fix (since 08:38Z 09-05) | **198** | **0** |
+| pre-fix (retention-truncated) | 279 | 19 (**6.81%**) |
+
+⭐ **The close is robust to the problem that forced this watch's correction.** Its baseline is **non-stationary** — 3.25% to 8.67% depending on the day — so every earlier p-value depended on which day you picked. At **n=198** that stops mattering: `P(0 | 6.81%) ≈ 9e-7`, and **even against the quietest day ever measured (3.25%) it is ≈ 0.0014.** ⭐ Productivity control holds: **961 editions touched** across those runs, so it is not fast because it returns nothing.
+
+⚠ **The path is the lesson.** This number was published at p≈0.031, then 0.11, then 0.032 — then **corrected WEAKER** to a 0.02–0.24 range once the baseline's swing was measured. **A p-value computed against one day's baseline is not a result.** Only n≈200 made it insensitive to the choice.
+
+## 2. `/api/public/insights/pack-reality` + `/api/packs` timeouts — CLOSED
+
+Exit condition was a **date** ("re-read after 2026-09-06"), and it has arrived. **Zero events on both routes across 26.3 h** since migration `20260905134612`, against a measured pre-migration ~1.0/h ⇒ `P(0) ≈ 4e-12`.
+
+⚠ **The positive control was re-run at close, not assumed** — the same filter over the pre-migration window still returns **2 and 2**. That matters here because this exact query produced a **FALSE ALL-CLEAR** yesterday: `routes: "/insights/pack-reality"` returned *"No runtime errors found"* because the real path is `/api/public/insights/pack-reality`. **A wrong filter and a clean window are the same output.**
+
+⭐ **Why the date beat the statistic:** at 14:00Z on 09-05 this was already at p≈0.07 and looked closeable. The filing had set a DATE instead, which is what stopped an early close on a number that had not finished moving — the same trap Step 6 above fell into twice.
+
+**Nothing shipped in this entry.** Both fixes and their revert paths are in their own earlier entries.
+
+
 ### 2026-09-05 · ✅ OWED WATCH DISCHARGED — the `resolve-topshot-stubs` wall fix is confirmed by a single observation the broken version could not have produced · Claude Code (Trevor's box, interactive)
 
 **At 19:09:14Z, post-deploy, a `topshot-stub-resolver` edge run took 30,776 ms — past the old 30,000 ms wall — and it has a matching `resolve-topshot-stubs` terminal row with `ok = true`.**
