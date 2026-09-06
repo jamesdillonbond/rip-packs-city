@@ -4,8 +4,8 @@
 //
 // Unified transaction history — one reverse-chronological timeline of pack
 // buys, pack opens, moment buys, moment pulls, and moment sells for the user's
-// verified wallets. Auth-gated via proxy.ts + the /dashboard layout (noindex).
-// Wallets resolve via /api/profile/saved-wallets (verified only); the timeline
+// saved wallets. Auth-gated via proxy.ts + the /dashboard layout (noindex).
+// Wallets resolve via /api/profile/saved-wallets (every saved wallet — 09-06, #59); the timeline
 // comes from /api/wallet/transaction-history, which wraps the wallet-agnostic
 // SECDEF RPC get_wallet_transaction_history.
 //
@@ -118,7 +118,7 @@ export default function TransactionHistoryClient() {
   const [filter, setFilter] = useState<FilterKey>("all")
   const [page, setPage] = useState(0)
 
-  // ── Load verified wallets on mount ───────────────────────────────────────
+  // ── Load saved wallets on mount ───────────────────────────────────────
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -196,7 +196,7 @@ export default function TransactionHistoryClient() {
               Transaction History
             </h1>
             <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
-              Every pack and moment that moved through your verified wallets.
+              Every pack and moment that moved through your saved wallets.
             </div>
           </div>
           <Link href="/dashboard" style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)", textDecoration: "none", padding: "7px 12px", border: `1px solid ${ACCENT_RED}66`, borderRadius: 5 }}>
@@ -209,7 +209,7 @@ export default function TransactionHistoryClient() {
           <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Loading wallets…</div>
         ) : walletsFailed ? (
           /* ⚠ MUST precede the empty branch. Below it, a failed read tells a
-             collector who HAS verified a wallet that they have none, and points
+             collector who HAS saved a wallet that they have none, and points
              them at the dashboard to redo it. */
           <div
             role="status"
@@ -222,10 +222,10 @@ export default function TransactionHistoryClient() {
         ) : wallets.length === 0 ? (
           <div style={{ padding: 18, border: "1px dashed #444", borderRadius: 8, textAlign: "center" }}>
             <div style={{ fontFamily: condensedFont, fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 6 }}>
-              No verified wallets yet
+              No saved wallets yet
             </div>
             <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 12 }}>
-              Transaction history reads from your verified wallets. Verify a wallet from your dashboard, then come back here.
+              Transaction history reads from your saved wallets. Save a wallet from your dashboard, then come back here.
             </div>
             <Link href="/dashboard" style={{ display: "inline-block", padding: "8px 16px", background: ACCENT_RED, color: "#fff", borderRadius: 6, fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
               Open dashboard

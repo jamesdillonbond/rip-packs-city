@@ -102,7 +102,9 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // moves when a collection gains or loses a tab; __tests__/
     // sitemap-urls-are-anon-public.test.ts is what pins the SET against
     // proxy.ts isPublicPath in both directions.
-    expect(s).toHaveLength(74)
+    // 74 -> 75 on 2026-09-06: Candy MLB published (thin, overview only) adds
+    // /candy-mlb/overview to the feature pages.
+    expect(s).toHaveLength(75)
     // Root is priority 1.0, changeFrequency daily.
     expect(s[0].url).toBe(BASE)
     expect(s[0].priority).toBe(1)

@@ -40,6 +40,10 @@ export default defineConfig({
         // ships WITH tests — so it joins the gate rather than the unmeasured
         // allowlist. The rot-guard is what caught the omission.
         "components/media/**/*.tsx",
+        // Added 2026-09-06 with its first component: `components/telemetry/
+        // ClientErrorBeacon` is the ONLY client-side error detector (#34) and
+        // ships with tests that prove a thrown error becomes one bounded beacon.
+        "components/telemetry/**/*.tsx",
         "components/sniper/**/*.tsx",
         "components/collection/**/*.tsx",
         "components/pinnacle/**/*.tsx",

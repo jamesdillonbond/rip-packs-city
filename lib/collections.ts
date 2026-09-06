@@ -251,8 +251,13 @@ export const COLLECTIONS: Collection[] = [
     partner: "Candy Digital",
     accent: "#FB923C",
     icon: "⚾",
-    pages: ["overview", "collection", "packs", "sniper"],
-    published: false,
+    // 2026-09-06 — LIVE, thin: the overview tab only (Trevor delegated the
+    // decision; go-live-2026-09.md §4 C3). The Collection / Packs / Sniper tabs
+    // are Flow-dispatched components with zero Solana arms, and a dead tab is
+    // worse than no tab; the full board lives at /insights/candy-mlb and the
+    // overview links it. Re-add tabs here only WITH their Solana dispatch.
+    pages: ["overview"],
+    published: true,
     supabaseCollectionId: "209ade70-32c5-4470-bc7c-4793d660f713",
     pitch: "Wallet analytics, FMV, and pack/edition intelligence for Candy MLB on Solana — Metaplex Core, secondary on Magic Eden.",
   },

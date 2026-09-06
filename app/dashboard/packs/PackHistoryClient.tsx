@@ -3,7 +3,7 @@
 // app/dashboard/packs/page.tsx
 //
 // Pack history dashboard. Auth-gated via proxy.ts. The page resolves the
-// user's verified wallets via /api/profile/saved-wallets and renders the
+// user's saved wallets via /api/profile/saved-wallets and renders the
 // summary + paginated history for the active wallet. Status tabs are
 // {all, ripped, flipped, sold, held, other}; collection tabs come from
 // summary.by_collection. Row click expands the lifecycle via /api/wallet/
@@ -155,7 +155,7 @@ export default function PackHistoryClient() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [lifecycleCache, setLifecycleCache] = useState<Record<string, any>>({})
 
-  // ── Load verified wallets on mount ───────────────────────────────────────
+  // ── Load saved wallets on mount ───────────────────────────────────────
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -291,7 +291,7 @@ export default function PackHistoryClient() {
               <span title="pack_purchases tracks secondary market only — primary drop spend isn't captured yet." style={{ display: "inline-flex", width: 16, height: 16, alignItems: "center", justifyContent: "center", borderRadius: 999, border: "1px solid rgba(255,255,255,0.35)", color: "rgba(255,255,255,0.7)", fontFamily: monoFont, fontSize: 10, cursor: "help" }}>?</span>
             </div>
             <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>
-              Pack rip lifecycle, P&amp;L, and pulls for verified wallets.
+              Pack rip lifecycle, P&amp;L, and pulls for your saved wallets.
             </div>
           </div>
           <Link href="/dashboard" style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)", textDecoration: "none", padding: "7px 12px", border: "1px solid rgba(224,58,47,0.4)", borderRadius: 5 }}>
@@ -304,7 +304,7 @@ export default function PackHistoryClient() {
           <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Loading wallets…</div>
         ) : walletsFailed ? (
           /* ⚠ MUST precede the empty branch. Below it, a failed read tells a
-             collector who HAS verified a wallet that they have none, and points
+             collector who HAS saved a wallet that they have none, and points
              them at the dashboard to redo it. */
           <div
             role="status"
@@ -317,10 +317,10 @@ export default function PackHistoryClient() {
         ) : wallets.length === 0 ? (
           <div style={{ padding: 18, border: "1px dashed #444", borderRadius: 8, textAlign: "center" }}>
             <div style={{ fontFamily: condensedFont, fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 6 }}>
-              No verified wallets yet
+              No saved wallets yet
             </div>
             <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 12 }}>
-              Pack history reads from your verified wallets. Verify a wallet from your dashboard, then come back here.
+              Pack history reads from your saved wallets. Save a wallet from your dashboard, then come back here.
             </div>
             <Link href="/dashboard" style={{ display: "inline-block", padding: "8px 16px", background: "var(--rpc-red, #E03A2F)", color: "#fff", borderRadius: 6, fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", textDecoration: "none" }}>
               Open dashboard

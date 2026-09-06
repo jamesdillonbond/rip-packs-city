@@ -76,7 +76,10 @@ describe("shipped state — Candy is LIVE (2026-07-31 go-live)", () => {
     // how a safety net gets loosened by accident — flagged for a deliberate pass.
     // 74 = the historical 44 + candy-mlb (2026-07-31) + panini-squeeze
     // (2026-08-01), both live, + 28 feature tabs (2026-08-20).
-    expect(s).toHaveLength(74)
+    // 75 on 2026-09-06: Candy MLB is PUBLISHED (thin — `pages: ["overview"]`),
+    // so publishedCollections() contributes /candy-mlb/overview. That page is
+    // flag-INDEPENDENT (registry, not launch-flags), so both directions move by 1.
+    expect(s).toHaveLength(75)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
@@ -91,9 +94,10 @@ describe("rollback direction — flipping the flag off re-gates the launch", () 
     const { buildSitemapSegment } = await import("@/lib/sitemap-data")
     const s = await buildSitemapSegment(0)
     expect(s.some((x: any) => x.url === `${BASE}/insights/candy-mlb`)).toBe(false)
-    // Back to the historical 44-entry skeleton + the 28 feature tabs (which are
-    // flag-independent) — proof rollback is a clean no-op.
-    expect(s).toHaveLength(72)
+    // Back to the historical 44-entry skeleton + the 28 feature tabs + the
+    // registry-published /candy-mlb/overview (all flag-independent) — proof
+    // rollback is a clean no-op.
+    expect(s).toHaveLength(73)
   })
 
   it("restores robots:noindex when the flag is off", async () => {
@@ -133,10 +137,9 @@ describe("SEO invariants — independent of the flag", () => {
 })
 
 describe("chain attribution is derived, not hardcoded (P4)", () => {
-  it("reports FLOW only while Candy is unpublished", async () => {
+  it("reports FLOW + SOLANA now that Candy MLB is published (2026-09-06)", async () => {
     const { publishedChainsBadge } = await import("@/lib/collections")
-    // Zero visual change today — all 5 published collections are Flow.
-    expect(publishedChainsBadge()).toBe("BUILT ON FLOW")
+    expect(publishedChainsBadge()).toBe("BUILT ON FLOW + SOLANA")
   })
 
   it("never renders a dangling 'BUILT ON'", async () => {

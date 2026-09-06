@@ -50,9 +50,24 @@ describe("dbChain registry invariant", () => {
     expect(getCollection("rwa")?.dbChain).toBeNull()
   })
 
-  it("keeps all five PUBLISHED collections on Flow (guards an accidental publish of a chain-two surface)", () => {
+  // REWRITTEN 2026-09-06: this guard used to pin "every published collection is
+  // Flow". Candy MLB (Solana) is published now — deliberately, Trevor's
+  // delegated decision, thin (overview only) — so the invariant that still holds
+  // is narrower and load-bearing: a NON-Flow published collection may expose
+  // ONLY the pages that have a chain dispatch. Today that is `overview`; the
+  // Collection / Packs / Sniper tabs are Flow-dispatched with zero Solana arms.
+  // Adding a tab here without its dispatch would render a Flow page for a
+  // Solana wallet — this test is what stops that.
+  it("every published NON-Flow collection is thin — overview only, until its tabs have a chain dispatch", () => {
+    const nonFlow = COLLECTIONS.filter((c) => c.published && c.dbChain !== "flow")
+    expect(nonFlow.map((c) => c.id)).toEqual(["candy-mlb"])
+    for (const c of nonFlow) {
+      expect(c.pages, `${c.id} exposes a tab with no ${c.dbChain} dispatch`).toEqual(["overview"])
+    }
+  })
+  it("every published FLOW collection still declares dbChain flow (the chain filters key on it)", () => {
     for (const c of COLLECTIONS) {
-      if (!c.published) continue
+      if (!c.published || c.id === "candy-mlb") continue
       expect(c.dbChain, `published collection ${c.id} is not on Flow`).toBe("flow")
     }
   })

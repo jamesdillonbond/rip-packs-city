@@ -32,19 +32,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "wallet and packNftId required" }, { status: 400 })
   }
 
+  // 2026-09-06 (Trevor delegated the decision): the gate is "SAVED on this
+  // account", no longer "VERIFIED". Verification-by-listing has had no live data
+  // source since ~08-28 (public-api.nbatopshot.com is gone), so 0 wallets could
+  // verify and this route was unreachable for every new user — while everything
+  // it returns is public on-chain data. Ownership of the READ still requires the
+  // wallet to be on the caller's account. known-issues #59.
   const { data: matches, error: lookupErr } = await boundedRead(sb
     .from("saved_wallets")
     .select("wallet_addr")
     .eq("user_id", user.id)
     .eq("wallet_addr", wallet)
-    .not("verified_at", "is", null)
     .limit(1), "api/wallet/pack-lifecycle/saved-wallets")
 
   if (lookupErr) {
     return apiErrorResponse(lookupErr, "api/wallet/pack-lifecycle");
   }
   if (!matches || matches.length === 0) {
-    return NextResponse.json({ error: "wallet not verified on this account" }, { status: 403 })
+    return NextResponse.json({ error: "wallet not saved on this account" }, { status: 403 })
   }
 
   try {

@@ -1530,14 +1530,17 @@ describe("DashboardClient — wallet card actions and favourites", () => {
     })
   })
 
-  it("opens the verify modal from the wallet card", async () => {
+  // INVERTED 2026-09-06 (#59): the wallet card no longer offers "Verify by
+  // listing" — the check has no data source, so the button could only fail,
+  // and nothing gates on verification any more. An unverified saved wallet
+  // shows a neutral "Saved" label and never sends the reader to list a Moment.
+  it("an unverified saved wallet shows SAVED and offers NO verify-by-listing button", async () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [WALLET({ verified_at: null })] })
-    routes["/api/profile/verify-challenge"] = () => json(200, { challenge: CHALLENGE(), target: TARGET })
     render(<DashboardClient />)
-    fireEvent.click(await screen.findByRole("button", { name: /Verify by listing/ }))
-    await waitFor(() =>
-      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("verify-challenge"))).toBe(true),
-    )
+    await screen.findByText(/0xmine|0xmi/i)
+    expect(screen.queryByRole("button", { name: /Verify by listing/ })).toBeNull()
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("verify-challenge"))).toBe(false)
+    expect(screen.getAllByText(/^Saved$/).length).toBeGreaterThan(0)
   })
 
   it("favourites a collection", async () => {
@@ -1892,25 +1895,31 @@ describe("DashboardClient — recovery affordances", () => {
     }
   })
 
-  it("says Candy is not available yet rather than silently doing nothing", async () => {
-    // ⚠ CURRENT BEHAVIOUR, pinned as such. `candy-mlb` is UNPUBLISHED, so
-    // `getPublishedCollection("candy-mlb")` returns undefined and the Solana
-    // branch throws before it ever POSTs. A collector who pastes a Candy
-    // address gets a reason, not a dead button — and when Candy publishes,
-    // this test is what tells you the branch changed.
+  // INVERTED 2026-09-06: Candy MLB is PUBLISHED (thin), so the Solana branch
+  // is live — a base58 address is saved as a single Candy row, never fanned out
+  // to the Flow orchestrator. The old test pinned the "isn't available yet"
+  // throw; this is the day it said would come.
+  it("saves a Solana address as ONE Candy wallet row (the Solana branch is live)", async () => {
     routes["/api/profile/saved-wallets"] = () => json(200, { wallets: [] })
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
     await revealSectionForm()
     const box = (await screen.findAllByPlaceholderText("Dapper username"))[0]
-    fireEvent.change(box, { target: { value: "63p1oKqkAQ9sQD55iApNRkVL2XzYtASwKjCdSSNEGEhY" } })
+    const addr = "63p1oKqkAQ9sQD55iApNRkVL2XzYtASwKjCdSSNEGEhY"
+    fireEvent.change(box, { target: { value: addr } })
     fireEvent.click(box.closest("div")!.querySelector("button")!)
-    await screen.findAllByText(/Candy isn.t available yet/)
-    expect(
-      fetchMock.mock.calls.some(
+    await waitFor(() => {
+      const posts = fetchMock.mock.calls.filter(
         (c) => String(c[0]).includes("saved-wallets") && (c[1] as RequestInit)?.method === "POST",
-      ),
-    ).toBe(false)
+      )
+      expect(posts).toHaveLength(1)
+      const body = JSON.parse(String((posts[0][1] as RequestInit).body))
+      expect(body.walletAddr).toBe(addr) // base58 is case-sensitive — never lowercased
+      expect(body.collectionId).toBe("209ade70-32c5-4470-bc7c-4793d660f713")
+    })
+    // The Flow orchestrator must never be handed a Solana address.
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("resolve-and-associate"))).toBe(false)
+    expect(screen.queryByText(/Candy isn.t available yet/)).toBeNull()
   })
 })
 

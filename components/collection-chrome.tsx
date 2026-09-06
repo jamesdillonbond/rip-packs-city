@@ -49,6 +49,12 @@ const TICKER_ITEMS: Record<string, string[]> = {
     "⚡ SNIPER — fight moments below market",
     "⚡ ANALYTICS — portfolio tracking",
   ],
+  "candy-mlb": [
+    "⚾ CANDY MLB ON SOLANA — 125 editions, every one priced",
+    "⚾ FMV FROM REAL SALES — the highest sales-backed share on the platform",
+    "⚾ LIVE BOARD — floors, asks and 24h sales on the Candy MLB insights board",
+    "⚾ WALLET + PACK TOOLS — coming behind this overview",
+  ],
   "panini-blockchain": [
     "🃏 ETHEREUM BRIDGE LIVE — Panini cards now on-chain",
     "⚡ MARKET SNIPER — live OpenSea floor + listings",
@@ -77,9 +83,13 @@ export function CollectionTicker({ collection }: { collection: Collection }) {
 
 // ── Collection banner (breadcrumb + header + tabs) ────────────────────────────
 export function CollectionBanner({ collection }: { collection: Collection }) {
+  // Keyed on the ROADMAP tag (`chain`) with `dbChain` winning when it names a
+  // real network: "candy" once mapped to "Root Network", which the registry
+  // records as dead — Candy is Solana (2026-09-06 go-live).
   const chainLabel: Record<string, string> = {
     flow: "Flow", evm: "EVM", panini: "Panini Chain",
-    candy: "Root Network", rwa: "Multi-Chain",
+    candy: "Solana", rwa: "Multi-Chain",
+    solana: "Solana", ethereum: "Ethereum", polygon: "Polygon", flow_evm: "Flow EVM",
   }
 
   return (
@@ -123,7 +133,7 @@ export function CollectionBanner({ collection }: { collection: Collection }) {
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
             <AnonSignInPill />
             <div style={{ background: `${collection.accent}18`, border: `1px solid ${collection.accent}44`, borderRadius: 4, padding: "2px 8px", fontSize: 9, fontFamily: "var(--font-mono)", color: collection.accent, letterSpacing: "0.12em", textTransform: "uppercase" }}>
-              {chainLabel[collection.chain] ?? collection.chain}
+              {(collection.dbChain && chainLabel[collection.dbChain]) ?? chainLabel[collection.chain] ?? collection.chain}
             </div>
           </div>
         </div>

@@ -705,7 +705,7 @@ function buildSystemPromptParts(ctx: {
 
   const collectionBlurb = activeCollection
     ? `\n## Active Collection
-The user is currently browsing **${activeCollection.label}** (${activeCollection.sport}, ${activeCollection.partner}, ${activeCollection.chain.toUpperCase()} chain).
+The user is currently browsing **${activeCollection.label}** (${activeCollection.sport}, ${activeCollection.partner}, ${(activeCollection.dbChain ?? activeCollection.chain).toUpperCase()} chain).
 Treat THIS collection as the default scope for any query the user asks without naming a collection. If they ask about a different published collection, switch scope naturally.
 When linking to pages, use ${activeCollection.id} paths, e.g. /${activeCollection.id}/sniper, /${activeCollection.id}/packs.`
     : `\n## Active Collection
@@ -1898,7 +1898,11 @@ async function executeTool(
       if (!name) return JSON.stringify({ status: "error", message: "name required" });
       const perCollection = Math.min(Math.max(toolInput.limit || 3, 1), 10);
 
-      const published = publishedCollections();
+      // cached_listings holds FLOW listings only; Candy MLB's (Solana, published
+      // 2026-09-06) live in candy_listings, so fanning it out here would answer
+      // "no Candy listings" for a name that exists. Flow only until a Candy arm
+      // reads its own table.
+      const published = publishedCollections().filter((c) => c.dbChain === "flow");
       const queries = published.map(async (col) => {
         if (isPinnacle(col.id)) {
           return searchPinnacleByName(supabase, name, perCollection);

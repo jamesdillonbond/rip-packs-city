@@ -92,7 +92,7 @@ describe("fetchVerifiedWallets — an outage is not an empty account", () => {
     expect(out.wallets).toEqual([])
   })
 
-  it("keeps only verified wallets, de-duplicated and lower-cased", async () => {
+  it("keeps EVERY saved wallet (verified or not), de-duplicated and lower-cased — 09-06, #59", async () => {
     const out = await fetchVerifiedWallets(
       async () =>
         okBody([
@@ -104,6 +104,9 @@ describe("fetchVerifiedWallets — an outage is not an empty account", () => {
     expect(out.ok).toBe(true)
     expect(out.wallets).toEqual([
       { wallet_addr: "0xaaaaaaaaaaaaaaaa", verified_at: "2026-01-01T00:00:00Z" },
+      // An UNVERIFIED saved wallet is a wallet the history pages can read now —
+      // the listing check has no data source, so "verified only" meant "nobody".
+      { wallet_addr: "0xbbbbbbbbbbbbbbbb", verified_at: null },
     ])
   })
 

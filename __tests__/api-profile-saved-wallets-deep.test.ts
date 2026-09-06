@@ -75,9 +75,13 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe("GET /api/profile/saved-wallets — allow-list self-heal", () => {
-  it("auto-attaches one wallet row per published collection with the session user_id", async () => {
+  // 2026-09-06: one row per published FLOW collection. The allow-list address
+  // is a Flow 0x… address; Candy MLB (Solana) is published now and must NOT
+  // receive a row it can never match ("0 moments" manufactured by us).
+  it("auto-attaches one wallet row per published FLOW collection with the session user_id — never the Solana one", async () => {
     state.user = { id: "u1", email: "Me@X.com" }
     const attached = publishedCollections()
+      .filter((c) => c.dbChain === "flow")
       .map((c) => c.supabaseCollectionId)
       .filter(Boolean)
       .map((cid) => ({ id: `w-${cid}`, wallet_addr: "0xabc", collection_id: cid, cached_fmv_usd: null }))
@@ -94,7 +98,8 @@ describe("GET /api/profile/saved-wallets — allow-list self-heal", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
 
-    const published = publishedCollections().length
+    const published = publishedCollections().filter((c) => c.dbChain === "flow").length
+    expect(publishedCollections().length).toBeGreaterThan(published) // the Solana one exists and is excluded
     expect(body.wallets).toHaveLength(published)
     expect(body.wallets[0].cached_fmv).toBeNull()
     expect(body.wallets[0].pinned_at).toBeTruthy()
@@ -104,6 +109,9 @@ describe("GET /api/profile/saved-wallets — allow-list self-heal", () => {
     expect(up?.rows.every((r) => r.user_id === "u1")).toBe(true)
     expect(up?.rows.every((r) => r.wallet_addr === "0xabc")).toBe(true) // lowercased from allow_list
     expect(up?.rows.every((r) => r.accent_color === "#E03A2F")).toBe(true)
+    const candyId = publishedCollections().find((c) => c.id === "candy-mlb")?.supabaseCollectionId
+    expect(candyId).toBeTruthy()
+    expect(up?.rows.some((r) => r.collection_id === candyId)).toBe(false)
   })
 
   // ⚠ THIS GUARD PROTECTS A WRITE, AND `?? 0` MADE IT FAIL OPEN INTO ONE.

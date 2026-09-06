@@ -21,11 +21,13 @@ describe("getPublishedCollection", () => {
     expect(getPublishedCollection("not-a-real-collection")).toBeUndefined()
   })
   it("returns undefined for a collection that exists but is NOT published", () => {
-    // Find any registry collection that isn't in the published set, if one exists.
-    const unpublished = ["candy-mlb", "panini"].map((id) => getCollection(id)).find(Boolean)
-    if (unpublished) {
-      expect(getPublishedCollection(unpublished.id)).toBeUndefined()
-    }
+    // Panini is the registry's unpublished placeholder (Candy was published 2026-09-06).
+    const unpublished = ["panini-blockchain", "rwa"].map((id) => getCollection(id)).filter(Boolean)
+    expect(unpublished.length).toBeGreaterThan(0)
+    for (const c of unpublished) expect(getPublishedCollection(c!.id)).toBeUndefined()
+  })
+  it("returns the published thin collection (Candy MLB, overview only)", () => {
+    expect(getPublishedCollection("candy-mlb")?.pages).toEqual(["overview"])
   })
 })
 

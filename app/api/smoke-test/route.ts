@@ -939,6 +939,8 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       // Candy launch and a silent one — a gate that can't fail is worse than
       // none (see memory: rpc-silent-failure-class).
       ...(CANDY_MLB_PUBLIC ? ["/insights/candy-mlb"] : []),
+      // The thin-tab Candy overview (published 2026-09-06) — the launch page.
+      "/candy-mlb/overview",
       ...(PANINI_PUBLIC ? ["/insights/panini-squeeze"] : []),
     ].map((page) => checkPublicPage(page))),
 

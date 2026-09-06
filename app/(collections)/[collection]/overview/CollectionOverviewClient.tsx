@@ -113,6 +113,20 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
       body: "The Golazos sniper uses relative deal scoring rather than raw FMV discount — comparing each ask against the edition's current floor and against comparable moments. A 100x-floor outlier filter keeps stray high-asks from distorting the signal, so deals you see are deals you can act on.",
     },
   ],
+  "candy-mlb": [
+    {
+      title: "Built for Baseball Collectors",
+      body: "Candy MLB brings officially licensed MLB moments on-chain — Solana, under Candy Digital. RPC tracks every edition, prices it from real secondary sales, and shows collectors what the market is actually paying rather than what sellers are asking.",
+    },
+    {
+      title: "The Candy Ecosystem",
+      body: "Candy runs a compact catalogue — base and ICON series across Common and Legendary tiers — with secondary trading on Magic Eden and OpenSea. Because the set is small and trades daily, RPC prices every edition, and the share of prices backed by recent sales is the highest on the platform.",
+    },
+    {
+      title: "What Is Live Here",
+      body: "This overview carries the market pulse; the full Candy MLB board (floors, asks, 24h sales, per-edition history) is one tap away below. Wallet analytics and pack tools for Solana wallets are next — they appear here when they are real, not before.",
+    },
+  ],
   "ufc": [
     {
       title: "Built for Fight Collectors",
@@ -640,7 +654,25 @@ export default function CollectionOverviewClient({ collection }: { collection: s
         </section>
       )}
 
+      {/* ── The live board (thin-tab collections: everything past the overview lives on the insights board) ── */}
+      {collection === "candy-mlb" && (
+        <section className="rpc-card" style={{ padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: accent, opacity: 0.7 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: accent }} />
+            <span className="rpc-label">Candy MLB board</span>
+          </div>
+          <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", marginBottom: 12, lineHeight: 1.6 }}>
+            Every edition with its floor, best ask, FMV and 24h sales — the full Candy MLB intelligence board, updated continuously.
+          </div>
+          <Link href="/insights/candy-mlb" className="rpc-heading" style={{ display: "inline-block", padding: "10px 18px", background: accent, color: "#0B0B0D", borderRadius: 6, fontSize: "var(--text-sm)", letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none" }}>
+            Open the Candy MLB board →
+          </Link>
+        </section>
+      )}
+
       {/* ── Tools ── */}
+      {enabledPages.size > 1 && (
       <section className="rpc-card" style={{ padding: "16px 20px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--rpc-text-muted)" }} />
@@ -674,6 +706,7 @@ export default function CollectionOverviewClient({ collection }: { collection: s
           ))}
         </div>
       </section>
+      )}
 
     </div>
   )

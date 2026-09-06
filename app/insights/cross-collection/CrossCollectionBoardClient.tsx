@@ -407,8 +407,9 @@ export default function CrossCollectionBoardClient({ initial, initialFailed = fa
           <p>
             <strong>Cohort</strong> = any wallet appearing in our wallet
             tracker with at least one moment in 3 or more Flow blockchain
-            collections (out of the 5 currently published: Top Shot, All
-            Day, Golazos, Pinnacle, UFC Strike). Cohort refreshes manually
+            collections (the 5 Flow collections: Top Shot, All Day,
+            Golazos, Pinnacle, UFC Strike — Candy MLB is Solana and sits
+            outside this cohort). Cohort refreshes manually
             via a SECURITY DEFINER RPC.
           </p>
           <p>

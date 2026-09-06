@@ -101,7 +101,7 @@ describe("PackHistoryClient", () => {
   ])("does not say the account has no verified wallets after %s", async (_l, r) => {
     mount({ wallets: r as () => Response })
     await waitFor(() => expect(document.body.textContent).not.toMatch(/Loading wallets/))
-    expect(document.body.textContent).not.toMatch(/No verified wallets yet/)
+    expect(document.body.textContent).not.toMatch(/No saved wallets yet/)
     expect(document.body.textContent).not.toMatch(/Open dashboard/)
   })
 
@@ -111,12 +111,12 @@ describe("PackHistoryClient", () => {
     }))
     render(<PackHistoryClient />)
     await waitFor(() => expect(document.body.textContent).not.toMatch(/Loading wallets/))
-    expect(document.body.textContent).not.toMatch(/No verified wallets yet/)
+    expect(document.body.textContent).not.toMatch(/No saved wallets yet/)
   })
 
-  it("does say the account has no verified wallets when the read succeeded with none", async () => {
+  it("does say the account has no saved wallets when the read succeeded with none", async () => {
     mount({ wallets: () => json(200, { wallets: [] }) })
-    await waitFor(() => expect(document.body.textContent).toMatch(/No verified wallets yet/))
+    await waitFor(() => expect(document.body.textContent).toMatch(/No saved wallets yet/))
   })
 
   it("renders the summary and the pack table for the active wallet", async () => {

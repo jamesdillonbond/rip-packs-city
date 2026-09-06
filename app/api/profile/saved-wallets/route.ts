@@ -95,7 +95,13 @@ async function maybeAutoAttachAllowListWallet(user: {
   if (!walletAddr) return [];
 
   const username = typeof alRow.username === "string" ? alRow.username : null;
+  // ⚠ FLOW collections only. This self-heal takes a FLOW address off the
+  // allow-list and fans it out per published collection; a Solana collection
+  // (Candy MLB, published 2026-09-06) would receive a `0x…` row it can never
+  // match — a "0 moments" tile manufactured by us. `published` is a NAV flag,
+  // not a chain claim.
   const rows = publishedCollections()
+    .filter((c) => c.dbChain === "flow")
     .map((c) => c.supabaseCollectionId)
     .filter((id): id is string => Boolean(id))
     .map((collectionId) => ({

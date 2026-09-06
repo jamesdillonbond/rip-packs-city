@@ -75,18 +75,18 @@ describe("registry lookups", () => {
     }
   })
 
-  it("publishedCollections returns exactly the 5 live collections", () => {
+  it("publishedCollections returns exactly the 6 live collections (Candy MLB joined 2026-09-06)", () => {
     const ids = publishedCollections()
       .map((c) => c.id)
       .sort()
     expect(ids).toEqual(
-      ["nba-top-shot", "nfl-all-day", "laliga-golazos", "ufc", "disney-pinnacle"].sort()
+      ["nba-top-shot", "nfl-all-day", "laliga-golazos", "ufc", "disney-pinnacle", "candy-mlb"].sort()
     )
   })
 
-  it("unpublished chain-two placeholders are not returned as published", () => {
+  it("unpublished placeholders (Panini, RWA) are not returned as published", () => {
     const ids = publishedCollections().map((c) => c.id)
-    expect(ids).not.toContain("candy-mlb")
     expect(ids).not.toContain("panini-blockchain")
+    expect(ids).not.toContain("rwa")
   })
 })

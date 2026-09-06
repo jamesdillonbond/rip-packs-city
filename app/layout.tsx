@@ -10,6 +10,7 @@ import ConsoleGreeting from "@/components/visual/ConsoleGreeting"
 import TelemetryPageView from "@/components/TelemetryPageView"
 import RefCapture from "@/components/RefCapture"
 import DeadImageGuard from "@/components/media/DeadImageGuard"
+import ClientErrorBeacon from "@/components/telemetry/ClientErrorBeacon"
 
 export const metadata: Metadata = rootMetadata
 
@@ -75,6 +76,7 @@ export default function RootLayout({
         <TelemetryPageView />
         <RefCapture />
         <DeadImageGuard />
+        <ClientErrorBeacon />
         <WarmupProvider>
             <WalletPreloader />
             {children}

@@ -7,7 +7,7 @@
 // feed. Wraps the wallet-agnostic SECDEF RPC get_wallet_transaction_history.
 //
 // Auth: requires a Supabase user session AND that the requested wallet is one
-// of the user's *verified* saved wallets (saved_wallets.verified_at NOT NULL) —
+// of the user's saved wallets (verification no longer gates — 09-06, #59) —
 // the same ownership gate as /api/wallet/pack-history. This is the dashboard
 // (own-wallet) surface; the future any-wallet analytics view should call the
 // RPC behind its own appropriately-gated route, not this one.
@@ -58,12 +58,17 @@ export async function GET(req: NextRequest) {
   }
 
   // Wallet ownership check (same shape as /api/wallet/pack-history).
+  // 2026-09-06 (Trevor delegated the decision): the gate is "SAVED on this
+  // account", no longer "VERIFIED". Verification-by-listing has had no live data
+  // source since ~08-28 (public-api.nbatopshot.com is gone), so 0 wallets could
+  // verify and this route was unreachable for every new user — while everything
+  // it returns is public on-chain data. Ownership of the READ still requires the
+  // wallet to be on the caller's account. known-issues #59.
   const { data: matches, error: lookupErr } = await boundedRead(sb
     .from("saved_wallets")
     .select("wallet_addr")
     .eq("user_id", user.id)
     .eq("wallet_addr", wallet)
-    .not("verified_at", "is", null)
     .limit(1), "api/wallet/transaction-history/saved_wallets")
 
   if (lookupErr) {
@@ -72,7 +77,7 @@ export async function GET(req: NextRequest) {
   }
   if (!matches || matches.length === 0) {
     return NextResponse.json(
-      { error: "wallet not verified on this account" },
+      { error: "wallet not saved on this account" },
       { status: 403 },
     )
   }

@@ -106,13 +106,21 @@ describe("CollectionBanner — chain label mapping", () => {
     expect(container.textContent).toContain("Flow") // chain "flow" → "Flow"
   })
 
-  it("maps the panini chain to its partner-chain label", () => {
+  // 2026-09-06: the pill reads the REAL network (`dbChain`) when the registry
+  // names one, and only falls back to the roadmap tag. "candy" once rendered
+  // "Root Network" — a chain the registry itself records as dead.
+  it("renders the real network from dbChain — Panini's bridge plane is Ethereum, Candy is Solana", () => {
     const { container } = render(<CollectionBanner collection={PANINI} />)
-    expect(container.textContent).toContain("Panini Chain") // chain "panini"
+    expect(container.textContent).toContain("Ethereum") // dbChain "ethereum" wins over chain "panini"
+    expect(container.textContent).not.toContain("Panini Chain")
+    const candy = { ...TOPSHOT, id: "candy-mlb", chain: "candy", dbChain: "solana" } as any as Collection
+    const { container: c2 } = render(<CollectionBanner collection={candy} />)
+    expect(c2.textContent).toContain("Solana")
+    expect(c2.textContent).not.toContain("Root Network")
   })
 
-  it("falls back to the raw chain string for an unmapped chain value", () => {
-    const weird = { ...TOPSHOT, chain: "moonbeam" as any } as Collection
+  it("falls back to the roadmap tag, then the raw string, when no dbChain is set", () => {
+    const weird = { ...TOPSHOT, chain: "moonbeam" as any, dbChain: null } as Collection
     const { container } = render(<CollectionBanner collection={weird} />)
     // chainLabel has no "moonbeam" key → renders the raw value verbatim.
     expect(container.textContent).toContain("moonbeam")

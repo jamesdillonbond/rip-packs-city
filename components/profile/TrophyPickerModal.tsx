@@ -1047,7 +1047,10 @@ function CollectionPicker({
 }) {
   const items: { key: CollectionFilter; label: string; icon: string; accent: string }[] = [
     { key: "all", label: "All", icon: "★", accent: "#9CA3AF" },
-    ...publishedCollections().map((c) => ({
+    // Flow collections only: the trophy pool is read from the Flow-sourced
+    // wallet cache, so a Solana chip (Candy MLB, published 2026-09-06) would
+    // filter to an empty list every time — not "no trophies", "not indexed here".
+    ...publishedCollections().filter((c) => c.dbChain === "flow").map((c) => ({
       key: c.id,
       label: c.shortLabel,
       icon: c.icon,

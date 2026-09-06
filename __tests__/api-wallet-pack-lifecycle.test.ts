@@ -72,12 +72,14 @@ describe("GET /api/wallet/pack-lifecycle", () => {
     expect((await res.json()).error).not.toContain("db down")
   })
 
-  it("403s when the wallet is not a verified saved wallet on this account", async () => {
+  it("403s when the wallet is not SAVED on this account (verification no longer gates — 09-06, #59)", async () => {
     state.user = { id: "u1" }
     state.owned = { data: [], error: null } // no ownership match
     const res = await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc&packNftId=1"))
     expect(res.status).toBe(403)
-    expect((await res.json()).error).toContain("not verified")
+    const err = (await res.json()).error as string
+    expect(err).toContain("not saved")
+    expect(err).not.toContain("verified")
   })
 
   it("500s when get_pack_lifecycle returns an error", async () => {

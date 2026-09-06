@@ -1,6 +1,7 @@
 // lib/wallet/verified-wallets.ts
 //
-// "Which wallets has this signed-in user VERIFIED?" — the client-side read
+// "Which wallets has this signed-in user SAVED?" (was: verified — see the 09-06
+// note in fetchVerifiedWallets) — the client-side read
 // behind the wallet selector on /dashboard/history and /dashboard/packs.
 //
 // ⚠ WHY IT IS SHARED. The identical twenty-line loader was copy-pasted into
@@ -69,11 +70,18 @@ export async function fetchVerifiedWallets(
     // that happens to arrive with a 200 into a confident "you have none".
     if (!Array.isArray(json?.wallets)) return { wallets: [], ok: false }
 
+    // 2026-09-06 (#59, decision delegated by Trevor): EVERY saved wallet, not
+    // only the verified ones. Verification-by-listing lost its data source, so
+    // "verified only" here meant "nobody" — the history routes now gate on
+    // SAVED too. A verified wallet still sorts first so the badge keeps meaning.
     const seen = new Map<string, VerifiedWallet>()
     for (const w of json.wallets) {
-      if (!w?.verified_at || typeof w.wallet_addr !== "string") continue
+      if (!w || typeof w.wallet_addr !== "string") continue
       const k = w.wallet_addr.toLowerCase()
-      if (!seen.has(k)) seen.set(k, { wallet_addr: k, verified_at: w.verified_at })
+      const verifiedAt = typeof w.verified_at === "string" ? w.verified_at : null
+      const prev = seen.get(k)
+      if (!prev) seen.set(k, { wallet_addr: k, verified_at: verifiedAt })
+      else if (!prev.verified_at && verifiedAt) prev.verified_at = verifiedAt
     }
     return { wallets: Array.from(seen.values()), ok: true }
   } catch {
@@ -89,4 +97,4 @@ export async function fetchVerifiedWallets(
  * which is the specific harm the original copy caused.
  */
 export const VERIFIED_WALLETS_UNAVAILABLE =
-  "Couldn't load your wallets just now — this says nothing about which wallets you've verified. Try again shortly."
+  "Couldn't load your wallets just now — this says nothing about which wallets you've saved. Try again shortly."

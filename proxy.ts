@@ -803,10 +803,13 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // BreadcrumbList JSON-LD link the collection name to `/<collection>`, and the
   // 2026-09-04 sweep measured all five roots 307-ing to /login for the SEO
   // traffic those pages exist for. Published slugs only, GET/HEAD only — the
-  // same set the feature tabs above open; Panini/Candy roots stay gated.
+  // same set the feature tabs above open; the Panini root stays gated.
+  // candy-mlb joined 2026-09-06 (published, overview-only) — its root is the
+  // breadcrumb + BreadcrumbList JSON-LD target, so an anon 307 there is a
+  // crawl dead-end.
   if (
     (method === "GET" || method === "HEAD") &&
-    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc)$/.test(pathname)
+    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc|candy-mlb)$/.test(pathname)
   ) {
     return true
   }

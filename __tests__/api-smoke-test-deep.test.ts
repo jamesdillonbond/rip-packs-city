@@ -283,15 +283,19 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     // degrading". It exists because the concierge failed ~780 conversations over
     // 14 days while this suite reported ALL PASSED — the only concierge probes
     // were soft AND opt-in, so nothing measured whether users got answers.
-    expect(env.total).toBe(56)
-    expect(env.passed).toBe(56)
+    // 2026-09-06: 56 -> 57 (44 -> 45 hard). Candy MLB is PUBLISHED (thin,
+    // overview only); /candy-mlb/overview is the launch page and joins the
+    // hard 200-status public-page checks — the same reason /insights/candy-mlb
+    // did on 2026-07-31: a launch with no watcher fails silently.
+    expect(env.total).toBe(57)
+    expect(env.passed).toBe(57)
     expect(env.allPassed).toBe(true)
-    expect(env.hardTotal).toBe(44) // 12 checks are soft-flagged in a green run
+    expect(env.hardTotal).toBe(45) // 12 checks are soft-flagged in a green run
     // 2026-09-02: 55 -> 56 (43 -> 44 hard). Added the cron_heavy execute-drift arm:
     // a scheduled job that cannot execute its own function dies in 0.0 s, writes no
     // pipeline_runs row, and is otherwise invisible. Hard by design — it is a
     // catalogue read with no transient failure mode worth softening.
-    expect(env.hardPassed).toBe(44)
+    expect(env.hardPassed).toBe(45)
     expect(env.softFailures).toBe(0)
     expect(env.liveConcierge).toBe(false)
     expect(env.results.every((r) => r.passed)).toBe(true)
@@ -313,7 +317,7 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     // Persistence: one insert of all structured rows, all ok, stamped with ranAt.
     const writes = spy.writes["smoke_test_results"]
     expect(writes).toHaveLength(1)
-    expect(writes[0].rows).toHaveLength(56)
+    expect(writes[0].rows).toHaveLength(57)
     expect(writes[0].rows.every((r) => r.ok === true && r.error === null)).toBe(true)
     expect(writes[0].rows[0].ran_at).toBe(env.ranAt)
 
@@ -854,7 +858,7 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     const env = await run("?concierge=1")
 
     expect(env.liveConcierge).toBe(true)
-    expect(env.total).toBe(60)
+    expect(env.total).toBe(61) // 57 + the 4 live-LLM probes
     expect(env.allPassed).toBe(true)
     for (const name of [
       "concierge resolves Pinnacle query (collectionId routing)",

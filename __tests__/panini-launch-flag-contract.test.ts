@@ -76,7 +76,8 @@ describe("shipped state — Panini is LIVE (2026-08-01 go-live)", () => {
     // how a safety net gets loosened by accident — flagged for a deliberate pass.
     // 74 = 44 historical + candy-mlb (2026-07-31) + panini-squeeze (2026-08-01),
     // both live, + 28 feature tabs (2026-08-20).
-    expect(s).toHaveLength(74)
+    // 75 since 2026-09-06: + the registry-published /candy-mlb/overview.
+    expect(s).toHaveLength(75)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
@@ -94,7 +95,7 @@ describe("rollback direction — flipping the flag off re-gates the launch", () 
     // Back to the 45-entry skeleton (44 historical + candy-mlb) + the 28
     // flag-independent feature tabs — proof rollback is a clean no-op that
     // leaves Candy untouched.
-    expect(s).toHaveLength(73)
+    expect(s).toHaveLength(74)
   })
 
   it("restores robots:noindex when the flag is off", async () => {

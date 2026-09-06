@@ -1214,7 +1214,10 @@ function ProfilePageInner() {
                   onChange={(e) => setWalletForm({ ...walletForm, collectionId: e.target.value })}
                   style={{ padding: "8px 10px", background: "var(--rpc-black)", border: "1px solid var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 12 }}
                 >
-                  {publishedCollections().map((c) => (
+                  {/* Flow collections only: the input beside this is a 0x… Flow
+                      address; a Solana wallet goes through the one-field add
+                      above, which chain-detects base58 and saves it to Candy. */}
+                  {publishedCollections().filter((c) => c.dbChain === "flow").map((c) => (
                     <option key={c.id} value={c.id}>{c.icon} {c.shortLabel}</option>
                   ))}
                 </select>
@@ -1264,7 +1267,6 @@ function ProfilePageInner() {
                   stats={statsByWallet[g.addr.toLowerCase()] ?? []}
                   indexing={indexing}
                   onRemove={() => removeWallet(g.rows[0])}
-                  onVerify={() => setVerifyWallet(g.addr)}
                 />
               ))}
             </div>
@@ -2183,13 +2185,11 @@ function WalletGroupCard({
   stats,
   indexing,
   onRemove,
-  onVerify,
 }: {
   group: { addr: string; rows: SavedWallet[]; nickname: string | null; verifiedAt: string | null };
   stats: CollectionStat[];
   indexing: boolean;
   onRemove: () => void;
-  onVerify: () => void;
 }) {
   const verified = !!group.verifiedAt;
   return (
@@ -2223,24 +2223,32 @@ function WalletGroupCard({
               ✓ Verified
             </span>
           ) : (
-            <button
-              onClick={onVerify}
+            // 2026-09-06 (#59, decision delegated by Trevor): the "Verify by
+            // listing" button is gone. Its only check read a host that no
+            // longer exists, so the button could never succeed — and nothing
+            // gates on verification any more (history reads every SAVED
+            // wallet). A dead button that sends a collector to list a Moment
+            // for nothing is the worst shape of a false claim about their own
+            // account. The modal stays reachable via /dashboard?verify= (it
+            // reports the check as unavailable) until a replacement mechanism
+            // is chosen.
+            <span
+              title="Verification is paused — the listing check has no live data source. Every saved wallet already unlocks history."
               style={{
-                padding: "2px 10px",
-                background: "transparent",
-                border: "1px solid #F59E0B66",
-                color: "var(--rpc-warning)",
-                fontFamily: condensedFont,
-                fontWeight: 700,
-                fontSize: 10,
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "2px 8px",
+                border: "1px solid var(--rpc-border)",
+                color: "var(--rpc-text-muted)",
+                fontFamily: monoFont,
+                fontSize: 9,
                 letterSpacing: "0.1em",
                 textTransform: "uppercase",
                 borderRadius: 12,
-                cursor: "pointer",
               }}
             >
-              Verify by listing
-            </button>
+              Saved
+            </span>
           )}
         </div>
         <button
@@ -2253,12 +2261,19 @@ function WalletGroupCard({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
-        {publishedCollections().map((col) => {
+        {/* 2026-09-06: tiles for the collections on THIS wallet's chain only.
+            A Flow wallet cannot hold Candy (Solana) and a Solana wallet cannot
+            hold Top Shot — rendering the other chain's tiles is a "0 moments"
+            claim we manufactured. A thin-tab collection (no `collection` page)
+            links to its overview rather than a tab that does not exist. */}
+        {publishedCollections().filter((c) => (c.dbChain ?? "flow") === (detectAddressChain(group.addr) === "solana" ? "solana" : "flow")).map((col) => {
           const stat = stats.find(
             (s) => s.collection_id === col.supabaseCollectionId || s.collection_slug === col.id.replace(/-/g, "_")
           );
           const slug = col.id;
-          const href = `/${slug}/collection?q=${encodeURIComponent(group.addr)}`;
+          const href = col.pages.includes("collection")
+            ? `/${slug}/collection?q=${encodeURIComponent(group.addr)}`
+            : `/${slug}/overview`;
           const moments = stat?.moment_count ?? 0;
           const fmv = stat?.fmv_total ?? 0;
           const locked = stat?.locked_count ?? 0;
