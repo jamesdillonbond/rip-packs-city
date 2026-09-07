@@ -42,3 +42,42 @@ Also checked: **no view and no `cron.job` command reads `no_op`** either.
 ➡ **Closing this needs an OUTCOME check, not another self-report arm** — "how many `wallet_moments_cache` rows still disagree with `editions`?" — which is CLAUDE.md's own rule (*"Measure the OUTCOME table, not the self-report"*). ⚠ **Size it before building it:** this reconciler was the database's #1 physical reader at the old cadence, so a naive drift-count arm could reintroduce the cost the cadence change removed. Bound the query and compare BUFFERS.
 
 ⓘ **Not urgent.** The blind spot is on a failure mode with no evidence of ever having occurred; `detect_stalled_pipelines()` is `[]` and jobid 456 is 28/28 succeeded. This is a note for whoever next touches that arm, not a queued fix.
+
+---
+
+## ✅ SIZED — 2026-09-07 14:24 PT, Claude Code on Trevor's box (the session that shipped `20260907155956`)
+
+This section answers §3's explicit ask — *"size it before building it… bound the query and compare BUFFERS"* — and stops short of building, for the reason §2 gives.
+
+**1. The naive drift check is as expensive as §3 feared. Confirmed WITHOUT running it** (plan only — running it is the thing we are trying to avoid). The direct expression of "how many `wallet_moments_cache` rows still disagree with `editions`", mirroring the reconciler's own five-branch predicate:
+
+```
+Parallel Hash Join  (cost=4278.59..143916.84 rows=759184)
+  ->  Parallel Seq Scan on wallet_moments_cache  (cost=0.00..136982.52 rows=1011231)
+  ->  Parallel Hash -> Parallel Seq Scan on editions  (rows=12125)
+Finalize Aggregate  (cost=146814.91..146814.92)
+```
+
+A full sweep of ~1.01 M Top Shot `wmc` rows every tick. ⛔ **Do not build this arm.** §3's warning is upheld on the plan.
+
+**2. A bounded instrument already exists, and nothing needs to be created to use it.** `idx_wmc_metadata_fillable` is a partial index on `(collection_id, edition_key)` covering exactly the rows with a missing metadata field. Counting through it, **measured with `EXPLAIN (ANALYZE, BUFFERS)`**:
+
+```
+Index Only Scan using idx_wmc_metadata_fillable   (actual time=1.936..1.986 rows=20)
+  Heap Fetches: 0
+  Buffers: shared hit=12 read=4          -- 16 buffers total
+Execution Time: 2.068 ms
+```
+
+⚠ **16 buffers and 146,814 are different units** (measured buffers vs a planner cost estimate) — they are not a ratio, and the second was deliberately never executed. What the two together support is only the qualitative claim: one is an index-only touch of 16 pages, the other is a two-table sequential sweep.
+
+**3. The converged baseline is `20`.** Per collection today: NBA Top Shot **20** · NFL All Day 284 · UFC Strike 4,614 · Disney Pinnacle 56,295. ⓘ Only the Top Shot number is this reconciler's business — `reconcile_wmc_metadata_from_editions` hardcodes the Top Shot uuid — so the other three are neither drift nor a defect here, and an arm must scope to the collection or it will fire permanently on Pinnacle.
+
+**4. ⚠ What this cheap instrument is STRUCTURALLY BLIND TO — the reason it is not simply a drop-in for §3's ask.** Two gaps, both on the "does it disagree" half:
+
+- **Empty strings.** The index predicate is `tier IS NULL OR player_name IS NULL OR …`, but the reconciler fills on `COALESCE(w.player_name, '') = ''`. **A row whose `player_name` is `''` is fillable to the reconciler and invisible to this index.** Not measured here: the only honest way to count them is the seq scan item 1 rules out.
+- **The CORRECT half entirely.** A row whose `tier` / `set_name` / `mint_count` is present but *disagrees with the catalog* has no NULL, so it is absent from the index. That half is precisely what makes item 1 expensive, and this instrument does not see any of it.
+
+➡ So a cheap arm is available **for the fill-with-NULL half only, at 16 buffers**, and it must say so — naming what it cannot see, per this repo's own rule that a passing guard's silence has to be characterised.
+
+**5. ⛔ Deliberately NOT shipped, and the reason is §2's own argument.** Adding `extra.fillable_backlog` to the reconciler's row would cost ~16 buffers against a function that already reads far more — but it would be **another field with no observer**, which is the exact criticism §2 makes of my `extra.no_op`. Adding a second unread field to answer the first one is not progress. The remaining decision is *where the observer lives* (a trust-board arm in `rpc_trust_health_precompute_refresh`, which CLAUDE.md flags as timeout-prone and whose arm count already drifts), and that is a real design call rather than a mechanical follow-through — so it stays a note, still not urgent, now with its numbers attached.
