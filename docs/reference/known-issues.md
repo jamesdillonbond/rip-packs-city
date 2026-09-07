@@ -203,6 +203,18 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     🚨 **AND THE ENTRY'S POPULATION IS A CURATED LIST, SO IT IS SILENT ABOUT THE BIGGEST ONE.** `app/(collections)/[collection]/pack/dist/[distId]/page.tsx` is **2,384 lines** — larger than any of the three above — is a **SERVER** page with no client sibling, and appears in no monolith entry. ⚠ **It is also unmeasured by BOTH coverage gates:** the primary gate includes `lib/**` + `app/**/route.ts(x)` and the components gate `components/**` + `app/**/*Client.tsx`, so **`app/**/page.tsx` is in neither** — there is exactly one hand-added exception (`app/insights/squeeze-check/page.tsx`). It is not unguarded (`server-page-data-access-ratchet` and `insights-server-pages-bound-their-reads` read it statically), but **no gate measures whether its branches run.** ➡ **Derive this population from the tree by size, not from a list — that is why the largest instance went unnamed.**
 
+    🚨 **THAT INSTRUCTION WAS FOLLOWED BY NOBODY FOR A FORTNIGHT, SO IT IS A GUARD NOW — `__tests__/monolith-inventory-is-derived-from-the-tree.test.ts` (2026-09-07).** It walks `app/` + `components/` + `lib/` and requires every `.ts(x)` file **≥ 1,500 lines** to be NAMED somewhere in this file. ⭐ **The register is the SUPPRESSION list: naming a file is the entire requirement** — *"acknowledged, not scheduled"* passes. What must not recur is a file this size being invisible. ⛔ **It deliberately does NOT pin line counts** — every figure here is a dated sample, and a test asserting "1,849 lines" would red on every edit and train people to bump numbers without reading them. It prints the full inventory on failure so these numbers can be re-derived by hand.
+
+    **Its first run caught THREE files named nowhere in this register**, a fortnight after the note above told the next reader to go looking:
+
+    | file | lines (2026-09-07) | note |
+    |---|---|---|
+    | `app/api/fmv-recalc/route.ts` | **2,334** | CLAUDE.md discusses the *route's cost*; the FILE was in no monolith entry |
+    | `app/api/sniper-feed/route.ts` | **2,029** | — |
+    | `app/moment/[id]/page.tsx` | **1,953** | ⚠ **a SERVER page, larger than two of the three tracked above, and — exactly like the pack-dist page — measured by NEITHER coverage gate.** The identical shape, missed the identical way. |
+
+    ⚠ **AND ALL THREE TRACKED FILES GREW AGAIN since the 08-24 re-derivation** — `CollectionTabClient` 1,347 → **1,416**, `SniperClient` 1,804 → **1,849**, `CollectionAnalyticsClient` 1,840 → **1,875**. ⭐ That is the second consecutive re-measurement in which every number moved UP, against an entry that once recorded them shrinking. **The trend is the finding; the individual numbers are dated samples.** ⓘ The largest file in the repo, `app/api/support-chat/route.ts` (**4,526**), and `DashboardClient.tsx` (**2,836**, item #10) were already named and are unchanged in status.
+
     ⓘ **One near-miss worth recording, because it nearly became a false finding.** Reading the components config with a regex, I concluded `app/**` was absent from its `coverage.include` and that the 08-17 move had therefore failed its own purpose. **It has a blanket `app/**/*Client.tsx` glob** (added precisely so client bodies under `app/` are measured), and the coverage REPORT shows those files. **The config was 180 lines of commentary and my regex matched the wrong `include:`.** ➡ **Check the instrument's OUTPUT, not its configuration.**
 
 15. **`livetoken-portfolio*.json` fixtures — RESOLVED (verified 2026-06-01).** No longer tracked (`git ls-files` returns none for `livetoken-portfolio*` / `nftlocker-*` / `flowty-locker-test.json` / `test-gql.json`); nothing left to `git rm`.

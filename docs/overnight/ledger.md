@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-07 · ✅ THE MONOLITH INVENTORY IS DERIVED FROM THE TREE NOW — the register told the next reader to go looking, nobody did for a fortnight, and three files over 1,500 lines were named nowhere · Claude Code (cloud)
+
+**The register asked for this in its own words, and that is the whole justification.** known-issues **#14** carries, dated 2026-08-24: *"THE ENTRY'S POPULATION IS A CURATED LIST, SO IT IS SILENT ABOUT THE BIGGEST ONE … ➡ Derive this population from the tree by size, not from a list — that is why the largest instance went unnamed."*
+
+🚨 **A fortnight later nobody had, and the same failure had already recurred.** Walking the tree found **three** files ≥ 1,500 lines named nowhere in the register:
+
+| file | lines (`wc -l`, 2026-09-07) | note |
+|---|---|---|
+| `app/api/fmv-recalc/route.ts` | **2,334** | CLAUDE.md discusses the route's COST; the FILE was in no monolith entry |
+| `app/api/sniper-feed/route.ts` | **2,029** | — |
+| `app/moment/[id]/page.tsx` | **1,953** | ⚠ **a SERVER page, larger than two of the three #14 tracks, measured by NEITHER coverage gate** — the identical shape to the pack-dist page that prompted the note, missed the identical way |
+
+⭐ **A prose instruction to derive a population is itself a curated list with one entry.** So it is a guard: `__tests__/monolith-inventory-is-derived-from-the-tree.test.ts` walks `app/` + `components/` + `lib/` and requires every `.ts(x)` ≥ 1,500 lines to be NAMED in the register. **The register is the SUPPRESSION list — naming is the entire requirement, `"acknowledged, not scheduled"` passes.** What must not recur is a file that size being invisible. This is CLAUDE.md's own rule applied to the register instead of to code: *prefer a tree walk over a curated list; make suppression the curated list.*
+
+⛔ **It deliberately does NOT pin line counts.** Every figure in that register is a dated sample, and a test asserting *"SniperClient is 1,849 lines"* would red on every edit and train people to bump numbers without reading them. **Membership is stable; size is not.** The full inventory is PRINTED on failure so the register's numbers can be re-derived by hand — the only way they stay honest.
+
+⭐ **It failed on its first run against three real, live instances** — which is the strongest evidence available that it is not vacuous. **Three controls run, and the third is the one that matters:** removing a tracked file's mention reds it by name; breaking the tree walk reds it (the population control asserts the DENOMINATOR — `> 500` files walked — so an empty walk cannot pass by inspecting nothing, which is how three earlier guards on this repo died); and **raising `THRESHOLD_LINES` to dodge a failure also reds it**, because the same control asserts the threshold still selects a non-empty population. **The anti-cheat is mechanical, not a comment asking nicely.**
+
+⚠ **A second finding fell out of the measurement: all three files #14 DOES track grew again** — `CollectionTabClient` 1,347 → **1,416**, `SniperClient` 1,804 → **1,849**, `CollectionAnalyticsClient` 1,840 → **1,875**. That is the **second consecutive** re-measurement in which every number moved up, against an entry that once recorded them shrinking. **The trend is the finding; the individual numbers are dated samples.**
+
+⚠ **Two instruments disagreed by one and I made them agree rather than leave it.** The guard first used `split("\n").length`, which counts a trailing newline as an extra line; the register quotes `wc -l`. Left alone, someone eventually "corrects" one to match the other, forever. The guard counts newlines now and the two agree exactly (`app/api/fmv-recalc/route.ts` → 2,334 both ways).
+
+⛔ **NOT attempted, and named rather than implied:** the actual refactor. #14 is explicit that Phase 2 is medium-risk, needs rendered-DOM validation across all five collections, and **must not be attempted in one commit** — none of that changed, and an autonomous session at 07:00 is the wrong place for it. **This makes the inventory self-maintaining; it does not shrink a single file.**
+
+**Full suite green (1489 files / 16506 tests), tsc clean.** **Revert:** `git revert` the commit; deleting the test file alone restores the previous behaviour. Nothing in the DB changed. **Watch:** nothing time-based — the guard is the watch.
+
 ### 2026-09-07 · ✅ The two Atlas listing syncs go DIFFERENTIAL — the whole open book (15K rows) was being deleted and re-inserted every 2 minutes; 4 GB of WAL in a day · Cowork (cloud + device VM), the scheduled check-in
 
 **What the watch read (the one I owed on the tick's duration):** `ts-listings-atlas-sync` by hour: 2.7 s (04Z) → 1.4 → 4.2 → 1.2 → 1.3 → 1.7 → 2.1 → 4.6 → **9.3 s at 13Z (max 112 s)** as the open set filled 1,894 → 14,944 rows — the firehose sees ~8K events/hour and a listing stays "open + verified in 24 h" until it sells or the window closes. `pg_stat_statements` for the tick: 354 calls, **4,033 MB of WAL (11.4 MB/call and rising), 353K buffers/call**. Cause: `sync_ts_listings_from_atlas()` (mine, 09-07 02Z, pinned) and `sync_cached_listings_from_atlas()` (mine, 02Z) both did `DELETE everything; INSERT everything` — 2 × 15K rows and their indexes, 30 times an hour, for a set that changes by a few hundred rows a tick. The #35 shape, one day old, in my own code.
