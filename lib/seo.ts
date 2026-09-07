@@ -193,6 +193,82 @@ export const PUBLIC_TAB_PAGES: string[] = Object.keys(PAGE_META)
 
 const PAGE_META_OVERRIDES: Record<string, PageMeta> = {}
 
+// ── Closed-market tab copy ──────────────────────────────────────────────────
+//
+// PAGE_META above is written for a LIVE market and says so in nearly every
+// entry: "live FMV", "real-time FMV", "daily market pulse", "Live deals below
+// FMV". On UFC Strike those are false — the Flow market's last sale was
+// 2026-05-13 (lib/market-closed.ts) — and they were rendering on all five of
+// its published tabs, including the ~156 monthly impressions /ufc/overview
+// gets for "ufc strike value" (Search Console read, 2026-09-06). The sniper tab
+// was the worst of them: "Live deals below FMV" advertises an ACTION on a
+// market where nothing has traded in four months, which is the CLAUDE.md
+// "never offer an action the product lacks" rule reached through metadata.
+//
+// ⭐ DERIVED FROM `closedMarket()`, NOT KEYED PER COLLECTION. A second
+// per-slug list would have to be edited again the next time a market closes,
+// and lib/market-closed.ts's own header says the opposite: "WHEN A MARKET
+// REOPENS OR CLOSES, EDIT THIS MAP — not the individual pages". So the entries
+// below are keyed by PAGE, apply to every closed market, and interpolate the
+// venue + date from that map.
+//
+// ⚠ The completeness of this record is a GUARD, not a convention: every key in
+// PAGE_META must have one here, asserted by
+// __tests__/closed-market-tab-copy-carries-no-liveness-claim.test.ts (a ban at
+// zero over CLOSED_MARKETS × PAGE_META, plus a token ban on "live"/"real-time"
+// /"daily"). A new tab added to PAGE_META without a closed-market counterpart
+// fails there rather than shipping a live claim on a dead market.
+//
+// {label} = collection display name, {venue} = the venue that closed,
+// {closedOn} = "13 May 2026".
+const CLOSED_MARKET_PAGE_META: Record<string, PageMeta> = {
+  overview: {
+    title: '{label} Value After the {venue} Market Closed — Last Prices & Sales History',
+    description:
+      "{label}'s {venue} marketplace closed on {closedOn}. What your moments were worth when trading stopped: last-observed FMV, final floor prices, the closing top sales, and full history — for any moment or your whole account.",
+  },
+  collection: {
+    title: 'Wallet Analytics — Value a {label} Collection at Last Prices',
+    description:
+      'Analyze any Flow blockchain wallet holding {label}. The {venue} market closed on {closedOn}, so every value shown is the last observed before trading stopped — badge detection, serial premiums, and closing ask prices, marked as historical.',
+  },
+  sniper: {
+    title: '{label} Deals — Archive of the Final {venue} Discounts',
+    description:
+      'The {venue} market for {label} closed on {closedOn}, so there are no deals to snipe. What remains is the record: the last discounts to FMV observed before trading stopped, per edition.',
+  },
+  packs: {
+    title: '{label} Pack History — Final EV & Pull Odds',
+    description:
+      'Pack expected value and pull odds for {label} drops, computed from prices as of {closedOn} when the {venue} market closed. Historical analysis, not a buy recommendation — the packs are no longer trading.',
+  },
+  badges: {
+    title: 'Badge Tracker — {label} Badges & Their Closing Premiums',
+    description:
+      'Detect badge-eligible {label} moments on any Flow blockchain wallet. Premiums for Top Shot Debut, Fresh, Rookie Year and Championship are the last observed before the {venue} market closed on {closedOn}.',
+  },
+  sets: {
+    title: 'Set Completion — Track Your {label} Sets',
+    description:
+      'Set completion progress and bottleneck moments for any {label} set. Completion costs are priced at the last values before the {venue} market closed on {closedOn}, so treat them as history rather than a shopping list.',
+  },
+  analytics: {
+    title: 'Portfolio Analytics — {label} Wallet Breakdown at Closing Values',
+    description:
+      'Deep-dive wallet analytics for {label}: acquisition origin, tier and series breakdown, liquid vs locked value, and portfolio clarity — all valued at the last prices before the {venue} market closed on {closedOn}.',
+  },
+  market: {
+    title: 'Market Intelligence — {label} Edition Lookup & Closing Leaderboards',
+    description:
+      'Edition-level intelligence for {label}: last FMV, final ask/offer depth, and the sales that closed out the book. The {venue} market closed on {closedOn}; the leaderboards rank what happened, not what is trading.',
+  },
+  play: {
+    title: 'Play — {label} Challenges & Final Standings',
+    description:
+      'Game tools for {label}: Set & Crafting Challenges, lineup optimization, and ROI tracking, scored against the last prices before the {venue} market closed on {closedOn}.',
+  },
+}
+
 // ── The openGraph / twitter shallow-merge trap (deep-audit R10) ─────────────
 // Next merges page metadata into the root export at the TOP-LEVEL key only.
 // Defining `openGraph` (or `twitter`) in a child REPLACES the root's block
@@ -221,12 +297,22 @@ export const OG_INHERITED = { type: 'website', locale: 'en_US', siteName: 'Rip P
 export const TWITTER_INHERITED = { card: 'summary_large_image', site: '@RipPacksCity', creator: '@RipPacksCity' } as const
 
 export function pageMetadata(page: string, collectionLabel: string, collectionId: string): Metadata {
-  const override = PAGE_META_OVERRIDES[`${page}:${collectionId}`]
+  const override = ownMeta(PAGE_META_OVERRIDES, `${page}:${collectionId}`)
   const base = PAGE_META[page]
-  const meta = override ?? base
+  // A closed market takes the historical copy for this tab. The explicit
+  // per-collection override still wins, so a one-off stays possible; what is NOT
+  // possible is a closed market silently inheriting the live-market template.
+  const cm = closedMarket(collectionId)
+  const closed = cm ? ownMeta(CLOSED_MARKET_PAGE_META, page) : null
+  const meta = override ?? closed ?? base
   if (!meta) return {}
-  const title = meta.title.replace(/\{label\}/g, collectionLabel)
-  const description = meta.description.replace(/\{label\}/g, collectionLabel)
+  const fill = (t: string) =>
+    t
+      .replace(/\{label\}/g, collectionLabel)
+      .replace(/\{venue\}/g, cm?.venue ?? "")
+      .replace(/\{closedOn\}/g, cm ? formatClosedOn(cm.closedOn) : "")
+  const title = fill(meta.title)
+  const description = fill(meta.description)
   const canonical = `${BASE_URL}/${collectionId}/${page}`
   return {
     title,
@@ -611,12 +697,25 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
   const fmvUsd = fmvObj ? n(fmvObj, "fmv_usd") : null
   const subject = playerName
   const context = setName
-  // On a closed market the FMV is the last value observed before trading stopped, so
-  // the title must not present it as a current valuation. See lib/market-closed.ts.
+  // ⛔ NO DOLLAR FIGURE IN THE TITLE (2026-09-06, Search Console read §5).
+  // The title used to interpolate the live FMV — "… · Value $1.11 | …" — which
+  // is wrong on two counts. (1) It re-writes the <title> of ~20K entity URLs on
+  // every crawl, so Google most often discards it and synthesizes its own; the
+  // searchable half ("<Player> — <Set>", "value", "floor", "sales") is what the
+  // 224 impression-bearing queries actually contain, and it was being crowded
+  // out by a number nobody searches for. (2) A price in the title is a claim
+  // rendered in a surface (the SERP) we cannot refresh — a cached title asserts
+  // a stale valuation with no freshness signal attached, which is the honesty
+  // rule applied to a surface outside the app. The value stays in the
+  // DESCRIPTION, which Google shows next to it and re-reads on the same crawl.
+  //
+  // ⚠ The closed-market disclosure is UNCHANGED and load-bearing: the title
+  // still names the closure, so a UFC/Pinnacle result cannot read as a live
+  // market. See lib/market-closed.ts and the honesty pins.
   const cm = closedMarket(collectionUrlSlug)
   const title = cm
-    ? `${subject} — ${fmvUsd ? `${context} · Last Value ${fmtUsd(fmvUsd)}` : `${context} · Value History & Sales`} (${cm.venue} market closed) | ${collectionLabel} | Rip Packs City`
-    : `${subject} — ${fmvUsd ? `${context} · Value ${fmtUsd(fmvUsd)}` : `${context} · Value, Floor & Sales`} | ${collectionLabel} | Rip Packs City`
+    ? `${subject} — ${context} · Value History & Sales (${cm.venue} market closed) | ${collectionLabel} | Rip Packs City`
+    : `${subject} — ${context} · Value, Floor & Sales | ${collectionLabel} | Rip Packs City`
   const descParts = [
     cm
       ? (fmvUsd

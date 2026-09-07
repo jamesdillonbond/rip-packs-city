@@ -125,11 +125,26 @@ describe("pageMetadata", () => {
   })
 
   it("replaces every {label} occurrence (global)", () => {
-    const m = pageMetadata("sniper", "UFC Strike", "ufc")
+    // ⚠ Subject changed 2026-09-06 from "ufc" to a LIVE collection. UFC Strike is
+    // in CLOSED_MARKETS, so pageMetadata now serves it the closed-market template
+    // — this case is about the {label} substitution being global, and it needs a
+    // collection whose copy still carries two occurrences of the token.
+    const m = pageMetadata("sniper", "NBA Top Shot", "nba-top-shot")
     // sniper description ends with "…discount scoring for {label}." → the label
     // must not linger anywhere.
     expect(m.description).not.toContain("{label}")
-    expect(m.description).toContain("discount scoring for UFC Strike.")
+    expect(m.description).toContain("discount scoring for NBA Top Shot.")
+  })
+
+  it("a closed market gets the historical sniper copy, with venue + date filled in", () => {
+    // The other half of the case above: the same call on a closed market takes
+    // the closed template, and its two extra placeholders resolve too.
+    const m = pageMetadata("sniper", "UFC Strike", "ufc")
+    expect(m.description).not.toMatch(/\{(label|venue|closedOn)\}/)
+    expect(m.description).toContain("UFC Strike")
+    expect(m.description).toContain("Flow")
+    expect(m.description).toContain("13 May 2026")
+    expect(m.description).not.toContain("discount scoring")
   })
 })
 
@@ -223,9 +238,15 @@ describe("editionPageMetadata", () => {
       },
       "nba-top-shot"
     )
+    // ⛔ The title must carry NO dollar figure (2026-09-06). Asserted as the
+    // ABSENCE of a currency amount, not just as this exact string, so a future
+    // edit that re-introduces one under a different spelling still fails here.
     expect(titleText(m.title)).toBe(
-      "Damian Lillard — Base Set · Value $251 | NBA Top Shot | Rip Packs City"
+      "Damian Lillard — Base Set · Value, Floor & Sales | NBA Top Shot | Rip Packs City"
     )
+    expect(titleText(m.title)).not.toMatch(/\$[\d,]/)
+    // …and the value it used to carry is still published, one field over.
+    expect(m.description).toContain("$251")
     expect(m.description).toBe(
       "Damian Lillard Base Set is worth ~$251 (FMV) on NBA Top Shot. Tier COMMON. Series 2024-25. Circulation 15,000. Live FMV, recent sales, history chart, and packs that contained this edition."
     )
@@ -238,13 +259,19 @@ describe("editionPageMetadata", () => {
     )
   })
 
-  it("sub-$100 FMV uses 2-decimal formatting", () => {
+  it("sub-$100 FMV uses 2-decimal formatting — in the description, never the title", () => {
     const m = editionPageMetadata(
       { route_slug: "a", fmv: { fmv_usd: 5.5 } },
       "nba-top-shot"
     )
+    expect(m.description).toContain("~$5.50")
+    // Inverted 2026-09-06: this used to pin "· Value $5.50" INTO the title.
+    // The title is now FMV-independent — same string with or without a price.
     expect(titleText(m.title)).toBe(
-      "Edition — Edition · Value $5.50 | NBA Top Shot | Rip Packs City"
+      "Edition — Edition · Value, Floor & Sales | NBA Top Shot | Rip Packs City"
+    )
+    expect(titleText(m.title)).toBe(
+      titleText(editionPageMetadata({ route_slug: "a" }, "nba-top-shot").title)
     )
   })
 

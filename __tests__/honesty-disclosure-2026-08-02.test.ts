@@ -15,7 +15,14 @@ import {
   SERIALISED_PINNACLE_EDITION_TYPES,
   KNOWN_UNSERIALISED_PINNACLE_EDITION_TYPES,
 } from "@/lib/pinnacle/serialisation"
-import { editionJsonLd, editionPageMetadata } from "@/lib/seo"
+import {
+  editionJsonLd,
+  editionPageMetadata,
+  setPageMetadata,
+  playerPageMetadata,
+  teamPageMetadata,
+  seriesPageMetadata,
+} from "@/lib/seo"
 
 // `Metadata.title` is `string | { absolute } | { default, template }`.
 // collectionLayoutMetadata and the four entity builders returned bare strings
@@ -144,19 +151,47 @@ describe("seo: closed markets do not title a dead price as a current value", () 
     fmv: { fmv_usd: 200, confidence: "MEDIUM" },
   }
 
-  it("live market keeps the plain 'Value $X' title", () => {
+  // ⚠ INVERTED 2026-09-06, not deleted. These two cases were written when the
+  // edition title interpolated the FMV, and the property they held was "a dead
+  // price is never titled as a live one". The title no longer carries ANY price
+  // (Search Console read §5 — a volatile number in a <title> gets rewritten by
+  // Google and buries the searchable part), so the same property is now pinned
+  // one step stronger: NO edition title carries a currency amount at all, and
+  // the closure disclosure that made the closed-market title honest is still
+  // required. The dead-vs-live distinction survives in the DESCRIPTION, which is
+  // where the number went and where both cases still assert it.
+  it("live market: no price in the title, present-tense worth in the description", () => {
     const m = editionPageMetadata(payload, "nba-top-shot")
-    expect(titleText(m.title)).toContain("Value $200")
+    expect(titleText(m.title)).not.toMatch(/\$[\d,]/)
     expect(titleText(m.title)).not.toContain("market closed")
+    expect(String(m.description)).toContain("is worth ~$200")
   })
 
-  it("closed market says LAST value and names the closure", () => {
+  it("closed market: no price in the title, the closure named, and the description says LAST", () => {
     const m = editionPageMetadata(payload, "ufc")
-    expect(titleText(m.title)).toContain("Last Value")
+    expect(titleText(m.title)).not.toMatch(/\$[\d,]/)
     expect(titleText(m.title)).toContain("market closed")
+    expect(String(m.description)).toContain("last traded around $200")
     expect(String(m.description)).toContain("13 May 2026")
     // The description must not assert a present-tense worth.
     expect(String(m.description)).not.toContain("is worth")
+  })
+
+  // Ban at zero: NONE of the five entity-detail titles may carry a currency
+  // amount. A curated list of the one that used to would go stale the moment a
+  // sixth helper is added; this walks every helper the routes actually call.
+  it("no entity-detail title carries a dollar amount", () => {
+    const titles = [
+      editionPageMetadata({ route_slug: "x", fmv: { fmv_usd: 1234.5 } }, "nba-top-shot"),
+      editionPageMetadata({ route_slug: "x", fmv: { fmv_usd: 1234.5 } }, "ufc"),
+      setPageMetadata({ set_name: "S", fmv_total_usd: 9876 }, "nba-top-shot", "s"),
+      playerPageMetadata({ name: "P", fmv_total_usd: 9876 }, "nba-top-shot", "p"),
+      teamPageMetadata({ team_name: "T", fmv_total_usd: 9876 }, "nba-top-shot", "t"),
+      seriesPageMetadata({ display_label: "Series 7", fmv_total_usd: 9876 }, "nba-top-shot", "7"),
+    ].map((m) => titleText(m.title))
+    // Not vacuous at a population of zero: the set itself must be non-empty.
+    expect(titles.length).toBe(6)
+    for (const t of titles) expect(t).not.toMatch(/\$[\d,]/)
   })
 })
 
