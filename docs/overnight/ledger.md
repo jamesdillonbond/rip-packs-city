@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-06 · ✅ SECOND ROUND on the closed-market claim — the ticker pill literally read LIVE on every UFC tab, plus two Tools cards and a dead duplicate ticker; and the three guards' own regex was letting inflected forms through · Claude Code (cloud)
+
+**Why there was a second round at all, and it is the point of this entry.** The `/ufc/sniper` header was fixed hours earlier. I then measured `/ufc/overview` in production — and found **four more panels of the identical claim** on a page that fix never touched. **"Fix per PANEL, not per page" arriving exactly as CLAUDE.md advertises it.** Measured on the served HTML, not inferred from the tree:
+
+| surface | what it rendered | why it is false |
+|---|---|---|
+| ticker pill | **`LIVE`**, brand red, top of EVERY tab | UFC's Flow market last traded 13 May 2026 |
+| ticker item | `⚡ COLLECTION ANALYZER — FMV + active listing prices` | there are no active listings |
+| ticker item | `⚡ SNIPER — fight moments below market` | nothing is below market; nothing trades |
+| Tools card | `Sniper · Real-time deals below FMV` | the same claim I had just fixed, one panel over |
+| Tools card | `Collection · FMV · Flowty asks · badge intel` | asks that do not exist |
+
+**Shipped (code):** `lib/collection/closed-market-chrome.ts` — `tickerStatusLabel()` (pill → `CLOSED`), `tickerItems()` (a closed market gets a different LIST, not the live one with a disclaimer bolted on) and `toolCardDesc()`, all **derived from `closedMarket()`**, no per-slug branch. `toolCardDesc` also absorbs the Pinnacle listing-feed override that was an inline ternary; a pin asserts that override survived the move, because losing it silently would put "Flowty asks" on a collection that never used Flowty.
+
+🚨 **A DEAD DUPLICATE TICKER was sitting in `CollectionOverviewClient.tsx` — `COLLECTION_TICKER`, ZERO references, a stale per-collection copy of the chrome one, carrying the same trading claims.** It rendered nothing, so it was never a live defect — **it was worse than one.** The next session to fix "the overview ticker" finds it first and edits the copy nobody sees. Deleted, with a note naming the real file. ⓘ eslint had been flagging it as unused all along and the ratchet simply carried it: **file warnings 2 → 1**, measured before and after, not assumed.
+
+🚨 **AND THE GUARDS' OWN PATTERN WAS WRONG — found by a control that PASSED when it should have failed.** Control B fed a new tool card reading *"Editions whose floor is being **actively** swept"* to a ban of `/\b…|active|…\b/i`. It passed: **`\bactive\b` cannot match "actively"** — the trailing `\b` needs a non-word character and "actively" continues with an `l`. Every inflected form was invisible. ⭐ **Reading the regex would never have caught this; it looks obviously right. Only an assertion that a specific thing must FAIL did.**
+Worse, **three guards written the same evening had each declared their own copy of that regex and they had already drifted** — one banned `daily`, one banned `trading`, none banned all of it. That is the copy-paste spread CLAUDE.md names, reproduced *inside the guards meant to catch it*. Now **one** `__tests__/helpers/market-liveness.ts`, with inflections spelled out, **pinned by its own test** (17 positives, 12 negatives), and all three guards import it.
+
+⚠ **I banned `trad(e|es|ing)` first and then REMOVED it, and the reasoning is the durable part.** Every other token is unambiguously present-tense (`live`, `real-time`, `active`, `currently`, `now`, `today`, `daily`). **A gerund is not — it takes its tense from its clause.** Banning it reddened **six honest past-tense sentences already shipped** ("…what your moments were worth when trading stopped", "…the packs are no longer trading", "…rank what happened, not what is trading"). Twice earlier this session the right call on a token collision was to change the COPY, not the ban; **this is the case where that flips** — six good sentences contorted to dodge one word is how a guard earns enough resentment to be deleted wholesale. **The residual gap is named, not hidden:** a bare "Trading below FMV" is not caught, nothing in the tree says it, and the compound forms are caught by their other half. **It is pinned as a KNOWN LIMIT** so re-adding the blunt stem reds deliberately.
+
+**Guard:** `__tests__/closed-market-chrome-makes-no-trading-claim.test.ts` — ban at zero over `CLOSED_MARKETS × TOOL_CARD_DESC` and over the ticker, venue + date required, populations asserted, a **no-change control** (three live collections keep their chrome byte-for-byte) and a source-level ban on re-inlining the literals. **Four positive controls run:** closure ignored → fails; the pill literal re-inlined → fails; live collections silently rewritten → fails; and the "actively" card → **fails now, passed before the pattern fix**, which is the whole reason the pattern got fixed.
+
+⛔ **`PAGE_PITCHES` in `lib/collections.ts` carries the same `"Real-time deals below FMV"` string and was NOT touched — it has ZERO callers.** Named rather than fixed, per "name the caller before you touch the function".
+
+**Full suite green (1486 files / 16478 tests), tsc clean, eslint down one warning.** **Revert:** `git revert` the code commit; deleting `lib/collection/closed-market-chrome.ts` requires restoring the two inline literal blocks. Nothing in the DB changed.
+
 ### 2026-09-06 · ✅ Top Shot "lowest ask" is live again — `edition_offers.low_ask` refreshed from Atlas every 2 min; the GQL `offers-sweep` behind it has been dead since ~08-28 and reports `ok=true` · Cowork (cloud + device VM), Trevor: "Keep doing all you can"
 
 **Found while wiring the sniper:** `offers-sweep` (cron-job.org, ~20 min) is the writer of `edition_offers` — the "best offer / lowest ask" on the collection grid, moment and edition pages, and fmv-recalc's ask feed. Its host answers **530** (the decommissioned marketplace GraphQL); every tick since logs **`ok=true, skipped: upstream_outage`** — the *sweep-ok-means-COMPLETED* class, again — and 12,259 Top Shot rows carry a `low_ask` nobody has refreshed. Measured against the live Atlas floor: of 464 editions with both, **431 differ and 395 show a HIGHER stale ask than the live floor** — every one a false "lowest ask" and an under-reported deal.
