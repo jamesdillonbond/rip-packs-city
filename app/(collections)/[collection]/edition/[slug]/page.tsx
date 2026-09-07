@@ -34,7 +34,7 @@ import MomentHeroMedia from "@/components/MomentHeroMedia"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import PackThumb from "@/components/packs/PackThumb"
 import { slugifyName } from "@/lib/entity-labels"
-import { momentSubjectHref } from "@/lib/entity-href"
+import { editionHref, momentSubjectHref, momentSubjectName } from "@/lib/entity-href"
 import IpfsThumb from "@/components/entity/IpfsThumb"
 import { isTopShotFossilSlug, ASK_LABEL, notableTagLabel, fmvDayDelta, sortNotableSerials } from "@/lib/edition-detail-format"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
@@ -332,6 +332,30 @@ async function fetchTopOwners(editionId: string): Promise<TopOwnerRow[]> {
 
 async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
   return sectionRows<ParallelEdition>("edition parallels", "get_edition_parallels", { p_edition_id: editionId })
+}
+
+// "More from <player> / <set>" — up to 6 sibling editions (same player first,
+// FMV desc; same set's scarcest to fill). Added 2026-09-07 (Search Console
+// pass): the edition page is the canonical target of every /moment/<edition
+// uuid> 308 and linked to ZERO other editions, so the site's entity-to-entity
+// internal linking ran through the player page alone. Cost measured before the
+// function was written: ≤ ~2,300 buffers on the worst set, ~1,000 on the worst
+// player. Not Pinnacle (its editions live in pinnacle_editions).
+interface RelatedEdition {
+  id: string
+  external_id: string | null
+  player_name: string | null
+  team_name: string | null
+  set_name: string | null
+  tier: string | null
+  series: number | null
+  circulation_count: number | null
+  thumbnail_url: string | null
+  fmv_usd: number | null
+  relation: "player" | "set"
+}
+async function fetchRelated(editionId: string): Promise<RelatedEdition[]> {
+  return sectionRows<RelatedEdition>("edition related", "get_edition_related", { p_edition_id: editionId, p_limit: 6 })
 }
 
 // "Featured in Insights" membership — Top Shot only. Reads the same public
@@ -1052,7 +1076,7 @@ async function EditionBottomSections({
   // the edition smoke probe even though the page was healthy. Per-fetch .catch
   // keeps the section (and its titled empty-states) rendering when one leg times
   // out, and degrades real users gracefully instead of blanking the block.
-  const [salesRes, offersRes, parallels, packs, notableRes, packProvenance, topOwners] = await Promise.all([
+  const [salesRes, offersRes, parallels, packs, notableRes, packProvenance, topOwners, related] = await Promise.all([
     // ⚠ The catch fallbacks carry ok:false. Returning a bare [] here would put the
     // failure back exactly where it was erased before — see fetchSalesResult.
     fetchSalesResult(detail.collection_id, slug, SALES_PAGE_SIZE, 0).catch(() => ({ rows: [] as SaleRow[], ok: false })),
@@ -1068,6 +1092,7 @@ async function EditionBottomSections({
       : Promise.resolve(null)
     ).catch(() => null),
     (isTopShot ? fetchTopOwners(detail.id) : Promise.resolve([] as TopOwnerRow[])).catch(() => [] as TopOwnerRow[]),
+    (isPinnacle ? Promise.resolve([] as RelatedEdition[]) : fetchRelated(detail.id)).catch(() => [] as RelatedEdition[]),
   ])
   // Rows for rendering; the `ok` halves travel separately to the Activity block
   // so a degraded read can never be published as "No sales yet."
@@ -1129,7 +1154,7 @@ async function EditionBottomSections({
             {parallels.map(p => (
               <Link
                 key={p.id}
-                href={`/moment/${p.id}`}
+                href={editionHref(collection, p.external_id, p.id)}
                 className="rpc-card"
                 style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block", border: "1px solid var(--rpc-red)" }}
               >
@@ -1146,6 +1171,41 @@ async function EditionBottomSections({
           </div>
         </Section>
       )}
+
+      {/* ── More from this player / set (2026-09-07, internal linking) ──── */}
+      {related.length > 0 && (() => {
+        const who = momentSubjectName(detail.player_name, detail.team_name, detail.set_name)
+        const allPlayer = related.every((r) => r.relation === "player")
+        const title = allPlayer ? `More ${who} Editions` : related.some((r) => r.relation === "player") ? `More ${who} & ${detail.set_name ?? "Set"} Editions` : `More from ${detail.set_name ?? "this set"}`
+        return (
+          <Section title={title}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
+              {related.map((r) => {
+                const name = momentSubjectName(r.player_name, r.team_name, r.set_name)
+                return (
+                  <Link
+                    key={r.id}
+                    href={editionHref(collection, r.external_id, r.id)}
+                    className="rpc-card"
+                    style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
+                  >
+                    <IpfsThumb src={proxyIpfsUrl(r.thumbnail_url)} alt={`${name} — ${r.set_name ?? ""}`} label={r.set_name ?? name} />
+                    <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 2 }}>
+                      {name}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)", marginBottom: 4 }}>{r.set_name ?? "—"}</div>
+                    <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)" }}>
+                      {(r.tier ?? "").toUpperCase()}
+                      {r.circulation_count != null ? ` · ${fmtCount(r.circulation_count)} mint` : ""}
+                      {r.fmv_usd != null ? ` · ${fmtUsd(r.fmv_usd)}` : ""}
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </Section>
+        )
+      })()}
 
       {/* ── Found in packs ───────────────────────────────────────────────── */}
       {namedPacks.length > 0 && (

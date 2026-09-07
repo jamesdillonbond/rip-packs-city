@@ -36,6 +36,29 @@ export function momentSubjectHref(
  * is the team, then the set, and only then an honest dash. Never "Unknown":
  * that reads as a fact about the Moment, and it is a fact about our join.
  */
+/**
+ * The canonical edition-page href for an edition row that carries its
+ * `external_id`. Added 2026-09-07 (Search Console pass): four "related /
+ * parallel" blocks linked to `/moment/<edition uuid>`, which is the edition
+ * page under another URL — it now 308s there, so every such internal link was
+ * a redirect hop for the reader and a duplicate URL for the crawler (~11,000
+ * of them in the not-indexed buckets). Link straight to the canonical.
+ *
+ * ⚠ Pinnacle keys its edition route on the edition id, not `external_id`
+ * (see momentCanonicalPath) — pass `collectionUrlSlug = "disney-pinnacle"`
+ * and the id is used. Without an external_id the only honest target is the
+ * resolver URL, which redirects; that is the fallback, not the default.
+ */
+export function editionHref(
+  collectionUrlSlug: string,
+  externalId: string | null | undefined,
+  editionId: string,
+): string {
+  if (collectionUrlSlug === "disney-pinnacle") return `/disney-pinnacle/edition/${encodeURIComponent(editionId)}`
+  const ext = externalId?.trim()
+  return ext ? `/${collectionUrlSlug}/edition/${encodeURIComponent(ext)}` : `/moment/${encodeURIComponent(editionId)}`
+}
+
 export function momentSubjectName(
   playerName: string | null | undefined,
   teamName: string | null | undefined,

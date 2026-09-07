@@ -105,3 +105,14 @@ describe("no wallet cell links to /profile/<address> (a URL that does not exist)
     }
   })
 })
+
+describe("/pricing is no longer advertised (2026-09-07, Trevor: 'take /pricing out of the footer')", () => {
+  it("the footer has no /pricing link", () => {
+    const src = read("components/SiteFooter.tsx")
+    expect(src).not.toMatch(/href="\/pricing"/)
+  })
+  it("the pricing page is noindex (it says the product is free; it answers no search)", () => {
+    const src = read("app/pricing/page.tsx")
+    expect(src).toMatch(/robots:\s*\{\s*index:\s*false/)
+  })
+})

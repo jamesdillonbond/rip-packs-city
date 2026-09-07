@@ -168,7 +168,10 @@ export async function generateMetadata(
         }
   }
   const tierLabel = row?.tier ? humanizeLabel(String(row.tier)) : ""
-  const metaTitle = `${joinMetaParts([title, tierLabel], " — ")} | ${coll.displayName} | Rip Packs City`
+  // 2026-09-07 (Search Console): the queries that land here ("wnba gold slot",
+  // "premiumchance") are asking what a pack CONTAINS and what it is worth; the
+  // title now says so instead of ending on a bare tier word.
+  const metaTitle = `${joinMetaParts([title, tierLabel ? `${tierLabel} Pack` : "Pack"], " — ")} · Odds, Pulls & EV | ${coll.displayName} | Rip Packs City`
   // AllDay: prefer the odds/median-corrected EV (matches the page headline) so
   // the SEO description never advertises the inflated canonical number.
   // ⚠ Honour `ok`: a FAILED corrected-EV read used to fall through to the raw
@@ -209,7 +212,9 @@ export async function generateMetadata(
   const seoEvStale = isEvSnapshotStale({ snapshottedAt: row?.ev_snapshotted_at ?? null })
   const descParts = [
     `${title} on ${coll.displayName}.`,
-    !isHoldingPack && price !== null ? `Retail ${fmtUsd(price)}.` : null,
+    // A $0 retail is "no retail price recorded" (case toppers, airdrops), not a
+    // price — "Retail $0.00" published that null as a fact (2026-09-07).
+    !isHoldingPack && price !== null && price > 0 ? `Retail ${fmtUsd(price)}.` : null,
     !isHoldingPack && !seoSurvivorBiased && !seoEvStale && grossEv !== null ? `Value still sealed ≈ ${fmtUsd(grossEv)}.` : null,
     "Pack EV vs live secondary ask, top pulls, and depletion based on Rip Packs City's cached snapshot.",
   ].filter(Boolean) as string[]

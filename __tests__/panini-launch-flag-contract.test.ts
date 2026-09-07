@@ -77,7 +77,9 @@ describe("shipped state — Panini is LIVE (2026-08-01 go-live)", () => {
     // 74 = 44 historical + candy-mlb (2026-07-31) + panini-squeeze (2026-08-01),
     // both live, + 28 feature tabs (2026-08-20).
     // 75 since 2026-09-06: + the registry-published /candy-mlb/overview.
-    expect(s).toHaveLength(75)
+    // 74 on 2026-09-07: /pricing left the sitemap (footer + index too). Fourth
+    // unrelated bump — the deliberate restructure above is still owed.
+    expect(s).toHaveLength(74)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
@@ -95,7 +97,7 @@ describe("rollback direction — flipping the flag off re-gates the launch", () 
     // Back to the 45-entry skeleton (44 historical + candy-mlb) + the 28
     // flag-independent feature tabs — proof rollback is a clean no-op that
     // leaves Candy untouched.
-    expect(s).toHaveLength(74)
+    expect(s).toHaveLength(73)
   })
 
   it("restores robots:noindex when the flag is off", async () => {

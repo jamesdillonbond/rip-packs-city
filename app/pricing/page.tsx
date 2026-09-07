@@ -33,6 +33,9 @@ export const metadata: Metadata = {
   description:
     "Rip Packs City is free. Every feature unlocked at no cost — no invite, no card, no catch. FMV across all five Flow collections, deal-finding, pack EV, wallet analytics, and a Claude-powered concierge.",
   alternates: { canonical: `${SITE_URL}/pricing` },
+  // noindex 2026-09-07 (Search Console pass): the page says the product is free
+  // and answers no search; it left the footer and the sitemap the same day.
+  robots: { index: false, follow: true },
   openGraph: {
     title: "Pricing — Everything unlocked, free",
     description:

@@ -88,7 +88,7 @@ describe("SITEMAP_SEGMENT_IDS", () => {
 })
 
 describe("segment 0 — static + insights + overviews + series + profiles", () => {
-  it("emits the fixed static/insights/feature skeleton (74 entries) with no DB rows", async () => {
+  it("emits the fixed static/insights/feature skeleton with no DB rows", async () => {
     const s = await buildSitemapSegment(0)
     // 10 static + (1 insights index + 30 insight routes, incl. candy-mlb (live
     // 2026-07-31) + panini-squeeze (live 2026-08-01)) + 5 published overviews
@@ -104,7 +104,10 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // proxy.ts isPublicPath in both directions.
     // 74 -> 75 on 2026-09-06: Candy MLB published (thin, overview only) adds
     // /candy-mlb/overview to the feature pages.
-    expect(s).toHaveLength(75)
+    // 75 -> 74 on 2026-09-07: /pricing left the sitemap with its footer link
+    // (static 10 -> 9). Pinned below as an absence, not just a count.
+    expect(s).toHaveLength(74)
+    expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
     // Root is priority 1.0, changeFrequency daily.
     expect(s[0].url).toBe(BASE)
     expect(s[0].priority).toBe(1)

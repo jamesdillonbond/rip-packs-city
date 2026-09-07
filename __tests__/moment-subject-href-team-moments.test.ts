@@ -51,8 +51,10 @@ describe("momentSubjectHref — a team Moment goes to the team page, not a 404 p
     ]
     for (const f of files) {
       const src = fs.readFileSync(path.join(process.cwd(), f), "utf8")
-      expect(src, `${f} must import momentSubjectHref`).toContain(
-        'import { momentSubjectHref } from "@/lib/entity-href"',
+      // The PROPERTY (the helper is imported from its module), not the spelling of
+      // the import line — the edition page imports two more helpers from it now.
+      expect(src, `${f} must import momentSubjectHref`).toMatch(
+        /import \{[^}]*\bmomentSubjectHref\b[^}]*\} from "@\/lib\/entity-href"/,
       )
       // no hand-rolled player href built from a row/detail/listing's player name
       const handRolled = src.match(/\/player\/\$\{[^}]*[Pp]layer[Nn]ame[^}]*\}/g) ?? []

@@ -67,6 +67,7 @@ import {
 import { resolveUsernames } from "@/lib/flowty-username"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import { marketplaceMomentUrl, dapperMarketMomentUrl, dapperMarketEditionUrl, fromDbSlug } from "@/lib/collections"
+import { editionHref } from "@/lib/entity-href"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
@@ -1479,7 +1480,7 @@ export default async function MomentPage(
             {parallels.map((p) => (
               <Link
                 key={p.id}
-                href={`/moment/${p.id}`}
+                href={walletSlug ? editionHref(walletSlug, p.external_id, p.id) : `/moment/${p.id}`}
                 style={{
                   textDecoration: "none",
                   color: "inherit",

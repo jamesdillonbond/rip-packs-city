@@ -8,11 +8,17 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 export const metadata: Metadata = {
   // The root metadata template in lib/seo.ts appends " | Rip Packs City",
   // so baking the brand in here rendered it twice. (deep-audit D24)
-  title: "What's My NBA Top Shot Account Worth? Free Portfolio Value",
+  // 2026-09-07 (Search Console): the queries this page half-ranks for are
+  // "nba top shot value tracker", "nba top shot account value calculator",
+  // "nba top shot account value" — the title now says those words in that
+  // order. The question form moved to the description.
+  title: "NBA Top Shot Account Value Calculator — Free Value Tracker",
   description:
-    "Paste your Top Shot username or Flow wallet and see your account's total value — live FMV across every moment you own. Free, no signup. Works for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike.",
+    "What's my NBA Top Shot account worth? Paste your Top Shot username or Flow wallet and see your account's total value — live FMV across every moment you own. Free, no signup. Works for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike.",
   keywords: [
     "nba top shot account value",
+    "nba top shot account value calculator",
+    "nba top shot value tracker",
     "what's my top shot account worth",
     "top shot portfolio value",
     "top shot collection value",

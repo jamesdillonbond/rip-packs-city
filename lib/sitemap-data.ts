@@ -91,12 +91,12 @@ export const STATIC_SITEMAP_PAGES: ReadonlyArray<{
   { path: '/blog',                             changeFrequency: 'weekly',  priority: 0.5 },
   { path: '/blog/permanent-moments-ipfs',      changeFrequency: 'monthly', priority: 0.5 },
   { path: '/blog/pinnacle-star-wars-day-2026', changeFrequency: 'monthly', priority: 0.5 },
-  // Both added 2026-08-01. /pricing is public (proxy.ts:173), indexable and
-  // footer-linked, but had never been enumerated here. /nba/fast-break is public
-  // (proxy.ts:352) and the header comment at the top of this file has claimed it
-  // was covered since the file was written — it never was. Both are genuine
-  // anon-200s, so neither burns crawl budget.
-  { path: '/pricing',                          changeFrequency: 'monthly', priority: 0.6 },
+  // /nba/fast-break added 2026-08-01: public (proxy.ts) and the header comment
+  // at the top of this file had claimed it was covered since the file was
+  // written — it never was. /pricing was added the same day and REMOVED
+  // 2026-09-07 with its footer link (Trevor, Search Console pass): a page that
+  // says the product is free is not a search answer, and it was drawing 27,566
+  // internal links. It stays public and noindex, reachable from upgrade_url.
   { path: '/nba/fast-break',                   changeFrequency: 'daily',   priority: 0.7 },
 ]
 

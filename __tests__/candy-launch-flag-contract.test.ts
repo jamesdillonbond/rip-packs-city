@@ -79,7 +79,9 @@ describe("shipped state — Candy is LIVE (2026-07-31 go-live)", () => {
     // 75 on 2026-09-06: Candy MLB is PUBLISHED (thin — `pages: ["overview"]`),
     // so publishedCollections() contributes /candy-mlb/overview. That page is
     // flag-INDEPENDENT (registry, not launch-flags), so both directions move by 1.
-    expect(s).toHaveLength(75)
+    // 74 on 2026-09-07: /pricing left the sitemap (footer + index too). Fourth
+    // unrelated bump — the deliberate restructure above is still owed.
+    expect(s).toHaveLength(74)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
@@ -97,7 +99,7 @@ describe("rollback direction — flipping the flag off re-gates the launch", () 
     // Back to the historical 44-entry skeleton + the 28 feature tabs + the
     // registry-published /candy-mlb/overview (all flag-independent) — proof
     // rollback is a clean no-op.
-    expect(s).toHaveLength(73)
+    expect(s).toHaveLength(72)
   })
 
   it("restores robots:noindex when the flag is off", async () => {
