@@ -38,6 +38,7 @@
 //   children are kicked off with staggered start times (still
 //   concurrent execution, just offset starts). Total added lead time
 //   = 4 × stagger = 120s; the route still bounded by maxDuration=800.
+//   (2026-09-07: stagger is 10 s now — 40 s of lead time; see the constant.)
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -61,7 +62,18 @@ export const maxDuration = 800
 // pool load just as effectively as 60s (the children's heavy work runs
 // for minutes) without eating into the Phase-2 sync budget against the
 // 800s ceiling.
-const CHILD_STAGGER_MS = 30_000
+// 2026-09-07: 30 s → 10 s, on measurement. The 30 s figure was sized 2026-05-24
+// when each child ran a 100–600 s Cadence walk. Over the last 24 h (565
+// orchestrations, pipeline_runs): the children now average 3–14 s (topshot 14 s,
+// allday 6 s, golazos 4 s, pinnacle 3 s, ufc 3 s; worst single run 264 s) with
+// ZERO `skipped_db_saturated` ticks — while this orchestrator averaged 125 s per
+// wallet, 120 s of which was these four sleeps inside a paid lambda: ~19 h of
+// function time per day, ~18 h of it idle. At 10 s the lead time is 40 s per
+// wallet (~6 h/day); the 8-way seed-refresh concurrency cap, not the stagger,
+// is what bounds pool pressure. Watch on the next 12Z wave: `skipped_db_saturated`
+// stays 0 and the per-child error rates stay at their 24 h baseline (topshot
+// 11/566, allday 6/565, golazos 6/565); either rising is the revert signal.
+const CHILD_STAGGER_MS = 10_000
 
 async function sleepMs(ms: number): Promise<void> {
   if (ms <= 0) return

@@ -206,6 +206,14 @@ describe("wallet-backfill-multicollection — telemetry pair + fan-out", () => {
         round_trip_cap: 4,
       },
     ])
+
+    // 2026-09-07: the orchestrator's IDLE lead time is bounded. With every child
+    // answering instantly (these stubs), total_ms is exactly the four stagger
+    // sleeps — it read 120 s (30 s × 4) in production against children that
+    // finish in 3–14 s, i.e. ~18 h/day of a paid lambda sleeping. The bound is
+    // the property; the constant is free to move underneath it.
+    expect(cExtra.total_ms).toBeLessThanOrEqual(45_000)
+    expect(cExtra.fire_ms).toBeLessThanOrEqual(25_000)
   })
 
   it("resumes a sync child from its returned checkpoint until complete", async () => {
