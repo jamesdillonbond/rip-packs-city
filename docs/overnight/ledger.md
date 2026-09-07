@@ -42,6 +42,9 @@ Worse, **three guards written the same evening had each declared their own copy 
 
 ⛔ **`PAGE_PITCHES` in `lib/collections.ts` carries the same `"Real-time deals below FMV"` string and was NOT touched — it has ZERO callers.** Named rather than fixed, per "name the caller before you touch the function".
 
+✅ **CONFIRMED IN PRODUCTION** (`dpl_9L5ZUuEG9XEJ5XLWcyiqyygttJLn`, sha `7f4146e17`, READY, all 19 CI jobs green). `/ufc/overview` server-renders pill **`CLOSED`**; ticker `⚡ FLOW MARKET CLOSED 13 MAY 2026 — EVERY PRICE BELOW IS A FINAL ONE` + three more; cards **Collection → "Your moments at their closing values"**, **Sniper → "The last discounts before the market closed"**. ⭐ **A liveness sweep of the WHOLE document returns 0 matches.** `/ufc/sets` and `/ufc/collection` were swept too and are clean (titles `Set Completion — Track Your UFC Strike Sets` and `Wallet Analytics — Value a UFC Strike Collection at Last Prices`).
+⭐ **NO-CHANGE CONTROL, from the SAME deploy** (so it cannot be a stale-cache artifact): `/nba-top-shot/overview` still renders pill `LIVE`, all five original ticker items, and all six original tool-card descriptions — byte-identical.
+
 **Full suite green (1486 files / 16478 tests), tsc clean, eslint down one warning.** **Revert:** `git revert` the code commit; deleting `lib/collection/closed-market-chrome.ts` requires restoring the two inline literal blocks. Nothing in the DB changed.
 
 ### 2026-09-06 · ✅ Top Shot "lowest ask" is live again — `edition_offers.low_ask` refreshed from Atlas every 2 min; the GQL `offers-sweep` behind it has been dead since ~08-28 and reports `ok=true` · Cowork (cloud + device VM), Trevor: "Keep doing all you can"
