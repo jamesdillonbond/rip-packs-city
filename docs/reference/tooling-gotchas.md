@@ -504,6 +504,10 @@ of them. Do not read a status count as an invocation count.
 
 ---
 
+## ⚠ BOTH automation browsers show a PERMANENT Suspense fallback on the `useSearchParams` tabs — a real Chromium renders them (2026-09-06)
+
+`/nba-top-shot/sniper`, `/nba-top-shot/market` and `/nba-top-shot/collection` sat on *"Loading sniper…" / "Loading market…" / "Loading…"* for 2+ minutes in **Claude in Chrome (the extension driving Trevor's real Chrome, signed in)** AND in **Cowork's built-in browser (anonymous)** — no console error, no failed chunk, no `/api/sniper-feed` request, the client-error beacon empty for 30 h, and `/nba-top-shot/packs` (a server page) fine beside them. The common factor is the pattern: a client component calling `useSearchParams` under a `<Suspense>` boundary. **A real headless Chromium from the VM** (`PLAYWRIGHT_BROWSERS_PATH=$HOME/pw`, `LD_LIBRARY_PATH=$HOME/extralib/usr/lib/x86_64-linux-gnu` — `scripts/qa/README.md`) rendered the sniper in one pass: 104 serials, 416 prices, the feed request fired, zero errors. So the CDP-attached browsers are the artefact, the same class as the `SCANNING THE MARKETPLACE…` note in the surface-QA skill, now on a second surface family. **Before filing any "tab stuck on its loading fallback" finding, run the VM Playwright probe** (`$HOME/sniperprobe.mjs` shape: goto, wait, count `$` and `#serial` in `main`). The scheduled E2E smoke cannot see this class either way — its 200-char floor is met by nav + footer while `main` holds 50 chars.
+
 ## Driving Chromium from a Claude Code web sandbox (2026-08-22)
 
 * Playwright's own browser build is **absent** — the repo pins a newer revision than `/opt/pw-browsers`

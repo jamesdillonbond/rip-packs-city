@@ -221,6 +221,16 @@ const cdnOneBlank = (host: string) => `<!doctype html><html><body>
 </body></html>`
 const EMPTY_SHELL = `<!doctype html><html><body><div id="__next"></div></body></html>`
 
+// A DEAD <main> behind a healthy shell (2026-09-06): nav + footer carry ~600
+// chars, the page's own main holds a Suspense fallback and nothing else. This is
+// exactly what /nba-top-shot/sniper looked like in both automation browsers, and
+// the body floor alone passed it.
+const DEAD_MAIN = `<!doctype html><html><body>
+  <nav>${CONTENT}</nav>
+  <main class="rpc-mono">Loading sniper…</main>
+  <footer>${CONTENT}</footer>
+</body></html>`
+
 // ~130 chars of real content: above a custom 100 floor, below the default 200.
 const SHORT_OK = `<!doctype html><html><body><main>${"Short but genuine content here. ".repeat(4)}</main></body></html>`
 
@@ -374,6 +384,7 @@ test.beforeAll(async () => {
     else if (url.startsWith("/cdn-healthy")) html(cdnHealthy(altHost()))
     else if (url.startsWith("/cdn-one-blank")) html(cdnOneBlank(altHost()))
     else if (url.startsWith("/short-ok")) html(SHORT_OK)
+    else if (url.startsWith("/dead-main")) html(DEAD_MAIN)
     else if (url.startsWith("/hydration-throw")) html(HYDRATION_THROW)
     else if (url.startsWith("/hydration-console")) html(HYDRATION_CONSOLE)
     else if (url.startsWith("/ambient-noise")) html(AMBIENT_NOISE)
@@ -398,6 +409,18 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()))
+})
+
+test("FAILS a page whose <main> is a dead Suspense fallback behind a full nav + footer", async ({ page }) => {
+  // Every OTHER assertion passes here: 200, no error sign, ~1,200 body chars.
+  // Only the <main> floor can see that the page itself never rendered.
+  await expect(
+    assertHealthyPage(page, { path: `${base}/dead-main`, name: "dead main fixture" }),
+  ).rejects.toThrow(/<main> rendered only/)
+})
+
+test("PASSES the same shape when mainMinChars is 0 — the opt-out for a legitimately tiny main", async ({ page }) => {
+  await assertHealthyPage(page, { path: `${base}/dead-main`, name: "dead main, opted out", mainMinChars: 0 })
 })
 
 test("PASSES a healthy page (h1 + real content)", async ({ page }) => {

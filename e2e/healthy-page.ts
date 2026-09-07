@@ -14,6 +14,11 @@ export type PageCheck = {
   name: string
   expectText?: RegExp // page-specific content that must render
   minContentChars?: number // override the "not a blank shell" floor
+  /**
+   * Floor for the page's <main> alone (default MAIN_MIN_CONTENT). 0 disables it
+   * for a page whose main is legitimately tiny. See the MAIN floor note below.
+   */
+  mainMinChars?: number
 }
 
 // Substrings that mean the page rendered an error/crash state rather than content.
@@ -25,6 +30,14 @@ const ERROR_SIGNS: RegExp[] = [
 ]
 
 const DEFAULT_MIN_CONTENT = 200
+// ⚠ THE BODY FLOOR IS BLIND TO A DEAD <main> (2026-09-06). A feature tab whose
+// client component never leaves its Suspense fallback ("Loading sniper…") still
+// clears 200 body chars on nav + footer alone — measured: `main` held 50 chars
+// on /nba-top-shot/sniper while the body sailed past the floor. So when the page
+// HAS a <main>, its own text must clear this second floor. Sized against the
+// smallest real main on the list (the collection tab's pre-search form) with
+// headroom; a page whose main is legitimately smaller sets mainMinChars.
+const MAIN_MIN_CONTENT = 120
 
 // Console/pageerror text that means the page BROKE, as opposed to the ambient
 // noise every real site emits.
@@ -143,6 +156,21 @@ export async function assertHealthyPage(page: Page, check: PageCheck): Promise<v
     `${check.path} rendered only ${bodyText.trim().length} chars (likely an empty shell) — ` +
       `read after load + ${HYDRATION_SETTLE_MS}ms, so this is not a streaming race`,
   ).toBeGreaterThanOrEqual(floor)
+
+  // ── THE <main> FLOOR: a shell whose chrome renders and whose page does not ──
+  const mainFloor = check.mainMinChars ?? MAIN_MIN_CONTENT
+  if (mainFloor > 0) {
+    const mainCount = await page.locator("main").count().catch(() => 0)
+    if (mainCount > 0) {
+      const mainText = (await page.locator("main").first().innerText().catch(() => "")) || ""
+      expect(
+        mainText.trim().length,
+        `${check.path} <main> rendered only ${mainText.trim().length} chars while the body has ` +
+          `${bodyText.trim().length} — the page's own content never arrived (a Suspense fallback ` +
+          `that never resolves reads exactly like this; nav + footer carry the body floor)`,
+      ).toBeGreaterThanOrEqual(mainFloor)
+    }
+  }
 
   if (check.expectText) {
     expect(
