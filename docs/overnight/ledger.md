@@ -33,6 +33,8 @@ The last clause was an **unconditional** tail on `editionPageMetadata`'s `descPa
 
 ⓘ **Swept and NOT changed, named so it is not re-filed:** the edition hero's `Current FMV` tile already renders an em-dash on a closed market (deliberate, 2026-08-04) — a labelled empty slot, not a false number; `/api/og/edition` and `/api/og/moment` already suppress the figure; `set`/`player`/`team`/`series` as above. **With this, the closed-market sweep covers tabs, chrome, tools grid, sniper, entity metadata, JSON-LD, OG cards and hero tiles.**
 
+✅ **CONFIRMED IN PRODUCTION** (`dpl_7iUcjjaufcyKgM3B4jKCXv9A37Tt`, sha `c2897cc33`, READY; CI run 4956 green). The same UFC edition now serves: *“Tai Tuivasa Contender last traded around $1.00 on UFC Strike before its Flow market closed on 13 May 2026. Historical value, not a present-day price. Tier CONTENDER. Series 1. Circulation 23,970. **Sales history, the FMV history chart, and the packs that contained this edition.**”* — no `Live FMV`, closure still named. ⭐ **NO-CHANGE CONTROL from the SAME deploy** (so it cannot be a cache artifact): `/nba-top-shot/edition/8:133` is untouched — *“…**Live FMV**, recent sales, history chart, and packs that contained this edition.”*, no closure text, under the FMV-independent title this session shipped earlier. **A fix that had flattened the live copy would look identical on the UFC page alone.**
+
 **Full suite green (1488 files / 16504 tests), tsc clean.** **Revert:** `git revert` the code commit. Nothing in the DB changed. **Watch:** nothing time-based — the guard is the watch.
 
 ### 2026-09-06 · ✅ UFC'S SNIPER TAB IS RETIRED — Trevor: "we should just get rid of the sniper section for ufc since there is no market currently" · Claude Code (cloud)
