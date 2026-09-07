@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-07 · ✅ THE FIFTH HONESTY LAYER IS DRAINED AND GUARDED — re-swept to 0 of 22, and the sweep produced THREE false positives in a row, every one my instrument · Claude Code (cloud)
+
+**Nothing shipped as a fix, because there was nothing to fix — and establishing that is the deliverable.** CLAUDE.md's honesty canon names a FIFTH layer its four-row table does not cover: a **server-seeded prop**, where `initial={rows}` arrives as `[]` on a failed read **carrying no provenance**, so a component that correctly distinguishes failure for its OWN fetch still concludes on the seed. The canon records **7 instances by 08-24** and reads, to anyone arriving later, like an open hunting ground. **It is closed.**
+
+**Measured over the tree** (every `"use client"` component taking an `initial<Name>` prop typed as an array / `Board` / `Payload` / `Row`): **22 such components, 22 of them convey failure** — `initialFailed`, `initialOk`, `initialDegraded`, `loadError`, or a documented `ok` pair. **0 remaining.** And it is guarded twice **by derivation, not by a list**: `insights-board-degraded-wiring-guard` walks `app/insights/**` (so a page that knows `ok` and drops it reds without anyone maintaining a list), and `insights-seeded-boards-do-not-conclude-from-a-failed-seed` is the **SSR** half — the one that matters, since a mount effect corrects the state before jsdom looks and a client-render test therefore passes under two OPPOSITE mutations.
+
+🚨 **THREE FALSE POSITIVES IN A ROW, AND EVERY ONE WAS MY INSTRUMENT RATHER THAN THE CODE. That is the part worth keeping.**
+
+1. **A flag-name allowlist condemned a correct component.** `MarketIndexClient` came back as "no failure prop"; it takes **`loadError`** and branches on it explicitly — *"A read failure and a genuinely empty window look identical once the rows array is empty — say which one it is."* My regex just did not list that name.
+2. ⭐ **A test-FILENAME heuristic CANNOT SEE A DERIVED GUARD.** Four components came back as "no failed-seed test". Three are under `app/insights/**` and are covered by the directory-walking guard — which, **precisely because it derives its population, names none of them.** Grepping tests for a component's name measures whether someone wrote a BESPOKE test, not whether the component is covered.
+3. **The fourth was covered too** — `EditionActivity` carries BOTH `salesOk` and `offersOk`, each commented "`false` only when the server's read FAILED".
+
+⭐ **Generalised, and now in the canon:** *when a guard is DERIVED, absence-of-mention is the EXPECTED state — so any "is X covered?" probe that works by searching for X's name reports a false gap on exactly the best-guarded code.* Check what a guard's population is derived FROM before concluding it omits anything. ⓘ Same error one layer down, hit and avoided earlier in this session: five `check_*` functions return `jsonb`, so `count(*) = 1` means **CLEAN**, not one finding — a count read without the return shape is the identical mistake.
+
+⛔ **Deliberately NOT built: a guard for this class.** It has no live instances and two derived guards already cover it. **A third would have been work that looks like diligence and buys nothing** — and I only knew that because I measured the population before writing it, which is the same order-of-operations this session got wrong on `/api/best-offers` six hours earlier and right here.
+
+⚠ **CLAUDE.md was NOT edited: it stands at 39,989 of 40,000 characters — 11 to spare.** Its rule is that a new line must DISPLACE one rather than spend room, so this went to the file its existing pointer already targets (`key-files-and-honesty.md`). **The pointer was already correct; only the destination needed updating.**
+
+**Full suite unaffected (docs-only); the three relevant guards re-run green (49 tests); `check-memory-doc-links` resolves 163 links across 25 files.** **Revert:** `git revert` the commit. Nothing in the DB or production changed.
+
 ### 2026-09-07 · ✅ The rest of the pack-pull hydration queue is read ON-CHAIN from the database — pg_net POSTs a Cadence script per pull to the public Flow REST API; no dead host, no worker · Cowork (cloud + device VM), Trevor: "Keep going and doing all you can"
 
 **Where it stood:** after the wmc hydrator's first 26 ticks (34,854 rows) **176,337** Top Shot pack pulls still had no `moments` row — 4,877 wallets, top 200 = 61 %, and only 200 wallets ever walked. Two levers, both shipped, both verified by pg_cron's own record:

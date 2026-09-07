@@ -429,6 +429,23 @@ The first pass looked for boards with **no `initialDegraded` prop** — a proper
 
 Derived from the tree with that predicate: **9 candidates, 5 real, 4 correctly rejected.** Re-run it, do not quote the five.
 
+### ✅ RE-SWEPT 2026-09-07 — the class is DRAINED and GUARDED. Do not re-run this sweep; read this instead.
+
+**Result: 0 remaining.** Derived over the tree (every `"use client"` component taking an `initial<Name>` prop whose type is an array / `Board` / `Payload` / `Row`): **22 such components, 22 of them convey failure** — via `initialFailed`, `initialOk`, `initialDegraded`, `loadError`, or a documented `ok` pair. There is nothing left to fix at this layer.
+
+**And it is guarded twice, by DERIVATION rather than by a list:**
+· `__tests__/insights-board-degraded-wiring-guard.test.ts` — walks `app/insights/**`, so a page that knows `ok` and drops it on the floor reds without anyone adding it to a list.
+· `__tests__/insights-seeded-boards-do-not-conclude-from-a-failed-seed.test.tsx` — the SSR half, which is the one that matters (a mount effect corrects the state before jsdom looks, so a client-render test passes under two OPPOSITE mutations).
+Outside `app/insights/**`, the entity components carry the flag explicitly — `EditionActivity` has BOTH `salesOk` and `offersOk`, each with a comment saying `false` means the server read FAILED.
+
+🚨 **THE METHODOLOGICAL LESSON IS THE PART WORTH KEEPING, because this re-sweep produced THREE false positives in a row — every one of them my instrument, not the code:**
+
+1. **A flag-name allowlist missed a correct component.** `MarketIndexClient` was flagged as having no failure prop; it takes **`loadError`** and branches on it explicitly (*"A read failure and a genuinely empty window look identical once the rows array is empty — say which one it is."*). The regex simply did not list that name.
+2. **A test-FILENAME heuristic cannot see a DERIVED guard.** Four components were flagged as having no failed-seed test. Three sit under `app/insights/**` and are covered by the directory-walking guard above — which, precisely because it derives its population, **names none of them**. ⭐ *Grepping tests for a component's name measures whether someone wrote a bespoke test, not whether the component is covered.*
+3. **The fourth was covered too**, by explicit props the heuristic did not read.
+
+⚠ **Generalised: when a guard is derived, absence-of-mention is the EXPECTED state, so any "is X covered?" probe that works by searching for X's name will report a false gap on exactly the best-guarded code.** Check what a guard's population is DERIVED FROM before concluding it omits something. The same reasoning applies to `check_*` return shapes, where `count(*) = 1` means CLEAN for the jsonb ones — a count read without the shape is the same error one layer down.
+
 ### The five, and why each is a claim rather than a filter
 
 | board | the sentence | note |
