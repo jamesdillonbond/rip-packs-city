@@ -329,7 +329,7 @@ const PINS = [
   {
     fn: "sync_edition_offers_from_atlas",
     test: "supabase/tests/sync_edition_offers_from_atlas.sql",
-    migration: "supabase/migrations/20260907022120_audit_20260907_edition_offers_low_ask_from_atlas_the_gql_offers_sweep_is_dead.sql",
+    migration: "supabase/migrations/20260907024130_audit_20260907_edition_verify_lane_stale_asks_nulled_on_evidence_and_highest_offer_from_atlas.sql",
   },
   {
     fn: "mcp_get_fmv",
