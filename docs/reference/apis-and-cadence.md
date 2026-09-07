@@ -33,6 +33,8 @@ the input/output pair in the function header. ⚠ MCP script args are plain stri
 
 ### Atlas — THE live Top Shot / All Day source (2026-09-06)
 
+⚠ **Measured 09-07:** `{product, editionId}` with no `completed` key returns the edition's **FULL transaction history** newest-first (listings open, sold AND cancelled — `completed:true, purchased:false` is a cancellation), paginated at 200 — it is NOT an open book. To verify one listing is still open, read `{product, nftId}` (that Moment's history, a handful of rows) and let the drain's upsert flip `completed`. `sync_ts_listings_from_atlas` / `atlas_listing_verify_dispatch` do exactly this.
+
 `https://api.production.atlas.dapperlabs.com/public/atlas.v1.<Service>/<Method>` — the Connect-RPC backend
 nbatopshot.com and nflallday.com themselves call. POST JSON; headers `content-type: application/json`,
 `connect-protocol-version: 1`, `origin`/`referer` = the product site, a browser UA (`atlas_market_headers(p)`).
