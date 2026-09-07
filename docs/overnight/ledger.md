@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-07 · ✅ I REFUTED HALF OF MY OWN FILING FROM SIX HOURS EARLIER — `/api/best-offers` cannot truncate, because its one caller sends 200 ids to a route that chunks at 500 · Claude Code (cloud)
+
+**A live-health sweep first, and it is clean.** Security invariants `[]`, `check_anon_write_surface` `[]`, `check_pgcron_recent_failures` **0**, `check_secdef_anon_exec_drift` `[]`, `check_cursor_stall_threshold_drift` `[]`, `check_pipelines_running_but_not_succeeding` `[]`, `check_cron_heavy_job_exec_drift` `{"inspected": 58, "offenders": []}` (⭐ that one reports its own DENOMINATOR, which is how a clean result earns belief). The single arm firing is the **known, attributed** Atlas 403 at `info` — 73 of 480 dispatches, **0 of 266 sets stale**, so it correctly does not escalate. ⚠ **Read the RETURN TYPE before the count** — five of these return `jsonb`, so `count(*) = 1` means CLEAN, not one finding; the CLAUDE.md trap, hit and avoided. **The only failing pipelines are the dead-Top-Shot-GraphQL cluster (HTTP 530 / 1033 — #65, actively owned by the concurrent session) and `sync-nba-projections` `all_upstreams_failed` (#8, measured dead, Trevor's).** No unowned incident.
+
+**So I went back to my own filing and re-derived it, and half of it is WRONG.** Inbox `2026-09-07T0200Z` claimed `/api/best-offers` had a truncation defect: *"One failed chunk discards all later chunks."* Naming the caller — **which that filing never did** — settles it:
+
+| | |
+|---|---|
+| route chunks at | `CHUNK = 500` |
+| its **one** caller (`CollectionTabClient`) slices at | `CHUNK_SIZE = 200`, **before** it fetches |
+| therefore | `200 < 500` → **the loop body runs exactly once, always** |
+
+There are no remaining chunks to discard; **`break` and `continue` are the same statement here.** 🚨 **I read the defect off the CODE SHAPE.** CLAUDE.md says it twice — *"name the caller before you touch the function"* and *"a plausible mechanism is not a measurement"* — and this is precisely what skipping that produces: **a filed defect that does not exist, which the next session would have "fixed".**
+
+⭐ **The refutation is durable, not a note that rots:** `__tests__/best-offers-chunking-cannot-truncate.test.ts` pins the *inequality* `CLIENT_CHUNK <= ROUTE_CHUNK` rather than the numbers, because **inverting it makes the truncation real** — silently, in a route nobody watches. **Three controls run:** raising the client slice above the route chunk reds it with the explanation in the message; removing the client's constant reds it (the pattern-not-found path, which is itself the thing to look at); and refactoring the route's loop away reds it, so the pin cannot survive as a claim about a code path that no longer exists.
+
+⚠ **THE RATE THE FILING SAID TO MEASURE FIRST IS NOT MEASURABLE HERE, and the attempt is recorded so nobody repeats it.** A full-text log search for the warn string over 3h returns nothing — **but the positive control fails too**: `best-offers` returns **zero log lines of any kind** in that window, so the route never ran and the null says nothing. ⭐ **That is the control working, not a clean result** — reported as "no logs found" it would have read as "no errors". Wider windows do not rescue it: `24h` and `7d` full-text queries both **time out**. The route is reached only when a signed-in reader analyses a **non-Top-Shot** wallet. ➡ **What would measure it is a counter where the error is caught, not a log grep. Until something counts it the rate is UNKNOWN — not zero.**
+
+**What survives, unchanged:** a failed `marketplace_offers` read leaves `bestOffer: null` and the grid renders a dash, identical to *"nobody has bid"*. Real, bounded to rows whose baseline was already null (the leg only ever RAISES an existing value), display fix still a table-cell product call. **The filing stays open on that half only**, and now carries a correction box at the top plus a rewritten INDEX line so the refuted half cannot be read as live.
+
+**Full suite green (1490 files / 16509 tests), tsc clean.** **Revert:** `git revert` the commit; deleting the test restores prior behaviour. Nothing in the DB changed, no production code changed — **this commit ships a guard and a correction, not a fix.**
+
 ### 2026-09-07 · ✅ THE MONOLITH INVENTORY IS DERIVED FROM THE TREE NOW — the register told the next reader to go looking, nobody did for a fortnight, and three files over 1,500 lines were named nowhere · Claude Code (cloud)
 
 **The register asked for this in its own words, and that is the whole justification.** known-issues **#14** carries, dated 2026-08-24: *"THE ENTRY'S POPULATION IS A CURATED LIST, SO IT IS SILENT ABOUT THE BIGGEST ONE … ➡ Derive this population from the tree by size, not from a list — that is why the largest instance went unnamed."*

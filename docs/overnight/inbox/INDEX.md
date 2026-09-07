@@ -34,7 +34,7 @@ failure it documents.
 
 - [UFC serves six anon-public soft-404 tab URLs and three other collections do too (~19) — none is in the sitemap, all predate the sniper retirement, and the redirect pin is deliberately ONE-WAY so it cannot claim the class is handled](2026-09-07T0330Z-ufc-serves-six-anon-public-soft-404s-and-three-other-collections-do-too.md)
 
-- [`/api/best-offers` breaks out of its chunk loop on a failed read, so a missing offer renders as a dash — enrichment-only, so it is a false claim ONLY where the baseline was already null; the error RATE is unmeasured and sizes the whole item](2026-09-07T0200Z-best-offers-breaks-out-of-its-chunk-loop-on-error-and-a-missing-offer-renders-as-a-dash.md)
+- [⚠ HALF REFUTED BY ITS AUTHOR 2026-09-07 — the truncation claim is WRONG (one caller slices 200 before a route that chunks at 500, so the loop runs once and `break` discards nothing; now pinned); what survives is a failed read rendering as a dash, whose RATE is UNMEASURABLE (the route produces zero log lines in a short window, so the positive control fails, and wider windows time out)](2026-09-07T0200Z-best-offers-breaks-out-of-its-chunk-loop-on-error-and-a-missing-offer-renders-as-a-dash.md)
 
 ## 2026-09-06 — 2 filings
 
