@@ -396,6 +396,24 @@ interface PackRow {
   updated_at: string | null
 }
 
+// Sitemap pruning (2026-09-07, Search Console pass). Google's "Discovered –
+// currently not indexed" bucket (2,827 URLs on 09-06) was dominated by pack
+// pages, and the catalogue explains why: NFL All Day's median pack
+// distribution is 25 packs — challenge-reward and promo drops, 1,866 of 3,052
+// under 50 packs — each a near-identical shell with no odds, no EV and no
+// market. Advertising 34K URLs from a domain with no authority spends the
+// crawl budget on those and Google says so. A distribution with a KNOWN
+// mint of 1–49 packs, or no title, leaves the sitemap; the page stays live.
+// `total_minted` 0/NULL is "unknown" (every Golazos row is 0) and is KEPT —
+// an unread field is not a small pack. Measured 09-07: 2,065 of 5,529 pruned.
+export const SITEMAP_PACK_MIN_MINTED = 50
+export function packDistributionIsSitemapWorthy(r: { title?: string | null; total_minted?: number | null }): boolean {
+  if (typeof r.title !== 'string' || r.title.trim().length === 0) return false
+  const minted = r.total_minted
+  if (typeof minted === 'number' && minted > 0 && minted < SITEMAP_PACK_MIN_MINTED) return false
+  return true
+}
+
 async function getPackRows(): Promise<PackRow[]> {
   // One sitemap entry per pack distribution → /<collection>/pack/dist/<distId>.
   // Filtered by collection_id (the canonical FK) over the published
@@ -410,7 +428,7 @@ async function getPackRows(): Promise<PackRow[]> {
     const data = await fetchAllByCollection(
       sb,
       'pack_distributions',
-      'dist_id, collection_id, updated_at',
+      'dist_id, collection_id, updated_at, title, total_minted',
       PACK_COLLECTION_IDS,
       'dist_id',
       true,
@@ -426,8 +444,11 @@ async function getPackRows(): Promise<PackRow[]> {
       dist_id: string | null
       collection_id: string | null
       updated_at: string | null
+      title?: string | null
+      total_minted?: number | null
     }>)
       .filter((r) => typeof r.dist_id === 'string' && r.dist_id.length > 0 && !!r.collection_id)
+      .filter(packDistributionIsSitemapWorthy)
       .map((r) => ({
         dist_id: r.dist_id as string,
         collection_id: r.collection_id as string,

@@ -316,9 +316,15 @@ describe("segment 3 — set/player/team entities + top moments", () => {
 describe("segment 4 — pack distributions + Pinnacle pins", () => {
   it("maps packs (collection uuid → urlSlug) and pinnacle renders, dropping null ids", async () => {
     h.t.pack_distributions = ok([
-      { dist_id: "d1", collection_id: TS_ID, updated_at: null },
+      { dist_id: "d1", collection_id: TS_ID, updated_at: null, title: "A Pack", total_minted: 1500 },
       // Null dist_id → filtered out by getPackRows.
-      { dist_id: null, collection_id: TS_ID, updated_at: null },
+      { dist_id: null, collection_id: TS_ID, updated_at: null, title: "A Pack", total_minted: 1500 },
+      // 2026-09-07 pruning: a KNOWN tiny distribution (1–49 packs) and an
+      // untitled one leave the sitemap; an UNKNOWN mint (0 / null) stays.
+      { dist_id: "tiny", collection_id: TS_ID, updated_at: null, title: "Reward Pack", total_minted: 12 },
+      { dist_id: "untitled", collection_id: TS_ID, updated_at: null, title: "", total_minted: 5000 },
+      { dist_id: "unknown0", collection_id: TS_ID, updated_at: null, title: "Golazos-shaped", total_minted: 0 },
+      { dist_id: "unknownnull", collection_id: TS_ID, updated_at: null, title: "No mint field", total_minted: null },
     ])
     h.t.pinnacle_catalog = ok([
       { render_id: "r1", updated_at: "2026-06-01T00:00:00.000Z" },
@@ -326,7 +332,11 @@ describe("segment 4 — pack distributions + Pinnacle pins", () => {
     const s = await buildSitemapSegment(4)
     const packs = s.filter((x) => x.url.includes("/pack/dist/"))
     const pins = s.filter((x) => x.url.includes("/pinnacle/moment/"))
-    expect(packs.map((x) => x.url)).toEqual([`${BASE}/nba-top-shot/pack/dist/d1`])
+    expect(packs.map((x) => x.url)).toEqual([
+      `${BASE}/nba-top-shot/pack/dist/d1`,
+      `${BASE}/nba-top-shot/pack/dist/unknown0`,
+      `${BASE}/nba-top-shot/pack/dist/unknownnull`,
+    ])
     expect(packs[0].priority).toBe(0.5)
     expect(pins.map((x) => x.url)).toEqual([`${BASE}/pinnacle/moment/r1`])
     expect(pins[0].priority).toBe(0.55)
