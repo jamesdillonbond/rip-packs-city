@@ -32,9 +32,9 @@
 // The page keeps its own notFound() as a backstop for the residual case where the
 // id resolves but no edition hydrates.
 
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 import { decodeMomentId } from "@/lib/moment-detail-format"
-import { resolveMomentId } from "@/lib/moment/resolve-moment-id"
+import { editionGrainRedirectTarget, resolveMomentId } from "@/lib/moment/resolve-moment-id"
 
 interface LayoutProps {
   children: React.ReactNode
@@ -57,10 +57,18 @@ export default async function MomentLayout({ children, params }: LayoutProps) {
   // render and surface its own (soft) not-found instead. That policy now lives
   // in the fetcher, where a test can drive both failure shapes; this keeps the
   // log line, which is the only part that is the layout's business.
-  const { resolves, degraded, reason } = await resolveMomentId(id)
+  const resolution = await resolveMomentId(id)
+  const { resolves, degraded, reason } = resolution
   if (degraded) console.warn(`[moment-layout] resolve unavailable id=${id}: ${reason}`)
 
   if (!resolves) notFound()
+
+  // 2026-09-06 (Search Console): the EDITION-grain form is the edition page's
+  // duplicate and 301s there. It must be decided here, before the first flush,
+  // for the same reason the 404 is — in the page it is a 200 + meta refresh
+  // (see editionGrainRedirectTarget). Serial-grain moments never get a target.
+  const target = await editionGrainRedirectTarget(id, resolution)
+  if (target) permanentRedirect(target)
 
   return <>{children}</>
 }

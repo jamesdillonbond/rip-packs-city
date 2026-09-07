@@ -43,6 +43,20 @@ describe("robots: Googlebot may fetch the assets a page needs to render", () => 
 
 describe("/moment/<id>: the edition-grain duplicate redirects, the serial-grain page stays", () => {
   const src = read("app/moment/[id]/page.tsx")
+  const layout = read("app/moment/[id]/layout.tsx")
+
+  it("decides the redirect in the LAYOUT, before the first flush (the page's copy is a 200 + meta refresh)", () => {
+    // Measured live on fd65daa: with loading.tsx in this segment, a
+    // permanentRedirect in the page produced HTTP 200 with a streamed
+    // NEXT_REDIRECT row and <meta http-equiv="refresh"> — no Location header,
+    // so Google records no 301. The layout is awaited before the shell goes
+    // out (the same reason the segment's 404 lives there).
+    expect(layout).toMatch(/import \{[^}]*permanentRedirect[^}]*\} from "next\/navigation"/)
+    expect(layout).toContain("editionGrainRedirectTarget(id, resolution)")
+    expect(layout).toMatch(/if \(target\) permanentRedirect\(target\)/)
+    // …and it is decided AFTER the 404 gate, never before it.
+    expect(layout.indexOf("if (!resolves) notFound()")).toBeLessThan(layout.indexOf("permanentRedirect(target)"))
+  })
 
   it("permanently redirects an edition-grain resolution to its canonical edition page", () => {
     expect(src).toMatch(/import \{[^}]*permanentRedirect[^}]*\} from "next\/navigation"/)

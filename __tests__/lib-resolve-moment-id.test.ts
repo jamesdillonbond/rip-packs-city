@@ -100,3 +100,97 @@ describe("a HANGING read degrades instead of hanging the page", () => {
     expect(await p).toEqual({ resolves: true, degraded: false })
   })
 })
+
+// ── The edition-grain 301 (2026-09-06, Search Console) ─────────────────────
+//
+// /moment/<edition uuid> duplicated the edition page under ~11,000 URLs. The
+// redirect has to be decided in the LAYOUT (pre-flush) to be a real 308 — in
+// the page it degraded to a 200 + meta refresh, measured live. These pin the
+// helper the layout calls: it only ever produces a target for the resolver's
+// own `kind = 'edition'`, it fails OPEN (null) on every failed or empty read,
+// and it never redirects a serial-grain moment.
+import { editionGrainRedirectTarget } from "@/lib/moment/resolve-moment-id"
+
+const editionRow = (over: Record<string, unknown> = {}) => [
+  {
+    kind: "edition",
+    moment_id: null,
+    edition_id: "1d24f53d-a3aa-49dd-9606-38bd87ba1153",
+    serial_number: null,
+    collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+    collection_slug: "nba_top_shot",
+    ...over,
+  },
+]
+const editions = (result: { data: unknown; error: { message: string } | null } | "throw") => ({
+  from: (table: string) => {
+    expect(table).toBe("editions")
+    return {
+      select: (cols: string) => {
+        expect(cols).toBe("external_id")
+        return {
+          eq: (col: string, val: string) => {
+            expect(col).toBe("id")
+            expect(val).toBe("1d24f53d-a3aa-49dd-9606-38bd87ba1153")
+            return {
+              maybeSingle: async () => {
+                if (result === "throw") throw new Error("socket hang up")
+                return result
+              },
+            }
+          },
+        }
+      },
+    }
+  },
+})
+
+describe("resolveMomentId carries the resolver's edition-grain verdict", () => {
+  it("attaches `edition` for kind = 'edition' with its id and collection slug", async () => {
+    const r = await resolveMomentId("1d24f53d-a3aa-49dd-9606-38bd87ba1153", ok(editionRow()))
+    expect(r).toEqual({
+      resolves: true,
+      degraded: false,
+      edition: { editionId: "1d24f53d-a3aa-49dd-9606-38bd87ba1153", collectionSlug: "nba_top_shot" },
+    })
+  })
+
+  it("attaches nothing for a serial-grain moment, a Pinnacle edition, a miss, or a degraded read", async () => {
+    expect((await resolveMomentId("123", ok(editionRow({ kind: "moment", moment_id: "123", serial_number: 7 })))).edition).toBeUndefined()
+    expect((await resolveMomentId("x", ok(editionRow({ kind: "pinnacle_edition" })))).edition).toBeUndefined()
+    expect((await resolveMomentId("x", ok([]))).edition).toBeUndefined()
+    expect((await resolveMomentId("x", returnsError("timeout"))).edition).toBeUndefined()
+    expect((await resolveMomentId("x", throws("boom"))).edition).toBeUndefined()
+  })
+})
+
+describe("editionGrainRedirectTarget", () => {
+  const id = "1d24f53d-a3aa-49dd-9606-38bd87ba1153"
+  const resolved = { resolves: true, degraded: false, edition: { editionId: id, collectionSlug: "nba_top_shot" } }
+
+  it("returns the canonical edition path for an edition-grain resolution", async () => {
+    const t = await editionGrainRedirectTarget(id, resolved, editions({ data: { external_id: "99:3372" }, error: null }))
+    expect(t).toBe("/nba-top-shot/edition/99%3A3372")
+  })
+
+  it("never redirects a resolution with no edition-grain verdict (a serial moment)", async () => {
+    let touched = false
+    const client = { from: () => { touched = true; throw new Error("must not read") } }
+    expect(await editionGrainRedirectTarget("123", { resolves: true, degraded: false }, client as never)).toBeNull()
+    expect(touched).toBe(false)
+  })
+
+  it("fails OPEN — null, never a guessed slug and never a throw — on a returned error, an empty row, a non-string external_id, or a throw", async () => {
+    expect(await editionGrainRedirectTarget(id, resolved, editions({ data: null, error: { message: "statement timeout" } }))).toBeNull()
+    expect(await editionGrainRedirectTarget(id, resolved, editions({ data: null, error: null }))).toBeNull()
+    expect(await editionGrainRedirectTarget(id, resolved, editions("throw"))).toBeNull()
+    // A null external_id falls back to the edition uuid in the slug, which is a
+    // real route for the edition page — still a redirect, never /moment/self.
+    expect(await editionGrainRedirectTarget(id, resolved, editions({ data: { external_id: null }, error: null }))).toBe(`/nba-top-shot/edition/${id}`)
+  })
+
+  it("returns null when the canonical is the URL itself (no resolvable collection slug)", async () => {
+    const r = { ...resolved, edition: { editionId: id, collectionSlug: "not_a_collection" } }
+    expect(await editionGrainRedirectTarget(id, r, editions({ data: { external_id: "1:1" }, error: null }))).toBeNull()
+  })
+})
