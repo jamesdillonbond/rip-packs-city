@@ -318,6 +318,41 @@ function hasValidBypassToken(request: NextRequest): boolean {
 export const THIN_COLLECTION_MISSING_TABS =
   /^\/(candy-mlb)\/(collection|packs|sniper|market|sets|analytics|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
 
+// A PUBLISHED collection that has most tabs but not this one. The thin regex
+// above covers overview-only collections; this covers the partial case, and the
+// first entry is UFC's sniper, retired 2026-09-06 (Trevor) because UFC Strike's
+// Flow market closed 13 May 2026.
+//
+// ⚠ WHY A REDIRECT AND NOT `FeatureTabGate`. That component renders a 200 "not
+// available" page, which is a SOFT-404 — and /ufc/sniper is anon-public (the
+// feature-tab regex below) and has been in the sitemap, so it is indexed. This
+// repo has paid for soft-404s twice already (the entity layout gate, the
+// moment-uuid 301). A redirect is the honest status line.
+//
+// ⚠ 307, NOT 308, DELIBERATELY. Trevor's words were "there is no market
+// CURRENTLY". A 308 is cached hard by browsers and treated as permanent by
+// Google; if UFC's market reopens, the tab would be un-retirable for months
+// from caches we do not control. Temporary is the true claim.
+//
+// Set of "slug/tab" rather than a regex: the pin can then assert exact SET
+// EQUALITY against the registry instead of parsing an alternation out of a
+// regex source, and adding a collection cannot silently widen a character class.
+// Kept literal (no registry import at the edge), pinned in BOTH directions by
+// __tests__/proxy-is-public-path.test.ts.
+// ⚠ SCOPED DELIBERATELY TO WHAT WAS ASKED FOR, and the restraint is recorded
+// because the wider version is tempting and wrong to ship silently. UFC is
+// anon-public on TEN feature-tab URLs (see the feature-tab regex below) and has
+// only four tabs, so /ufc/market, /ufc/packs, /ufc/play, /ufc/pack-sniper,
+// /ufc/challenges and /ufc/hot-floors all serve a 200 FeatureTabGate shell —
+// soft-404s that PREDATE this change, and the same is true of nfl-all-day,
+// disney-pinnacle and laliga-golazos (~19 URLs in total). Redirecting all of
+// them is a defensible cleanup and is NOT this change: it would swap a
+// deliberate UX shell for a redirect on four collections nobody asked about.
+// Filed instead — docs/overnight/inbox/2026-09-07T0330Z-*.
+export const RETIRED_COLLECTION_TABS: ReadonlySet<string> = new Set([
+  "ufc/sniper",
+])
+
 export function isPublicPath(pathname: string, method: string): boolean {
   // ── Panini WC Prizm surfaces — gated iff `PANINI_PUBLIC` is false (live since 2026-08-01) ──
   // Gates the page (/insights/panini-squeeze), its public JSON
@@ -1079,6 +1114,27 @@ export async function proxy(request: NextRequest) {
     url.pathname = `/${thinTab[1]}/overview`
     url.search = ""
     return NextResponse.redirect(url, 307)
+  }
+
+  // ── A published collection's retired / never-built tab → its overview ──────
+  // Second root of the same property (see RETIRED_COLLECTION_TABS): the thin
+  // regex above only knows overview-only collections, so a partial one like UFC
+  // fell through and served a 200 gate shell — a soft-404 on an anon-public,
+  // indexed URL. The completeness pin asserts these TWO mechanisms together
+  // cover every published collection × every public tab it lacks, so neither can
+  // quietly stop contributing.
+  if (request.method === "GET" || request.method === "HEAD") {
+    const seg = pathname.split("/")
+    // ["", slug, tab, …] — a deeper path (/ufc/edition/x) has seg.length > 3 and
+    // is left alone; entity routes are not tabs.
+    if (seg.length === 3 || (seg.length === 4 && seg[3] === "")) {
+      if (RETIRED_COLLECTION_TABS.has(`${seg[1]}/${seg[2]}`)) {
+        const url = request.nextUrl.clone()
+        url.pathname = `/${seg[1]}/overview`
+        url.search = ""
+        return NextResponse.redirect(url, 307)
+      }
+    }
   }
 
   // Periodic in-memory rate-limit map cleanup.

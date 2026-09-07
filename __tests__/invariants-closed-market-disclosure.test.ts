@@ -35,7 +35,7 @@ const REPO = process.cwd()
 const COLLECTION_ROOT = path.join(REPO, "app", "(collections)", "[collection]")
 
 /** Per-collection tabs UFC registers, all of which render FMV or ask prices. */
-const UFC_PRICED_TABS = ["overview", "collection", "sniper", "sets", "analytics"] as const
+const UFC_PRICED_TABS = ["overview", "collection", "sets", "analytics"] as const
 
 /**
  * Priced tabs deliberately NOT guarded, with the reason. UFC does not register
@@ -45,6 +45,15 @@ const UFC_PRICED_TABS = ["overview", "collection", "sniper", "sets", "analytics"
 const KNOWN_UNMOUNTED: Record<string, string> = {
   market: "UFC does not register `market` (pages: all except UFC)",
   packs: "UFC does not register `packs` (pages: all except UFC)",
+  // ⭐ THIS GUARD FIRED ON THE CHANGE THAT MOVED IT HERE, which is the whole
+  // point of the registry check above: UFC's sniper tab was RETIRED 2026-09-06
+  // (Trevor — "there is no market currently"), so it can no longer render a
+  // dead UFC price because it can no longer render at all. /ufc/sniper 307s to
+  // the overview at the edge (proxy.ts RETIRED_COLLECTION_TABS).
+  // ⚠ If UFC's market reopens and the tab comes back, the registry check reds
+  // and this line moves back into UFC_PRICED_TABS — the banner must be mounted
+  // before it does.
+  sniper: "UFC's `sniper` was retired 2026-09-06 — no market since 2026-05-13",
 }
 
 function sourceOf(tab: string): string {

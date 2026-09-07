@@ -8,6 +8,18 @@ import { collectionHasPage, getCollection, PAGE_LABELS, type CollectionPage } fr
 // /ufc/market, /disney-pinnacle/sets) renders a graceful pointer instead of a
 // broken/empty core tab. When collectionHasPage passes, it's a transparent
 // pass-through.
+//
+// ⛔ THE COPY MUST NOT NAME ANOTHER TAB. It used to send readers to the Sniper
+// tab for market state and deals, which was wrong twice over: the missing tab
+// can BE the sniper (UFC's was retired 2026-09-06), and a present-tense market
+// claim is not one this component can make on a collection whose market has
+// closed. It now points only at the Overview, which every collection has by
+// construction. The old sentence is quoted in the pin, not here — the guard
+// bans those phrases from this source.
+//
+// ⚠ This gate renders a 200, i.e. a SOFT-404. That is fine for a tab URL nobody
+// advertises, and NOT fine for one that is anon-public and in the sitemap — those
+// are redirected at the edge instead (proxy.ts RETIRED_COLLECTION_TABS).
 export default function FeatureTabGate({
   id,
   page,
@@ -29,7 +41,8 @@ export default function FeatureTabGate({
         {pageLabel} isn&apos;t available for {label}
       </div>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--rpc-text-muted)", lineHeight: 1.7, maxWidth: 460 }}>
-        {label} doesn&apos;t expose the {pageLabel} tab yet. Use the Overview and Sniper tabs for live market state and deals.
+        {label} doesn&apos;t expose the {pageLabel} tab. Head back to the Overview
+        for what {label} does carry.
       </div>
       <Link
         href={`/${id}/overview`}

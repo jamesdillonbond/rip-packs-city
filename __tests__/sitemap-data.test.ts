@@ -106,8 +106,16 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // /candy-mlb/overview to the feature pages.
     // 75 -> 74 on 2026-09-07: /pricing left the sitemap with its footer link
     // (static 10 -> 9). Pinned below as an absence, not just a count.
-    expect(s).toHaveLength(74)
+    // 74 -> 73 on 2026-09-07: UFC's `sniper` was RETIRED from the registry
+    // (Trevor — "there is no market currently"; the Flow market closed
+    // 2026-05-13), so /ufc/sniper stops being advertised. The count is derived
+    // from `pages` ∩ PUBLIC_TAB_PAGES, so this moved on its own — the number
+    // below is the RECORD of that, not the cause. Pinned as an absence too.
+    expect(s).toHaveLength(73)
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
+    expect(s.find((x) => x.url === `${BASE}/ufc/sniper`)).toBeUndefined()
+    // …and the no-change control: the other collections still advertise theirs.
+    expect(s.find((x) => x.url === `${BASE}/nba-top-shot/sniper`)).toBeTruthy()
     // Root is priority 1.0, changeFrequency daily.
     expect(s[0].url).toBe(BASE)
     expect(s[0].priority).toBe(1)

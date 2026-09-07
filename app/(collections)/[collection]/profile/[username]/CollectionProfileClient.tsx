@@ -12,7 +12,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
-import { getCollection } from "@/lib/collections";
+import { collectionHasPage, getCollection, type CollectionPage } from "@/lib/collections";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { avatarDisplayUrl } from "@/lib/media/avatar-proxy";
 
@@ -811,6 +811,10 @@ export default function CollectionProfileClient({
       )}
 
       {/* ── Live Sniper Deals ── */}
+      {/* ⛔ Gated on the collection actually HAVING a sniper tab. UFC's was
+          retired 2026-09-06 (no market since 13 May 2026), and this section
+          both asserted "LIVE" and linked to a tab that no longer exists. */}
+      {collectionHasPage(collection, "sniper") && (
       <section style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <span style={labelStyle}>{"\u26A1"} LIVE SNIPER DEALS</span>
@@ -850,17 +854,27 @@ export default function CollectionProfileClient({
           </div>
         )}
       </section>
+      )}
 
       {/* ── Quick Links ── */}
       <section style={{ marginBottom: 32 }}>
         <div style={Object.assign({}, labelStyle, { marginBottom: 12 })}>TOOLS</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
+          {/* ⛔ FILTERED BY THE REGISTRY, not a fixed four. Two of these were
+              already wrong for UFC BEFORE the sniper was retired: UFC has never
+              had a packs tab, so "Pack EV" has been linking to /ufc/packs — a
+              tab that does not exist — for as long as this grid has shipped.
+              Found by enumerating every caller of the sniper link, which is the
+              reason the sweep is the caller list and not the one file you had
+              in mind (CLAUDE.md). */}
           {[
-            { label: "Collection", icon: "\u25C8", href: basePath + "/collection", color: "var(--rpc-red)" },
-            { label: "Pack EV", icon: "\u25A3", href: basePath + "/packs", color: "#F59E0B" },
-            { label: "Sniper", icon: "\u26A1", href: basePath + "/sniper", color: "#34D399" },
-            { label: "Sets", icon: "\u25C9", href: basePath + "/sets", color: "#F472B6" },
-          ].map(function(link) {
+            { label: "Collection", icon: "\u25C8", page: "collection", href: basePath + "/collection", color: "var(--rpc-red)" },
+            { label: "Pack EV", icon: "\u25A3", page: "packs", href: basePath + "/packs", color: "#F59E0B" },
+            { label: "Sniper", icon: "\u26A1", page: "sniper", href: basePath + "/sniper", color: "#34D399" },
+            { label: "Sets", icon: "\u25C9", page: "sets", href: basePath + "/sets", color: "#F472B6" },
+          ].filter(function(link) {
+            return collectionHasPage(collection, link.page as CollectionPage);
+          }).map(function(link) {
             return (
               <Link key={link.label} href={link.href} style={{ textDecoration: "none" }}>
                 <div className="rpc-card" style={{ padding: "14px 16px", cursor: "pointer", position: "relative", overflow: "hidden", textAlign: "left" }}>

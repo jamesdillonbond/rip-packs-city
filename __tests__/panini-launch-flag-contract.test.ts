@@ -79,7 +79,9 @@ describe("shipped state — Panini is LIVE (2026-08-01 go-live)", () => {
     // 75 since 2026-09-06: + the registry-published /candy-mlb/overview.
     // 74 on 2026-09-07: /pricing left the sitemap (footer + index too). Fourth
     // unrelated bump — the deliberate restructure above is still owed.
-    expect(s).toHaveLength(74)
+    // 73 on 2026-09-07: UFC's sniper tab retired from the registry (no market
+    // since 2026-05-13). FIFTH unrelated bump, and still flag-independent.
+    expect(s).toHaveLength(73)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
@@ -94,10 +96,11 @@ describe("rollback direction — flipping the flag off re-gates the launch", () 
     const { buildSitemapSegment } = await import("@/lib/sitemap-data")
     const s = await buildSitemapSegment(0)
     expect(s.some((x: any) => x.url === `${BASE}/insights/panini-squeeze`)).toBe(false)
-    // Back to the 45-entry skeleton (44 historical + candy-mlb) + the 28
+    // Back to the 45-entry skeleton (44 historical + candy-mlb) + the
     // flag-independent feature tabs — proof rollback is a clean no-op that
-    // leaves Candy untouched.
-    expect(s).toHaveLength(73)
+    // leaves Candy untouched. 73 -> 72 on 2026-09-07: one fewer feature tab,
+    // UFC's retired sniper. Both directions move by the same 1.
+    expect(s).toHaveLength(72)
   })
 
   it("restores robots:noindex when the flag is off", async () => {

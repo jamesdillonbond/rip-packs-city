@@ -81,7 +81,10 @@ describe("shipped state — Candy is LIVE (2026-07-31 go-live)", () => {
     // flag-INDEPENDENT (registry, not launch-flags), so both directions move by 1.
     // 74 on 2026-09-07: /pricing left the sitemap (footer + index too). Fourth
     // unrelated bump — the deliberate restructure above is still owed.
-    expect(s).toHaveLength(74)
+    // 73 on 2026-09-07: UFC's sniper tab retired from the registry (no market
+    // since 2026-05-13). FIFTH unrelated bump, and still flag-independent —
+    // which is exactly what this test is asserting about the Candy flag.
+    expect(s).toHaveLength(73)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
@@ -96,10 +99,12 @@ describe("rollback direction — flipping the flag off re-gates the launch", () 
     const { buildSitemapSegment } = await import("@/lib/sitemap-data")
     const s = await buildSitemapSegment(0)
     expect(s.some((x: any) => x.url === `${BASE}/insights/candy-mlb`)).toBe(false)
-    // Back to the historical 44-entry skeleton + the 28 feature tabs + the
+    // Back to the historical 44-entry skeleton + the feature tabs + the
     // registry-published /candy-mlb/overview (all flag-independent) — proof
-    // rollback is a clean no-op.
-    expect(s).toHaveLength(72)
+    // rollback is a clean no-op. 72 -> 71 on 2026-09-07: one fewer feature tab,
+    // UFC's retired sniper. Both directions move by the same 1, which is the
+    // property that keeps this pair meaningful.
+    expect(s).toHaveLength(71)
   })
 
   it("restores robots:noindex when the flag is off", async () => {

@@ -205,7 +205,17 @@ export const COLLECTIONS: Collection[] = [
     partner: "Concept Labs",
     accent: "#EF4444",
     icon: "\u{1F94A}",
-    pages: ["overview", "collection", "sniper", "sets", "analytics"],
+    // ⛔ NO SNIPER TAB (Trevor, 2026-09-06): "get rid of the sniper section for
+    // ufc since there is no market currently". UFC Strike's Flow market last
+    // traded 13 May 2026 (lib/market-closed.ts), so a deal-finder here could
+    // only ever rank the final discounts before close — a tool nobody can act
+    // on, which the read-only product rule already forbids offering.
+    // ⭐ THIS ARRAY IS THE SWITCH. Removing "sniper" here drops the tab bar
+    // entry, the overview Tools card and Sniper panel, the mobile bottom-bar
+    // link, the sitemap URL and the folded-tab canonical, and turns /ufc/sniper
+    // into a redirect — all derived, none of it a second edit. Putting it back
+    // if the market reopens is the same one-word change.
+    pages: ["overview", "collection", "sets", "analytics"],
     published: true,
     badge: "BETA",
     flowContractName: "UFC_NFT",
