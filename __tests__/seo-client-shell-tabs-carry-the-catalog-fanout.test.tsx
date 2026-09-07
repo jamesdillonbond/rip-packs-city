@@ -37,6 +37,12 @@ describe("the indexable client-shell tabs carry the server-rendered catalog fan-
       expect(src.indexOf("<PopularOnCollection")).toBeGreaterThan(src.indexOf("{props.children}"))
     })
   }
+  it("the bespoke Disney Pinnacle segment (its own /collection and /sniper page dirs) mounts it too", () => {
+    const src = read("app/(collections)/disney-pinnacle/layout.tsx")
+    expect(src).toMatch(/import PopularOnCollection from "@\/components\/entity\/PopularOnCollection"/)
+    expect(src).toMatch(/<PopularOnCollection collection=\{collection\.id\} \/>/)
+    expect(src.indexOf("<PopularOnCollection")).toBeGreaterThan(src.indexOf("{children}"))
+  })
   it("the overview keeps it too (the pass that added it, 2026-06-05)", () => {
     expect(read("app/(collections)/[collection]/overview/layout.tsx")).toMatch(/<PopularOnCollection collection=\{collection\} \/>/)
   })

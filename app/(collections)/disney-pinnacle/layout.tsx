@@ -5,6 +5,7 @@ import { CollectionTicker, CollectionBanner } from "@/components/collection-chro
 import ActiveCollectionSync from "../[collection]/ActiveCollectionSync"
 import WalletHydrator from "@/components/WalletHydrator"
 import WalletSearchBand from "@/components/WalletSearchBand"
+import PopularOnCollection from "@/components/entity/PopularOnCollection"
 
 export const metadata: Metadata = {
   // Same two defects as collectionLayoutMetadata, in a static segment that does
@@ -47,6 +48,10 @@ export default function DisneyPinnacleLayout({
             silently lose it. */}
         <WalletSearchBand scope="collection" collectionId={collection.id} />
         {children}
+        {/* 2026-09-07: the same server-rendered catalog fan-out the five generic
+            client-shell tabs carry. These two bespoke tabs are client shells too
+            (18 Pinnacle edition links for a crawler that otherwise gets none). */}
+        <PopularOnCollection collection={collection.id} />
       </main>
     </div>
   )
