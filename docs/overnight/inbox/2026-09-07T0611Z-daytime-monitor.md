@@ -14,6 +14,26 @@ Lock note: `docs/overnight/.lock` on the mount is STALE (`LOCKED 2026-09-06T08:0
 - **Risk read:** LOW / read-only. No user-facing surface is affected. The only exposure is alert-fatigue — a recurring false `medium` can bury a real stall on this pipeline.
 - **Suggested action (night pass):** reconcile the instrument with the job's real liveness, pick one — (a) have `wmc-metadata-reconcile` write a `pipeline_runs` heartbeat every tick (a marker row with `rows_*` NULL, per the `after()`-heartbeat convention) so recency tracks the job rather than the workload; or (b) raise this pipeline's `pipeline_cadence_watchlist.max_silent_minutes` to cover a post-drain quiet gap on the new 30-min cadence; or (c) validate this specific watched pipeline via `cron.job_run_details` success rather than `pipeline_runs` recency. Do NOT treat the `medium` as a real outage — jobid 456 is verifiably running and succeeding.
 
+- ✅ **MEASURED 2026-09-07 ~09:0x PT (Claude Code, cloud) — the three options are now ONE. Evidence, then the two refutations.**
+
+  **The control that settles the mechanism.** Over the window since the cadence change (`*/10` → `15,45`, 2026-09-07 01:49Z), the two instruments disagree:
+
+  | instrument | question it answers | result |
+  |---|---|---|
+  | `cron.job_run_details` (jobid 456) | did it **RUN**? | **28 executions, 28 `succeeded`, 0 not-succeeded** |
+  | `pipeline_runs` recency | did it **WRITE**? | **12 rows**, `min(rows_written) = 1` |
+
+  ⭐ **16 of 28 healthy, successful executions leave NO ROW**, because the function only logs a tick that wrote ≥1. `detect_stalled_pipelines()` keys on `pipeline_runs` recency, so **it is measuring WORKLOAD and reporting it as LIVENESS.** The job is verifiably 100% healthy while the arm fires. ⚠ This is not transient: **max observed silence 180 min, 2 gaps over the 100-min threshold in ~13 h ≈ 3.7 false positives/day.**
+
+  ⚠ **I nearly mis-sized it by pooling across the cadence change.** Over a 36 h window the same query reads 84 logged ticks / 2 gaps — which understates the rate, because most of that window ran at `*/10`. **A rate pooled across a change measures the change's absence** (CLAUDE.md); split on 01:49Z and it is 12 of 26 expected, not 84 of 216.
+
+  ⛔ **(b) "raise `max_silent_minutes`" is REFUTED BY MEASUREMENT, not by preference.** The observed max silence is **180 min**, so suppressing the false positive needs a threshold above that — **6 missed ticks** — at which point a genuine three-hour outage of this job goes unreported. Widening it does not trade precision for recall; it removes the arm.
+
+  ⛔ **(a) "write a `pipeline_runs` heartbeat every tick" under the REAL pipeline name is refuted by this repo's own recorded trap** — CLAUDE.md: *"A marker under the REAL name would refresh `last_run` every tick and silence `detect_stalled_pipelines()` on exactly the outage it exists to expose."* That is why the `after()` convention suffixes `-heartbeat`; but a suffixed marker is invisible to an arm keyed on the real name, so (a) either defeats the arm or does nothing.
+  ⓘ **One variant of (a) survives and is worth considering beside (c):** have the reconciler log EVERY completed tick, zero-write included. For a **pg_cron SQL function** that is honest liveness — the row is written at tick END inside the same transaction, so it cannot claim a tick that died, which is the specific failure the `after()`-route trap is about.
+
+  ⭐ **(c) is the survivor, and the control above IS (c) running:** `cron.job_run_details` answers "did this job execute and succeed" directly, with **28/28** in hand. ⛔ **Not shipped from here:** it is a migration to the PINNED `detect_stalled_pipelines()`, and jobid 456's cadence was changed **14 h ago** by the session that owns this lane — inside the 24–48 h collision window. **The decision is made and evidenced; the migration is that lane's.**
+
 ---
 
 Known / attributed items seen this sweep, logged only so they are not re-raised (all already in ledger or inbox):

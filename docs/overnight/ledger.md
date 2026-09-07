@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-07 · ✅ THE `wmc-metadata-reconcile` STALL ALARM IS A FALSE POSITIVE ~3.7×/DAY, AND THE MONITOR'S THREE OPTIONS ARE NOW ONE — measured, with the control that separates "did not run" from "ran and wrote nothing" · Claude Code (cloud)
+
+**The 06:11Z daytime monitor filed a candidate and left the choice open** — *"reconcile the instrument with the job's real liveness, pick one — (a) heartbeat every tick, (b) raise `max_silent_minutes`, (c) validate via `cron.job_run_details`"*. **Two of the three are now refuted by measurement rather than by preference.**
+
+⭐ **THE CONTROL IS THE WHOLE ENTRY.** Two instruments, asked two different questions, over the window since the cadence change (`*/10` → `15,45`, 2026-09-07 01:49Z):
+
+| instrument | question | result |
+|---|---|---|
+| `cron.job_run_details` (jobid 456) | did it **RUN**? | **28 executions, 28 `succeeded`, 0 not-succeeded** |
+| `pipeline_runs` recency | did it **WRITE**? | **12 rows**, `min(rows_written) = 1` |
+
+**16 of 28 healthy, successful executions leave NO ROW** — the function logs only a tick that wrote ≥1. `detect_stalled_pipelines()` keys on `pipeline_runs` recency, so **it measures WORKLOAD and reports it as LIVENESS.** ⚠ Not transient: **max silence 180 min, 2 gaps past the 100-min threshold in ~13 h ≈ 3.7 false alarms/day** on a job that is verifiably 100% healthy. ⛔ **An arm that cries wolf ~4×/day is worse than no arm** — it is the "permanently-red instrument is indistinguishable from a broken one" shape, intermittent, which trains the reader to skip it.
+
+⚠ **I NEARLY MIS-SIZED IT BY POOLING ACROSS THE CADENCE CHANGE, and caught it only because this file says to.** A 36 h window reads 84 logged ticks / 2 breaches, which *understates* the rate — most of that window ran at `*/10`. **A rate pooled across a change measures the change's absence.** Split on 01:49Z: **12 of 26 expected**, not 84 of 216.
+
+⛔ **(b) "raise the threshold" — REFUTED BY NUMBER.** Observed max silence is **180 min**, so suppressing the false positive needs a threshold above it — **6 missed ticks** — at which point a genuine three-hour outage goes unreported. That is not trading precision for recall; **it is removing the arm while leaving it on the board**, which is exactly how a real breach gets hidden.
+
+⛔ **(a) "heartbeat every tick" under the REAL name — refuted by this repo's own recorded trap.** CLAUDE.md: *"A marker under the REAL name would refresh `last_run` every tick and silence `detect_stalled_pipelines()` on exactly the outage it exists to expose."* A `-heartbeat`-suffixed marker avoids that but is then invisible to an arm keyed on the real name. So (a) either defeats the arm or does nothing.
+ⓘ **One variant survives:** have the reconciler log EVERY completed tick, zero-write included. For a **pg_cron SQL function** that is honest liveness — the row is written at tick END in the same transaction, so it cannot claim a tick that died, which is the specific failure the `after()`-route trap describes. Worth weighing beside (c).
+
+⭐ **(c) is the survivor — and the control above IS (c) running**, with 28/28 in hand.
+
+⛔ **DELIBERATELY NOT SHIPPED FROM HERE.** The fix is a migration to the **pinned** `detect_stalled_pipelines()`, and jobid 456's cadence was changed **14 h ago** by the session that owns that lane — inside the 24–48 h collision window this repo's own convention protects. **The decision is made and evidenced; the migration belongs to that lane.** Recorded as a measured addendum on the filing (`2026-09-07T0611Z`) so it is read where the question was asked, not only here.
+
+**Docs-only; inbox-index guard re-run green.** **Revert:** `git revert` the commit. Nothing in the DB or production changed — ⓘ every query above was `execute_sql`, read-only.
+
 ### 2026-09-07 · ✅ The pack-pull hydrator's third free source is our own sales ledger, and the chain lane stops spending scripts on rows a free source will name — `no_nft` 30 % → 1–2 % of answers · Cowork (cloud + device VM), Trevor: "Keep going and doing all you can"
 
 **Measured from the chain lane's own first 100 answers:** 31 `no_nft` — the pull had left the puller's wallet. Of the first 54 `no_nft` rows, **22 are named by a `sales` row** (edition_id + serial_number + buyer); on the newest 20,000 queue rows, 1,132 (5.7 %) are — every one a canonical edition. A Moment that moved usually moved by selling, and the sale is already in our ledger. **Shipped (`20260907155014`):** (1) `hydrate_topshot_moments_from_wmc()` resolves from a third UNION arm, `sales` (pri 3; owner = the latest buyer when it is a Flow address, else NULL), joined per yearly partition through `idx_sales_nft_id` with `sold_at >= acquired_date − 1 day` — true by construction (a pull is the mint) and it lets the executor prune the partitions per row: the leg costs 15.5K buffers on a 5,000-row page (105K without the predicate; EXPLAIN 15:5xZ). (2) `topshot_moment_hydrate_dispatch()` excludes candidates any of the three free sources will name (the same three predicates the hydrator resolves on) — on the newest 472 queue rows the exclusions removed 21 (wmc) + 21 (sales) + 44 (Atlas events) before the request-window check; 4.6K buffers for 80 candidates. Same signatures, ACLs preserved (anon EXECUTE false ×2, drift 0). **Verified by the real callers:** chain ticks 15:51Z / 15:55Z (the first two dispatched under the exclusion) drained **78 written / 2 `no_nft`** and **79 / 1** (the three ticks before: 56/24, 67/13, 70/10); wmc tick 15:55Z 943 written in 5.4 s; queue 174,970 (15:35Z) → 173,723 (15:56Z). **Watch:** the chain lane's `no_nft` share stays ≤ 5 %; wmc `duration_ms` stays ≤ 10 s with the third leg. **Revert:** in the migration header (re-apply the two bodies from `152641` / `153117`).
