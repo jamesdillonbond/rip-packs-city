@@ -1,176 +1,31 @@
 {
- "generated_at_pt": "2026-09-05T10:15:00-07:00",
- "pass": "2026-09-05 Cowork cloud overnight — 4 DB ships, 1 code ship, and the four delegated needs-Trevor items DECIDED rather than re-queued",
- "migrations_applied": [
-  "20260905110532 the 403 arm attributes the Atlas walk by request_id, so a self-healing upstream challenge stops paging as critical (0 criticals on the board)",
-  "20260905134612 pack_ev_latest joins pack_ask_state once instead of probing it per history row (128,911 loops / 382,519 buffers returning zero rows every loop) — 707,048 -> 10,898 buffers, equivalence proven both directions",
-  "20260905162923 three Top Shot pipelines that fire and write nothing suppressed, each reason carrying a RUNNABLE self-invalidating predicate + the value measured at apply time + a 2026-12-05 forcing expiry (get_pipeline_alerts 7 -> 4 rows)",
-  "20260905163444 drain_stalled stops being a ratio (TRUE 45.8% of the resolver's life; the obvious retune measures 60.4%, WORSE) and becomes a 12h liveness test calibrated on 5,571 gaps whose max is 6.00h; the ETA stops being a point estimate and publishes both windows"
- ],
- "code_shipped": [
-  "e900d58 csp: cloudflare-ipfs.com removed from proxy.ts img-src AND media-src (host decommissioned, 0/8 CIDs, <0.1s DNS fail; zero rows referencing it across every url/image/avatar/media/art/thumbnail text column of every live public table).",
-  "e900d58 (same commit, the finding that matters) lib/media/avatar-proxy.ts CSP_ALLOWED_IMAGE_HOSTS was a hand-copy of img-src whose comment claimed a test kept it in sync. NO TEST READ THE CONSTANT. It had drifted FOUR hosts behind: gateway.pinata.cloud, *.supabase.co, arweave.net, *.arweave.net — every one renders in a browser while canDisplayAvatarUrl() called it undisplayable, swapping a real avatar for the monogram. Mirror corrected, wildcard suffixes added WITH the leading dot, and the sync test the comment falsely claimed now genuinely exists."
- ],
- "converged": {
-  "circulation_base_editions_corrected": 1312,
-  "circulation_parallel_editions_corrected": 449,
-  "holder_rows_behind_them": 186124,
-  "wmc_mint_count_corrected": 539811,
-  "wmc_mint_count_remaining": 4,
-  "parallel_identity_filled": 107,
-  "parallel_identity_remaining": 37,
-  "parallel_identity_remaining_note": "all 37 have a base that is ALSO nameless — 0 fixable; the corrector declines to invent rather than guess",
-  "series1_editions": 1310,
-  "series1_editions_before": 65,
-  "listings_still_fabricated": 0,
-  "wmc_base_keyed_resolvable_parallels": 0,
-  "secdef_anon_execute_violations": [],
-  "topshot_description_coverage_pct_before": 68.5,
-  "topshot_description_coverage_pct_after": 95.9,
-  "topshot_description_coverage_note": "68.5% frozen since 2026-08-28 -> 95.9% within ~4.5 h of the Atlas enrichment (NULLs 4,237 -> 554), 0 errors. NOT a constant: re-measure, never quote.",
-  "vercel_crons": 35,
-  "dead_host_topshot_pipelines_remaining": 0,
-  "dead_host_note": "topshot-badge-set-backfill and topshot-catalog-backfill both unscheduled 2026-09-04 (routes kept, one-line restore in each header); topshot-misattrib-drain measured at 215 residual rows = a one-off script, not a pipeline.",
-  "atlas_new_editions_not_created": "16 of 100 on a sampled page of set 90 — parallels Atlas knows and we do not carry. Deliberately NOT auto-created: it ripples into circulation, the sitemap and every entity surface.",
-  "canonical_topshot_editions": 13452,
-  "ultimate_1of1_editions_created": 16,
-  "ultimate_1of1_blank_holder_tiles_fixed": 5,
-  "ultimate_1of1_note": "Every one is tier ULTIMATE, mint 1. Five were held in wallet_moments_cache and rendered blank (incl. Victor Wembanyama's 1/1 2023 Rookie Ultimate, Atlas ask $150,000). NOT caused by the catalog retirement -- searchMarketplaceEditions never surfaced Ultimate 1/1s, which is why backfill-badges-from-sets existed.",
-  "atlas_editions_we_still_lack": 563,
-  "atlas_editions_we_still_lack_note": "All parallels. Deliberately NOT created: subedition keying, circulation ladders, series rollups and the sitemap all move. Still a decision.",
-  "editions_we_hold_that_atlas_no_longer_lists": 100,
-  "enrichment_positive_control": "The 16 new rows were created with NULL media/prose on purpose; the Atlas enrichment then filled 16/16 thumbnails, 16/16 videos and 14/16 descriptions unaided. The 2 without prose are the 2 Atlas itself has none for (253:8864, 253:8865) -- an upstream absence, not a defect."
- },
- "verified_live_signed_out": {
-  "disney_pinnacle_sniper": "pinnacle-sniper-feed 200 (was 307), 12 rows, 'FMV coverage unavailable' gone",
-  "nba_top_shot_packs": "0 anon 307s (was /api/pack-listings), 1,002 images, 0 broken, 500 rows",
-  "insights_trophies": "204 images, 0 broken — the retry recovers or falls back cleanly",
-  "edition_98_3150__5": "3 ipfs 200s, 0 502s, 0 broken — the CIDs that 502'd this morning are warm",
-  "edition_227_7574": "Mint 249; ladder Standard /249 · Hexwave /25 2.7x · Jukebox /10 5.2x",
-  "nba_top_shot_collection_tab": "broken images 26 -> 0 of 374 after the fix; /api/moment-thumbnail 307 text/plain -> 200 image/jpeg"
- },
- "surface_qa": {
-  "instrument": "$HOME/qa-sweep.mjs on the device VM — a PLAIN headless Chromium, no Claude instrumentation",
-  "why": "both Claude browsers hang the route-level Suspense reveal on /moment and /edition ('SCANNING THE MARKETPLACE…'); plain Chromium reveals correctly. The recorded false-positive note said this reproduced on no normal-browser axis — it DOES reproduce in Claude in Chrome.",
-  "covered": "31 /insights boards, 5 collection overviews + snipers + packs, moment/edition/parallel/set/team/player/series pages, home, pricing, legal — desktop 1280 and mobile 390",
-  "mobile": "zero horizontal overflow on every page swept (scrollWidth == clientWidth == 390)",
-  "insights_boards": "all 31 return 200, no NaN/undefined, no '#N / 0', no honest-error states, no broken images"
- },
- "checked_and_correctly_left_alone": [
-  "offers-sweep 108/216 red — the documented circuit breaker probing hourly; public.offers is fresh (25,478 open, newest minutes ago) via the on-chain backstop",
-  "sync-nba-projections 0/26 — known-issue #8, operator-gated behind the sports-proxy; its alert suppression predicate (error = all_upstreams_failed) re-checked live and still holds",
-  "6,575 UUID-keyed 'fossil' editions — the documented dropTsFossils class, excluded from the sitemap (0 of 13,436 urls), 404+noindex, 1.08% of daily FMV writes. I filed this as a finding and then WITHDREW it; see the ledger",
-  "every 404 emits two robots tags plus a canonical — a 404 status dominates any meta tag, so nil impact and the fix means touching root-layout metadata",
-  "a cdn.nba.com logo reported naturalWidth 0 once via ERR_HTTP2_PROTOCOL_ERROR — curls 200 three times, box renders 96x96: a headless artifact",
-  "app/api/listing-cache/route.ts has the same || \"COMMON\" fabrication but only 1 of 201 rows arrives without traits; instrument is set_name IS NULL",
-  "/api/golazos-sniper-feed and /api/allday-pack-listings 307 but have no anon-public caller — deliberately left gated, pinned by a test"
- ],
- "queued": [],
- "open_questions_closed_by_measurement": {
-  "wmc_mint_count_treadmill": "NOT a treadmill. The count read 4 then ~170 and the cursor had passed those editions twice, but a rewound tick fixed 168 instantly. My '1.70% regressed' metric compared against the value I WROTE at 08:04 rather than the CURRENT catalog — an expected value captured at time T is not a baseline for a column tracking a moving source. wmc vs catalog is 0 of 1,910,846. Real behaviour: denorm lag bounded by one ~2h reconcile cycle.",
-  "64_uncovered_trophy_editions": "It is 2. 62 of the 64 are dropTsFossils rows. Atlas covers 266 of 266 Top Shot sets; exactly one (152, 2023-24 Honors Diced) returns total_count=0, leaving 152:5366 (2 holders) and 152:5372 (0 holders). The retired route could not serve them either — its upstream is the same 530. Upstream absence, no action.",
-  "v_topshot_parallel_premiums_optimisation": "REFUSED, and measuring is what refused it. Swapping its fmv_snapshots laterals for edition_fmv_current would change 45 of 3,913 rows (1.15%) — with the LATERAL the FRESHER side, since it reads the newest snapshot while the rollup refreshes hourly. That trades a public accuracy board's freshness for buffers. Do not re-propose.",
-  "listing_cache_common_fabrication": "Re-measured: All Day is 1 of 100 rows arriving without traits and that row already stores a NULL tier; Top Shot is 89 of 100 and all 89 correctly NULL since this morning's fix. Still unexposed; decision to leave it stands.",
-  "badge_sync_workflow": "My own needs-trevor note called it 'dead weight worth deleting'. WRONG: it also drives allday-badge-low-ask-refresh (144/144 ok, 151,802 rows in 3 days), golazos-badge-low-ask-refresh (144/144) and allday-badge-ingest (3/3, 16,800). Deleting it would have killed three working pipelines. It is also GREEN while its Top Shot leg fails 0/12 — the 'ok means completed, not that its lanes worked' shape.",
-  "set_name_drift": "needs-trevor said 1,709 Moments. Re-measured over all 1,911,545 joined Top Shot rows: set_name differs on 0, blank player_name 0 (from 91,180 and 14,711 this morning). tier differs on 153, all above the reconcile cursor — lag, not drift.",
-  "anon_public_page_calls_gated_api": "SYSTEMATIC SCAN, not more one-offs. Enumerated all 175 /api/... paths called from client components and ran each through isPublicPath: 43 are gated, and every one of them is called only from a page that is ITSELF gated (profile/alerts/rewards/cost-basis/watchlist/stripe/mcp-keys, plus panini-blockchain/*, the pack simulator and dashboard/alerts — all four verified 307 live). After the four fixes today the class is CLOSED, bounded by an enumeration rather than by 'the ones I stumbled on'."
- },
- "post_ship_watch": [
-  "topshot-badge-set-backfill should log NO new pipeline_runs rows after its next former slot (15 3,9,15,21 PT) — the vercel.json entry is removed and deployed in b9f1c07.",
-  "the wmc metadata reconcile cursor was rewound to ~103 during the mint_count investigation; it re-walks idempotently and was at 126:4424 at 18:30 PT."
- ],
- "health_at_close": {
-  "pt": "2026-09-05 10:18",
-  "security_invariants_rows": 0,
-  "detect_stalled_pipelines": 1,
-  "detect_stalled_pipelines_detail": "topshot-badge-set-backfill, severity info, no_marker — the 2026-09-04 seeded row, expected",
-  "secdef_anon_execute_violations": 0,
-  "pipeline_alerts_critical": 0,
-  "pipeline_alerts_total": 4,
-  "pipeline_alerts_total_before_tonight": 7,
-  "check_pipelines_running_but_not_succeeding_rows": 0,
-  "atlas_sets_stale_over_6h": 0,
-  "atlas_sets_total": 266,
-  "sentry": "NOT READ — no Sentry MCP in this session (standing 'dark since 08-18' blocker)",
-  "drain_quiet_hours_nfl_all_day": 0.04,
-  "ci_on_main": "28f6876 — 19 success / 1 skipped / 0 failures. ⚠ e900d58 went RED first: my anon-exec line was prose and that guard keys the marker PER FUNCTION NAME; fixed in 1a0c739, ledger correction in ebaee48."
- },
- "measured_not_shipped": [
-  "pack_ev_latest is >99.7% of two public routes now crossing their 8s read bound; SubPlan 3 runs 128,712x for 381,922 buffers; mv_pack_ev_latest swap REFUTED (0 of 7 columns). inbox/2026-09-05T1120Z",
-  "unmapped-drain 'STALLED' test fires 45.8% of hours on a working drain; the 12h x2 retune measures WORSE at 60.4%. inbox/2026-09-05T1125Z",
-  "surface QA: 21 pages, all 200, ~900 third-party images, 0 blank"
- ],
- "corrections_to_my_own_claims": [
-  "cdn.nba.com 'blank on 4 of 4 NBA team pages' was a headless-Chromium sandbox artifact — real Chrome renders it at naturalWidth 150, 0 blank of 84. My first isolation test was invalid (a data: page cannot load ANY cross-origin image; the control proved it). NEW known false positive.",
-  "'96.4% Top Shot description coverage' had an unstated denominator: it is 96.6% of the 13,915 ATLAS-COVERED editions. A further 6,697 are outside Atlas at 1.1% prose. The topshot-catalog-backfill retirement still stands — those 6,697 were created 2026-05-08..2026-08-20 while that walker was alive and healthy and it was not filling them either — and only 100 of the 6,697 are user-reachable (50 holders, 59 sales), the rest inert.",
-  "I filed pack_ev_latest as operator-gated by inheriting the 2026-08-30 verdict — which is about mv_pack_ev_latest, a MATERIALIZED view needing DROP ... CASCADE. pack_ev_latest is relkind='v', a plain view: CREATE OR REPLACE keeps the column list and all 68 dependents. Re-read a blocked item's blocker before inheriting it — it may be a blocker for a DIFFERENT OBJECT.",
-  "cdn.nba.com 'blank on 4 of 4 NBA team pages' (headless artifact, real Chrome fine); /packs 'renders nothing on mobile' (settle artifact — 83,753 chars after 3 scroll passes); '36 over-wide elements on pack-reality' (table correctly inside overflow-x:auto); 'the trophy case renders no art' (204 lazy images pending, 0 failed); '43 CIDs x 5.1MB = 220MB per page' (lazy loading means only what is scrolled past is fetched). Five alarms, five controls.",
-  "A COMMENT ASSERTING A GUARD IS NOT A GUARD. lib/media/avatar-proxy.ts said __tests__/avatar-proxy-hosts.test.ts 'parses the real directive out of proxy.ts and fails if the two disagree'. No test in the repo read that constant at all, and the mirror had drifted four hosts behind — hiding the Arweave art that was moved INTO the CSP the day before precisely so it would hotlink. The existing disjointness test could never have caught it: disjointness is satisfied by a mirror that is EMPTY."
- ],
- "description_coverage_topshot": {
-  "atlas_covered": 13915,
-  "atlas_covered_pct": 96.6,
-  "not_atlas_covered": 6697,
-  "not_atlas_covered_pct": 1.1,
-  "not_covered_user_reachable": 100,
-  "all_editions": 20612,
-  "all_pct": 65.6
- },
- "pack_ev_latest_rewrite": {
-  "before_buffers": 707048,
-  "after_buffers": 10898,
-  "factor": "65x",
-  "ranker_staleness_route": {
-   "before": 705997,
-   "after": 10907,
-   "rows": "3 -> 3"
-  },
-  "calibrated_route": {
-   "before": 707584,
-   "after": 12618,
-   "rows": "810 -> 810"
-  },
-  "equivalence": "live 4642 / cand 4642, EXCEPT 0 both directions, INTERSECT 4642",
-  "honest_cost": "trades index-ordered scan for Seq Scan + external merge sort spilling ~28-49MB temp per execution; sized at tens of calls/hour so not a concurrency hazard",
-  "live_after": "/api/public/insights/pack-reality 200 in 2.1s cold / 0.26s warm; /api/packs?collection=nba-top-shot 200 in 2.2s, 100 rows",
-  "falsifier": "the two Vercel error groups must STOP — re-read get_runtime_errors for those routes after 2026-09-06"
- },
- "owed_watches": [
-  "pack_ev_latest falsifier: the two Vercel error groups (/api/public/insights/pack-reality, /api/packs) must STOP. Read get_runtime_errors AFTER 2026-09-06. Interim: 0 events since the 13:46Z apply, but P(0 | fix did nothing) ~= 0.07 — suggestive, not closed. Both groups were already quiet 2h+ BEFORE the apply.",
-  "topshot-catalog-backfill silence: first testable 19:12 PT 2026-09-05",
-  "allday-pack-opens-backfill 56.6% alert: self-clears ~22:00 PT 2026-09-05",
-  "THE THREE NEW SUPPRESSION PREDICATES. Any of them returning FALSE means the suppression is wrong and the row must be DELETED, not renewed: (a) SELECT count(*) >= 500 FROM editions WHERE collection_id='95f28a17-224a-4025-96ad-adf8a4c63bfd' AND updated_at > now()-interval '24 hours'  (b) SELECT max(updated_at) > now()-interval '7 days' FROM challenges  (c) SELECT count(*) <= 500 FROM mv_topshot_misattrib_candidates c WHERE NOT EXISTS (SELECT 1 FROM topshot_misattrib_onchain_map m WHERE m.nft_id=c.nft_id). All three TRUE at 2026-09-05 16:28Z.",
-  "THE NEW DRAIN LIVENESS ARM'S FIRST FIRING. drain_quiet_hours was 9.64 at close against a 12h threshold and a historical max closed gap of 6.00h. If unmapped-sales-nfl_all_day pages 'the resolver is QUIET', that is a TRUE POSITIVE and the nfl_all_day resolver needs looking at — this arm has never fired correctly before, so do not dismiss its first one as noise."
- ],
- "needs_trevor": [
-  "ALL FOUR PRIOR ITEMS ARE NOW DECIDED AND SHIPPED — see decisions_taken_on_delegation below. Nothing on this list is blocking.",
-  "OPTIONAL, and it is Trevor's heading to edit: if you agree the mv_pack_ev_latest rewrite should never be raised again, move its 2026-09-05 DECLINED ledger entry under 'Declined — do not re-suggest'. I will not write into that heading."
- ],
- "decisions_taken_on_delegation": {
-  "authority": "Trevor, 2026-09-05: 'address the issues that were unresolved, and make decisions on those open items based upon what's best for RPC long term and for our users'.",
-  "1_sentinel_three_dead_topshot_pipelines": {
-   "decision": "SUPPRESS all three, with predicates rather than labels.",
-   "why": "Each is redundant, not broken, and the replacement was measured: Atlas keeps the catalog current (6,967 Top Shot editions updated in 24h); pg_cron jobid 87 rpc-refresh-challenge-costs maintains challenges (newest updated_at 2026-09-05 07:20Z, matching its 20 7 * * * schedule to the minute); the misattrib backlog is 410 open of 20,128 candidates (98.0% mapped).",
-   "the_discipline": "pipeline_alert_suppression has no predicate column, so each reason embeds the runnable SQL, its threshold and the apply-time value, and says a predicate returning FALSE makes the suppression wrong — delete it, do not renew. A free-text label previously got a 24-hour silent outage dismissed five consecutive times.",
-   "not_ack": "Deliberately NOT the sentinel_threshold_config ack mechanism, which migration 20260903163248 records twice as Trevor's call. Suppression carries a predicate; an ack carries a reason string.",
-   "expiry": "2026-12-05 — silence expires even if nobody reads the predicate."
-  },
-  "2_mv_pack_ev_latest_rewrite": {
-   "decision": "DECLINED, on evidence not caution.",
-   "why": "The benefit evaporated: jobid 73 now runs 48/48 ok at avg 5.8s. The cost is real: relkind='m' means DROP ... CASCADE across a public read surface with 68 dependents. The actual win was taken earlier tonight on pack_ev_latest itself (707,048 -> 10,898 buffers).",
-   "filed_where": "A normal dated ledger entry, NOT under 'Declined — do not re-suggest' — that heading is Trevor's to edit."
-  },
-  "3_cloudflare_ipfs_in_the_csp": {
-   "decision": "REMOVED from both img-src and media-src.",
-   "why": "Host decommissioned (0/8 CIDs, <0.1s DNS fail) and referenced by zero rows anywhere in the live schema. A CSP entry for a host that cannot answer is a wider policy that buys nothing.",
-   "kept_deliberately": "cloudflare-ipfs.com STAYS in IPFS_GATEWAY_RE and isBareIpfsGatewayUrl: matching it REWRITES a legacy URL onto our same-origin proxy. Removing it there would leave such a URL hotlinking a dead host — worse, not cleaner.",
-   "what_it_exposed": "The stale avatar-proxy mirror above. The small item was the doorway, not the finding."
-  },
-  "4_unmapped_drain_stall_test": {
-   "decision": "REPLACED the ratio with a liveness test, and separately stopped the ETA pretending to be a point estimate.",
-   "why": "outflow_3h*16 < outflow_24h reads TRUE 45.8% of the resolver's life; my own first retune (12h x 2) measures 60.4%, WORSE, and was refuted before shipping. The replacement never divides one window by another: 12h since the last resolution, calibrated on 5,571 consecutive gaps with max 6.00h and p99 0.74h — zero historical firings.",
-   "the_bigger_half": "24h and 7d windows disagree 50x (2,627d vs 54d) because this resolver works in intermittent bulk sweeps (4,297 rows 09-02, 899 09-03, 43 09-04, 8 09-05, vs a ~60-110/day baseline). Publishing either alone is a failed read rendered as an answer, so both are published and the alert prints the range.",
-   "live_reading_at_close": "drain_quiet_hours 9.64 at ship (16:29Z) — already longer than any gap this resolver has ever CLOSED, and still correctly under the 12h threshold. POSTSCRIPT 17:18Z: it fell to 0.04 — the resolver resumed on its own, so the longest quiet in its history self-healed, the new arm stayed silent through it, and the old ratio arm was firing the whole time. First live test of the calibration, passed."
-  }
- }
+  "generated_at_pt": "2026-09-07 01:05 PT",
+  "generated_at_utc": "2026-09-07T08:05Z",
+  "pass": "rpc-nightly-autonomous-pass (cloud, NO-PUSH)",
+  "shipped": 0,
+  "reverted": 0,
+  "health_at_close": "green",
+  "security_invariants": "all [] (invariants, anon_write_holes, rls_off_base, secdef_anon)",
+  "trust_health_breaches": 0,
+  "stalled_pipelines": 0,
+  "public_5xx_24h": 19,
+  "public_5xx_on_boards": 0,
+  "db_size_mb": 18191,
+  "topshot_fmv_high": 2081,
+  "topshot_fmv_medium": 5555,
+  "topshot_fmv_high_med": 7636,
+  "topshot_editions_total": 20441,
+  "topshot_high_med_pct": 37.4,
+  "topshot_fmv_pct_stale_30d": 30.6,
+  "editions_by_collection": {"nba_top_shot": 20612, "nfl_all_day": 6190, "laliga_golazos": 575, "ufc_strike": 518, "candy_mlb": 125},
+  "unmapped_backlog_nfl_actionable": 41303,
+  "sentinel_ts_uuid_editions_48h": 0,
+  "post_ship_watch_0906": "all holding (atlas dispatch 0.6-1.7s, moments-hydrate ok draining, refresh_wmc_fmv_changed clean)",
+  "queued": [
+    "best-offers break-on-error (0x warn in 24h; close after 1wk of zeros)",
+    "~19 anon-public soft-404 tabs (product call + proxy.ts)",
+    "sync-nba-projections dry >=72h (likely NBA offseason)"
+  ],
+  "resolved_by_other_session": ["allday-lock-refresh trypdub false-alarm (per-wallet non-fatal, ok=true since 09-06 17:23Z)"],
+  "ops_note": "405 un-archived inbox files back to 2026-08-09; archival needs a push run"
 }
