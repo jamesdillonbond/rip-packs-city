@@ -859,6 +859,23 @@ dead.** The preflight (`scripts/panini-cdp-preflight.mjs`) now does what the run
 YOU NEED, not any endpoint it should reach*.
 
 
+## 🚨 A GUARD'S PROSE AND ITS CONSTANT DISAGREE, AND THE CONSTANT IS THE FACT (2026-09-07 — four re-swept dead ends in one session)
+
+**Symptom: you read a guard file or a register item, believe there is open work, sweep it, and find it drained.** That happened **four times in one session** on 2026-09-07, and each time the pointer that misled was NARRATIVE TEXT sitting beside a live value that said otherwise. This is the mirror image of the rule CLAUDE.md already carries (*"every figure is a DATED SAMPLE — re-measure before quoting it"*): here the stale figure does not overstate health, it **overstates the remaining work**, so the cost is a wasted sweep rather than a wrong ship. Cheaper to catch, easier to repeat.
+
+| what the prose said | what the live value said |
+|---|---|
+| `server-page-data-access-ratchet`: *"ships a guard with a 36-entry allowlist"*, *"the 36 pages below"* | **`const BUDGET = 3`** — the debt fell 37 → 3, and all three survivors are under `app/insights/**`, inside the derived wiring guard. The narrative is the file's own history, kept deliberately; it is not the population. |
+| `key-files-and-honesty.md` fifth layer: *"Two were found 2026-08-23. Five more on 2026-08-24"* | **0 of 22** — every seeded-prop client component now conveys failure. |
+| known-issues **#17**: a *"Remaining"* paragraph listing modal accessibility | a later ✅ block **in the same item** says drained; the sweep's two hits are both documented non-instances. |
+| my own inbox filing, six hours old: *"one failed chunk discards all later chunks"* | the one caller slices **200** ids for a route that chunks at **500**, so the loop runs once. |
+
+⭐ **THE READING RULE.** In a guard file, the **constant, the walk, and the budget are the specification**; the paragraphs are its changelog. Read `const BUDGET`/`THRESHOLD`/the derivation **before** the comment that explains them, and in a register item read the **newest dated block**, not the first `Remaining:` heading — items here are appended to, never rewritten, so the oldest text is the most prominent and the most wrong.
+
+⚠ **Do not "fix" this by deleting the history.** Those paragraphs are why the numbers are trusted — the ratchet's own note that it *"fell four times without anyone tracking it"* is the evidence its no-slack assertion works. The defect is reading order, not the presence of history.
+
+ⓘ **Related, same session, different mechanism** (recorded in `key-files-and-honesty.md`): when a guard's population is **derived**, absence-of-mention is the EXPECTED state, so any *"is X covered?"* probe that greps for X's name reports a false gap on exactly the best-guarded code. **Both failures share one root — treating a search over PROSE as a measurement of STATE.**
+
 ## eslint is NOT in CI, and that is a decision (2026-08-22)
 
 `grep eslint .github/workflows` returns nothing; `package.json` has the script and no job calls it.

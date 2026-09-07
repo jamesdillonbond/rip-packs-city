@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-07 · ⓘ FOUR RE-SWEPT DEAD ENDS IN ONE SESSION, ONE ROOT CAUSE — a guard's PROSE and its CONSTANT disagree, and I kept believing the prose · Claude Code (cloud)
+
+**Nothing was broken. That is the entry.** Four probes today went looking for open work in areas the memory files present as open, and every one was already drained. The pointer that misled was **narrative text sitting beside a live value that said otherwise**:
+
+| what the prose said | what the live value said |
+|---|---|
+| `server-page-data-access-ratchet`: *"a guard with a 36-entry allowlist"*, *"the 36 pages below"* | **`const BUDGET = 3`** — 37 → 3, and all three survivors sit under `app/insights/**`, inside the derived wiring guard |
+| `key-files-and-honesty.md` fifth layer: *"Two found 08-23. Five more on 08-24"* | **0 of 22** — every seeded-prop client component conveys failure |
+| known-issues **#17**: a *"Remaining"* paragraph listing modal accessibility | a later ✅ block **in the same item** says drained; the sweep's two hits are documented non-instances |
+| **my own filing, six hours old**: *"one failed chunk discards all later chunks"* | the one caller slices **200** ids for a route that chunks at **500** |
+
+⭐ **This is the MIRROR of the rule CLAUDE.md already carries.** *"Every figure is a DATED SAMPLE — re-measure before quoting it"* is written against a stale number that overstates HEALTH. These stale numbers overstate the **remaining work**, so the cost is a wasted sweep rather than a wrong ship — **cheaper to hit, and therefore easier to keep hitting.** I hit it four times in one day.
+
+⭐ **The reading rule, now in `testing-and-ci.md`:** in a guard file the **constant, the walk and the budget are the specification; the paragraphs are its changelog** — read `const BUDGET` / `THRESHOLD` / the derivation *before* the comment explaining them. In a register item read the **newest dated block**, not the first `Remaining:` heading: items here are appended to and never rewritten, so **the oldest text is the most prominent and the most wrong.**
+
+⚠ **The fix is NOT to delete the history.** Those paragraphs are why the numbers are trusted — the ratchet's own note that it *"fell four times without anyone tracking it"* is the evidence its no-slack assertion works. **The defect is reading order, not the presence of history.**
+
+ⓘ **Same session, same root, different mechanism** (recorded in `key-files-and-honesty.md`): when a guard's population is **derived**, absence-of-mention is the EXPECTED state, so a *"is X covered?"* probe that greps for X's name reports a false gap on exactly the **best**-guarded code. **Both are one error — treating a search over PROSE as a measurement of STATE.**
+
+ⓘ **What the four sweeps establish positively, since a null result with controls is still a result:** the server-page inline-reader debt is **3, all inside a derived guard**; the seeded-prop honesty layer is **0 of 22, guarded twice by derivation**; #17's modal-a11y is drained with both remaining `role="dialog"` files documented as non-instances; and live invariants are clean (security `[]`, pg_cron 0, cron-heavy `{inspected: 58, offenders: []}`). **The open register items that remain are owner-gated, not code-gated.**
+
+**Docs-only.** **Revert:** `git revert` the commit. Nothing in the DB or production changed.
+
 ### 2026-09-07 · ✅ THE `wmc-metadata-reconcile` STALL ALARM IS A FALSE POSITIVE ~3.7×/DAY, AND THE MONITOR'S THREE OPTIONS ARE NOW ONE — measured, with the control that separates "did not run" from "ran and wrote nothing" · Claude Code (cloud)
 
 **The 06:11Z daytime monitor filed a candidate and left the choice open** — *"reconcile the instrument with the job's real liveness, pick one — (a) heartbeat every tick, (b) raise `max_silent_minutes`, (c) validate via `cron.job_run_details`"*. **Two of the three are now refuted by measurement rather than by preference.**
