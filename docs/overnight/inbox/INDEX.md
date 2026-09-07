@@ -1,4 +1,4 @@
-# Inbox index — 409 live filings
+# Inbox index — 410 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-09-07 — 7 filings
+## 2026-09-07 — 8 filings
+
+- [⭐ **`refresh_atlas_pack_ev()` writes a fabricated `total_unopened = 0` and `pack_ev_latest` reads it as SOLD OUT — no row that function writes can ever be published as +EV**](2026-09-07T2135Z-refresh-atlas-pack-ev-writes-a-fabricated-total-unopened-zero-that-bars-every-atlas-row-from-the-ev-board.md) — *(Claude Code on Trevor's box. READ-ONLY diagnosis; **deliberately not shipped**, cost of shipping measured in the filing. Found while diagnosing `2026-09-07T1603Z`.)* The snapshot migration documents **eight** honesty properties guarding `is_positive_ev` — *"the single boolean a collector reads as 'buying this pack is worth it'"* — and then the success-branch INSERT hardcodes `total_unopened = 0, depletion_pct = NULL`, which `pack_ev_latest` turns into `is_positive_ev = false`. ⭐ **The `?? 0` shape one table apart: an unknown published as a measured zero, with a downstream consumer acting on it.** Measured live: **333 rows with `total_unopened = 0`, 0 of them positive-EV**; the 12 that are positive come from writers that leave the column NULL. The real supply is in `pack_distributions`, which the function **already joins** — `total_sealed > 0` on **57/57** walked dists, fresh 12:13Z, so the `0` is wrong on every row, not merely unknown. ⛔ **Counterfactual is ZERO** — no Atlas-walked pack currently has `gross_ev > pack_price`, so fixing it changes nothing a user sees today; it is a latent bug that keeps the board empty *even when a genuinely +EV pack appears*, and it bites exactly when the pack pool is repopulated (**#65**, another session's live lane — take it there). ⚠ Not a two-line change: the 455-line pin embeds the body **byte-identical** under an md5 with `db-invariants-drift-guard` failing CI on drift, and the fixture needs a **column-level audit** or the new reads resolve to NULL and prove nothing. ⭐ `total_unopened` is asserted **nowhere** in that pin today — the repoint should add one, or the fix ships with the same silence that hid the defect.
 
 - [✅ VERIFIED against the pre-fix baseline: the reconcile heartbeat fix takes logged ticks from 12/26 to 11/11 and gaps from 180 min to 30 — and the ONE blind spot it opens is named, with the closing field (`extra.no_op`) confirmed written-but-read-by-nothing](2026-09-07T2130Z-the-reconcile-heartbeat-fix-verified-and-the-one-blind-spot-it-opens.md)
 
