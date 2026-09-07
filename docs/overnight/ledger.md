@@ -10,6 +10,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-07 · ✅ The fabricated-divisor ban was blind to the spelling that NAMES the denominator — three live sites inside its own roots · Claude Code (cloud), Trevor: "Keep going"
+
+**Started from the guard, not from a symptom.** CLAUDE.md's standing question — *what is a passing guard structurally SILENT about?* — asked of `no-fabricated-divisor-ratchet`, which has read green since it was written. It anchors on the `/`, deliberately (that is what keeps `parseInt(x) || 1` legal), and therefore cannot see the substitution once the denominator is **named first**:
+
+```
+const total = stats?.total_principal_usd || 1     // matches nothing
+const pct = (part / total) * 100                  // …nor here
+```
+
+⭐ **The transferable rule is not about division: a guard anchored on an OPERATOR is blind to the hoisted spelling of its own class.** Assign the fabricated value to a name and every operator-anchored ban stops seeing it.
+
+**Three live sites, all inside the guard's existing roots:**
+
+| site | what it published | reach |
+|---|---|---|
+| `components/analytics/WalletProfile.tsx` | a measured **"0%"** collection-mix share per collection | **2 of 16** borrower wallets in `flowty_funded_loans` (dated sample) |
+| `app/profile/[username]/ProfileClient.tsx` `Sparkline` | a FLAT series drawn hard along the **bottom** of the box | any wallet whose snapshots are all equal |
+| `app/(collections)/[collection]/profile/[username]/CollectionProfileClient.tsx` `Sparkline` | identical | identical |
+
+The WalletProfile case is the RPC's `COALESCE(SUM(principal_usd), 0)`: when every loan carries a NULL principal the total AND every part go to 0 together, so `|| 1` turns an undefined share into a measured zero. The Sparkline case is `max - min || 1`, sending every point of a flat series to `(v - min) / 1 === 0` — visually identical to a portfolio that fell to the low of its window and stayed there. **A dormant wallet is unchanged, not at its low.** 🚨 **And it is the SAME copy-paste pair this ban was written for, one expression down** — the register already records that fixing one and trusting the other is how this class survives, so both are fixed and both are pinned.
+
+**Shipped (code):** shares render `—` when the total is not positive; flat series draw through the vertical centre; `scripts/flow-backfill.ts` prints `ETA: unknown` instead of `blocksRemaining / 60` minutes off a fabricated 1-block-per-second rate; `scripts/classify-ts-livetoken.mjs` prints `n/a` instead of `0.0%` on an empty run.
+
+**Shipped (guard) — widened on three axes, each proved:** the **clamp** spelling (`x / Math.max(y, 1)`, added at population zero); the **hoisted** spelling; and the roots, from a curated four to a walk that also covers **`scripts`** (with `.mjs`/`.js`, where one instance lived) and **`supabase/functions`** — an exclusion that rested on nothing, since edge fns are outside the coverage gates entirely. ⚠ Hoisted enrolls only a **non-zero** literal fallback: `?? 0` is a different class (dividing by an explicit zero is `Infinity`/`NaN` — loud, not plausible). ⚠ **Its first cut had two false positives and both were the identifier inside a URL PATH** (`"/api/fmv/demo"` for an `fmv` constant, `"/serial-premiums"` for a `serial` one) — a `/` is not an operator just because it precedes the name.
+
+⚠ **AND THE OPT-OUT BIT A SECOND TIME, in the opposite direction from its first recorded failure.** The fixed **3-line** lookback silently swallowed *both* suppressions written this session, because a justification stating the measured population, why the fix is elsewhere, and the exit condition does not fit in three lines. It is now those 3 lines **UNIONed with the contiguous comment block immediately above**, which stops at the first non-comment line and so — unlike a larger fixed number — can never reach across code to excuse something below it. Both directions pinned against the real helper. **An escape hatch that quietly does nothing is worse than none: the author believes it took.**
+
+**Two suppressions, each with a written reason and an exit condition:** `app/api/collection-moments/route.ts` (`|| 50` is a page-size PARSE fallback; dividing a real total by the page size in effect is the correct answer) and the `pack-supply-parse` pair (`_shared` + the hand-copy in `backfill-topshot-pack-supply/index.ts`). ⛔ The second is **suppressed, not absolved**: at `totalCount === 0` it writes `drop_weight 0` for a whole distribution, a "never drops" claim the data does not support — the honest answer is to emit no rows. **Measured: 0 of the `gql_historical` distributions in `pack_drop_pool` are degenerate (`sum(orig_drop_weight) = 0`), so it is LATENT.** Not fixed here because the fix needs both copies **plus an edge deploy**, and bundling an edge deploy into a display fix destroys the attribution. **EXIT:** fix both copies, deploy, delete the markers.
+
+**Verification.** Full suite green (baseline 1490 files / 16509 tests before the change), `tsc --noEmit` clean. ⭐ **Every claim carries a positive control, and two carry a no-change control:** all three new guard spellings were proved by INJECTION into real files in all three newly-relevant places (a `.mjs` under the new `scripts` root, a `.tsx` for the clamp, a `.ts` under the new `supabase/functions` root) and reverted; each of the three product pins was re-run with the DEFECT RESTORED and fails there (`0%` returns; the flat series returns to `y=22` at the box bottom instead of `y=12` at its centre); and the varying-series / non-zero-total controls pass in **both** states, so the fixes did not simply suppress everything.
+
+**Revert:** `git revert` the code commit. No DB, no migration, no production state changed; the two `supabase/functions` files gained comments only and no edge function was deployed.
+
+
 ### 2026-09-07 · ✅ The chain hydrator walks its page in order and stops at the 80th candidate — the cursored page was bounded but tested as a set; 5.5 s → 1.1 s · Cowork (cloud), Trevor: "Keep going"
 
 Reading the cursored dispatcher (`20260907211915`) back an hour later: the first dispatching tick under it took 5.5 s, not the 2.4 s of its 0-candidate ticks. EXPLAIN on the page (as the function builds it — a temp table, so no index and no statistics): the planner probed **all five** exclusion tables for **all 3,000** page rows and sorted the 2,314 survivors before the `LIMIT 80` could apply — 39K buffers to pick 80. **Shipped (`20260907214240`):** the page is walked in cursor order and each row is tested as the walk reaches it (`CONTINUE WHEN EXISTS …` × 5, `moments` first), exiting at `p_max` — ~5 probes per row examined, ~100 rows examined when the page is unresolved territory, at most the page when it is not. Same signature, same cursor semantics (the cursor still lands on the 80th candidate, so nothing after it is skipped), ACLs preserved (anon EXECUTE false, drift 0). **Verified by the real caller:** tick 21:43Z `dispatched 80 · examined 3000`, **1,055 ms** (21:39Z, set form: 5,481 ms; 15:39Z at ship, newest-first: 1,635 ms). **Revert:** in the migration header.

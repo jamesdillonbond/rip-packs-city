@@ -1358,6 +1358,30 @@ Moved here to pay for two new standing rules; nothing deleted. CLAUDE.md keeps t
 
 > ⚠ **Ask what a passing guard is structurally SILENT about** — every guard's own derivation fixes its blast radius (the anon driver-message guard derived its file set from `isPublicPath`, so everything behind sign-in was outside it *by construction*). **Prefer a directory/tree walk over a curated list, and a ban at population zero over an allowlist.** ⚠ **A curated list drifts, and COVERAGE IS ONLY REAL AGAINST WHAT THE GUARD READS** — `detect_stalled_pipelines`'s `WHERE w.is_active` blind spot is **76 of 164** (08-23; numerator held while the population grew — diff the SET). Derive from `pipeline_runs`; make *suppression* the curated list. ⚠ **Assert an exclusion at the PROPERTY's granularity** — a FILE-level grep vouched for a per-HANDLER exclusion (4 dishonest handlers).
 
+**A THIRD AXIS, found 2026-09-07 — the OPERATOR the guard anchors on.** A root can be right, a spelling
+list can be complete, and the guard can still be blind because it matches the class only where the class is
+written *inline*. `no-fabricated-divisor-ratchet` anchors on the `/` — deliberately, since that is what lets
+`parseInt(x) || 1` stay legal — and therefore could not see the substitution once the denominator was **named
+first**:
+
+```
+const total = stats?.total_principal_usd || 1     // the guard sees nothing here
+const pct = (part / total) * 100                  // …nor here
+```
+
+That exact code sat in `components/analytics/WalletProfile.tsx`, **inside the guard's own roots**, for the
+guard's whole lifetime, publishing a measured `0%` share for wallets whose principal sums to zero — and the same
+sweep found the already-twice-recorded copy-paste pair carrying `max - min || 1` in both `Sparkline`s. ⭐ **The
+rule: a guard anchored on an OPERATOR is blind to the hoisted spelling of its own class. Assign the fabricated
+value to a name and every operator-anchored ban stops seeing it** — ask this of every guard here, not just that
+one. Two secondary lessons from the widening: the hoisted detector's first cut reported two FALSE POSITIVES that
+were both the identifier appearing inside a **URL path** (`"/api/fmv/demo"`, `"/serial-premiums"` — a `/` is not
+an operator just because it precedes the name); and the opt-out's fixed **3-line** window silently swallowed
+*both* suppressions written that day, because a justification naming the measured population, why the fix is
+elsewhere, and the exit condition does not fit in three lines. It is now those 3 lines UNIONed with the
+contiguous comment block immediately above, which stops at the first non-comment line and so cannot reach across
+code. **An escape hatch that quietly does nothing is worse than none — the author believes it took.**
+
 **Two more instances, both found 2026-08-23, both by asking what the guard's DERIVATION excludes:**
 
 1. 🚨 **A guard's ROOT is a claim.** `saturation-throttle-reads-its-error` walked `app/api/cron` ONLY, and its own
