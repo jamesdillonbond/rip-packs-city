@@ -15,7 +15,7 @@
 --     return payload counts rows / unverified / unmapped.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260907020428_audit_20260907_ts_listings_from_atlas_the_topshot_sniper_serial_feed_is_back_with_a_verify_probe.sql);
+-- (supabase/migrations/20260907135757_audit_20260907_atlas_listing_syncs_go_differential_the_open_book_was_deleted_and_reinserted_every_2_min.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -35,13 +35,14 @@ CREATE TABLE public.ts_listings (
   series_number integer, is_locked boolean, asset_path_prefix text, ingested_at timestamptz, listed_at timestamptz);
 
 -- >>> BEGIN verbatim sync_ts_listings_from_atlas (keep byte-identical to the migration) >>>
+
 CREATE OR REPLACE FUNCTION public.sync_ts_listings_from_atlas()
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
 AS $$
-DECLARE v_started timestamptz := clock_timestamp(); v_n int; v_unverified int; v_unmapped int;
+DECLARE v_started timestamptz := clock_timestamp(); v_n int; v_ins int; v_upd int; v_del int; v_unverified int; v_unmapped int;
 BEGIN
   -- Open nba listings we could not map to an edition are counted, never guessed at.
   SELECT count(*) INTO v_unmapped
@@ -52,28 +53,62 @@ BEGIN
     FROM public.topshot_atlas_market_events ev
    WHERE ev.product = 'nba' AND ev.kind = 'listing' AND NOT ev.completed AND ev.last_seen_at <= now() - interval '24 hours';
 
-  DELETE FROM public.ts_listings;
-  INSERT INTO public.ts_listings (listing_id, flow_id, set_id, play_id, parallel_id, serial_number, circulation_count, price_usd,
-                                  seller_address, player_name, set_name, moment_tier, series_number, is_locked, asset_path_prefix,
-                                  ingested_at, listed_at)
-  -- One row per Moment: a relisted Moment carries its superseded listing as "open" until
-  -- the verify probe flips it, so the NEWEST listing per nft wins here (measured 09-07:
-  -- 614 open rows over 604 Moments).
-  SELECT DISTINCT ON (ev.nft_id) ev.uuid, ev.nft_id, ev.set_id_onchain, ev.play_id_onchain,
-         COALESCE(NULLIF(split_part(m.external_id, '::', 2), '')::int, 0),
-         ev.serial_number, e.circulation_count, (ev.price_cents::numeric / 100),
-         ev.seller_address, COALESCE(e.player_name, e.team_name), e.set_name, COALESCE(ev.tier, e.tier::text), e.series,
-         false, NULL, ev.last_seen_at, ev.listed_at
+  -- The wanted set. One row per Moment: a relisted Moment carries its superseded listing as
+  -- "open" until the verify probe flips it, so the NEWEST listing per nft wins here.
+  DROP TABLE IF EXISTS _tsl_want;  -- a caller may run the sync twice in one transaction (the pin does)
+  CREATE TEMP TABLE _tsl_want ON COMMIT DROP AS
+  SELECT DISTINCT ON (ev.nft_id)
+         ev.uuid AS listing_id, ev.nft_id AS flow_id, ev.set_id_onchain AS set_id, ev.play_id_onchain AS play_id,
+         COALESCE(NULLIF(split_part(m.external_id, '::', 2), '')::int, 0) AS parallel_id,
+         ev.serial_number, e.circulation_count, (ev.price_cents::numeric / 100) AS price_usd,
+         ev.seller_address, COALESCE(e.player_name, e.team_name) AS player_name, e.set_name,
+         COALESCE(ev.tier, e.tier::text) AS moment_tier, e.series AS series_number,
+         false AS is_locked, NULL::text AS asset_path_prefix, ev.last_seen_at AS ingested_at, ev.listed_at
     FROM public.topshot_atlas_market_events ev
     JOIN public.topshot_atlas_edition_map m ON m.atlas_edition_id = ev.atlas_edition_id
     JOIN public.editions e ON e.id = m.rpc_edition_id
    WHERE ev.product = 'nba' AND ev.kind = 'listing' AND NOT ev.completed
      AND ev.nft_id IS NOT NULL AND ev.price_cents > 0
      AND ev.last_seen_at > now() - interval '24 hours'
-   ORDER BY ev.nft_id, ev.listed_at DESC NULLS LAST
-  ON CONFLICT (listing_id) DO NOTHING;
-  GET DIAGNOSTICS v_n = ROW_COUNT;
-  RETURN jsonb_build_object('rows', v_n, 'unverified_24h', v_unverified, 'unmapped', v_unmapped,
+   ORDER BY ev.nft_id, ev.listed_at DESC NULLS LAST;
+  SELECT count(*) INTO v_n FROM _tsl_want;
+
+  -- Gone: rows no longer in the wanted set (sold, cancelled by a verify read, aged out of the window,
+  -- or superseded by a newer listing of the same Moment — the newer one's listing_id replaces it).
+  DELETE FROM public.ts_listings t WHERE NOT EXISTS (SELECT 1 FROM _tsl_want w WHERE w.listing_id = t.listing_id);
+  GET DIAGNOSTICS v_del = ROW_COUNT;
+
+  -- New and changed. The update fires only when a carried column differs.
+  WITH up AS (
+    INSERT INTO public.ts_listings (listing_id, flow_id, set_id, play_id, parallel_id, serial_number, circulation_count, price_usd,
+                                    seller_address, player_name, set_name, moment_tier, series_number, is_locked, asset_path_prefix,
+                                    ingested_at, listed_at)
+    SELECT w.listing_id, w.flow_id, w.set_id, w.play_id, w.parallel_id, w.serial_number, w.circulation_count, w.price_usd,
+           w.seller_address, w.player_name, w.set_name, w.moment_tier, w.series_number, w.is_locked, w.asset_path_prefix,
+           w.ingested_at, w.listed_at
+      FROM _tsl_want w
+    ON CONFLICT (listing_id) DO UPDATE
+      SET flow_id = EXCLUDED.flow_id, set_id = EXCLUDED.set_id, play_id = EXCLUDED.play_id, parallel_id = EXCLUDED.parallel_id,
+          serial_number = EXCLUDED.serial_number, circulation_count = EXCLUDED.circulation_count, price_usd = EXCLUDED.price_usd,
+          seller_address = EXCLUDED.seller_address, player_name = EXCLUDED.player_name, set_name = EXCLUDED.set_name,
+          moment_tier = EXCLUDED.moment_tier, series_number = EXCLUDED.series_number, is_locked = EXCLUDED.is_locked,
+          asset_path_prefix = EXCLUDED.asset_path_prefix, ingested_at = EXCLUDED.ingested_at, listed_at = EXCLUDED.listed_at
+      WHERE (public.ts_listings.flow_id, public.ts_listings.set_id, public.ts_listings.play_id, public.ts_listings.parallel_id,
+             public.ts_listings.serial_number, public.ts_listings.circulation_count, public.ts_listings.price_usd,
+             public.ts_listings.seller_address, public.ts_listings.player_name, public.ts_listings.set_name,
+             public.ts_listings.moment_tier, public.ts_listings.series_number, public.ts_listings.is_locked,
+             public.ts_listings.asset_path_prefix, public.ts_listings.ingested_at, public.ts_listings.listed_at)
+            IS DISTINCT FROM
+            (EXCLUDED.flow_id, EXCLUDED.set_id, EXCLUDED.play_id, EXCLUDED.parallel_id, EXCLUDED.serial_number,
+             EXCLUDED.circulation_count, EXCLUDED.price_usd, EXCLUDED.seller_address, EXCLUDED.player_name, EXCLUDED.set_name,
+             EXCLUDED.moment_tier, EXCLUDED.series_number, EXCLUDED.is_locked, EXCLUDED.asset_path_prefix,
+             EXCLUDED.ingested_at, EXCLUDED.listed_at)
+    RETURNING (xmax = 0) AS inserted
+  )
+  SELECT count(*) FILTER (WHERE inserted), count(*) FILTER (WHERE NOT inserted) INTO v_ins, v_upd FROM up;
+
+  RETURN jsonb_build_object('rows', v_n, 'inserted', v_ins, 'updated', v_upd, 'deleted', v_del,
+                            'unverified_24h', v_unverified, 'unmapped', v_unmapped,
                             'duration_ms', (extract(epoch from clock_timestamp() - v_started) * 1000)::int);
 END $$;
 -- <<< END verbatim sync_ts_listings_from_atlas <<<
@@ -126,5 +161,13 @@ SELECT _assert_eq((SELECT j->>'unverified_24h' || '/' || (j->>'unmapped') FROM (
   'one listing withheld as unverified, one as unmapped — counted, not guessed');
 -- idempotent: a second sync yields the same set
 SELECT _assert_eq((SELECT count(*)::text FROM public.ts_listings), '4', 'a second sync leaves exactly the same four rows');
+-- differential (2026-09-07): a sync over an unchanged set touches nothing — no delete/re-insert of the open book
+SELECT _assert_eq((SELECT j->>'inserted' || '/' || (j->>'updated') || '/' || (j->>'deleted') FROM (SELECT public.sync_ts_listings_from_atlas() j) s), '0/0/0',
+  'an unchanged open set is 0 inserted / 0 updated / 0 deleted');
+-- …and a price change on an open listing is an UPDATE of that one row, not a rebuild
+UPDATE public.topshot_atlas_market_events SET price_cents = 1300 WHERE uuid = 'u1';
+SELECT _assert_eq((SELECT j->>'inserted' || '/' || (j->>'updated') || '/' || (j->>'deleted') || '/' || (j->>'rows') FROM (SELECT public.sync_ts_listings_from_atlas() j) s), '0/1/0/4',
+  'one changed price = one updated row, the set still four');
+SELECT _assert_eq((SELECT round(price_usd, 2)::text FROM public.ts_listings WHERE listing_id = 'u1'), '13.00', 'the updated price is what the reader sees');
 
 ROLLBACK;

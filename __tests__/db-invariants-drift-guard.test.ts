@@ -324,7 +324,7 @@ const PINS = [
   {
     fn: "sync_ts_listings_from_atlas",
     test: "supabase/tests/sync_ts_listings_from_atlas.sql",
-    migration: "supabase/migrations/20260907020428_audit_20260907_ts_listings_from_atlas_the_topshot_sniper_serial_feed_is_back_with_a_verify_probe.sql",
+    migration: "supabase/migrations/20260907135757_audit_20260907_atlas_listing_syncs_go_differential_the_open_book_was_deleted_and_reinserted_every_2_min.sql",
   },
   {
     fn: "sync_edition_offers_from_atlas",
