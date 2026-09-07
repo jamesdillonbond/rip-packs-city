@@ -6,6 +6,7 @@ import { getCollection } from "@/lib/collections"
 import { nameOrDash, fmtPrice, fmtAge, minutesSince, freshnessFromAge, EM_DASH, type Freshness } from "@/lib/collection-overview-format"
 import InsiderSignalsPanel from "@/components/InsiderSignalsPanel"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
+import { toolCardDesc } from "@/lib/collection/closed-market-chrome"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -143,37 +144,13 @@ const COLLECTION_ABOUT: Record<string, AboutBlock[]> = {
   ],
 }
 
-const COLLECTION_TICKER: Record<string, string[]> = {
-  "nba-top-shot": [
-    "\u26A1 COLLECTION ANALYZER \u2014 FMV + Flowty asks + badge intel",
-    "\u26A1 PACK EV CALCULATOR \u2014 expected value vs price",
-    "\u26A1 SNIPER \u2014 real-time deals below FMV",
-    "\u26A1 BADGE FILTERS \u2014 filter any view by Top Shot Debut \u00B7 Fresh \u00B7 Rookie Year",
-    "\u26A1 SET TRACKER \u2014 completion + bottleneck finder",
-  ],
-  "nfl-all-day": [
-    "\u26A1 COLLECTION ANALYZER \u2014 FMV + marketplace asks + badge intel",
-    "\u26A1 PACK EV CALCULATOR \u2014 expected value vs drop price",
-    "\u26A1 SNIPER \u2014 live deals below FMV",
-    "\u26A1 BADGE FILTERS \u2014 Debut \u00B7 Fresh \u00B7 Rookie Year, on any view",
-    "\u26A1 SET TRACKER \u2014 completion progress + bottleneck finder",
-  ],
-  "disney-pinnacle": [
-    "\u26A1 COLLECTION ANALYZER \u2014 FMV + active listing prices",
-    "\u26A1 SNIPER \u2014 pins priced below market",
-    "\u26A1 ANALYTICS \u2014 portfolio value + deal history",
-  ],
-  "laliga-golazos": [
-    "\u26A1 COLLECTION ANALYZER \u2014 relative deal scoring + FMV",
-    "\u26A1 SNIPER \u2014 floor deals with outlier filter",
-    "\u26A1 FMV COVERAGE \u2014 growing from real sales data",
-  ],
-  "ufc": [
-    "\u26A1 COLLECTION ANALYZER \u2014 FMV + active listing prices",
-    "\u26A1 SNIPER \u2014 fight moments below market",
-    "\u26A1 ANALYTICS \u2014 portfolio tracking",
-  ],
-}
+// ⛔ REMOVED 2026-09-06: a second, DEAD `COLLECTION_TICKER` map lived here —
+// a stale per-collection copy of components/collection-chrome.tsx's
+// TICKER_ITEMS, with ZERO references anywhere in the tree. It rendered
+// nothing, so it was never a live defect; it was worse than one. It still
+// carried the trading claims the real ticker was just corrected for, and
+// the next session to fix "the overview ticker" would have found it first
+// and edited the copy nobody sees. The ticker is components/collection-chrome.tsx.
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -689,20 +666,20 @@ export default function CollectionOverviewClient({ collection }: { collection: s
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
           {[
-            {
-              label: "Collection",
-              desc: collection === "disney-pinnacle"
-                ? "FMV \u00b7 listing prices \u00b7 deal finder"
-                : "FMV \u00b7 Flowty asks \u00b7 badge intel",
-              icon: "\u25C8",
-              color: accent,
-              page: "collection",
-            },
-            { label: "Pack EV",   desc: "Expected value vs price",             icon: "\u25A3", color: "var(--tier-legendary)", page: "packs" },
-            { label: "Sniper",    desc: "Real-time deals below FMV",           icon: "\u26A1", color: "#34D399",                page: "sniper" },
-            { label: "Sets",      desc: "Completion + bottleneck finder",       icon: "\u25C9", color: "#F472B6",                page: "sets" },
-            { label: "Analytics", desc: "Portfolio breakdown + clarity",        icon: "\u25CE", color: "#A78BFA",                page: "analytics" },
-            { label: "Market",    desc: "Edition lookup + leaderboards",        icon: "\u25C8", color: "var(--tier-rare)",      page: "market" },
+            // ⛔ The descriptions are DERIVED, not literals. Two of them were
+            // asserting a trading venue on /ufc/overview, whose market closed
+            // 13 May 2026 — measured in production, not inferred. toolCardDesc()
+            // also absorbs the Pinnacle listing-feed override that used to be an
+            // inline ternary here. The old strings are quoted in
+            // lib/collection/closed-market-chrome.ts, which carries the case
+            // history; they are deliberately NOT repeated in this file, because
+            // the guard bans them from this source.
+            { label: "Collection", desc: toolCardDesc("collection", collection), icon: "\u25C8", color: accent,                  page: "collection" },
+            { label: "Pack EV",   desc: toolCardDesc("packs", collection),      icon: "\u25A3", color: "var(--tier-legendary)", page: "packs" },
+            { label: "Sniper",    desc: toolCardDesc("sniper", collection),     icon: "\u26A1", color: "#34D399",                page: "sniper" },
+            { label: "Sets",      desc: toolCardDesc("sets", collection),       icon: "\u25C9", color: "#F472B6",                page: "sets" },
+            { label: "Analytics", desc: toolCardDesc("analytics", collection),  icon: "\u25CE", color: "#A78BFA",                page: "analytics" },
+            { label: "Market",    desc: toolCardDesc("market", collection),     icon: "\u25C8", color: "var(--tier-rare)",      page: "market" },
           ].filter((t) => enabledPages.has(t.page as never)).map(({ label, desc, icon, color, page }) => (
             <Link key={page} href={basePath + "/" + page} style={{ textDecoration: "none" }}>
               <div className="rpc-card" style={{ padding: "14px 16px", cursor: "pointer", position: "relative", overflow: "hidden" }}>

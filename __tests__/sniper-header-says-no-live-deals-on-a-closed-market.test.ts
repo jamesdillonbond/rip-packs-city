@@ -25,8 +25,14 @@ import {
   SNIPER_SUBTITLE_DEFAULT,
   SNIPER_SUBTITLE_PINNACLE,
 } from "@/lib/sniper/header-copy"
+import { MARKET_LIVENESS_CLAIM } from "./helpers/market-liveness"
 
-const LIVENESS = /\b(live|real[- ]time|realtime|current|now|today)\b/i
+// ⚠ ONE shared pattern (helpers/market-liveness.ts), not a local copy. Three
+// guards each declared their own on 2026-09-06 and they had already drifted;
+// worse, the shared one's first version used `\bactive\b` and could not match
+// "actively", so a positive control that SHOULD have failed passed. That
+// pattern is pinned by its own test now.
+const LIVENESS = MARKET_LIVENESS_CLAIM
 
 describe("sniper header subtitle", () => {
   const closedSlugs = Object.keys(CLOSED_MARKETS)

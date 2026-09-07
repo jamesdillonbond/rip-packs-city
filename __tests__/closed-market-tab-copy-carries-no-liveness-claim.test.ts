@@ -30,11 +30,17 @@
 import { describe, it, expect } from "vitest"
 import { CLOSED_MARKETS, closedMarket, formatClosedOn } from "@/lib/market-closed"
 import { pageMetadata, PUBLIC_TAB_PAGES } from "@/lib/seo"
+import { MARKET_LIVENESS_CLAIM } from "./helpers/market-liveness"
 
 // Words that assert the market is trading right now. Checked case-insensitively
 // on whole words, so "Live"/"live"/"LIVE" and "real-time" are all caught, while
 // "delivery" or "alive" are not.
-const LIVENESS = /\b(live|real[- ]time|realtime|daily|current|today|now trading)\b/i
+// ⚠ ONE shared pattern (helpers/market-liveness.ts), not a local copy. Three
+// guards each declared their own on 2026-09-06 and they had already drifted;
+// worse, the shared one's first version used `\bactive\b` and could not match
+// "actively", so a positive control that SHOULD have failed passed. That
+// pattern is pinned by its own test now.
+const LIVENESS = MARKET_LIVENESS_CLAIM
 
 function text(v: unknown): string {
   if (typeof v === "string") return v

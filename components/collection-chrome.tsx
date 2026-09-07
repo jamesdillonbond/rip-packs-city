@@ -13,6 +13,7 @@ import { CollectionTabBar } from "@/components/collection-tab-bar"
 import CollectionSwitcher from "@/components/CollectionSwitcher"
 import CollectionHeading from "@/components/CollectionHeading"
 import AnonSignInPill from "@/components/AnonSignInPill"
+import { tickerItems, tickerStatusLabel } from "@/lib/collection/closed-market-chrome"
 
 // ── Ticker ─────────────────────────────────────────────────────────────────────
 const TICKER_ITEMS: Record<string, string[]> = {
@@ -64,12 +65,21 @@ const TICKER_ITEMS: Record<string, string[]> = {
 }
 
 export function CollectionTicker({ collection }: { collection: Collection }) {
-  const items = TICKER_ITEMS[collection.id] ?? TICKER_ITEMS["nba-top-shot"] ?? [`⚡ ${collection.label.toUpperCase()} — COLLECTOR INTELLIGENCE`]
+  // ⛔ Every string in this bar is server-rendered on EVERY tab, and the lists
+  // above are written for a venue that is trading. On a closed market both the
+  // pill and the items are replaced — see lib/collection/closed-market-chrome.ts
+  // for the production measurement that prompted it.
+  const liveItems = TICKER_ITEMS[collection.id] ?? TICKER_ITEMS["nba-top-shot"] ?? [`⚡ ${collection.label.toUpperCase()} — COLLECTOR INTELLIGENCE`]
+  const items = tickerItems(collection.id, liveItems)
+  const statusLabel = tickerStatusLabel(collection.id)
   const doubled = [...items, ...items]
   return (
     <div style={{ background: "var(--rpc-surface)", borderBottom: "1px solid rgba(224,58,47,0.2)", overflow: "hidden", height: 28, display: "flex", alignItems: "center" }}>
-      {/* brand-exception: white "LIVE" text on the red pill — theme-independent */}
-      <div style={{ background: "var(--rpc-red)", padding: "0 12px", fontSize: 9, fontFamily: "var(--font-mono)", letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>LIVE</div>
+      {/* brand-exception: white pill text on the red pill — theme-independent.
+          ⛔ The label is DERIVED, never the literal "LIVE": on a closed market
+          this pill was asserting a trading venue in brand red at the top of
+          every tab. */}
+      <div style={{ background: "var(--rpc-red)", padding: "0 12px", fontSize: 9, fontFamily: "var(--font-mono)", letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>{statusLabel}</div>
       <div style={{ overflow: "hidden", flex: 1 }}>
         <div style={{ display: "flex", gap: 64, animation: "ticker 38s linear infinite", whiteSpace: "nowrap", paddingLeft: 24 }}>
           {doubled.map((item, i) => (
