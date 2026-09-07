@@ -25,6 +25,7 @@ import { ActionCell } from "@/components/sniper/ActionCell";
 import SniperFilterBar from "@/components/sniper/SniperFilterBar";
 import SniperStatsBar from "@/components/sniper/SniperStatsBar";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
+import { sniperSubtitle } from "@/lib/sniper/header-copy";
 import type { SniperDeal, FeedResult, SortOption } from "@/lib/sniper/types";
 import {
   sniperFeedDegraded,
@@ -87,6 +88,10 @@ function SniperMomentsBody() {
   const isPinnacle = collectionSlug === "pinnacle" || collectionSlug === "disney-pinnacle";
   const isGolazos = collectionSlug === "laliga-golazos";
   const isUfc = collectionSlug === "ufc";
+  // ⛔ On a closed market this must not say "LIVE DEALS". Derived in
+  // lib/sniper/header-copy.ts (which carries the case history) so the property
+  // is unit-testable without mounting this component.
+  const headerSubtitle = sniperSubtitle(collectionSlug, isPinnacle);
 
   // Phase 5: every collection now flows through the unified endpoint. The
   // per-collection dispatch lives server-side in /api/sniper-feed and reuses
@@ -733,10 +738,12 @@ function SniperMomentsBody() {
               <h1 className="rpc-heading flex items-center gap-2" style={{ fontSize: "var(--text-xl)" }}>
                 <span style={{ fontSize: "var(--text-2xl)" }}>⚡</span> SNIPER
               </h1>
+              {/* ⛔ "LIVE DEALS" is a claim about the MARKET — see
+                  lib/sniper/header-copy.ts. The MarketplaceStatusBanner further
+                  down does NOT cover this: it resolves client-side, so the
+                  server shell would carry the false line alone. */}
               <p className="rpc-label" style={{ marginTop: 2 }}>
-                {isPinnacle
-                  ? "LIVE PINNACLE DEALS BELOW FMV — VARIANT-AWARE"
-                  : "LIVE DEALS BELOW ADJUSTED FMV — BADGE-AWARE, SERIAL-ADJUSTED"}
+                {headerSubtitle}
               </p>
             </div>
             <div className="flex items-center gap-3">
