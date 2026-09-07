@@ -719,7 +719,7 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
   const descParts = [
     cm
       ? (fmvUsd
-          ? `${subject} ${setName} last traded around ${fmtUsd(fmvUsd)} on ${collectionLabel} before its ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}. Historical value, not a current price.`
+          ? `${subject} ${setName} last traded around ${fmtUsd(fmvUsd)} on ${collectionLabel} before its ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}. Historical value, not a present-day price.`
           : `${subject} ${setName} on ${collectionLabel} — historical value and sales. The ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}.`)
       : (fmvUsd
           ? `${subject} ${setName} is worth ~${fmtUsd(fmvUsd)} (FMV) on ${collectionLabel}.`
@@ -728,7 +728,22 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
     seriesLabel ? `${formatSeriesLabel(seriesLabel, collectionUrlSlug)}.` : null,
     circulation ? `Circulation ${fmtCount(circulation)}.` : null,
     null,
-    "Live FMV, recent sales, history chart, and packs that contained this edition.",
+    // ⛔ CONDITIONAL. This tail used to be unconditional, so a CLOSED-market
+    // description said "Historical value, not a present-day price. … Live FMV,
+    // recent sales, …" — contradicting itself inside one sentence run, on every
+    // UFC edition page. Found 2026-09-06 by reading a live one, not by grep.
+    //
+    // ⭐ THE SAME FILE ALREADY GOT THIS RIGHT twenty lines below: editionJsonLd's
+    // Product.description branches on isMarketClosed() for exactly this string.
+    // One helper right, its neighbour wrong — which is why the guard now walks
+    // ALL FIVE entity helpers instead of pinning the one that was found.
+    //
+    // ⓘ MEASURED, not assumed: the set / player / team / series helpers do NOT
+    // share this bug — they route their FMV through fmvClosedQualifier(). This
+    // was one defect, not five.
+    cm
+      ? "Sales history, the FMV history chart, and the packs that contained this edition."
+      : "Live FMV, recent sales, history chart, and packs that contained this edition.",
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
   const canonical = `${BASE_URL}/${collectionUrlSlug}/edition/${encodeURIComponent(routeSlug)}`

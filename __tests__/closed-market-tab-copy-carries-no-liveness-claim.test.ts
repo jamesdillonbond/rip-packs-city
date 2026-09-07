@@ -114,3 +114,89 @@ describe("closed-market tab metadata", () => {
     }
   })
 })
+
+// ── The entity-detail helpers ───────────────────────────────────────────────
+//
+// 🚨 ADDED 2026-09-06 BECAUSE THE GUARD ABOVE HAD A BLIND SPOT AND A REAL DEFECT
+// LIVED IN IT. Everything above walks `pageMetadata`, i.e. the TAB copy. The
+// five entity-detail helpers build their own descriptions, and
+// `editionPageMetadata` appended an unconditional tail — so a closed-market
+// edition read:
+//
+//   "…before its Flow market closed on 13 May 2026. Historical value, not a
+//    present-day price. Tier CONTENDER. Circulation 23,970. LIVE FMV, recent
+//    sales, history chart, and packs that contained this edition."
+//
+// contradicting itself inside one sentence run, on every UFC edition page —
+// the largest URL family this collection has. ⚠ It was found by READING A LIVE
+// PAGE, not by grepping: the same file branches correctly on isMarketClosed()
+// for the identical string in `editionJsonLd`, twenty lines below, so a source
+// search for the bug pattern would have landed on the version that was right.
+//
+// ⭐ SO THIS WALKS ALL FIVE HELPERS, not the one that was broken. Pinning
+// `editionPageMetadata` alone would have re-created the blind spot one level
+// down. ⓘ Measured at the time: set / player / team / series were already
+// clean (they route FMV through fmvClosedQualifier), so this was one defect,
+// not five — the guard exists to keep it that way.
+
+import {
+  editionPageMetadata,
+  setPageMetadata,
+  playerPageMetadata,
+  teamPageMetadata,
+  seriesPageMetadata,
+} from "@/lib/seo"
+
+describe("closed-market entity-detail metadata", () => {
+  const closedSlugs = Object.keys(CLOSED_MARKETS)
+
+  // Each helper with a payload rich enough to exercise every branch that could
+  // append a liveness claim — an FMV present AND absent, since the edition bug
+  // lived in a part of the string that fired either way.
+  const helpers = (slug: string) => [
+    ["edition (priced)", editionPageMetadata({ route_slug: "x", player_name: "P", set_name: "S", tier: "T", series_label: "1", circulation_count: 23970, fmv: { fmv_usd: 12 } }, slug)],
+    ["edition (unpriced)", editionPageMetadata({ route_slug: "x", player_name: "P", set_name: "S" }, slug)],
+    ["set", setPageMetadata({ set_name: "S", edition_count: 3, total_circulation: 100, fmv_total_usd: 99 }, slug, "s")],
+    ["player", playerPageMetadata({ name: "P", team: "T", edition_count: 3, fmv_total_usd: 99 }, slug, "p")],
+    ["team", teamPageMetadata({ team_name: "T", player_count: 2, edition_count: 3, fmv_total_usd: 99 }, slug, "t")],
+    ["series", seriesPageMetadata({ display_label: "Series 1", edition_count: 3, set_count: 2, fmv_total_usd: 99 }, slug, "1")],
+  ] as const
+
+  it("has helpers and closed markets to check (population control)", () => {
+    expect(closedSlugs.length).toBeGreaterThan(0)
+    expect(helpers(closedSlugs[0]!).length).toBe(6)
+  })
+
+  it("no closed-market entity description makes a liveness claim", () => {
+    let checked = 0
+    for (const slug of closedSlugs) {
+      for (const [name, m] of helpers(slug)) {
+        const desc = String(m.description ?? "")
+        expect(desc.length, `${slug}/${name}: empty description`).toBeGreaterThan(20)
+        expect(desc, `${slug}/${name}: "${desc}"`).not.toMatch(LIVENESS)
+        checked += 1
+      }
+    }
+    expect(checked).toBe(closedSlugs.length * 6)
+  })
+
+  it("…and every one still DISCLOSES the closure, so silence is not how they pass", () => {
+    // Without this, deleting the FMV sentence entirely would satisfy the case
+    // above — a description that says nothing claims nothing.
+    for (const slug of closedSlugs) {
+      const cm = closedMarket(slug)!
+      for (const [name, m] of helpers(slug)) {
+        const desc = String(m.description ?? "")
+        expect(desc, `${slug}/${name} does not name the closure`).toContain(formatClosedOn(cm.closedOn))
+      }
+    }
+  })
+
+  it("NO-CHANGE CONTROL — a live market keeps its liveness copy", () => {
+    // A fix that stripped the tail for everyone would satisfy both cases above
+    // while flattening the description on ~23K live entity pages.
+    const live = editionPageMetadata({ route_slug: "x", player_name: "P", set_name: "S" }, "nba-top-shot")
+    expect(String(live.description)).toMatch(LIVENESS)
+    expect(String(live.description)).toContain("Live FMV")
+  })
+})
