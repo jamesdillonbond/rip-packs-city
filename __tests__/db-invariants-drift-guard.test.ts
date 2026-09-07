@@ -322,6 +322,11 @@ const PINS = [
     migration: "supabase/migrations/20260907005829_audit_20260907_get_edition_related_the_edition_pages_more_from_this_player_and_set_block.sql",
   },
   {
+    fn: "sync_ts_listings_from_atlas",
+    test: "supabase/tests/sync_ts_listings_from_atlas.sql",
+    migration: "supabase/migrations/20260907020428_audit_20260907_ts_listings_from_atlas_the_topshot_sniper_serial_feed_is_back_with_a_verify_probe.sql",
+  },
+  {
     fn: "mcp_get_fmv",
     test: "supabase/tests/mcp_get_fmv.sql",
     migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",

@@ -444,7 +444,7 @@ async function fetchTopShotPool(
   try {
     const { data, error } = await boundedRead((supabase as any)
       .from("ts_listings")
-      .select("listing_id, flow_id, set_id, play_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked, listed_at, ingested_at")
+      .select("listing_id, flow_id, set_id, play_id, parallel_id, serial_number, circulation_count, price_usd, player_name, set_name, moment_tier, series_number, is_locked, listed_at, ingested_at")
       .order("ingested_at", { ascending: false })
       .limit(200), "ts_listings");
 
@@ -465,6 +465,7 @@ async function fetchTopShotPool(
       flow_id: string;
       set_id: number | null;
       play_id: number | null;
+      parallel_id: number | null;
       serial_number: number;
       circulation_count: number;
       price_usd: number;
@@ -476,11 +477,17 @@ async function fetchTopShotPool(
       listed_at: string | null;
       ingested_at: string | null;
     }) => {
+      // 2026-09-07: ts_listings is fed from the Atlas firehose again, and every row
+      // carries the on-chain set/play (and the parallel's subedition id) straight
+      // from the marketplace event. Those are the edition's IDENTITY - use them
+      // first, and fall back to the name-tuple lookup only for a row without them
+      // (the old GHA writer's shape). A name match can pick a same-named set in
+      // another series; an id cannot.
       const editionKey = editionKeyMap.get(r.flow_id);
-      // Parse edition key "setId:playId" into setPlay IDs
       const parts = editionKey?.split(":") ?? [];
-      const setID = parts[0] ?? "";
-      const playID = parts[1] ?? "";
+      const setID = r.set_id != null ? String(r.set_id) : (parts[0] ?? "");
+      const playID = r.play_id != null ? String(r.play_id) : (parts[1] ?? "");
+      const parallelID = r.parallel_id != null && r.parallel_id > 0 ? r.parallel_id : 0;
       return {
         id: r.flow_id,
         circulationCount: r.circulation_count ?? 0,
@@ -492,7 +499,7 @@ async function fetchTopShotPool(
         setSeriesNumber: r.series_number ?? 0,
         isLocked: r.is_locked ?? false,
         listingOrderID: r.listing_id,
-        setPlay: { setID, playID },
+        setPlay: { setID, playID, parallelID },
         // Prefer the actual on-chain listing time; fall back to when our
         // ingest job first saw the row. Either is dramatically better than
         // "now", which would make every TS deal show as "Just now".
@@ -1586,7 +1593,10 @@ async function computeSniperFeed(opts: {
   // fake -99% deal), and flag thin-data FMV. Loaded once per feed build.
   const fmvGuard = await loadTopshotFmvGuard(supabase as any).catch(() => new Map());
 
-  // 1. Fetch TS listings (Flowty marketplace shut down May 2026 — TS GQL only).
+  // 1. Fetch TS listings - ts_listings, rebuilt every 2 min from the Atlas
+  //    firehose (open Dapper-marketplace listings verified in the last 24 h;
+  //    migration 20260907020428). Before 2026-09-07 this table held one row
+  //    from May and the feed was edition-level only.
   const { listings: tsListings, tsCount } = await fetchTopShotPool(supabase as any, sink);
 
   console.log(`[sniper-feed] fetched ts=${tsListings.length}`);

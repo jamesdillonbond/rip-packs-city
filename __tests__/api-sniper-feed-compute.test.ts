@@ -301,3 +301,64 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
     expect(body.deals[0].confidenceSource).toBe("ask_proxy")
   })
 })
+
+// ── 2026-09-07: ts_listings is Atlas-fed and carries the on-chain identity ──
+// The rows now come from the Dapper-marketplace firehose with set/play (and the
+// parallel's subedition id) on every row. The route must key the edition off
+// THOSE, not off the (player|set|series) name tuple: a name match can pick a
+// same-named set in another series, or miss entirely on a punctuation drift,
+// and an unpriced row is a deal the reader never sees.
+describe("sniper-feed prices Atlas-fed ts_listings through their on-chain ids", () => {
+  it("prices a row whose names match NOTHING in get_editions_for_sniper, because set_id/play_id identify it", async () => {
+    fx.tables = enrichedTables({
+      ts_listings: {
+        data: Array.from({ length: 26 }, (_, i) =>
+          tsListing({
+            listing_id: `A${i}`,
+            flow_id: `N${i}`,
+            set_id: 1,
+            play_id: 2,
+            parallel_id: 0,
+            // deliberately unmatched by the name-tuple RPC fixture
+            player_name: "S. Curry",
+            set_name: "Base Set (Series 4)",
+            series_number: 99,
+            serial_number: i + 10,
+            price_usd: 10 + i,
+          }),
+        ),
+      },
+    })
+    const body = await (await GET(get("?collection=nba-top-shot"))).json()
+    expect(body.deals.length).toBeGreaterThan(0)
+    expect(body.deals[0].editionKey).toBe("1:2")
+    expect(body.deals[0].aspUsd).toBe(95)
+  })
+
+  it("keys a parallel printing to its ::subedition edition, never the base", async () => {
+    fx.tables = enrichedTables({
+      ts_listings: {
+        data: Array.from({ length: 26 }, (_, i) =>
+          tsListing({ listing_id: `P${i}`, flow_id: `Q${i}`, set_id: 1, play_id: 2, parallel_id: 17, serial_number: i + 10, price_usd: 10 + i }),
+        ),
+      },
+      editions: {
+        data: [
+          { id: "uuid-1-2", external_id: "1:2", set_id_onchain: 1, play_id_onchain: 2, thumbnail_url: "https://img/1-2.png" },
+          { id: "uuid-1-2-17", external_id: "1:2::17", set_id_onchain: 1, play_id_onchain: 2, thumbnail_url: "https://img/1-2-17.png" },
+        ],
+      },
+      fmv_current: {
+        data: [
+          { edition_id: "uuid-1-2", fmv_usd: 100, wap_usd: 95, floor_price_usd: 80, confidence: "HIGH", days_since_sale: 2, sales_count_30d: 14, computed_at: "2026-07-16T00:00:00Z" },
+          { edition_id: "uuid-1-2-17", fmv_usd: 400, wap_usd: 380, floor_price_usd: 300, confidence: "HIGH", days_since_sale: 2, sales_count_30d: 9, computed_at: "2026-07-16T00:00:00Z" },
+        ],
+      },
+    })
+    const body = await (await GET(get("?collection=nba-top-shot"))).json()
+    expect(body.deals.length).toBeGreaterThan(0)
+    expect(body.deals[0].editionKey).toBe("1:2::17")
+    // priced off the PARALLEL's own FMV (asp 380), not the base's (95)
+    expect(body.deals[0].aspUsd).toBe(380)
+  })
+})
