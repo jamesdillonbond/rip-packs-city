@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-07 · ✅ VERIFIED A PARALLEL SESSION'S FIX AGAINST A BASELINE ONLY THIS SESSION HELD — the reconcile heartbeat works, and the one blind spot it opens is named · Claude Code (cloud)
+
+**A fix shipped between my diagnosis and my next look, and it took the variant I had named as the survivor.** Migration `20260907155956` makes `reconcile_wmc_metadata_from_editions()` log EVERY completed tick, zero-write included — the option its own header quotes from my commit `8a7ee0be4`: *"the row is written at tick END inside the same transaction, so it cannot claim a tick that died."* ⭐ **Its falsifier was checkable only because this session had measured the BEFORE**, and `pipeline_runs` retains ~73 h, so that window was closing.
+
+| | pre-fix (~13 h) | post-fix (5.3 h) |
+|---|---|---|
+| ticks logged / expected at 30-min cadence | **12 / 26** (46%) | **11 / 11** (100%) |
+| max gap between rows | **180 min** | **30 min** — exactly the cadence |
+| gaps past `max_silent_minutes = 100` | **2** | **0** |
+| previously-invisible ticks now recorded | — | **4 of 11** |
+
+**The ~3.7 false alarms/day are gone, and sensitivity is untouched** — the detector was not modified, only the data it reads, and a tick that dies still rolls its row back into silence.
+
+⚠ **AND IT OPENS ONE BLIND SPOT, WHICH IS THE PART WORTH KEEPING.** The failure mode *"runs, succeeds, examines its window, corrects nothing — forever"* used to be caught **incidentally**, by the very silence that produced the false positives. It now logs `ok = true` every 30 min, so `detect_stalled_pipelines()` cannot fire (rows are arriving) and `check_pipelines_running_but_not_succeeding()` cannot fire (it keys on `ok_runs = 0 AND work_done = 0`).
+
+⭐ **VERIFIED FROM `pg_proc.prosrc`, NOT INFERRED:** the migration added `extra.no_op` as *"the shape-independent field an observer keys on"* — and **neither arm keyed on this pipeline reads it**, nor does any view, nor any `cron.job` command. ⚠ **This is CLAUDE.md's own rule caught one step short:** *"fix the guard AND the field an observer keys on."* **The field was fixed; no observer keys on it yet.** ⛔ Not a criticism of the migration — the trade is clearly right, a daily false positive is worse than a latent gap — but a gap is not closed by the existence of the field that could close it.
+
+⛔ **THE OBVIOUS ARM IS WRONG, so it is filed as a non-fix rather than a quick win.** *"Alert on N consecutive `no_op` ticks"* fails here because **post-drain a long no-op streak is the DESIGNED state** (the watchlist row's own note: *"post-drain it writes 2–220 rows/hour by design"*). No threshold on `rows_written` separates converged from wedged — both look identical from the self-report. ➡ Closing it needs an **OUTCOME** check (do `wallet_moments_cache` rows still disagree with `editions`?), which is the standing rule *"measure the OUTCOME table, not the self-report"* — ⚠ **sized first**, because this reconciler was the DB's #1 physical reader at the old cadence and a naive drift count could reintroduce exactly the cost the cadence change removed.
+
+ⓘ **Not urgent, and said so on the filing:** no evidence the failure mode has ever occurred; `detect_stalled_pipelines()` is `[]`, jobid 456 is 28/28 succeeded. **A note for whoever next touches that arm, not a queued fix.** Detail: inbox `2026-09-07T2130Z`.
+
+**Docs-only; all queries read-only. Inbox-index guard green (counts re-derived, 09-07 6 → 7).** **Revert:** `git revert` the commit. Nothing in the DB or production changed.
+
 ### 2026-09-07 · ✅ Caught the tree up from three no-push sessions, and shipped the ONE variant of the heartbeat that a parallel session's refutation left standing — `wmc-metadata-reconcile` now logs every completed tick · Claude Code on Trevor's box, Trevor: "get us caught up, address everything pending in the tree"
 
 **Catch-up.** The mount held the output of three sessions that all failed to push (nightly pass — no cloud credential; two `rpc-daytime-monitor` ticks; a Cowork laptop session whose device flow Trevor declined) while **33 commits landed upstream**. Spliced into the *current* tree rather than writing back the copies they read: two ledger entries (+2 headings), the 09-07 metrics, a session entry, three inbox filings, INDEX 404 → 407 with counts re-derived by `npm run inbox:index:fix`. Guards held — swallowed-headings **3**, future-dated **0**, 5/5 INDEX assertions (`ed8d546c1`).

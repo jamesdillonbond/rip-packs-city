@@ -1,4 +1,4 @@
-# Inbox index — 408 live filings
+# Inbox index — 409 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-09-07 — 6 filings
+## 2026-09-07 — 7 filings
+
+- [✅ VERIFIED against the pre-fix baseline: the reconcile heartbeat fix takes logged ticks from 12/26 to 11/11 and gaps from 180 min to 30 — and the ONE blind spot it opens is named, with the closing field (`extra.no_op`) confirmed written-but-read-by-nothing](2026-09-07T2130Z-the-reconcile-heartbeat-fix-verified-and-the-one-blind-spot-it-opens.md)
 
 - [⭐ **`/insights/pack-reality` renders an HONEST empty state (verified by rendered DOM) — but the 0311Z diagnosis is REFUTED: `pack_drop_pool` froze on 08-28 and the `atlas` pool is a 57-distribution July seed**](2026-09-07T1603Z-pack-reality-is-empty-because-the-pack-drop-pool-froze-on-08-28-and-the-atlas-pool-is-a-57-dist-july-seed.md) — *(Claude Code on Trevor's box. READ-ONLY diagnosis, nothing shipped for this item. **Answers the open ask in `2026-09-07T0311Z` and refutes its diagnosis.**)* The page is fine: one `.rpc-pr-state` block carrying the stale-source copy, the false `No +EV packs right now.` claim **absent**, both probe controls passing — the 09-01 third-state fix working on live traffic. ⛔ But the board is **not** "genuinely empty": `pack_drop_pool` froze with the GQL host on **2026-08-28** (`gql` 767 dists, `gql_historical` 1,161 — both last refreshed 08-28), and the `atlas` pool that `refresh_atlas_pack_ev()` walks is a **57-distribution static seed last refreshed 2026-07-17**, seven weeks before the Atlas restoration work and not part of it. Distinct packs priced/day: **308–836 → a flat 145–152** at the change point, unchanged for 10 days, under `ok` 24/24 throughout (green-pipeline-blind-to-its-own-work). ⛔ Do NOT widen the MV gates — all 12 freshly-priced positive-EV packs are **92–99 % depleted**, so failing closed is right. Lever is repopulating the pack pool from Atlas = **#65**, actively being shipped by another session → **queued for coordination**. ⚠ Two method notes: `innerText` is CSS-**uppercased**, so a case-sensitive DOM substring probe returns false for copy that IS present (it reported the honest clause absent) — always run controls; and `pack_ask_state` has **1,995 rows claiming `is_listed=TRUE` with a price against 96 checked in 48 h**, ~1,899 live-market assertions on up-to-11-day-old evidence (unaudited, own sweep wanted).
 
