@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-06 · ✅ EVERY UFC EDITION PAGE'S DESCRIPTION CONTRADICTED ITSELF — "Historical value, not a present-day price … Live FMV" in one sentence run — and the guard that should have caught it only walked the TAB copy · Claude Code (cloud)
+
+**Found by reading a live page, not by grepping** — and that distinction is the entry. Continuing the closed-market sweep onto UFC's biggest URL family, a production fetch of `/ufc/edition/TAI-TUIVASA-UFC-264-KO-TKO-23970` returned a `<meta name="description">` reading:
+
+> "…before its **Flow market closed on 13 May 2026**. Historical value, **not a current price**. Tier CONTENDER. Series 1. Circulation 23,970. **Live FMV**, recent sales, history chart, and packs that contained this edition."
+
+The last clause was an **unconditional** tail on `editionPageMetadata`'s `descParts`, so it appended to the closed-market branch as readily as the live one. Live on every UFC edition page.
+
+🚨 **THE SAME FILE ALREADY GOT IT RIGHT TWENTY LINES BELOW.** `editionJsonLd`'s `Product.description` branches on `isMarketClosed()` for the *identical* string. ⭐ **That is why a grep would not have found this:** searching the source for the bug pattern lands on the version that is correct, and the broken one is the same words with no branch around it. **The page had to be read.**
+
+ⓘ **MEASURED, not assumed — it was ONE defect, not five.** I probed all five entity-detail helpers on a closed market before touching anything: `set` / `player` / `team` / `series` route their FMV through `fmvClosedQualifier()` and were already clean. Only `edition` had a hand-written tail.
+
+**Shipped:** the tail is conditional (`"Sales history, the FMV history chart, and the packs that contained this edition."` when closed), and *"not a current price"* became *"not a present-day price"* — **the third time this session that a token collision was resolved by changing the COPY rather than teaching the ban to parse negation.** The ban stays blunt because it only has to be right, not clever.
+
+🚨 **THE REAL FIX IS THE GUARD'S BLIND SPOT, and it is worth stating plainly: I wrote that guard earlier tonight and it did not cover this.** `closed-market-tab-copy-carries-no-liveness-claim` walked `pageMetadata` — the TAB copy — and stopped there, while the entity-detail helpers build their own descriptions and were never inspected. **A guard is silent about whatever its DERIVATION does not reach**, and mine reached one of two metadata families. It now walks **all five entity helpers × both the priced and unpriced branch**, with:
+· the liveness ban (the defect itself);
+· ⭐ **a disclosure assertion** — every closed-market description must still name the closure date, so **silence is not how a description passes**: without it, deleting the FMV sentence entirely would have satisfied the ban;
+· **a no-change control** — a live edition must still say "Live FMV", because a fix that stripped the tail for everyone would have satisfied both of the above while flattening ~23K live entity descriptions.
+
+⚠ **A control of mine PASSED WHEN IT SHOULD HAVE FAILED, and the mutation was wrong rather than the guard.** Testing the disclosure assertion, I deleted the "Historical value…" sentence — and it still passed, because the closure DATE lives in the *preceding* clause. Re-run with the date itself removed, it fails by name. **A control that passes is not evidence until you have checked it could have failed for the reason you think.** The other two (the exact bug restored; the fix over-applied to live markets) failed first time.
+
+ⓘ **Swept and NOT changed, named so it is not re-filed:** the edition hero's `Current FMV` tile already renders an em-dash on a closed market (deliberate, 2026-08-04) — a labelled empty slot, not a false number; `/api/og/edition` and `/api/og/moment` already suppress the figure; `set`/`player`/`team`/`series` as above. **With this, the closed-market sweep covers tabs, chrome, tools grid, sniper, entity metadata, JSON-LD, OG cards and hero tiles.**
+
+**Full suite green (1488 files / 16504 tests), tsc clean.** **Revert:** `git revert` the code commit. Nothing in the DB changed. **Watch:** nothing time-based — the guard is the watch.
+
 ### 2026-09-06 · ✅ UFC'S SNIPER TAB IS RETIRED — Trevor: "we should just get rid of the sniper section for ufc since there is no market currently" · Claude Code (cloud)
 
 **The decision, and it is the right one.** Earlier this evening I made the UFC sniper *honest* — the header stopped saying LIVE DEALS, the metadata stopped advertising a live market. Trevor's call goes further and is better: **an archive of dead discounts is still a tool nobody can act on**, which the read-only product rule already forbids offering. UFC Strike's Flow market last traded **13 May 2026**.
