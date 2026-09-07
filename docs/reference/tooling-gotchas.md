@@ -986,3 +986,31 @@ easy to miss.**
 a stop. The fix while unpushed is `git reset --soft origin/main && git reset`, then re-stage
 deliberately. (Same family as the `.gitignore` swallow: *a clean `git status` afterwards is consistent
 with both outcomes.*)
+
+## 🚨 `innerText` RETURNS CSS-TRANSFORMED TEXT — a case-sensitive DOM substring probe is a FALSE-NEGATIVE MACHINE (2026-09-07)
+
+**This matters more here than the bug count suggests: CLAUDE.md records that the scheduled `E2E DOM Smoke` badge is the ENTIRE client-side detection surface** (Sentry has dropped every event since 08-18, Vercel sees only server execution, no `window.onerror`). A probe method that silently answers "absent" is therefore the failure mode with the least backstop on the platform.
+
+**What happened.** Verifying the honesty canon on `/insights/pack-reality` — does the empty +EV board render an honest state? — the probe was:
+
+```js
+const body = await p.locator('body').innerText()
+body.includes('No +EV packs right now.')   // the FALSE claim — must be absent
+body.includes('our data being behind')     // the HONEST clause — must be PRESENT
+```
+
+**Both returned `false`.** The second one is on the page, in the block the same script had just printed. `.rpc-pr-state` carries `text-transform: uppercase`, and **`innerText` returns the text as RENDERED, so the DOM string is `OUR DATA BEING BEHIND`.** Had only the first probe been written — the natural way round, since the false claim is what you are hunting — it would have read "the false claim is absent" and the page would have been declared honest **by a probe incapable of finding it.** The conclusion would have been right by luck.
+
+**Why the controls caught it and reading the output did not.** The script also dumped every `.rpc-pr-state` block, and that output plainly showed the honest sentence. Two artefacts of the same run disagreed and the eye went to the one that confirmed the expectation. **Only re-running with an explicit pair of controls settled it:**
+
+```js
+const body = (await p.locator('body').innerText()).toUpperCase()
+// positive control: a string KNOWN to be on the page
+body.includes('PACK REALITY')          // must be PRESENT, or the probe is broken
+// negative control: a string known NOT to be
+body.includes('ZZZ_NOT_ON_THIS_PAGE')  // must be absent, or the probe is broken
+```
+
+**THE RULE.** Any DOM substring probe: **normalise case on both sides**, and ship a **positive AND a negative control in the same run**. Without the positive control, `false` is indistinguishable from "the probe cannot see anything" — the shape CLAUDE.md names as *"a permanently-zero instrument is indistinguishable from a broken one"*, and the sibling of *"prove a watcher can see a FAILURE before relying on it."*
+
+⚠ **Also blind for the same reason:** `text-transform: lowercase | capitalize`, `::before` / `::after` content (absent from `innerText` entirely), and `visibility: hidden` subtrees. When the assertion is about *specific copy* rather than presence, prefer a scoped locator (`page.locator('.rpc-pr-state').allInnerTexts()`) and assert on that array — the block that printed the truth here — over a whole-`body` substring search.

@@ -199,6 +199,7 @@ Full detail: [docs/reference/tooling-gotchas.md](docs/reference/tooling-gotchas.
 - ⚠ **Revoke `FROM PUBLIC, anon, authenticated` in ONE statement** — either half alone leaves a grant (this DB carries a PUBLIC default AND `ALTER DEFAULT PRIVILEGES`). Verify with `has_function_privilege`, never the acl text; re-run `check_secdef_anon_exec_drift()` after creating ANY function.
 - ⚠ **`check_*` functions have MIXED return shapes.** A jsonb-array one returns `count(*) = 1` when CLEAN — read the array LENGTH; a SETOF one returns **zero rows** when clean. **Check the return type before interpreting the count** (which is which: [database.md](docs/reference/database.md)).
 - ⚠ **`rows_written = 0` is a null instrument with three incompatible meanings** (correct-and-broken, wrong-and-healthy, correct-and-failing) and `ok = false` is overloaded the same way. Read `extra` and `last_error`; never retire a pipeline on `rows_written`. ⚠ **An IDENTICAL `rows_written` across a success and a failure is a stale cache being rewritten, not health** (`ownership-sync-dune`, [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)). Measure the OUTCOME table, not the self-report. ⚠ **`extra.<step>=0` is the SAME null instrument one level down** — pair every per-step count with an `_error` field.
+- ⚠ **A `*_at` name is not its contract — read `col_description()` before treating a timestamp as freshness.** 3 such columns here; one cost a retraction: [database.md](docs/reference/database.md).
 - **`pipeline_runs` retains ~73h** — a missing record is usually a RETENTION ARTIFACT; `pipeline_runs_daily` is indefinite but **six-hourly**, so never read it for RECENCY.
 - **`apply_migration` for DDL; `execute_sql` for reads/verification.** ⚠ `CREATE INDEX CONCURRENTLY` is reachable ONLY via a **one-statement pg_cron job** (libpq), never `execute_sql`. FMV writes are delete-then-insert, NEVER upsert. Always query `information_schema.columns` before writing a route handler; Supabase MCP multi-statement queries return only the last result.
 
@@ -231,9 +232,7 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 
 ### Enums
 
-- `fmv_snapshots.confidence` is UPPERCASE: `HIGH · MEDIUM · LOW · NO_DATA · ASK_ONLY · SALES_ONLY · STALE`. **Never `.ilike` an enum column — use `.eq`.** ⚠ `nba_player_projections.confidence` allows only `HIGH | MED | LOW` (3-letter MED).
-- `tier_type` spans all collections (Top Shot COMMON→ULTIMATE; UFC CHALLENGER/CONTENDER/FANDOM) — full list in `database.md`.
-- `chain_type`: `flow | ethereum | polygon | solana | flow_evm`. `chain` lives on `collections` ONLY; dependent rows reach it via `collection_id` FK, and `collection_chains` is the canonical join view.
+- **Never `.ilike` an enum column — use `.eq`**; `fmv_snapshots.confidence` is UPPERCASE. ⚠ Two confidence vocabularies — `nba_player_projections.confidence` allows only 3-letter `MED`. Value lists (`fmv_confidence`, `tier_type`): [database.md](docs/reference/database.md). `chain_type`, and why `chain` lives on `collections` ONLY: [chain-strategy.md](docs/reference/chain-strategy.md).
 
 ### Series map (on-chain UInt32 → display name)
 
