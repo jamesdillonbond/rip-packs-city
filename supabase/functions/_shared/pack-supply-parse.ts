@@ -62,6 +62,15 @@ export function buildTopshotPoolPayload(
 ): PoolRow[] {
   const countByExt = new Map<string, number>()
   for (const e of eds) countByExt.set(e.ext, (countByExt.get(e.ext) ?? 0) + (e.count || 0))
+  // fabricated-divisor: intentional — SUPPRESSED, NOT ABSOLVED. If every parsed
+  // ext has count 0 this writes drop_weight 0 for the whole distribution, which
+  // is a claim ("never drops") the data does not support; the honest answer is
+  // to emit no rows. Measured 2026-09-07: 0 of the gql_historical distributions
+  // in pack_drop_pool are degenerate (sum(orig_drop_weight) = 0), so it is
+  // LATENT. Not fixed here because the fix must land in this module AND the
+  // hand-copy in backfill-topshot-pack-supply/index.ts AND an edge deploy, and
+  // bundling an edge deploy into a display fix destroys the attribution.
+  // EXIT: fix both copies + deploy, then delete this marker.
   const totalCount = [...countByExt.values()].reduce((s, c) => s + c, 0) || 1
   return [...countByExt.entries()]
     .filter(([ext]) => opts.idByExt.has(ext))

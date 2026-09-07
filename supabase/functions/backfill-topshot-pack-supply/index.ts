@@ -182,6 +182,9 @@ async function backfillPool(limit: number, conc: number) {
       // PK makes the upsert throw "ON CONFLICT ... cannot affect row a second time".
       const countByExt = new Map<string, number>()
       for (const e of eds) countByExt.set(e.ext, (countByExt.get(e.ext) ?? 0) + (e.count || 0))
+      // fabricated-divisor: intentional — the hand-copy of the _shared mirror's
+      // suppression. Same reason, same exit condition; see
+      // supabase/functions/_shared/pack-supply-parse.ts.
       const totalCount = [...countByExt.values()].reduce((s, c) => s + c, 0) || 1
       const payload = [...countByExt.entries()].filter(([ext]) => idByExt.has(ext)).map(([ext, count]) => ({ collection_id: TS, dist_id: row.dist_id, edition_id: idByExt.get(ext)!, edition_flow_id: ext, drop_weight: Number((count / totalCount).toFixed(6)), orig_drop_weight: count, slot_name: "default", pool_source: "gql_historical", last_refreshed_at: new Date().toISOString() }))
       if (payload.length) { const { error: ue } = await supabase.from("pack_drop_pool").upsert(payload, { onConflict: "collection_id,dist_id,edition_id,slot_name" }); if (ue) { lastErr = lastErr || ue.message; fail++; return } poolRows += payload.length }

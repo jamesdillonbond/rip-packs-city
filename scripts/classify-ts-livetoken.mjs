@@ -377,11 +377,13 @@ function printDryRunPreview({
   console.log(`suspicious (delta > 5 min):    ${suspicious.length}`)
   console.log("")
   console.log("method breakdown (matched rows):")
-  const total = matched.length || 1
+  // A share of zero matched rows is undefined, not 0.0%. The `|| 1` this
+  // replaces printed a measured-looking "0.0%" per method on an empty run.
+  const total = matched.length
   for (const m of METHODS) {
     const c = breakdown[m] || 0
-    const pct = ((c / total) * 100).toFixed(1)
-    console.log(`  ${m.padEnd(20)} ${c.toString().padStart(5)}  ${pct.padStart(5)}%`)
+    const pct = total > 0 ? `${((c / total) * 100).toFixed(1)}%` : "n/a"
+    console.log(`  ${m.padEnd(20)} ${c.toString().padStart(5)}  ${pct.padStart(6)}`)
   }
   console.log("")
   console.log("delta stats:")

@@ -970,6 +970,48 @@ describe("CollectionProfileClient", () => {
     expect(document.body.textContent).toContain("\u2193")
   })
 
+  it("draws a FLAT series through the middle of the box, not along its bottom", async () => {
+    // ⚠ THE SAME COPY-PASTE PAIR, ONE EXPRESSION DOWN. The `|| 1` fixed above was
+    // the 30D ratio; `Sparkline` in both files carried a second one,
+    // `const range = max - min || 1`, which sent every point of a flat series to
+    // (v - min) / 1 === 0 — the line drawn hard along the BOTTOM edge, reading as
+    // "fell to the low of the window and stayed" for a wallet that simply did not
+    // change. Pinned on BOTH siblings deliberately: the register's own lesson is
+    // that fixing one and trusting the other is how this class survives.
+    mount({
+      wallets: () => json(200, { wallets: [WALLET()] }),
+      snapshots: () => json(200, { snapshots: SNAPS(500, 500) }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    const poly = document.body.querySelector("polyline")
+    const boxHeight = Number(poly?.closest("svg")?.getAttribute("height"))
+    const pts = (poly?.getAttribute("points") ?? "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((q) => Number(q.split(",")[1]))
+    expect(pts.length, "no sparkline points to inspect").toBeGreaterThan(1)
+    expect(Number.isFinite(boxHeight) && boxHeight > 0, "no svg height to reason about").toBe(true)
+    expect(pts.every((y) => y === boxHeight / 2), `flat series drawn at ${pts.join(",")}`).toBe(true)
+  })
+
+  it("still spreads a VARYING series across the box on this sibling (no-change control)", async () => {
+    mount({
+      wallets: () => json(200, { wallets: [WALLET()] }),
+      snapshots: () => json(200, { snapshots: SNAPS(100, 500) }),
+    })
+    await waitFor(() => expect(document.body.textContent).toMatch(/Damian Lillard/))
+    const poly = document.body.querySelector("polyline")
+    const boxHeight = Number(poly?.closest("svg")?.getAttribute("height"))
+    const pts = (poly?.getAttribute("points") ?? "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((q) => Number(q.split(",")[1]))
+    expect(new Set(pts).size).toBeGreaterThan(1)
+    expect(Math.max(...pts) - Math.min(...pts)).toBe(boxHeight - 4)
+  })
+
   it("renders sniper deals when the feed has them", async () => {
     mount({
       sniper: () => json(200, {

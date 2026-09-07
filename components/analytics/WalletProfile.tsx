@@ -577,8 +577,14 @@ function RolePanel({
             Collection mix
           </div>
           {collections.map(([key, val]) => {
-            const total = stats?.total_principal_usd || 1
-            const pct = ((val?.principal_usd ?? 0) / total) * 100
+            // A share OF ZERO is undefined, not zero. The fabricated "|| 1"
+            // denominator this replaces published a measured "0%" for every
+            // collection on a wallet whose funded loans all carry a NULL
+            // principal_usd: the RPC COALESCEs that SUM to 0, so the total and
+            // every part go to 0 together. Measured 2026-09-07: 2 of 16 borrower
+            // wallets in flowty_funded_loans are in that state (a dated sample).
+            const total = stats?.total_principal_usd ?? 0
+            const pct = total > 0 ? ((val?.principal_usd ?? 0) / total) * 100 : null
             return (
               <div key={key} className="flex items-center gap-2 text-xs">
                 {/* brand-exception: data-viz collection swatch fallback color */}
@@ -593,7 +599,7 @@ function RolePanel({
                   {fmtUsd(val?.principal_usd ?? 0)}
                 </span>
                 <span className="text-[color:var(--rpc-text-muted)] tabular-nums w-12 text-right">
-                  {pct.toFixed(0)}%
+                  {pct == null ? "—" : `${pct.toFixed(0)}%`}
                 </span>
               </div>
             )

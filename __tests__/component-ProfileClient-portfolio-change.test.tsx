@@ -70,6 +70,15 @@ async function mountWith(totals: number[]) {
   return r
 }
 
+/** The y coordinate of every sparkline point, in order. */
+function ys(container: HTMLElement): number[] {
+  return (container.querySelector("polyline")?.getAttribute("points") ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => Number(p.split(",")[1]))
+}
+
 beforeEach(() => window.history.replaceState({}, "", "/profile/trevor"))
 afterEach(() => {
   cleanup()
@@ -92,6 +101,41 @@ describe("30-day change is omitted when it cannot be computed", () => {
     // `sparkChange >= 0` on a null would paint a genuine gain red.
     const { container } = await mountWith([0, 500])
     expect(container.querySelector("polyline")?.getAttribute("stroke")).toBe("#34D399")
+  })
+
+  it("draws a FLAT series through the middle, not along the bottom of the box", async () => {
+    // ⚠ Same fabricated-denominator class as the percentage above, one component
+    // down. `const range = max - min || 1` sent every point of a flat series to
+    // (v - min) / 1 === 0, so the polyline was drawn hard along the BOTTOM edge —
+    // visually indistinguishable from a portfolio that fell to the low of its
+    // window and stayed there. A dormant wallet is unchanged, not at its low.
+    // Pin on the PROPERTY (y is the vertical centre), not on the old spelling.
+    const flat = await mountWith([500, 500, 500])
+    const flatPts = ys(flat.container)
+    const boxHeight = Number(flat.container.querySelector("svg")?.getAttribute("height"))
+    expect(flatPts.length).toBe(3)
+    expect(Number.isFinite(boxHeight) && boxHeight > 0, "no svg height to reason about").toBe(true)
+    // The honest flat render is the vertical centre — asserted against the box's
+    // OWN height, so the pin survives a caller changing the sparkline size.
+    expect(flatPts.every((y) => y === boxHeight / 2), `flat series drawn at ${flatPts.join(",")}`).toBe(true)
+    cleanup()
+
+    // ⚠ And the property that names the defect: a flat series must not sit where
+    // the LOWEST point of a real series sits. Measured from a varying series in
+    // the same box rather than from a constant, so it cannot drift apart.
+    const varying = await mountWith([100, 500])
+    const bottomY = Math.max(...ys(varying.container))
+    expect(flatPts[0]! < bottomY, `flat ${flatPts[0]} vs bottom ${bottomY}`).toBe(true)
+  })
+
+  it("still spreads a VARYING series across the full box (no-change control)", async () => {
+    // The control that stops the fix above from reading as correct because it
+    // centred everything. A real series must still use the vertical range.
+    const { container } = await mountWith([100, 500])
+    const pts = ys(container)
+    expect(new Set(pts).size).toBeGreaterThan(1)
+    const boxHeight = Number(container.querySelector("svg")?.getAttribute("height"))
+    expect(Math.max(...pts) - Math.min(...pts)).toBe(boxHeight - 4)
   })
 
   it("colours a decline red", async () => {

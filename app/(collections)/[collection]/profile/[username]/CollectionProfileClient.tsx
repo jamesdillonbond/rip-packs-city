@@ -137,10 +137,16 @@ function Sparkline(props: { data: number[]; width?: number; height?: number; col
   if (data.length < 2) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
-  const range = max - min || 1;
+  // A FLAT series has no shape, and a fabricated denominator invents one. The
+  // `max - min || 1` this replaces mapped every point to (v - min) / 1 === 0,
+  // which draws the line hard along the BOTTOM of the box — visually identical
+  // to a series that fell to the low of its window and stayed there. A wallet
+  // whose snapshots are all equal (dormant, or a single value repeated) is not
+  // "at its low"; it is unchanged. Draw it through the middle instead.
+  const span = max - min;
   const points = data.map(function(v, i) {
     const x = (i / (data.length - 1)) * width;
-    const y = height - ((v - min) / range) * (height - 4) - 2;
+    const y = span > 0 ? height - ((v - min) / span) * (height - 4) - 2 : height / 2;
     return x + "," + y;
   }).join(" ");
   return (

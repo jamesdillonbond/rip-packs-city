@@ -583,9 +583,15 @@ async function main() {
       const elapsed = (Date.now() - startTime) / 1000;
       const blocksProcessed = batchEnd - startHeight;
       const blocksRemaining = endHeight - batchEnd;
-      const blocksPerSec = blocksProcessed / (elapsed || 1);
-      const etaSeconds = blocksRemaining / (blocksPerSec || 1);
-      const etaMin = Math.round(etaSeconds / 60);
+      // An ETA with no elapsed time and no processed blocks is not an
+      // estimate. The `|| 1` fallbacks this replaces substituted a fabricated
+      // 1-second / 1-block-per-second denominator, so a run that had processed
+      // nothing yet printed `blocksRemaining / 60` minutes as if measured.
+      const blocksPerSec = elapsed > 0 ? blocksProcessed / elapsed : null;
+      const etaMin =
+        blocksPerSec != null && blocksPerSec > 0
+          ? `${Math.round(blocksRemaining / blocksPerSec / 60)}min`
+          : "unknown";
 
       console.log(
         `[${new Date().toISOString()}] ` +
@@ -595,7 +601,7 @@ async function main() {
           `Skipped: ${totalSkipped.toLocaleString()} | ` +
           `GQL resolved: ${gqlResolved.toLocaleString()} | ` +
           `Still missing: ${editionsMissing.toLocaleString()} | ` +
-          `ETA: ${etaMin}min`,
+          `ETA: ${etaMin}`,
       );
       lastLogHeight = batchStart;
     }

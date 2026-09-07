@@ -39,13 +39,66 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 // divisor substitution, and is deliberately untouched: the pattern below only
 // matches a `|| N` sitting in DENOMINATOR position, i.e. immediately after `/`.
 
-const ROOTS = ["app", "lib", "components", "workers"] as const
+// ── ROOTS: WIDENED 2026-09-07, and the widening is the point ────────────────
+//
+// The first four roots were a curated list, and CLAUDE.md's standing rule is to
+// prefer a TREE WALK over one. `scripts` and `supabase/functions` were outside
+// it, and their exclusion rested on nothing — the edge fns are outside the
+// coverage gates entirely, so no other instrument was looking. Enrolling them
+// on the widened patterns below surfaced three real sites; each is now either
+// fixed or carries a written suppression on the line.
+const ROOTS = ["app", "lib", "components", "workers", "scripts", "supabase/functions"] as const
 
 /**
  * Division whose denominator is a `||`/`??` fallback to a literal.
  * Anchored on the `/` so a bare `x || 1` anywhere else is not enrolled.
  */
 const FABRICATED_DIVISOR = /\/\s*\(\s*[A-Za-z0-9_$.[\]?!]+\s*(?:\|\||\?\?)\s*-?\d+(?:\.\d+)?\s*\)/g
+
+/**
+ * The CLAMP spelling of the same substitution: `x / Math.max(y, 1)`. It reads as
+ * a divide-by-zero guard and is the identical value substitution — a ratio
+ * against zero is undefined, and clamping the denominator to 1 reports a
+ * fabricated finite number instead. Population was already zero when this was
+ * added, so it is a pure ban with no debt.
+ */
+const CLAMPED_DIVISOR = /\/\s*Math\.max\(\s*[A-Za-z0-9_$.[\]?!()]+\s*,\s*-?\d+(?:\.\d+)?\s*\)/g
+
+/**
+ * ── THE HOISTED SPELLING, and why this guard needed it ──────────────────────
+ *
+ * Both patterns above anchor on the `/`, so they only see the substitution when
+ * it is written INSIDE the division. Name it first and the guard goes blind:
+ *
+ *     const total = stats?.total_principal_usd || 1     // <- invisible
+ *     const pct = (part / total) * 100
+ *
+ * That is not hypothetical. `components/analytics/WalletProfile.tsx` carried
+ * exactly it — inside this guard's OWN roots, under a green CI, for as long as
+ * the guard has existed — and published a measured "0%" collection-mix share
+ * for every wallet whose funded loans all carry a NULL principal_usd (2 of 16
+ * borrower wallets on 2026-09-07). The two `Sparkline` copies carried the same
+ * shape as `max - min || 1`, drawing a FLAT series along the bottom of the box
+ * as though it sat at the low of its window.
+ *
+ * A declaration is enrolled only when BOTH hold:
+ *   1. its initialiser falls back to a NON-ZERO numeric literal — `?? 0` is not
+ *      this class, because dividing by an explicit 0 yields Infinity/NaN, which
+ *      is loud, not a plausible-looking measurement; and
+ *   2. the identifier is actually used in denominator position in the same file.
+ *
+ * ⚠ (2) is deliberately strict about what counts as a `/`. A first cut matched
+ * any `/` before the name and reported `?? 1`/`?? 148.0` constants whose names
+ * merely appeared inside URL PATHS ("/api/fmv/demo", "/serial-premiums") — two
+ * false positives out of seven. The divisor must be preceded by a value-ish
+ * character and not followed by another path segment.
+ */
+const HOISTED_DECL =
+  /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*?(?:\|\||\?\?)\s*-?(?!0(?:\.0+)?\b)\d+(?:\.\d+)?\s*(?:[;\n)]|$)/gm
+
+function usedAsDivisor(src: string, id: string): boolean {
+  return new RegExp(`[\\w$)\\]]\\s*\\/\\s*\\(?\\s*${id.replace(/\$/g, "\\$")}(?![\\w$/-])`).test(src)
+}
 
 /**
  * Deliberate, reviewed exception.
@@ -88,42 +141,99 @@ const OPT_OUT_LOOKBACK = 3
  * 49 newly-visible files — a real negative result, not an absence of looking.
  */
 
+/**
+ * ⚠ WIDENED 2026-09-07, in the one direction that cannot leak. The fixed 3-line
+ * lookback is kept verbatim (it exists because these expressions WRAP, so the
+ * flagged line's neighbours are often code, not prose) and is now UNIONed with
+ * the contiguous comment block immediately above the line.
+ *
+ * Reason: a suppression worth honouring states WHY, and a real justification
+ * does not fit in three lines. BOTH suppressions written the day this widened
+ * were silently ignored by the 3-line rule — an escape hatch that quietly does
+ * nothing is worse than none, because the author believes it took.
+ *
+ * The block walk stops at the FIRST non-comment line, so unlike a bigger fixed
+ * number it can never reach across code to excuse something below it.
+ */
+export function isSuppressed(rawLines: string[], i: number): boolean {
+  if (rawLines.slice(Math.max(0, i - OPT_OUT_LOOKBACK), i + 1).some((l) => OPT_OUT.test(l))) return true
+  for (let j = i - 1; j >= 0; j--) {
+    const t = (rawLines[j] ?? "").trim()
+    if (!(t.startsWith("//") || t.startsWith("*") || t.startsWith("/*"))) return false
+    if (OPT_OUT.test(rawLines[j]!)) return true
+  }
+  return false
+}
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry)
     if (statSync(full).isDirectory()) {
       if (entry === "node_modules" || entry === ".next") continue
       walk(full, out)
-    } else if (entry.endsWith(".ts") || entry.endsWith(".tsx")) {
+    } else if (/\.(ts|tsx|mjs|js)$/.test(entry) && !entry.includes(".test.")) {
+      // ⚠ .mjs/.js added with the `scripts` root: the repo's analysis scripts are
+      // .mjs, and one of them (classify-ts-livetoken) carried the class. A walk
+      // that reaches a directory but not its file extension is not a walk.
       out.push(full)
     }
   }
   return out
 }
 
-function offenders(): { file: string; line: number; text: string }[] {
-  const hits: { file: string; line: number; text: string }[] = []
+type Hit = { file: string; line: number; text: string; kind: string }
+
+/** Line index (0-based) of a character offset, for the hoisted matches. */
+function lineOf(src: string, index: number): number {
+  let n = 0
+  for (let i = 0; i < index && i < src.length; i++) if (src[i] === "\n") n++
+  return n
+}
+
+function offenders(): Hit[] {
+  const hits: Hit[] = []
   for (const root of ROOTS) {
     for (const full of walk(join(process.cwd(), root))) {
       const raw = readFileSync(full, "utf8")
       const stripped = stripComments(raw)
-      if (!FABRICATED_DIVISOR.test(stripped)) {
-        FABRICATED_DIVISOR.lastIndex = 0
-        continue
-      }
-      FABRICATED_DIVISOR.lastIndex = 0
       const rawLines = raw.split("\n")
-      stripped.split("\n").forEach((line, i) => {
-        FABRICATED_DIVISOR.lastIndex = 0
-        if (!FABRICATED_DIVISOR.test(line)) return
-        const window = rawLines.slice(Math.max(0, i - OPT_OUT_LOOKBACK), i + 1)
-        if (window.some((l) => OPT_OUT.test(l))) return
-        hits.push({
-          file: relative(process.cwd(), full).split(sep).join("/"),
-          line: i + 1,
-          text: (rawLines[i] ?? "").trim().slice(0, 120),
+      const file = relative(process.cwd(), full).split(sep).join("/")
+
+      // The opt-out is honoured identically for every kind: on the flagged line
+      // or any of the OPT_OUT_LOOKBACK lines above it.
+      const suppressed = (i: number) => isSuppressed(rawLines, i)
+      const push = (i: number, kind: string) => {
+        if (suppressed(i)) return
+        hits.push({ file, line: i + 1, text: (rawLines[i] ?? "").trim().slice(0, 120), kind })
+      }
+
+      // ── inline spellings, line by line ──
+      for (const [kind, re] of [
+        ["inline", FABRICATED_DIVISOR],
+        ["clamp", CLAMPED_DIVISOR],
+      ] as const) {
+        re.lastIndex = 0
+        if (!re.test(stripped)) {
+          re.lastIndex = 0
+          continue
+        }
+        re.lastIndex = 0
+        stripped.split("\n").forEach((line, i) => {
+          re.lastIndex = 0
+          if (re.test(line)) push(i, kind)
         })
-      })
+        re.lastIndex = 0
+      }
+
+      // ── hoisted spelling: whole-file, because the declaration and the
+      //    division are on different lines by construction ──
+      HOISTED_DECL.lastIndex = 0
+      let m: RegExpExecArray | null
+      while ((m = HOISTED_DECL.exec(stripped)) !== null) {
+        if (!usedAsDivisor(stripped, m[1])) continue
+        push(lineOf(stripped, m.index), "hoisted")
+      }
+      HOISTED_DECL.lastIndex = 0
     }
   }
   return hits
@@ -136,7 +246,25 @@ describe("no fabricated divisor", () => {
     // point — and this repo has already shipped that bug once, in
     // server-page-data-access-ratchet's `pages.length > 10`.
     const files = ROOTS.flatMap((r) => walk(join(process.cwd(), r)))
-    expect(files.length, "the walk must find .ts/.tsx files at all").toBeGreaterThan(200)
+    expect(files.length, "the walk must find source files at all").toBeGreaterThan(200)
+  })
+
+  it("EVERY root contributes files — a root added but not reached is a silent hole", () => {
+    // ⚠ The rule this pins: an exclusion (or an inclusion that reaches nothing)
+    // is a CLAIM. `scripts` and `supabase/functions` were added on 2026-09-07;
+    // asserting only the total would let either of them contribute ZERO — a
+    // typo'd path, a moved directory — while the aggregate stayed comfortably
+    // above 200 on the four original roots alone.
+    for (const r of ROOTS) {
+      expect(walk(join(process.cwd(), r)).length, `root "${r}" reached no files`).toBeGreaterThan(0)
+    }
+  })
+
+  it("the walk reaches .mjs, not only .ts/.tsx", () => {
+    // The `scripts` root is mostly .mjs. Enrolling the directory without the
+    // extension would have read as coverage while measuring nothing there.
+    const scripts = walk(join(process.cwd(), "scripts"))
+    expect(scripts.some((f) => f.endsWith(".mjs")), "no .mjs reached under scripts/").toBe(true)
   })
 
   it("the pattern matches the shape it names, and NOT the benign ones (guards the guard)", () => {
@@ -153,6 +281,17 @@ describe("no fabricated divisor", () => {
       expect(FABRICATED_DIVISOR.test(src), `should flag: ${src}`).toBe(true)
     }
 
+    // The CLAMP spelling.
+    for (const src of [
+      "const r = x / Math.max(y, 1)",
+      "const r = x / Math.max(counts.length, 1)",
+    ]) {
+      CLAMPED_DIVISOR.lastIndex = 0
+      expect(CLAMPED_DIVISOR.test(src), `should flag: ${src}`).toBe(true)
+    }
+    CLAMPED_DIVISOR.lastIndex = 0
+    expect(CLAMPED_DIVISOR.test("const r = x / Math.max(y, z)")).toBe(false)
+
     const benign = [
       // A parse fallback: `|| 1` is not in denominator position.
       'const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1)',
@@ -166,6 +305,50 @@ describe("no fabricated divisor", () => {
       FABRICATED_DIVISOR.lastIndex = 0
       expect(FABRICATED_DIVISOR.test(src), `should NOT flag: ${src}`).toBe(false)
     }
+  })
+
+  it("the HOISTED detector fires on the real shapes and not on the two it over-matched", () => {
+    // ⚠ POSITIVE CONTROL FIRST, and it is not decoration: an earlier revision of
+    // this detector used `\\bactive\\b`-style over-narrow anchoring in a sibling
+    // guard and passed when it should have failed. Both fixtures below are the
+    // VERBATIM shapes found in the tree on 2026-09-07.
+    const hoistedFires = (src: string) => {
+      HOISTED_DECL.lastIndex = 0
+      let m: RegExpExecArray | null
+      while ((m = HOISTED_DECL.exec(src)) !== null) if (usedAsDivisor(src, m[1])) return true
+      return false
+    }
+
+    expect(
+      hoistedFires("const total = stats?.total_principal_usd || 1\nconst pct = ((v ?? 0) / total) * 100"),
+      "the WalletProfile shape must be caught",
+    ).toBe(true)
+    expect(
+      hoistedFires("const range = max - min || 1;\nconst y = height - ((v - min) / range) * h;"),
+      "the Sparkline shape must be caught",
+    ).toBe(true)
+    expect(
+      hoistedFires("const totalCount = xs.reduce((s, c) => s + c, 0) || 1\nconst w = count / totalCount"),
+      "the pack-supply shape must be caught",
+    ).toBe(true)
+
+    // NOT the class: `?? 0` divides by an explicit zero, which is loud
+    // (Infinity/NaN), not a plausible-looking finite measurement.
+    expect(hoistedFires("const total = s?.count ?? 0\nconst pct = (v / total) * 100")).toBe(false)
+
+    // NOT the class: the name only appears inside a URL PATH. Both of these
+    // were real false positives before `usedAsDivisor` was tightened.
+    expect(
+      hoistedFires('const fmv = sample?.fmv ?? 148.0\nconst r = await fetch("/api/fmv/demo")'),
+      "a name inside a URL path is not a divisor",
+    ).toBe(false)
+    expect(
+      hoistedFires('const serial = r.headline_serial ?? 1\nconst href = "/serial-premiums"'),
+      "a name inside a URL path is not a divisor",
+    ).toBe(false)
+
+    // NOT the class: declared with a fallback but never divided by.
+    expect(hoistedFires("const limit = parseInt(x, 10) || 50\nconst rows = all.slice(0, limit)")).toBe(false)
   })
 
   it("the comment stripper is load-bearing (this file would flag itself without it)", () => {
@@ -202,6 +385,40 @@ describe("no fabricated divisor", () => {
     expect(farWindow.some((l) => OPT_OUT.test(l))).toBe(false)
   })
 
+  it("the opt-out reaches through a MULTI-LINE justification block, and stops at code", () => {
+    // ⚠ Drives the real `isSuppressed`, not a re-implementation — the same
+    // discipline the 3-line test above already applies.
+    //
+    // Positive: a 6-line justification whose marker is on the FIRST line. Under
+    // the old fixed window this returned false, and both suppressions shipped
+    // that day were ignored without any signal.
+    const block = [
+      "// fabricated-divisor: intentional — a stated reason,",
+      "// which runs on for several lines because it names the",
+      "// measured population, why the fix is not here, and the",
+      "// exit condition that would let the marker be deleted.",
+      "// Three lines is not enough room for any of that.",
+      "const totalCount = xs.reduce((s, c) => s + c, 0) || 1",
+    ]
+    expect(isSuppressed(block, 5), "a marker at the top of an adjacent comment block must count").toBe(true)
+
+    // Negative: the block is broken by a line of CODE, so the marker above it
+    // must NOT excuse the offender below. This is the property a bigger fixed
+    // lookback would have lost.
+    const broken = [
+      "// fabricated-divisor: intentional — belongs to the line below it",
+      "const somethingElse = compute()",
+      "",
+      "",
+      "",
+      "const totalCount = xs.reduce((s, c) => s + c, 0) || 1",
+    ]
+    expect(isSuppressed(broken, 5), "a marker separated by code must not reach").toBe(false)
+
+    // And an unmarked block stays unsuppressed however long it is.
+    expect(isSuppressed(["// just a comment", "// and another", "const x = a / (b || 1)"], 2)).toBe(false)
+  })
+
   it("no source file divides by a fabricated denominator", () => {
     const hits = offenders()
     expect(
@@ -211,7 +428,7 @@ describe("no fabricated divisor", () => {
         "direction/colour from the SERIES, not from the now-null ratio). If a case is\n" +
         "genuinely deliberate, add `fabricated-divisor: intentional` with a reason, on the\n" +
         `flagged line or any of the ${OPT_OUT_LOOKBACK} lines above it.\n` +
-        hits.map((h) => `  - ${h.file}:${h.line}  ${h.text}`).join("\n"),
+        hits.map((h) => `  - [${h.kind}] ${h.file}:${h.line}  ${h.text}`).join("\n"),
     ).toBe(0)
   })
 })

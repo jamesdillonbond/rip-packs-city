@@ -242,6 +242,41 @@ describe("WalletProfile — position transfers + role-panel depth", () => {
     expect(text).toContain("15.0%") // lender avg APR
   })
 
+  it("renders a DASH, not a measured 0%, for the collection mix when the total principal is zero", () => {
+    // ⚠ Pin on the PROPERTY, not the spelling. A share of zero is undefined;
+    // the `total_principal_usd || 1` this replaces fabricated a $1 denominator
+    // and published "0%" as a measurement for every collection on a wallet whose
+    // funded loans all carry a NULL principal_usd (the RPC COALESCEs that SUM to
+    // 0, so the total and every part go to 0 together — 2 of 16 borrower wallets
+    // on 2026-09-07). The assertion is the ABSENCE of the false claim, then the
+    // presence of the dash, in that order.
+    const data = baseData({
+      as_borrower: { loan_count: 3, total_principal_usd: 0, first_seen_at: "2026-01-01", last_seen_at: "2026-07-01" },
+      borrower_collection_breakdown: { topshot: { loan_count: 3, principal_usd: 0 } },
+    })
+    const { container } = render(<WalletProfile data={data} />)
+    const text = container.textContent ?? ""
+    expect(text).toContain("Collection mix")
+    expect(text).not.toContain("0%")
+    // ⚠ Scoped to the share cell. A bare `toContain("—")` on the whole panel
+    // would pass off some OTHER dash (the default-rate cell renders one too),
+    // i.e. for a reason unrelated to the fix.
+    const shareCells = Array.from(container.querySelectorAll("span.w-12")).map((n) => n.textContent)
+    expect(shareCells.length).toBeGreaterThan(0)
+    expect(shareCells.every((t) => t === "—")).toBe(true)
+  })
+
+  it("still renders a real percentage when the total principal is non-zero (no-change control)", () => {
+    // ⚠ The control that stops the fix above from reading as correct because it
+    // suppressed EVERYTHING. Same component, same panel, a populated total.
+    const data = baseData({
+      as_borrower: { loan_count: 4, total_principal_usd: 400, first_seen_at: "2026-01-01", last_seen_at: "2026-07-01" },
+      borrower_collection_breakdown: { topshot: { loan_count: 3, principal_usd: 300 } },
+    })
+    const { container } = render(<WalletProfile data={data} />)
+    expect(container.textContent ?? "").toContain("75%")
+  })
+
   it("expands a loan row and shows term + term-rate detail from term_seconds / interest_rate", () => {
     const data = baseData({
       recent_as_borrower: [

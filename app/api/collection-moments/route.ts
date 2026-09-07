@@ -171,6 +171,10 @@ export async function GET(req: NextRequest) {
     console.log("[collection-moments] resolved wallet input %s → %s", walletInput, wallet)
 
     const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1)
+    // fabricated-divisor: intentional — `|| 50` is a PARSE fallback for a
+    // caller-supplied page size, not a substitution for a measured quantity.
+    // `total_pages` below divides by it, and dividing a real total by the page
+    // size actually in effect is the correct answer, not an invented one.
     const limit = Math.min(200, Math.max(1, parseInt(sp.get("limit") ?? "50", 10) || 50))
     const sortBy = VALID_SORTS.has(sp.get("sortBy") ?? "") ? sp.get("sortBy")! : "fmv_desc"
     const playerFilter = sp.get("player")?.trim() || null
