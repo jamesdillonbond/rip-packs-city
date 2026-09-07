@@ -57,11 +57,27 @@ The API's `meta.ranker_staleness.stale_count = 3` is therefore **correct**, and 
 08-29 onward   149 149 152 150 145 145 145 150 150 147
 ```
 
-A 5x collapse with a sharp change point at the host death, flat ever since. The 3 packs that pass every gate are all `pool_source = 'gql'` only, with `pack_drop_pool.last_refreshed_at` = 08-28 and `pack_ask_state.last_checked_at` = **2026-08-27 02:58Z**.
+A 5x collapse with a sharp change point at the host death, flat ever since. The 3 packs that pass every gate are all `pool_source = 'gql'` only, with `pack_drop_pool.last_refreshed_at` = **08-28**.
 
-## The wider exposure this surfaced (not yet filed anywhere)
+⚠ **Their `pack_ask_state.last_checked_at` also reads 2026-08-27, and that is NOT corroborating evidence — see the retraction below.** Those three asks (\$388 / \$774 / \$19.88) are re-verified every 5 minutes and are genuinely live; the stamp is frozen by design. **What is stale is the EV RECOMPUTE, not the price feed** — `pack_ev_history.snapshotted_at` for these dists, because `refresh_atlas_pack_ev()` walks only the 57-dist `atlas` pool and these three are `gql`-pool. The pool diagnosis above stands on `pack_drop_pool` and `pack_ev_history` alone and does not depend on the ask-state stamp at all.
 
-`pack_ask_state` for `nba-top-shot`: **2,042 rows, 1,995 of them `is_listed = TRUE` with a `lowest_ask` — but only 96 checked in the last 48 h.** So ~1,899 rows assert "listed at $X" on evidence up to 11 days old. This is the memory `pack-availability-flags-are-snapshot-columns` at scale: **gate on `last_checked_at`, never on `is_listed` alone.** Any surface trusting that flag is making a live-market claim from an 11-day-old reading. Not audited this pass — worth its own sweep.
+## ⛔ RETRACTED — the "wider exposure" in the first version of this filing was MY OWN MEASUREMENT ERROR
+
+**The original claim (WRONG, retained so the error is legible):** *"`pack_ask_state` holds 1,995 rows `is_listed = TRUE` with a `lowest_ask` but only 96 checked in 48 h, so ~1,899 rows assert 'listed at $X' on evidence up to 11 days old. Gate on `last_checked_at`, never on `is_listed` alone."*
+
+⛔ **That is false, and acting on it would have made an accurate surface inaccurate** — the precise failure CLAUDE.md warns about under *"a filed FINDING is a hypothesis."* Gating `pack_table_rows.live_ask` on `last_checked_at` freshness would have **hidden 2,876 genuinely-live asks** across both collections.
+
+**What refuted it, re-derived 2026-09-07 ~14:2x PT:**
+
+- `snapshot-pack-asks` runs **every 5 minutes, `ok=true`, ~3 s**, and its `extra.per_collection` reports `total_listed` = **1,995** (nba-top-shot) and **981** (nfl-all-day) — *exactly* the `is_listed = TRUE` counts — with **`dropped: 0` on every tick**. The complete book is fetched and re-verified 5-minutely. A tick at 21:08Z recorded `changed: 3`, so the change-detection is live, not wedged.
+- `upsert_pack_ask_state` **does** demote rows missing from the payload (`SET is_listed = false … WHERE NOT EXISTS (SELECT 1 FROM _fresh …)`). `dropped: 0` therefore means every one of those rows was present upstream this tick — that is the positive control.
+- ⭐ **`last_checked_at` is not a freshness column.** Migration `20260827030000` made the upsert change-detected (`WHERE s.is_listed = false OR lowest_ask IS DISTINCT … OR pack_listing_id IS DISTINCT`) to stop rewriting every row every tick — **386 MB of WAL/day, "the worst WAL-per-unit-of-information ratio measured on this instance."** An unchanged row keeps its old stamp by design.
+- 🚨 **The column carries a COMMENT that says exactly this, and I did not read it before measuring:** *"MEANING CHANGED 2026-08-26: this is now 'last CHANGED', not 'last checked'. … **Do NOT hang a staleness or freshness monitor on this column** — the same trap as `saved_wallets.cache_updated_at` and `edition_fmv_current.refreshed_at`. For sweep freshness read `pipeline_runs` where `pipeline = 'snapshot-pack-asks'`, which is written on every tick."* That migration swept six caller sources and found nothing reading the column; my "finding" was the seventh reader it warned about not existing.
+- The "oldest check 2026-08-27 02:58Z" that looked like a host death is just **the migration's own apply time** — the last moment every row was unconditionally rewritten.
+
+⭐ **The lesson, which is the only durable output of this section: read the COLUMN COMMENT before treating a timestamp as freshness.** A `*_at` column name is not its contract. Three columns on this database now carry this same trap.
+
+✅ **`pack_table_rows.live_ask` and `secondary_available` are HONEST.** No change wanted, and the memory `pack-availability-flags-are-snapshot-columns` does **not** apply to `pack_ask_state.is_listed` — that flag is re-verified every 5 minutes.
 
 ## Risk read and suggested action
 
