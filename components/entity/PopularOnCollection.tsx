@@ -1,6 +1,8 @@
 // components/entity/PopularOnCollection.tsx
 //
-// Server-rendered public fan-out for the per-collection /overview page. The
+// Server-rendered public fan-out for the per-collection /overview page — and,
+// since 2026-09-07, the five indexable client-shell tabs (see the cache note
+// above `loadPopularCached`). The
 // overview page itself is a client component whose prominent links (Tools,
 // "View all") point at auth-gated tabs that 302→/login for an anonymous
 // crawler. This block adds real, server-rendered links into public entity
@@ -14,6 +16,7 @@
 // pe.id, so those link to /disney-pinnacle/edition/<id>.
 
 import Link from "next/link"
+import { unstable_cache } from "next/cache"
 import { getCollection } from "@/lib/collections"
 import { fetchHubRows, fetchLinkRows } from "@/lib/entity/popular-on-collection-fetchers"
 import { slugifyName } from "@/lib/entity-labels"
@@ -146,10 +149,62 @@ function HubRow({ label, links }: { label: string; links: HubLink[] }) {
   )
 }
 
+type PopularData = {
+  linkRes: Awaited<ReturnType<typeof loadLinks>>
+  hubRes: Awaited<ReturnType<typeof loadHubs>>
+}
+
+async function loadPopularUncached(collection: string): Promise<PopularData> {
+  const [linkRes, hubRes] = await Promise.all([loadLinks(collection), loadHubs(collection)])
+  return { linkRes, hubRes }
+}
+
+// Thrown INSIDE the cached callback so a failed read is never stored for the
+// whole revalidate window — `unstable_cache` does not cache a rejection. The
+// caller unwraps the result it carries, so a failure costs ONE read, not two.
+class PopularReadFailed extends Error {
+  constructor(public readonly result: PopularData) {
+    super("popular-on-collection read failed")
+  }
+}
+
+// 2026-09-07 (Search Console pass, part three). This block is now mounted on
+// the five indexable client-shell tabs (collection / sniper / analytics / sets /
+// market) as well as /overview — those tabs serve Googlebot ≤ 180 chars of
+// <main> and ZERO entity links before hydration (measured 2026-09-07 03:30Z on
+// every published collection), so the fan-out is the only server-rendered
+// crawl path on them. Six routes × per-request reads is not acceptable on a
+// SMALL compute tier, and /overview's `revalidate = 3600` never applied (the
+// route renders dynamic: `cache-control: private, no-store`, `x-vercel-cache:
+// MISS` on every hit), so the two bounded reads are cached here, per
+// collection, for an hour, on the Data Cache — which works on a dynamic route.
+//
+// ⚠ Outside a Next request scope (vitest, a bare Node script) `unstable_cache`
+// throws its `incrementalCache missing` invariant on CALL; the fallback below
+// runs the reads uncached, which is the pre-2026-09-07 behaviour exactly.
+const loadPopularCached = unstable_cache(
+  async (collection: string): Promise<PopularData> => {
+    const result = await loadPopularUncached(collection)
+    if (!result.linkRes.ok || !result.hubRes.ok) throw new PopularReadFailed(result)
+    return result
+  },
+  ["popular-on-collection-v1"],
+  { revalidate: 3600, tags: ["popular-on-collection"] },
+)
+
+export async function loadPopularOnCollection(collection: string): Promise<PopularData> {
+  try {
+    return await loadPopularCached(collection)
+  } catch (e) {
+    if (e instanceof PopularReadFailed) return e.result
+    return loadPopularUncached(collection)
+  }
+}
+
 export default async function PopularOnCollection({ collection }: { collection: string }) {
   const coll = getCollection(collection)
   if (!coll) return null
-  const [linkRes, hubRes] = await Promise.all([loadLinks(collection), loadHubs(collection)])
+  const { linkRes, hubRes } = await loadPopularOnCollection(collection)
   const links = linkRes.links
   const hubs = hubRes.hubs
 
