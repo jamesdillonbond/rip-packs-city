@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-06 · ✅ /ufc/sniper told a dead market it had LIVE DEALS — in the SERVER-RENDERED body, where the status banner cannot reach · Claude Code (cloud), found by verifying the metadata ship in production
+
+**Found by the verification, not by a grep — which is the part worth keeping.** Checking the closed-market metadata fix on the live deployment, the returned HTML carried the corrected `<title>` and `og:/twitter:description` *and* this, in the page body: `LIVE DEALS BELOW ADJUSTED FMV — BADGE-AWARE, SERIAL-ADJUSTED`, on `/ufc/sniper`, whose Flow market last traded **13 May 2026**. ⭐ **A metadata fix is not a page fix.** The false claim I had just removed from the `<head>` was still being rendered, in larger type, to the reader.
+
+🚨 **`MarketplaceStatusBanner` is on that page and does NOT cover this.** It resolves its status **client-side**, so the shell a reader — and a crawler — receives first carries the false line with nothing beside it, and **if that fetch fails nothing ever corrects it**. This is the "a page with one honest error branch is not an honest page" rule with a timing edge on it: the disclosure has to be in **synchronously-rendered** copy, which is exactly the reason `lib/market-closed.ts` is a static map and not a DB read ("the surfaces that most need this fact are pure/synchronous").
+
+**Shipped (code):** the subtitle moves out of an inlined ternary into `lib/sniper/header-copy.ts` → `sniperSubtitle(slug, isPinnacle)`, **derived from `closedMarket()`** and checked BEFORE the Pinnacle branch (there is no live Pinnacle deal on a closed venue either). Closed markets render `FLOW MARKET CLOSED 13 MAY 2026 — FINAL OBSERVED DISCOUNTS, NOTHING IS TRADING`; live markets are byte-identical to before.
+
+**Guard:** `__tests__/sniper-header-says-no-live-deals-on-a-closed-market.test.ts` — over **every** entry in `CLOSED_MARKETS` × both branches of the live ternary: no liveness token, the venue and date both named, population count asserted, plus a **no-change control** (three live slugs keep their exact copy) and a **not-a-no-op control** (the closed line differs from both live lines). A second leg bans the literal from `SniperClient.tsx` itself, because the case history is that it *was* an inlined ternary and re-inlining is the failure mode. **Both positive controls run:** disabling the closure branch reds it by slug; re-inlining the literal reds the source leg.
+
+⚠ **My own first copy failed my own guard, and the fix is the general lesson.** I wrote `… — LAST OBSERVED DISCOUNTS, NOT LIVE DEALS`; the token ban caught the word inside the negation. **Rather than teach the ban to reason about negation, the copy dropped the word** — a ban that has to parse "not" is a ban that will eventually be wrong, and a label scanned at a glance reads better without it either way.
+
+⛔ **The source leg does NOT use `scripts/lib/strip-comments.mjs`, deliberately.** CLAUDE.md records that helper failing silently three times, and its failure mode is a **FALSE GREEN**. The banned patterns were instead chosen to be absent from this file's prose, so the check works on raw source; a future comment quoting the old subtitle in full would red it, which is the safe direction.
+
+ⓘ **Swept, and this is the only one:** a literal-string sweep for present-tense market claims across `app/(collections)/[collection]/**` and `components/{collection,sniper}` returns exactly this subtitle. `"What Is Live Here"` on the overview is Candy MLB's copy — a live collection.
+
+**Verification of the metadata half, on the live deployment (`dpl_5HvJbgQJETgoRzCaNqwiQ9DZNaz7`, sha `9909fb8b6`, READY):** `/ufc/sniper` returns `<title>UFC Strike Deals — Archive of the Final Flow Discounts | Rip Packs City</title>` and `description` / `og:description` / `twitter:description` all reading *"The Flow market for UFC Strike closed on 13 May 2026, so there are no deals to snipe…"*. ⚠ Direct egress to `www.rippackscity.com` is **403 at the sandbox proxy** (as the register already records), so this was read through the Vercel deployment URL — same build, same handler.
+
+**Revert:** `git revert` the code commit ("fix(honesty): the Sniper header stops advertising LIVE DEALS…"); deleting `lib/sniper/header-copy.ts` requires restoring the inlined ternary. Nothing in the DB changed. **Watch:** nothing time-based — the guard is the watch.
+
 ### 2026-09-06 · ✅ SEO part two — `/pricing` out of the footer (Trevor), `get_edition_related` gives every edition page a "More from this player / set" block, parallels cards stop routing through `/moment/<uuid>`, pack-dist and account-value titles match the queries that land on them · Cowork (cloud + device VM), Trevor: "Take /pricing out of the footer and keep going"
 
 **`/pricing`:** footer link removed (`components/SiteFooter.tsx`), sitemap entry removed (static 10 → 9), page `robots: {index:false, follow:true}`; still public and reachable from every `upgrade_url`. It was the site's #1 internal-link target (27,566) for a page that says the product is free.
