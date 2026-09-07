@@ -525,6 +525,12 @@ tuning. ⛔ **And do not "make the declarations real" as a batch:** several jobs
 past their declared value (jobid 217 declares 120 s and has succeeded at 595 s), so enforcing them
 would convert working runs into failures. See known-issues **#43**.
 
+### Displaced from CLAUDE.md 2026-09-07 (verbatim) — the timeouts bullet and the `net._http_response` clause, to pay for the bounded-queue-walk rule
+
+- ⚠ **Timeouts (A/B 08-27): a function's `SET statement_timeout` is inert on pg_cron (44/248 overrun) but via PostgREST a HIGHER one RAISES it** (30→60 s; lower inert) — **and the Supabase GATEWAY hard-caps that path at ~120 s (`504 upstream request timeout`), so 48 declarations >120 s are unreachable on BOTH paths.** ⛔ **122 of 195 exceed 30 s: load-bearing, do NOT strip as no-ops.** ⚠ `anon`/`auth` not re-probed; `authenticator`'s 8 s stands (**no 3 s bound on anon compute**). [database.md](database.md) (this file).
+
+⚠ **For a pg_cron `net.http_get` pipeline, `net._http_response` splits dispatched / killed / answered with NO deploy.**
+
 ## 🚨 A CORRELATED SUBQUERY AGAINST A `DISTINCT ON` VIEW RE-MATERIALISES THE WHOLE VIEW ONCE PER OUTER ROW (measured 2026-09-02)
 
 **The shape.** `pack_ev_latest` is a view of `pack_ev_history` with
