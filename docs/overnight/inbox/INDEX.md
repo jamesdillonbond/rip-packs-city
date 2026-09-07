@@ -1,4 +1,4 @@
-# Inbox index — 403 live filings
+# Inbox index — 404 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-09-07 — 1 filing
+## 2026-09-07 — 2 filings
+
+- [UFC serves six anon-public soft-404 tab URLs and three other collections do too (~19) — none is in the sitemap, all predate the sniper retirement, and the redirect pin is deliberately ONE-WAY so it cannot claim the class is handled](2026-09-07T0330Z-ufc-serves-six-anon-public-soft-404s-and-three-other-collections-do-too.md)
 
 - [`/api/best-offers` breaks out of its chunk loop on a failed read, so a missing offer renders as a dash — enrichment-only, so it is a false claim ONLY where the baseline was already null; the error RATE is unmeasured and sizes the whole item](2026-09-07T0200Z-best-offers-breaks-out-of-its-chunk-loop-on-error-and-a-missing-offer-renders-as-a-dash.md)
 
