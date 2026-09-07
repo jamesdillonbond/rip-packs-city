@@ -49,7 +49,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Daily Portfolio Snapshot | /api/cron/daily-portfolio-snapshot | daily 07:05 UTC |
 | RPC EVM Transfers Ingest | /api/cron/evm-transfers-ingest | hourly :19 |
 | RPC Lock Check Batch | /api/cron/lock-check-batch | 8,38 — ✅ FIXED (was brushing 30s cap) |
-| RPC Offers Sweep | /api/cron/offers-sweep | 2,22,42 | ⚠ dead host (public-api.nbatopshot.com 530 since 08-28); kept ACTIVE behind the upstream circuit breaker (c8ac905). |
+| RPC Offers Sweep | /api/cron/offers-sweep | ~~2,22,42~~ **INACTIVE 2026-09-07 02:5xZ** (job 7712610, console) | Dead host (530 since 08-28) — the breaker made every tick `ok=true skipped`, which read as health. Replaced: `edition_offers.low_ask` from Atlas every 2 min (`20260907022120`/`024130`), `highest_offer` from job 7735311 (on-chain) + Atlas for verified editions. Watchlist row retired `20260907024754`. Re-enable in the console = revert. |
 | RPC Ownership On-chain Walk | /api/cron/ownership-onchain-walk | daily 13:30 UTC ⟨exec-derived⟩ — NEW |
 | RPC Pinnacle Events Ingest | /api/cron/pinnacle-events-ingest | 4,19,34,49 |
 | RPC Pinnacle Metadata Backfill | /api/cron/pinnacle-metadata-backfill | hourly :22 |
