@@ -409,3 +409,10 @@ The three payments, none of which lost an instruction:
    `find-swallowed-ledger-headings.awk` still prints **3**, a COUNT, never `| wc -l` ·
    `find-future-dated-ledger-headings.mjs` prints **0**, dates PT vs CI's UTC) are all still stated, as a
    semicolon list instead of three sentences. Full recipe: [ledger-discipline.md](ledger-discipline.md).
+
+
+## 2026-09-06 — Code patterns line, parenthetical displaced (verbatim)
+
+> Claude Code prompts: normal markdown, desktop-read (the iPhone rule was RETIRED 07-25).
+
+Displaced to make room for the IYKYK rule on the Team Captain designation (Trevor, 2026-09-06: never lead outreach, copy or a bio with it; the reused RPC brand is the tell).

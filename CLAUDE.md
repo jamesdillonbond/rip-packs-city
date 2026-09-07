@@ -75,7 +75,7 @@ Shared state in `docs/overnight/`: `ledger.md` (**"Declined — do not re-sugges
 
 ## Project overview
 
-Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles intelligence platform: analytics, deal-finding, sniper tools, FMV pricing and badge tracking across the 5 published Flow collections (NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike). Trevor (founder) holds an official Portland Trail Blazers Team Captain designation on NBA Top Shot — a key brand differentiator.
+Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles intelligence platform: analytics, deal-finding, sniper tools, FMV pricing and badge tracking across the 5 published Flow collections (NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike). Trevor (founder) holds an official Portland Trail Blazers Team Captain designation on NBA Top Shot — ⛔ **IYKYK: never lead copy or outreach with it** (09-06).
 
 Stack: Next.js 16 App Router, React 19, TS 5, Tailwind 4, @onflow/fcl, Supabase (Pro, Small compute), Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public).
 
@@ -257,7 +257,7 @@ The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **a
 
 ## Code patterns and conventions
 
-- Full file replacements only — never snippets or diffs. Claude Code prompts: normal markdown, desktop-read (the iPhone rule was RETIRED 07-25).
+- Full file replacements only — never snippets or diffs. Claude Code prompts: normal markdown, desktop-read.
 - `proxy.ts` is the correct Next.js 16 convention (renamed from middleware.ts). Supabase client typed `any` in API routes.
 - `generateMetadata` cannot be exported from a client component — it belongs in the server `layout.tsx`. ⚠ `openGraph`/`twitter` merge **SHALLOWLY**: a route redefining either key REPLACES the root object, silently dropping `siteName`/`type`/`locale`/`creator`.
 - `useSearchParams` requires a Suspense wrapper.
