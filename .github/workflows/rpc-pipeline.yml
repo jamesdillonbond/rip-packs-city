@@ -49,33 +49,20 @@ jobs:
       # ⚠ Asserted against the real step count by
       # __tests__/rpc-pipeline-workflow-can-fail.test.ts, so this cannot drift
       # when a step is added or removed.
-      EXPECTED_STEPS: "6"
+      EXPECTED_STEPS: "5"
     steps:
       - name: Prepare status directory
         run: mkdir -p "$STATUS_DIR"
 
-      - name: Ingest — Fetch latest Top Shot sales
-        timeout-minutes: 4
-        continue-on-error: true
-        run: |
-          # ⚠ `bash -e`: a fallible command in an ASSIGNMENT aborts the step there,
-          # so every capture is written `X=$(…) || X=""` and the explicit test
-          # below is what decides. curl exits non-zero on a connection failure.
-          # ⚠ NO --retry on these six (removed 2026-09-02). They are synchronous
-          # POSTs to routes that hold no claim_pipeline_lock and run up to 300 s,
-          # so a retry after a client-side timeout re-invoked the route WHILE the
-          # first call was still running -- doubling load under exactly the disk-IO
-          # saturation that made it slow. And --retry 2 x 180 s could never fit the
-          # 4-minute step wall anyway. One attempt, one wall, one status.
-          STATUS=$(curl -s --max-time 200 -o /tmp/ingest.json -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/ingest) || STATUS=""
-          echo "Ingest status: ${STATUS:-<no response>}"
-          cat /tmp/ingest.json 2>/dev/null || true
-          echo "${STATUS:-000}" > "$STATUS_DIR/ingest"
-          if [ "$STATUS" != "200" ]; then
-            echo "::warning::Ingest returned ${STATUS:-<no response>}"
-          fi
+      # ⛔ The "Ingest — Fetch latest Top Shot sales" step (POST /api/ingest) was
+      # RETIRED 2026-09-07 (known-issues #67 (3)). Its upstream,
+      # public-api.nbatopshot.com, has answered 530 to every call since ~08-28
+      # (5 of 5 runs on 09-07), and the sales it used to write are written from the
+      # Atlas marketplace feed now (sync_sales_from_atlas, pg_cron jobid 471, every
+      # 10 min, migration 20260907233444). A 200-second curl against a dead host
+      # three times a day bought nothing but a `pipeline_runs` failure row. The
+      # route itself is untouched; re-add the step (and bump EXPECTED_STEPS + the
+      # gate's name list + the pin test) only if that host ever answers again.
 
       - name: FMV Recalc — Recompute fair market values
         timeout-minutes: 4
@@ -167,7 +154,7 @@ jobs:
         run: |
           OK=0
           TOTAL=0
-          for name in ingest fmv-recalc fmv-backfill backfill-player-names backfill price-snapshots; do
+          for name in fmv-recalc fmv-backfill backfill-player-names backfill price-snapshots; do
             TOTAL=$((TOTAL + 1))
             CODE=$(cat "$STATUS_DIR/$name" 2>/dev/null) || CODE=""
             # ⚠ A MISSING file counts as a failure, not as an absent measurement.
@@ -187,7 +174,7 @@ jobs:
             exit 1
           fi
           if [ "$OK" -eq 0 ]; then
-            echo "::error::EVERY endpoint failed. This is an outage (expired INGEST_SECRET_TOKEN, DNS, or a bad deploy), not the ordinary partial failure this job tolerates. Per-run detail is in pipeline_runs; check the newest rows for ingest / fmv-recalc / fmv-backfill / backfill / backfill-player-names / price-snapshots."
+            echo "::error::EVERY endpoint failed. This is an outage (expired INGEST_SECRET_TOKEN, DNS, or a bad deploy), not the ordinary partial failure this job tolerates. Per-run detail is in pipeline_runs; check the newest rows for fmv-recalc / fmv-backfill / backfill / backfill-player-names / price-snapshots."
             exit 1
           fi
           echo "At least one endpoint succeeded — partial failure is tolerated here and self-heals on the next tick."

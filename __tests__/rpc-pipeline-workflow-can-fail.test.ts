@@ -5,7 +5,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parse } from "yaml"
 
-// `.github/workflows/rpc-pipeline.yml` calls six production ingest endpoints
+// `.github/workflows/rpc-pipeline.yml` calls five production ingest endpoints
+// (six until 2026-09-07, when the dead-host /api/ingest step was retired — #67)
 // ~3×/day and, until 2026-08-29, COULD NOT FAIL (register R68): six of six steps
 // were `continue-on-error` with non-200 emitting only `::warning::`, so 30 of 30
 // recent runs read `success` by construction. Two steps did not even test the
@@ -40,15 +41,15 @@ describe("the RPC pipeline workflow can fail", () => {
     // ⚠ Every predicate below can pass by finding nothing. A renamed step, a
     // switch away from curl, or a restructured job would otherwise make this
     // whole file green while measuring an empty set.
-    expect(curlSteps.length, "no curl steps found — the parser or the job shape changed").toBe(6)
+    expect(curlSteps.length, "no curl steps found — the parser or the job shape changed").toBe(5)
     expect(gateStep, "no gate step found").toBeTruthy()
-    expect(CALLED_ROUTES.length, "no production URLs found in the workflow").toBe(6)
+    expect(CALLED_ROUTES.length, "no production URLs found in the workflow").toBe(5)
   })
 
   it("keeps every endpoint step tolerant, so one bad endpoint cannot starve the rest", () => {
     // The false-positive control for the gate: making the steps themselves fail
     // would reintroduce the 2026-06-25 starvation this job was restructured to fix.
-    expect(curlSteps.map((s) => s["continue-on-error"])).toEqual([true, true, true, true, true, true])
+    expect(curlSteps.map((s) => s["continue-on-error"])).toEqual([true, true, true, true, true])
   })
 
   it("has exactly one step that can fail the job, and it is the gate", () => {
@@ -89,7 +90,7 @@ describe("the gate's shell logic, executed", () => {
   // assertion cannot tell you whether the script works; this can.
   const script = gateStep.run as string
 
-  function runGate(files: Record<string, string>, expectedSteps = "6") {
+  function runGate(files: Record<string, string>, expectedSteps = "5") {
     const dir = mkdtempSync(join(tmpdir(), "rpc-gate-"))
     try {
       for (const [name, code] of Object.entries(files)) writeFileSync(join(dir, name), code)
@@ -109,7 +110,7 @@ describe("the gate's shell logic, executed", () => {
     }
   }
 
-  const ALL = ["ingest", "fmv-recalc", "fmv-backfill", "backfill-player-names", "backfill", "price-snapshots"]
+  const ALL = ["fmv-recalc", "fmv-backfill", "backfill-player-names", "backfill", "price-snapshots"]
   const allAt = (code: string) => Object.fromEntries(ALL.map((n) => [n, code]))
 
   it("passes when every endpoint returned 200", () => {
@@ -117,7 +118,7 @@ describe("the gate's shell logic, executed", () => {
   })
 
   it("passes on PARTIAL failure — that is normal here and self-heals on the next tick", () => {
-    expect(runGate({ ...allAt("500"), ingest: "200" }).code).toBe(0)
+    expect(runGate({ ...allAt("500"), "fmv-recalc": "200" }).code).toBe(0)
   })
 
   it("FAILS when every endpoint failed — the outage case that had no signal at all", () => {
@@ -135,9 +136,9 @@ describe("the gate's shell logic, executed", () => {
   })
 
   it("FAILS when its list no longer matches EXPECTED_STEPS, rather than reporting a partial population", () => {
-    const r = runGate(allAt("200"), "7")
+    const r = runGate(allAt("200"), "6")
     expect(r.code).toBe(1)
-    expect(r.out).toMatch(/inspected 6 endpoint\(s\) but EXPECTED_STEPS is 7/)
+    expect(r.out).toMatch(/inspected 5 endpoint\(s\) but EXPECTED_STEPS is 6/)
   })
 })
 
