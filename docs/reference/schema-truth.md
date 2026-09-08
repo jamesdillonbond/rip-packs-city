@@ -11,6 +11,42 @@ should point here for these facts rather than duplicating them, because they dri
 > drift vs CLAUDE.md to `docs/overnight/ledger.md` (Queued). A dropped/renamed table that
 > CLAUDE.md still names = HIGH-priority footgun.
 
+🔁 **RE-READ 2026-09-08 (PT) — and this one found REAL DRIFT, in the row this file exists to protect.**
+
+🚨 **`public.collections` is no longer 5 active / 2 inactive — it is 6 / 1.** `candy_mlb` (`solana`,
+`209ade70-32c5-4470-bc7c-4793d660f713`) flipped to **`is_active = true`** when Candy MLB went live
+(register **#63**, 2026-09-06), leaving **`panini_blockchain` (`ethereum`) as the ONLY `is_active=false` row**.
+CLAUDE.md still read *"both are the `is_active=false` rows"* and was corrected in the same commit as this
+stamp. ⭐ **This is exactly the drift this file is for** — the prose had been true for months and quietly
+stopped being true, and only a live read could tell.
+
+**Volatile counts, live 2026-09-08 (PT), against the 2026-08-27 spot-check in the block below:**
+
+| fact | 08-27 | **09-08** | note |
+|---|---|---|---|
+| `public` base tables | 376 | **423** | informational; the count grows most weeks, the INVARIANT is what matters |
+| `public` views | 136 | **137** | |
+| `public` functions | 668 | **731** | |
+| active `cron.job` rows | 99 | **133** | +34 in twelve days — the fleet is growing fast |
+| `editions` columns | 36 | **36** | unchanged |
+| `public.collections` rows | 7 (5 active) | **7 (6 active)** | 🚨 the drift above |
+| tables with `rowsecurity = false` | 0 | **0** | invariant HOLDS |
+| `check_public_security_invariants()` | 0 rows | **0 rows** | clean |
+| `check_anon_write_surface()` | 0 rows | **0 rows** | clean |
+
+**Enums re-read live the same minute — all four byte-identical to the table below, zero casing drift:**
+`fmv_confidence` = HIGH, MEDIUM, LOW, ASK_ONLY, SALES_ONLY, STALE, NO_DATA · `tier_type` = ULTIMATE,
+LEGENDARY, RARE, UNCOMMON, FANDOM, COMMON, CHAMPION, CHALLENGER, CONTENDER · `chain_type` = flow,
+ethereum, polygon, solana, flow_evm · `edition_kind` = LE, CC.
+
+⚠ **STILL NOT A FULL REGENERATION.** The column inventories, partition lists and RLS per-table detail
+below still date from the **2026-08-22** generation, and the precedence rule at the top of this file
+(*"this file wins"*) is only as strong as THAT stamp — not this one. What was re-read here is named
+explicitly above; treat everything else as 2026-08-22 vintage. ⭐ The `collections` drift found today is
+the argument for a real regeneration rather than a sixth spot-check: **a spot-check only re-reads the
+facts someone already thought to list.**
+
+---
 **Spot-re-verified again 2026-08-27 (PT) — collections registry ZERO DRIFT for a fourth consecutive read**
 (all 7 ids, chains and `is_active` flags identical to the table below, which matters more than usual now that
 this is the only in-repo copy); `public` base tables **376** (was 372 on 08-25 — the count grows most weeks and

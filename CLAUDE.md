@@ -228,7 +228,7 @@ Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes
 
 ### Collection UUIDs
 
-All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — **re-verified against `public.collections` 2026-08-24, zero drift.** Candy MLB is `solana` and Panini `ethereum`; both are the `is_active=false` rows.
+All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — ⚠ **re-read 2026-09-08: Candy MLB (`solana`) is now `is_active=true` (#63); Panini (`ethereum`) is the ONLY inactive row.**
 
 ### Enums
 
