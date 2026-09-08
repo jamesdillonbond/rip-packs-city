@@ -10,6 +10,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-08 · ✅ CLOSED — the final free Dune cycle spent out cleanly: 84,868 Top Shot sellers recovered below the spork wall, and the sunset job I shipped last night was BOTH redundant AND harmful · Claude Code (cloud), Trevor: "do what you think is best"
+
+**Closes the two 09-07 entries below. Cycle fully spent, lane stopped by its own gate, nothing left running.**
+
+| | |
+|---|---:|
+| seller addresses recovered | **84,868** |
+| nba_top_shot below-wall gap | 909,970 → **825,102** |
+| 2023-08 filled | 19,565 → **98,639** (48,035 still null) |
+| datapoints | **1,034,812** of a 1,000,000 cap |
+| executions | **30** · ~300 est. credits of 2,500 |
+
+**The stop is verified, not assumed.** Last five ticks: `ok: true`, `budget_stopped: true`, `budget_reason: "datapoint/row cap reached"`, **~400–700 ms each** — the lane's own gate refuses before it calls Dune, exactly as `logDuneBudgetStop` intends (a CONFIGURED cap is pacing, not failure, so nothing pages). Audit: **0 malformed addresses**, **0 self-trades**, **8,976 distinct sellers** across 84,868 rows.
+
+⚠ **The cap OVERSHOT by 3.5 % — 1,034,812 spent against 1,000,000** — because budget is consulted at WINDOW boundaries, not mid-paging, so the final window's pages ran past it. Dune never 402'd, so the real meter had room; but **do not treat `cycle_datapoint_cap` as a hard ceiling — it is a per-window check, and one window's paging is the granularity.**
+
+## 🚨 The correction: `rpc-dune-free-tier-sunset` (jobid 475) was rescheduled `0 12 11 9 *` → `0 12 23 9 *`
+
+Last night's reasoning was **wrong in both directions, and the evidence was already in `pipeline_runs`:**
+
+1. ⛔ **REDUNDANT for 09-10.** The premise was "after the free tier dies this lane throws `ok: false` hourly forever". It cannot: **our own cycle cap is spent, so the gate stops it in ~400 ms without ever reaching Dune** — the five ticks above prove it. There is no failure noise between now and the cycle reset.
+2. ⛔ **HARMFUL.** Dune hands affected accounts a **14-day Plus trial** from 09-10; a pause on 09-11 would have silently killed that window (its only use needs the cycle cap raised by hand, which is a deliberate act someone might well take).
+3. ✅ **The real risk opens 2026-09-24**, when `cycle_start` rolls and the cap REFILLS — that is when the lane would start calling a dead API hourly. Sunset now lands **09-23 12:00Z**, just ahead of it.
+
+⚠ **The transferable rule: before adding a guard, check whether an EXISTING gate already covers the window you are guarding.** The budget ledger built in August was already doing this job; the new job only mattered for a date three weeks later than the one it was set to.
+
+**REVERTS.** `select cron.alter_job((select jobid from cron.job where jobname='rpc-dune-free-tier-sunset'), schedule := '0 12 11 9 *');` or `select cron.unschedule('rpc-dune-free-tier-sunset');` · `update public.dune_budget_state set paused = false, day_row_cap = 150000, day_datapoint_cap = 900000 where id = 1;` · `update public.dune_budget_allocation set cap_datapoints = 900000, reserved_datapoints = 900000, min_start_datapoints = 880000 where pipeline = 'ownership-sync-dune';` · `update public.dune_budget_allocation set cap_datapoints = 100000 where pipeline = 'sales-seller-recovery-dune';` · data: `delete from public.sales_counterparty_recovered where recovered_at > '2026-09-08T04:40:00Z'` + NULL the matching `sales.seller_address` (fill-only — no other column moved).
+
+**Still open, unchanged:** `ownership-sync-dune` is capped at 0 and will budget-stop weekly (Mondays 11:40Z) at `ok: true` — it is superseded by the free on-chain walk, but it is OFF until someone restores its cap. `laliga_golazos` is still absent from `claim_sales_counterparty_batch`'s `IN` list (0.6 % coverage, 2,586 above-wall rows static) — a real gap, deliberately not fixed at 23:00 against a hot function with the 298,630-row All Day backfill in flight. Source-floor map: [apis-and-cadence.md](../reference/apis-and-cadence.md).
+
 ### 2026-09-07 (late, 23:5x PT) · ✅ Dune's last cycle is RUNNING and productive: 17,283 Top Shot sellers recovered below the spork wall, the reserve released on a market-closed check, and the lane scheduled to switch ITSELF off · Claude Code (cloud), Trevor: "do what you think is best for RPC long term and for our users"
 
 **Continues the 09-07 entry below.** Spend at 06:52Z: **325,432 of 1,000,000 datapoints · 19 executions · ~190 est. credits of 2,500.** Free tier goes view-only **2026-09-10**.
