@@ -183,7 +183,10 @@ async function backfillPool(limit: number, conc: number) {
       const countByExt = new Map<string, number>()
       for (const e of eds) countByExt.set(e.ext, (countByExt.get(e.ext) ?? 0) + (e.count || 0))
       // fabricated-divisor: intentional — the hand-copy of the _shared mirror's
-      // suppression. Same reason, same exit condition; see
+      // suppression. ⛔ It has NO LIVE CALLER: this is the `mode=pool` branch,
+      // and jobid 16 (rpc-backfill-pack-pool) is ACTIVE = FALSE, while the one
+      // active lane (jobid 15, mode=supply) 530s daily on the dead
+      // public-api.nbatopshot.com host. Full reasoning and the exit condition:
       // supabase/functions/_shared/pack-supply-parse.ts.
       const totalCount = [...countByExt.values()].reduce((s, c) => s + c, 0) || 1
       const payload = [...countByExt.entries()].filter(([ext]) => idByExt.has(ext)).map(([ext, count]) => ({ collection_id: TS, dist_id: row.dist_id, edition_id: idByExt.get(ext)!, edition_flow_id: ext, drop_weight: Number((count / totalCount).toFixed(6)), orig_drop_weight: count, slot_name: "default", pool_source: "gql_historical", last_refreshed_at: new Date().toISOString() }))

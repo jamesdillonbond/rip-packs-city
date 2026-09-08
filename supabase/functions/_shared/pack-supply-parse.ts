@@ -65,12 +65,25 @@ export function buildTopshotPoolPayload(
   // fabricated-divisor: intentional — SUPPRESSED, NOT ABSOLVED. If every parsed
   // ext has count 0 this writes drop_weight 0 for the whole distribution, which
   // is a claim ("never drops") the data does not support; the honest answer is
-  // to emit no rows. Measured 2026-09-07: 0 of the gql_historical distributions
-  // in pack_drop_pool are degenerate (sum(orig_drop_weight) = 0), so it is
-  // LATENT. Not fixed here because the fix must land in this module AND the
-  // hand-copy in backfill-topshot-pack-supply/index.ts AND an edge deploy, and
-  // bundling an edge deploy into a display fix destroys the attribution.
-  // EXIT: fix both copies + deploy, then delete this marker.
+  // to emit no rows.
+  //
+  // ⛔ NOT FIXED BECAUSE IT HAS NO LIVE CALLER — measured 2026-09-07, and this
+  // replaces an earlier, weaker reason ("it would need its own edge deploy"):
+  //   • the only path reaching this code is backfill-topshot-pack-supply's
+  //     `mode=pool` branch, whose sole caller is pg_cron jobid 16
+  //     (rpc-backfill-pack-pool) — ACTIVE = FALSE;
+  //   • the one active lane, jobid 15 `mode=supply`, has returned HTTP 530 on
+  //     every daily run since at least 09-05: its upstream is the dead
+  //     public-api.nbatopshot.com host, known-issues #50/#65;
+  //   • 0 of the gql_historical distributions in pack_drop_pool are degenerate
+  //     (sum(orig_drop_weight) = 0), so nothing fabricated was ever written;
+  //   • and the DEPLOYED build's parity with this file is UNVERIFIABLE — the
+  //     edge-fn content census has never produced a result (#31), so a deploy
+  //     would push an unknown delta live on a function whose half-done deploy
+  //     already cost a ~40 h silent outage (2026-08-12).
+  // Deploying to fix dormant code buys nothing and risks that. EXIT: when the
+  // pool lane is revived (#65), fix both copies in THAT change and delete both
+  // markers — not before.
   const totalCount = [...countByExt.values()].reduce((s, c) => s + c, 0) || 1
   return [...countByExt.entries()]
     .filter(([ext]) => opts.idByExt.has(ext))

@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-07 · ⛔ The one item I deferred has NO LIVE CALLER — and the reason I had written down was the weak one · Claude Code (cloud), Trevor: "complete anything still unresolved"
+
+**Went to close the only open item from this session's fabricated-divisor pass and closed it the other way.** The `pack-supply-parse` suppression was deferred with this reason: *"the fix needs both hand-copies plus an edge deploy, and bundling an edge deploy into a display fix destroys the attribution."* ⚠ **That reason DISSOLVES the moment the deploy is its own commit** — which is exactly what I was about to do. So it would have licensed the deploy on the very next read.
+
+**Named the caller first, per CLAUDE.md, and the answer is nobody:**
+
+| fact | value |
+|---|---|
+| only path reaching the divisor | `backfill-topshot-pack-supply` **`mode=pool`** (`index.ts:232` → `backfillPool`, line 134) |
+| its sole caller | pg_cron **jobid 16 `rpc-backfill-pack-pool`** — **`active = false`** |
+| the one ACTIVE lane | jobid 15 `mode=supply` — **`HTTP 530` on every daily run since ≥ 09-05** |
+| why 530 | upstream is the dead `public-api.nbatopshot.com`, already registered **#50/#65** |
+| rows actually fabricated | **0** — no degenerate `gql_historical` distribution exists |
+| deployed-vs-repo parity | ⚠ **UNVERIFIABLE** — the edge-fn content census has never once produced a result (**#31**) |
+
+🚨 **And the function I was about to deploy is the one whose half-done deploy caused a documented ~40-hour silent outage** (2026-08-12, `backfill-topshot-pack-supply` v25 shipped the env-var gate with the secret unset; a 403'd edge function writes NO `pipeline_runs` row, so nothing noticed). ⛔ **Deploying to fix dormant code buys nothing and risks that.** Nothing was deployed; no DB or production state changed.
+
+⭐ **THE DURABLE LESSON, and it sharpens a rule CLAUDE.md already carries.** That file already says a filed DECISION NOT TO ACT is a hypothesis nobody re-checks, and that *"the tell is a cost stated with no number in it"* — my deferral was precisely that shape, and I wrote it myself six hours earlier without noticing. The sharpening: **a WEAK reason CROWDS OUT the strong one, and becomes PERMISSION the moment it dissolves.** A deferral whose stated reason evaporates is not thereby licensed — it is un-measured. Promoted to CLAUDE.md's measurement bullet; **room RECLAIMED again, not spent** — the *Measurement discipline* section carried FOUR inline `database.md` pointers, three of which said nothing the bullet did not; dropping those three (keeping the `pg_stat_statements` one, which names a specific two-directional case) funded it. **39,943 → 39,960, 40 of headroom.** ⚠ **The limit guard caught two over-budget drafts before either was written** (40,039 then 40,011) — the pre-flight `if (s.length > 40000) exit(1)` is why no over-limit file ever hit disk.
+
+**Both suppression markers and known-issues rewritten** to carry the measured reason instead of the attribution one, with the exit condition re-pointed: fix both copies **as part of the change that revives the pool lane (#65)** — not before, and never as a standalone deploy.
+
+**Revert:** `git revert` this commit; docs + two code comments only.
+
+
 ### 2026-09-07 · ✅ Session wrap — the heartbeat fix closed on PRODUCTION evidence, and the column-comment rule promoted into CLAUDE.md by reclaiming room from pure duplication · Claude Code on Trevor's box, Trevor: "Wrap up and complete anything still unresolved, then update your CLAUDE.md and memories"
 
 **The one open verification is CLOSED, on the production caller.** Migration `20260907155956` was verified this morning only by a forced rollback probe; the natural evidence has now arrived. Since the fix landed: **16 pg_cron ticks, 16 `pipeline_runs` rows — 1:1**, **6 of them naturally `no_op: true`** (rows the old body would not have written at all), **max gap 30 min — exactly the cadence**, against a pre-fix max of 180 min. `detect_stalled_pipelines()` returns `[]`. The ~3.7 false alarms/day are gone and the detector was never modified.
