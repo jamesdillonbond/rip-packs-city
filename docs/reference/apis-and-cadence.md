@@ -79,6 +79,48 @@ and every header variant (browser UA, honest UA, no origin, bare) 403'd identica
 challenge is rate-shaped, not header-shaped. Total Atlas traffic today ≈ 5 req/min (editions + market);
 never probe in bursts, and read `topshot_atlas_market_requests.error` before blaming the code.
 
+### 🚨 Counterparty source floors — where each upstream BOTTOMS OUT (measured 2026-09-07/08)
+
+⚠ **Every source for `sales.seller_address` / `buyer_address` has a floor, and three of the four floors
+are INVISIBLE at the call site** — they answer 200, or an empty result, not an error. Filling a
+counterparty gap means picking the source whose floor is BELOW the era you want; there is no source that
+covers everything, and one era is covered by nothing at all.
+
+| source | floor | collections | how the floor presents |
+|---|---|---|---|
+| **Flow REST** `/v1/transaction_results` | **2023-11-08 17:00Z** (spork wall) | all | ⛔ **HTTP 200 with an empty body** (`execution: "Pending"`, zero events) — `res.ok` is not a liveness check; discriminate on the BODY |
+| **Atlas** `SearchMarketplaceTransactions` | **~2021-01** for completed purchases | **`nba` + `nfl` ONLY** | an unsupported product is a hard **`400 invalid_argument "product is required"`** — ⚠ NOT the silent-firehose fallback an unknown *key* produces |
+| **Dune** saved query `8027085` | **~2021** — returns **zero rows** below it | **`nba_top_shot` ONLY** | ⛔ **`rows_returned: 0` on a 200** — a successful execution of an empty result, indistinguishable from "no sales that week" unless you know the window has rows |
+| **`flowty_transactions`** | n/a | all | ⛔ **carries no counterparties at all** — `payer` / `proposer` / `storefront_addr` are not buyer/seller |
+
+**Consequences, each of which someone has already assumed the other way:**
+
+- ⛔ **2020 Top Shot counterparties are PERMANENTLY UNRECOVERABLE** — 79,160 sales (oldest 2020-07-28),
+  0.0 % seller coverage, below every floor above. **Do not spend money or a cycle trying to recover them**,
+  and do not let a surface imply provenance for that era. Measured 2026-09-08: ten clean Dune windows over
+  2020-11-27..2020-12-17 returned `rows_returned: 0` on every one; 9 Atlas probes across Moments carrying
+  2020 sales returned **zero** 2020 purchase records (oldest Atlas purchase seen anywhere **2021-01-15**).
+- ⚠ **Atlas is the DEFAULT for 2021→now, not Dune** — it serves ~699,169 of the 909,970 below-wall
+  nba_top_shot null-seller rows for free, with both counterparties, and the chains are coherent (each
+  sale's buyer is the next sale's seller). Anything that pays for that era is paying for free data.
+- ⚠ **UFC Strike + Golazos have NO counterparty source below the wall** (778,032 rows) — Atlas rejects both
+  products, Flow REST is pruned, Flowty has no counterparties. ⚠ **But `ufc_strike` is a CLOSED market**
+  (`collections.market_closed_at = 2026-05-13`, FMV frozen, UI renders unavailable), so 702,545 of that
+  would buy history for a dead collection — **size the value before the volume.**
+- ⚠ **`claim_sales_counterparty_batch` covers `nba_top_shot`, `nfl_all_day`, `ufc_strike` only** — Golazos
+  is NOT in its `IN` list, and it is floored at the spork wall. It excludes two sources as known-undecodable
+  (`allday_studio_history_v1`, `ufc_studio_history_v1`).
+- ⚠ **Dune returns FAR more sales than `sales` holds** — 38,105 rows for a 2023-06 week in which `sales`
+  carries ~8,358 Top Shot rows. That is the *ingest* gap, not a counterparty gap, and a fill-only lane
+  (`apply_sales_counterparty_external`) can never close it: it matches `(transaction_hash, nft_id)` on rows
+  that already exist and **cannot create a row**.
+
+⚠ **A single failed execution is not a diagnosis.** The first 2020 probe returned Dune
+`QUERY_STATE_FAILED` and was read as an era/schema fault; the same era ran clean an hour later and simply
+returned nothing. Re-run before concluding — and prefer a control window in a DENSE period, or a legitimate
+zero (2020-07 carries 266 rows all month) reads exactly like "this source cannot serve the era".
+
+
 ### Top Shot GraphQL
 
 > ⛔ **DECOMMISSIONED ~2026-08-28.** `public-api.nbatopshot.com` answers Cloudflare 530 / 1033 for every caller (residential included); the catalog walker, badge-set backfill and `resolve-and-associate` all fail on it, and the circulation field it fed now comes from the chain (`topshot-circulation-onchain`, 2026-09-03). Nothing below this line is a live contract — see `docs/operations/cron-schedule.md` for the dead-host census.
