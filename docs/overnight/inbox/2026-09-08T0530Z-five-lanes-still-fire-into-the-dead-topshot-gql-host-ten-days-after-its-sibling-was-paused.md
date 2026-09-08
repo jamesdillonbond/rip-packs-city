@@ -2,6 +2,8 @@
 
 *Claude Code on Trevor's box, 2026-09-07 22:2x PT / 2026-09-08T05:30Z. READ-ONLY sweep; **nothing paused, and the reason is stated below rather than implied.** Found while closing register **#38**, which turned out to be about a pipeline that no longer runs.*
 
+> ✅ **DISPOSITION 2026-09-08 14:2xZ (Cowork).** Three of the five were NOT cron-job.org items — `ingest-topshot-challenges` (`10 8`), `backfill-topshot-subedition-circulation` (`10 21`) and `drain-topshot-misattribution` (`0 11`) are **`vercel.json` crons**, and they are now REMOVED (schedule-only; routes + tests untouched, `UNSCHEDULED 2026-09-08` note in each route header, pinned by `__tests__/topshot-gql-dead-host-crons-are-retired.test.ts`). `ingest` was retired from `rpc-pipeline.yml` on 09-07 (#67 (3)). **jobid 15 is deliberately still active:** the live path keeping `pack_distributions` fresh is STILL unnamed — it was updated in one 1,995-row shot at 12:13:09Z 09-08 with no coinciding `pipeline_runs` row, and `apply_topshot_supply` / `seed_topshot_pack_distributions` / `merge_pack_dist_meta` have no pg_cron, `vercel.json` or GHA caller in the repo. The remaining candidates are a Task-Scheduler-class job on Trevor's box or a manual/MCP call; pause jobid 15 once one of them is named.
+
 ---
 
 ## The finding

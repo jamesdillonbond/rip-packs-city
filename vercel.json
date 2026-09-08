@@ -54,16 +54,8 @@
       "schedule": "0 4 * * *"
     },
     {
-      "path": "/api/admin/backfill-topshot-subedition-circulation",
-      "schedule": "10 21 * * *"
-    },
-    {
       "path": "/api/admin/backfill-topshot-onchain-art?limit=300",
       "schedule": "22 */3 * * *"
-    },
-    {
-      "path": "/api/admin/drain-topshot-misattribution",
-      "schedule": "0 11 * * *"
     },
     {
       "path": "/api/admin/drain-conflated-subeditions",
@@ -116,10 +108,6 @@
     {
       "path": "/api/admin/backfill-allday-buyers?collection=golazos",
       "schedule": "25 6 * * *"
-    },
-    {
-      "path": "/api/cron/ingest-topshot-challenges",
-      "schedule": "10 8 * * *"
     },
     {
       "path": "/api/ingest/candy-editions",

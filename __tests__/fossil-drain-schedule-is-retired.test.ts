@@ -70,16 +70,23 @@ describe("topshot-wmc-fossil-drain schedule is retired", () => {
     expect(wmc).toEqual([])
   })
 
-  it("keeps the daily non-wmc drain, which is a DIFFERENT and productive pool", () => {
-    // The drain reads topshot_misattrib_drain_targets and wrote 888 rows on
-    // 2026-08-17. Retiring the wmc leg must not touch it — they share a route but
-    // not a target pool, a rekey RPC, or a pipeline name.
+  it("no longer schedules the daily non-wmc drain either — its resolver host died 2026-08-28", () => {
+    // ⚠ THIS ASSERTION WAS INVERTED, NOT DELETED (2026-09-08). It used to require
+    // exactly one daily entry, because the drain reads a DIFFERENT and (then)
+    // productive pool — 888 rows on 2026-08-17. Its resolver is Top Shot GraphQL
+    // getMintedMoment on public-api.nbatopshot.com, which has answered 530 / CF 1033
+    // since ~2026-08-28: 3 of 3 runs over the full pipeline_runs window failed with
+    // `HTTP 530 | HTTP 530 | HTTP 530`, 0 rows, last_success NULL. The daily entry was
+    // removed from vercel.json on 2026-09-08 — schedule-only, the route still runs by
+    // hand — and __tests__/topshot-gql-dead-host-crons-are-retired.test.ts pins the
+    // retirement together with its two sibling lanes. Pinned here too so the obvious
+    // "restore" reds instead of re-creating a permanently-red instrument.
     const daily = crons().filter(
       (c) =>
         c.path.startsWith("/api/admin/drain-topshot-misattribution") &&
         !/[?&]wmc=1(&|$)/.test(c.path),
     )
-    expect(daily).toHaveLength(1)
+    expect(daily).toEqual([])
   })
 
   it("no longer schedules ?rekey=1 over HTTP — that leg moved to pg_cron 2026-09-02", () => {

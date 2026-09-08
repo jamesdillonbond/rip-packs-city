@@ -1,5 +1,14 @@
 // app/api/admin/drain-topshot-misattribution/route.ts
 //
+// ⛔ UNSCHEDULED 2026-09-08 (the daily Vercel cron `0 11 * * *` removed from vercel.json). Its resolver,
+// Top Shot GraphQL getMintedMoment via the topshot-proxy worker, has answered 530 / CF 1033 since
+// ~2026-08-28: 3 of 3 runs over the full pipeline_runs window were `ok=false`, 0 rows (`HTTP 530 | HTTP
+// 530 | HTTP 530`), `last_success` NULL (docs/overnight/inbox/2026-09-08T0530Z-five-lanes-still-fire-...).
+// Schedule-only retirement, same disposition as the ?wmc=1 leg (UNSCHEDULED 2026-08-17) and the ?rekey=1
+// leg (moved to pg_cron 2026-09-02): the route and every leg still run by hand. Re-add the cron entry
+// only after a manual run writes rows. Pinned by __tests__/topshot-gql-dead-host-crons-are-retired.test.ts
+// (and the inverted "daily drain" assertion in __tests__/fossil-drain-schedule-is-retired.test.ts).
+//
 // On-chain drain for the platform-wide TopShot sales mis-attribution
 // (docs/scoping-2026-06-20-26-edition-misattribution.md). The self-healing
 // remap (remap_misattributed_topshot_sales, wired into the guard refresh) can

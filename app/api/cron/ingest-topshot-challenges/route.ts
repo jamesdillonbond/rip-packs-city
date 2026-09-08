@@ -1,5 +1,13 @@
 // app/api/cron/ingest-topshot-challenges/route.ts
 //
+// ⛔ UNSCHEDULED 2026-09-08 (Vercel cron `10 8 * * *` removed from vercel.json). The feed it reads,
+// public-api.nbatopshot.com via the topshot-proxy worker, has answered 530 / CF 1033 since ~2026-08-28:
+// 3 of 3 runs over the full pipeline_runs window were `ok=false`, 0 rows, `last_success` NULL
+// (docs/overnight/inbox/2026-09-08T0530Z-five-lanes-still-fire-into-the-dead-topshot-gql-host-...).
+// Schedule-only retirement: the route, its gate and its tests are unchanged and it still runs by hand
+// (POST with $INGEST_SECRET_TOKEN). Re-add the cron entry only after a manual run writes rows.
+// Pinned by __tests__/topshot-gql-dead-host-crons-are-retired.test.ts.
+//
 // Cron for the automated Top Shot challenge-definition ingest. WIRED to the real feed — the
 // `searchChallenges` operation (VARIABLE challenges, variableSlots) through the topshot-proxy
 // worker — upserting each challenge + its slots, then resolving slot queries to eligible

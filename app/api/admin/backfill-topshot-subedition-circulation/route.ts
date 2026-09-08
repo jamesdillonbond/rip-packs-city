@@ -1,5 +1,13 @@
 // app/api/admin/backfill-topshot-subedition-circulation/route.ts
 //
+// ⛔ UNSCHEDULED 2026-09-08 (Vercel cron `10 21 * * *` removed from vercel.json). The feed it reads,
+// Top Shot GraphQL `searchMarketplaceEditions` on public-api.nbatopshot.com, has answered 530 / CF 1033
+// since ~2026-08-28: 3 of 3 runs over the full pipeline_runs window were `ok=false`, 0 rows,
+// `last_success` NULL (docs/overnight/inbox/2026-09-08T0530Z-five-lanes-still-fire-into-the-dead-topshot-gql-host-...).
+// Schedule-only retirement: the route and its tests are unchanged and it still runs by hand (admin
+// bearer). Re-add the cron entry only after a manual run writes rows — or re-point it to Atlas first.
+// Pinned by __tests__/topshot-gql-dead-host-crons-are-retired.test.ts.
+//
 // Authoritative per-parallel circulation for the 1,374 subedition ("::")
 // Top Shot editions cataloged by Stage B (979d06f). Stage B seeded each
 // parallel's circulation_count from the MAX OBSERVED SERIAL — a documented
