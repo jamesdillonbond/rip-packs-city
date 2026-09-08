@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-07 · ✅ The final free Dune cycle is armed at the one era nothing else can reach — the dormant ownership lane's 900k reservation was what was blocking it · Claude Code (cloud), Trevor: "start consuming credits responsibly to move towards our goals"
+
+**Why now:** Dune converts free accounts created before 2026-07-21 to **view-only on 2026-09-10** (not at our `cycle_anchor_day` 24 — `dune_budget_state` will read "16 days left" and be wrong by two weeks). A 14-day Plus trial follows automatically. The whole cycle was intact: `global_datapoints_left` **1,000,000**, `credits_est_left` **2,500**, `dune_api_usage` **zero rows ever** (the ledger landed 08-22; `ownership-sync-dune` last wrote 08-14 and has no runs in `pipeline_runs_daily`; `sales-seller-recovery-dune` ticks hourly but sat `drained` with `cursor_end == floor_date == 2020-01-01` since 07-26).
+
+**What the credits were pointed at, and what they were NOT.** ⚠ **Most of the pre-spork counterparty gap stopped being Dune-only last week and nobody re-derived it.** Atlas (#65) serves completed sales with BOTH counterparties below the 2023-11-08 spork wall — probed, and the chains are coherent (each sale's buyer is the next sale's seller: nft `15168396` 2021-11-22 → 2021-12-16 → 2022-04-27 → 2023-11-07). But its floor is ~2021: **9 Moments probed, 7 of them carrying 2020 sales in `sales`, ZERO 2020 purchase records; oldest Atlas purchase seen anywhere 2021-01-15**; one Moment returned 19 transactions and no completed sale at all. No truncation — every history came back under the `limit: 20`. So the nba_top_shot null-seller population splits:
+
+| slice | rows | source |
+|---|---:|---|
+| 2021-08-01 → spork wall | **699,169** | Atlas, **free** — do not spend a datapoint here |
+| before 2021-08-01 (oldest 2020-07-28) | **210,801** | **Dune only** |
+
+Flow REST serves neither (pruned below the wall, and it answers **200** while doing it — the #67-class failure on an upstream). `flowty_transactions` carries `payer`/`proposer`/`storefront_addr`, no counterparties. Monthly shape of the target: 2020-12 **31,873**, 2021-01 **74,969** (the boom), 2020-10 21,720 — sums to exactly 210,801, which reconciles against the independent gap count.
+
+**Shipped (DB only — no deploy; the budget was built so caps move with one UPDATE):**
+1. `dune_budget_allocation` / `ownership-sync-dune` → `reserved_datapoints` **900,000 → 0**, `min_start` 880,000 → 0, `cap` → 0. ⚠ **That reservation — 90 % of the cycle, held for a lane dormant since 08-14 — was the sole reason `sales-seller-recovery-dune` read `datapoints_allowed_now = 100,000`.** It is superseded: `topshot_ownership` reads 213,209 `onchain_walk` rows (fresh today, free) vs 54,533 `dune` rows stale at 08-14. **REVERT:** `cap`/`reserved` = 900000, `min_start` = 880000.
+2. `dune_budget_allocation` / `sales-seller-recovery-dune` → `cap_datapoints` **100,000 → 950,000**. **REVERT:** 100000.
+3. `sales_seller_recovery_state` → `floor_date` **2020-12-28**, `cursor_end` **2021-01-01**, `window_days` **4** — ONE window, ~10 credits, as a positive control before committing ~600k datapoints. **REVERT:** `floor_date`/`cursor_end` = 2020-01-01, `window_days` = 2.
+
+⚠ **The control window is deliberately inside a DENSE month** (2020-12-28 → 2021-01-01, ~4k rows expected). A window in 2020-07 (266 rows all month) would return ~0 legitimately and read exactly like "Dune has no 2020 coverage" — a null instrument answering a question it cannot answer. **No-change control:** `sales` 2020-07-01..2021-01-01 with `seller_address is not null` = **0** before the run, so any non-zero after it is attributable.
+
+⚠ **The column count is UNMEASURED and it decides whether the era fits.** `apply_sales_counterparty_external` matches on `tx_hash + nft_id` and writes `seller` — 3 fields — but the saved query `8027085` returns an unknown number, and datapoints are rows × columns: at 3 cols the 210,801 rows cost 632,403 dp (fits); at 6 they cost 1,264,806 (does not). `dune_api_usage.columns_returned` answers it on the first page — **read it before extending the walk, do not assume the 6 in the ownership lane's note.** Trimming the query's SELECT list is a dune.com console edit (operator).
+
+**Not spendable from here, stated rather than quietly dropped:** `sync-sales-ingest-dune` — the only lane that could ingest the **#67** missing sales — **has no caller** (absent from `vercel.json` crons and from `.github/`), the vault is empty and no `cron.job` authenticates to a Vercel route, so there is no way to drive it without a push. #67's gap is measured here at **~26,700 nba_top_shot sales over 08-27 → 09-06** (baseline ~4,100/day 08-22..08-26 → ~1,000–1,700 08-29..09-06, recovering 09-07 as `sales-atlas-sync` lands); its free closure path is already designed in #67 option (2).
+
+**Next:** read the 02:47Z tick; if rows land, extend `floor_date` → 2020-07-01 and `cursor_end` → 2021-08-01 (396 days / 4 = 99 executions against a 250-execution credit budget). UFC Strike's 702,545 below-wall null-seller rows (86 % of that collection's history, no Atlas product code) do not fit the free cycle at ~2.1M dp — that is what the Plus trial is for.
+
 ### 2026-09-07 · ✅ Audit drain: the Atlas events table has a retention policy, the client-error beacon is re-proven from a real Chrome, and the go-live Top Shot number is two numbers · Cowork (cloud + device VM), Trevor: "find things to work on"
 
 **Triage first: every 09-07 owed watch read from its real caller before anything shipped.** `ts-listings-atlas-sync` 671 ok / 0 fail in 24 h, tick 2–5 s at a **34,526-row open book** (was 1.6 s at ~15K — the differential sync is linear in the book, the book is still filling; the 50–110 s outliers at 23:00–23:10Z are the seed-wallet wave, known band); `sales-atlas-sync` 7/7 ok, 2,000 examined / ~150 written per tick, cursor at 09-07 13:07Z and catching up; `topshot-moments-hydrate-chain` 134/134 ok, **0 × 429**; `topshot-moments-hydrate-wmc` 58/58 ok; TS `v_moments_needing_hydration` 155K → **153,685**; `v_offer_sanity_flags` 1,313 (00:10Z) → 1,325 (00:30Z) — the daytime monitor's candidate 1 is a copy fix on the scorecard card, not a breakage, left for the artifact pass.
