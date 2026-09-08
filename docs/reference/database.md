@@ -1648,3 +1648,69 @@ The board-liveness probe times `SELECT count(*) FROM <view>`, and the planner dr
 **THE RULE.** Before treating any `*_at` as freshness: read `col_description('public.<table>'::regclass, <ordinal>)` (or `\d+`). Then find the **writer's** freshness signal instead — for a per-tick sweep that is its `pipeline_runs` row, one per tick, not a stamp on 2,981 rows. ⭐ **Three columns on this database carry this trap and the comment names all three:** `pack_ask_state.last_checked_at`, `saved_wallets.cache_updated_at`, `edition_fmv_current.refreshed_at`.
 
 ⚠ **And do not generalise the sibling memory onto it.** `pack-availability-flags-are-snapshot-columns` (about `pack_ev_latest` / `pack_table_rows` `secondary_available` / `secondary_ask`, which genuinely DO age with `ev_snapshotted_at`) is a **different table and a different mechanism**. `pack_table_rows` now overlays the live ask on top of the aging EV snapshot — `COALESCE(pas.live_ask, pev.secondary_ask)`, and `secondary_available` true when `pas.live_ask IS NOT NULL` — so for a dist WITH a live ask those two columns are fresh 5-minutely and only the FALLBACK path ages. Misapplying that memory here is precisely the mistake this section records.
+
+## 🚨 Pointing a NEW SCOPE at a shared, collection-scoped function fires EVERY branch it has — including the destructive one, retroactively (2026-09-08)
+
+`promote_unmapped_sales(p_collection_id, p_max)` is the drain for `unmapped_sales`. Its call sites
+all pass an explicit collection id, and until 2026-09-08 **none of them passed Top Shot**. Adding
+pg_cron `rpc-topshot-promote-unmapped` (jobid 474, hourly) to drain the newly-parked Top Shot rows
+therefore did something nobody was thinking about: its **first tick reported `archived: 24583`**.
+
+The function carries a retention arm alongside the promote:
+
+```sql
+DELETE FROM public.unmapped_sales
+ WHERE resolved_at IS NOT NULL
+   AND resolved_at < now() - interval '7 days'
+   AND (p_collection_id IS NULL OR collection_id = p_collection_id)
+```
+
+That arm had never executed for `nba_top_shot`, so the **entire Dec-2025/Jan-2026 resolved cohort was
+reaped the instant a drain existed** — eight months of rows, in one tick, from a job whose stated
+purpose was to promote.
+
+✅ **It was safe, and that was CHECKED rather than assumed:** every deleted row had
+`resolved_at IS NOT NULL` (i.e. was already promoted), and `sales` holds **73,660** `nba_top_shot`
+rows spanning exactly that cohort's window (2025-12-29 → 2026-01-16). The deletions were staging
+duplicates of data that lives in `sales`.
+
+⭐ **THE RULE: a collection-scoped shared function is not dormant for an unused scope — it is a
+LOADED ARM whose predicate has simply never been evaluated there.** Before pointing a new scope at
+one, read every statement in its body, not just the one you want. The blast radius is that scope's
+ENTIRE history, because the age predicate has had years to accumulate matches while nothing ran.
+
+⚠ Corollary for the reverse direction: `unmapped_sales` deletes **only resolved** rows, so an
+unresolved parked row has no deadline — UFC still holds 1,070 unresolved rows from 2025-12-30 and
+Golazos 20 from 2025-12-29. Parking is durable; promotion is what starts the 7-day clock.
+
+## 🚨 A PARTIAL unique index is not a dedup guarantee — two writers of the same row can BOTH satisfy it and never collide (2026-09-08)
+
+Found minutes after `83820bd8` made the Top Shot indexer park unresolvable sales. Two lanes now write
+the same Top Shot listing sale:
+
+| writer | `transaction_hash` |
+|---|---|
+| the parked row, promoted by `promote_unmapped_sales` | **present** (the on-chain tx) |
+| `sync_sales_from_atlas` (jobid 471), ~2 h later | **NULL** — Atlas does not carry one |
+
+The promoter's only duplicate guard is `ON CONFLICT DO NOTHING` on `idx_sales_tx_nft_sold`, which is
+**PARTIAL: `WHERE transaction_hash IS NOT NULL`**. The Atlas row does not satisfy the predicate, so it
+is not in the index, so **it can never conflict with the promoted row** — and the one cross-source
+twin trigger on `sales` (`trg_zzz_allday_cross_source_dedup`) is All Day only. Sequence: parked within
+minutes → Atlas row at +2 h (its own ±10 min check finds nothing yet) → nft resolves → promoter
+inserts a SECOND row. **Every FMV reads `sales`; a duplicated sale is fabricated volume.**
+
+Closed in the lane that already dedupes (`20260908030456`): `sync_sales_from_atlas` marks an open
+parked twin resolved against its own row, so the promoter never sees it. The reverse race is covered
+by that lane's existing ±10 min dedupe against `sales`.
+
+⭐ **THE RULE: when a change creates a NEW writer of an existing row, enumerate every OTHER writer of
+that row and check the dedup key each one actually uses.** A unique index guarantees uniqueness only
+across rows that satisfy its predicate — and here the row being added satisfied it while the row it
+would collide with did not. **Reading "there is a unique index on (tx, nft, sold_at)" is not enough;
+read its `WHERE`.**
+
+⚠ **And when hunting the resulting duplicates, a ±10 min twin is a CANDIDATE, not a finding.** A
+6-hour scan returned exactly 1 pair on this market and it was a REAL double sale — nft `52212786`
+sold twice **94 seconds apart at $0.30 then $1.00**, both `onchain`, both with distinct tx hashes.
+Rapid flips exist here; discriminate on the tx hash and the price, not the interval.
