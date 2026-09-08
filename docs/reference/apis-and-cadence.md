@@ -116,9 +116,29 @@ covers everything, and one era is covered by nothing at all.
   `NFTStorefrontV2.ListingAvailable` plus fee movements, **no NFT `Withdraw` event**, so there is no
   counterparty to decode. Same family as the two named exclusions (`ufc_studio_history_v1` 813,380 rows /
   **0** sellers). Golazos's only decodable rows are its 480 on-chain ones (`onchain_dapper_v2` 378 +
-  `onchain` 102), already **100 %** filled. ⚠ **The `*_studio_history_v1` hash appears to be the LISTING tx,
-  not the purchase tx — n=2, re-derive before acting.** The rows are not duplicated (78,073 rows : 78,073
-  distinct hashes, 1.45 rows per nft), so they read as genuine sales carrying an unusable hash.
+  `onchain` 102), already **100 %** filled. ✅ **RESOLVED 2026-09-08 by a controlled probe — the `*_studio_history_v1` hash question is settled and
+  the answer DIFFERS BY COLLECTION.** Randomised sample (`hashtext`), all **above** the spork wall so a
+  pruned empty-200 could not be misread as "not a purchase":
+
+  | arm | purchase tx (`ListingCompleted` + NFT `Withdraw`) | events |
+  |---|---|---|
+  | `allday_studio_history_v1`, seller FILLED (positive control) | **3/3** | 62 · 62 · 81 |
+  | `allday_studio_history_v1`, seller NULL | **2/3** | 62 · 62 · 6 |
+  | `ufc_studio_history_v1`, seller NULL | **0/3** | 6 · 6 · 6 |
+  | `golazos_studio_history_v1`, seller NULL | **0/3** | 4 · 4 · 4 |
+
+  ⭐ **The discriminator, reusable:** a **purchase** carries `NFTStorefrontV2.ListingCompleted` **and** an
+  NFT `.Withdraw`, and runs **62–81 events**; a **listing creation** carries only `ListingAvailable` plus
+  fee movements at **4–6 events**. ⚠ **Both answer `Success`/`Sealed` on a 200 — the event set is the only
+  discriminator, never the status.**
+
+  ⇒ **UFC + Golazos studio-history rows point at LISTING transactions and are structurally undecodable**
+  (0/6); their exclusion is correct and permanent. ⇒ **All Day's are MIXED and mostly REAL purchases** —
+  its exclusion from `claim_sales_counterparty_batch` is also correct, but for the opposite reason: a
+  DEDICATED lane owns them (`allday-buyer-backfill`, 16/16 ok and 1,920 rows per 48 h on 2026-09-08), so
+  the exclusion prevents DOUBLE WORK, not recovery. ⚠ At ~960/day the remaining ~277,886 above-wall rows
+  need **~289 days** — slow but progressing; that is a throughput fact, not a defect. The rows are not
+  duplicated (78,073 : 78,073 distinct hashes, 1.45 per nft), so they are genuine sales.
 - ⚠ **Dune returns FAR more sales than `sales` holds** — 38,105 rows for a 2023-06 week in which `sales`
   carries ~8,358 Top Shot rows. That is the *ingest* gap, not a counterparty gap, and a fill-only lane
   (`apply_sales_counterparty_external`) can never close it: it matches `(transaction_hash, nft_id)` on rows
