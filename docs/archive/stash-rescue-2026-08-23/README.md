@@ -1,5 +1,7 @@
 # Stash rescue — 2026-08-23
 
+> ⏩ **SUPERSEDED 2026-09-07 — all three stashes are now DROPPED, with every patch preserved in this folder.** The line below saying they are "still in `git stash list`" is no longer true; it is left unedited because `docs/archive/**` is frozen history. Current state and the per-stash evidence: [../stash-rescue-2026-09-07-disposition.md](../stash-rescue-2026-09-07-disposition.md).
+
 Two stash entries were parked on this clone and flagged as at risk of silent loss.
 **Nothing was dropped, applied or modified.** Both entries are still in `git stash list`.
 These files are read-only backups so the work cannot vanish to a `git stash clear`,
