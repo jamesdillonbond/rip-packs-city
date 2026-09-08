@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-07 (late, 23:5x PT) · ✅ Dune's last cycle is RUNNING and productive: 17,283 Top Shot sellers recovered below the spork wall, the reserve released on a market-closed check, and the lane scheduled to switch ITSELF off · Claude Code (cloud), Trevor: "do what you think is best for RPC long term and for our users"
+
+**Continues the 09-07 entry below.** Spend at 06:52Z: **325,432 of 1,000,000 datapoints · 19 executions · ~190 est. credits of 2,500.** Free tier goes view-only **2026-09-10**.
+
+## What landed
+
+**17,283 `nba_top_shot` seller addresses recovered**, all below the 2023-11-08 spork wall where **nothing free reaches** (`claim_sales_counterparty_batch` is floored there; Atlas's edition-history walk does not exist). 2023-08 null sellers **127,109 → 115,620**. Audited: `sales_counterparty_recovered` matches the fill exactly, **0 malformed addresses**, **0 self-trades**, and the 4,390-row tick spread over **1,342 distinct sellers with the top wallet at 1.9 %** — diverse collectors, not Dapper-internal concentration (which would have made the fill worthless).
+
+⚠ **Cross-source validation was INCONCLUSIVE, not a pass, and is recorded as such.** Atlas held **no purchase record** for 3 of 3 sampled 2023-08 sales (one Moment had zero transactions), so seller-to-seller comparison was impossible; it did corroborate one wallet from an April-2023 listing on the same Moment. Likely `sales` carries `ts_history_backfill_v1` rows from a different import than Atlas's marketplace feed — **not proven**. Do not cite this fill as cross-validated.
+
+⚠ **The $1 prices are NOT an artifact** — checked because 3 of 3 samples showed `price_usd = 1`. Sales ≤ $1 are **37–59 % of EVERY month** May–Nov 2023 (median price $1–2); 2023-08 is 77.7 %. That is the 2023 bear market's $1 common floor, not bad data.
+
+## Decisions taken under the delegation
+
+1. ⭐ **RESERVE RELEASED — the "irreplaceable UFC/Golazos" prize was mostly worthless and I had not checked.** `ufc_strike.market_closed_at = 2026-05-13` (FMV frozen, UI renders unavailable), so **702,545 of that 778,032 buys history for a DEAD collection**. ⚠ **Value was stated by VOLUME; the collection's own status was never read.** Cap 500,000 → 1,000,000.
+2. **Retargeted to 2023-08, not a backward walk from the wall.** August is the densest month below the wall (146,674 sales, **86.7 % null = 127,109 recoverable**, ~29k/week vs June's ~8.8k); walking back from 2023-11-08 spends the budget on low-volume Oct/Nov and never arrives. **Measured payoff: 12.7–16.5 dp per useful row vs June's 26.3.**
+3. **`day_row_cap` 150,000 → 250,000.** It existed to stop one day burning a MONTH; there is no later day to protect and pacing now only strands datapoints. **REVERT: 150000.**
+4. **`window_days` 2, not 7** — the route's `HARD_BUDGET_MS` is **720 s** and the cursor advances only on a COMPLETED window, so an over-long window re-spends its datapoints on retry. A 2-day August window ≈ 43 pages ≈ 6 min, comfortably inside one tick.
+
+## 🚨 The lane now switches ITSELF off — pg_cron **jobid 475 `rpc-dune-free-tier-sunset`**, `0 12 11 9 *`
+
+After 09-10 the API refuses and this hourly lane would throw `ok: false` **forever** — the permanently-red instrument this file warns is indistinguishable from a broken one. The job sets `dune_budget_state.paused = true` (idempotent, `where paused = false`), which `readDuneBudget` reports as a **configured** stop, so `logDuneBudgetStop` logs **`ok: true`** and pages nobody. **REVERT:** `select cron.unschedule('rpc-dune-free-tier-sunset'); update public.dune_budget_state set paused = false where id = 1;`
+
+## Watch — and the one thing that is NOT a defect
+
+⚠ **`QUERY_STATE_FAILED` is INTERMITTENT and SELF-CLEARING — do not chase it.** It ended 3 of 4 ticks, but **the window that failed at 05:47Z (2023-08-28..08-30) SUCCEEDED at 06:47Z**; it costs one execution and **ZERO datapoints**, and the cursor advances only on success, so nothing is lost or double-written. ⛔ **A single failed execution is not a diagnosis** — the 02:47Z instance was read as an era/schema fault and the same era ran clean an hour later.
+
+Throughput ~7,000 rows/h at ~117k dp/h ⇒ the remaining **674,568 dp** should yield **~40,000 more rows** and exhaust ~**12:45Z 09-08**. Watch `dune_budget_status` `datapoints_cycle` → 1,000,000 and `aug_still_null` falling from 115,620.
+
+**Also found, NOT shipped (deliberate):** `claim_sales_counterparty_batch` omits **`laliga_golazos`** from its `IN` list (only `nba_top_shot`, `nfl_all_day`, `ufc_strike`), and Golazos counterparty coverage is **480 sellers of 78,553 sales (0.6 %), newest write 08-31, 2,586 above-wall rows static**. Real gap, but the fix is a `CREATE OR REPLACE` on a hot function whose queue ordering drives the **298,630-row All Day** backfill in flight, for 2,586 rows, with no deadline — it deserves a considered edit, not a 23:00 addition. Source-floor map: [apis-and-cadence.md](../reference/apis-and-cadence.md) (`9bf4120a3`).
+
 ### 2026-09-07 · ✅ Sentry decided (no upgrade) and the browser SDK is switched off — it was POSTing traces and user PII to a quota that has answered 429 since 08-18 · Cowork (cloud + device VM), Trevor: "Keep doing all you can. We're not upgrading Sentry unless we absolutely need to."
 
 **The decision, recorded:** Sentry stays on the exhausted free quota; the client-side detector is the beacon (`components/telemetry/ClientErrorBeacon.tsx` → `usage_events.client_error` → the pipeline-alerts `client_errors` arm), proven on prod 09-06 and again tonight. Go-live B2 is closed on that basis; #34's "Sentry money" line is closed as DECLINED.
