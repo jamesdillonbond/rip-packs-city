@@ -1047,6 +1047,36 @@ export async function POST(req: NextRequest) {
       console.log(
         `[sales-indexer] parked ${unmappedParked}/${unresolvedEvents.length} unresolvable sales in unmapped_sales`,
       )
+
+      // ⚠ FAIL CLOSED. `unresolved_unparked` is the only genuinely-lost figure
+      // here, and a field whose whole purpose is to alarm is worthless if
+      // nothing reads it — the "instrument nobody keys on" trap. Nothing does:
+      // no trust-board arm, no `get_pipeline_alerts_core` rule and no detector
+      // keys on a `pipeline_runs.extra` field. So rather than add a watcher,
+      // convert the signal into the failure it actually is, using the idiom
+      // this route already documents twice: throw, the outer catch writes
+      // ok:false with `cursorAfter: null`, the cursor HOLDS, and the next tick
+      // re-reads the range. One cycle, nothing lost.
+      //
+      // ⚠ THE DIRECTION IS A COST ARGUMENT, so it is stated rather than
+      // assumed. Failing closed risks a STALL if some row could never insert;
+      // failing open silently loses that sale forever. A stall is loud (the
+      // cadence watchlist, `detect_stalled_pipelines`, and a visible drop in
+      // `sales`) and fully recoverable because the cursor held; the loss is
+      // invisible and permanent. ⭐ And the poison-row vector was CHECKED, not
+      // waved away: every NOT NULL column on `unmapped_sales` is a constant
+      // (`collection_id`), always-a-string (`nft_id`), always-a-number
+      // (`price_usd`, via `|| 0`) or always-valid (`sold_at` — `toIsoTimestamp`
+      // falls back to `new Date()` and cannot return null). No data shape this
+      // route produces can fail permanently, so a park failure is transient
+      // infrastructure, which is exactly the class a cursor hold repairs.
+      const unparked = unresolvedIds.length - unmappedParked - unmappedAlreadyParked
+      if (unparked > 0) {
+        throw new Error(
+          `unmapped_sales park incomplete: ${unparked} of ${unresolvedIds.length} unresolved sales ` +
+            `neither parked nor already parked — holding the cursor so the next tick re-reads them`,
+        )
+      }
     }
 
     // Step 7: Update cursor (capped if a chunk fetch failed).

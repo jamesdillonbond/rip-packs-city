@@ -912,4 +912,61 @@ describe("sales-indexer — unresolvable sales are parked, not dropped", () => {
     expect(run?.ok).toBe(false)
     expect(String(run?.error)).toContain("unmapped_sales dedup read")
   })
+
+  // Force every `unmapped_sales` insert to fail — the batch AND the per-row
+  // retry — so nothing parks and `unresolved_unparked` would be > 0.
+  function withFailingUnmappedInsert(spy: ReturnType<typeof install>) {
+    const fixture = spy.fixture as { from: (t: string) => Record<string, unknown> }
+    const baseFrom = fixture.from.bind(fixture)
+    fixture.from = (t: string) => {
+      const b = baseFrom(t)
+      if (t === "unmapped_sales") {
+        const base = b.insert as (rows: unknown) => unknown
+        b.insert = (rows: unknown) => {
+          base(rows)
+          return Promise.resolve({ data: null, error: { code: "XX000", message: "park boom" } })
+        }
+      }
+      return b
+    }
+    return spy
+  }
+
+  it("a sale that could not be PARKED holds the cursor — the lost figure fails the run instead of being reported", async () => {
+    // ⛔ THE POINT OF THE WHOLE CHANGE. If parking fails and the cursor advances
+    // anyway, the sale is gone permanently and `unresolved_unparked` records it
+    // in a field nothing reads. Failing closed converts that into a held cursor:
+    // the next tick re-reads the range and the sale gets another chance.
+    state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9600", "12.5", "f".repeat(64), DAPPER_MERCHANT)]
+    const spy = withFailingUnmappedInsert(install(unresolvableFixtures()))
+
+    await POST(req())
+    await runDeferred()
+
+    expect(
+      spy.writes.event_cursor ?? [],
+      "the cursor must NOT advance past a sale that was neither written nor parked",
+    ).toHaveLength(0)
+    const run = pipelineRun(spy)
+    expect(run?.ok).toBe(false)
+    expect(String(run?.error)).toContain("park incomplete")
+  })
+
+  it("CONTROL: a successful park still advances the cursor — the hold is not unconditional", async () => {
+    // Without this the test above passes for a route that simply never advances
+    // the cursor on any unresolvable sale, which would stall the indexer for
+    // good. Same fixture, working inserts.
+    state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9601", "12.5", "0".repeat(64), DAPPER_MERCHANT)]
+    const spy = install(unresolvableFixtures())
+
+    await POST(req())
+    await runDeferred()
+
+    expect((spy.writes.unmapped_sales ?? []).flatMap((w) => w.rows)).toHaveLength(1)
+    expect(
+      spy.writes.event_cursor ?? [],
+      "a parked sale is safe, so the range is covered and the cursor moves",
+    ).not.toHaveLength(0)
+    expect(pipelineRun(spy)?.ok).toBe(true)
+  })
 })
