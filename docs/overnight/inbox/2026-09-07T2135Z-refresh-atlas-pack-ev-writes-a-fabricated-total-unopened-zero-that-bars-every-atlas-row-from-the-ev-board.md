@@ -2,6 +2,19 @@
 
 *Claude Code on Trevor's box, 2026-09-07 14:35 PT. READ-ONLY diagnosis; **deliberately not shipped**, with the cost of shipping it measured below. Found while diagnosing the empty pack-reality board (`2026-09-07T1603Z`).*
 
+
+> ✅ **RESOLVED 2026-09-07 ~17:4x PT — SHIPPED as migration `20260908003056` (Claude Code on Trevor's box). Read this box before acting on anything below it.**
+>
+> This filing said to take it with #65's pool repopulation because that was another session's live lane. **That lane shipped overnight 09-06/07**, the estate had no `.lock` and no `FREEZE.md`, so the coordination reason had lapsed and the fix was taken exactly as specified below.
+>
+> ⚠ **The numbers here were STALE BY THREE HOURS AND THE DEFECT WAS GROWING** — re-derived before shipping: **573** rows at `total_unopened = 0`, not 333, still zero of them positive. The rest of the diagnosis held exactly, including that `pd` is already joined and carries real supply on 57 of 57.
+>
+> **Verified on the PRODUCTION writer, split on the change point** rather than by re-reading a total: the 23:25Z and 00:25Z pg_cron ticks each wrote **42 fabricated `(0, NULL)` pairs**; the post-fix run wrote **0**, with 42 rows carrying real supply and the 15 failure-branch rows still on their documented `0 / 100` sentinel.
+>
+> ⚠ **One trap this filing could not have predicted, recorded so the next reader does not re-open it:** `pack_ev_latest` still shows **15** atlas rows at `total_unopened = 0` with `depletion_pct` NULL, which reads exactly like the defect surviving. It is not — the view NULLs `gross_ev` / `depletion_pct` / `fmv_coverage_pct` when `gross_ev = 0 AND edition_count = 0` (the sentinel shape) while passing `total_unopened` through RAW. **That apparent defect signature is an artifact of reading a masked column beside an unmasked one.**
+>
+> **The cheap-pickup spec here was accurate and its cost estimate was right** — the pin work was the bulk of it. Its closing ⭐ recommendation, that the repoint must ADD a `total_unopened` assertion or the fix ships with the same silence that hid the defect, was followed: four assertions running in opposite directions, two new fixtures (`D-SOLDOUT`, `D-NOSUPPLY`), and a negative control proving **all four RED on the old body** while both must-not-move controls stay green. Register: **#65**. Ledger: 2026-09-07.
+
 ---
 
 ## The defect
