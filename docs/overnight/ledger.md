@@ -10,6 +10,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-08 · 📚 Session wrap — the Dune work is closed and its lessons are promoted out of the ledger into the docs that get read · Claude Code (cloud), Trevor: "wrap up and handle anything unresolved, then commit what you need to memory and refresh relevant documentation"
+
+**No prod state changed in this turn.** Closes the three 09-07/09-08 Dune entries below; every revert path there still stands.
+
+**Documentation refreshed — the point is that a fact left only in the ledger stops being read:**
+- **[cron-and-schedulers.md](../reference/cron-and-schedulers.md)** — pg_cron **jobid 475 `rpc-dune-free-tier-sunset`** (`0 12 23 9 *`) recorded with the mechanism (`paused` makes the hourly lane a **CONFIGURED** stop at `ok: true`, not an hourly `ok: false`), **why the date is 09-23 and not the 09-11 I first shipped** (redundant — the spent cycle cap already refuses in ~400 ms without reaching Dune; and harmful — it would have killed the 14-day Plus trial), and the revert.
+- **[apis-and-cadence.md](../reference/apis-and-cadence.md)** — already carries the counterparty **source-floor map** (`9bf4120a3`) and the **resolved** `*_studio_history_v1` probe (`4162d2ce5`).
+- **[docs/sessions/2026-09.md](../sessions/2026-09.md)** — session entry prepended.
+
+⚠ **CLAUDE.md was NOT touched: it sits at 39,960 of 40,000 chars — 40 characters.** Every lesson below therefore went to a `docs/reference/*.md`; promoting any of them into CLAUDE.md means DISPLACING a rule, which is a deliberate call for whoever makes it, not a wrap-up action.
+
+**Guards run before committing, because they read what I edited:** `check-retired-rules.mjs` **0 violations across 34 surfaces / 14,333 lines**; `check-memory-doc-links.mjs` **163 links / 25 files all resolve**; ledger headings **+1**, `find-swallowed-ledger-headings.awk` **3**, `find-future-dated-ledger-headings.mjs` **0**. ⚠ **Both doc guards EXCLUDE `docs/sessions/**` as frozen history — which is also why session entries carry no markdown links; match that convention rather than introduce the first ones.**
+
+**Final state, read live:** jobid 475 active `0 12 23 9 *` · `sales-ingest-dune` cap back to 100,000 · `sales-seller-recovery-dune` cap 1,000,000, cycle spent, gate refusing · `ownership-sync-dune` cap 0, reservation freed (**no caller either way** — see the correction below) · `dune_budget_state` day caps 250,000 rows / 1,000,000 dp, `paused = false` until 09-23 · cursor 2023-08-02 · **84,868 rows delivered, 0 malformed, 0 self-trades**.
+
+**Nothing is left running and nothing is unverified.** ⏳ Owed to a human, unchanged: the UFC/Golazos console repoint is **not worth doing** (UFC's market closed 2026-05-13; Golazos alone is 75,487 rows), and All Day's remaining ~277,886 above-wall counterparty rows need **~289 days** at `allday-buyer-backfill`'s measured ~960/day — a throughput fact, not a defect, and the thing to look at if All Day counterparty coverage matters before next summer.
+
 ### 2026-09-08 · ✅ The weekly wmc reindex now covers the TWO LARGEST indexes on the table — it had never named them, and they were the most bloated objects on it · Claude Code on Trevor's box, Trevor: "Keep going"
 
 **Picked up #56, whose two headline claims turned out to be stale — and whose underlying rate turned out to be RIGHT.** The item says *"no reindex job exists"* and *"`wmc-reindex-verify` is a permanently-red instrument that nothing is scheduled to clear."* Both were fixed by `20260903223235`: **jobids 438–441** reindex four indexes every Sunday and **442** verifies at 03:23, and the **2026-09-06 03:23Z verify ran `ok: true`** with all four at **83.7–90.5 %** leaf density.
