@@ -1024,3 +1024,48 @@ body.includes('ZZZ_NOT_ON_THIS_PAGE')  // must be absent, or the probe is broken
 2. **The reset, automated:** `Rip Packs City/cowork-2026-09-08/fix-sessions-vhdx.ps1` (+ `.cmd` / `-FORCE.cmd`) closes Claude (or waits ≤ 30 min for a tray quit), waits for `claude` + `vmmem` to exit, renames the vhdx to `.bak-<stamp>`, relaunches Claude, logs beside itself. Launch it by **double-click in File Explorer under computer use** (Explorer and terminals are click-only there — the script is the keyboard). The bridge drops ~75 s and reconnects; `df -h /sessions` then reads ~1 %. The `.bak` is Trevor's to delete.
 3. ⛔ **Windows PowerShell 5.1 reads a BOM-less UTF-8 `.ps1` as ANSI** — an em dash becomes `â€”`, whose last byte is a smart quote, and every string after it mis-parses ("The string is missing the terminator"). Scripts written from the VM must be pure ASCII (or carry a BOM).
 4. ⚠ **After the reset, the LIVE session's `$HOME` comes back owned by `nobody`** (only `mnt/` is yours) and the rootfs `/tmp` was wiped by the VM restart. Use `/tmp/rpc-<uid>` for the rest of that session; the next session starts clean.
+
+## 🚨 `apply_migration` creates REPO/PROD DRIFT that NO instrument here catches — verify by md5 every time (2026-09-08)
+
+`apply_migration` takes the SQL as an **inline argument**, so the text that reaches production is
+hand-assembled for the tool call while the committed file is written separately. Two artefacts, one
+author, no mechanical link — and on 2026-09-08 I trimmed an in-body comment out of the MCP call and
+did not notice:
+
+```
+deployed pg_proc.prosrc   md5 5c45be6daa05f7c4b12aa5b7535f1c07
+committed migration body  md5 540afbb7a3ff1d066b1de9fb8bb455d8
+```
+
+⭐ **Nothing about the DATABASE was wrong.** The function behaved correctly and its six targets were
+live. What was wrong is that **the committed file had stopped being a description of production**,
+which is the one job a migration file has.
+
+⛔ **AND NOTHING WOULD HAVE CAUGHT IT.** `migration-parity` matches on **NAME, not content** (by
+design — `apply_migration` stamps its own version, so filename timestamps legitimately differ). The
+`db-invariants-drift-guard` only compares functions registered in `PINS`, and this one is not
+registered. **A green parity job plus a green drift guard is compatible with a committed file that
+does not match prod.**
+
+**How to apply — one query and one command, after EVERY `apply_migration` of a function:**
+
+```sql
+SELECT md5(prosrc) FROM pg_proc WHERE proname = '<fn>';
+```
+
+and md5 the committed file's body between its dollar-quote delimiters. A mismatch is a defect **even
+when the deployed behaviour is correct**. Fix it by re-applying the repo's exact text, not by editing
+the repo to match what you happened to send.
+
+⚠ **The comment-trim is the shruggable version; the same mechanism on CODE is why two edge functions
+are DEFERRED rather than deployed** (known-issues #23): one embeds a `\u0300` written as six literal
+ASCII characters that JSON decoding silently turns into a raw combining mark, the other hardcoded
+Cadence contract addresses where a wrong hex digit resolves the wrong contract without crashing.
+**A path that can drop a comment can drop a digit.**
+
+⚠⚠ **THE VERIFIER HAS ITS OWN FOOTGUN, hit while writing the file that documents this.** An extractor
+that splits a `.sql` on the dollar-quote tag and takes index 1 counts **every** occurrence — including
+one written inside a COMMENT. Naming the tag in prose made the splitter return the wrong slice and
+report a **false drift** (body length 1390 against the real 3034). Anchor on the LAST marker pair, or
+on `AS <tag>` … `<tag>;`. ⭐ **A verifier that can be confused by the text it verifies is not a
+verifier** — the same family as the repo's rule that `stripComments` is not a guarantee it stripped.
