@@ -110,6 +110,15 @@ covers everything, and one era is covered by nothing at all.
 - ⚠ **`claim_sales_counterparty_batch` covers `nba_top_shot`, `nfl_all_day`, `ufc_strike` only** — Golazos
   is NOT in its `IN` list, and it is floored at the spork wall. It excludes two sources as known-undecodable
   (`allday_studio_history_v1`, `ufc_studio_history_v1`).
+  ⛔ **Golazos's omission is CORRECT, not an oversight — do not "fix" it** (a 2026-09-08 filing called it a
+  real gap; that was wrong). **99.4 % of `laliga_golazos` sales are `golazos_studio_history_v1`** (78,073 of
+  78,553, **zero sellers**), and 2 of 2 sampled hashes from it resolve to **LISTING** transactions —
+  `NFTStorefrontV2.ListingAvailable` plus fee movements, **no NFT `Withdraw` event**, so there is no
+  counterparty to decode. Same family as the two named exclusions (`ufc_studio_history_v1` 813,380 rows /
+  **0** sellers). Golazos's only decodable rows are its 480 on-chain ones (`onchain_dapper_v2` 378 +
+  `onchain` 102), already **100 %** filled. ⚠ **The `*_studio_history_v1` hash appears to be the LISTING tx,
+  not the purchase tx — n=2, re-derive before acting.** The rows are not duplicated (78,073 rows : 78,073
+  distinct hashes, 1.45 rows per nft), so they read as genuine sales carrying an unusable hash.
 - ⚠ **Dune returns FAR more sales than `sales` holds** — 38,105 rows for a 2023-06 week in which `sales`
   carries ~8,358 Top Shot rows. That is the *ingest* gap, not a counterparty gap, and a fill-only lane
   (`apply_sales_counterparty_external`) can never close it: it matches `(transaction_hash, nft_id)` on rows
