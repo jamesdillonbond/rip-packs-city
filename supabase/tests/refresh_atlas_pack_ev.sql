@@ -67,11 +67,19 @@
 -- table tells it to, so the failure branch and the smallint clamp are reachable,
 -- and it RECORDS the slots/ask it was handed so the input guards are assertable.
 --
--- The function DDL below is VERBATIM from the committed snapshot migration
--- (supabase/migrations/20260816050000_audit_20260816_snapshot_refresh_atlas_pack_ev.sql),
--- pulled from live prod via pg_get_functiondef on 2026-08-16
--- (md5 acbe79769403d75542bf17f1550959a9).
+-- The function DDL below is VERBATIM from the committed migration
+-- (supabase/migrations/20260908003056_audit_20260907_refresh_atlas_pack_ev_writes_real_supply_not_a_fabricated_zero.sql),
+-- re-read from live prod after that migration applied, 2026-09-07
+-- (md5 of pg_proc.prosrc = 4d65a354e86c60df8885ea17358f78f5).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+--
+-- ⚠ The md5 above is over `pg_proc.prosrc` (the BODY). The previous header
+-- recorded acbe79769403d75542bf17f1550959a9 against `pg_get_functiondef`
+-- output (body PLUS the CREATE header and SET clauses) on 2026-08-16 — two
+-- different expressions over two different strings, so the two values were
+-- never comparable and neither is wrong. Recorded because a digest without the
+-- expression that produced it cannot be verified later: state which one, or the
+-- next reader re-derives a mismatch and reports drift that is not there.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -83,11 +91,19 @@ CREATE TABLE public.pack_drop_pool (
   pool_source   text
 );
 
+-- ⚠ `total_sealed` / `depletion_pct` were added to this fixture 2026-09-07 with
+-- the supply fix (migration 20260908003056). They are the REAL supply the
+-- success branch now publishes in place of a fabricated `0`. Types mirror prod
+-- exactly — `total_sealed` integer, `depletion_pct` smallint — because the
+-- history columns they feed are integer / smallint and a widened fixture would
+-- hide an overflow the real table would raise.
 CREATE TABLE public.pack_distributions (
   collection_id uuid,
   dist_id       text,
   title         text,
-  metadata      jsonb
+  metadata      jsonb,
+  total_sealed  int,
+  depletion_pct smallint
 );
 
 CREATE TABLE public.pack_ask_state (
@@ -183,7 +199,9 @@ BEGIN
            pd.metadata->>'uuid' AS listing_uuid,
            COALESCE(pd.title, pd.metadata->>'name') AS title,
            GREATEST(COALESCE((pd.metadata->>'number_of_pack_slots')::int, 1), 1) AS slots,
-           pas.lowest_ask
+           pas.lowest_ask,
+           pd.total_sealed,
+           pd.depletion_pct
     FROM pack_drop_pool p
     JOIN pack_distributions pd ON pd.collection_id = v_cid AND pd.dist_id = p.dist_id
     LEFT JOIN pack_ask_state pas ON pas.collection_slug = 'nba-top-shot' AND pas.dist_id = p.dist_id
@@ -214,7 +232,7 @@ BEGIN
       round(v_gross - COALESCE(r.lowest_ask, 0), 2),
       (r.lowest_ask > 0 AND (v_gross - r.lowest_ask) > 0),
       CASE WHEN r.lowest_ask > 0 THEN round(v_gross / r.lowest_ask, 3) ELSE NULL END,
-      (ev->>'fmv_coverage_pct')::smallint, LEAST((ev->>'edition_count')::int, 32767), 0, NULL, v_now);
+      (ev->>'fmv_coverage_pct')::smallint, LEAST((ev->>'edition_count')::int, 32767), r.total_sealed, r.depletion_pct, v_now);
     v_written := v_written + 1;
   END LOOP;
 
@@ -241,6 +259,8 @@ $function$;
 -- D-NOSLOTS  : metadata has no number_of_pack_slots       -> slots floor 1
 -- D-NOTATLAS : pool_source = 'live'                       -> not swept
 -- D-WRONGC   : another collection                         -> not swept
+-- D-SOLDOUT  : EV clears the ask, but total_sealed = 0     -> writes a REAL 0/100
+-- D-NOSUPPLY : EV clears the ask, supply UNKNOWN (NULL)    -> writes NULL, never 0
 INSERT INTO public.pack_drop_pool (collection_id, dist_id, pool_source) VALUES
   (:TS::uuid, 'D-ASK',      'atlas'),
   (:TS::uuid, 'D-UNDER',    'atlas'),
@@ -252,6 +272,14 @@ INSERT INTO public.pack_drop_pool (collection_id, dist_id, pool_source) VALUES
   (:TS::uuid, 'D-BIG',      'atlas'),
   (:TS::uuid, 'D-NOSLOTS',  'atlas'),
   (:TS::uuid, 'D-NOTATLAS', 'live'),
+  -- ⚠ The two supply controls, added 2026-09-07 with the fix that made the
+  -- success branch publish REAL supply instead of a fabricated 0. They run in
+  -- OPPOSITE directions on purpose: without D-SOLDOUT the pin would only prove
+  -- "not zero" (satisfiable by any wrong non-zero constant), and without
+  -- D-NOSUPPLY it would not notice a COALESCE(total_sealed, 0) putting the
+  -- defect straight back.
+  (:TS::uuid, 'D-SOLDOUT',  'atlas'),
+  (:TS::uuid, 'D-NOSUPPLY', 'atlas'),
   (:AD::uuid, 'D-WRONGC',   'atlas'),
   -- ⚠ D-CROSSPOOL: an atlas pool row under ALL DAY for a dist_id that is
   -- DISTRIBUTED under Top Shot, with no Top Shot pool row. This is the ONLY
@@ -269,21 +297,37 @@ INSERT INTO public.pack_drop_pool (collection_id, dist_id, pool_source) VALUES
   -- edition) would be swept once per edition and write duplicate history rows.
   (:TS::uuid, 'D-ASK',      'atlas');
 
-INSERT INTO public.pack_distributions (collection_id, dist_id, title, metadata) VALUES
-  (:TS::uuid, 'D-ASK',      'Ask Pack',      '{"uuid":"u-ask","number_of_pack_slots":5}'),
-  (:TS::uuid, 'D-UNDER',    'Under Pack',    '{"uuid":"u-under","number_of_pack_slots":5}'),
-  (:TS::uuid, 'D-NOASK',    'No Ask Pack',   '{"uuid":"u-noask","number_of_pack_slots":5}'),
-  (:TS::uuid, 'D-DELISTED', 'Delisted Pack', '{"uuid":"u-del","number_of_pack_slots":5}'),
-  (:TS::uuid, 'D-ZEROASK',  'Zero Ask Pack', '{"uuid":"u-zero","number_of_pack_slots":5}'),
-  (:TS::uuid, 'D-FAIL',     'Fail Pack',     '{"uuid":"u-fail","number_of_pack_slots":5}'),
-  (:TS::uuid, 'D-NULLOK',   'Null Ok Pack',  '{"uuid":"u-nullok","number_of_pack_slots":5}'),
-  (:TS::uuid, 'D-BIG',      'Big Pack',      '{"uuid":"u-big","number_of_pack_slots":5}'),
+-- ⚠ COLUMN-LEVEL FIXTURE AUDIT, 2026-09-07. `total_sealed` / `depletion_pct`
+-- carry REAL values on every row rather than defaulting to NULL. The repo rule
+-- for repointing a DB pin is that a new read must resolve to something, or the
+-- assertion passes while proving nothing — a fixture-wide NULL would have made
+-- the "publishes real supply" assertions below vacuous in exactly the direction
+-- the defect ran.
+--
+-- ⚠ D-FAIL and D-NULLOK deliberately carry REAL supply (900 / 10) even though
+-- they take the failure branch. That is the control proving the failure branch
+-- is UNTOUCHED by this change: it must still write its documented 0 / 100
+-- sentinel while real supply sits right there in the row, so a future edit
+-- cannot quietly make property 4 depend on the data.
+INSERT INTO public.pack_distributions (collection_id, dist_id, title, metadata, total_sealed, depletion_pct) VALUES
+  (:TS::uuid, 'D-ASK',      'Ask Pack',      '{"uuid":"u-ask","number_of_pack_slots":5}',    1200,  40),
+  (:TS::uuid, 'D-UNDER',    'Under Pack',    '{"uuid":"u-under","number_of_pack_slots":5}',   500,  55),
+  (:TS::uuid, 'D-NOASK',    'No Ask Pack',   '{"uuid":"u-noask","number_of_pack_slots":5}',   500,  55),
+  (:TS::uuid, 'D-DELISTED', 'Delisted Pack', '{"uuid":"u-del","number_of_pack_slots":5}',     500,  55),
+  (:TS::uuid, 'D-ZEROASK',  'Zero Ask Pack', '{"uuid":"u-zero","number_of_pack_slots":5}',    500,  55),
+  (:TS::uuid, 'D-FAIL',     'Fail Pack',     '{"uuid":"u-fail","number_of_pack_slots":5}',    900,  10),
+  (:TS::uuid, 'D-NULLOK',   'Null Ok Pack',  '{"uuid":"u-nullok","number_of_pack_slots":5}',  900,  10),
+  (:TS::uuid, 'D-BIG',      'Big Pack',      '{"uuid":"u-big","number_of_pack_slots":5}',     700,  25),
   -- no `title`, and no slot count: the name falls back to metadata.name and the
   -- slots to the floor of 1.
-  (:TS::uuid, 'D-NOSLOTS',  NULL,            '{"uuid":"u-noslots","name":"Slotless Pack"}'),
-  (:TS::uuid, 'D-NOTATLAS', 'Live Pack',     '{"uuid":"u-live","number_of_pack_slots":5}'),
-  (:AD::uuid, 'D-WRONGC',   'AllDay Pack',   '{"uuid":"u-ad","number_of_pack_slots":5}'),
-  (:TS::uuid, 'D-CROSSPOOL','Cross Pool',    '{"uuid":"u-cross","number_of_pack_slots":5}');
+  (:TS::uuid, 'D-NOSLOTS',  NULL,            '{"uuid":"u-noslots","name":"Slotless Pack"}',   700,  25),
+  -- a pack that really IS sold out: the 0 it publishes is MEASURED, not fabricated.
+  (:TS::uuid, 'D-SOLDOUT',  'Sold Out Pack', '{"uuid":"u-soldout","number_of_pack_slots":5}',   0, 100),
+  -- supply genuinely UNKNOWN. Must stay NULL all the way to pack_ev_history.
+  (:TS::uuid, 'D-NOSUPPLY', 'No Supply Pack','{"uuid":"u-nosupply","number_of_pack_slots":5}',NULL,NULL),
+  (:TS::uuid, 'D-NOTATLAS', 'Live Pack',     '{"uuid":"u-live","number_of_pack_slots":5}',    500,  55),
+  (:AD::uuid, 'D-WRONGC',   'AllDay Pack',   '{"uuid":"u-ad","number_of_pack_slots":5}',      500,  55),
+  (:TS::uuid, 'D-CROSSPOOL','Cross Pool',    '{"uuid":"u-cross","number_of_pack_slots":5}',   500,  55);
 
 INSERT INTO public.pack_ask_state (collection_slug, dist_id, is_listed, lowest_ask) VALUES
   ('nba-top-shot', 'D-ASK',      true,  20.00),
@@ -294,6 +338,10 @@ INSERT INTO public.pack_ask_state (collection_slug, dist_id, is_listed, lowest_a
   ('nba-top-shot', 'D-NULLOK',   true,  10.00),
   ('nba-top-shot', 'D-BIG',      true,  10.00),
   ('nba-top-shot', 'D-NOSLOTS',  true,  10.00),
+  -- both supply controls are listed with an ask their EV clears, so each would
+  -- be +EV on every OTHER property — supply is the only thing separating them.
+  ('nba-top-shot', 'D-SOLDOUT',  true,  20.00),
+  ('nba-top-shot', 'D-NOSUPPLY', true,  20.00),
   -- ⚠ the ask table is keyed by SLUG, and this row is All Day's. It exists so
   -- dropping the `collection_slug` predicate is observable: D-ASK would then
   -- join two ask rows and be swept twice.
@@ -309,6 +357,8 @@ INSERT INTO public.__ev_fixture (dist_id, payload) VALUES
   ('D-NULLOK',   '{"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
   ('D-BIG',      '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":90000}'),
   ('D-NOSLOTS',  '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
+  ('D-SOLDOUT',  '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
+  ('D-NOSUPPLY', '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
   ('D-NOTATLAS', '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
   ('D-WRONGC',   '{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}'),
   ('D-CROSSPOOL','{"ok":true,"gross_ev":50.00,"typical_pull_ev":12.00,"fmv_coverage_pct":88,"edition_count":40}');
@@ -372,16 +422,76 @@ SELECT _assert_eq(
   'a DELISTED ask and a ZERO ask are both treated as NO ASK, never as a $0 pack'
 );
 
+-- ── Supply: the two columns that decide whether a row can EVER be published ──
+--
+-- ⭐ ADDED 2026-09-07 WITH THE FIX, AND THE REASON THEY EXIST IS THAT THEY DID
+-- NOT. `total_unopened` was asserted NOWHERE in this pin, and `depletion_pct`
+-- only on the failure branch — so for three weeks the success branch hardcoded
+-- `0, NULL`, `pack_ev_latest` read that fabricated 0 as SOLD OUT, and every row
+-- this function wrote was barred from the +EV board with the whole pin green.
+-- 573 live rows, 0 of them ever publishable. A guard is silent about what it
+-- does not name.
+--
+-- `pack_ev_latest` (not in this fixture — it is a view over the real table)
+-- applies: total_unopened IS NOT NULL AND total_unopened <= 0 -> false, and
+-- depletion_pct IS NOT NULL AND depletion_pct >= 100 -> false. So these two
+-- columns can VETO the flag the function just computed, which is why they are
+-- pinned at the same level as the flag itself.
+SELECT _assert_eq(
+  (SELECT total_unopened::text || '/' || depletion_pct::text
+     FROM public.pack_ev_history WHERE dist_id = 'D-ASK'),
+  '1200/40',
+  'the success branch publishes the REAL supply from pack_distributions, not a fabricated 0'
+);
+
+-- ⚠ THE OTHER DIRECTION, and without it the assertion above is satisfiable by
+-- any wrong constant: a pack that genuinely IS sold out must still write 0/100.
+-- The fix is "publish what pd says", not "publish something non-zero".
+SELECT _assert_eq(
+  (SELECT total_unopened::text || '/' || depletion_pct::text
+     FROM public.pack_ev_history WHERE dist_id = 'D-SOLDOUT'),
+  '0/100',
+  'a genuinely sold-out pack publishes a MEASURED 0 — the veto is correct when the data says so'
+);
+
+-- ⚠ THE ANTI-REGRESSION. Unknown supply must stay NULL all the way through.
+-- `pack_ev_latest` reads NULL as "unknown" and lets the computed flag stand —
+-- which is exactly why the 100 rows other writers leave NULL can be +EV while
+-- none of this writer's 573 zeros could. A COALESCE(pd.total_sealed, 0) would
+-- restore the original defect while both assertions above still passed.
+SELECT _assert_eq(
+  (SELECT coalesce(total_unopened::text,'NULL') || '/' || coalesce(depletion_pct::text,'NULL')
+     FROM public.pack_ev_history WHERE dist_id = 'D-NOSUPPLY'),
+  'NULL/NULL',
+  'UNKNOWN supply is withheld as NULL, never published as a measured 0'
+);
+
+-- ⚠ The defect''s exact signature, asserted at population zero so it cannot
+-- come back in a row this pin does not name individually: a SUCCESS-branch row
+-- (gross_ev > 0 is only reachable there) carrying `total_unopened = 0` with
+-- `depletion_pct IS NULL` is the fabricated pair and nothing else produces it.
+SELECT _assert_eq(
+  (SELECT count(*)::text FROM public.pack_ev_history
+    WHERE gross_ev > 0 AND total_unopened = 0 AND depletion_pct IS NULL),
+  '0',
+  'no success-branch row carries the fabricated (0, NULL) supply pair'
+);
+
 -- ── The failure branch ──────────────────────────────────────────────────────
 -- ⚠ It WRITES rather than skips. Skipping would leave last hour''s row as
 -- pack_ev_latest, so a pack that stopped being computable would keep publishing
 -- a stale +EV badge indefinitely.
+--
+-- ⚠ `total_unopened` is asserted here too, and D-FAIL''s fixture carries REAL
+-- supply (900 sealed, 10% depleted). The sentinel must IGNORE it: property 4 is
+-- that an uncomputable pack cannot publish a +EV badge, and that must not become
+-- conditional on the supply data now that the success branch reads it.
 SELECT _assert_eq(
   (SELECT gross_ev::text || '/' || coalesce(typical_ev::text,'NULL') || '/' ||
-          is_positive_ev::text || '/' || depletion_pct::text
+          is_positive_ev::text || '/' || total_unopened::text || '/' || depletion_pct::text
      FROM public.pack_ev_history WHERE dist_id = 'D-FAIL'),
-  '0/NULL/false/100',
-  'a FAILED EV computation still writes a row — and it can never be +EV'
+  '0/NULL/false/0/100',
+  'a FAILED EV computation still writes a row — sentinel supply, never the real supply, and never +EV'
 );
 
 -- `IS NOT TRUE`, not `= false`: a payload with no `ok` key at all must take the
@@ -448,7 +558,7 @@ SELECT _assert_eq(
 SELECT _assert_eq(
   (SELECT ok::text || '/' || rows_written::text || '/' || collection_slug || '/' || (extra->>'rows')
      FROM public.pipeline_runs WHERE pipeline = 'topshot-atlas-pack-ev'),
-  'true/9/nba-top-shot/9',
+  'true/11/nba-top-shot/11',
   'the success path logs its own pipeline_runs row — the ONLY path that logs at all'
 );
 

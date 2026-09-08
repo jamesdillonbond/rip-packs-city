@@ -1529,10 +1529,24 @@ const PINS = [
     // ⚠ Also pins that `pack_ev` and `is_positive_ev` can legitimately disagree:
     // an ask-less pack gets a positive-looking pack_ev equal to its gross EV
     // while the flag is NULL. Anything rendering a buy signal must read the FLAG.
+    //
+    // ⚠ REPOINTED 2026-09-07 from the 20260816050000 snapshot to the supply fix.
+    // The success branch had hardcoded `total_unopened = 0, depletion_pct = NULL`,
+    // and pack_ev_latest reads a non-NULL total_unopened <= 0 as SOLD OUT — so
+    // it VETOED the very flag these pins protect, on every row this writer
+    // produced (573 live rows, 0 ever publishable as +EV, against 12 positive
+    // among the 100 that other writers leave NULL). ⭐ The pin was GREEN
+    // throughout: `total_unopened` was asserted nowhere in it and depletion_pct
+    // only on the failure branch, so the honesty guard was silent about the two
+    // columns that could overrule its own subject. The repoint adds assertions
+    // in BOTH directions — real supply published, a genuine sold-out 0 still
+    // written, unknown supply withheld as NULL rather than coalesced to 0 — and
+    // the fixture gained real total_sealed / depletion_pct values so those reads
+    // resolve to something instead of passing vacuously on NULL.
     fn: "refresh_atlas_pack_ev",
     test: "supabase/tests/refresh_atlas_pack_ev.sql",
     migration:
-      "supabase/migrations/20260816050000_audit_20260816_snapshot_refresh_atlas_pack_ev.sql",
+      "supabase/migrations/20260908003056_audit_20260907_refresh_atlas_pack_ev_writes_real_supply_not_a_fabricated_zero.sql",
   },
   {
     // pg_cron `13 * * * *` — one of the three heavy jobs CLAUDE.md names as
