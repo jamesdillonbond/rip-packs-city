@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-08 · ✅ Register staleness sweep — four items were overstating problems already fixed, and the fifth was checked and left open · Claude Code on Trevor's box, Trevor: "Keep going"
+
+**Went looking for a permanently-red instrument to fix and found there was nothing left to fix — four times.** ⭐ The pattern is worth naming because it is the one nobody re-checks: **an item that has rotted in the REASSURING direction.** A stale OPEN entry looks like diligence, so it survives every read, while the thing it describes was removed weeks ago. Three of the four had been fixed by *other* sessions whose work never made it back into the register.
+
+| item | what it claimed | what a live read says |
+|---|---|---|
+| **#38** | `topshot-pack-pool-backfill` fails 99.6 % of ticks | **ZERO runs** in the whole `pipeline_runs` retention window (`max(started_at)` NULL — not a retention artifact), pg_cron **jobid 16 `active = false`** since 2026-08-29 |
+| **#31** | the drift detector's authoritative arm "has never once produced a result" | Tier 2 has run since 08-30 (**#53**); today's log: `content census: 38 body/bodies read, 0 failed (eszip-parsed 38, matched 32)` |
+| **#23** | 25 edge functions running code that is not `main` | **`DRIFT: 6 function(s). 0 of them are safe to redeploy.`** — 2 deferred-by-decision, 4 do-not-redeploy. **All six deliberate** |
+| **#21** | codify the hydrator worker's cron before a `wrangler deploy` deletes it | the worker logs **nothing**; #65's pg_cron pair does the work (**339/339 ok, 20,093 rows** and **99/99 ok, 69,898 rows**) against a **1,450,773** queue |
+
+**#38, #31 and #23 are CLOSED** with their original diagnoses preserved — every one was correct when written. **#21 is UPDATED, not closed:** the ACTION changes from *codify its cron* to *retire it*, but ⛔ Cloudflare is unreadable from a session, so **retired** and **running-but-dying-before-its-first-log-write** are indistinguishable from here — which is the same ambiguity that item's own *"24–49 runs log out of ~144 ticks"* finding described, now at 0 of ~144. Both states need the same operator action, so the action could move without resolving it.
+
+⛔ **AND THE HALF OF A SWEEP THAT USUALLY GOES UNRECORDED: #11 was checked and LEFT OPEN.** Its named sub-item genuinely is a ghost (`/home-fmv-preview.png`, moot since 06-01), which is exactly the shape of the four above — but it carries a REAL remainder, the ungated Phase-2 brand-token debt, stated as tracked-not-gated on purpose. ⭐ **An old item is not a stale item, and a sweep that cannot return "still open" is just a closing spree.** Recorded in the register stamp so the next reader knows #11 was examined rather than skipped.
+
+**The register stamp names what was NOT swept**, per this file's own convention: the operator-gated items (#22, #32, #55, #58), the Trevor-decision items (#33, #39, #54, #64) and the measurement items (#29, #42, #43, #48) all keep their own older dates.
+
+**Filed, not fixed — the sweep's one genuinely new finding.** Closing #38 exposed that the 2026-08-29 mitigation was applied to **one** job and never swept across its siblings: **five lanes still fire into the dead `public-api.nbatopshot.com`**, measured over the FULL retention window at **0 ok and 0 rows written each**, `last_success` NULL throughout — `ingest` (22 runs), `topshot-subedition-circulation-backfill`, `ingest-topshot-challenges`, `topshot-pack-supply-backfill`, `topshot-misattrib-drain` (3 each). ⛔ **Nothing paused, deliberately:** `pack_distributions` is provably fresh (**1,995 of 2,099** updated in 24 h, `total_sealed` on all 2,099), so the supply lane's failure is **not** causing staleness — but the path that IS keeping it fresh could not be identified (only jobids 15/16 call that edge fn; no pg_cron calls the other two writers; the DB writers have no in-DB caller; this box's Task Scheduler runs four unrelated tasks), and pausing something whose live path you have not mapped is how a retry arm disappears. Per-lane disposition in the filing. ⭐ **Transferable: a mitigation applied to ONE job is a claim about every sibling sharing its upstream — sweep by UPSTREAM** (`error ILIKE '%530%'` over full retention finds them in one query).
+
+⚠⚠ **A METHOD TRAP THAT ALMOST PRODUCED A FALSE FINDING OF MY OWN, recorded in the filing.** Grouping `net._http_response` by `status_code` and sampling with **`max(content)`** returns the **lexicographically largest** body, not a representative one. It surfaced `{"code":"invalid_argument","message":"product is required"}` — **2 of 1,635** — and buried the real **1,633**, which are benign Flow REST `Error Code: 1101` responses from the moments hydrator (the documented moved-Moment case, already attributed as `flow-rest-moment-moved-400`). I spent several queries chasing a phantom Atlas bug before grouping by `left(content, N)` and counting. **Same family as the repo's `max()`-on-a-text-cursor rule, one table over.**
+
+**Revert:** `git revert` the four docs commits — documentation only. **No code, no migration, no DB write in this stretch**; every query read-only.
+
 ### 2026-09-08 · ✅ CLOSED — the final free Dune cycle spent out cleanly: 84,868 Top Shot sellers recovered below the spork wall, and the sunset job I shipped last night was BOTH redundant AND harmful · Claude Code (cloud), Trevor: "do what you think is best"
 
 **Closes the two 09-07 entries below. Cycle fully spent, lane stopped by its own gate, nothing left running.**
