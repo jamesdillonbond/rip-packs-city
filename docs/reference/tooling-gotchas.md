@@ -1069,3 +1069,27 @@ one written inside a COMMENT. Naming the tag in prose made the splitter return t
 report a **false drift** (body length 1390 against the real 3034). Anchor on the LAST marker pair, or
 on `AS <tag>` … `<tag>;`. ⭐ **A verifier that can be confused by the text it verifies is not a
 verifier** — the same family as the repo's rule that `stripComments` is not a guarantee it stripped.
+
+## 🔁 FIFTH backtick-substitution instance (2026-09-08) — and this time the READ-BACK passed while the content was gutted
+
+Same session as the fourth, same `node -e "…"` inline form, same silent loss: seven backticked terms
+command-substituted away by bash before node ever saw them, leaving an inbox INDEX entry that read
+*"⭐ ** is 5529 across the ENTIRE history and  is NULL**"*.
+
+⭐ **THE NEW PART, and it is the transferable one: I HAD a read-back assertion and it PASSED.** It
+checked that the link target was present:
+
+```js
+if (!back.includes('2026-09-08T2110Z-daytime-monitor.md')) { /* fail */ }
+```
+
+The link survives command substitution — it contains no backticks. **So the assertion verified the one
+part of the line that could not have been damaged.** A read-back is only as good as the terms it
+names, and the terms worth naming are exactly the FRAGILE ones: backticks, `$`, anything the transport
+can eat. Assert the content most likely to be lost, never the scaffolding around it.
+
+**The repair asserted all eight** (`pack_table_rows`, `rpc-daytime-monitor`, `row_count`, `err`,
+`EXPLAIN (ANALYZE, BUFFERS)`, `[]`, `flow-rest-moment-moved-400`, plus the link) and was written as a
+**script FILE**, which is the rule this file already gives and which three separate instances in one
+session have now paid for. ⛔ **Stop reaching for `node -e` with prose in it.** The file path costs one
+extra tool call and removes the entire class.
