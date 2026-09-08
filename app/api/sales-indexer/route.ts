@@ -752,6 +752,12 @@ export async function POST(req: NextRequest) {
     // Step 5 & 6: Build and insert sales
     const salesBatch: any[] = []
     const unresolvedIds: string[] = []
+    // ⚠ The EVENT, not just its nft id. Until 2026-09-07 this route kept only the
+    // id, so an unresolvable sale's price/seller/tx/timestamp were discarded at
+    // the moment they were in hand and the sale was unrecoverable even in
+    // principle. Step 6b parks these in `unmapped_sales` — the All Day indexer's
+    // long-standing behaviour — so the catalogue can resolve them later.
+    const unresolvedEvents: any[] = []
     let serialsResolved = 0
     let serialsZero = 0
 
@@ -784,6 +790,7 @@ export async function POST(req: NextRequest) {
 
       if (!editionId) {
         unresolvedIds.push(nftId)
+        unresolvedEvents.push(evt)
         continue
       }
 
@@ -924,6 +931,124 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Step 6b: PARK the unresolvable sales (2026-09-07) ────────────────────
+    //
+    // 🚨 THIS RUNS BEFORE STEP 7 ADVANCES THE CURSOR, AND THAT ORDER IS THE
+    // WHOLE POINT. A sale whose edition cannot be resolved from the cache,
+    // `moments` or the (now dead) GQL resolver used to hit
+    // `unresolvedIds.push(nftId); continue` and be dropped: never written to
+    // `sales`, never parked, and the cursor advanced past its block anyway.
+    // Nothing revisits a block below the cursor, so the sale was gone
+    // permanently — while the run logged `ok: true` with an `unresolved_count`
+    // that reads like an ordinary catalogue gap. Measured 2026-09-08 over six
+    // consecutive ticks: 41 sales dropped in ~80 minutes, ~740/day, every tick
+    // `ok: true` and `gql_resolved: 0` since the GQL host died ~08-28.
+    // Every FMV reads `sales`; this was the largest accuracy defect on the
+    // register (#67).
+    //
+    // ⭐ Parking is not speculative here — it is the All Day indexer's
+    // long-standing behaviour, and `promote_unmapped_sales` has already resolved
+    // **24,583 of 24,583** Top Shot rows parked this way (the Dec-2025/Jan-2026
+    // cohort, 100%). It resolves via `nft_edition_map`, the `resolution_hint`,
+    // or `wallet_moments_cache` — and wmc/`moments` are continuously hydrated
+    // (jobids 468/469), so a sale unresolvable at ingest becomes resolvable once
+    // the catalogue catches up. That is exactly what the wait buys.
+    //
+    // ⚠ The DRAIN IS A pg_cron JOB, NOT A CALL FROM HERE. This route is
+    // `maxDuration = 120` inside an `after()` body, where a kill CANNOT be
+    // caught; `promote_unmapped_sales` measured p95 196 s / max 297 s on the All
+    // Day backlog. Calling it inline would be a latent kill that grows with the
+    // backlog it creates. It runs as `rpc-topshot-promote-unmapped` instead
+    // (migration 20260908_..., hourly), mirroring All Day's jobid 215.
+    let unmappedParked = 0
+    let unmappedAlreadyParked = 0
+    if (unresolvedEvents.length > 0) {
+      // Dedup against rows already parked. A chunk fetch failure caps the cursor
+      // to `firstFailedChunkStart - 1`, so later successful chunks are re-scanned
+      // next tick — harmless for `sales` (unique tx) but `unmapped_sales` carries
+      // NO natural-key constraint (only a PK), and 1,985 duplicate
+      // (collection, nft, tx) groups already exist there from other collections.
+      // A unique index cannot be added without rewriting their data, so the
+      // guard lives here, where it is bounded by one tick's event count.
+      const parkedAlready = new Set<string>()
+      const unresolvedNftIds = Array.from(new Set(unresolvedEvents.map((e) => String(e.data.nftID))))
+      for (let i = 0; i < unresolvedNftIds.length; i += 500) {
+        const batch = unresolvedNftIds.slice(i, i + 500)
+        const { data: existing, error: existErr } = await (supabaseAdmin as any)
+          .from("unmapped_sales")
+          .select("nft_id, transaction_hash")
+          .eq("collection_id", TOPSHOT_COLLECTION_ID)
+          .in("nft_id", batch)
+        // ⚠ A failed read here must NOT read as "nothing is parked yet" — that
+        // would re-park the whole tick on every retry. supabase-js RETURNS
+        // errors, so bind it and throw: the outer catch holds the cursor and the
+        // next tick re-reads the range, costing one cycle and losing nothing.
+        if (existErr) throw new Error(`unmapped_sales dedup read: ${existErr.message}`)
+        for (const row of existing ?? []) {
+          parkedAlready.add(`${row.nft_id}|${row.transaction_hash ?? ""}`)
+        }
+      }
+
+      // ⚠ Counted SEPARATELY from a failure to park. An already-parked sale is
+      // already recoverable, so folding it into `unresolved_unparked` would
+      // alarm on the dedup working correctly — the exact conflation this
+      // telemetry exists to avoid.
+      const alreadyParkedThisTick = unresolvedEvents.filter((evt) =>
+        parkedAlready.has(`${String(evt.data.nftID)}|${evt.transactionId ?? ""}`),
+      ).length
+      unmappedAlreadyParked = alreadyParkedThisTick
+
+      const unmappedRows = unresolvedEvents
+        .filter((evt) => !parkedAlready.has(`${String(evt.data.nftID)}|${evt.transactionId ?? ""}`))
+        .map((evt) => ({
+          collection_id: TOPSHOT_COLLECTION_ID,
+          nft_id: String(evt.data.nftID),
+          // NULL, not 0: the serial is genuinely unknown here (the edition lookup
+          // is what failed). `promote_unmapped_sales` fills it on promotion, and a
+          // fabricated 0 would publish an unknown as a measured value.
+          serial_number: null,
+          price_usd: parseFloat(evt.data.salePrice) || 0,
+          currency: "USD",
+          seller_address: evt.data.seller ?? null,
+          buyer_address: null,
+          marketplace:
+            evt.source === "topshotMarketV3"
+              ? "topshot"
+              : determineMarketplace(evt.data.commissionReceiver ?? null),
+          transaction_hash: evt.transactionId ?? null,
+          block_height: evt.blockHeight,
+          sold_at: toIsoTimestamp(evt.blockTimestamp),
+          source: "onchain",
+          resolution_hint: { indexer: "topshot-sales-indexer", parked_at_block: evt.blockHeight },
+        }))
+
+      // Same all-or-nothing reasoning as the `sales` insert above: one bad row
+      // must not discard its co-batched siblings, which the advancing cursor
+      // would make permanent.
+      for (let i = 0; i < unmappedRows.length; i += 100) {
+        const batch = unmappedRows.slice(i, i + 100)
+        const { error: unmappedErr } = await (supabaseAdmin as any)
+          .from("unmapped_sales")
+          .insert(batch)
+        if (unmappedErr) {
+          if (unmappedErr.code !== "23505") {
+            console.log("[sales-indexer] unmapped batch insert error:", unmappedErr.message)
+          }
+          for (const row of batch) {
+            const { error: singleErr } = await (supabaseAdmin as any)
+              .from("unmapped_sales")
+              .insert(row)
+            if (!singleErr) unmappedParked++
+          }
+        } else {
+          unmappedParked += batch.length
+        }
+      }
+      console.log(
+        `[sales-indexer] parked ${unmappedParked}/${unresolvedEvents.length} unresolvable sales in unmapped_sales`,
+      )
+    }
+
     // Step 7: Update cursor (capped if a chunk fetch failed).
     const { error: cursorAnchorErr2 } = await (supabaseAdmin as any)
       .from("event_cursor")
@@ -953,6 +1078,21 @@ export async function POST(req: NextRequest) {
         tx_decode_candidates: decodeTargets.length,
         duped: duped,
         unresolved_count: unresolvedIds.length,
+        // ⚠ Read these THREE TOGETHER. `unresolved_count` alone was the field
+        // that made ~740 dropped sales/day look like an ordinary catalogue gap.
+        // `unmapped_parked` is what this tick newly made recoverable;
+        // `unmapped_already_parked` was recoverable before it (the dedup working
+        // — NOT a loss, and counting it as one would alarm on correct
+        // behaviour); and `unresolved_unparked` is the ONLY genuinely lost
+        // figure. It must be 0. A non-zero value is real permanent loss and
+        // should be investigated, not averaged away.
+        unmapped_parked: unmappedParked,
+        unmapped_already_parked: unmappedAlreadyParked,
+        unresolved_unparked: unresolvedIds.length - unmappedParked - unmappedAlreadyParked,
+        // The ids themselves, so a drop is falsifiable at all. The All Day
+        // indexer has carried this since it was written; this route did not, so
+        // no past drop here can be reconstructed.
+        unresolved_sample: unresolvedIds.slice(0, 20),
         parallel_redirects: parallelRedirects,
         parallel_splits: parallelSplits,
         blocks_scanned: cursorTarget - lastBlock,

@@ -755,3 +755,161 @@ describe("sales-indexer — a failed chunk must HOLD the cursor, not skip its bl
     ).toBe(0)
   })
 })
+
+// ── Step 6b: unresolvable sales are PARKED, not dropped (2026-09-07) ─────────
+//
+// 🚨 THE DEFECT THESE PIN. Until this change a sale whose edition could not be
+// resolved hit `unresolvedIds.push(nftId); continue` and was DROPPED: never
+// written to `sales`, never parked in `unmapped_sales`, and Step 7 advanced the
+// cursor past its block anyway. Nothing revisits a block below the cursor, so
+// the sale was gone permanently — while the run logged `ok: true` with an
+// `unresolved_count` that reads like an ordinary catalogue gap. Measured
+// 2026-09-08 over six consecutive production ticks: 41 sales dropped in ~80
+// minutes (~740/day), every tick `ok: true`, `gql_resolved: 0` since the GQL
+// host died ~08-28. Every FMV reads `sales` (register #67).
+//
+// ⚠ The cursor MUST still advance here. Holding it would be the other failure
+// mode — an unresolvable sale is not a transient error, so the range would be
+// re-scanned forever. Parking is what makes advancing safe, which is why the
+// "parks it" and "advances anyway" assertions belong in one test.
+describe("sales-indexer — unresolvable sales are parked, not dropped", () => {
+  // Nothing resolves this nft: wmc empty, moments empty, editions empty, and the
+  // GQL proxy stub returns { data: null } (the beforeEach default).
+  function unresolvableFixtures(extra: Record<string, unknown> = {}) {
+    return {
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      topshot_moment_subeditions: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      moments: { data: [], error: null },
+      editions: { data: [], error: null },
+      sales: { data: null, error: null },
+      unmapped_sales: { data: [], error: null },
+      ...extra,
+    } as Fixtures
+  }
+
+  it("parks the sale in unmapped_sales with its price, tx and timestamp — and still advances the cursor", async () => {
+    const tx = "a".repeat(64)
+    state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9500", "42.5", tx, DAPPER_MERCHANT)]
+    const spy = install(unresolvableFixtures())
+
+    await POST(req())
+    await runDeferred()
+
+    // ⛔ THE LOAD-BEARING ASSERTION: the sale survives somewhere.
+    const parked = (spy.writes.unmapped_sales ?? []).flatMap((w) => w.rows)
+    expect(parked, "an unresolvable sale must be parked, never dropped").toHaveLength(1)
+    expect(parked[0]).toMatchObject({
+      collection_id: TOPSHOT,
+      nft_id: "9500",
+      price_usd: 42.5,
+      transaction_hash: tx,
+      source: "onchain",
+      marketplace: "topshot",
+    })
+    // It reached `sales` nowhere — that is the point of parking rather than guessing.
+    expect((spy.writes.sales ?? []).flatMap((w) => w.rows)).toHaveLength(0)
+
+    // …and the cursor advanced, because the row is now recoverable.
+    const cursorUpdate = spy.writes.event_cursor?.find((w) => w.method === "update")
+    expect(cursorUpdate?.rows[0]).toMatchObject({ last_processed_block: 1250 })
+  })
+
+  it("parks a NULL serial rather than a fabricated 0", async () => {
+    // The edition lookup is what failed, so the serial is genuinely UNKNOWN.
+    // `sales` rows use `serial_number: 0` as a real sentinel, and copying that
+    // here would publish an unknown as a measured value — the fabricated-zero
+    // shape. promote_unmapped_sales fills the serial on promotion.
+    state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9501", "10", "b".repeat(64), DAPPER_MERCHANT)]
+    const spy = install(unresolvableFixtures())
+
+    await POST(req())
+    await runDeferred()
+
+    const parked = (spy.writes.unmapped_sales ?? []).flatMap((w) => w.rows)
+    expect(parked).toHaveLength(1)
+    expect(parked[0].serial_number, "unknown serial must be NULL, never 0").toBeNull()
+  })
+
+  it("reports what was parked AND what was not — unresolved_unparked is the only lost figure", async () => {
+    state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9502", "7", "c".repeat(64), DAPPER_MERCHANT)]
+    const spy = install(unresolvableFixtures())
+
+    await POST(req())
+    await runDeferred()
+
+    const extra = pipelineRun(spy)?.extra as Record<string, unknown>
+    expect(extra.unresolved_count).toBe(1)
+    expect(extra.unmapped_parked).toBe(1)
+    // ⚠ The figure an operator should alarm on. `unresolved_count` alone is what
+    // made ~740 dropped sales/day look like an ordinary catalogue gap.
+    expect(extra.unresolved_unparked, "nothing may be silently lost").toBe(0)
+    expect(extra.unresolved_sample).toEqual(["9502"])
+  })
+
+  it("does not re-park a sale already sitting in unmapped_sales", async () => {
+    // A capped cursor re-scans later successful chunks next tick, and
+    // `unmapped_sales` carries no natural-key constraint (only a PK) — 1,985
+    // duplicate (collection, nft, tx) groups already exist there from other
+    // collections, so a unique index cannot be added without rewriting their
+    // data. The guard therefore lives in the route.
+    //
+    // ⚠ TWO SALES, NOT ONE, AND THAT IS DELIBERATE. An earlier version of this
+    // test used a single already-parked sale and asserted ZERO writes — which
+    // the DROPPING version also satisfies, so it passed against the very defect
+    // this block exists to catch (verified: with the capture removed it was the
+    // one green test among five). An absence assertion cannot tell "correctly
+    // skipped" from "never captured". The second sale is the positive control:
+    // the filter must be SELECTIVE, not a blanket no-op.
+    const txSeen = "d".repeat(64)
+    const txNew = "f".repeat(64)
+    state.eventsByType[STOREFRONT_EVENT] = [
+      storefrontSale("9503", "9", txSeen, DAPPER_MERCHANT),
+      storefrontSale("9505", "11", txNew, DAPPER_MERCHANT),
+    ]
+    const spy = install(
+      unresolvableFixtures({
+        unmapped_sales: { data: [{ nft_id: "9503", transaction_hash: txSeen }], error: null },
+      }),
+    )
+
+    await POST(req())
+    await runDeferred()
+
+    const parked = (spy.writes.unmapped_sales ?? []).flatMap((w) => w.rows)
+    expect(parked, "exactly the unseen sale is parked").toHaveLength(1)
+    expect(parked[0]).toMatchObject({ nft_id: "9505", transaction_hash: txNew })
+
+    // Both are unresolved; only one was newly parked, and the run says so.
+    const extra = pipelineRun(spy)?.extra as Record<string, unknown>
+    expect(extra.unresolved_count).toBe(2)
+    expect(extra.unmapped_parked).toBe(1)
+    expect(extra.unmapped_already_parked).toBe(1)
+    // ⚠ The already-parked one is NOT loss — it is already recoverable — so the
+    // lost figure stays 0. Writing this test is what caught the first version of
+    // this telemetry conflating the two and alarming on the dedup working.
+    expect(extra.unresolved_unparked, "nothing may be silently lost").toBe(0)
+  })
+
+  it("a FAILED unmapped_sales dedup read holds the cursor instead of re-parking everything", async () => {
+    // supabase-js RETURNS errors. An unbound error here would read as "nothing
+    // is parked yet" and re-park the whole tick on every retry, growing a
+    // duplicate backlog that looks like real volume. Throwing holds the cursor:
+    // one cycle lost, nothing duplicated and nothing dropped.
+    state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9504", "5", "e".repeat(64), DAPPER_MERCHANT)]
+    const spy = install(
+      unresolvableFixtures({
+        unmapped_sales: { data: null, error: { message: "unmapped read boom" } },
+      }),
+    )
+
+    await POST(req())
+    await runDeferred()
+
+    expect(spy.writes.event_cursor ?? [], "the block range must remain unread").toHaveLength(0)
+    expect((spy.writes.unmapped_sales ?? []).flatMap((w) => w.rows)).toHaveLength(0)
+    const run = pipelineRun(spy)
+    expect(run?.ok).toBe(false)
+    expect(String(run?.error)).toContain("unmapped_sales dedup read")
+  })
+})
