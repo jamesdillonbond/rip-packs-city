@@ -26,3 +26,7 @@ A completed event whose `last_seen_at` is older than N days is read by nothing a
 ## Falsifier for the growth figure
 
 Two `count(*)` readings a day apart, same instrument: if the second is not ~90K above the first, the rate above was the verify lane's history walk front-loading and the steady state is lower. Re-derive before sizing the policy.
+
+## ✅ SHIPPED 2026-09-08 00:43Z (Cowork, same night) — `20260908004325_audit_20260908_prune_completed_atlas_market_events`
+
+Re-measured first: **225,179 rows / 99 MB at 00:28Z** (so ~5.8K rows/h at that moment; the ~90K/day figure above stands within its own falsifier's tolerance). `prune_topshot_atlas_market_events(7, 20000)` on pg_cron jobid 473 `rpc-prune-atlas-market-events` at `27 * * * *`: completed `nba` rows older than **7 days** (not 30 — the widest reader window is 24 h and the sales margin is now a guard, not a window), oldest first off a new partial index, ≤ 20,000 per run, **never past the `sales-atlas-sync` cursor, never an nft still in `v_moments_needing_hydration`**; `nfl` rows untouched. Proof: `(7, 20000)` → 0 (nothing is 7 days old yet); `(0, 5)` → 5 deleted with the cutoff clamped to the cursor (13:07Z); guard-2 positive control 307 of a 20,000-row page would be kept today. Reader list above re-verified against `pg_proc`/`pg_views`/`cron.job` and the repo (zero app references). Ledger entry dated 2026-09-07 PT; cron-schedule row added; revert in the migration header.
