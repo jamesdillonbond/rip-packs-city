@@ -1,4 +1,4 @@
-# Inbox index — 411 live filings
+# Inbox index — 412 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,9 +30,11 @@ failure it documents.
 
 ---
 
-## 2026-09-08 — 1 filing
+## 2026-09-08 — 2 filings
 
 - [`topshot_atlas_market_events` grows ~90K rows / 45 MB a day with no retention — and four lanes now read it](2026-09-08T0015Z-the-atlas-events-table-grows-90k-rows-a-day-with-no-retention-and-four-lanes-now-read-it.md) — *(Cowork cloud, close of the 09-06/07 audit drain. READ-ONLY sizing; nothing shipped.)* 131,734 rows / 55 MB at 16Z on 09-07 → 223,643 / 98 MB at 00:12Z on 09-08; ~33M rows / 15 GB a year on the Small tier if steady. The five readers are enumerated (listing syncs on OPEN rows, the verify settles, both hydrators via `nft_id`, the sales lane behind a `last_seen_at` cursor, the All Day resolver) so a retention policy can be shaped without pruning a reader out from under — a completed event older than N ≥ 30 days whose nft already has a `moments` row is read by nothing. Owner: the feed's (#65). Falsifier: a second day's count.
+
+- [`v_offer_sanity_flags` = 1313 while the pipeline its own scorecard card names as the self-clear (`offers-sweep`) has been INACTIVE ~21h — re-measure the trend before touching anything](2026-09-08T0010Z.md) — *(`rpc-daytime-monitor`, cloud, READ-ONLY. Nothing shipped; **author could not push** — committed on its behalf after being read in full.)* LOW and explicitly **not** a breakage: `edition_offers` is fresh (updated 00:10Z), kept current by the two live indexers (`topshot-offers-indexer` and `allday-offers-indexer`, 18 ok/6h each), and the authoritative **trust board is clean on every offer metric** (`offer_edition_gap_max_usd` 5, `candy_offers_unverified_pct` 0). `offsan` is an info-ranked sanity view with **no baseline showing a regression** — 1313 may be its resting level. ⭐ The real question is a TREND, not a level: does it still decline now that only the indexers write `edition_offers`? If stable/declining the fix is **artifact copy only** — the `rpc-qa-scorecard` `offsan` card detail names a dead pipeline as its self-clear and should point at the live indexers instead. Sweep otherwise clean; the filing also names four already-filed items (#65 pack-EV zero, the benign Atlas/flow-REST `info` alerts, `sync-nba-projections`) so they are not re-swept.
 
 ## 2026-09-07 — 8 filings
 
