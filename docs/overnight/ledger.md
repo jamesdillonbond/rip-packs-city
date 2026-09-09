@@ -34,6 +34,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 | MEDIUM (5–6) | 1,106 | **1,171** | +65 |
 | **HIGH or MEDIUM** | **4,301** | **4,726** | **+425 editions, +9.9 %** |
 
+🚨⭐ **THE MOST IMPORTANT PART IS NOT THE COUNT — THE GAP WAS RARITY-BIASED, so FMV was worst exactly where dollars are largest.** Share of each tier's sales that were missing (matched against the Atlas events for the same nft+day, 30-day window):
+
+| tier | recovered | **share of that tier's sales that were MISSING** |
+|---|---|---|
+| COMMON | 3,868 | 19.1 % |
+| FANDOM | 253 | 28.5 % |
+| RARE | 2,479 | 34.5 % |
+| LEGENDARY | 542 | **46.3 %** |
+| **ULTIMATE** | 109 | **55.9 %** |
+
+**We were missing more than HALF of every ULTIMATE sale and nearly half of LEGENDARY.** The mechanism is not mysterious and it is not random: the on-chain indexer resolves an edition through the catalogue (`wallet_moments_cache` / `moments`), and the rarest and newest editions — ULTIMATE, parallels, fresh drops — are precisely the ones least likely to be catalogued yet, so their sales fell through to `unresolved` and were dropped. ⭐ **A collector pricing a Legendary or Ultimate was being shown an FMV computed on barely half its evidence, on the Moments where a pricing error costs the most real money.** This also retroactively raises the value of the parking fix shipped earlier tonight: the sales that indexer was silently discarding were disproportionately the expensive ones.
+
+⚠ **Units were checked before trusting any of it**, because a `price_cents` field holding dollars would inflate FMV upward and look like exactly this pattern: median ratio of backfilled price to the same nft's nearest other sale is **1.429** (not ~100), 3,777 of 3,929 within 5x, and the expensive tail verifies row-by-row against the source (`$25,000` ← `2,500,000` cents, ULTIMATE, serial **#1**). The higher median (2.76 vs 0.30 on-chain) is the rarity bias above, not a scaling bug.
 **Historical remainder scheduled, not blasted (`audit_20260909_schedule_the_historical_half…`, jobid 481, `7-57/10`, 1,500/tick ≈ 9 k/h, ~8 h).** Those ~74,297 rows never re-enter the confidence window so they do NOT move FMV — but **per-edition sales history is user-facing on edition and Moment pages**, which are currently missing real sales we hold. Paced because this instance is IO-bound and `sales` is heavily indexed and partitioned; 74 k inserts at once is the shape that causes a saturation spell. ⚠ **RETIRE THE JOB WHEN `extra.remaining` READS 0** — it is a one-shot backfill, and a job writing 0 forever is the null-instrument shape this repo keeps paying for. Unschedule command in the migration header.
 
 ⚠ **Also corrected: my own earlier overstatement.** I told Trevor the Top Shot sales gap was "~1,700/day short of baseline". That compared a **pre-dedup** baseline against a **post-dedup** present — the 08-24 figure I quoted (4,426) included ~1,283 rows #68 has since removed as duplicates. Re-measured with both sides from ONE post-dedup query: **baseline 2,861/day, trough 1,206, yesterday 2,356 — a ~505/day (17.6 %) gap, and closing.** ⭐ The same cross-instrument error this file warns about, made about our own recovery.
