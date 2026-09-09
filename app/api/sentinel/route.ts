@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { redactSecrets } from "@/lib/redact-secrets";
+import { summariseBlindChecks, BLIND_CHECK_NAME } from "@/lib/sentinel/blind-checks";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 // Bumped 60 -> 180 on 2026-08-08: under pooler saturation the ~8 sequential
@@ -1555,12 +1556,31 @@ export async function POST(req: NextRequest) {
 
   // A check explicitly disabled via config (enabled=false) is forced to ok so it
   // never pages, but stays in the report (visible, annotated) rather than vanishing.
+  const disabledByConfig = new Set<string>();
   for (const c of checks) {
+    if (cfgMap[c.name]?.enabled === false) disabledByConfig.add(c.name);
     if (cfgMap[c.name]?.enabled === false && c.status !== "ok") {
       c.status = "ok";
       c.detail = `[check disabled via config] ${c.detail}`;
     }
   }
+
+  // ── HOW MANY CHECKS COULD NOT BE EVALUATED AT ALL ─────────────────────────
+  // Every check above degrades a statement timeout to `warn` rather than paging,
+  // which is correct per-check and earned (two false CRITICAL pages are recorded
+  // in this file's header). But the aggregation below is `some()`, so ONE warn
+  // and THIRTEEN warns are the same `WARN` — a total measurement blackout scored
+  // as a routine niggle. This arm is the only thing that can state the
+  // population, and it issues NO query, so it is the one check that gets more
+  // informative as the database gets worse. Full argument + the two threshold
+  // anchors: lib/sentinel/blind-checks.ts.
+  const blackout = summariseBlindChecks(checks, disabledByConfig);
+  checks.push({
+    name: BLIND_CHECK_NAME,
+    status: blackout.status,
+    detail: blackout.detail,
+    value: blackout.blind,
+  });
 
   const hasCritical = checks.some((c) => c.status === "critical");
   const hasWarn = checks.some((c) => c.status === "warn");
