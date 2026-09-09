@@ -10,6 +10,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-08 · 🚨 **81,337 Top Shot sales were ALREADY IN THIS DATABASE and unwritten — the 30-day window is recovered and HIGH+MEDIUM editions went 4,301 → 4,726 (+9.9 %) at ZERO Atlas cost** · Claude Code on Trevor's box, Trevor: "Do what you think is best… what's best for RPC long term and for our user base"
+
+**Went to spend the Atlas budget on #67(2) and found the data was already ours.** The filing proposed a per-edition history walk — ~14 K Atlas reads, ~2 days, competing with live lanes that already run a 16–23 % Cloudflare 403 rate. ⭐ **Before buying reads I asked what the free sources already hold, and `topshot_atlas_market_events` held 81,337 completed nba listing sales with no `sales` row** — every one already mapped to an `rpc_edition_id`. The firehose had paid for them; nobody had converted them.
+
+**Why it mattered to users, measured before acting:** 7,071 of them sat inside the live 30-day FMV window across 2,418 editions, while **722 canonical editions were exactly ONE sale short of MEDIUM** and 1,105 two short of HIGH. Accuracy is the roadmap's gate; sales we already hold and have not written are the cheapest accuracy available.
+
+⛔⛔ **AND THE OBVIOUS GUARD WOULD HAVE UNDONE ANOTHER SESSION'S WORK — this is the finding, not the backfill.** The live lane dedupes on *"no `sales` row for this nft within ±10 min"*. Applied to a BACKFILL that is unsafe, and the check that proved it: **4,644 candidates matched rows the 2026-09-08 #68 dedup had DELETED hours earlier.** Inserting them would have silently re-added 33,000-row-cleanup casualties and **re-inflated the go-live metric with duplicates — the exact harm #68 existed to fix.** ⭐ **Why ±10 min fails here and not there:** #68's pairs share tx/nft/price and differ in `sold_at` because two writers disagreed about the clock; Atlas's `purchased_at` lines up with the DELETED `topshot_gql` timestamp while the SURVIVING on-chain row sits further away — so a ±10 min probe finds nothing live and the candidate looks free when it is the same sale. **"No matching row exists" is not "this row belongs" — a row can be absent because someone deliberately removed it.**
+
+⭐ **The key was chosen by measurement, on a 2,000-row sample of exactly the dangerous candidates:** `(nft_id, price)` caught **1,542 / 2,000 (77 %)** — insufficient; **`(nft_id, sold_at::date)` caught 2,000 / 2,000 (100 %)**. ⚠ **Its direction is a cost argument, stated not assumed:** the day key is CONSERVATIVE and skips genuine same-day re-sales (they exist — one measured this session sold twice **94 s apart at $0.30 then $1.00**). Losing a few real sales keeps them recoverable later; inserting duplicates makes the accuracy metric look **better than reality**. **Under-counting our own accuracy is the safe direction.**
+
+⚠ **Intra-statement self-duplication, caught in design:** `NOT EXISTS` reads the snapshot at statement start, so two candidates for the same (nft, day) would BOTH insert — the guard cannot see its own statement's writes. `DISTINCT ON (nft_id, purchased_at::date)` collapses them first.
+
+**Shipped (`audit_20260909_recover_topshot_sales_already_captured_in_atlas_events`).** Paged `SECURITY DEFINER` function, newest-first so the FMV window drains first, `REVOKE`d from PUBLIC/anon/authenticated, logging `topshot-sales-atlas-backfill` with `written` **and** `remaining`. ⭐ Rows land as **`source = 'atlas_backfill'`**, distinct from the live lane's `'atlas'`, which makes the revert exactly one statement.
+
+✅ **VERIFIED AT EVERY STEP, smallest first.** A 50-row run was checked before anything larger: 50/50 with edition, serial, price and a `0x`-normalised seller; **0 same-day duplicates; 0 revived deletions.** Then the window drained (2,500 / 2,500 / 1,539 — the short last call IS the completion signal). **Final: 6,589 rows, 0 malformed, 0 same-day duplicates, 0 revived #68 deletions.**
+
+**USER-FACING RESULT — the headline metric moved, computed both ways from one query (`before` = the same window excluding `atlas_backfill`):**
+
+| confidence (30 d rolling) | before | after | Δ |
+|---|---|---|---|
+| HIGH (≥ 7 sales) | 3,195 | **3,555** | **+360** |
+| MEDIUM (5–6) | 1,106 | **1,171** | +65 |
+| **HIGH or MEDIUM** | **4,301** | **4,726** | **+425 editions, +9.9 %** |
+
+**Historical remainder scheduled, not blasted (`audit_20260909_schedule_the_historical_half…`, jobid 481, `7-57/10`, 1,500/tick ≈ 9 k/h, ~8 h).** Those ~74,297 rows never re-enter the confidence window so they do NOT move FMV — but **per-edition sales history is user-facing on edition and Moment pages**, which are currently missing real sales we hold. Paced because this instance is IO-bound and `sales` is heavily indexed and partitioned; 74 k inserts at once is the shape that causes a saturation spell. ⚠ **RETIRE THE JOB WHEN `extra.remaining` READS 0** — it is a one-shot backfill, and a job writing 0 forever is the null-instrument shape this repo keeps paying for. Unschedule command in the migration header.
+
+⚠ **Also corrected: my own earlier overstatement.** I told Trevor the Top Shot sales gap was "~1,700/day short of baseline". That compared a **pre-dedup** baseline against a **post-dedup** present — the 08-24 figure I quoted (4,426) included ~1,283 rows #68 has since removed as duplicates. Re-measured with both sides from ONE post-dedup query: **baseline 2,861/day, trough 1,206, yesterday 2,356 — a ~505/day (17.6 %) gap, and closing.** ⭐ The same cross-instrument error this file warns about, made about our own recovery.
+
+⚠ **Cross-check against the OTHER session's fix shipped the same hour** (`audit_20260909_sales_tx_nft_price_unique_per_partition`): its new `sales_2026_tx_nft_price_uidx` is `UNIQUE (transaction_hash, nft_id, price_usd) WHERE transaction_hash IS NOT NULL`. **Atlas rows carry NO transaction hash**, so every row this backfill writes sits OUTSIDE that index — no conflict with their work, and **no protection from it either.** ⭐ That is precisely why the `(nft_id, sold_at::date)` guard had to be derived and measured rather than assumed: for this source the structural constraint does not apply, and the only thing standing between us and a repeat of #68 is the query's own key.
+
+**Revert:** `DELETE FROM public.sales WHERE collection='nba_top_shot' AND source='atlas_backfill';` plus `cron.unschedule('rpc-topshot-sales-atlas-backfill')`. Both migrations are `CREATE OR REPLACE` / schedule-only; no schema change, no data mutated — only rows added under a distinguishable source.
+
 ### 2026-09-08 · ⚠ RETRACTION — my "M1 will fall ~4 points to ~46.6 %, below the bar" was WRONG, and it was wrong because I modelled a confidence rule I had not read · Cowork (cloud), Trevor: "exhaust all of your capabilities"
 
 **What I claimed, twice, and put in the go-live doc:** that removing the 33,000 duplicate sales would drop `topshot_fmv_high_med_share_pct` by ~4.3 points to ~46.6 %, i.e. **below its 50 % bar**, and that the go-live row should read *"treat 50.9 % as not-yet-met"*. **Measured after the drain: the live metric is 53.2 % and RISING** (51.8 % at the 19:48Z leg, pre-drain). The retraction matters more than the number: a false negative on a launch gate is as damaging as a false positive.
