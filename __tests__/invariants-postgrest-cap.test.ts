@@ -26,6 +26,20 @@ import path from "path"
 // returned `count` with `head:true`. This guard reads each fixed route/lib
 // source and asserts the safe pattern is still present, so a refactor that
 // reintroduces the raw-DESC / length-as-total read fails here instead of in prod.
+//
+// ⚠ READ THIS BEFORE TREATING THE FILE AS COVERAGE OF THE CLASS (added 2026-09-09).
+// This is a CURATED LIST of six already-fixed sites. It is a good regression pin
+// and it is structurally SILENT about a seventh — it cannot fail for a site it
+// does not name. A tree walk on 2026-09-09 found **21 reads stating a bound above
+// the cap, none of them here**, two of them over their population. The tree-wide
+// half of this class now lives in
+// `__tests__/postgrest-limit-above-the-cap-is-a-false-bound.test.ts` (a ban at
+// zero with an inline `postgrest-cap: intentional` suppression); the two guards
+// are complements, not duplicates — that one bans a FALSE BOUND, this one pins
+// the SHAPE each of these six was fixed to. ⛔ Do not delete either believing the
+// other covers it, and do not add a seventh entry here instead of fixing the site:
+// growing a curated list is what made this class invisible for a year. See
+// known-issues #71.
 
 const REPO = process.cwd()
 const read = (...p: string[]) => readFileSync(path.join(REPO, ...p), "utf8")
