@@ -180,7 +180,13 @@ export async function getPackDeals(
       .eq("is_rare_single_pack", false)
       .gte("ev_snapshotted_at", evCutoff)
       .lt("depletion_pct", MAX_DEPLETION_PCT)
-      .limit(2000),
+      // ⚠ The old .limit(2000) was clamped to 1,000 by PostgREST anyway, so it
+      // stated a bound that did not exist — the same trap the comment directly
+      // below describes for the recency map. Measured 2026-09-09, the widest
+      // this filter can return is one collection's pack_table_rows with a
+      // non-null gross_ev and is_rare_single_pack = false: TS 516, AD 470,
+      // Golazos 33. Under the cap, and this is a per-collection read.
+      .limit(1000),
     // Recency state via the one-row jsonb RPC (get_pack_ask_state_map) instead of
     // a table read — PostgREST clamps any select to 1000 rows and TS has ~1,900
     // listed dists, so a .from().limit() silently dropped ~half the recency map.

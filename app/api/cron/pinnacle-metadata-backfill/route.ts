@@ -391,6 +391,23 @@ export async function GET(req: NextRequest) {
       .eq("collection_id", PINNACLE_COLLECTION_ID)
       .not("edition_key", "is", null)
       .ilike("edition_key", "%:%") // composite keys contain colons; cheap pre-filter to skip integer-only keys
+      // postgrest-cap: intentional — the number is KEPT ON PURPOSE and it is NOT
+      // a bound. Measured 2026-09-09: this predicate matches >= 9,000 wmc rows,
+      // so PostgREST returns its 1,000-row cap and the effective pool is the
+      // FIRST 1,000 PHYSICAL ROWS — this read carries no .order(), so which
+      // 1,000 is undefined. Recorded rather than "fixed" for two reasons.
+      // (a) Lowering the number to 1,000 would be behaviour-preserving only if
+      //     the server cap really is 1,000; that is a PostgREST setting, not
+      //     readable from Postgres, and unverifiable from a sandbox with no REST
+      //     egress. A silent coverage cut resting on an unverified premise is
+      //     worse than a stated one.
+      // (b) The real fix is a bounded cursor over the pool, not a bigger limit —
+      //     "a LIMIT bounds a query's OUTPUT, not its COST", and this is the
+      //     queue-walk-from-the-top shape CLAUDE.md names. That is a redesign of
+      //     an ACTIVE cron, not a comment edit.
+      // Bounded blast radius, measured the same day: only 419 DISTINCT composite
+      // edition_keys exist across the whole pool and Q3's cap is 25/tick, so the
+      // exposure is "some keys may be unreachable", not "most are". Registered.
       .limit(5000)
     if (wmcErr) {
       return NextResponse.json({ ok: false, error: `q3 wmc pool: ${wmcErr.message}` }, { status: 500 })
@@ -441,7 +458,10 @@ export async function GET(req: NextRequest) {
     const { data: peRows, error: peErr } = await supabaseAdmin
       .from("pinnacle_editions")
       .select("id, character_name, edition_key")
-      .limit(10000)
+      // 569 rows measured 2026-09-09 — the comment above is right that this is
+      // hundreds, and the bound now says so. A larger number is clamped to
+      // PostgREST's 1,000-row cap and would read as a guarantee it is not.
+      .limit(1000)
     if (peErr) {
       return NextResponse.json({ ok: false, error: `q4 pe load: ${peErr.message}` }, { status: 500 })
     }
@@ -460,6 +480,11 @@ export async function GET(req: NextRequest) {
       .eq("collection_id", PINNACLE_COLLECTION_ID)
       .not("edition_key", "is", null)
       .ilike("edition_key", "%:%:%") // composite keys have two colons; skips integer-only keys
+      // postgrest-cap: intentional — same read, same reasoning as Q3 above (>= 9,000
+      // matching rows, clamped to 1,000, unordered; keeping the number rather than
+      // cutting coverage on an unverified cap). Q4's own target set was 12 rows on
+      // 2026-09-09 out of 419 distinct composite keys, which is why this is filed
+      // as a reachability risk rather than treated as a live data loss.
       .limit(8000)
     if (wmcErr) {
       return NextResponse.json({ ok: false, error: `q4 wmc pool: ${wmcErr.message}` }, { status: 500 })

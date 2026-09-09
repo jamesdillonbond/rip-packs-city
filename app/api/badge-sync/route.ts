@@ -299,7 +299,11 @@ async function fetchSetOnchainMap(): Promise<Map<string, string>> {
     .select("external_id, set_id_onchain")
     .eq("collection_id", COLLECTION_ID)
     .not("set_id_onchain", "is", null)
-    .limit(10000)
+    // A bound above PostgREST's 1,000-row cap is silently clamped, so it is a
+    // claim about the population rather than a limit. Measured 2026-09-09:
+    // 265 Top Shot sets carry set_id_onchain. Comfortably under; page it if
+    // Top Shot's set count ever approaches four figures.
+    .limit(1000)
   if (error) {
     console.log("[badge-sync] set onchain map error:", error.message)
     return map

@@ -38,7 +38,9 @@ async function loadUnresolved() {
     .select('moment_id')
     .eq('collection_id', AD_COLLECTION_ID)
     .like('edition_key', 'locked_%')
-    .limit(10000);
+    // 0 locked_ AllDay wmc rows remain (measured 2026-09-09). PostgREST clamps
+    // any bound above 1,000, so the old number stated a reach it never had.
+    .limit(1000);
   if (error) throw new Error('Supabase: ' + error.message);
   return new Set(data.map(r => parseInt(r.moment_id)));
 }

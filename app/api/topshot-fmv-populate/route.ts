@@ -267,7 +267,9 @@ async function runSweep(): Promise<void> {
     .select("external_id, set_id_onchain")
     .eq("collection_id", COLLECTION_ID)
     .not("set_id_onchain", "is", null)
-    .limit(5000)
+    // 265 rows measured 2026-09-09. Anything over PostgREST's 1,000-row cap is
+    // clamped silently, so the old .limit(5000) stated a bound that never existed.
+    .limit(1000)
   if (setsErr) {
     try {
       await supabase.rpc("log_pipeline_run", {

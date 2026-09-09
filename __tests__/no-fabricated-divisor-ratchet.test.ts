@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 import { stripComments } from "../scripts/lib/strip-comments.mjs"
+import { isMarkerSuppressed } from "../scripts/lib/marker-suppression.mjs"
 
 // BAN (population ZERO) on dividing by a FABRICATED denominator — `x / (y || 1)`,
 // `x / (y ?? 1)`, and the same shape with any other invented constant.
@@ -155,14 +156,15 @@ const OPT_OUT_LOOKBACK = 3
  * The block walk stops at the FIRST non-comment line, so unlike a bigger fixed
  * number it can never reach across code to excuse something below it.
  */
+/*
+ * ⚠ MIGRATED 2026-09-09 to the ONE shared reader, `scripts/lib/marker-suppression.mjs`,
+ * for the same reason `stripComments` was: a second guard now needs these exact
+ * window semantics, and a copy would have to re-earn all three properties above.
+ * The signature here is unchanged, so every control below still drives the real
+ * implementation. Do not re-inline a local copy.
+ */
 export function isSuppressed(rawLines: string[], i: number): boolean {
-  if (rawLines.slice(Math.max(0, i - OPT_OUT_LOOKBACK), i + 1).some((l) => OPT_OUT.test(l))) return true
-  for (let j = i - 1; j >= 0; j--) {
-    const t = (rawLines[j] ?? "").trim()
-    if (!(t.startsWith("//") || t.startsWith("*") || t.startsWith("/*"))) return false
-    if (OPT_OUT.test(rawLines[j]!)) return true
-  }
-  return false
+  return isMarkerSuppressed(rawLines, i, OPT_OUT, OPT_OUT_LOOKBACK)
 }
 
 function walk(dir: string, out: string[] = []): string[] {

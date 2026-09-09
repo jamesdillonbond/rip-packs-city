@@ -216,7 +216,10 @@ async function loadCohort() {
     .eq("collection_id", TS_COLLECTION_ID)
     .or("set_name.is.null,player_name.is.null,circulation_count.is.null,tier.is.null,set_id_onchain.is.null,play_id_onchain.is.null")
     .order("created_at", { ascending: false })
-    .limit(2000)
+    // 153 editions in the cohort on 2026-09-09. The old 2000 was clamped to
+    // PostgREST's 1,000-row cap anyway; the ordering above is what makes the
+    // truncation deterministic rather than arbitrary.
+    .limit(1000)
   if (error) throw new Error(`cohort load: ${error.message}`)
   return data ?? []
 }

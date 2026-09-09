@@ -112,7 +112,9 @@ async function main() {
     .select("id, external_id, name, player_name, team_name")
     .eq("collection_id", TOPSHOT_COLLECTION_ID)
     .or("team_name.is.null,name.is.null")
-    .limit(2000)
+    // 2 rows matched on 2026-09-09. A bound above PostgREST's 1,000-row cap is
+    // clamped silently, so 2000 never bounded anything.
+    .limit(1000)
 
   if (error) {
     console.error("Failed to fetch editions:", error.message)
@@ -293,7 +295,9 @@ async function phase2UuidBackfill() {
     .eq("collection_id", TOPSHOT_COLLECTION_ID)
     .is("player_name", null)
     .like("external_id", "%-%")
-    .limit(2000)
+    // 0 rows matched on 2026-09-09 (phase 2 is drained). Bound lowered to a real
+    // one — PostgREST clamps anything above 1,000 without saying so.
+    .limit(1000)
 
   if (error) {
     console.error("Phase 2 fetch failed:", error.message)

@@ -116,7 +116,11 @@ async function loadOffending() {
     .gte('sold_at', WINDOW_START)
     .lt('sold_at', WINDOW_END)
     .order('sold_at', { ascending: true })
-    .limit(10000)
+    // 0 serial_number = 0 Top Shot sales remain (measured 2026-09-09), so this
+    // one-shot is drained. PostgREST clamps a bound above 1,000 silently: if a
+    // future window ever exceeds it, PAGE this with .range() rather than raising
+    // the number, which cannot work.
+    .limit(1000)
   if (error) throw new Error(`load failed: ${error.message}`)
   return data ?? []
 }

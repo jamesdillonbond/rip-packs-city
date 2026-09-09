@@ -683,6 +683,21 @@ async function fetchSecondaryAskMap(): Promise<Map<string, number>> {
       .eq("collection_slug", "nba-top-shot")
       .eq("is_listed", true)
       .gt("lowest_ask", 0)
+      // postgrest-cap: intentional — this one WOULD truncate, and it is left alone
+      // deliberately. Measured 2026-09-09: 1,995 listed Top Shot rows in
+      // pack_ask_state, so PostgREST returns 1,000 and this ask-anchor fallback
+      // sees about half of them, unordered. lib/packs/pack-deals.ts hit the same
+      // wall on the same table and fixed it by calling get_pack_ask_state_map()
+      // instead of reading rows — that is the fix here too.
+      // ⛔ NOT applied, because this function is DORMANT: `compute-topshot-pack-ev`
+      // has no cron.job row and no pipeline_runs row in 24h (measured 2026-09-09);
+      // Top Shot pack EV is produced by refresh_atlas_pack_ev() (jobid 217,
+      // pipeline topshot-atlas-pack-ev, 75 runs / 4,275 rows in the same window).
+      // Editing a supabase/functions file without deploying creates repo-vs-deployed
+      // drift, and deploying to fix dormant code buys nothing while risking the
+      // half-deployed-edge-function outage class (known-issues #31 / the 2026-08-12
+      // ~40h silent outage). EXIT: if this function is ever revived, switch to
+      // get_pack_ask_state_map() as part of THAT change and delete this marker.
       .limit(3000)
     if (pasErr) {
       console.log(`[compute-topshot-pack-ev] pack_ask_state fallback err: ${pasErr.message}`)

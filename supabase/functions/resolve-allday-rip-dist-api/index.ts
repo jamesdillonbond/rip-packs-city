@@ -33,6 +33,12 @@ async function lookup(ids:string[]){ return await raw(Q,{ i:{ first: ids.length,
 Deno.serve(async(req)=>{
   const url=new URL(req.url)
   if(!gateKeyOk(url.searchParams.get("key"))) return new Response(JSON.stringify({error:"forbidden"}),{status:403})
+  // postgrest-cap: intentional — 0 AllDay pack_rips rows have a null dist_id
+  // (measured 2026-09-09), so nothing is truncated today. The number is kept
+  // rather than lowered only because this is a supabase/functions file: changing
+  // it without a deploy creates repo-vs-deployed drift, and it does not earn a
+  // deploy on its own. EXIT: fold the bound down to 1,000 into the next real
+  // deploy of this function.
   const { data:rows }=await sb.from("pack_rips").select("pack_nft_id").eq("collection_id",ALLDAY).is("dist_id",null).limit(3000)
   const ids=(rows??[]).map((r:any)=>String(r.pack_nft_id))
   if(url.searchParams.get("mode")==='probe'){ const j=await lookup(ids.slice(0,3)); await dbg({probe:true,resp:j}); return new Response(JSON.stringify({ok:true}),{headers:{"content-type":"application/json"}}) }

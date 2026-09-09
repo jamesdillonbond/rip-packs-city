@@ -172,7 +172,10 @@ async function fetchSetOnchainMap(): Promise<Map<string, string>> {
     .select("external_id, set_id_onchain")
     .eq("collection_id", COLLECTION_ID)
     .not("set_id_onchain", "is", null)
-    .limit(10000)
+    // 265 Top Shot sets with set_id_onchain, measured 2026-09-09. A larger
+    // bound is clamped to 1,000 by PostgREST and reads as a guarantee it is not
+    // — the sibling paged read 40 lines above says the same thing.
+    .limit(1000)
   if (error) {
     console.log("[offers-sweep] set onchain map error:", error.message)
     return map

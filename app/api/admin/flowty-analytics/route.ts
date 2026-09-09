@@ -147,7 +147,11 @@ async function loadSalesRows(
     .select("*")
     .gte("day", startIso)
     .lte("day", endIso)
-    .limit(100000);
+    // PostgREST clamps any bound above its 1,000-row cap, so a bigger number is
+    // not a limit — it is an unstated claim about the population. This one is
+    // measured: mv_flowty_sales_daily held 269 rows on 2026-09-09, and Flowty's
+    // marketplace shut 2026-05-13, so the view is frozen history and cannot grow.
+    .limit(1000);
   if (collection !== "all") q = q.eq("collection", collection);
   const { data, error } = await q;
   if (error) {
@@ -167,7 +171,8 @@ async function loadLoanRows(
     .select("*")
     .gte("day", startIso)
     .lte("day", endIso)
-    .limit(100000);
+    // mv_flowty_loans_daily: 193 rows measured 2026-09-09, frozen history.
+    .limit(1000);
   if (collection !== "all") q = q.eq("collection", collection);
   const { data, error } = await q;
   if (error) {
@@ -187,7 +192,10 @@ async function loadActivationRows(
     .select("*")
     .gte("first_at", startIso)
     .lte("first_at", endIso)
-    .limit(200000);
+    // mv_flowty_first_activations: 754 rows measured 2026-09-09, frozen history.
+    // ⚠ The closest of the three to the cap — if Flowty ingest is ever revived
+    // this is the one to page rather than bound.
+    .limit(1000);
   if (collection !== "all") q = q.eq("collection", collection);
   const { data, error } = await q;
   if (error) {
@@ -198,7 +206,8 @@ async function loadActivationRows(
 }
 
 async function loadAllTimeSales(collection: string): Promise<Record<string, unknown>[]> {
-  let q = supabaseAdmin.from("mv_flowty_sales_daily").select("*").limit(200000);
+  // 269 rows measured 2026-09-09; frozen history (see loadSalesRows).
+  let q = supabaseAdmin.from("mv_flowty_sales_daily").select("*").limit(1000);
   if (collection !== "all") q = q.eq("collection", collection);
   const { data, error } = await q;
   if (error) {
@@ -209,7 +218,8 @@ async function loadAllTimeSales(collection: string): Promise<Record<string, unkn
 }
 
 async function loadAllTimeLoans(collection: string): Promise<Record<string, unknown>[]> {
-  let q = supabaseAdmin.from("mv_flowty_loans_daily").select("*").limit(200000);
+  // 193 rows measured 2026-09-09; frozen history (see loadSalesRows).
+  let q = supabaseAdmin.from("mv_flowty_loans_daily").select("*").limit(1000);
   if (collection !== "all") q = q.eq("collection", collection);
   const { data, error } = await q;
   if (error) {

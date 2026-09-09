@@ -367,7 +367,10 @@ async function getCollectionSeries(): Promise<SeriesRow[]> {
       .from('collection_series')
       .select('display_label, collection_id')
       .in('collection_id', EDITION_COLLECTION_IDS)
-      .limit(2000)
+      // collection_series holds 26 rows in total (measured 2026-09-09). Any
+      // bound above PostgREST's 1,000-row cap is clamped silently, so 2000 was
+      // a claim, not a limit.
+      .limit(1000)
     if (error) {
       // R47: a failed read is not "this site has no series".
       throw new SitemapReadIncomplete('collection_series read failed: ' + error.message)
