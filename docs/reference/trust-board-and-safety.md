@@ -197,3 +197,43 @@ not the 62 filed against all 102 watchlist rows. **Derive the watched set from `
 as a rate rather than an anecdote: the list does not have to rot for its coverage to fall.** ⚠ Both
 readings are dated samples of a moving population — re-derive, and note that the two numbers are
 comparable ONLY because they were taken with the same instrument over the same retention window.
+
+## ⚠ `public_board_slow_count` fires on ONE warm sample — check whether the WHOLE SWEEP moved before investigating the board (2026-09-08)
+
+`public_board_liveness_sweep` probes every watchlisted board in one pass and records `elapsed_ms` per
+board; `public_board_slow_count` breaches at **1**, so a single board exceeding its `max_ms` on a
+single tick reds the trust board. Each probe is one warm sample taken **while the sweep is probing
+44 other boards**, so it carries whatever contention the instance had at that instant.
+
+⭐ **THE DISCRIMINATOR IS ONE QUERY, and it answers "did this board regress?" vs "was the instance
+busy?" without touching `EXPLAIN` or hunting bloat:**
+
+```sql
+SELECT checked_at, count(*) AS boards, round(avg(elapsed_ms)) AS avg_ms, sum(elapsed_ms) AS total_ms
+FROM public_board_liveness_history
+WHERE checked_at > now() - interval '4 days'
+GROUP BY checked_at ORDER BY checked_at DESC;
+```
+
+**If the sweep's average and total moved with the flagged board, the environment moved, not the
+board.** Worked case, 2026-09-08: `pack_table_rows` breached at **4903 ms** against a 3900 ms cap
+after a week at 687–991 ms — which reads as textbook latency drift. It was not. At that same tick the
+sweep average across all 44 boards was **662 ms against a 232–283 ms baseline** and the total was
+**29,126 ms against ~10–12 k**. Every board was slow. An isolated re-probe of the exact sweep query
+(`SELECT count(*), count(t.*) FROM pack_table_rows t` — the `count(t.*)` is deliberate, it defeats
+index-only pruning) returned **166 ms**, four times faster than the board's own "baseline".
+
+⚠ **And check the DAILY distribution before believing two rising probes are a trend.** Two
+consecutive rising 6-hourly points looked like drift; the 12-day daily average sweep total runs
+369,346 ms (08-28, pre-drain) → ~11.6–20.4 k across the following week, and the alarming day's
+**17,102 sits inside that band with 09-04 higher**. Two points are not a trend when the distribution
+containing them is flat.
+
+⛔ **Do NOT loosen the cap on the strength of one benign flicker.** The arm has flickered before — the
+watchlist note records widening the multiplier 3x → 6x after two boards exceeded by **6 ms and 3 ms**
+— and tuning a safety threshold by anecdote is how an instrument stops meaning anything. The cost of
+this arm is one query to interpret it, which is now written down; the cost of loosening it is a real
+regression that arrives quietly. If it ever becomes genuinely noisy, the principled fixes in order
+are: require **2 consecutive** breaches (a real regression persists; contention does not), or
+normalise each probe against the same tick's sweep average so contention divides out — not a bigger
+number in `max_ms`.
