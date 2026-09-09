@@ -95,7 +95,75 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
-## ⭐ HEADLINE METRIC — re-read live 2026-09-01 20:5x PT (2026-09-02 03:5xZ) (supersedes the 08-29 17:25 PT block below)
+## ⭐ HEADLINE METRIC — re-read live 2026-09-08 20:4x PT (2026-09-09 03:4xZ) (supersedes the 09-01 20:5x PT block below)
+
+**All-rows basis (Trevor's 08-28 decision), and the basis MEANS SOMETHING DIFFERENT NOW than it did in the
+block below: the 6,597 non-canonical Top Shot editions were RETIRED on 2026-09-08
+(`20260908035228`), so "all rows" and "canonical" have converged for Top Shot.** Read the documented way —
+`public.rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by
+`rpc_thp_leg_fmv_coverage`), never by calling `rpc_fmv_confidence_share()`. Leg age at read: **1.9 h** for the
+five shared collections (01:48:00Z), **5.8 h** for Pinnacle (21:55:00Z, jobid 331's own schedule). An
+independent hand-derivation over `fmv_snapshots` (latest per `(collection_id, edition_id)`) is quoted beside
+it as a cross-check, not as the source.
+
+| collection | priced | HIGH/MEDIUM | share (hand) | precompute | vs 09-01 |
+|---|---:|---:|---:|---:|---:|
+| nba_top_shot | 14,015 | 7,186 | **51.3%** | 50.7% | **+11.4 pt — but see the warning below** |
+| nfl_all_day | 6,190 | 1,252 | **20.2%** | 20.3% | **−5.2 pt, −322 rows** on an unchanged denominator |
+| laliga_golazos | 575 | 1 | 0.2% | 0.2% | −1 row |
+| ufc_strike | 518 | 0 | 0.0% | 0.0% | flat |
+| candy_mlb | 125 | 75 | 60.0% | 60.0% | −4 rows, −3.2 pt |
+| **estate-wide** | **21,423** | **8,514** | **39.7%** | — | denominator −5,756, numerator −1,026 |
+| *disney_pinnacle (separate leg)* | — | — | — | *45.3%* | *+0.3 pt* |
+
+🚨🚨 **THE TOP SHOT RISE IS A DENOMINATOR EVENT, NOT AN ACCURACY GAIN — AND THE NUMERATOR IS FALLING.**
+This is the single most important line in this block, because every surface that quotes M1 will read the
++11.4 pt as progress. Measured against the retirement's own backup tables rather than assumed:
+`audit_20260908_ts_noncanonical_fmv_snapshots` holds **6,426 priced editions of which only 163 were
+HIGH/MEDIUM**. So the retirement took **6,426 off the denominator and 163 off the numerator**. Reconciled
+like-for-like against the 09-01 block:
+
+| | 09-01 | retirement | 09-01 rebased | today | Δ on the same population |
+|---|---:|---:|---:|---:|---:|
+| priced | 19,771 | −6,426 | 13,345 | 14,015 | **+670** (newly priced canonical editions) |
+| HIGH/MEDIUM | 7,885 | −163 | 7,722 | 7,186 | **−536** |
+
+⭐ **So the count of Top Shot editions carrying a trustworthy price FELL by ~536 over the week while the
+published share rose 11.4 points.** The share moved because 6,426 dead rows left the denominator — which
+was the right thing to do, and R41's intent is better served by an honest denominator — but **it is not
+evidence that pricing improved, and M1 reading at its bar must not be cited as though it were.** The
+numerator's fall is the 08-28 → 09-06 sales hole (#67) working through the rolling 30-day window.
+
+⚠ **STATED AS A READING, NOT A TREND, because the instrument is mid-flight.** `fmv_current` shows **8,857 of
+14,015** Top Shot editions (63%) recomputed since the #68 drain landed at 00:24Z; `min(computed_at)` is still
+2026-09-02, so the sweep has NOT completed and the −536 is measured across a mixed population. The 6,589
+recovered Atlas sales (ledger 2026-09-08) were measured at the SALES level as **+425 editions at
+MEDIUM-or-better**, and most of that has not reached `fmv_snapshots` yet. **The honest statement is: the
+numerator is down 536 on an incomplete sweep with a known upward correction still propagating.** Re-read
+after `min(computed_at)` on Top Shot `fmv_current` passes 2026-09-09 00:24Z.
+
+⚠ **ALL DAY IS THE UNWATCHED REGRESSION — down 5.2 points (1,574 → 1,252 rows) on an unchanged 6,190
+denominator, so this one IS a real numerator loss and not a denominator artifact.** Its go-live bar (M2) is
+≥ 30%; it was 27.7% on 08-13, 25.4% on 09-01 and is **20.2%** now — a monotonic slide across three readings
+with nothing on the register naming it. **This is the finding this pass would not have made if it had only
+re-read the Top Shot number everyone is watching.**
+
+⭐ **AND THE CAUSE WAS MEASURED RATHER THAN GUESSED, WHICH CHANGES WHAT TO DO ABOUT IT: All Day's SALES
+VOLUME roughly halved, and no ingest lane is failing.** `sales` (nfl_all_day) per day ran **~333/day across
+08-19..08-24** (273, 388, 312, 491, 241, 332) and **~153/day across 09-01..09-08** (104, 135, 66, 212, 226,
+49, 272, 159). Over the same 48 h every All Day lane is green — `allday-sales-indexer` **156 runs / 156 ok /
+348 rows written**, which is ~174/day and *tracks the observed volume*, so the indexer is writing what it
+sees. ⛔ **That rules out a broken lane; it does NOT establish that the market itself halved** — an upstream
+coverage change (what Flowty/Dapper serve us) would look identical from inside and was not measured. ⚠ It is
+also the wrong direction for the season: this is the start of the NFL season, when All Day volume should
+RISE. **Next probe is an upstream one (does the source list the sales we are not writing), not another
+pipeline read.**
+
+⚠ **Candy is at 60.0%, below the 63.2% of 09-01 and below the 65.6% the go-live doc quotes** — on a fixed
+125-edition denominator, so it is 4 editions moving, i.e. noise at this population size. Do not read a trend
+into a 125-row base.
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC — re-read live 2026-09-01 20:5x PT (2026-09-02 03:5xZ) (supersedes the 08-29 17:25 PT block below)
 
 **All-rows basis (Trevor's 08-28 decision). Read THE DOCUMENTED WAY — straight from
 `public.rpc_trust_health_precompute` (`<collection>_fmv_high_med_share_pct`, written by

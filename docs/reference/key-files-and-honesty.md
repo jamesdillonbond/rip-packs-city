@@ -2,6 +2,24 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+
+## Displaced from CLAUDE.md 2026-09-08 (verbatim) — the ISR-caches-a-failed-read instance detail
+
+CLAUDE.md keeps the RULE and its test discipline; the measured instance that produced it lives here so
+the rule stays one line. Verbatim, as it stood in CLAUDE.md before the 2026-09-08 documentation pass:
+
+> - ⚠ **ISR CACHES A FAILED READ for the whole `revalidate` window** — a COLD regeneration over the 8 s
+>   `BOARD_LIVE_TIMEOUT_MS` served `/insights/pack-drops` degraded **15 min** at `x-vercel-cache: HIT`
+>   while the API answered in 1.2 s. It self-heals warm, so it is **easy to declare fixed by accident**:
+>   test *"does a COLD pass exceed the budget"*, never *"is the page OK now"*.
+
+Also displaced the same day, from the `/sitemap/3.xml` bullet: the instance numbers (**24k of 27.2k rows
+served under a 200**, FIXED as register #28). The rule — a paged read that `break`s on error returns a
+partial list no caller can distinguish from a complete one, the tell is the control-flow keyword rather
+than any copy, and the fix is to throw or carry `complete:false` — stays in CLAUDE.md.
+
+⚠ The status of the ISR item itself is register **#33** (open, Trevor's call), not this file.
+
 ## ⭐ 2026-09-03/04 — THE NINTH SHAPE: a SWEEP's `ok` means it COMPLETED, not that its LANES worked
 
 `sales-serial-backfill` logged **`ok=true` on 36 of 36 runs** while its Top Shot lane failed **100%
