@@ -2,6 +2,17 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## Displaced from CLAUDE.md 2026-09-08 (verbatim) — the fmv-recalc sizing figures
+
+CLAUDE.md keeps the verdict (*wasteful, NOT broken, SIZED*); the numbers behind it live here so that
+line stays short. Verbatim, as it stood in CLAUDE.md before the 2026-09-08 documentation pass:
+
+> - `fmv-recalc` — wasteful, NOT broken, now SIZED: `query_sql` is the DB's **#1 reader** (12.1M
+>   blocks/24h), owned by this route's 7 inline scans (inbox `2026-09-04T0500Z`).
+
+⚠ Dated sample (2026-09-04) — re-measure before quoting it. The filing is
+`docs/overnight/inbox/2026-09-04T0500Z-*`.
+
 ## Displaced from CLAUDE.md 2026-09-04 (verbatim) — the one measured-but-unshipped DB fix
 
 > - **The one measured-but-unshipped DB fix is LOW-STAKES now (re-derived 2026-09-02): every caller is

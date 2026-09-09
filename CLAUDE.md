@@ -280,7 +280,7 @@ The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **a
 **Open items, stated rather than quietly dropped:**
 
 - **sports-proxy `403` — ⛔ "PROXY ESPN" IS MEASURED DEAD** (#8 in [known-issues.md](docs/reference/known-issues.md)).
-- `fmv-recalc` — wasteful, NOT broken, now SIZED: `query_sql` is the DB's **#1 reader** (12.1M blocks/24h), owned by this route's 7 inline scans (inbox `2026-09-04T0500Z`).
+- `fmv-recalc` — wasteful, NOT broken, SIZED (it owns the DB's #1 reader): roadmap-status.md.
 - 🚨 **Needs TREVOR, not code — two:** the **DEFEATED credential purge** (public branch `claude/todo-implementation-e4tib3` still carries the pre-purge blob, re-verified 08-27 — triage `ee94c8a2a`, delete via the GitHub UI, GC, **rotate regardless**, #22) · ⛔ **the 2-hourly-Routine approval card DOES NOT EXIST — both are DISABLED, replaced by a desktop-local task invisible to `RemoteTrigger`; done-check is a run that pushes itself (#55).**
 - **GO-LIVE bars + blockers: [go-live-2026-09.md](docs/strategy/go-live-2026-09.md)** — verification gate DROPPED (#59), beacon LIVE and finding real defects (#34/#69), TS HIGH/MED **50.7% (09-09 01:48Z) — at the bar, but by DENOMINATOR retirement; numerator FELL ~536**, **Candy LIVE thin (#63)**, Panini = WC Prizm plane (#64).
 
