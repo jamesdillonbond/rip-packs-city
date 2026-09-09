@@ -154,3 +154,59 @@ skipping it turns a working job into a broken one.
 ## ✅ jobid 78 RESOLVED the other way round; jobid 11 aged out (2026-09-04 02:2xZ, Claude Code on Trevor's box)
 
 §5's ordering was followed — "find out whether it CAN complete before tuning anything" — and the answer changed the fix. **78 `backfill_pinnacle_acquisitions`** (7 d: 28 runs, 23 ok, max ok **118 s**, **5 kills** at the wall): its entire candidate join is **6,573 rows and every one is already in `moment_acquisitions`** — the backfill is complete, and each tick was re-scanning ~2.5 M `wallet_moments_cache` rows to insert nothing. So the prefix was the wrong lever (a bigger ceiling would let a tick waste 600 s on the same nothing — #42's warning verbatim). Shipped instead: a `p_since_days` window (migration `20260904014220`, pin re-pointed, cron passes 14 via `cron.alter_job`) — **297 ms / 15k buffers** for the same statement, semantics pinned unchanged at the default. **11 `refresh_insights_new_collectors`**: 7 d max ok **29 s**, 0 kills at the wall (one `job startup timeout`) — no longer in the §3 shape; left alone. **87**: 1 kill / 7 d, already addressed 09-02. 259 stays as the self-correction says (procedure; arguments are the lever).
+
+---
+## 🔁 REVISITED 2026-09-09 ~16:4x PT (23:4xZ) — the class is LOAD-RECRUITED, and there is now a SECOND reason not to apply the prefix (Claude Code, cloud)
+
+**Reached from the opposite direction:** while closing out the 09-09 saturation spell (#73) I found
+residual `statement timeout` cancellations still arriving in bursts after the spell had otherwise
+recovered, traced them, and landed back here. ⭐ **Two things this filing could not have known, one of
+which changes its recommendation.**
+
+### 1. §3's method finds jobs clipped AT REST. Load recruits others.
+
+§3 filtered to jobs whose successes **never reach 120 s** — which is the right way to find an
+unambiguous ceiling, and it found five. But on 2026-09-09, with the instance running 5–10× slower for
+nine hours, **five DIFFERENT jobs started dying at ~120 s** — none of them in §3's list, and all five
+`username = postgres` with no `SET` prefix, i.e. squarely inside §2's "36 exposed":
+
+| jobname | fails (2h window) | avg duration |
+|---|---:|---:|
+| `rpc-ts-listings-atlas-sync` | 6 | 121 s |
+| `rpc-allday-unmapped-atlas-resolver` | 3 | 121 s |
+| `rpc-atlas-editions-drain` | 1 | 120 s |
+| `rpc-atlas-market-drain` | 1 | 120 s |
+| `rpc-topshot-moments-hydrate-wmc` | 1 | 120 s |
+
+Verified per job: `username = postgres`, `command ~* '^\s*SET\s+statement_timeout'` = **false**, and the
+`postgres` role carries **no** `statement_timeout` in `rolconfig` — so the 120 s wall is the database
+default, exactly as §1.3 established. ⭐ **So §5's "most of them are nowhere near 120 s" is true at rest
+and false under load: the exposed population is not five jobs, it is 36, and WHICH of them are clipped
+is a function of how slow the instance is that hour.** That is a refinement of this filing's model, not
+a contradiction of it — and it means the class cannot be closed by draining a list.
+
+### 2. 🚨 A SECOND, INDEPENDENT REASON NOT TO APPLY THE PREFIX — and it is not #42's waste argument
+
+§5 declines the sweep on **waste** (#42: a 120 s kill becomes a 600 s kill). That still stands. The new
+one is **contention**, and it is a different mechanism:
+
+**`max_worker_processes = 6`.** pg_cron launches every job as a background worker. The 09-09 spell's
+worst damage was **135 `job startup timeout` failures** — jobs that never ran at all because no slot was
+free while the six-hourly heavies overlapped. ⛔ **Raising these jobs from 120 s to 600 s multiplies
+their worker-slot occupancy by up to 5×, on the binding constraint that produced that cascade.** Applying
+the prefix to the five above would have made 2026-09-09 *worse*, not better.
+
+⚠ So the prefix is now a genuine **trade-off across two budgets** (statement time vs worker slots), not a
+one-liner with a cost only in wasted IO. §5's per-job ordering is still the right process; **step 1
+should now also ask "what does this job's slot occupancy do to the other 133 jobs while it runs?"**
+⛔ **Nothing was applied here, for that reason.**
+
+### 3. What DID ship, and what it does not claim
+
+✅ `check_pgcron_failure_rate(p_window)` (migration `20260909233213`) + a `pg_cron Failures (6h)`
+sentinel arm — because the deeper problem on 09-09 was that **nothing was watching this surface at all**:
+the sentinel contained zero references to `cron.job_run_details`, and `check_pgcron_recent_failures()`
+had no caller anywhere in the repo. ⭐ The arm's detail deliberately splits **startup timeouts** from
+**statement timeouts**, because that split is the discriminator between the two mechanisms above and it
+is what took longest to find by hand. ⛔ It does not fix anything here; it makes the next occurrence
+legible in one line instead of a two-hour investigation.
