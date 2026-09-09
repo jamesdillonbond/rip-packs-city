@@ -159,16 +159,29 @@ denominator, so this one IS a real numerator loss and not a denominator artifact
 with nothing on the register naming it. **This is the finding this pass would not have made if it had only
 re-read the Top Shot number everyone is watching.**
 
-⭐ **AND THE CAUSE WAS MEASURED RATHER THAN GUESSED, WHICH CHANGES WHAT TO DO ABOUT IT: All Day's SALES
-VOLUME roughly halved, and no ingest lane is failing.** `sales` (nfl_all_day) per day ran **~333/day across
-08-19..08-24** (273, 388, 312, 491, 241, 332) and **~153/day across 09-01..09-08** (104, 135, 66, 212, 226,
-49, 272, 159). Over the same 48 h every All Day lane is green — `allday-sales-indexer` **156 runs / 156 ok /
-348 rows written**, which is ~174/day and *tracks the observed volume*, so the indexer is writing what it
-sees. ⛔ **That rules out a broken lane; it does NOT establish that the market itself halved** — an upstream
-coverage change (what Flowty/Dapper serve us) would look identical from inside and was not measured. ⚠ It is
-also the wrong direction for the season: this is the start of the NFL season, when All Day volume should
-RISE. **Next probe is an upstream one (does the source list the sales we are not writing), not another
-pipeline read.**
+⭐ **THE WRITER IS NOT THE PROBLEM — `pipeline_runs_daily` settles that, and it is the only instrument that
+can (indefinite retention, against `pipeline_runs`' ~73 h).** `allday-sales-indexer` **`rows_found` falls in
+lockstep with `rows_written`**: ~300–460/day through 08-24, then 83 · 248 · 122 · 83 · 177 · 231 · 146 · 104
+· 135 · 63 · 215 · 224 · 51 · 264 · 167 from 08-25 on, with `rows_skipped` small and 0–2 failures a day.
+⛔ **The lane is not dropping what it finds; it is finding less.** ⚠ **That does NOT establish the market
+halved** — `rows_found` is what OUR query of the upstream returns, so an upstream coverage narrowing has an
+identical signature. **The open question is an UPSTREAM probe, not another pipeline read** (egress is blocked
+from a sandbox, so it is a prod-caller item).
+
+🚨 **CORRECTION, SAME PASS, AGAINST THIS BLOCK'S FIRST VERSION.** It originally read *"~333/day (08-19..24)
+→ ~153/day (09-01..08)"* — **a delta between two hand-picked windows, which is precisely what this file's own
+measurement rules forbid** (*a directional claim needs a DISTRIBUTION, not a snapshot*). The weekly series is
+the honest instrument and it changes the reading: All Day runs **2,578 · 6,772 · 2,984 · 2,626 · 1,609 ·
+2,479 · 3,012 → 1,291 (wk 08-24) · 938 (wk 08-31)** — roughly flat and volatile, then a **STEP**, not a smooth
+halving. ⚠ **And the cross-collection control is AMBIGUOUS rather than supporting:** every collection is down
+on the two-window comparison (All Day −55.5 %, Top Shot −40.7 %, Candy −37.5 %), and Candy shares no ingest
+path with All Day at all — but Candy's weekly shape is a **monotonic decay from a late-July launch peak**,
+not a step, so it does not corroborate. A market-wide decline cannot be excluded; it also is not shown.
+
+🚨 **COINCIDENT AND UNEXPLAINED: the indexer's daily RUN COUNT fell ~100–110 → ~78 around 08-26/27** and has
+stayed there. Named as a coincidence, not a cause (`rows_skipped` stayed small, and a cursored indexer should
+not lose rows to fewer ticks) — but it sits at almost exactly the change point and nothing read so far
+explains it. Full item, with falsifiers: register **#70**.
 
 ⚠ **Candy is at 60.0%, below the 63.2% of 09-01 and below the 65.6% the go-live doc quotes** — on a fixed
 125-edition denominator, so it is 4 editions moving, i.e. noise at this population size. Do not read a trend
