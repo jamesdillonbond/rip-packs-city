@@ -139,11 +139,18 @@ export function summariseBlindChecks(
   // ⛔ Never "critical" — see the header. The cap is structural, not a policy
   // that a future edit can drift past without failing a test that names it.
   const status: "ok" | "warn" = blind >= threshold ? "warn" : "ok";
+  // ⚠ The explanatory clause is appended ONLY when the arm is firing. Caught on
+  // the first production payload (2026-09-09 20:52Z, value 1): at `ok` the line
+  // still read "this many at once means the database could not answer", which is
+  // simply untrue of a single check. An arm whose own copy overstates at its
+  // quiet level is the thing this repo keeps writing down — the number was right
+  // and the sentence was not.
+  const names = blindOnes.map((c) => c.name).join(", ");
   const detail =
     blind === 0
       ? `All ${evaluated} checks were evaluated (0 inconclusive).`
-      : `${blind} of ${evaluated} checks could not be evaluated (threshold ${threshold}): ${blindOnes
-          .map((c) => c.name)
-          .join(", ")}. A check that times out is not data loss on its own — but this many at once means the database could not answer, so every OTHER 'ok' in this report is weaker than it looks.`;
+      : blind >= threshold
+        ? `${blind} of ${evaluated} checks could not be evaluated (threshold ${threshold}): ${names}. A check that times out is not data loss on its own — but this many at once means the database could not answer, so every OTHER 'ok' in this report is weaker than it looks.`
+        : `${blind} of ${evaluated} checks could not be evaluated (threshold ${threshold}): ${names}. Below the threshold, so this is reported for the record rather than as a finding.`;
   return { blind, evaluated, threshold, status, detail, names: blindOnes.map((c) => c.name) };
 }

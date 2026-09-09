@@ -62,6 +62,15 @@ describe("sentinel: the measurement-blackout arm", () => {
     const quiet = summariseBlindChecks(mk(16, 2))
     expect(quiet.status).toBe("ok")
     expect(quiet.detail).toMatch(/2 of 16/)
+    // ⚠ Caught on the FIRST production payload (value 1): the quiet line must not
+    // borrow the firing line's claim. "this many at once means the database could
+    // not answer" is untrue of one check, and an arm that overstates at its quiet
+    // level teaches readers to discount it at its loud one.
+    expect(quiet.detail).not.toMatch(/this many at once/)
+    expect(quiet.detail).toMatch(/for the record rather than as a finding/)
+    const loud = summariseBlindChecks(mk(16, 6))
+    expect(loud.status).toBe("warn")
+    expect(loud.detail).toMatch(/this many at once/)
     const clean = summariseBlindChecks(mk(16, 0))
     expect(clean.detail).toMatch(/All 16 checks were evaluated/)
   })
