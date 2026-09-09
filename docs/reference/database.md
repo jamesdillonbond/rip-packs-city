@@ -1746,3 +1746,107 @@ discriminator is `cron.job_run_details`, never the pipeline table.**
 with the GRANT to the job's role, and assert it afterwards with `has_function_privilege` rather than
 reading the acl text — then confirm on the job's next natural tick, because a `GRANT` that names the
 wrong role is invisible until then.
+
+---
+
+## `sales` is PARTITIONED, and that is why a unique index could not dedupe it (#68, 2026-09-08/09)
+
+**CLAUDE.md carries the claim; this is the measurement behind it.**
+
+### The defect
+
+`public.sales` is `RANGE (sold_at)`-partitioned across eight partitions (`sales_2020` … `sales_2027`).
+Postgres requires that **a unique index on a partitioned parent contain the partition key**, so the
+duplicate guard that existed — `idx_sales_tx_nft_sold (transaction_hash, nft_id, sold_at)` — was not a
+design choice, it was the only shape the parent would accept.
+
+⛔ **And it could never fire.** The two writers that ingested the same Top Shot transaction disagree
+about `sold_at` by ~3.4 s on average (`topshot_gql` stamps its own fetch-adjacent time; the on-chain and
+`offer_fill` lanes carry the block time), so every duplicate pair differed in the third index column.
+⭐ **The tell was that the constraint had recorded EXACTLY ZERO violations — not a small number.** A
+guard whose violation count is precisely zero over years of a write-heavy table is far more likely to be
+structurally unable to fire than to be perfectly obeyed.
+
+`app/api/sales-indexer/route.ts` had been written expecting the opposite: its batch insert falls back to
+`insertIndividually(batch)` and treats `23505` as an expected, unlogged outcome. The route was correct;
+the index it relied on could not deliver.
+
+### What it cost
+
+**33,000 duplicate rows** inside `public.sales`, of which ~20,780 sat inside the live 30-day FMV window
+and inflated `sales_count_30d` on 598 editions across the MEDIUM threshold. Top Shot sales went
+3,216,034 → 3,183,200 on the drain.
+
+By source of the row that was REMOVED: `topshot_gql` 30,093 · NULL 1,852 · `ts_history_backfill_v1` 545 ·
+`topshot_marketplace` 326 · `historical_2020_import` 184. **No `onchain` or `offer_fill` row was
+removed.**
+
+### How it was found
+
+By WIDENING a falsifier past the change that had just been made. The cross-source duplicate check
+written for the parked-sale resolver read 0 for the rows that lane wrote; re-running it without the
+`sold_at >` clause that scoped it to my own change surfaced 27,608 pairs going back years.
+
+### The keep-rule, and why the first one was wrong
+
+The rule filed with the issue — "keep the row with the richer fields" — was a **guess**, and measurement
+refuted it: buyer, seller, serial number and edition are **100% present on every source**. The real
+discriminator is `block_height`, which only the chain-derived lanes carry. The shipped ordering:
+
+```sql
+ORDER BY CASE COALESCE(s.source, '~')
+           WHEN 'onchain' THEN 1 WHEN 'offer_fill' THEN 2
+           WHEN 'topshot_gql' THEN 3 WHEN 'ts_history_backfill_v1' THEN 4
+           ELSE 5 END, s.sold_at, s.id
+```
+
+⚠ **A keep-rule is a claim about the data and has to be measured like one.** Deleting on an unmeasured
+keep-rule is the same class of error as acting on an unmeasured finding.
+
+### The fix, and the fix that was IMPOSSIBLE
+
+Recommended three times before it was checked: "re-cut the index without `sold_at`". **That cannot
+exist on the parent** — see the partition-key rule above — and it would additionally have refused 1,607
+legitimate `historical_2020_import` rows that genuinely share `(tx, nft, price)`.
+
+What shipped instead indexes the **partitions** directly, which is valid because a duplicate pair is
+same-partition by construction (both rows date the same transaction):
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS sales_2026_tx_nft_price_uidx
+  ON public.sales_2026 (transaction_hash, nft_id, price_usd)
+  WHERE transaction_hash IS NOT NULL;   -- built CONCURRENTLY, 105 MB, indisvalid
+CREATE UNIQUE INDEX IF NOT EXISTS sales_2027_tx_nft_price_uidx
+  ON public.sales_2027 (transaction_hash, nft_id, price_usd)
+  WHERE transaction_hash IS NOT NULL;
+```
+
+⭐ **`CREATE INDEX CONCURRENTLY` ran via `execute_sql`.** CLAUDE.md had claimed it was reachable only
+from a one-statement pg_cron job; that claim is retracted. It is `apply_migration` that cannot take it,
+because that path is transactional. The `IF NOT EXISTS` migration
+(`20260909002014_audit_20260909_sales_tx_nft_price_unique_per_partition.sql`) records the built indexes
+so the change is not fileless and `migration-parity` stays green.
+
+The constraint was then **proved to reject**: a real duplicate was inserted, `unique_violation` caught,
+transaction rolled back. An untested constraint is exactly as untrustworthy as an untested monitor.
+
+### Backup and revert
+
+Every deleted row was copied first into `public.audit_20260908_ts_dupe_sales`
+(`LIKE public.sales INCLUDING DEFAULTS`, plus `kept_sale_id uuid` and `backed_up_at`, RLS on,
+service_role only) — **33,000 rows**, so the drain is reversible row-for-row. The drain function
+`dedupe_topshot_dupe_sales(p_from, p_to, p_max)` carries three roll-back assertions; the load-bearing
+one is *"any survivor missing from `sales` afterwards"*, which is what catches a keep-rule that deletes
+the row it meant to keep. Result: 0 survivors missing, 0 groups left.
+
+### The watch
+
+`check_topshot_dupe_sales(p_hours DEFAULT 7)` (pg_cron jobid 480, `38 3,9,15,21`) counts groups on
+`(nft_id, transaction_hash, price_usd)` and logs `ok = (v_err IS NULL AND v_groups = 0)`, so the existing
+`failure_rate` arm of `get_pipeline_alerts_core()` reports it with no edit to that function.
+
+⚠ **Its window was chosen by MEASUREMENT, not by taste.** A 45-day window costs 75,473 buffers /
+23,700 disk reads / 14.2 s on an instance whose binding constraint is disk reads — refused. The 7-hour
+window costs **429 buffers / 48 ms**. The detector was verified to FIRE by running it at `p_hours => 288`
+while the pre-drain window was still reachable (1 group, `ok=false`, correct message) before being left
+at its default.

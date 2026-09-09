@@ -1414,3 +1414,21 @@ the remaining context is directional.**
 
 ⚠ **AND A STALL IS NOT IDLENESS.** `ufc_strike` has always reported a null ETA with zero outflow;
 folding it into "stalled" would have invented a regression. The pin asserts both directions.
+
+---
+
+## Displaced from CLAUDE.md 2026-09-09 (verbatim) — the "worst sub-classes" bullet
+
+⭐ **Why it moved:** CLAUDE.md's header requires a new durable rule to DISPLACE one rather than spend
+headroom, and 2026-09-09 added two (the partitioned-unique-index trap, and "a metric's definition lives
+in code"). The NAMES of the sub-classes stay in CLAUDE.md; the parentheticals — the part that explains
+*why* each one is worst — moved here, beside the canon they came from. Nothing was deleted.
+
+> - **The worst sub-classes:** a false claim about the reader's **own account** (actionable — it makes
+>   them redo finished work); a page that **loads state and writes it back** (a failed read there is a
+>   *delete*, so WITHHOLD the form, don't annotate it); an **alert** (its output is silence, so the
+>   error is unfalsifiable); a **guard** (`?? 0` on a count makes a check fail *open*); an empty state
+>   that **concludes** ("your moments are priced at or below market") rather than reports; and a
+>   **SWEEP whose `ok` means it COMPLETED, not that its LANES worked** — a lane failing 100% on a dead
+>   host rode under `ok=true` for a month. Group the failures table by reason with
+>   `max(last_failed_at)`; fail the sweep when a lane fails EVERY target on TRANSPORT.

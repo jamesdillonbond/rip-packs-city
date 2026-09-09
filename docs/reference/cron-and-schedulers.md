@@ -1393,3 +1393,33 @@ The shape: a pg_cron lane selects "the next N rows that still need work" from th
 **And the second-order trap (`20260907214240`):** a page held in a TEMP table has no index and no statistics, so a set-form query over it (`WHERE NOT EXISTS … ×5 ORDER BY … LIMIT 80`) probes every exclusion table for every page row and sorts the survivors BEFORE the LIMIT can apply — 39K buffers, 5.5 s. Walk the page in cursor order in plpgsql (`FOR r IN … ORDER BY … LOOP CONTINUE WHEN EXISTS (…) … EXIT WHEN v_n >= p_max`) — ~5 probes per row examined, exit at the 80th candidate, 1.0 s.
 
 **Rules:** a queue walk pages a BOUNDED slice of the INDEX behind a cursor and applies its filters to the page; a temp-table page is walked row by row; read `EXPLAIN (ANALYZE, BUFFERS)` of the candidate query at ship AND after the first few hours — the tick's `extra.duration_ms` is the instrument that caught all three. Sibling rule from the same day: **a new pg_net lane is wired into `check_edge_fn_http_failures()` (the 4xx arm) by request_id in the migration that creates it**, or its designed non-200s page as an unknown edge-function failure two hours later (`20260907162237`); a session's own pg_net probes are recorded as `__probe__` rows in `topshot_atlas_market_requests` the moment they are sent. Also: **Atlas addresses carry no `0x`** — `flow_addr_0x()` normalises them (`20260907233849`).
+
+---
+
+## Displaced from CLAUDE.md 2026-09-09 (verbatim) — the `after()` / `maxDuration` bullet
+
+⭐ **Why it moved:** CLAUDE.md's header requires a new durable rule to DISPLACE one rather than spend
+headroom, and 2026-09-09 added two — the partitioned-unique-index trap (#68) and "a metric's definition
+lives in code". This bullet's RULE stays in CLAUDE.md; only its cases moved, and this file already
+carries the measurement they came from (§ `drain-fmv-cold-tail`, `npm run pipelines:kills`, the 125/172
+kill census). Nothing was deleted.
+
+> - Fire-and-forget >30s: `after(runX())` from `next/server`, return `{status: accepted}`. ⚠ Any
+>   `after()` route needs an **invocation heartbeat written BEFORE the work** (separate
+>   `<pipeline>-heartbeat` name), because **`try/catch` CANNOT catch a `maxDuration` kill** — without it
+>   a killed tick is indistinguishable from a cron that never fired. Read kills by CORRELATION
+>   (heartbeat, no terminal row), never a `finally`. ⚠ **A kill is ABSENT from `pipeline_runs_daily`,
+>   not a failure row**, so that rollup reads a perfect record while a job dies nightly.
+>   `npm run pipelines:kills` classifies it (now also against each route's OWN wall); a marker row's
+>   `rows_*` must be **NULL, not 0**. ⚠ **Bound every `fetch` inside one** — no default timeout.
+
+## Displaced from CLAUDE.md 2026-09-09 (verbatim) — the null-instrument bullet's CASES
+
+⭐ Same reason as above; the rule stays in CLAUDE.md, its worked cases live here.
+
+> - ⚠ **`rows_written = 0` is a null instrument with three incompatible meanings** (correct-and-broken,
+>   wrong-and-healthy, correct-and-failing) and `ok = false` is overloaded the same way. Read `extra`
+>   and `last_error`; never retire a pipeline on `rows_written`. ⚠ **An IDENTICAL `rows_written` across
+>   a success and a failure is a stale cache being rewritten, not health** (`ownership-sync-dune`).
+>   Measure the OUTCOME table, not the self-report. ⚠ **`extra.<step>=0` is the SAME null instrument
+>   one level down** — pair every per-step count with an `_error` field.
