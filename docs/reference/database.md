@@ -1714,3 +1714,35 @@ read its `WHERE`.**
 6-hour scan returned exactly 1 pair on this market and it was a REAL double sale — nft `52212786`
 sold twice **94 seconds apart at $0.30 then $1.00**, both `onchain`, both with distinct tx hashes.
 Rapid flips exist here; discriminate on the tx hash and the price, not the interval.
+
+## 🚨 A `REVOKE … FROM PUBLIC` on a NEW function silently orphans the pg_cron job that calls it (2026-09-09)
+
+The standing rule here is *revoke `FROM PUBLIC, anon, authenticated` in ONE statement*. That is right,
+and it is **half of an ACL**. A new function created for a scheduled job needs the other half:
+
+```sql
+REVOKE EXECUTE ON FUNCTION public.<fn>(<args>) FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.<fn>(<args>) TO cron_heavy;   -- ← the job's `username`
+```
+
+Measured 2026-09-09: `backfill_topshot_sales_from_atlas_events` shipped with the REVOKE only. Its
+job (**481**) failed on its first tick with `ERROR: permission denied for function …`, and
+`has_function_privilege('cron_heavy', …)` read **false** — `cron_heavy` had no explicit grant and had
+been reaching the function through the PUBLIC grant the REVOKE removed.
+
+⚠ **`SECURITY DEFINER` does NOT cover this.** It governs what the function RUNS AS once entered; the
+CALLER still needs EXECUTE to enter it, and a pg_cron job runs as its `cron.job.username`, not as the
+function's owner. A SECDEF function with a correct owner and a revoked PUBLIC is still uncallable by
+the scheduler.
+
+🚨 **AND IT PRESENTS AS SILENCE, NOT FAILURE, IN THE PLACE YOU WOULD LOOK.** The permission error
+happens *before* the body runs, so `log_pipeline_run` is never reached: `cron.job_run_details` shows
+`failed` with the exact message, while **`pipeline_runs` shows NOTHING AT ALL**. A pipeline-level
+monitor, a cadence watchlist and `detect_stalled_pipelines` all see a job that simply never reported
+— indistinguishable from a schedule that never fired. ⭐ **For any "scheduled job wrote no row", the
+discriminator is `cron.job_run_details`, never the pipeline table.**
+
+**How to apply:** in the SAME migration that creates a function for a scheduled job, pair the REVOKE
+with the GRANT to the job's role, and assert it afterwards with `has_function_privilege` rather than
+reading the acl text — then confirm on the job's next natural tick, because a `GRANT` that names the
+wrong role is invisible until then.
