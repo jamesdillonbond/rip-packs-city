@@ -3,6 +3,17 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## Displaced from CLAUDE.md 2026-09-09 (verbatim) — the "fix per PANEL" instance detail
+
+CLAUDE.md keeps the rule; its instance lives here. Verbatim, as it stood before the 2026-09-09 pass:
+
+> - **Fix per PANEL, not per page.** A page with one honest error branch is not an honest page —
+>   **instance six landed on a page a prior audit had already hardened.**
+
+⭐ That is the whole point of the rule: the page had been audited, a panel on it had an honest error
+branch, and a DIFFERENT panel on the same page still concluded from a failed read. **"This page was
+fixed" is not a property of a page; it is a property of each panel on it.**
+
 ## Displaced from CLAUDE.md 2026-09-08 (verbatim) — the ISR-caches-a-failed-read instance detail
 
 CLAUDE.md keeps the RULE and its test discipline; the measured instance that produced it lives here so

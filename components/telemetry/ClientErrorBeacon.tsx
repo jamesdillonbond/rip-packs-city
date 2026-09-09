@@ -30,12 +30,71 @@
 // `audit_20260906_client_error_beacon_arm`) raises medium when a single message
 // recurs across ≥ 5 distinct paths or ≥ 25 times in 24 h. Prove the watcher can
 // see a failure before trusting it: throw in the console on prod and read the row.
+//
+// ── `sid`: WHY A COUNT WAS NOT AN INCIDENCE, AND WHAT FIXED IT (2026-09-09, #69) ──
+// The beacon's first real finding was 17 rows of one message on one path, and the
+// register could not say whether that was 17 readers or one reader seventeen times
+// — a ~17x range on the only number that decides urgency. Every row was written
+// with `wallet_address = 'anon'` (the route's sentinel for a signed-out caller),
+// so `count(distinct …)` returned 1 and meant nothing.
+//
+// ⭐ A DETECTOR THAT CANNOT ATTRIBUTE ITS EVENTS TO DISTINCT ACTORS REPORTS A
+// COUNT THAT READS LIKE AN INCIDENCE. `sid` is the smallest honest fix: a random
+// per-TAB id in sessionStorage. Read it as:
+//   • rows with the same `sid`      → repeat loads in ONE tab
+//   • distinct `sid` values         → distinct tabs (the floor on "how many people")
+//
+// ⚠ Two properties make this a discriminator and NOT tracking, and both are
+// deliberate: sessionStorage is scoped to one tab and is cleared when that tab
+// closes, so it cannot follow a reader across tabs, sessions or devices; and the
+// value is random, derived from nothing about the person. Do NOT "improve" this by
+// moving it to localStorage or a cookie — that would make it a visitor id, which is
+// a different thing with different consent obligations, and it is not needed to
+// size a defect.
+//
+// ⚠ Reading row COUNT as load count is already sound and stays so: `seen` lives for
+// the life of the mount (this component sits in the root layout, so one hard load =
+// one mount, surviving soft navigations), and for a rejection `source`/`lineno` are
+// always undefined — so the dedupe key is the message alone and ONE load can emit at
+// most ONE row per distinct message. Rows ≈ loads; `sid` adds tabs.
 
 import { useEffect } from "react"
 
 const MAX_PER_LOAD = 6
 const MAX_FIELD = 300
 const MAX_STACK = 1200
+const SID_KEY = "rpc_err_sid"
+
+/**
+ * A random per-tab id, so a row COUNT can be read as an incidence (#69).
+ *
+ * ⚠ Every path here is failure-tolerant on purpose: `sessionStorage` THROWS (not
+ * returns null) in a partitioned/blocked-storage context, and a beacon that throws
+ * while reporting an error is worse than no beacon. On any failure we fall back to
+ * a module-scoped id, which still discriminates within the page load — strictly
+ * more than the `'anon'` it replaces, and never an exception.
+ */
+let memorySid: string | null = null
+export function pageSessionId(): string {
+  const mint = () => {
+    try {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID()
+    } catch {
+      /* fall through to the arithmetic id */
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  }
+  try {
+    const existing = sessionStorage.getItem(SID_KEY)
+    if (existing) return existing
+    const fresh = mint()
+    sessionStorage.setItem(SID_KEY, fresh)
+    return fresh
+  } catch {
+    if (!memorySid) memorySid = mint()
+    return memorySid
+  }
+}
 
 export function clientErrorPayload(input: {
   kind: "error" | "unhandledrejection"
@@ -47,6 +106,7 @@ export function clientErrorPayload(input: {
   path: string
   width: number
   ua: string
+  sid?: string
 }): { feature: string; metadata: Record<string, unknown> } {
   const s = (v: unknown, max = MAX_FIELD) => (typeof v === "string" ? v.slice(0, max) : v == null ? null : String(v).slice(0, max))
   return {
@@ -62,6 +122,8 @@ export function clientErrorPayload(input: {
       path: s(input.path),
       width: input.width,
       ua: s(input.ua, 120),
+      // Per-tab discriminator, NOT an identity — see the `sid` note in the header.
+      sid: s(input.sid),
     },
   }
 }
@@ -116,6 +178,7 @@ export default function ClientErrorBeacon() {
           path: window.location.pathname,
           width: window.innerWidth,
           ua: navigator.userAgent,
+          sid: pageSessionId(),
         }),
       )
     }

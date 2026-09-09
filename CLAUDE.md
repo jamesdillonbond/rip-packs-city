@@ -12,15 +12,15 @@
 
 All under `docs/reference/`:
 
-- **`key-files-and-honesty.md`** — largest and most-read. Key modules + the full **"a failed read must not render as an answer"** canon, leak guards, fabricated-number shapes, OG cards, Workers.
-- **`database.md`** — `editions` · `wmc` · `fmv_snapshots` · `sales`, role timeouts, PostgREST caps, `apply_migration` cost, **Security posture**.
-- **`testing-and-ci.md`** — vitest layers, the 3 coverage gates + ratchets, DB-invariant SQL pins, mutation categories, CI jobs (incl. the `bash -e` abort class), Playwright.
+- **`key-files-and-honesty.md`** — largest and most-read. Key modules + the full honesty canon, leak guards, fabricated-number shapes, OG cards, Workers.
+- **`database.md`** — `editions` · `wmc` · `fmv_snapshots` · `sales`, role timeouts, PostgREST caps, `apply_migration` cost, security posture.
+- **`testing-and-ci.md`** — vitest layers, the 3 coverage gates + ratchets, DB-invariant SQL pins, mutation categories, CI jobs, Playwright.
 - **`known-issues.md`** — open/resolved register (stable item numbers), deferred hardening, deep-audit follow-ups.
-- **`cron-and-schedulers.md`** — the 4 schedulers, pg_cron mechanics, `pipeline_runs` retention + rollup traps, fleet health, saturation findings.
-- **`trust-board-and-safety.md`** — trust board (⚠ the arm count drifts and the view CAN time out at 60 s — prefer the sentinel's `Trust Health` check to any number in that file), precompute split, destructive-op breaker, cross-session coordination.
+- **`cron-and-schedulers.md`** — the 4 schedulers, pg_cron mechanics, `pipeline_runs` retention + rollup traps, fleet health, saturation.
+- **`trust-board-and-safety.md`** — trust board (⚠ the arm count drifts and the view CAN time out at 60 s — prefer the sentinel's `Trust Health` check to any number there), precompute split, destructive-op breaker, cross-session coordination.
 - **`chain-strategy.md`** — multi-chain thesis, Candy/Solana + Panini readiness, chain-abstraction Phases A–F.
 - **`routes-and-surfaces.md`** — route structure, per-collection `pages`, API endpoints, search.
-- **`apis-and-cadence.md`** — Top Shot / All Day GraphQL, Flowty, Flow REST, the RPC FMV API, contract addresses, Cadence gotchas.
+- **`apis-and-cadence.md`** — Top Shot / All Day GraphQL, Flowty, Flow REST, the RPC FMV API, contracts, Cadence gotchas.
 - **`concierge.md`** · **`brand-auth-proxy.md`** · **`tooling-gotchas.md`** · **`packs.md`** · **`architecture-notes.md`** · **`ledger-discipline.md`** · **`autonomous-tasks.md`** · **`roadmap-status.md`** · **`session-and-archive-conventions.md`** · **`parallels-variants-data-model.md`** · **`revert-map-2026-07-25.md`**.
 - **`claude-md-condensed-originals.md`** — verbatim pre-restructure text of sections **shortened rather than moved**. ⚠ **Check here first if a detail seems missing.**
 - **`schema-truth.md`** — read from the live DB; **wins on any disagreement with prose — but only as fresh as its stamp** (no generator script; it once sat 25 days stale outranking a correct doc).
@@ -136,10 +136,10 @@ These are the rules a session needs *before* it knows which subsystem it is in. 
 - **There are always THREE states, never two:** read failed · read ok + genuinely empty · read ok + unrenderable (e.g. rows that failed a name join). A name filter is not an emptiness test.
 - ⚠ **A SERVER-SEEDED PROP is a fifth layer the table does not cover:** `initial={rows}` arrives as `[]` with **no provenance**, so a component that distinguishes failure for its OWN fetch still concludes on the seed (7 by 08-24). Pass `initialFailed`, and **assert it by SSR (`renderToString`)** — a mount effect corrects the state before jsdom looks, so two OPPOSITE mutations pass every client test.
 - ⚠ **ISR CACHES A FAILED READ for the whole `revalidate` window** and self-heals warm, so it is **easy to declare fixed by accident**: test *"does a COLD pass exceed the budget"*, never *"is the page OK now"* (#33; the 15-min `x-vercel-cache: HIT` instance: key-files-and-honesty.md).
-- **Fix per PANEL, not per page.** A page with one honest error branch is not an honest page — instance six landed on a page a prior audit had already hardened.
+- **Fix per PANEL, not per page.** A page with one honest error branch is not an honest page (instance six: key-files-and-honesty.md).
 - **The worst sub-classes:** an account-level false claim; a page that **LOADS state and WRITES IT BACK** (a failed read there is a *delete*); an **alert**; a **guard** (`?? 0` fails it *open*); an empty state that **CONCLUDES**; a **SWEEP whose `ok` means it COMPLETED, not that its LANES worked**. Cases: [key-files-and-honesty.md](docs/reference/key-files-and-honesty.md)
 - ⚠ **`?? 0` on a supabase count and `|| 1` as a divide-guard are the fabricated-number shapes.** supabase-js **RETURNS** errors rather than throwing, so a failed count resolves `{count: null, error}` — `Promise.all`/`allSettled`/`try-catch` do not help, and `?? 0` publishes a measured zero. `|| 1` on a $0 baseline rendered **"↑ 50000.0% / 30D"**. `no-fabricated-divisor-ratchet` is a **ban at population zero**.
-- 🚨 **A CLIENT-ONLY failure was captured by NOTHING until the 09-07 beacon** — Sentry drops every event since 08-18, SDK now OFF (#34, decided: no spend); Vercel sees only server execution. Detectors: the `window.onerror`/rejection beacon → `usage_events.client_error`, plus the scheduled `E2E DOM Smoke` badge. ⚠ **The beacon has NO actor key — every row is `anon`, so its COUNT reads as an INCIDENCE** (#69, first real find 09-08).
+- 🚨 **A CLIENT-ONLY failure was captured by NOTHING until the 09-07 beacon** — Sentry drops every event since 08-18, SDK now OFF (#34, decided: no spend); Vercel sees only server execution. Detectors: the `window.onerror`/rejection beacon → `usage_events.client_error` (per-tab `sid`; its alert arm counts only non-bot UAs), plus the scheduled `E2E DOM Smoke` badge (#69).
 - ⚠ **When you find one, grep for the EXPRESSION, not the file** — it has spread by copy-paste five times now; **a comment is only read by someone already in that file** (instances: [key-files-and-honesty.md](docs/reference/key-files-and-honesty.md)).
 
 Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/reference/key-files-and-honesty.md).
@@ -167,6 +167,7 @@ Full detail: [docs/reference/testing-and-ci.md](docs/reference/testing-and-ci.md
 - ⚠ **Name the caller before you touch the function** — an expensive-looking function is not a cost until you have; an afternoon went into one with **zero** callers. Require SIX sources: `pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, `pg_trigger`, a full-repo grep — ⚠ **and the Cowork artifacts' HTML, outside BOTH repo and catalogue**. ⚠ **A TRIGGER function has no textual caller, and `pg_stat_statements` misleads BOTH ways** ([database.md](docs/reference/database.md)). ⚠ **SEVENTH cron-job.org, EIGHTH this box's Task Scheduler (4 prod ingests)** — invisible to all six.
 - ⚠ **Read `cron.job.command` to learn what a schedule calls; never infer the callee from the name** — two objects one suffix apart yielded *opposite* conclusions.
 - ⚠ **A directional claim needs a DISTRIBUTION, not a snapshot; a delta between two STOCKS is neither a rate nor a sign; `max()` on a `text` cursor is lexicographic.**
+- ⚠ **When an instrument's first finding is SURPRISING, establish WHO generated it before believing WHAT it says** — 17 "user-facing" client errors were ONE headless crawler, `ua` in the payload all along (#69). **A `count(*)` over an OPEN endpoint counts REQUESTS, not READERS.**
 - ⚠ **A rate POOLED ACROSS A FIX measures the fix's ABSENCE and reads as its FAILURE** — a kill rate was 87.5% pre-deploy, 0% post, **56% pooled**. Split on the change point: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
 - ⚠ **Diff the SET, not the count** — a total can hold while membership turns over twice, so the number reads "no change" across a fix landing *and* a new arm firing. Case: [trust-board-and-safety.md](docs/reference/trust-board-and-safety.md).
 - ⚠ **Controls, both directions:** a NULL result needs a positive control; a POSITIVE needs a no-change control **the fix cannot move**; a DIFFERENCE needs both sides counted by the same instrument. **Never pair a count from one table with a property from another.** ⚠ **A control must use the PRODUCTION CALLER**: a `postgres` MCP call cannot prove a `cron_heavy` job runs.

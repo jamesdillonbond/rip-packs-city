@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { render, cleanup } from "@testing-library/react"
 import { renderToString } from "react-dom/server"
-import ClientErrorBeacon, { clientErrorPayload, dedupeKey, isNoiseError } from "@/components/telemetry/ClientErrorBeacon"
+import ClientErrorBeacon, { clientErrorPayload, dedupeKey, isNoiseError, pageSessionId } from "@/components/telemetry/ClientErrorBeacon"
 
 // The client-error beacon (known-issues #34, go-live bar M7). The property under
 // test is not "it renders" — it renders nothing — but that a thrown error in the
@@ -83,5 +83,68 @@ describe("ClientErrorBeacon", () => {
     vi.stubGlobal("fetch", vi.fn(() => { throw new Error("offline") }))
     render(<ClientErrorBeacon />)
     expect(() => window.dispatchEvent(new ErrorEvent("error", { message: "x", filename: "a.js", lineno: 1 }))).not.toThrow()
+  })
+
+  // ── `sid`, the per-tab discriminator (#69) ────────────────────────────────
+  // The defect this fixes was NOT a missing field — it was that a row COUNT read
+  // like an INCIDENCE, because every row carried the same `'anon'` and
+  // `count(distinct …)` was 1. So the property under test is that two different
+  // tabs are DISTINGUISHABLE and one tab is STABLE. Asserting merely that `sid`
+  // exists would pass against a hardcoded constant, which is the bug.
+
+  it("every beacon carries a sid, and it is STABLE within a tab", () => {
+    render(<ClientErrorBeacon />)
+    window.dispatchEvent(new ErrorEvent("error", { message: "one", filename: "a.js", lineno: 1 }))
+    window.dispatchEvent(new ErrorEvent("error", { message: "two", filename: "a.js", lineno: 2 }))
+    expect(posts).toHaveLength(2)
+    const sids = posts.map((p) => JSON.parse(p.body).metadata.sid)
+    expect(sids[0]).toBeTruthy()
+    expect(sids[0]).toBe(sids[1])
+  })
+
+  it("a DIFFERENT tab gets a DIFFERENT sid ON THE WIRE — the property that makes a count an incidence", () => {
+    // Deliberately asserted on the POSTED body, not on pageSessionId()'s return:
+    // a mutation that hardcodes `sid` in the payload leaves the helper correct and
+    // must still fail HERE, or this test's title is a promise its assertion breaks.
+    render(<ClientErrorBeacon />)
+    window.dispatchEvent(new ErrorEvent("error", { message: "tab-a", filename: "a.js", lineno: 1 }))
+    cleanup()
+    sessionStorage.clear() // a new tab starts with empty sessionStorage
+    render(<ClientErrorBeacon />)
+    window.dispatchEvent(new ErrorEvent("error", { message: "tab-b", filename: "a.js", lineno: 2 }))
+    expect(posts).toHaveLength(2)
+    const [a, b] = posts.map((p) => JSON.parse(p.body).metadata.sid)
+    expect(a).toBeTruthy()
+    expect(b).toBeTruthy()
+    expect(b).not.toBe(a)
+  })
+
+  it("sid survives blocked storage — it never throws, and still discriminates in-memory", () => {
+    const proto = Object.getPrototypeOf(sessionStorage)
+    const getSpy = vi.spyOn(proto, "getItem").mockImplementation(() => { throw new Error("blocked") })
+    const setSpy = vi.spyOn(proto, "setItem").mockImplementation(() => { throw new Error("blocked") })
+    try {
+      expect(() => pageSessionId()).not.toThrow()
+      const a = pageSessionId()
+      expect(a).toBeTruthy()
+      expect(pageSessionId()).toBe(a) // the in-memory fallback is stable, not a fresh id per call
+      render(<ClientErrorBeacon />)
+      expect(() => window.dispatchEvent(new ErrorEvent("error", { message: "blocked-storage", filename: "a.js", lineno: 9 }))).not.toThrow()
+      expect(posts).toHaveLength(1)
+      expect(JSON.parse(posts[0].body).metadata.sid).toBe(a)
+    } finally {
+      getSpy.mockRestore()
+      setSpy.mockRestore()
+    }
+  })
+
+  it("sid is per-TAB, never a cross-session visitor id — nothing is written to localStorage or cookies", () => {
+    const before = document.cookie
+    localStorage.clear()
+    render(<ClientErrorBeacon />)
+    window.dispatchEvent(new ErrorEvent("error", { message: "scope", filename: "a.js", lineno: 1 }))
+    expect(posts).toHaveLength(1)
+    expect(localStorage.length).toBe(0)
+    expect(document.cookie).toBe(before)
   })
 })
