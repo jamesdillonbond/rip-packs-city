@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · 🔴 Autovacuum had NEVER run on `net._http_response` because the stat that gates it read ZERO dead tuples against a true 161,390 — one 581 ms ANALYZE fixed it, and a second lever had to be cancelled · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously"
+
+**Shipped: one live `ANALYZE` (no DDL, no migration, no schedule, no data mutation) + register #75. ⚠ One manual `VACUUM` was started and CANCELLED — see below; nothing was harmed and that is verified, not assumed.**
+
+⭐⭐ **FOUND BY CAPTURING A LIVE SATURATION WINDOW INSTEAD OF RECONSTRUCTING ONE.** At 23:02Z the instance read **34 active / 20 IO waiters**. Two `pg_statio_user_tables` snapshots **225 s** apart name the reader: **`net._http_response`, 132,617 blocks — ≈589 blocks/s, 2.8× the next table** (`wallet_moments_cache` 47,023 · `fmv_snapshots_2026` 45,727 · `sales_2026` 13,977) — **despite being only 4th by CUMULATIVE reads**, which is why no previous sweep saw it. ⓘ On a Small tier with a **22 MB/s** budget that is **≈4.6 MB/s, about a fifth of the whole instance, spent reading a table that is 95% dead space.**
+
+⭐ **AND THE LIVE WAIT BREAKDOWN SETTLES WHAT `cron.job_run_details` CANNOT — it is IO, not a lock.** 12 sessions `IO/DataFileRead`, 9 `IPC/BufferIo` (backends queueing for the SAME buffers), **ZERO on any `Lock`/`LWLock`**. ⭐ **And `authenticator` holds 9 of the 12 IO waiters and 9 of 9 `BufferIo` — the pressure is REST-side**, which corroborates #73's wallet-backfill conclusion on a **third** instrument.
+
+🚨 **THE MECHANISM, and it is a statistic lying rather than a query being slow.** `pg_net.ttl = 6 hours` and pruning **works** (11,036 live rows, oldest 17:08Z, newest 23:07Z). But **`n_live_tup` read 639, `n_dead_tup` read 0, `autovacuum_count` 0, `autoanalyze_count` 0, `last_autovacuum` NULL — for the table's entire life.** Autovacuum's trigger is computed FROM `n_dead_tup`, so **a stat pinned at 0 makes it unreachable by construction**: the deletes happen forever and the vacuum never does, and the TOAST extends **~1.2–2 GB/day**. `reloptions` NULL on heap and toast, so it was never disabled — just never *seen*. **8,574 MB total = 176 MB heap + 8,395 MB TOAST, holding 443 MB of live bodies (avg 41 kB).**
+
+✅ **FIXED AND VERIFIED, FOR 581 ms.** `ANALYZE net._http_response` at **23:09:06Z** moved `n_dead_tup` **0 → 161,390**, and **autovacuum fired 43 SECONDS LATER at 23:09:49Z** (`autovacuum_count` 0 → 1), clearing all 161,390. ⭐ **The fix unblocks the estate's own maintenance rather than substituting for it** — autovacuum is throttled (`cost_delay` 2 ms) and did the work without harm.
+
+⚠⚠ **I THEN TRIED A SECOND LEVER AND HAD TO CANCEL IT, WHICH IS THE MORE USEFUL HALF.** A manual `VACUUM (ANALYZE)` is **UNTHROTTLED**: it blew past the 60 s MCP timeout, was still in `IO/DataFileRead` at **66 s**, and drove `io_waiters` **0–2 → 6** on an instance with a documented saturation problem, in a wallet-backfill hour. **Cancelled with `pg_cancel_backend`.** ✅ **Verified no damage rather than assumed: `vacuums_running` 0 afterwards and ZERO cron failures in the 10-minute window.** **Measured costs: `ANALYZE` 580.8 ms vs manual `VACUUM` >60 s — ~100×.**
+
+⛔ **SO THE OBVIOUS REMEDIATION IS THE WRONG ONE, and I only know that because I ran it.** Scheduling a manual vacuum here — mirroring the existing `maint-vacuum-sales-hot-partition [53 10,20 * * *]` precedent — **would reproduce exactly the IO spike I had to cancel.** If a job is needed at all it should be a scheduled **cheap `ANALYZE`**, because autovacuum itself is throttled and competent once it can see the truth.
+
+⚠ **WHETHER A JOB IS NEEDED IS NOT YET ESTABLISHED, and the test is running.** `n_dead_tup` read 0 at 23:15Z and 238 after a manual ANALYZE — **but ANALYZE sets that value directly, so 238 may be my own measurement rather than the collector recovering.** Re-read after ~20 minutes with **no** manual ANALYZE: **climbing → autovacuum self-sustains, no job needed; frozen → a scheduled `ANALYZE` is required.**
+
+⛔ **STILL TREVOR'S, and it is the bigger number: the existing ~8.4 GB of bloated TOAST is NOT recovered by any of this.** Plain vacuum only marks space reusable; returning it to the OS needs **`VACUUM FULL`, ACCESS EXCLUSIVE, which would block every pg_net lane** — a maintenance-window decision, not an autonomous one.
+
+**Files:** `docs/reference/known-issues.md` (#75 new), `docs/overnight/ledger.md`, `docs/sessions/2026-09.md`.
+
+**Revert:** nothing to revert in git beyond docs. **The DB change is an `ANALYZE`, which only refreshes statistics — it is not reversible and does not need to be.** If the resulting autovacuum activity were ever unwanted, `ALTER TABLE net._http_response SET (autovacuum_enabled = false)` would stop it — ⛔ but that restores the exact defect this item is about, so do not.
+
 ### 2026-09-10 · 🔴 The saturation bursts RECURRED on schedule, and 48 h of hourly data refutes the amplifier this estate had settled on — staggering pg_cron cannot fix it · Claude Code (cloud), Trevor: "Keep going"
 
 **Shipped: docs only — register #73 extended. READ-ONLY. No migration, no data mutation, no schedule touched, nothing paused. The root cause is still NOT settled and the reason for shipping nothing operational is stated below.**
