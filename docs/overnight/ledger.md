@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · 🔴 The saturation bursts RECURRED on schedule, and 48 h of hourly data refutes the amplifier this estate had settled on — staggering pg_cron cannot fix it · Claude Code (cloud), Trevor: "Keep going"
+
+**Shipped: docs only — register #73 extended. READ-ONLY. No migration, no data mutation, no schedule touched, nothing paused. The root cause is still NOT settled and the reason for shipping nothing operational is stated below.**
+
+⭐ **The new arm found it on its first real day.** `check_pgcron_failure_rate('6 hours')` read **158 fails / 2,157 runs across 38 jobs (63 startup, 95 statement)** at 13:45Z — well over its 10-per-6h bar. That is the arm doing exactly the job it was built for: yesterday this surface was watched by nothing.
+
+🚨 **THE BURSTS ARE A RECURRING DAILY PATTERN, NOT THE ONE-OFF SPELL #73 DESCRIBES.** `job startup timeout` lands at **09-09 12Z (10) · 13Z (66) · 18Z (59)** and again at **09-10 12Z (34) · 13Z (29)** — and at **ZERO of the other 43 hours** in the 48 h window. Same clock hours, next day.
+
+⛔⛔ **AND THE `*/6` CLUSTERING IS REFUTED AS THE CAUSE — by measurement, against the explanation this estate had already accepted.** #73 records the amplifier as "the six-hourly heavy MV refreshes cluster at minutes 20–50 of hours 0/6/12/18; at today's runtimes they OVERLAP and exhaust the slots." **The scheduled population is IDENTICAL across all four windows** — every job in the top-20 by duration runs the same number of times at 0Z, 6Z, 12Z, 18Z (2/2/2/2, 12/12/12/12, 60/60/58/60) — **and at 0Z and 6Z that identical cluster finishes in seconds.** Same job, max duration by hour: `remap-misattributed-sales` **51 · 27 · 780 · 530 s**; `refresh-mv-pack-ev-latest` **9 · 7 · 600 · 688 s**; `refresh-topshot-pack-sales-agg` **197 · 16 · 617 · 600 s**; `backfill-pinnacle-mint-acquisitions` **57 · 22 · 869 · 212 s**. ⭐ **The variable is the HOUR, not the schedule. So staggering pg_cron cannot fix this, and any analysis that reads only `cron.job` is looking in the wrong place** — which is most of them, mine included until today.
+
+⭐⭐ **`job startup timeout` IS A SYMPTOM, AND THE SECOND-LEVEL TRACE SHOWS WHAT IT IS A SYMPTOM OF: A MASS RELEASE.** At **09-09 12:36Z, 29 runs across 21 distinct jobs ended inside ONE MINUTE with durations spanning 0 s to 788 s.** ⚠ **A shared DURATION is a timeout; a shared INSTANT across heterogeneous durations is a global unblock** — that distinction is the whole finding. Nine long jobs (306 · 307 · 310 · 341 · 363 · 422 · 547 · 780 · 788 s) all finished between **12:36:00.867 and 12:36:12.457**, several returning `1 row` after 300–780 s — **waiting, not computing**. Five jobs launched at 12:36:04 then died with `job startup timeout` at 12:36:15–16 (11.0–11.3 s each) because the six slots were still held, and at 12:36:14 the backlog burst through at **0.1–0.5 s per job**. **Order: stall → slots stay held → launches fail → release → flood.**
+
+⛔ **One mechanism ruled out for the price of one query: it is NOT a `REFRESH MATERIALIZED VIEW` ACCESS EXCLUSIVE lock.** All **11** active bare-refresh jobs use **`CONCURRENTLY`**, which does not block readers. Still plausible IO contributors; not the blocker. **Recorded so nobody re-runs that hunt.**
+
+⭐ **INDEPENDENT INSTRUMENT, AND IT POINTS AWAY FROM pg_cron:** `pipeline_runs` counts by UTC hour over the same 48 h vary **3.1×** — ~1,150–1,250/h baseline against **13Z 3,559 · 18Z 3,215 · 07Z 3,064 · 01Z 2,795** — with median duration tracking it (**13Z 17,048 ms** vs ~1,200–2,000 ms). With the pg_cron population flat, **that variation belongs to the other schedulers** — cron-job.org, GHA, `vercel.json`, the residential box — the sources this file already names as invisible to a `cron.job` sweep.
+
+⚠ **THE HYPOTHESIS IS STATED WITH ITS OWN COUNTEREXAMPLE, not without it: the bursts appear to need BOTH the cluster AND high external load.** 07Z has load and no cluster → clean; 6Z has the cluster and the lowest load → clean; 12/13Z and 18Z have both → bursts. ⛔ **But 0Z carries 2,057 runs against 12Z's 1,648 and is still clean, so run COUNT alone does not separate them.** The discriminator is more likely the COST of the concurrent work than its count, and that is **not established**. ⛔ **Nothing operational was changed: the levers are capacity (Trevor's, and there is no infra spend pre-revenue) and the external schedulers' timing, and neither should move on a hypothesis with a live counterexample in it.**
+
+**Files:** `docs/reference/known-issues.md` (#73 extended), `docs/overnight/ledger.md`, `docs/sessions/2026-09.md`.
+
+**Revert:** `git revert <sha of this commit>`. Docs only — no DB object, no schedule and no code path was touched.
+
 ### 2026-09-09 · 📈 All Day could never be ask-corroborated — the one go-live metric still below its bar, blocked by a data-availability comment rather than a judgement · Claude Code (cloud), Trevor: "keep driving the metrics and KPIs blocking the next phase of the roadmap"
 
 **Shipped: one route change (`app/api/fmv-recalc/route.ts`, Step 2a-ter(c)) + one new test file, 15 tests, 4 mutations proven. No migration, no data mutation, no schedule touched, no DB object created. Full suite green before push: 1,494 files / 16,578 tests.**
