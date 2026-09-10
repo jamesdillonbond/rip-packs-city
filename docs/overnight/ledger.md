@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ✅ #75 CLOSED THE WAY IT SAID IT WOULD BE CLOSED: the durability test came back FROZEN, so the scheduled `ANALYZE` was required — job 482 is live, fired on time, and moved the gating stat · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
+
+**Shipped: one pg_cron job, `maint-analyze-net-http-response` (jobid 482, `41 * * * *`, `ANALYZE net._http_response`). Revert: `select cron.unschedule('maint-analyze-net-http-response');` — no code, no migration, no data mutation.**
+
+⭐ **THE ENTRY EXISTS BECAUSE THE OPEN QUESTION WAS ANSWERED BY A TEST, NOT BY THE PLAUSIBLE STORY.** #75 shipped with an explicitly stated discriminator: `ANALYZE` sets `n_dead_tup` directly, so the 238 it left behind at 23:17:49Z **might have been my own measurement rather than the collector recovering**. The stated test was to re-read after ~20 minutes with no manual ANALYZE — *climbing → autovacuum self-sustains and nothing more is needed; frozen → a scheduled ANALYZE is required.*
+
+🚨 **IT WAS FROZEN, AND FROZEN AT EXACTLY THE VALUE I SET.** At 23:38:11Z `n_dead_tup` read **238**, `autoanalyze_count` **0**, `last_autoanalyze` **NULL** — while over the same 20 minutes `actual_rows` moved 11,042 → 11,032 and TOAST grew 8,406 → **8,436 MB**. ⭐ **~600 rows aged out without moving the counter by one**, which is the whole finding: the collector is not tracking this table, so the stat only ever changes when something ANALYZEs it, and autovacuum — whose threshold is computed FROM that stat — would never fire again unaided. **The 23:09:49Z autovacuum was not the system recovering; it was a one-shot consequence of my one-shot ANALYZE.**
+
+✅ **SCHEDULED, AND THEN VERIFIED RATHER THAN ASSUMED.** `cron.schedule('maint-analyze-net-http-response','41 * * * *','ANALYZE net._http_response')` → jobid **482**. The thing worth testing was whether a pg_cron job running as `postgres` can ANALYZE a table owned by `supabase_admin` — so I waited for the real fire instead of reasoning about it. **First run 23:41:00.196Z → `succeeded`, `return_message` `ANALYZE`, 320 ms**, and `pg_stat_all_tables` then read `n_dead_tup` **238 → 977** with `last_analyze` 23:41:00.511Z. **The stat is live again and the autovacuum trigger is reachable.**
+
+⭐ **THE CADENCE IS SIZED, NOT GUESSED.** Threshold here is `50 + 0.2 × 11,040` ≈ **2,258**; observed accrual is ~977 dead in ~32 min ≈ **1,830/h**, so the threshold is crossed roughly every ~75 minutes. Hourly ANALYZE means the stat is never more than an hour stale when autovacuum looks — autovacuum then fires on its own, **throttled** (`cost_delay` 2 ms), which is the entire point.
+
+⛔ **DELIBERATELY `ANALYZE`, NOT `VACUUM`, and #75 records why in measured numbers:** ANALYZE **580.8 ms** vs a manual `VACUUM (ANALYZE)` that blew past the 60 s MCP timeout, was still in `IO/DataFileRead` at 66 s, drove `io_waiters` 0–2 → 6 and had to be cancelled. Mirroring `maint-vacuum-sales-hot-partition` here would have reproduced exactly that spike. ⚠ Post-flight also ran my own widened exec-drift guard against my own change: `{inspected: 113, offenders: [], revocable: 58, immune_owner: 55}`.
+
+⛔ **STILL TREVOR'S, unchanged and NOT closed by this:** the ~8.4 GB of already-bloated TOAST is not reclaimed by any of the above. Plain vacuum marks space reusable; only `VACUUM FULL` returns it to the OS, and that takes ACCESS EXCLUSIVE and would block every pg_net lane — a maintenance-window decision.
+
 ### 2026-09-10 · 🚨🚨 P0, LIVE AND UNNOTICED FOR ~9.5 HOURS: THE VERCEL PROJECT IS PAUSED (`live: false`) — the site is down, ~20 ingest lanes are dead, and the sentinel cannot report it because the sentinel is one of the casualties · Claude Code (cloud), Trevor: "Keep going and make your own decisions"
 
 **Shipped: docs only — this entry + register #76. NOTHING was unpaused, restarted or mutated. The remediation is one click and it is TREVOR'S, for the reason stated below.**
