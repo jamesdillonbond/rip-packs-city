@@ -628,8 +628,23 @@ export async function POST(req: NextRequest) {
     // Day's bare-integer keys, making the external_id lookup unambiguous.
     // ⚠ THIS STEP IS THE TOP SHOT HALF ONLY — it is no longer the whole feed.
     // Step 2a-ter(c) merges All Day's on-chain floor ask into these same two maps
-    // (2026-09-09, go-live M2). Absent only for collections with no ask feed at
-    // all (Golazos, UFC, Pinnacle, Candy).
+    // (2026-09-09, go-live M2).
+    // ⚠ CORRECTED SAME DAY, because the first version of this line claimed the other
+    // four collections have "no ask feed at all" and that was WRONG on two of them.
+    // What is absent is an EDITION-KEYED feed, which is not the same thing (measured
+    // live 2026-09-09):
+    //   UFC, Candy      — no `cached_listings_v2` rows at all. Genuinely no feed.
+    //   Pinnacle        — 13,945 OPEN asks, ingesting live, but `edition_id` is NULL
+    //                     on every row: its grain is the (character_name, set_name,
+    //                     variant_type) triple, so it cannot be joined by edition_id
+    //                     here. ⛔ Corroborating Pinnacle means the TRIPLE and never
+    //                     `edition_key` alone (CLAUDE.md) — a real lever, not free.
+    //   Golazos         — 539 open asks over 198 editions, edition-keyed, so it COULD
+    //                     join. Not wired because the market is inactive rather than
+    //                     the lane broken: `golazos-listings-indexer` and
+    //                     `golazos-sales-indexer` both run every few minutes, ok, and
+    //                     wrote 0 rows in 48 h. Corroboration needs ≥3 recent SALES,
+    //                     which a market with no sales cannot supply.
     const editionAskById = new Map<string, number>()
     // ⚠ AGE, CARRIED ALONGSIDE THE ASK. Until 2026-08-29 the corroboration had NO age
     // bound, so an ask nobody had confirmed in 87 days could still lift an edition to
