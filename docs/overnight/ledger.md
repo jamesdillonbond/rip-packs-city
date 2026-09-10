@@ -48,6 +48,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **AND THE 449 SIZING IS PROBABLY AN OVER-COUNT — stated now rather than after someone quotes it.** The route only widens to 90 days the editions ALREADY in `editionSalesMap`, which is built from the **30-day** window, so an edition with **zero** sales in 30 d but ≥3 in 90 d is never in the map and can never be corroborated. My 449 was derived on a pure 90-day basis and does not carry that condition; the 30-day-basis figure is **223**. **The true liftable set is between 223 and 449** — editions with ≥1 sale in 30 d whose widened set reaches ≥3 in band — and the settled number should be READ off the treated group after a full sweep, not modelled again. ⛔ **So "M2 → ~29.8%" is now an UPPER bound, not an estimate**, and M2 remains not met.
 
+✅✅ **SETTLED READ, 2026-09-10 06:2xZ (23:2x PT), 12 post-deploy runs in — THE EFFECT IS REAL AND THE MATCHED CONTROL SEPARATES IT CLEANLY.** Cutoff verified safe first: the last pre-deploy run finished **04:29:10** and the first post-deploy run started **04:35:46**, so `computed_at >= 04:35:46Z` cannot contain an old-code row (the trap that ruined the first read).
+
+| group | size | swept | lifted to MEDIUM | still LOW | **lift rate** |
+|---|---|---|---|---|---|
+| **treated** (ask in ±25 % band) | 459 | 99 | **87** | 12 | **87.9 %** |
+| **control** (ask OUT of band) | 762 | 180 | 29 | 151 | **16.1 %** |
+
+⭐ **5.5× the control rate, a 71.8-point gap.** The control's 16.1 % is not zero and should not be: it is the background rate of editions crossing the volume floor as their sales sets move — which is exactly why a control was needed. **It is the group the change cannot touch, and it did not move.**
+
+🔵 **M2 IS MOVING: 22.59 % → 24.07 %** (HIGH 125+MEDIUM 1,273 = 1,398 → HIGH 124 + MEDIUM 1,366 = **1,490** of 6,190; LOW 1,670 → 1,581) — **on only 13.7 % of the estate swept**, and **87 of the +92 net gain is the treated group**, so the attribution is not ambiguous. ⚠ **The published metric has NOT moved and must not be quoted yet: `allday_fmv_high_med_share_pct` still reads 23.4 from the 01:48Z leg** — the precompute has not re-run. Per this file's own rule, **a metric is met when it is READ at the bar**, and it has not been.
+
+⛔ **PROJECTION, AND IT LANDS SHORT OF THE BAR — said plainly rather than reframed.** Of the 360 unswept treated editions, **313 (86.9 %) carry a ≥1 sale in 30 d** and so can reach the map; 47 cannot and will never corroborate. At the observed 87.9 % rate that is ~275 further lifts, ~362 of 459 total, putting M2 near **28–29 % against a 30 % bar — still NOT MET.** ⚠ And even that is mildly optimistic: the swept group is **100 %** in-30d-map versus **86.9 %** unswept, so recalc's active-first ordering means the remaining rate should be expected to fall, not hold.
+
+⭐ **THAT ALSO CORRECTS MY OWN OVER-CORRECTION FROM TWO HOURS AGO.** I had downgraded the 449 sizing to "somewhere between 223 and 449" on the grounds that only editions in the 30-day map can be corroborated. Measured, that condition costs **~13 %** of the 90-day-basis set, not the ~50 % the 223 figure implied — **the liftable set is ~400, near the top of that range, not the middle.** ⚠ Recorded because the pessimistic correction was as unmeasured as the optimistic estimate it replaced: **both were models, and only the treated-group read is a measurement.**
+
 **Files:** `app/api/fmv-recalc/route.ts` (new Step 2a-ter(c); two stale comments corrected in place, including the "Top-Shot-only by design" one that is now false), `__tests__/fmv-allday-ask-corroboration.test.ts` (new, 15 tests incl. a stripper-actually-stripped check and 3 no-change controls).
 
 **Revert:** `git revert <sha of the code commit>`. **No data revert is needed or possible-to-owe** — nothing was written by this change; the confidence labels it produces are recomputed from scratch on every `fmv-recalc` sweep, so reverting returns the affected editions to LOW on the next sweep with no cleanup.
