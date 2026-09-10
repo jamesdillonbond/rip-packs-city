@@ -37,6 +37,36 @@ import { join } from "node:path"
 // i.e. the positive branch *is* the retry) and are intentionally not matched
 // here — flagging them would be a false positive.
 //
+// ── 2026-09-09: THE SCOPE WAS AUDITED AND DELIBERATELY LEFT ALONE ──────────
+//
+// The exclusion above is a CLAIM about other code ("the backfill routes use a
+// DIFFERENT but CORRECT idiom"), and nothing enforced it, so it was re-checked
+// rather than trusted. Every file in app/, lib/, workers/, scripts/ and
+// supabase/functions/ referencing 23505 was classified: 30 files, 6 inside this
+// guard's scope and 24 outside it. Every 23505 handler outside the scope was
+// read. RESULT: the class is at population zero tree-wide.
+//   • app/api/backfill/route.ts:330 and app/api/ingest/route.ts:529 swallow
+//     23505 on a SINGLE-ROW .insert({...}) inside a per-row loop — correct,
+//     one duplicate skipped, nothing else lost.
+//   • The *-sales-history-backfill and studio-sales-history handlers are the
+//     positive-branch-IS-the-retry idiom this header already describes, and
+//     still are. The exclusion claim holds.
+//   • supabase/functions/compute-pinnacle-pack-ev writes a real batch and does
+//     NOT swallow: it logs the pipeline run ok:false with the error and returns.
+//
+// ⛔ A TREE-WIDE VERSION WAS CONSIDERED AND REJECTED, which is the part worth
+// recording. The property that matters is "batch insert + 23505 swallowed with
+// no row-by-row fallthrough", and the fallthrough half is not reliably visible
+// to a source scan: a 14-line-window prototype produced TWELVE candidates and
+// ALL TWELVE were false positives — mostly the row-by-row retry itself, whose
+// .insert(row) argument is an identifier and so looks batch-shaped, plus this
+// family's own correct sites whose insertIndividually() call sits past the
+// window. A guard with that false-positive rate is worse than none here: it
+// trains readers to skim, which is the failure this repo keeps paying for.
+//
+// So the directory-driven scope stands. If you come back to widen it, the
+// blocker is detecting the FALLTHROUGH, not finding the batch inserts.
+//
 // This is a SOURCE property test rather than a behavioural fixture on purpose:
 // the defect is a one-line branch trivially reintroduced by copy-paste across
 // sibling indexers (exactly how it spread to five files), while a per-route
