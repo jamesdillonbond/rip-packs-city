@@ -624,9 +624,12 @@ export async function POST(req: NextRequest) {
     // edition_offers.low_ask, keyed by (collection_id, external_id). Used ONLY
     // to RAISE confidence (LOW->MEDIUM in escalateConfidence) when the sales
     // median agrees with it — never to lower a sales-based FMV (the ask is a
-    // floor). Absent for editions/collections without a live ask feed (e.g.
-    // All Day). TS external_ids carry a colon so they never collide with All
+    // floor). TS external_ids carry a colon so they never collide with All
     // Day's bare-integer keys, making the external_id lookup unambiguous.
+    // ⚠ THIS STEP IS THE TOP SHOT HALF ONLY — it is no longer the whole feed.
+    // Step 2a-ter(c) merges All Day's on-chain floor ask into these same two maps
+    // (2026-09-09, go-live M2). Absent only for collections with no ask feed at
+    // all (Golazos, UFC, Pinnacle, Candy).
     const editionAskById = new Map<string, number>()
     // ⚠ AGE, CARRIED ALONGSIDE THE ASK. Until 2026-08-29 the corroboration had NO age
     // bound, so an ask nobody had confirmed in 87 days could still lift an edition to
@@ -681,15 +684,31 @@ export async function POST(req: NextRequest) {
     // edition_offers.low_ask feed built above; All Day's ask is NOT in
     // edition_offers (that carries All Day's bid side, highest_offer) — it lives
     // in allday_edition_floor_ask.floor_ask, keyed by edition_id. Build a
-    // SEPARATE map for the ceiling so the All Day floor never leaks into
-    // ask-corroboration (editionAskById stays Top-Shot-only by design): the
-    // ceiling only ever LOWERS an overstated FMV, corroboration RAISES
-    // confidence, so the two want different, independently-reasoned inputs.
+    // SEPARATE map for the ceiling: the ceiling only ever LOWERS an overstated
+    // FMV, corroboration RAISES confidence, so the two want different,
+    // independently-reasoned inputs and must stay free to diverge.
+    // ⚠ CORRECTED 2026-09-09: this comment used to say the All Day floor "never
+    // leaks into ask-corroboration (editionAskById stays Top-Shot-only by
+    // design)". That is no longer true and the separation is no longer what
+    // enforces it — Step 2a-ter(c) now feeds the All Day floor to corroboration
+    // DELIBERATELY, with its own age semantics (feed liveness, not listed_at).
+    // What this copy still guarantees is the one-way direction: because the
+    // ceiling map is materialised HERE as a copy, taken BEFORE 2a-ter(c) runs,
+    // no corroboration change can ever move a published FMV value.
     // Fetching by edition_id is inherently All-Day-scoped (only All Day editions
     // exist in that table). Measured 2026-08-08: 1,549 of 2,970 priced All Day
     // editions with a live floor read above it (avg 1.74x, max ~17x) — a
     // confident wrong number that fabricates "deals".
     const editionCeilingAskById = new Map<string, number>(editionAskById)
+    // Kept as its own map so Step 2a-ter(c) can reuse these rows for
+    // ask-corroboration WITHOUT a second identical fetch. Populated from the
+    // same loop below; read only after it completes.
+    const allDayFloorAskById = new Map<string, number>()
+    // Chunk-level failures below `continue`, so this map can be INCOMPLETE. That
+    // is safe in both consumers and in opposite directions: a missing ceiling
+    // simply does not cap (the pre-existing behaviour), and a missing
+    // corroboration ask simply does not lift — it can only UNDERSTATE
+    // confidence, never publish an unsupported MEDIUM.
     try {
       const CEIL_CHUNK = 500
       for (let i = 0; i < editionIds.length; i += CEIL_CHUNK) {
@@ -712,10 +731,103 @@ export async function POST(req: NextRequest) {
           // edition_id colliding across both feeds.
           const prior = editionCeilingAskById.get(edId)
           editionCeilingAskById.set(edId, prior != null ? Math.min(prior, ask) : ask)
+          allDayFloorAskById.set(edId, ask)
         }
       }
     } catch (err) {
       console.warn("[FMV-RECALC] All Day floor-ask ceiling fetch failed (non-fatal):", err instanceof Error ? err.message : err)
+    }
+
+    // ── Step 2a-ter(c): All Day ask-CORROBORATION (M2, 2026-09-09) ────────────
+    // Ask-corroboration (lib/fmv-confidence.ts, A2) lifts LOW -> MEDIUM when an
+    // independent live ask agrees with the sales median. Until today it was fed
+    // ONLY by Top Shot's edition_offers.low_ask, so NO All Day edition could ever
+    // be corroborated — the comment at Step 2a-ter said so and gave the reason as
+    // "All Day's ask is not in edition_offers", a DATA-AVAILABILITY fact, not a
+    // judgement that the All Day ask is weaker evidence.
+    //
+    // ⭐ THE STATE THAT ARGUMENT LEFT BEHIND WAS INTERNALLY INCONSISTENT, and that
+    // is the finding. This same floor_ask is ALREADY trusted, in this same route,
+    // for two strictly stronger jobs: it CAPS a sales-derived FMV (Step 1's
+    // capFmvAtCheapestAsk — it overrides the sales evidence) and it is the SOLE
+    // price signal for All Day's ASK_ONLY tier at floor x 0.90 (Step 5d, 1,560
+    // editions today). An ask good enough to set a price alone and to overrule a
+    // sales median cannot be too weak to merely AGREE with one.
+    //
+    // Measured before shipping (2026-09-09, live): of 1,670 LOW All Day editions,
+    // 1,545 carry a live floor ask and 449 have >= MIN_SALES_ASK_CORROBORATION
+    // sales whose median sits inside the +/-25% band — i.e. M2 (go-live bar 30%)
+    // moves from a measured 22.6% toward ~29-30% on editions whose price two
+    // independent signals already agree on. The band IS the safety gate: 1,096 of
+    // the 1,545 do NOT agree and stay LOW.
+    //
+    // 🚨 AGE: THE ALL DAY ASK HAS NO POLL TIMESTAMP, AND listed_at IS NOT ONE.
+    // Top Shot's age comes from edition_offers.updated_at, a SWEEP time ("when we
+    // last re-confirmed this ask exists"). All Day's ask comes from
+    // cached_listings_v2, which is EVENT-SOURCED: a row is written on a Listed
+    // event and stamped completed_at on a Completed/Withdrawn event, so an open
+    // row means "the lane has not seen this listing end". Its listed_at is how
+    // long the thing has been ON SALE, a different contract entirely — the median
+    // open All Day ask is 53 days old and perfectly live, so dating asks by
+    // listed_at would reject almost the whole population for no reason.
+    //
+    // So what has to be bounded is THE LANE, not the row: if the listings indexer
+    // dies, every open listing keeps looking open forever — a failed read
+    // publishing itself as a fact, the defect class this repo is built around.
+    // The probe is therefore the newest OPEN All Day listing's listed_at, read as
+    // FEED LIVENESS ("when did this lane last observe a new listing"), never as
+    // any individual ask's age, and the same lag is passed for every All Day ask.
+    // It is index-only on idx_cl_v2_collection_listed_active: measured 5 buffers /
+    // 2 ms, so the honesty check is free. Threshold is the EXISTING
+    // MAX_ASK_AGE_HOURS_CORROBORATION (7 days) — the same question ("is this still
+    // evidence"), so deliberately not a new constant to justify.
+    //
+    // THREE STATES, and they are not interchangeable (the pattern Step 2a-ter
+    // established for Top Shot):
+    //   lane fresh    -> pass the lag; corroboration is live
+    //   lane stale    -> pass the lag; escalateConfidence withholds every lift,
+    //                    so a dead indexer turns this feature off by itself
+    //   probe FAILED  -> pass null; "I could not tell" is NOT "recent enough".
+    // ⚠ The ask and its age are written as a PAIR and must be read as one. Never
+    // put an entry in editionAskById without the matching editionAskAgeHoursById
+    // entry: a consumer that reads the ask alone treats an undatable ask as fresh.
+    // ⓘ editionCeilingAskById was already materialised as a COPY above, so nothing
+    // here can change the ask-CEILING — this step only ever raises confidence.
+    let allDayCorroborationAsks = 0
+    let allDayFeedLagHours: number | null = null
+    if (allDayFloorAskById.size > 0) {
+      try {
+        const { data: liveRows, error: liveErr } = await supabaseAdmin
+          .from("cached_listings_v2")
+          .select("listed_at")
+          .eq("collection_id", ALLDAY_COLLECTION_ID)
+          .is("completed_at", null)
+          .order("listed_at", { ascending: false })
+          .limit(1)
+        if (liveErr) {
+          // supabase-js RETURNS errors rather than throwing, so this branch is the
+          // one that actually runs on failure. Leaving the lag null is what makes
+          // the failure withhold the lift instead of publishing one.
+          console.warn("[FMV-RECALC] All Day listings-feed liveness probe error:", liveErr.message)
+        } else {
+          const newest = (liveRows as { listed_at: string | null }[] | null)?.[0]?.listed_at ?? null
+          const newestMs = newest ? Date.parse(String(newest)) : NaN
+          allDayFeedLagHours = Number.isNaN(newestMs) ? null : (Date.now() - newestMs) / 3_600_000
+        }
+      } catch (err) {
+        console.warn("[FMV-RECALC] All Day listings-feed liveness probe failed:", err instanceof Error ? err.message : err)
+      }
+
+      for (const [edId, ask] of allDayFloorAskById.entries()) {
+        editionAskById.set(edId, ask)
+        editionAskAgeHoursById.set(edId, allDayFeedLagHours)
+        allDayCorroborationAsks++
+      }
+      const lagLabel =
+        allDayFeedLagHours == null ? "UNDATABLE (no lift)" : `${allDayFeedLagHours.toFixed(1)}h`
+      console.log(
+        `[FMV-RECALC] All Day ask-corroboration: ${allDayCorroborationAsks} editions carry a live floor; listings-feed lag ${lagLabel}`,
+      )
     }
 
     // ULTIMATE rows in fmv_snapshots are owned exclusively by recalc_ultimate_fmv
