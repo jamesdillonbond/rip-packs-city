@@ -1298,6 +1298,144 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // ── pg_cron failure RATE (2026-09-09) ─────────────────────────────────────
+  // ⭐ THIS SURFACE WAS COMPLETELY UNWATCHED. Every other arm in this file reads
+  // `pipeline_runs`, and a pg_cron job that fails to START never writes one —
+  // `log_pipeline_run` is inside the body, which never runs. So on 2026-09-09 the
+  // instance logged **399 cron failures** (262 cancelled at a statement budget,
+  // 135 `job startup timeout` against `max_worker_processes = 6`) against a 7-day
+  // fleet baseline of **0-3 per DAY**, and five sentinel sweeps could not see any
+  // of them. The only existing instrument, `check_pgcron_recent_failures()`, had
+  // NO CALLER anywhere in the repo.
+  //
+  // ⚠ This arm is deliberately FLEET-LEVEL and RATE-shaped: it answers "is the
+  // INSTANCE unwell", which is the question that cost a two-hour manual
+  // investigation. `Pipeline Silence` already answers "is this lane sick" and did
+  // so correctly that day — this is not a replacement for it.
+  //
+  // ⭐ The startup-vs-statement split in the detail is the load-bearing part, and
+  // it is the discriminator that took longest to find: `startup timeout` means
+  // pg_cron could not get a WORKER SLOT (contention, 6 of them), while
+  // `statement timeout` means the job ran and was CANCELLED AT ITS BUDGET (a
+  // clipped tail — see inbox 2026-08-31T1425Z). Same failure count, opposite
+  // causes and opposite fixes.
+  //
+  // ⛔ Never `critical`. A failure burst under saturation is real but it is not
+  // data loss, and this file's header records two false CRITICAL pages from
+  // exactly that conflation. Threshold is anchored on a MEASURED baseline
+  // (0-3/day fleet-wide, 2026-09-02..08 — so ~0-1 per 6h); 10 is ~10x that and
+  // every 6h window of the 09-09 spell read 60+.
+  try {
+    const { data: cronRow, error: cronErr } = await supabase.rpc("check_pgcron_failure_rate", {
+      p_window: "6 hours",
+    });
+    if (cronErr) {
+      const sat = isSaturationError(cronErr.message);
+      // ⭐ A saturation failure here is itself a signal, and marking it
+      // INCONCLUSIVE is what lets the Measurement Blackout arm count it.
+      checks.push({
+        name: "pg_cron Failures (6h)",
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}RPC error: ${cronErr.message}`,
+      });
+    } else {
+      // ⚠⚠ THE TWO CASES BELOW ARE NOT THE SAME AND I CONFLATED THEM FIRST TIME.
+      // `Number(r.runs ?? 0) || 0` turns "the RPC returned no payload" into
+      // "the RPC answered zero runs" — a failed read rendered as a measurement,
+      // inside an arm whose whole subject is measurement honesty. Seven existing
+      // sentinel tests caught it. Keep them separate: an unreadable payload is
+      // INCONCLUSIVE, an explicit zero is a scheduler-down signal.
+      const r: any = cronRow;
+      const runsRaw = r && typeof r === "object" ? Number((r as any).runs) : NaN;
+      const runs = Number.isFinite(runsRaw) ? runsRaw : -1;
+      const CRON_FAIL_WARN = 10;
+      // ⚠ `runs === 0` is not health, it is a missing measurement: pg_cron
+      // writing no run rows at all in 6h means the scheduler is down or the read
+      // returned nothing, and reporting that as "0 failures" would be the
+      // failed-read-as-fact shape this repo keeps paying for.
+      if (runs < 0) {
+        checks.push({
+          name: "pg_cron Failures (6h)",
+          status: "warn",
+          detail:
+            `${INCONCLUSIVE}the RPC returned no readable payload (no numeric \`runs\`), ` +
+            "so the failure rate was not evaluated. This is an UNREADABLE result, not zero runs.",
+        });
+      } else if (runs === 0) {
+        checks.push({
+          name: "pg_cron Failures (6h)",
+          status: "warn",
+          detail:
+            "INCONCLUSIVE — pg_cron ANSWERED and reported ZERO runs in 6h, so the failure rate " +
+            "was not evaluated. Every job on the instance is scheduled at least 6-hourly, so zero " +
+            "runs is a scheduler-down signal, not a clean bill of health.",
+          value: 0,
+        });
+      } else {
+        // ⚠ Read the payload's fields ONLY here, past both guards. The first cut
+        // read them before, so a null payload threw a raw TypeError into the
+        // catch and the report said "Exception: Cannot read properties of null"
+        // instead of "no readable payload" — a driver message leaked into a
+        // health report, and the honest branch never reached. Caught by test.
+        const fails = Number(r.fails ?? 0) || 0;
+        const startup = Number(r.startup_timeouts ?? 0) || 0;
+        const stmt = Number(r.statement_timeouts ?? 0) || 0;
+        const other = Number(r.other_fails ?? 0) || 0;
+        const jobs = Number(r.jobs_failing ?? 0) || 0;
+        const top = Array.isArray(r.top) ? r.top : [];
+        // ⚠ THE COUNTS ABOVE ARE ONLY A MEASUREMENT WHEN `complete` IS TRUE.
+        // check_pgcron_failure_rate fences its scan on the runid PK for cost
+        // (cron.job_run_details has no start_time index and postgres cannot add
+        // one — known-issues #60), and reports `complete: false` when that fence
+        // cut the window short. A bound fence UNDER-counts, so "below threshold"
+        // stops being a supportable conclusion: a lower bound under a bar proves
+        // nothing about the real value. Above the bar it still proves the bar was
+        // crossed, so a firing finding survives — it just becomes "at least N".
+        // Three states, not two: true, false, and no such key at all (an older
+        // function deployed), which is stated rather than read as true.
+        const completeRaw = (r as any).complete;
+        const bound = completeRaw === false;
+        const completeUnknown = typeof completeRaw !== "boolean";
+        const atLeast = bound ? "at least " : "";
+        checks.push({
+          name: "pg_cron Failures (6h)",
+          status: fails >= CRON_FAIL_WARN || bound ? "warn" : "ok",
+          detail:
+            `${atLeast}${fails} of ${runs} cron runs failed in 6h across ${jobs} job(s) ` +
+            `(threshold ${CRON_FAIL_WARN}) — ${startup} worker-slot 'startup timeout', ` +
+            `${stmt} cancelled at a statement budget, ${other} other.` +
+            (top.length
+              ? ` Top: ${top.map((t: any) => `${t.jobname}=${t.fails}`).join(", ")}.`
+              : "") +
+            (fails >= CRON_FAIL_WARN
+              ? " A startup-timeout share points at worker-slot contention (max_worker_processes = 6); a statement-timeout share points at clipped tails, not contention."
+              : bound
+                ? ""
+                : " Below threshold, reported for the record rather than as a finding. \u26a0 The fleet " +
+                "baseline is NOT a constant and a low count here is a comparison against the CURRENT regime, " +
+                "not a clean bill of health: re-measured 30d on 2026-09-09, 08-11..08-30 ran at 50-496 " +
+                "failures/DAY, 08-31..09-08 at 0-3/day, 09-09 at 399.") +
+            (bound
+              ? " \u26a0 INCOMPLETE: the runid fence bound the window, so every count here is a LOWER " +
+                "BOUND and not a measurement — \"below threshold\" is NOT concluded from it."
+              : "") +
+            (completeUnknown
+              ? " \u26a0 The RPC returned no `complete` flag (older function deployed), so whether the " +
+                "scan covered the whole window is UNKNOWN, not confirmed."
+              : ""),
+          value: fails,
+        });
+      }
+    }
+  } catch (e: any) {
+    const sat = isSaturationError(e?.message);
+    checks.push({
+      name: "pg_cron Failures (6h)",
+      status: "warn",
+      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e?.message ?? String(e)}`,
+    });
+  }
+
   // Trust health (2026-07-16): surface v_rpc_trust_health (23 metrics as of
   // 2026-07-27, when the three Candy arms landed) in the
   // sentinel digest — per-collection FMV staleness, impossible-parallel serials,

@@ -1,0 +1,44 @@
+-- audit_20260909_pgcron_failure_rate_baseline_correction
+--
+-- COMMENT ONLY. No code, no signature, no grants -- so no new overload and no
+-- privilege change. Applied in a quiet window (23:45Z, 1 active / 1 IO waiter,
+-- clear of the 00:00Z six-hourly block) because every apply_migration costs a
+-- ~10-20s PGRST002 schema-cache burst.
+--
+-- WHY: the comment this replaces stated the thresholding baseline as "0-3
+-- failures per DAY fleet-wide, 2026-09-02..08". That is TRUE of that window and
+-- MISLEADING as a baseline, and I wrote it after sampling only 7 days.
+--
+-- Re-measured over 30 days:
+--   2026-08-11 .. 08-30 : 50-496 failures/day (startup timeouts 36-332/day)
+--   2026-08-31 .. 09-08 : 0-3 failures/day
+--   2026-09-09          : 399
+--
+-- So the estate ran at 50-496 cron failures/day for THREE WEEKS, dropped to ~0
+-- on 2026-08-31, and reverted for one day on 09-09. I sampled only after the
+-- change point and called it "the baseline" -- the inverse of CLAUDE.md's
+-- pooled-rate error (a rate pooled ACROSS a fix measures the fix's absence;
+-- a rate sampled only AFTER one mistakes the fix for the norm).
+--
+-- ⚠ CORRELATION, NOT PROVEN CAUSATION: the 08-31 ledger records "the
+-- top-consumer drain: three of the instance's four biggest reads cut" and "the
+-- instance's #1 consumer now drives from the 26 allow-listed wallets (30,993 ->
+-- 15,973 blocks/call)" shipping that same day. The mechanism is sensible (less
+-- IO pressure -> heavy jobs finish faster -> they stop overlapping -> worker
+-- slots stay free -> no `job startup timeout`), and the change point is sharp
+-- (08-30: 96 fails / 59 startup; 08-31: 1 fail / 0 startup). But several things
+-- shipped that day, so this is a dated correlation with a plausible mechanism
+-- and is recorded as such. ⭐ Nobody claimed this benefit at the time: that
+-- drain's own entry claims IO reduction and says nothing about cron failures,
+-- so ~200 failures/day were removed by a change measured on a different axis.
+--
+-- The threshold stays calibrated to the POST-08-31 regime, deliberately: the
+-- estate demonstrably runs at 0-3/day, so 10-per-6h is a legitimate bar. ⭐ And
+-- the consequence is the arm's value statement -- it would have been LOUD for
+-- the three weeks before 08-31, which is exactly the period nobody was watching
+-- this surface at all.
+--
+-- REVERT: re-apply migration 20260909233213's COMMENT ON statement.
+
+comment on function public.check_pgcron_failure_rate(interval) is
+  'Fleet-level pg_cron failure RATE over p_window (default 6h), as one jsonb row: runs, fails, jobs_failing, startup_timeouts, statement_timeouts, other_fails, complete, top 5 offenders. Added 2026-09-09 after a spell logged 399 failures with nothing watching: the sentinel reads only pipeline_runs, and a job that fails to START writes no pipeline_runs row. Complements check_pgcron_recent_failures(), which filters to jobs whose LATEST run failed and therefore misses a high-rate intermittent failer (measured: 23-fail and 19-fail jobs invisible at every probe on 2026-09-09). PERFORMANCE: cron.job_run_details has no index on start_time and is owned by supabase_admin (postgres cannot add one - known-issues #60), so the scan is fenced on the runid PK, sized at 3,000/h with a 50,000 floor against a measured ~362/h; 18,313 physical buffer reads -> 628, same answers. `complete` is false when that fence bound the window, in which case every count is a LOWER BOUND. THRESHOLD BASELINE, re-measured over 30 days and NOT the 7-day figure first recorded here: 2026-08-11..08-30 ran at 50-496 failures/DAY (startup timeouts 36-332/day), 08-31..09-08 at 0-3/day, 09-09 at 399. The drop coincides with the 08-31 top-consumer IO drain (dated correlation, plausible mechanism, not proven - several things shipped that day; and that drain never claimed this benefit). Thresholds are calibrated to the POST-08-31 regime on purpose: the estate demonstrably runs at 0-3/day, and this arm would have been loud for the three weeks before it, which is the period nobody watched this surface.';

@@ -65,6 +65,23 @@ function greenFixtures(): Fixtures {
       error: null,
     },
     "rpc:detect_stalled_pipelines": { data: [], error: null },
+    // pg_cron failure-rate arm (added 2026-09-09). Healthy fixture: a normal 6h
+    // window. ⚠ It must be supplied explicitly — the arm treats an unreadable
+    // payload and an explicit zero-runs answer as INCONCLUSIVE rather than as
+    // health, which is deliberate and is what caught a third-state bug in it.
+    "rpc:check_pgcron_failure_rate": {
+      data: {
+        window_text: "06:00:00",
+        runs: 2100,
+        fails: 1,
+        jobs_failing: 1,
+        startup_timeouts: 0,
+        statement_timeouts: 1,
+        other_fails: 0,
+        top: [{ jobname: "rpc-example", fails: 1 }],
+      },
+      error: null,
+    },
     v_rpc_trust_health: { data: [{ metric: "topshot_fmv_stale_hours", value: 1, breach_at: 6, status: "ok" }], error: null },
     "rpc:sentinel_total_sales_estimate": { data: 4200000, error: null },
     "rpc:sentinel_sales_ingest_health": { data: ingestHealthy(), error: null },

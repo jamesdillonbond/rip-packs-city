@@ -72,6 +72,23 @@ function greenFixtures(): Fixtures {
       error: null,
     },
     "rpc:detect_stalled_pipelines": { data: [], error: null },
+    // pg_cron failure-rate arm (added 2026-09-09). Healthy fixture: a normal 6h
+    // window. ⚠ It must be supplied explicitly — the arm treats an unreadable
+    // payload and an explicit zero-runs answer as INCONCLUSIVE rather than as
+    // health, which is deliberate and is what caught a third-state bug in it.
+    "rpc:check_pgcron_failure_rate": {
+      data: {
+        window_text: "06:00:00",
+        runs: 2100,
+        fails: 1,
+        jobs_failing: 1,
+        startup_timeouts: 0,
+        statement_timeouts: 1,
+        other_fails: 0,
+        top: [{ jobname: "rpc-example", fails: 1 }],
+      },
+      error: null,
+    },
     v_rpc_trust_health: {
       data: [
         { metric: "topshot_fmv_stale_hours", value: 1, breach_at: 6, status: "ok" },
@@ -201,6 +218,8 @@ interface Check {
   name: string
   status: string
   detail: string
+  /** Present on arms that publish a number; absent when a check could not be evaluated. */
+  value?: string | number
 }
 function check(report: { checks: Check[] }, name: string): Check {
   const c = report.checks.find((x) => x.name === name)
@@ -1035,4 +1054,180 @@ describe("POST /api/sentinel — records its own run durably", () => {
       ).toBe(hour % 6 === 0)
     }
   })
+
+  // ── pg_cron failure-rate arm (2026-09-09) ─────────────────────────────────
+  // Added after a spell logged 399 cron failures against a 0-3/DAY fleet
+  // baseline with nothing watching: every other arm reads pipeline_runs, and a
+  // job that fails to START never writes one. These cases pin the three states
+  // the arm must keep apart, and the middle one is a bug it actually had.
+  describe("pg_cron Failures (6h)", () => {
+    const NAME = "pg_cron Failures (6h)"
+    const cron = (over: Record<string, unknown>) => {
+      const f = greenFixtures() as any
+      f["rpc:check_pgcron_failure_rate"] = {
+        data: {
+          window_text: "06:00:00",
+          runs: 2100,
+          fails: 0,
+          jobs_failing: 0,
+          startup_timeouts: 0,
+          statement_timeouts: 0,
+          other_fails: 0,
+          top: [],
+          complete: true,
+          ...over,
+        },
+        error: null,
+      }
+      return f
+    }
+
+    it("is ok at the measured baseline and still REPORTS the count", async () => {
+      // The arm is the record that lets a future pass fit a real threshold, so
+      // it must state the number even when quiet — and must NOT borrow the
+      // firing line's language.
+      install(cron({ fails: 1, jobs_failing: 1, statement_timeouts: 1 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.status).toBe("ok")
+      expect(c.value).toBe(1)
+      expect(c.detail).toContain("1 of 2100")
+      expect(c.detail).toContain("for the record rather than as a finding")
+    })
+
+    it("warns past the threshold and NAMES the startup-vs-statement split", async () => {
+      // That split is the discriminator that took longest to find on 09-09:
+      // startup timeout = no worker slot (contention, 6 of them); statement
+      // timeout = ran and was cancelled at its budget. Same count, opposite fix.
+      install(cron({
+        fails: 157, jobs_failing: 44, startup_timeouts: 59, statement_timeouts: 98,
+        top: [{ jobname: "rpc-ts-listings-atlas-sync", fails: 60 }],
+      }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.status).toBe("warn")
+      expect(c.value).toBe(157)
+      expect(c.detail).toContain("59 worker-slot")
+      expect(c.detail).toContain("98 cancelled at a statement budget")
+      expect(c.detail).toContain("max_worker_processes = 6")
+      expect(c.detail).toContain("rpc-ts-listings-atlas-sync=60")
+    })
+
+    it("⚠ separates an UNREADABLE payload from an answered ZERO — the bug it had", async () => {
+      // `Number(r.runs ?? 0) || 0` collapsed "no payload" into "zero runs",
+      // i.e. a failed read published as a measurement, inside an arm whose
+      // subject is measurement honesty. Both warn, and they must not say the
+      // same thing: one is unreadable, the other is a scheduler-down signal.
+      const unreadable = greenFixtures() as any
+      unreadable["rpc:check_pgcron_failure_rate"] = { data: null, error: null }
+      install(unreadable)
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const a = check(await (await POST(post())).json(), NAME)
+      expect(a.status).toBe("warn")
+      expect(a.detail).toContain("no readable payload")
+      expect(a.detail).toContain("not zero runs")
+      expect(a.value).toBeUndefined()
+
+      install(cron({ runs: 0 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const b = check(await (await POST(post())).json(), NAME)
+      expect(b.status).toBe("warn")
+      expect(b.detail).toContain("ANSWERED and reported ZERO runs")
+      expect(b.detail).toContain("scheduler-down")
+      expect(b.value).toBe(0)
+      expect(a.detail).not.toBe(b.detail)
+    })
+
+    it("never returns critical, at any failure level", async () => {
+      // A failure burst under saturation is real but is not data loss, and this
+      // route's header records two false CRITICAL pages from that conflation.
+      for (const fails of [0, 10, 400, 5000]) {
+        install(cron({ fails, jobs_failing: 50, statement_timeouts: fails }))
+        stubFetch([sniperOk, telegramOk, resendOk])
+        const c = check(await (await POST(post())).json(), NAME)
+        expect(["ok", "warn"], `fails=${fails}`).toContain(c.status)
+      }
+    })
+
+    it("⚠ a BOUND fence is a lower bound, so \"below threshold\" is NOT concluded from it", async () => {
+      // check_pgcron_failure_rate fences its scan on the runid PK for cost and
+      // reports complete:false when that fence cut the window short. An
+      // under-count under a bar proves nothing about the real value, so the arm
+      // must not return ok on one — that would be the exact failed-read-as-fact
+      // shape this arm exists to catch, one level down.
+      //
+      // ⭐ This case is why the fence gained a p_fence_span override on
+      // 2026-09-09: the fence scales with p_window, so no window binds it and
+      // complete:false was UNREACHABLE in production. A flag nothing can drive
+      // to its interesting value is indistinguishable from one hard-wired true.
+      // Proven live at the same time: span 100 -> complete false / runs 100;
+      // span 50000 (the computed floor) -> complete true / runs 2174, identical
+      // to the default path.
+      install(cron({ fails: 2, jobs_failing: 1, statement_timeouts: 2, complete: false }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.status).not.toBe("ok")
+      expect(c.detail).toContain("LOWER BOUND")
+      expect(c.detail).toContain("at least 2 of 2100")
+      // ⚠ And it must not STATE the conclusion it is about to retract. The
+      // blackout arm shipped exactly this defect once — a clause untrue at the
+      // value it prints — so the sub-threshold wording is suppressed when the
+      // fence bound, rather than printed and then walked back two clauses later.
+      expect(c.detail).not.toContain("for the record rather than as a finding")
+    })
+
+    it("a bound fence ABOVE the threshold still stands as a finding, worded as a lower bound", async () => {
+      // Asymmetry on purpose: a lower bound under a bar proves nothing, but a
+      // lower bound OVER the bar still proves the bar was crossed.
+      install(cron({ fails: 157, jobs_failing: 44, startup_timeouts: 59, statement_timeouts: 98, complete: false }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("at least 157")
+      expect(c.detail).toContain("max_worker_processes = 6")
+    })
+
+    it("a complete scan does NOT carry the lower-bound caveat", async () => {
+      // The negative control: without it the caveat could be unconditional text
+      // and both cases above would still pass.
+      install(cron({ fails: 2, jobs_failing: 1, statement_timeouts: 2, complete: true }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.status).toBe("ok")
+      expect(c.detail).not.toContain("LOWER BOUND")
+      expect(c.detail).not.toContain("at least")
+      expect(c.detail).toContain("2 of 2100")
+    })
+
+    it("a MISSING complete flag is stated as unknown, never read as complete", async () => {
+      // Three states, not two. An older function deployment emits no such key;
+      // treating absence as true would republish a possibly-bound count as a
+      // measurement.
+      const f = cron({ fails: 2 })
+      delete (f["rpc:check_pgcron_failure_rate"] as any).data.complete
+      install(f)
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), NAME)
+      expect(c.detail).toContain("UNKNOWN, not confirmed")
+      expect(c.detail).not.toContain("LOWER BOUND")
+    })
+
+    it("an RPC saturation error is marked INCONCLUSIVE so the blackout arm counts it", async () => {
+      const f = greenFixtures() as any
+      f["rpc:check_pgcron_failure_rate"] = {
+        data: null,
+        error: { message: "canceling statement due to statement timeout" },
+      }
+      install(f)
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      const c = check(report, NAME)
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("INCONCLUSIVE")
+      // and the composition: the blackout arm must see it in its population
+      const blackout = check(report, "Measurement Blackout")
+      expect(blackout.detail).toContain(NAME)
+    })
+  })
+
 })
