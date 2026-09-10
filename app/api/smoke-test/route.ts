@@ -1426,9 +1426,34 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
           notes: null,
         };
       }
-      // 56 pairs live at 2026-09-02. The floor is deliberately far below that so
-      // ordinary unscheduling does not trip it, and far above zero so a broken walk
-      // cannot pass.
+      // ⚠ `inspected` IS NOT HOW MUCH WAS TESTED, and reading it that way is the
+      // trap this arm was widened to close on 2026-09-10. A pair whose calling
+      // role OWNS the function cannot have its EXECUTE revoked, so the guard
+      // tests nothing there. The function now reports `revocable` — the pairs it
+      // actually tested — and that number, not `inspected`, is the coverage.
+      // Three states, because an older deployed function emits no such key:
+      // a number is the coverage, absent means coverage is UNKNOWN and is said
+      // so rather than assumed, and a small number is a broken guard.
+      const revocable = typeof (payload as { revocable?: unknown })?.revocable === "number"
+        ? ((payload as { revocable?: number }).revocable as number)
+        : null;
+      const immuneOwner = typeof (payload as { immune_owner?: unknown })?.immune_owner === "number"
+        ? ((payload as { immune_owner?: number }).immune_owner as number)
+        : null;
+      if (revocable !== null && revocable < 10) {
+        return {
+          ...meta,
+          passed: false,
+          couldNotRun: true,
+          detail: `the guard TESTED only ${revocable} revocable pair(s) of ${inspected} inspected — the rest are owner-immune, so this is a vacuous run, not a clean one`,
+          statusCode: null,
+          bodyExcerpt: null,
+          notes: { inspected, revocable, offender_count: offenders.length },
+        };
+      }
+      // 56 pairs live at 2026-09-02, 113 inspected / 58 revocable at 2026-09-10.
+      // The floor is deliberately far below that so ordinary unscheduling does not
+      // trip it, and far above zero so a broken walk cannot pass.
       if (inspected < 20) {
         return {
           ...meta,
@@ -1445,13 +1470,16 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         ...meta,
         passed,
         detail: passed
-          ? `0 offenders across ${inspected} scheduled job/function pair(s)`
-          : `${offenders.length} cron_heavy job(s) cannot execute their own function: ${offenders
+          ? `0 offenders across ${inspected} scheduled job/function pair(s)` +
+            (revocable !== null
+              ? ` — ${revocable} of them actually TESTED${immuneOwner !== null ? `, ${immuneOwner} owner-immune (the calling role owns the function, so its EXECUTE cannot be revoked)` : ""}`
+              : " ⚠ the payload carries no `revocable` count (older function deployed), so how many of those were actually testable is UNKNOWN, not confirmed")
+          : `${offenders.length} cron job(s) cannot execute their own function: ${offenders
               .map((o: { jobname?: string; function?: string }) => `${o.jobname}→${o.function}`)
               .join(", ")}`,
         statusCode: null,
         bodyExcerpt: passed ? null : JSON.stringify(offenders).slice(0, 500),
-        notes: { inspected, offender_count: offenders.length },
+        notes: { inspected, revocable, immune_owner: immuneOwner, offender_count: offenders.length },
       };
     }, {
       name: "cron_heavy can execute every function it is scheduled to call",

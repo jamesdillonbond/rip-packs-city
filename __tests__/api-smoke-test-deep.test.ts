@@ -785,6 +785,72 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     expect(guard.detail).toContain("unexpected payload shape")
   })
 
+  // ── coverage, added 2026-09-10 when the guard was widened to every role ──
+  //
+  // The guard used to filter WHERE username = 'cron_heavy'. Widening it to every
+  // active job raised `inspected` 58 -> 113, and 55 of those new pairs are
+  // OWNER-IMMUNE: postgres owns all 54 functions its own jobs call, and an owner's
+  // EXECUTE cannot be revoked, so the guard tests nothing there. Reading
+  // `inspected` as coverage would therefore read 113 where 58 were tested.
+  // `revocable` is the honest number and these cases hold it in place.
+
+  it("⚠ a walk that INSPECTED many pairs but TESTED almost none is couldNotRun, not clean", async () => {
+    // The vacuity trap one level in from the empty-population one above: the walk
+    // is healthy, offenders is honestly empty, and the run still proves nothing
+    // because nearly every pair was owner-immune.
+    const f = greenFixtures()
+    f["rpc:check_cron_heavy_job_exec_drift"] = {
+      data: { inspected: 113, revocable: 2, immune_owner: 111, offenders: [] },
+      error: null,
+    }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+    const guard = findResult(env, "cron_heavy can execute every function it is scheduled to call")
+
+    expect(guard.passed).toBe(false)
+    expect(guard.couldNotRun).toBe(true)
+    expect(guard.detail).toContain("TESTED only 2")
+    expect(guard.detail).toContain("vacuous")
+    expect(guard.notes?.revocable).toBe(2)
+  })
+
+  it("a healthy split PASSES and states what it could not test, rather than implying full coverage", async () => {
+    const f = greenFixtures()
+    f["rpc:check_cron_heavy_job_exec_drift"] = {
+      data: { inspected: 113, revocable: 58, immune_owner: 55, offenders: [] },
+      error: null,
+    }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+    const guard = findResult(env, "cron_heavy can execute every function it is scheduled to call")
+
+    expect(guard.passed).toBe(true)
+    expect(guard.detail).toContain("58 of them actually TESTED")
+    expect(guard.detail).toContain("owner-immune")
+    expect(guard.notes?.immune_owner).toBe(55)
+  })
+
+  it("a payload with NO revocable count says coverage is UNKNOWN, never assumes it", async () => {
+    // Three states, not two. An older deployed function emits {inspected, offenders}
+    // only; treating that as full coverage is the same failed-read-as-fact shape the
+    // guard itself exists to catch.
+    const f = greenFixtures()
+    f["rpc:check_cron_heavy_job_exec_drift"] = { data: { inspected: 113, offenders: [] }, error: null }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+    const guard = findResult(env, "cron_heavy can execute every function it is scheduled to call")
+
+    expect(guard.passed).toBe(true)
+    expect(guard.detail).toContain("UNKNOWN, not confirmed")
+    expect(guard.detail).not.toContain("actually TESTED")
+  })
+
   // Positive control for the four above: the honest clean state must still PASS, or
   // the arm is green-by-breaking-it.
   it("a walk that inspected a real population with no offenders is an honest pass", async () => {
