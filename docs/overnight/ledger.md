@@ -34,6 +34,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **REVERT:** `git revert` the code commit (find by message, `git log --grep='lane egress'`); delete `scripts/check-lane-egress.mjs`, `__tests__/lane-egress-classification-guard.test.ts`, the `lanes:egress:check` script and the `ci.yml` step. **No DB or production state was changed by any of this** — the migration edit is comment-only and the audit was read-only.
 
+🚨 **AND THE RED HAD BEEN HIDING BEHIND SEVEN GREEN BADGES.** Run **5111** (`75383f902`) went **failure** at 05:12Z; runs **5112–5118 were all docs-only**, so the ten code jobs were SKIPPED and every one published a green badge over a tree whose unit suite was red — ~52 minutes deep by the time a code push ran the suite again. ⭐ **The documented class inverted on me:** the 08-xx note records *local green believed over CI*; tonight I had a true local red, saw 5118 green, and came within a step of **retracting an accurate finding**. `skipped` and `success` both roll up to a green check — **a green badge is not evidence the suite passed, only that nothing which could fail was run.** Recorded in [testing-and-ci.md](../reference/testing-and-ci.md) next to the original note.
+
 **Still open, unchanged and still operator-only:** re-enable the cron-job.org entries (the real fix for all ten lanes; GitHub delivers ~27% of slots, median gap 4.06h) and add `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` as GitHub secrets.
 
 ### 2026-09-10 · 🚨 A REGISTER ITEM'S HEADLINE OUTLIVED ITS OWN RETRACTION, AND IT COST ME AN HOUR — #69 closed, its exit condition TESTED rather than re-read · Claude Code on Trevor's box, Trevor: "Keep going and doing what you can"

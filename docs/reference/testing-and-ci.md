@@ -2059,3 +2059,9 @@ npm run lint:ratchet     # eslint, per-RULE against the baseline
 ```
 
 ⚠ **WHY IT SURVIVED THREE PUSHES, and this is the transferable half:** docs-only commits skip the code jobs and pass, so the badge history read as *alternating*, not as *broken* — and **local green was read as CI's verdict instead of CI being read.** ⭐ Same error, one level down, as the `live: false` correction filed the same night: **verify by making the request, not by reading the status you expect.**
+
+🚨 **IT RECURRED 2026-09-10 PT, RAN SEVEN PUSHES INSTEAD OF THREE, AND POINTED THE OTHER WAY — that second half is the part this note was missing.** Run **5111** (`75383f902`, a `.sql` migration, so classified code) went **failure** at 05:12Z on `migration-new-function-states-its-anon-exec-decision`. Runs **5112–5118 were all docs-only**, so the ten code jobs were **skipped** and each published a **green** badge over a tree whose unit suite was still red — ~52 minutes and seven green badges deep by the time a code push ran the suite again.
+
+⭐ **AND THE FAILURE MODE INVERTED.** The 08-xx instance was *local green believed over CI*. This time a session ran the suite locally, saw a genuine red, checked the latest CI run (5118, **green**) and nearly **retracted a true finding** — the badge was about to win against a correct measurement. **A `success` conclusion is not evidence the suite passed; it is evidence that nothing which could fail was run.** Before believing a green badge, read whether the job you care about has `conclusion: "skipped"` — `list_workflow_jobs` says so per job, and `skipped` and `success` both roll up to a green check.
+
+⚠ **So the standing rule cuts both ways: read CI rather than the badge, and read the JOB rather than the run.** The corollary for anyone doing this arithmetic later: a red introduced by a code push stays hidden for as many docs-only pushes as follow it, which on a ledger-heavy night is most of them.
