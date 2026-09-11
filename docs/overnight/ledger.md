@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · 🚨 I TURNED `main` RED AND FIXED IT — the amendment migration re-declared a function without its `anon-exec` marker, and I ran the DOC guards for that push while never re-running the MIGRATION guards · Claude Code (cloud), Trevor: "work through anything unresolved"
+
+**Shipped: the missing marker in `20260911053500` (no SQL behaviour change). `main` green again.**
+
+🚨 **WHAT BROKE.** `75383f902` (the watchdog verdict-order fix) reddened CI's **Unit tests shard 2/2**: `migration-new-function-states-its-anon-exec-decision` flagged `20260911053500 → public.rpc_gha_schedule_watchdog`. The amendment carried the full `CREATE OR REPLACE FUNCTION` — correct, that is how a function change is shipped — **but no `anon-exec:` marker and no REVOKE, so by the guard's definition the migration states no decision.**
+
+⚠ **THE MARKER IS THE RIGHT FIX, NOT A REVOKE, and the guard's own message says why: `CREATE OR REPLACE FUNCTION` does NOT reset a function's ACL**, so re-revoking would be ACL churn rather than a decision. Re-verified live after the marker: `has_function_privilege` anon **false**, authenticated **false**, postgres **true**. ⚠ **And the detector needs `anon-exec:` and the function name on the SAME LINE** — a trap that had already cost me one red earlier tonight.
+
+🚨 **THE PROCESS FAILURE IS THE PART WORTH RECORDING, because the rule was already in CLAUDE.md: "Grep for the guards that READ a file before you EDIT it."** I ran **14 documentation guards / 118 tests** for that push because the push was mostly docs — and **never re-ran the migration guards after adding a migration file to it.** ⭐ **A mixed commit gets the UNION of its guards, not the set matching whichever part you were thinking about.** The same guard caught me twice in one session for the same structural reason.
+
+⚠ **And "the suite passed locally" was TRUE AND STALE:** my green full-suite run predated the amendment file by ~20 minutes. **A suite result is a reading of a TREE, and the tree changed** — the repo's own rule about a measurement taken while its subject moved, applied to CI instead of a benchmark.
+
+✅ **Now: full suite 1,501 files / 16,658 tests green** (up 1 file / 12 tests on tonight's new guard), marker in place, and the failing job identified by reading the JOB rather than guessing — the red was shard 2/2 and nothing else.
+
+**Revert:** drop the comment block; it is a comment, so there is nothing behavioural to revert. **Gate:** the guard that reddened now passes, and the whole suite with it.
+
 ### 2026-09-10 · ⛔ THE OBVIOUS FIX FOR THE DEAD LANES IS MEASURABLY THE WRONG ONE — and I nearly "restored" a lane that was never broken · Claude Code on Trevor's box, Trevor: "Keep going and doing what you can"
 
 **Shipped: docs only — #76 gains a post-stall read and an attribution correction, #80 gains tightened endpoints. No code, no migration, no data mutation.**

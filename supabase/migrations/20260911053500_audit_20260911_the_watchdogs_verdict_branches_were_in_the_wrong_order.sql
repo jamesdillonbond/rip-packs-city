@@ -28,6 +28,17 @@
 -- `20260911045500_audit_20260911_a_db_side_watchdog_so_a_github_scheduler_stall_cannot_be_invisible`.
 -- ============================================================================
 
+-- anon-exec: UNCHANGED -- rpc_gha_schedule_watchdog keeps the REVOKE FROM PUBLIC, anon,
+-- authenticated granted in 20260911045500, and deliberately does not repeat it: CREATE OR
+-- REPLACE FUNCTION does NOT reset a function's ACL, so a revoke here would be ACL churn
+-- rather than a decision. Re-verified live after this migration: has_function_privilege
+-- reads anon false, authenticated false, postgres true.
+--
+-- ⚠ THIS MARKER IS WHY CI WENT RED, AND THE LESSON IS ONE ALREADY IN CLAUDE.md: GREP FOR
+-- THE GUARDS THAT READ A FILE BEFORE YOU EDIT IT. I ran the documentation guards for the
+-- docs in the same push and never re-ran the MIGRATION guards after adding this file, so a
+-- guard I had already tripped once tonight caught me a second time. The detector needs
+-- `anon-exec:` and the function name on the SAME LINE -- which is the first line above.
 CREATE OR REPLACE FUNCTION public.rpc_gha_schedule_watchdog()
 RETURNS jsonb
 LANGUAGE plpgsql
