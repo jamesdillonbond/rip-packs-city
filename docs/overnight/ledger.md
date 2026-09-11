@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ⭐ THE ZERO-YIELD DETECTOR NEEDS NO PER-LANE DECLARATION AFTER ALL — the lane's OWN HISTORY is the declaration — and calibrating it before building it flagged 5 lanes of 243, FOUR OF THEM NEW (#79) · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
+
+**Shipped: docs only — register #79 + this entry. No code, no migration, no data mutation.**
+
+⭐ **I TALKED MYSELF OUT OF THIS AN HOUR AGO AND WAS WRONG.** I filed the fourth lane state (*ran, succeeded, found nothing*) as needing a per-lane declaration for ~140 lanes, and shelved it on that basis. **The objection dissolves if the lane's own history is the declaration:** flag a lane that HAD a non-zero `rows_found` baseline and has since gone to zero while still running. No configuration, and the curated part shrinks to a **suppression** list — which is this repo's own prescribed guard shape. ⚠ **A shelving decision is a filed decision, and CLAUDE.md is explicit that those are the ones nobody re-checks. This one lasted an hour.**
+
+✅ **CALIBRATED BEFORE BUILT, which is the step usually skipped — and the measurement is what makes it shippable.** Rule: non-zero `rows_found` in days −30…−8, **exactly zero** in the last 7, ≥50 runs in those 7. **It flags 5 lanes out of 243.** Small enough to act on, non-zero so it is not vacuous, and it catches the known defect (`golazos-listings-indexer`, #78) without being told about it.
+
+⭐ **FOUR OF THE FIVE ARE NEW, and each is a CLEAN DATED CLIFF rather than a decay** — which is exactly why they are worth triaging rather than dismissing. `offers-sweep` ran **209,521 / 215,517 / 209,808 / 145,056** on 08-25…08-28, then **exactly 0 every day from 08-29** at 70–72 runs/day, **and then stopped running at all after 09-07** — four days dead *before* #76's outage and unrelated to it. `allday-price-recover` held a flat **68–72k found/day** to 09-01, went partial 09-02, **0/0 from 09-03**, still running 72×/day. `sales-counterparty-backfill` **wrote 0 on four separate days while still finding 34,560** — a *different* failure (found-but-not-written) nested inside the same lane, before its find went to zero too.
+
+⚠ **FILED AS CANDIDATES, NOT DEFECTS, and the distinction is load-bearing:** two are named `*backfill`, and a backfill that genuinely finished SHOULD read zero forever. **Only `golazos-listings-indexer` is confirmed.** ⚠ One thread left dangling rather than quietly dropped: `marketplace_offers_2026_09` holds **0 rows** while `offers` holds 177,088 with a newest of **00:49:12Z today** — offers are flowing somewhere, and whether `offers-sweep` targets the empty partition was NOT established.
+
+⛔ **NOT BUILT TONIGHT, and this time the reason is the clock rather than the design.** The rule is calibrated; the suppression list is a per-lane judgement Trevor owns. **Standing a guard up against ~140 lanes in the last hour of a session is precisely how this repo acquires half-calibrated guards it later has to repair** — and I broke the `Alert Delivery` arm on exactly that kind of zero three hours ago. Filed with the rule, its population and its first five hits.
+
 ### 2026-09-10 · 🚨 3-OF-3 vs 0-OF-9 ALONG THE CADENCE AXIS: every slow lane resumed on its first slot, not one fast lane has — and `alerts-send`/`alerts-dispatch` are in the dead set, so USER ALERTS have been down since 13:54Z · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
 
 **Shipped: docs only — the split recorded on #76 + this entry. No code, no migration, no data mutation.**
