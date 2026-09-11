@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · 🔴 RE-DERIVING A ONE-LINE GO-LIVE ROW CAUGHT A SATURATION SPELL IN PROGRESS — and TWO gate rows were stale in the optimistic direction (#84) · Claude Code on Trevor's box, Trevor: "Keep going. Don't stop for another hour"
+
+**Shipped: docs only — go-live **M8** and **M11** corrected, register **#84**, inbox filing `2026-09-11T1330Z-…`, INDEX. No code, no migration, no data mutation.**
+
+⭐ **THE GO-LIVE DOC IS EXHAUSTIVE ON M1/M2 AND ONE LINE EACH ON THE REST, WHICH IS EXACTLY WHERE ROT HIDES.** M1 and M2 carry thousands of words, four retractions and hour-by-hour readings. **M8 and M11 had a phrase each — and both were wrong in the direction that reads like progress.**
+
+🔴 **M8 HAD NO READING AT ALL.** Its "current" cell said *"check the workflow log, not the badge"* — **that is the METHOD, not a value**, so the row scans as satisfied while nothing has been measured. Measured: `E2E DOM Smoke` **FAILED twice on 09-10** (16:41Z, 21:13Z), green either side. ⭐ **Both fall inside the #76 spend-cap pause, so they are explained — but an explained failure still breaks a CONSECUTIVE-NIGHTS bar, and a gate that forgives its own outages measures nothing.** Current run is **2 green runs inside ONE night**, not 7. **Earliest it can be met is ~09-18.**
+
+🚨 **M11 SAID "~0 SINCE 08-30" AND A SPELL WAS RUNNING AS I READ IT.** On the 09-09 filing's own discriminator (`job startup timeout` — which writes **NO `pipeline_runs` row**, so every pipeline monitor reads it as silence): **09-03→09-08 all ZERO**, then **09-09: 135 across 3 h · 09-10: 63 across 2 · 09-11: 61 across 3 on a PARTIAL day.** Bar is 0 in 7 days; it is **259 in 3**.
+
+⭐ **AND IT WAS CAUGHT MID-SPELL, which is the part that usually cannot be got.** `pg_stat_activity` at 13:25Z: **17 backends in `COMMIT` blocked on `LWLock:WALWrite`**, **7 on `IO:DataFileRead` running `backfill_pinnacle_trade_acquisitions(50000)`, longest 191 s**, 29 blocked overall. **The chain reads in one direction:** parallel heavy reads → IO saturated → WAL writes stall → every committer queues. ⚠ **NOT the 09-09 mechanism** (MV refreshes exhausting `max_worker_processes=6`) — **one job's BATCH SIZE**, not slot contention.
+
+🚨 **THE CULPRIT IS INVISIBLE ON A NORMAL DAY, and that is the transferable half.** pg_cron **jobid 355** (`23 1-22/3 * * *`, batch **50,000**) normally finishes in **EIGHT SECONDS**. It ran **490 s** on 09-10 13:23, **80 s** at 10:23 today, **212 s and still running** at 13:23. ⭐ **`status` is `succeeded` and `return_message` is `"1 row"` either way — so on the scheduler's own instruments an 8-second run and a 490-second run are INDISTINGUISHABLE**, and it writes no `pipeline_runs` row to hang a heartbeat on. **A job whose cost varies 60× with the backlog it happens to find will hide until it bites.**
+
+⚠ **A CAUSE, NOT PROVEN THE ONLY ONE — and I am recording it that way because the correlation is seductive.** Its slow runs match **3 of the 5 burst hours**; **09-10's 12Z burst (34) has no slow run behind it.** The 09-09 filing's own warning applies: in a fleet-wide slowdown every lane is 6–32× slower, so **ratios cannot separate cause from victim.** What lifts it above correlation is that at 13:25Z this function was the **only non-`COMMIT` work running**.
+
+⛔ **NOTHING SHIPPED, and the reason is in the finding itself:** the lever is the `50000` batch, and **the only honest way to size a replacement is BUFFERS, not wall-clock — measured OUTSIDE a spell.** The instance is saturated right now, so **every timing available to me tonight is worthless for that comparison.** Cutting a live job's batch on numbers taken mid-spell is how a fix gets shipped on a measurement of the incident rather than of the change.
+
+**Revert:** docs only — `git revert` the commit.
+
 ### 2026-09-11 · ✅ #83's FORWARD FIX — the 2026-07-19 decision is now a CONSTANT in the decoder that ignored it, not prose in a handoff · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
 
 **Shipped: `lib/chains/flow/dapper-v1-tx-decode.ts` (a custodial-deposit-target set + predicate) and two paired tests. No migration, no data mutation — this stops NEW rows only; the 9,486 existing ones are still Trevor's call.**
