@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ⭐ THE TWO SCHEDULERS, MEASURED SIDE BY SIDE THE SAME NIGHT: pg_cron delivered 4 of 4, GitHub delivered 0 of 6 — and one dead lane turns out to need NO credential to move · Claude Code (cloud), Trevor: "Do what you think is best… what's best for RPC long term and for our users"
+
+**Shipped: docs only — this synthesis. No code; the follow-up it names is deliberately NOT built tonight.**
+
+⭐ **A CLEAN NATURAL EXPERIMENT FELL OUT OF TONIGHT'S WORK, because both schedulers were exercised in the same hours on the same instance.** `rpc-site-availability-probe` (pg_cron, every 5 min) has fired **4 times with 0 failures** since it was created. `dead-lane-backstop` (GitHub Actions, every 15 min) has fired **0 times on its schedule** — all four of its runs are `workflow_dispatch`, two mine and two from the concurrent session. ⛔ **Same night, same estate, same purpose: the database scheduler delivered everything and GitHub delivered nothing.**
+
+🚨 **AND SESSION `01H2WWcC` MEASURED THE GITHUB SIDE PROPERLY, WHICH MAKES MY OWN ESTIMATE OBSOLETE.** Over Pipeline Sentinel's last 52 delivered scheduled runs (a 191.9-hour window): **27% delivery of an HOURLY cron, median gap 4.06h, max 5.97h** — and **worse than the standing 08-27 figure** (max gap 358 min today against 191.9 then). ⛔ **So a 15-minute backstop cron buys a ~4-HOUR floor, not the 45 minutes I estimated.** They also observed the re-freeze directly: 27 minutes after a dispatch, all ten lanes still held their pre-dispatch run. ⭐ **"A dispatch buys one tick, not a cadence"** is their phrasing and it is exactly right — I have now dispatched that workflow four times tonight, and each bought exactly one tick.
+
+⛔ **WHICH DOWNGRADES MY OWN SHIPPED WORK, and it should be said plainly.** I built the backstop and called it "a floor, not a restoration." **The floor is four hours, not fifteen minutes.** For `alerts-send` (a 5-minute lane) that is a 48× gap. It is still worth having — 0-of-6 scheduled is not 0-of-∞, and it is the only lever that needed no operator action — but **nobody should read "the lanes have a caller again" as "the lanes are covered."**
+
+⭐ **THE DURABLE FIX IS A SCHEDULER THAT ACTUALLY DELIVERS, and there are exactly two, both outside my reach tonight:** (a) **re-enable the cron-job.org entries** — Trevor's, 2 minutes, restores the real cadence; or (b) **a DB-side caller**, which pg_cron demonstrably delivers — but the lanes are Vercel routes behind `INGEST_SECRET_TOKEN`, and putting a production secret into a pg_cron command is squarely the secrets/env class that is off-limits to autonomous work. **That is a credential decision, not an engineering one.**
+
+✅ **EXCEPT FOR ONE LANE, WHERE THE CREDENTIAL PROBLEM SIMPLY DOES NOT EXIST — measured, not assumed.** `app/api/wmc-fmv-populate/route.ts` makes **ZERO external fetches** (`grep -cE 'fetch\(|https?://'` → **0**) and calls exactly three DB functions: `populate_wmc_fmv_from_snapshots`, `populate_wmc_image`, `log_pipeline_run`. ⭐ **It is a pure-database lane wearing an HTTP route as a coat.** pg_cron could drive it directly, with **no token, no Vercel and no GitHub** in the path — removing a single point of failure that took it out for 12.5 hours today.
+
+⛔ **NOT BUILT TONIGHT, and the reason is a number rather than caution.** That lane runs **~2,007 times a day** (every ~43 s). Standing up a pg_cron duplicate at that cadence is a real IO increase on a Small-tier instance where *saturation is IO-bound, not CPU-bound*, and choosing the right cadence needs a load measurement I have not taken. **The finding — no credential required — is the part that was missing; the cadence is the part still to size.** A 5-minute pg_cron backstop is the obvious shape.
+
+⚠ **AND THE SAME QUESTION IS WORTH ASKING OF THE OTHER NINE** before anyone assumes they all need a token: the listings indexers walk the chain and the alert lanes call TS libraries, so those genuinely need the route — but that was checked for one lane, not nine.
+
 ### 2026-09-10 · ⭐ FIRST TRIAGE THROUGH THE NEW DETECTOR — `allday-price-recover`'s zero is CORRECT, and the M2 lever I thought I had found is REFUTED · Claude Code (cloud), Trevor: "Do what you think is best… what's best for RPC long term and for our users"
 
 **Shipped: one suppression row in `pipeline_zero_yield_suppressions` (data, not code) + this entry. Revert: `delete from public.pipeline_zero_yield_suppressions where pipeline = 'allday-price-recover';`**
