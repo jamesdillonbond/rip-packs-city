@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · 🧹 TREE RECONCILED — four no-push cloud artifacts committed at last, and the one claim they carried that was still true is the one nobody had acted on · Claude Code on Trevor's box, Trevor: "get caught up. work through everything in the tree... don't stop until we have a clean tree"
+
+**Shipped: docs + artifacts only — the 09-09 night pass's ledger record (back-filled), `metrics-latest.json` re-derived, three inbox filings + INDEX, two handoffs, the 09-10 ecosystem-watch entry. No code, no migration, no data mutation. One operational action: a `workflow_dispatch` of `Dead Lane Backstop`.**
+
+🚨 **THE REAL FINDING IS NOT IN ANY OF THE FILES — IT IS THAT THE RECOVERY EVERYONE RECORDED AS DONE IS BEING HELD UP BY HAND.** The ten cron-job.org lanes have run **only** on manual `workflow_dispatch`: 02:27Z, 03:03Z, and 03:40Z from this session. **`Dead Lane Backstop`'s `schedule` has never once self-fired** — 0 scheduled runs against 6+ elapsed `:12/:27/:42/:57` slots. ⭐ **And the control that makes that interpretable is one I did not create and cannot influence:** `Pipeline Sentinel` is hourly at `:34`, registered for months, untouched tonight — and `gh run list` shows its *scheduled* runs landing at 14:34, 18:37, 21:46, 00:23Z, roughly every **three hours**. So this is estate-wide GHA shedding, not a misconfigured new workflow. ⛔ **The lanes are one forgotten hand-dispatch away from re-freezing, and the durable fix is re-enabling the cron-job.org jobs — an operator action.**
+
+⭐ **TWO OF THE THREE HEADLINE CLAIMS IN THE UNCOMMITTED ARTIFACTS WERE ALREADY REFUTED WHEN I PICKED THEM UP, WHICH IS THE ARGUMENT FOR RE-DERIVING RATHER THAN COMMITTING.** The 17:55 PT monitor snapshot led with a "13-pipeline external-scheduler freeze" caused by *a GitHub Actions workflow disabled or out of minutes* — **every workflow reads `active` and GHA schedules are still delivering**; the cause was the Vercel spend-cap pause (#76) plus cron-job.org's auto-disable after hundreds of consecutive failures. It also flagged **M1 at 49.8%, below its 50% bar** — re-derived live, **52.5%** (1,496 HIGH + 5,863 MEDIUM of 14,015), so the flag was a transient single reading and the bar is met. ⚠ **Both were written correctly at the time.** The lesson is the one this file already carries — a filed finding is a HYPOTHESIS — and the cost of committing them unexamined would have been a repo asserting two false things in its most-read artifact.
+
+⚠ **AND A THIRD FIGURE IN THAT SNAPSHOT WAS A UNIT TRAP I NEARLY REPEATED.** Computing M1 from `fmv_snapshots` returns **3430.2%** — the table is historical, many rows per edition. `fmv_current` is the one-row-per-edition source. **The tell was that the number was impossible; a plausible-looking wrong one would have shipped.**
+
+✅ **A PROD MUTATION HAD NO LEDGER ENTRY AT ALL, WHICH IS THE GAP THE RULE EXISTS TO CLOSE.** Migration `20260909080921_retire_ingest_cadence_watchlist_row` was applied to prod by a no-push cloud pass on 09-09 and its file reached `main` via another session — but **`grep` finds zero mentions of it anywhere in this ledger**. Back-filled as its own dated entry below. Post-ship verified live tonight: `detect_stalled_pipelines()` returns **1** row and `ingest` is absent — the change is HOLDING.
+
+⚠ **THE MIGRATION EXISTED TWICE, IN TWO NON-IDENTICAL COPIES, AND THE UNTRACKED ONE WOULD HAVE BLOCKED THE PULL.** The mount carried a longer-header, `public.`-qualified variant of the same version; `origin/main` carried the committed one. Semantically identical, so the committed copy was kept and the mount copy discarded. ⭐ **Worth naming as a shape: a no-push session writes the repo file it cannot commit, a later session writes it again, and the SAME migration version ends up with two texts — the version string is the identity, so the second copy is invisible to `list_migrations` and shows up only as an untracked file that refuses to fast-forward.**
+
+**Health at close, all re-derived rather than carried:** trust **38/38 ok**, breaches `[]`; security 4/4 clean (`check_public_security_invariants` 0 rows, `check_anon_write_surface` 0 rows, `check_secdef_anon_exec_drift` `[]`); stalled pipelines **1** (the known `topshot-catalog-backfill` info seed); `pinnacle_render_floor_stale_hours` **1.9** vs `breach_at` 30. DB **26,391 MB** (+8.2 GB since 09-07, Atlas-events growth, retention still a queued policy call). M2 All Day **25.8%**, still below its 30% bar but up from the 20.2% of 09-08 — **one reading, so it neither closes nor re-asserts that slide.**
+
+⚠ **Carried watch, filed not fixed:** `rpc-topshot-onchain-rekey` took a single statement timeout at 09-10 11:33Z on its `CREATE TEMP TABLE _mv` build, green the five prior days; next tick 11:33Z 09-11. **One isolated timeout is not a bug; a second consecutive one is** — then `EXPLAIN (ANALYZE, BUFFERS)` and scope it, comparing BUFFERS not wall-clock.
+
+✅ **The dispatch was verified by its WORK, not its badge:** all ten lanes wrote `pipeline_runs` rows at 03:40:13–03:40:22Z with `ok=true`.
+
+**Revert:** docs/artifacts only — `git revert` the commit. The `workflow_dispatch` is a one-off idempotent tick (every route in that workflow was checked for idempotency in its own header); there is nothing to undo.
+
 ### 2026-09-10 · ✅ #76's ROOT CAUSE IS SETTLED BY TREVOR — a VERCEL SPEND-CAP pause — so the rule is "escalate, never unpause", and metered SPEND is now an off-limits class for autonomous work · Claude Code (cloud), Trevor: "It was a spend management pause, but I increased budget slightly"
 
 **Shipped: docs only — CLAUDE.md (one off-limits class, +19 chars), `autonomous-tasks.md`, `tooling-gotchas.md`, `known-issues.md` (#76 → 🟠 partial), this entry. No code, no migration, no data mutation.**
@@ -465,6 +487,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Files:** `docs/reference/known-issues.md` (#73 extended), `docs/overnight/ledger.md`, `docs/sessions/2026-09.md`.
 
 **Revert:** `git revert <sha of this commit>`. Docs only — no DB object, no schedule and no code path was touched.
+
+### 2026-09-09 · ✅ Night pass (cloud, NO-PUSH) — retire the `ingest` cadence-watchlist row so it stops firing a permanent false `medium` stall · BACK-FILLED 2026-09-10 from the mount
+
+⚠ **BACK-FILLED.** This DB change shipped to prod on 2026-09-09 from a cloud pass that had no push, so its ledger entry sat uncommitted on the mount while the migration file reached `main` by another route. It is recorded here on 09-10 because **a prod mutation with no ledger entry is exactly the gap the ledger rule exists to close** — a `grep` for the migration name found nothing in this file.
+
+**Shipped (1, DB-only).** Migration `20260909080921_retire_ingest_cadence_watchlist_row`: a guarded single-row `UPDATE pipeline_cadence_watchlist SET is_active=false WHERE pipeline='ingest'`, wrapped in a `DO` block that raises unless it finds **exactly one** active row. The `ingest` lane was retired from `rpc-pipeline.yml` on 2026-09-07 (#67(3) — upstream `public-api.nbatopshot.com` decommissioned, 530/CF-1033; Top Shot sales now written by `sync_sales_from_atlas`), so its last run is frozen at 2026-09-07T23:46:57Z and `detect_stalled_pipelines()` returned it `medium` **forever** — the `rpc-qa-scorecard` "Pipelines stalled" card read RED permanently. ⭐ **The class is the one this file already names: a stall arm that can never clear is indistinguishable from a broken one, and it masks the next real stall of a still-live lane.**
+
+⛔ **The wrong tool was considered and rejected in the filing:** do NOT widen `max_silent_minutes` — the lane is **gone, not slow**, so a threshold change would still eventually re-fire.
+
+**Post-ship verified (re-checked live 2026-09-10 evening PT):** `ingest.is_active=false`; `detect_stalled_pipelines()` went 2 → 1 and returns only the `topshot-catalog-backfill` info seed; no test or route depends on the row.
+
+**Revert:** `UPDATE public.pipeline_cadence_watchlist SET is_active = true WHERE pipeline = 'ingest';`
+**Target metric:** `detect_stalled_pipelines()` length stays 1; the qa-scorecard stall card shows no `medium` alert.
+
+**Source filing:** `docs/overnight/inbox/2026-09-09T0611Z-daytime-monitor.md`. Full log: `docs/handoff-2026-09-09-overnight-pass.md`.
 
 ### 2026-09-09 · 📈 All Day could never be ask-corroborated — the one go-live metric still below its bar, blocked by a data-availability comment rather than a judgement · Claude Code (cloud), Trevor: "keep driving the metrics and KPIs blocking the next phase of the roadmap"
 
