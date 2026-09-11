@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ✅ #78 IS RESOLVED BY THE BACKSTOP'S FIRST TICK — and BOTH of my diagnoses for it were refuted by the next measurement · Claude Code (cloud), Trevor: "Do it all"
+
+**Shipped: docs only — #78 resolved + a lag caveat on #79 + this entry. The fix itself was the backstop already shipped; no new code.**
+
+✅ **THE LANE WORKS.** `dead-lane-backstop` fired `golazos-listings-indexer` once at **02:27:36Z**: **50,000 blocks scanned, `rows_found` 25, `rows_written` 8**, and `extra.v2_dapper_typeids_seen` carries **`A.87ca73a41bb50ad5.Golazos.NFT`** alongside TopShot / AllDay / Pinnacle / MFLPack. ⭐ **So the event walk is not broken and the type filter is not stale.**
+
+✅ **CONFIRMED ON THE OUTCOME TABLE, not the self-report:** `cached_listings_v2` for `laliga_golazos` **908 → 916 rows** (exactly the 8 written), `newest listed_at` **09-03 → 2026-09-10 19:49:58Z**, and the half frozen longest, **`newest completed_at` 08-31 → 2026-09-10 19:07:49Z**. It is inserting new listings and closing filled ones again.
+
+🚨 **I WAS WRONG TWICE ON THIS ITEM, AND BOTH TIMES THE NEXT MEASUREMENT SAID SO.** First I filed it as *"~670 clean runs that moved nothing"* — pointing at the writer. `rows_found = 0` refuted that. Then I filed *"the fix is in the event walk, not the writer"* — pointing at the contract, the filter or the cursor. **A single real invocation refuted that too.** ⭐ **The pattern worth keeping is not that I was wrong; it is that each wrong diagnosis was confidently reasoned from real data and killed by the CHEAPEST possible next measurement — one run.** *A plausible mechanism is not a measurement*, including when it is mine.
+
+⛔ **THE CAUSE OF THE 7-DAY ZERO IS STILL NOT ESTABLISHED, and I am not inventing one.** Measured: Golazos listing events run **~25 per 50,000 blocks (~1 per 2,000)**; each pre-outage tick scanned **~1,128 blocks**, which matches Flow's block rate over a 15-minute cadence almost exactly — **so coverage was complete and a 7-day zero is arithmetically surprising.** The 09-10 13:52Z tick saw 301 events and **no Golazos type id at all**. Candidates — genuinely bursty listing activity, or something venue-specific about V2 Dapper — are not separated by anything I have.
+
+⚠ **AND THE EVIDENCE WINDOW IS CLOSING:** now that the lane writes again, the zero ages out of the 30-day baseline and `check_zero_yield_lanes()` will stop flagging it. **Whoever picks this up should read the register entry, not the detector.**
+
+⚠ **A REAL PROPERTY OF THE NEW DETECTOR, found the same night:** it reads `pipeline_runs_daily`, which is **six-hourly**, so it still listed `golazos-listings-indexer` minutes after that lane wrote 8 rows. ⭐ **Correct for what it measures — a multi-day fall to zero — but it means a cleared lane reads as an offender for up to six hours and a lane that broke ten minutes ago is invisible to it.** `Pipeline Silence` and `Pipeline Success` stay the live instruments; this one answers a question neither can.
+
+⭐ **ONE MORE THING THE REBASE TAUGHT, because it cost real time:** my unanchored `grep -c '<<<<<<<\|>>>>>>>\|======='` on the resolved ledger returned **10** and looked like a botched resolution. All ten were the ledger's own PROSE about conflict markers — **and the ledger already records this exact false positive as "instance SIX".** Mine was seven. The anchored checks (`^<<<<<<<` / `^=======$` / `^>>>>>>>`) all read 0 and the resolution was clean. **The recipe already says to anchor it; I ran the unanchored one anyway.**
+
 ### 2026-09-10 · ✅ ALL TEN DEAD LANES ARE RUNNING AGAIN — verified in `pipeline_runs`, not on the badge — and #79's zero-yield detector is LIVE, calibrated before it shipped · Claude Code (cloud), Trevor: "Do it all"
 
 **Shipped: (1) the backstop's first run, which restored ten lanes; (2) migration `20260911022859_audit_20260910_zero_yield_lanes_are_visible` — `check_zero_yield_lanes()` + `pipeline_zero_yield_suppressions`; (3) a `Zero-Yield Lanes` sentinel arm + `lib/sentinel/zero-yield.ts` + 7 cases. Reverts: delete the workflow (`git revert`); `drop function public.check_zero_yield_lanes(int,int,int); drop table public.pipeline_zero_yield_suppressions;`; `git revert` the arm commit.**
