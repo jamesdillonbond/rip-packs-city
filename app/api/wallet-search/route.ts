@@ -901,12 +901,34 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
           for (const row of (edRows ?? [])) {
             if (row.set_id_onchain == null || row.play_id_onchain == null) continue
             const intKey = `${row.set_id_onchain}:${row.play_id_onchain}`
-            const isInt = /^\d+:\d+$/.test(String(row.external_id ?? ""))
             const existing = canonicalKeyByInt.get(intKey)
-            // Prefer UUID-format external_id; only fall back to int-format
-            // when nothing else has been seen yet. Equivalent to:
-            //   ORDER BY (external_id ~ '^[0-9]+:[0-9]+$') ASC LIMIT 1
-            if (!existing || (!isInt && /^\d+:\d+$/.test(existing))) {
+            // 🚨 A `::N` PARALLEL IS A DIFFERENT PRINTING OF THE SAME set:play,
+            // NEVER A SUBSTITUTE FOR IT. The old test was `/^\d+:\d+$/`, which
+            // is false for `90:3550::1`, so the "prefer the non-int format"
+            // branch treated every parallel as the canonical key and promoted
+            // it over the base edition — for BOTH arrival orders. Every Top Shot
+            // moment of a set:play that has any parallel printing was then
+            // cached against that parallel's edition_key, taking its (small)
+            // circulation and its tier with it.
+            //
+            // Measured 2026-09-11: that produced 337 wmc rows whose serial
+            // EXCEEDED the circulation of the edition they were keyed to —
+            // e.g. a trophy slab rendering `#1017/50` — accruing ~200/day, plus
+            // a larger silent population whose serial happens to fit and so is
+            // wrong without being arithmetically detectable.
+            //
+            // ⚠ AND THE BRANCH'S INTENDED CASE IS UNREACHABLE TODAY: it exists to
+            // let a legacy UUID-keyed edition stand in for the int-pair key, and
+            // Top Shot now has 9,539 base + 4,476 parallel + **0** other-form
+            // external_ids (the uuid fossils were retired). So the only thing the
+            // old test still did was the damage above.
+            //
+            // The rule now states the intent directly: a member of the int
+            // family (base OR parallel) never displaces the key; only a
+            // genuinely non-int-family external_id may.
+            const isIntFamily = /^\d+:\d+(::\d+)?$/.test(String(row.external_id ?? ""))
+            if (isIntFamily) continue
+            if (!existing) {
               canonicalKeyByInt.set(intKey, String(row.external_id))
             }
           }
