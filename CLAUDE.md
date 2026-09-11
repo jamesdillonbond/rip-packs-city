@@ -178,7 +178,7 @@ Full detail: [docs/reference/testing-and-ci.md](docs/reference/testing-and-ci.md
 
 ### Timestamps
 
-**DATES ARE PACIFIC (Trevor operates in PT).** ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents came from a plausible timestamp produced by a clock whose zone was assumed.** Git Bash lies both ways (`TZ=` returns **UTC labelled `GMT`**; bare `date` has read a calendar DAY ahead) and the **web sandbox is PDT, not UTC**, so "subtract 7h from `date -u`" lands a day early. Trustworthy: `date '+%Z'` first, then PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` (it prints the offset, so it cannot lie silently). Convert to PT before stamping any `### <date>` here or in the ledger.
+🚨 **EVERY TIME YOU REPORT TO TREVOR IS PT — chat, summaries, ledger headings, all of it. NEVER quote a UTC/`Z` time to him** (asked repeatedly; broken again 09-10, a whole session quoting `03:12Z` at his 8:12pm). ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents came from a plausible timestamp produced by a clock whose zone was assumed.** ⚠ Git Bash lies BOTH ways and the **web sandbox is PDT, not UTC**, so "subtract 7h from `date -u`" lands a day early. Trustworthy clocks + the conversion recipe: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
 ### Windows / Git Bash
 

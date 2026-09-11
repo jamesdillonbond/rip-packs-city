@@ -1116,3 +1116,22 @@ can eat. Assert the content most likely to be lost, never the scaffolding around
 **script FILE**, which is the rule this file already gives and which three separate instances in one
 session have now paid for. ⛔ **Stop reaching for `node -e` with prose in it.** The file path costs one
 extra tool call and removes the entire class.
+
+## Times reported to Trevor are ALWAYS PT (2026-09-10, said repeatedly and broken again)
+
+🚨 **EVERY time quoted to Trevor — in chat, in a summary, in a ledger heading, anywhere — is Pacific. NEVER a UTC/`Z` time.** He has asked for this many times. On 2026-09-10 an entire session reported `03:12Z`, `02:27:34Z`, `00:01:09Z` and so on in its running commentary while it was **8:12pm** where he sits, and his reply was *"I've told you so many times."*
+
+⭐ **THE FAILURE WAS A NARROW READING OF THE RULE, which is why the rule was rewritten rather than repeated.** CLAUDE.md said *"DATES ARE PACIFIC"* and *"Convert to PT before stamping any `### <date>`"* — both true, both about **stamping**. The session converted its ledger headings correctly and then quoted raw UTC in every sentence it wrote to him, because the rule as written covered the artefact and not the conversation. **The scope is now explicit: chat and summaries are covered, not just headings.**
+
+⚠ **INTERNAL USE OF UTC IS FINE AND USUALLY RIGHT.** `pipeline_runs.started_at`, `cron.job_run_details`, GitHub Actions and Vercel are all UTC, and comparing them in UTC avoids a class of conversion bugs. ⛔ **The rule is about OUTPUT.** Work in whatever zone the data is in; convert at the moment you write a time where Trevor will read it.
+
+### The trustworthy clocks
+
+⚠ **READ THE ZONE BEFORE CONVERTING — four incidents came from a plausible timestamp produced by a clock whose zone was assumed.**
+
+- **Web sandbox (this environment): `TZ` data IS present and correct.** `TZ=America/Los_Angeles date '+%Y-%m-%d %I:%M%p %Z'` returns real PDT/PST — verified 2026-09-10 (`2026-09-10 17:48 PDT` against `2026-09-11T00:48:50Z`). This is the cheapest correct conversion here and should be the default.
+- ⛔ **Git Bash on Trevor's Windows box lies BOTH ways:** `TZ=America/Los_Angeles date` returns **UTC labelled `GMT`** (no `/usr/share/zoneinfo`), and bare `date` has read a calendar **DAY** ahead.
+- ✅ **On Windows the only trustworthy form is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"`** — it prints the offset, so it cannot be wrong silently.
+- ⚠ **"Subtract 7h from `date -u`" is NOT a safe shortcut**: it is 7h only in PDT and 8h in PST, and in a sandbox that is already local it lands a day early.
+
+⭐ **Sanity check before writing a time to him: PDT is UTC−7, PST is UTC−8.** `03:12Z` → **8:12pm PT the previous day**. A UTC timestamp after ~07:00Z is still *yesterday* in PT — which is also why ledger `### <date>` headings need the conversion.
