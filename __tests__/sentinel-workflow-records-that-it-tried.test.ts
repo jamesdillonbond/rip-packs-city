@@ -108,7 +108,7 @@ function runSentinel(fixture: string) {
 
   const ghExprs = step.run!.match(/\$\{\{[^}]*\}\}/g) ?? []
   expect(ghExprs.length, "expected exactly one GitHub expression to neutralise").toBe(1)
-  let run = step.run!.replace(/\$\{\{[^}]*\}\}/g, "harness-token")
+  const run = step.run!.replace(/\$\{\{[^}]*\}\}/g, "harness-token")
 
   const sleeps = run.match(/^\s*sleep \d+$/gm) ?? []
   expect(sleeps.length, "expected exactly one backoff sleep to neutralise").toBe(1)
