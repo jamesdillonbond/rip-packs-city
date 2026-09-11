@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { redactSecrets } from "@/lib/redact-secrets";
 import { fitTelegramMessage, fitTelegramText } from "@/lib/telegram-message";
+import { summariseAlertDelivery } from "@/lib/sentinel/alert-delivery";
 import { summariseBlindChecks, BLIND_CHECK_NAME } from "@/lib/sentinel/blind-checks";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
@@ -1697,6 +1698,63 @@ export async function POST(req: NextRequest) {
     } else {
       c.detail = `[ACK EXPIRED ${until} — ${ack.reason}] ${c.detail}`;
     }
+  }
+
+  // ── DID ANYONE HEAR THE LAST ALARM? (2026-09-11) ──────────────────────────
+  // This route has recorded per-channel delivery in `extra.notifications` since
+  // 2026-08-29 — and NOTHING HAS EVER READ IT. Measured today, across all 18 runs
+  // in the durable record: `email-FAILED:not_configured` on 18 of 18, so the
+  // estate has run on a SINGLE out-of-band channel for this alarm's whole
+  // recorded history; and then on the 00:01:09Z CRITICAL sweep that one channel
+  // returned `telegram-FAILED:http_400 … "message is too long"`. The alarm
+  // reached nobody on the one run that mattered, and every fact needed to say so
+  // was already in the table.
+  //
+  // ⚠ The failure condition is ZERO channels, not ALL channels, and that is what
+  // stops this arm being useless: email is unconfigured today, so an
+  // "every channel delivered" arm would be red from its first run until an env
+  // var changes — and a permanently-red instrument is indistinguishable from a
+  // broken one. The unconfigured channel is reported in the DETAIL instead.
+  //
+  // ⚠ It reads the PREVIOUS runs, never the current one. A check cannot observe
+  // its own delivery, because the message it would be judging has not been sent
+  // when the check runs. Full argument: lib/sentinel/alert-delivery.ts.
+  try {
+    const { data: delRows, error: delErr } = await supabase
+      .from("pipeline_runs")
+      .select("started_at, extra")
+      .eq("pipeline", "sentinel")
+      .order("started_at", { ascending: false })
+      .limit(12);
+    if (delErr) {
+      const sat = isSaturationError(delErr.message);
+      checks.push({
+        name: "Alert Delivery",
+        status: sat ? "warn" : "critical",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${delErr.message}`,
+      });
+    } else {
+      // ⚠ A failed read must not render as an answer, and `[]` from a successful
+      // read is a different state from a read that failed — the branch above owns
+      // the second one, so this branch only ever sees rows it really got.
+      const verdict = summariseAlertDelivery(
+        (delRows ?? []).map((r: any) => ({
+          started_at: r.started_at,
+          notifications: r?.extra?.notifications,
+        })),
+      );
+      checks.push({
+        name: "Alert Delivery",
+        status: verdict.status,
+        detail: verdict.detail,
+      });
+    }
+  } catch (e: any) {
+    checks.push({
+      name: "Alert Delivery",
+      status: "warn",
+      detail: `Exception: ${e?.message ?? e}`,
+    });
   }
 
   // A check explicitly disabled via config (enabled=false) is forced to ok so it
