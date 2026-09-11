@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · 🚨 I PUSHED THREE CODE COMMITS TONIGHT WITH RED CI AND DID NOT NOTICE UNTIL I WENT LOOKING — `npm test` and `tsc` are BOTH green on a tree the ESLint ratchet rejects · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
+
+**Shipped: a one-word fix (`let` → `const`) in `__tests__/sentinel-workflow-records-that-it-tried.test.ts`. Revert: `git revert` the commit. CI green after it.**
+
+🚨 **THE MISS, PLAINLY.** Runs **5076** (`e113f639c`), **5077** (`26ec426d9`) and **5079** (`0a1d63c7e`) — all three of tonight's code commits — concluded **`failure`**. I verified each one with `npm test` (16,599 → 16,610 → 16,619 tests, all green) and `npx tsc --noEmit` (clean), reported it green in the commit message, and pushed. **The docs-only commits in between all passed**, which made the badge history look alternating rather than broken, and I did not check CI until I went looking at the end of the window.
+
+⭐ **ONE JOB OF NINETEEN WAS RED, AND IT IS THE ONE NEITHER LOCAL GATE COVERS: `ESLint ratchet`.** Everything else passed — TypeScript, both vitest shards, the coverage merge/ratchet, component coverage, worker coverage and typecheck, DB invariants, both Cadence jobs, every doc guard. **`npm test` runs vitest and nothing else; `tsc --noEmit` is types only. Neither runs ESLint, so a tree can be green on both and rejected by CI.**
+
+⭐ **The rule is per-RULE, not per-total, which is why it bit on a single line:** `prefer-const grew 15 -> 16`. The offender was mine — `let run = step.run!.replace(…)` in a test harness where the value is never reassigned. Total violations actually read **717 against a baseline of 717**, so **a total-only check would have passed the broken tree.**
+
+⚠ **THE GENERALISABLE LESSON, and it is a sharper version of one already in CLAUDE.md.** The file says *"`npx vitest run <file>` proves the FILE, not the tree — run the full suite before pushing"*, and I did run the full suite. **The full suite is not the full gate.** Before pushing code here the local set is **`npm test` AND `npx tsc --noEmit` AND `npm run lint:ratchet`** — the third one existed all along and I never ran it. ⭐ **And the reason I got away with it for three commits is worth keeping too: I read my own local green as CI's verdict instead of reading CI.**
+
+✅ **FIXED AND VERIFIED:** ratchet now exits 0 (716 violations against baseline 717), the 18 cases in that file still pass, `tsc` clean. ⚠ **Deliberately NOT re-baselined to 716** — the tool invites it, but re-baselining is a deliberate act and the 1-violation gain is incidental to this fix rather than earned by it.
+
 ### 2026-09-10 · ⭐ THE ZERO-YIELD DETECTOR NEEDS NO PER-LANE DECLARATION AFTER ALL — the lane's OWN HISTORY is the declaration — and calibrating it before building it flagged 5 lanes of 243, FOUR OF THEM NEW (#79) · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
 
 **Shipped: docs only — register #79 + this entry. No code, no migration, no data mutation.**
