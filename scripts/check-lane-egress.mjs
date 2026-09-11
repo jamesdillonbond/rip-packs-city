@@ -101,6 +101,10 @@ const PINNED = {
   "cron/snapshot-pack-asks": "needs-egress",
   "wmc-fmv-populate": "pure-db",
   "cron/ownership-onchain-walk": "needs-egress",
+  // Added 2026-09-10 PT. Walks the Top Shot marketplace GQL through
+  // lib/chains/flow/topshot.ts, so pg_cron is not an option for it — it needs the
+  // route, the token and egress, exactly like the other eight.
+  "cron/offers-sweep": "needs-egress",
 };
 
 const EXTS = [".ts", ".tsx", ".mts", ".js", ".mjs"];

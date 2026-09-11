@@ -36,10 +36,13 @@ describe("the lane list is derived, not curated", () => {
   it("reads every backstopped lane out of the workflow", () => {
     const lanes = lanesFromWorkflow(fs.readFileSync(WORKFLOW, "utf8"));
     // A count assertion, because a derivation that silently matches nothing is
-    // the failure mode this repo has already shipped once.
-    expect(lanes.length).toBe(10);
+    // the failure mode this repo has already shipped once. 10 -> 11 on 2026-09-10
+    // when offers-sweep was added; the guard caught its own new lane as UNPINNED
+    // rather than passing it silently, which is the behaviour this file pins.
+    expect(lanes.length).toBe(11);
     expect(lanes.map((l: any) => l.lane)).toContain("wmc-fmv-populate");
     expect(lanes.map((l: any) => l.lane)).toContain("cron/alerts-dispatch");
+    expect(lanes.map((l: any) => l.lane)).toContain("cron/offers-sweep");
   });
 
   it("MUTATION: a workflow whose url shape changed yields zero lanes, and zero lanes is RED", () => {

@@ -246,3 +246,48 @@ jobs:
           retries: "1"
           max-time: "60"
           fail-on-auth: "false"
+
+      # ⭐ THE ELEVENTH LANE, ADDED 2026-09-10 PT — it was dead and OUTSIDE this
+      # workflow, which is why nothing here covered it.
+      #
+      # 🚨 IT IS THE ONLY WRITER OF `edition_offers.highest_offer` FOR TOP SHOT.
+      # Grep-verified across app/ and lib/: allday-offers-indexer writes All Day's,
+      # golazos-offers-indexer writes Golazos's, and offers-sweep writes Top Shot's.
+      # Nothing else writes that column. It last wrote on **2026-08-28**, so the
+      # "Best offer" on the collection grid, moment and edition pages, /api/best-offers
+      # and the `price_gap` in /api/badges have been unrefreshed for 13 days.
+      #
+      # ⚠ AND THE STALENESS IS INVISIBLE, WHICH IS THE WORSE HALF.
+      # `edition_offers.updated_at` reads FRESH for Top Shot — minutes old — because
+      # `topshot-deal-floor-serials` stamps `updated_at` while writing only `low_ask`,
+      # `low_ask_serial` and `low_ask_nft_id`. It never writes `highest_offer`. So the
+      # timestamp vouches for the ask and not for the offer sitting in the same row.
+      # ⛔ DO NOT treat `edition_offers.updated_at` as freshness for `highest_offer`.
+      #
+      # ⚠ THIS STEP IS NOT THE WHOLE FIX, stated plainly so nobody reads it as one.
+      # There were TWO failures. The lane stopped WRITING on 08-29 (72 runs/day,
+      # rows_written 0, ok_count 36/72 — still unexplained) and stopped RUNNING on
+      # 09-07 when cron-job.org went. This step addresses only the second. If it comes
+      # back and still writes zero, the first failure is the live one and is the thing
+      # to root-cause; either way pipeline_runs can see it again, which it could not
+      # while nothing called the route at all.
+      #
+      # Idempotency checked before adding, same as every lane above: the sweep is
+      # cursored across ticks via pipeline_runs.cursor_after and writes through
+      # `.upsert(batch, { onConflict: "collection_id,external_id" })` — the same
+      # cursor+upsert shape as the listings indexers. ⚠ Its cursor lives in
+      # `pipeline_runs`, which retains ~73h, so after this long dead the cursor is
+      # gone and the next tick restarts at the head. That is the route's own
+      # documented behaviour for reaching the end (cursor_after=null restarts a fresh
+      # full refresh cycle), not a new risk.
+      - name: offers-sweep — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/offers-sweep
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: offers-sweep
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
