@@ -24,6 +24,8 @@ import {
   type TeamProgress,
 } from "@/lib/fan-teams/fetchers"
 import TeamLogo from "@/components/entity/TeamLogo"
+import { isExhibitionTeamSlug } from "@/lib/team-denylist"
+import type { CSSProperties, ReactNode } from "react"
 
 export const dynamic = "force-dynamic"
 
@@ -186,7 +188,16 @@ function TeamCard({
 }) {
   const coll = getCollectionByUuid(team.collection_id)
   const urlSlug = coll?.urlSlug ?? "nba-top-shot"
-  const hubHref = `/${urlSlug}/team/${team.route_slug}`
+  // ⚠ THE DENYLIST IS ENFORCED AT THE DESTINATION, SO IT MUST BE ENFORCED HERE.
+  // /[collection]/team/[slug] and its layout notFound() the 12 exhibition
+  // rosters. This builder's slug comes from `teams_master` (97 curated league
+  // rows, 0 denylisted — measured 2026-09-11), so today it CANNOT produce a
+  // denylisted href. That is a property of the DATA, not of the code, and a
+  // single INSERT changes it silently. Gating here makes the property true by
+  // construction instead, which is cheaper than maintaining the argument.
+  const hubHref = isExhibitionTeamSlug(team.route_slug)
+    ? null
+    : `/${urlSlug}/team/${team.route_slug}`
 
   const primary = team.primary_color || "var(--rpc-surface)"
   const accent = team.secondary_color || "var(--rpc-red)"
@@ -201,11 +212,7 @@ function TeamCard({
   const cost = progress?.cost_to_complete_usd
 
   return (
-    <Link
-      href={hubHref}
-      className="rpc-card"
-      style={{ padding: 0, overflow: "hidden", borderTop: `3px solid ${accent}`, textDecoration: "none", color: "inherit", display: "block" }}
-    >
+    <CardShell href={hubHref} accent={accent}>
       {/* Branded header */}
       <div style={{ background: gradient, padding: 14, display: "flex", gap: 12, alignItems: "center", position: "relative" }}>
         <div style={{ transform: "scale(0.62)", transformOrigin: "left center", width: 96, height: 60, flex: "0 0 auto" }}>
@@ -296,7 +303,33 @@ function TeamCard({
           Open team hub →
         </div>
       </div>
+    </CardShell>
+  )
+}
+
+/**
+ * The whole card is the link. When a followed team's hub is denylisted there is
+ * no valid destination, so the card must still RENDER — the reader does follow
+ * this team, and dropping it would under-report their own follows — but as a
+ * non-link. `<Link href="#">` would be the other way to get this wrong.
+ */
+function CardShell({ href, accent, children }: { href: string | null; accent: string; children: ReactNode }) {
+  const style: CSSProperties = {
+    padding: 0,
+    overflow: "hidden",
+    borderTop: `3px solid ${accent}`,
+    textDecoration: "none",
+    color: "inherit",
+    display: "block",
+  }
+  return href ? (
+    <Link href={href} className="rpc-card" style={style}>
+      {children}
     </Link>
+  ) : (
+    <div className="rpc-card" style={style}>
+      {children}
+    </div>
   )
 }
 

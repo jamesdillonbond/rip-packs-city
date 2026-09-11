@@ -51,6 +51,7 @@ import {
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { seriesDisplay } from "@/lib/series-label"
+import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { momentSubject, notableTagLabel, specialSerialLabel } from "@/lib/moment-labels"
 import { isMarketClosed } from "@/lib/market-closed"
@@ -663,9 +664,18 @@ export default async function MomentPage(
   // rest render as the existing pill. (2026-06-15)
   const badgeArt = await fetchBadgeArt(badges.map((b) => b.title), r?.collection_id ?? null)
 
+  // ⚠ THE DENYLIST IS ENFORCED AT THE DESTINATION, SO IT MUST BE ENFORCED HERE.
+  // /[collection]/team/[slug] (and its layout) notFound() the 12 exhibition
+  // rosters, and the sitemap and PopularOnCollection both filter them -- but the
+  // href builders did not. This one takes its team name from MOMENT METADATA,
+  // an OPEN vocabulary that contains all-star rosters, so it rendered a link to
+  // a guaranteed 404 on 100 Top Shot edition pages plus their player and moment
+  // pages. Measured 2026-09-11. This is CLAUDE.md's "enumerate EVERY caller
+  // before you gate a route" applied to inbound LINKS rather than to fetchers.
+  const momentTeamSlug = e.team_name ? slugifyTeam(e.team_name) : null
   const teamHref =
-    collectionSlugUrl && e.team_name
-      ? `/${collectionSlugUrl}/team/${encodeURIComponent(slugifyTeam(e.team_name))}`
+    collectionSlugUrl && momentTeamSlug && !isExhibitionTeamSlug(momentTeamSlug)
+      ? `/${collectionSlugUrl}/team/${encodeURIComponent(momentTeamSlug)}`
       : null
 
   // Schema.org Product JSON-LD — gives crawlers a structured snapshot of the

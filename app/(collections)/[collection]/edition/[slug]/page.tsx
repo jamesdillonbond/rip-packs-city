@@ -34,6 +34,7 @@ import MomentHeroMedia from "@/components/MomentHeroMedia"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import PackThumb from "@/components/packs/PackThumb"
 import { slugifyName } from "@/lib/entity-labels"
+import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { editionHref, momentSubjectHref, momentSubjectName } from "@/lib/entity-href"
 import IpfsThumb from "@/components/entity/IpfsThumb"
 import { isTopShotFossilSlug, ASK_LABEL, notableTagLabel, fmvDayDelta, sortNotableSerials } from "@/lib/edition-detail-format"
@@ -562,7 +563,19 @@ export default async function EditionPage(
   // A team Moment stores the team in player_name; momentSubjectHref sends it to /team, which
   // exists, instead of /player, which 404s for all 370 of them.
   const playerHref = momentSubjectHref(collection, detail.player_name, detail.team_name)
-  const teamHref = detail.team_name ? `/${collection}/team/${encodeURIComponent(slugifyName(detail.team_name))}` : null
+  // ⚠ THE DENYLIST IS ENFORCED AT THE DESTINATION, SO IT MUST BE ENFORCED HERE.
+  // /[collection]/team/[slug] (and its layout) notFound() the 12 exhibition
+  // rosters, and the sitemap and PopularOnCollection both filter them -- but the
+  // href builders did not. This one takes its team name from MOMENT METADATA,
+  // an OPEN vocabulary that contains all-star rosters, so it rendered a link to
+  // a guaranteed 404 on 100 Top Shot edition pages plus their player and moment
+  // pages. Measured 2026-09-11. This is CLAUDE.md's "enumerate EVERY caller
+  // before you gate a route" applied to inbound LINKS rather than to fetchers.
+  const teamSlugCandidate = detail.team_name ? slugifyName(detail.team_name) : null
+  const teamHref =
+    teamSlugCandidate && !isExhibitionTeamSlug(teamSlugCandidate)
+      ? `/${collection}/team/${encodeURIComponent(teamSlugCandidate)}`
+      : null
 
   // 24h delta from history (latest day vs day prior).
   const dayDelta = fmvDayDelta(history.rows)

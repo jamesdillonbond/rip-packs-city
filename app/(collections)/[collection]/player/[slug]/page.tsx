@@ -10,6 +10,7 @@ import { Suspense } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRows, sectionRowsResult, structuralSection } from "@/lib/entity-section-rpc"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
@@ -299,7 +300,18 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
 
   // Portrait fallback chain: headshot_url → first edition thumbnail → none.
   const portrait = detail.headshot_url ?? proxyIpfsUrl(editions[0]?.thumbnail_url) ?? null
-  const teamHref = detail.team_slug ? `/${collection}/team/${encodeURIComponent(detail.team_slug)}` : null
+  // ⚠ THE DENYLIST IS ENFORCED AT THE DESTINATION, SO IT MUST BE ENFORCED HERE.
+  // /[collection]/team/[slug] (and its layout) notFound() the 12 exhibition
+  // rosters, and the sitemap and PopularOnCollection both filter them -- but the
+  // href builders did not. This one takes its team name from MOMENT METADATA,
+  // an OPEN vocabulary that contains all-star rosters, so it rendered a link to
+  // a guaranteed 404 on 100 Top Shot edition pages plus their player and moment
+  // pages. Measured 2026-09-11. This is CLAUDE.md's "enumerate EVERY caller
+  // before you gate a route" applied to inbound LINKS rather than to fetchers.
+  const teamHref =
+    detail.team_slug && !isExhibitionTeamSlug(detail.team_slug)
+      ? `/${collection}/team/${encodeURIComponent(detail.team_slug)}`
+      : null
 
   // Group editions by set_slug → set summary cards (buildPlayerSetCards, tested).
   // ⚠ Derived from `editions`, so it inherits that read's state: on a failure it
