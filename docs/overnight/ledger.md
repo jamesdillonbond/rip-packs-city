@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · 🧪 `npm test` IS GREEN ON THIS BOX AGAIN — a new guard's mutation cases were Windows-broken, and the overstatement I nearly shipped is the more useful half · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
+
+**Shipped: `scripts/check-lane-egress.mjs` — the import walker now emits POSIX-separated paths. No test was changed, no classification moved. Full suite 1502 files / 16,671 tests, exit 0.**
+
+⭐ **FOUND AS A BY-PRODUCT OF A CONTROL, NOT BY LOOKING FOR IT.** The full suite came back `2 failed` while I was verifying an unrelated pin fix. Rather than assume it was mine, I **stashed my work and re-ran on a clean tree — it failed identically**, which is the only thing that makes "not mine" a measurement instead of a hope.
+
+**The mechanism.** `resolveSpec` used `path.resolve(path.dirname(fromFile), spec)`. On Windows that is platform-dependent twice: it emits `\` separators, **and given a rootless-POSIX base like `/r` it prepends the current DRIVE** — `path.resolve("/r", "./lib/remote")` → `C:\r\lib\remote`. The guard's `exists` is INJECTED (so its mutation cases can run against an in-memory tree, which is good design), and that tree is keyed `/r/lib/remote.ts`. The lookup missed, the import was never followed, and a lane with a fetch one level down classified `pure-db`. Fixed with a hand-rolled join that preserves a leading `/` and treats a `C:` drive as an ordinary segment, so real Windows roots and POSIX fixtures both round-trip.
+
+🚨 **THE PART WORTH KEEPING IS THE CLAIM I WROTE FIRST AND THEN DISPROVED.** I wrote in the code comment that this was *"the guard failing OPEN — the exact direction it must never fail"*. **That is wrong, and one control killed it:** on a real tree the base is already an absolute Windows path, so `path.resolve` behaves. I checked out the **pre-fix** script and ran it — **same 11 lanes, same 2 pure-db, same evidence lines**; the only difference was `lib\chains\flow\topshot.ts:47` vs `lib/chains/…`, cosmetic. ⭐ **The guard was always correct in production on both platforms. What broke was its own mutation tests, and they broke LOUDLY — 2 of 18 red here, green on CI.** I corrected the comment before committing. **A plausible mechanism is not a measurement, even when the mechanism is real and the fix is right** — the mechanism was real, the blast radius I inferred from it was not.
+
+⚠ **THE COST IS STILL REAL, WHICH IS WHY THIS WAS WORTH FIXING RATHER THAN ANNOTATING.** `npm test` could not be run green on the box where changes are verified by hand — and memory carries the invariant *"npm test is GREEN on this box — a red file MEANS something"*. **A permanently-red file trains a reader to ignore it**, which is precisely how a true red gets waved through; this repo has already paid for that with a permanently-red stall arm.
+
+✅ **Verified:** the guard's own tests **18/18**; the script still **PASSES on the real tree** with the pinned classifications unchanged (11 lanes, 2 pure-db — `cron/alerts-dispatch`, `wmc-fmv-populate`); `tsc` 0; ESLint ratchet 0; **full suite 1502/1502 files, 16,671 passed, exit 0** (was `1 failed | 1501 passed`).
+
+**Revert:** `git revert` the commit — it restores `path.resolve` and the two Windows-only test failures.
+
 ### 2026-09-11 · 🛡 A DB PIN WENT STALE 10 HOURS BEFORE ITS BADGE WOULD HAVE SAID SO — the blocking guard was green on a definition that had not run in production since 23:21Z · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
 
 **Shipped: `supabase/tests/rpc_thp_leg_fmv_coverage.sql` (verbatim block + assertions + header) and the `__tests__/db-invariants-drift-guard.test.ts` pin entry re-pointed. No migration, no data mutation — the FUNCTION was already correct in prod; the PIN was describing an older one.**

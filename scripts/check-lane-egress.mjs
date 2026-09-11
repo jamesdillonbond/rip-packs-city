@@ -128,17 +128,57 @@ const SPEC_RES = [
  * every transitive mutation case silently unresolvable — which is to say, GREEN.
  * That is exactly how a mutation test comes to prove nothing.
  */
+/**
+ * ⚠ EVERY PATH THIS WALKER PRODUCES IS POSIX-SEPARATED (2026-09-11). `path.resolve`
+ * is platform-dependent twice over on Windows: it emits `\` separators, and given a
+ * rootless-POSIX base like `/r` it also prepends the current DRIVE — so
+ * `path.resolve("/r", "./lib/remote")` returns `C:\r\lib\remote`. The injected
+ * `exists` above is keyed on the CALLER's spelling, so for the in-memory fixtures
+ * (keyed `/r/...`) that lookup missed, the import was never followed, and a lane
+ * with a fetch one level down classified `pure-db`.
+ *
+ * ⭐ STATED PRECISELY, BECAUSE THE TEMPTING OVERSTATEMENT IS WRONG: this was NOT the
+ * guard failing open in production. On a real tree the base is already an absolute
+ * Windows path, so `path.resolve` behaved and the classification was correct on both
+ * platforms — verified by running the pre-fix script here, which returned the same 11
+ * lanes and the same 2 pure-db. What broke was **this file's own mutation tests**, and
+ * they broke LOUDLY: 2 of 18 red on Trevor's box, green on CI. ⛔ The cost is still
+ * real — `npm test` could not be run green on the box where changes are verified by
+ * hand, and a permanently-red file trains a reader to ignore it, which is how a true
+ * red gets waved through.
+ *
+ * `resolveInto` therefore does the join itself instead of delegating to `path`. A
+ * leading `/` is preserved; a `C:` drive survives as an ordinary segment, so real
+ * Windows roots and the tests' POSIX fixtures both round-trip unchanged.
+ */
+const toPosix = (p) => String(p).replace(/\\/g, "/");
+
+function resolveInto(dir, spec) {
+  const absolute = dir.startsWith("/");
+  const out = [];
+  for (const seg of `${dir}/${spec}`.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      out.pop();
+      continue;
+    }
+    out.push(seg);
+  }
+  return (absolute ? "/" : "") + out.join("/");
+}
+
 function resolveSpec(spec, fromFile, exists) {
+  const from = toPosix(fromFile);
   let base;
-  if (spec.startsWith("@/")) base = path.join(ROOT, spec.slice(2));
-  else if (spec.startsWith(".")) base = path.resolve(path.dirname(fromFile), spec);
+  if (spec.startsWith("@/")) base = resolveInto(toPosix(ROOT), spec.slice(2));
+  else if (spec.startsWith(".")) base = resolveInto(from.slice(0, from.lastIndexOf("/")), spec);
   else return null;
   for (const e of EXTS) {
     const c = base + e;
     if (exists(c)) return c;
   }
   for (const e of EXTS) {
-    const c = path.join(base, "index" + e);
+    const c = `${base}/index${e}`;
     if (exists(c)) return c;
   }
   return exists(base) ? base : null;
@@ -157,7 +197,7 @@ export function lanesFromWorkflow(workflowText) {
     const lane = m[1].replace(/\/+$/, "");
     if (seen.has(lane)) continue;
     seen.add(lane);
-    out.push({ lane, routeFile: path.join(ROOT, "app", "api", lane, "route.ts") });
+    out.push({ lane, routeFile: toPosix(path.join(ROOT, "app", "api", lane, "route.ts")) });
   }
   return out;
 }
@@ -174,14 +214,14 @@ export function classifyLane(entryFile, { readFile = (f) => fs.readFileSync(f, "
     seen.add(f);
     const code = stripComments(readFile(f));
     code.split("\n").forEach((line, i) => {
-      if (CALL_RE.test(line)) calls.push(`${path.relative(ROOT, f)}:${i + 1}`);
+      if (CALL_RE.test(line)) calls.push(`${toPosix(path.relative(ROOT, f))}:${i + 1}`);
     });
     for (const re of SPEC_RES) {
       re.lastIndex = 0;
       let m;
       while ((m = re.exec(code))) {
         const spec = m[1];
-        if (NET_PKG.test(spec)) deps.push(`${spec} (via ${path.relative(ROOT, f)})`);
+        if (NET_PKG.test(spec)) deps.push(`${spec} (via ${toPosix(path.relative(ROOT, f))})`);
         const r = resolveSpec(spec, f, exists);
         if (r) stack.push(r);
       }
