@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ⭐ GITHUB'S SCHEDULER RESUMED AT 22:01 PT AND THE NEW TAG CAUGHT IT THE SAME MINUTE — which exposed a second bug in my own watchdog: an `unknown` that was actually KNOWN · Claude Code (cloud), Trevor: "Keep going"
+
+**Shipped: `rpc_gha_schedule_watchdog()` verdict branches reordered (migration `20260911053500`). Nothing else touched.**
+
+⭐ **THE STALL ENDED, AND THE INSTRUMENT SHIPPED AN HOUR EARLIER IS WHAT SAW IT.** A `sentinel-heartbeat` row landed **22:01 PT carrying `event = schedule`** — the first GitHub-delivered scheduled tick since **18:30 PT**, a ~3.5h outage. ⚠ **Before tonight that row was indistinguishable from a hand-fired dispatch**, which is the entire reason the tag was added.
+
+🚨 **AND THE 22:08 PT TICK THEN MISREPORTED IT** as `unknown_probe_younger_than_window`. No false alarm — but it **could** tell: a `schedule`-tagged tick inside the window is positive proof of delivery. The deploy grace sat ABOVE the delivery test, so a perfectly healthy scheduler would have read "cannot tell" for the probe's whole first six hours, exactly when somebody would most want to read it.
+
+⭐ **THE LESSON IS THE SYMMETRY, and it is why this is its own entry.** The honesty canon here is almost always invoked against *a failed read rendering as a fact*, and the reflex that follows is to widen `unknown`. **An `unknown` that is actually KNOWN is the same defect facing the other way.** Honesty runs in both directions: don't claim what you can't see, and don't disclaim what you can.
+
+✅ **Fixed by testing `scheduled_ticks_6h > 0` FIRST**; the other three branches are unchanged and still reach `stalled` only after the grace. Verified live: the function now returns **`verdict: delivering`, `gha_schedule_stalled: false`, 1 scheduled tick 11 min old**. ⚠ **Caught by reading what a live tick actually wrote — the second defect tonight found that way and the second that no amount of re-reading the code would have surfaced.**
+
+✅ **Everything else from tonight verified unattended in the same window:** watchdog pg_cron ticks at **21:38 and 22:08 PT**; `wmc-fmv-populate` backstop tick at **22:04 PT** reading `http_caller_alive_stood_down` (the route had run at 22:02, so the stand-down branch is confirmed in production, not just forced); and `dead-lane-backstop-heartbeat` at **22:02 PT** carrying `event = workflow_dispatch`, so both heartbeat writers tag correctly in prod.
+
+**Revert:** re-apply the function body from `20260911045500`. **Gate:** live call returns `delivering`; no schedule, grant or watchlist change.
+
 ### 2026-09-10 · ⚠ A CAVEAT AGAINST MY OWN SHIP FROM MINUTES EARLIER: I put the new backstop INSIDE the documented lock-collision window, because I checked cron MINUTES and the thing that matters is how long the other job RUNS · Claude Code (cloud), Trevor: "Keep going"
 
 **Shipped: `rpc-wmc-fmv-populate-backstop` rescheduled `3,18,33,48` → `4,24,44` (migration `20260911052600`). Function unchanged.**
