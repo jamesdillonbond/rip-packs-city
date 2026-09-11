@@ -89,6 +89,20 @@ function greenFixtures(): Fixtures {
       },
       error: null,
     },
+    // Zero-yield arm (added 2026-09-10, #79). Healthy fixture: a real population
+    // inspected, nothing fallen to zero. ⚠ It must be supplied EXPLICITLY — the
+    // arm treats an unreadable payload and an inspected-nothing answer as
+    // UNMEASURED rather than as health, which is the whole point of it and is
+    // what makes an omission here fail loudly instead of silently passing.
+    "rpc:check_zero_yield_lanes": {
+      data: {
+        inspected: 243,
+        suppressed: 0,
+        window: { baseline_days: 30, zero_days: 7, min_runs: 50 },
+        offenders: [],
+      },
+      error: null,
+    },
     v_rpc_trust_health: {
       data: [
         { metric: "topshot_fmv_stale_hours", value: 1, breach_at: 6, status: "ok" },

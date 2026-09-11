@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { redactSecrets } from "@/lib/redact-secrets";
 import { fitTelegramMessage, fitTelegramText } from "@/lib/telegram-message";
 import { summariseAlertDelivery } from "@/lib/sentinel/alert-delivery";
+import { summariseZeroYield } from "@/lib/sentinel/zero-yield";
 import { summariseBlindChecks, BLIND_CHECK_NAME } from "@/lib/sentinel/blind-checks";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
@@ -1752,6 +1753,37 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     checks.push({
       name: "Alert Delivery",
+      status: "warn",
+      detail: `Exception: ${e?.message ?? e}`,
+    });
+  }
+
+  // ── LANES THAT RAN, SUCCEEDED, AND FOUND NOTHING (2026-09-10, #79) ────────
+  // The fourth lane state. `Pipeline Silence` sees a lane ticking; `Pipeline
+  // Success` sees it green; neither can see that it has written nothing for ten
+  // days. That is how laliga_golazos listings went 7+ days stale behind ~670
+  // clean runs (#78) with every instrument OK.
+  //
+  // ⚠ The rule keys on a FALL, not a level — the lane's own history is its
+  // declaration — because a finished backfill's zero is CORRECT. Calibrated
+  // before it shipped: 5 lanes of 243. Full argument: lib/sentinel/zero-yield.ts
+  // and the SQL in check_zero_yield_lanes().
+  try {
+    const { data: zyData, error: zyErr } = await supabase.rpc("check_zero_yield_lanes");
+    if (zyErr) {
+      const sat = isSaturationError(zyErr.message);
+      checks.push({
+        name: "Zero-Yield Lanes",
+        status: sat ? "warn" : "critical",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${zyErr.message}`,
+      });
+    } else {
+      const verdict = summariseZeroYield(zyData as any);
+      checks.push({ name: "Zero-Yield Lanes", status: verdict.status, detail: verdict.detail });
+    }
+  } catch (e: any) {
+    checks.push({
+      name: "Zero-Yield Lanes",
       status: "warn",
       detail: `Exception: ${e?.message ?? e}`,
     });
