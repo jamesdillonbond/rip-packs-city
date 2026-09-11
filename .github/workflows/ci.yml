@@ -235,6 +235,25 @@ jobs:
         # Runs even if tsc failed — same reason as check-brand-tokens above.
         if: ${{ !cancelled() }}
 
+      # ⭐ EGRESS CLASS OF EVERY BACKSTOPPED LANE (2026-09-10 PT).
+      # `rpc_wmc_fmv_populate_backstop` runs wmc-fmv-populate's work from pg_cron
+      # with no token, and its whole justification is that the lane reaches no
+      # external network. Nothing checked that. A fetch added anywhere in that
+      # lane's import tree makes the backstop quietly do LESS than the route it
+      # stands in for, with every other instrument green.
+      # ⚠ The obvious check — grep the route file — returns 0 for FOUR of the ten
+      # lanes and is WRONG on two of them (snapshot-pack-asks reaches the network
+      # through lib/packs/live-pack-listings.ts, ownership-onchain-walk through
+      # @onflow/fcl). So this walks imports transitively and counts CALL SITES,
+      # not URL strings: lib/collections.ts holds 28 `https://` lines and no
+      # fetch, and counting strings would have thrown away the real finding.
+      # Lanes are DERIVED from dead-lane-backstop.yml, so a new lane arrives as an
+      # unpinned failure rather than as silence, and ZERO lanes parsed is RED.
+      # Mutation-proven both directions in
+      # __tests__/lane-egress-classification-guard.test.ts. Pure node, no network.
+      - run: node scripts/check-lane-egress.mjs
+        if: ${{ !cancelled() }}
+
   # Cadence type-check harness for the purchase-moment transaction (canonical
   # source: lib/chains/flow/cadence/purchase-moment.ts after the 2026-05-30
   # Phase-D reorg; lib/cadence/purchase-moment.ts is a re-export shim).

@@ -26,6 +26,18 @@
 --
 -- REVERT: re-apply the function body from
 -- `20260911045500_audit_20260911_a_db_side_watchdog_so_a_github_scheduler_stall_cannot_be_invisible`.
+--
+-- ANON-EXECUTE DECISION (added 2026-09-10 PT; the guard was red on `main` without it).
+-- This is a SAME-SIGNATURE `CREATE OR REPLACE`, which PRESERVES the existing ACL
+-- rather than creating a new overload with default PUBLIC EXECUTE, so the revoke
+-- in the creating migration (20260911045500) still stands and this file changes
+-- no grant at all. Verified live before writing this, with
+-- `has_function_privilege` and not acl text:
+--   anon=false  authenticated=false  service_role=true  postgres=true
+-- ⛔ So the correct fix here is the MARKER, not a REVOKE: adding a REVOKE to an
+-- already-applied migration would pose as a no-op while being the only statement
+-- in the file that could change production.
+-- anon-exec: already revoked in 20260911045500 — rpc_gha_schedule_watchdog is a pg_cron-only watchdog, never reached by a browser caller
 -- ============================================================================
 
 -- anon-exec: UNCHANGED -- rpc_gha_schedule_watchdog keeps the REVOKE FROM PUBLIC, anon,
