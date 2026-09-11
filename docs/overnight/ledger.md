@@ -30,6 +30,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ✅ **The dispatch was verified by its WORK, not its badge:** all ten lanes wrote `pipeline_runs` rows at 03:40:13–03:40:22Z with `ok=true`.
 
+**Files:** `docs/overnight/ledger.md` (this entry + the back-filled 09-09 one), `docs/overnight/metrics-latest.json`, `docs/overnight/flow-ecosystem-watch.md`, `docs/overnight/inbox/` (3 filings + `INDEX.md`), `docs/handoff-2026-09-09-overnight-pass.md` and `docs/handoff-2026-09-10-overnight-pass.md` (each given a correction banner, bodies kept verbatim), `docs/reference/known-issues.md` (#76 gains the re-measurement — the backstop has never self-fired, and the pg_cron-vs-cron-job.org split is now read from `cron.job` rather than inferred from lane silence).
+
 **Revert:** docs/artifacts only — `git revert` the commit. The `workflow_dispatch` is a one-off idempotent tick (every route in that workflow was checked for idempotency in its own header); there is nothing to undo.
 
 ### 2026-09-10 · ✅ #76's ROOT CAUSE IS SETTLED BY TREVOR — a VERCEL SPEND-CAP pause — so the rule is "escalate, never unpause", and metered SPEND is now an off-limits class for autonomous work · Claude Code (cloud), Trevor: "It was a spend management pause, but I increased budget slightly"
