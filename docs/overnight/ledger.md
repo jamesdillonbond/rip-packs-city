@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · ✅ SHIPPED THE NIGHT PASS'S QUEUED Q1 — the board-MV staleness arm scanned a 154 MB table EIGHT TIMES per call; now once, 8.0x fewer reads · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can... plan on working autonomously for the next 5 hours"
+
+**Shipped (1, DB-only):** migration `20260911091415_perf_board_mv_refresh_max_stale_hours_single_pass_scan`. The 01:0x PT cloud pass diagnosed this fully and **could not ship it** — it re-declares a live `SECURITY DEFINER` instrument function and that pass had no `vitest`/`tsc` to run the `anon-exec` guard which had reddened `main` on this exact operation < 24 h earlier. **This session has CI, so the handoff was executed rather than re-queued.**
+
+⭐ **THE COST IS MEASURED IN BUFFERS, BY THE SAME INSTRUMENT ON BOTH SIDES — because this instance's saturation confounds wall-clock in both directions.** `board_mv_refresh_max_stale_hours()` ran a **correlated subquery once per active watchlisted MV (8)**, each a Parallel Seq Scan of `cron.job_run_details` — **261,934 rows / 154 MB, oldest 2026-07-09, carrying ONLY a `runid` pkey**, so no `jobid` index exists to use. Measured 2026-09-11: **OLD `shared hit=576 read=150601`** (`loops=8`) → **NEW `shared hit=174 read=18759`** (one scan via a `MATERIALIZED` CTE) = **8.0x fewer physical reads**, exactly the 8-loops→1 prediction.
+
+⚠ **AND I DID NOT CONFIRM THE SYMPTOM THAT MOTIVATED IT, which is worth stating rather than quietly omitting.** The pass reported this leg timing out `rpc_ops_snapshot()` and the live `v_rpc_trust_health` board arm at 57014. **On my run the OLD form completed in 970 ms on a warm cache.** The timeout is **load-dependent and was not reproducible on demand** — so this ships justified on the **buffer reduction**, which is the durable signal, and the migration header says so explicitly to stop the next reader hunting a reproducible timeout as "confirmation".
+
+✅ **EQUIVALENCE PROVEN OVER THE POPULATION, not argued from the plan** — this repo's rule is that scoping an aggregate is an equivalence CLAIM. Both forms were run side by side **per watchlist row**: identical `last_end` for **all 8 active MVs** under `IS NOT DISTINCT FROM` (so NULLs compare equal). `max()` over a union of groups equals `max()` of the per-group maxes, which is what makes the pre-aggregation safe.
+
+⛔ **AN INDEX WAS THE FIRST CHOICE AND IS BLOCKED:** `CREATE INDEX … ON cron.job_run_details (jobid, status, end_time)` → **`42501 must be owner of table job_run_details`** — the table is pg_cron-owned. Hence a rewrite rather than an index, and hence the durable lever is retention, not tuning.
+
+✅ **Post-ship verified live:** function returns **3.12** (vs 2.11 five hours earlier — normal drift, the arm is `ok`); **`anon` EXECUTE still `false`, `authenticated` `false`, `service_role` `true`** (`has_function_privilege`, not acl text) — confirming `CREATE OR REPLACE` does **not** reset a function's ACL, which is why the migration carries an `anon-exec:` marker and deliberately **no REVOKE**; `check_secdef_anon_exec_drift()` length **0**. Repo file recovered **programmatically and proved byte-exact** against prod (`md5 f9ceeea9af73a3ebe5b8059374dc860b`, md5 taken from DISK) and committed in the same turn, so `migration-parity` never saw a gap. All 5 migration guards green (33 assertions).
+
+⚠ **UNRELATED BREACH SURFACED IN THE SAME POST-SHIP READ, recorded so it is not mistaken for regression from this ship:** `topshot_impossible_parallel_serials` = **4 against breach_at 3** (trust 37/38). It is a data-quality arm about F1 parallel serial mis-attribution and touches nothing this migration changed. **Being investigated next, separately.**
+
+**Revert:** re-apply the body from `20260802152023` (correlated-subquery form, `/3600.0`, COALESCE to `w.watchlisted_at`). **Target metric:** `board_mv_refresh_max_stale_hours()` stays a single-scan plan and the board arm keeps reporting without timing out.
+
+⛔ **DURABLE COMPANION, NOT DONE — and it is the real fix for the CLASS rather than this instance:** `cron.job_run_details` has **no retention at all** (261,934 rows in ~2 months, growing). A prune to 14–30 d would remove the pressure entirely, but it is a bulk `DELETE` on a pg_cron-owned table — **destructive, so it needs Trevor.**
+
 ### 2026-09-11 · ⚠ NO-PUSH cloud run (bash/clone mount down, 3rd night) — health GREEN, one real instrument-perf regression found + QUEUED (couldn't CI-verify a live-function replace), GHA backstop self-fired for the first time · rpc-nightly-autonomous-pass (cloud, NO-PUSH)
 
 **Shipped: NOTHING.** Sandbox bash/clone failed identically to the last two cloud runs (Windows Sept-8 update; Plan9 share `c` unmounted) → no git, no `vitest`/`tsc`. DB reads/DDL, Vercel, Sentry, artifacts, mount file reads all worked. This entry + handoff + metrics are on the mount **uncommitted** — commit from desktop, run the three ledger guards there. Real time established from DB (`now()`=08:0xZ, `max(ingested_at)` fresh) = 01:0x PT genuine overnight.
