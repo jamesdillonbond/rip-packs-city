@@ -58,6 +58,16 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
+          # ⭐ WHICH TRIGGER DELIVERED THIS TICK (2026-09-10 PT). Until now the
+          # heartbeat recorded that the workflow RAN but not WHO RAN IT, so a
+          # `schedule` tick and a hand-fired `workflow_dispatch` wrote identical
+          # rows — and on 2026-09-10 that is exactly the distinction nobody could
+          # make: GitHub delivered ZERO scheduled runs repo-wide for hours while
+          # dispatches succeeded, and `pipeline_runs` could not tell the two
+          # apart. With this field, "GitHub's scheduler is delivering" becomes a
+          # fact readable from the DATABASE, which is the one place that keeps
+          # working when GitHub is the thing that is broken.
+          EVENT: ${{ github.event_name }}
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
             echo "::warning::No Supabase credentials on this runner — no invocation heartbeat was written, so for THIS run a shed tick and a dead route stay indistinguishable."
@@ -70,7 +80,7 @@ jobs:
           # writes 0 because it genuinely moves no rows (a MEASURED zero), while a
           # heartbeat has measured NOTHING. `log_pipeline_run` preserves an
           # explicit NULL, so the distinction survives into the table.
-          PAYLOAD=$(printf '{"p_pipeline":"sentinel-heartbeat","p_started_at":"%s","p_rows_found":null,"p_rows_written":null,"p_rows_skipped":null,"p_ok":true,"p_error":null,"p_collection_slug":null,"p_cursor_before":null,"p_cursor_after":null,"p_extra":{"source":"github-actions","run_id":"%s","run_attempt":"%s"}}' "$STARTED" "$RUN_ID" "$RUN_ATTEMPT") || PAYLOAD=""
+          PAYLOAD=$(printf '{"p_pipeline":"sentinel-heartbeat","p_started_at":"%s","p_rows_found":null,"p_rows_written":null,"p_rows_skipped":null,"p_ok":true,"p_error":null,"p_collection_slug":null,"p_cursor_before":null,"p_cursor_after":null,"p_extra":{"source":"github-actions","event":"%s","run_id":"%s","run_attempt":"%s"}}' "$STARTED" "${EVENT:-unknown}" "$RUN_ID" "$RUN_ATTEMPT") || PAYLOAD=""
 
           RESP=$(curl -s --max-time 20 -X POST "$SUPABASE_URL/rest/v1/rpc/log_pipeline_run" \
             -H "apikey: $SUPABASE_KEY" \

@@ -70,6 +70,62 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # ⭐ THE SCHEDULER-LIVENESS PROBE (added 2026-09-10 PT). This workflow shipped
+      # earlier tonight and its coverage claim rested on TWO hand-fired dispatches;
+      # by 04:12Z it had missed SIX consecutive scheduled slots, and GitHub had
+      # delivered ZERO scheduled runs repo-wide since 01:30Z against a 7-hour
+      # baseline of ~4.3/hour. Nothing in the database could tell that apart from
+      # ordinary shedding, because a dispatched run and a scheduled run wrote
+      # identical rows — and the only watcher that could have noticed,
+      # `pipeline-sentinel`, is itself a GHA `schedule` and died in the same
+      # stall. Correlated alarm and subject: the failure this estate keeps
+      # repeating.
+      #
+      # ⭐ WHY HERE AND NOT ONLY ON THE SENTINEL: sampling rate. The sentinel is
+      # hourly and GitHub's measured delivery on this repo is ~1 in 3, so a
+      # 3-hour gap there is unremarkable and an alarm keyed on it cannot fire
+      # quickly without crying wolf. This workflow fires 4x/hour, so the same
+      # window carries 12 slots — zero delivered is ~0.8% under the 1-in-3 model
+      # instead of ~30%. `rpc_gha_schedule_watchdog()` (pg_cron, every 30 min,
+      # an INDEPENDENT scheduler) reads these rows.
+      #
+      # ⚠ IT MUST NEVER FAIL THE JOB, for the same reason the sentinel's must
+      # not: this is telemetry about a backstop, and a broken instrument that
+      # reds a badge masks the signal it exists to record. Missing credentials
+      # warn and exit 0; the lane calls below still run.
+      #
+      # ⚠ rows_* stay NULL, never 0 — a heartbeat has measured NOTHING, while a
+      # lane writes 0 because it genuinely moved no rows.
+      - name: Record which trigger delivered this tick
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::warning::No Supabase credentials on this runner — no heartbeat was written, so for THIS run a shed tick and a delivered one stay indistinguishable."
+            exit 0
+          fi
+
+          STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ) || STARTED=""
+
+          PAYLOAD=$(printf '{"p_pipeline":"dead-lane-backstop-heartbeat","p_started_at":"%s","p_rows_found":null,"p_rows_written":null,"p_rows_skipped":null,"p_ok":true,"p_error":null,"p_collection_slug":null,"p_cursor_before":null,"p_cursor_after":null,"p_extra":{"source":"github-actions","event":"%s","run_id":"%s","run_attempt":"%s"}}' "$STARTED" "${EVENT:-unknown}" "$RUN_ID" "$RUN_ATTEMPT") || PAYLOAD=""
+
+          RESP=$(curl -s --max-time 20 -X POST "$SUPABASE_URL/rest/v1/rpc/log_pipeline_run" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            -w "\n%{http_code}") || RESP=""
+
+          CODE=$(printf '%s' "$RESP" | tail -1) || CODE=""
+          case "$CODE" in
+            2*) echo "dead-lane-backstop-heartbeat written (HTTP $CODE), event=${EVENT:-unknown}" ;;
+            *)  echo "::warning::heartbeat NOT written (HTTP ${CODE:-none}) — for THIS run a shed tick and a delivered one stay indistinguishable." ;;
+          esac
       # Dispatch BEFORE send: dispatch fills the outbox, send drains it. Reversed,
       # a backstop tick delivers nothing until the following tick.
       - name: alerts-dispatch — backstop trigger
