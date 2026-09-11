@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · 🚨 THIS REPO DECIDED IN WRITING THAT A VALUE "WOULD BE A LIE" AND THEN WROTE IT 9,486 TIMES — the decision reached one writer and never the other (#83) · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
+
+**Shipped: docs only — register **#83**, inbox filing `2026-09-11T1014Z-…`, INDEX. No code, no migration, no data mutation.**
+
+⭐ **FOUND BY PROBING SOMETHING ELSE, AND IT IS NOT THE ANSWER TO THAT QUESTION.** I opened **#70 / go-live M2** ("All Day FMV confidence is sliding; the next probe is UPSTREAM, not another pipeline read") and started by characterising our own All Day volume. That turned up a **984-sale day on 09-10** against a ~160/day trough — and drilling it produced a different defect entirely. **Filed as its own item rather than folded into M2, because it does not bear on M2 at all.**
+
+⚠ **AND MY FIRST READ OF IT WAS WRONG, which is why the address was worth looking up.** The 09-10 spike is **444 sales in one hour at an average of $0.26**, apparently to a single buyer — I read that as a floor-sweeping bot. **It is not a buyer at all.** `0xddfbe848a81b2236` is All Day's **constant Dapper CUSTODIAN**, and this repo already says so: the 2026-07-19 handoff reads *"Set `buyer` to NULL for AllDay/UFC. Those collections deposit to a constant Dapper custodian … so writing it as the buyer **would be a lie**. Seller only."* **One grep turned a market story into a data-integrity finding.**
+
+🚨 **THE RULING WAS APPLIED TO ONE WRITER AND NEVER THE OTHER.** That ship changed the counterparty-RECOVERY worker. The offending rows come from the **MAIN INDEXERS** — `onchain_dapper_v2` **6,482** (06-14 → 09-10) and `onchain_dapper_v1` **2,997** (05-18 → 09-10), plus 7 from `allday_studio_history_v1`: **9,486 rows, 62 distinct days, 1,819 editions.**
+
+⚠ **INTERMITTENT, DOWN ~97%, NOT OVER:** 721 May · 2,740 June · **5,290 July (last 07-20)** · 174 August · **561 on 09-10 alone**, while every other day 08-21 → 09-11 reads **zero**. ⛔ **The July cliff falls one day after the buyer-honesty ship — offered as a correlation and explicitly NOT as cause**, since that ship touched a different writer. **A rare TX SHAPE that re-creates hundreds of rows in one event** is what the distribution actually supports.
+
+⛔ **THE OBVIOUS HYPOTHESIS WAS TESTED AND REFUTED.** "It is a post-outage catch-up artifact" — 09-10 carried both real-time ingests and a recovery burst (21:56–22:20Z), so I split on ingest time: **511 custodian rows landed in REAL TIME (<21:40Z)**, only 50 in the catch-up. **The live indexer writes it.**
+
+**Blast radius:** `buyer_address` keys wallet pages, buyer analytics, top-buyer boards and the insider detectors — one fake mega-buyer across 1,819 editions, and the exact inverse of the honest shape the 07-19 decision chose (**NULL** says "we do not know who bought this", which is true). ⚠ **FMV and M2 are NOT implicated** — the sales are real moments at real prices, only the counterparty is wrong, and I say so in the item so nobody folds it into the M2 slide.
+
+⭐⭐ **THE HALF THAT TRANSFERS: A DECISION RECORDED IN PROSE REACHES THE SESSION THAT WROTE IT AND NOTHING ELSE.** The custodian address appears in a handoff and a ledger entry — **nowhere in code, no constant, no guard** — which is precisely why one writer inherited the rule and the other never did. **A constant with a comment, or a check, is what makes a decision binding on the NEXT writer.** This estate has the same shape recorded for grep-able defects ("grep for the EXPRESSION, not the file"); this is its governance twin.
+
+⛔ **NOTHING SHIPPED, and the reason is the same class as #82:** extending the rule to the indexers is a route change, and **backfilling 9,486 rows to NULL is a bulk `UPDATE` on `sales` — destructive class, Trevor's call** — though it is the honest end state.
+
+**Revert:** docs only — `git revert` the commit.
+
 ### 2026-09-11 · 🧪 `npm test` IS GREEN ON THIS BOX AGAIN — a new guard's mutation cases were Windows-broken, and the overstatement I nearly shipped is the more useful half · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
 
 **Shipped: `scripts/check-lane-egress.mjs` — the import walker now emits POSIX-separated paths. No test was changed, no classification moved. Full suite 1502 files / 16,671 tests, exit 0.**
