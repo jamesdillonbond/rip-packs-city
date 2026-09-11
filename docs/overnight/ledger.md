@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ✅ THE TEN DEAD LANES HAVE A CALLER AGAIN — a GHA backstop, because their ONLY scheduler was cron-job.org and this repo has already been bitten by exactly that · Claude Code (cloud), Trevor: "Do it all"
+
+**Shipped: `.github/workflows/dead-lane-backstop.yml` (new, 10 lanes / 2 jobs) + `__tests__/dead-lane-backstop-covers-real-routes.test.ts` (7 cases). Revert: `git revert` the commit — deleting the workflow restores the previous state exactly; no route, migration or data change.**
+
+🚨 **THE PRECONDITION WAS MEASURED, NOT ASSUMED — and this repo had already written the finding down five months ago.** `sales-indexers-backstop.yml`'s own header: *"cron-job.org auto-disables a job that persistently fails its 30s client cap, so a single bad window can silently kill sales ingest (the 2026-05-31 topshot-sales-indexer 01:32-08:02 UTC outage)."* **Four sales lanes got a backstop then. These ten never did — and that is the entire difference between a lane that recovered by itself after the 09-10 pause and a lane still dead eleven hours later.** ⭐ The 3-of-3 vs 0-of-9 cadence split I filed earlier tonight is that same mechanism recurring where nobody had built the net.
+
+⚠ **IDEMPOTENCY WAS CHECKED PER ROUTE BEFORE ADDING IT, because a backstop that double-writes is worse than a dead lane.** `alerts-dispatch` enqueues **deduped** (its own header); `alerts-send` *"claims pending `alert_deliveries` for a channel (**atomic**) … then marks each row sent/failed"* — it cannot double-send; the listings indexers are block-cursor (`event_cursor`) + upsert `onConflict`; the retries are `.update()` only, no inserts; `snapshot-pack-asks` goes through `upsert_pack_ask_state`; `wmc-fmv-populate` through write-in-place `populate_*` RPCs. **All ten are `after()` fire-and-forget behind `INGEST_SECRET_TOKEN`, so a duplicate tick advances a cursor or no-ops.**
+
+⛔ **IT IS A FLOOR, NOT A RESTORATION, and the header says so rather than implying otherwise.** GitHub deprioritises `schedule`: measured on this repo 2026-08-27, **16 of 48 runs delivered (one third), max gap 191.9 min**. A lane whose primary is a 5-minute cron gets something nearer 45-minute cover from here. ⛔ **Tightening the cron does not fix that** — GitHub drops the extra fires too, and `sales-indexers-backstop.yml` already records that lesson. **The real fix stays the operator one: re-enable the cron-job.org entries.**
+
+⭐ **Minutes 12/27/42/57 were DERIVED from every `cron:` in `.github/workflows`, not picked** — and the test re-derives the same set, so a future workflow claiming one of those minutes reds here instead of quietly contending. Two jobs, so a slow ingest step cannot starve the user-facing alert lanes behind it.
+
+⚠ **Every step is `continue-on-error` with `fail-on-status: false` ON PURPOSE:** a noisy backstop badge competes with the real alarm rather than adding to it. **Whether the lanes ran is read from `pipeline_runs`, never from this workflow's badge** — and the test pins that, so nobody "improves" it into a second pager.
+
+✅ **Five mutations, five caught:** a route renamed out from under a URL (a backstop firing 404s forever while reading green) · a step allowed to red on auth · a cron colliding with another workflow · a `max-time` outgrowing its job timeout · `continue-on-error` dropped. **Full gate green — 1,498 files / 16,626 tests, `tsc` clean, and `npm run lint:ratchet` exit 0**, which is the gate I shipped three red commits past earlier tonight.
+
+⛔ **STILL TREVOR'S, and unchanged by this:** re-enabling the cron-job.org entries, and `RESEND_API_KEY` / `ALERT_EMAIL`. **Egress from this sandbox is 403 at the proxy for both `www.rippackscity.com` and `api.cron-job.org` — tested, not assumed** — so neither is reachable from here at any price.
+
 ### 2026-09-10 · 🚨 I PUSHED THREE CODE COMMITS TONIGHT WITH RED CI AND DID NOT NOTICE UNTIL I WENT LOOKING — `npm test` and `tsc` are BOTH green on a tree the ESLint ratchet rejects · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
 
 **Shipped: a one-word fix (`let` → `const`) in `__tests__/sentinel-workflow-records-that-it-tried.test.ts`. Revert: `git revert` the commit. CI green after it.**
