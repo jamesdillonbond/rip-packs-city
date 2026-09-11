@@ -2,9 +2,11 @@
 -- coverage leg of the trust-board precompute, on pg_cron jobid 325
 -- (`48 1,7,13,19 * * *`) since the 2026-08-16 8-way split.
 --
--- WHY THIS LEG IS WORTH PINNING AT ALL. It writes TEN of the board's arms in one
+-- WHY THIS LEG IS WORTH PINNING AT ALL. It writes TWENTY of the board's arms in one
 -- statement (`<collection>_fmv_pct_stale_30d` x5, `<collection>_fmv_high_med_share_pct`
--- x5). `v_rpc_trust_health` carries no per-metric age, so a leg that writes a
+-- x5, and since 2026-09-10 `<collection>_fmv_sweep_pct_24h` x5 +
+-- `<collection>_fmv_high_med_fresh24h_pct` x5).
+-- `v_rpc_trust_health` carries no per-metric age, so a leg that writes a
 -- WRONG number is indistinguishable from one that wrote a right one — the only
 -- instrument between that and an operator acting on it is the max-age arm, and
 -- max-age cannot see a value that is fresh and wrong. The share metric is also
@@ -35,9 +37,20 @@
 -- canonical drift). The editions LEFT JOIN existed only for the filter and is gone;
 -- TS orphan snapshots now COUNT, same as every other collection.
 --
+-- ⚠ RE-POINTED 2026-09-11 (audit_20260910_thp_fmv_coverage_publishes_sweep_completeness…):
+-- the leg gained TWO metric families — `*_fmv_sweep_pct_24h` and
+-- `*_fmv_high_med_fresh24h_pct` — so it writes **20** arms, not 10. It was caught by
+-- `npm run db:pins:check` (live vs pinned copy), NOT by CI: the blocking drift guard
+-- compares this file to THE MIGRATION ITS PIN NAMES, and that entry still named the
+-- 08-28 migration, so the pin, the test and the guard were all green while this copy
+-- described a function that no longer ran anywhere. ⭐ The redefinition landed 23:21Z
+-- 09-10, AFTER the last scheduled pin check (12:16Z), so the daily badge had not yet
+-- reddened — this was repaired inside that window.
+--
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260828225605_audit_20260828_r41_fmv_coverage_leg_all_rows_denominator.sql),
--- whose body was verified against live prod prosrc after apply on 2026-08-28.
+-- (supabase/migrations/20260910230812_audit_20260910_thp_fmv_coverage_publishes_sweep_completeness_so_a_leg_can_be_told_from_a_level.sql),
+-- verified byte-equal to live prod `pg_get_functiondef` on 2026-09-11 under the pin
+-- checker's own normalization (body between dollar tags, whitespace collapsed).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -67,8 +80,11 @@ CREATE TABLE public.fmv_snapshots (
 
 -- >>> BEGIN verbatim rpc_thp_leg_fmv_coverage (byte-identical to the migration/prod) >>>
 CREATE OR REPLACE FUNCTION public.rpc_thp_leg_fmv_coverage()
- RETURNS void LANGUAGE plpgsql SECURITY DEFINER
- SET search_path TO 'public','pg_temp' SET statement_timeout TO '240s'
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public, pg_temp'
+SET statement_timeout = '240s'
 AS $fn$
 DECLARE t1 timestamptz := clock_timestamp();
 BEGIN
@@ -88,7 +104,16 @@ BEGIN
              round(100.0 * count(*) FILTER (WHERE elig.computed_at < (now() - '30 days'::interval))::numeric
                    / NULLIF(count(*), 0)::numeric, 1) AS pct_stale_30d,
              round(100.0 * count(*) FILTER (WHERE elig.confidence IN ('HIGH','MEDIUM'))::numeric
-                   / NULLIF(count(*), 0)::numeric, 1) AS high_med_pct
+                   / NULLIF(count(*), 0)::numeric, 1) AS high_med_pct,
+             -- Sweep completeness: how much of the estate this reading actually refreshed.
+             round(100.0 * count(*) FILTER (WHERE elig.computed_at >= (now() - '24 hours'::interval))::numeric
+                   / NULLIF(count(*), 0)::numeric, 1) AS sweep_pct_24h,
+             -- The share over a CONSISTENT population. Denominator is the fresh set, so it
+             -- is NULL (-> -1 below) when nothing was recomputed, never a spurious 0.
+             round(100.0 * count(*) FILTER (WHERE elig.confidence IN ('HIGH','MEDIUM')
+                                              AND elig.computed_at >= (now() - '24 hours'::interval))::numeric
+                   / NULLIF(count(*) FILTER (WHERE elig.computed_at >= (now() - '24 hours'::interval)), 0)::numeric, 1)
+               AS high_med_fresh24h_pct
       FROM elig GROUP BY elig.collection_id
     ),
     want(metric, collection_id) AS (
@@ -105,12 +130,33 @@ BEGIN
              ('ufc_fmv_high_med_share_pct',     '9b4824a8-736d-4a96-b450-8dcc0c46b023'::uuid),
              ('candy_fmv_high_med_share_pct',   '209ade70-32c5-4470-bc7c-4793d660f713'::uuid)
     ),
+    want_sweep(metric, collection_id) AS (
+      VALUES ('topshot_fmv_sweep_pct_24h', '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid),
+             ('allday_fmv_sweep_pct_24h',  'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid),
+             ('golazos_fmv_sweep_pct_24h', '06248cc4-b85f-47cd-af67-1855d14acd75'::uuid),
+             ('ufc_fmv_sweep_pct_24h',     '9b4824a8-736d-4a96-b450-8dcc0c46b023'::uuid),
+             ('candy_fmv_sweep_pct_24h',   '209ade70-32c5-4470-bc7c-4793d660f713'::uuid)
+    ),
+    want_fresh(metric, collection_id) AS (
+      VALUES ('topshot_fmv_high_med_fresh24h_pct', '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid),
+             ('allday_fmv_high_med_fresh24h_pct',  'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid),
+             ('golazos_fmv_high_med_fresh24h_pct', '06248cc4-b85f-47cd-af67-1855d14acd75'::uuid),
+             ('ufc_fmv_high_med_fresh24h_pct',     '9b4824a8-736d-4a96-b450-8dcc0c46b023'::uuid),
+             ('candy_fmv_high_med_fresh24h_pct',   '209ade70-32c5-4470-bc7c-4793d660f713'::uuid)
+    ),
     resolved AS (
       SELECT w.metric, COALESCE(a.pct_stale_30d, 0::numeric) AS value
       FROM want w LEFT JOIN agg a ON a.collection_id = w.collection_id
       UNION ALL
       SELECT w.metric, COALESCE(a.high_med_pct, 0::numeric) AS value
       FROM want_share w LEFT JOIN agg a ON a.collection_id = w.collection_id
+      UNION ALL
+      -- -1, not 0: an absent collection has no denominator, and 0% would be a claim.
+      SELECT w.metric, COALESCE(a.sweep_pct_24h, -1::numeric) AS value
+      FROM want_sweep w LEFT JOIN agg a ON a.collection_id = w.collection_id
+      UNION ALL
+      SELECT w.metric, COALESCE(a.high_med_fresh24h_pct, -1::numeric) AS value
+      FROM want_fresh w LEFT JOIN agg a ON a.collection_id = w.collection_id
     )
     INSERT INTO public.rpc_trust_health_precompute (metric, value, computed_at, duration_ms)
     SELECT r.metric, r.value, now(),
@@ -119,12 +165,20 @@ BEGIN
     ON CONFLICT (metric) DO UPDATE
       SET value = EXCLUDED.value, computed_at = EXCLUDED.computed_at, duration_ms = EXCLUDED.duration_ms;
   EXCEPTION WHEN OTHERS THEN
+    -- The new families are listed here too. Omitting them would leave them holding a
+    -- PREVIOUS value while their siblings read 999 -- a half-failed leg that looks
+    -- partly healthy, which is the shape that makes an outage unmeasurable.
     INSERT INTO public.rpc_trust_health_precompute (metric, value, computed_at, duration_ms)
     SELECT m, 999, now(), round(EXTRACT(epoch FROM clock_timestamp() - t1) * 1000)
     FROM unnest(ARRAY['topshot_fmv_pct_stale_30d','allday_fmv_pct_stale_30d','golazos_fmv_pct_stale_30d',
                       'ufc_fmv_pct_stale_30d','candy_fmv_pct_stale_30d',
                       'topshot_fmv_high_med_share_pct','allday_fmv_high_med_share_pct','golazos_fmv_high_med_share_pct',
-                      'ufc_fmv_high_med_share_pct','candy_fmv_high_med_share_pct']) AS m
+                      'ufc_fmv_high_med_share_pct','candy_fmv_high_med_share_pct',
+                      'topshot_fmv_sweep_pct_24h','allday_fmv_sweep_pct_24h','golazos_fmv_sweep_pct_24h',
+                      'ufc_fmv_sweep_pct_24h','candy_fmv_sweep_pct_24h',
+                      'topshot_fmv_high_med_fresh24h_pct','allday_fmv_high_med_fresh24h_pct',
+                      'golazos_fmv_high_med_fresh24h_pct','ufc_fmv_high_med_fresh24h_pct',
+                      'candy_fmv_high_med_fresh24h_pct']) AS m
     ON CONFLICT (metric) DO UPDATE
       SET value = EXCLUDED.value, computed_at = EXCLUDED.computed_at, duration_ms = EXCLUDED.duration_ms;
   END;
@@ -174,8 +228,8 @@ SELECT public.rpc_thp_leg_fmv_coverage();
 -- ── All ten arms are written every run ──────────────────────────────────────
 -- A leg that silently wrote fewer would leave the missing arms frozen at their
 -- previous value, which no consumer can distinguish from a fresh reading.
-SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute), '10',
-  'the leg writes all ten arms in one statement (5 stale + 5 share)');
+SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute), '20',
+  'the leg writes all TWENTY arms in one statement (5 stale + 5 share + 5 sweep + 5 fresh24h)');
 
 -- ── Top Shot: the arithmetic, on ALL SIX latest-FMV rows (R41, 2026-08-28) ───
 -- 6 eligible: #1 stale/HIGH, #2 fresh/LOW, #3 fresh/LOW (newest wins),
@@ -221,13 +275,43 @@ SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute
                       AND value = 0), '4',
   'every zero-row collection takes the same path — this is the shape, not a Golazos quirk');
 
+-- ── ⚠ THE NEW FAMILIES ANSWER THE SAME ABSENCE WITH -1, NOT 0 (2026-09-11) ───
+-- `*_fmv_sweep_pct_24h` and `*_fmv_high_med_fresh24h_pct` were added
+-- 2026-09-10 so a LEG reading could be told from a LEVEL. They COALESCE the same
+-- missing `agg` row to **-1**, not 0, and the migration says why: "an absent
+-- collection has no denominator, and 0% would be a claim."
+--
+-- ⭐ So this fixture now pins THREE verdicts for ONE input. Golazos/UFC/Candy have
+-- no snapshot rows at all, and that identical absence publishes:
+--     *_fmv_pct_stale_30d        = 0   → reads PERFECT
+--     *_fmv_high_med_share_pct   = 0   → reads WORST
+--     *_fmv_sweep_pct_24h        = -1  → reads NOT MEASURED
+--     *_fmv_high_med_fresh24h_pct= -1  → reads NOT MEASURED
+-- The -1 pair is the honest shape and the 0 pair is the one this file has always
+-- flagged. Pinned in BOTH directions: if the new families ever start publishing 0
+-- for an absent collection they join the defect, and this assertion reddens.
+SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute
+                    WHERE metric IN ('golazos_fmv_sweep_pct_24h','ufc_fmv_sweep_pct_24h','candy_fmv_sweep_pct_24h',
+                                     'golazos_fmv_high_med_fresh24h_pct','ufc_fmv_high_med_fresh24h_pct',
+                                     'candy_fmv_high_med_fresh24h_pct')
+                      AND value = -1), '6',
+  'a collection with NO FMV rows publishes -1 (not measured) for BOTH new families — '
+  'the deliberate opposite of the 0 its two older siblings publish for the same absence');
+SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute
+                    WHERE metric IN ('golazos_fmv_sweep_pct_24h','ufc_fmv_sweep_pct_24h','candy_fmv_sweep_pct_24h',
+                                     'golazos_fmv_high_med_fresh24h_pct','ufc_fmv_high_med_fresh24h_pct',
+                                     'candy_fmv_high_med_fresh24h_pct')
+                      AND value = 0), '0',
+  'and NONE of them publishes 0 — the control for the assertion above, so it cannot '
+  'pass by the metrics simply being absent');
+
 -- ── Idempotent: the arms are keyed, not appended ────────────────────────────
 -- `trust_precompute_max_age_hours` reads max(computed_at) over this table, so a
 -- re-run must REFRESH the timestamp in place. An append would grow the table
 -- unboundedly and a non-refresh would make a healthy leg look stalled.
 UPDATE public.rpc_trust_health_precompute SET computed_at = now() - interval '20 hours';
 SELECT public.rpc_thp_leg_fmv_coverage();
-SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute), '10',
+SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute), '20',
   're-running the leg updates in place (ON CONFLICT), it does not append');
 SELECT _assert((SELECT max(now() - computed_at) FROM public.rpc_trust_health_precompute)
                  < interval '1 minute',
@@ -242,8 +326,8 @@ SELECT _assert((SELECT max(now() - computed_at) FROM public.rpc_trust_health_pre
 SAVEPOINT before_generic_error;
 DROP TABLE public.fmv_snapshots;
 SELECT public.rpc_thp_leg_fmv_coverage();
-SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = 999), '10',
-  'an ordinary error flips ALL TEN arms to the loud 999 sentinel — 999 is above every '
+SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = 999), '20',
+  'an ordinary error flips ALL TWENTY arms to the loud 999 sentinel — 999 is above every '
   'breach threshold, so a failed leg pages instead of publishing a stale value as current');
 ROLLBACK TO SAVEPOINT before_generic_error;
 
@@ -276,7 +360,12 @@ SAVEPOINT before_cancel;
 DROP TABLE public.fmv_snapshots;
 CREATE VIEW public.fmv_snapshots AS SELECT * FROM public._cancel();
 -- Mark every arm so a sentinel write would be unmistakable.
-UPDATE public.rpc_trust_health_precompute SET value = -1;
+-- ⚠ THE MARKER WAS -1 UNTIL 2026-09-11 AND IS NO LONGER SAFE AS ONE: the leg now
+-- writes -1 ITSELF for any collection absent from `agg` (the sweep/fresh24h
+-- families COALESCE to -1 deliberately, so an absent denominator is never reported
+-- as a 0% claim). A marker a function can legitimately produce cannot prove the
+-- function did not run. -424242 is outside every path in the leg.
+UPDATE public.rpc_trust_health_precompute SET value = -424242;
 
 DO $$
 DECLARE caught boolean := false;
@@ -294,7 +383,7 @@ END $$;
 SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = 999), '0',
   'and therefore NO 999 sentinel is written on the one failure mode this instance '
   'actually produces — the arms keep their previous values and publish them as current');
-SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = -1), '10',
+SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = -424242), '20',
   'the arms are left EXACTLY as they were: a frozen value is indistinguishable from a '
   'fresh one in v_rpc_trust_health, which has no per-metric age column');
 ROLLBACK TO SAVEPOINT before_cancel;

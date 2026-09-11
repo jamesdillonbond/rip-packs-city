@@ -1040,12 +1040,21 @@ const PINS = [
   // Writes the ten per-collection FMV coverage arms. ⚠ Its two COALESCE(...,0) defaults
   // point in OPPOSITE directions for the identical absence: 0% stale reads as PERFECT,
   // 0% high/med share reads as WORST. Pinned, not endorsed.
+    // Re-pointed 2026-09-11: the leg gained `*_fmv_sweep_pct_24h` and
+    // `*_fmv_high_med_fresh24h_pct`, so it writes 20 arms rather than 10, and an
+    // absent collection now publishes -1 there (not measured) instead of a 0 that
+    // would be a claim. ⚠ Caught by `npm run db:pins:check` against LIVE, not by this
+    // guard — this guard compares the test copy to the migration THIS ENTRY NAMES, so
+    // while the entry still named the 08-28 migration it was green on a definition
+    // that had not run in production since 23:21Z 09-10. The test's assertions moved
+    // with it (10 -> 20 in three places) and its cancel-test marker changed from -1 to
+    // -424242, because the leg itself now writes -1 legitimately.
     fn: "rpc_thp_leg_fmv_coverage",
     test: "supabase/tests/rpc_thp_leg_fmv_coverage.sql",
     // Re-pinned 2026-08-28 onto the R41 all-rows-denominator migration (the
     // canonical-only filter is gone; both TS metrics changed denominator).
     migration:
-      "supabase/migrations/20260828225605_audit_20260828_r41_fmv_coverage_leg_all_rows_denominator.sql",
+      "supabase/migrations/20260910230812_audit_20260910_thp_fmv_coverage_publishes_sweep_completeness_so_a_leg_can_be_told_from_a_level.sql",
   },
   {
   // Parallel-only, known-circulation-only. Both filters asserted in both directions:

@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · 🛡 A DB PIN WENT STALE 10 HOURS BEFORE ITS BADGE WOULD HAVE SAID SO — the blocking guard was green on a definition that had not run in production since 23:21Z · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
+
+**Shipped: `supabase/tests/rpc_thp_leg_fmv_coverage.sql` (verbatim block + assertions + header) and the `__tests__/db-invariants-drift-guard.test.ts` pin entry re-pointed. No migration, no data mutation — the FUNCTION was already correct in prod; the PIN was describing an older one.**
+
+⭐ **FOUND BY BASELINING AN INSTRUMENT BEFORE USING IT, WHICH IS THE ONLY REASON IT WAS FOUND AT ALL.** I ran `npm run db:pins:check` to get a clean baseline before touching an unrelated pinned function, and it returned **195 of 196 clean — `rpc_thp_leg_fmv_coverage` STALE**. ⛔ **The blocking CI guard could not see it:** `db-invariants-drift-guard` compares the test copy to **the migration its own PINS entry names**, and that entry still named the 08-28 migration — so the pin, the test and the guard were all green while the copy described a function that **had not run in production since 23:21Z the previous night** (`388a601ed`, the sweep-completeness change). **Only the live DB can answer this**, which is exactly what `check-db-pin-staleness.mjs`'s own header says it exists for.
+
+⏱ **AND IT WAS INSIDE THE WINDOW.** The daily `DB pin staleness` workflow last ran **09-10 12:16Z, success**; the redefinition landed **09-10 23:21Z**. The next scheduled run (~12:16Z 09-11) would have reddened the badge. **Repaired ~10 hours before that, so the badge never flipped** — which is the outcome, not a near-miss to celebrate: nothing here caught it, a baseline did.
+
+✅ **WHAT MOVED, and the assertions moved WITH the copy rather than being bent to fit it.** The leg now writes **20** arms, not 10 (`*_fmv_sweep_pct_24h` ×5 and `*_fmv_high_med_fresh24h_pct` ×5 were added so a LEG reading could be told from a LEVEL). Three `'10'` counts became `'20'`; the header's "writes TEN arms" was corrected. ⭐ **New assertions pin the behaviour the change was FOR:** a collection with no snapshot rows publishes **-1 (not measured)** on both new families, where its two older siblings publish **0** for the identical absence — so this fixture now pins **three verdicts for one input**, with a paired control asserting none of the six is `0` so it cannot pass by the metrics simply being absent.
+
+🚨 **THE CANCEL TEST'S MARKER WAS NO LONGER A MARKER, and that is the subtle half.** It set every arm to **-1** as an "unmistakable" flag, then asserted the arms were untouched. **The new leg writes -1 ITSELF** for an absent collection — so a value the function can legitimately produce was being used to prove the function had not run. Changed to **-424242**, outside every path in the leg. ⚠ **A sentinel is only a sentinel while the code under test cannot emit it.**
+
+⚠ **AND MY FIRST ATTEMPT AT THE SWAP WAS WRONG IN THE EXACT WAY THE GUARD'S OWN SOURCE WARNS ABOUT.** A naive `indexOf('CREATE OR REPLACE FUNCTION public.rpc_thp_leg_fmv_coverage')` matched the name **inside the migration's REVERT comment** first, so the extracted block began mid-comment and the guard failed. `db-invariants-drift-guard` skips an occurrence preceded by `--` on the same line, and its source says why. **Re-done with that rule; the fix was to use the instrument's own extractor rather than write a second one.**
+
+✅ **Verified, in this order:** drift guard **204/204**; `npm run db:pins:check` **196/196 clean, exit 0** (from 195/196); `tsc` 0; the new assertions' expected values **measured, not reasoned** — the leg's `resolved` CTE was replayed read-only over the test's exact fixture and returned golazos/ufc/candy `sweep=-1, fresh24h=-1` (**the 6 rows asserted**) with every pre-existing value unchanged (TS 50.0/66.7, AllDay 50.0/50.0).
+
+⚠ **The SQL test itself runs only on CI** (a throwaway Postgres on the runner; there are no Postgres binaries on this box). The change classifies as `code`, so that job runs rather than being skipped.
+
+⚠ **PRE-EXISTING RED ON THIS BOX, NOT MINE AND NOT CI'S:** `__tests__/lane-egress-classification-guard.test.ts` fails 2 of 18 here — **confirmed by stashing my work and re-running on a clean tree**. Its fixture uses POSIX paths (`/r/route.ts`) so the resolver's Windows backslashes never match and an import is not followed. **CI (Linux) is genuinely green; `main` is NOT red** — but the *"npm test is green on this box"* invariant is, which is its own cost. Being fixed separately.
+
+**Revert:** `git revert` the commit — it restores the previous pin copy and entry. **Target metric:** `npm run db:pins:check` stays at 196/196.
+
 ### 2026-09-11 · ✅ THE NIGHT PASS'S OTHER TWO QUEUED ITEMS ARE BOTH NON-ISSUES — one predates its own fix by 13 minutes, the other is silent ON PURPOSE · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
 
 **Shipped: docs only — dispositions written into the 09-11 handoff's queue section so the next pass cannot re-queue them. No code, no migration, no data mutation.**
