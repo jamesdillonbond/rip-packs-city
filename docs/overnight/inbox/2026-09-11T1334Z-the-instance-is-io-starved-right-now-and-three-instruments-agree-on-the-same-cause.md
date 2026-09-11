@@ -61,3 +61,45 @@ Every candidate above is either a production DB-parameter change with delayed, h
 ## Incidental, and separately filed context
 
 The thread that led here: `offers-sweep` and `topshot-deal-floor-serials` both last wrote **2026-08-28** and both now fail with **HTTP 530** from `public-api.nbatopshot.com/graphql` (reached via `topshot-proxy`, which passes the upstream status through verbatim — `index.js:115`). Register **#81** carries that. ⭐ **`sales-indexer` shares the dependency and does NOT lose data** — it degrades to on-chain tx-decode and `unmapped_sales` resolution ran **100 % on each of the last four full days**. That fallback is the difference between the two outcomes and is worth copying, not just noting.
+
+---
+
+# ADDENDUM (07:20 PT) — the 1330Z filing's ONE unexplained burst is explained, and its lever applies to THREE jobs, not one
+
+The 1330Z filing closes with two honest loose ends. Both move here.
+
+## 1. "09-10's 12Z burst (34 timeouts) has no slow run of 355 behind it" — it has the OTHER filed mechanism behind it
+
+Every job that ran long inside 2026-09-10 12:00–13:00Z fires *inside that hour*, and they are almost all six-hourly:
+
+| jobid | job | schedule | fires | max_s | failed |
+|---|---|---|---|---:|---|
+| 218 | `rpc-backfill-pinnacle-mint-acquisitions` | `19 */3 * * *` | 12:19 | **869** | ✗ |
+| 210 | `rpc-refresh-allday-pack-sales-agg` | `20 */6 * * *` | 12:20 | **810** | ✗ |
+| 62 | `rpc-remap-misattributed-sales` | `23 */6 * * *` | 12:23 | 623 | ok |
+| 211 | `rpc-refresh-allday-pack-realized` | `35 */6 * * *` | 12:35 | 600 | ✗ |
+| 65 | `rpc-allday-ev-corrected-refresh` | `47 */6 * * *` | 12:47 | 600 | ✗ |
+| 324 | `rpc-thp-leg-impossible-parallel` | `48 0,6,12,18 * * *` | 12:48 | 600 | ✗ |
+| 212 | `rpc-refresh-topshot-pack-sales-agg` | `50 */6 * * *` | 12:50 | 601 | ✗ |
+
+⭐ **Four of them fail at 600–601 s, which is a CAP being hit, not a distribution** — the tell is that the numbers agree to the second.
+
+**Measured, not inferred: there are 16 active six-hourly jobs** (`*/6` or `0,6,12,18`) **plus 2 three-hourly**, and they all converge on 0/6/12/18Z against `max_worker_processes = 6`. ⭐ **That is exactly the mechanism the 2026-09-09 filing describes and which the 1330Z filing correctly said was NOT the shape of the 13Z spell.** Both filings are right: **12Z is the convoy, 13Z is jobid 355's batch.** Two mechanisms, adjacent hours, and the 13Z spell landed on an instance the 12Z convoy had already left hot.
+
+## 2. The `50000` lever is not one job — it is THREE, stacked six minutes apart
+
+```
+ 78  rpc-backfill-pinnacle-acquisitions        [17 */6 * * *]
+218  rpc-backfill-pinnacle-mint-acquisitions   [19 */3 * * *]
+355  rpc-backfill-pinnacle-trade-acquisitions  [23 1-22/3 * * *]
+```
+
+All three carry the identical `(50000)` batch shape, and at 0/6/12/18Z **all three fire inside six minutes** — on top of the 16-job convoy. The 1330Z filing found 355 by catching it live; 218 is visible only in history, where it ran **869 s and FAILED** during the unexplained burst. ⛔ **Any batch-size change that fixes only 355 leaves two-thirds of the shape in place.**
+
+⚠ **AND ALL THREE BACKFILL A COLLECTION THAT IS NOT LIVE.** `panini_blockchain` is the only `is_active = false` row in `collections`. That does not make the work worthless — it is catalog backfill for a future launch — but it is the cheapest thing to deprioritise on a saturated instance, and it is a **cadence** decision (three jobs, 0/6/12/18Z) before it is a batch-size one.
+
+## What is still NOT established here
+
+- ⛔ **Still no BUFFERS measurement**, so the 1330Z filing's first instruction stands unmet: cutting `50000` may not cut cost, because a `LIMIT` bounds output and not cost. **Do not change a batch size on the strength of this addendum.**
+- ⛔ **The convoy is a schedule fact, not a proven cause** of the 34 timeouts — 16 heavy jobs in one hour against 6 worker slots is a strong mechanism, and the 600 s cap cluster corroborates it, but no change-point split was taken.
+- ⚠ The 09-09 nine-hour spell had a different shape again. **This closes the 12Z door the 1330Z filing left open; it does not close the corridor.**
