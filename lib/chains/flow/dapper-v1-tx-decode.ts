@@ -60,6 +60,46 @@ function unwrapCdc(node: unknown): unknown {
   return node
 }
 
+/**
+ * Deposit targets that are CUSTODIANS, not buyers.
+ *
+ * ⛔ THIS IS NOT A NEW DECISION — it is a 2026-07-19 decision finally written where
+ * a writer will see it. That day's handoff, on the counterparty-recovery worker:
+ *
+ *   "Set `buyer` to NULL for AllDay/UFC. Those collections deposit to a constant
+ *    Dapper custodian (0xddfbe848a81b2236), so writing it as the buyer would be a
+ *    LIE. Seller only."
+ *
+ * and the ledger for the same ship: the custodian "re-forwards to the real buyer in a
+ * LATER tx", so `<collection>.Deposit.to` names the custodian, never the person.
+ *
+ * 🚨 THAT RULING REACHED THE RECOVERY WORKER AND NEVER REACHED THIS DECODER, which is
+ * the primary sale path. Measured 2026-09-11 (register #83): 9,486 All Day sales
+ * across 62 days and 1,819 editions carry the custodian in `buyer_address`, written
+ * by `onchain_dapper_v2` (6,482) and `onchain_dapper_v1` (2,997) — the two lanes fed
+ * from here. It is intermittent (a rare tx shape), it fell ~97% after July, and it is
+ * not over: 561 rows on 09-10 alone, 511 of them ingested in REAL TIME.
+ *
+ * ⭐ WHY THIS IS A CONSTANT AND NOT A COMMENT: a decision recorded in prose reaches the
+ * session that wrote it and nothing else. The address lived only in a handoff and a
+ * ledger entry, which is exactly why one writer inherited the rule and the other did
+ * not. A named constant is what makes it binding on the NEXT writer.
+ *
+ * ⚠ SCOPE, measured rather than assumed. Only All Day is affected today: UFC has no
+ * buyer rows at all, and LaLiga Golazos' buyers are organically distributed (top
+ * wallet 197 buys, then 62/57/54 — no custodial concentration). Top Shot deposits to
+ * the REAL buyer and is decoded by `decodeTopShotSaleTx` below, which is untouched.
+ * ⚠ Add an address here only with evidence; a wrong entry silently NULLs real buyers.
+ */
+const CUSTODIAL_DEPOSIT_TARGETS: ReadonlySet<string> = new Set([
+  "0xddfbe848a81b2236", // NFL All Day — constant Dapper custodian, re-forwards later
+])
+
+/** True when a `Deposit.to` names a custodian rather than a person. Hex-normalised. */
+export function isCustodialDepositTarget(addr: string): boolean {
+  return CUSTODIAL_DEPOSIT_TARGETS.has(normHex(addr))
+}
+
 export interface V1TxDecodeConfig {
   depositEventType: string
   withdrawEventType: string
@@ -133,7 +173,11 @@ export async function decodeV1SaleTx(
       if (evt.type === config.depositEventType) {
         if (String(payload.id) === config.nftId) {
           const to = payload.to
-          if (typeof to === "string" && to.length > 0) result.buyer = to
+          if (typeof to === "string" && to.length > 0) {
+            // ⛔ A CUSTODIAL deposit target is NOT the buyer, and this repo already
+            // decided that in writing. See CUSTODIAL_DEPOSIT_TARGETS below.
+            result.buyer = isCustodialDepositTarget(to) ? null : to
+          }
         }
         continue
       }

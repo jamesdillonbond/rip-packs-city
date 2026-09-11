@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · ✅ #83's FORWARD FIX — the 2026-07-19 decision is now a CONSTANT in the decoder that ignored it, not prose in a handoff · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
+
+**Shipped: `lib/chains/flow/dapper-v1-tx-decode.ts` (a custodial-deposit-target set + predicate) and two paired tests. No migration, no data mutation — this stops NEW rows only; the 9,486 existing ones are still Trevor's call.**
+
+⭐ **THE FIX IS THE FILING'S OWN LESSON, APPLIED TO ITSELF.** #83's transferable half was *"a decision recorded in PROSE reaches the session that wrote it and nothing else — a constant with a comment, or a guard, is what makes a decision binding on the NEXT writer."* The custodian address lived in a handoff and a ledger entry; the primary sale decoder never saw either. **It is now `CUSTODIAL_DEPOSIT_TARGETS` in the file that does the writing**, carrying the 07-19 quote verbatim so the next reader gets the ruling and its reason in the same place as the code.
+
+**Where it was:** `decodeV1SaleTx` did `result.buyer = to` straight off `<collection>.Deposit.to` — which for All Day names the **custodian that re-forwards to the real buyer in a LATER tx**. Now `result.buyer = isCustodialDepositTarget(to) ? null : to`.
+
+⚠ **SCOPE MEASURED, NOT ASSUMED — and it kept the set to ONE address.** UFC has **no buyer rows at all**; LaLiga Golazos' buyers are organically distributed (top wallet 197 buys, then 62/57/54 — no custodial concentration); Top Shot deposits to the REAL buyer and uses a different decoder, left untouched. **A wrong entry in that set would silently NULL real buyers, so it is documented as evidence-only.**
+
+✅ **BOTH DIRECTIONS ASSERTED, AND THE CONTROL IS THE POINT.** A predicate that nulls EVERYTHING satisfies the custodial case and would destroy every real buyer on the platform — so the paired test asserts an ordinary deposit target is still written. ⭐ **Mutation-proven rather than assumed: forcing the predicate to `return false` fails EXACTLY ONE test (the custodial one) and restoring it passes 20/20.** The custodial case also asserts `seller`, `priceDuc` and `priceCertain` survive — **this nulls ONE field; a "fix" that dropped the sale would be worse than the defect.**
+
+⚠ **ONE FIXTURE BUG CAUGHT BY THE TEST ITSELF.** My first draft used `uint64(1)` while the describe block's `config.nftId` is `"42"`, so neither event matched and buyer AND seller came back null — **two failures with one cause.** Worth noting because the failure LOOKED like the fix nulling too much, which is exactly the wrong conclusion to draw in a hurry.
+
+**Verified:** `tsc` 0 · ESLint ratchet 0 · full suite **1502 files / 16,673 passed** (up 2 — the new cases).
+
+⛔ **WHAT THIS DOES NOT DO:** the **9,486 existing rows** still name the custodian. Backfilling them to NULL is a bulk `UPDATE` on `sales` — destructive class, **Trevor's call** — and it remains the honest end state. **#83 stays open for that.**
+
+**Revert:** `git revert` the commit — it restores `result.buyer = to` and the two tests go with it.
+
 ### 2026-09-11 · ✅ #82's INSTRUMENT IS HONEST AND ITS PIN CAN FINALLY SEE THE BLOCKER — the self-heal now reports `raised: 0, attempted: 4, reverted_by_trigger: 4` on live data instead of claiming four repairs · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
 
 **Shipped (1, DB + repo):** migration `20260911103459_impossible_parallel_selfheal_audits_only_raises_that_survived`, its byte-exact repo file, the re-pointed pin, and the SQL fixture that makes the pin non-vacuous.

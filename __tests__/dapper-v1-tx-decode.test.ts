@@ -110,6 +110,41 @@ describe("decodeV1SaleTx — V1 Dapper NFTStorefront sale recovery", () => {
     expect(r.priceDuc).toBe(10)
   })
 
+  // ── The custodial deposit target (register #83, 2026-09-11) ────────────────
+  // All Day deposits to a CONSTANT Dapper custodian that re-forwards to the real
+  // buyer in a LATER transaction, so `AllDay.Deposit.to` names the custodian and
+  // never the person. A 2026-07-19 decision says writing it as the buyer "would be
+  // a LIE" — but that reached only the counterparty-recovery worker, and this
+  // decoder (the PRIMARY sale path) kept writing it: 9,486 rows across 62 days and
+  // 1,819 editions, still producing 561 in a single day on 09-10.
+  //
+  // ⚠ Both directions are asserted. A predicate that NULLs everything would satisfy
+  // the first case alone and would silently destroy every real buyer on the platform,
+  // so the second case is the control that makes the first one mean something.
+  it("does NOT write the Dapper custodian as the buyer — it is a custodian, not a person", async () => {
+    stubResults([
+      evt(DEPOSIT, eventNode(DEPOSIT, [["id", uint64(42)], ["to", optional(addr("0xddfbe848a81b2236"))]]), 0),
+      evt(WITHDRAW, eventNode(WITHDRAW, [["id", uint64(42)], ["from", optional(addr("0xseller00000000"))]]), 1),
+      evt(DUC_TOKENS_WITHDRAWN, eventNode(DUC_TOKENS_WITHDRAWN, [["amount", ufix(10)], ["from", optional(addr(DUC_CONTRACT_ADDRESS))]]), 2),
+    ])
+    const r = await decodeV1SaleTx("0xabc", config)
+    expect(r.buyer).toBeNull()
+    // The rest of the decode is unaffected — this nulls ONE field, it does not
+    // discard the sale. A fix that dropped the row would be worse than the defect.
+    expect(r.seller).toBe("0xseller00000000")
+    expect(r.priceDuc).toBe(10)
+    expect(r.priceCertain).toBe(true)
+  })
+
+  it("CONTROL: still writes an ordinary deposit target as the buyer", async () => {
+    stubResults([
+      evt(DEPOSIT, eventNode(DEPOSIT, [["id", uint64(42)], ["to", optional(addr("0xa1b2c3d4e5f60718"))]]), 0),
+      evt(DUC_TOKENS_WITHDRAWN, eventNode(DUC_TOKENS_WITHDRAWN, [["amount", ufix(10)], ["from", optional(addr(DUC_CONTRACT_ADDRESS))]]), 1),
+    ])
+    const r = await decodeV1SaleTx("0xabc", config)
+    expect(r.buyer).toBe("0xa1b2c3d4e5f60718")
+  })
+
   it("returns tx_no_events for an empty event list", async () => {
     stubResults([])
     const r = await decodeV1SaleTx("0xabc", config)
