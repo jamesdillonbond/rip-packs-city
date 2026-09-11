@@ -1338,6 +1338,20 @@ names both went quiet on 2026-08-30, with opposite results:
 steps, not one: the name tells you where to look, and **the table it writes tells you the answer.** An
 output frozen at exactly the last logged run is about as unambiguous as this gets.
 
+⚠ **BUT THE FALSIFIER HAS NO POWER WHEN THE OUTPUT IS SPARSE — check the table's NORMAL RATE before
+trusting its silence** (2026-09-10). The rule above settles liveness at `cached_listings_v2` volumes,
+where a freeze lands on the exact last-logged instant. It settles **nothing** on a table writing
+**2 rows a week**: `alerts-send`/`alerts-dispatch` went quiet at 13:54/13:59Z, and their output
+`alert_deliveries` held **2 rows in 7 days, newest 26 h old, against 2 ACTIVE `alert_subscriptions`** —
+at that volume "zero because broken" and "zero because nothing triggered" are **indistinguishable**, and
+reading the silence as *stopped* would have manufactured an outage. ⭐ **The falsifier needs a
+denominator too: establish the expected write rate first, and if a normal week is a handful of rows,
+say UNMEASURED rather than picking a direction.** (A ledger heading that night asserted "USER ALERTS
+have been down since 13:54Z" on exactly this evidence.) ⚠ **Watch for the sibling trap: a DIFFERENT,
+busier table can look like the confirmation you wanted** — `alert_notifications_sent` was current to
+31 minutes, but it is the **OPS** path (`/api/check-alerts`, `severity`/`pipeline_count`), not user
+price alerts, so it neither vindicates nor condemns those lanes.
+
 ⚠ **And neither had a `cron.job` row**, so both were driven by something a sandbox cannot see
 (cron-job.org, a GHA workflow, the Task Scheduler). ⛔ Which makes "re-enable it" the wrong call from
 here: **re-enabling a schedule someone deliberately removed is the mirror image of leaving a broken

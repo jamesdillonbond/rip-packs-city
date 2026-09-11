@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · 🚨 I RE-MADE THE EXACT MISREADING THE LEDGER HAD CORRECTED AN HOUR EARLIER — plus the output-table falsifier has NO POWER on a sparse table, and two "dead" lanes are alive · Claude Code (cloud), Trevor: "Keep going"
+
+**Shipped: docs only — this entry, notes on #76/#78, and one refinement promoted into `cron-and-schedulers.md`. No code, no migration, no data mutation, nothing unpaused or re-enabled.**
+
+🚨🚨 **MY OWN ERROR FIRST, BECAUSE IT IS THE WORST ONE HERE.** I resumed, read `get_project` → `"live": false` with both apex hosts missing from `domains`, and reported **"the site has now been down ~12.4 hours."** ⛔ **The site was UP and had been for 2.4 hours.** #76's own correction — written ~1 h before I said it — records that **`live: false` and the `domains` list read IDENTICALLY on a healthy estate**, because production hostnames live on the **DEPLOYMENT's `alias` array**, not on `get_project.domains`. ⭐ **I read a status field instead of making a request, which is this estate's oldest rule (*verify by rendered DOM, never HTTP 200*) one level up — and the correction was already in the file I had just been editing.** ✅ Current truth, from work actually happening: `fmv-recalc` 10 min, `sentinel` 00:47Z, `disney_pinnacle` listings ingest **1 min**.
+
+✅ **STEP TWO OF THE LIVENESS CHECK SPLITS THE "DEAD" SET THREE WAYS — and `pipeline_runs` alone could not have.** The rule in `cron-and-schedulers.md` is that the **output table**, not the pipeline name, is the falsifier. Run over `cached_listings_v2`:
+
+| collection | newest ingest | verdict |
+|---|---|---|
+| `disney_pinnacle` | **1 min ago** | ⭐ **ALIVE** — so `pinnacle-listings-retry` and `pinnacle-events-ingest` are silent NAMES over working WORK |
+| `nfl_all_day` | **2026-09-10 14:02:14Z** | 🔴 **genuinely stopped** — frozen at the same instant as its last logged run (14:02:12), the doc's most unambiguous signal |
+| `laliga_golazos` | 2026-09-03 | #78, **7.4 days**, pre-dates the outage by a week |
+
+⛔ **So the "10 dead lanes" count is OVERSTATED: at least the two Pinnacle names are a logging artifact.** The genuinely-stopped, consequential one is **All Day listings, 12.4 h** — which is the feed `allday_edition_floor_ask` and therefore today's ask-corroboration reads.
+
+🚨 **AND THE USER-ALERT CLAIM IS STRONGER THAN ITS EVIDENCE.** A ledger heading tonight reads *"so USER ALERTS have been down since 13:54Z"*. Measured: **`alert_notifications_sent` newest 01:55:22Z — 31 minutes ago**, so that path is flowing. ⚠ But it is the **OPS** path (`/api/check-alerts`, columns `severity`/`pipeline_count`), **not** user price alerts, so it does not vindicate the lanes either. The user-side output is `alert_deliveries`: **2 rows in 7 days, newest 26 h ago, against 2 ACTIVE `alert_subscriptions`.** ⛔ **At that volume the output table cannot falsify anything** — 2 deliveries/week is indistinguishable from zero-because-broken and zero-because-nothing-triggered. **The lane silence is real; the user impact is UNMEASURED, and "user alerts are down" should not be asserted or denied from this data.** ✅ Ops alerting IS working, so the estate is not blind.
+
+⭐⭐ **PROMOTED, because it is a real limit on the rule rather than an instance of it: THE OUTPUT-TABLE FALSIFIER HAS NO POWER WHEN THE OUTPUT IS SPARSE.** The doc presents it as the step that settles liveness — and it does, at `cached_listings_v2` volumes, where a freeze lands on the exact last-logged instant. **At 2 rows/week it settles nothing**, and reading its silence as "stopped" would manufacture an outage. **Check the output table's NORMAL RATE before trusting its silence** — the falsifier needs a denominator too.
+
+⛔ **AND A HYPOTHESIS OF MINE, REFUTED RATHER THAN POLISHED.** The alive/dead split looked like *"lanes with a Vercel cron or GHA backstop survived; cron-job.org-only lanes died"* — `fmv-recalc` (rpc-pipeline.yml) and `allday-sales-indexer` (sales-indexers-backstop.yml) both alive, `allday-listings-indexer` (neither) dead. **Cross-tabbed over 15 lanes it is 5-of-6 alive vs 5-of-9 dead — correlated, and with counterexamples in BOTH directions: `allday-listing-cache` is ALIVE with neither caller, while `golazos-listings-indexer` and `alerts-dispatch` are DEAD despite appearing in a workflow file.** ⚠ **My instrument was also too coarse to settle it: grepping the lane name across `.github/workflows/` conflates "named anywhere" with "called by a SCHEDULED workflow"** — a mention in a test, a comment or a `workflow_dispatch`-only backstop counts the same. **So the surviving mechanism remains NOT ESTABLISHED, exactly as #76 left it, and nothing here should be quoted as the answer.**
+
+⛔ **NOTHING RE-ENABLED, AND THAT IS THE DOC'S CALL NOT MINE.** The dead lanes are cron-job.org-driven, whose console is operator-only and unenumerable from here — and `cron-and-schedulers.md` states plainly that **"re-enable it" is the wrong call from a sandbox: re-enabling a schedule someone deliberately removed is the mirror image of leaving a broken one dead, and nothing visible from this side distinguishes them.** No backstop workflow covers `allday-listings-indexer`, so there was also no in-reach lever to pull.
+
+**Files:** `docs/overnight/ledger.md`, `docs/reference/known-issues.md` (#76, #78), `docs/reference/cron-and-schedulers.md` (the sparse-output limit).
+
+**Revert:** docs only, nothing to revert. **Operator items unchanged: the All Day + Golazos listing lanes need the cron-job.org console.**
+
 ### 2026-09-10 · ✅ THE TEN DEAD LANES HAVE A CALLER AGAIN — a GHA backstop, because their ONLY scheduler was cron-job.org and this repo has already been bitten by exactly that · Claude Code (cloud), Trevor: "Do it all"
 
 **Shipped: `.github/workflows/dead-lane-backstop.yml` (new, 10 lanes / 2 jobs) + `__tests__/dead-lane-backstop-covers-real-routes.test.ts` (7 cases). Revert: `git revert` the commit — deleting the workflow restores the previous state exactly; no route, migration or data change.**
