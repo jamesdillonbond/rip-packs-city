@@ -6,7 +6,12 @@
 -- Pins:
 --   * auth.uid() set and <> p_user_id raises 42501; anon passes;
 --   * COALESCE precedence editions-over-denorm for player_name/set_name/tier/
---     circulation/video, and the latest fmv_snapshot over the frozen tm.fmv;
+--     video, and the latest fmv_snapshot over the frozen tm.fmv;
+--   * ⭐ CIRCULATION IS NO LONGER A PLAIN COALESCE — a serial ABOVE the resolved
+--     edition's circulation is impossible, so the reader falls back to the frozen
+--     per-moment mint when that can hold the serial and to NULL when neither can.
+--     THIS PIN WAS INVERTED 2026-09-11: it previously pinned the plain COALESCE,
+--     i.e. it was holding the `#1017/50` defect in place. Inverted, never deleted.
 --   * edition resolution via the wmc edition_key (falling back to tm.edition_id);
 --   * badges come from get_edition_badges_unified when the edition resolves, else
 --     the frozen tm.badges;
@@ -14,7 +19,7 @@
 --   * slots ordered ASC; a user with no slabs -> '[]' (never NULL).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql);
+-- (supabase/migrations/20260911093000_audit_20260911_trophy_slab_refuses_an_impossible_serial_over_circulation.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -70,7 +75,18 @@ BEGIN
       COALESCE(e.player_name, tm.player_name) AS player_name,
       COALESCE(e.set_name,    tm.set_name)    AS set_name,
       tm.serial_number,
-      COALESCE(e.circulation_count, tm.circulation_count) AS circulation_count,
+      CASE
+        WHEN tm.serial_number IS NOT NULL
+         AND e.circulation_count IS NOT NULL
+         AND tm.serial_number > e.circulation_count
+        THEN CASE
+               WHEN tm.circulation_count IS NOT NULL
+                AND tm.serial_number <= tm.circulation_count
+               THEN tm.circulation_count
+               ELSE NULL::int
+             END
+        ELSE COALESCE(e.circulation_count, tm.circulation_count)
+      END AS circulation_count,
       COALESCE(e.tier::text, tm.tier) AS tier,
       tm.thumbnail_url,
       COALESCE(e.video_url, tm.video_url) AS video_url,
@@ -80,7 +96,18 @@ BEGIN
       public.serial_fmv_estimate(
         tm.collection_id,
         tm.serial_number,
-        COALESCE(e.circulation_count, tm.circulation_count),
+        CASE
+          WHEN tm.serial_number IS NOT NULL
+           AND e.circulation_count IS NOT NULL
+           AND tm.serial_number > e.circulation_count
+          THEN CASE
+                 WHEN tm.circulation_count IS NOT NULL
+                  AND tm.serial_number <= tm.circulation_count
+                 THEN tm.circulation_count
+                 ELSE NULL::int
+               END
+          ELSE COALESCE(e.circulation_count, tm.circulation_count)
+        END,
         COALESCE(e.tier::text, tm.tier),
         COALESCE(f.fmv_usd, tm.fmv),
         f.confidence::text,
@@ -160,6 +187,21 @@ INSERT INTO public.trophy_moments (id, slot, moment_id, edition_id, player_name,
 
 INSERT INTO public.editions (id, collection_id, external_id, player_name, set_name, tier, circulation_count, video_url, jersey_number, play_category, team_name, series, thumbnail_url) VALUES
   ('e1111111-1111-1111-1111-111111111111'::uuid, :TS::uuid, 'k1', 'RealName', 'RealSet', 'RARE', 100, 'realvid', 5, 'Dunk', 'Blazers', 4, 'edthumb1');
+
+-- ── 2026-09-11: the impossible-pair fixtures (the `#1017/50` shape) ──────────
+-- mC: serial 1017 against a PARALLEL edition of 50, with a frozen per-moment mint
+--     of 2034 that CAN hold it -> the frozen mint must win.
+-- mD: serial 1017, parallel edition 50, and a frozen mint of 60 that ALSO cannot
+--     hold it -> neither source is consistent, so the denominator must be NULL.
+INSERT INTO public.trophy_moments (id, slot, moment_id, edition_id, player_name, set_name, serial_number, circulation_count, tier, thumbnail_url, video_url, fmv, badges, note, collection_id, user_id, pinned_at) VALUES
+  ('cccccccc-0000-0000-0000-00000000000c'::uuid, 1, 'mC', 'k3', 'Wemby', 'PlayoffSet', 1017, 2034, 'COMMON', 'thumbC', NULL, 13, NULL, NULL, :TS::uuid, '30000000-0000-0000-0000-000000000003'::uuid, now()),
+  ('dddddddd-0000-0000-0000-00000000000d'::uuid, 2, 'mD', 'k3', 'Wemby', 'PlayoffSet', 1017,   60, 'COMMON', 'thumbD', NULL, 13, NULL, NULL, :TS::uuid, '30000000-0000-0000-0000-000000000003'::uuid, now());
+
+INSERT INTO public.editions (id, collection_id, external_id, player_name, set_name, tier, circulation_count, video_url, jersey_number, play_category, team_name, series, thumbnail_url) VALUES
+  ('e3333333-3333-3333-3333-333333333333'::uuid, :TS::uuid, 'k3', 'Wemby', 'PlayoffSet', 'FANDOM', 50, NULL, NULL, NULL, 'Spurs', 8, 'edthumb3');
+
+INSERT INTO public.wallet_moments_cache (moment_id, collection_id, edition_key) VALUES
+  ('mC', :TS::uuid, 'k3'), ('mD', :TS::uuid, 'k3');
 -- k2 has NO editions row on purpose.
 
 -- wmc gives mA an edition_key so the editions join resolves.
@@ -211,6 +253,22 @@ SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 1 ->> 'acquisition_
 
 -- ── 7. empty user -> '[]' ────────────────────────────────────────────────────
 SELECT _assert_eq(public.get_trophy_slab_data(:U2::uuid)::text, '[]', 'no slabs -> empty array, not NULL');
+
+\set U3 '''30000000-0000-0000-0000-000000000003'''
+
+-- ── 8. an impossible serial/circulation pair is never published (2026-09-11) ──
+-- ⚠ ASSERT THE ABSENCE OF THE FALSE CLAIM, not the presence of a message: the
+-- defect was a rendered `#1017/50`, so the pin is that 50 never comes back.
+SELECT _assert_eq((public.get_trophy_slab_data(:U3::uuid) -> 0 ->> 'circulation_count'), '2034',
+  'mC: serial 1017 > parallel edition 50 -> frozen per-moment mint 2034 wins');
+SELECT _assert((public.get_trophy_slab_data(:U3::uuid) -> 0 ->> 'circulation_count') <> '50',
+  'mC: the parallel circulation 50 is NEVER published beside serial 1017');
+SELECT _assert((public.get_trophy_slab_data(:U3::uuid) -> 1 ->> 'circulation_count') IS NULL,
+  'mD: neither source can hold serial 1017 -> denominator dropped, not guessed');
+-- ⚠ NON-VACUOUS CONTROL: the ordinary path must still take the edition value, or
+-- a reader that returned NULL for everything would satisfy the two pins above.
+SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 1 ->> 'circulation_count'), '100',
+  'control: a POSSIBLE pair still takes the live edition circulation');
 
 SELECT '✓ get_trophy_slab_data: all assertions passed' AS result;
 

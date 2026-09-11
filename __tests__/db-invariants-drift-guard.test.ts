@@ -504,7 +504,10 @@ const PINS = [
   {
     fn: "get_trophy_slab_data",
     test: "supabase/tests/get_trophy_slab_data.sql",
-    migration: "supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql",
+    // Repointed 2026-09-11: the circulation expression is no longer a plain
+    // COALESCE — it refuses a serial above the resolved edition's circulation
+    // (the rendered `#1017/50`). D25's render half.
+    migration: "supabase/migrations/20260911093000_audit_20260911_trophy_slab_refuses_an_impossible_serial_over_circulation.sql",
   },
   {
     fn: "get_moment_detail",
