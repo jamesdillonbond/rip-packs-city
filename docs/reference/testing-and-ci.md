@@ -158,6 +158,19 @@ The repo has a real automated test suite. Run it before shipping non-trivial cod
 ---
 
 
+## Fixing a guard without fixing its RECORD leaves the incidence unmeasurable (displaced from CLAUDE.md 2026-09-10, verbatim)
+
+> - ⚠ **FIXING A GUARD WITHOUT FIXING ITS RECORD leaves the incidence unmeasurable** — 8 of 10 saturation
+>   breakers logged `extra: {}`, so the obvious query saw **1** event and a shape-independent one saw **3**.
+>   Fix the guard AND the field an observer keys on.
+
+The rule stays in CLAUDE.md; the worked numbers live here. **The trap is that the guard WORKED** — it
+tripped ten times — and the defect was entirely in what it wrote down: with `extra` empty, the query any
+observer would naturally write (keyed on the field naming the offender) found one event, and only a
+shape-independent count found three. **An instrument's record is part of the instrument.** When you fix a
+guard, fix the field whoever comes to measure its incidence will key on, or the fix is unmeasurable and the
+next reader concludes the problem was rare.
+
 ## Test-quality lessons from the 2026-08-17 coverage pass
 
 Added rather than extracted — these are new, and the pass that produced them is recorded in

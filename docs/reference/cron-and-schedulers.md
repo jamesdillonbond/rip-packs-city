@@ -128,6 +128,98 @@ and see whether the others RISE (budget) or hold at ~5 (cap).
 
 Derivation, the gap distribution, and the detector: [testing-and-ci.md](testing-and-ci.md).
 
+## 🚨 2026-09-10 — DELIVERY WENT TO **ZERO**, AND EVERY WATCHER WAS ITSELF A GHA SCHEDULE
+
+The section above is about *shedding* — erratic delivery. This is the other state, and it is distinct:
+**from 18:30 PT to 21:11 PT GitHub delivered NO `schedule` event to this repo at all.** Baseline over the
+7 hours to 18:30 PT was **~4.3 scheduled runs/hour** (30 runs, hourly range 1–6); across the next 2.8 h,
+~27 slots on four high-frequency workflows, **zero**. Against the 27%-of-an-hourly-cron rate measured the
+same night that is p ≈ 2e-4 **if slots were independent** — ⚠ they are not (shedding is load-correlated),
+so read it as an upper bound on significance, not proof. What is not in doubt is the direction.
+
+**Controls, because "GitHub is broken" is the easy story:**
+
+- **Actions itself was healthy** — three `workflow_dispatch` runs and every push CI run succeeded in the
+  same window. It is the *scheduler*, not the runner or the repo's credentials.
+- **Nothing was queued**: `status=queued` held exactly ONE run, created 2026-08-19 (a separate, long-stale
+  `allday-ingest` run). So ticks were **dropped, not delayed**.
+- **cron-job.org was ALIVE** — topshot/allday/golazos `*-sales-indexer` each logged 8–9 runs in the same
+  2.8 h. ⭐ So the blast radius is exactly *lanes whose only live caller is a GHA schedule*, which on the
+  night was the ten `dead-lane-backstop` lanes plus `topshot-active-listings-ingest`,
+  `topshot-sales-history-backfill` and `pinnacle-owner-discovery`.
+
+⛔ **THE DEFECT WORTH REMEMBERING IS NOT THE STALL — IT IS THE CORRELATION.** `pipeline-sentinel` (hourly
+`:34`), `ops-monitor`, `e2e-smoke` and even `scheduler-liveness.yml` are ALL GHA schedules, so the lanes
+and every instrument watching them stopped together. **An alarm that shares a scheduler with its subject
+is not an alarm.** A 2.8 h outage of 13+ lanes was found by a session happening to look.
+
+### `rpc_gha_schedule_watchdog()` — pg_cron watching GitHub, and GitHub watching pg_cron
+
+pg_cron is in the database, is not throttled by GitHub, and ran normally through BOTH of 2026-09-10's
+outages (the ~10 h Vercel spend-cap pause, #76, and this stall). Added that night:
+
+- **`public.rpc_gha_schedule_watchdog()`**, pg_cron `rpc-gha-schedule-watchdog` at `8,38`, writing one
+  `gha-schedule-watchdog` row to `pipeline_runs` per tick.
+- **`extra.event` on every heartbeat writer** (`sentinel-heartbeat`, `dead-lane-backstop-heartbeat`),
+  carrying `github.event_name`. ⭐ **This is what made the stall measurable at all:** a heartbeat recorded
+  that a workflow RAN but never WHICH TRIGGER ran it, so a `schedule` tick and a hand-fired dispatch wrote
+  **identical rows** — and on the night the only runs that existed were dispatches. The watchdog counts
+  **only** `event = 'schedule'`.
+- **A `gha-schedule-watchdog` watchlist row** (`medium`, 90 m) — the reverse direction, so the GHA sentinel
+  alarms if *pg_cron* stops. Neither system can hide the other's failure.
+
+⚠ **The probe lives on `dead-lane-backstop` (4×/hour) as well as the sentinel (1×/hour) for SAMPLING RATE.**
+At 27% delivery the hourly sentinel cannot separate a stall from its own normal 4.06 h median gap at any
+useful latency.
+
+⚠ **THE 6-HOUR THRESHOLD IS COMPUTED, NOT CHOSEN — a threshold is a false-alarm budget.** At 27% delivery
+and 4 slots/hour, a 3 h window is 12 slots: an all-miss run has p = 0.73¹² ≈ 2.3%, and with 96 starting
+positions a day that is **~2 false alarms every day**. 6 h is 24 slots, p ≈ 5e-4, ~2.5% across a day of
+half-hourly ticks. The cost is latency and it is stated rather than hidden: **a stall publishes ~6 h in.**
+The 3 h/6 h/24 h tick counts are written every tick regardless — the flag is the alarm, the counts are the
+instrument. ⚠ Re-derive both if the backstop's cadence or GitHub's rate moves.
+
+⚠ **THREE STATES, AND THE FIRST TICK FOUND THE HOLE IN TWO.** A **total** stall writes no tagged heartbeat
+at all (nothing runs, so nothing writes one), which classifies as `unknown` — and with `ok` keyed on
+`stalled` alone, **the worst case would have written `ok = true` forever** while the estate's only scan
+(`ok = false`) saw nothing: this repo's own honesty defect, rebuilt inside the instrument meant to prevent
+it, and caught only by RUNNING it and reading what it wrote. So an unknown has a **shelf life** — a deploy
+artifact for 12 h, a BROKEN PROBE after that (`extra.instrument_broken`, which sets `ok = false` exactly
+like a stall does).
+
+⚠ **`ok` describes the FINDING, not the function's execution** — deliberately, because `ok = false` is what
+the daytime monitor scans for and a row carrying the stall only in `extra` would be written and never seen.
+The watchdog's own liveness is the row EXISTING, plus the watchlist row. **Cadence breaches are context
+only and never set `ok = false`**: the sentinel already alarms on those, and during a GHA stall there are
+many, which would bury the one finding this lane exists to publish.
+
+✅ **Proven it can see a failure rather than assumed:** a synthetic `schedule`-tagged heartbeat at −7 h
+produced `verdict: stalled`, `ok = false`, an `error` naming 420 min, `rows_*` all NULL. Negative control in
+the same pass: with no tagged rows it returns `gha_schedule_stalled: null` and refuses to claim health. All
+five test rows were deleted afterwards.
+
+⚠ **`rows_*` MUST be NULL, never 0** — and the convenience overload is the trap: the 3-argument
+`log_pipeline_run(text, boolean, jsonb)` **COALESCEs `rows_found/written/skipped` to 0**, a fabricated zero
+for anything that measures nothing. Call the 11-argument form with explicit NULLs.
+
+⭐ **COST — and the obvious predicate was the expensive one.** `detect_stalled_pipelines()` is 18.5 ms /
+1,767 buffers warm. But `WHERE pipeline LIKE '%-heartbeat'` **cannot use `pipeline_runs_pipeline_started_idx`
+(pipeline, started_at DESC)** and seq-scans the whole table: **3,618 buffers / 147 ms against 11 buffers /
+2.8 ms** for an `IN (...)` list — **329×**, and ⚠ **narrowing the time window does not help, because the seq
+scan reads every page either way.** On an IO-bound Small instance a watchdog must not cost 28 MB twice an
+hour. The equality list is curated, so it is guarded rather than trusted:
+`__tests__/gha-schedule-watchdog-covers-every-tagged-heartbeat.test.ts` walks `.github/workflows/**`,
+asserts tree and list agree **in both directions**, and executes both shipped `run:` bodies (a blank `event`
+must read `unknown`, never `""` — an empty string would filter as "no scheduled tick" and could fabricate a
+stall out of a missing field).
+
+⛔ **WHAT IT DOES NOT DO.** It **records**; it does not **deliver** (no Telegram/email — those need tokens a
+sandbox session cannot reach, and delivery is the sentinel's arms). And it does **not** restore cadence:
+🚨 **re-enabling the cron-job.org entries remains the only lever that restores a 5-minute cadence — operator.**
+
+**Read it:** `SELECT started_at, ok, error, extra FROM pipeline_runs WHERE pipeline = 'gha-schedule-watchdog'
+ORDER BY started_at DESC LIMIT 5;`
+
 ## Cron / scheduler surfaces (4 independent schedulers)
 
 Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, all green (`detect_stalled_pipelines()` = `[]`, `check_pgcron_recent_failures()` = `[]`):

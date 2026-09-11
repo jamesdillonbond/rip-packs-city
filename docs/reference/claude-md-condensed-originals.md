@@ -447,3 +447,14 @@ The three payments, none of which lost an instruction:
 > Claude Code prompts: normal markdown, desktop-read (the iPhone rule was RETIRED 07-25).
 
 Displaced to make room for the IYKYK rule on the Team Captain designation (Trevor, 2026-09-06: never lead outreach, copy or a bio with it; the reused RPC brand is the tell).
+
+## 2026-09-10 — the `extra: {}` incidence example, displaced (verbatim)
+
+> - ⚠ **FIXING A GUARD WITHOUT FIXING ITS RECORD leaves the incidence unmeasurable** — 8 of 10 saturation breakers logged `extra: {}`, so the obvious query saw **1** event and a shape-independent one saw **3**. Fix the guard AND the field an observer keys on.
+
+The RULE stays in CLAUDE.md; only the worked numbers moved, and they are also recorded in
+[testing-and-ci.md](testing-and-ci.md) where the bullet now points. Displaced to pay for the
+correlated-scheduler rule (**an alarm sharing its subject's scheduler is no alarm**), which 2026-09-10
+cost 2.8 hours of invisible lane silence: GitHub's scheduler shed every tick and every one of the four
+watchers — `pipeline-sentinel`, `ops-monitor`, `e2e-smoke`, `scheduler-liveness` — is itself a GHA
+`schedule`, so the alarm and its subject failed together. Case: known-issues #80.
