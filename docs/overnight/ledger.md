@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · 🚨 THE FLEET ALARM FIRED CRITICAL AND COULD NOT TELL ANYONE — Telegram REJECTS an over-long message, and the sentinel's message grows with the size of the incident · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
+
+**Shipped: `lib/telegram-message.ts` (new), wired into all three Telegram senders — `app/api/sentinel/route.ts`, `lib/ops-alert.ts`, `lib/allow-list/prewarm.ts` — plus `__tests__/telegram-alerts-are-bounded.test.ts` (11 cases). Revert: `git revert` the commit; the module is new and the three call sites are one added line each.**
+
+🚨 **FOUND BY RUNNING THE THING, NOT BY READING IT.** I dispatched `Pipeline Sentinel` to verify the heartbeat change end-to-end, and the row it wrote carried this: `notifications: ["telegram-FAILED:http_400: {\"ok\":false,\"error_code\":400,\"description\":\"Bad Request: message is too long\"}", "email-FAILED:not_configured", "github-actions-native"]` on a **`status: CRITICAL`** sweep. ⭐ **Both out-of-band channels failed on the same run** — the alarm detected a real condition and the only surviving signal was a GitHub annotation.
+
+⭐ **THE DEFECT IS THE SHAPE, AND IT IS THE WORST VERSION OF IT: the message is one line per check, and `Pipeline Silence` NAMES EVERY SILENT LANE.** So the message length is a function of how bad the incident is, and Telegram's `sendMessage` caps `text` at **4096 characters** and **REJECTS past it rather than truncating**. 🚨 **The alarm's delivery probability therefore FALLS AS THE THING IT REPORTS GETS WORSE** — it is least likely to arrive on exactly the runs that matter most, and its failure is visible only as silence. That is this estate's alert sub-class in its purest form.
+
+✅ **FIXED AS A CLASS, NOT AT THE SITE.** A grep for the expression rather than the file found **three** unbounded senders (sentinel, `ops-alert`, allow-list `prewarm`), and the bound is applied **inside each sender**, not at the call site — a call site can always be copied without its length handling, which is how this repo has recorded this class spreading five times; a sender cannot be bypassed.
+
+⭐ **THE CONTRACT IS NOT "IT FITS" — it is "it fits AND the reader can tell what was removed."** Lines are dropped in **severity order** (ok, then warn, then critical) but **rendered in original order**; the notice states how many of how many were dropped **and, when a critical had to go, NAMES it** — a bare count would let a reader conclude they had seen every critical. A single runaway detail is capped with its own visible marker instead of taking the other seventeen checks down with it, because a check's NAME and STATUS are worth more than its prose. ⛔ **Deliberately NOT split into multiple messages:** partial delivery (message 1 lands, message 2 400s) reintroduces the same defect one level down, and `notifications` carries one verdict per channel, which could then no longer be true.
+
+⚠ **THE NOTICE IS SIZED AGAINST ITS OWN WORST CASE before anything is cut** — its length depends on the numbers printed inside it, so "reserve a fixed 60 characters" is the shape that fails at a boundary nobody tested. **That mutation broke 4 of the 11 cases**, which is how I know the property is pinned rather than described.
+
+✅ **Five mutations, five caught:** the sender's bound removed · severity order inverted · dropped criticals no longer named · the per-line cap removed · the notice not sized for its worst case. Full suite **1,496 files / 16,610 tests green**, `tsc --noEmit` clean.
+
+⚠ **NOT FIXED, RECORDED INSTEAD (different class, same file):** `lib/allow-list/prewarm.ts` `await fetch(...)` and **never reads `res.ok`** — a 400 there is completely silent, with no `-FAILED` entry anywhere. The length bound now stops the specific 400 this entry is about, but that sender still cannot report any other delivery failure.
+
+⚠ **NEEDS A DEPLOY TO TAKE EFFECT ON THE SENTINEL** — the route change is only live once Vercel serves it, and the project currently reads `live: false` (#76).
+
 ### 2026-09-10 · ⭐ #76's TRANSFERABLE HALF, FIXED: the sentinel's own outage left NO record, because the thing that writes the record is downstream of the thing that was down — the runner now writes a heartbeat BEFORE the call, so "the tick fired and the route died" stops looking like "the tick never fired" · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
 
 **Shipped: `.github/workflows/pipeline-sentinel.yml` (two new steps, +137 lines) and `__tests__/sentinel-workflow-records-that-it-tried.test.ts` (18 cases). No route change, no migration, no data mutation. Revert: `git revert` the commit — the workflow is the entire change and reverting restores the previous step list exactly.**
