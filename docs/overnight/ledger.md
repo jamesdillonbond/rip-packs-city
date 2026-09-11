@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · ⚠ I SIZED MY OWN FINDING AND IT SHRANK BY AN ORDER OF MAGNITUDE — "~24% of sales missing" is worth +0.15 to +0.58 points of M2, not the lever it sounds like · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
+
+**Shipped: docs only — an addendum to the `2026-09-11T1030Z` filing and a `(c)` block on #70. No code, no migration, no data mutation.**
+
+⭐ **THE PREVIOUS ENTRY SAID "do not quote a predicted M2 delta — that is measurable and has not been measured." So I measured it, and the number corrects my own framing.** *"We are missing ~24% of All Day sales"* reads like a go-live lever. **On the evidence it is not one.**
+
+⚠ **FIRST, A GAP THE SIZING EXPOSED THAT THE FINDING ITSELF DID NOT: there is no All Day NFT→edition catalog in this estate.** `moments` holds **ZERO** All Day rows (it is Top Shot only — 830,486 rows, none All Day) and `wallet_moments_cache` keys on `(edition_key, serial_number)` with **no `nft_id` column at all**. So the only map available was **prior sales**, which keys **450 of 2,190 fills (21%) onto 325 editions**.
+
+**Measured on that subset:** 325 editions touched · **69 already HIGH/MEDIUM** (the fills change nothing there) · 256 not yet · **9 would cross the 5-sale MEDIUM threshold**, 36 the 3-sale ask-corroboration one. **On a 6,190 denominator that is +0.15 to +0.58 points of M2.**
+
+⚠ **AND THE OBVIOUS SCALE-UP IS AN UPPER BOUND, NOT AN ESTIMATE — which is the part worth keeping.** ×4.87 to all 2,190 fills gives +0.7 to +2.8 points. **But the mappable subset is biased toward editions that have ALREADY traded — that is literally how they became mappable — so they sit nearer a threshold.** The 1,740 unmappable fills are disproportionately in colder editions where an added sale moves 0→1 and **crosses nothing**. **A sample selected by the same property that drives the outcome cannot be scaled linearly.**
+
+⭐ **SO THE ACTIONABLE STATEMENT CHANGED.** M2 reads **28.8% against a 30% bar — a 1.2-point gap.** The measured lower bound **does not close it**; only the upper bound might. **Ship the offer-fill lane for data completeness and as a contributor — do NOT sell it as the M2 fix**, and plan against the measured figure.
+
+⛔ **AND THE FIX IS BIGGER THAN I FIRST WROTE.** "Widen the lane" understated it: a real ingest lane resolves each NFT's edition **from the chain** (as `onchain_dapper_v1/v2` do), so the 79%-unmappable figure is an artifact of MY method, not a property of the fix. **But the absence of any All Day NFT→edition catalog is real, and it is the same gap behind `unmapped-sales-nfl_all_day`'s ~33,835 open rows. Scope the lane WITH its resolver, or it will write sales it cannot key.**
+
+⚠ **Instance note, recorded because it shaped the method:** the per-edition counts took four attempts — a 2,184-row `VALUES` join to `moments`, then to `sales`, then 60-edition chunks, all hit `57014`. What worked was **querying the `sales_2026` PARTITION directly in 40-edition chunks with a grouped scan** instead of correlated subqueries against the partitioned parent, whose `idx_sales_edition` is an `ON ONLY` stub.
+
+**Revert:** docs only — `git revert` the commit.
+
 ### 2026-09-11 · ⭐⭐ #70 ANSWERED FROM OUTSIDE THE ESTATE — the All Day decline is REAL, our ingest is EXACT, and that exactness is how I found a whole MISSING SALE TYPE worth ~24% of volume · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can... plan on working autonomously for the next 5 hours"
 
 **Shipped: docs only — #70 updated with its answer, inbox filing `2026-09-11T1030Z-…`, INDEX. No code, no migration, no data mutation. Dune cost: 1.9 credits of 2,500.**

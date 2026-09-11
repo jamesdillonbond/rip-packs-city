@@ -93,3 +93,48 @@ transaction contributes one row per moment — which is why it is comparable to 
 than to transactions. ⚠ It does not cover any sale path that emits neither event type; the exact
 27-of-30 agreement is the evidence that those two plus offers are the whole picture, not an
 assumption.
+
+---
+
+## 4. ADDENDUM (same session, ~03:40 PT): the M2 impact is now MEASURED, and it is MUCH SMALLER than §3 implies
+
+§3 deliberately refused to quote a number. Having now measured one, the honest headline is a
+**correction to the impression this filing otherwise leaves**: *"we are missing ~24% of sales"* sounds
+like a large M2 lever. **It is not.**
+
+**Method.** Pulled all 2,190 All Day offer-fills for 08-12 → 09-11 with their `nftId` (Dune, 1.45
+credits). ⚠ **There is no All Day NFT→edition catalog in this estate** — `moments` holds **zero** All
+Day rows (it is Top Shot only) and `wallet_moments_cache` keys on `(edition_key, serial)` with no
+`nft_id` column — so the only mapping available to me is **prior sales**. That keys **450 of 2,190
+fills (21%) onto 325 editions**; the other 1,740 are NFTs this estate has never seen sell.
+
+**Result on the mappable subset** (current 30-day sale counts from `sales_2026`, confidence from
+`fmv_current`):
+
+| | editions |
+|---|---:|
+| touched by a mappable fill | 325 |
+| already HIGH/MEDIUM (fills change nothing) | 69 |
+| not yet HIGH/MEDIUM | 256 |
+| **would cross the 5-sale MEDIUM threshold** | **9** |
+| would cross the 3-sale ask-corroboration threshold | 36 |
+
+**9 to 36 editions of a 6,190 denominator = +0.15 to +0.58 points of M2.**
+
+⚠ **A naive ×4.87 scale-up to all 2,190 fills gives +0.7 to +2.8 points — and that is an UPPER BOUND,
+not a central estimate.** The mappable subset is **biased toward editions that have already traded**
+(that is literally how they were mappable), and those sit nearer a threshold. The 1,740 unmappable
+fills are disproportionately in colder editions, where one added sale moves 0→1 and crosses nothing.
+**So the true figure is below the naive scaling, probably well below.**
+
+⭐ **Against the live gap this matters: M2 reads 28.8% against a 30% bar — 1.2 points.** The measured
+lower bound (+0.15 to +0.58) **does not close it**; the upper bound might. **So the offer-fill lane is
+worth shipping on data-completeness grounds and as a contributor, but it should NOT be sold as the
+fix for M2**, and anyone planning against it should use the measured lower bound.
+
+⛔ **AND THE FIX IS BIGGER THAN "WIDEN THE LANE", which §3 understated.** A real ingest lane would
+resolve each NFT's edition **from the chain**, as `onchain_dapper_v1/v2` already do — so the 79%
+unmappable figure is an artifact of MY method, not a property of the fix. **But it does show there is
+no All Day NFT→edition catalog to lean on**, which is the same gap that leaves
+`unmapped-sales-nfl_all_day` sitting at ~33,835 open rows. **Scope the lane with its resolver, or it
+will write sales it cannot key.**
