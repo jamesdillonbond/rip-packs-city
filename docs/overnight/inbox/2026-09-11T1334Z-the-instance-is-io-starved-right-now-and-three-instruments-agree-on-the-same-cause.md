@@ -103,3 +103,43 @@ All three carry the identical `(50000)` batch shape, and at 0/6/12/18Z **all thr
 - ⛔ **Still no BUFFERS measurement**, so the 1330Z filing's first instruction stands unmet: cutting `50000` may not cut cost, because a `LIMIT` bounds output and not cost. **Do not change a batch size on the strength of this addendum.**
 - ⛔ **The convoy is a schedule fact, not a proven cause** of the 34 timeouts — 16 heavy jobs in one hour against 6 worker slots is a strong mechanism, and the 600 s cap cluster corroborates it, but no change-point split was taken.
 - ⚠ The 09-09 nine-hour spell had a different shape again. **This closes the 12Z door the 1330Z filing left open; it does not close the corridor.**
+
+---
+
+# ADDENDUM 2 (06:55 PT) — ⛔ CUTTING THE `50000` BATCH WOULD HAVE CHANGED NOTHING. Measured, safely, without executing the backfill.
+
+The 1330Z filing's action #1 is *"cut the batch from 50,000 to 2,000–5,000"*, correctly gated on *"measure first: compare BUFFERS between batch sizes"* — and gated again on the instance being calm enough to measure, which it is not. **The measurement was available anyway: `EXPLAIN` WITHOUT `ANALYZE` does not execute**, so the SELECT half of `backfill_pinnacle_trade_acquisitions` can be planned at two batch sizes with no writes and no load.
+
+**The plan is byte-identical at `LIMIT 50000` and `LIMIT 50`:**
+
+```
+Limit  (cost=37355.19..44226.26 rows=20 width=61)
+  ->  Gather  (cost=37355.19..44226.26 rows=20)   Workers Planned: 1
+        ->  Parallel Hash Join  (cost=36355.19..43224.26 rows=12)
+              Hash Cond: ((t.nft_id = wmc.moment_id) AND (lower(t.to_wallet) = lower(wmc.wallet_address)))
+              ->  Parallel Seq Scan on pinnacle_trade_events t  (cost=0.00..6018.00 rows=85100)
+              ->  Parallel Hash  (cost=35855.39..35855.39 rows=33320)
+                    ->  Parallel Index Scan using idx_wmc_collection_id on wallet_moments_cache wmc
+```
+
+⭐ **Two things in that plan kill the batch-size lever outright, and neither needed a stopwatch:**
+
+1. **`rows=20`.** The planner estimates the join yields about **twenty** rows. A `LIMIT` of 50,000 is not merely large, it is **non-binding** — it can never be reached, so lowering it to 5,000, or to 50, removes nothing.
+2. **Startup cost is 37,355 of 44,226 — 84%.** A `LIMIT` only trims the *run* cost after startup. Here almost all the cost is building the hash over `wallet_moments_cache` before a single row can be emitted, and that happens in full regardless of the limit.
+
+⚠ **The byte-identical numbers are corroborated by the mechanism, not trusted on their own** — this repo's own warning is that an identical reading can be an artifact. Here the identity is the *predicted* consequence of a non-binding LIMIT over a blocking hash, and the plan states both facts independently.
+
+## So what IS the lever
+
+**The join predicate is unsargable, and I verified there is no index that could make it otherwise:**
+`lower(wmc.wallet_address) = lower(t.to_wallet)` — a function on **both** sides. Measured: **zero expression indexes containing `lower(` on `wallet_moments_cache`, and zero on `pinnacle_trade_events`.** So the planner's only option is to hash one side whole. ⭐ **The expensive side is `wallet_moments_cache` — the same 3,250 MB table whose 39-minute autovacuum this filing opened with.** The two halves of this document meet at one table.
+
+**And the function has no progress mechanism.** `LIMIT p_limit` carries **no `ORDER BY` and no cursor or watermark**, so every tick re-reads the same rows in physical order and relies on `ON CONFLICT (nft_id, wallet, transaction_hash) DO NOTHING` to no-op. ⭐ **That is why it "usually takes 8 seconds" — it is normally doing nothing at all**, and the 490-second runs are what the same unbounded work costs when the instance is already hot. This is this repo's recorded "a queue walk that starts at the top of what it resolves COMPOUNDS", in a backfill rather than a queue.
+
+**Candidate levers, in the order the evidence supports — none taken here:**
+
+1. **Expression indexes** on `lower(wallet_address)` (`wallet_moments_cache`) and `lower(to_wallet)` (`pinnacle_trade_events`), making the join sargable. ⚠ An index on a 3.25 GB table is itself a large object and this instance is IO-bound — but `CREATE INDEX CONCURRENTLY` **does** run via `execute_sql` (proven 2026-09-09, 105 MB). **Verify with `EXPLAIN` that the planner would actually use it before building it.**
+2. **A cursor/watermark** so the backfill advances instead of rescanning. With `rows=20` outstanding against 146,979 trade events and 3,742 acquisitions already written, most ticks are pure waste.
+3. ⛔ **NOT a batch-size change.** Measured above, both directions.
+
+⚠ **Scope: this is `backfill_pinnacle_trade_acquisitions` only.** Jobs **78** and **218** carry the same `(50000)` shape and were NOT planned here — check each before assuming the same conclusion, because the same argument can be binding in one function and decorative in another.
