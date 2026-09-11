@@ -18,6 +18,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase";
 import { redactSecrets } from "@/lib/redact-secrets";
+import { fitTelegramText } from "@/lib/telegram-message";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
@@ -43,6 +44,10 @@ type Delivery = { ok: true } | { ok: false; reason: string };
 
 async function sendTelegram(text: string): Promise<Delivery> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return { ok: false, reason: "not_configured" };
+  // See lib/telegram-message.ts: an over-long alert is REJECTED, not truncated,
+  // by Telegram — so an unbounded message is a silent alert. Observed live on
+  // the sentinel 2026-09-11; this sender has the same unbounded shape.
+  text = fitTelegramText(text);
   try {
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",

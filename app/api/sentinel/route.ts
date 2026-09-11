@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { redactSecrets } from "@/lib/redact-secrets";
+import { fitTelegramMessage, fitTelegramText } from "@/lib/telegram-message";
 import { summariseBlindChecks, BLIND_CHECK_NAME } from "@/lib/sentinel/blind-checks";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
@@ -94,6 +95,12 @@ type Delivery = { ok: true } | { ok: false; reason: string };
 
 async function sendTelegram(text: string): Promise<Delivery> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return { ok: false, reason: "not_configured" };
+  // 🚨 The cap is enforced HERE, at the boundary, not only at the call site.
+  // On 2026-09-11T00:01:09Z this route detected a CRITICAL and got back
+  // `http_400 … "message is too long"`, so the alarm fired and nobody heard it.
+  // A call site can always be copied without its length handling; the sender
+  // cannot be bypassed.
+  text = fitTelegramText(text);
   try {
     const res = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
@@ -1749,10 +1756,21 @@ export async function POST(req: NextRequest) {
         : "\u2705";
 
     {
-      const tgLines = checks.map(
-        (c) => `${emoji(c.status)} <b>${c.name}</b>: ${c.detail}`,
+      // ⚠ ONE LINE PER CHECK MEANS THE MESSAGE GROWS WITH THE INCIDENT —
+      // `Pipeline Silence` names every silent lane, so a fleet-wide outage
+      // writes the longest message this route can produce, and Telegram rejects
+      // it at 4096 characters. The builder drops the least severe lines first
+      // and declares what it dropped, so a large incident degrades the DETAIL
+      // rather than the DELIVERY.
+      const tgLines = checks.map((c) => ({
+        status: c.status,
+        name: c.name,
+        text: `${emoji(c.status)} <b>${c.name}</b>: ${c.detail}`,
+      }));
+      const tgMsg = fitTelegramMessage(
+        `${statusEmoji} <b>RPC Sentinel - ${overallStatus}</b>\n${now.toUTCString()}`,
+        tgLines,
       );
-      const tgMsg = `${statusEmoji} <b>RPC Sentinel - ${overallStatus}</b>\n${now.toUTCString()}\n\n${tgLines.join("\n")}`;
       const tg = await sendTelegram(tgMsg);
       // ⚠ The reason is appended to the SAME `telegram-FAILED` prefix any
       // existing reader matches on, so nothing that greps for it breaks.

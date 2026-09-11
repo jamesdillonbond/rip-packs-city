@@ -22,6 +22,7 @@
 // manually before calling in.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { fitTelegramText } from "@/lib/telegram-message"
 import {
   buildWelcomeEmailHtml,
   buildWelcomeEmailSubject,
@@ -411,6 +412,9 @@ async function sendTelegramAlert(text: string): Promise<void> {
     console.log("[prewarm] telegram env missing — skip alert")
     return
   }
+  // See lib/telegram-message.ts: Telegram REJECTS an over-long message rather
+  // than truncating it, so an unbounded alert is a silent one.
+  text = fitTelegramText(text)
   try {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
