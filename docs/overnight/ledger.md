@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · 🚨 3-OF-3 vs 0-OF-9 ALONG THE CADENCE AXIS: every slow lane resumed on its first slot, not one fast lane has — and `alerts-send`/`alerts-dispatch` are in the dead set, so USER ALERTS have been down since 13:54Z · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
+
+**Shipped: docs only — the split recorded on #76 + this entry. No code, no migration, no data mutation.**
+
+⭐ **THE RESULT IS CLEAN BECAUSE THE CADENCES WERE MEASURED BEFORE THE PREDICTION, from `pipeline_runs_daily` over 09-07…09-09.** Re-read 00:52Z, ~50 minutes after serving returned. **Every low-frequency lane resumed on its FIRST post-recovery slot and none was late:** `candy-sales-indexer` **00:20:13Z** (4-hourly `:20`) · `candy-listings-indexer` **00:35:12Z** (`:35`) · `candy-offers-indexer` **00:50:42Z** (6-hourly `:50`). ⛔ **Not one of the nine lanes on a 1–15 minute cadence has run**, 649–682 minutes silent: `ownership-onchain-walk`, `pinnacle-events-ingest`, `golazos-listings-indexer`, `allday-listings-retry`, `alerts-send`, `alerts-dispatch`, `allday-listings-indexer`, `pinnacle-listings-retry`, `snapshot-pack-asks`, `wmc-fmv-populate`. **Each has had between 3 and 50 scheduled slots pass since recovery and taken none.**
+
+⚠ **THE MECHANISM IS A HYPOTHESIS AND IS LABELLED ONE — cron-job.org auto-disables a job after a run of consecutive failures.** ⭐ **The discriminator it predicts is the failure COUNT, not the lane, and that is exactly the axis the data splits on:** across the ~10-hour outage a 4-hourly job accumulated **2–3** consecutive failures and stayed enabled; a 1-minute job accumulated **~640**. ⛔ **cron-job.org's job state is not readable from this sandbox, so this is NOT measured** — but no other mechanism offered predicts 3-of-3 / 0-of-9 along cadence. 🚨 **OPERATOR CHECK, TREVOR, cheap and decisive: open cron-job.org and see whether those nine jobs are DISABLED.** If they are, the site returning was never going to restart them — they need re-enabling by hand, and nothing on this platform will tell you otherwise.
+
+🚨 **THE URGENT PART: `alerts-send` and `alerts-dispatch` are in the dead set.** **User-facing alert delivery has been down since 13:54Z / 13:59Z** — eleven hours — and that is *separate from and on top of* the sentinel's own mute alarm in #77. **Two independent alerting failures at once**, which is also why nothing escalated.
+
 ### 2026-09-10 · 🚨 I HAD #78's DIAGNOSIS WRONG AND `rows_found` SAID SO: the Golazos writer is fine — it FINDS NOTHING — and that is a FOURTH lane state nothing on this platform watches · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
 
 **Shipped: docs only — a corrected diagnosis on #78 + this entry. No code, no migration, no data mutation.**
