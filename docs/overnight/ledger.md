@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · ✅ THE NIGHT PASS'S OTHER TWO QUEUED ITEMS ARE BOTH NON-ISSUES — one predates its own fix by 13 minutes, the other is silent ON PURPOSE · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
+
+**Shipped: docs only — dispositions written into the 09-11 handoff's queue section so the next pass cannot re-queue them. No code, no migration, no data mutation.**
+
+⭐ **Q2 IS STALE, AND THE MECHANISM THAT PRODUCED IT WILL RECUR.** The pass filed `/api/sentinel` dropping a Telegram alert at **00:01Z** with `400 … message is too long` as a live route defect. **Its fix landed at 00:14:44Z — thirteen minutes later** (`26ec426d9`, `lib/telegram-message.ts`). Every sentinel run since reports a clean `"telegram"` — 00:20, 00:23, 00:47, 03:08, 05:01Z — including **20-check payloads**, and the bound is unit-proven across **11 cases**, one of which *reproduces the live failure*, with enforcement at the SENDER so no caller can reintroduce it. ⚠ **The generalisable trap: the pass swept "runtime errors, last 24 h", and a 24-hour error window ALWAYS contains the failures a fix landed inside it was built to stop.** Check whether a fix post-dates the error before filing the error.
+
+⭐ **Q3 IS A FALSE POSITIVE AND THE SHAPE IS WORTH KEEPING.** `ingest-topshot-challenges` reads "silent 3 days, and its ONLY `pipeline_runs` row ever is a 09-08 upstream `HTTP 530 / CF 1033`" — which reads exactly like a lane that died on its first bad upstream day. **It was deliberately UNSCHEDULED on 2026-09-08** (`62a092ae6`, Vercel cron `10 8 * * *` removed) because it fires into `public-api.nbatopshot.com`, dead since ~08-28. Its route header records the retirement, the evidence, and the re-enable condition ("only after a manual run writes rows"); `__tests__/topshot-gql-dead-host-crons-are-retired.test.ts` **pins that it stays unscheduled** and passes 7/7. **The "3 days" ARE the retirement.** ⭐ **A lane whose last row is a failure with nothing after it can be a RETIREMENT rather than a breakage — read `vercel.json` and the route header before filing, because `pipeline_runs` cannot tell the two apart.**
+
+⚠ **AND ONE COUNT WORTH CORRECTING WHILE HERE, though it changes no action:** #81 says the dead Top Shot GQL is "KILLING **BOTH** LANES THAT USE IT". The 2026-09-08 inbox filing that opened this thread is titled *"**five** lanes still fire into the dead topshot gql host"*, and the retirement guard's own `RETIRED` list is broader than two. **#81's "both" is scoped to the offers path, not to the host** — worth not reading as a full enumeration of what the dead host takes down.
+
+**Revert:** docs only — `git revert` the commit.
+
 ### 2026-09-11 · 🚨 A SELF-HEAL HAS RUN 4x/DAY FOR MONTHS, LOGGED 274 REPAIRS IT NEVER MADE, AND ITS DB-INVARIANT PIN IS BLIND TO THAT BY CONSTRUCTION (#82) · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can... plan on working autonomously for the next 5 hours"
 
 **Shipped: docs only — register **#82**, inbox filing `2026-09-11T0927Z-…`, INDEX. No code, no migration, no data mutation. The three candidate fixes are enumerated in #82 and NONE was taken autonomously; the reasons are recorded there and below.**
