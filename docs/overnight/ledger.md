@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ✅ #78 IS NO LONGER A HYPOTHESIS — Golazos traded 6 moments today and its listings lane has not CLOSED one in 259 hours · plus all three of tonight's changes verified live · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
+
+**Shipped: docs only — the refutation on #78 + this entry. No code, no migration, no data mutation.**
+
+✅ **THE ALTERNATIVE I NAMED AND COULD NOT EXCLUDE IS NOW EXCLUDED, ON A DIFFERENT TABLE.** #78 rested on Golazos listings being frozen since 09-03, with one honest escape hatch: LaLiga Golazos is much the smallest marketplace, so *"the feed genuinely has no new listings"* was not absurd. **It required the marketplace to be idle, and it is not** — `sales` holds **6 `laliga_golazos` sales in the last 24 hours, newest 2026-09-10 18:43:07Z**. ⭐ **And the decisive reading was on the WRITE side, not the read side: `cached_listings_v2.completed_at` for Golazos is newest at 2026-08-31 05:24Z — 259 HOURS (~10.8 DAYS).** So the lane is neither inserting new listings **nor closing the ones that filled**, while sales kept settling. **A working indexer cannot leave 539 rows open across a week in which six of them sold.**
+
+⭐ **TWO CONTROLS ON THE SAME INSTRUMENT, BOTH BEHAVING:** `disney_pinnacle` newest `completed_at` **0 h ago** (working) · `nfl_all_day` **11 h ago** (stopped exactly with #76's outage, no earlier). Same table, same column, same query — **so the Golazos reading is a property of the lane, not of the measurement.** ⚠ What remains unknown is the mechanism inside the lane (fetch-and-discard, a filter, a mis-keyed collection) — **not whether it is broken.**
+
+✅ **ALL THREE OF TONIGHT'S SHIPPED CHANGES ARE VERIFIED IN PRODUCTION, not just in CI.** (1) **`sentinel-heartbeat`** — row written **00:01:08Z** with `rows_*` NULL and `extra.run_id` matching the dispatching run, and **no spurious `sentinel` row on the healthy path** (the negative control). (2) **The Telegram bound** — `notifications: ["telegram", …]` on the 00:20:35Z and 00:47:39Z sweeps, no `-FAILED`; ⚠ still **not** a like-for-like reproduction of the 400, and the entry that shipped it says so. (3) **The `Alert Delivery` arm** — live: **`checks_run` 18 → 19**, and it reports **WARN** with `Alert Delivery` named in `extra.warn`, which is exactly its designed verdict (telegram delivered, email `not_configured`). ⭐ **The arm is doing on its first production run precisely what it was built to do: saying out loud that this alarm has one working channel.**
+
+⛔ **Unchanged and still Trevor's, restated because it is the actionable half of the night:** `RESEND_API_KEY` / `ALERT_EMAIL` are absent from the sentinel's runtime env (`not_configured` on every run since the record began). **Until that is set, one Telegram failure is a total alerting outage — which is exactly what happened at 00:01Z.**
+
 ### 2026-09-10 · 🚨 TESTING #76's STATED EXIT CONDITION INSTEAD OF RE-READING IT FOUND TWO MORE THINGS: 19 lanes on 1–15 MINUTE cadences still silent through 50 minutes of restored serving, and `laliga_golazos` LISTINGS FROZEN FOR 7 DAYS behind a lane reporting 96 clean runs a day (#78) · Claude Code (cloud), Trevor: "Keep going and plan on working autonomously for the next 3 hours"
 
 **Shipped: docs only — register #78 (new) + a corrected lane analysis on #76 + this entry. No code, no migration, no data mutation.**

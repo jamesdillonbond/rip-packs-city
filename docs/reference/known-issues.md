@@ -704,6 +704,12 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     ⚠ **THE ALTERNATIVE IS NAMED AND NOT YET EXCLUDED:** LaLiga Golazos is by far the smallest of the three marketplaces (908 rows vs 91k/113k), so "the feed genuinely has no new listings" is not absurd on its face. ⛔ **But 539 rows still marked OPEN is the part that argues against it** — a working indexer would have completed or expired most of them across seven days. **The discriminator is a single live read of the Golazos listings feed compared against these 908 rows**; it has not been run, so the cause is NOT claimed.
 
+
+    ✅ **THE ALTERNATIVE IS NOW REFUTED, ON A DIFFERENT TABLE, 2026-09-11 00:50Z — so the cause IS claimed.** "The feed genuinely has no new listings" required the Golazos marketplace to be idle. It is not: **`sales` holds 6 `laliga_golazos` sales in the last 24 hours, newest 2026-09-10 18:43:07Z.** Moments are trading. ⭐ **And the sharper half is the WRITE side rather than the read side: `cached_listings_v2.completed_at` for Golazos is newest at 2026-08-31 05:24Z — 259 HOURS (~10.8 DAYS) AGO.** The lane is therefore neither inserting new listings (7.3 d) **nor closing the ones that filled** (10.8 d), while sales kept settling. **A working indexer cannot leave 539 rows open across a week in which six of them sold.**
+
+    ⭐ **TWO CONTROLS ON THE SAME INSTRUMENT, AND THEY BEHAVE AS THEY SHOULD:** `disney_pinnacle` newest `completed_at` **0 hours ago** (a working lane) · `nfl_all_day` newest **11 hours ago** (a lane that stopped exactly with #76's outage and no earlier). **Same table, same column, same query — so the Golazos reading is a property of that lane, not of the measurement.**
+
+    🚨 **NET: `golazos-listings-indexer` has written NOTHING for over a week while `pipeline_runs` recorded ~670 clean runs (96/day).** The remaining unknown is the mechanism inside the lane — whether it fetches and discards, fails a filter, or writes to a mis-keyed collection — not whether it is broken.
     ⚠ **CONSEQUENCE IF IT IS WHAT IT LOOKS LIKE:** every Golazos surface that reads a floor ask, a deal score or a listing count has been serving week-old data while reporting nothing wrong — and the go-live accuracy metrics treat this collection as live.
 
 ### Resolved (verified 2026-05-23)
