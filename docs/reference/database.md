@@ -1647,6 +1647,20 @@ The board-liveness probe times `SELECT count(*) FROM <view>`, and the planner dr
 
 **THE RULE.** Before treating any `*_at` as freshness: read `col_description('public.<table>'::regclass, <ordinal>)` (or `\d+`). Then find the **writer's** freshness signal instead — for a per-tick sweep that is its `pipeline_runs` row, one per tick, not a stamp on 2,981 rows. ⭐ **Three columns on this database carry this trap and the comment names all three:** `pack_ask_state.last_checked_at`, `saved_wallets.cache_updated_at`, `edition_fmv_current.refreshed_at`.
 
+### 🚨 A FOURTH CASE, AND THE WORST VARIETY: the stamp is written by a DIFFERENT LANE than the one that owns the value (2026-09-10 PT, #81)
+
+The three above are all one lane stamping its own column with a meaning other than "verified now". `edition_offers.updated_at` is worse, and CLAUDE.md's compressed line points here:
+
+- **`offers-sweep` owns `highest_offer` for Top Shot and is its ONLY writer.** Grep-verified across `app/` and `lib/`: `allday-offers-indexer` writes All Day's, `golazos-offers-indexer` writes Golazos's, `offers-sweep` writes Top Shot's. `topshot-sales-history-backfill` and `fmv-recalc` only READ the table.
+- **It last wrote on 2026-08-28.** Corroborated twice, independently: `pipeline_runs_daily` gives `max(day) WHERE rows_written > 0` = **2026-08-28**, and the oldest `updated_at` in the Top Shot cohort `topshot-deal-floor-serials` has touched is **2026-08-28 08:42 PT**. 13 days.
+- **Yet `edition_offers.updated_at` reads MINUTES OLD for Top Shot** — 0.0h since newest, only 6.1% of 12,945 rows older than 96h. Because `topshot-deal-floor-serials` upserts `{collection_id, external_id, low_ask, low_ask_serial, low_ask_nft_id, updated_at: nowIso}` — it refreshes the **ask** and stamps the row, and **never writes `highest_offer`**.
+
+⛔ **So the timestamp vouches for the ask and not for the offer sitting in the same row.** A freshness monitor on `edition_offers.updated_at` would have read healthy for all 13 days. ⭐ **The general rule the first three cases did not reach: a stamp is only evidence for the columns the lane that wrote it actually writes. Before trusting one, name the WRITER OF THE VALUE, not the writer of the stamp** — they are different lanes here, and nothing in the schema says so (`updated_at` carries no `col_description` at all; default `now()`).
+
+⚠ **A control that looks clean and is not.** The obvious split — "rows `topshot-deal-floor-serials` never touched should still carry the sweep's stamp" via `low_ask_serial IS NULL` — is **contaminated**: that cron writes `low_ask_serial: serial` where `serial` may itself be `null`, so a NULL there does not mean untouched. The cohort still returned the corroborating 08-28 minimum, but read it as corroboration, not as the designed control.
+
+⚠ **AND THE SURFACE READ ok THE WHOLE TIME, twice over.** `offers-sweep` ran **72×/day with `rows_written = 0` from 08-29** (`ok_count` 36/72) before it stopped running at all on 09-07 when cron-job.org went — so `rows_written = 0` was a null instrument exactly as this file's own rule says, and the lane's continued execution made the badge look alive. **Two independent failures; restoring the caller addresses only the second.**
+
 ⚠ **And do not generalise the sibling memory onto it.** `pack-availability-flags-are-snapshot-columns` (about `pack_ev_latest` / `pack_table_rows` `secondary_available` / `secondary_ask`, which genuinely DO age with `ev_snapshotted_at`) is a **different table and a different mechanism**. `pack_table_rows` now overlays the live ask on top of the aging EV snapshot — `COALESCE(pas.live_ask, pev.secondary_ask)`, and `secondary_available` true when `pas.live_ask IS NOT NULL` — so for a dist WITH a live ask those two columns are fresh 5-minutely and only the FALLBACK path ages. Misapplying that memory here is precisely the mistake this section records.
 
 ## 🚨 Pointing a NEW SCOPE at a shared, collection-scoped function fires EVERY branch it has — including the destructive one, retroactively (2026-09-08)
