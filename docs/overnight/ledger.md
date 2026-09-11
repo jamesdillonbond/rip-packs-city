@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ✅ BOTH CRITIQUES OF TONIGHT'S WATCHDOG ARE CORRECT AND I AM ACCEPTING THEM — including that my own instrument reported "the first tick I could SEE" as "the first tick GitHub delivered" · Claude Code (cloud), Trevor: "work through anything unresolved"
+
+**Shipped: `cron-and-schedulers.md` — the watchdog's coverage boundary, the corrected recovery time, and the tightening precondition. Docs only; no behaviour change.**
+
+✅ **CORRECTION ACCEPTED (#1), and it is about my instrument rather than the incident.** I wrote that GitHub resumed at **22:01 PT**, when the `sentinel-heartbeat` carrying `event = schedule` landed. A concurrent session's **200-run enumeration of the Actions API** puts the real resumption at **~21:31 PT** (`RPC Ops Monitor`), the stall at **3 h 01 m**, and the sentinel **fourth back, not first**. 🚨 **The watchdog samples only workflows that WRITE A TAGGED HEARTBEAT — two of ~17 scheduled workflows — so it structurally reports "the first tick I could see".** That is a ~30-minute blind spot on recovery, inherent and now written down: **quote a recovery time from the API enumeration; use the watchdog for the durable record that survives when GitHub is the thing that is broken.** ⭐ And my "2.8 h" was a **lower bound the moment it was written** — measured at 21:11 PT from inside an ongoing outage. **A duration measured from inside an outage should be written as `≥`.**
+
+✅ **CORRECTION ACCEPTED (#2): a repeat of this exact stall would NOT fire the flag** — 3 h 01 m against a 6-hour window, invisible by construction. The counts would show it; the alarm would not. ⭐ **Their arithmetic also shows the floor is tightenable and why 6 h was right when set:** on the hourly sentinel alone a 3 h window is 3 slots, P(0 of 3) ≈ 39% at 27% delivery ≈ 3 false alarms/day; pooling `dead-lane-backstop-heartbeat` at 4×/hour makes 3 h carry 15 slots, P ≈ 0.89%, ~one false alarm a fortnight.
+
+⛔ **AND THEY WERE RIGHT NOT TO TIGHTEN IT, which I re-verified rather than took on trust: the backstop's `schedule` trigger has STILL never delivered.** Re-checked **22:48 PT** — every `dead-lane-backstop-heartbeat` row is `event = workflow_dispatch`, **including the slots after GitHub resumed for the sentinel** (21:42 · 21:57 · 22:12 · 22:27 · 22:42 all empty). **So the 4 slots/hour the tightening depends on are a claim, not a measured rate. Keying an alarm to a number that may be zero is the same mistake in a new place.** **Precondition, unchanged and now better evidenced: one `dead-lane-backstop-heartbeat` with `event = 'schedule'`, then a day of them for the rate.**
+
+⭐ **ALSO ACCEPTED FROM THE SAME PASS, AND IT VALIDATES THE SCOPE I CHOSE:** a pg_cron backstop for the other nine lanes is ruled out on three measurements (they are Next.js routes needing pg_net + a bearer token; `vault.secrets` holds **zero** rows so the token is not in the DB; and `max_worker_processes` is 6 with **63 startup-timeout bursts in 24h**, all inside three hours). **"The constraint was never pg_cron — it was the credential."** The one-lane variant is the only one that avoids it, which is what shipped.
+
+**Revert:** docs-only. **Gate:** link guard 177/177; the claim corrected in the doc a reader reaches from CLAUDE.md, and this entry left above the entry it corrects rather than rewriting it.
+
 ### 2026-09-10 · 🚨 I TURNED `main` RED AND FIXED IT — the amendment migration re-declared a function without its `anon-exec` marker, and I ran the DOC guards for that push while never re-running the MIGRATION guards · Claude Code (cloud), Trevor: "work through anything unresolved"
 
 **Shipped: the missing marker in `20260911053500` (no SQL behaviour change). `main` green again.**

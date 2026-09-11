@@ -220,9 +220,32 @@ sandbox session cannot reach, and delivery is the sentinel's arms). And it does 
 **Read it:** `SELECT started_at, ok, error, extra FROM pipeline_runs WHERE pipeline = 'gha-schedule-watchdog'
 ORDER BY started_at DESC LIMIT 5;`
 
-⭐ **IT CAUGHT THE RECOVERY THE SAME MINUTE IT HAPPENED.** GitHub resumed at **22:01 PT 2026-09-10** — a
-`sentinel-heartbeat` row carrying `event = schedule`, the first delivered tick since 18:30 PT, a ~3.5 h
-outage. **Before the tag that row was indistinguishable from a hand-fired dispatch.**
+⭐ **IT CAUGHT THE RECOVERY — BUT LATE, AND THE REASON IS ITS OWN COVERAGE BOUNDARY.** The watchdog saw a
+`sentinel-heartbeat` carrying `event = schedule` at **22:01 PT 2026-09-10**, and the first write-up called
+that "the moment GitHub resumed". ⛔ **Corrected by a concurrent session's 200-run enumeration of the
+Actions API: delivery actually resumed ~21:31 PT, the stall ran 3h01m (not 2.8 h, which was measured while
+it was still running and was therefore a lower bound), and the sentinel was the FOURTH workflow back, not
+the first.**
+
+🚨 **THE LESSON IS THE INSTRUMENT'S, NOT THE INCIDENT'S: this probe samples only the workflows that WRITE
+A TAGGED HEARTBEAT — two of ~17 scheduled workflows — so it reports "the first tick I could see", never
+"the first tick GitHub delivered".** That is a ~30-minute blind spot on recovery and it is inherent, not a
+bug: the Actions API sees every workflow, the database sees only what instrumented runs write into it.
+**Quote a recovery time from the API enumeration; use the watchdog for the DURABLE record that survives
+when GitHub is the thing that is broken.** (Adding a tagged heartbeat to more workflows narrows this; the
+guard test makes each addition cheap.)
+
+⚠ **AND THE 6-HOUR FLOOR MEANS A REPEAT OF THIS EXACT STALL WOULD NOT FIRE THE FLAG — 3h01m against a 6 h
+window, invisible by construction.** The counts (`scheduled_ticks_3h/6h/24h`) would show it; the alarm
+would not. ⭐ **The floor IS tightenable, and the arithmetic is written down: keyed on the hourly sentinel
+alone a 3 h window is 3 slots, P(0 of 3) ≈ 39% at 27% delivery — ~3 false alarms a day, which is why 6 h
+was right when set. Pooling `dead-lane-backstop-heartbeat` at 4×/hour makes 3 h carry 15 slots, P ≈ 0.89%
+— about one false alarm per fortnight.** ⛔ **Do not tighten it yet: the backstop's `schedule` trigger has
+NEVER been observed delivering** (re-checked 22:48 PT 2026-09-10 — every run of it is a `workflow_dispatch`,
+including through the slots after GitHub resumed for the sentinel), **so those 4 slots/hour are a claim,
+not a measured rate, and keying an alarm to a number that may be zero is the same mistake in a new place.**
+**Precondition for tightening: a `dead-lane-backstop-heartbeat` row carrying `event = 'schedule'`, then a
+day of them to establish the rate.**
 
 🚨 **AND THE 22:08 PT TICK MISREPORTED IT, which is the second lesson and the more general one.** It
 published `unknown_probe_younger_than_window` when it plainly could tell: a `schedule`-tagged tick inside
