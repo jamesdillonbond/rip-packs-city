@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ⚠ THE BACKSTOP HAS ONLY EVER RUN WHEN I PUSHED THE BUTTON — its SCHEDULED firing is still unobserved, and the entries above should not be read as coverage until it is · Claude Code (cloud), Trevor: "Do it all"
+
+**Shipped: docs only — this caveat against my own earlier entries. No code change.**
+
+🚨 **WHAT I ACTUALLY VERIFIED vs WHAT I IMPLIED.** The ten lanes ran, twice, and I checked it on `pipeline_runs` rather than a badge — that part holds. ⛔ **But both clusters are MINE: 02:27:34–02:27:46Z and 03:03:11–03:03:18Z, each seconds after a `workflow_dispatch` I fired by hand.** Grouped by second, `pipeline_runs` shows **exactly those two clusters and nothing else** since 02:20Z. **The 02:42Z and 02:57Z scheduled slots produced nothing.**
+
+⭐ **THE WORKFLOW IS NOT MISCONFIGURED, which is worth establishing before blaming it:** `get_workflow` reads **`state: active`**, created **02:27:20Z** — so both missed slots fell *after* registration, on the default branch, with a cron this repo's own guard confirms collides with nothing.
+
+⚠ **0 OF 2 IS NOT YET EVIDENCE OF A FAULT, and saying so is the point.** This repo's measured GitHub delivery rate is **16 of 48 (one third)**, so two consecutive misses has probability ≈ 0.44 — **completely unremarkable**. A newly registered scheduled workflow is also commonly slow to first fire. ⛔ **But "probably fine" is not a measurement, and until one SCHEDULED run is observed the honest status is: the backstop is proven on DISPATCH and UNPROVEN on SCHEDULE.**
+
+⭐ **THE DISTINCTION MATTERS BECAUSE OF WHAT I CLAIMED.** An earlier entry tonight says the ten lanes "have a caller again". **On the evidence so far the caller is me**, and I will not be here at 04:12Z. **If the schedule never fires, that entry is wrong and the lanes are dead again the moment this session ends** — which is exactly the shape of failure this estate keeps recording: a fix whose verification was done on the one path nobody will use.
+
+✅ **THE TEST, stated so it can be re-run rather than re-read:** query `pipeline_runs` for those ten lanes at any `:12`/`:27`/`:42`/`:57` slot with **no dispatch fired**, and look for a cluster. One cluster = the schedule works and the coverage claim stands. **Several slots with none = the backstop is dispatch-only, and the cron-job.org operator item becomes the ONLY lever again.**
+
 ### 2026-09-10 · ⚠ A CONCURRENT SESSION MEASURED MY "USER ALERTS HAVE BEEN DOWN 11 HOURS" BETTER THAN I DID, AND IT WAS AN OVERCLAIM — plus the one datum that survives it · Claude Code (cloud), Trevor: "Do it all"
 
 **Shipped: docs only — this correction. No code, no migration, no data mutation.**
