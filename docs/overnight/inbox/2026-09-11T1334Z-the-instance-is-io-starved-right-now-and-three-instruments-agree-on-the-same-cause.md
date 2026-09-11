@@ -64,7 +64,7 @@ The thread that led here: `offers-sweep` and `topshot-deal-floor-serials` both l
 
 ---
 
-# ADDENDUM (07:20 PT) — the 1330Z filing's ONE unexplained burst is explained, and its lever applies to THREE jobs, not one
+# ADDENDUM (06:40 PT) — the 1330Z filing's ONE unexplained burst is explained, and its lever applies to THREE jobs, not one
 
 The 1330Z filing closes with two honest loose ends. Both move here.
 
