@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ⭐ THE CONTROL SETTLES IT: my new workflow's missed ticks are GitHub shedding, not a broken schedule — an untouched workflow missed its slots in the same window · plus the sentinel is now 20 checks and all three of tonight's arms are live · Claude Code (cloud), Trevor: "Do it all"
+
+**Shipped: docs only — this control + the arm verification. No code change.**
+
+⭐ **THE CONTROL, AND IT IS ONE I NEITHER CREATED NOR CAN INFLUENCE — which is the only reason it is worth anything.** I flagged that `dead-lane-backstop` had missed **three** scheduled slots (02:42Z, 02:57Z, 03:12Z) and that "probably shedding" was not a measurement. **`Pipeline Sentinel` is the control: hourly at `:34`, registered for MONTHS, not touched by me tonight. It produced NO run at 01:34Z or 02:34Z.** Every `sentinel` row since midnight — 00:01, 00:20, 00:23, 00:47, 03:08 — is one of my own dispatches.
+
+🚨 **SO: FIVE MISSED SCHEDULED TICKS ACROSS TWO WORKFLOWS in ~2.5 hours — one brand new, one long-established.** ⭐ **That removes "the new workflow is misconfigured" as the explanation**, which was the live hypothesis and the one that would have made tonight's backstop worthless. It is the estate-wide shedding this repo already measured at **16 of 48 delivered**, and it is currently running worse than that.
+
+⛔ **WHAT IT DOES NOT ESTABLISH, stated because the temptation is to round it up:** a control that explains the misses is **not** a positive observation of my schedule firing. **The backstop remains proven on DISPATCH and unobserved on SCHEDULE** — the test in the previous entry stands unchanged, and the first un-dispatched cluster at a `:12`/`:27`/`:42`/`:57` slot is what closes it.
+
+⚠ **AND IT SHARPENS THE OPERATOR ITEM RATHER THAN SOFTENING IT.** If GitHub is currently dropping even an hourly sentinel, a GHA backstop is a **thin** floor — thinner than the 1-in-3 the header promises. **Re-enabling the cron-job.org entries is not merely the better fix; on tonight's delivery rate it is the only one that actually restores a 5-minute cadence.**
+
+✅ **ALL THREE ARMS SHIPPED TONIGHT ARE LIVE AND VERIFIED IN PRODUCTION, visible as a clean progression in `extra.checks_run`: 18 → 19 → 20.** The 03:08:32Z sweep runs **20 checks** and its `warn` list names both new arms — **`Alert Delivery`** (correctly: telegram delivered, email still `not_configured`) and **`Zero-Yield Lanes`** (correctly: 5 candidate lanes). ⭐ **`notifications: ["telegram", …]` with no `-FAILED`** — the bounded-message fix is holding on a 20-check payload.
+
 ### 2026-09-10 · ⚠ THE BACKSTOP HAS ONLY EVER RUN WHEN I PUSHED THE BUTTON — its SCHEDULED firing is still unobserved, and the entries above should not be read as coverage until it is · Claude Code (cloud), Trevor: "Do it all"
 
 **Shipped: docs only — this caveat against my own earlier entries. No code change.**
