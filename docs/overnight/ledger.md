@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ✅ #76's ROOT CAUSE IS SETTLED BY TREVOR — a VERCEL SPEND-CAP pause — so the rule is "escalate, never unpause", and metered SPEND is now an off-limits class for autonomous work · Claude Code (cloud), Trevor: "It was a spend management pause, but I increased budget slightly"
+
+**Shipped: docs only — CLAUDE.md (one off-limits class, +19 chars), `autonomous-tasks.md`, `tooling-gotchas.md`, `known-issues.md` (#76 → 🟠 partial), this entry. No code, no migration, no data mutation.**
+
+✅ **THE ONE QUESTION #76 COULD NOT ANSWER FROM A SANDBOX IS ANSWERED, AND IT WAS THE RIGHT QUESTION TO LEAVE OPEN.** The ~10-hour outage on 2026-09-10 was **Vercel SPEND MANAGEMENT pausing the project**, and the budget has since been raised **slightly**. Billing is not readable from this sandbox and prod egress 403s at the proxy, so nothing on this side could have distinguished (a) Trevor paused it from (b) the platform did — **which is exactly why it was escalated rather than guessed.**
+
+⭐ **AND IT RETROACTIVELY SETTLES THE JUDGEMENT CALL, which is worth recording as a CALIBRATION rather than as a win.** `unpause_project` was one MCP call away and #76 recorded, at the time, that it was not used because *"the pause may BE the intent… unpausing would either override an explicit decision or re-open metered spend that something capped."* **The second branch is what actually happened:** unpausing would have re-opened spend against a cap that had genuinely been hit, on an estate whose standing rule is *no infra spend pre-revenue* against a $412/cycle bill. ⚠ **The calibration lesson is not "I was right" — it is that the cost of escalating was a few hours of a site that recovered on its own, against the cost of guessing, which was real money and an overridden decision. That asymmetry is the thing to recognise next time, not the outcome.**
+
+⛔ **PROMOTED AS A RULE: a `DEPLOYMENT_PAUSED` 503 is a BUDGET STATE, NOT AN OUTAGE TO FIX — ESCALATE, NEVER `unpause_project`.** ⚠ **And the cap moved only SLIGHTLY, so this CAN RECUR**, looking identical when it does: **recognise the 503 body rather than re-diagnosing from scratch.** Full account — mechanism, blast radius, and why the only real evidence is the 503 BODY (`live: false` and a `domains` list missing both apex hosts read identically on a healthy estate) — now in [tooling-gotchas.md](../reference/tooling-gotchas.md).
+
+⭐ **THE HOME FOR IT WAS AN OFF-LIMITS LIST, NOT A NEW MEMORY RULE — which is why it cost 19 characters instead of 275.** CLAUDE.md stood at **39,967 / 40,000** (headroom 33); a standalone Vercel bullet would not have fitted without another displacement. But the file already points at an off-limits set for autonomous work, so naming **metered SPEND** alongside hot/payer wallet, secrets/env, auth and destructive SQL puts the prohibition exactly where a session about to act reads it. **39,986, headroom 14, limit test green.** The reasoning and the incident live in [autonomous-tasks.md](../reference/autonomous-tasks.md). ⚠ **Worth keeping as a pattern: when a new prohibition fits an existing enumerated class, extend the class — do not mint a rule.**
+
+⚠ **AND A SMALL INSTRUMENT TRAP CAUGHT IN THE SAME EDIT.** Restating #76's opening for the status derivation produced an index row reading just `PARTLY RESOLVED 2026-09-10` — **an empty title**, because `gen-known-issues-index.mjs` cuts the derived title at the first `—`, `:` or `.` followed by a space past character 24, and my lead put the em-dash at ~27. **Rewritten so the substance precedes the first such separator**; the row now names the cause. ⭐ **The general form: a DERIVED field is a contract on the prose that feeds it — check the derivation's output, not just that the prose reads well.**
+
+⛔ **WHAT IS STILL OPEN ON #76, and the item stays 🟠 partial for it:** the **detection gap is unfixed**. The sentinel is an HTTP route, so it 503s *before* `log_pipeline_run` and reads as *silent* rather than *failing*; `alerts-dispatch`/`alerts-send` sit behind the same paused deployment; and `Scheduler liveness` is **DAILY**, with a ~23-hour blind window the outage started inside. **A recurrence would be just as quiet.** ⓘ A concurrent session shipped a sentinel alert-delivery arm tonight, which addresses delivery — **not** the case where the sentinel itself cannot run.
+
+**Files:** `CLAUDE.md`, `docs/reference/autonomous-tasks.md`, `docs/reference/tooling-gotchas.md`, `docs/reference/known-issues.md`, `docs/overnight/ledger.md`.
+
+**Revert:** docs only, nothing to revert.
+
 ### 2026-09-10 · 🚨 I REPORTED UTC TO TREVOR ALL SESSION AND HE HAS ASKED FOR PT "SO MANY TIMES" — the rule existed, covered only the ARTEFACT, and I read it narrowly · Claude Code (cloud), Trevor: "only report times in PT to me... Save it to everywhere"
 
 **Shipped: `CLAUDE.md` Timestamps rule rewritten (net **−24 chars**, headroom 33 → 57 — displaced, not spent), the full case in [tooling-gotchas.md](docs/reference/tooling-gotchas.md), and a line in this ledger's own header. Revert: `git revert` the commit.**

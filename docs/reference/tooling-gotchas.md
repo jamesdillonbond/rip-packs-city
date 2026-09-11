@@ -674,6 +674,36 @@ file before you EDIT it.* The bundle is not a build artifact you can regenerate 
 account installs, so a stale one ships stale instructions (see known-issues #32, which is exactly that
 failure in its un-guarded form).
 
+## 🚨 A `DEPLOYMENT_PAUSED` 503 is a SPEND CAP — escalate, never `unpause_project` (confirmed by Trevor 2026-09-10)
+
+**What happened.** On 2026-09-10 the Vercel project stopped serving at ~14:00Z for ~10 hours. Every
+request returned **HTTP 503** with the body `The deployment is currently unavailable` / `DEPLOYMENT_PAUSED`,
+and production deployments pushed during the window went straight to **`CANCELED`**. ✅ **Trevor
+confirmed the cause: Vercel SPEND MANAGEMENT paused the project**, and he then raised the budget
+**slightly**.
+
+⛔ **THE RULE: a `DEPLOYMENT_PAUSED` 503 is a BUDGET state, not an outage to fix.** `unpause_project`
+is one MCP call away and it is the wrong call from a session: it re-opens metered spend against a cap
+that had genuinely been hit, on an estate whose standing rule is *no infra spend pre-revenue* against a
+$412/cycle bill. **Escalate to Trevor with the evidence; do not unpause.** Now also listed in
+[autonomous-tasks.md](autonomous-tasks.md)'s off-limits set. ⚠ **The cap was raised only slightly, so
+THIS CAN RECUR** — and a recurrence looks identical, so recognise the 503 body rather than re-diagnosing.
+
+⭐ **THE BLAST RADIUS IS WHAT MAKES IT DANGEROUS: every HTTP lane dies, INCLUDING the detectors.**
+~20 ingest lanes stopped. The **sentinel is itself an HTTP route**, so it 503s and fails *before*
+`log_pipeline_run` — writing no `pipeline_runs` row at all, which makes it read as **"silent"** rather
+than **"failing"** (indistinguishable from never-scheduled). `alerts-dispatch`/`alerts-send` sit behind
+the same paused deployment. And `Scheduler liveness`, the GHA watchdog built for this, is **DAILY** —
+it ran an hour before the event, passed legitimately, and was blind for ~23 hours. **Three detectors,
+three blind spots, composing into total silence: the estate was down for 9.5 h before anyone noticed,
+and then only because a hard smoke failure appeared on an unrelated commit.**
+
+⚠ **DIAGNOSING IT: the only reading that is real evidence is the 503 BODY.** `get_project` → `live: false`
+and a `domains` list missing both apex hosts **read IDENTICALLY on a healthy estate** (prod hostnames live
+on the DEPLOYMENT's `alias` array), so neither is evidence of an outage — that pair produced a false P0
+*and*, an hour after the correction was written, a false *"still down"* report from a second session.
+**Make a request.** Full account: known-issues #76.
+
 ## ⚠ A run's START, not its row timestamps, decides which side of a deploy it is on (measured 2026-09-10)
 
 Attributing database rows to a code version across a deploy is a two-timestamp problem and the obvious
