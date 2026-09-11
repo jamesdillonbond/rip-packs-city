@@ -146,7 +146,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 
 ### Guards, tests and instruments
 
-- ⚠ **`npx vitest run <file>` proves the FILE, not the tree — run the full suite before pushing.** A red run is not automatically yours: read the failing JOB first.
+- ⚠ **`npx vitest run <file>` proves the FILE, and the SUITE is not the GATE: `npm test`+`tsc` pass trees `npm run lint:ratchet` reds (per-RULE).** A red run is not automatically yours: read the failing JOB first.
 - ⚠ **Ask what RUNS a guard, not only whether it passes, and ASSERT THE COUNT IT INSPECTED** — a staged-only default inspected **nothing** on a CI checkout and exited 0.
 - ⚠ **Ask what a passing guard is structurally SILENT about — its DERIVATION fixes its blast radius, and its ROOT is a CLAIM** (one walked `app/api/cron` while the tenth copy sat in the `lib/` module two routes delegate to). **Prefer a tree walk over a curated list and a ban at zero over an allowlist; make *suppression* the curated list; assert an exclusion at the PROPERTY's granularity — and assert that a SECOND root CONTRIBUTES.** ⚠ **A guard anchored on an OPERATOR is blind to its class HOISTED into a name** (`t = x || 1` then `p / t` — 3 live sites in the divisor ban's OWN roots).
 - ⚠ **A vacuous assertion reads as coverage everywhere, and mutation testing cannot find the worst kind** — **a test stating the contract in a comment and asserting something weaker.** The tell is the TITLE: a name carrying a negative claim or a transformation is a promise the assertion usually fails to keep. **Assert the ABSENCE of the false claim, not the PRESENCE of an error message.**

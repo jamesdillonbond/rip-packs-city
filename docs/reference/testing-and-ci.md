@@ -2028,3 +2028,21 @@ Full narrative in `docs/sessions/2026-09.md` (entry "the CI estate audit, draine
 - ⚠ **"Wait for the render, not the call."** Three board-interaction tests `await waitFor`'d until `fetch` was CALLED with the new sort, then asserted the rows synchronously. The rows render one tick later, after the mock resolves. It passed locally 3 of 3 and reddened `main` on a commit with no `.tsx` in it. The tell is a `waitFor` whose predicate is about the MOCK followed by an assertion about the DOM.
 - ⚠ **Register ids collide between concurrent sessions.** R83 and R84 were each claimed twice on 2026-09-03 by two sessions minutes apart; `check-register-integrity` reds the whole run. Re-fetch origin and re-run the integrity check in the SAME command chain as the push, not before it; on a collision the later claimant renumbers. ⚠ **And a concurrent register write from a STALE copy drops CELL CONTENT with the guard green** — `check-register-integrity` compares rows and ids, not cell text, so commit `7fe59d47b` silently reverted four cells' same-day addenda (R61/R64/R71/R78; re-applied `dfdadc5ee`). After any register edit, diff your rows against `origin/main` before AND after the next fetch; a shorter cell is the tell.
 - **The sentinel's threshold-config read is now a visible failure** (`Threshold Config` warn arm) — the `const { data } = await …select()` shape on a supabase-js call is CLAUDE.md's `?? 0` class one layer up: the error comes back in the object, not as a throw, and a `for … of data || []` runs zero times with nothing said.
+
+## The SUITE is not the GATE (2026-09-10, measured the expensive way)
+
+🚨 **Three code commits were pushed on 2026-09-10 with RED CI, each verified locally first and each reported green in its own commit message.** The local checks run were `npm test` (16,599 → 16,610 → 16,619 tests, all passing) and `npx tsc --noEmit` (clean). **Both were honest; neither covers the gate that failed.**
+
+⭐ **ONE JOB OF NINETEEN WAS RED: `ESLint ratchet`.** Green alongside it: TypeScript, both vitest shards, the coverage merge + ratchet, component coverage, worker coverage and typecheck, DB invariants, both Cadence jobs, and every doc guard. **`npm test` runs vitest and nothing else. `tsc --noEmit` is types only. Neither runs ESLint.**
+
+⭐ **THE RATCHET IS PER-RULE, NOT PER-TOTAL, which is why one line tripped it:** `prefer-const grew 15 -> 16`, on a `let` in a test harness that is never reassigned. **The TOTAL read 717 against a baseline of 717 — so a total-only ratchet would have passed the broken tree.** That is the same shape this file warns about elsewhere: a check whose granularity is coarser than the property it claims to protect.
+
+✅ **THE LOCAL SET FOR A CODE PUSH IS THEREFORE THREE COMMANDS, not two:**
+
+```bash
+npm test                 # vitest
+npx tsc --noEmit         # types
+npm run lint:ratchet     # eslint, per-RULE against the baseline
+```
+
+⚠ **WHY IT SURVIVED THREE PUSHES, and this is the transferable half:** docs-only commits skip the code jobs and pass, so the badge history read as *alternating*, not as *broken* — and **local green was read as CI's verdict instead of CI being read.** ⭐ Same error, one level down, as the `live: false` correction filed the same night: **verify by making the request, not by reading the status you expect.**
