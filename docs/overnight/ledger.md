@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · ⭐⭐ #70 ANSWERED FROM OUTSIDE THE ESTATE — the All Day decline is REAL, our ingest is EXACT, and that exactness is how I found a whole MISSING SALE TYPE worth ~24% of volume · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can... plan on working autonomously for the next 5 hours"
+
+**Shipped: docs only — #70 updated with its answer, inbox filing `2026-09-11T1030Z-…`, INDEX. No code, no migration, no data mutation. Dune cost: 1.9 credits of 2,500.**
+
+⭐ **#70 ASKED FOR EXACTLY THIS AND NAMED WHY:** *"the next probe is UPSTREAM, not another pipeline read"* — because *"an upstream coverage change looks identical from inside and was not measured."* **Nothing inside this estate can answer it**, so I used **Dune `flow.cadence_events`**, an index built from the chain and independent of every pipeline here.
+
+✅ **(a) THE DECLINE IS REAL AND OUR LISTING INGEST IS ESSENTIALLY PERFECT.** Counting `NFTStorefront(V2).ListingCompleted` for `nftType = AllDay.NFT` with **`purchased = true`** — the filter matters, cancellations are numerous (09-07: **629 cancels against 272 buys**), and counting them would have manufactured a coverage gap that does not exist — against our own `sales`: **EXACT agreement on 27 of 30 days.** 398/398 · 436/436 · 841/841 · 83/83 · 146/146 · 269/269 · **984/984**. The three misses are one partial-window day and two off-by-2s. **On-chain purchased listings fell ~400/day (08-12→08-24) → ~150/day (08-25→09-09).** ⛔ **The coverage hypothesis is REFUTED: the market halved, the ingest kept pace.** ⭐ **And it has TURNED — 09-10 printed 984, the highest since 08-17, on NFL kickoff.**
+
+🚨 **(b) AND THE EXACTNESS IS ITSELF THE FINDING — this is the part I did not go looking for.** If the listing path matches PERFECTLY, then anything else is **entirely absent**. `OffersV2.OfferCompleted` for `AllDay.NFT`, `purchased = true`: **~65/day, 1,110 fills over 08-25→09-10**, against 3,581 sales captured in the same window — **~31% of what we record, ~24% of true All Day volume, and present EVERY SINGLE DAY.**
+
+⛔ **TOP SHOT HAS THIS LANE AND ALL DAY DOES NOT.** 14-day sources: TS `onchain` 15,059 / **`offer_fill` 9,260** / `atlas` 4,538 — All Day `onchain_dapper_v2` 2,537 / `onchain_dapper_v1` 669 and **no `offer_fill` row exists.** ⭐ **The indexer is not missing — its SCOPE is.** This repo already records that `0xb8ea91944fd51c43` *"serves AllDay + TopShot"*. **A scope widening of working code, the same shape as the 2026-07-19 counterparty widening — not new machinery.**
+
+⚠ **WHAT I AM NOT CLAIMING, because it is the tempting half.** M2 keys on sales-per-edition, so dropping ~24% of sales depresses it **by construction** — that is DIRECTION and INPUT SIZE. ⛔ **It is NOT a predicted M2 delta.** How far M2 moves depends on how those 1,110 fills distribute across editions and how many sit near a threshold, **which is measurable and has not been measured — so no number is quoted, in the item or here.** The honest next step is: widen the lane, then re-measure and report the delta.
+
+⭐ **METHOD NOTE WORTH KEEPING: the event types were READ FROM THE CHAIN, not assumed.** I discovered All Day emits only `Deposit`/`Withdraw` (no sale event of its own), then found the marketplace path by asking what CO-OCCURS in the same transactions — which surfaced `ListingCompleted`, `OffersV2` and `PackNFT.Opened` together. **Guessing the event name would have produced a confident wrong answer**; the `purchased` flag and the `nftType` field, both found by reading one sample payload, are what made the count comparable to ours at all.
+
+**Revert:** docs only — `git revert` the commit.
+
 ### 2026-09-11 · 🚨 THIS REPO DECIDED IN WRITING THAT A VALUE "WOULD BE A LIE" AND THEN WROTE IT 9,486 TIMES — the decision reached one writer and never the other (#83) · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
 
 **Shipped: docs only — register **#83**, inbox filing `2026-09-11T1014Z-…`, INDEX. No code, no migration, no data mutation.**
