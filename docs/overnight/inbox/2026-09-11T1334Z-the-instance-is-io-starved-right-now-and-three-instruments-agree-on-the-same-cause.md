@@ -1,0 +1,63 @@
+# The instance is IO-starved RIGHT NOW, three independent instruments agree, and a 3.25 GB table's near-continuous autovacuum is a prime consumer
+
+**Filed 2026-09-11 06:34 PT (Claude Code, cloud) — Trevor: "Keep going."** Found while chasing why `offers-sweep` still 530s; the 530 turned out to be a smaller story than what the logs were sitting next to.
+
+🚨 **READ [the 1330Z filing](2026-09-11T1330Z-a-live-saturation-spell-with-a-named-culprit-a-50000-row-batch-that-usually-takes-8-seconds.md) FIRST — IT NAMES THE CULPRIT AND THIS ONE DOES NOT.** A concurrent session snapshotted the SAME spell **20 minutes before** this one (13:25Z vs 13:45Z) and got further: **pg_cron jobid 355, `backfill_pinnacle_trade_acquisitions(50000)`, seven parallel workers, longest 191 s**, with the causal chain intact — heavy `DataFileRead` → disk IO saturated → **WAL writes stall** → 29 backends queued on `LWLock:WALWrite`. They also tie it to a **go-live bar**: M11 claimed *"~0 saturation spells since 08-30"* and the true count is **259 `job startup timeout` rows in 3 days against a bar of 0 in 7**.
+
+⛔ **SO DO NOT READ THIS FILE AS "THE AUTOVACUUM IS THE CAUSE".** Their evidence for causation is stronger than anything here, and a batch size on a schedule we control is a far better lever than a vacuum we should not starve. What the two readings establish TOGETHER is that **at least two heavy IO consumers were running concurrently**: their batch job, and a 39-minute autovacuum that — by its own 2,344 s runtime — had already been running since ~06:06 PT and was therefore underneath THEIR snapshot too. ⭐ **The autovacuum is a co-occurring standing consumer, not the trigger.** This file's distinct contribution is that second consumer plus the DOWNSTREAM cost — the kill rates and the user-facing timeouts below — which their filing does not cover.
+
+⚠ **READ THE SCOPE FIRST.** The kill rates and the log counts are WINDOWED (6 h). The `pg_stat_activity` reading is a **SNAPSHOT at 06:45 PT** and a snapshot is not a distribution — this file does NOT claim a trend, a start time, or a cause-and-effect chain. What it claims is that three instruments that fail in different ways all read the same thing at the same moment, which is why it is worth someone's next hour.
+
+## The three readings
+
+**1. Every active backend is blocked on IO — not CPU, not locks.** `pg_stat_activity` at 06:45 PT: **34 active** connections (`max_connections` 90, compute = SMALL, 2 cores). Every single one carries `wait_event_type = IO`, `wait_event` in (`DataFileRead`, `DataFilePrefetch`). ⭐ That is this repo's own standing claim — *"saturation is IO-, not CPU-bound"* — caught in the act rather than quoted.
+
+**2. The longest running statement is an autovacuum, at 39 minutes.**
+`autovacuum: VACUUM public.wallet_moments_cache` — `running_s = 2344`, waiting on `DataFileRead`. A second one (`ANALYZE public.panini_card_serials`, 53 s) was running concurrently.
+
+| table | total size | live | dead | % dead | autovacuum_count | last completed (PT) |
+|---|---|---|---|---|---|---|
+| `wallet_moments_cache` | **3,250 MB** | 2,305,851 | 99,919 | **4.2 %** | **1,025** | 2026-09-11 04:59 |
+
+⭐ **The tell is 1,025 passes at 4.2 % dead.** The last pass FINISHED at 04:59 PT and another was 39 minutes deep by 06:07 PT — i.e. it is vacuuming this table close to continuously, for a modest dead ratio, on the largest table in the database, against a **22 MB/s** tier budget. Whatever else is competing, this is a standing consumer.
+
+**3. The lanes with the heaviest `after()` bodies are being killed at their wall, and the user-facing pages are timing out.** Heartbeat-vs-terminal correlation (the only instrument that sees a `maxDuration` kill — `try/catch` cannot catch one and `pipeline_runs_daily` never shows it), **6 h window**:
+
+| lane | heartbeats | terminals | kills | rate |
+|---|---|---|---|---|
+| `panini-ingest` | 273 | 147 | **126** | **46 %** |
+| `fmv-recalc` | 37 | 14 | **23** | **62 %** |
+| `wallet-backfill` | 252 | 188 | 64 | 25 % |
+| `drain-fmv-cold-tail` | 12 | 5 | 7 | 58 % |
+| `wallet-backfill-golazos` | 254 | 242 | 12 | 5 % |
+
+⚠ **One artifact stated so nobody over-reads the table:** a fixed window counts a heartbeat near its end whose terminal lands after the cutoff as a kill. At these volumes that is ~1–2 rows, not 126 — but it is why the small numbers (1s) are noise.
+
+And the same window in Vercel production runtime logs, on **user-facing** paths:
+- `/nba-top-shot/edition/271:9040::19` → status **0** (connection closed), `[edition] market_bundle canceling statement due to statement timeout`
+- `/nfl-all-day/edition/6094` → status **0**, plus `get_edition_offers timed out after 45000ms — degrading to empty`
+- `/nba-top-shot/player/robert-covington` → `get_player_detail timed out after 45000ms — failing OPEN`
+- `/nfl-all-day/pack/dist/5815` → four `read exceeded 5000ms` on one page
+
+⛔ **`failing OPEN` and `degrading to empty` are the honesty canon's own worst sub-classes firing in production.** They are behaving as designed — the point is how often the design is being exercised.
+
+## What this is NOT
+
+- ⛔ **Not attributed to the 1am night pass.** Its migrations landed 02:13–03:34 PT and this reading is 06:45 PT. Plausible, unproven, and **nobody should act on that link without the change-point split** (`pipeline_runs` retains ~73 h, so the split is available).
+- ⛔ **Not "autovacuum is the bug".** Autovacuum on a 3.25 GB hot cache table is necessary; disabling or starving it trades a visible problem for a worse invisible one. The lever is per-table TUNING, not removal.
+- ⛔ **Not an upgrade recommendation.** This repo's standing rule is *fix expensive queries, don't upgrade* — and no infra spend pre-revenue.
+
+## The cheapest next measurements (none of them shipped here, on purpose)
+
+1. **Split on a change point.** Kill rates per hour across 72 h. If 46 %/62 % are steady-state the fix is capacity planning; if they stepped, find the step. **A rate pooled across a change measures neither side.**
+2. **Is `wallet_moments_cache` churn justified?** `n_tup_upd` / `n_tup_del` per hour vs `autovacuum_count`. If it is rewritten wholesale on a cadence, the lever is the WRITER, not the vacuum.
+3. **Per-table autovacuum tuning as the candidate fix:** `autovacuum_vacuum_scale_factor` / `autovacuum_vacuum_threshold` on `wallet_moments_cache` so passes are fewer but still bounded. ⚠ This is a production change with DELAYED consequences (bloat accrues quietly) and needs a before/after on table size and dead-tuple ratio, not just on kill rate.
+4. **`fmv-recalc` at 62 % deserves its own look** — this repo already records it as the DB's #1 reader and as *"wasteful, NOT broken, SIZED"*. A 62 % kill rate is new information against that filing and may or may not survive item 1.
+
+## Why it was not shipped from here
+
+Every candidate above is either a production DB-parameter change with delayed, hard-to-reverse effects, or needs a distribution this session did not take. **The measurement is the deliverable; the fix needs the change-point split first.**
+
+## Incidental, and separately filed context
+
+The thread that led here: `offers-sweep` and `topshot-deal-floor-serials` both last wrote **2026-08-28** and both now fail with **HTTP 530** from `public-api.nbatopshot.com/graphql` (reached via `topshot-proxy`, which passes the upstream status through verbatim — `index.js:115`). Register **#81** carries that. ⭐ **`sales-indexer` shares the dependency and does NOT lose data** — it degrades to on-chain tx-decode and `unmapped_sales` resolution ran **100 % on each of the last four full days**. That fallback is the difference between the two outcomes and is worth copying, not just noting.
