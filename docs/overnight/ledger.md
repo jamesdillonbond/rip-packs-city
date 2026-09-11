@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · ✅ #82's INSTRUMENT IS HONEST AND ITS PIN CAN FINALLY SEE THE BLOCKER — the self-heal now reports `raised: 0, attempted: 4, reverted_by_trigger: 4` on live data instead of claiming four repairs · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
+
+**Shipped (1, DB + repo):** migration `20260911103459_impossible_parallel_selfheal_audits_only_raises_that_survived`, its byte-exact repo file, the re-pointed pin, and the SQL fixture that makes the pin non-vacuous.
+
+⭐ **THE FIX IS TO THE REPORT, NOT THE WORK — deliberately.** `raise_impossible_parallel_circ()` still attempts exactly what it attempted before; #82's other two options (retiring the job, running the remap) remain Trevor's. What changed is that it can no longer **claim** a repair it did not make: `RETURNING e.circulation_count` sees the BEFORE trigger's rewrite, so the audit INSERT is now filtered to `stored_circ IS NOT DISTINCT FROM new_circ` and the return carries **`attempted` / `raised` / `reverted_by_trigger`**.
+
+✅ **PROVEN ON PRODUCTION DATA, ROLLED BACK VIA `RAISE` SO NOTHING PERSISTED:**
+
+```
+return   = {"raised": 0, "attempted": 4, "reverted_by_trigger": 4}
+audit_rows 274 -> 274
+```
+
+⭐ **`attempted = 4` is the SAME 4 as the breached trust metric** (`topshot_impossible_parallel_serials` = 4 vs breach_at 3) — the loop closes on itself. **The old function, on that identical call, would have returned `raised: 4` and written FOUR audit rows for repairs that never happened.** That is how 274 rows accumulated across 188 editions while 168 of them are not reflected in the data.
+
+⭐⭐ **AND THE PIN CAN NOW FAIL ON THIS, WHICH IT COULD NOT BEFORE.** `supabase/tests/raise_impossible_parallel_circ.sql` had **neither** the `badge_editions` table **nor** the trigger that reverts the write — it validated the function in a world where the thing that breaks it does not exist, and every assertion it carried was about what the function must NOT touch. **Not one asserted a raise SURVIVED.** Added: both objects (a clearly-labelled stand-in for the parallel branch only, with the production behaviour quoted so a reader can check it against `pg_proc` without leaving the file), plus **e5** — a parallel WITH Atlas authority, which is what **185 of 188** production editions look like. **The audit-row count is now the anti-fabrication assertion and it can genuinely fail**, with a paired control asserting the reverted edition specifically has no row.
+
+⚠ **ONE MISTAKE CAUGHT BEFORE IT SHIPPED, and it is the kind this file exists to prevent.** My first draft asserted `raised`, `attempted` and `reverted_by_trigger` with **three separate calls** to the function. It is not idempotent across calls by design — the first heals e1, so calls two and three see a different world — so the three assertions would have read **three different runs** and passed on numbers that never co-occurred. Rewritten to capture ONE run into a temp table. **A helper that mutates cannot be called once per assertion.**
+
+⚠ **THE SQL TEST ITSELF IS UNRUN LOCALLY AND I AM NOT PRETENDING OTHERWISE.** There is no Postgres and no Docker on this box; that file executes only in CI's throwaway instance. The change classifies as `code`, so the `DB invariants (SQL)` job runs rather than being skipped. **What IS verified here:** the function's behaviour on live production data (above), drift guard **204/204**, `db:pins:check` **196/196 clean**, `tsc` 0, ESLint ratchet 0, full suite **1502 files / 16,671 passed**.
+
+**Revert:** re-apply the body from `20260801160200_…_snapshot_raise_impossible_parallel_circ.sql` (single `v_raised`, audit every updated row, return `{raised, at}`) and re-point the pin. **Target metric:** the audit table stops growing on no-op runs — `impossible_parallel_circ_raises` should sit at **274** until a genuinely raisable edition appears.
+
+⛔ **#82 IS NOT CLOSED BY THIS.** The breach is still 4, the 6-hourly loop still runs, and the actual repair — `remap_topshot_parallel_to_base_misattributed()`, which re-keys the mis-attributed sales and **has no cron job at all** — still mutates `sales` and is still Trevor's call. **This makes the problem visible; it does not solve it.**
+
 ### 2026-09-11 · ⚠ I SIZED MY OWN FINDING AND IT SHRANK BY AN ORDER OF MAGNITUDE — "~24% of sales missing" is worth +0.15 to +0.58 points of M2, not the lever it sounds like · Claude Code on Trevor's box, Trevor: "Keep going and doing anything you can"
 
 **Shipped: docs only — an addendum to the `2026-09-11T1030Z` filing and a `(c)` block on #70. No code, no migration, no data mutation.**

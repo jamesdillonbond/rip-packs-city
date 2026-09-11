@@ -773,7 +773,14 @@ const PINS = [
   {
     fn: "raise_impossible_parallel_circ",
     test: "supabase/tests/raise_impossible_parallel_circ.sql",
-    migration: "supabase/migrations/20260801160200_audit_20260801_snapshot_raise_impossible_parallel_circ.sql",
+    // Re-pointed 2026-09-11 (#82): the function now audits ONLY raises that survived
+    // the BEFORE trigger and reports attempted / raised / reverted_by_trigger. Until
+    // then its audit row was written from the PRE-trigger CTE value and `raised` counted
+    // UPDATEs ATTEMPTED, so 274 "repairs" were logged across 188 editions while 168 of
+    // them are not reflected in the data. ⭐ The fixture moved with it: it had NEITHER
+    // the `badge_editions` table NOR the trigger that reverts the write, so it validated
+    // the function in a world where the thing that breaks it does not exist.
+    migration: "supabase/migrations/20260911103459_impossible_parallel_selfheal_audits_only_raises_that_survived.sql",
   },
   {
     fn: "get_wallet_total_fmv",
