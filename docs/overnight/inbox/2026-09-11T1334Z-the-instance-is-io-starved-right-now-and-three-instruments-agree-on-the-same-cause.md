@@ -106,7 +106,7 @@ All three carry the identical `(50000)` batch shape, and at 0/6/12/18Z **all thr
 
 ---
 
-# ADDENDUM 2 (06:55 PT) — ⛔ CUTTING THE `50000` BATCH WOULD HAVE CHANGED NOTHING. Measured, safely, without executing the backfill.
+# ADDENDUM 2 (06:46 PT) — ⛔ CUTTING THE `50000` BATCH WOULD HAVE CHANGED NOTHING. Measured, safely, without executing the backfill.
 
 The 1330Z filing's action #1 is *"cut the batch from 50,000 to 2,000–5,000"*, correctly gated on *"measure first: compare BUFFERS between batch sizes"* — and gated again on the instance being calm enough to measure, which it is not. **The measurement was available anyway: `EXPLAIN` WITHOUT `ANALYZE` does not execute**, so the SELECT half of `backfill_pinnacle_trade_acquisitions` can be planned at two batch sizes with no writes and no load.
 
