@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ⚠ A CAVEAT AGAINST MY OWN SHIP FROM MINUTES EARLIER: I put the new backstop INSIDE the documented lock-collision window, because I checked cron MINUTES and the thing that matters is how long the other job RUNS · Claude Code (cloud), Trevor: "Keep going"
+
+**Shipped: `rpc-wmc-fmv-populate-backstop` rescheduled `3,18,33,48` → `4,24,44` (migration `20260911052600`). Function unchanged.**
+
+🚨 **THE ERROR.** I chose `3,18,33,48` and justified it in the migration header: those minutes collide with neither jobid 302 (minutes ≡ 2 mod 5) nor jobid 303 (`7-57/10`). **That is true of the FIRING INSTANTS and irrelevant.** `app/api/wmc-fmv-populate/route.ts` records the actual behaviour: *"pg_cron jobid 303 runs a median of 240s, so the route's tick one minute later used to block ~18s on `wallet_moments_cache` row locks and die. **83 of 84 lock timeouts in 48h landed on :08/:18/:28/:38/:48/:58**, one minute after each 303 firing."* ⛔ **`:18` and `:48` are two of those exact minutes.** I had put a new job in the one window this repo has already measured as hostile.
+
+⚠ **THE GENERAL LESSON, and it is the reason this is its own entry: a cron-collision check on MINUTES is a check on START TIMES. A job with a 4-minute median OCCUPIES four minutes of them.** 303 is busy 7–11, 17–21, 27–31, 37–41, 47–51, 57–01. **Ask what the other job's DURATION is, not only when it starts.**
+
+✅ **FIX: `4,24,44`** — inside 303's free gaps (1–7, 21–27, 41–47) and still ≡ 4 mod 5 so it misses 302. Three ticks an hour rather than four: with the 15-minute staleness threshold that is **at most ~35 min of silence before takeover**, against this lane's watchlist `max_silent_minutes` of **120**. ⚠ **And note what the fix does NOT rely on:** `refresh_wmc_fmv_changed` returns NULL when another instance holds its advisory lock, but this backstop calls `refresh_wmc_fmv_drift_active`, which has **no such skip** — avoiding the window IS the protection, not a retry.
+
+⭐ **Caught before a single scheduled tick fired** (job created 21:56 PT, first `:18` would have been 22:18; rescheduled 22:01), so no lock timeout was ever incurred — but it was caught by re-reading the route's header, not by anything in the gate. **No guard here knows what a pg_cron job's median duration is.**
+
+**Revert:** re-schedule with `'3,18,33,48'`. **Target metric:** unchanged. **Gate:** both jobs read `active=true` with the corrected schedules at 22:01 PT.
+
 ### 2026-09-10 · ✅ ONE OF THE TEN DEAD LANES HAS A REAL CALLER AGAIN — a CONDITIONAL pg_cron backstop that costs 7ms when the HTTP lane is alive, and the handoff figure that stopped it being built was 8.7x too high · Claude Code (cloud), Trevor: "Keep going"
 
 **Shipped to `main` + prod DB: `public.rpc_wmc_fmv_populate_backstop(p_stale_minutes int default 15)` on pg_cron `3,18,33,48`.**

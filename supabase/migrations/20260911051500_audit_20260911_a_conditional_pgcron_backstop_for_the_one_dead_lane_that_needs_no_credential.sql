@@ -171,6 +171,14 @@ REVOKE ALL ON FUNCTION public.rpc_wmc_fmv_populate_backstop(int) FROM PUBLIC, an
 -- what stops it failing as silence.
 GRANT EXECUTE ON FUNCTION public.rpc_wmc_fmv_populate_backstop(int) TO postgres;
 
+-- ⚠ SUPERSEDED MINUTES — see migration
+-- `20260911052600_audit_20260911_move_the_wmc_backstop_out_of_jobid_303s_four_minute_shadow`.
+-- `3,18,33,48` misses the FIRING INSTANTS of jobid 302/303 but `:18`/`:48` sit
+-- one minute after each 303 firing, which the route's own header records as
+-- where 83 of 84 lock timeouts landed: 303 runs a MEDIAN OF 240s, so a
+-- minute-level collision check was the wrong check. Live schedule is now
+-- `4,24,44`.
+--
 -- Every 15 minutes, at minutes chosen to avoid the two jobs that touch the same
 -- tables: jobid 302 fires at minutes = 2 mod 5 and jobid 303 at 7 mod 10, so
 -- 3/18/33/48 collides with neither. `SET statement_timeout` is in the COMMAND,
