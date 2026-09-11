@@ -1,0 +1,192 @@
+name: Dead Lane Backstop
+
+# WHY THIS EXISTS (2026-09-10, register #76).
+# ------------------------------------------------------------------------
+# The Vercel project was paused ~14:00Z on 2026-09-10 and serving was restored
+# between 21:46Z and 00:01Z. Every lane on a 4-hourly or 6-hourly cadence came
+# back on its FIRST slot after recovery — candy-sales 00:20Z, candy-listings
+# 00:35Z, candy-offers 00:50Z, 3 of 3. **Not one lane on a 1-15 minute cadence
+# came back at all**, 649-682 minutes silent and counting, with 3 to 50 of their
+# own slots passed since the site returned.
+#
+# ⭐ THE SPLIT IS ALONG CADENCE, AND THAT IS THE TELL. These lanes have no
+# scheduler but cron-job.org — their own route headers say so
+# (`alerts-send` line 12: "Cron-job.org: every ~5 min"; `alerts-dispatch` line 8:
+# "Cron-job.org: every ~15 min"). cron-job.org auto-disables a job after a run of
+# consecutive failures, so across a ~10-hour outage a 4-hourly job banked 2-3
+# failures and survived while a 1-minute job banked ~640 and did not.
+#
+# 🚨 THIS REPO HAS ALREADY BEEN BITTEN BY EXACTLY THIS. sales-indexers-backstop.yml's
+# own header: "cron-job.org auto-disables a job that persistently fails its 30s
+# client cap, so a single bad window can silently kill sales ingest (the
+# 2026-05-31 topshot-sales-indexer 01:32-08:02 UTC outage)." The four sales lanes
+# got a backstop then. **These ten never did, and that is the whole difference
+# between a lane that recovered by itself and a lane still dead 11 hours later.**
+#
+# ⚠ WHAT THIS IS AND IS NOT. It is a FLOOR, not a restoration. GitHub
+# deprioritises `schedule` and drops most of it — measured on this repo
+# 2026-08-27, 16 of 48 scheduled runs delivered (one third), max gap 191.9m. So a
+# lane whose primary is a 5-minute cron gets, from here, something closer to
+# 45-minute cover. ⛔ Do NOT "fix" that by tightening the cron: GitHub drops the
+# extra fires too, and sales-indexers-backstop.yml records that lesson already.
+# **The real fix is re-enabling the cron-job.org entries, which is an operator
+# action.** This exists so that the next time they die, the lanes degrade instead
+# of stopping.
+#
+# ⚠ EVERY ROUTE HERE WAS CHECKED FOR IDEMPOTENCY BEFORE BEING ADDED, because a
+# backstop that double-writes is worse than a dead lane:
+#   alerts-dispatch      enqueues alert_deliveries DEDUPED (its own header)
+#   alerts-send          "claims pending alert_deliveries for a channel (atomic)
+#                         ... then marks each row sent/failed" — cannot double-send
+#   *-listings-indexer   block-cursor (`event_cursor`) + upsert onConflict
+#   *-listings-retry     `.update()` only, no inserts
+#   snapshot-pack-asks   upsert_pack_ask_state (upsert by key)
+#   wmc-fmv-populate     populate_* RPCs (write-in-place)
+#   pinnacle-events-ingest / ownership-onchain-walk  cursor + onConflict
+# All ten are `after()` fire-and-forget behind INGEST_SECRET_TOKEN, so a
+# duplicate tick advances a cursor or no-ops.
+#
+# ⚠ Minutes 12/27/42/57 are GHA-EMPTY on this repo (derived from every `cron:` in
+# .github/workflows, not assumed). Two jobs so the user-facing alert lanes cannot
+# be starved by a slow ingest step ahead of them in the same job.
+#
+# ⚠ Every step is `continue-on-error` with `fail-on-status: false`: this is a
+# backstop, and a red badge here would compete with the real alarm
+# (pipeline-sentinel) rather than add to it. Whether the lanes actually ran is
+# read from `pipeline_runs`, not from this workflow's badge.
+on:
+  schedule:
+    - cron: "12,27,42,57 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  alerts:
+    name: Alert delivery lanes (user-facing)
+    runs-on: ubuntu-latest
+    # 2 steps x (1 retry x 60s + backoff) — generous headroom over ~4 min.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Dispatch BEFORE send: dispatch fills the outbox, send drains it. Reversed,
+      # a backstop tick delivers nothing until the following tick.
+      - name: alerts-dispatch — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/alerts-dispatch
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: alerts-dispatch
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: alerts-send — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/alerts-send
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: alerts-send
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+
+  ingest:
+    name: High-frequency ingest lanes
+    runs-on: ubuntu-latest
+    # 8 steps x (1 retry x 60s + backoff) ~= 16 min worst case.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: allday-listings-indexer — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/allday-listings-indexer
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: allday-listings-indexer
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: allday-listings-retry — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/allday-listings-retry
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: allday-listings-retry
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: golazos-listings-indexer — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/golazos-listings-indexer
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: golazos-listings-indexer
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: pinnacle-listings-retry — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/pinnacle-listings-retry
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: pinnacle-listings-retry
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: pinnacle-events-ingest — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/pinnacle-events-ingest
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: pinnacle-events-ingest
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: snapshot-pack-asks — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/snapshot-pack-asks
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: snapshot-pack-asks
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: wmc-fmv-populate — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/wmc-fmv-populate
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: wmc-fmv-populate
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
+      - name: ownership-onchain-walk — backstop trigger
+        continue-on-error: true
+        uses: ./.github/actions/rpc-call
+        with:
+          url: https://www.rippackscity.com/api/cron/ownership-onchain-walk
+          token: ${{ secrets.INGEST_SECRET_TOKEN }}
+          label: ownership-onchain-walk
+          accept: "200,202"
+          retries: "1"
+          max-time: "60"
+          fail-on-auth: "false"
