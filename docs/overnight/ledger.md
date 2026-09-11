@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ✅ ALL TEN DEAD LANES ARE RUNNING AGAIN — verified in `pipeline_runs`, not on the badge — and #79's zero-yield detector is LIVE, calibrated before it shipped · Claude Code (cloud), Trevor: "Do it all"
+
+**Shipped: (1) the backstop's first run, which restored ten lanes; (2) migration `20260911022859_audit_20260910_zero_yield_lanes_are_visible` — `check_zero_yield_lanes()` + `pipeline_zero_yield_suppressions`; (3) a `Zero-Yield Lanes` sentinel arm + `lib/sentinel/zero-yield.ts` + 7 cases. Reverts: delete the workflow (`git revert`); `drop function public.check_zero_yield_lanes(int,int,int); drop table public.pipeline_zero_yield_suppressions;`; `git revert` the arm commit.**
+
+✅ **THE RESTORATION IS THE HEADLINE, AND IT WAS MEASURED ON THE OUTCOME TABLE RATHER THAN THE BADGE.** The backstop's first dispatch completed `success` in 17 s — **which proves nothing on its own**, so I read `pipeline_runs`: **all ten lanes wrote a row at 02:27:34–02:27:46Z**, their first since 13:30–14:03Z. ⭐ **`alerts-dispatch` 02:27:34 and `alerts-send` 02:27:35 — user-facing alert delivery is live again after 12.5 hours.** The others: allday-listings-indexer, allday-listings-retry, golazos-listings-indexer, pinnacle-listings-retry, pinnacle-events-ingest, snapshot-pack-asks, wmc-fmv-populate, ownership-onchain-walk.
+
+⛔ **THIS DOES NOT RETIRE THE OPERATOR ITEM.** GHA delivers ~1/3 of a schedule here, so the backstop is a **floor** — the cron-job.org entries still need re-enabling, and **egress from this sandbox is 403 at the proxy for both `www.rippackscity.com` and `api.cron-job.org`, tested rather than assumed.**
+
+⭐ **#79's DETECTOR IS LIVE AND THE DESIGN OBJECTION IS GONE.** The rule keys on a **FALL, not a level** — a lane that HAD a non-zero `rows_found` baseline and has since gone to zero while still running — so **the lane's own history is its declaration** and no per-lane config exists for ~140 lanes. The curated half shrinks to a suppression table, which is this repo's prescribed guard shape. ✅ **Calibrated BEFORE it shipped and reproduced exactly by the deployed function: `inspected` 243, `offenders` 5, `suppressed` 0.**
+
+✅ **SUPPRESSION WAS PROVEN IN BOTH DIRECTIONS, not assumed.** Inserted a control row for `offers-sweep` → `suppressed` 0 → **1**, offenders 5 → **4**, `offers-sweep` gone from the list; deleted it → back to **243 / 5 / 0**, suppression table empty. ⭐ **And the count is PUBLISHED in the arm's detail** — a guard that hides what it excluded makes its own incidence unmeasurable, which this estate has already paid for once.
+
+✅ **SECURITY POSTURE VERIFIED IN A SEPARATE STEP, per the migration checklist:** `anon`/`authenticated` EXECUTE **false**, `service_role` **true**; the table has **RLS on** with no anon SELECT or INSERT; `check_secdef_anon_execute_violations()` returns an array of **length 0**.
+
+🚨 **THE ARM BROKE THE DEEP BATTERY — THE SECOND TIME TONIGHT, AND FOR THE SAME REASON.** My 7 new cases passed; the full suite went **7 failed**, exactly as the `Alert Delivery` arm did three hours earlier. Both times the arm correctly treats an unreadable payload as UNMEASURED, and both times the all-green fixture simply did not mock the new RPC. ⭐ **The fix is the FIXTURE, not the arm** — weakening "unmeasured ≠ healthy" to make a test pass would have destroyed the only property the arm exists for. ⚠ **`npx vitest run <file>` would have shipped it both times.**
+
+✅ **Five mutations, five caught** (empty inspection reads as clean · population and suppression hidden · offenders no longer named · candidates escalated to CRITICAL · unreadable payload reads as ok). **Full gate green — 1,499 files / 16,633 tests, `tsc` clean, `lint:ratchet` exit 0.**
+
+⚠ **The arm WARNS, deliberately.** Two of the five live hits are named `*backfill`, and a finished backfill's zero is CORRECT — spending CRITICAL on that trains the reader to ignore the loudest signal the estate has. **The five are candidates; only `golazos-listings-indexer` is confirmed (#78).**
+
 ### 2026-09-10 · 📘 SESSION CLOSE-OUT — all three listing lanes RECOVERED (Golazos after 7.4 days), and three rules promoted into memory by DISPLACEMENT rather than by spending room · Claude Code (cloud), Trevor: "Keep going doing all you can on anything unresolved, then update memory"
 
 **Shipped: docs only — CLAUDE.md (2 new rules, 3 bullets compressed), `claude-md-condensed-originals.md` (the 3 originals verbatim), `cron-and-schedulers.md` (the 8 caller sources), `tooling-gotchas.md` (the deploy-attribution rule), `docs/sessions/2026-09.md`, this entry. No code, no migration, no data mutation.**
