@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · ⭐ THE SWEEP METRICS SHIPPED AT THE START OF TONIGHT ANSWERED THE QUESTION TONIGHT OPENED WITH, AND THE ANSWER IS "NOT WITH CODE" — M2 is LIQUIDITY-gated, both code levers total ~+1.6 pt · Claude Code (cloud), Trevor: "Keep going and work through anything unresolved"
+
+**Shipped: docs + memory only — `go-live-2026-09.md` (M1/M2 rows + 21 UTC stamps converted to PT-first), `roadmap-status.md` (new headline block), `cron-and-schedulers.md`, `CLAUDE.md` (one rule, by displacement), `claude-md-condensed-originals.md`, session log. No code, no DB change.**
+
+⭐ **FIRST READING EVER TAKEN WITH ITS SWEEP POSITION ATTACHED** (20:42 PT leg, the metrics added in `20260910230812`): **Top Shot 52.5% / swept 77.0% / 68.1% among swept** · **All Day 25.8% / swept 55.2% / 46.7% among swept** · Candy 59.2% / 100% · Golazos 0.5% / 50.8% · UFC 0.0% / 0.0%. ⚠ **UFC's `*_fresh24h_pct` reads `-1` — a cannot-compute SENTINEL for an empty fresh cohort, never a percentage.**
+
+⭐ **In both gated collections the UNSWEPT cohort is ~0% HIGH/MED** (TS stale ≈0.3%, AD stale ≈0.04%), so the headline is arithmetically `sweep% × fresh-rate`. 🚨 **Which makes "finish the sweep" look like a free +21 points on All Day — and it is NOT.** Cohorted against the **live `sales` table**, not the recorded `sales_count_30d` (which is exactly as stale as the snapshot carrying it): **stale cohort 2,806 editions, 2 HIGH/MED, only 6 with ≥5 sales in 30d.** The tail is unswept *because it is illiquid*; sweeping it lifts **~6 editions, +0.1 pt.**
+
+⛔ **LEVER TWO IS BOUNDED TOO: 91** fresh editions hold ≥5 sales/30d without being HIGH/MED → a perfect lift is **~+1.5 pt → ~29%**, still short of 30. ⚠ **91 is a PROXY** (the real rule re-fetches thin editions over 90d and corroborates asks at 3), so read it as an order of magnitude. ⭐ **Both numbers agree with the 09-09 sizing reached by a completely different route (173 eligible → 54 real → +0.9 pt), which is the only reason I trust them.** **M2 is gated on ALL DAY SALES VOLUME. Check any future M2 proposal against 6 · 91 · +1.6 pt before costing it.**
+
+⚠ **M1 IS NOW STATED AS A RANGE — 48–55%** — because this same day produced **47.9 twice** and **52.5–54.6** tonight on cursor position alone. **A single leg is neither a pass nor a fail**; 68.1% (the fresh cohort) is the ceiling the pricing logic can actually reach.
+
+✅ **MEMORY: one rule earned its place — the honesty MIRROR, *an `unknown` that is actually KNOWN is the same defect*** (tonight's watchdog said "cannot tell" 7 min after the proof landed). **CLAUDE.md 39,975/40,000, headroom 25.** Paid for by three trims, **none of them a rule**: a stale TS reading (which also carried a UTC stamp in memory, against the PT rule), the Candy/Panini tail compressed to register numbers, one over-long pointer. ⚠ **The link guard caught me on the quoted line immediately — a CLAUDE.md path quoted verbatim into `docs/reference/` resolves wrong from there, the exact bug that guard exists for, now twice in one session.**
+
+✅ **Also closed:** the daytime monitor's carried-forward watch (*does the GHA backstop self-fire?*) — **answered NO** (0 of 27 slots; dispatch-only), recorded in the inbox index and #80. And **21 UTC stamps** in the go-live doc converted to PT-first; the bare `HH:MMZ` forms left behind are **sweep-leg identifiers** (database row names), and the file now states that convention rather than leaving a reader to guess.
+
+**Revert path:** docs-only — `git log --grep="answered the question tonight opened with"`. **Target metric:** M1/M2 readability — a reader can no longer mistake a sweep position for a gate result. **Gate:** 14 doc guards / 118 tests green, memory limit test green, link guard 177/177, ledger +1.
+
 ### 2026-09-10 · ⭐ GITHUB'S SCHEDULER RESUMED AT 22:01 PT AND THE NEW TAG CAUGHT IT THE SAME MINUTE — which exposed a second bug in my own watchdog: an `unknown` that was actually KNOWN · Claude Code (cloud), Trevor: "Keep going"
 
 **Shipped: `rpc_gha_schedule_watchdog()` verdict branches reordered (migration `20260911053500`). Nothing else touched.**

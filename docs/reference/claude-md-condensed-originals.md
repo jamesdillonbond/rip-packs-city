@@ -458,3 +458,30 @@ correlated-scheduler rule (**an alarm sharing its subject's scheduler is no alar
 cost 2.8 hours of invisible lane silence: GitHub's scheduler shed every tick and every one of the four
 watchers — `pipeline-sentinel`, `ops-monitor`, `e2e-smoke`, `scheduler-liveness` — is itself a GHA
 `schedule`, so the alarm and its subject failed together. Case: known-issues #80.
+
+## 2026-09-10 (late) — three trims in the Prioritized/Honesty sections, and what they bought
+
+Trimmed, none of them a RULE (so nothing is reproduced verbatim below — these were a stale READING and two
+pointers whose targets are unchanged):
+
+> TS HIGH/MED **50.7% (09-09 01:48Z) — at the bar, but by DENOMINATOR retirement; numerator FELL ~536**
+
+Superseded, not displaced: the reading is now a RANGE (48–55%, swinging on sweep position) and the full
+derivation lives in [roadmap-status.md](roadmap-status.md) and
+[../strategy/go-live-2026-09.md](../strategy/go-live-2026-09.md). It also carried a UTC stamp in memory,
+which the PT rule forbids.
+
+> , **Candy LIVE thin (#63)**, Panini = WC Prizm plane (#64).
+
+Compressed to `(#63 Candy, #64 Panini)` — both are register items, so the content is one lookup away.
+
+> (#8 in [known-issues.md](../../docs/reference/known-issues.md))  ← path as it appeared in CLAUDE.md; rewritten here with `../../` because this file lives in `docs/reference/`, the exact bug the link guard exists for
+
+Compressed to `(#8)`; `known-issues.md` is already in this file's reference index.
+
+**Bought:** the honesty MIRROR in the three-states bullet — *an `unknown` that is actually KNOWN is the
+same defect*. Earned on 2026-09-10 by a watchdog that reported "cannot tell" seven minutes after the proof
+it needed had landed (known-issues #80, mechanism in
+[cron-and-schedulers.md](cron-and-schedulers.md)). **The canon is almost always invoked against a failed
+read rendering as a fact, and the reflex that follows is to widen `unknown`; this records that the mirror
+is also a defect.**

@@ -106,7 +106,53 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
-## ⭐ HEADLINE METRIC — re-read live 2026-09-08 20:4x PT (2026-09-09 03:4xZ) (supersedes the 09-01 20:5x PT block below)
+## ⭐ HEADLINE METRIC — re-read live 2026-09-10 22:34 PT, WITH SWEEP POSITION (supersedes the 09-08 20:4x PT block below)
+
+**First reading taken with the sweep-completeness metrics shipped earlier the same night, which is what
+every previous reading in this file was missing.** `rpc_trust_health_precompute`, 20:42 PT leg, plus a
+hand-derivation at 22:34 PT:
+
+| collection | HIGH/MED share (all priced) | swept in 24 h | HIGH/MED among the SWEPT |
+|---|---|---|---|
+| Top Shot | **52.5%** (hand 54.6%) | 77.0% | **68.1%** |
+| All Day | **25.8%** (hand 27.5%) | 55.2% | **46.7%** |
+| Candy MLB | 59.2% | 100.0% | 59.2% |
+| Golazos | 0.5% | 50.8% | 1.0% |
+| UFC | 0.0% | 0.0% | **-1** (cannot-compute SENTINEL for an empty fresh cohort — never read it as a percentage) |
+
+⭐ **THE SPLIT EXPLAINS THE NUMBER: in both gated collections the UNSWEPT cohort is ~0% HIGH/MED** (Top
+Shot's stale 23% ≈ 0.3%; All Day's stale 44.8% ≈ 0.04%), so the headline is arithmetically
+`sweep% × fresh-rate`. **Which makes "just finish the sweep" look like a free +21 points on All Day.**
+
+🚨 **IT IS NOT, AND THIS IS THE MEASUREMENT THAT SETTLES IT (2026-09-10 22:34 PT).** Cohorted against the
+LIVE `sales` table — not the recorded `sales_count_30d`, which is exactly as stale as the snapshot
+carrying it:
+
+| All Day cohort | editions | HIGH/MED | ≥5 sales in 30 d | not HIGH/MED but ≥5 sales |
+|---|---|---|---|---|
+| swept < 24 h | 3,384 | 1,701 | 642 | **91** |
+| stale | 2,806 | **2** | **6** | **6** |
+
+⛔ **The stale tail is unswept BECAUSE IT IS ILLIQUID — 6 of 2,806 have ≥5 sales in 30 days — so
+completing the sweep lifts ~6 editions, +0.1 pt.** The sweep is prioritising correctly.
+⛔ **And the other lever is bounded too: 91 fresh editions carry ≥5 sales/30d without being HIGH/MED, so
+a perfect confidence-rule lift is ~+1.5 pt → ~29%, still short of the 30% bar.** ⚠ **91 is a PROXY and
+should be read as an order of magnitude, not a target** — the real rule re-fetches thin editions over 90
+days and lifts LOW→MEDIUM on ask corroboration at 3 sales, so eligibility is broader than `≥5/30d` while
+realised gain is narrower (the ELIGIBILITY-is-not-GAIN rule; the 09-09 sizing showed 173 eligible → 54
+real → +0.9 pt).
+
+⭐ **SO THE HONEST ANSWER TO "HOW DO WE MOVE M2" IS: NOT WITH CODE.** Both code-side levers together are
+~+1.6 pt. **M2 is gated on All Day sales volume**, which stepped down at the week of 08-24 (weekly series
+2,578 · 6,772 · 2,984 · 2,626 · 1,609 · 2,479 · 3,012 → 1,291 · 938). **Liquidity cannot be manufactured
+by a faster sweep or a looser threshold, and any future M2 proposal should be checked against these three
+numbers — 6 · 91 · +1.6 pt — before it is costed.**
+
+⚠ **AND M1 SHOULD BE STATED AS A RANGE, NOT A POINT.** The same day produced **47.9 twice** and
+**52.5–54.6** tonight, purely on cursor position; 68.1% (the fresh cohort) is the ceiling the pricing
+logic can actually reach. **A single leg is not a pass and not a fail.**
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC — re-read live 2026-09-08 20:4x PT (2026-09-09 03:4xZ) (supersedes the 09-01 20:5x PT block below)
 
 **All-rows basis (Trevor's 08-28 decision), and the basis MEANS SOMETHING DIFFERENT NOW than it did in the
 block below: the 6,597 non-canonical Top Shot editions were RETIRED on 2026-09-08

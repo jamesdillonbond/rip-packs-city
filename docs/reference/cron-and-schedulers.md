@@ -220,6 +220,75 @@ sandbox session cannot reach, and delivery is the sentinel's arms). And it does 
 **Read it:** `SELECT started_at, ok, error, extra FROM pipeline_runs WHERE pipeline = 'gha-schedule-watchdog'
 ORDER BY started_at DESC LIMIT 5;`
 
+⭐ **IT CAUGHT THE RECOVERY THE SAME MINUTE IT HAPPENED.** GitHub resumed at **22:01 PT 2026-09-10** — a
+`sentinel-heartbeat` row carrying `event = schedule`, the first delivered tick since 18:30 PT, a ~3.5 h
+outage. **Before the tag that row was indistinguishable from a hand-fired dispatch.**
+
+🚨 **AND THE 22:08 PT TICK MISREPORTED IT, which is the second lesson and the more general one.** It
+published `unknown_probe_younger_than_window` when it plainly could tell: a `schedule`-tagged tick inside
+the window is positive proof of delivery. The deploy grace had been placed ABOVE the delivery test, so a
+perfectly healthy scheduler would have read "cannot tell" for the probe's first six hours — exactly when
+someone would most want to read it. Fixed by testing `scheduled_ticks_6h > 0` FIRST
+(`20260911053500`). ⭐ **THE SYMMETRY IS WORTH KEEPING: this repo's honesty canon is almost always
+invoked against a failed read rendering as a fact, and the reflex that follows is to widen `unknown`. An
+`unknown` that is actually KNOWN is the same defect facing the other way.** Do not claim what you cannot
+see; do not disclaim what you can.
+
+### `rpc_wmc_fmv_populate_backstop()` — a CONDITIONAL pg_cron backstop, and the only lane that could have one
+
+Of the ten lanes that lost every caller on 2026-09-10, **nine are a credential decision** — they sit
+behind `INGEST_SECRET_TOKEN`, and copying a production secret into a `cron.job` command is the
+secrets/env class a session must not take. ⭐ **`wmc-fmv-populate` is the exception, measured rather than
+assumed: its route makes ZERO external fetches** — a pure-database lane wearing an HTTP route as a coat —
+so pg_cron can drive it with no token, no Vercel and no GitHub in the path.
+
+⭐ **Only three of its five RPCs needed a caller**, read from `cron.job.command` with a word-boundary
+match: `refresh_wmc_fmv_changed` is already pg_cron (`7-57/10`) and `backfill_wmc_fmv_confidence` already
+pg_cron (`2-59/5`). The three with no caller but the dead route: `populate_wmc_fmv_from_snapshots`,
+`populate_wmc_image`, `refresh_wmc_fmv_drift_active`.
+
+⭐ **THE DESIGN IS "BACKSTOP", NOT "SECOND CALLER", AND THE MEASUREMENT CHOSE IT.** One warm pass:
+populate FMV (Top Shot, limit 50k) **707 ms / 8,436 buffers**; populate image **32 ms / 1,691**;
+`refresh_wmc_fmv_drift_active(25, 20000)` **16,365 ms / 197,082 buffers, 122 MB read**. The drift leg is
+**23× everything else together**, and this instance is IO-bound, so an unconditional day of ticks would
+add ~8–12 GB of reads for nothing whenever the real caller is fine. **So it reads one index lookup, and
+if a `wmc-fmv-populate-heartbeat` row exists inside `p_stale_minutes` (default 15) it does NOTHING** —
+7 ms measured. Takeover is 17.3 s. It disengages by itself when a caller returns.
+
+⛔ **IT DOES NOT WRITE UNDER `wmc-fmv-populate`, and that is the honesty decision.** A row under the
+lane's own name would refresh `last_run` and **silence `detect_stalled_pipelines()` on the dead HTTP
+caller** — the same reasoning the route's heartbeat header records for its `-heartbeat` suffix. **The
+work gets done; the caller's silence stays visible. A backstop must not launder the failure it is
+compensating for.**
+
+⚠ **`p_stale_minutes` is a PARAMETER so both branches are reachable without faking data** (`10000` forces
+stand-down, `0` forces takeover). A guard whose interesting branch cannot be reached is one nobody has
+seen work.
+
+### Two traps this night produced that generalise beyond it
+
+🚨 **A CRON-COLLISION CHECK ON MINUTES IS A CHECK ON START TIMES — ASK THE OTHER JOB'S DURATION.** The
+backstop first shipped at `3,18,33,48`, justified as colliding with neither jobid 302 (minutes ≡ 2 mod 5)
+nor 303 (`7-57/10`). True of the firing instants and irrelevant: **303 runs a median of 240 s**, and the
+route's own header records that **83 of 84 lock timeouts in 48 h landed on `:08/:18/:28/:38/:48/:58`, one
+minute after each 303 firing.** `:18` and `:48` are two of those. 303 OCCUPIES 7–11, 17–21, 27–31, 37–41,
+47–51, 57–01; the fix is `4,24,44`, inside its gaps. ⚠ **Nothing in this repo's gate knows a pg_cron
+job's median duration** — it has to be read from `cron.job_run_details` or from the incident record.
+
+🚨 **LANE ROWS ARE NOT INVOCATIONS, and the error killed a build before it caught one.** A handoff sized
+`wmc-fmv-populate` at "~2,007 times a day (every ~43 s)" and declined to give it a pg_cron caller on that
+IO basis. **The lane writes ~7 `pipeline_runs` rows PER INVOCATION** (one per collection). The invocation
+instrument is the `-heartbeat` lane: **692 in 72 h = ~230/day, one every ~6.3 min** — 8.7× lower (811 lane
+rows against 116 heartbeats in the same 24 h confirms the factor). ⚠ **A number that KILLS a build
+deserves the same re-derivation as one that justifies it** — the filed-decision-not-to-act rule, in its
+most expensive form.
+
+⚠ **AND THE CONVENIENCE OVERLOAD FABRICATES ZEROS: the 3-argument `log_pipeline_run(text, boolean, jsonb)`
+COALESCEs `rows_found`/`rows_written`/`rows_skipped` TO 0.** For anything that measured nothing — a
+heartbeat, a watchdog, a stand-down — that is a measured zero where a NULL belongs, which is this repo's
+own fabricated-number shape inside its own logger. **Use the 11-argument form with explicit NULLs.** (The
+route-level half of this was already fixed once, in `20260829040000`.)
+
 ## Cron / scheduler surfaces (4 independent schedulers)
 
 Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, all green (`detect_stalled_pipelines()` = `[]`, `check_pgcron_recent_failures()` = `[]`):

@@ -133,7 +133,7 @@ These are the rules a session needs *before* it knows which subsystem it is in. 
 | OG social card | `lib/og/board-empty-copy.ts` → `boardEmptyCopy(fetched, noun)` |
 
 - ⚠ **A PAGED read that `break`s on error returns a PARTIAL list no caller can distinguish from a complete one** (`/sitemap/3.xml`, #28). No copy exists to grep — the tell is the control-flow keyword. Throw, or carry `complete:false`.
-- **There are always THREE states, never two:** read failed · read ok + genuinely empty · read ok + unrenderable (e.g. rows that failed a name join). A name filter is not an emptiness test.
+- **There are always THREE states, never two:** read failed · read ok + genuinely empty · read ok + unrenderable (e.g. rows that failed a name join). A name filter is not an emptiness test. ⚠ **The MIRROR: an `unknown` that is actually KNOWN is the same defect** (#80).
 - ⚠ **A SERVER-SEEDED PROP is a fifth layer the table does not cover:** `initial={rows}` arrives as `[]` with **no provenance**, so a component that distinguishes failure for its OWN fetch still concludes on the seed (7 by 08-24). Pass `initialFailed`, and **assert it by SSR (`renderToString`)** — a mount effect corrects the state before jsdom looks, so two OPPOSITE mutations pass every client test.
 - ⚠ **ISR CACHES A FAILED READ for the whole `revalidate` window** and self-heals warm, so it is **easy to declare fixed by accident**: test *"does a COLD pass exceed the budget"*, never *"is the page OK now"* (#33; the 15-min `x-vercel-cache: HIT` instance: key-files-and-honesty.md).
 - **Fix per PANEL, not per page.** A page with one honest error branch is not an honest page (instance six: key-files-and-honesty.md).
@@ -283,10 +283,10 @@ The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **a
 
 **Open items, stated rather than quietly dropped:**
 
-- **sports-proxy `403` — ⛔ "PROXY ESPN" IS MEASURED DEAD** (#8 in [known-issues.md](docs/reference/known-issues.md)).
+- **sports-proxy `403` — ⛔ "PROXY ESPN" IS MEASURED DEAD** (#8).
 - `fmv-recalc` — wasteful, NOT broken, SIZED (it owns the DB's #1 reader): roadmap-status.md.
 - 🚨 **Needs TREVOR, not code — two:** the **credential-purge residue** (branch deleted 09-07; ask GitHub to **GC** the unreachable objects, **rotate regardless** — #22) · ⛔ **both 2-hourly Routines are DISABLED, no approval card exists, and re-verified still so 09-08** (#55).
-- **GO-LIVE bars + blockers: [go-live-2026-09.md](docs/strategy/go-live-2026-09.md)** — verification gate DROPPED (#59), beacon LIVE and finding real defects (#34/#69), TS HIGH/MED **50.7% (09-09 01:48Z) — at the bar, but by DENOMINATOR retirement; numerator FELL ~536**, **Candy LIVE thin (#63)**, Panini = WC Prizm plane (#64).
+- **GO-LIVE bars + blockers: [go-live-2026-09.md](docs/strategy/go-live-2026-09.md)** — verification gate DROPPED (#59), beacon LIVE and finding real defects (#34/#69), TS HIGH/MED **48–55%, a RANGE swinging on SWEEP POSITION; M2 is LIQUIDITY-gated, code levers ~+1.6 pt (09-10)** (#63 Candy, #64 Panini).
 
 Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/reference/roadmap-status.md). Issue register: [docs/reference/known-issues.md](docs/reference/known-issues.md).
 
