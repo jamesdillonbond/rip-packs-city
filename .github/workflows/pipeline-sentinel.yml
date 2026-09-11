@@ -17,6 +17,74 @@ jobs:
     # alarm on the one workflow that must stay trustworthy.
     timeout-minutes: 12
     steps:
+      # ⭐ WHY THE RUNNER WRITES A HEARTBEAT BEFORE CALLING THE ROUTE (2026-09-10,
+      # register #76). On 2026-09-10 the Vercel project was PAUSED at ~14:00Z and
+      # the site was down for ~9.5 hours before anyone noticed. This workflow
+      # DETECTED it — it went red at 14:34, 18:37 and 21:46 — but the detection
+      # left NO durable record, because the only thing that writes a
+      # `pipeline_runs` row for this lane is `log_pipeline_run` at the BOTTOM of
+      # `app/api/sentinel/route.ts`, and a 503 never reaches it.
+      #
+      # 🚨 THE DEFECT IS THE HONESTY CANON APPLIED TO AN INSTRUMENT: a failed read
+      # rendered as an ABSENCE. In `pipeline_runs` the outage read as "pipeline
+      # `sentinel` silent for 813 minutes", which is character-for-character what
+      # a tick GitHub simply never fired looks like — and GitHub sheds ticks on
+      # this repo constantly (17 `sentinel` rows exist for 09-07 20:44Z → 09-10
+      # 09:57Z, against 24/day asked for). So the one state that mattered was
+      # indistinguishable from the state that happens several times a day.
+      #
+      # ✅ THREE STATES, NOT TWO, which is what this step buys:
+      #   heartbeat + `sentinel` row      -> the tick fired and the route answered
+      #   heartbeat, NO `sentinel` row    -> the tick fired and the route DID NOT
+      #   no heartbeat at all             -> the tick never happened (shed/disabled)
+      # `detect_stalled_pipelines()` already speaks this exact vocabulary — it
+      # classifies a watchlisted lane as `invoked_but_never_logged` vs
+      # `not_invoked` off a `<pipeline>-heartbeat` row — so this introduces no new
+      # convention and needs no new reader.
+      #
+      # ⛔ IT DELIBERATELY ADDS NO `pipeline_cadence_watchlist` ROW. The route's
+      # own comment records why an entry for itself would be useless (the tick
+      # that would notice the silence is the tick that did not happen), and that
+      # reasoning is untouched here: the OBSERVER is the runner, not the route.
+      #
+      # ⚠ IT MUST NEVER FAIL THE JOB. This is telemetry about the alarm; if it
+      # could red the badge it would become a second false-alarm source on the one
+      # workflow that has to stay trustworthy. Missing credentials or an
+      # unreachable Supabase warn loudly and exit 0 — the sentinel check below
+      # still runs, and the real signal is never masked by a broken instrument.
+      - name: Record the invocation before calling the route
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::warning::No Supabase credentials on this runner — no invocation heartbeat was written, so for THIS run a shed tick and a dead route stay indistinguishable."
+            exit 0
+          fi
+
+          STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ) || STARTED=""
+
+          # rows_* are NULL, not 0, and the difference is load-bearing: the route
+          # writes 0 because it genuinely moves no rows (a MEASURED zero), while a
+          # heartbeat has measured NOTHING. `log_pipeline_run` preserves an
+          # explicit NULL, so the distinction survives into the table.
+          PAYLOAD=$(printf '{"p_pipeline":"sentinel-heartbeat","p_started_at":"%s","p_rows_found":null,"p_rows_written":null,"p_rows_skipped":null,"p_ok":true,"p_error":null,"p_collection_slug":null,"p_cursor_before":null,"p_cursor_after":null,"p_extra":{"source":"github-actions","run_id":"%s","run_attempt":"%s"}}' "$STARTED" "$RUN_ID" "$RUN_ATTEMPT") || PAYLOAD=""
+
+          RESP=$(curl -s --max-time 20 -X POST "$SUPABASE_URL/rest/v1/rpc/log_pipeline_run" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            -w "\n%{http_code}") || RESP=""
+
+          CODE=$(printf '%s' "$RESP" | tail -1) || CODE=""
+          case "$CODE" in
+            2*) echo "sentinel-heartbeat written (HTTP $CODE)" ;;
+            *)  echo "::warning::sentinel-heartbeat NOT written (HTTP ${CODE:-none}) — for THIS run a shed tick and a dead route stay indistinguishable." ;;
+          esac
+
       # ⚠ Until 2026-08-29 this step captured HTTP_CODE, echoed it, and NEVER
       # TESTED IT. A 500, a 504, or a 401 from a rotated token all left STATUS as
       # PARSE_ERROR, which is not "CRITICAL", so the step exited 0 — a sentinel
@@ -33,6 +101,7 @@ jobs:
       # command inside a bare assignment aborts the step where it stands, which
       # would make the retry loop below DEAD CODE that still reads as coverage.
       - name: Run Pipeline Sentinel
+        id: sentinel
         run: |
           HTTP_CODE=""
           BODY=""
@@ -64,6 +133,26 @@ jobs:
           # treating that as "not CRITICAL" is how an unreadable signal becomes a
           # green badge.
           if [ "$HTTP_CODE" != "200" ]; then
+            # ⚠ ONLY BOUNDED TOKENS LEAVE THIS STEP. The status is stripped to
+            # digits and the body is classified against a WHITELIST — no span of
+            # the response body is ever forwarded. A non-200 body is an error
+            # page from a layer this repo does not control, and `pipeline_runs.extra`
+            # is the wrong place to discover that the hard way (the route's own
+            # header already records "quoting the URL would write a live
+            # credential into pipeline_runs.extra").
+            MARKER=none
+            case "$BODY" in
+              *DEPLOYMENT_PAUSED*) MARKER=deployment_paused ;;
+              *DEPLOYMENT_NOT_FOUND*) MARKER=deployment_not_found ;;
+              *DEPLOYMENT_DISABLED*) MARKER=deployment_disabled ;;
+              *FUNCTION_INVOCATION_TIMEOUT*) MARKER=function_invocation_timeout ;;
+            esac
+            SAFE_CODE=$(printf '%s' "$HTTP_CODE" | tr -cd '0-9') || SAFE_CODE=""
+            {
+              echo "unreachable=true"
+              echo "http_code=${SAFE_CODE:-0}"
+              echo "marker=$MARKER"
+            } >> "${GITHUB_OUTPUT:-/dev/null}"
             echo "::error::Pipeline Sentinel unreachable — last HTTP $HTTP_CODE after 3 attempts. The fleet alarm did not run."
             exit 1
           fi
@@ -77,3 +166,51 @@ jobs:
             echo "::error::Pipeline Sentinel detected CRITICAL issues"
             exit 1
           fi
+
+      # The other half of the three-state record: the runner saw the route fail to
+      # answer, so it writes the `sentinel` lane's OUTCOME from outside the thing
+      # that is down. Two reasons this is not redundant with the heartbeat:
+      #   1. `ok = false` is what the daytime monitor scans for, so the outage
+      #      becomes visible to an EXISTING watcher rather than to a new one.
+      #   2. it carries the HTTP status and a classified marker, so "paused",
+      #      "rotated token" and "saturated" are separable without opening the
+      #      GitHub log — the log existed on 2026-09-10 and went unread for 7 h.
+      #
+      # ⚠ ONLY on unreachability, never on CRITICAL or on an unreadable 200. Those
+      # two mean the route ANSWERED and has already written its own row; a second
+      # row from here would overwrite a real reading with a guess.
+      #
+      # ⚠ `p_extra.source` names the runner, and `p_error` says "observed by the
+      # runner, not by the route", so this row can never be misread as the route
+      # reporting its own failure. rows_* are NULL for the same reason as above.
+      - name: Record that the route did not answer
+        if: always() && steps.sentinel.outputs.unreachable == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          HTTP_CODE: ${{ steps.sentinel.outputs.http_code }}
+          MARKER: ${{ steps.sentinel.outputs.marker }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::warning::No Supabase credentials on this runner — the unreachable sentinel was NOT recorded in pipeline_runs. The job is still red for the real reason."
+            exit 0
+          fi
+
+          STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ) || STARTED=""
+
+          PAYLOAD=$(printf '{"p_pipeline":"sentinel","p_started_at":"%s","p_rows_found":null,"p_rows_written":null,"p_rows_skipped":null,"p_ok":false,"p_error":"the sentinel route did not answer - HTTP %s after 3 attempts, observed by the GitHub Actions runner and not by the route","p_collection_slug":null,"p_cursor_before":null,"p_cursor_after":null,"p_extra":{"source":"github-actions","observed":"route_unreachable","http_code":"%s","marker":"%s","run_id":"%s","run_attempt":"%s"}}' "$STARTED" "$HTTP_CODE" "$HTTP_CODE" "$MARKER" "$RUN_ID" "$RUN_ATTEMPT") || PAYLOAD=""
+
+          RESP=$(curl -s --max-time 20 -X POST "$SUPABASE_URL/rest/v1/rpc/log_pipeline_run" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            -w "\n%{http_code}") || RESP=""
+
+          CODE=$(printf '%s' "$RESP" | tail -1) || CODE=""
+          case "$CODE" in
+            2*) echo "recorded sentinel unreachable in pipeline_runs (HTTP $CODE)" ;;
+            *)  echo "::warning::could NOT record the unreachable sentinel in pipeline_runs (HTTP ${CODE:-none}) — the outage is in this log only." ;;
+          esac
