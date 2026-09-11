@@ -1323,6 +1323,28 @@ sandbox**, and both are documented as real producers of production traffic. A de
 a filing, not a deletion.
 
 
+### The EIGHT caller sources — displaced verbatim from CLAUDE.md 2026-09-10
+
+CLAUDE.md keeps the rule (*name the caller before you touch the function*) and the count; the list
+lives here. **An expensive-looking function is not a cost until you have named its caller — an
+afternoon went into one with zero callers.**
+
+1. `pg_proc.prosrc` — another function's body
+2. `pg_views.definition` — a view
+3. `cron.job.command` — pg_cron (⚠ read the COMMAND; never infer the callee from the job name)
+4. `pg_trigger` — ⚠ **a TRIGGER function has no textual caller at all**
+5. a full-repo grep
+6. ⚠ **the Cowork artifacts' HTML — outside BOTH the repo and the catalogue**
+7. ⚠ **cron-job.org** — console is operator-only, entries are not enumerable from the repo
+8. ⚠ **the Windows Task Scheduler on Trevor's box** (4 prod ingests)
+
+⛔ **7 and 8 are INVISIBLE from a sandbox**, and both are documented producers of real production
+traffic — which is why a dead-code candidate is a filing, not a deletion. ⚠ **A NINTH, added
+2026-09-09: a Supabase EDGE FUNCTION invoked by an external scheduler** — found only by grepping the
+SQL function name rather than the pipeline name, and the free discriminator is a `pgrst_source`
+wrapper in `pg_stat_statements`, which proves the call arrived over HTTP. ⚠ `pg_stat_statements`
+otherwise misleads BOTH ways ([database.md](database.md)).
+
 ### ⭐ The OUTPUT TABLE is a better liveness falsifier than the pipeline name
 
 `pipeline_runs` tells you a NAME stopped logging. It cannot tell you whether the WORK stopped —

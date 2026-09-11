@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-10 · 📘 SESSION CLOSE-OUT — all three listing lanes RECOVERED (Golazos after 7.4 days), and three rules promoted into memory by DISPLACEMENT rather than by spending room · Claude Code (cloud), Trevor: "Keep going doing all you can on anything unresolved, then update memory"
+
+**Shipped: docs only — CLAUDE.md (2 new rules, 3 bullets compressed), `claude-md-condensed-originals.md` (the 3 originals verbatim), `cron-and-schedulers.md` (the 8 caller sources), `tooling-gotchas.md` (the deploy-attribution rule), `docs/sessions/2026-09.md`, this entry. No code, no migration, no data mutation.**
+
+✅ **THE TWO OPERATOR ITEMS I HANDED OFF HAVE SELF-RESOLVED — verified by VOLUME, not by a `max()`.** All three listing lanes are ingesting again: **All Day 160 rows in 15 min** (dead 12.4 h), **Golazos 8 in 15 min — its first listings ingest since 2026-09-03, 7.4 days** (#78), **Pinnacle 8 in 60 min**. ⚠ Recorded as *recovered*, not *fixed*: **by whom and by what is not established**, and Golazos coming back after a week is a bigger change than the outage explains, so #78's mechanism question stands. ⭐ **Checked with a 15-min AND a 60-min count precisely because a single newest-row timestamp cannot tell a resumed lane from one stray row** — Golazos's 8-in-15 against 8-in-60 is what shows it just restarted rather than trickling.
+
+✅ **NOTHING STALE LEFT BEHIND:** `list_triggers` shows exactly ONE enabled Routine on the account — the 2026-11-07 push-credential reminder, not mine. Every `send_later` check-in this session created has fired and self-disabled, so the archive leaves no scheduled work pointing at a dead thread.
+
+⭐ **MEMORY UPDATED BY DISPLACEMENT, which is the only way this file can take a rule.** CLAUDE.md stood at **39,944 / 40,000** (headroom 56), so two additions cost three compressions: **39,967 chars, headroom 33, and `claude-md-stays-under-the-memory-file-limit` passes.** Measured with `node .length`, never `wc -c`. The three shortened fragments are in [claude-md-condensed-originals.md](../reference/claude-md-condensed-originals.md) **verbatim, with the `](` prefixes re-pointed** — `check-memory-doc-links.mjs` reds on exactly that and now reports **168 links across 25 files all resolve**.
+
+**The two rules added, both earned the hard way today:**
+1. ⭐ **Verify platform STATE by a REQUEST, never a status field.** `get_project.live:false` + both apex hosts absent from `domains` **read IDENTICALLY on a healthy estate** (prod hostnames live on the DEPLOYMENT's `alias`). That pair produced a false P0 **and**, an hour after the correction was written, a false *"still down"* from me. Folded into the existing *rendered-DOM-not-HTTP-200* bullet, because it is the same rule one level up.
+2. ⭐ **An ELIGIBILITY count is not a GAIN count** — they differ by the share ALREADY in the target state. "173 editions would corroborate" (+2.79 pts, clearing the bar) was really **54** (+0.87), because **119 were already MEDIUM**. **Ask what would CHANGE, not what the rule would fire on.**
+
+**And one promoted to [tooling-gotchas.md](../reference/tooling-gotchas.md) rather than memory, being narrower:** ⚠ **a run's START, not its row timestamps, decides which side of a deploy it is on.** A `fmv-recalc` run that began **3 s before** the alias switched finished **61 s after** it, writing old-code rows into my "post-deploy" window and producing a **1-of-12 false refutation** of a change that actually works. The cheap safety check is recorded with it: confirm the last pre-deploy run FINISHED before the first post-deploy run STARTED.
+
+⚠ **Displacement was verified, not assumed.** I claimed the #68 detail "now lives in database.md" and then checked: it does — the partitioned-unique-index account sits at `database.md:1759+` with the 33,000 count and the `3.4 s` mechanism twice. **Had it not, the compression would have destroyed the only copy.**
+
+**Files:** `CLAUDE.md`, `docs/reference/claude-md-condensed-originals.md`, `docs/reference/cron-and-schedulers.md`, `docs/reference/tooling-gotchas.md`, `docs/sessions/2026-09.md`, `docs/overnight/ledger.md`.
+
+**Revert:** docs only, nothing to revert. ⛔ **Still open and NOT closed by this entry:** M2 is **23.2 %** against a 30 % bar with no lever in reach; **M1's two-consecutive-below-50 trigger has FIRED** (47.9 twice) and the documented response — the denormalised-priority walk order, designed and costed 09-08 and declined — is **Trevor's to re-open**; #78's Golazos mechanism; and #76's surviving-mechanism question, which I tried to answer and **refuted my own hypothesis** (5-of-6 vs 5-of-9, counterexamples both ways).
+
 ### 2026-09-10 · 🚨 I RE-MADE THE EXACT MISREADING THE LEDGER HAD CORRECTED AN HOUR EARLIER — plus the output-table falsifier has NO POWER on a sparse table, and two "dead" lanes are alive · Claude Code (cloud), Trevor: "Keep going"
 
 **Shipped: docs only — this entry, notes on #76/#78, and one refinement promoted into `cron-and-schedulers.md`. No code, no migration, no data mutation, nothing unpaused or re-enabled.**

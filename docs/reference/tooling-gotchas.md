@@ -674,6 +674,29 @@ file before you EDIT it.* The bundle is not a build artifact you can regenerate 
 account installs, so a stale one ships stale instructions (see known-issues #32, which is exactly that
 failure in its un-guarded form).
 
+## ⚠ A run's START, not its row timestamps, decides which side of a deploy it is on (measured 2026-09-10)
+
+Attributing database rows to a code version across a deploy is a two-timestamp problem and the obvious
+filter gets it wrong. On 2026-09-10 the ask-corroboration change went READY at **04:28:09Z**; the
+natural check — *"rows written after the alias switched"* — read `computed_at > 04:28:09Z` and reported
+**1 of 12** treated editions lifted, which looked like a clean refutation of the change.
+
+🚨 **It was contaminated.** The `fmv-recalc` run that **started at 04:28:06 — three seconds BEFORE the
+deploy went ready — finished at 04:29:10**, so it wrote **OLD-code rows inside the "post-deploy"
+window**. Eleven of the twelve were its output and could not have lifted. Restricted to the first run
+that *started* after the switch (04:35:46), the same query read **1 of 1**, and at a real sample the
+treated/control split was **83.2 % vs 13.0 %**.
+
+⭐ **The rule: take the change point from the first run whose START is after the deploy, not from the
+deploy instant.** A long-running job straddles the boundary, and `pipeline_runs.started_at` /
+`finished_at` is what tells you where the boundary actually falls. ⚠ This is the *"a reading taken
+while its SUBJECT CHANGED is not a reading"* rule with a concrete boundary: the subject changed
+mid-run, so the run is neither side.
+
+⚠ **And the cheap verification that the cutoff is safe:** check that the last pre-deploy run FINISHED
+before the first post-deploy run STARTED (here 04:29:10 < 04:35:46). If they overlap, no single
+`computed_at` cutoff is clean and the runs must be separated by id or window.
+
 ## ⛔ The v13 deployments POST does NOT force a build here — only a non-docs TIP commit does (measured 2026-08-26)
 
 CLAUDE.md said *"an empty or docs-only commit can never force a rebuild — use the v13 deployments POST, **or**

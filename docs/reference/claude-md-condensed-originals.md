@@ -1,5 +1,36 @@
 # CLAUDE.md — verbatim originals of the sections that were CONDENSED
 
+## 2026-09-10 — condensed to make room for the platform-state and eligibility-vs-gain rules (VERBATIM originals)
+
+The 2026-09-10 session added two rules CLAUDE.md did not carry — **verify platform STATE by a REQUEST,
+never a status field** (`get_project.live:false` and a `domains` list missing both apex hosts read
+IDENTICALLY on a healthy estate; that pair produced a false P0 *and*, an hour after the correction was
+written, a false "still down" report from a second session) and **an ELIGIBILITY count is not a GAIN
+count**. The file was at **39,944 / 40,000** characters, so each addition displaced text. **The three
+fragments shortened that day are reproduced verbatim below.** Links are re-prefixed per the note at the
+top of this file; no other character was changed.
+
+### 1. "Name the caller before you touch the function" — the SIX/SEVENTH/EIGHTH enumeration
+
+> - ⚠ **Name the caller before you touch the function** — an expensive-looking function is not a cost until you have; an afternoon went into one with **zero** callers. Require SIX sources: `pg_proc.prosrc`, `pg_views.definition`, `cron.job.command`, `pg_trigger`, a full-repo grep — ⚠ **and the Cowork artifacts' HTML, outside BOTH repo and catalogue**. ⚠ **A TRIGGER function has no textual caller, and `pg_stat_statements` misleads BOTH ways** ([database.md](../../docs/reference/database.md)). ⚠ **SEVENTH cron-job.org, EIGHTH this box's Task Scheduler (4 prod ingests)** — invisible to all six.
+
+⭐ The enumeration now lives in [cron-and-schedulers.md](../../docs/reference/cron-and-schedulers.md);
+CLAUDE.md keeps the rule, the count (EIGHT) and the sandbox-invisible pair.
+
+### 2. The partitioned-unique-index rule — the #68 case detail
+
+> - ⛔ **A UNIQUE INDEX ON A PARTITIONED TABLE MUST CONTAIN THE PARTITION KEY — a dedupe key that omits it is IMPOSSIBLE at the parent, so index the PARTITIONS.** `sales` is `RANGE (sold_at)`, so its guard carried `sold_at` and two writers dating one transaction ~3.4 s apart slipped **33,000 duplicate sales** past it (#68); ⭐ **the tell was EXACTLY zero violations, not a small count.** ⚠ **A keep-rule is a CLAIM about the data** (mine was wrong) **and a new constraint must be PROVEN to reject.** [database.md](../../docs/reference/database.md)
+
+⭐ The `~3.4 s` two-writer mechanism is now in [database.md](../../docs/reference/database.md); CLAUDE.md
+keeps the rule, the 33,000 count and the zero-violations tell.
+
+### 3. "A filed FINDING is a hypothesis" — the four case clauses
+
+> - ⚠ **A filed FINDING is a hypothesis — re-derive which subsystem it measured before acting.** Several have been refuted; one "fix" would have made an accurate surface inaccurate. ⚠ **So is a filed DECISION NOT TO ACT, and that is the one nobody re-checks** — declining to act reads as the conservative choice. The tell is a cost stated with no number in it. ⚠ **A WEAK one CROWDS OUT the strong one and becomes PERMISSION when it dissolves** — one read `needs its own deploy`; the real reason was ZERO callers. ⚠ **A number is no immunity: re-TEST a stated exit condition, never re-read it** — a "once cleared" 114 was 5.
+
+⭐ All four rules survive in CLAUDE.md; only the "declining to act reads as the conservative choice"
+gloss and the `needs its own deploy` instance were cut.
+
 ## 2026-08-26 — condensed to make room for the 08-26 refresh (VERBATIM originals)
 
 The 2026-08-26 memory-file refresh added four things CLAUDE.md did not carry (the client-side
