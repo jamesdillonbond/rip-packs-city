@@ -1,0 +1,118 @@
+name: Site Availability Alarm
+
+# WHY THIS EXISTS (2026-09-10, register #76).
+# ------------------------------------------------------------------------
+# A Vercel SPEND-CAP pause took the site down for ~10 hours and it was found BY
+# ACCIDENT. The budget was raised only SLIGHTLY, so it can recur and will look
+# identical. Every detector that should have caught it was a casualty of the same
+# pause (the sentinel is an HTTP route; alerts-dispatch/send sit behind the same
+# deployment) or asleep (Scheduler liveness is DAILY).
+#
+# ⭐ THE ONE PLANE THAT SURVIVED WAS POSTGRES. pg_cron kept firing and pg_net kept
+# reaching the internet for the whole outage. `probe_site_health()` now probes
+# /api/health every 5 minutes from inside the database and records the result in
+# `site_probe`; `check_site_availability()` reads it back. THIS workflow is the
+# other half: GitHub Actions is ALSO independent of Vercel, so DB-records-it plus
+# GHA-shouts-about-it is a complete detect→notify loop with no Vercel in it.
+#
+# ⚠ THIS WORKFLOW IS *SUPPOSED* TO GO RED. Every other ops workflow here is
+# warn-only on purpose; this one is the alarm. A red badge is the point.
+#
+# 🚨 TELEGRAM IS THE HALF THAT NEEDS TREVOR, and it is wired so it starts working
+# the moment he acts and costs nothing until then. The bot token lives in VERCEL
+# env, which is exactly the plane that goes away in an outage. Adding
+# TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID as GITHUB secrets makes the alert path
+# fully Vercel-independent. Until they exist this step says so and still fails the
+# job, so the badge and GitHub's own notification remain the fallback.
+#
+# ⚠ NO COOLDOWN, DELIBERATELY. During a real outage this fires on each delivered
+# tick (GitHub sheds most of them, so at most ~4/hour). Being told four times an
+# hour that the site is down is the correct amount of annoying; the 2026-09-10
+# failure was silence, not noise.
+#
+# ⚠ Minutes 4/19/33/49 are GHA-EMPTY on this repo, derived from every `cron:` in
+# .github/workflows rather than assumed, and re-derived by the test.
+on:
+  schedule:
+    - cron: "4,19,33,49 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  availability:
+    name: Is the site actually serving
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Read site availability from the database
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # ~3 consecutive 5-minute probes ≈ 15 minutes down. One failed probe is
+          # a blip; three in a row is an outage. Deliberately not 1.
+          FAIL_STREAK: "3"
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::error::No Supabase credentials — this alarm cannot read site_probe, so the site's state is UNKNOWN, not healthy."
+            exit 1
+          fi
+
+          RESP=$(curl -s --max-time 30 -X POST "$SUPABASE_URL/rest/v1/rpc/check_site_availability" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            -w "\n%{http_code}") || RESP=""
+
+          CODE=$(printf '%s' "$RESP" | tail -1) || CODE=""
+          BODY=$(printf '%s' "$RESP" | head -n -1) || BODY=""
+          echo "RPC HTTP $CODE"
+          echo "$BODY"
+
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Could not read check_site_availability (HTTP ${CODE:-none}). The site's state is UNKNOWN, not healthy."
+            exit 1
+          fi
+
+          # ⚠ Every assignment guarded: this is `bash -e`, and a fallible command
+          # inside a bare assignment aborts the step where it stands, leaving the
+          # checks below as dead code that still reads as coverage.
+          PROBES=$(printf '%s' "$BODY" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).probes??'')}catch{console.log('')}})") || PROBES=""
+          STREAK=$(printf '%s' "$BODY" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).consecutive_fails??'')}catch{console.log('')}})") || STREAK=""
+          STATUS=$(printf '%s' "$BODY" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).latest_status??'none')}catch{console.log('none')}})") || STATUS="none"
+
+          if [ -z "$PROBES" ] || [ -z "$STREAK" ]; then
+            echo "::error::check_site_availability returned an unreadable payload — UNKNOWN, not healthy."
+            exit 1
+          fi
+
+          # ⚠ A window that probed NOTHING is not a window in which nothing went
+          # wrong. If the prober itself has stopped, this alarm is blind and must
+          # say so rather than reporting green.
+          if [ "$PROBES" -eq 0 ]; then
+            echo "::error::site_probe recorded ZERO probes in the window — the availability prober itself is not running (pg_cron job rpc-site-availability-probe). This alarm is BLIND; the site's state is unknown."
+            exit 1
+          fi
+
+          echo "probes=$PROBES consecutive_fails=$STREAK latest_status=$STATUS"
+
+          if [ "$STREAK" -ge "$FAIL_STREAK" ]; then
+            MSG="RPC SITE DOWN — $STREAK consecutive failed probes from inside the database, latest HTTP $STATUS. A Vercel spend-cap pause answers 503 (register #76). Checked from Postgres, which a Vercel pause cannot silence."
+            if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+              TG=$(curl -s --max-time 20 -o /dev/null -w "%{http_code}" \
+                -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+                -H "Content-Type: application/json" \
+                -d "$(node -e "console.log(JSON.stringify({chat_id:process.env.TELEGRAM_CHAT_ID,text:process.argv[1]}))" "$MSG")") || TG=""
+              echo "telegram HTTP ${TG:-none}"
+            else
+              echo "::warning::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not GitHub secrets, so no message was sent. The bot token currently lives only in Vercel env — the exact plane that disappears in this outage. Adding them here makes the alert path fully Vercel-independent."
+            fi
+            echo "::error::$MSG"
+            exit 1
+          fi
+
+          echo "Site is serving — $PROBES probes in window, $STREAK consecutive failures."
