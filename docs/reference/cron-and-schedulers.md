@@ -23,10 +23,36 @@ from done-for-now.**
 the silence"*). ⭐ **So for any detector built on that table, "ran and found nothing" and "does not
 exist" are the same row — namely, none. A zero is not a null**, and only the zero is visible to a
 `pipeline_runs` predicate (register #79).
-⛔ **Sizing this class needs a job→pipeline-name mapping that DOES NOT EXIST in either table.** A
-heuristic matching pg_cron callees against pipeline names produces false zeros — jobid 56 calls
-`ingest-topshot-pack-opens-history` and logs as `topshot-pack-opens-history-backfill`. Build the
-mapping first; do not quote a count derived from name-matching.
+✅ **SIZED 2026-09-12: 58 %.** 12 active pg_cron jobs dispatch to an edge function **2,409×/24 h**,
+and **five of them — 1,392/day — have NO counterpart in `pipeline_runs`/`pipeline_runs_daily`, ever**:
+jobid **25** `backfill-allday-pack-sales` (480/day), **29** `backfill-topshot-pack-sales` (480),
+**27** `backfill-allday-dist-opened` (360), **22** `resolve-allday-pull-editions` (48),
+**26** `resolve-allday-rip-dist-api` (24).
+
+⭐ **THE INSTRUMENT WORTH REUSING IS THE CADENCE SEARCH, because it needs no mapping at all.** A name
+search can only fail to find; a job dispatching 480×/day that LOGS must produce a lane with ~480
+runs/day. **Zero lanes logged 440–520 runs yesterday**, so nothing of the right shape is hiding under
+an unrelated name. Corroborated by a name match over the **248 distinct lane names ever recorded**
+(0 hits), by source inspection, and by `20260901071258`'s own header.
+
+🚨 **WHY NO MAPPING EXISTED: THREE IDIOMS WRITE THAT TABLE.**
+```
+1.  logPipelineRun("literal-name", …)
+2.  const pipeline = "literal-name";  logPipelineRun({ pipeline, … })   // ingest-pinnacle-mints
+3.  supabase.from("pipeline_runs").insert({ pipeline, … })              // ingest-topshot-pack-opens-history
+```
+Of 38 in-repo edge functions: **25 yield a name, 1 logs under a non-literal, 12 have no write path at
+all.** ⚠ **A false zero was produced TWICE, the same way, before this came out right** — matching
+callee names missed jobid 56, and grepping `logPipelineRun("` missed `ingest-pinnacle-mints`.
+⭐ **THE FIX IS THE TRANSFERABLE PART: use a POSITIVE regex for ANY write path
+(`log_pipeline_run|logPipelineRun|logRun\(|from("pipeline_runs")`), evaluated SEPARATELY from name
+extraction, so "logs but I cannot name it" is a DISTINCT answer from "does not log".** Both failures
+were the tool saying *no evidence* and the reader hearing *evidence of no*.
+
+⛔ **Four of the five callees have NO SOURCE IN THIS REPO** (`backfill-allday-pack-sales`,
+`backfill-topshot-pack-sales`, `backfill-allday-dist-opened`, `resolve-allday-pull-editions`), which
+is the upstream cause of their being unknowable from a sandbox and is a bigger problem than the
+missing logging.
 
 ⭐ **THE FREE DETECTOR, and it needs no new instrument: `count(DISTINCT <stamp>::date)` on any
 hydrated table.** Top Shot read **28** across 75 days; All Day read **2**. A genuine refresher cannot
