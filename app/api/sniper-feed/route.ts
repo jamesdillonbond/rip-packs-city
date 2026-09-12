@@ -876,9 +876,17 @@ async function fetchJerseyNumbers(
   // jersey number, so a bare .select() returned 1,000 and the last ~24% of
   // players never had their jersey-serial listings flagged. Same silent shape
   // as badge_editions above — a successful read of the wrong rows.
+  // ⚠ THE PAGING FIX'S OWN FAILURE MODE RECREATED THE BUG IT FIXED (2026-09-12).
+  // The loop below was added because a bare `.select()` returned 1,000 of 1,317
+  // and silently dropped the last ~24 % — "a successful read of the wrong rows",
+  // per the comment above. But `if (error) break` reaches the SAME outcome by a
+  // different route: a partial map that no caller can tell from a complete one.
+  // CLAUDE.md's rule for this class is explicit — "throw, or carry
+  // `complete:false`" — so the page failure is now RECORDED rather than hidden.
   const rows: Array<{ name: string; jersey_number: number }> = [];
   const PAGE = 1000;
   const MAX_ROWS = 100000;
+  let complete = false;
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
     const { data, error } = await (supabase as any)
       .from("players")
@@ -889,12 +897,21 @@ async function fetchJerseyNumbers(
       // on id to keep the page boundary deterministic.
       .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
-    if (error) break;
+    if (error) {
+      console.warn(`[sniper-feed] jersey_numbers INCOMPLETE at offset ${from}: ${error.message}`);
+      break;
+    }
     const page = (data ?? []) as Array<{ name: string; jersey_number: number }>;
     rows.push(...page);
-    if (page.length < PAGE) break;
+    if (page.length < PAGE) { complete = true; break; }
   }
-  if (!rows.length) return new Map();
+  // ⚠ An empty map is reported as incomplete rather than as "no player has a
+  // jersey number" — that is the three-states rule: read failed, read ok +
+  // genuinely empty, and read ok + partial are DIFFERENT answers.
+  if (!rows.length) {
+    if (!complete) console.warn("[sniper-feed] jersey_numbers: 0 rows AND incomplete — treating as unknown, not as empty");
+    return new Map();
+  }
 
   const map = new Map<string, number>();
   for (const row of rows) {
@@ -912,9 +929,19 @@ async function fetchJerseyNumbers(
 // short page signals the end. (Today `moments.retired` has 0 true rows, so this
 // returns an empty set — the fix is purely defensive against that changing.)
 async function fetchRetiredMomentIds(supabase: SupabaseClient): Promise<Set<string>> {
+  // 🚨 THIS SET IS AN EXCLUSION, SO A PARTIAL READ FAILS *OPEN* (2026-09-12).
+  // Every id missing from it is a retired moment that LEAKS BACK INTO THE FEED —
+  // precisely the outcome this function's paging was written to prevent. A
+  // partial exclusion set is therefore not a smaller answer, it is a WRONGER
+  // one, and it must not be silently indistinguishable from a complete set.
+  // ⚠ Blast radius today is ZERO and is stated rather than assumed: `moments`
+  // holds 845,793 rows and **0** with `retired = true` (measured 2026-09-12), so
+  // this loop returns an empty set on its first page either way. The fix is
+  // shape, not a save — but the shape is what bites the day retirements land.
   const ids = new Set<string>();
   const PAGE = 1000;
   const MAX_ROWS = 500000; // safety bound (moments has ~572k rows total)
+  let complete = false;
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
     const { data, error } = await (supabase as any)
       .from("moments")
@@ -922,11 +949,15 @@ async function fetchRetiredMomentIds(supabase: SupabaseClient): Promise<Set<stri
       .eq("retired", true)
       .order("nft_id", { ascending: true })
       .range(from, from + PAGE - 1);
-    if (error) break;
+    if (error) {
+      console.warn(`[sniper-feed] retired-moment exclusion INCOMPLETE at offset ${from}: ${error.message} — retired moments may leak into the feed`);
+      break;
+    }
     const rows = (data ?? []) as Array<{ nft_id: string | null }>;
     for (const r of rows) if (r.nft_id != null) ids.add(String(r.nft_id));
-    if (rows.length < PAGE) break;
+    if (rows.length < PAGE) { complete = true; break; }
   }
+  if (!complete) console.warn(`[sniper-feed] retired-moment exclusion returning ${ids.size} ids from an INCOMPLETE walk`);
   return ids;
 }
 
