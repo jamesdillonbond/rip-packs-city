@@ -29,7 +29,20 @@ export default function robots(): MetadataRoute.Robots {
         // optimized-image endpoint) are allowed; `/_next/data/` and the rest
         // stay blocked. A more specific Allow beats a shorter Disallow in
         // Google's robots.txt precedence (longest match wins).
-        allow: ['/', '/_next/static/', '/_next/image'],
+        // 2026-09-12: `Disallow: /api/` was blocking EVERY social card on the
+        // site. Every og:image we emit is served from `/api/og/*`, and
+        // Twitterbot/facebookexternalhit obey robots.txt — so a shared link
+        // unfurled with the title and description present (the /profile/ HTML
+        // is crawlable) and a broken-image placeholder where the card belongs.
+        // That split is the discriminating evidence: a dead or slow endpoint
+        // would have failed both halves, not just the picture.
+        //
+        // Same carve-out shape as `/_next/static/` above, for the same reason:
+        // never block the resources a page needs to render. `Allow: /api/og/`
+        // (9 chars) beats `Disallow: /api/` (6) under longest-match-wins, which
+        // every major crawler implements. The rest of /api/ stays blocked,
+        // which is what the 08-06 crawler-load work wanted.
+        allow: ['/', '/_next/static/', '/_next/image', '/api/og/'],
         disallow: [
           '/api/',
           '/_next/',

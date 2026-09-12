@@ -39,6 +39,30 @@ describe("robots: Googlebot may fetch the assets a page needs to render", () => 
     expect(disallow).toContain("/_next/")
     expect(disallow).toContain("/api/")
   })
+
+  // 2026-09-12: `Disallow: /api/` blocked every og:image on the site, because
+  // every card this app emits is served from /api/og/*. Twitterbot obeys
+  // robots.txt, so every share link unfurled with a broken-image placeholder.
+  //
+  // ⚠ Pinned as a PROPERTY, not a spelling: the assertion is that whatever
+  // path prefix the OG routes are served from is reachable by a crawler, and
+  // that the carve-out is strictly narrower than /api/ itself. Do not "fix" a
+  // failure here by deleting the Disallow — that would open the whole API.
+  it("carves /api/og/ back out of the /api/ block, so social cards are fetchable", () => {
+    const allow = ([] as string[]).concat(wildcard.allow ?? [])
+    const disallow = ([] as string[]).concat(wildcard.disallow ?? [])
+
+    const ogAllow = allow.find((a) => a.startsWith("/api/og"))
+    expect(ogAllow, "no Allow rule covers the /api/og/* card routes").toBeTruthy()
+
+    // Longest-match-wins is what makes the carve-out work at all: the Allow
+    // must be strictly more specific than the Disallow it overrides.
+    const blocking = disallow.filter((d) => ogAllow!.startsWith(d))
+    for (const d of blocking) expect(ogAllow!.length).toBeGreaterThan(d.length)
+
+    // And it must stay a carve-out: /api/ itself is still blocked.
+    expect(allow).not.toContain("/api/")
+  })
 })
 
 describe("/moment/<id>: the edition-grain duplicate redirects, the serial-grain page stays", () => {

@@ -38,6 +38,7 @@
 
 import type { Metadata } from "next"
 import { getPublicProfile } from "@/lib/profile/public-profile"
+import FunnelTracker from "@/components/FunnelTracker"
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -171,5 +172,24 @@ export default function PublicProfileLayout({
 }: {
   children: React.ReactNode
 }) {
-  return children
+  // 2026-09-12 — /profile/<username> is where every share link this product
+  // emits actually LANDS, and it fired nothing into funnel_events: 0 of 28,129
+  // rows carried a profile surface, and the utm_source=share we attach to the
+  // shared URL had never once been recorded. Vercel Web Analytics is not
+  // enabled on this project, so funnel_events is the only instrument there is.
+  //
+  // Mounted in the LAYOUT, not the page, so the trophy-case sub-route is
+  // covered by the same instance — `perPath` re-fires on the pathname change
+  // and `surface` defaults to the pathname, which is how /profile/<u> and
+  // /profile/<u>/trophy-case stay distinguishable under one event_type. That
+  // mirrors collection_view carrying its tab in `surface`.
+  //
+  // ⚠ The referrer/campaign string is resolved by lib/track-funnel on the
+  // landing hit and is deliberately NOT passed here; see FunnelTracker.
+  return (
+    <>
+      <FunnelTracker eventType="profile_view" perPath />
+      {children}
+    </>
+  )
 }

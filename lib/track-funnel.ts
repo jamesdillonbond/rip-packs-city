@@ -18,6 +18,12 @@ export type FunnelEventType =
   | "insights_view"
   | "insights_card_click"
   | "collection_view"
+  // Public profile + its trophy-case sub-page (2026-09-12). ONE type — the
+  // sub-page is carried in `surface` (the pathname), same as collection_view
+  // carries its tab, so adding a sub-route needs no new type or CHECK change.
+  // This is the landing page for every share link the product emits, and it
+  // fired nothing until now: 0 of 28,129 rows had a profile surface.
+  | "profile_view"
   // signup funnel (2026-07-20): CTA intent, auth-confirm success, email capture
   | "signin_click"
   | "account_created"
@@ -72,6 +78,19 @@ function getSessionId(): string | null {
 const ATTR_KEY = "rpc_attr"
 const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign"] as const
 
+// The sharer's own id, carried as `&ref=` by ShareProfileButtons. Channel
+// attribution (utm_source=share) answers "did X send traffic"; this answers
+// "WHICH collector is recruiting", which is the number that matters for a
+// referral push. It is our own param, not third-party data.
+//
+// ⚠ STORED UNDER A DIFFERENT KEY THAN IT ARRIVES. The attribution string
+// already spends `ref=` on the external document.referrer below, so copying
+// the URL's `ref` verbatim would put two `ref=` keys in one string and make
+// `split_part(referrer,'ref=',2)` ambiguous — silently mixing sharer ids and
+// referring URLs in the same column. It is written as `share_ref=` instead.
+const SHARE_REF_PARAM = "ref"
+const SHARE_REF_KEY = "share_ref"
+
 function utmToken(raw: string): string {
   return raw.replace(/[^A-Za-z0-9._~-]/g, "").slice(0, 64)
 }
@@ -88,7 +107,10 @@ function refOriginAndPath(href: string, selfOrigin: string): string {
   }
 }
 
-// Returns e.g. "utm_source=twitter&utm_campaign=squeeze&ref=https://t.co/abc".
+// Returns e.g.
+//   "utm_source=share&utm_medium=x&share_ref=<sharer-id>&ref=https://t.co/abc".
+// `share_ref` is OUR sharer id from the link; `ref` is the external referring
+// page. Two different questions, two different keys — see SHARE_REF_KEY.
 // "" is a valid resolved answer (no campaign, no external referrer) and is
 // cached as such, so we never re-read a now-internal document.referrer.
 function getAttribution(): string | null {
@@ -103,6 +125,11 @@ function getAttribution(): string | null {
       const v = utmToken(params.get(k) ?? "")
       if (v) parts.push(`${k}=${v}`)
     }
+    // Sharer attribution. Same conservative token charset and cap as the utm
+    // values — and note the key rename (SHARE_REF_KEY), which is what keeps
+    // this out of the `ref=` namespace the referrer below occupies.
+    const shareRef = utmToken(params.get(SHARE_REF_PARAM) ?? "")
+    if (shareRef) parts.push(`${SHARE_REF_KEY}=${shareRef}`)
     const ref =
       typeof document !== "undefined"
         ? refOriginAndPath(document.referrer || "", window.location.origin)

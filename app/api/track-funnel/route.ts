@@ -21,6 +21,12 @@ const ALLOWED_EVENT_TYPES = new Set([
   // analytics,play}. One type — the tab is carried in `surface` (the pathname),
   // so adding a tab needs no new event_type or CHECK change.
   "collection_view",
+  // Public profile + its trophy-case sub-page (2026-09-12). Same one-type
+  // shape as collection_view: the sub-page rides in `surface`, so a new
+  // /profile sub-route needs no new event_type or CHECK change. This is where
+  // every shared link lands, and it was the only page type in the product
+  // firing nothing — 0 of 28,129 rows carried a profile surface.
+  "profile_view",
   // Signup funnel (2026-07-20): a "create free account" CTA click, a successful
   // /auth/confirm session, and the deal-watch email capture on the analyzer.
   "signin_click",
