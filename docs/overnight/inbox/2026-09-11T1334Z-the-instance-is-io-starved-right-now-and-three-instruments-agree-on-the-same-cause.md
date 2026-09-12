@@ -168,3 +168,25 @@ That is the same plan I re-derived today (the relations have grown to 262k / 994
 A recency window strands anything older than the window that was never processed. **That risk is currently zero, and that is a measurement, not an assumption: 0 outstanding on both jobs.** ⚠ The safety is therefore *conditional on re-checking immediately before shipping* — if an ingest backlog lands first, the window must be preceded by one unbounded catch-up run, exactly as jobid 78's signature already allows (`NULL = unbounded`).
 
 ⚠ **And the earlier claim in this file that these serve an unlaunched collection is RETRACTED above — they serve `disney_pinnacle`, which is live.** The case for acting rests on cost and on M11, not on nobody noticing.
+
+---
+
+# ADDENDUM 4 (2026-09-11 18:21 PT) — ⛔ MY OWN LEVER #1 IS REFUTED BY DIRECT MEASUREMENT. No new index is needed.
+
+The quiet window arrived at **18:07 PT** (1 active backend, 0 IO waiters) and a session on Trevor's box took the `BUFFERS` measurement every filing today — mine included — was gated on. Filed as `2026-09-12T0115Z-the-quiet-window-finally-came…`. **It refutes Addendum 2's candidate lever #1, which was mine.**
+
+⛔ **I wrote:** *"a function on BOTH sides … the planner's only option is to hash one side whole"*, and prescribed expression indexes on `lower(wallet_address)` / `lower(to_wallet)`. **The plan does not do that.** Measured: it uses `idx_wmc_collection_id` and hashes only the **~58k Pinnacle rows**, and once a recency bound is applied it switches to a **Nested Loop driven by `idx_wmc_moment_collection_cover` — an index that ALREADY EXISTS** — with `lower(...)` demoted to a cheap per-probe `Filter`. ⭐ **No new index on a 3.26 GB IO-bound table is required, which is exactly the expensive thing my prescription would have bought.**
+
+⚠ **I had the evidence to catch this myself and did not join it up.** Addendum 3 records that in **job 218's** plan the `lower()=lower()` is already "a cheap post-`Filter` on a 1-row index lookup, not a join condition" — the same demotion, on the same table, one job over. I observed the mechanism that refutes my own prescription and still shipped the prescription.
+
+## What survives, and one thing I overstated
+
+✅ **The recency window IS the lever** — now measured in reads rather than inferred from job 78: **7 days = 372 buffers, 14 days = 2,443, unbounded = 40,331.** A 7-day bound is a **108×** reduction. That corroborates Addendum 3's "job 78 is the proven model" from an independent direction.
+
+🚨 **BUT THE CURVE IS NOT MONOTONIC, AND THIS IS THE PART NOBODY WOULD GUESS: 30 days TIMES OUT AT >120 s — slower than no bound at all.** The smaller outer scan drops below the parallel threshold, so the same 58k-row hash runs on **one** worker instead of two. **Bounding the outer table does not shrink the dominant cost; it removes the parallelism that was hiding it.** ⛔ A team trying "30 days" as the obvious first step would have measured a regression and concluded the lever does not work. **Pick 7 or 14, and never reason about this curve by interpolation.**
+
+⚠ **"Fully drained" (Addendum 3) is too absolute.** I measured **0 outstanding at one instant** on the strict conflict key, which is true and is not the same as finished: the steady state is **1–3 new rows/day** (3 inserted in 24 h, 6 in 7 days). The correct statement is *drained to a trickle*, and that trickle is what makes a time bound safe — measured max lag **1.1 days** since 08-31, so 14 days is a **12.7× margin**. ⚠ And the pooled lag distribution would have misled: 65% of all rows show >100-day lag, which is the initial backfill's signature, not ongoing behaviour.
+
+## ⚠ The same doubt now attaches to MY OTHER open prescription
+
+The `sales-counterparty-backfill` filing (`2026-09-12T0117Z`) recommends *"put `source` in the index predicate"*. **That recommendation has NOT been measured with `BUFFERS` and is the same SHAPE of claim that just failed here** — reasoning from a predicate's form to what the planner must do. ⛔ **Treat it as unverified.** The difference worth noting: there the `EXPLAIN` shows an estimate of 51.98 against a full-scan cost of 83,831 with a true result of zero, so the *scan-everything-find-nothing* behaviour is established even though the prescribed fix is not. **Verify it in the next quiet window, on the same instrument, before building anything.**
