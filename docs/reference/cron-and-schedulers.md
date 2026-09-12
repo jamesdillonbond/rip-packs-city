@@ -2,6 +2,45 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ RETIRING a `cron_heavy` job — the ownership error reads like a MISSING job, and the role path also covers `unschedule` (re-proven 2026-09-12)
+
+The reschedule mechanism above is proven for `cron.schedule`. **It covers `cron.unschedule` too**, and
+the failure you hit first is easy to misread:
+
+```
+ERROR:  XX000: Job 219 does not exist or you don't own it
+```
+
+⚠ **That is an OWNERSHIP error wearing a missing-object error's wording.** The job was right there in
+`cron.job`, `active = true`, `username = cron_heavy`. Reading it literally sends you looking for a
+jobid that never moved.
+
+```sql
+SET LOCAL ROLE cron_heavy;
+SELECT cron.unschedule('rpc-selfheal-impossible-parallel-circ');   -- retire
+-- or  SELECT cron.schedule('<EXISTING job name>', '<cron>', '<command>');  -- re-time in place
+RESET ROLE;
+```
+
+⭐ **Probe it in a rolled-back `DO` block before writing the migration** — make the call, then
+`RAISE EXCEPTION 'PROBE_OK …'`. The raise proves the privilege and rolls the change back; then confirm
+the job still exists, and that `current_user` is back to `postgres`, before doing it for real. That is
+how jobid 219 was retired on 2026-09-12 (register #82) after `cron.alter_job` refused.
+
+⚠ **`RESET ROLE` is load-bearing** — a `SET LOCAL ROLE` survives the `DO` block, so without it
+`apply_migration` writes its own bookkeeping row as `cron_heavy`. Verify `current_user` afterwards.
+
+⛔ **`cron.unschedule` REMOVES the row, so the revert is not `git revert`** — record the full
+re-`schedule` call (name, cadence, command) in the migration body, because the schedule is not
+recoverable from the repo once the row is gone. For jobid 219 that is
+`cron.schedule('rpc-selfheal-impossible-parallel-circ', '43 0,6,12,18 * * *', 'SELECT public.raise_impossible_parallel_circ();')`.
+
+⚠ **Register #19's headline — "NO session-reachable role can reschedule 42 of 93 jobs" — over-reaches
+and was already superseded when it was written.** It is true of `alter_job` only; the 8-way split had
+proven the role path six days earlier. Corrected in the register 2026-09-12, because a filed
+*"you cannot"* is the least re-checked kind of claim there is.
+
+
 ## ⭐ A CANDIDATE PREDICATE THAT SELECTS ON THE COLUMN IT FILLS IS A ONE-SHOT — and once it finishes it is indistinguishable from a healthy drain (2026-09-12 PT, two collections, filed 11 days apart)
 
 **The symptom is never an error.** The pool empties by construction, so from that moment every tick

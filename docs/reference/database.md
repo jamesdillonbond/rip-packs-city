@@ -337,6 +337,58 @@ SELECT (SELECT count(*) FROM public.check_public_security_invariants()) AS sec_v
        jsonb_array_length(public.check_secdef_anon_execute_violations()) AS secdef;        -- 0 = clean
 ```
 
+## 🚨 A SELF-HEAL CAN BE THE BUG AND THE `BEFORE` TRIGGER THE PROTECTION — an impossible value has TWO causes and the obvious repair fixes the wrong one (2026-09-12, register #82)
+
+**`observed > capacity` never tells you which side is wrong.** It can mean capacity is understated, or
+that the observation belongs to a different row. A repair function encodes one of those readings and is
+structurally silent about the other — and the prose around it will restate its assumption as a finding.
+
+**The case.** `raise_impossible_parallel_circ()` read `sales.serial_number >
+editions.circulation_count` on a Top Shot **parallel** as *"circulation is stale, raise it"*, ran
+4×/day for months and logged **274 repairs**. The condition was a **MIS-KEYED SALE**:
+
+- The canonical map `moments.nft_id → edition_id` **disagrees with the sale** on both adjudicable rows
+  and names the **BASE** printing: nft `52643519` serial 2042 (sale says `258:9009::16`, moments says
+  `258:9009`); nft `52549592` serial 140 (sale says `270:8973::17`, moments says `270:8973`).
+- **Every offender's serial fits inside its base edition's circulation, 6 of 6** — `258:8892::16`
+  circulation **99**, wanted **3002**, base **4000**; `90:4055::1` 500/2048/8000; `258:9009::16`
+  99/2042/4000; `250:8813::18` 50/829/1000; `258:8904::16` 99/688/4000; `270:8973::17` 99/140/1000.
+- Atlas (`badge_editions`) is internally consistent on each — `effective_supply + burned =
+  circulation` (492+8=500, 99+0=99, 24+1=25, 92+7=99) — so nothing indicts Atlas's number.
+
+⭐⭐ **THE INVERSION, which is the part to carry: a `BEFORE` trigger had been silently reverting every
+raise, and the trigger was RIGHT.** For a day the register called the trigger the blocker and the
+self-heal the thwarted fix. In fact raising circulation to match would have **corrupted an
+Atlas-verified figure by up to 30×**. ⚠ **A mechanism that keeps undoing your repair is a hypothesis,
+not an obstacle — read it before routing around it.** This one said so in its own comment:
+*"Parallel: Atlas is the only per-printing authority, in both directions."*
+
+🚨 **The protection was incomplete in the revealing direction: where the authority had NO row, nothing
+clamped and one raise LANDED** — `171:5972::16`, 93 → **1270**, with `atlas_circ` NULL and its nft
+absent from `moments`, so it cannot be adjudicated either way (serial 1270 fits the base's 4,000).
+⛔ **A guard that only fires when a reference value exists leaves precisely the unverifiable rows
+unprotected.**
+
+**What to do with one of these**
+
+- Name the two causes, then find an **independent** adjudicating map. For Top Shot that is
+  `moments.nft_id → edition_id`.
+- ⚠ **Measure a corroboration guard's COVERAGE before shipping it, or it silently becomes a no-op.**
+  Requiring the canonical map here discriminates correctly — positive control on **249** hash-sampled
+  recent Top Shot sales: **121** nfts present in `moments`, **120 agree**, 1 disagrees — but `moments`
+  covers only **~49%** of sale nfts, so the guard fails closed on half. **With the authority already
+  neutralising every raise, a guarded function is a more elaborate way of doing nothing** — the job was
+  retired instead (`20260912144225`, jobid 219 unscheduled; function and pin kept).
+- ⭐ **Keep the detector and RELABEL it.** The trust metric `topshot_impossible_parallel_serials` was
+  correct all along: it is a **mis-keyed-sales detector**, not a "circulation needs raising" signal. It
+  stays breached either way — retiring the repair moved no metric, because the repair never moved a row.
+- ⚠ **Making a liar honest is not the same as making it right.** The 09-11 fix made this function's
+  audit truthful (`attempted` / `raised` / `reverted_by_trigger`); one day later that truthful audit is
+  what proved it should not run. Both steps were needed, in that order.
+- ⛔ The remaining repair — fixing the mis-keyed `sales` rows and the one corrupted `editions` row — is
+  a bulk `UPDATE`, the destructive class, and is the owner's call.
+
+
 ## ⭐⭐ WHERE THE DISK IO ACTUALLY GOES: THREE TABLES HOLDING 5.7 GB ARE 60 % OF IT, AND THEY ARE ONE CHAIN (2026-09-12)
 
 Saturation on this instance is **IO-bound, not CPU-bound** (CLAUDE.md), so "which query is slow" is the wrong first question and "which table is being read off disk" is the right one. From `pg_statio_user_tables`:

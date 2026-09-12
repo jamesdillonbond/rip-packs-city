@@ -325,6 +325,23 @@ const PACK_LIFECYCLE = {
 }
 
 let originalFetch: typeof globalThis.fetch
+// ⚠ CLEANUP MUST RESTORE, NOT DELETE. This file used to `delete` these two in afterEach,
+// which leaks an ABSENCE rather than a stub. That is a real hazard, because
+// `lib/supabase.ts` calls createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, ...) at MODULE
+// level, so any later file that calls vi.resetModules() and imports a route would throw
+// "supabaseUrl is required" inside beforeAll. Save-and-restore instead, same pattern as
+// api-cron-drain-base-parallel-probe.test.ts.
+//
+// ⛔ HONEST SCOPE, because the obvious story here does NOT survive its own control.
+// api-allday-listings-indexer DID red exactly that way in one full run on 2026-09-12
+// (hook failure, 8 skipped, zero failed assertions) while passing alone — which is the
+// signature of a cross-file env leak. But: running the two files TOGETHER passes both
+// before and after this change, and a full suite with this change REVERTED also passes
+// (1506 files / 16,713 tests). So the red was FLAKY, and this edit is hardening that
+// removes one candidate leak source — it is NOT a demonstrated fix for that failure.
+// Do not read the green suite as proof; the null hypothesis produces it too.
+let savedSbUrl: string | undefined
+let savedSbKey: string | undefined
 
 /**
  * True for a request the CARD makes (its own public API), false for one the
@@ -432,6 +449,8 @@ function stubFetch(respond: (url: string) => Promise<Response>) {
 beforeEach(() => {
   // Both PostgREST-backed cards return their fallback outright when these are
   // unset, so without them their data branches are unreachable in test.
+  savedSbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  savedSbKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://stub.supabase.co"
   process.env.SUPABASE_SERVICE_ROLE_KEY = "stub-service-key"
   originalFetch = globalThis.fetch
@@ -451,8 +470,10 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  delete process.env.NEXT_PUBLIC_SUPABASE_URL
-  delete process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (savedSbUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL
+  else process.env.NEXT_PUBLIC_SUPABASE_URL = savedSbUrl
+  if (savedSbKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY
+  else process.env.SUPABASE_SERVICE_ROLE_KEY = savedSbKey
   vi.resetModules()
   vi.doUnmock("@/lib/supabase")
   vi.doUnmock("@supabase/supabase-js")
