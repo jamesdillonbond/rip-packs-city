@@ -243,3 +243,27 @@ offender still exists — an unanchored pattern DOES match the live ledger, whic
 — (2) the anchored pattern does not, and (3) the script contains no `includes("<<<<<<<")`.
 ⭐ **Mutation-tested both ways**: reverting the script to the unanchored form reds the suite with the
 intended message; restoring it greens. The guard is known to be able to FAIL, not merely observed passing.
+## ⚠ Two more shapes from the 2026-09-11 splices — `--theirs` in a STASH POP, and a commit that outran its own assertion
+
+**1. In `git stash pop`, `--theirs` is the STASH — the opposite of a merge.** Resolving a
+ledger/INDEX conflict during a stash pop with `git checkout --theirs <file>` keeps **my**
+stashed copy and discards upstream's, which is exactly backwards from the mental model a
+`merge` builds. It **clobbered a concurrent session's INDEX entry**, silently: the file was
+well-formed, all four ledger guards were green, and the entry was simply gone.
+
+- ⭐ **The only thing that caught it was a set comparison against disk** — listing
+  `docs/overnight/inbox/*.md` and checking each against INDEX — run *before* committing.
+  Recovered with `git show origin/main:docs/overnight/inbox/INDEX.md`.
+- ⚠ **A count check would not have seen it**, because I was adding an entry in the same
+  breath as destroying one: the total held. This is the *"diff the SET, not the count"*
+  rule arriving through a git verb rather than a query.
+
+**2. Gate the COMMIT on the splice, not merely on the assertion existing.** A splice
+assertion correctly **refused a non-unique anchor** and exited non-zero — and the commit ran
+anyway, because the assertion and the `git commit` were separate steps rather than
+`&&`-joined. The commit message described content the tree did not contain, which is worse
+than a failed splice: it is a *false record* of one. `scripts/resolve-ledger-rebase-conflict.mjs`
+already encodes the `&&` form; **hand splices must borrow it.** Anchor on a string verified
+unique in the freshly-read file first (`grep -c`), never on the first `^### ` alone when the
+payload could match twice.
+

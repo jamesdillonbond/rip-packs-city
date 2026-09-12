@@ -2,6 +2,28 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⛔ `supabase/migrations/` IS A FINDINGS ARCHIVE NOBODY GREPS — read it BEFORE measuring a pg_cron job (2026-09-11 PT)
+
+I spent a measurement pass establishing two facts about the Pinnacle acquisition
+backfills: that the `LIMIT 50000` **never binds**, and that start-minute staggering does
+nothing for them. **Both were already written down** — in prose, inside
+`20260818040426_audit_20260817_pinnacle_mint_acquisitions_cadence_cut.sql`, a migration
+applied **24 days earlier**, which states *"the `LIMIT 50000` NEVER BINDS"*, carries the
+same anti-join plan, and records the staggering as measured dead. The file is committed,
+greppable, and had never been read, because nobody treats a migration as documentation.
+
+- ⭐ **A migration body is the one place a finding is recorded at the moment it was ACTED
+  on.** The reference docs record what a session *concluded*; the migration records what
+  the estate actually *did about it*, and the two diverge whenever a conclusion was
+  reached but never promoted.
+- ⚠ **So before measuring any pg_cron job or DB function:**
+  `grep -rn '<job or function name>' supabase/migrations/ | tail -20`. It is the cheapest
+  de-duplicator available — a plain grep against a measurement that can cost a quiet
+  window you may have to wait hours for (jobid 355 waited from 06:00 to 18:07 PT).
+- ⚠ **And the reason it goes unread is the FILENAME.**
+  `…_pinnacle_mint_acquisitions_cadence_cut.sql` gives no hint that the file answers
+  *"does the batch size matter"*. Grep the **body**, never the filename list.
+
 ## ⛔ THE COST CURVE OF A TIME BOUND IS NOT MONOTONIC — 30 DAYS IS SLOWER THAN NO BOUND (jobid 355, measured 2026-09-11 in a genuinely quiet window)
 
 `backfill_pinnacle_trade_acquisitions(50000)` — jobid **355**, the sibling of jobid 218 in the

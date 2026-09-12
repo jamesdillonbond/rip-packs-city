@@ -3,6 +3,44 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## 🚨 A PRESENCE GUARD AND AN AUTO-FIXER CAN AGREE WITH EACH OTHER AND BOTH BE WRONG (2026-09-11)
+
+I filed an inbox entry late in the PT evening. UTC had already rolled to the next day, so
+the filing was named `2026-09-12T0117Z-…` while I was thinking in the PT date, and its
+`INDEX.md` line went under the wrong day heading. **Every instrument stayed green**, and
+the reason is the transferable part:
+
+- `inbox-index-lists-every-filing` asserts **membership** — every file on disk is listed,
+  and no entry points at a file that is gone. **Placement is not a membership property**,
+  so it is structurally invisible to that guard. (This is the *"ask what a passing guard
+  is structurally SILENT about"* rule, in its cheapest costume: the guard was not wrong,
+  it was answering a different question.)
+- `scripts/fix-inbox-index-counts.mjs` recomputes each `## YYYY-MM-DD — N filings` heading
+  **from the `- [` lines it finds under that heading**. Given a misplaced entry it derives
+  a count that **agrees with** the misplacement.
+
+⛔ **A fixer that derives its expected value from the OBSERVED state cannot detect an error
+in the observed state — it launders one into internal consistency.** Two green instruments
+are not two pieces of evidence when one consumes the other's output; that is the
+*"monitor whose input set includes another monitor's OUTPUT"* rule, and an auto-fixer is
+the form of it nobody recognises, because a fixer does not look like a monitor.
+**Pair every derive-from-state fixer with an assertion that does not read from the thing it
+repairs.**
+
+✅ **Shipped: `__tests__/inbox-index-entries-sit-under-their-own-date.test.ts`**, which reads
+the **filename** — the one field the fixer never touches. Measured over all **431** entries
+2026-09-11: headings from **2026-08-29** onward are **127 entries with ZERO mismatches**, so
+it is a **ban at zero** with a real population, not an allowlist. The seven headings
+2026-08-22..08-28 are mixed (**63** entries one day early) and are held as a **ratchet that
+can only shrink**, so repairing history greens the test and can never red it — those filings
+are permanent citation targets and their INDEX lines should not be shuffled for cosmetics.
+⭐ **Mutation-proven**: moving one live entry one heading up reds it with the offending line
+number; restoring greens it.
+
+⚠ **The tell that made the diagnosis certain rather than a guess: every mismatch is exactly
++1 day.** A fourth assertion pins that, so if the residue ever acquires a non-boundary
+offset the guard says *"this is no longer the UTC/PT class"* instead of absorbing it.
+
 ## 🚨 A DB PIN CAN GUARD BLAST RADIUS AND BE STRUCTURALLY SILENT ABOUT EFFICACY (2026-09-11, register #82)
 
 `supabase/tests/*.sql` pins run a **verbatim copy** of a function against tables the test file
