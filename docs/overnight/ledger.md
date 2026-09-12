@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · ⛔ MY OWN #84 ACTION IS REFUTED AND I CORRECTED IT — the `50000` batch is a NON-BINDING limit, and the 12Z burst had a different cause than the 13Z one · Claude Code on Trevor's box, Trevor: "Keep going until nothing is left unresolved"
+
+**Shipped: docs only — #84 corrected, three stranded daytime-monitor filings committed with INDEX entries. No code, no migration, no data mutation.**
+
+🚨 **#84 TOLD A READER TO DO SOMETHING THAT HAD ALREADY BEEN DISPROVEN, which is the exact defect class I fixed on #69 earlier in this same session.** Its action (1) was *"cut the batch from 50,000 toward 2,000–5,000"*. ⛔ **A concurrent session planned it and the plan is BYTE-IDENTICAL at `LIMIT 50000` and `LIMIT 50`** — because the planner estimates the join yields **`rows=20`**. **The LIMIT is NON-BINDING: it can never be reached, so lowering it removes nothing.**
+
+⭐ **AND IT IS THIS ESTATE'S OWN RECORDED TRAP — "a LIMIT that never binds is a full sweep; check the EXPLAIN row-estimate against the LIMIT."** I walked into it **while quoting the neighbouring rule** ("cut ITEMS per tick, not rows per item"). ⚠ **The two rules look alike and point opposite ways: one is about a limit that BINDS too loosely, the other about one that never binds at all — and only the EXPLAIN tells you which you are holding.**
+
+✅ **THE GATE HELD, WHICH IS THE ONLY REASON THIS COST NOTHING.** I wrote the action with *"measure BUFFERS first, and NOT during a spell"* and shipped no change. **The recommendation was wrong; the refusal to act on an unmeasured recommendation was right** — and that is the difference between a bad suggestion and a bad outcome.
+
+✅ **THE REAL LEVER, from the sibling filing:** the join is `lower(wmc.wallet_address) = lower(t.to_wallet)` — a function on **both** sides, with **zero expression indexes containing `lower(`** on either `wallet_moments_cache` or `pinnacle_trade_events`, so the planner must hash a 3.25 GB table whole. **Expression indexes are the fix.** ⚠ Scope: planned for **355 only**; jobs **78** and **218** share the `(50000)` shape and were not planned.
+
+✅ **AND 09-10's 12Z BURST IS RESOLVED — by the mechanism I had ruled OUT.** **16 active six-hourly jobs plus 2 three-hourly converge on 0/6/12/18Z against `max_worker_processes = 6`** — the 2026-09-09 convoy. ⭐ **So the two bursts on one day have DIFFERENT causes: 12Z the convoy, 13Z jobid 355.** **That is precisely why "a cause, not proven the only one" was the right hedge** — a single-culprit story would have been confidently wrong, and the unexplained 12Z burst I flagged rather than smoothed over is what led someone to the second mechanism.
+
+✅ **Three stranded daytime filings committed** (15:06Z, 18:08Z, 00:10Z — bash/clone mount down a THIRD day). ⭐ **All three are disciplined in a way worth naming: each states its positive control up front, labels every item a SYMPTOM under an active spell, and refuses a causal conclusion** — the 18:08Z one explicitly says *"do NOT treat these as new bugs"* and points at the live investigation instead of re-filing it. **The spell recurred three times today (13Z · 18:08Z · 00:10Z).**
+
+**Revert:** docs only — `git revert` the commit.
+
 ### 2026-09-11 · 🔴 THE INSTANCE IS IO-STARVED AND A SIBLING SESSION NAMED THE CULPRIT 20 MINUTES BEFORE I DID — filed as the second half, not a second answer · Claude Code (cloud), Trevor: "Keep going"
 
 **Read-only turn; one inbox filing, no code or DB change.** Chasing why `offers-sweep` still 530s led somewhere bigger. `pg_stat_activity` at **06:45 PT: 34 active backends, EVERY one blocked on `IO` (`DataFileRead`/`DataFilePrefetch`)** — this repo's standing *"saturation is IO-, not CPU-bound"* caught in the act rather than quoted. Longest statement: **`autovacuum: VACUUM public.wallet_moments_cache`, 2,344 s**. That table is **3,250 MB**, **1,025 autovacuums**, only **4.2% dead**, last pass finished 04:59 PT with the next already 39 minutes deep by 06:07 — near-continuous, against a **22 MB/s** tier budget.
