@@ -1170,6 +1170,34 @@ extra tool call and removes the entire class.
 
 ⭐ **Sanity check before writing a time to him: PDT is UTC−7, PST is UTC−8.** `03:12Z` → **8:12pm PT the previous day**. A UTC timestamp after ~07:00Z is still *yesterday* in PT — which is also why ledger `### <date>` headings need the conversion.
 
+## ⭐ THE CLOUD SANDBOX CAN READ PRODUCTION PAGES — `curl` is blocked, the Vercel MCP tool is NOT (2026-09-11)
+
+`curl https://www.rippackscity.com/...` fails here with `connect_rejected (the egress proxy denied
+the CONNECT)`, and so does `rest-mainnet.onflow.org`. It is easy to conclude from that that
+**"verify by rendered DOM, not HTTP 200"** — this repo's standing rule — cannot be executed from a
+cloud session. ⛔ **It can.** `mcp__Vercel__web_fetch_vercel_url` goes out through Vercel's own API
+rather than the sandbox's egress proxy, and it returns the **full body and response headers** of a
+live production URL:
+
+```
+mcp__Vercel__web_fetch_vercel_url { url: "https://www.rippackscity.com/api/health" }
+→ 200 {"ok":true,...}   + x-vercel-cache, x-matched-path, the whole CSP header
+```
+
+⭐ **So the ship → fetch → verify-the-DOM loop is available**, which is what makes a user-facing
+change safe to land from here: no service-role key is needed in the sandbox, and `x-vercel-cache`
+comes back so a **HIT can be told from a MISS** — the discriminator the ISR-caches-a-failed-read
+rule (**#33**) depends on.
+
+⚠ **It is a Vercel-hosted-URL tool, not a general fetcher** — it will not reach Flow REST, Atlas,
+Dune or the Top Shot GQL host, so on-chain verification stays impossible from a sandbox and those
+questions still need a machine with real egress.
+
+⭐ It also reads the public JSON APIs directly, which is the cheapest way to check a board's
+third-state honesty: `/api/public/insights/pack-reality` returns `meta.errors: []` with
+`top_ev: []` and `ranker_staleness.stale_count: 3` — an empty board that **says why**, rather than
+a failed read rendered as an empty market.
+
 ## ⭐ THE CLOUD SANDBOX CAN RUN THE FULL DB-INVARIANT SUITE — "no Postgres on the box" is TRUE OF TREVOR'S BOX, NOT OF THIS ONE (2026-09-11)
 
 Several entries (and **#82**) say the SQL pins "run only in CI (no Postgres or Docker on the
