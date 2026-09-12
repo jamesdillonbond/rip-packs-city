@@ -57,9 +57,25 @@ import { isMarkerSuppressed } from "../scripts/lib/marker-suppression.mjs"
 // this guard enforces.
 //
 // ── WHAT THIS IS STRUCTURALLY SILENT ABOUT, stated rather than implied ──────
-//  1. A NON-LITERAL bound (`.limit(pageSize)`, `.range(from, from + PAGE - 1)`).
-//     Only literals can be judged statically. The paging helpers are the right
-//     answer there and `range-needs-order` already covers the ordering half.
+//  1. ~~A NON-LITERAL bound. Only literals can be judged statically.~~
+//     ⛔ CORRECTED 2026-09-11, and it had a LIVE INSTANCE. A same-file
+//     `const NAME = <number>` IS statically judgeable, and hiding the number
+//     behind a name is precisely how this class survives a guard anchored on the
+//     literal — CLAUDE.md names that shape ("a guard anchored on an OPERATOR is
+//     blind to its class HOISTED into a name") and the divisor ban had the same
+//     hole. Found by resolving every `.limit(<name>)` in the tree against its
+//     own file: 74 named sites, 31 resolvable, ONE over the cap —
+//     `app/api/cron/pinnacle-wmc-render-id/route.ts` `.limit(CAP)` with
+//     `const CAP = 2000`, which the 2026-09-09 walk could not see. Now covered
+//     by LIMIT_NAMED below.
+//     ⚠ STILL SILENT, deliberately: a bound that is a function PARAMETER
+//     (`.limit(pageSize)`), an IMPORTED constant, or any computed expression —
+//     none is decidable from one file, and guessing would put noise on every
+//     correct pager. `.range(from, from + PAGE - 1)` likewise; the paging helpers
+//     are the right answer there and `range-needs-order` covers the ordering half.
+//     ⚠ AND ONLY WHEN THE NAME HAS EXACTLY ONE NUMERIC DEFINITION in the file —
+//     a reassigned or shadowed name is skipped rather than guessed, because a
+//     false positive on a ban-at-zero guard is a red CI run for everyone.
 //  2. A `.limit(<=1000)` over a LARGER population. That is a truncation too, and
 //     it is invisible to any source-shape check — it needs a row count, which
 //     is a live read, not a lint.
@@ -79,6 +95,55 @@ const LIMIT_LITERAL = /\.limit\(\s*(\d[\d_]*)\s*\)/g
 
 /** `.range(<literal>, <literal>)` — the same lie, spelled as a span. */
 const RANGE_LITERAL = /\.range\(\s*(\d[\d_]*)\s*,\s*(\d[\d_]*)\s*\)/g
+
+/** `.limit(<bare identifier>)` — the same lie with the number hoisted into a name. */
+const LIMIT_NAMED = /\.limit\(\s*([A-Za-z_$][\w$]*)\s*\)/g
+
+/**
+ * Same-file numeric constant definitions, as `name -> value`.
+ *
+ * ⚠ CONSERVATIVE ON PURPOSE. The value must be a bare numeric literal that ENDS
+ * the assignment (`= 2000;` or `= 2000` at end of line) — so `= 2000 * 3` and
+ * `= Number(x) || 2000` are not read as 2000. And a name defined more than once
+ * in the file is DROPPED rather than resolved to either value: a reassigned or
+ * shadowed name is not statically known, and on a ban-at-zero guard a false
+ * positive is a red run for everybody. Under-reaching here is the safe direction;
+ * the walk still catches every literal.
+ */
+function numericConsts(strippedLines: string[]): Map<string, number> {
+  const seen = new Map<string, number[]>()
+  const DECL = /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*[^=]+?)?=\s*(\d[\d_]*)\s*;?$/
+  // ⚠ A BARE REASSIGNMENT COUNTS AS A DEFINITION, and leaving it out was a real
+  // bug in the first draft of this resolver — `let CAP = 2000; CAP = 10;` was
+  // read as a single definition of 2000 and fired. Caught by the reassignment
+  // case in the test below, which is why that case is written as an assertion
+  // rather than a comment.
+  const REASSIGN = /^([A-Za-z_$][\w$]*)\s*=\s*(\d[\d_]*)\s*;?$/
+  // Any OTHER assignment to the name (a computed value, a call, a ternary) also
+  // makes it unknowable — record a sentinel so the name is dropped.
+  const ASSIGN_ANY = /^(?:(?:export\s+)?(?:const|let|var)\s+)?([A-Za-z_$][\w$]*)\s*(?::\s*[^=]+?)?=(?![=>])/
+  for (const raw of strippedLines) {
+    const line = raw.trim()
+    const m = DECL.exec(line) ?? REASSIGN.exec(line)
+    if (m) {
+      const list = seen.get(m[1]) ?? []
+      list.push(Number(m[2].replace(/_/g, "")))
+      seen.set(m[1], list)
+      continue
+    }
+    const a = ASSIGN_ANY.exec(line)
+    if (a) {
+      const list = seen.get(a[1]) ?? []
+      list.push(Number.NaN)
+      seen.set(a[1], list)
+    }
+  }
+  const out = new Map<string, number>()
+  for (const [name, vals] of seen) {
+    if (vals.length === 1 && Number.isFinite(vals[0])) out.set(name, vals[0])
+  }
+  return out
+}
 
 /**
  * Deliberate, reviewed exception. Honoured on the flagged line, any of the 3
@@ -121,6 +186,7 @@ function offenders(): Hit[] {
       const strippedLines = stripComments(raw).split("\n")
       const rawLines = raw.split("\n")
       const file = relative(process.cwd(), full).split(sep).join("/")
+      const consts = numericConsts(strippedLines)
 
       strippedLines.forEach((line, i) => {
         const push = (kind: string, value: number) => {
@@ -139,6 +205,12 @@ function offenders(): Hit[] {
         while ((m = RANGE_LITERAL.exec(line)) !== null) {
           const span = Number(m[2].replace(/_/g, "")) - Number(m[1].replace(/_/g, "")) + 1
           if (span > CAP) push("range", span)
+        }
+
+        LIMIT_NAMED.lastIndex = 0
+        while ((m = LIMIT_NAMED.exec(line)) !== null) {
+          const n = consts.get(m[1])
+          if (n !== undefined && n > CAP) push(`limit via ${m[1]} =`, n)
         }
       })
     }
@@ -160,6 +232,27 @@ function fires(src: string): boolean {
     }
     while ((m = RANGE_LITERAL.exec(line)) !== null) {
       if (Number(m[2].replace(/_/g, "")) - Number(m[1].replace(/_/g, "")) + 1 > CAP) return true
+    }
+    return false
+  })
+}
+
+/**
+ * Drive the NAMED-constant path over a whole file, the way the walk does.
+ * `fires()` above is line-scoped and structurally cannot see a const declared
+ * elsewhere in the file — which is exactly why the class hid from it.
+ */
+function firesFile(src: string): boolean {
+  const stripped = stripComments(src).split("\n")
+  const rawLines = src.split("\n")
+  const consts = numericConsts(stripped)
+  return stripped.some((line, i) => {
+    if (isMarkerSuppressed(rawLines, i, OPT_OUT, OPT_OUT_LOOKBACK)) return false
+    LIMIT_NAMED.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = LIMIT_NAMED.exec(line)) !== null) {
+      const n = consts.get(m[1])
+      if (n !== undefined && n > CAP) return true
     }
     return false
   })
@@ -200,6 +293,39 @@ describe("a PostgREST bound above the row cap is a false bound", () => {
     // pretending otherwise would produce noise on every correct pager.
     expect(fires("  .limit(pageSize)")).toBe(false)
     expect(fires("  .range(from, from + PAGE - 1)")).toBe(false)
+  })
+
+  it("catches the number HOISTED INTO A NAME — the shape that hid from the literal walk", () => {
+    // The live instance: app/api/cron/pinnacle-wmc-render-id/route.ts carried
+    // `const CAP = 2000` and `.limit(CAP)` on a plain PostgREST select, and the
+    // literal-only walk on 2026-09-09 reported zero offenders across the tree.
+    expect(firesFile("const CAP = 2000;\nawait sb.from('t').select('*').limit(CAP);")).toBe(true)
+    expect(firesFile("const CAP = 20_000\n  .limit(CAP)"), "separators must not hide it").toBe(true)
+    expect(firesFile("const CAP: number = 5000;\n  .limit(CAP)"), "a type annotation must not hide it").toBe(true)
+
+    // At or under the cap, the bound is real.
+    expect(firesFile("const CAP = 1000;\n  .limit(CAP)")).toBe(false)
+
+    // ⚠ THE CONSERVATISM, asserted rather than described. Each of these is a
+    // name the guard must DECLINE to judge, because guessing wrong reds CI for
+    // everyone on a ban-at-zero check.
+    expect(firesFile("let CAP = 2000;\nCAP = 10;\n  .limit(CAP)"), "a name defined twice is not statically known").toBe(
+      false,
+    )
+    expect(firesFile("const CAP = 2000 * 3;\n  .limit(CAP)"), "a computed value is not a bare literal").toBe(false)
+    expect(firesFile("const CAP = Number(x) || 2000;\n  .limit(CAP)"), "a fallback expression is not a bare literal").toBe(
+      false,
+    )
+    expect(firesFile("function f(pageSize: number) {\n  return q.limit(pageSize)\n}"), "a parameter is unknowable").toBe(
+      false,
+    )
+    expect(firesFile("  .limit(opts.pageSize)"), "a dotted access is not a bare identifier").toBe(false)
+
+    // The opt-out reaches this path too, via the same shared reader.
+    expect(
+      firesFile("const CAP = 2000;\n// postgrest-cap: intentional — 5 rows measured 2026-09-11\n  .limit(CAP)"),
+      "the marker must suppress a named hit as well as a literal one",
+    ).toBe(false)
   })
 
   it("the comment stripper is load-bearing (this file would flag itself without it)", () => {

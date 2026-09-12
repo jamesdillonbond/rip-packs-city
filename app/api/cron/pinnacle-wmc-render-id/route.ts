@@ -39,7 +39,30 @@ const TOKEN = process.env.INGEST_SECRET_TOKEN ?? "";
 const PIPELINE_NAME = "pinnacle-wmc-render-id";
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714";
 const GQL = "https://api.production.studio-platform.dapperlabs.com/graphql";
-const CAP = 2000;
+// Candidate batch for the wmc render_id drain below.
+//
+// ⚠ WAS 2000, WHICH WAS NEVER A BOUND (corrected 2026-09-11). The read at the
+// bottom of this file is a plain PostgREST select, and PostgREST CLAMPS an
+// explicit .limit() above 1,000 down to 1,000 — silently, with nothing in the
+// response distinguishing a complete result from a truncated one. So this
+// constant claimed a batch the server would never return, and because it is a
+// NAME rather than a literal, the tree-walking guard for that class
+// (__tests__/postgrest-limit-above-the-cap-is-a-false-bound.test.ts) could not
+// see it: its own header recorded "only literals can be judged statically".
+// This was the live instance that closed that gap; the guard now resolves
+// same-file numeric constants.
+//
+// ⭐ SIZED BEFORE CHANGING, because a site is not a defect: the candidate pool
+// (disney_pinnacle wallet_moments_cache rows with render_id IS NULL) measured
+// **5 rows out of 56,646** on 2026-09-11, and the lane runs 24x/day resolving
+// 5-65 rows/day with zero failures. So the clamp has had NO effect and this is
+// a truth-in-source fix, not a behaviour change — 1,000 is what the server was
+// already returning. It also keeps ~200x headroom against the pool, and stays
+// correct in the one scenario that could refill it (a bulk re-key like
+// scripts/remap-pinnacle-wmc.mjs): 1,000/tick x 24 ticks drains 56,646 in
+// ~2.4 days, where a paging rewrite would instead put 56k GQL lookups inside a
+// single tick's maxDuration.
+const CAP = 1000;
 const ID_CHUNK = 250;
 // Ongoing sales render_id drain (Q2): keep new pinnacle_sales rows from sitting
 // unresolved more than a tick. The one-time bulk drain is the admin route
