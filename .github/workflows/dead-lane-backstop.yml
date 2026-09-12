@@ -247,47 +247,62 @@ jobs:
           max-time: "60"
           fail-on-auth: "false"
 
-      # ⭐ THE ELEVENTH LANE, ADDED 2026-09-10 PT — it was dead and OUTSIDE this
-      # workflow, which is why nothing here covered it.
+      # ⛔⛔ THE ELEVENTH LANE IS DISABLED (2026-09-11 PT). It was added 09-10 on a
+      # premise that MEASUREMENT REFUTES, and it cannot do anything but fail.
       #
-      # 🚨 IT IS THE ONLY WRITER OF `edition_offers.highest_offer` FOR TOP SHOT.
-      # Grep-verified across app/ and lib/: allday-offers-indexer writes All Day's,
-      # golazos-offers-indexer writes Golazos's, and offers-sweep writes Top Shot's.
-      # Nothing else writes that column. It last wrote on **2026-08-28**, so the
-      # "Best offer" on the collection grid, moment and edition pages, /api/best-offers
-      # and the `price_gap` in /api/badges have been unrefreshed for 13 days.
+      # 🚨 THE CLAIM THAT JUSTIFIED IT — "IT IS THE ONLY WRITER OF
+      # `edition_offers.highest_offer` FOR TOP SHOT. Grep-verified across app/ and
+      # lib/" — IS FALSE, AND THE WORD `app/ and lib/` IS WHY.
+      # `public.raise_edition_offers_from_chain()` writes `highest_offer` and is on
+      # pg_cron as `rpc-raise-edition-offers-backstop [34 * * * *]`; its last six runs
+      # all `succeeded` (most recent 09-11 21:34 PT), and 7,433 of 13,054 Top Shot
+      # rows carry a `highest_offer`. `public.sync_edition_offers_from_atlas()` writes
+      # it too. **A repo grep cannot see a DATABASE writer** — CLAUDE.md states this
+      # exact rule ("a TABLE's writers the same — grep the DB"), and this is its
+      # second recorded instance after #81. Query that settles it:
+      #   SELECT proname, prosrc ILIKE '%highest_offer%' FROM pg_proc p
+      #   JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public'
+      #     AND p.prosrc ILIKE '%edition_offers%';
       #
-      # ⚠ AND THE STALENESS IS INVISIBLE, WHICH IS THE WORSE HALF.
-      # `edition_offers.updated_at` reads FRESH for Top Shot — minutes old — because
-      # `topshot-deal-floor-serials` stamps `updated_at` while writing only `low_ask`,
-      # `low_ask_serial` and `low_ask_nft_id`. It never writes `highest_offer`. So the
-      # timestamp vouches for the ask and not for the offer sitting in the same row.
-      # ⛔ DO NOT treat `edition_offers.updated_at` as freshness for `highest_offer`.
+      # ⛔ AND THE LANE CANNOT WRITE ANYTHING EVEN IF IT RAN. `offers-sweep` is
+      # Top-Shot-only (`COLLECTION_ID = 95f28a17…`, one arm) and calls
+      # `https://public-api.nbatopshot.com/graphql`, which is DECOMMISSIONED and
+      # answers Cloudflare **530** — the host CLAUDE.md flags and that register #65
+      # re-pointed to Atlas on 09-07, the same night `offers-sweep` (cron-job.org job
+      # 7712610) was deliberately made **INACTIVE** and its watchlist row retired.
+      # ⭐ So this step was resurrecting a lane that had been retired ON PURPOSE three
+      # days earlier, using a rationale the register had already superseded.
       #
-      # ⚠ THIS STEP IS NOT THE WHOLE FIX, stated plainly so nobody reads it as one.
-      # There were TWO failures. The lane stopped WRITING on 08-29 (72 runs/day,
-      # rows_written 0, ok_count 36/72 — still unexplained) and stopped RUNNING on
-      # 09-07 when cron-job.org went. This step addresses only the second. If it comes
-      # back and still writes zero, the first failure is the live one and is the thing
-      # to root-cause; either way pipeline_runs can see it again, which it could not
-      # while nothing called the route at all.
+      # THE MEASUREMENT, from `pipeline_runs_daily` (the 73h live table cannot see it):
+      #   08-25..08-27  209,521 / 215,517 / 209,808 rows written, 0 failures
+      #   08-28         145,056 written, 22 failures  ← the decommission lands
+      #   08-29         70 runs, 0 ok, 0 written
+      #   08-30..09-06  72 runs/day, exactly 36 ok / 36 fail, 0 written, every day
+      #   09-11         6 runs, 0 ok — this step re-firing it
+      # ⚠ The 36/36 split is NOT a fabricated green: it is the route's own half-open
+      # `OUTAGE_BREAKER_WINDOW_MS = 30 min` breaker logging `ok=true, skipped` against
+      # a ~20 min cadence. The breaker is behaving exactly as designed.
       #
-      # Idempotency checked before adding, same as every lane above: the sweep is
-      # cursored across ticks via pipeline_runs.cursor_after and writes through
-      # `.upsert(batch, { onConflict: "collection_id,external_id" })` — the same
-      # cursor+upsert shape as the listings indexers. ⚠ Its cursor lives in
-      # `pipeline_runs`, which retains ~73h, so after this long dead the cursor is
-      # gone and the next tick restarts at the head. That is the route's own
-      # documented behaviour for reaching the end (cursor_after=null restarts a fresh
-      # full refresh cycle), not a new risk.
-      - name: offers-sweep — backstop trigger
-        continue-on-error: true
-        uses: ./.github/actions/rpc-call
-        with:
-          url: https://www.rippackscity.com/api/cron/offers-sweep
-          token: ${{ secrets.INGEST_SECRET_TOKEN }}
-          label: offers-sweep
-          accept: "200,202"
-          retries: "1"
-          max-time: "60"
-          fail-on-auth: "false"
+      # ⚠ WHAT IS **NOT** SETTLED, stated so nobody reads this as a full all-clear:
+      # whether the on-chain writer reaches the same COVERAGE the marketplace sweep
+      # did. It cannot be measured from the schema — `edition_offers` has ONE shared
+      # `updated_at` and no per-column stamp, so a fresh timestamp vouches for
+      # `low_ask` and `highest_offer` indistinguishably (the previous note was right
+      # about that, and it is the one claim here that survives). ⛔ Re-pointing the
+      # sweep at Atlas is the open work; re-enabling it against the dead host is not.
+      #
+      # Re-enable by uncommenting ONLY after the route reads Atlas instead of
+      # public-api.nbatopshot.com. Until then this step can only add 6 failing
+      # invocations a day and noise in `pipeline_runs`.
+      #
+      # - name: offers-sweep — backstop trigger
+      #   continue-on-error: true
+      #   uses: ./.github/actions/rpc-call
+      #   with:
+      #     url: https://www.rippackscity.com/api/cron/offers-sweep
+      #     token: ${{ secrets.INGEST_SECRET_TOKEN }}
+      #     label: offers-sweep
+      #     accept: "200,202"
+      #     retries: "1"
+      #     max-time: "60"
+      #     fail-on-auth: "false"

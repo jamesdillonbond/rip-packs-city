@@ -135,9 +135,74 @@ today's genuinely-empty state and the wrong behaviour if it ever empties for a b
 
 ---
 
+---
+
+## 4 · A health sweep found a backstop resurrecting a lane that was retired ON PURPOSE — and the 🚨 claim that justified it is refuted by a DB grep
+
+Not from the monitor; found by sweeping `pipeline_runs` for 100%-failing lanes in the last 6 h.
+`offers-sweep`: **2 runs, 2 failures, `Top Shot GraphQL failed with 530`.**
+
+**The lane is Top-Shot-only** (`COLLECTION_ID = 95f28a17…`, a single arm) and calls
+`https://public-api.nbatopshot.com/graphql` — **decommissioned**, the host CLAUDE.md flags. From
+`pipeline_runs_daily`, which is the only table that can see this (the live one retains ~73 h):
+
+| day | runs | ok | written |
+|---|---:|---:|---:|
+| 08-25 … 08-27 | 70–71 | all | **209,521 / 215,517 / 209,808** |
+| **08-28** | 70 | 48 | **145,056** ← the decommission lands mid-day |
+| **08-29** | 70 | **0** | **0** |
+| 08-30 … 09-06 | 72 | **exactly 36** | **0**, every day |
+| 09-11 | 6 | 0 | 0 ← the backstop re-firing it |
+
+⚠ **The 36/36 split is NOT a fabricated green** — it is the route's own half-open
+`OUTAGE_BREAKER_WINDOW_MS = 30 min` breaker logging `ok=true, skipped` against a ~20 min cadence.
+The breaker is doing exactly what it was built to do.
+
+⭐ **The lane was retired deliberately on 09-07.** Register **#65** records the 530, re-points both
+halves to Atlas, and states `offers-sweep` (cron-job.org job 7712610) is **INACTIVE** with its
+watchlist row retired. **`dead-lane-backstop.yml`, added 09-10 to revive lanes killed by the
+cron-job.org outage, brought it back three days later** — its comment calls the 08-29 stop *"still
+unexplained"*, which the register had explained and acted on.
+
+🚨 **And the 🚨 claim that justified adding it is FALSE:** *"IT IS THE ONLY WRITER of
+`edition_offers.highest_offer` for Top Shot. **Grep-verified across app/ and lib/**."* Those two
+directories are exactly why it is wrong — **the replacement writer is a DATABASE function**:
+
+```sql
+SELECT proname, prosrc ILIKE '%highest_offer%' FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public' AND p.prosrc ILIKE '%edition_offers%';
+```
+
+`raise_edition_offers_from_chain()` writes `highest_offer` and runs on pg_cron as
+`rpc-raise-edition-offers-backstop [34 * * * *]` — **last six runs all `succeeded`**, most recent
+**09-11 21:34 PT**; 7,433 of 13,054 Top Shot rows carry a `highest_offer`.
+`sync_edition_offers_from_atlas()` writes it too. ⭐ **CLAUDE.md states this rule verbatim — "a
+TABLE's WRITERS the same — grep the DB" — and this is its second recorded instance after #81.**
+
+⚠ **I walked into the adjacent trap first and was caught by the note I was about to delete.** I
+checked `max(edition_offers.updated_at)`, saw **09-11 21:47 PT**, and concluded "fresh, no gap". The
+existing comment warns precisely against that: `updated_at` is **one shared column**, stamped by the
+`low_ask` writer, so it vouches for the ask and the offer **indistinguishably**. That half of the
+note is correct and survives.
+
+⛔ **SO WHAT IS NOT SETTLED, stated rather than rounded to an all-clear:** whether the on-chain
+writer reaches the same **coverage** the marketplace sweep did. **It cannot be measured from this
+schema** — there is no per-column stamp on `edition_offers`, and adding one is the change that would
+make the question answerable at all.
+
+**Shipped: the step is DISABLED (commented out, wiring preserved), not deleted**, with the refutation
+and the measurement inline. The argument does not depend on the open coverage question: **the lane
+calls a decommissioned host, so it cannot write anything either way** — re-enabling it against
+`public-api.nbatopshot.com` can only add 6 failing invocations a day. **Re-pointing the route at
+Atlas is the open work.** Guards: `dead-lane-backstop-covers-real-routes` + `scheduler-liveness-detector`
+green (29 assertions), YAML re-parsed, active `rpc-call` steps **11 → 10** against a guard floor of 8.
+
 ## What changed on disk this turn
 
 - `.github/workflows/snapshot-institutional-wallets-backstop.yml` — STALE-RATIONALE note corrected
   with the measured fire times, the 202-then-nothing sequence, and the positive control. **Comment
   only; the `cron:` is untouched** and the file still parses (`js-yaml`, schedule unchanged).
+- `.github/workflows/dead-lane-backstop.yml` — the `offers-sweep` step DISABLED (commented out,
+  wiring preserved) with the refutation and measurements inline. Active `rpc-call` steps 11 -> 10.
 - Nothing else. No migration, no DB mutation, no schedule change.

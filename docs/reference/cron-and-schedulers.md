@@ -2,6 +2,64 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⛔⛔ "GREP-VERIFIED ACROSS `app/` AND `lib/`" IS NOT A WRITER AUDIT — and a backstop built on one resurrected a lane that was retired ON PURPOSE (2026-09-11 PT, second instance after #81)
+
+`dead-lane-backstop.yml` gained an eleventh step on 09-10 to revive lanes killed by the cron-job.org
+outage. Its justification was a 🚨 claim: *"IT IS THE ONLY WRITER of `edition_offers.highest_offer`
+for Top Shot. **Grep-verified across app/ and lib/**."* Those two directories are exactly why it was
+wrong — **the replacement writer is a DATABASE function, which no repo grep can see.**
+
+```sql
+SELECT p.proname,
+       (p.prosrc ILIKE '%highest_offer%') AS writes_it,
+       COALESCE((SELECT string_agg(j.jobname || ' [' || j.schedule || ']', ', ')
+                 FROM cron.job j WHERE j.command ILIKE '%' || p.proname || '%'),
+                '(no pg_cron caller)') AS scheduled_by
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public' AND p.prosrc ILIKE '%edition_offers%'
+ORDER BY 2 DESC;
+```
+
+`raise_edition_offers_from_chain()` writes it, on pg_cron as `rpc-raise-edition-offers-backstop
+[34 * * * *]`, **last six runs all `succeeded`**; `sync_edition_offers_from_atlas()` writes it too.
+⭐ **Join `cron.job` in the same query** — a function that writes the column but which nothing
+schedules is not a live writer, and the two look identical until you check.
+
+⭐ **THE COMPOUNDING FAILURE: the lane was dead ON PURPOSE.** Register **#65** recorded the 530,
+re-pointed both halves to Atlas on **09-07**, and made `offers-sweep` (cron-job.org job 7712610)
+**INACTIVE** with its watchlist row retired. The backstop's own comment calls the 08-29 stop *"still
+unexplained"* — it was explained and acted on four days before that comment was written. ⚠ **A
+workflow comment is not a status; check the register before reviving anything.**
+
+**The measurement, from `pipeline_runs_daily` — the live table's ~73 h cannot reach it:**
+
+| day | runs | ok | rows written |
+|---|---:|---:|---:|
+| 08-25 … 08-27 | 70–71 | all | **209,521 / 215,517 / 209,808** |
+| **08-28** | 70 | 48 | **145,056** ← the decommission lands mid-day |
+| **08-29** | 70 | **0** | **0** |
+| 08-30 … 09-06 | 72 | **exactly 36** | **0**, every day |
+| 09-11 | 6 | 0 | 0 ← the backstop re-firing it |
+
+⚠ **The flat 36/36 is NOT a fabricated green** — it is the route's own half-open
+`OUTAGE_BREAKER_WINDOW_MS = 30 min` breaker logging `ok=true, skipped` against a ~20 min cadence,
+working as designed. ⭐ **A clean dated cliff like this is the signature of an upstream
+decommission**, not of decay.
+
+⚠ **THE ADJACENT TRAP, which caught me before the note I was replacing did.** I read
+`max(edition_offers.updated_at)` = 21:47 PT and concluded "fresh, no gap". Wrong: `edition_offers`
+has **one shared `updated_at`**, stamped by the `low_ask` writer, so it vouches for the ask and the
+offer **indistinguishably**. ⛔ **Where two independent writers share a row, a shared timestamp can
+prove nothing about either column** — and a per-column stamp is the only change that would make the
+staleness question measurable at all. That half of the old note was correct and was kept.
+
+⛔ **What stayed open, on purpose:** whether the on-chain writer reaches the sweep's **coverage**.
+The schema cannot answer it. **Disabling the step does not depend on that question** — the lane calls
+a decommissioned host, so it cannot write anything either way; the step could only add 6 failing
+invocations a day. Commented out rather than deleted so the wiring survives for whoever re-points the
+route at Atlas, which is the actual open work.
+
+
 ## 🚨 A BACKSTOP THAT ACCEPTS A `202` IS NOT A BACKSTOP — and GHA's delay can move a job into the saturation window it was built to survive (2026-09-11 PT)
 
 `snapshot-institutional-wallets` has a primary (cron-job.org, 10:07Z) and a GHA backstop whose header

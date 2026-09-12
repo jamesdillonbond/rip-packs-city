@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · ⛔ A BACKSTOP WAS RESURRECTING A LANE THAT WAS RETIRED ON PURPOSE — and the 🚨 "only writer" claim that justified it is refuted by a DB grep · Claude Code on Trevor's box, Trevor: "keep going"
+
+**Shipped: one workflow step DISABLED (commented out, wiring preserved). No code, migration, DB mutation or schedule change.**
+
+Found by sweeping `pipeline_runs` for 100%-failing lanes, not from any filing: **`offers-sweep`, 2 runs / 2 failures, `Top Shot GraphQL failed with 530`.**
+
+**The lane is Top-Shot-only, one arm, calling `https://public-api.nbatopshot.com/graphql` — the DECOMMISSIONED host CLAUDE.md flags.** From `pipeline_runs_daily` (the 73h live table cannot see this): **209,521 / 215,517 / 209,808 rows written on 08-25…08-27**, then **145,056 on 08-28** as the decommission lands, then **0 every single day from 08-29**, at 70–72 runs/day, and **6 more failing runs on 09-11** courtesy of the backstop. ⚠ **The steady 36 ok / 36 fail split is NOT a fabricated green** — it is the route's own half-open `OUTAGE_BREAKER_WINDOW_MS = 30 min` breaker logging `ok=true, skipped` against a ~20 min cadence, behaving exactly as designed.
+
+⭐ **The lane had already been retired on 09-07.** Register **#65** records the 530, re-points both halves to Atlas, and states `offers-sweep` (cron-job.org job 7712610) is **INACTIVE** with its watchlist row retired. **`dead-lane-backstop.yml`, added 09-10 to revive lanes killed by the cron-job.org outage, brought it back three days later** — its own comment calls the 08-29 stop *"still unexplained"*, which the register had already explained and acted on. **A backstop fighting a deliberate decision, on a rationale the register had superseded.**
+
+🚨 **AND THE CLAIM THAT JUSTIFIED ADDING IT IS FALSE, for a reason worth keeping:** *"IT IS THE ONLY WRITER of `edition_offers.highest_offer` for Top Shot. **Grep-verified across app/ and lib/**."* Those two directories are exactly the error — **the replacement writer is a DATABASE function.** `raise_edition_offers_from_chain()` writes `highest_offer` and runs on pg_cron as `rpc-raise-edition-offers-backstop [34 * * * *]`, **last six runs all `succeeded`** (most recent **21:34 PT**), with 7,433 of 13,054 Top Shot rows carrying a value; `sync_edition_offers_from_atlas()` writes it too. ⭐ **CLAUDE.md states this rule verbatim — "a TABLE's WRITERS the same — grep the DB" — and this is its SECOND recorded instance after #81.**
+
+⚠ **I walked into the adjacent trap first, and the note I was about to delete is what caught me.** I read `max(edition_offers.updated_at)` = 21:47 PT and concluded "fresh, no gap". The existing comment warns precisely against that: `updated_at` is **one shared column**, stamped by the `low_ask` writer, so it vouches for the ask and the offer **indistinguishably**. That half of the note is right and survives into the replacement.
+
+⛔ **What is NOT settled, stated rather than rounded into an all-clear:** whether the on-chain writer reaches the same **coverage** the marketplace sweep did. **The schema cannot answer it** — `edition_offers` has no per-column stamp, and adding one is the change that would make the question measurable. **Re-pointing the route at Atlas is the open work; re-enabling it against the dead host is not.**
+
+**Why disabling is safe independent of that open question:** the lane calls a decommissioned host, so it **cannot write anything either way** — the step can only add 6 failing invocations a day and noise in `pipeline_runs`. Commented out rather than deleted so the wiring survives for whoever re-points it.
+
+**REVERT:** uncomment the `offers-sweep` step in `.github/workflows/dead-lane-backstop.yml` (or `git revert` this commit) — behaviour returns to 6 failing invocations a day. **Verified:** YAML re-parsed, active `rpc-call` steps **11 → 10** against the guard's floor of 8, `dead-lane-backstop-covers-real-routes` + `scheduler-liveness-detector` green (29 assertions).
+
+
 ### 2026-09-11 · ✅ SHIPPED: a lane that reported `ok` 63 times in a row while three of its four queues could not have succeeded — two of the three causes fixed, the third filed with its falsifier · Claude Code (cloud), autonomous session
 
 **Shipped: 2 migrations + 1 route + 3 test files. Every measurement below was taken on a QUIET instance (1 active backend, 0 IO waiters), stated first because every cost number depends on it.**
