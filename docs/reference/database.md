@@ -337,6 +337,42 @@ SELECT (SELECT count(*) FROM public.check_public_security_invariants()) AS sec_v
        jsonb_array_length(public.check_secdef_anon_execute_violations()) AS secdef;        -- 0 = clean
 ```
 
+## ⭐ A HEAP'S STATS DEFECT DOES NOT IMPLY ITS TOAST WAS FIXED WITH IT (2026-09-12)
+
+**They are SEPARATE relations with separate stats and separate autovacuum triggers — and the bloat
+is usually in the one nobody names**, because every query, every `\dt` and every monitoring view
+reports the heap.
+
+Register **#75** found `net._http_response`'s `n_dead_tup` pinned at 0, which makes autovacuum's
+trigger unreachable by construction, and fixed it with an hourly `ANALYZE` (pg_cron jobid 482).
+**That fix is verified end-to-end and it treats 0.17 % of the problem:** `ANALYZE
+net._http_response` analyses the **17 MB heap**. The bloat is in `pg_toast.pg_toast_51873`, which
+reads **`autovacuum_count` 0 · `last_autovacuum` NULL · `n_dead_tup` 0** — never autovacuumed, stats
+pinned at zero exactly as the heap's were — at **10 GB holding 418 MB of live content (~96 % dead)**,
+still growing ~1.6 GB per 9 h, the same rate as before the fix.
+
+**The check, whenever a stats or vacuum defect is found on a heap:**
+
+```sql
+select c.relname, pg_size_pretty(pg_relation_size(c.oid)),
+       s.n_live_tup, s.n_dead_tup, s.autovacuum_count, s.last_autovacuum
+from pg_class c join pg_stat_all_tables s on s.relid = c.oid
+where c.oid = (select reltoastrelid from pg_class where oid='<schema>.<table>'::regclass);
+```
+
+⚠ **And do not score the fix from the heap's counters.** They were healthy the whole time — that is
+precisely what made this invisible.
+
+⛔ **`pgstattuple` is installed, and on a multi-GB relation it is the wrong instrument here.** A full
+scan of 10 GB against this tier's **22 MB/s** budget is ~7.5 minutes of the ENTIRE instance's IO —
+it would manufacture a saturation spell to refine a ratio that `sum(pg_column_size(<toasted col>))`
+against `pg_relation_size` already gives for free.
+
+⚠ **A manual `VACUUM` is unthrottled only because `vacuum_cost_delay` defaults to 0** — that is a
+default, not a constraint. `SET vacuum_cost_delay = 2; VACUUM <table>;` throttles it exactly as
+autovacuum is throttled, and a parent `VACUUM` **does** process its TOAST. ⛔ Neither reclaims space
+to the OS: that needs `VACUUM FULL` (ACCESS EXCLUSIVE) or `pg_repack`.
+
 ## 🚨 `EXCEPTION WHEN OTHERS` DOES NOT CATCH A STATEMENT TIMEOUT — so an isolation block built on it cannot survive the only failure this instance actually produces (promoted here 2026-08-26)
 
 **PostgreSQL: *"the special condition name `OTHERS` matches every error type EXCEPT `QUERY_CANCELED`
