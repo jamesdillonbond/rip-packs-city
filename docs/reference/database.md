@@ -1865,3 +1865,78 @@ the row it meant to keep. Result: 0 survivors missing, 0 groups left.
 window costs **429 buffers / 48 ms**. The detector was verified to FIRE by running it at `p_hours => 288`
 while the pre-drain window was still reachable (1 group, `ok=false`, correct message) before being left
 at its default.
+
+## ⭐ A LOOSE INDEX SCAN is the cheap way to get a COMPLETE distinct-key list — and `DISTINCT ON` is the expensive way that looks like the obvious one (2026-09-11)
+
+Measured on `wallet_moments_cache` (2.3 M rows, 3,275 MB), the Pinnacle slice being **56,440 rows
+holding only 419 distinct composite `edition_key`s**, all on an idle instance (1 active backend, 0 IO
+waiters):
+
+| shape | buffers | time |
+|---|---|---|
+| `select distinct on (edition_key) … order by edition_key, id` | **38,398** | 8,076 ms (external merge sort, 4.8 MB) |
+| recursive "next key strictly greater than the last" | **2,154** | **255 ms** |
+
+**18× fewer buffers for the same answer**, because the skip scan touches ~1 index page per KEY while
+`DISTINCT ON` reads every ROW and then sorts them. The shape:
+
+```sql
+with recursive k as (
+  (select edition_key from wallet_moments_cache
+    where collection_id = $1 and edition_key is not null
+    order by edition_key limit 1)
+  union all
+  (select (select w.edition_key from wallet_moments_cache w
+            where w.collection_id = $1 and w.edition_key > k.edition_key
+            order by w.edition_key limit 1)
+     from k where k.edition_key is not null)
+)
+select edition_key from k where edition_key is not null;
+```
+
+⚠ **It needs a B-tree whose leading columns are `(scope, the key)`** — here
+`idx_wmc_coll_ek_serial_cover` `(collection_id, edition_key, serial_number) INCLUDE (moment_id)`, which
+also makes the walk **index-only**. Check for one before prescribing a new index; this estate already
+had it.
+
+⭐ **Why it matters beyond cost: it is what makes COMPLETE coverage affordable.** The read it replaced
+was a PostgREST `.limit(5000)` clamped to 1,000 **unordered** rows — an undefined physical head of a
+56,440-row pool that never moved, so 6 of 9 work items were permanently unreachable (register **#71**).
+"Page the whole pool" was the other option and it is worse: the full `wallet_moments_cache ×
+pinnacle_nft_map` join costs **213,341 buffers / 12.1 s** as a nested loop and **145,054 / 28.1 s**
+with `enable_nestloop = off` — ⚠ so forcing a hash/merge here HALVED the buffers and more than DOUBLED
+the time. Neither is payable hourly on a 2-core / 22 MB/s instance.
+
+⭐ **And when a per-tick walk must still be bounded, slice on KEY BOUNDARIES, not on a row count.**
+One key held **1,510** rows, so a 1,000-row page would split it and let rows fall between slices,
+which no count-based check can see (the duplicates and omissions cancel — the `.range()` trap in a
+different costume). Take the next N keys, scan each whole, persist the last key as the cursor, wrap to
+NULL at the end. Measured at 25 keys / 1,280 rows: **5,966 buffers / 877 ms**, and a full pass over
+419 keys is ~17 ticks for ~100k buffers — **half the buffers of the single full join it replaces,
+while being bounded per tick.**
+
+## 🚨 A COMPLETENESS PREDICATE ITS OWN REPAIRING WRITER CAN UN-SATISFY IS AN INFINITE LOOP — and it presents as a healthy lane writing rows forever (2026-09-11)
+
+`/api/cron/pinnacle-metadata-backfill` Q4 selected catalog rows to repair with *"`character_name` is
+`'Unknown'` therefore incomplete"*, and its repair writes `info.characterName || "Unknown"` —
+deliberately, because it must not invent a name. **So for any edition whose on-chain shape metadata
+carries no character, the repair writes the exact value that re-selects it on the next tick.** Three
+rows were re-upserted hourly forever, with real on-chain mint counts (270 / 299 / 148) and `updated_at`
+stamps sitting on recent ticks as the fingerprint.
+
+⭐ **The tell is free and general: read the WRITER's fallback, then ask whether the SELECTOR's predicate
+can be satisfied by that fallback.** If the writer's own output lands in the rejected state, the queue
+cannot terminate — no amount of capacity helps, and every instrument reads healthy (`ok = true`, a
+non-zero `rows_written`, a non-empty eligible count, every tick, indefinitely).
+
+**The fix is to key completeness on PROVENANCE, not on a value the writer controls.** Here: *written
+from chain* = `edition_key IS NOT NULL AND mint_count IS NOT NULL`. ⚠ **Publish what the narrowed
+predicate excludes** (`q4_unknown_name_chain_written` = 3) — an exclusion nobody can count is how a
+guard goes quietly blind. ⛔ **And state the cost:** those three are now never re-read, so a later
+upstream fix for them will not be picked up.
+
+⚠ **Corollary on the instrument:** this was invisible because the lane's `extra` published two of its
+five write counters — the two that were moving. A per-step count with no sibling count cannot show a
+step that never fires (**#70**, one level down). Publish every counter that feeds `rows_written`, and
+publish the POPULATION next to any capped list, or "the cap is binding" and "the backlog is not
+shrinking" are the same reading.
