@@ -12,17 +12,22 @@ Standing authority: ship what is clearly-safe and net-positive; queue the rest. 
 Never assume last night's environment. Establish, in one batch:
 
 - `bash`, `git --version`, `df -h /` — shell green?
-- **Push capability, by actual test:** clone `origin/main` fresh, then `git push --dry-run origin HEAD:refs/heads/main`. On desktop, first harvest the mount clone's token without echoing it: `git -C <clone> remote set-url --push origin "$(git -C <mount> config --get remote.origin.pushurl)"`.
-- Supabase / Vercel / Sentry MCP, and the device bridge (`device_list_dir` and `device_bash` fail **independently** — test both).
+- **Push capability, by actual test:** clone `origin/main` fresh, then `git push --dry-run origin HEAD:refs/heads/main`. A dry-run still authenticates GitHub's `git-receive-pack` advertisement, so exit 0 IS proof of push auth.
+- Supabase / Vercel / Sentry MCP, and the device bridge (`device_list_dir` and `device_bash` fail **independently** — test both; since the 2026-09-08 Windows update `device_bash` can fail on `echo` while `device_list_dir` / `device_stage_files` / `device_commit_files` still work).
 
-**bash-green ≠ push-green.** Three distinct NO-PUSH causes need three different fixes: desktop `useradd … /sessions no space` (vhdx reset) · desktop missing cred-injection (wire the mount pushurl) · cloud proxy *"not in this session's authorized repository set"* (operator-only; the mount-token trick cannot cross filesystems).
+**bash-green ≠ push-green.** The NO-PUSH causes need different fixes: desktop `useradd … /sessions no space` (vhdx reset) · desktop VM shell dead outright (`sandbox-helper: no Plan9 drive shares mounted` — a Windows-update casualty, awaiting Microsoft; nothing in-session fixes it) · cloud proxy *"not in this session's authorized repository set"* (the repo must be attached as a source when the task is CREATED; `add_repo` is not exposed; ⛔ the proxy OVERWRITES any `Authorization` header a tool sends, so never stage `.rpc-git-cred` into the cloud — it cannot help).
+
+**Three push paths, in order of preference:**
+1. Desktop VM (`device_bash` alive): fresh `$HOME` clone + `store --file=$HOME/mnt/rip-packs-city/.rpc-git-cred` (the 08-29 durable recipe).
+2. Cloud with the repo attached at task creation: plain `git push` from a fresh clone, no cred file.
+3. **Either side dead → `Rip Packs City\cowork-push\apply-and-push.cmd` on the laptop** (proven 2026-09-12, `ede6cc7..da71df7` and `b5ee842..ce0cab7`, CI green both times): commit in the cloud clone → `git format-patch origin/main -o out/` → copy under `/mnt/user-data/outputs/` → `device_commit_files` into `…\cowork-push\queue\` → double-click the `.cmd` via click-only File Explorer computer use (`computer_open_application("File Explorer")`, pinned `rip-packs-city` in the sidebar → `Rip Packs City` → `cowork-push`; zoom to tell the `.cmd` icon from the `.log`) → `device_stage_files` the log and READ it: success is the literal `[PUSH CONFIRMED]`. It applies with `git am -3` onto a fresh clone of origin/main, is idempotent by commit subject, and aborts before the push on any conflict. Its README is in the folder.
 
 ⛔ **Whatever you find, SCOPE IT in every document you write:**
-> ⚠ This blocker is specific to **this cloud session**. Trevor's machine and Claude Code push normally via the PAT in `remote.origin.pushurl`. **Commit these files as usual.**
+> ⚠ This blocker is specific to **this cloud session**. Trevor's machine and Claude Code push normally via Git Credential Manager. **Commit these files as usual.**
 > 
 > Omitting that line once left two applied migrations uncommitted for ~18 hours. An environment limitation is a fact about the environment that hit it, never about the artifact.
 
-**Mode:** cloud = nightly, DB + handoff, cannot push. Desktop = weekly, can push, takes the queued code work.
+**Mode:** cloud = nightly, DB + handoff — and, with path 3, docs/migration/guard commits too. Desktop = weekly, can push, takes the queued code work.
 
 ## 1. Orient
 
@@ -52,9 +57,9 @@ Cost triage recipe: `sum(end_time - start_time)` per job over 24h, split by stat
 ## 4. What is shippable without git
 
 - **DB migrations via `apply_migration`** (load the `rpc-migration` skill). Guarded splices that RAISE on no-match; assert on the arm/function **anchor**, never a bare substring; pair every `CREATE OR REPLACE VIEW` with `ALTER VIEW … SET (security_invoker = on)`.
-- ⚠ Every Cowork DB change opens a prod/repo drift window. **Write the matching `supabase/migrations/<version>_<name>.sql` to the mount in the same session** — use the exact version `apply_migration` recorded. Revert path in the file header.
+- ⚠ Every Cowork DB change opens a prod/repo drift window. **Write the matching `supabase/migrations/<version>_<name>.sql` in the same session** — use the exact version `apply_migration` recorded, revert path in the file header — and commit it through whichever push path §0 found (path 3 needs no credential at all). Only if all three are dead does it go to the laptop folder for a later commit.
 - Edge functions via MCP (ship `deno.json` alongside `index.ts`).
-- **Not shippable:** route/`.tsx`/worker code → `rpc-handoff` skill.
+- **Not shippable unattended:** route/`.tsx`/worker code → `rpc-handoff` skill (the push path is not the blocker any more; the missing local test run is).
 
 ## 5. Verify the fix, not the diagnosis
 
@@ -62,8 +67,8 @@ Hand-evaluate the new logic against the real payload. Demand a **positive contro
 
 ## 6. Output contract
 
-Ledger entry (append at top, dated, with revert paths) · `metrics-latest.json` · a handoff at `docs/handoff-YYYY-MM-DD-<topic>.md` **carrying the scope line from §0** · migration files on the mount · memory writes for anything durable · release the LOCK.
+Ledger entry (append at top, dated, with revert paths) · `metrics-latest.json` · a handoff at `docs/handoff-YYYY-MM-DD-<topic>.md` **carrying the scope line from §0** · migration files committed (or on the laptop if every push path is dead) · memory writes for anything durable · release the LOCK.
 
-⚠ The `remote-devices` server can drop mid-session, taking memory and mount writes with it — **mirror the handoff to the claude.ai Project** (`project_write`), which persists regardless.
+⚠ The `remote-devices` server can drop mid-session, taking memory and mount writes with it — **mirror the handoff to the claude.ai Project** (`project_write`), which persists regardless. ⚠ The Project has a 2M-token knowledge cap: write ONE handoff per session, never metrics JSON, ledger paste-readies, migration SQL, patches or per-block progress notes (those belong in the repo or the laptop folder).
 
 Close with a digest: health verdict, what shipped, post-ship watch on the previous pass, what needs Trevor, what failed. State "nothing shipped" plainly when nothing was clearly-safe — a quiet pass is a valid outcome, a fabricated one is not.
