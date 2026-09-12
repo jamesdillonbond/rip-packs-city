@@ -26,9 +26,12 @@
 -- `COUNT(pull_value_usd)` beside the existing `COUNT(*)`/`SUM(...)` on
 -- public.pack_rips. No new scan, no new join, no new index.
 --
--- anon-exec: intentional -- CREATE OR REPLACE with the same signature; ACL
--- preserved (SECURITY DEFINER; anon EXECUTE false, authenticated EXECUTE false,
--- service_role EXECUTE true -- verified live 2026-09-12 before and after).
+-- ⚠ The marker below must keep the function name ON THE SAME LINE as `anon-exec:` —
+-- migration-new-function-states-its-anon-exec-decision matches per LINE, so wrapping
+-- the name onto the next one reads as no decision at all (cost one red CI, 2026-09-12).
+-- anon-exec: intentional — CREATE OR REPLACE keeps the ACL of get_wallet_pack_summary, so a revoke here would CHANGE production rather than preserve it
+-- Verified live 2026-09-12 before AND after: SECURITY DEFINER, anon EXECUTE false,
+-- authenticated EXECUTE false, service_role EXECUTE true.
 -- search_path=public and statement_timeout=15s are re-pinned below; dropping
 -- either is how this function silently loses its guard.
 --
