@@ -1999,3 +1999,17 @@ five write counters — the two that were moving. A per-step count with no sibli
 step that never fires (**#70**, one level down). Publish every counter that feeds `rows_written`, and
 publish the POPULATION next to any capped list, or "the cap is binding" and "the backlog is not
 shrinking" are the same reading.
+
+## ⚠⚠ ON THIS TIER, AN EXPLORATORY QUERY IS PRODUCTION LOAD — THE MEASUREMENT CAN BE THE CHANGE (2026-09-12)
+
+CLAUDE.md already says *"a reading taken while its SUBJECT CHANGED is not a reading — freeze the tree, then measure."* **This is the sharper case: the probe and the subject share one IO budget, so investigating a saturation defect makes the instance saturate, and the instrument then reports your own probes as the fix failing.**
+
+**What happened.** After shipping the `atlas_listing_verify_dispatch` fix (#85), three successive `pg_stat_statements` deltas on `atlas_listing_verify_tick` read **3.9 s / 32.5 MB (n=2) → 4.79 s / 65.4 MB (n=5) → 18.38 s / 100.4 MB (n=9)** — apparently regressing past the pre-fix pooled 16.37 s. It was not regressing. In that window I was running several **unbounded 55-second scans of `pack_rips`** (2 GB, 3.7 M rows) plus repeated temp-table samples, investigating a different item, on a **2-core instance whose saturation is IO- not CPU-bound**.
+
+⭐ **`cron.job_run_details` shows it exactly:** 15:00→15:12Z every tick **3.6–6.2 s, all succeeded** · 15:14 **33.8 s** · 15:16 **34.3 s** · **15:18 / 15:20 / 15:22 → 120.0 s FAILED ×3** · 15:24 67.5 s · 15:26 **6.1 s**. **The failures start and stop with the scans.** A session investigating production degraded it into three real pipeline failures.
+
+**The rules this earns:**
+- ⛔ **Never quote a `pg_stat_statements` delta taken while you were running heavy ad-hoc queries.** Snapshot, stop probing, then read.
+- ⚠ **When a post-change reading drifts the WRONG way, check your own session before you check the change.** The natural reading — "the fix stopped working" — was available, wrong, and would have triggered a revert.
+- ✅ **Bound every probe**: a `LIMIT`ed temp sample, `reltuples` from `pg_class` instead of `count(*)`, a partial index's own range, `EXPLAIN` without `ANALYZE` for plan shape. ⚠ **And `ORDER BY … LIMIT n` on a big table is not a bounded probe** — it sorts the whole matching set first; several 55 s timeouts here were exactly that.
+- ⭐ **Prefer an instrument the probe cannot move.** `cron.job_run_details` durations were contaminated too, but they carry per-run timestamps, so the clean window is *visible and separable*; a cumulative counter has no such seam.
