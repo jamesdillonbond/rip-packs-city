@@ -2,6 +2,78 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ `sales-counterparty-backfill` — the THREE remaining fixes, each gated on something different, with the waste finally quantified (2026-09-12)
+
+The cursor reset (migration `20260912192653`) got this lane working — verified at 120 rows/tick, three
+consecutive `ok` ticks, cursor descending. **It will re-enter the exhausted range and start timing out
+again once it drains 2026** (~8k eligible rows at 120/tick ≈ 6 h). The option space is now fully
+explored; every remaining fix is gated, and on a *different* thing. Do not re-derive this.
+
+**FIRST, THE WASTE, MEASURED — this is what justifies spending anything at all.** From
+`pg_stat_user_indexes`:
+
+| index | scans | tuples read | **per scan** |
+|---|---:|---:|---:|
+| `idx_sales_2024_nullseller_soldat` | 5,915 | 310,804,377 | **52,545** |
+| `idx_sales_2023_nullseller_soldat` | 5,203 | 229,126,198 | **44,038** |
+| `idx_sales_2025_nullseller_soldat` | 44 | 96,738 | 2,199 |
+
+⭐ **540 million tuples read across ~11,100 scans, every one discarded** — the scan counts track this
+lane's ~286 runs/day almost exactly, so these two indexes exist to serve its futile walk and nothing
+else. That is the bill for the 219,498-row / zero-eligible window.
+
+### Option A — narrow the partial-index predicate ⟶ gated on a QUIET WINDOW
+
+```sql
+-- ONE statement, and NOT via execute_sql/apply_migration for a partition this size.
+CREATE INDEX CONCURRENTLY idx_sales_2024_nullseller_decodable_soldat
+  ON public.sales_2024 USING btree (sold_at DESC)
+  WHERE seller_address IS NULL
+    AND source IS DISTINCT FROM 'allday_studio_history_v1'
+    AND source IS DISTINCT FROM 'ufc_studio_history_v1';
+-- repeat for sales_2023 (838 MB) and, if wanted, sales_2025 (567 MB) / sales_2026 (1,421 MB)
+```
+
+The predicate is **provably implied** by the claim query (both clauses appear literally in it), so the
+planner can use it, and it would hold **≈0 entries** for 2023/2024 — turning a 48k-tuple walk into an
+immediate empty. ⚠ **Channel matters:** 636 MB+ needs the **one-statement pg_cron** route, not
+`execute_sql` (gateway ~120 s). Full recipe, including `ALTER ROLE postgres … statement_timeout='30min'`
+**which applies at LOGIN and must be `RESET` immediately after**: memory
+`large-index-build-on-hot-table`. ⛔ **Build WITHOUT `IF NOT EXISTS`** — a cancelled `CONCURRENTLY`
+leaves an INVALID 0-byte stub that `IF NOT EXISTS` then silently no-ops against, reporting success on a
+dead index. **Gate:** 0 `startup timeout` in 30 min AND ≤2 IO waiters. At the time of writing the
+instance read 4 active / 2 IO wait / **0 startup timeouts** — close, but 12 chronic statement timeouts
+in the same window, so it was not taken.
+
+### Option B — an EXHAUSTED state with backoff ⟶ gated on a TWO-FUNCTION state-machine change
+
+⛔ **And the naive version of this is wrong, which is the part worth keeping.** "Reset the cursor to
+NULL when the walk comes back empty" *sounds* self-healing and is not: with nothing eligible anywhere
+the head branch walks every partition from the floor to now, so it converts one stuck expensive walk
+into the *same* expensive walk, once per tick. **The backoff is the load-bearing half** — on an empty
+result, record `exhausted_until = now() + interval '1 hour'` and return immediately without scanning,
+which cuts 286 futile walks/day to 24. ⚠ The cursor is written by **`apply_sales_counterparty`** and
+read (and self-healed) by **`claim_sales_counterparty_batch`**, so this touches two functions that
+share one state row. Neither is pinned (`supabase/tests/` has no copy), so the change is contained —
+but it is a state machine, not a one-liner.
+
+### Option C — raise `floor_sold_at` ⟶ gated on TREVOR, because it is a CAPTURE-SCOPE change
+
+Tempting and nearly free: set the floor just above the provably-empty region and the self-heal ("a
+cursor strictly below the floor is invalid state") turns the lane self-sustaining with **no function
+change and no IO**. ⛔ **But it is not free, and the number is small enough to be easy to miss.**
+Eligible rows that a 2026-01-01 floor would abandon: **176 in `sales_2025`** (`ts_history_backfill_v1`
+144 · `onchain_dapper_v1` 20 · `topshot_marketplace` 11 · `onchain` 1) and **45 in upper `sales_2024`**
+(`ts_history_backfill_v1`) — **~221 rows**. A floor at the old cursor (2024-04-19) keeps all 221 and
+still excludes the full 219,498-row dead zone. ⚠ **The residual risk is a WRITER, not the data:**
+`ts_history_backfill_v1` writes *historical* sales, so it can add rows below any floor after the fact,
+and a raised floor abandons those silently. **Same class as the jobid 355 window — what the system
+CAPTURES, so it is an owner's call.**
+
+⭐ **The lane is working in the meantime**, so none of the three is urgent; A is the durable one and
+only needs a window.
+
+
 ## ⭐ RETIRING a `cron_heavy` job — the ownership error reads like a MISSING job, and the role path also covers `unschedule` (re-proven 2026-09-12)
 
 The reschedule mechanism above is proven for `cron.schedule`. **It covers `cron.unschedule` too**, and
