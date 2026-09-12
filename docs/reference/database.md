@@ -2065,3 +2065,11 @@ CLAUDE.md already says *"a reading taken while its SUBJECT CHANGED is not a read
 - ⚠ **When a post-change reading drifts the WRONG way, check your own session before you check the change.** The natural reading — "the fix stopped working" — was available, wrong, and would have triggered a revert.
 - ✅ **Bound every probe**: a `LIMIT`ed temp sample, `reltuples` from `pg_class` instead of `count(*)`, a partial index's own range, `EXPLAIN` without `ANALYZE` for plan shape. ⚠ **And `ORDER BY … LIMIT n` on a big table is not a bounded probe** — it sorts the whole matching set first; several 55 s timeouts here were exactly that.
 - ⭐ **Prefer an instrument the probe cannot move.** `cron.job_run_details` durations were contaminated too, but they carry per-run timestamps, so the clean window is *visible and separable*; a cumulative counter has no such seam.
+
+### Displaced from CLAUDE.md 2026-09-12 (verbatim) — the clock-sweep instance, to pay for the your-own-probe clause
+
+The FOUR-ways-a-measurement-lies bullet used to carry this instance of *"a reading taken while its SUBJECT CHANGED is not a reading"*:
+
+> — 3 of 4 clock-sweep runs measured the instrument, not the suite.
+
+It was displaced by the sharper case from the same day — **the probe and the subject share one IO budget, so the measurement can BE the change** — recorded in full under *"ON THIS TIER, AN EXPLORATORY QUERY IS PRODUCTION LOAD"* above. Both are the same rule; the new instance is the one with production failures attached.

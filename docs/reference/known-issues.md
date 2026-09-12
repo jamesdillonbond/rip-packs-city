@@ -957,6 +957,12 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     ✅ **FIXED:** both constants and both payload keys removed from `app/api/fmv-recalc/route.ts`, along with the two log-line tokens. **Nothing read either key** (full-repo grep: the other `blended` hits are LiveToken `valuations.blended` payloads and the sniper feed's unrelated `confidenceSource = "ask_proxy"`). **Retired, not zeroed** — the same reasoning as the `dist_resolved` retirement the same morning: a key that disappears at a timestamp tells a reader the definition changed.
 
+    ✅ **END-TO-END VERIFIED IN PRODUCTION 2026-09-12 (hourly route, three consecutive runs) — and the honest field is already earning its keep, because it MOVES:**
+    - **18:53Z** — `dist_already_set` **478** · `dist_newly_resolved` **1** · `dist_still_null` **21** (sums to 500 ✓)
+    - **19:53Z** — `dist_already_set` **394** · `dist_newly_resolved` **70** · `dist_still_null` **36** (sums to 500 ✓)
+    - **17:53Z** — `ok: false`, every field **null** ✓ — the null-coalescing path on a failed RPC, exactly as the updated test pins it.
+    ⭐⭐ **The old field would have printed 479 and 464 — two numbers that look identical and say "97 % and 93 % resolved". The honest one prints 1 and 70.** The *variance* is the proof: a drain's real progress swings with what it happens to find, and a field that barely moves across runs was never measuring the drain. ⭐ **That is also the detector's own signature, confirmed from the other direction** — the thing that made `dist_resolved` suspicious (484 / 484 / 488) is exactly what the corrected field no longer does.
+
     ⭐⭐ **THE REUSABLE PART IS THE DETECTOR, NOT THE FIX — and it is data-driven rather than static.** Over `pipeline_runs` (73 h) or `pipeline_runs_daily` (indefinite), explode `extra` and rank numeric keys by how little they vary across runs. **Three refinements it needed, each learned by getting it wrong:**
     1. ⚠ **Do not filter `mean > 0`** — the most interesting null instrument is pinned at **zero**, and the first pass excluded exactly those.
     2. ⚠ **Separate SETTINGS from MEASUREMENTS by name.** Most constant fields are config echoed into the payload (`batch_size`, `spork_floor`, `edition_limit`, `chain_id`, `soft_deadline_ms`, `stale_ceiling_min`) and are *supposed* to be constant.
