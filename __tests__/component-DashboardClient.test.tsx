@@ -335,6 +335,51 @@ describe("DashboardClient — per-wallet collection stats", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
   })
 
+  // ── The read-in-flight hole (2026-09-12) ──────────────────────────────────
+  //
+  // ⚠ These two pin a state the four earlier tests could not reach. Every
+  // honesty test above resolves its fixture immediately, so the window between
+  // mount and the stats read ANSWERING was never rendered — and in that window
+  // `statsFailed` is [] (nothing has failed YET), `walletsFailed` is false,
+  // `indexing` is false, and `wallets.length` is 1, so all four StatTile states
+  // were false and the tiles summed {} to a measured-looking "0 · $0 · 0".
+  //
+  // On a wallet whose `/api/profile/collection-stats` times out, that window is
+  // not a frame — it is 20 s for the call plus 20 s for the one retry in
+  // `refreshStats`. Reproduced against production 2026-09-12 on
+  // 0xbd94cade097e50ac (19,520 Moments, $68,497 cached): "TOTAL MOMENTS 0 ·
+  // PORTFOLIO FMV $0 · COLLECTIONS 0" in full colour with no warning at t+4 s,
+  // "—  Couldn't load" only at t+52 s.
+  //
+  // A never-resolving fixture holds that window open for the assertion.
+  it("⚠ does NOT publish a measured zero while the stats read is still in flight", async () => {
+    routes["/api/profile/collection-stats"] = () => new Promise(() => {}) as unknown as Response
+    render(<DashboardClient />)
+    await waitFor(() => expect(screen.getByText("Total Moments")).toBeTruthy())
+    // The false claim, stated three ways on one row. Assert its ABSENCE.
+    expect(document.body.textContent).not.toMatch(/\$0(?!\d)/)
+    // …and that the tiles say so rather than going silently blank.
+    await waitFor(() => expect(screen.getAllByText("Loading…").length).toBeGreaterThan(0))
+  })
+
+  it("⚠ wallet tiles render — not '0 Moments' when that wallet's stats read FAILED", async () => {
+    // The headline tiles got the `statsFailed` guard on 2026-09-06; the card
+    // below them did not. `stats={statsByWallet[addr] ?? []}` handed the card an
+    // empty array, which is exactly what a wallet holding nothing looks like —
+    // so all five collection tiles kept asserting "MOMENTS 0" about a
+    // 19,273-Moment wallet even while the banner above said "Couldn't load".
+    routes["/api/profile/collection-stats"] = () => json(503, {})
+    render(<DashboardClient />)
+    await waitFor(() => expect(screen.getAllByText("Moments").length).toBeGreaterThan(0))
+    await waitFor(() => {
+      for (const label of screen.getAllByText("Moments")) {
+        // The tile is <div>Moments</div><div>{value}</div> inside one parent.
+        const value = label.nextElementSibling?.textContent ?? ""
+        expect(value).toBe("—")
+      }
+    })
+  })
+
   it("renders real per-collection figures when the read succeeds", async () => {
     routes["/api/profile/collection-stats"] = () =>
       json(200, {

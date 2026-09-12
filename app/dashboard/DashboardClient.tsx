@@ -215,6 +215,17 @@ function ProfilePageInner() {
   // 2026-08-05 incident (get_wallet_collection_stats crossed its statement
   // timeout -> 503 -> false $0 on a 19,213-moment wallet).
   const [statsFailed, setStatsFailed] = useState<string[]>([]);
+  // ⚠ THE READ-IN-FLIGHT STATE, which the four StatTile states did not cover.
+  // Between mount and `refreshStats` settling, `statsByWallet` is {} and
+  // `statsFailed` is [] — so `statsIncomplete` is false, `statsPending` is
+  // false (it gates on `indexing`, true only just after a wallet is saved),
+  // and the tiles summed {} to a confident "0 · $0 · 0". On a 19.5K-Moment
+  // wallet `/api/profile/collection-stats` spends 20 s, then its one retry
+  // spends 20 s more, so that measured-looking zero stood for ~41 SECONDS on
+  // every dashboard load before the "Couldn't load" banner replaced it
+  // (reproduced live 2026-09-12: 0/$0/0 at t+4 s, "—" at t+52 s).
+  // A read that has not answered is not an answer. Settled starts FALSE.
+  const [statsSettled, setStatsSettled] = useState(false);
   // Did the SAVED-WALLETS read itself fail this pass? Distinct from statsFailed,
   // which covers per-wallet holdings once the list is known — and load-bearing
   // for the same reason one step earlier.
@@ -382,8 +393,12 @@ function ProfilePageInner() {
     if (addrs.length === 0) {
       setStatsByWallet({});
       setStatsFailed([]);
+      // Nothing to read IS a settled state — otherwise a collector with no
+      // wallet saved would sit on "Loading…" forever instead of the empty copy.
+      setStatsSettled(true);
       return {};
     }
+    setStatsSettled(false);
     const out: Record<string, CollectionStat[]> = {};
     const failed: string[] = [];
     await Promise.all(
@@ -428,6 +443,7 @@ function ProfilePageInner() {
     );
     setStatsByWallet(out);
     setStatsFailed(failed);
+    setStatsSettled(true);
     return out;
   }, []);
 
@@ -763,6 +779,10 @@ function ProfilePageInner() {
   // The totals are just as unknowable there as when a per-wallet stats call
   // fails; the failure simply happened one route earlier.
   const statsIncomplete = statsFailed.length > 0 || walletsFailed;
+  // The read is in flight and has never answered this pass. Deliberately NOT
+  // `!statsSettled` alone: with no wallets saved there is nothing to load and
+  // the tiles must fall through to `empty`, not to "Loading…".
+  const statsLoading = !statsSettled && wallets.length > 0 && !walletsFailed;
   // The just-saved-wallet window: the indexing poll is live, at least one wallet
   // is saved, and no collection has counted a Moment yet. Not a failure, not an
   // answer — the tiles render "Indexing…" rather than a zero (2026-09-04).
@@ -1023,6 +1043,7 @@ function ProfilePageInner() {
             value={totalMoments.toLocaleString()}
             color="var(--rpc-text-primary)"
             unavailable={statsIncomplete}
+            loading={statsLoading}
             pending={statsPending}
             empty={!walletsFailed && wallets.length === 0}
           />
@@ -1032,6 +1053,7 @@ function ProfilePageInner() {
             color="var(--rpc-success)"
             caption={staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString()} stale-priced moments` : undefined}
             unavailable={statsIncomplete}
+            loading={statsLoading}
             pending={statsPending}
             empty={!walletsFailed && wallets.length === 0}
           />
@@ -1040,6 +1062,7 @@ function ProfilePageInner() {
             value={String(collectionCount)}
             color="#A855F7"
             unavailable={statsIncomplete}
+            loading={statsLoading}
             pending={statsPending}
             empty={!walletsFailed && wallets.length === 0}
           />
@@ -1265,6 +1288,15 @@ function ProfilePageInner() {
                   key={g.addr}
                   group={g}
                   stats={statsByWallet[g.addr.toLowerCase()] ?? []}
+                  /* ⚠ `?? []` above is a FALLBACK, never a result. An empty
+                     array is what a failed read and a genuinely empty wallet
+                     both look like from in here, and the card has no other way
+                     to tell them apart — which is why it kept asserting
+                     "MOMENTS 0" on all five collections of a 19,273-Moment
+                     wallet even AFTER the headline tiles had switched to
+                     "Couldn't load" (2026-09-12). Pass the provenance. */
+                  failed={walletsFailed || statsFailed.includes(g.addr.toLowerCase())}
+                  loading={statsLoading}
                   indexing={indexing}
                   onRemove={() => removeWallet(g.rows[0])}
                 />
@@ -2183,15 +2215,25 @@ function ClaimHandleCard() {
 function WalletGroupCard({
   group,
   stats,
+  failed,
+  loading,
   indexing,
   onRemove,
 }: {
   group: { addr: string; rows: SavedWallet[]; nickname: string | null; verifiedAt: string | null };
   stats: CollectionStat[];
+  /** This wallet's collection-stats read FAILED this pass. `stats` is then [] for
+   *  a reason that has nothing to do with what the wallet holds. */
+  failed?: boolean;
+  /** The collection-stats read has not answered yet this pass. */
+  loading?: boolean;
   indexing: boolean;
   onRemove: () => void;
 }) {
   const verified = !!group.verifiedAt;
+  // No answer yet, or no answer at all. Either way every per-collection figure
+  // below is unknown — and an unknown must not render as a measured zero.
+  const unknown = !!failed || !!loading;
   return (
     <div
       className="rpc-wallet-card"
@@ -2278,7 +2320,7 @@ function WalletGroupCard({
           const fmv = stat?.fmv_total ?? 0;
           const locked = stat?.locked_count ?? 0;
           const fmvMax = stat?.fmv_max ?? 0;
-          const showSpinner = moments === 0 && indexing;
+          const showSpinner = moments === 0 && indexing && !unknown;
           return (
             <Link
               key={col.id}
@@ -2303,15 +2345,15 @@ function WalletGroupCard({
               <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 6, marginTop: 6 }}>
                 <div>
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Moments</div>
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-text-primary)" }}>{moments.toLocaleString()}</div>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: unknown ? "var(--rpc-text-ghost)" : "var(--rpc-text-primary)" }}>{unknown ? "—" : moments.toLocaleString()}</div>
                 </div>
                 <div>
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
                   {/* No priced editions (e.g. thin-market UFC) -> em dash, not a misleading "$0". */}
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: fmv > 0 ? "var(--rpc-success)" : "var(--rpc-text-ghost)" }}>{fmv > 0 ? fmtUsd(fmv) : "—"}</div>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: !unknown && fmv > 0 ? "var(--rpc-success)" : "var(--rpc-text-ghost)" }}>{!unknown && fmv > 0 ? fmtUsd(fmv) : "—"}</div>
                 </div>
               </div>
-              {(fmvMax > 0 || locked > 0) && (
+              {!unknown && (fmvMax > 0 || locked > 0) && (
                 <div style={{ display: "flex", gap: 8, marginTop: 4, fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)" }}>
                   {fmvMax > 0 && <span>Top {fmtUsd(fmvMax)}</span>}
                   {locked > 0 && <span>🔒 {locked.toLocaleString()}</span>}
@@ -2772,18 +2814,26 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 // the underlying read FAILED, so a partial/unknown total can never masquerade as a
 // real 0 / $0 — the collector must be able to tell "we couldn't load this" apart
 // from "you own nothing".
-function StatTile({ label, value, color, caption, unavailable, pending, empty }: { label: string; value: string; color: string; caption?: string; unavailable?: boolean; pending?: boolean; empty?: boolean }) {
-  // FOUR states: unavailable (read failed) · pending (read not yet happened) ·
-  // empty (nothing to read — no wallet saved yet) · a value. 2026-09-06: a
-  // fresh account with no wallet rendered "0 · $0 · 0" as if measured; "$0"
-  // is a claim about a collection that has not been named yet.
-  const muted = unavailable || pending || empty;
+function StatTile({ label, value, color, caption, unavailable, loading, pending, empty }: { label: string; value: string; color: string; caption?: string; unavailable?: boolean; loading?: boolean; pending?: boolean; empty?: boolean }) {
+  // FIVE states: unavailable (read failed) · loading (read in flight, has not
+  // answered yet) · pending (wallet saved, indexer still warming) · empty
+  // (nothing to read — no wallet saved yet) · a value. 2026-09-06: a fresh
+  // account with no wallet rendered "0 · $0 · 0" as if measured; "$0" is a
+  // claim about a collection that has not been named yet. 2026-09-12: the
+  // `loading` state closed the remaining hole — every one of the other four
+  // was false while the read was still in flight, so the SAME "0 · $0 · 0"
+  // rendered for ~41 s on a wallet whose stats call times out twice.
+  // Order matters: a FAILED read outranks an in-flight one, because the retry
+  // that is in flight does not make the failure we already know about untrue.
+  const muted = unavailable || loading || pending || empty;
   return (
     <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "12px 16px" }}>
       <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color: muted ? "var(--rpc-text-muted)" : color, lineHeight: 1 }} aria-busy={pending || undefined}>{muted ? "—" : value}</div>
+      <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color: muted ? "var(--rpc-text-muted)" : color, lineHeight: 1 }} aria-busy={pending || loading || undefined}>{muted ? "—" : value}</div>
       {unavailable ? (
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Couldn&apos;t load</div>
+      ) : loading ? (
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Loading…</div>
       ) : pending ? (
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Indexing your wallet…</div>
       ) : empty ? (
