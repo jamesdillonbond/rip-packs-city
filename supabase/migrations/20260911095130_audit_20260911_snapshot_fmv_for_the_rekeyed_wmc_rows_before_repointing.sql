@@ -39,3 +39,14 @@ SELECT w.wallet_address, w.moment_id, w.fmv_usd, l.fmv_usd,
  WHERE l.fmv_usd IS NOT NULL
    AND (w.fmv_usd IS DISTINCT FROM l.fmv_usd OR w.fmv_confidence::text IS DISTINCT FROM l.confidence::text)
 ON CONFLICT (wallet_address, moment_id) DO NOTHING;
+
+-- RLS STATED IN THE CREATING MIGRATION (added 2026-09-11 18:4x PT, post-application).
+-- `migration-new-public-table-enables-rls` reads each migration FILE IN ISOLATION and
+-- cannot see a fix applied by a LATER migration, so this file read as a table created
+-- without RLS even though production is correct. ⚠ LIVE STATE VERIFIED FIRST, not
+-- assumed: relrowsecurity = true, has_table_privilege(anon,'SELECT') = false,
+-- has_table_privilege(authenticated,'SELECT') = false, 0 policies -- RLS-on-with-no-policy
+-- is the intended deny-all posture for an operator audit table. The statement below is
+-- therefore IDEMPOTENT and ALREADY TRUE; it changes nothing in production and exists so
+-- the file states the decision a rebuild-from-migrations would need.
+ALTER TABLE public.audit_20260911_wmc_rekey_fmv_repoint ENABLE ROW LEVEL SECURITY;
