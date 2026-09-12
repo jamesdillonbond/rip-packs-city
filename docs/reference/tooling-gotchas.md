@@ -977,6 +977,21 @@ applied to a corpus instead of a code path.
 - ⚠ **A truncating projection is not a redaction.** `left(command, 140)` on one of these rows prints
   a *partial* key into the transcript — enough to be a leak, not enough to be useful. Filter and
   aggregate; never truncate.
+- 🚨 **AND THE SAME PROJECTION HIDES A DIAGNOSIS, WHICH IS THE OTHER HALF OF THE SAME RULE
+  (2026-09-12, the same night as the leak above).** `pipeline_runs.error` / `pipeline_runs_daily.last_error`
+  store the **full upstream HTML body**. Every Top Shot 530 since 2026-08-28 has carried Cloudflare
+  **error reference 1033** — *"the host is configured as a Cloudflare Tunnel and Cloudflare is
+  currently unable to resolve it"* — which settles register **#81**'s central question (it is an
+  origin outage, not a gated query) **without any egress at all**. Nobody saw it for fifteen days
+  because the alert's own `detail` renders `left(f.last_error, 160)` and every triage session used
+  `left(error, 70..300)`: **the body spends its first ~900 characters on a `<style>` block, so every
+  truncation stopped before the diagnosis.**
+  ⭐ **RULE: when an error column holds an upstream's HTML page, the diagnosis is at the END. Never
+  triage one with `left(error, N)`** — extract what you need
+  (`substring(error from 'Error reference number: ([0-9]+)')`,
+  `substring(error from 'Requested URL: ([^<]+)')`) or read it whole. **A truncating projection is
+  not a faithful projection, in either direction: it leaks what you did not want and hides what you
+  did.**
 - 🚨 **FOURTH INSTANCE, 2026-09-12 — AND THE RULE ABOVE WAS ALREADY HERE, WHICH IS THE ONLY NEW
   INFORMATION IN IT.** A session tracing which job calls a lane ran
   `SELECT jobid, jobname, schedule, active, left(command, 300) FROM cron.job` and printed a live
