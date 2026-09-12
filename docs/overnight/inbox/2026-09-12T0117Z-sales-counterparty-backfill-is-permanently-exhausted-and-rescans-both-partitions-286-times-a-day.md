@@ -1,0 +1,70 @@
+# `sales-counterparty-backfill` is PERMANENTLY EXHAUSTED, its cursor cannot advance, and it rescans both `sales` partitions 286 times a day to discard every row — 47% of those ticks die on `statement timeout`
+
+**Filed 2026-09-11 18:17 PT (Claude Code, cloud) — Trevor: "keep going until there's nothing left unresolved."** Found while triaging a lane I had flagged in passing at 15% failures this morning; it is now 47% and the cause is not what the failure string suggests.
+
+## The numbers
+
+**Last 24 h, `pipeline_runs`:** **286 runs, 151 ok, 135 failed (47%)**, `rows_found` **0** and `rows_written` **0** across *all* 286. Every failure is the identical string:
+
+```
+Error: claim failed: canceling statement due to statement timeout
+```
+
+⚠ **That is the POSTGRES statement timeout, not the Supabase gateway** — this estate's own rule, and it matters here because it says the CLAIM QUERY is too slow, not that an upstream is unreachable.
+
+## The zero is CORRECT — and that is what makes this expensive rather than broken
+
+`claim_sales_counterparty_batch(p_limit)` walks `sales` backwards from a cursor:
+
+```sql
+WHERE s.seller_address IS NULL
+  AND s.collection IN ('nba_top_shot','nfl_all_day','ufc_strike')
+  AND s.transaction_hash ~ '^[0-9a-f]{64}$'
+  AND s.sold_at < v_cursor AND s.sold_at >= v_floor
+  AND s.source IS DISTINCT FROM 'allday_studio_history_v1'
+  AND s.source IS DISTINCT FROM 'ufc_studio_history_v1'
+ORDER BY s.sold_at DESC LIMIT v_limit
+```
+
+Live state: `cursor_sold_at = 2024-04-19 02:32 PT`, `floor_sold_at = 2023-11-08 09:00 PT`.
+
+⚠ **I guessed the regex was the excluder and I was wrong — measured, in the month directly below the cursor: 19,254 of 19,254 rows PASS it.** The excluder is `source`. In that same month the null-seller rows are **15,254 `allday_studio_history_v1` + 4,000 `ufc_studio_history_v1` = 19,254, i.e. 100%.**
+
+**Sampled three widely-spaced slices across the cursor's range — 104,600 null-seller rows, ZERO eligible:**
+
+| slice | eligible after `source` filter | total null-seller |
+|---|---:|---:|
+| 2023-12 | **0** | 55,415 |
+| 2024-02 | **0** | 40,168 |
+| 2024-04 (below cursor) | **0** | 9,017 |
+
+⭐ **So the remaining work is structurally ineligible by design** — studio-history rows are *known-undecodable*, which is exactly what the function's own `IS DISTINCT FROM` comment intends. **The lane has finished its decodable work.** This is the `allday-price-recover` "correct zero" of #79 — with one difference that costs real money.
+
+## Why a correct zero costs a full scan of two partitions, 286 times a day
+
+`EXPLAIN` (no `ANALYZE`, nothing executed) on the live cursor values:
+
+```
+Limit  (cost=0.84..51.98 rows=100 width=56)
+  ->  Append  (cost=0.84..83831.55 rows=163942 width=56)
+        ->  Index Scan using idx_sales_2024_nullseller_soldat on sales_2024  (cost=0.42..36423.10 rows=69535)
+              Index Cond: (sold_at < cursor AND sold_at >= floor)
+              Filter: (transaction_hash ~ '^[0-9a-f]{64}$' AND source IS DISTINCT FROM ... AND collection = ANY (...))
+        ->  Index Scan using idx_sales_2023_nullseller_soldat on sales_2023  (cost=0.42..46588.74 rows=94407)
+```
+
+🚨 **THE LIMIT'S ESTIMATE IS 51.98 AND ITS REALITY IS 83,831.** The planner believes it will satisfy `LIMIT 100` almost immediately out of 163,942 candidate rows, so it costs the plan as if it stops early. Because the true answer is **zero**, it never stops early — it drains the entire index range of **both partitions** every single tick. ⭐ **A partial index exists (`…_nullseller_soldat`) and carries the NULL-seller and `sold_at` predicates — but NOT `source`, which is the one that rejects 100% of the rows.** So the scan is index-driven and still reads everything, only to throw it all away in a post-`Filter`.
+
+⛔ **And the cursor CANNOT advance**, because it only moves when rows are claimed. It has been pinned at 2024-04-19 and is rescanning the same exhausted range indefinitely.
+
+## Candidate fixes — none applied, and the ordering matters
+
+1. ⭐ **Put `source` in the index predicate** (`… WHERE seller_address IS NULL AND source NOT IN ('allday_studio_history_v1','ufc_studio_history_v1')`). The scan then finds nothing immediately instead of reading 163,942 rows. `CREATE INDEX CONCURRENTLY` is the vehicle and this estate has proven it runs via `execute_sql`. ⚠ **Verify with `EXPLAIN` that the planner would actually adopt it before building it** — and note an index build is itself heavy IO on a 2-core, 22 MB/s instance.
+2. **Give the lane an EXHAUSTED state** so a drained backfill stops instead of re-deriving the same zero forever. This is the durable one.
+3. ⛔ **Do NOT simply raise `floor_sold_at` to the cursor.** I worked this through and it backfires: the function self-heals a cursor *strictly below* the floor by setting the cursor to NULL, which switches it to the `cursor IS NULL` branch scanning **upward from the floor, newest-first** — i.e. it would re-walk everything above 2024-04-19 that is already done. **The obvious one-row UPDATE is the wrong fix.**
+
+## What is NOT claimed
+
+- ⛔ **Not claimed as the cause of today's spells.** It is a standing consumer; the acute spells have named causes elsewhere. In a fleet-wide slowdown every lane is slower, so a 47% timeout rate is partly *symptom*. What is independent of load is the plan shape: 163,942 rows read to return 0, every tick, by construction.
+- ⚠ **Three sampled months are not the whole range.** They are spread across it and all read exactly 0 eligible, but a full count was not taken — deliberately, since it is the same scan that is timing out.
+- ⚠ `rows_found = 0` is a self-report and this estate treats it as a null instrument. It is corroborated here by the independent slice counts, not trusted alone.

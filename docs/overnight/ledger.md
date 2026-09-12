@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · 🔴 A LANE THAT FINISHED ITS WORK MONTHS AGO IS STILL SCANNING BOTH `sales` PARTITIONS 286 TIMES A DAY TO FIND NOTHING — and I declined to ship the fix because the instance is mid-spell · Claude Code (cloud), Trevor: "keep going until there's nothing left unresolved"
+
+**Read-only turn. One new inbox filing; no code, DB or production state changed.**
+
+**`sales-counterparty-backfill`, last 24 h: 286 runs, 135 failed (47%)**, `rows_found` and `rows_written` **0 on all 286**, every failure the identical `claim failed: canceling statement due to statement timeout` — the **Postgres** timeout, so the CLAIM query is too slow rather than an upstream being unreachable. I flagged this lane at 15% this morning and moved on; it is now 47%.
+
+⭐ **THE ZERO IS CORRECT, AND THAT IS PRECISELY WHY IT IS EXPENSIVE.** ⚠ I guessed the unindexable regex `^[0-9a-f]{64}$` was the excluder and **that was wrong — 19,254 of 19,254 rows below the cursor PASS it.** The excluder is `source`: in that month the null-seller rows are **15,254 `allday_studio_history_v1` + 4,000 `ufc_studio_history_v1` = 100%**. Three slices spread across the cursor's whole range — **104,600 null-seller rows, ZERO eligible**. The decodable work is finished and the remainder is *known-undecodable by design*, which is what the function's own `IS DISTINCT FROM` comment intends. This is #79's `allday-price-recover` correct-zero, with one difference that costs real money.
+
+🚨 **`EXPLAIN` (no `ANALYZE`, nothing executed) shows the Limit estimated at 51.98 against a real 83,831.** The planner expects to satisfy `LIMIT 100` out of 163,942 candidates and stop early; because the true answer is **zero** it never stops, draining the entire index range of **both the 2023 and 2024 partitions** every tick. The partial index `…_nullseller_soldat` carries the NULL-seller and `sold_at` predicates but **NOT `source`** — the one that rejects everything — so the scan is index-driven and still reads all 163,942 rows to throw them away in a post-`Filter`. ⛔ **And the cursor CANNOT advance**, because it only moves when rows are claimed: pinned at 2024-04-19, rescanning an exhausted range indefinitely.
+
+⛔ **THE OBVIOUS ONE-ROW FIX IS THE WRONG ONE, and I worked it through before proposing it.** Raising `floor_sold_at` to the cursor trips the function's own self-heal — a cursor *strictly below* the floor is reset to NULL — which switches it to the `cursor IS NULL` branch scanning **upward from the floor, newest-first**, re-walking everything above 2024-04-19 that is already done. The fix order is: put `source` in the index predicate · give the lane an EXHAUSTED state · **not** the floor.
+
+⛔ **WHY NOTHING SHIPPED, stated with the reading rather than as a shrug:** at 18:15 PT `pg_stat_activity` read **33 active, 26 in IO wait** — the instance is IN a spell (the daytime monitor filed the same recurrence at 17:10 PT). `apply_migration` costs a 10–20 s burst of user-facing `PGRST002` 500s, and a `CREATE INDEX CONCURRENTLY` on a hot 2-core / 22 MB/s instance is heavy IO. **The benefit accrues over days; there is no case for forcing either into an active spell on a Friday evening while a concurrent session is editing the same area.** ⚠ Not claimed as a cause of today's spells either — it is a standing consumer, and at 47% the failure rate is partly symptom. What is independent of load is the plan shape.
+
+⚠ **A guard gap found by tripping it:** my filing is named `2026-09-12T0117Z` (UTC had rolled over) and I inserted its INDEX row into the **09-11** section. `inbox-index-lists-every-filing` stayed GREEN — it asserts every file is LISTED, and is silent about WHICH date section — and `fix-inbox-index-counts.mjs` then **laundered the misplacement into consistency**, moving 09-11 from 9 to 10. ⭐ **A presence guard plus an auto-fixer can agree with each other and both be wrong.** Corrected by hand (09-12 → 2, 09-11 → 9).
+
+**REVERT:** docs-only; `git revert` this commit removes the filing and its INDEX row (re-run `fix-inbox-index-counts.mjs` after).
+
 ### 2026-09-11 · ⭐⭐ THE QUIET WINDOW CAME AND SETTLED JOBID 355 — both proposed fixes were wrong, the index it needs already exists, and the "obvious" 30-day bound is SLOWER THAN NO BOUND · Claude Code on Trevor's box, Trevor: "Keep going until nothing is left unresolved"
 
 **Shipped: docs only — inbox filing `2026-09-12T0115Z-…`, #84 updated, INDEX. No code, no migration, no data mutation.**
