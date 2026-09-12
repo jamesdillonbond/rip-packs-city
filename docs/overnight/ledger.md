@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ⭐⭐ `sales-counterparty-backfill` WAS NOT "PERMANENTLY EXHAUSTED" — it was STUCK BELOW ITS OWN WORK, and retiring it (the obvious next step) would have abandoned ~3,659 claimable rows · Claude Code on Trevor's box, Trevor: "keep going"
+
+**Shipped: `20260912192653_audit_20260912_sales_counterparty_backfill_was_stuck_below_its_work_not_exhausted` — one row, one column: `sales_counterparty_backfill_state.cursor_sold_at` reset to NULL so the lane restarts from the head.** No index built, no function changed, no schedule touched.
+
+**This corrects a filing rather than acting on it.** Inbox `2026-09-12T0117Z` sampled three slices (104,600 rows, zero eligible) and concluded the decodable work was finished — and the queue was about to be drained on that basis, which is how a working lane gets retired.
+
+⭐ **(1) The WINDOW is exhausted, re-derived EXHAUSTIVELY rather than sampled.** Cursor 2024-04-19, floor 2023-11-08, so the walk is `sales_2023` (from the floor) + `sales_2024` (to the cursor). Counted partition-direct by source: **78,441 + 18,645** in 2023 and **93,098 + 29,314** in 2024 — **219,498 null-seller rows, 100% carrying one of the two sources the claim predicate excludes. ZERO eligible.** That is why every tick returns nothing and dies at the **60 s** Postgres statement timeout proving it (`duration_ms` 60,300 on run after run).
+
+🚨 **(2) But there is eligible work ABOVE the cursor that the lane can never reach.** `sales_2026` null-seller rows by source: `topshot_marketplace` **4,948** · `onchain_dapper_v1` **2,883** · `onchain` **734** · `onchain_dapper_v2` **42** (plus 1,329 `allday_studio_history_v1`, excluded), every one with a valid 64-hex hash. ⚠ Discounting `topshot_marketplace` — migration `20260902053232` recorded it converting **zero of 480** — **~3,659 `onchain*` rows are genuinely claimable.** The cursor branch only walks `sold_at < cursor`, so none of them was ever in range.
+
+⛔ **(3) The filing's "re-walk" objection does not hold, and that is what makes this safe.** It warned a cursor reset would "re-walk everything above that is already done". It cannot: the claim predicate is `seller_address IS NULL`, and a resolved row **has** a seller. A reset re-walks only UNRESOLVED rows, newest first — which is precisely the 2026 backlog.
+
+⭐ **(4) MEASURED, not argued — the reset branch is also the CHEAP one.** `EXPLAIN (ANALYZE, BUFFERS)` on the `cursor IS NULL` query: **8,466 ms**, `shared hit=866 read=4,219`, 100 rows returned out of **8,607** found in `sales_2026` — and `sales_2025` / `sales_2024` / `sales_2023` all report **"never executed"**. The partitions are range-ordered on `sold_at`, so the planner emits an **order-preserving `Append`** newest-first with `Limit` above it and stops inside 2026. **The stuck branch has no such exit and must walk all 219,498 ineligible rows.** So this makes the lane cheaper *and* productive: 8.5 s of real work against 60 s of timeout.
+
+⭐⭐ **VERIFIED ON THE OUTCOME TABLE, not on the self-report: the FIRST post-reset tick did real work.** 12:31:26 PT — **`ok=true`, `rows_found=120`, `rows_written=120`**, against **`0/0` on every one of the preceding 286+ runs**. A clean change point, and the only instrument that could show it. ⓘ That run took 66,497 ms and still succeeded, which incidentally pins the 60 s timeout to the CLAIM query specifically rather than to the whole tick.
+
+⚠ **Stated rather than glossed: 8.5 s/tick is not free.** The Bitmap Heap Scan touches **4,813 heap blocks** (1,200 → 8,460 ms of the total) and writes 941 buffers, so it is reading cold pages. It shrinks as the backlog drains.
+
+⛔ **NOT a substitute for the queued partial index, and the reason is a number.** Once the cursor descends past 2026 the lane re-enters the exhausted zone and the timeouts return. The real fix stays queued: add `source` to the predicate of `idx_sales_*_nullseller_soldat` so the excluded rows are not in the index at all. That is a `CONCURRENTLY` build across **1.47 GB** of partitions, and at the time of writing the instance read **7 active backends, 3 in IO wait, 9 failed cron jobs in 30 minutes** — mildly in a spell, so it is deliberately not done here.
+
+⛔ **And a trap worth carrying: do NOT reach this state by raising `floor_sold_at`.** The claim function self-heals a cursor strictly below the floor to NULL, so raising the floor lands in the same place via a side effect nobody reading the floor would predict. Set the cursor directly.
+
+**REVERT:** `UPDATE public.sales_counterparty_backfill_state SET cursor_sold_at = '2024-04-19 09:32:49.894839+00'::timestamptz WHERE id = 1;` — recorded verbatim in the migration. `git revert` alone does NOT restore the cursor. Repo file written the same turn and **md5-verified byte-exact** against the applied statement (`8386f01e05c52cc5b1ab9c9b83595dbf`).
+
+
 ### 2026-09-12 · 🚨 `Disallow: /api/` WAS BLOCKING EVERY SOCIAL CARD ON THE SITE — and /profile, where every share link lands, fired no funnel event · Claude Code on Trevor's box, from the Cowork 09-12 handoff
 
 **Shipped three things; two of the handoff's five findings were REFUTED as already-shipped and deliberately not re-done.**

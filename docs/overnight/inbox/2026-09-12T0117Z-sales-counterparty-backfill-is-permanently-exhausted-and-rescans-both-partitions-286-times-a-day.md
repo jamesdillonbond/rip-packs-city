@@ -1,5 +1,17 @@
 # `sales-counterparty-backfill` is PERMANENTLY EXHAUSTED, its cursor cannot advance, and it rescans both `sales` partitions 286 times a day to discard every row — 47% of those ticks die on `statement timeout`
 
+> ## ⛔⛔ CORRECTED 2026-09-12 12:3x PT — THE HEADLINE IS WRONG IN THE ONE WAY THAT MATTERS: THIS LANE IS **STUCK**, NOT EXHAUSTED
+>
+> **Read this before acting on anything below.** The *window* is exhausted and every number in this filing checks out — I re-derived it **exhaustively** rather than by three slices: cursor 2024-04-19 to floor 2023-11-08 holds **219,498** null-seller rows, **100%** carrying one of the two excluded sources, **zero** eligible.
+>
+> 🚨 **But `sales_2026` holds eligible work the cursor branch can NEVER reach:** `topshot_marketplace` 4,948 · `onchain_dapper_v1` 2,883 · `onchain` 734 · `onchain_dapper_v2` 42, all with valid 64-hex hashes. Discounting `topshot_marketplace` (migration `20260902053232`: converts **zero of 480**), **~3,659 `onchain*` rows are genuinely claimable.** **So “the decodable work is finished” is false, and retiring the lane on that basis — the obvious next step from this filing — would have abandoned them.**
+>
+> ⛔ **This filing's “do NOT reset the cursor, it re-walks what is already done” objection also does not hold:** the claim predicate is `seller_address IS NULL`, and a resolved row **has** a seller, so a reset re-walks only UNRESOLVED rows, newest first.
+>
+> ⭐ **Measured:** the `cursor IS NULL` branch runs in **8,466 ms** (`shared hit=866 read=4,219`), returns 100 of **8,607** found in `sales_2026`, and leaves `sales_2025`/`2024`/`2023` **“never executed”** — an order-preserving `Append` over range-partitions stops early. The stuck branch has no exit and times out at 60 s.
+>
+> ✅ **Shipped `20260912192653`: cursor reset to NULL.** ⚠ The partial-index fix this filing recommends **still stands** and is still the durable one — the cursor will descend back into the exhausted zone. It was not built here because the instance read 7 active / 3 IO-wait / 9 failed cron in 30 min.
+
 **Filed 2026-09-11 18:17 PT (Claude Code, cloud) — Trevor: "keep going until there's nothing left unresolved."** Found while triaging a lane I had flagged in passing at 15% failures this morning; it is now 47% and the cause is not what the failure string suggests.
 
 ## The numbers
