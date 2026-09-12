@@ -31,6 +31,8 @@ snapshot-institutional-wallets status: 202
 
 **Left for Trevor, stated rather than dropped:** why the cron-job.org primary (10:07Z) did not fire at all on 09-11 — a console question, and the console is off-limits here.
 
+**Promoted, so it is not left only in a session log:** the generalisable half — four acceptance-greens against one honest outcome table, `zero pipeline_runs rows` as the SIGNATURE OF A KILL, the free `cron_heartbeats` discriminator and the need to ATTRIBUTE the fire, and GHA delay moving a job into a different operating regime — is now a section in [cron-and-schedulers.md](../reference/cron-and-schedulers.md), with a session entry in [docs/sessions/2026-09.md](../sessions/2026-09.md) and four memory files updated in place.
+
 **REVERT:** `git revert` this commit restores the previous workflow comment (behaviour is unchanged either way — the edit is comment-only) and removes the two filings plus their INDEX rows (both INDEX counts are re-derived from disk by the script, not incremented).
 
 

@@ -2,6 +2,68 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## 🚨 A BACKSTOP THAT ACCEPTS A `202` IS NOT A BACKSTOP — and GHA's delay can move a job into the saturation window it was built to survive (2026-09-11 PT)
+
+`snapshot-institutional-wallets` has a primary (cron-job.org, 10:07Z) and a GHA backstop whose header
+promises *"a silently disabled primary still yields today's snapshot."* On **2026-09-11 that promise
+was tested for real** — the primary never fired — **and it failed.** The day has no snapshot and never
+will.
+
+**What each layer reported, and why all of it was worthless:**
+
+| signal | value | what it actually proves |
+|---|---|---|
+| GHA run conclusion | `success` | the step ran (`continue-on-error: true`, `fail-on-status: false`) |
+| HTTP status | `202` | the route accepted |
+| `edge_status` | `200` | the edge function accepted |
+| `edge_body.ok` | `true` | …it accepted |
+| **`wallet_holdings_snapshot`** | **0 rows for 09-11** | **the only honest instrument** |
+
+⭐ **Four greens, all about ACCEPTANCE, none about STORAGE.** The route's own reply even says *"Real
+results will appear in `pipeline_runs` within ~10-30s"* — they did not, and nothing re-read it.
+Group with the register's accepted-is-not-stored family and **always finish on the outcome table**.
+
+**Why it died, and why it died SILENTLY.** The work runs in `EdgeRuntime.waitUntil(...)`. A wall-clock
+kill of that task **cannot be caught by the function's `try/catch` OR by its `.catch()`** — the same
+shape as a Vercel `maxDuration` kill. This function writes a `pipeline_runs` row on **all four**
+terminal paths (success · no-wallets · `skipped_in_progress` · `panicked`), so ⭐ **zero rows is the
+signature of a kill**, not of a bug in any branch. Healthy runs take **58.6 / 67.4 / 71.6 s** walking
+257 pages of `wallet_moments_cache`; that margin is what a saturated instance eats.
+
+⭐ **THE DISCRIMINATOR THAT COST NOTHING.** The route writes `cron_heartbeats` *before* the work. It
+read `edge_runwork_start` at **05:15 PT**, which settles *fired-and-died* vs *never-fired* without
+touching the cron-job.org console — ⛔ which is off-limits here anyway (its bearer has leaked twice).
+⚠ **Then ATTRIBUTE the fire**: 05:15 PT = 12:15Z matched the **GHA backstop**, not the 10:07Z primary.
+Skipping that step inverts the conclusion — "the primary fired, so the console is fine" would have
+been exactly backwards. ⚠ The table holds **one upserted row per pipeline** (`pipeline`,
+`last_fired_at`, `last_source`): it is a *latest*, not a history.
+
+🚨 **AND THE NOMINAL CRON IS NOT WHEN IT RUNS.** Nominal `29 7 * * *`; eight consecutive scheduled
+fires at **11:18 · 11:41 · 12:10 · 12:11 · 12:15 · 12:16 · 12:23 · 13:34 Z** — **+3h49m to +6h05m**.
+So the backstop does not *lead* the primary by 2h38m as its header claimed for six weeks; it **trails**
+it by ~2h, into the morning IO window. ⭐ **A workflow comment reasoning from a nominal cron is stating
+a falsehood**, and this is the second cost of GHA's unhonoured schedules: not just *late*, but **in a
+different operating regime**.
+
+⛔ **Do NOT "fix" this by re-timing the nominal cron.** The observed delay spread is **over two hours
+wide**, so no nominal minute maps to a predictable fire time. The real lever is making the walk
+**resumable** instead of all-or-nothing. `workflow_dispatch` is the only way to fire one when you
+choose.
+
+⭐ **Positive control, because "it failed" is not a diagnosis:** a dispatch at **20:49 PT on a quiet
+instance** returned `ok=true, rows_written=3, elapsed_ms=58639, 257 pages`. **The path is sound; the
+fire time is the defect.** That control also refuted my own first hypothesis — three fires with zero
+run rows had me concluding the backstop was structurally broken.
+
+⛔ **The loss is PERMANENT, and this generalises to every snapshot lane:** `snapshot_at` is the UTC
+date **at run time**, so a re-fire writes TODAY's row and silently leaves yesterday's hole. **Never
+report a re-fire as a recovery without checking whether the missing key is reachable at all.**
+
+⭐ **What did NOT fail: detection.** The pipeline watchlist flagged the silence as `high` unaided. No
+new instrument is needed here — and the impact is worth stating plainly rather than inflating:
+**3 rows/day for 2 wallets.**
+
+
 ## ⛔ `supabase/migrations/` IS A FINDINGS ARCHIVE NOBODY GREPS — read it BEFORE measuring a pg_cron job (2026-09-11 PT)
 
 I spent a measurement pass establishing two facts about the Pinnacle acquisition
