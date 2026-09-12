@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ CODE — Pack History and all ~30 `/insights` boards had NO bottom nav; the two layouts that should have mounted it now do · Cowork cloud, Trevor: "Keep going"
+
+**Shipped:** `app/dashboard/layout.tsx` (was literally `return children`), `app/insights/layout.tsx`, the two now-duplicate child mounts removed from `app/dashboard/DashboardClient.tsx` and `app/dashboard/api-keys/ApiKeysClient.tsx`, and 2 source-pinned tests. Revert: `git revert` the commit whose message starts `fix(nav): mount the bottom bar on the two route families that had none`.
+
+**What was missing.** The bar is mounted **ad hoc in eleven places**, not the root layout. Measured 2026-09-12: of the six routes under `/dashboard` only two carried it, so **`/dashboard/packs` — the surface Trevor screenshotted — plus `/dashboard/history`, `/dashboard/alerts` and `/dashboard/notifications` had no bottom nav at all**; and neither did **any of the ~30 boards under `/insights`**, including `/insights/candy-mlb`, which is the ONLY Candy surface that exists (the collection is pinned to `pages: ["overview"]`, so that board is otherwise reachable only through a link on that one tab). On a phone, the largest anonymous surface in the product was a dead end.
+
+**Why the two layouts and NOT the root layout.** The root would also put a bar on `/login` and every other surface that has never had one — a bigger change than this fixes, on routes nobody reported. The eleven-site consolidation is still worth doing; it is a separate decision and belongs in its own pass. ⚠ **`/dashboard` and `api-keys` mounted it themselves**, so those two had to be removed in the same commit: two `position: fixed; bottom: 0` bars stack exactly on top of each other and look like one bar with doubled tap targets.
+
+**Pinned as SOURCE facts**, because there is no route-level render harness here and the failure is silent both ways — a layout that stops mounting the bar looks fine in every component test, and so does a child that mounts it twice.
+
 ### 2026-09-12 · 📝 DOCS — session close-out: the eleventh honesty shape, the stripper's real population, three register items · Claude Code, Trevor's archive request
 
 **Shipped (docs + one CLAUDE.md displacement, no code):** `docs/sessions/2026-09.md` (session entry), `docs/reference/key-files-and-honesty.md`, `docs/reference/testing-and-ci.md`, `docs/reference/known-issues.md` (#87–#89 + regenerated index), `docs/reference/claude-md-condensed-originals.md`, `CLAUDE.md`. Revert: `git revert` the commit whose message starts `docs: close out the share-card session` (find by message, not sha).
