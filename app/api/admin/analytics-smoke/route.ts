@@ -19,6 +19,7 @@
 // Bearer …` header or a `?token=…` query param (lib/admin-auth.ts handles both).
 
 import { NextRequest, NextResponse, after } from "next/server";
+import { fitTelegramText } from "@/lib/telegram-message";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 import { isSaturationError } from "@/lib/pipeline/saturation";
@@ -100,7 +101,9 @@ async function fireTelegram(text: string): Promise<boolean> {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
+        // ⚠ BOUNDED 2026-09-12 (register #77) — the smoke report grows with the
+        // number of findings; Telegram 400s over 4,096 chars instead of truncating.
+        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: fitTelegramText(text) }),
         signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
       }
     );

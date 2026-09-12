@@ -14,6 +14,7 @@
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse, after } from "next/server";
+import { fitTelegramText } from "@/lib/telegram-message";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG, marketplaceMomentUrl } from "@/lib/collections";
@@ -2982,7 +2983,13 @@ async function executeTool(
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               chat_id: process.env.TELEGRAM_CHAT_ID,
-              text: `\u{1F6A8} RPC Support Escalation (HIGH)\nCategory: ${category}\nSession: ${ctx.sessionId}\nUser: ${ctx.ownerKey ?? "(anon)"}\n\nIssue: ${reason}`,
+              // ⚠ BOUNDED 2026-09-12 (register #77). `reason` is model-written from a
+              // user conversation and is unbounded; Telegram REJECTS over 4,096 chars
+              // with HTTP 400. This is the HIGH-severity page, and the route already
+              // refuses to tell the user "you've been paged" unless the send was
+              // accepted — so an over-long issue turned a real emergency into an
+              // honest non-delivery. Truncating with a visible notice actually pages.
+              text: fitTelegramText(`\u{1F6A8} RPC Support Escalation (HIGH)\nCategory: ${category}\nSession: ${ctx.sessionId}\nUser: ${ctx.ownerKey ?? "(anon)"}\n\nIssue: ${reason}`),
               parse_mode: "HTML",
             }),
             // 10s cap. `fetch()` has NO default timeout and this runs inside

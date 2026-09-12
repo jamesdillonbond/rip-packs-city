@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { fitTelegramText } from "@/lib/telegram-message"
 
 // GET /api/admin/cron/detect-league-drift
 // Authorization: Bearer <INGEST_SECRET_TOKEN>  OR  ?token=<INGEST_SECRET_TOKEN>
@@ -136,7 +137,10 @@ export async function GET(req: NextRequest) {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               chat_id: tgChat,
-              text,
+              // ⚠ BOUNDED 2026-09-12 (register #77) — one bullet per candidate, each
+              // embedding a set name, so it grows with the size of the drift, and
+              // Telegram REJECTS over 4,096 chars with HTTP 400 rather than truncating.
+              text: fitTelegramText(text),
               parse_mode: "HTML",
               disable_web_page_preview: true,
             }),

@@ -6,6 +6,7 @@
 //    via Resend honoring a 6-hour cooldown per alert, stamps last_triggered_at.
 
 import { NextRequest, NextResponse, after } from "next/server";
+import { fitTelegramText } from "@/lib/telegram-message";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 import crypto from "crypto";
@@ -96,6 +97,15 @@ async function sendTelegram(text: string): Promise<{ ok: boolean; error?: string
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
     return { ok: false, error: "TELEGRAM_BOT_TOKEN/CHAT_ID not configured" };
   }
+  // ⚠ BOUNDED 2026-09-12 (register #77). Telegram REJECTS a message over 4,096
+  // characters with HTTP 400 rather than truncating it, and this text GROWS WITH
+  // THE INCIDENT — `buildPipelineAlertTelegram` caps the LINE COUNT at 12 but each
+  // line embeds an unbounded `detail`. Measured live 2026-09-12 with 13 active
+  // alerts: ~3,250 characters, **79 % of the cap**, longest single detail 574.
+  // One more verbose alert and the send 400s, so the alarm goes silent exactly
+  // when the fleet is worst. `fitTelegramText` truncates with a VISIBLE notice;
+  // it is a no-op below the limit.
+  text = fitTelegramText(text);
   try {
     const res = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,

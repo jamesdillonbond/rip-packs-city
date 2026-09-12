@@ -15,6 +15,7 @@ export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse, after } from "next/server";
+import { fitTelegramText } from "@/lib/telegram-message";
 import { createClient } from "@supabase/supabase-js";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import {
@@ -103,7 +104,11 @@ async function sendTelegramGroup(chatId: string, group: Delivery[]): Promise<voi
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      text: buildTelegramMessage(group),
+      // ⚠ BOUNDED 2026-09-12 (register #77). The message is built from every
+      // delivery in the group, so its length grows with how much the user is owed —
+      // and Telegram REJECTS over 4,096 chars with HTTP 400 rather than truncating,
+      // which would drop the WHOLE batch. No-op below the limit.
+      text: fitTelegramText(buildTelegramMessage(group)),
       parse_mode: "HTML",
       disable_web_page_preview: false,
     }),

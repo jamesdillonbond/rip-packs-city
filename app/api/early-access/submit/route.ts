@@ -14,6 +14,7 @@
 // they intentionally do not re-page Trevor.
 
 import { NextRequest, NextResponse, after } from "next/server"
+import { fitTelegramText } from "@/lib/telegram-message"
 import { createHash } from "node:crypto"
 import { supabaseAdmin } from "@/lib/supabase"
 
@@ -193,7 +194,11 @@ async function notifyTelegramAndMark(opts: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
-          text,
+          // ⚠ BOUNDED 2026-09-12 (register #77). Fixed fields today, so this is the
+          // cheapest kind of insurance rather than a live defect — but `email` and
+          // the collections list are user-supplied, and the class is a 400 that
+          // drops the whole notification.
+          text: fitTelegramText(text),
           disable_web_page_preview: true,
         }),
         // 10s cap. `fetch()` has NO default timeout and this runs inside
