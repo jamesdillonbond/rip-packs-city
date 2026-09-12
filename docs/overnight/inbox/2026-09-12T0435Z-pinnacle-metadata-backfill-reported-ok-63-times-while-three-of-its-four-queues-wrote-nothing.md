@@ -98,3 +98,7 @@ ok true · rows_found 59 · rows_written 2 · duration_ms 6432
 ⭐ **The independent count of wmc-vs-map disagreements fell 5 → 4**, so a repair actually landed. ⭐ **And Cause 2 is now VISIBLE rather than inferred:** `mint_count_filled: 0` and `edition_keys_resolved: 0` sit in the log next to `q1_eligible: 1` and `q2_eligible: 50`, which is precisely the reading that was impossible before.
 
 ⚠ **Cost, stated rather than buried: 6,432 ms against ~2,300 ms before.** Complete coverage is not free; it is well inside the 30 s `maxDuration`, and the per-PASS buffer cost remains about half the single full join the old read would otherwise have needed.
+
+### Forecast for the remaining 4, made checkable rather than left as "it should converge"
+
+The cursor sits at key **53 of 423** (`PAS-OEV1-BUGS:Golden:1`). The four surviving disagreements live at key positions **197, 257, 347, 350** — ⭐ **all AHEAD of the cursor**, so at 25 keys/tick they are reached on roughly the **6th, 9th, 12th and 12th** tick from here, i.e. all four inside this pass, by about **03:22 PT** (10:22Z). ⚠ **If `disagreements_corrected` is still 0 across those ticks while `q3_keys_scanned` keeps reading 25, the repair path is broken rather than the discovery** — the slices will have covered their keys, which is a different defect from the one fixed here.
