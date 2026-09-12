@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ DOCS — a third push path from Cowork: `Rip Packs City\cowork-push\apply-and-push.cmd` (laptop, one double-click, Git Credential Manager) · Cowork cloud, Trevor: "exhaust all you can"
+
+**Shipped: `docs/reference/tooling-gotchas.md` gains "a THIRD push path, for when the desktop VM is dead" under *Pushing from a sandbox*.** Docs only — no code, no DB, no schedule. Revert: `git revert` the commit whose message starts `docs(tooling-gotchas): cowork-push fallback` (find by message, not sha).
+
+**Why.** The 2026-09-08 Windows update killed the Cowork desktop VM (`device_bash` fails on `echo`; status.claude.com incident, awaiting Microsoft), so the 08-29 `.rpc-git-cred` recipe is unusable until the patch lands. The cloud container has a proxy GitHub credential now but pushes only when the repo is attached at task creation, and the proxy overwrites any Authorization header a tool sends. So neither primary route works from inside a session.
+
+**What was proven.** `push-dryrun.cmd` on the laptop: fresh clone at `%USERPROFILE%\rpcwork-cowork`, `git push --dry-run` exit 0, credential helper `manager` — the receive-pack advertisement is authenticated, so that is push auth. `apply-and-push.cmd` exercised with an empty queue (refresh → dirty 0 → base `7a130de` → "queue empty - nothing to push"). **This entry is the first REAL push through it** — if you are reading it on `main`, the path works end-to-end.
+
+**Same session, recorded elsewhere:** the claude.ai Project was at its 2M-token knowledge cap (writes refused) — 501 of 543 docs archived verbatim to `Rip Packs City\project-docs-archive-2026-09-12\` and deleted (654k after), and the GitHub sync narrowed from `/` (991% of capacity) to `CLAUDE.md` + `docs/reference/` + `docs/strategy/` (33% after). 35 inbox filings from the 08-29→09-01 cloud passes exist only in that archive (`unpushed-inbox\`); they cannot go to `inbox/archive/` (post-08-17 ban) and were NOT added to the live queue — Trevor's call.
+
 ### 2026-09-12 · ⭐⭐ `sales-counterparty-backfill` WAS NOT "PERMANENTLY EXHAUSTED" — it was STUCK BELOW ITS OWN WORK, and retiring it (the obvious next step) would have abandoned ~3,659 claimable rows · Claude Code on Trevor's box, Trevor: "keep going"
 
 **Shipped: `20260912192653_audit_20260912_sales_counterparty_backfill_was_stuck_below_its_work_not_exhausted` — one row, one column: `sales_counterparty_backfill_state.cursor_sold_at` reset to NULL so the lane restarts from the head.** No index built, no function changed, no schedule touched.
