@@ -2,6 +2,45 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ A CANDIDATE PREDICATE THAT SELECTS ON THE COLUMN IT FILLS IS A ONE-SHOT — and once it finishes it is indistinguishable from a healthy drain (2026-09-12 PT, two collections, filed 11 days apart)
+
+**The symptom is never an error.** The pool empties by construction, so from that moment every tick
+honestly reports "no candidates" and succeeds. No timeout, no `ok:false`, no row that says the data
+is old. **The lane is not broken; it is *done*, permanently — and nothing distinguishes done-forever
+from done-for-now.**
+
+| | Top Shot | All Day |
+|---|---|---|
+| lane | `backfill-topshot-pack-supply` (pg_cron **15**, `15 8 * * *`) | `backfill-allday-dist-opened` (pg_cron **27**, 4-minutely) |
+| predicate | `NOT EXISTS (… s.dist_id = d.dist_id AND s.supply_ok = true)` | `.is('opened_count', null)` |
+| result | 2,083 rows hydrated once, never revisited | 3,020 rows hydrated in ONE 2 h window on 2026-06-30 |
+| distinct `*_at` days | 28 | **2** |
+
+⭐ **THE FREE DETECTOR, and it needs no new instrument: `count(DISTINCT <stamp>::date)` on any
+hydrated table.** Top Shot read **28** across 75 days; All Day read **2**. A genuine refresher cannot
+produce a 2. Reach for this before concluding a frozen table means a dead upstream.
+
+⚠ **AND THE CAUSAL TRAP THAT COST A REGISTER ITEM ITS DIAGNOSIS.** #74 tied Top Shot's freeze to
+#81's GraphQL 530 because the newest successful fetch (2026-08-26) sat two days before the host died.
+**Both facts were true and the link was false:** the lane really does 530, but only on the **2 dists
+that have never succeeded** — which are the *entire* live candidate set. So clearing the 530 would
+not have unfrozen the 2,083. ⭐ **The discriminator is free: `max(stamp)` vs `max(stamp) WHERE ok`.**
+2026-09-11 against 2026-08-26 — a sixteen-day gap between "newest row" and "newest GOOD row" means
+still-running-and-failing-on-a-tail, not stopped.
+
+⛔ **REPAIRING THE PREDICATE CAN MAKE A SURFACE WORSE, AND THE ORDER IS LOAD-BEARING.** With the
+upstream failing, a re-walk flips every row to `ok = false`. If the failure branch does not CLEAR the
+data (the honest shape — it leaves the stale values), the surface keeps serving the same number and
+**loses whatever as-of it had**. So: a `last_success_at` column that survives a failure FIRST, the
+predicate SECOND, and the predicate only once the upstream is back.
+
+⚠ **SECOND-ORDER, and the reason this section exists at all.** The All Day diagnosis was correct,
+complete, and written down — **in a migration header** (`20260901071258`), which even predicted
+*"the hydrator will freeze again the moment it finishes"*. It did. The identical shape was then
+re-derived from scratch for Top Shot eleven days later, because nothing indexed the CLASS.
+**When a filing names a transferable defect class, the class belongs in `docs/reference/`, not only
+in the migration that fixed one instance of it.**
+
 ## ⛔⛔ "GREP-VERIFIED ACROSS `app/` AND `lib/`" IS NOT A WRITER AUDIT — and a backstop built on one resurrected a lane that was retired ON PURPOSE (2026-09-11 PT, second instance after #81)
 
 `dead-lane-backstop.yml` gained an eleventh step on 09-10 to revive lanes killed by the cron-job.org
