@@ -977,6 +977,19 @@ applied to a corpus instead of a code path.
 - ⚠ **A truncating projection is not a redaction.** `left(command, 140)` on one of these rows prints
   a *partial* key into the transcript — enough to be a leak, not enough to be useful. Filter and
   aggregate; never truncate.
+- 🚨 **FOURTH INSTANCE, 2026-09-12 — AND THE RULE ABOVE WAS ALREADY HERE, WHICH IS THE ONLY NEW
+  INFORMATION IN IT.** A session tracing which job calls a lane ran
+  `SELECT jobid, jobname, schedule, active, left(command, 300) FROM cron.job` and printed a live
+  `rpc_pls_` gate key. That is the `left(command, 140)` anti-pattern named two bullets up, with a
+  larger number — so this file did not lack the rule, the session lacked the prompt to come and read
+  it. ⭐ **The failure was in the INDEX, not the content:** CLAUDE.md's one-line secret-safety summary
+  named `get_edge_function` as *the* vector and nothing else, so a `cron.job` query did not look like
+  a secret-handling operation at the moment of writing it. Amended the same day to name
+  `cron.job.command` too and to point here. **When a documented rule is broken by someone who would
+  have followed it, fix the pointer, not the rule.**
+  ⚠ And note the shape that made it feel safe: the SELECT was *about* `schedule` and `active`.
+  **Three of the four instances were queries whose SUBJECT was something else entirely** — a count, a
+  config field, a schedule. The secret is never what you asked for; that is the whole hazard.
 - **The DB-side remedy needs no key to pass through a session at all:** rewrite the command in place
   with `regexp_replace` inside `cron.alter_job`, so the value never leaves the database. One job at a
   time, post-state checked against `net._http_response` — `net.http_get(url, params, headers,
