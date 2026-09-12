@@ -15,7 +15,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
 
@@ -505,7 +504,6 @@ export default function ApiKeysClient() {
         </div>
       )}
 
-      <MobileNav />
       <SupportChatConnected />
     </main>
   );

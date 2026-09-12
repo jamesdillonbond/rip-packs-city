@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/react"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 
 // MobileNav (0% before this) is the bottom mobile tab bar + the slide-up
 // Collections sheet. Drives its OWN code: the pathname->active-tab derivation,
@@ -192,5 +194,40 @@ describe("MobileNav — which tab owns the route", () => {
     const css = container.querySelector("nav.rpc-mobile-nav style")?.textContent ?? ""
     expect(css).toContain("padding-bottom: env(safe-area-inset-bottom")
     expect(css).toContain("box-sizing: content-box")
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WHERE the bar is mounted (2026-09-12)
+//
+// ⚠ The bar is mounted AD HOC — eleven call sites, not the root layout — and two
+// whole route families had none. Measured that day:
+//   * /dashboard/packs (the surface Trevor screenshotted), /dashboard/history,
+//     /dashboard/alerts and /dashboard/notifications: `app/dashboard/layout.tsx`
+//     was `return children`, and only two of the six routes under it carried the
+//     bar themselves.
+//   * every one of the ~30 boards under /insights, including /insights/candy-mlb
+//     — the ONLY Candy surface that exists, since the collection is pinned to
+//     pages:["overview"]. On a phone the largest anonymous surface in the product
+//     was a dead end.
+//
+// Pinned as a SOURCE fact because there is no route-level render harness here,
+// and the failure mode is silent: a layout that stops mounting it looks fine in
+// every component test. The second half is the mirror — a child that ALSO mounts
+// it renders two fixed bars stacked exactly on top of each other, which looks
+// like one bar with doubled tap targets.
+describe("MobileNav — the layouts that mount it", () => {
+  const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8")
+
+  it("is mounted by the /dashboard and /insights layouts", () => {
+    for (const p of ["app/dashboard/layout.tsx", "app/insights/layout.tsx"]) {
+      expect(read(p), p).toContain("<MobileNav />")
+    }
+  })
+
+  it("⚠ is NOT also mounted by a child of those layouts — two fixed bars stack invisibly", () => {
+    for (const p of ["app/dashboard/DashboardClient.tsx", "app/dashboard/api-keys/ApiKeysClient.tsx"]) {
+      expect(read(p), p).not.toContain("<MobileNav />")
+    }
   })
 })

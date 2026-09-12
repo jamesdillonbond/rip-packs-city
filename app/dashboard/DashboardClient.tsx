@@ -6,7 +6,6 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
 import FirstRunTourMount from "@/components/onboarding/FirstRunTourMount";
 import RpcLogo from "@/components/RpcLogo";
@@ -1475,7 +1474,6 @@ function ProfilePageInner() {
         </div>
       )}
 
-      <MobileNav />
       <SupportChatConnected />
       <FirstRunTourMount />
     </div>

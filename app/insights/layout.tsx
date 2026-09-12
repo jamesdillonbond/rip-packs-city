@@ -7,6 +7,7 @@
 import type { Metadata } from "next"
 import InsightsEmailCapture from "@/components/insights/InsightsEmailCapture"
 import FunnelTracker from "@/components/FunnelTracker"
+import MobileNav from "@/components/MobileNav"
 import SiteFooter from "@/components/SiteFooter"
 import SupportChatConnected from "@/components/SupportChatConnected"
 import WalletSearchBand from "@/components/WalletSearchBand"
@@ -76,6 +77,18 @@ export default function InsightsLayout({ children }: { children: React.ReactNode
       {children}
       <InsightsEmailCapture />
       <SiteFooter />
+      {/* ⚠ THE BOTTOM NAV IS MOUNTED AD HOC, NOT IN THE ROOT LAYOUT — eleven
+          call sites as of 2026-09-12, and this subtree was not one of them.
+          Measured that day: there was NO bottom nav at all on any of the ~30
+          boards under /insights, including /insights/candy-mlb, which is the
+          ONLY Candy surface that exists (the collection is pinned to
+          pages:["overview"], so the board is otherwise reachable only through a
+          link on that one tab). On a phone that made the largest anonymous
+          surface in the product a dead end.
+          Mounted at the LAYOUT, not per board: the layout persists across
+          /insights/* navigations, and each board owns its own <main>. */}
+      <MobileNav />
+
       {/* The concierge. Mounted here 2026-09-02 because it was absent from every
           public entry point: it lives in the (collections) and (analytics)
           layouts and on a handful of signed-in surfaces, and NOT on /insights —
