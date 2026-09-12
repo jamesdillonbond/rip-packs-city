@@ -71,3 +71,31 @@ group by 1,2,3 order by quiet_busy_s_per_h desc nulls last;
 2. **`refresh_wmc_fmv_changed`** — 1,826 GB of disk reads and **208 exec-hours in 31 days** from 4,211 calls, the single biggest line in `pg_stat_statements`. ⛔ **Deliberately NOT touched:** it is a deadline-bounded drain that is *designed* to consume its budget, it is pinned, it is FMV-correctness-critical, and it has already had several measured optimisation passes documented in its own body. **Its cost is its upstream's over-production (`fmv-recalc` writes a snapshot per recalculated edition whether or not the number moved — 74 % identical, measured 08-30), which CLAUDE.md already records as sized-and-known.** The lever is upstream.
 3. **The two telemetry `count(*)`s in `sync_ts_listings_from_atlas`** — same 264 K population, every 2 minutes, 68 of 464 timeouts. Pinned as an honesty invariant (*"counted, never guessed"*), so the fix must make them cheap, not absent.
 4. **#35's OFFSET pagination pair** (`topshot_pack_sales_history` 507 GB, `allday_pack_sales_history` 500 GB in 31 days) is still 1 TB/month. ⛔ Its recorded blocker — the two writers are edge functions with no committed source — was **not** worked around here: reading them back needs `get_edge_function`, which CLAUDE.md records as having burned a live gate key into a transcript twice. **That is an operator step, not a sandbox one.**
+
+---
+
+## 5. Addendum — where the disk IO actually goes, and it is three tables holding 5.7 GB
+
+The section above ranks **jobs**. This ranks **tables**, from `pg_statio_user_tables`, and it reframes everything above it.
+
+⚠ **Window caveat first, because it changes how these may be quoted.** `pg_stat_database.stats_reset` is **NULL** on this instance, so these counters have no known start — they are NOT the 31-day `pg_stat_statements` window (24,820 GB) but a longer one (34,824 GB database-wide). **Quote the SHARES, which are window-independent if the mix is stable; do not quote the absolute GB as a rate.**
+
+| table | on disk | disk reads | share of all user-table reads |
+|---|---:|---:|---:|
+| **`wallet_moments_cache`** | 3,292 MB | 11,401 GB | **33.0 %** |
+| **`fmv_snapshots_2026`** | 950 MB | 4,817 GB | **13.9 %** |
+| **`sales_2026`** | 1,419 MB | 4,425 GB | **12.8 %** |
+| `_http_response` | 11 GB | 1,493 GB | 4.3 % |
+| `panini_card_serials` | 186 MB | 1,030 GB | 3.0 % |
+| `sales_2023` | 838 MB | 992 GB | 2.9 % |
+| `topshot_pack_sales_history` | 309 MB | 921 GB | 2.7 % |
+| `topshot_atlas_market_events` | 784 MB | 892 GB | 2.6 % |
+
+⭐⭐ **The top three are 59.7 % of all disk reads and hold 5.7 GB between them.** `wallet_moments_cache` alone is read ~3,450 times over. ⭐ **And the three are one chain: `sales` → `fmv_snapshots` → `wallet_moments_cache`. The FMV recompute path is roughly sixty per cent of this database's disk IO.** CLAUDE.md already says *"fmv-recalc — wasteful, NOT broken, SIZED (it owns the DB's #1 reader)"*; this quantifies it and adds the #2 and #3, which were never named.
+
+⚠ **Everything else is a long tail** — no fourth item reaches 5 %. **A saturation fix that does not touch the FMV chain is trimming 40 % of the problem**, which is the honest frame for the jobid-466 change shipped today (`topshot_atlas_market_events`, 2.6 %, and only part of that).
+
+⛔ **NOT ACTED ON, and the reasons are specific rather than cautious:**
+- **`refresh_wmc_fmv_changed` is the biggest statement** (1,826 GB / **208 exec-hours** / 4,211 calls in 31 days) and writes `wallet_moments_cache`. It is a **deadline-bounded drain designed to consume its budget**, it is pinned, it is FMV-correctness-critical, and its body already carries several measured optimisation passes. **Its cost is its upstream's over-production**, which the body itself records: *74 % of new snapshots carry an `fmv_usd` IDENTICAL to the edition's previous one*, because `fmv-recalc` writes a row per recalculated edition whether or not the number moved. **The lever is upstream, and it is Trevor's per CLAUDE.md.**
+- **Its own comment names a bloated index** — *"a 2.5M-row table behind a bloated `(collection_id, edition_key)` index"* — and `REINDEX CONCURRENTLY` was considered and **not run**: `wallet_moments_cache` carries **19 indexes totalling ~2.3 GB**, a reindex of the 372 MB candidate is a full rebuild's worth of IO **in the middle of a live spell**, and bloat was not measured, only quoted from a comment. **Re-measure the bloat in the quiet window (02:00–06:00Z) and reindex there, not at 8 a.m.**
+- **Three indexes are being FULL-SCANNED, which is the one unexplored lead here**: `idx_wmc_cohort_cover` (340 MB, **13,157 scans, 636 GB read — 48 MB per scan**), `idx_wmc_lockcheck_order` (39 MB, 4,563 scans, 113 GB — 24 MB/scan), `idx_wmc_collection_id` (43 MB, 10,511 scans, 111 GB — 10.5 MB/scan). **860 GB combined, from three indexes read end-to-end rather than sought into.** By contrast `idx_wmc_moment_collection_cover` does 314 M scans for 840 GB — 2.7 KB per scan, a healthy point lookup. ⚠ **Which statements drive the three full scans was NOT established** — `pg_stat_statements` does not attribute per index, so this needs `auto_explain` or a live `pg_stat_activity` catch, and naming a query without that would be a guess.

@@ -337,6 +337,29 @@ SELECT (SELECT count(*) FROM public.check_public_security_invariants()) AS sec_v
        jsonb_array_length(public.check_secdef_anon_execute_violations()) AS secdef;        -- 0 = clean
 ```
 
+## ⭐⭐ WHERE THE DISK IO ACTUALLY GOES: THREE TABLES HOLDING 5.7 GB ARE 60 % OF IT, AND THEY ARE ONE CHAIN (2026-09-12)
+
+Saturation on this instance is **IO-bound, not CPU-bound** (CLAUDE.md), so "which query is slow" is the wrong first question and "which table is being read off disk" is the right one. From `pg_statio_user_tables`:
+
+| table | on disk | disk reads | share of all user-table reads |
+|---|---:|---:|---:|
+| **`wallet_moments_cache`** | 3,292 MB | 11,401 GB | **33.0 %** |
+| **`fmv_snapshots_2026`** | 950 MB | 4,817 GB | **13.9 %** |
+| **`sales_2026`** | 1,419 MB | 4,425 GB | **12.8 %** |
+| `net._http_response` | 11 GB | 1,493 GB | 4.3 % |
+| `panini_card_serials` | 186 MB | 1,030 GB | 3.0 % |
+
+⭐ **The top three are 59.7 % and hold 5.7 GB between them** — `wallet_moments_cache` is read roughly **3,450 times over**. ⭐ **And they are one chain: `sales` → `fmv_snapshots` → `wallet_moments_cache`. The FMV recompute path is about sixty per cent of this database's disk IO**, which is the quantified form of CLAUDE.md's *"fmv-recalc … owns the DB's #1 reader"*. Nothing else reaches 5 %, so **any saturation fix that does not touch the FMV chain is trimming 40 % of the problem** — state that when you ship one.
+
+⚠ **WINDOW CAVEAT, and it decides how these may be quoted.** `pg_stat_database.stats_reset` is **NULL** here, so these counters have no known start. They are **not** the `pg_stat_statements` window (which carries its own `stats_reset`), and the two totals differ (34,824 GB vs 24,820 GB). ⛔ **Quote the SHARES — they are window-independent while the mix is stable — never the absolute GB as a rate.** Both columns come from the same instrument, which is what makes the share honest.
+
+⚠ **`pg_statio_user_tables` sorts NULLs FIRST under `ORDER BY … DESC`.** `idx_blks_read` is NULL for a table with no indexes, so `heap_blks_read + idx_blks_read` is NULL for those rows and a naive descending sort puts **16 kB tables at the top and buries the 11 TB one.** `coalesce(...,0)` every term. This produced a completely inverted first reading on 2026-09-12.
+
+⭐ **AN INDEX'S GB-PER-SCAN SPLITS A SEEK FROM A FULL SCAN, AND `idx_scan` ALONE CANNOT.** On `wallet_moments_cache` (19 indexes, ~2.3 GB): `idx_wmc_moment_collection_cover` does **314 M scans for 840 GB — 2.7 kB per scan**, a healthy point lookup. `idx_wmc_cohort_cover` does **13,157 scans for 636 GB — 48 MB per scan on a 340 MB index**, i.e. it is read end-to-end nearly every time. Same for `idx_wmc_lockcheck_order` (24 MB/scan on 39 MB) and `idx_wmc_collection_id` (10.5 MB/scan on 43 MB) — **860 GB from three indexes nobody seeks into.** ⚠ **Which statements drive them is NOT established** — `pg_stat_statements` does not attribute per index, so that needs `auto_explain` or a live `pg_stat_activity` catch; naming a query without one is a guess.
+
+Full readings, and the four levers considered and declined with reasons: [inbox 2026-09-12T1500Z](../overnight/inbox/2026-09-12T1500Z-the-quiet-window-ranking-that-found-a-36-percent-consumer.md). Register **#85**.
+
+
 ## ⭐ A HEAP'S STATS DEFECT DOES NOT IMPLY ITS TOAST WAS FIXED WITH IT (2026-09-12)
 
 **They are SEPARATE relations with separate stats and separate autovacuum triggers — and the bloat
