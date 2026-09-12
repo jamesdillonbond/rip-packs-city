@@ -1890,3 +1890,42 @@ cron-job.org entries are disabled (**#76**) and stay red until an operator re-en
 it to the sentinel **after** that, when a red means something new — and note the general rule:
 **an arm that is correct today but will be red for a week is, at a glance, indistinguishable from
 a broken arm.**
+
+### 🚨 THE ARM'S FIRST FALSE-POSITIVE CLASS, found by using it the same night: `pipeline_runs` IS NOT A RECORD OF EXECUTION
+
+Two of the twelve `degraded` entries on the first live call — **`refresh_wmc_fmv_changed`** and
+**`refresh_wmc_fmv_drift_active`** — are **logging artifacts, not collapsed work.**
+
+⭐ **Measured:** `refresh_wmc_fmv_changed` has its own pg_cron job — **jobid 303
+`rpc-refresh-wmc-fmv-changed`, `7-57/10 * * * *`, ACTIVE, 144 runs in 24 h, avg 188 s** — and it is
+simultaneously the estate's **#1 disk consumer** (1,816 GB of `shared_blks_read` over the 31-day
+`pg_stat_statements` window, 7.4 % of all disk reads, 207 h of execution). **The work never
+stopped.** What collapsed is the *other* caller: the seven `pipeline_runs` rows in 24 h land at
+**07:30 · 12:22 · 16:40 · 19:18 · 21:49 · 23:45 · 02:31Z** — the GHA backstop's tick times exactly —
+so the table is recording the route-driven path and is **blind to 95 % of the function's executions.**
+
+⛔ **So the arm's statement is TRUE and the inference a reader draws is FALSE.** It says *"logged
+runs fell to 8/day against a 96/day baseline"*; the reader hears *"the work stopped"*. **A rate arm
+over `pipeline_runs` measures the LOGGER, not the lane** — whenever a pipeline name is shared
+between a route that logs and a pg_cron job that does not, a collapse of the logging path is
+indistinguishable from a collapse of the work.
+
+**Before acting on any `degraded` entry, spend one query:**
+
+```sql
+select j.jobid, j.jobname, j.schedule, j.active,
+       (select count(*) from cron.job_run_details d
+         where d.jobid = j.jobid and d.start_time > now() - interval '24 hours') as runs_24h
+from cron.job j where j.command ilike '%<function or route name>%';
+```
+
+A row here with a healthy `runs_24h` means the lane is alive and only its logging collapsed.
+⚠ **A NULL result is not proof of the opposite** — `cron.job.command` only sees what the job calls
+DIRECTLY, so a function invoked *inside* another job's body matches nothing. That is the state of
+`refresh_wmc_fmv_drift_active`: same 8/day logged pattern, **no matching `cron.job` row, and
+therefore UNRESOLVED rather than confirmed either way.** Say so instead of guessing.
+
+⚠ **The same blindness has a second victim worth knowing about: `atlas_editions_drain()` shows
+5,721 MCP-issued calls and 918 GB of disk reads in the same window** (`-- source: POST /mcp`), a
+consumer no pipeline table sees at all, alongside its own pg_cron job (jobid 449, every 2 min).
+**"What ran" and "what got logged" are different questions everywhere in this estate.**
