@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · ✅ SHIPPED: the HIGH-severity alarm that had been crying wolf for days was a real query defect — `fmv_backfill_candidates` now drives from `editions` (21,423 rows) instead of `sales` (4.9 M), 5.7× fewer buffers and no temp spill · Claude Code (cloud), autonomous session
+
+**Shipped: migration `20260912063341`, its DB-invariant pin updated (fixture + verbatim DDL + a new assertion), `PINS` repointed. Applied in a measured quiet window.**
+
+Found by taking an alert at face value and then testing the excuse attached to it. `rpc_ops_snapshot()` carried `fmv-backfill` at **8/12 runs failed (66.7 %), HIGH severity**, and the day's monitor filings had (reasonably) written it off as **spell collateral**. ⭐ **The spell had cleared, so the excuse was testable — and it half-held:** the lane's successes all land at quiet hours (23:24 · 01:23 · 06:11Z) and every failure at a busy one. **But every success reads `rows_found = 0, rows_written = 0`.** The attribution was right about the timeouts and silent about the more interesting fact: **when the lane works, it does nothing.**
+
+🚨 **THE SHAPE IS THIS ESTATE'S LIMIT-NEVER-BINDS PATHOLOGY, and the plan says so exactly.** The old body scanned `sales` with `NOT EXISTS (fmv_snapshots)`, `GROUP BY`, `LIMIT 100` — a **Parallel Hash Anti Join over ALL EIGHT partitions** (2,446,494 rows × 2 workers) hashed against **743,191** snapshot rows, with the `LIMIT` sitting **above a Sort/Group where it cannot short-circuit**. With a true answer of **zero** the limit never binds, so every tick pays the entire scan. Its own `SET statement_timeout = '60s'` then decides the outcome by instance load.
+
+⭐ **A/B ON ONE IDLE INSTANCE, warm-vs-warm so the comparison is not a cache artifact:**
+
+```
+BEFORE  427,727 buffers + 55,406 TEMP blocks (16 hash batches, spilled)  11,129 ms
+AFTER    75,105 buffers, no temp                     3,237 ms cold / ~149 ms warm
+```
+
+**5.7× fewer buffers, the temp spill gone, and 11.1 s on an IDLE instance is what a 60 s budget loses under load.**
+
+⭐ **THE ZERO IS CORRECT AND EXHAUSTIVELY VERIFIED — per partition, not sampled:** `sales_2020` 922 editions / **0** missing a snapshot · 2021 1,309/0 · 2022 2,326/0 · 2023 7,431/0 · 2024 10,343/0 · 2025 11,542/0 · 2026 18,401/0. **The backlog is empty across the entire history.** ⛔ **So this is NOT "speed up a lane that is behind" — it is "stop paying a full-table scan to prove a lane is finished".** The lane is kept rather than retired because a genuinely new edition still has to be caught; what changes is the cost of finding none.
+
+⭐ **EQUIVALENCE IS PROVEN, NOT ASSUMED — and it rests on a foreign key.** The only way the two forms could differ is a `sales.edition_id` absent from `editions`, and **`sales_edition_id_fkey FOREIGN KEY (edition_id) REFERENCES editions(id)`** makes that impossible; control on the 2026 partition: **18,401 distinct edition_ids, 0 not in `editions`.** ⚠ **That dependency is now PINNED where the next reader meets it:** the pin's fixture has no FK on purpose, and a new case asserts an orphan sale is not returned — **so if the FK is ever dropped, the assertion is what says this rewrite has silently narrowed.**
+
+**Verification.** Pin **run locally, not just written** (this sandbox has postgresql-16): passes, and **mutation-proven — dropping `price_usd > 0` reds it** (`got [2], want [1]`, psql exit 3). Drift guard **205/205** with the `PINS` entry repointed to the new migration. **Whole DB-invariant suite 188/188, runner exit 0.** `tsc` 0. ⭐ **The committed migration body md5s IDENTICAL to the deployed `prosrc`** (`bd3e0f803691f1fed8fd3ad46cc23529`) — using the check promoted to testing-and-ci.md two hours earlier, on its first real outing. Security: anon **false**, authenticated **false**, service_role **true**, exactly **one** overload, `check_secdef_anon_exec_drift()` length **0**. Live call after the change returns **0 candidates**, unchanged.
+
+⭐ **The secondary win is alarm hygiene: a HIGH-severity `failure_rate` arm that fires two ticks in three trains readers to ignore the arm.** It should now go quiet on its own; **if `fmv-backfill` still times out after this, the remaining cost is elsewhere and the alert means something new** — which is the point of fixing rather than suppressing it.
+
+**REVERT:** (a) DB — re-apply the body from `supabase/migrations/20260626001900_fmv_backfill_candidates_antijoin_rpc.sql` (the old anti-join); (b) repo — `git revert` the commit whose message begins `perf(fmv): candidates drive from editions` (find by MESSAGE, not sha), which also restores the pin and the `PINS` pointer. ⚠ Revert BOTH halves together: the pin asserts the new body, so reverting only the DB reds the drift check on the next `db:pins:check`.
+
 ### 2026-09-11 · ⚠ SCOPE CORRECTION ON MY OWN ARM, made the same night I shipped it — 2 of its 12 `degraded` entries are LOGGING ARTIFACTS, and the top disk consumer never stopped · Claude Code (cloud), autonomous session
 
 **Docs only: `cron-and-schedulers.md` gains the arm's first false-positive class. No code, migration, DB or production state changed.**
