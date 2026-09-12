@@ -22,7 +22,7 @@
 
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
-import { ogImageDataUris } from "@/lib/og/img-data"
+import { ogImageDataUriSlots } from "@/lib/og/img-data"
 import { getPublicProfile } from "@/lib/profile/public-profile"
 import { borderCosmetic } from "@/lib/cosmetics"
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style"
@@ -100,16 +100,36 @@ export async function GET(
       .map((t) => t as Record<string, unknown>)
       .filter((t) => !!t.thumbnail_url)
 
-    const uris = await ogImageDataUris(
-      rows.map((t) => hiResThumb(t.thumbnail_url as string) ?? "").filter(Boolean),
+    // ⚠ SLOTS, NOT THE COMPACTING VARIANT. `ogImageDataUris` drops failures and
+    // closes the gap, so `uris[i]` stopped lining up with `rows[i]` the moment
+    // ANY art failed — and until 2026-09-12 two whole collections always failed
+    // (Pinnacle's relative URL, All Day's WebP; see lib/og/img-data.ts). The
+    // observable result on this card was Kevin Durant's Moment captioned
+    // "Amon-Ra St. Brown". A card built for sharing put one collector's art
+    // under another player's name, and nothing in CI could see it because the
+    // tile count still looked plausible.
+    const uris = await ogImageDataUriSlots(
+      rows.map((t) => hiResThumb(t.thumbnail_url as string) ?? null),
     )
-    const tiles = rows
-      .map((t, i) => ({
-        art: uris[i],
-        tier: (t.tier as string | null) ?? null,
-        player: (t.player_name as string | null) ?? null,
-      }))
-      .filter((t) => !!t.art)
+    // ⚠ A ROW WHOSE ART FAILED KEEPS ITS TILE. Dropping it made the case draw
+    // fewer Moments than the collector pinned, with no signal anywhere that a
+    // Moment was missing — the trophy is real, only its picture is unavailable,
+    // and a named placeholder says that where a silently shorter shelf does not.
+    const tiles = rows.map((t, i) => ({
+      art: uris[i] ?? null,
+      tier: (t.tier as string | null) ?? null,
+      player: (t.player_name as string | null) ?? null,
+    }))
+    const artless = tiles.filter((t) => !t.art)
+    if (artless.length > 0) {
+      console.warn(
+        `[og/trophy-case] art unavailable for ${artless.length}/${tiles.length} trophies (${username}):`,
+        rows
+          .filter((_, i) => !uris[i])
+          .map((t) => `${t.player_name ?? "?"} <- ${t.thumbnail_url}`)
+          .join(" | "),
+      )
+    }
 
     const w = caseTileWidth(tiles.length)
     const h = Math.round(w * 1.32)
@@ -216,12 +236,32 @@ export async function GET(
                       boxShadow: "0 12px 30px rgba(0,0,0,0.55)",
                     }}
                   >
-                    <img
-                      src={t.art as string}
-                      width={w}
-                      height={h}
-                      style={{ width: w, height: h, objectFit: "cover" }}
-                    />
+                    {t.art ? (
+                      <img
+                        src={t.art}
+                        width={w}
+                        height={h}
+                        style={{ width: w, height: h, objectFit: "cover" }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: w,
+                          height: h,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: 10,
+                          textAlign: "center",
+                          color: "rgba(255,255,255,0.3)",
+                          fontSize: 11,
+                          fontFamily: fam.mono,
+                          letterSpacing: 2,
+                        }}
+                      >
+                        ART UNAVAILABLE
+                      </div>
+                    )}
                   </div>
                   {t.player && (
                     <div

@@ -179,3 +179,112 @@ describe("stripComments — DEFECT 4 population is COUNTED, not merely described
     expect(keepsTooMuch.every((r) => r.file.length > 0 && r.endState.length > 0)).toBe(true)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ⚠ THE END-STATE CENSUS ABOVE UNDER-REPORTS, AND IT UNDER-REPORTS THE WORST
+// FILE IN THE REPO. Measured 2026-09-12.
+//
+// `endState` can only see a desync that is STILL OPEN at EOF. JSX prose carries
+// apostrophes in PAIRS as often as not — "we'll … doesn't" — so the machine
+// opens `sq` on the first, copies everything between the two verbatim (comments
+// included), CLOSES on the second, and reports `code` at EOF. Healthy, by that
+// probe. `app/dashboard/DashboardClient.tsx` was exactly that file, and the
+// largest instance in the repo: **1,076 of its lines** read in a bogus string
+// state, 63 comment lines surviving into every guard built on this helper. It
+// reddened `no-rewards-promises-while-unshipped` on 2026-09-12 by handing it a
+// code comment about the +50 Status award as published copy.
+//
+// ⚠ It was then partly reworded (`0871fff1c`) to get CI green, and IS STILL IN
+// THE POPULATION at 203 lines. A reword moves the boundary and leaves behind the
+// impression that it is gone — which is the argument for a named, ratcheted
+// census over a one-off fix. Sweep total the same day: 1,764 lines before the
+// reword, 898 after, across the same 10 files.
+//
+// ⭐ THE DETECTOR BELOW NEEDS NO PROXY, because a single- or double-quoted
+// string CANNOT SPAN A NEWLINE in JS/TS. So a line whose START state is `sq` or
+// `dq` is not evidence of a desync — it IS one, wherever it sits in the file
+// and whether or not the machine later re-syncs. `tpl` is excluded for the same
+// reason it must be: a template literal spanning newlines is ordinary, and the
+// `//` inside our Cadence transactions is source that MUST survive. A first cut
+// of this census counted those and over-reported 13 files where there are 10.
+//
+// ⚠ CHECKED, not assumed: this census STRICTLY CONTAINS the keeps-too-much
+// ratchet above (all 7 of those files are among these 10), so that ceiling is
+// now a subset view. The BAN AT ZERO above is not subsumed and must stay — it
+// covers the `block`/`regex`/`tpl` states, which BLANK source rather than keep
+// it, and which no string-state probe can see.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Files with at least one line read in an unterminated-string state.
+ *
+ * ⚠ Down only, and satisfiable at ZERO — a guard that reds when its own
+ * boundary is fixed punishes its own success. Lines are reported but NOT
+ * ratcheted: the line count moves with ordinary editing inside an already-
+ * desynced file, and a ceiling that churns gets raised rather than read.
+ */
+const MAX_FILES_WITH_STRING_DESYNC = 10
+
+describe("stripComments — DEFECT 4 is counted where it HAPPENS, not only at EOF", () => {
+  const files = walk(ROOT)
+
+  const desync = files
+    .map((f) => {
+      const { lineStates } = stripCommentsWithState(readFileSync(f, "utf8"))
+      return { file: rel(f), lines: lineStates.filter((st) => st === "sq" || st === "dq").length }
+    })
+    .filter((r) => r.lines > 0)
+    .sort((a, b) => b.lines - a.lines)
+
+  it("the DETECTOR discriminates — pinned instead of read off the tree", () => {
+    // Without this the census could silently stop detecting and the ratchet
+    // would pass having counted nothing — the vacuous-guard trap this whole
+    // file exists to close. Positive control, negative control, and the
+    // template-literal control that the first cut of this census got wrong.
+    const bad = stripCommentsWithState("const s = <p>we'll go</p>\n// KEPT\nconst t = 'x'\n")
+    expect(bad.lineStates[1]).toBe("sq")
+    const good = stripCommentsWithState("const s = <p>we will go</p>\n// STRIPPED\n")
+    expect(good.lineStates[1]).toBe("code")
+    // Cadence/SQL prose in a template literal is NOT a desync and its `//` is
+    // source, not a comment.
+    const tpl = stripCommentsWithState("const q = `\n// cadence comment\n`\n")
+    expect(tpl.lineStates[1]).toBe("tpl")
+    expect(tpl.code).toContain("// cadence comment")
+  })
+
+  it("lineStates lines up 1:1 with the file's lines", () => {
+    // If this drifts, every index above names the wrong line and the census
+    // becomes confidently wrong rather than merely absent.
+    for (const f of files.slice(0, 200)) {
+      const src = readFileSync(f, "utf8")
+      expect(stripCommentsWithState(src).lineStates.length).toBe(src.split("\n").length)
+    }
+  })
+
+  it("RATCHET — the number of files with a string desync does not grow", () => {
+    expect(
+      desync.length,
+      `Files with an unterminated-string desync grew to ${desync.length} ` +
+        `(ceiling ${MAX_FILES_WITH_STRING_DESYNC}); ` +
+        `${desync.reduce((n, r) => n + r.lines, 0)} lines total.\n` +
+        desync.map((r) => `  ${String(r.lines).padStart(5)} lines  ${r.file}`).join("\n") +
+        "\n\nEvery guard built on stripComments reads those lines verbatim — comments\n" +
+        "included — so it may over-report on them. Nothing goes blind.\n" +
+        "If you ADDED one, it is an apostrophe in JSX prose: see DEFECT 4 in\n" +
+        "scripts/lib/strip-comments.mjs. Rephrasing the prose is a workaround, not\n" +
+        "the fix; a guard whose subject is user-facing COPY should instead stop\n" +
+        "depending on the stripper being right (see copyOf in\n" +
+        "__tests__/no-rewards-promises-while-unshipped.test.ts).\n" +
+        "If you FIXED one, lower MAX_FILES_WITH_STRING_DESYNC in the same commit.\n",
+    ).toBeLessThanOrEqual(MAX_FILES_WITH_STRING_DESYNC)
+  })
+
+  it("names the population, and the count is not zero by accident", () => {
+    // ⚠ A census that finds nothing reads identically to a broken one. While
+    // the boundary exists this must find it; the day the stripper gains real
+    // JSX awareness, this assertion is deleted in the same commit that takes
+    // the ceiling to 0.
+    expect(desync.length).toBeGreaterThan(0)
+    expect(desync.every((r) => r.file.length > 0 && r.lines > 0)).toBe(true)
+  })
+})

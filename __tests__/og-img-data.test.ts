@@ -9,7 +9,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // ~10MB total-payload budget. global fetch is stubbed to return controlled
 // bytes + content-type so every branch is deterministic.
 
-import { ogImageDataUri, ogImageDataUris } from "@/lib/og/img-data"
+import {
+  ogImageDataUri,
+  ogImageDataUris,
+  ogImageDataUriSlots,
+  ogImageTarget,
+} from "@/lib/og/img-data"
 
 const fetchMock = vi.fn()
 
@@ -50,10 +55,63 @@ describe("ogImageDataUri — input guards", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it("returns null for non-http(s) urls (e.g. ipfs://, relative)", async () => {
+  it("returns null for a url with no scheme we can fetch", async () => {
     expect(await ogImageDataUri("ipfs://Qm123")).toBeNull()
-    expect(await ogImageDataUri("/local/path.png")).toBeNull()
+    expect(await ogImageDataUri("not a url")).toBeNull()
+    // ⚠ Protocol-relative, NOT site-relative. Prefixing BASE_URL here would
+    // build https://www.rippackscity.com//assets.example.com/a.png.
+    expect(await ogImageDataUri("//assets.example.com/a.png")).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  // ⚠ INVERTED 2026-09-12, deliberately. This case used to assert that a
+  // SITE-RELATIVE url resolved to null with no fetch, which is exactly the
+  // behaviour that meant no Disney Pinnacle art has ever rendered on any OG
+  // card — Pinnacle addresses ALL of its art as
+  // `/api/public/pinnacle-image/<render_id>` because Dapper's CDN serves only
+  // signed, short-lived URLs. The old assertion was pinning the defect in
+  // place, so it states the opposite property now rather than being deleted.
+  it("resolves a SITE-RELATIVE path against our own origin and fetches it", async () => {
+    fetchMock.mockResolvedValue(res(PNG_BYTES, "image/png"))
+    const out = await ogImageDataUri("/api/public/pinnacle-image/LEV2-LION-CARE-S6")
+    expect(out).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString("base64")}`)
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "https://www.rippackscity.com/api/public/pinnacle-image/LEV2-LION-CARE-S6",
+    )
+  })
+})
+
+describe("ogImageTarget — the two url shapes that dropped whole collections", () => {
+  it("absolutizes a site-relative Pinnacle art path", () => {
+    expect(ogImageTarget("/api/public/pinnacle-image/LEV2-LION-CARE-S6")).toBe(
+      "https://www.rippackscity.com/api/public/pinnacle-image/LEV2-LION-CARE-S6",
+    )
+  })
+
+  it("asks an All Day render url for PNG instead of the WebP satori cannot decode", () => {
+    // The live shape, verified against the DB 2026-09-12: all 6,190 nfl_all_day
+    // editions carry format=webp, and the same origin serves format=png.
+    expect(
+      ogImageTarget("https://media.nflallday.com/editions/675/media/image?width=512&format=webp&quality=90"),
+    ).toBe("https://media.nflallday.com/editions/675/media/image?width=512&format=png&quality=90")
+  })
+
+  it("rewrites format=avif too, and leaves a format we can decode alone", () => {
+    expect(ogImageTarget("https://ex.com/a?format=avif")).toBe("https://ex.com/a?format=png")
+    expect(ogImageTarget("https://ex.com/a?format=jpeg")).toBe("https://ex.com/a?format=jpeg")
+  })
+
+  it("does not maul a url whose path merely contains the word webp", () => {
+    expect(ogImageTarget("https://ex.com/webp/a.png")).toBe("https://ex.com/webp/a.png")
+    expect(ogImageTarget("https://ex.com/a.webp")).toBe("https://ex.com/a.webp")
+    // ...nor a longer value that merely starts with it.
+    expect(ogImageTarget("https://ex.com/a?format=webpx")).toBe("https://ex.com/a?format=webpx")
+  })
+
+  it("still prefers the IPFS proxy over any format rewrite", () => {
+    expect(ogImageTarget("https://ipfs.io/ipfs/QmABC?format=webp")).toBe(
+      "https://www.rippackscity.com/api/public/ipfs-media/QmABC",
+    )
   })
 })
 
@@ -188,5 +246,58 @@ describe("ogImageDataUris — batch prefetch", () => {
     fetchMock.mockResolvedValueOnce(mk()).mockResolvedValueOnce(mk())
     const out = await ogImageDataUris(["https://ex.com/1.png", "https://ex.com/2.png"])
     expect(out).toHaveLength(1)
+  })
+})
+
+describe("ogImageDataUriSlots — position is the contract", () => {
+  it("leaves a null IN PLACE where an image failed, rather than closing the gap", async () => {
+    // ⚠ THE DEFECT THIS EXISTS TO PREVENT. `ogImageDataUris` compacts, so a
+    // caller reading `uris[i]` beside `rows[i]` captions image 3 with name 2.
+    // The trophy-case card did exactly that and shipped Kevin Durant's Moment
+    // under "Amon-Ra St. Brown" (2026-09-12).
+    fetchMock
+      .mockResolvedValueOnce(res(PNG_BYTES, "image/png"))
+      .mockResolvedValueOnce(res(WEBP_BYTES, "image/webp")) // undecodable -> null
+      .mockResolvedValueOnce(res(JPEG_BYTES, "image/jpeg"))
+    const out = await ogImageDataUriSlots([
+      "https://ex.com/1.png",
+      "https://ex.com/2.bin",
+      "https://ex.com/3.jpg",
+    ])
+    expect(out).toHaveLength(3)
+    expect(out[0]).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString("base64")}`)
+    expect(out[1]).toBeNull()
+    expect(out[2]).toBe(`data:image/jpeg;base64,${Buffer.from(JPEG_BYTES).toString("base64")}`)
+  })
+
+  it("keeps a slot for an input that was never fetchable at all", async () => {
+    fetchMock.mockResolvedValue(res(PNG_BYTES, "image/png"))
+    const out = await ogImageDataUriSlots([null, "https://ex.com/a.png", "ipfs://x"])
+    expect(out).toHaveLength(3)
+    expect(out[0]).toBeNull()
+    expect(out[1]).not.toBeNull()
+    expect(out[2]).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("nulls an image that busts the total-payload budget without shifting the rest", async () => {
+    const big = () => {
+      const b = new Uint8Array(3.9 * 1024 * 1024)
+      b.set(PNG_BYTES)
+      return res(b, "image/png")
+    }
+    fetchMock
+      .mockResolvedValueOnce(big())
+      .mockResolvedValueOnce(big())
+      .mockResolvedValueOnce(res(JPEG_BYTES, "image/jpeg"))
+    const out = await ogImageDataUriSlots([
+      "https://ex.com/1.png",
+      "https://ex.com/2.png",
+      "https://ex.com/3.jpg",
+    ])
+    expect(out).toHaveLength(3)
+    expect(out[0]).not.toBeNull()
+    expect(out[1]).toBeNull() // over budget
+    expect(out[2]).not.toBeNull() // small enough to still fit, and still at index 2
   })
 })

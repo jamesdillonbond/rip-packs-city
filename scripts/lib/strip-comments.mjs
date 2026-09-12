@@ -90,9 +90,42 @@
 //
 // ✅ Unlike DEFECT 3, this one fails in the SAFE direction: inside `sq`/`dq`
 // everything is copied verbatim, so the machine KEEPS too much (comments survive)
-// and never blanks code. A guard may therefore over-report on those 8 files; it
+// and never blanks code. A guard may therefore over-report on those files; it
 // cannot go blind on them. Fixing it needs real JSX awareness — do not attempt
 // it without a fresh measurement and the same paired negative controls.
+//
+// 🚨 **AND THAT "7 FILES" IS A PROXY THAT UNDER-REPORTS — it missed the worst
+// file in the repo.** Re-measured 2026-09-12: **10 files, 898 lines** are read
+// in a bogus string state (the same sweep read 1,764 lines earlier the same day,
+// before `app/dashboard/DashboardClient.tsx` was partly reworded — a DATED
+// SAMPLE, as always; re-run the census rather than quoting either number).
+//
+// `endState` can only see a desync STILL OPEN at EOF, and JSX prose carries
+// apostrophes in PAIRS as often as not — "we'll … doesn't". The first opens
+// `sq`, everything between is copied verbatim, the second CLOSES it, and the
+// file reports `code`, healthy. `app/dashboard/DashboardClient.tsx` was that
+// file and the largest instance here: one contraction on line 1192, **1,076 of
+// its lines** read as string, **63** comment lines surviving into every guard.
+// It reddened `no-rewards-promises-while-unshipped` on 2026-09-12 by presenting
+// a code comment about the +50 Status award as published copy.
+//
+// ⚠ **THAT FILE WAS THEN PARTLY REWORDED (`0871fff1c`) AND IT IS STILL IN THE
+// POPULATION — 203 lines.** A reword moves the boundary; it does not remove it,
+// and it leaves behind the impression that it did. That is why the census is a
+// ratchet with names in the failure message rather than a one-off fix.
+//
+// ⭐ **Count a boundary by its SYMPTOM, not by a proxy for it** — and the symptom
+// needs no proxy, because a single- or double-quoted string CANNOT SPAN A
+// NEWLINE in JS/TS. `lineStates` (returned below) makes that countable per line;
+// `__tests__/strip-comments-defect-4-population.test.ts` ratchets it and names
+// the files. ⚠ `tpl` is excluded there and must be: a template literal spanning
+// newlines is ordinary, and the `//` inside our Cadence transactions is SOURCE
+// that must survive — a first cut that counted those over-reported 13 for 10.
+//
+// ⚠ Until DEFECT 4 is fixed, a guard whose subject is USER-FACING COPY should
+// not depend on this helper being right about JSX: blank `//`/`*` lines
+// textually as well. `no-rewards-promises-while-unshipped.test.ts` (`copyOf`)
+// is the worked example — "prefer a check that does not NEED it right".
 //
 // Blanking rule: removed characters become spaces and newlines are preserved,
 // so byte offsets and LINE NUMBERS survive. Callers report positions.
@@ -118,12 +151,22 @@ const KEYWORDS_BEFORE_REGEX = new Set([
  * machine desynced somewhere and the rest of that file was read in the wrong
  * state.
  *
+ * `lineStates[n]` is the machine's state at the START of line n (0-based) —
+ * see the DEFECT 4 note above for why a per-line state and not just an end
+ * state: a desync that RE-SYNCS before EOF is invisible to `endState`, and
+ * those are the majority. It is also what lets a census tell a JS comment the
+ * machine wrongly kept (line-start state `sq`) from Cadence or SQL prose inside
+ * a template literal that it RIGHTLY kept (state `tpl`) — a census without that
+ * distinction over-counts by a factor of two.
+ *
  * @param {string} src
- * @returns {{ code: string, endState: string, tplDepth: number }}
+ * @returns {{ code: string, endState: string, tplDepth: number, lineStates: string[] }}
  */
 export function stripCommentsWithState(src) {
   let out = ""
   let i = 0
+  /** @type {string[]} */
+  const lineStates = []
   /** @type {"code"|"line"|"block"|"sq"|"dq"|"tpl"|"regex"|"class"} */
   let state = "code"
   // Template-literal nesting. Each `${` inside a template pushes a frame and
@@ -152,6 +195,11 @@ export function stripCommentsWithState(src) {
   while (i < src.length) {
     const c = src[i]
     const d = src[i + 1]
+
+    // Record the state at each line start. `out` ends with a newline exactly
+    // when the next character begins a new line, and blanking preserves
+    // newlines, so this indexes the source's lines 1:1.
+    if (i === 0 || src[i - 1] === "\n") lineStates.push(state)
 
     if (state === "code") {
       if (c === "/" && d === "/") { state = "line"; out += "  "; i += 2; continue }
@@ -216,7 +264,13 @@ export function stripCommentsWithState(src) {
     out += c; i++
   }
 
-  return { code: out, endState: state, tplDepth: tplStack.length }
+  // A trailing newline (or an empty file) opens a final, characterless line
+  // that the loop above never visits. Push its state so `lineStates` indexes
+  // `src.split("\n")` exactly — a census that is off by one names the wrong
+  // line, which is worse than not counting at all.
+  if (src.length === 0 || src.endsWith("\n")) lineStates.push(state)
+
+  return { code: out, endState: state, tplDepth: tplStack.length, lineStates }
 }
 
 /**

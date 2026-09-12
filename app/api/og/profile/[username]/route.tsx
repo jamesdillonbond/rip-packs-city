@@ -207,8 +207,15 @@ async function fetchRpc<T>(fn: string, body: unknown): Promise<{ rows: T[]; ok: 
  * chosen to fill the 420px column exactly at each column count.
  */
 export function trophyGrid(count: number): { cols: number; w: number; h: number } {
-  const cols = Math.min(3, Math.max(1, count));
-  const w = cols === 1 ? 240 : cols === 2 ? 195 : 130;
+  // ⚠ FOUR IS ITS OWN CASE, and it is the count this card hits most often once
+  // an upstream drops one tile. `Math.min(3, …)` gave 4 trophies a row of three
+  // with a single orphan slab beneath it and a 280px hole beside that — the
+  // most broken-looking arrangement the grid can produce. A 2×2 block reads as
+  // a case. The width is HEIGHT-bound, not width-bound: two rows plus the 12px
+  // gap have to clear the 380px column, so 138 is the ceiling (2×182+12=376),
+  // which is still wider than the 130 a row of three would have given.
+  const cols = count === 4 ? 2 : Math.min(3, Math.max(1, count));
+  const w = count === 4 ? 138 : cols === 1 ? 240 : cols === 2 ? 195 : 130;
   return { cols, w, h: Math.round(w * 1.32) };
 }
 
@@ -354,9 +361,34 @@ export async function GET(
     const trophyDataUris = await Promise.all(
       rawTrophies.map((t) => ogImageDataUri(hiResThumb(t.thumbnail_url) ?? null)),
     );
-    const thumbTrophies = rawTrophies
-      .map((t, i) => ({ ...t, thumbnail_url: trophyDataUris[i] }))
-      .filter((t) => !!t.thumbnail_url);
+    // ⚠ THE CARD USED TO CLAIM SIX AND DRAW FOUR, and nothing said so.
+    // `filledTrophyCount` counts the RPC's rows; the grid used to count the
+    // post-filter array, and the two were never compared — so a trophy whose
+    // ART failed vanished from the case while the label kept asserting it. Two
+    // did, permanently, for every collector holding a Pinnacle or All Day
+    // Moment (both causes fixed in lib/og/img-data.ts on 2026-09-12), and the
+    // only way anyone found out was by counting slabs in a rendered PNG.
+    //
+    // The trophy IS pinned — only its picture is unavailable — so the tile
+    // stays and says that. Silently drawing a shorter case is the empty-state-
+    // that-concludes defect wearing a picture frame.
+    const thumbTrophies = rawTrophies.map((t, i) => ({
+      ...t,
+      thumbnail_url: trophyDataUris[i] ?? null,
+    }));
+    const artless = thumbTrophies.filter((t) => !t.thumbnail_url);
+    if (artless.length > 0) {
+      // The one line that would have turned both of the 09-12 drops into a log
+      // search instead of a visual inspection. Names the Moment AND the URL —
+      // the URL is the whole diagnosis in both cases (relative path / webp).
+      console.warn(
+        `[og/profile] trophy art unavailable for ${artless.length}/${rawTrophies.length} (${username}):`,
+        rawTrophies
+          .filter((_, i) => !trophyDataUris[i])
+          .map((t) => `${t.player_name ?? "?"} <- ${t.thumbnail_url}`)
+          .join(" | "),
+      );
+    }
     const filledTrophyCount = trophies.length;
     const grid = trophyGrid(thumbTrophies.length);
 
@@ -672,12 +704,32 @@ export async function GET(
                       boxShadow: "0 10px 24px rgba(0,0,0,0.5)",
                     }}
                   >
-                    <img
-                      src={t.thumbnail_url as string}
-                      width={grid.w}
-                      height={grid.h}
-                      style={{ width: grid.w, height: grid.h, objectFit: "cover" }}
-                    />
+                    {t.thumbnail_url ? (
+                      <img
+                        src={t.thumbnail_url}
+                        width={grid.w}
+                        height={grid.h}
+                        style={{ width: grid.w, height: grid.h, objectFit: "cover" }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: grid.w,
+                          height: grid.h,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: 8,
+                          textAlign: "center",
+                          color: "rgba(255,255,255,0.3)",
+                          fontSize: 10,
+                          fontFamily: mono,
+                          letterSpacing: 2,
+                        }}
+                      >
+                        ART UNAVAILABLE
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (

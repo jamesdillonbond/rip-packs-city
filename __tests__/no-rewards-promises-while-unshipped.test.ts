@@ -53,6 +53,46 @@ function userFacingFiles(): string[] {
   )
 }
 
+/**
+ * The USER-FACING COPY of a file: comment-stripped, then belt-and-braces.
+ *
+ * ⚠ WHY THIS EXISTS RATHER THAN A BARE `stripComments`, measured 2026-09-12.
+ * The shared stripper carries a KNOWN, documented blindness (DEFECT 4 in
+ * scripts/lib/strip-comments.mjs): it is a JS/TS parser run over `.tsx`, and in
+ * JSX *text* an apostrophe is prose, not a string delimiter. One `we'll` in
+ * rendered copy opens an `sq` state that copies everything verbatim — comments
+ * included — until the next apostrophe, which can be hundreds of lines later.
+ *
+ * That is what reddened this guard: `app/dashboard/DashboardClient.tsx` says
+ * "we'll associate it with NBA Top Shot…" on line 1192, and 63 later comment
+ * lines survive the strip, one of which EXPLAINS the once-a-day Status award
+ * that ShareProfileButtons hands out. The guard was reading a code comment as
+ * published copy. Live count that day: 10 files, 1,764 lines read as string —
+ * ⚠ and DashboardClient was in NEITHER census the repo had, because a desync
+ * that re-syncs before EOF is invisible to an END-STATE probe. It is counted
+ * now: see __tests__/strip-comments-defect-4-population.test.ts.
+ *
+ * ⚠ DashboardClient was then partly reworded (`0871fff1c`) to get CI green the
+ * same afternoon. That is a workaround, and it is not what makes this guard
+ * safe — the file is STILL desynced (203 lines) and the next contraction in any
+ * JSX file puts some other comment back in front of these patterns. `copyOf` is
+ * what makes the guard independent of that.
+ *
+ * ⭐ So this guard does not depend on the stripper being right. Published copy
+ * never lives in a `//` line comment or a `*`-continued block, so those lines
+ * are blanked TEXTUALLY as well — the check no longer needs a parser to be
+ * correct about JSX in order to be correct about copy. Fixing DEFECT 4 remains
+ * worth doing; it is just not this guard's precondition any more.
+ *
+ * Lines are blanked, not removed, so line numbers still line up with the file.
+ */
+function copyOf(file: string): string {
+  return stripComments(fs.readFileSync(file, "utf8"))
+    .split("\n")
+    .map((l) => (/^\s*(\/\/|\*|\/\*)/.test(l) ? "" : l))
+    .join("\n")
+}
+
 /** Does this layout source unconditionally 404? Comment-stripped, so a
  *  commented-out call correctly reads as NOT hidden. */
 function detectsHidden(src: string): boolean {
@@ -99,7 +139,7 @@ describe("no rewards promises while the programme is unshipped", () => {
     ]
     const offenders: string[] = []
     for (const file of userFacingFiles()) {
-      const src = stripComments(fs.readFileSync(file, "utf8"))
+      const src = copyOf(file)
       for (const rx of PROMISE) {
         const m = src.match(rx)
         if (m) offenders.push(`${path.relative(ROOT, file)}: ${m[0].trim()}`)
@@ -113,7 +153,7 @@ describe("no rewards promises while the programme is unshipped", () => {
     // have none, so it was a dead end for almost everyone who read it.
     const offenders: string[] = []
     for (const file of userFacingFiles()) {
-      const src = stripComments(fs.readFileSync(file, "utf8"))
+      const src = copyOf(file)
       if (/href=\{?["']\/rewards["']\}?/.test(src)) offenders.push(path.relative(ROOT, file))
     }
     expect(offenders, `Links to the 404'd /rewards:\n${offenders.join("\n")}`).toEqual([])

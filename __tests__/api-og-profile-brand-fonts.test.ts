@@ -259,4 +259,17 @@ describe("trophyGrid — the case must be legible, not a fan of slivers", () => 
     expect(trophyGrid(0).cols).toBe(1)
     expect(trophyGrid(99).cols).toBe(3)
   })
+
+  it("lays four trophies out as a 2x2 block, not a row of three plus an orphan", async () => {
+    const { trophyGrid } = await import("@/app/api/og/profile/[username]/route")
+    // `Math.min(3, count)` gave four trophies three across and one alone
+    // underneath, with a ~280px hole beside the orphan — and four is the count
+    // this card lands on whenever a single upstream drops a tile.
+    const g = trophyGrid(4)
+    expect(g.cols).toBe(2)
+    expect(Math.ceil(4 / g.cols)).toBe(2)
+    // ...and the tile is no SMALLER than the row-of-three it replaces, or the
+    // tidier arrangement would have cost legibility.
+    expect(g.w).toBeGreaterThan(trophyGrid(6).w)
+  })
 })
