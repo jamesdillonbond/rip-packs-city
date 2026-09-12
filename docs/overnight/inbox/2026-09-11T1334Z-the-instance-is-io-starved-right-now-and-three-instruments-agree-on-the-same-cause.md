@@ -96,7 +96,7 @@ Every job that ran long inside 2026-09-10 12:00–13:00Z fires *inside that hour
 
 All three carry the identical `(50000)` batch shape, and at 0/6/12/18Z **all three fire inside six minutes** — on top of the 16-job convoy. The 1330Z filing found 355 by catching it live; 218 is visible only in history, where it ran **869 s and FAILED** during the unexplained burst. ⛔ **Any batch-size change that fixes only 355 leaves two-thirds of the shape in place.**
 
-⚠ **AND ALL THREE BACKFILL A COLLECTION THAT IS NOT LIVE.** `panini_blockchain` is the only `is_active = false` row in `collections`. That does not make the work worthless — it is catalog backfill for a future launch — but it is the cheapest thing to deprioritise on a saturated instance, and it is a **cadence** decision (three jobs, 0/6/12/18Z) before it is a batch-size one.
+🚨 **CORRECTION (2026-09-11 18:10 PT) — I WROTE THAT THESE BACKFILL AN UNLAUNCHED COLLECTION AND THAT IS FLATLY WRONG.** They serve **`disney_pinnacle`** (`7dd9dd11-e8b6-45c4-ac99-71331f959714`, chain `flow`, **`is_active = true`**) — one of the five LIVE published collections. I conflated **Disney Pinnacle** with **Panini** (`panini_blockchain`, chain `ethereum`, the genuinely inactive row). ⛔ **That kills the "cheapest thing to deprioritise because nobody sees it" reasoning I built on it** — this is live-collection provenance data. ⚠ The 46%-kill lane `panini-ingest` IS Panini; the three `backfill_pinnacle_*` jobs are not. **Two similarly-named collections, and the shared prefix is the whole trap.** That does not make the work worthless — it is catalog backfill for a future launch — but it is the cheapest thing to deprioritise on a saturated instance, and it is a **cadence** decision (three jobs, 0/6/12/18Z) before it is a batch-size one.
 
 ## What is still NOT established here
 
@@ -143,3 +143,28 @@ Limit  (cost=37355.19..44226.26 rows=20 width=61)
 3. ⛔ **NOT a batch-size change.** Measured above, both directions.
 
 ⚠ **Scope: this is `backfill_pinnacle_trade_acquisitions` only.** Jobs **78** and **218** carry the same `(50000)` shape and were NOT planned here — check each before assuming the same conclusion, because the same argument can be binding in one function and decorative in another.
+
+---
+
+# ADDENDUM 3 (2026-09-11 18:10 PT) — ⛔ THE REPO ALREADY KNEW. Both the sibling session and I re-derived a 2026-08-17 result, and the durable fix has been NAMED AND UNLANDED for 25 days.
+
+**`supabase/migrations/20260818040426_audit_20260817_pinnacle_mint_acquisitions_cadence_cut.sql` contains, in its header, the finding Addendum 2 spent a morning measuring.** Verbatim from it:
+
+> *"the `LIMIT 50000` NEVER BINDS. `EXPLAIN` gives a Merge Anti Join streaming ~247k `pinnacle_mint_events` against ~877k `moment_acquisitions` (rows=1 estimate), then a nested-loop probe into `wallet_moments_cache` per survivor. Because only tens of candidates exist, the LIMIT is never satisfied and EVERY run walks the join to completion. So this is a FULL SWEEP wearing an incremental catch-up's clothes."*
+
+That is the same plan I re-derived today (the relations have grown to 262k / 994k; everything else matches). ⛔ **So the 1330Z filing's suggested action #1 — cut the batch — was already documented as futile three weeks before it was suggested, and neither of us looked.** The migration also records that **start-minute staggering is measured DEAD** (twice: jobid 71 on 08-16, jobid 218 on 08-17), which pre-empts the obvious next idea.
+
+⭐ **THE PROCESS LESSON, which is the expensive half: `supabase/migrations/` IS a findings archive, and nothing in the search path treats it as one.** Both of us grepped `docs/`, `__tests__/` and the register. A migration header on this repo routinely carries the measurement, the refuted alternatives and the accepted cost — it is where the *reasoning* lives, not just the DDL. **Before measuring a pg_cron job, `grep -rl '<function_name>' supabase/migrations/` and read the newest hit.**
+
+## What IS new today, stated narrowly
+
+1. ⭐ **BOTH backfills are now FULLY DRAINED — 0 outstanding candidates, measured on the real predicates.** The 08-17 migration said *"only tens of candidates exist"*; that has reached zero. So each run is now a whole-relation join that inserts **nothing at all**. `backfill_pinnacle_trade_acquisitions` (355) and `backfill_pinnacle_mint_acquisitions` (218) both return 0.
+2. **Job 355 was never analysed.** The 08-17 work covered 218 only. 355's plan is a *different* shape — a **Parallel Hash Join with 84% of cost in startup** (`cost=37355.19..44226.26`), not a streaming anti-join, and it has **no progress predicate at all**: it relies entirely on `ON CONFLICT DO NOTHING`.
+3. ⭐ **The durable fix the migration names is already PROVEN in-repo on the third sibling.** Jobid **78** `backfill_pinnacle_acquisitions(50000, 14)` took a recency window on 2026-09-04. Measured over 7 days: **p50 1.0 s, max 13.8 s, plan cost 4,436** — against 355 (p50 8.6 s, max **570.8 s**, cost 44,226) and 218 (p50 20.5 s, max **868.7 s**, cost 46,690). **The windowed sibling is ~10× cheaper on estimate and has a 40–60× smaller tail.**
+4. The migration closed with *"⚠ NOT THE DURABLE FIX … Do not read this as closed."* **It is 25 days later and it is still not closed.**
+
+## Why the window is now demonstrably SAFE, which it was not before
+
+A recency window strands anything older than the window that was never processed. **That risk is currently zero, and that is a measurement, not an assumption: 0 outstanding on both jobs.** ⚠ The safety is therefore *conditional on re-checking immediately before shipping* — if an ingest backlog lands first, the window must be preceded by one unbounded catch-up run, exactly as jobid 78's signature already allows (`NULL = unbounded`).
+
+⚠ **And the earlier claim in this file that these serve an unlaunched collection is RETRACTED above — they serve `disney_pinnacle`, which is live.** The case for acting rests on cost and on M11, not on nobody noticing.
