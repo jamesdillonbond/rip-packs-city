@@ -3,6 +3,42 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## ⭐ THE PAGED-BREAK BAN, AND THE CORRECT IMPLEMENTATION THAT TAUGHT IT (2026-09-12)
+
+CLAUDE.md has long named this class — *"a PAGED read that `break`s on error returns a PARTIAL list no
+caller can distinguish from a complete one… the tell is the control-flow keyword"* (#28, the sitemap
+that served **24,000 of 27,246** editions under a 200). **There was no guard**:
+`catch-blocks-do-not-assert-completeness` covers the React `catch` + `setExhausted` shape, not the
+server-side `break`. There is one now —
+`__tests__/paged-reads-do-not-break-into-a-silent-partial.test.ts`, a ban at zero.
+
+⭐ **THE SHARPEST VERSION OF THE CLASS: the paging loop is usually itself the FIX for PostgREST's
+silent 1,000-row clamp, and `if (error) break` reaches the identical outcome by another route. The
+fix's own failure mode recreates the bug it fixed.** `fetchJerseyNumbers` in `/api/sniper-feed` is
+exactly that — its comment records that a bare `.select()` returned 1,000 of 1,317, *"a successful
+read of the wrong rows"*, and its error branch could return the same truncation silently.
+
+⚠ **AN EXCLUSION SET FAILS OPEN.** `fetchRetiredMomentIds` builds a set of moments to REMOVE from the
+feed, so every id a partial walk misses **leaks back IN**. **A short exclusion list is not a smaller
+answer, it is a wronger one** — and it is the one case where "fewer rows" is not the conservative
+direction.
+
+**The four remedies the guard accepts** (all real, none a dodge): a `complete` flag · a `throw`
+(`lib/sitemap-data.ts`'s `SitemapReadIncomplete`) · a `console.warn` naming the cut-short walk ·
+**capture-and-check**.
+
+🚨 **THE FOURTH ONE EXISTS BECAUSE A CORRECT IMPLEMENTATION WAS FLAGGED FIRST.**
+`app/api/cron/compute-laliga-pack-ev` writes `if (error) { poolErr = error; break }`, then under its
+own comment *"⛔ A PARTIAL POOL IS NOT A SMALLER POOL"* checks `if (poolErr)` and **fails the run**.
+That is precisely what the guard exists to require, and the first matcher called it an offender —
+**a guard punishing its own success.** ⭐ **It is not a blanket exemption: the hoisted name must be
+READ again after the break.** A capture nobody checks is still a hit.
+
+⚠ **AND A MUTATION THAT LEAVES THE REMEDY IN PLACE IS NOT A MUTATION.** Three of the first four here
+"survived" because they reverted only part of the fix — the `complete` flag or a later reference
+stayed behind and cleared the check. **Revert to the committed pre-fix file** (`git show
+HEAD:<path>`) rather than hand-editing a hunk; that reds the guard and names both sites.
+
 ## Displaced from CLAUDE.md 2026-09-09 (verbatim) — the "fix per PANEL" instance detail
 
 CLAUDE.md keeps the rule; its instance lives here. Verbatim, as it stood before the 2026-09-09 pass:

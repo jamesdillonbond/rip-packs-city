@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ SHIPPED: a paged read that `break`s on error no longer returns a silent partial — two sites fixed, and a ban that a *correct* implementation taught me to write · Claude Code (cloud), autonomous session
+
+CLAUDE.md names this class and its remedy: *"A PAGED read that `break`s on error returns a PARTIAL list no caller can distinguish from a complete one. **No copy exists to grep — the tell is the control-flow keyword.** Throw, or carry `complete:false`."* It shipped for real in `/sitemap/3.xml` (#28), which served **24,000 of 27,246 editions under an HTTP 200**. There was no guard for it: `catch-blocks-do-not-assert-completeness` covers the React `catch` + `setExhausted` shape, not the server-side `break`.
+
+✅ **`/sitemap/3.xml` is genuinely FIXED and that is what validated the sweep rather than refuting it** — it throws `SitemapReadIncomplete` and the route distinguishes a partial read from an unexpected failure, so it correctly did not appear.
+
+**Two real instances, both in `/api/sniper-feed`, now record the cut-short walk.** ⭐ **The sharper half is WHY they exist:** each paging loop was itself the FIX for PostgREST's silent 1,000-row clamp — `fetchJerseyNumbers`'s own comment records that a bare `.select()` returned 1,000 of 1,317 and dropped the last ~24 %, *"a successful read of the wrong rows"* — and `if (error) break` **reaches the identical outcome by a different route. The fix's own failure mode recreated the bug it fixed.** ⚠ **And `fetchRetiredMomentIds` fails OPEN:** it builds a set of moments to REMOVE from the feed, so every id a partial walk misses is a retired moment that leaks back IN. **A short exclusion list is not a smaller answer, it is a wronger one.**
+
+⚠ **GAIN TODAY IS ~ZERO AND IS RECORDED AS SUCH, not as a save.** `moments.retired = true` reads **0 of 845,793** (measured), so the exclusion set is empty either way; `players` with a jersey number is **1,317**, i.e. two pages, so a mid-walk failure costs at most a display gap. **Shape, not a rescue — but the shape is what bites the day retirements land.**
+
+✅ **Shipped a ban at zero:** `__tests__/paged-reads-do-not-break-into-a-silent-partial.test.ts` — a walk over six roots, accepting four remedies (a `complete` flag · a `throw` · a `console.warn` naming it · **capture-and-check**), suppression via inline `paged-partial: intentional`.
+
+🚨 **A CORRECT IMPLEMENTATION TAUGHT ME TO WRITE THE GUARD, AND THAT IS THE PART WORTH READING.** The first matcher flagged `app/api/cron/compute-laliga-pack-ev` — which writes `if (error) { poolErr = error; break }` and then, under its own comment *"⛔ A PARTIAL POOL IS NOT A SMALLER POOL"*, checks `if (poolErr)` and **fails the run** rather than computing EV over whatever arrived. **That is precisely the behaviour the guard exists to require, and the guard called it an offender** — a guard punishing its own success, which CLAUDE.md names directly. ⭐ **So "capture-and-check" became the fourth remedy, and it is not a blanket exemption: the hoisted name must be READ again after the break.** A capture nobody checks is still a hit, and that case is pinned.
+
+**Verification.** Mutation-proven with TRUE reverts rather than partial ones — ⚠ **my first three mutations all "survived" because they left the remedy in place**, which is a weaker test masquerading as a result. Restoring the committed pre-fix `sniper-feed` reds the guard and **names both sites** (`:892`, `:925`, *"expected 2 to be +0"*); stripping every later read of `poolErr` reds it and names that site; a synthetic silent partial in `lib/seo.ts` reds it; and **the control — the same synthetic WITH a `complete` flag — stays quiet.** `npm test` **1506 files / 16,718 tests**, `tsc` clean, `lint:ratchet` 716 vs baseline 717 over 3,001 files.
+
+**Revert path.** Code only, no DB: `git revert` the commit whose message begins `fix(sniper-feed): a paged read that breaks on error says so`.
+
+
 ### 2026-09-12 · ✅ SHIPPED: nine of twelve Telegram senders could be REJECTED for length, including the user-facing alerter at 79 % of the cap — all bounded, plus a ban-at-zero guard · Claude Code (cloud), autonomous session
 
 **Register #77** recorded the fleet alarm going mute on 2026-09-11T00:01:09Z: Telegram answered `http_400 … "message is too long"`, email was `not_configured`, and the only surviving signal was a GitHub annotation nobody watched. ⭐ **The generalisable half is that the text is one line per finding, so ITS LENGTH GROWS WITH THE SIZE OF THE INCIDENT — the alarm's delivery probability falls as the thing it reports gets worse, and the failure's output is silence.**
