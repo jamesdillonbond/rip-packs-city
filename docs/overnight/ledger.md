@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ CODE — the profile card's tile row, per Trevor's spec: portfolio FMV off, packs ripped on, teams read from a field the handoff said did not exist · Claude Code, from Cowork handoff `handoff-2026-09-12b`, Part B
+
+**Shipped:** `app/api/og/profile/[username]/route.tsx` (+ prose in `app/api/og/trophy-case/[username]/route.tsx`) and three test files. Revert: `git revert` the commit whose message starts `feat(og): the profile card's tiles are teams, moments/pins/cards, packs ripped` (find by message, not sha).
+
+**Tiles now: TEAMS · MOMENTS / PINS / CARDS · PACKS RIPPED · TROPHY CASE.** Rendered and eyeballed at 1200×630 in all four states before shipping, not inferred from the JSX.
+
+- ⭐ **`PORTFOLIO FMV` is off the card** (Trevor's call). Also a privacy repair: every share of a profile was broadcasting that collector's net worth into a public timeline. `saved_wallets.cached_fmv_*` is no longer read by this route at all.
+- **Tile 2 keeps ONE combined total and changes only its label** — Trevor wants it to "encompass all of the naming nomenclatures": Moments (TS/AD/Golazos), Pins (Pinnacle), Cards (Candy/Panini). Not split per collection. **Packs stand alone** ("this is on brand for Rip Packs City").
+- **PACKS RIPPED** counts `pack_rips.opener_address` over the profile's `saved_wallets.wallet_addr`, via a PostgREST `count=exact` read. ⚠ **No `cached_pack_rips` column, deliberately** — the handoff suggested caching it, but measured it is an Index Only Scan on `idx_pack_rips_opener`, **22 shared buffers** for Trevor's 4-wallet / 503-rip profile. A cache would cost a writer and staleness handling to save 22 buffers on an edge-cached card.
+
+**⭐ THE HANDOFF'S B1 WAS REFUTED BEFORE A LINE WAS WRITTEN, AND THAT IS THE ENTRY'S POINT.** It specified a migration (`profile_bio.favorite_teams text[]`, backfilled, capped at 3) plus a new team picker in `/profile/edit`, on the finding that `favorite_team` is NULL for all 25 users. Both **already exist in a different shape**: `user_favorite_teams (user_id, league, team_slug, is_primary)` inner-joined to `teams_master`, written by the "Fan Affinity" picker that replaced the free-text field, read by `/api/profile/teams`, already rendering as chips on the profile page. The card now reads that same source, so it cannot drift from the page. **A migration and a UI build were avoided by re-deriving a filed finding instead of acting on it.**
+
+**Two things the spec could not have known, both found by reading the live rows.** (1) **Abbreviations are unique per LEAGUE, not globally** — Trevor's picks are Blazers (NBA), Portland Fire (WNBA), Lions (NFL), so undeduped the founder's own card reads **"POR · POR · DET"**. Deduped, and pinned with his real picks as the fixture. (2) `order=is_primary.desc` puts **NULLS FIRST** in Postgres, ahead of the real primary pick — now `.nullslast`.
+
+**Reflow before the tile, as the handoff insisted.** `statTileWidth(n)` + `flexWrap`: 1–3 tiles fill the 700px column in one row, 4 wrap to a 2×2 block. **4 of 25 accounts have a team pick**, so the TEAMS tile is SUPPRESSED (not drawn empty) for 21 of them and the row is three tiles wide — an always-present tile would have shipped 21 empty boxes.
+
+**Honesty, per tile.** `—` means the read failed, never that the value is zero. ⚠ The pack count is a `Content-Range` read, so **a 200 with no parseable total reads as FAILED, not as 0 packs** — that is the `?? 0` shape, on the one surface where the reader cannot check. Pinned in both directions: four withholding cases (wallets down · rips down · 200 with no header · per-leg isolation) each paired with the positive mirror, including **"STILL renders 0 for a collector who genuinely has not ripped a pack"** — without it, "always withhold" would satisfy every failure case while deleting a true statement.
+
+⚠ **Four tests in `api-og-share-cards-no-false-zero` were INVERTED, not deleted** — they pinned the FMV tile's honesty and the tile is gone, so the first now asserts the opposite property (no portfolio label, no figure) and the pairs they carried moved onto the tiles that replaced it.
+
+**⛔ TILE 4, `PACKS UNOPENED`, IS NOT SHIPPED — no honest source exists.** `pack_purchases` is not an acquisition ledger (503 rips against 133 purchase rows); packs LEAVE a wallet sealed (5 of those 133 were opened by a different address), so `purchases − rips` is wrong in both directions at once; and every `total_unopened` / `total_sealed` column in the schema is distribution-level SUPPLY, not per-wallet. It needs a Flow chain read for sealed pack NFTs per wallet, cached like `cached_moment_count` — **an ingest, not a card change**. Recorded in the route so the next session does not re-derive it.
+
+**Gates:** `npm test` **1508 files / 16,755 tests, all pass**; `tsc --noEmit` clean; `lint:ratchet` 716 vs baseline 716. Previous commit's CI (#5218) and Smoke Tests both green on `main`.
+
 ### 2026-09-12 · ✅ CODE — no Disney Pinnacle or NFL All Day art has EVER rendered on an OG card, and the trophy-case card was captioning one Moment with another player's name · Claude Code, from Cowork handoff `handoff-2026-09-12b-trophy-art-drops-and-card-redesign`
 
 **Shipped:** `lib/og/img-data.ts`, `app/api/og/profile/[username]/route.tsx`, `app/api/og/trophy-case/[username]/route.tsx`, plus `scripts/lib/strip-comments.mjs` and two guards (below). Revert: `git revert` the commit whose message starts `fix(og): pinnacle art is relative, all day art is webp` (find by message, not sha).
