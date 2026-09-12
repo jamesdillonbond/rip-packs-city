@@ -74,4 +74,17 @@ The alert that reports this renders `left(f.last_error, 160)`. Every triage sess
 - `topshot-pack-supply-backfill` — **2/2 = 100 %**, `HTTP 530` (the lane in this filing)
 - `match-topshot-players` — 1/2 = 50 %, `rpc_failed: upstream request timeout` (already a register item)
 
-⚠ **The `>= 5` is legitimate in intent** — it stops a 1-of-1 blip paging someone. **But it is expressed in RUNS, which conflates "small sample" with "low cadence".** A daily lane that failed both of the last two days is a *stronger* signal than a 15-minute lane failing 5 of 20 ticks, and only the second one can fire. **Filed rather than shipped**: widening it means deciding what to do about `match-topshot-players`, which is a parked product decision and would sit red — the **#25** trap — so it needs an evidenced suppression with a re-check condition alongside, not a threshold nudge on its own.
+⚠ **The `>= 5` is legitimate in intent** — it stops a 1-of-1 blip paging someone. **But it is expressed in RUNS, which conflates "small sample" with "low cadence".** A daily lane that failed both of the last two days is a *stronger* signal than a 15-minute lane failing 5 of 20 ticks, and only the second one can fire.
+
+**A fix was designed and SIMULATED rather than guessed at.** Admit a low-cadence lane only at a **100 % failure rate across ≥ 2 distinct days** — which is the statistically correct treatment of a small sample, since at n = 2 only 2/2 is signal and 1/2 is a coin flip:
+
+```sql
+HAVING (sum(runs) >= 5 AND fail_ratio > 0.25)
+    OR (sum(runs) BETWEEN 1 AND 4 AND sum(fail_count) = sum(runs) AND days_all_failed >= 2)
+```
+
+**Simulated over the live fleet: 7 lanes fire today, 8 under the proposal, exactly ONE newly admitted** — `topshot-pack-supply-backfill` (2/2, 2 days all-failed). ⭐ **`match-topshot-players` excludes ITSELF at 1/2 = 50 %, so no suppression is needed for it** — which corrects my own first reading of this, written an hour earlier, that named it as the blocker.
+
+⛔ **THE REAL BLOCKER IS SHARPER, AND IT IS WHY THIS IS STILL FILED RATHER THAN SHIPPED.** The single lane the change admits is one whose redness will persist **indefinitely** — Top Shot's host is gone (this filing), so the lane cannot succeed until someone finds a successor or retires it. **That is exactly the #25 permanently-red-instrument condition**, and this estate's own rule for it is: wire it *after* the underlying fix, or *with* an evidenced suppression and a re-check condition. ⚠ **And a pre-emptive suppression here would be worse than useless: it would suppress the ONLY lane the change admits, so the widened arm would fire on nothing and no one could ever prove the new branch works** — a guard that punishes its own success. ⭐ **Two further facts, checked rather than assumed:** `pipeline_alert_suppression` is keyed on `pipeline` ALONE (no `type` column), so suppressing a lane blinds **every** arm for it, not just this one; and `topshot-pack-supply-backfill` is **not** on `pipeline_cadence_watchlist` (verified — the query returns zero rows), so today that particular cost would be nil.
+
+✅ **So the sequence is: settle #81's lane question first (find the successor host, or retire both lanes), then widen this arm** — at which point its one new firing is a lane that can actually be fixed, and the branch is provable. The predicate above is recorded so the next session does not re-derive it.
