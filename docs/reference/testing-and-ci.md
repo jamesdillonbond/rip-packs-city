@@ -3,6 +3,72 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## ⚠⚠ CONTENTION PRODUCES A *PARTIAL* RED THAT READS AS A REAL DEFECT — and the tell is the ELAPSED TIME, not the failures (2026-09-12)
+
+The all-red contention signature is already recorded (`Vitest failed to find the runner`, every file,
+`Tests no tests`) and is unmistakable. **This is the dangerous sibling: a handful of files failing with
+ordinary hook and assertion errors, on a green commit.**
+
+Measured the same morning, same commit, same box, minutes apart:
+
+| run | files | result | elapsed |
+|---|---:|---|---:|
+| suite5 | 1506 | **all pass** | ~4 min |
+| suite6 — with the candidate fix **REVERTED** | 1506 | **all pass** | ~4 min |
+| suite7 | 1499 | **8 files / 9 tests FAIL** | **> 10 min** |
+| the same 8 files re-run **together** | 8 | **73 pass** | 40 s |
+
+⭐ **THE DURATION IS THE INSTRUMENT.** suite7 ran **2.5× slower** because concurrent sessions were
+building and pushing eight commits; once they finished, CPU read **3%** across 16 logical cores. A
+~4-minute wall is the reference on this box — **a full run that takes much longer is measuring
+contention, not the code** (CLAUDE.md: *a reading taken while its SUBJECT CHANGED is not a reading*).
+
+⛔ **WHY IT IS CONVINCING, WHICH IS THE PART TO DISTRUST.** The failures were named
+*"finds the DDL-extractor copies at all (positive control)"* and *"CONTROL — a PARTIAL failure stays
+`ok=true`"*. **A failing positive control or CONTROL reads as structural breakage** — precisely the
+finding a session acts on immediately. They were timeouts.
+
+**The order of checks, cheapest first**
+
+1. **Elapsed time** against the ~4-minute baseline, and CPU/`node` process load.
+2. **Re-run the failing files TOGETHER.** If they pass, it is the environment. (Alone is weaker: a real
+   cross-file leak also passes alone.)
+3. Only then look for an isolation bug.
+
+## 🚨 THE SAME MORNING'S SECOND RED WAS **NOT** CONTENTION, AND `hookTimeout` IS WHY — the 2026-08-24 fix never covered hooks
+
+⛔ **A separate red on `api-allday-listings-indexer` looked identical to the above and was NOT.** It
+reproduced on an **idle** box in a **161 s** run. The error, once read instead of assumed:
+
+```
+Error: Hook timed out in 10000ms.
+```
+
+**`testTimeout: 30_000` does not apply to `beforeAll`/`beforeEach`** — hooks kept vitest's **10 s**
+default. That file's `beforeAll` does `vi.resetModules()` then `await import("@/app/api/...")`, and the
+file measured **16,396 ms**. ⭐⭐ **§2 of `vitest-config-notes.md` NAMES THIS VERY FILE** among those
+that "red for being SLOW and pass in isolation" — so the 08-24 fix was incomplete in exactly the way
+that kept its own worked example flaky. Fixed by **`hookTimeout: 30_000`** in all three vitest configs.
+
+⭐ **The causal proof is in the skip count, not in the green:** before, `16,711 passed | 8 skipped`;
+after, `16,714 passed | 5 skipped` — **exactly the 3 tests of the aborted block moved from skipped to
+passing.** A green run alone would have proved nothing.
+
+🚨 **WHAT IT COST, because this is the reason the asymmetry mattered.** A hook timeout reports as a
+**hook failure with ZERO failed assertions and its tests marked skipped** — which reads as structural
+breakage. I diagnosed a cross-file env leak (`lib/supabase.ts` calls
+`createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, …)` at **module level**, and
+`api-og-cards-render-sweep` **deleted** that variable in `afterEach` instead of restoring it), shipped
+the hardening, and had to **retract the fix claim** when two controls refused it: the pair passed
+before and after, and a full suite with the change **reverted** passed too. ⚠ **Read the error string
+before building a mechanism** — "hook failed" and "hook timed out" are different findings.
+
+⭐ **The hardening stays on its own merits, and is worth keeping as a rule: cleanup that DELETES rather
+than RESTORES leaks an ABSENCE, which is worse than leaking a stub whenever a module reads env at
+import time.** Save the prior value in `beforeEach`, restore it in `afterEach` — the pattern
+`api-cron-drain-base-parallel-probe.test.ts` already uses. **But it is not the fix for that red.**
+
+
 ## 🚨 A PRESENCE GUARD AND AN AUTO-FIXER CAN AGREE WITH EACH OTHER AND BOTH BE WRONG (2026-09-11)
 
 I filed an inbox entry late in the PT evening. UTC had already rolled to the next day, so

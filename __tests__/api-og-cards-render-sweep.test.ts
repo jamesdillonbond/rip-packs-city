@@ -332,14 +332,19 @@ let originalFetch: typeof globalThis.fetch
 // "supabaseUrl is required" inside beforeAll. Save-and-restore instead, same pattern as
 // api-cron-drain-base-parallel-probe.test.ts.
 //
-// ⛔ HONEST SCOPE, because the obvious story here does NOT survive its own control.
-// api-allday-listings-indexer DID red exactly that way in one full run on 2026-09-12
-// (hook failure, 8 skipped, zero failed assertions) while passing alone — which is the
-// signature of a cross-file env leak. But: running the two files TOGETHER passes both
-// before and after this change, and a full suite with this change REVERTED also passes
-// (1506 files / 16,713 tests). So the red was FLAKY, and this edit is hardening that
-// removes one candidate leak source — it is NOT a demonstrated fix for that failure.
-// Do not read the green suite as proof; the null hypothesis produces it too.
+// ⛔ HONEST SCOPE — THIS FIXED NOTHING THAT WAS ACTUALLY BROKEN, and the retraction is
+// the useful part. I changed it while chasing a red on api-allday-listings-indexer
+// (hook failure, 8 skipped, ZERO failed assertions) that passed in isolation, and read
+// that as the signature of a cross-file env leak. Two controls said otherwise: the two
+// files together passed before and after, and a full suite with this change REVERTED
+// passed as well. The real cause was neither this file nor a leak — it was
+// `Hook timed out in 10000ms`, because the 2026-08-24 `testTimeout: 30_000` fix never
+// covered HOOKS, and that file's `beforeAll` does vi.resetModules() plus a dynamic
+// route import (16,396 ms for the file). Fixed properly by `hookTimeout: 30_000` in the
+// three vitest configs.
+//
+// This edit stays because restore-beats-delete is correct on its own merits, NOT because
+// it fixed that red. Do not cite it as the fix.
 let savedSbUrl: string | undefined
 let savedSbKey: string | undefined
 
