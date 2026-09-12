@@ -16,6 +16,18 @@ from done-for-now.**
 | result | 2,083 rows hydrated once, never revisited | 3,020 rows hydrated in ONE 2 h window on 2026-06-30 |
 | distinct `*_at` days | 28 | **2** |
 
+⛔ **AND THE LANE MAY WRITE NO `pipeline_runs` ROW AT ALL, WHICH IS WORSE THAN WRITING ZEROS.**
+`backfill-allday-dist-opened` (pg_cron **jobid 27**, ACTIVE, 4-minutely) made **360 dispatches in
+24 h** and has **ZERO rows in `pipeline_runs` and ZERO in `pipeline_runs_daily` — ever**; migration
+`20260901071258`'s header says so independently (*"It writes NO pipeline_runs row, so nothing watched
+the silence"*). ⭐ **So for any detector built on that table, "ran and found nothing" and "does not
+exist" are the same row — namely, none. A zero is not a null**, and only the zero is visible to a
+`pipeline_runs` predicate (register #79).
+⛔ **Sizing this class needs a job→pipeline-name mapping that DOES NOT EXIST in either table.** A
+heuristic matching pg_cron callees against pipeline names produces false zeros — jobid 56 calls
+`ingest-topshot-pack-opens-history` and logs as `topshot-pack-opens-history-backfill`. Build the
+mapping first; do not quote a count derived from name-matching.
+
 ⭐ **THE FREE DETECTOR, and it needs no new instrument: `count(DISTINCT <stamp>::date)` on any
 hydrated table.** Top Shot read **28** across 75 days; All Day read **2**. A genuine refresher cannot
 produce a 2. Reach for this before concluding a frozen table means a dead upstream.
