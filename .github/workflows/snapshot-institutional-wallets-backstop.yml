@@ -32,6 +32,36 @@ name: Snapshot Institutional Wallets Backstop
 # disabled primary still yields today's snapshot. Whether to re-trail it (e.g.
 # 10:37 UTC) is a deliberate cadence decision, NOT a collision fix, so it is
 # left alone here and flagged instead.
+#
+# CORRECTION (2026-09-11 PT, MEASURED): the note above reasons from the NOMINAL
+# cron, and the nominal cron is not when this runs. GitHub does not honour this
+# schedule -- 8 consecutive fires landed 11:18Z / 11:41Z / 12:10Z / 12:11Z /
+# 12:15Z / 12:16Z / 12:23Z / 13:34Z against a nominal 07:29Z, a delay of +3h49m
+# to +6h05m. So this backstop does NOT lead the 10:07Z primary by 2h38m; it
+# TRAILS it by roughly 2h, and it lands inside the instance's documented morning
+# IO-saturation window.
+#
+# WHY THAT MATTERS, and it is not cosmetic. On 2026-09-11 the primary did not
+# fire at all and this backstop was the only chance at that day's snapshot. It
+# DID fire (12:15:15Z), the route returned 202 {"accepted":true,"message":
+# "queued"}, the edge function reached runWork (cron_heartbeats shows
+# `edge_runwork_start`) -- and then produced NO pipeline_runs row and NO
+# wallet_holdings_snapshot rows. A wall-clock kill of the EdgeRuntime.waitUntil
+# task cannot be caught by the function's try/catch or its .catch(), so it is
+# silent by construction. 2026-09-11 has no institutional-wallet snapshot and
+# never will: snapshot_at is the UTC date AT RUN TIME, so holdings for a past
+# day cannot be captured after the fact.
+#
+# POSITIVE CONTROL (same day, 20:49 PT, quiet instance): a workflow_dispatch of
+# THIS workflow completed ok=true, rows_written=3, elapsed_ms=58639, 257 pages
+# walked. The path is sound; the scheduled fire time is the problem. Healthy
+# runs take 58-72s, so the margin to the wall is what saturation eats.
+#
+# ⛔ DO NOT "fix" this by re-timing the nominal cron without measuring: the
+# observed delay spread is over two hours wide, so no nominal minute maps to a
+# predictable fire time. The lever, if one is wanted, is making the walk
+# resumable rather than all-or-nothing. Detection already works -- the pipeline
+# watchlist flagged the silence as `high` on its own.
 on:
   schedule:
     - cron: "29 7 * * *"

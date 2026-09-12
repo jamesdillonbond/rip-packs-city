@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · 🚨 THE BACKSTOP FIRED, GOT A `202 {"accepted":true}`, AND PRODUCED NOTHING — the one day the primary went silent, the redundancy was tested for real and a day of snapshots is gone for good · Claude Code on Trevor's box, Trevor: "keep going until there's nothing left"
+
+**Shipped: one workflow COMMENT correction. No code, migration, DB mutation or schedule change.** Plus one inbox filing, and the cloud monitor's 03:09Z filing committed on its behalf (its mount is down a third night).
+
+⭐ **The cron-job.org console — which the monitor asked for and which is off-limits here — was never needed.** The route writes `cron_heartbeats` **before** the work exactly so "never fired" can be told from "fired and died". It read `edge_runwork_start` at **05:15 PT**, matching the GHA backstop's fire (**12:15:15Z**) exactly. Its own step log:
+
+```
+snapshot-institutional-wallets status: 202
+{"accepted":true,"edge_status":200,"edge_body":{"ok":true,"message":"queued", ...}}
+```
+
+🚨 **The results never appeared, and the OUTCOME table is the reading that matters:** `wallet_holdings_snapshot` holds **3 rows/day for 09-04 → 09-10 and ZERO for 09-11**. ⛔ **That gap is PERMANENT** — `snapshot_at` is the UTC date *at run time*, so a past day's holdings cannot be captured later. Re-firing produces today's, not the missing one.
+
+⭐ **POSITIVE CONTROL, and it refuted my own hypothesis.** From three fires with zero run rows I had inferred the backstop was structurally broken. A `workflow_dispatch` at **20:49 PT on a quiet instance** returned `ok=true, rows_written=3, elapsed_ms=58639, 257 pages walked`, writing 3 rows at `snapshot_at=2026-09-12`. **The path is sound.** Healthy runs take 58.6–71.6 s; the 12:15Z fire was a **wall-clock kill of the `EdgeRuntime.waitUntil` task** — uncatchable by the function's `try/catch` *or* its `.catch()`, which is precisely why none of its four terminal `pipeline_runs` paths wrote anything. 12:15Z sits inside the same morning IO-saturation window the monitor documented that day.
+
+🚨 **AND THE SCHEDULE IS NOT WHAT THE FILE SAID.** Nominal `29 7 * * *`; eight consecutive observed fires at **11:18 · 11:41 · 12:10 · 12:11 · 12:15 · 12:16 · 12:23 · 13:34 Z** — **+3h49m to +6h05m**. The workflow's STALE-RATIONALE note reasoned from the nominal cron and concluded the backstop "LEADS the primary by ~2h38m"; it **trails** the 10:07Z primary by ~2h and lands in the spell. Corrected in the file with the measurements inline — **comment only, `cron:` untouched, YAML re-parsed and the schedule asserted unchanged.** ⛔ **Deliberately NOT re-timed:** the delay spread is over two hours wide, so no nominal minute maps to a predictable fire time; re-timing would be a guess wearing a fix's clothes. ⭐ **Detection did not fail** — the watchlist flagged the silence `high` unaided. Impact is small and stated as such: **3 rows/day, 2 wallets.**
+
+⛔ **Two more of the monitor's suggested actions died on measurement.** (1) *"the upstream timeout is transient; a re-fire likely succeeds"* — `pipeline_runs`'s 73 h could only show one failure, but **`pipeline_runs_daily` is indefinite**: `match-topshot-players` failed **11 of 37 non-gated runs (30%)**, including **eight CONSECUTIVE days 08-14 → 08-21**, always at 125.3–126.2 s — while its best *success* is **120,444 ms**. ⭐ **The success band's upper tail is ON the ~120 s gateway wall**, so the outcome is decided by instance load, not by the upstream; gated to weekly, roughly **one week in three gets no player matching at all**. (2) The empty pack-reality board is **honest** (`meta.errors: 0`, and the page's third-state copy already shipped) — and ⚠ **my "a dead lane starved it" explanation was wrong**: Top Shot's newest `pack_ev_latest.snapshotted_at` is **20 minutes old**, the Atlas lane having replaced `compute-topshot-pack-ev`; exactly **3 of 1,210** rows pass everything but freshness, matching the API's own `stale_count: 3`.
+
+**Left for Trevor, stated rather than dropped:** why the cron-job.org primary (10:07Z) did not fire at all on 09-11 — a console question, and the console is off-limits here.
+
+**REVERT:** `git revert` this commit restores the previous workflow comment (behaviour is unchanged either way — the edit is comment-only) and removes the two filings plus their INDEX rows (both INDEX counts are re-derived from disk by the script, not incremented).
+
+
 ### 2026-09-11 · ✅ SHIPPED: a placement guard for the inbox INDEX, and four durable lessons promoted out of this session into the reference docs · Claude Code (cloud), Trevor: "update memory and relevant documentation before I archive the thread"
 
 **1. `__tests__/inbox-index-entries-sit-under-their-own-date.test.ts`** — every `INDEX.md` entry must sit under the day heading matching the **UTC date in its own filename**. **Why it did not exist:** my own misfiled entry (PT date in my head, `2026-09-12T0117Z` in the filename) went under the wrong heading and **every instrument stayed green**. `inbox-index-lists-every-filing` asserts **membership**, and placement is not a membership property. `scripts/fix-inbox-index-counts.mjs` recomputes each heading's count **from the lines it finds under that heading**, so it derived a count that **agreed with** the misplacement. ⛔ **A fixer that derives its expected value from the observed state cannot detect an error in the observed state — it launders one into internal consistency.** The new guard reads the **filename**, the one field the fixer never touches.
