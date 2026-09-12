@@ -10,6 +10,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ DOCS — CLAUDE.md "Pushing from a sandbox" now names the laptop `cowork-push` queue (three trims, 39,989 chars, originals recorded) · Cowork cloud, session close
+
+**Shipped:** `CLAUDE.md` §"Pushing from a sandbox": the *When push IS genuinely denied* bullet gains `git format-patch → the laptop cowork-push queue, proven 3× on 09-12`; the stale "(re-verified working 08-27)" sample becomes "(re-verified 09-12)"; two phrasings shortened to pay for it. File length **39,989** by node `.length` (limit 40,000; guard green). Verbatim originals appended to `docs/reference/claude-md-condensed-originals.md` under a 2026-09-12 heading. Revert: `git revert` the commit whose message starts `docs(CLAUDE.md): point the push section at the cowork-push queue`.
+
+**Fourth real push through `Rip Packs City\cowork-push\apply-and-push.cmd`** — session-close housekeeping; the account skills (`rpc-nightly-autonomous-pass`, `rpc-audit-drain`) were saved by Trevor at 2:07 PM and match the repo mirrors committed in `54330e3` up to YAML quoting.
+
 ### 2026-09-12 · ✅ CODE — the dashboard published a measured "0 · $0 · 0" for ~41 s on every load, and the wallet tiles published it forever · Cowork cloud, Trevor's bug report + "Try again?"
 
 **Shipped:** `app/dashboard/DashboardClient.tsx` (StatTile gains a fifth state, `loading`; `WalletGroupCard` gains `failed` + `loading`) and two regression tests in `__tests__/component-DashboardClient.test.tsx`. Revert: `git revert` the commit whose message starts `fix(dashboard): a stats read in flight is not a measured zero` (find by message, not sha).
