@@ -170,10 +170,37 @@ prove nothing about either column** — and a per-column stamp is the only chang
 staleness question measurable at all. That half of the old note was correct and was kept.
 
 ⛔ **What stayed open, on purpose:** whether the on-chain writer reaches the sweep's **coverage**.
-The schema cannot answer it. **Disabling the step does not depend on that question** — the lane calls
-a decommissioned host, so it cannot write anything either way; the step could only add 6 failing
-invocations a day. Commented out rather than deleted so the wiring survives for whoever re-points the
-route at Atlas, which is the actual open work.
+**Disabling the step does not depend on that question** — the lane calls a decommissioned host, so it
+cannot write anything either way; the step could only add 6 failing invocations a day. Commented out
+rather than deleted so the wiring survives for whoever re-points the route at Atlas.
+
+✅ **ANSWERED 2026-09-12, and the answer is NO — the on-chain writer is MONOTONIC.**
+`raise_edition_offers_from_chain()` upserts with
+`WHERE EXCLUDED.highest_offer > COALESCE(edition_offers.highest_offer, 0)` and `GREATEST(...)`, so it
+**only ever raises**. It cannot correct a stale-high offer — by construction, not by accident: it was
+built as a *backstop* to a sweep that set the value in both directions, and became the sole writer when
+that sweep died on 08-28. ⚠ **So `edition_offers.highest_offer` is a HIGH-WATER MARK for Top Shot, not
+a current best offer**, and "Best offer" on the grid / moment / edition pages can show an offer nobody
+is making.
+
+**Measured against live `offers`** (fresh — newest row minutes old, and it tracks lifecycle:
+cancelled 108,609 · filled 46,473 · open 24,723, so an absence is real and not a lag):
+of **7,476** Top Shot rows carrying `highest_offer > 0`, **3,651 agree**, **1,047 are higher than any
+open on-chain offer**, and **2,778 have no open edition-level offer at all** — **3,825 (51%)
+overstated**, worst case **$1,750**.
+
+⭐ **BUT THIS IS A KNOWN DRAIN ON SCHEDULE, NOT A NEW DEFECT — grep the register before filing.**
+The corrective writer is `sync_edition_offers_from_atlas()` §(b), which writes *and NULLs*
+`highest_offer`, gated on `verified_at > now() - interval '24 hours'`. Register **#65** predicted
+"~11.7K stale rows drain over ~8 days" from 09-07. The verify lane is healthy —
+`topshot_atlas_edition_verified` holds **10,536** rows, **all** inside 7 days, **1,486 in the last
+24 h**, newest **09-12 12:20** — so at day 5 a remainder of ~3.8K is exactly on track.
+
+⭐ **The transferable part: the correction rate is bounded by the VERIFY rate, not by the offer data.**
+Fresh `offers` rows cannot fix a stale row until that edition is re-verified, so "why is this still
+wrong when the source is current?" has its answer in a different lane's throughput. ⛔ And do not
+"fix" it by dropping the monotonic clause — that would set 2,778 editions to NULL on the strength of
+an absence, which is the opposite error.
 
 
 ## 🚨 A BACKSTOP THAT ACCEPTS A `202` IS NOT A BACKSTOP — and GHA's delay can move a job into the saturation window it was built to survive (2026-09-11 PT)
