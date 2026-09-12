@@ -3,6 +3,73 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## 🚨 THE SHARED COMMENT STRIPPER'S DEFECT 4 IS TWICE THE SIZE ITS OWN CENSUS SAID, AND THE PROXY IS WHY (2026-09-12)
+
+`scripts/lib/strip-comments.mjs` DEFECT 4 — a JS/TS parser run over `.tsx`, where an apostrophe in
+JSX *prose* opens an `sq` state that copies everything verbatim, comments included — was already
+documented, ratcheted and believed to affect **7 files**. It reddened
+`no-rewards-promises-while-unshipped` on 2026-09-12 with `app/dashboard/DashboardClient.tsx: +50
+Status`, a string sitting inside a `//` comment the guard believes it strips.
+
+⭐⭐ **THE FILE WAS IN NEITHER CENSUS THE REPO HAD, AND THE REASON GENERALISES.** The ratchet counted
+`endState !== "code"` — a desync **still open at EOF**. JSX prose carries apostrophes in PAIRS as
+often as not ("we'll … doesn't"), so the machine opens `sq` on the first, copies through, CLOSES on
+the second, and reports `code`. Healthy, by that probe. DashboardClient was the **largest instance
+in the repo**: one contraction on line 1192, **1,076 of its lines** read as string, 63 comment lines
+handed to every guard as source.
+
+⭐ **COUNT A BOUNDARY BY ITS SYMPTOM, NOT BY A PROXY FOR IT — and here the symptom needs no proxy,
+because a single- or double-quoted string CANNOT SPAN A NEWLINE in JS/TS.** So a line whose START
+state is `sq`/`dq` is not evidence of a desync, it IS one, wherever it sits and whether or not the
+machine re-syncs. `stripCommentsWithState` now returns `lineStates`, and
+`__tests__/strip-comments-defect-4-population.test.ts` ratchets on it: **10 files, 1,764 lines**
+(898 after a concurrent session reworded part of DashboardClient — a DATED SAMPLE, re-measure).
+The new census **strictly contains** the old 7-file ceiling, which was checked rather than assumed;
+the ban-at-zero on the source-BLANKING states is not subsumed and stays.
+
+⚠ **`tpl` IS EXCLUDED AND MUST BE.** A template literal spanning newlines is ordinary, and the `//`
+inside our Cadence transactions is SOURCE that must survive. A first cut of this census counted
+those and over-reported **13 files where there are 10** — a census that over-counts gets its ceiling
+raised, which is how a ratchet dies.
+
+⭐⭐ **THE REPAIR THAT ACTUALLY SHIPPED IS NOT A STRIPPER FIX — it is the standing rule "prefer a
+check that does not NEED it right", made concrete.** `copyOf` in
+`__tests__/no-rewards-promises-while-unshipped.test.ts` strips comments AND blanks `//` / `*` lines
+TEXTUALLY, because published COPY never lives in a line comment. That guard no longer depends on a
+parser being correct about JSX in order to be correct about copy. ⚠ **Proven non-vacuous by a
+positive control** — an injected `Earn +50 Status` in real JSX still reds it — because "blank more
+lines" is one keystroke from "blank everything".
+
+⛔ **REWORDING THE SOURCE IS THE OTHER AVAILABLE FIX AND IT IS A TRAP.** A concurrent session took
+it the same afternoon and CI went green; the file is **still desynced**, and the next contraction in
+any `.tsx` puts some other comment back in front of some other guard. A workaround that removes the
+symptom removes the reason anyone would fix the cause. Register **#87**.
+
+## ⭐ ASSERTING ON A SURFACE THAT RENDERS NO TEXT: make the two cases DIFFER, don't ask whether one renders (2026-09-12)
+
+An OG card's trophy tiles carry art and nothing else — no label a tree-walking harness can read. The
+tempting test ("does the card render with badges?") passes through every interesting defect, because
+the broken card renders perfectly well; it is just wrong.
+
+**Three assertion shapes, strongest first:**
+
+1. **Read the rendered `<img>` srcs.** `ogImageSrcs` from `__tests__/helpers/og-capture` returns
+   every src; our glyphs are `data:` URIs, so `decodeURIComponent` hands back the geometry that was
+   drawn. This distinguishes *drew the jersey glyph* from *drew a glyph* — byte comparison cannot.
+2. **Differential between two FAILURES**, when there is no text and no readable src. Two renders
+   that differ only in WHICH input failed must not be byte-identical. This is what caught the
+   compacting-prefetch misattribution (see key-files-and-honesty.md, eleventh shape).
+3. **Byte inequality against a baseline** — the weakest, and it only proves *something* changed.
+
+⚠ **A `textTransform: uppercase` label is TITLE CASE to `ogText`.** The harness walks the element
+tree; it does not lay out. Asserting `"JERSEY MATCH"` passes only by accident of how the fixture is
+written and reds the day the style moves — assert the canonical string the code produces.
+
+⚠ **AND A MOCK CAN MAKE THE WHOLE SUITE VACUOUS FROM ONE LINE.** `api-og-share-cards-no-false-zero`
+mocked `ogImageDataUri` to `null`; with no art the slab draws the ART UNAVAILABLE placeholder and
+**not** its badge strip, so every badge assertion would have passed while testing nothing. Check
+what a module mock's default makes IMPOSSIBLE, not only what it makes deterministic.
+
 ## ⚠⚠ CONTENTION PRODUCES A *PARTIAL* RED THAT READS AS A REAL DEFECT — and the tell is the ELAPSED TIME, not the failures (2026-09-12)
 
 The all-red contention signature is already recorded (`Vitest failed to find the runner`, every file,

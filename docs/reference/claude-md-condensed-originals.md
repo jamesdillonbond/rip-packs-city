@@ -1,4 +1,15 @@
 # CLAUDE.md — verbatim originals of the sections that were CONDENSED
+## Displaced from CLAUDE.md 2026-09-12 (verbatim) — the strip-comments "blind THREE times" bullet
+
+The guards bullet read, before the 2026-09-12 swap that replaced the un-countable "THREE times"
+with the counted population:
+
+> 🚨 **But USING it is not a guarantee it stripped — blind THREE times** (08-27: nested `${`…`}` BLANKED code AND KEPT comments). **Prefer a check that does not NEED it right.**
+
+⚠ Nothing was lost that is not recorded elsewhere: the 08-27 nested-interpolation mechanism is
+DEFECT 3 in `scripts/lib/strip-comments.mjs`'s own header, and the count it replaced was an
+UNDERSTATEMENT — the population is 10 files, measured 2026-09-12 (register #87,
+[testing-and-ci.md](testing-and-ci.md)).
 
 ## 2026-09-10 — condensed to make room for the platform-state and eligibility-vs-gain rules (VERBATIM originals)
 

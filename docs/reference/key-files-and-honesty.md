@@ -3,6 +3,62 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## ⭐ THE ELEVENTH SHAPE (2026-09-12): a prefetch that COMPACTS on failure MISATTRIBUTES — the failed read renders as a TRUE-LOOKING claim about the WRONG subject
+
+Every shape above turns a failed read into a false claim about the thing that failed. This one is
+worse in the way that matters for a shareable surface: the failed read produces a **confident,
+correct-looking claim about a DIFFERENT entity**, and the surface has no missing value anywhere for
+a reader — or a test — to notice.
+
+`lib/og/img-data.ts`'s `ogImageDataUris` prefetches a list of images and DROPS failures, closing the
+gap. `/api/og/trophy-case/[username]` then read `uris[i]` alongside `rows[i]`. One failed image slid
+every later image one slot forward, so the card captioned **Kevin Durant's Moment "Amon-Ra St.
+Brown"** — one collector's property under another player's name, on the card built to be posted.
+
+⭐ **THE TELL IS THE PAIRING, NOT THE VALUE.** The helper's own doc-comment said "order preserved",
+and it is: order is preserved *among the survivors*. That is a correct sentence which is also the
+bug, because the caller's contract is not order — it is POSITION. **Whenever a prefetch result is
+read beside anything else about the same row (a name, a tier, a price), it must return a slot per
+input.** `ogImageDataUriSlots` does; `ogImageDataUris` is now a filter over it, documented as
+correct only for an ANONYMOUS montage (`lib/og/entity-card.tsx`).
+
+⚠ **AND NO ROUTINE TEST CAN SEE IT.** A render test asserts the card renders; it does. A byte test
+asserts it differs from the empty case; it does. The assertion that works is **differential between
+two failures**: render with image 1 failing and again with image 6 failing, and assert the two are
+NOT byte-identical. Under the compacting read they ARE identical — both collapse to the same five
+tiles under the same five names, and only the (invisible) pairing differs. Pinned in
+`__tests__/api-og-trophy-case-render.test.tsx`.
+
+### The same session's plainer instance: the card CLAIMED SIX and DREW FOUR, and nothing said so
+
+`/api/og/profile/[username]` printed `N / 6  TROPHY CASE` from the RPC's row count and drew the case
+from the post-prefetch array. **The two were never compared**, so a trophy whose ART failed vanished
+while the label kept asserting it. Both cards now keep a named `ART UNAVAILABLE` tile — the trophy
+IS pinned, only its picture is missing — and `console.warn` the dropped Moments **with their URLs**.
+
+⭐ **THE GENERAL RULE: a count and a rendering derived from DIFFERENT stages of the same pipeline
+are two claims, and nothing reconciles them.** Grep for the shape — a `.length` on a pre-filter
+array printed next to a `.map` over the post-filter one.
+
+### Why nobody found it for months: the art had been failing for TWO WHOLE COLLECTIONS
+
+Measured live 2026-09-12. `ogImageDataUri` dropped every image whose URL was **site-relative**
+(Disney Pinnacle addresses all art as `/api/public/pinnacle-image/<render_id>`, because Dapper's CDN
+serves only signed short-lived URLs) and every image served as **WebP** (all **6,190 of 6,190**
+`nfl_all_day` editions carry `format=webp`; satori cannot decode it). So no Pinnacle or All Day art
+had ever rendered on any OG card — the moment card included, not just the trophy tiles.
+
+⭐ **Both were URL SHAPES the module declined to normalize, not judgement errors, and both were
+fixed in `ogImageTarget` rather than at the call sites that noticed** — `/api/og/moment/[id]` passes
+`thumbnail_url` straight in and had both holes too. **A drop-on-failure helper hides its own
+population: the callers degrade gracefully, so the failure rate is invisible until someone counts
+tiles in a rendered PNG.** The `console.warn` naming the Moment AND the URL is what turns the next
+occurrence into a log search.
+
+⚠ **STILL LATENT:** the Pinnacle render measured **2,896,041 B against the module's 4 MB cap** (72%).
+A larger Pinnacle `front.png` silently reintroduces exactly this symptom with a different cause, and
+that route takes no width param. Register **#89**.
+
 ## ⭐ THE PAGED-BREAK BAN, AND THE CORRECT IMPLEMENTATION THAT TAUGHT IT (2026-09-12)
 
 CLAUDE.md has long named this class — *"a PAGED read that `break`s on error returns a PARTIAL list no
