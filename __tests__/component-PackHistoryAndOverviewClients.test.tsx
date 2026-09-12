@@ -53,6 +53,11 @@ describe("PackHistoryClient", () => {
     wallet: "0xmine",
     totals: {
       packs_purchased: 12, packs_ripped: 7, packs_sold: 3, primary_drops: 5,
+      // ⚠ FULL coverage on BOTH sides deliberately — 0 unpriced buys and all 7
+      // rips valued — so the baseline fixture exercises the "we can state this"
+      // branch. The partial-coverage cases get their own tests below; without
+      // this the whole file would silently move onto the withheld branch.
+      ripped_value_known_count: 7,
       secondary_buys: 7, primary_spent_usd: 90, primary_spend_unknown_count: 0,
       spent_usd: 120, sold_proceeds_usd: 40, ripped_value_usd: 55, net_pl_usd: -25,
       first_event_at: new Date().toISOString(), last_event_at: new Date().toISOString(),
@@ -164,6 +169,73 @@ describe("PackHistoryClient", () => {
     mount()
     await waitFor(() => expect(document.body.textContent).toMatch(/Packs purchased/))
     expect(document.body.textContent).not.toMatch(/unpriced/)
+  })
+
+  // ── Coverage on the money tiles (2026-09-12) ──────────────────────────────
+  //
+  // Measured on 0xbd94cade097e50ac the day these landed: the history list holds
+  // 598 packs, the hero said "PACKS PURCHASED 133", TOTAL SPENT $398 covered 47
+  // of them, and RIPPED VALUE $241.40 was the sum over 50 of 503 rips. NET P&L
+  // then subtracted the first from the second and published -$156.60 as if it
+  // were a measured result. Product-wide `pack_rips.pull_value_usd` is populated
+  // on 8.5% of 3,685,458 rows, so the rip side understates for EVERY user.
+
+  /** The rendered value of a hero tile, found by its label. A body-wide regex
+   *  cannot distinguish the Net P&L TILE from the collection TAB, which renders
+   *  the same figure — and the tab was the second place this false claim lived. */
+  function tileValue(label: string): string | null {
+    const el = [...document.querySelectorAll("div")].find((d) => d.textContent?.trim() === label)
+    return el?.nextElementSibling?.textContent ?? null
+  }
+
+  it("renders PACKS RIPPED — the count the RPC always returned and the page never showed", async () => {
+    mount()
+    await waitFor(() => expect(document.body.textContent).toMatch(/Packs ripped/i))
+    // The tile, not an incidental match elsewhere on the page.
+    expect(tileValue("Packs ripped")).toBe("7")
+  })
+
+  it("⚠ says how many packs the spend figure actually covers", async () => {
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, primary_spend_unknown_count: 5 } }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/across 7 of 12 packs with a known price/))
+  })
+
+  it("⚠ says how many rips the ripped-value figure actually covers", async () => {
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, ripped_value_known_count: 2 } }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/from 2 of 7 rips/))
+  })
+
+  it("⚠ WITHHOLDS Net P&L when the rip side is a thin sample, instead of publishing it", async () => {
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, ripped_value_known_count: 1 } }) })
+    await waitFor(() => expect(tileValue("Net P&L")).toBeTruthy())
+    // The false claim is the FIGURE. Assert its absence, not the presence of copy.
+    expect(tileValue("Net P&L")).toBe("\u2014")
+    expect(document.body.textContent).toMatch(/needs a price on most packs/)
+    // …and the collection TAB must not publish it either.
+    expect(document.body.textContent).not.toMatch(/\$-25/)
+  })
+
+  it("⚠ WITHHOLDS Net P&L when the spend side is a thin sample", async () => {
+    mount({ summary: () => json(200, { ...SUMMARY, totals: { ...SUMMARY.totals, primary_spend_unknown_count: 9 } }) })
+    await waitFor(() => expect(tileValue("Net P&L")).toBeTruthy())
+    expect(tileValue("Net P&L")).toBe("\u2014")
+    expect(document.body.textContent).not.toMatch(/\$-25/)
+  })
+
+  it("⚠ an OLDER payload with no ripped_value_known_count withholds rather than guesses", async () => {
+    const totals: Record<string, unknown> = { ...SUMMARY.totals }
+    delete totals.ripped_value_known_count
+    mount({ summary: () => json(200, { ...SUMMARY, totals }) })
+    await waitFor(() => expect(document.body.textContent).toMatch(/pull values are incomplete/))
+    expect(tileValue("Net P&L")).toBe("\u2014")
+    expect(document.body.textContent).not.toMatch(/\$-25/)
+  })
+
+  it("publishes Net P&L when both sides are fully covered", async () => {
+    mount()
+    await waitFor(() => expect(tileValue("Net P&L")).toBeTruthy())
+    expect(tileValue("Net P&L")).toBe("$-25.00")
+    expect(document.body.textContent).not.toMatch(/needs a price on most packs/)
   })
 
   it("renders the per-currency breakdown", async () => {

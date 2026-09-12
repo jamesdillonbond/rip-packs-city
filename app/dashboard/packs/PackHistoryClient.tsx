@@ -29,6 +29,12 @@ interface SummaryTotals {
   net_pl_usd: number
   packs_purchased: number
   packs_ripped: number
+  /** How many of `packs_ripped` actually carry a pull_value_usd. Added by
+   *  audit_20260912_pack_summary_ripped_value_known_count. Optional because an
+   *  older cached payload will not have it -- absent means "coverage unknown",
+   *  which is treated the same as partial: the caption still renders, without a
+   *  count, and NET P&L still withholds. */
+  ripped_value_known_count?: number
   packs_sold: number
   primary_drops: number
   secondary_buys: number
@@ -36,6 +42,39 @@ interface SummaryTotals {
   primary_spend_unknown_count?: number
   first_event_at: string | null
   last_event_at: string | null
+}
+
+/** How much of the wallet's pack activity each money figure actually covers.
+ *
+ * ⚠ Both money tiles are sums over a SUBSET of the wallet's packs, and until
+ * 2026-09-12 neither said so. Measured that day on 0xbd94cade097e50ac: the
+ * history list holds 598 packs, the hero said "PACKS PURCHASED 133", TOTAL SPENT
+ * $398 covered 47 of them (33 secondary + 14 primary with a recoverable retail
+ * price; 86 primary drops have none), and RIPPED VALUE $241.40 was the sum over
+ * 50 of 503 rips. `pack_rips.pull_value_usd` is populated on 312,982 of
+ * 3,685,458 rows product-wide — 8.5% — so the rip side understates by roughly an
+ * order of magnitude for EVERY user, not just this one. NET P&L then subtracted
+ * the first from the second and published the difference as a measured result.
+ *
+ * `ripped_value_known_count` absent (an older cached payload) is treated as
+ * coverage UNKNOWN, which withholds — never as full coverage.
+ */
+export function packCoverage(t: SummaryTotals): {
+  spendKnown: number
+  ripKnown: number | null
+  plWithheld: boolean
+} {
+  const spendKnown = Math.max(0, t.packs_purchased - (t.primary_spend_unknown_count ?? 0))
+  const ripKnown = t.ripped_value_known_count ?? null
+  const spendCov = t.packs_purchased > 0 ? spendKnown / t.packs_purchased : 1
+  const ripCov = t.packs_ripped > 0 ? (ripKnown == null ? 0 : ripKnown / t.packs_ripped) : 1
+  // A FLOOR, not a measurement. Below it the two sides of the subtraction
+  // describe samples too small and too different for the difference to mean
+  // anything. Same family as the pack-EV publish guard (FMV coverage >= 25%):
+  // pick a floor, state it, withhold below it. Set higher here because P&L is a
+  // claim about the reader's own money rather than about a market.
+  const PL_COVERAGE_FLOOR = 0.8
+  return { spendKnown, ripKnown, plWithheld: spendCov < PL_COVERAGE_FLOOR || ripCov < PL_COVERAGE_FLOOR }
 }
 
 interface SummaryCurrency {
@@ -355,19 +394,66 @@ export default function PackHistoryClient() {
           <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Loading summary…</div>
         ) : summaryError ? (
           <div style={{ padding: 12, border: "1px solid #7f1d1d", background: "rgba(127,29,29,0.2)", borderRadius: 6, fontFamily: monoFont, fontSize: 12, color: "#F87171" }}>{summaryError}</div>
-        ) : summary ? (
+        ) : summary ? ((() => {
+          const t = summary.totals
+          const { spendKnown, ripKnown, plWithheld } = packCoverage(t)
+          return (
           <>
+            {/* Coverage is computed once in `packCoverage` (module scope, unit
+                tested) because the collection tabs below publish the SAME
+                subtraction and must withhold with these tiles, not after them. */}
             <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-              <PacksPurchasedStat
-                purchased={summary.totals.packs_purchased}
-                primary={summary.totals.primary_drops}
-                secondary={summary.totals.secondary_buys}
-                unpriced={summary.totals.primary_spend_unknown_count ?? 0}
-              />
-              <HeroStat label="Total spent" value={summary.totals.spent_usd} tint={summary.totals.spent_usd > 0 ? "var(--rpc-red, #E03A2F)" : "#fff"} />
-              <HeroStat label="Sold proceeds" value={summary.totals.sold_proceeds_usd} tint="#34D399" />
-              <HeroStat label="Ripped value" value={summary.totals.ripped_value_usd} tint="#34D399" />
-              <HeroStat label="Net P&L" value={summary.totals.net_pl_usd} tint={summary.totals.net_pl_usd >= 0 ? "#34D399" : "var(--rpc-red, #E03A2F)"} />
+                  <PacksPurchasedStat
+                    purchased={t.packs_purchased}
+                    primary={t.primary_drops}
+                    secondary={t.secondary_buys}
+                    unpriced={t.primary_spend_unknown_count ?? 0}
+                  />
+                  <CountStat
+                    label="Packs ripped"
+                    value={t.packs_ripped}
+                    caption={
+                      ripKnown == null
+                        ? undefined
+                        : ripKnown < t.packs_ripped
+                          ? `${ripKnown.toLocaleString("en-US")} with a known pull value`
+                          : "all valued"
+                    }
+                  />
+                  <HeroStat
+                    label="Total spent"
+                    value={t.spent_usd}
+                    tint={t.spent_usd > 0 ? "var(--rpc-red, #E03A2F)" : "#fff"}
+                    caption={
+                      spendKnown < t.packs_purchased
+                        ? `across ${spendKnown.toLocaleString("en-US")} of ${t.packs_purchased.toLocaleString("en-US")} packs with a known price`
+                        : undefined
+                    }
+                  />
+                  <HeroStat label="Sold proceeds" value={t.sold_proceeds_usd} tint="#34D399" />
+                  <HeroStat
+                    label="Ripped value"
+                    value={t.ripped_value_usd}
+                    tint="#34D399"
+                    caption={
+                      ripKnown == null
+                        ? "pull values are incomplete"
+                        : ripKnown < t.packs_ripped
+                          ? `from ${ripKnown.toLocaleString("en-US")} of ${t.packs_ripped.toLocaleString("en-US")} rips`
+                          : undefined
+                    }
+                  />
+                  <HeroStat
+                    label="Net P&L"
+                    value={t.net_pl_usd}
+                    tint={t.net_pl_usd >= 0 ? "#34D399" : "var(--rpc-red, #E03A2F)"}
+                    withheld={plWithheld}
+                    caption={
+                      plWithheld
+                        ? "needs a price on most packs bought and ripped before this means anything"
+                        : undefined
+                    }
+                  />
             </section>
 
             {/* Currency breakdown */}
@@ -391,15 +477,23 @@ export default function PackHistoryClient() {
                     key={c.collection_slug}
                     active={collection === c.collection_slug}
                     label={c.collection_name}
-                    sub={`${c.activity_total} · ${fmtUsd(c.net_pl_usd)}`}
-                    pl={c.net_pl_usd}
+                    /* ⚠ The per-collection P&L is the SAME subtraction as the
+                       headline, over the same two thin samples — it was
+                       publishing "12 · $-25.00" one component below a tile that
+                       had just withheld the identical figure. Fix per panel, not
+                       per page: when the headline withholds, these withhold too
+                       and fall back to the activity count, which is a real
+                       measurement. */
+                    sub={plWithheld ? `${c.activity_total} activity` : `${c.activity_total} · ${fmtUsd(c.net_pl_usd)}`}
+                    pl={plWithheld ? undefined : c.net_pl_usd}
                     onClick={() => setCollection(c.collection_slug)}
                   />
                 ))}
               </div>
             )}
           </>
-        ) : null)}
+          )
+        })()) : null)}
 
         {/* Status filter buttons */}
         {activeWallet && (
@@ -491,11 +585,36 @@ export default function PackHistoryClient() {
 
 // ── Subcomponents ──────────────────────────────────────────────────────────
 
-function HeroStat({ label, value, tint }: { label: string; value: number; tint: string }) {
+function HeroStat({ label, value, tint, caption, withheld }: { label: string; value: number; tint: string; caption?: string; withheld?: boolean }) {
+  // `withheld` renders the em dash instead of the figure. It exists for NET P&L,
+  // whose two sides are each summed over a DIFFERENT small sample of the wallet's
+  // packs -- see the coverage comment at the call site. A number assembled that
+  // way is not a partial sum a reader can discount; it is noise wearing a
+  // currency symbol, and the honesty canon says an unknown renders as unknown.
   return (
     <div style={{ background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 8, padding: "14px 16px" }}>
       <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
-      <div className="rpc-pack-stat-num" style={{ color: tint, marginTop: 4 }}>{fmtUsd(value)}</div>
+      <div className="rpc-pack-stat-num" style={{ color: withheld ? "rgba(255,255,255,0.45)" : tint, marginTop: 4 }}>{withheld ? "\u2014" : fmtUsd(value)}</div>
+      {caption && (
+        <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 6, letterSpacing: "0.04em", lineHeight: 1.4 }}>{caption}</div>
+      )}
+    </div>
+  )
+}
+
+// A plain count tile. PACKS RIPPED was computed by get_wallet_pack_summary from
+// the beginning and never rendered: the hero row led with PACKS PURCHASED 133 on
+// a wallet that has ripped 503, under a page subtitled "Pack rip lifecycle".
+// The collection tabs already showed the truth (386 + 250 = 636 activities), so
+// the page contradicted itself on screen.
+function CountStat({ label, value, caption }: { label: string; value: number; caption?: string }) {
+  return (
+    <div style={{ background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 8, padding: "14px 16px" }}>
+      <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</div>
+      <div className="rpc-pack-stat-num" style={{ color: "#fff", marginTop: 4 }}>{value.toLocaleString("en-US")}</div>
+      {caption && (
+        <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 6, letterSpacing: "0.04em", lineHeight: 1.4 }}>{caption}</div>
+      )}
     </div>
   )
 }
