@@ -226,6 +226,15 @@ function ProfilePageInner() {
   // (reproduced live 2026-09-12: 0/$0/0 at t+4 s, "—" at t+52 s).
   // A read that has not answered is not an answer. Settled starts FALSE.
   const [statsSettled, setStatsSettled] = useState(false);
+  // Per-wallet provenance for the stats read: which source answered, how old that
+  // answer is, and — load-bearing — WHICH COLLECTIONS IT ACTUALLY COVERS.
+  // /api/profile/collection-stats serves the precomputed `saved_wallets.cached_*`
+  // columns, and a cached read only covers collections the wallet has a row for.
+  // A MISSING row is not a zero: measured 2026-09-12, six wallets had no
+  // `ufc_strike` row at all and three of them held 247, 61 and 18 UFC Moments.
+  // Rendering an uncovered collection as "0" would publish a claim about a
+  // $1,547 holding, so the card renders it as unknown instead.
+  const [statsMeta, setStatsMeta] = useState<Record<string, { source: string; cacheUpdatedAt: string | null; covered: string[] | null }>>({});
   // Did the SAVED-WALLETS read itself fail this pass? Distinct from statsFailed,
   // which covers per-wallet holdings once the list is known — and load-bearing
   // for the same reason one step earlier.
@@ -392,6 +401,7 @@ function ProfilePageInner() {
   const refreshStats = useCallback(async (addrs: string[]) => {
     if (addrs.length === 0) {
       setStatsByWallet({});
+      setStatsMeta({});
       setStatsFailed([]);
       // Nothing to read IS a settled state — otherwise a collector with no
       // wallet saved would sit on "Loading…" forever instead of the empty copy.
@@ -400,6 +410,7 @@ function ProfilePageInner() {
     }
     setStatsSettled(false);
     const out: Record<string, CollectionStat[]> = {};
+    const meta: Record<string, { source: string; cacheUpdatedAt: string | null; covered: string[] | null }> = {};
     const failed: string[] = [];
     await Promise.all(
       addrs.map(async (addr) => {
@@ -421,6 +432,13 @@ function ProfilePageInner() {
             }
           }
           const d = await res.json();
+          meta[addr] = {
+            source: String(d?.source ?? "live"),
+            cacheUpdatedAt: d?.cache_updated_at ?? null,
+            // `null` means the route did not say — treat that as "covers
+            // everything it returned", which is the pre-2026-09-12 behaviour.
+            covered: Array.isArray(d?.covered_collection_ids) ? d.covered_collection_ids.map(String) : null,
+          };
           out[addr] = (d?.stats ?? []).map((r: any) => ({
             collection_id: r.collection_id,
             collection_slug: r.collection_slug,
@@ -442,6 +460,7 @@ function ProfilePageInner() {
       })
     );
     setStatsByWallet(out);
+    setStatsMeta(meta);
     setStatsFailed(failed);
     setStatsSettled(true);
     return out;
@@ -783,6 +802,20 @@ function ProfilePageInner() {
   // `!statsSettled` alone: with no wallets saved there is nothing to load and
   // the tiles must fall through to `empty`, not to "Loading…".
   const statsLoading = !statsSettled && wallets.length > 0 && !walletsFailed;
+  // The oldest cache stamp across every wallet that answered from cache. The
+  // numbers are ACCURATE — measured 2026-09-12, cached counts matched
+  // wallet_moments_cache to within ~0.1% — they are just late, so the honest
+  // presentation is the figure plus its age, not the figure alone. Below the
+  // threshold the stamp is noise and is not shown; the reconciler targets 6 h.
+  const cacheAgeHours = useMemo(() => {
+    const stamps = Object.values(statsMeta)
+      .filter((m) => m.source === "cache" && m.cacheUpdatedAt)
+      .map((m) => new Date(m.cacheUpdatedAt as string).getTime())
+      .filter((t) => Number.isFinite(t));
+    if (stamps.length === 0) return null;
+    const hrs = (Date.now() - Math.min(...stamps)) / 3_600_000;
+    return hrs >= 2 ? hrs : null;
+  }, [statsMeta]);
   // The just-saved-wallet window: the indexing poll is live, at least one wallet
   // is saved, and no collection has counted a Moment yet. Not a failure, not an
   // answer — the tiles render "Indexing…" rather than a zero (2026-09-04).
@@ -1051,7 +1084,10 @@ function ProfilePageInner() {
             label="Portfolio FMV"
             value={fmtUsd(totalFmv)}
             color="var(--rpc-success)"
-            caption={staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString()} stale-priced moments` : undefined}
+            caption={[
+              staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString()} stale-priced moments` : null,
+              cacheAgeHours != null ? `as of ${Math.round(cacheAgeHours)}h ago` : null,
+            ].filter(Boolean).join(" · ") || undefined}
             unavailable={statsIncomplete}
             loading={statsLoading}
             pending={statsPending}
@@ -1297,6 +1333,7 @@ function ProfilePageInner() {
                      "Could not load" (2026-09-12). Pass the provenance. */
                   failed={walletsFailed || statsFailed.includes(g.addr.toLowerCase())}
                   loading={statsLoading}
+                  covered={statsMeta[g.addr.toLowerCase()]?.covered ?? null}
                   indexing={indexing}
                   onRemove={() => removeWallet(g.rows[0])}
                 />
@@ -2217,6 +2254,7 @@ function WalletGroupCard({
   stats,
   failed,
   loading,
+  covered,
   indexing,
   onRemove,
 }: {
@@ -2227,13 +2265,18 @@ function WalletGroupCard({
   failed?: boolean;
   /** The collection-stats read has not answered yet this pass. */
   loading?: boolean;
+  /** Collection ids this read actually covers. A collection ABSENT from this list
+   *  was not measured — it is unknown, not zero. `null` means the route did not
+   *  say, which keeps the pre-2026-09-12 behaviour of trusting every tile. */
+  covered?: string[] | null;
   indexing: boolean;
   onRemove: () => void;
 }) {
   const verified = !!group.verifiedAt;
   // No answer yet, or no answer at all. Either way every per-collection figure
   // below is unknown — and an unknown must not render as a measured zero.
-  const unknown = !!failed || !!loading;
+  const cardUnknown = !!failed || !!loading;
+  const coveredSet = covered ? new Set(covered) : null;
   return (
     <div
       className="rpc-wallet-card"
@@ -2316,6 +2359,12 @@ function WalletGroupCard({
           const href = col.pages.includes("collection")
             ? `/${slug}/collection?q=${encodeURIComponent(group.addr)}`
             : `/${slug}/overview`;
+          // Covered ONLY if the read said so. `stat` being undefined and the
+          // collection being uncovered are the same picture from here, and only
+          // one of them is a measured zero.
+          const unknown =
+            cardUnknown ||
+            (coveredSet != null && col.supabaseCollectionId != null && !coveredSet.has(col.supabaseCollectionId));
           const moments = stat?.moment_count ?? 0;
           const fmv = stat?.fmv_total ?? 0;
           const locked = stat?.locked_count ?? 0;

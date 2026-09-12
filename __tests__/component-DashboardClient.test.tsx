@@ -380,6 +380,56 @@ describe("DashboardClient — per-wallet collection stats", () => {
     })
   })
 
+  // ── Coverage: a collection the read did not cover is UNKNOWN, not zero ────
+  //
+  // ⚠ The route is cache-first since 2026-09-12, and a cached read only covers
+  // collections the wallet has a `saved_wallets` row for. Measured that day: six
+  // wallets had NO `ufc_strike` row at all — they predate UFC joining
+  // SEED_SLUGS — and three of them held 247, 61 and 18 UFC Moments, worth $1,547
+  // on the largest. Zero-filling an uncovered collection publishes a claim about
+  // a holding nobody measured; it is the same false-zero the honesty canon keeps
+  // paying for, arriving through a new door.
+  it("⚠ renders — for a collection the stats read did NOT cover, and the real number for one it did", async () => {
+    const TOP_SHOT = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+    routes["/api/profile/collection-stats"] = () =>
+      json(200, {
+        source: "cache",
+        cache_updated_at: new Date().toISOString(),
+        covered_collection_ids: [TOP_SHOT],
+        stats: [
+          { collection_id: TOP_SHOT, collection_slug: "nba_top_shot", moment_count: 15335, fmv_total: 58073, fmv_stale_total: 0, stale_count: 0, fmv_max: 0, priced_count: 0, locked_count: 0, top_tier: "LEGENDARY" },
+        ],
+      })
+    render(<DashboardClient />)
+    await waitFor(() => expect(screen.getAllByText("Moments").length).toBeGreaterThan(0))
+    await waitFor(() => {
+      const values = screen.getAllByText("Moments").map((l) => l.nextElementSibling?.textContent ?? "")
+      // The covered collection publishes its real figure…
+      expect(values).toContain("15,335")
+      // …and no tile anywhere claims a measured zero.
+      expect(values).not.toContain("0")
+    })
+  })
+
+  it("still trusts every tile when the route does not report coverage (older payload)", async () => {
+    const TOP_SHOT = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+    routes["/api/profile/collection-stats"] = () =>
+      json(200, {
+        stats: [
+          { collection_id: TOP_SHOT, collection_slug: "nba_top_shot", moment_count: 42, fmv_total: 1234, fmv_stale_total: 0, stale_count: 0, fmv_max: 0, priced_count: 0, locked_count: 0, top_tier: null },
+        ],
+      })
+    render(<DashboardClient />)
+    await waitFor(() => expect(screen.getAllByText("Moments").length).toBeGreaterThan(0))
+    await waitFor(() => {
+      const values = screen.getAllByText("Moments").map((l) => l.nextElementSibling?.textContent ?? "")
+      expect(values).toContain("42")
+      // No `covered_collection_ids` means "we did not say", which must keep the
+      // pre-2026-09-12 behaviour rather than blanking every other tile.
+      expect(values).toContain("0")
+    })
+  })
+
   it("renders real per-collection figures when the read succeeds", async () => {
     routes["/api/profile/collection-stats"] = () =>
       json(200, {
