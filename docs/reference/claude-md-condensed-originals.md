@@ -485,3 +485,11 @@ it needed had landed (known-issues #80, mechanism in
 [cron-and-schedulers.md](cron-and-schedulers.md)). **The canon is almost always invoked against a failed
 read rendering as a fact, and the reflex that follows is to widen `unknown`; this records that the mirror
 is also a defect.**
+
+## 2026-09-12 — three trims in "Pushing from a sandbox", to point at the laptop `cowork-push` queue (verbatim originals)
+
+Displaced by the Cowork cloud session that established the third push path (ledger, 2026-09-12 · "a third push path from Cowork"; recipe in [tooling-gotchas.md](tooling-gotchas.md) under *Pushing from a sandbox*). The only fact removed is the stale dated sample "re-verified working 08-27" — the same probe was re-verified on 09-12.
+
+- `- ⚠ **"The sandbox cannot push" is CONDITIONAL — TEST IT, in one command: `git push --dry-run origin main`** (re-verified working 08-27). A session whose authorized repo set lacks this repo is refused at the **repo-authorization layer, before any credential is evaluated**, so a PAT returns the identical 403 — the discriminator and the second probe: tooling-gotchas.md.`
+- `- **When push IS genuinely denied:** repo-as-session-source · `/web-setup` in a REAL TERMINAL session (authorizes at CREATION, so it fixes the NEXT one) · desktop "Run this task" · or **`git format-patch`**, proven end-to-end.`
+- `- Bash-green ≠ push-green; never commit from the mount. Full history: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).`

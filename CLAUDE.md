@@ -55,12 +55,12 @@ Any time you ship something that changes `main` or production DB/data state — 
 
 ### Pushing from a sandbox — test it, do not assume it
 
-- ⚠ **"The sandbox cannot push" is CONDITIONAL — TEST IT, in one command: `git push --dry-run origin main`** (re-verified working 08-27). A session whose authorized repo set lacks this repo is refused at the **repo-authorization layer, before any credential is evaluated**, so a PAT returns the identical 403 — the discriminator and the second probe: tooling-gotchas.md.
+- ⚠ **"The sandbox cannot push" is CONDITIONAL — TEST IT, in one command: `git push --dry-run origin main`** (re-verified 09-12). A session whose authorized repo set lacks this repo is refused at the **repo-authorization layer, before any credential is evaluated**, so a PAT returns the identical 403 (discriminator + 2nd probe: tooling-gotchas.md).
 - ⚠ **Diagnose a push failure from the ERROR STRING, not from the fact that it failed** — `(non-fast-forward)` means BEHIND ORIGIN and reads exactly like a permissions failure.
 - ⛔ **Never "fix" a 403 by re-embedding a PAT** — merely reading it (`git remote -v`) prints a live `github_pat_…` into the transcript; that burned a real PAT on 2026-08-16. ⚠ **The DESKTOP `remote.origin.pushurl` harvest is DEAD and fails QUIETLY.**
-- **When push IS genuinely denied:** repo-as-session-source · `/web-setup` in a REAL TERMINAL session (authorizes at CREATION, so it fixes the NEXT one) · desktop "Run this task" · or **`git format-patch`**, proven end-to-end.
+- **When push IS genuinely denied:** repo-as-session-source · `/web-setup` in a real terminal (authorizes at CREATION — fixes the NEXT one) · desktop "Run this task" · or **`git format-patch` → the laptop `cowork-push` queue**, proven 3× on 09-12.
 - ⚠ **A no-push session's DB reach is narrower than `apply_migration` suggests** — a PINNED SQL function is PUSH-GATED and every `apply_migration` reds `migration-parity` until its file is committed. **Real no-push levers: pg_cron schedules, indexes, new objects**; `execute_sql` for SCRATCH DDL.
-- Bash-green ≠ push-green; never commit from the mount. Full history: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+- Bash-green ≠ push-green; never commit from the mount. History: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
 ## Autonomous Cowork tasks
 
