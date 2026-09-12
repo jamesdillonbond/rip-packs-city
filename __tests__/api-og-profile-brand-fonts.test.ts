@@ -222,6 +222,35 @@ describe("profile OG card — the collector's equipped flair", () => {
   }, 60_000)
 })
 
+describe("statTileWidth — the row reflows, because the tile count is not fixed", () => {
+  const GAP = 16
+  const COLUMN = 700
+
+  it("fits a full row at one, two and three tiles", async () => {
+    const { statTileWidth } = await import("@/app/api/og/profile/[username]/route")
+    for (let n = 1; n <= 3; n++) {
+      const w = statTileWidth(n)
+      expect(n * w + (n - 1) * GAP).toBeLessThanOrEqual(COLUMN)
+    }
+  })
+
+  it("wraps FOUR tiles to a 2x2 block instead of orphaning one", async () => {
+    // ⚠ The TEAMS tile is suppressed for a collector with no picks — 21 of 25
+    // accounts today — so this row is three tiles for most people and four for
+    // the rest. A fixed width would have shipped either a gap or an orphan.
+    const { statTileWidth } = await import("@/app/api/og/profile/[username]/route")
+    const w = statTileWidth(4)
+    expect(2 * w + GAP).toBeLessThanOrEqual(COLUMN) // two per row fits
+    expect(3 * w + 2 * GAP).toBeGreaterThan(COLUMN) // ...and a third does not
+  })
+
+  it("clamps rather than returning zero for a nonsense count", async () => {
+    const { statTileWidth } = await import("@/app/api/og/profile/[username]/route")
+    expect(statTileWidth(0)).toBeGreaterThan(0)
+    expect(statTileWidth(9)).toBeGreaterThan(0)
+  })
+})
+
 describe("trophyGrid — the case must be legible, not a fan of slivers", () => {
   it("sizes a single trophy as a hero", async () => {
     const { trophyGrid } = await import("@/app/api/og/profile/[username]/route")

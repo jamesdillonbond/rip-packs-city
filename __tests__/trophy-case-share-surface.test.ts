@@ -5,8 +5,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 //
 // Until 2026-08-14 the only trophy-case export was a PDF, and a PDF cannot
 // unfurl: pasting one into X or Discord produces a file, not a picture. The
-// profile card does show the case but LEADS WITH PORTFOLIO FMV, so it answers
-// "how big is this collection" when sharing a case asks "look at these six".
+// profile card does show the case but leads with collection COUNTS, so it
+// answers "how big is this collection" when sharing a case asks "look at these
+// six". (It led with PORTFOLIO FMV until 2026-09-12, when that figure came off
+// the card — Trevor's call, and a privacy repair.)
 //
 // The assertions are the two properties that make this surface safe to share:
 // it never publishes a figure the read did not produce, and it never turns our

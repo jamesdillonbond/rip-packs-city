@@ -84,12 +84,20 @@ interface BioRow {
 }
 
 interface WalletRow {
-  cached_fmv_usd: number | null;
-  /** Stale-priced portion of cached_fmv_usd — held out of the headline, as
-   *  the dashboard does (2026-09-02, QA finding #6). */
-  cached_fmv_stale_usd?: number | null;
+  /** Needed to attribute pack rips — `pack_rips` keys on the opener's address,
+   *  not on a user id. Addresses are stored lowercase; query them with plain
+   *  equality, NEVER `lower()` (a `lower()` join against `pack_rips` times out,
+   *  57014). */
+  wallet_addr: string | null;
   cached_moment_count: number | null;
   cached_badges: string[] | null;
+}
+
+/** One structured favourite-team pick, joined to the master catalog. */
+interface TeamRow {
+  league: string | null;
+  is_primary: boolean | null;
+  teams_master: { abbreviation: string | null; team_name: string | null } | null;
 }
 
 interface TrophyRow {
@@ -136,20 +144,30 @@ function achTierColor(tier: string): string {
   }
 }
 
-function fmtDollars(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "$0";
-  if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "K";
-  return "$" + n.toFixed(2);
+/**
+ * Tile width for the stat row, sized so the tiles fill the 700px left column
+ * at each count and WRAP to a 2×2 block at four rather than orphaning one.
+ *
+ * ⚠ The count is not fixed: the TEAMS tile is suppressed for a collector with
+ * no picks, which today is 21 of 25 accounts. Building the row at a hardcoded
+ * width would have shipped either a gap or a wrapped orphan for almost everyone.
+ */
+export function statTileWidth(count: number): number {
+  const n = Math.min(4, Math.max(1, count));
+  // 4 wraps: 2×300 + 16 = 616 fits, a third would need 916 and does not.
+  return [0, 300, 300, 222, 300][n];
 }
 
 /**
  * ⚠ Returns `ok` alongside the rows, and the distinction is load-bearing.
  *
- * This card renders a PORTFOLIO FMV for a named collector. Before 2026-08-13 a
- * failed `saved_wallets` read returned `[]`, `totalFmv` reduced to 0, and the
- * card published "$0" as that person's portfolio — a false financial claim about
- * an identifiable individual, baked into an edge-cached PNG and shared socially.
+ * This card makes counted claims about a NAMED collector. Before 2026-08-13 a
+ * failed `saved_wallets` read returned `[]`, the FMV reduce collapsed to 0, and
+ * the card published "$0" as that person's portfolio — a false financial claim
+ * about an identifiable individual, baked into an edge-cached PNG and shared
+ * socially. The portfolio figure came OFF the card on 2026-09-12, but the same
+ * hazard rides on every tile that replaced it (Moments, packs ripped), which is
+ * why this contract stayed.
  *
  * THREE states, not two: a read that failed (`ok:false` — withhold the figure),
  * a profile with no linked wallets (`ok:true`, empty — a real answer), and rows.
@@ -195,6 +213,40 @@ async function fetchRpc<T>(fn: string, body: unknown): Promise<{ rows: T[]; ok: 
     return { rows: Array.isArray(data) ? (data as T[]) : [], ok: true };
   } catch {
     return { rows: [], ok: false };
+  }
+}
+
+/**
+ * Read a COUNT through PostgREST without pulling the rows, same `ok`-vs-value
+ * contract as the readers above.
+ *
+ * ⚠ `?? 0` on a supabase count is one of this repo's two named fabricated-number
+ * shapes, and it is exactly the shape this card must not have: a failed read
+ * publishing "0 PACKS RIPPED" about a named collector, baked into a cached PNG
+ * and shared into other people's timelines where nobody can check it. So the
+ * count comes back as `null` when the read failed, and the tile says "—".
+ *
+ * The total rides in `Content-Range` (`0-0/503`), which is why this asks for one
+ * row rather than none — `limit=0` returns `*\/503` on some paths and there is no
+ * reason to depend on which.
+ */
+async function fetchCount(url: string): Promise<{ count: number | null; ok: boolean }> {
+  try {
+    const r = await ogFetch(url, {
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: "Bearer " + SERVICE_KEY,
+        Prefer: "count=exact",
+      },
+      cache: "no-store",
+    });
+    if (!r.ok) return { count: null, ok: false };
+    const total = (r.headers.get("content-range") || "").split("/")[1];
+    const n = Number(total);
+    if (!total || !Number.isFinite(n)) return { count: null, ok: false };
+    return { count: n, ok: true };
+  } catch {
+    return { count: null, ok: false };
   }
 }
 
@@ -305,10 +357,10 @@ export async function GET(
     // ⚠ A profile with no resolvable user_id has no wallets to read — that is
     // `ok: true` with no rows (a real answer), NOT a failure. Only a read that
     // actually errored may suppress the figures below.
-    const [walletsRes, trophiesRes, achievementsRes] = await Promise.all([
+    const [walletsRes, trophiesRes, achievementsRes, teamsRes] = await Promise.all([
       uidEnc
         ? fetchJson<WalletRow>(
-            `${SUPABASE_URL}/rest/v1/saved_wallets?user_id=eq.${uidEnc}&select=cached_fmv_usd,cached_fmv_stale_usd,cached_moment_count,cached_badges&limit=25`,
+            `${SUPABASE_URL}/rest/v1/saved_wallets?user_id=eq.${uidEnc}&select=wallet_addr,cached_moment_count,cached_badges&limit=25`,
           )
         : Promise.resolve({ rows: [] as WalletRow[], ok: true }),
       // ⚠ THE RPC, NOT `trophy_moments`. Those rows are PIN-TIME snapshots:
@@ -323,12 +375,65 @@ export async function GET(
       fetchJson<AchievementRow>(
         `${SUPABASE_URL}/rest/v1/profile_achievements?owner_key=eq.${enc}&select=achievement_key,tier&order=unlocked_at.asc`,
       ),
+      // ⚠ `user_favorite_teams`, NOT `profile_bio.favorite_team`. The handoff
+      // that specified this tile called for a new `favorite_teams text[]` column
+      // and a picker in /profile/edit — both already exist, in a different
+      // shape: a per-league table with a `is_primary` flag, an inner join to
+      // `teams_master`, and the "Fan Affinity" picker that replaced the legacy
+      // free-text field. Re-derived 2026-09-12 before building anything, which
+      // is the only reason no redundant column shipped.
+      // `!inner` drops picks whose slug has left the master catalog, matching
+      // /api/profile/teams so the card and the profile page cannot disagree.
+      uidEnc
+        ? fetchJson<TeamRow>(
+            `${SUPABASE_URL}/rest/v1/user_favorite_teams?user_id=eq.${uidEnc}` +
+              `&select=league,is_primary,teams_master!inner(abbreviation,team_name)` +
+              `&order=is_primary.desc.nullslast,league.asc&limit=4`,
+          )
+        : Promise.resolve({ rows: [] as TeamRow[], ok: true }),
     ]);
     const wallets = walletsRes.rows;
     const trophies = trophiesRes.rows;
     const achievements = achievementsRes.rows;
     const walletsOk = walletsRes.ok;
     const trophiesOk = trophiesRes.ok;
+
+    // ── PACKS RIPPED ──────────────────────────────────────────────────────
+    // Sequential rather than in the batch above, because `pack_rips` keys on
+    // the OPENER'S ADDRESS and the addresses only exist once `saved_wallets`
+    // has answered. Measured 2026-09-12: an Index Only Scan on
+    // `idx_pack_rips_opener`, 22 shared buffers for a 4-wallet / 503-rip
+    // profile — cheap enough that a `cached_pack_rips` column (and the writer
+    // and staleness handling it would need) is not worth its own ingest.
+    const walletAddrs = wallets
+      .map((w) => (w.wallet_addr ?? "").trim())
+      .filter((a) => /^0x[0-9a-fA-F]{6,}$/.test(a));
+    const ripsRes =
+      walletsOk && walletAddrs.length > 0
+        ? await fetchCount(
+            `${SUPABASE_URL}/rest/v1/pack_rips?opener_address=in.(${walletAddrs
+              .map((a) => encodeURIComponent(a))
+              .join(",")})&select=id&limit=1`,
+          )
+        : { count: null as number | null, ok: false };
+
+    // ⚠ Abbreviations, because that is what the profile page's chips show and a
+    // full team name does not fit a 300px tile at this weight. `is_primary`
+    // first, which the `order=` above already applied.
+    // ⚠ DEDUPED, and this is not hypothetical tidiness: abbreviations are unique
+    // per LEAGUE, not globally, and the two most-picked teams in the data share
+    // one. Trevor's own picks are Blazers (NBA), Portland Fire (WNBA) and Lions
+    // (NFL) — three rows, and undeduped the tile reads "POR · POR · DET".
+    const teamLabels = [
+      ...new Set(
+        teamsRes.rows.map((t) => (t.teams_master?.abbreviation || "").trim()).filter(Boolean),
+      ),
+    ].slice(0, 3);
+    // The legacy free-text field is still the fallback, exactly as
+    // ProfileClient does it — a collector who set one before the picker existed
+    // should not read as having no team.
+    const legacyTeam = (bio?.favorite_team || "").trim();
+    const teamsValue = teamLabels.length > 0 ? teamLabels.join(" · ") : legacyTeam;
 
     const accent = (bio?.accent_color || "#E03A2F").trim() || "#E03A2F";
     const border = borderCosmetic(bio?.equipped_border);
@@ -338,16 +443,12 @@ export async function GET(
     // applies (ProfileClient's Avatar).
     const ringColor = border?.ring ?? accent;
 
-    // Headline = total minus the stale-priced portion — the dashboard's
-    // definition. The card used to publish the flat total, 80% above the
-    // number the collector had just read on their own dashboard.
-    const totalFmv = Math.max(
-      0,
-      wallets.reduce(
-        (s, w) => s + (Number(w.cached_fmv_usd) || 0) - (Number(w.cached_fmv_stale_usd) || 0),
-        0,
-      ),
-    );
+    // ⭐ PORTFOLIO FMV IS GONE FROM THIS CARD — Trevor's call, 2026-09-12.
+    // It is also a privacy repair: every share of a profile was broadcasting
+    // that collector's net worth into a public timeline, which is not something
+    // most people would opt into if they were asked. The stale-split arithmetic
+    // that used to live here went with it; `saved_wallets.cached_fmv_*` is no
+    // longer read by this route at all.
     const totalMoments = wallets.reduce(
       (s, w) => s + (Number(w.cached_moment_count) || 0),
       0,
@@ -404,6 +505,59 @@ export async function GET(
     // ⚠ `hasAvatar` still means "we fetched BYTES", not "a URL existed" — a
     // dead host (or a dead logo) must fall through to the monogram rather than
     // baking a broken <img> into a cached PNG.
+    // ── THE STAT TILES, in Trevor's order (2026-09-12) ────────────────────
+    //
+    // ⚠ "—" MEANS THE READ FAILED, NEVER THAT THE VALUE IS ZERO. This card
+    // makes claims about a NAMED person and bakes them into an edge-cached PNG
+    // that lands in other people's timelines, so every figure here is withheld
+    // rather than guessed.
+    //
+    // ⭐ TILE 2 KEEPS ONE COMBINED TOTAL AND CHANGES ONLY ITS LABEL. Trevor:
+    // the label should "encompass all of the naming nomenclatures of the
+    // individual collectibles" — Moments (Top Shot, All Day, LaLiga), Pins
+    // (Pinnacle), Cards (Candy/Panini when they land). Do NOT split it per
+    // collection.
+    //
+    // ⭐ PACKS STAND ALONE. Trevor: "Packs should standalone. This is on brand
+    // for Rip Packs City." Not a sub-line of the Moments tile.
+    //
+    // ⛔ THE FIFTH TILE TREVOR ASKED FOR — PACKS UNOPENED — IS DELIBERATELY NOT
+    // HERE, and it is not an oversight. Nothing in this database answers it:
+    // `pack_purchases` is not an acquisition ledger (Trevor has 503 rips against
+    // 133 purchase rows), packs LEAVE a wallet sealed (5 of those 133 were
+    // opened by a different address), so `purchases − rips` is wrong in both
+    // directions at once; and every `total_unopened` / `total_sealed` column in
+    // the schema is distribution-level SUPPLY, not per-wallet holdings. It needs
+    // a Flow chain read for sealed pack NFTs per wallet, cached like
+    // `cached_moment_count` — an ingest, not a card change. A "close enough"
+    // number on the most-shared surface in the product is precisely what the
+    // accuracy gate exists to stop, and this is the one surface where nobody
+    // looking at it can check.
+    const statTiles: Array<{ label: string; value: string; small?: boolean }> = [
+      // TEAMS is SUPPRESSED rather than drawn empty. 4 of 25 accounts have a
+      // pick today, so an always-present tile would ship 21 empty boxes — which
+      // is why the reflow (statTileWidth + flexWrap) had to exist before the
+      // tile, not after it.
+      ...(teamsValue
+        ? [{ label: "TEAMS", value: teamsValue.toUpperCase(), small: true }]
+        : []),
+      {
+        label: "MOMENTS / PINS / CARDS",
+        value: walletsOk && totalMoments > 0 ? totalMoments.toLocaleString() : "—",
+      },
+      {
+        label: "PACKS RIPPED",
+        // `ripsRes.count` is null when the read failed AND when there was no
+        // address to ask about — both are "we do not know", never "zero".
+        value: ripsRes.ok && ripsRes.count != null ? ripsRes.count.toLocaleString() : "—",
+      },
+      {
+        label: "TROPHY CASE",
+        value: trophiesOk ? filledTrophyCount + " / 6" : "—",
+      },
+    ];
+    const tileWidth = statTileWidth(statTiles.length);
+
     const avatarSrc = resolveAvatarUrl(bio?.avatar_url);
     const avatarDataUri = avatarSrc.startsWith("https://")
       ? await ogImageDataUri(avatarSrc)
@@ -572,32 +726,13 @@ export async function GET(
               <div
                 style={{
                   display: "flex",
+                  flexWrap: "wrap",
                   gap: 16,
                   marginTop: 26,
+                  maxWidth: 700,
                 }}
               >
-                {[
-                  // ⚠ "—" when the READ failed, not when the value is zero. A
-                  // collector with an empty wallet genuinely has $0; a collector
-                  // whose wallet row we could not read does not, and publishing
-                  // "$0" for them on a shareable card is a false claim about a
-                  // named person.
-                  {
-                    label: "PORTFOLIO FMV",
-                    value: walletsOk ? fmtDollars(totalFmv) : "—",
-                  },
-                  {
-                    label: "MOMENTS",
-                    value:
-                      walletsOk && totalMoments > 0
-                        ? totalMoments.toLocaleString()
-                        : "—",
-                  },
-                  {
-                    label: "TROPHY CASE",
-                    value: trophiesOk ? filledTrophyCount + " / 6" : "—",
-                  },
-                ].map((s) => (
+                {statTiles.map((s) => (
                   <div
                     key={s.label}
                     style={{
@@ -607,13 +742,15 @@ export async function GET(
                       background: "rgba(255,255,255,0.03)",
                       border: "1px solid rgba(255,255,255,0.07)",
                       borderRadius: 10,
-                      minWidth: 196,
+                      width: tileWidth,
                     }}
                   >
                     <div
                       style={{
                         color: "#fff",
-                        fontSize: 36,
+                        // Team abbreviations are a string, not a figure — three
+                        // of them do not fit the tile at 36.
+                        fontSize: s.small ? 26 : 36,
                         fontWeight: 900,
                         lineHeight: 1,
                         display: "flex",

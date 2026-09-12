@@ -137,17 +137,34 @@ describe("/api/og/share — a failed read must not publish a $0 portfolio", () =
  * their real tier colour. `get_trophy_slab_data_by_username` returns live
  * values, and is the same source the profile PAGE and the trophy-case card use.
  */
-function mockPostgrest(opts: { fail?: string; wallets?: unknown[]; trophies?: unknown[] }) {
+function mockPostgrest(opts: {
+  fail?: string
+  wallets?: unknown[]
+  trophies?: unknown[]
+  teams?: unknown[]
+  /** `pack_rips` answers with a Content-Range total, not a row array. */
+  rips?: number | null
+}) {
   globalThis.fetch = vi.fn(async (url: string) => {
     const u = String(url)
     if (opts.fail && u.includes(opts.fail)) return new Response("down", { status: 503 })
+    // ⚠ The rips leg is a COUNT read: the figure rides in `Content-Range`, and a
+    // 200 whose header is missing or unparseable must read as a FAILED read, not
+    // as zero packs. `rips: null` is that case.
+    if (u.includes("pack_rips")) {
+      const headers: Record<string, string> = { "content-type": "application/json" }
+      if (opts.rips != null) headers["content-range"] = `0-0/${opts.rips}`
+      return new Response(JSON.stringify([]), { status: 200, headers })
+    }
     const body = u.includes("profile_bio")
       ? [{ user_id: "u1", display_name: "Trevor", tagline: "", accent_color: "#E03A2F" }]
       : u.includes("saved_wallets")
-        ? (opts.wallets ?? [{ cached_fmv_usd: 5000, cached_moment_count: 30 }])
-        : u.includes("get_trophy_slab_data_by_username")
-          ? (opts.trophies ?? [])
-          : []
+        ? (opts.wallets ?? [{ wallet_addr: "0xbd94cade097e50ac", cached_moment_count: 30 }])
+        : u.includes("user_favorite_teams")
+          ? (opts.teams ?? [])
+          : u.includes("get_trophy_slab_data_by_username")
+            ? (opts.trophies ?? [])
+            : []
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -156,6 +173,7 @@ function mockPostgrest(opts: { fail?: string; wallets?: unknown[]; trophies?: un
   vi.doMock("@/lib/og/img-data", () => ({
     ogImageDataUri: async () => null,
     ogImageDataUris: async () => [],
+    ogImageDataUriSlots: async (urls: unknown[]) => urls.map(() => null),
   }))
 }
 
@@ -167,48 +185,141 @@ async function renderProfile(username = "jamesdillonbond") {
   return ogText(capture.c!.element())
 }
 
-describe("/api/og/profile — a failed wallets read must not publish PORTFOLIO FMV $0", () => {
-  it("renders the real portfolio when the read resolves", async () => {
-    mockPostgrest({})
+// ⭐ THE PORTFOLIO FIGURE CAME OFF THIS CARD ENTIRELY on 2026-09-12 (Trevor's
+// call), so the four cases that used to live here — "renders the real
+// portfolio", "holds the stale-priced portion out", "withholds it on failure",
+// "still renders $0 for an empty wallet" — no longer have a tile to assert
+// against. They are INVERTED rather than deleted: the first case below states
+// the opposite property (the figure must NOT appear), and the honesty pairs
+// they carried move onto the tiles that replaced it.
+//
+// Removing it is also a privacy repair. Every share of a profile was
+// broadcasting that collector's net worth into a public timeline, which is not
+// something most people would opt into if they were asked.
+describe("/api/og/profile — the card states no portfolio figure at all", () => {
+  it("publishes neither the label nor the number, even when the read succeeds", async () => {
+    mockPostgrest({ wallets: [{ wallet_addr: "0xabc123", cached_moment_count: 30 }] })
     const text = await renderProfile()
-    expect(text).toContain("PORTFOLIO FMV")
-    expect(text).toContain("$5.0K")
+    expect(text).not.toContain("PORTFOLIO FMV")
+    expect(compact(text)).not.toContain("$5.0K")
+    // ...and the card is still a card: the tiles that remain are drawn.
+    expect(text).toContain("MOMENTS / PINS / CARDS")
+    expect(text).toContain("TROPHY CASE")
+  })
+})
+
+describe("/api/og/profile — a failed read must not publish a zero about a named person", () => {
+  it("renders the real counts when every read resolves", async () => {
+    mockPostgrest({ rips: 503 })
+    const text = await renderProfile()
+    expect(text).toContain("MOMENTS / PINS / CARDS")
     expect(text).toContain("30")
+    expect(text).toContain("PACKS RIPPED")
+    expect(text).toContain("503")
   })
 
-  // 2026-09-02 (onboarding QA #6): the card publishes the DASHBOARD's number —
-  // total minus the stale-priced portion — so the tweet and the page agree.
-  it("holds the stale-priced portion out of PORTFOLIO FMV", async () => {
-    mockPostgrest({ wallets: [{ cached_fmv_usd: 88425, cached_fmv_stale_usd: 39553, cached_moment_count: 19381 }] })
+  it("WITHHOLDS the Moments count when the wallets read fails", async () => {
+    mockPostgrest({ fail: "saved_wallets", rips: 503 })
     const text = await renderProfile()
-    expect(text).toContain("$48.9K")
-    expect(text).not.toContain("$88.4K")
-  })
-
-  it("WITHHOLDS the portfolio figure when the wallets read fails", async () => {
-    mockPostgrest({ fail: "saved_wallets" })
-    const text = await renderProfile()
-
-    expect(text).toContain("PORTFOLIO FMV")
     // The label stays — the card's layout is intact — but the VALUE is withheld.
-    expect(text).not.toContain("$0")
+    expect(text).toContain("MOMENTS / PINS / CARDS")
     expect(text).toContain("—")
   })
 
-  it("STILL renders $0 for a profile with genuinely no wallets", async () => {
-    // The positive mirror: an empty-but-successful read is a real answer.
-    mockPostgrest({ wallets: [] })
+  it("WITHHOLDS the pack count when the rips read fails", async () => {
+    mockPostgrest({ fail: "pack_rips" })
     const text = await renderProfile()
-    expect(text).toContain("PORTFOLIO FMV")
-    expect(text).toContain("$0")
+    expect(text).toContain("PACKS RIPPED")
+    // Per-leg, not all-or-nothing: the Moments figure survives its neighbour.
+    expect(text).toContain("30")
+    expect(text).toContain("—")
+  })
+
+  it("WITHHOLDS the pack count when the count read 200s with no Content-Range", async () => {
+    // ⚠ The failure shape a `?? 0` would have swallowed. A 200 with no total is
+    // a read we could not interpret, and "0 PACKS RIPPED" about a named
+    // collector is a claim, not a blank.
+    mockPostgrest({ rips: null })
+    const text = await renderProfile()
+    expect(text).toContain("PACKS RIPPED")
+    expect(text).toContain("—")
+  })
+
+  it("STILL renders 0 for a collector who genuinely has not ripped a pack", async () => {
+    // The positive mirror. Without it, "always withhold" would satisfy every
+    // failure case above while deleting a true statement about a real collector.
+    mockPostgrest({ rips: 0 })
+    const text = await renderProfile()
+    expect(text).toContain("PACKS RIPPED")
+    expect(text).toContain("0")
+  })
+
+  it("suppresses the TEAMS tile rather than drawing an empty box", async () => {
+    // 21 of 25 accounts have no pick, so this is the DEFAULT rendering, not an
+    // edge case — an always-present tile would ship 21 empty boxes.
+    mockPostgrest({ teams: [], rips: 12 })
+    const text = await renderProfile()
+    expect(text).not.toContain("TEAMS")
+    expect(text).toContain("PACKS RIPPED")
+  })
+
+  it("draws the TEAMS tile from the structured picks, primary first", async () => {
+    mockPostgrest({
+      teams: [
+        { league: "nba", is_primary: true, teams_master: { abbreviation: "POR", team_name: "Portland Trail Blazers" } },
+        { league: "nfl", is_primary: false, teams_master: { abbreviation: "DET", team_name: "Detroit Lions" } },
+      ],
+      rips: 12,
+    })
+    const text = await renderProfile()
+    expect(text).toContain("TEAMS")
+    expect(text).toContain("POR · DET")
+  })
+
+  it("dedupes an abbreviation two leagues share", async () => {
+    // ⚠ Trevor's real picks, 2026-09-12: Blazers (NBA), Portland Fire (WNBA),
+    // Lions (NFL). Abbreviations are unique per LEAGUE, not globally, so the
+    // undeduped tile reads "POR · POR · DET" on the founder's own card.
+    mockPostgrest({
+      teams: [
+        { league: "NBA", is_primary: true, teams_master: { abbreviation: "POR", team_name: "Portland Trail Blazers" } },
+        { league: "WNBA", is_primary: false, teams_master: { abbreviation: "POR", team_name: "Portland Fire" } },
+        { league: "NFL", is_primary: false, teams_master: { abbreviation: "DET", team_name: "Detroit Lions" } },
+      ],
+      rips: 503,
+    })
+    const text = await renderProfile()
+    expect(text).toContain("POR · DET")
+    expect(text).not.toContain("POR · POR")
+  })
+
+  it("falls back to the legacy free-text team, as the profile page does", async () => {
+    globalThis.fetch = vi.fn(async (url: string) => {
+      const u = String(url)
+      if (u.includes("pack_rips"))
+        return new Response("[]", { status: 200, headers: { "content-range": "0-0/7" } })
+      const body = u.includes("profile_bio")
+        ? [{ user_id: "u1", display_name: "Trevor", accent_color: "#E03A2F", favorite_team: "Rip City" }]
+        : u.includes("saved_wallets")
+          ? [{ wallet_addr: "0xabc123", cached_moment_count: 30 }]
+          : []
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    }) as unknown as typeof globalThis.fetch
+    const text = await renderProfile()
+    expect(text).toContain("TEAMS")
+    expect(text).toContain("RIP CITY")
   })
 
   it("withholds the trophy count when only the trophy read fails", async () => {
     // Per-leg, not all-or-nothing: a failed trophy read must not blank the
-    // portfolio, and vice versa.
-    mockPostgrest({ fail: "get_trophy_slab_data_by_username" })
+    // counts beside it, and vice versa.
+    mockPostgrest({ fail: "get_trophy_slab_data_by_username", rips: 503 })
     const text = await renderProfile()
-    expect(text).toContain("$5.0K") // portfolio still shown
+    expect(text).toContain("30") // Moments still shown
+    expect(text).toContain("503") // packs still shown
     expect(text).not.toContain("0 / 6") // trophy count withheld
   })
 

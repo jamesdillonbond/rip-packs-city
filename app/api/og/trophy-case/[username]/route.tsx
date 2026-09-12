@@ -6,9 +6,12 @@
  * WHY THIS EXISTS SEPARATELY FROM THE PROFILE CARD. Until 2026-08-14 the only
  * trophy-case export was a PDF, and a PDF cannot unfurl: pasting it into X or
  * Discord produces a file, not a picture. The profile card does show the case,
- * but it leads with PORTFOLIO FMV and moment counts — it answers "how big is
- * this collection", where sharing a trophy case asks "look at these six". This
- * card gives the Moments the whole canvas and states no portfolio figure at all.
+ * but it leads with collection counts — it answers "how big is this
+ * collection", where sharing a trophy case asks "look at these six". This card
+ * gives the Moments the whole canvas.
+ * ⚠ It used to say the profile card "leads with PORTFOLIO FMV". That figure was
+ * removed from the profile card on 2026-09-12 (Trevor's call, and a privacy
+ * repair); neither card states a portfolio value now.
  *
  * ⚠ IT READS THROUGH `getPublicProfile`, NOT `trophy_moments` DIRECTLY, and
  * that is a data-quality decision rather than a convenience. Those rows are
