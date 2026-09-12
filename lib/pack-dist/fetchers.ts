@@ -199,6 +199,23 @@ export interface PackTableRow {
   price_source: "primary" | "secondary" | "min" | "none" | null
   primary_available: boolean | null
   secondary_available: boolean | null
+  /**
+   * As-of of `total_minted` / `total_opened` / `total_sealed` (2026-09-11).
+   * Top Shot: `topshot_pack_supply.updated_at`, only when that fetch SUCCEEDED —
+   * the lane's failure branch bumps that stamp while leaving the stale counters,
+   * so the view guards on `supply_ok`. All Day: `allday_pack_supply.opened_updated_at`.
+   * ⚠ `null` means "no honest age", NEVER "fresh": render no age clause, never a
+   * fresh-looking one. See lib/pack-dist/as-of.ts.
+   */
+  supply_as_of: string | null
+  /**
+   * As-of of `depletion_pct` specifically, branch-matched in the view to the
+   * COALESCE that produces it (supply stamp when the generated column wins,
+   * `mv_pack_ev_latest.snapshotted_at` when the EV fallback wins). Deliberately
+   * separate from `supply_as_of` — the two numbers can have different ages, and
+   * pairing one with the other's stamp would be worse than showing no age.
+   */
+  depletion_as_of: string | null
 }
 
 export interface DistFallbackRow {

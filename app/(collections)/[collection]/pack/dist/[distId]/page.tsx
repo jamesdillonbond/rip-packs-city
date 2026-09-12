@@ -81,6 +81,7 @@ import {
   type HeroEdition,
   fetchPackDetailBundle,
 } from "@/lib/pack-dist/fetchers"
+import { withAsOf, depletionTileAsOf, packsRemainingTileAsOf } from "@/lib/pack-dist/as-of"
 import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 
@@ -331,6 +332,11 @@ export default async function PackDetailPage(
     price_source: null,
     primary_available: null,
     secondary_available: null,
+    // Every counter above is null in this branch, so there is nothing to date.
+    // ⚠ null here must stay null: a stamp beside a missing number would read as
+    // "we measured zero just now" rather than "we have no row yet".
+    supply_as_of: null,
+    depletion_as_of: null,
   }
 
   const distMetadata = fallback?.metadata ?? null
@@ -554,6 +560,44 @@ export default async function PackDetailPage(
             ? Math.max(0, Math.min(100, (allDayOpened / allDayTotalMinted) * 100))
             : null)
       : depletionPct
+
+  // ── AS-OF, MATCHED PER NUMBER (2026-09-11, register #74) ───────────────────
+  // Every depletion / packs-remaining figure this page renders comes from a
+  // supply counter whose refresh lane is dead, and until now none of them said
+  // how old it was: topshot_pack_supply's newest SUCCESSFUL fetch is 2026-08-26
+  // (median 2026-06-28), allday_pack_supply holds exactly two distinct stamps
+  // (3,020 rows at 2026-06-30, 175 at 2026-09-01), and the v20 tier counts below
+  // are newest 2026-08-28 with ZERO of 823 fresher than a week.
+  //
+  // ⚠ THE SUB-LABEL "live pool" USED TO BE RENDERED HERE WHENEVER
+  // tierCountsUpdatedAt EXISTED, WITH NO AGE CHECK IN THE BRANCH — a positive
+  // freshness claim over data at least fifteen days old. It is gone: the age is
+  // stated, exactly as the EV-staleness caveat above already does it ("a reader
+  // can only judge a stale number if they are told how stale").
+  //
+  // ⚠ EACH STAMP MIRRORS THE BRANCH THAT PRODUCED ITS NUMBER. The three depletion
+  // sources have three different ages, so a single page-level "data as of" would
+  // attach one source's age to another's figure — the trap CLAUDE.md names under
+  // measurement discipline, and worse than showing no age at all. Where a tile's
+  // two numbers do not share a provenance, it gets NO age rather than a guess.
+  // Both selectors are pure and live in lib/pack-dist/as-of.ts, where a coverage
+  // gate watches them — `app/**/page.tsx` is measured by neither.
+  const depletionAsOf = depletionTileAsOf({
+    isAllDay: collection === "nfl-all-day",
+    supplyAsOf: merged.supply_as_of,
+    depletionAsOf: merged.depletion_as_of,
+    tierCountsUpdatedAt,
+    metaTotalPackCount,
+    metaTotalUnopened,
+  })
+  const packsRemainingAsOf = packsRemainingTileAsOf({
+    supplyAsOf: merged.supply_as_of,
+    tierCountsUpdatedAt,
+    allDayUnopened,
+    allDayTotalMinted,
+    metaTotalUnopened,
+    metaTotalPackCount,
+  })
 
   // Pool depletion (% of the drop pool's editions exhausted) is the figure the
   // pull-value EV is computed against, and the one that drives survivor bias.
@@ -1099,14 +1143,14 @@ export default async function PackDetailPage(
           <KpiCell
             label="Depletion"
             value={`${displayDepletionPct.toFixed(displayDepletionPct >= 10 ? 0 : 1)}%`}
-            sub={collection === "nfl-all-day" ? "of all minted packs" : tierCountsUpdatedAt ? "live pool" : merged.ev_depletion_pct === null ? undefined : `Pool ${merged.ev_depletion_pct}%`}
+            sub={withAsOf(collection === "nfl-all-day" ? "of all minted packs" : tierCountsUpdatedAt ? "pool" : merged.ev_depletion_pct === null ? null : `Pool ${merged.ev_depletion_pct}%`, depletionAsOf) ?? undefined}
           />
         )}
         {!isRewardPack && (
           <KpiCell
             label="Packs remaining"
             value={fmtCount(effectiveUnopened)}
-            sub={effectiveTotalMinted !== null ? `of ${fmtCount(effectiveTotalMinted)} minted` : undefined}
+            sub={withAsOf(effectiveTotalMinted !== null ? `of ${fmtCount(effectiveTotalMinted)} minted` : null, packsRemainingAsOf) ?? undefined}
           />
         )}
       </section>
