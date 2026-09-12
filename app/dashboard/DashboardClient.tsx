@@ -222,7 +222,7 @@ function ProfilePageInner() {
   // and the tiles summed {} to a confident "0 · $0 · 0". On a 19.5K-Moment
   // wallet `/api/profile/collection-stats` spends 20 s, then its one retry
   // spends 20 s more, so that measured-looking zero stood for ~41 SECONDS on
-  // every dashboard load before the "Couldn't load" banner replaced it
+  // every dashboard load before the "Could not load" banner replaced it
   // (reproduced live 2026-09-12: 0/$0/0 at t+4 s, "—" at t+52 s).
   // A read that has not answered is not an answer. Settled starts FALSE.
   const [statsSettled, setStatsSettled] = useState(false);
@@ -1294,7 +1294,7 @@ function ProfilePageInner() {
                      to tell them apart — which is why it kept asserting
                      "MOMENTS 0" on all five collections of a 19,273-Moment
                      wallet even AFTER the headline tiles had switched to
-                     "Couldn't load" (2026-09-12). Pass the provenance. */
+                     "Could not load" (2026-09-12). Pass the provenance. */
                   failed={walletsFailed || statsFailed.includes(g.addr.toLowerCase())}
                   loading={statsLoading}
                   indexing={indexing}
@@ -2222,7 +2222,7 @@ function WalletGroupCard({
 }: {
   group: { addr: string; rows: SavedWallet[]; nickname: string | null; verifiedAt: string | null };
   stats: CollectionStat[];
-  /** This wallet's collection-stats read FAILED this pass. `stats` is then [] for
+  /** The collection-stats read for this wallet FAILED this pass. `stats` is then [] for
    *  a reason that has nothing to do with what the wallet holds. */
   failed?: boolean;
   /** The collection-stats read has not answered yet this pass. */
