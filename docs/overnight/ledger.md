@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ SHIPPED: nine of twelve Telegram senders could be REJECTED for length, including the user-facing alerter at 79 % of the cap — all bounded, plus a ban-at-zero guard · Claude Code (cloud), autonomous session
+
+**Register #77** recorded the fleet alarm going mute on 2026-09-11T00:01:09Z: Telegram answered `http_400 … "message is too long"`, email was `not_configured`, and the only surviving signal was a GitHub annotation nobody watched. ⭐ **The generalisable half is that the text is one line per finding, so ITS LENGTH GROWS WITH THE SIZE OF THE INCIDENT — the alarm's delivery probability falls as the thing it reports gets worse, and the failure's output is silence.**
+
+⛔ **`lib/telegram-message.ts` was written for that incident and only THREE call sites adopted it.** A tree walk found **twelve** `sendMessage` sites; **nine were unbounded.** That is this estate's recorded *one-bounded-read-vouching-for-its-bare-siblings* shape — **a helper existing is not the same as every sender using it, and only a walk can tell the difference.**
+
+🚨 **SIZED LIVE, and the user-facing one is already near the edge: `/api/check-alerts` measured ~3,250 characters at 13 active alerts — 79 % of the 4,096 cap — with a longest single `detail` of 574.** It caps the LINE COUNT at 12 but each line embeds an unbounded `detail`, so one more verbose alert 400s the send and the pipeline alarm goes silent exactly when the fleet is worst.
+
+**Bounded six senders** (`check-alerts`, `cron/alerts-send`, `support-chat`'s HIGH escalation page, `admin/cron/detect-league-drift`, `admin/analytics-smoke`, `early-access/submit`). ⭐ **`app/api/bots/telegram` was deliberately LEFT ALONE — it already chunks at 4,000 via `splitForTelegram`, which is a real fix, not an exemption**, and rewriting it into truncation would have been a regression dressed as consistency. ⚠ **The `support-chat` one is the sharpest after check-alerts:** `reason` is model-written from a user conversation and unbounded, and that route already refuses to tell a user "you've been paged" unless the send was accepted — so an over-long issue turned a real HIGH emergency into an *honest* non-delivery.
+
+**Shipped a ban at zero**, `__tests__/telegram-senders-are-all-bounded.test.ts`: a tree walk over six roots, accepting either the shared helper or a local chunker, with an inline `telegram-length: intentional` marker as the suppression.
+
+🚨 **AND MUTATING MY OWN GUARD IS WHAT MADE IT A GUARD.** The first version tested the raw source for `fitTelegramText`, so **reverting the real call in `/api/check-alerts` left the `import { fitTelegramText }` line behind and the guard went GREEN** — three of four mutations survived, and it would have passed a file whose only trace of the fix was an unused import. ⭐ **Imports are now stripped before the test, so only a CALL counts**, and the case is pinned as an assertion. **All six reverts now KILLED; a synthetic new unbounded sender in `lib/seo.ts` killed; the control — a synthetic BOUNDED sender — correctly quiet.**
+
+**Verification.** `npm test` **1505 files / 16,713 tests** green (+5, this guard), `tsc` clean, `lint:ratchet` 716 vs baseline 717 over 3,000 files.
+
+**Revert path.** Code only, no DB: `git revert` the commit whose message begins `fix(alerts): every Telegram sender bounds its text`. ⚠ Reverting restores the length-rejection on all six.
+
+⛔ **#77's EMAIL half is untouched and stays open: `email-FAILED:not_configured` on 18 of 18 runs is a missing key, which is Trevor's.** So the fleet alarm is still single-channel — this change makes that one channel stop failing on the runs that matter, it does not restore the second.
+
+
 ### 2026-09-12 · ✅ SHIPPED: the go-live gates now keep a HISTORY — the table they are read from is keyed on `metric` alone and kept none, which is why M2's 28.3 was recorded as a gain and retracted · Claude Code (cloud), autonomous session
 
 **What shipped.** `public.rpc_trust_health_history` (append-only) + pg_cron **jobid 488** `rpc-trust-health-history` (`*/10`, owner `postgres`), which copies `rpc_trust_health_precompute` into it. Migration `20260912083457`. ⭐ **The precompute, the function that writes it, and every existing reader are UNTOUCHED** — this is a new object beside them, not a change to one.
