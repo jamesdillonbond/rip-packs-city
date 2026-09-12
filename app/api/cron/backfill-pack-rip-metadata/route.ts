@@ -59,7 +59,17 @@ async function run(request: NextRequest) {
         p_ok: ok,
         p_error: errMsg,
         p_extra: {
-          dist_resolved: data?.dist_resolved ?? null,
+          // 2026-09-12: `dist_resolved` is RETIRED, not renamed. It came from
+          // `RETURNING pr.dist_id IS NOT NULL` over an UPDATE that COALESCEs the
+          // existing value, so it counted every row that ENDED UP with a dist_id
+          // — including the ones that walked in with one — and read 484/484/488
+          // of 500 on three consecutive runs while the outcome table did not
+          // move. A key that DISAPPEARS tells a reader the definition changed;
+          // a key that stays and means something new does not. See #72 and
+          // migration 20260912152337. The three fields sum to `processed`.
+          dist_newly_resolved: data?.dist_newly_resolved ?? null,
+          dist_already_set: data?.dist_already_set ?? null,
+          dist_still_null: data?.dist_still_null ?? null,
           value_resolved: data?.value_resolved ?? null,
           duration_ms: Date.now() - startedMs,
         },

@@ -62,8 +62,11 @@ describe("/api/cron/backfill-pack-rip-metadata — deferred body", () => {
     expect(call?.[1]).toEqual({ p_limit: 500 })
   })
 
-  it("success → ok:true and data.{processed,value_resolved,dist_resolved} shape the log", async () => {
-    backfillImpl.fn = async () => ({ data: { processed: 10, value_resolved: 4, dist_resolved: 3 }, error: null })
+  it("success → ok:true and the three dist states shape the log", async () => {
+    backfillImpl.fn = async () => ({
+      data: { processed: 10, value_resolved: 4, dist_newly_resolved: 3, dist_already_set: 6, dist_still_null: 1 },
+      error: null,
+    })
     await drive()
     const p = logParams()
     expect(p.p_ok).toBe(true)
@@ -71,8 +74,28 @@ describe("/api/cron/backfill-pack-rip-metadata — deferred body", () => {
     expect(p.p_rows_found).toBe(10)
     expect(p.p_rows_written).toBe(4)
     expect(p.p_extra.value_resolved).toBe(4)
-    expect(p.p_extra.dist_resolved).toBe(3)
+    expect(p.p_extra.dist_newly_resolved).toBe(3)
+    expect(p.p_extra.dist_already_set).toBe(6)
+    expect(p.p_extra.dist_still_null).toBe(1)
     expect(typeof p.p_extra.duration_ms).toBe("number")
+  })
+
+  // ⛔ THE RETIRED KEY MUST NOT COME BACK, and this is the assertion that holds
+  // that. `dist_resolved` counted rows that ALREADY had a dist_id (it read
+  // `RETURNING pr.dist_id IS NOT NULL` over a COALESCE-ing UPDATE), so it
+  // reported 484/484/488 of 500 on three consecutive runs while `pack_rips`
+  // gained nothing. ⭐ Asserting the ABSENCE of the false field, not the
+  // presence of the new ones — restoring the old body reds this even if it also
+  // emits the new keys alongside.
+  it("SELF-TEST — the retired `dist_resolved` key is not logged, even if the RPC still returns it", async () => {
+    backfillImpl.fn = async () => ({
+      data: { processed: 10, value_resolved: 4, dist_resolved: 484, dist_newly_resolved: 0, dist_already_set: 9, dist_still_null: 1 },
+      error: null,
+    })
+    await drive()
+    const p = logParams()
+    expect(Object.keys(p.p_extra)).not.toContain("dist_resolved")
+    expect(p.p_extra.dist_newly_resolved).toBe(0)
   })
 
   it("returned { error } → ok:false, errMsg surfaced", async () => {
@@ -99,7 +122,9 @@ describe("/api/cron/backfill-pack-rip-metadata — deferred body", () => {
     expect(p.p_ok).toBe(true)
     expect(p.p_rows_found).toBe(0)
     expect(p.p_rows_written).toBe(0)
-    expect(p.p_extra.dist_resolved).toBeNull()
+    expect(p.p_extra.dist_newly_resolved).toBeNull()
+    expect(p.p_extra.dist_already_set).toBeNull()
+    expect(p.p_extra.dist_still_null).toBeNull()
     expect(p.p_extra.value_resolved).toBeNull()
   })
 
