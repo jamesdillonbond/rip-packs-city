@@ -2,6 +2,50 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ DUNE'S `flow.cadence_events` IS THE INDEPENDENT CONTROL FOR ANY "IS OUR INGEST MISSING ROWS?" QUESTION (method, 2026-09-11, register #70)
+
+When a collection's volume falls, **nothing inside this estate can tell a market decline from a
+coverage gap** — `rows_found` is what *our* query returned, so a narrowing upstream looks identical to
+a quiet market. **Dune is built from the chain and touches none of our pipelines**, which is what
+makes it a control rather than a second opinion. Total cost of the 09-11 investigation: **~2 credits
+of 2,500** — it is cheap, and the constraint is datapoints (rows × columns), not queries.
+
+**The method, in the order that worked. Steps 1–3 each changed the answer.**
+
+1. **Read the event types FROM the chain — never guess them.** `UNNEST(topics)` filtered to
+   `%<Contract>%` over 2–3 days. All Day emits only `Deposit` / `Withdraw` — **no sale event of its
+   own**, which a guessed query would have missed entirely.
+2. **Find the marketplace by CO-OCCURRENCE, not by assumption.** Take the transactions containing the
+   collection's `Withdraw` and group the *other* topics in the same tx. That surfaced
+   `NFTStorefrontV2.ListingCompleted`, `NFTStorefront.ListingCompleted`, `OffersV2.OfferCompleted` and
+   `PackNFT.Opened` together.
+3. **Read one sample `data` payload before counting anything.** It is JSON carrying `nftType`,
+   `purchased`, `salePrice`, `nftId` — so a collection filter and a cancellation filter are both
+   available **without joining on transactions at all**. ⚠ **`ListingCompleted` fires on
+   CANCELLATION too**: 09-07 had **629 cancels against 272 purchases**, so counting the event raw
+   manufactures a coverage gap that does not exist.
+4. **Always filter `block_date`** (the partition column), or the cost climbs fast.
+
+**Calibration — how good the comparison can get.** Purchased-listing counts matched RPC's own `sales`
+**EXACTLY on 27 of 30 days** (398/398, 841/841, 984/984); the three misses were one partial-window day
+and two off-by-2s. ⭐ **That exactness is itself a finding instrument — once the listing path matches
+perfectly, anything else is provably ABSENT.** That is how the missing All Day accepted-offer lane
+surfaced: Top Shot has `offer_fill` at 9,260 rows/14d, All Day has **none**, at roughly **65/day**.
+(Sized afterwards, it is worth **+0.15–0.58 points of M2** — only 450 of 2,190 fills are mappable, and
+the naive ×4.87 scale-up is an upper bound because the mappable subset is biased toward
+already-traded editions.)
+
+**Gotchas**
+
+- It counts **EVENTS**, so a multi-moment transaction contributes one row per moment — comparable to
+  `sales` **rows**, not to transaction counts.
+- Addresses seen in this pass: AllDay `e4cf4bdc1751c65d` · TopShot `0b2a3299cc857e29` ·
+  storefront `4eb8a10cb9f87357` · OffersV2 `b8ea91944fd51c43` (serves **both** AllDay and TopShot) ·
+  DUC `ead892083b3e2c6c`.
+- A large result exceeds the MCP output cap and is written to a file instead — **parse it with a
+  script**, do not read it into context.
+
+
 ## 2026-09-03/04 — Top Shot is readable ON CHAIN, and the Flow REST script has a MEASURED batch ceiling
 
 With `public-api.nbatopshot.com` decommissioned, two Top Shot facts that the GraphQL host used to serve

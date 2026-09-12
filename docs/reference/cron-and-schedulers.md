@@ -2,6 +2,61 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⛔ THE COST CURVE OF A TIME BOUND IS NOT MONOTONIC — 30 DAYS IS SLOWER THAN NO BOUND (jobid 355, measured 2026-09-11 in a genuinely quiet window)
+
+`backfill_pinnacle_trade_acquisitions(50000)` — jobid **355**, the sibling of jobid 218 in the
+"LIMIT that never binds" family. Same signature: a `rows=19` estimate under `LIMIT 50000`, **3,728
+candidate rows re-derived every run** against an existing 3,742, **3 rows inserted in 24 h**, and an
+8 s ↔ 490 s spread that is pure **cache residency**, not contention.
+
+Every earlier filing on this job was gated on *"measure BUFFERS outside a saturation spell"* and none
+could. At **18:07 PT on 09-11** the instance was quiet — 1 active backend, 0 IO waiters, 0 startup
+timeouts in 15 minutes — so the measurement finally happened, same instrument on every variant,
+back to back:
+
+| bound on `t.traded_at` | outer rows | plan | **buffer reads** | writes |
+|---|---:|---|---:|---:|
+| **unbounded (shipped today)** | 148,025 | Parallel Hash Join | **40,331** | 7,369 |
+| 30 days | 33,749 | **serial** Hash Join | **TIMEOUT > 120 s** | — |
+| 14 days | 8,119 | **Nested Loop** | **2,443** | 0 |
+| 7 days | 1,325 | **Nested Loop** | **372** | 1 |
+
+⭐ **The middle is the worst place to be.** The plan says why: the smaller outer scan drops below the
+**parallel threshold**, so the *same* ~58k-row hash over `wallet_moments_cache` runs on **one** worker
+instead of two. **Bounding the outer table does not shrink the dominant cost — it removes the
+parallelism that was hiding it.** A team trying "30 days" as the obvious first step measures a
+regression and concludes the lever does not work.
+
+**Two rules this adds to any "bound the scan" prescription:**
+
+- **Test ≥3 window sizes, never one.** The win only appears once the outer side is small enough to
+  flip hash → nested loop. Between "big enough to parallelise" and "small enough to loop" there is a
+  dead zone that is worse than doing nothing.
+- **Check for an EXISTING index before prescribing one.** A sibling filing prescribed expression
+  indexes on `lower(wallet_address)` / `lower(to_wallet)` reasoning that a function on both sides
+  forces a whole-side hash. **The plan does not do that** — at 7/14 days it drives a Nested Loop from
+  `idx_wmc_moment_collection_cover (moment_id, collection_id)`, **which already exists**, with
+  `lower(...)` demoted to a cheap per-probe `Filter`. The prescription would have built a large index
+  on a **3.26 GB** IO-bound table to buy nothing. Both it and "cut the 50000 batch" (byte-identical
+  plan at `LIMIT 50` — the bound is non-binding) are **refuted**, and #84 is corrected in place.
+
+⚠ **A time bound is only safe if nothing arrives late, and the POOLED lag distribution lies.** Pooled,
+**65% of rows lag >100 days** — that is the initial backfill's signature (it drained 08-23 → 08-30, up
+to 1,195 rows/day, lags to 242 days), not ongoing behaviour. Split on the change point: from 08-31 the
+steady state is **1–3 rows/day with a maximum lag of 1.1 days**, every one under 1.2. A 14-day window
+is a **12.7× margin** over the observed steady-state maximum; 7 days is 6.4×.
+
+⛔ **NOT SHIPPED, and the reason is not caution for its own sake: a bound changes what the system
+CAPTURES, on a user-facing path.** `moment_acquisitions` feeds `/api/cost-basis`,
+`/api/wallet-cost-basis`, `/api/wallet-hold-time` and `/api/wallet-search`. If a trade's
+`wallet_moments_cache` row ever appears more than 14 days late, that acquisition is skipped
+**permanently** — nothing re-scans it. Nothing observed does that, but the observation window is only
+~12 days of steady state. **That trade-off is Trevor's, and it is a one-line approval.** If it ships,
+the revert is the current body (drop the `WHERE`), and a one-off unbounded manual run re-catches
+anything the window missed — so the failure mode is recoverable, provided someone remembers this
+paragraph.
+
+
 ## 2026-09-04 — the no-success arm needs a LOWER BOUND when the threshold exceeds retention
 
 `detect_pipelines_without_success()` (added 09-03) fired on `topshot-circulation-onchain` the moment its

@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · 📚 SESSION CLOSE-OUT — three durable lessons promoted out of today's work into the reference docs, because a fact left in a session log stops being read · Claude Code on Trevor's box, Trevor: "update memories and documentation, then I'll archive this thread"
+
+**Docs-only. No code, migration, DB or production state changed.**
+
+Three sections added, each the generalisable half of something measured today rather than a restatement of the filing:
+
+- **[testing-and-ci.md](../reference/testing-and-ci.md)** — a DB pin runs against **its fixture's world, not production's**, so it can guard BLAST RADIUS while being structurally silent about **EFFICACY**. The case is #82: `raise_impossible_parallel_circ()` logged **274 repairs** and landed none, because a `BEFORE` trigger the fixture lacked reverted every one. Carries the two questions to ask of any pin, the `pg_trigger` fixture-diff query, the labelled-stand-in rule, and the `RETURNING`-sees-the-rewrite trick.
+- **[cron-and-schedulers.md](../reference/cron-and-schedulers.md)** — jobid 355's four-variant BUFFERS table, measured in the quiet window at 18:07 PT. ⛔ **The cost curve is NOT monotonic: 30 days is slower than no bound**, because the smaller outer scan drops below the parallel threshold. Adds "test ≥3 window sizes" and "check for an existing index before prescribing one" to any bound-the-scan prescription, and records both refuted fixes.
+- **[apis-and-cadence.md](../reference/apis-and-cadence.md)** — the Dune `flow.cadence_events` method as an **independent control** for "is our ingest missing rows, or did the market move?": read event types FROM the chain, find the marketplace by co-occurrence, read one `data` payload before counting (`ListingCompleted` fires on **cancellation** too), always filter `block_date`. ~2 credits of 2,500.
+
+Session entry prepended to **[docs/sessions/2026-09.md](../sessions/2026-09.md)**, newest-first.
+
+⛔ **`CLAUDE.md` was NOT edited — it measures 39,998 chars against a 40,000 limit, 2 of headroom.** Every lesson above went to a reference doc instead, which is the displacement rule working rather than being waived.
+
+**Verified:** doc guards **41/41 green** (`memory-docs-have-no-duplicated-blocks`, `memory-doc-links-guard`, `live-docs-md-links-resolve`, `claude-md-stays-under-the-memory-file-limit`, `retired-rules-are-absent-from-live-memory`, `gitignore-cannot-silently-swallow-a-docs-file`), gated on the exit line, not on grep. Each splice asserted its H2 count rose by exactly one.
+
+**REVERT:** docs-only; `git revert` this commit.
+
+
 ### 2026-09-11 · 🔴 A LANE THAT FINISHED ITS WORK MONTHS AGO IS STILL SCANNING BOTH `sales` PARTITIONS 286 TIMES A DAY TO FIND NOTHING — and I declined to ship the fix because the instance is mid-spell · Claude Code (cloud), Trevor: "keep going until there's nothing left unresolved"
 
 **Read-only turn. One new inbox filing; no code, DB or production state changed.**

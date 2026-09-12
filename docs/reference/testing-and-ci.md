@@ -3,6 +3,58 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## 🚨 A DB PIN CAN GUARD BLAST RADIUS AND BE STRUCTURALLY SILENT ABOUT EFFICACY (2026-09-11, register #82)
+
+`supabase/tests/*.sql` pins run a **verbatim copy** of a function against tables the test file
+`CREATE`s itself. **Those tables are not production's.** Anything production has that the fixture
+lacks — a trigger, a companion table, a constraint — is **invisible to the pin by construction**,
+however green it runs. This is a different failure from a **stale** pin (one pointing at a superseded
+migration): here the pin was current, correct, and green, and the function it pinned **did nothing at
+all in production**.
+
+**The measured case.** `raise_impossible_parallel_circ()` ran 4×/day for months, logged
+**274 repairs across 188 editions** in `impossible_parallel_circ_raises`, and **made none of them**.
+A `BEFORE UPDATE` trigger (`trg_topshot_normalize_base_club_circulation`) rewrites a Top Shot
+parallel's `circulation_count` from `badge_editions` in the **same statement**, so every raise was
+reverted before it landed. Proven live and rolled back:
+
+```
+before=99 | wrote=140 | after_trigger=99
+```
+
+The pin asserted `raised = '1'` and passed, because its fixture had **neither the trigger nor
+`badge_editions`**.
+
+⭐⭐ **THE SHAPE, and it is the part that generalises: the pin guarded BLAST RADIUS and was silent
+about EFFICACY.** Its own header said *"a regression here would silently mutate circulation on the
+wrong editions"*, and every assertion was about what the function must **NOT** touch — non-parallels,
+other collections, rows already within circulation. **Not one asserted that the change SURVIVED.**
+Both are legitimate concerns; only one was covered, and the register read as though the function was
+verified working.
+
+**How to apply — two questions, not one.** When adding or reviewing any pin, ask *what must it not
+touch?* **and** *does its effect persist?* A suite answering only the first reads as thorough and
+proves nothing about the second.
+
+- Before trusting a pin, diff the fixture's schema against production for the table it writes:
+  `SELECT tgname FROM pg_trigger WHERE tgrelid = '<table>'::regclass AND NOT tgisinternal`.
+  A trigger the fixture lacks is the classic gap.
+- A fixture **stand-in** for a production trigger is acceptable **if it is labelled as one** and the
+  behaviour it reproduces is quoted inline, so a reader can check it against `pg_proc` without
+  leaving the file. Reproduce only the branch under test. The 09-11 fix added
+  `_stand_in_normalize_parallel_circ` on exactly that contract, plus fixture **e5** whose write the
+  stand-in reverts.
+- ⚠ **`RETURNING` sees a `BEFORE` trigger's rewrite — it reports the row as actually STORED.** That
+  is the cheap way to make *"did my write survive?"* observable inside the same statement, and it is
+  what the forward fix uses to split `attempted` from `raised`:
+  `reverted_by_trigger = attempted - raised`, with the audit insert filtered to
+  `stored_circ IS NOT DISTINCT FROM new_circ`.
+- ⚠ **A mutating function must be captured ONCE.** The first draft of the new pin called
+  `raise_impossible_parallel_circ()` three times to make three assertions — three different runs
+  against three different states. `CREATE TEMP TABLE _run1 AS SELECT raise_impossible_parallel_circ() AS j;`
+  then assert against `_run1`.
+
+
 ## Memory docs carry no duplicated blocks (`memory-docs-have-no-duplicated-blocks`, added 2026-08-27)
 
 🚨 **A scripted insert duplicated half a reference doc and NOTHING SAW IT FOR TWO DAYS.** On 2026-08-25
