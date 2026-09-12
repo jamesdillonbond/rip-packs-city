@@ -51,7 +51,7 @@ Any time you ship something that changes `main` or production DB/data state — 
 - Run the smoke test after deploying; verify Supabase row counts and Vercel deploy status before calling a task done.
 - **Commit the ledger BEFORE the code** so the code commit is the tip and auto-deploys (a docs-only tip suppresses the Vercel deploy — this trap has bitten twice).
 - Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200. ⚠ **And platform STATE by a REQUEST, never a status field: `get_project.live:false` + apex hosts absent from `domains` read IDENTICALLY on a healthy estate** (prod hostnames live on the DEPLOYMENT's `alias`) — a false P0 AND a false "still down" in one night (#76).
-- **Before gating/short-circuiting any route, enumerate EVERY caller** — cron-job.org, GHA workflows, vercel.json, pg_cron, in-repo fetches — not just the one you had in mind (a 07-18 gate silently no-op'd a GHA backstop because its sweep stopped at cron-job.org).
+- **Before gating a route, enumerate EVERY caller AND every inbound link** — cron-job.org, GHA, vercel.json, pg_cron, in-repo fetches, each `href` builder (07-18 a gate no-op'd a GHA backstop; 09-11 the denylist left 100 pages linking into its own 404).
 
 ### Pushing from a sandbox — test it, do not assume it
 
