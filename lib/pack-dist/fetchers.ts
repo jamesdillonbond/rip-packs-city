@@ -201,9 +201,9 @@ export interface PackTableRow {
   secondary_available: boolean | null
   /**
    * As-of of `total_minted` / `total_opened` / `total_sealed` (2026-09-11).
-   * Top Shot: `topshot_pack_supply.updated_at`, only when that fetch SUCCEEDED —
-   * the lane's failure branch bumps that stamp while leaving the stale counters,
-   * so the view guards on `supply_ok`. All Day: `allday_pack_supply.opened_updated_at`.
+   * Top Shot: `topshot_pack_supply.last_success_at` — NOT `updated_at`, which the
+   * lane bumps on a FAILED fetch while leaving the stale counters in place, so it
+   * dates the attempt rather than the data. All Day: `allday_pack_supply.opened_updated_at`.
    * ⚠ `null` means "no honest age", NEVER "fresh": render no age clause, never a
    * fresh-looking one. See lib/pack-dist/as-of.ts.
    */

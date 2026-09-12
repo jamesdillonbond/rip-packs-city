@@ -1657,8 +1657,7 @@ function TierOddsPanel({
           Pull odds by tier
         </h2>
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-          {slots && slots > 0 ? `${slots} slots/pack` : "per pack"}
-          {updatedAt ? ` · as of ${relTimeShort(updatedAt)}` : ""}
+          {withAsOf(slots && slots > 0 ? `${slots} slots/pack` : "per pack", updatedAt)}
         </span>
       </div>
       <div style={{ overflowX: "auto" }}>
@@ -1782,7 +1781,11 @@ function PacksContentRemaining({
           Packs Content Remaining
         </h2>
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-          live pool{updatedAt ? ` · as of ${relTimeShort(updatedAt)}` : ""}
+          {/* ⚠ "live pool" was an unverified freshness claim and this very span
+              rendered it beside a 15-day age ("live pool · as of 15d ago") — the
+              tier counts behind it are newest 2026-08-28, with zero of 823 Top
+              Shot dists fresher than a week. The noun stays, the adjective goes. */}
+          {withAsOf("pool", updatedAt)}
         </span>
       </div>
 

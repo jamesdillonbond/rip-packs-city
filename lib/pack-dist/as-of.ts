@@ -41,22 +41,33 @@
 // source with an age from another is the trap CLAUDE.md names under measurement
 // discipline, and it would be worse than showing nothing.
 
-import { fmtAge, minutesSince } from "@/lib/collection-overview-format"
+import { relTimeShort } from "@/lib/pack-dist-format"
 
 /**
  * "as of 15d ago" for a stamp we have; `null` for one we do not.
  *
- * ⚠ NULL IS A REAL ANSWER AND MUST STAY DISTINCT FROM "0m ago". A caller that
- * rendered a missing stamp as "just now" would invent the freshness this module
- * exists to stop inventing, so an absent/unparseable/blank stamp returns null
- * and the caller omits the clause entirely. `fmtAge(minutesSince(...))` alone
- * cannot be used for this: it collapses null to an em-dash, which reads as a
- * rendered value rather than an absence.
+ * ⚠ DELEGATES TO relTimeShort RATHER THAN FORMATTING ITS OWN AGE, and that is a
+ * correctness decision, not tidiness. This page ALREADY renders " · as of X" in
+ * two other places off relTimeShort (the pull-odds and packs-content headers),
+ * from the SAME tier_counts_updated_at stamp these tiles use. A second formatter
+ * would have been a fifth age helper in this repo, and the two disagree: this
+ * one rounds days (`Math.round(hrs/24)`) where `fmtAge` floors them, so a
+ * 15.6-day-old stamp would have rendered "16d ago" in the header and "15d ago"
+ * in the tile directly below it — one page, one timestamp, two ages. Today both
+ * read 15d, which is exactly how that would have shipped unnoticed.
+ *
+ * ⚠ NULL IS A REAL ANSWER AND MUST STAY DISTINCT FROM "just now". relTimeShort
+ * returns "" for an absent or unparseable stamp; that empty string is converted
+ * to null here so a caller can OMIT the clause rather than render an empty one.
+ * A caller that turned a missing stamp into "just now" would invent the very
+ * freshness this module exists to stop inventing.
+ *
+ * `now` is injectable for the same reason relTimeShort's is: so the tests can
+ * pin an age without a fake clock.
  */
-export function asOfLabel(iso: string | null | undefined): string | null {
-  const minutes = minutesSince(iso)
-  if (minutes == null) return null
-  return `as of ${fmtAge(minutes)}`
+export function asOfLabel(iso: string | null | undefined, now: number = Date.now()): string | null {
+  const rel = relTimeShort(iso ?? null, now)
+  return rel ? `as of ${rel}` : null
 }
 
 /**
@@ -73,8 +84,12 @@ export function asOfLabel(iso: string | null | undefined): string | null {
  *   neither      `null`, which callers pass straight to `sub` as undefined. An
  *                empty string would render an empty sub-line.
  */
-export function withAsOf(label: string | null | undefined, iso: string | null | undefined): string | null {
-  const age = asOfLabel(iso)
+export function withAsOf(
+  label: string | null | undefined,
+  iso: string | null | undefined,
+  now: number = Date.now(),
+): string | null {
+  const age = asOfLabel(iso, now)
   const noun = label && label.trim() ? label : null
   if (noun && age) return `${noun} · ${age}`
   return noun ?? age ?? null

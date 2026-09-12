@@ -608,7 +608,10 @@ const PINS = [
   {
     fn: "apply_topshot_supply",
     test: "supabase/tests/apply_topshot_supply.sql",
-    migration: "supabase/migrations/20260802191000_audit_20260802_snapshot_apply_topshot_supply.sql",
+    // re-pointed 2026-09-11: the success branch now also writes last_success_at, so
+    // an as-of can survive a failed fetch (the failure branch bumps updated_at while
+    // leaving stale counters, which would otherwise publish a fresh age over them).
+    migration: "supabase/migrations/20260912072451_audit_20260911_topshot_pack_supply_keeps_its_last_success_stamp.sql",
   },
   {
     fn: "resolve_golazos_listing_edition_ids",

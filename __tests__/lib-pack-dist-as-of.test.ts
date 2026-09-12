@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest"
+import { describe, it, expect } from "vitest"
 import { asOfLabel, withAsOf } from "@/lib/pack-dist/as-of"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -12,23 +12,19 @@ import { asOfLabel, withAsOf } from "@/lib/pack-dist/as-of"
 // than the presence of a string, per CLAUDE.md's guards-and-tests rules.
 // ─────────────────────────────────────────────────────────────────────────────
 
-afterEach(() => vi.useRealTimers())
-
-const NOW = new Date("2026-09-12T07:00:00.000Z")
-function at(iso: string) {
-  vi.useFakeTimers()
-  vi.setSystemTime(NOW)
-  return iso
-}
+// `now` is injected rather than faked: asOfLabel/withAsOf take it, exactly as
+// relTimeShort does in lib/pack-dist-format.ts, so these tests need no clock
+// control and cannot leak a fake timer into a sibling file.
+const NOW = Date.parse("2026-09-12T07:00:00.000Z")
 
 describe("asOfLabel", () => {
   it("states the age of a stamp it has", () => {
-    expect(asOfLabel(at("2026-08-28T07:00:00.000Z"))).toBe("as of 15d ago")
+    expect(asOfLabel("2026-08-28T07:00:00.000Z", NOW)).toBe("as of 15d ago")
   })
 
   it("uses hours inside a day and minutes inside an hour", () => {
-    expect(asOfLabel(at("2026-09-12T04:00:00.000Z"))).toBe("as of 3h ago")
-    expect(asOfLabel(at("2026-09-12T06:30:00.000Z"))).toBe("as of 30 min ago")
+    expect(asOfLabel("2026-09-12T04:00:00.000Z", NOW)).toBe("as of 3h ago")
+    expect(asOfLabel("2026-09-12T06:30:00.000Z", NOW)).toBe("as of 30m ago")
   })
 
   // ⚠ THE CORE CASE. A missing stamp must not become "just now" / "0m ago" /
@@ -37,9 +33,7 @@ describe("asOfLabel", () => {
   it.each([null, undefined, "", "not-a-date"])(
     "returns null rather than a fresh-looking label for %p",
     (bad) => {
-      vi.useFakeTimers()
-      vi.setSystemTime(NOW)
-      expect(asOfLabel(bad as string | null | undefined)).toBeNull()
+      expect(asOfLabel(bad as string | null | undefined, NOW)).toBeNull()
     },
   )
 
@@ -47,7 +41,7 @@ describe("asOfLabel", () => {
   // the 73-day topshot_pack_supply median, which is the number that motivated
   // the whole change.
   it("does not soften a 73-day-old stamp", () => {
-    const label = asOfLabel(at("2026-06-28T07:00:00.000Z"))
+    const label = asOfLabel("2026-06-28T07:00:00.000Z", NOW)
     expect(label).toBe("as of 76d ago")
     expect(label).not.toMatch(/just now|min ago|\dh ago/)
   })
@@ -56,37 +50,33 @@ describe("asOfLabel", () => {
   // Math.max(0, …) — pinned here so a future refactor cannot start rendering a
   // NEGATIVE age, which would read as a prediction.
   it("never renders a negative age", () => {
-    expect(asOfLabel(at("2026-09-12T09:00:00.000Z"))).toBe("as of just now")
+    expect(asOfLabel("2026-09-12T09:00:00.000Z", NOW)).toBe("as of just now")
   })
 })
 
 describe("withAsOf", () => {
   it("joins the provenance noun to the age", () => {
-    expect(withAsOf("pool", at("2026-08-28T07:00:00.000Z"))).toBe("pool · as of 15d ago")
+    expect(withAsOf("pool", "2026-08-28T07:00:00.000Z", NOW)).toBe("pool · as of 15d ago")
   })
 
   // The noun says WHERE the number came from and stays true with no stamp; only
   // the WHEN is dropped. Crucially the result carries no freshness word.
   it("keeps the noun and adds nothing when the age is unknown", () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(NOW)
-    expect(withAsOf("pool", null)).toBe("pool")
-    expect(withAsOf("pool", null)).not.toMatch(/as of|live|just now/)
+    expect(withAsOf("pool", null, NOW)).toBe("pool")
+    expect(withAsOf("pool", null, NOW)).not.toMatch(/as of|live|just now/)
   })
 
   it("stands the age alone when there is no noun", () => {
-    expect(withAsOf(null, at("2026-08-28T07:00:00.000Z"))).toBe("as of 15d ago")
-    expect(withAsOf("", at("2026-08-28T07:00:00.000Z"))).toBe("as of 15d ago")
-    expect(withAsOf("   ", at("2026-08-28T07:00:00.000Z"))).toBe("as of 15d ago")
+    expect(withAsOf(null, "2026-08-28T07:00:00.000Z", NOW)).toBe("as of 15d ago")
+    expect(withAsOf("", "2026-08-28T07:00:00.000Z", NOW)).toBe("as of 15d ago")
+    expect(withAsOf("   ", "2026-08-28T07:00:00.000Z", NOW)).toBe("as of 15d ago")
   })
 
   // ⚠ null, not "". The callers hand this straight to a KpiCell `sub`, and an
   // empty string is a rendered (blank) sub-line rather than an absent one.
   it("returns null when it knows neither where nor when", () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(NOW)
-    expect(withAsOf(null, null)).toBeNull()
-    expect(withAsOf("", undefined)).toBeNull()
+    expect(withAsOf(null, null, NOW)).toBeNull()
+    expect(withAsOf("", undefined, NOW)).toBeNull()
   })
 
   // ⚠ Pins the removal of the old label. "live pool" was rendered unconditionally
@@ -94,9 +84,7 @@ describe("withAsOf", () => {
   // module produces may reintroduce an unearned freshness adjective.
   it("never emits an unverified freshness adjective", () => {
     for (const iso of ["2026-09-12T06:59:00.000Z", "2026-06-28T07:00:00.000Z", null]) {
-      vi.useFakeTimers()
-      vi.setSystemTime(NOW)
-      expect(withAsOf("pool", iso)).not.toMatch(/\blive\b|\bcurrent\b|\bfresh\b/i)
+      expect(withAsOf("pool", iso, NOW)).not.toMatch(/\blive\b|\bcurrent\b|\bfresh\b/i)
     }
   })
 })
