@@ -10,6 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ CODE — the bottom nav had no active tab on most of the app, lit the WRONG one on /dashboard/packs, and its labels measured 1.80:1 · Cowork cloud, Trevor: "this entire nav bar needs to be audited"
+
+**Shipped:** `components/MobileNav.tsx` + 7 tests in `__tests__/component-MobileNav.test.tsx`. Revert: `git revert` the commit whose message starts `fix(nav): the bottom bar had no active tab on most of the app`. **Destinations are UNCHANGED** — every tab still links exactly where it did. The re-slotting Trevor asked about is a separate, product-level decision and is NOT in this commit.
+
+**Four measured defects, all inside one file.**
+
+1. **NO TAB WAS ACTIVE ON MOST OF THE APP.** `isActive` was `segments[1] === key`, plus `startsWith("/profile")` for one tab. Neither matches `/dashboard`, `/dashboard/packs`, a collection's own `/overview` landing tab, `/alerts`, `/rewards`, `/my-teams`, `/insights/*` or `/`. **Confirmed live on `/nba-top-shot/overview` — five identical glyphs, none active, on the most common entry point in the product.** Replaced with `activeTabFor(pathname, pageSegment, isCollectionRoute)`, exported and unit-tested: every account surface belongs to Profile (the tab they are all reached through), and a collection page lights a tab only when that tab is where it lives.
+2. **`/dashboard/packs` LIT THE PACKS TAB, WHICH POINTS SOMEWHERE ELSE** — `segments[1]` is "packs" there while the href is `/{collection}/packs`, the market page, so tapping the active tab left the page. The new map needs the first segment to actually name a collection.
+3. **1.80 : 1.** Inactive was `--rpc-text-ghost` = `rgba(255,255,255,0.2)` on the nav's own `#0d0d0d`, at **8px**, on the product's most-tapped control set. WCAG AA wants 4.5:1 for text. Measured the alternatives on the same ground: `--rpc-text-muted` **4.08** (still under — do not "compromise" on it), `--rpc-text-secondary` **6.25**. Took secondary; it is theme-aware so it holds in light mode. Labels 8px → 10px, resting weight 400 → 600. **Bar height unchanged**, so nothing reflows.
+4. **The BAR had no safe-area padding, only `body` did** — on a device with a home indicator the icons and captions were centred inside a 60px box whose lower strip is the indicator. Added `padding-bottom: env(safe-area-inset-bottom, 0px)` + `box-sizing: content-box` so the 60px content height is preserved and nothing moves on a device without one, and moved the Collections sheet's `bottom` onto the same calc. ⚠ It lives in the component's stylesheet rather than inline **because jsdom's CSS parser DROPS an inline `env()` value** — inline, the test would have pinned nothing.
+
+**Non-vacuity proven:** all 7 tests run against the unpatched component — 7 failed / 6 passed; with the patch, 13 passed, and 210 across the four suites that mount this bar.
+
+**Still open and NOT done here:** the bar is mounted **ad hoc in 11 places**, not the root layout, so there is no bottom nav at all on `/dashboard/packs`, `/dashboard/history`, `/dashboard/alerts`, `/dashboard/notifications`, or any of the **30 boards under `/insights`** — including the only Candy surface that exists. That is a 12-file change and gets its own commit so it can be reverted on its own.
+
 ### 2026-09-12 · ✅ DATA — six wallets had no `ufc_strike` row at all, and three of them held 247, 61 and 18 UFC Moments · Cowork cloud, Trevor: "Keep going"
 
 **Shipped (data, no push):** six `saved_wallets` rows inserted — one `ufc_strike` row per wallet for the six that had none — then `aggregate_saved_wallet_stats` run for the three that actually hold UFC. **Revert: `delete from saved_wallets where id in (2032,2033,2034,2035,2036,2037);`**
