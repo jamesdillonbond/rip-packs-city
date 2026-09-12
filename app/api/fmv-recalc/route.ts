@@ -1105,8 +1105,19 @@ export async function POST(req: NextRequest) {
     // proxy paths were removed 2026-05-24. ⚠ Do not re-derive their removal from
     // "cached_listings is dead" — it is not; see the note at Step 2's end.
     const insertRows: Record<string, unknown>[] = []
-    const blendedCount = 0
-    const askProxyCount = 0
+    // ⛔ `blendedCount` / `askProxyCount` REMOVED 2026-09-12. They were
+    // `const … = 0`, never reassigned, left behind when the two paths above were
+    // removed on 2026-05-24 — and they were still being SHIPPED into
+    // `pipeline_runs.extra` as `blended` / `ask_proxy` on every run.
+    // 🚨 A hardcoded zero in a pipeline's own record is indistinguishable from a
+    // measured one: `pipeline_runs_daily` shows both at 0 for every day since the
+    // fields began being recorded (2026-08-31) — ~1,700 runs, ~800,000 rows — while
+    // every OTHER leg (`historical_fallback`, `ask_offers_fallback`,
+    // `parallel_ask_floor`, `haircut_rows`) varies day to day. **A reader sees "the
+    // blend path ran and found nothing to blend" where the truth is "that path was
+    // deleted in May."** This cost a real investigation on 2026-09-12 before the
+    // `const` was found, which is the evidence it was worth deleting rather than
+    // documenting. Nothing read either key. See register #86.
 
     for (const [editionId, edEntry] of editionSalesMap.entries()) {
       const { collectionId } = edEntry
@@ -2334,7 +2345,7 @@ export async function POST(req: NextRequest) {
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount}${historicalFallbackError ? ` historicalFallbackFAILED="${historicalFallbackError}"` : ""} askOffersFallback=${askOffersBackfillCount} allDayAskFallback=${allDayAskBackfillCount} staleTouch=${staleTouchCount} haircut=${haircutRowsTotal} thinSalesCaps=${thinSalesCaps?.total_caps_applied ?? 0} disconnectedAskClamp=${clampRows} hasMore=${hasMore} duration=${duration}ms`
+      `[FMV-RECALC] Done — editions=${editionIds.length} snapshots=${snapshotsUpdated} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount}${historicalFallbackError ? ` historicalFallbackFAILED="${historicalFallbackError}"` : ""} askOffersFallback=${askOffersBackfillCount} allDayAskFallback=${allDayAskBackfillCount} staleTouch=${staleTouchCount} haircut=${haircutRowsTotal} thinSalesCaps=${thinSalesCaps?.total_caps_applied ?? 0} disconnectedAskClamp=${clampRows} hasMore=${hasMore} duration=${duration}ms`
     )
 
     // Surface the run + cap counts in pipeline_runs.extra so /admin
@@ -2361,8 +2372,6 @@ export async function POST(req: NextRequest) {
           page_size: pageEditionIds.length,
           edition_limit: limit,
           has_more: hasMore,
-          blended: blendedCount,
-          ask_proxy: askProxyCount,
           wash_trade_filtered: washTradeEditionCount,
           // ⚠ EVERY per-step count below is paired with an `*_error` key, and the
           // pairing is the point. A count of 0 on its own is ambiguous — nothing
@@ -2407,7 +2416,7 @@ export async function POST(req: NextRequest) {
 
     await fireNextPipelineStep("/api/listing-cache", chain)
     console.log(
-      `[FMV-RECALC] Summary — editionsProcessed=${editionIds.length} snapshotsUpdated=${snapshotsUpdated} blended=${blendedCount} askProxy=${askProxyCount} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} haircutRows=${haircutRowsTotal} haircutCollectionsRun=${haircutCollectionsRun} hasMore=${hasMore} nextOffset=${hasMore ? offset + limit : "null"} durationMs=${duration}`
+      `[FMV-RECALC] Summary — editionsProcessed=${editionIds.length} snapshotsUpdated=${snapshotsUpdated} washTradeFiltered=${washTradeEditionCount} backfill=${backfillCount} historicalFallback=${historicalBackfillCount} haircutRows=${haircutRowsTotal} haircutCollectionsRun=${haircutCollectionsRun} hasMore=${hasMore} nextOffset=${hasMore ? offset + limit : "null"} durationMs=${duration}`
     )
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)
