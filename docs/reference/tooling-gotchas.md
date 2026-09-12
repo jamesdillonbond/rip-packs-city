@@ -1169,3 +1169,43 @@ extra tool call and removes the entire class.
 - ⚠ **"Subtract 7h from `date -u`" is NOT a safe shortcut**: it is 7h only in PDT and 8h in PST, and in a sandbox that is already local it lands a day early.
 
 ⭐ **Sanity check before writing a time to him: PDT is UTC−7, PST is UTC−8.** `03:12Z` → **8:12pm PT the previous day**. A UTC timestamp after ~07:00Z is still *yesterday* in PT — which is also why ledger `### <date>` headings need the conversion.
+
+## ⭐ THE CLOUD SANDBOX CAN RUN THE FULL DB-INVARIANT SUITE — "no Postgres on the box" is TRUE OF TREVOR'S BOX, NOT OF THIS ONE (2026-09-11)
+
+Several entries (and **#82**) say the SQL pins "run only in CI (no Postgres or Docker on the
+authoring box)". That is correct **for the Windows desktop**, and it has been silently
+generalised into "pins cannot be run before pushing". ⛔ **In the Claude-Code-on-the-web
+sandbox it is wrong: `postgresql-16` is installed** (`/usr/bin/psql`,
+`/usr/lib/postgresql/16/bin`, and `docker` is present too). The whole suite ran here in one
+pass: **188/188, runner exit 0.**
+
+⚠ **Two things make it fail in ways that look like "not available" rather than "held wrong".**
+
+1. **`initdb` refuses to run as root** (*"cannot be run as root"*), and this sandbox is root.
+   Run it as the existing `postgres` user.
+2. **That user cannot write into the scratchpad** — the parent directories are not traversable
+   for it, so `initdb` dies on `Permission denied` for its own log. **Put the data directory and
+   the socket in the `postgres` user's HOME.**
+
+The recipe, start to finish:
+
+```bash
+su postgres -c "export PATH=/usr/lib/postgresql/16/bin:\$PATH; \
+  mkdir -p ~/t && initdb -D ~/t/data -U postgres -A trust >~/t/initdb.log 2>&1 && \
+  pg_ctl -D ~/t/data -o '-k /var/lib/postgresql/t -p 55432 -c listen_addresses=' -l ~/t/server.log start"
+
+export PGTZ=UTC
+export DATABASE_URL="postgres://postgres@/postgres?host=/var/lib/postgresql/t&port=55432"
+bash scripts/run-db-tests.sh          # the whole suite
+# or one file, the way the runner does it:
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/_helpers.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/<pin>.sql
+```
+
+⭐ **Why it is worth the four minutes: it converts a pin from "CI will tell me" into a local
+MUTATION test.** A pin you cannot run is a pin you cannot prove fires — and this repo's own
+rule is that a passing guard nobody has seen fail is indistinguishable from one that inspects
+nothing. Shipping `check_pipeline_cadence_collapse` this way caught the mutation (`psql` exit
+**3**, `ASSERT FAILED`) before the push rather than after it. ⚠ The suite needs only the
+`unaccent` contrib extension, which the Ubuntu package already carries, and `PGTZ=UTC`
+matters: several pins render a `timestamptz` and fail on the OFFSET otherwise.

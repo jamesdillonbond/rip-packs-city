@@ -2155,3 +2155,46 @@ npm run lint:ratchet     # eslint, per-RULE against the baseline
 ⭐ **AND THE FAILURE MODE INVERTED.** The 08-xx instance was *local green believed over CI*. This time a session ran the suite locally, saw a genuine red, checked the latest CI run (5118, **green**) and nearly **retracted a true finding** — the badge was about to win against a correct measurement. **A `success` conclusion is not evidence the suite passed; it is evidence that nothing which could fail was run.** Before believing a green badge, read whether the job you care about has `conclusion: "skipped"` — `list_workflow_jobs` says so per job, and `skipped` and `success` both roll up to a green check.
 
 ⚠ **So the standing rule cuts both ways: read CI rather than the badge, and read the JOB rather than the run.** The corollary for anyone doing this arithmetic later: a red introduced by a code push stays hidden for as many docs-only pushes as follow it, which on a ledger-heavy night is most of them.
+
+## 🚨 POSTGRES STORES COMMENTS IN `prosrc` — so a comment-only difference between a pinned file and production is DRIFT the repo-vs-repo guard CANNOT SEE (2026-09-11)
+
+Caught on my own work, one command before committing it. I drafted a function with two inline
+comments inside the body, applied a version **without** them (typed into `apply_migration`), and
+then committed the drafted file as the migration. Both halves looked right:
+`db-invariants-drift-guard` compares **the pin file against the migration file** — both mine,
+both carrying the comments — so it would have passed **green forever** while the committed DDL
+was not what runs.
+
+⛔ **`prosrc` contains everything between the dollar-quote delimiters, comments included.** So:
+
+- a comment present in the file and absent from prod is a **body difference**;
+- `npm run db:pins:check` (prod-vs-repo) reports it — **but that needs the service-role key and
+  is not in the blocking job**, so it can sit unnoticed for as long as nobody runs a health sweep;
+- the drift guard is **structurally blind** to it by construction, because neither side it
+  compares is production. This is the README's own warning — *"It says nothing about
+  production"* — with a new way in.
+
+⭐ **The check is one command and needs no key beyond MCP read access.** Normalise whitespace on
+both sides and compare digests — never eyeball it, and never compare raw lengths only:
+
+```sql
+select md5(btrim(regexp_replace(prosrc, '\s+', ' ', 'g'))) from pg_proc where proname = '<fn>';
+```
+
+```python
+m = re.search(r"as \$function\$(.*?)\$function\$", open(migration).read(), re.S)
+hashlib.md5(re.sub(r"\s+", " ", m.group(1)).strip().encode()).hexdigest()
+```
+
+**Identical digests or the file is not the applied SQL.** Mine differed by **282 characters** of
+comment; the fix was to move them into the header *above* `CREATE OR REPLACE`, which is outside
+`prosrc` and therefore free. ⭐ **Do this on every MCP-applied migration that defines a pinned
+function** — `apply_migration` applies first and the file is a manual follow-up, so the repo
+record is a **retyping** of production unless something proves otherwise.
+
+⚠ **And a second, cheaper trap in the same hour: the drift guard's extractor matches the LITERAL
+UPPERCASE `CREATE OR REPLACE FUNCTION public.<name>`.** A migration written in lowercase makes
+the pin **unextractable**, and the failure reads `"<fn> not found in supabase/tests/<pin>.sql"` —
+which looks like a wrong path or a renamed function, not like casing. (`PROCEDURE` is matched
+too; `prokind` does not matter.) The casing of the `CREATE` line is **not** stored in `prosrc`,
+so fixing it in the file is free and does not touch production.

@@ -1840,3 +1840,53 @@ kill census). Nothing was deleted.
 >   a success and a failure is a stale cache being rewritten, not health** (`ownership-sync-dune`).
 >   Measure the OUTCOME table, not the self-report. ⚠ **`extra.<step>=0` is the SAME null instrument
 >   one level down** — pair every per-step count with an `_error` field.
+
+## 🚨 A SILENCE DETECTOR CANNOT SEE A CADENCE COLLAPSE — it is a blind spot BY CONSTRUCTION, and it cost two days across nine lanes (2026-09-11)
+
+Nine lanes — including both **user-facing alert-delivery** lanes — ran at **8 ticks/day against
+96–2,016** for two days, and **three instruments stayed green the whole time**. None of them was
+broken; the gap is in what they measure:
+
+| instrument | what it actually asserts | why it is silent here |
+|---|---|---|
+| `cron_silent` / `detect_stalled_pipelines()` | time since the last run > **1,800 min (30 h)** | a lane ticking every **177 min** is never 30 h silent |
+| `pipeline_runs.ok` | *this tick* succeeded | every one of the 8 ticks genuinely succeeded |
+| the GHA dead-lane backstop | nothing — deliberately badge-less so it cannot compete with the real alarm | its firing is not a signal |
+
+⭐ **So "is it alive?" and "is it running as often as it should?" are different questions, and only
+the first one was instrumented.** Liveness is a floor test; cadence is a rate test. **A lane at
+1/12th cadence is, to a liveness arm, a healthy lane.**
+
+✅ **The arm that closes it: `check_pipeline_cadence_collapse()`** (migration `20260912054710`) —
+observed runs in a trailing window against each lane's **own trailing median runs/day** from
+`pipeline_runs_daily`. ⭐ **No hand-maintained table of expected cadences**: a lane's normal is its
+own history, so a new lane is covered the day it has a baseline and a retuned one re-baselines
+itself.
+
+⭐ **The thresholds are MEASURED.** Over all **100** lanes with a baseline ≥ 24 runs/day the
+observed/baseline ratio on a **12-hour** window separates with **nothing in between**: collapsed
+**0.000** (×4, fully stopped) and **0.028–0.111** (×12); healthy **0.625** (lowest), then 0.682,
+0.696, 0.766, bulk **0.92–1.05**. `ratio = 0.40` has **1.56×** margin to the lowest healthy lane.
+⚠ **A 6-hour window was measured and rejected** — it puts two healthy 32/day lanes at exactly
+**0.500**, i.e. jitter on a half-hourly lane.
+
+⭐⭐ **SPLIT `degraded` FROM `stopped`, or the arm is unshippable.** `degraded` (still ticking,
+under the ratio) is the class no existing instrument can see. `stopped` (zero runs) is **already**
+the silence arm's case once its 30 h elapses. Merging them makes the new arm fire on every
+long-retired lane — four of them here — which is the **permanently-red-instrument trap (#25)** and
+would have forced a curated suppression list. **The split removes the need for one entirely.**
+
+⚠ **THE BASELINE MUST EXCLUDE THE RECENT DAYS, and this is the property most likely to be
+"simplified" away.** A trailing baseline that includes the collapse **decays toward it**: the
+ratio climbs back to 1.0 and the arm goes quiet while the lane is still broken — the
+reassuring-direction drift this estate already records for trailing-window rates. The cost is a
+**~17-day memory** at the defaults, which is stated in the function's comment and **published as
+`baseline_window`** rather than left implicit. ⚠ The same exclusion also dodges a second trap:
+`pipeline_runs_daily` is refreshed **six-hourly**, so today's row is partial and would understate
+every lane.
+
+⚠ **Shipped UNWIRED on purpose.** It would fire immediately for the nine lanes whose
+cron-job.org entries are disabled (**#76**) and stay red until an operator re-enables them. Wire
+it to the sentinel **after** that, when a red means something new — and note the general rule:
+**an arm that is correct today but will be red for a week is, at a glance, indistinguishable from
+a broken arm.**
