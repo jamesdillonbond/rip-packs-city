@@ -33,6 +33,34 @@ const SHEET_PAGES: { key: CollectionPage; label: string }[] = [
 const TAB_ICON_FONT = 18;
 const NAV_HEIGHT = 60;
 
+// Which tab owns the current route.
+//
+// ⚠ THE OLD RULE WAS `segments[1] === key`, PLUS `startsWith("/profile")` for one
+// tab, and it produced two measured defects (2026-09-12).
+//
+//   (a) NO TAB WAS ACTIVE ON MOST OF THE APP. Neither form matches `/dashboard`,
+//       `/dashboard/packs`, a collection's own `/overview` landing tab,
+//       `/alerts`, `/rewards`, `/my-teams`, `/insights/*` or `/`. Confirmed live
+//       on `/nba-top-shot/overview`: five identical glyphs, none active — on the
+//       most common entry point in the product.
+//   (b) ON `/dashboard/packs` THE PACKS TAB LIT UP POINTING SOMEWHERE ELSE,
+//       because `segments[1]` is "packs" there while the tab's href is
+//       `/{collection}/packs`, the market page. Tapping the active tab left.
+//
+// So the map is by DESTINATION, not by string coincidence. Every account surface
+// belongs to Profile — that is the tab they are all reached through — and a
+// collection page only lights a tab when that tab is where it lives.
+const ACCOUNT_PREFIXES = ["/profile", "/dashboard", "/alerts", "/rewards", "/my-teams"];
+
+export function activeTabFor(pathname: string, pageSegment: string, isCollectionRoute: boolean): string | null {
+  if (ACCOUNT_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) return "profile";
+  if (!isCollectionRoute) return null;
+  if (pageSegment === "sniper") return "sniper";
+  if (pageSegment === "packs") return "packs";
+  if (pageSegment === "collection") return "wallet";
+  return null;
+}
+
 export default function MobileNav() {
   const pathname = usePathname() ?? "/";
   const router = useRouter();
@@ -60,6 +88,10 @@ export default function MobileNav() {
   }, [segments, fallbackCollection]);
 
   const pageSegment = segments[1] ?? "";
+  // A collection route is one whose FIRST segment names a collection. Without
+  // this, `/dashboard/packs` looked like the Packs tab of a collection.
+  const isCollectionRoute = !!getCollection(segments[0] ?? "");
+  const activeTab = activeTabFor(pathname, pageSegment, isCollectionRoute);
 
   const tabs = [
     {
@@ -67,7 +99,7 @@ export default function MobileNav() {
       label: "PROFILE",
       icon: "\u{1F464}",
       href: "/profile",
-      isActive: pathname.startsWith("/profile"),
+      isActive: activeTab === "profile",
       kind: "link" as const,
     },
     {
@@ -75,7 +107,7 @@ export default function MobileNav() {
       label: "SNIPER",
       icon: "⚡",
       href: `/${collection}/sniper`,
-      isActive: pageSegment === "sniper",
+      isActive: activeTab === "sniper",
       kind: "link" as const,
     },
     {
@@ -83,7 +115,7 @@ export default function MobileNav() {
       label: "PACKS",
       icon: "▣",
       href: `/${collection}/packs`,
-      isActive: pageSegment === "packs",
+      isActive: activeTab === "packs",
       kind: "link" as const,
     },
     {
@@ -91,7 +123,7 @@ export default function MobileNav() {
       label: "WALLET",
       icon: "◈",
       href: `/${collection}/collection`,
-      isActive: pageSegment === "collection",
+      isActive: activeTab === "wallet",
       kind: "link" as const,
     },
     {
@@ -139,7 +171,7 @@ export default function MobileNav() {
             aria-label="Collections"
             style={{
               position: "fixed",
-              bottom: NAV_HEIGHT,
+              bottom: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
               left: 0,
               right: 0,
               background: "var(--rpc-surface)",
@@ -293,7 +325,14 @@ export default function MobileNav() {
         className="rpc-mobile-nav"
       >
         {tabs.map((tab) => {
-          const color = tab.isActive ? "var(--rpc-red)" : "var(--rpc-text-ghost)";
+          // ⚠ `--rpc-text-ghost` is rgba(255,255,255,0.2), which measures
+          // **1.80 : 1** against the nav's own `--rpc-surface` (#0d0d0d) — on 8px
+          // labels, on the product's most-tapped control set. WCAG AA wants
+          // 4.5:1 for text. `--rpc-text-secondary` measures **6.25 : 1** on the
+          // same ground and is theme-aware, so it holds in light mode too.
+          // (`--rpc-text-muted` is 4.08 — under the floor. Do not "compromise"
+          // on it.) This is the measured half of "the nav doesn't pop".
+          const color = tab.isActive ? "var(--rpc-red)" : "var(--rpc-text-secondary)";
           const inner = (
             <>
               <span
@@ -307,9 +346,12 @@ export default function MobileNav() {
               </span>
               <span
                 style={{
-                  fontSize: 8,
-                  letterSpacing: "0.12em",
-                  fontWeight: tab.isActive ? 700 : 400,
+                  // 8px was below the size at which the letter-spacing below is
+                  // legible at all; 10 with a heavier resting weight reads at
+                  // arm's length without changing the bar's height.
+                  fontSize: 10,
+                  letterSpacing: "0.1em",
+                  fontWeight: tab.isActive ? 800 : 600,
                   color,
                 }}
               >
@@ -397,6 +439,14 @@ export default function MobileNav() {
             free of dates/dashes: jsdom folds <style> text into body.textContent and a
             component test asserts no "-<digit>" renders. */}
         <style>{`
+          /* ⚠ The BAR itself had no safe-area padding — only body did. On a
+             device with a home indicator the icons and captions were centred
+             inside a 60px box whose lower strip is the indicator. content-box
+             keeps the 60px content height and puts the inset BELOW it, so
+             nothing moves on a device without one.
+             This lives here rather than inline because jsdom's CSS parser drops
+             an inline env() value, which makes it unassertable. */
+          .rpc-mobile-nav { padding-bottom: env(safe-area-inset-bottom, 0px); box-sizing: content-box; }
           .rpc-mobile-nav { display: none !important; }
           .rpc-mobile-sheet { display: none !important; }
           @media (max-width: 768px) {

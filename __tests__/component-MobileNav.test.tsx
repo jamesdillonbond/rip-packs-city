@@ -13,7 +13,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: nav.push, replace: vi.fn(), prefetch: vi.fn() }),
 }))
 
-import MobileNav from "@/components/MobileNav"
+import MobileNav, { activeTabFor } from "@/components/MobileNav"
 
 afterEach(() => {
   cleanup()
@@ -113,5 +113,84 @@ describe("MobileNav — thin collections (2026-09-06)", () => {
     const inert = Array.from(bar.querySelectorAll("[aria-disabled='true']"))
     expect(inert.length).toBe(3)
     nav.pathname = "/nba-top-shot/collection"
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The active-tab map (2026-09-12)
+//
+// ⚠ TWO MEASURED DEFECTS, both from deriving "active" by string coincidence
+// (`segments[1] === key`, plus `startsWith("/profile")` for one tab):
+//
+//   (a) NO TAB WAS ACTIVE ON MOST OF THE APP — not on /dashboard, not on
+//       /dashboard/packs, not on a collection's own /overview landing tab, not
+//       on /alerts, /rewards, /my-teams, /insights/* or /. Confirmed live on
+//       /nba-top-shot/overview: five identical glyphs, none active, on the most
+//       common entry point in the product.
+//   (b) ON /dashboard/packs THE PACKS TAB LIT UP POINTING SOMEWHERE ELSE —
+//       `segments[1]` is "packs" there, while the tab's href is
+//       /{collection}/packs, the market page. Tapping the active tab left it.
+//
+// These drive `activeTabFor` directly so the map is pinned independently of how
+// the bar happens to render it.
+describe("MobileNav — which tab owns the route", () => {
+  it("lights the collection tab the page actually lives on", () => {
+    expect(activeTabFor("/nba-top-shot/sniper", "sniper", true)).toBe("sniper")
+    expect(activeTabFor("/nba-top-shot/packs", "packs", true)).toBe("packs")
+    expect(activeTabFor("/nba-top-shot/collection", "collection", true)).toBe("wallet")
+  })
+
+  it("⚠ does NOT light the Packs tab on /dashboard/packs — that tab links elsewhere", () => {
+    // The account surface owns this route; Packs would send the reader away.
+    expect(activeTabFor("/dashboard/packs", "packs", false)).toBe("profile")
+    expect(activeTabFor("/dashboard/packs", "packs", false)).not.toBe("packs")
+  })
+
+  it("⚠ lights Profile on every account surface, not just /profile", () => {
+    for (const p of ["/profile", "/profile/someone", "/dashboard", "/dashboard/history", "/alerts", "/rewards", "/my-teams"]) {
+      expect(activeTabFor(p, "", false), p).toBe("profile")
+    }
+  })
+
+  it("does not claim a tab for a route none of them own", () => {
+    // /insights/* and / genuinely belong to no tab. Returning null is the honest
+    // answer; the bug was that EVERY collection page also returned null.
+    expect(activeTabFor("/insights/candy-mlb", "candy-mlb", false)).toBeNull()
+    expect(activeTabFor("/", "", false)).toBeNull()
+    expect(activeTabFor("/nba-top-shot/overview", "overview", true)).toBeNull()
+  })
+
+  it("⚠ a prefix match must not swallow an unrelated route", () => {
+    // "/profiles-of-note" starts with "/profile" as a STRING but is not under it.
+    expect(activeTabFor("/profiles-of-note", "", false)).toBeNull()
+  })
+
+  it("renders the active tab in the brand red and the rest at the readable token", () => {
+    // ⚠ MEASURED: `--rpc-text-ghost` is rgba(255,255,255,0.2) = **1.80 : 1**
+    // against the nav's own #0d0d0d, on 8px labels. WCAG AA wants 4.5:1.
+    // `--rpc-text-secondary` measures 6.25 : 1 on the same ground, and it is
+    // theme-aware so it holds in light mode. Assert the ABSENCE of the
+    // unreadable token, which is the thing that was wrong.
+    nav.pathname = "/nba-top-shot/collection"
+    const { container } = render(<MobileNav />)
+    const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
+    const html = bar.innerHTML
+    expect(html).not.toContain("--rpc-text-ghost")
+    expect(html).toContain("--rpc-text-secondary")
+    expect(html).toContain("--rpc-red")
+  })
+
+  it("pads the BAR itself for the home indicator, not just the body", () => {
+    // The body already reserved `60px + env(safe-area-inset-bottom)`; the bar did
+    // not, so its content was centred inside a box whose lower strip is the
+    // indicator. content-box keeps the 60px content height and puts the inset
+    // below it, so nothing moves on a device without one.
+    const { container } = render(<MobileNav />)
+    // ⚠ Asserted on the component's own stylesheet, not on `bar.style`: jsdom's
+    // CSS parser DROPS an inline `env(...)` value, so the inline form reads as
+    // absent here and the test would pin nothing.
+    const css = container.querySelector("nav.rpc-mobile-nav style")?.textContent ?? ""
+    expect(css).toContain("padding-bottom: env(safe-area-inset-bottom")
+    expect(css).toContain("box-sizing: content-box")
   })
 })
