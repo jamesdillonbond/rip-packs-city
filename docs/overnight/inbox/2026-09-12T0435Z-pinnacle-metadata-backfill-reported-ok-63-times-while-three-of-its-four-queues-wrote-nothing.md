@@ -81,3 +81,20 @@ Small. The lane is ~2.5–3.5 s per tick and writes 1–2 rows. **The finding is
 - `extra` now publishes all five write counters plus `q4_targets_total`, `distinct_edition_keys`, `q3_keys_scanned`, `q3_cursor_after`, `q3_wrapped`, `q3_pass`.
 
 **Re-check condition for the fix (so it is falsifiable rather than declared):** within ~17 ticks the log should show `q3_wrapped: true` at least once and `disagreements_corrected` non-zero on the ticks whose slice contains the 5 known pairs; `q4_targets_total` should fall from 9 toward 0. ⚠ **If `q4_targets_total` stays at 7 while `catalog_upserted` keeps reporting rows every tick, there is a FOURTH loop of the Cause-3 shape hiding behind a different column** — look at which `pinnacle_editions` column the upsert leaves in the state the predicate rejects, exactly as `character_name` was.
+
+## ✅ VERIFIED IN PRODUCTION, first tick after the deploy (2026-09-12T05:22Z = 22:22 PT)
+
+The re-check condition above said "within ~17 ticks". It was met on tick one, and the important half is that it was checked against the **outcome table**, not the lane's own report:
+
+```
+q3_eligible 1 · disagreements_corrected 1   <- 0 on all 63 prior runs
+q4_eligible 7 = q4_targets_total 7          <- complete coverage, cap not binding
+q3_keys_scanned 25 · q3_cursor_after PAS-OEV1-BUGS:Golden:1 · q3_passes 1 (persisted)
+distinct_edition_keys 423 · q4_unknown_name_chain_written 3
+mint_count_filled 0 · edition_keys_resolved 0 · catalog_upserted 1 · serials_filled 0
+ok true · rows_found 59 · rows_written 2 · duration_ms 6432
+```
+
+⭐ **The independent count of wmc-vs-map disagreements fell 5 → 4**, so a repair actually landed. ⭐ **And Cause 2 is now VISIBLE rather than inferred:** `mint_count_filled: 0` and `edition_keys_resolved: 0` sit in the log next to `q1_eligible: 1` and `q2_eligible: 50`, which is precisely the reading that was impossible before.
+
+⚠ **Cost, stated rather than buried: 6,432 ms against ~2,300 ms before.** Complete coverage is not free; it is well inside the 30 s `maxDuration`, and the per-PASS buffer cost remains about half the single full join the old read would otherwise have needed.
