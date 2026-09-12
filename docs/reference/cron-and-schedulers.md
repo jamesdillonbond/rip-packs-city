@@ -41,7 +41,7 @@ immediate empty. ⚠ **Channel matters:** 636 MB+ needs the **one-statement pg_c
 **which applies at LOGIN and must be `RESET` immediately after**: memory
 `large-index-build-on-hot-table`. ⛔ **Build WITHOUT `IF NOT EXISTS`** — a cancelled `CONCURRENTLY`
 leaves an INVALID 0-byte stub that `IF NOT EXISTS` then silently no-ops against, reporting success on a
-dead index. **Gate:** 0 `startup timeout` in 30 min AND ≤2 IO waiters. At the time of writing the
+dead index. **Gate:** 0 `startup timeout` in 30 min AND ≤2 IO waiters. ⭐⭐ **TWO REFINEMENTS FROM TRYING IT (2026-09-12).** (1) **The global `ALTER ROLE postgres … statement_timeout` step in the recipe is UNNECESSARY** — `cron_heavy` already carries `statement_timeout=600s` (`SELECT rolconfig FROM pg_roles`), and `cron.use_background_workers` is still `off`, so `SET LOCAL ROLE cron_heavy; SELECT cron.schedule(…); RESET ROLE;` buys a 10-minute budget with **no change to a shared default** — the riskiest line in that recipe, removed. Pick a cron expression that fires **once** and cannot recur for a year, which also sidesteps the never-unschedule-an-in-flight-run hazard. (2) ⚠⚠ **THE GATE MUST BE READ IN THE SAME BREATH AS SCHEDULING — a reading minutes old is STALE.** Within one hour this instance read 4 active / 2 IO wait, then 7 / 6, then 9 / 7, then 4 / 2, with `startup timeout` at 0 throughout. ⛔ I met the gate at 4/2, went to write it up, re-read at **7 active / 6 IO wait** and did not build — which is the rule working, not a missed opportunity. At the time of writing the
 instance read 4 active / 2 IO wait / **0 startup timeouts** — close, but 12 chronic statement timeouts
 in the same window, so it was not taken.
 
