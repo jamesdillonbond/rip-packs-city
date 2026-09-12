@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · QUIET / QUEUE-ONLY NIGHT — nothing shipped · rpc-nightly-autonomous-pass (desktop, NO-PUSH: bash/git mount dead 4th night, Sept-8 Windows Plan9 breakage)
+
+**Shipped: 0. Reverted: 0.** DB/Vercel/Sentry/artifact MCP + file tools all live; git entirely unavailable (no shell). Handoff + this entry + metrics-latest.json written to the mount, **UNCOMMITTED** — commit from desktop, run the three ledger guards. Full write-up: [handoff-2026-09-12-overnight-pass.md](../handoff-2026-09-12-overnight-pass.md).
+
+**Why nothing shipped:** the two acute items' real fixes are behavioral changes on user-facing paths (Trevor's call), and the instance was in live IO contention (bad time for index builds / any migration). A quiet honest night.
+
+**Post-ship watch (09-11 ships):** ✅ pinnacle discovery-cursored fix tracking as predicted (`q4_targets_total` 7→6, new `extra` fields live ~05:22Z, no regression). ⚠ offers-sweep disable NOT yet effective — still firing 3×/12h at 02:31Z via `dead-lane-backstop.yml`; confirm the 09-11 workflow commit reached origin+redeployed. ✅ Q1 board-MV perf regression appears resolved (`rpc_ops_snapshot()` completed clean, arm 1.94h) — confirm the migration is actually applied+committed.
+
+**Health:** security 4/4 clean · 1 trust BREACH `topshot_impossible_parallel_serials`=5 (known #82, ticked 4→5, self-heal is a structural no-op) · 🔴 saturation/M11 unmet: 261 pg_cron `job startup timeout`/24h, 14 spell-hours/72h · DB 28,343 MB (+1,547 MB/24h, no Atlas/job-details retention).
+
+**Queued (details + ready SQL in handoff):** Q-355 pinnacle-trade-acquisitions 14-day-window fix (user-facing capture path; both cheap fixes REFUTED — do NOT cut batch, no expression index needed) · Q-SCB sales-counterparty-backfill exhaustion state + partial-index `source` predicate (quiet-window build) · Q-INST snapshot-institutional-wallets silent 41h (cron console) · Q-MTP match-topshot-players weekly full run upstream-timeout (retry or wait to 09-18) · Q-PACKREALITY board empty = legitimate (source fresh), route-honesty read deferred.
+
+**Needs Trevor (carried):** cron.job_run_details retention · Atlas-events retention · #55 Routines enabled:false · #22 credential-purge GC+rotate · inbox archival (435 files, needs a push-capable pass).
+
 ### 2026-09-12 · ✅ SHIPPED: two `fmv-recalc` telemetry fields were **hardcoded zeros shipped as measurements** — found by a detector, and they cost an investigation first · Claude Code (cloud), autonomous session
 
 **Found by sweeping for the CLASS after fixing one instance**, which is this repo's own *"grep for the EXPRESSION, not the file"* rule applied to an instrument rather than a code shape. `pipeline_runs.extra.blended` and `.ask_proxy` read **0 on every day since the fields began being recorded (08-31)** — 13 days, ~1,700 runs, ~800,000 rows written — while every other leg of the same payload varies (`historical_fallback` 231→1,157/day · `ask_offers_fallback` 0→85 · `parallel_ask_floor` 3→265 · `haircut_rows` 4,075→7,744).
