@@ -15,6 +15,25 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists
+    // because a SILENCE detector cannot see a cadence collapse — nine lanes ran at
+    // 1/12th cadence for two days while `cron_silent` (1,800-minute threshold) and
+    // `ok = true` both stayed green (#76). Three properties are asserted in both
+    // directions: that a still-ticking degraded lane is found at all; that
+    // `degraded` and `stopped` stay APART (merging them fires on long-retired
+    // lanes and reads as noise — the #25 trap — and `stopped` is already
+    // detect_stalled_pipelines()'s case); and ⭐ that the baseline EXCLUDES the
+    // recent days. That last one is the property most likely to be simplified away
+    // and its removal is SILENT: a trailing baseline that includes the collapse
+    // decays toward it, so the ratio climbs back to 1.0 and the arm goes quiet
+    // while the lane is still broken. The fixture is built so removing the
+    // exclusion FLIPS the verdict rather than merely changing a number.
+    fn: "check_pipeline_cadence_collapse",
+    test: "supabase/tests/check_pipeline_cadence_collapse.sql",
+    migration:
+      "supabase/migrations/20260912054710_audit_20260911_a_silence_detector_cannot_see_a_cadence_collapse.sql",
+  },
+  {
     // Added 2026-09-02 with the fields it pins. This function had ONE input —
     // max(started_at) over the pipeline's own terminal rows — so it could say a
     // watchlisted pipeline had gone silent and could not say whether the schedule
