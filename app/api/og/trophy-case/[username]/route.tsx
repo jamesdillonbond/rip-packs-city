@@ -26,6 +26,9 @@
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { ogImageDataUriSlots } from "@/lib/og/img-data"
+import { supabaseAdmin } from "@/lib/supabase"
+import { boundedRead } from "@/lib/api/bounded-read"
+import { editionKey, trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks"
 import { getPublicProfile } from "@/lib/profile/public-profile"
 import { borderCosmetic } from "@/lib/cosmetics"
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style"
@@ -35,6 +38,16 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const FALLBACK_ACCENT = "#E03A2F"
+
+/**
+ * Budget for the jersey-number read — a DECORATION budget, smaller than either
+ * number already in this repo. `lib/og/og-fetch.ts` bounds a card's DATA at 10s
+ * because the card cannot render without it; `lib/badges/server-art.ts` bounds
+ * badge art at 4s because it blocks a PAGE. This blocks neither: a timeout costs
+ * the jersey glyph and nothing else. ⚠ A DATED SAMPLE informs it, not a
+ * constant — re-measure before quoting it.
+ */
+const JERSEY_BUDGET_MS = 2_500
 
 /**
  * One row, always — a case reads as a shelf, and a 3×2 grid at this size makes
@@ -118,10 +131,70 @@ export async function GET(
     // fewer Moments than the collector pinned, with no signal anywhere that a
     // Moment was missing — the trophy is real, only its picture is unavailable,
     // and a named placeholder says that where a silently shorter shelf does not.
+    // ── Jersey numbers, the ONE thing the trophy RPC does not already give us ──
+    // It reads `editions.jersey_number` (to feed serial_fmv_estimate) but does
+    // not return it, so the jersey-match glyph needs this lookup. Everything
+    // else a badge row needs — the unified edition badges, the serial and the
+    // circulation — is already on the row.
+    //
+    // ⚠ Keyed on (collection_id, external_id), never external_id alone: that
+    // column is unique per COLLECTION. And a failure here costs exactly the
+    // jersey glyph — `first` and `perfect` are computed from the row.
+    const jerseyByKey = new Map<string, number>()
+    const extIds = Array.from(
+      new Set(rows.map((t) => (t.edition_id as string | null) ?? "").filter(Boolean)),
+    )
+    if (extIds.length > 0) {
+      try {
+        // ⚠ BOUNDED, like every other DB read a card makes — an OG card renders
+        // while a social crawler holds the connection, and unbounded this could
+        // burn the whole lambda for a row of decoration.
+        //
+        // ⚠ And bounded TIGHTER than the card's data reads, deliberately.
+        // `OG_FETCH_TIMEOUT_MS` is 10s because a card cannot render without its
+        // data; this read only decides whether a jersey glyph appears, so it
+        // gets the same 2.5s decoration budget as the moment card's badge read
+        // rather than ten seconds of a crawler's patience.
+        const { data: eds, error: edErr } = await boundedRead(
+          (supabaseAdmin as any)
+            .from("editions")
+            .select("external_id, collection_id, jersey_number")
+            .in("external_id", extIds)
+            .limit(200),
+          "og/trophy-case/jersey_number",
+          JERSEY_BUDGET_MS,
+        )
+        if (edErr) {
+          console.warn("[og/trophy-case] jersey lookup failed; jersey glyphs suppressed:", edErr.message)
+        } else {
+          for (const e of (eds ?? []) as Array<{ external_id: string; collection_id: string; jersey_number: number | null }>) {
+            if (e.jersey_number != null) {
+              jerseyByKey.set(editionKey(e.collection_id, e.external_id), Number(e.jersey_number))
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[og/trophy-case] jersey lookup threw; jersey glyphs suppressed:", err)
+      }
+    }
+
     const tiles = rows.map((t, i) => ({
       art: uris[i] ?? null,
       tier: (t.tier as string | null) ?? null,
       player: (t.player_name as string | null) ?? null,
+      // Gold special serials first, then edition badges — the Trophy Case PDF's
+      // order, so the two artefacts of the same six Moments read the same way.
+      marks: trophyMarks(
+        {
+          badges: t.badges,
+          serial_number: (t.serial_number as number | null) ?? null,
+          circulation_count: (t.circulation_count as number | null) ?? null,
+        },
+        jerseyByKey.get(
+          editionKey(t.collection_id as string | null, t.edition_id as string | null),
+        ) ?? null,
+        4,
+      ),
     }))
     const artless = tiles.filter((t) => !t.art)
     if (artless.length > 0) {
@@ -136,6 +209,10 @@ export async function GET(
 
     const w = caseTileWidth(tiles.length)
     const h = Math.round(w * 1.32)
+    // Scales with the tile so six Moments do not get bigger badges than one.
+    // Floored at 16: below that the monoline geometry stops resolving into a
+    // recognisable mark and the row reads as three grey specks.
+    const markSize = Math.max(16, Math.min(24, Math.round(w / 9)))
 
     return new ImageResponse(
       (
@@ -281,6 +358,36 @@ export async function GET(
                       {t.player}
                     </div>
                   )}
+                  {/* Badge row. Pure inline SVG data URIs — no network, which is
+                      the whole reason these are RPC's own glyphs rather than
+                      Dapper's art (lib/badges/glyphs.ts states the trade). */}
+                  <div
+                    style={{
+                      // ⚠ ALWAYS RENDERED, even with no badges. The tiles are
+                      // centred in the shelf, so a Moment with no badge row is
+                      // a SHORTER column and satori centres it lower — Simba
+                      // sat 10px below his five neighbours in the first render.
+                      // Reserving the height keeps every Moment's art on one
+                      // baseline whatever it has earned.
+                      display: "flex",
+                      gap: 5,
+                      height: markSize,
+                      alignItems: "center",
+                      maxWidth: w,
+                    }}
+                  >
+                    {t.marks.map((m: TrophyMark) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={m.label}
+                        src={m.uri}
+                        alt={m.label}
+                        width={markSize}
+                        height={markSize}
+                        style={{ width: markSize, height: markSize }}
+                      />
+                    ))}
+                  </div>
                 </div>
               ))
             ) : (

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
 import { NextRequest } from "next/server"
-import { installOgCapture, resetOgCapture, ogText, type OgCapture } from "./helpers/og-capture"
+import { installOgCapture, resetOgCapture, ogText, ogImageSrcs, type OgCapture } from "./helpers/og-capture"
 
 // The two SHARE cards — /api/og/share (a wallet's collection card) and
 // /api/og/profile/[username] (a collector's public profile card).
@@ -142,6 +142,8 @@ function mockPostgrest(opts: {
   wallets?: unknown[]
   trophies?: unknown[]
   teams?: unknown[]
+  /** Rows for the `editions` read the jersey-match glyph needs. */
+  jerseys?: unknown[]
   /** `pack_rips` answers with a Content-Range total, not a row array. */
   rips?: number | null
 }) {
@@ -162,18 +164,23 @@ function mockPostgrest(opts: {
         ? (opts.wallets ?? [{ wallet_addr: "0xbd94cade097e50ac", cached_moment_count: 30 }])
         : u.includes("user_favorite_teams")
           ? (opts.teams ?? [])
-          : u.includes("get_trophy_slab_data_by_username")
-            ? (opts.trophies ?? [])
-            : []
+          : u.includes("/editions?")
+            ? (opts.jerseys ?? [])
+            : u.includes("get_trophy_slab_data_by_username")
+              ? (opts.trophies ?? [])
+              : []
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { "content-type": "application/json" },
     })
   }) as unknown as typeof globalThis.fetch
   vi.doMock("@/lib/og/img-data", () => ({
-    ogImageDataUri: async () => null,
+    // ⚠ Art resolves to a data URI here rather than null, because a slab with
+    // no art draws the ART UNAVAILABLE placeholder and NOT its badge strip —
+    // a null-art mock would make every badge assertion below vacuously pass.
+    ogImageDataUri: async (u: string | null | undefined) => (u ? "data:image/png;base64,AAAA" : null),
     ogImageDataUris: async () => [],
-    ogImageDataUriSlots: async (urls: unknown[]) => urls.map(() => null),
+    ogImageDataUriSlots: async (urls: unknown[]) => urls.map(() => "data:image/png;base64,AAAA"),
   }))
 }
 
@@ -340,5 +347,96 @@ describe("/api/og/profile — a failed read must not publish a zero about a name
     )
     expect(urls.some((u) => u.includes("get_trophy_slab_data_by_username"))).toBe(true)
     expect(urls.some((u) => u.includes("trophy_moments"))).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BADGES ON THE PROFILE CARD'S TROPHY SLABS — Trevor, 2026-09-12.
+//
+// The slabs carry no text, so the marks are asserted through `ogImageSrcs`: the
+// glyphs are `data:` URIs, and a decoded URI names the geometry it drew. That
+// is what lets these tests tell "drew the jersey glyph" from "drew a glyph",
+// which byte-inequality cannot.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TS_COLLECTION = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
+
+/** Decoded SVG for every mark drawn — the slab art is a PNG data URI, so it
+ *  filters out cleanly. */
+function drawnGlyphs(): string[] {
+  return ogImageSrcs(capture.c!.element())
+    .filter((src) => src.startsWith("data:image/svg+xml"))
+    .map((src) => decodeURIComponent(src.slice(src.indexOf(",") + 1)))
+}
+
+const CLINGAN = {
+  slot: 1,
+  player_name: "Donovan Clingan",
+  tier: "ULTIMATE",
+  thumbnail_url: "https://assets.nbatopshot.com/media/1/image?width=180",
+  badges: ["Three-Star Rookie"],
+  serial_number: 1,
+  circulation_count: 1,
+  edition_id: "176:7003",
+  collection_id: TS_COLLECTION,
+}
+
+describe("/api/og/profile — every pinned Moment shows what it has earned", () => {
+  it("draws a special-serial glyph AND an edition-badge glyph on the slab", async () => {
+    mockPostgrest({ trophies: [CLINGAN], rips: 503 })
+    await renderProfile()
+    const glyphs = drawnGlyphs()
+    // Two marks: the gold #1 medal (serial 1) and the Three-Star Rookie badge.
+    expect(glyphs).toHaveLength(2)
+    expect(glyphs.filter((g) => g.includes("#F59E0B"))).toHaveLength(1) // the gold one
+  })
+
+  it("⚠ draws NO jersey glyph when the edition lookup returns nothing", async () => {
+    // Absent beats invented: a jersey match this card has not verified is a
+    // false claim about a named collector's Moment.
+    mockPostgrest({
+      trophies: [{ ...CLINGAN, serial_number: 23, circulation_count: 50, badges: null }],
+      jerseys: [],
+      rips: 503,
+    })
+    await renderProfile()
+    expect(drawnGlyphs()).toHaveLength(0)
+  })
+
+  it("draws the jersey glyph when the edition DOES report that number", async () => {
+    // The positive mirror of the case above — without it, "never draw a jersey"
+    // would satisfy the failure case while deleting a true badge.
+    mockPostgrest({
+      trophies: [{ ...CLINGAN, serial_number: 23, circulation_count: 50, badges: null }],
+      jerseys: [{ external_id: "176:7003", collection_id: TS_COLLECTION, jersey_number: 23 }],
+      rips: 503,
+    })
+    await renderProfile()
+    expect(drawnGlyphs()).toHaveLength(1)
+  })
+
+  it("⚠ does NOT take a jersey number from a DIFFERENT collection's edition", async () => {
+    // `editions.external_id` is unique per collection, not globally, and the
+    // read filters on external_id alone. An unqualified map would give this
+    // Top Shot Moment an All Day player's jersey number and draw a badge it
+    // has not earned. The map key is what stops it.
+    mockPostgrest({
+      trophies: [{ ...CLINGAN, serial_number: 23, circulation_count: 50, badges: null }],
+      jerseys: [
+        { external_id: "176:7003", collection_id: "dee28451-5d62-409e-a1ad-a83f763ac070", jersey_number: 23 },
+      ],
+      rips: 503,
+    })
+    await renderProfile()
+    expect(drawnGlyphs()).toHaveLength(0)
+  })
+
+  it("survives a failed edition read without losing the rest of the row", async () => {
+    mockPostgrest({ trophies: [CLINGAN], fail: "/editions?", rips: 503 })
+    await renderProfile()
+    // The #1 medal and the Three-Star Rookie badge are computed from the trophy
+    // row; only a jersey match would have been lost, and this Moment has none.
+    expect(drawnGlyphs()).toHaveLength(2)
+    expect(ogText(capture.c!.element())).toContain("TROPHY CASE")
   })
 })

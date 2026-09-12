@@ -55,6 +55,11 @@ import {
   truncate,
   ansi,
 } from "@/lib/trophy-case/pdf-image";
+import {
+  BADGE_GLYPH_BODY,
+  SPECIAL_GLYPH_BODY,
+  glyphSvg,
+} from "@/lib/badges/glyphs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -187,30 +192,16 @@ const ALLDAY_BADGE_SVG_SLUG: Record<string, string> = {
   "crafted-reward": "crafted-reward",
 };
 
-// Original RPC-brand glyphs (NOT Dapper art) for badges whose upstream art is
-// unavailable, in SpecialSerialGlyph's monoline style. 24×24 viewBox.
-const GLYPH = (body: string, color: string) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">${body}</svg>`;
+// ⚠ THE GLYPH GEOMETRY MOVED to `lib/badges/glyphs.ts` on 2026-09-12, when the
+// OG share cards started drawing the same badges. It is imported, not copied:
+// a card and this PDF of the SAME six Moments must not disagree about what a
+// "Rookie Mint" looks like. This route still PREFERS real Dapper art and falls
+// back to these; the cards use these always, because six Moments × four badges
+// of remote SVG on a path a social crawler is holding open is the exact defect
+// `lib/og/marks.tsx` exists to have removed.
+const GLYPH = (body: string, color: string) => glyphSvg(body, color);
 
-const STAR = "M12 3.2 L14.3 8.6 L20.2 9.1 L15.8 13 L17.1 18.8 L12 15.7 L6.9 18.8 L8.2 13 L3.8 9.1 L9.7 8.6 Z";
-const BADGE_GLYPH_BODY: Record<string, string> = {
-  "rookie-year": `<path d="${STAR}"/>`,
-  "rookie-mint": `<circle cx="12" cy="12" r="9.5"/><path d="M12 6.5 L13.5 10.2 L17.5 10.5 L14.5 13.1 L15.4 17 L12 14.9 L8.6 17 L9.5 13.1 L6.5 10.5 L10.5 10.2 Z"/>`,
-  "championship-year": `<circle cx="12" cy="14.5" r="6.5"/><path d="M9.2 5 H14.8 L16.5 8.6 L12 10.5 L7.5 8.6 Z"/>`,
-  "rookie-premiere": `<path d="M12 2.8 L13.9 7.2 L18.7 7.6 L15.1 10.8 L16.2 15.5 L12 13 L7.8 15.5 L8.9 10.8 L5.3 7.6 L10.1 7.2 Z"/><path d="M8 16.5 L7 21.5 L12 19 L17 21.5 L16 16.5"/>`,
-  "rookie-of-the-year": `<path d="M7 4 H17 V9 A5 5 0 0 1 7 9 Z"/><path d="M7 5.5 H4.5 A0.2 0.2 0 0 0 4.5 9.5 A3.5 3.5 0 0 0 7.4 11"/><path d="M17 5.5 H19.5 A0.2 0.2 0 0 1 19.5 9.5 A3.5 3.5 0 0 1 16.6 11"/><path d="M12 14 V17 M9 20 H15 M10 17 H14 L15 20 H9 Z"/>`,
-  "top-shot-debut": `<circle cx="12" cy="14" r="4.5"/><path d="M12 2.5 V6.5 M5.3 5.3 L8 8 M18.7 5.3 L16 8"/>`,
-  "three-stars": `<path d="M6 10.5 L6.9 12.6 L9.2 12.8 L7.5 14.3 L8 16.6 L6 15.4 L4 16.6 L4.5 14.3 L2.8 12.8 L5.1 12.6 Z"/><path d="M12 5.5 L12.9 7.6 L15.2 7.8 L13.5 9.3 L14 11.6 L12 10.4 L10 11.6 L10.5 9.3 L8.8 7.8 L11.1 7.6 Z"/><path d="M18 10.5 L18.9 12.6 L21.2 12.8 L19.5 14.3 L20 16.6 L18 15.4 L16 16.6 L16.5 14.3 L14.8 12.8 L17.1 12.6 Z"/>`,
-  "generic": `<circle cx="12" cy="10" r="5.5"/><path d="M9.5 14.5 L8.5 21 L12 18.7 L15.5 21 L14.5 14.5"/>`,
-};
-BADGE_GLYPH_BODY["three-star-rookie"] = BADGE_GLYPH_BODY["three-stars"];
 
-// Special-serial glyphs (gold) — medal (#1 / 1-of-1), jersey, target (perfect).
-const SPECIAL_GLYPH_BODY: Record<string, string> = {
-  first: `<circle cx="12" cy="9" r="6"/><path d="M9 14 L8 22 L12 19 L16 22 L15 14"/><circle cx="12" cy="9" r="2.1" fill="#F59E0B" stroke="none"/>`,
-  jersey: `<path d="M8 3.5 L4 6.5 L6 10 L8 8.8 V20.5 H16 V8.8 L18 10 L20 6.5 L16 3.5 A4 4 0 0 1 8 3.5 Z"/>`,
-  perfect: `<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.6"/><circle cx="12" cy="12" r="1.4" fill="#F59E0B" stroke="none"/>`,
-};
 
 // Rasterize an SVG string to a PNG buffer via satori/resvg (next/og) —
 // pdf-lib embeds PNG/JPEG only.

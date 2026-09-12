@@ -53,6 +53,7 @@ import { ogImageDataUri } from "@/lib/og/img-data";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style";
+import { editionKey, trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks";
 import {
   brandFonts,
   brandFamilies,
@@ -105,6 +106,21 @@ interface TrophyRow {
   player_name: string | null;
   thumbnail_url: string | null;
   tier: string | null;
+  /** Edition-wide badge titles, already rolled up by the RPC — see
+   *  lib/og/trophy-marks.ts for why no extra read is made for these. */
+  badges: string[] | null;
+  serial_number: number | null;
+  circulation_count: number | null;
+  /** `editions.external_id`, e.g. "165:6563" — NOT the uuid. */
+  edition_id: string | null;
+  collection_id: string | null;
+}
+
+/** One `editions` row, read only for the jersey-match glyph. */
+interface JerseyRow {
+  external_id: string | null;
+  collection_id: string | null;
+  jersey_number: number | null;
 }
 
 interface AchievementRow {
@@ -408,14 +424,52 @@ export async function GET(
     const walletAddrs = wallets
       .map((w) => (w.wallet_addr ?? "").trim())
       .filter((a) => /^0x[0-9a-fA-F]{6,}$/.test(a));
-    const ripsRes =
+    // ── JERSEY NUMBERS, for the jersey-match glyph ────────────────────────
+    // The trophy RPC reads `editions.jersey_number` (to feed
+    // serial_fmv_estimate) but does not return it, and it is the ONE thing a
+    // badge row needs that is not already on the trophy row — the unified
+    // edition badges, the serial and the circulation all are.
+    //
+    // ⚠ Runs in the SAME round trip as the pack count rather than after it.
+    // Both became available at the same moment (this one needs the trophies,
+    // that one needs the wallets, and both of those resolved together above),
+    // so pairing them costs the crawler one hop instead of two.
+    const trophyExtIds = Array.from(
+      new Set(trophies.map((t) => (t.edition_id ?? "").trim()).filter(Boolean)),
+    ).slice(0, 12);
+    const [ripsRes, jerseyRes] = await Promise.all([
       walletsOk && walletAddrs.length > 0
-        ? await fetchCount(
+        ? fetchCount(
             `${SUPABASE_URL}/rest/v1/pack_rips?opener_address=in.(${walletAddrs
               .map((a) => encodeURIComponent(a))
               .join(",")})&select=id&limit=1`,
           )
-        : { count: null as number | null, ok: false };
+        : Promise.resolve({ count: null as number | null, ok: false }),
+      trophyExtIds.length > 0
+        ? fetchJson<JerseyRow>(
+            `${SUPABASE_URL}/rest/v1/editions?external_id=in.(${trophyExtIds
+              .map((e) => encodeURIComponent(`"${e}"`))
+              .join(",")})&select=external_id,collection_id,jersey_number&limit=200`,
+          )
+        : Promise.resolve({ rows: [] as JerseyRow[], ok: true }),
+    ]);
+
+    // ⚠ Keyed on (collection_id, external_id), never external_id alone — that
+    // column is unique per COLLECTION, so an unqualified map would hand one
+    // player's jersey number to another collection's Moment.
+    const jerseyByKey = new Map<string, number>();
+    for (const e of jerseyRes.rows) {
+      if (e.jersey_number != null) {
+        jerseyByKey.set(editionKey(e.collection_id, e.external_id), Number(e.jersey_number));
+      }
+    }
+    if (!jerseyRes.ok) {
+      // Costs exactly the jersey glyph; `first` and `perfect` are computed from
+      // the trophy row and are unaffected. Said out loud rather than swallowed,
+      // because a Moment quietly missing a badge it has earned is the mirror of
+      // the defect this card was just fixed for.
+      console.warn(`[og/profile] jersey lookup failed; jersey glyphs suppressed (${username})`);
+    }
 
     // ⚠ Abbreviations, because that is what the profile page's chips show and a
     // full team name does not fit a 300px tile at this weight. `is_primary`
@@ -476,6 +530,10 @@ export async function GET(
     const thumbTrophies = rawTrophies.map((t, i) => ({
       ...t,
       thumbnail_url: trophyDataUris[i] ?? null,
+      // Gold special serials first, then edition badges — the Trophy Case PDF's
+      // order, and now the trophy-case card's, so all three artefacts of the
+      // same six Moments read the same way.
+      marks: trophyMarks(t, jerseyByKey.get(editionKey(t.collection_id, t.edition_id)) ?? null, 3),
     }));
     const artless = thumbTrophies.filter((t) => !t.thumbnail_url);
     if (artless.length > 0) {
@@ -492,6 +550,11 @@ export async function GET(
     }
     const filledTrophyCount = trophies.length;
     const grid = trophyGrid(thumbTrophies.length);
+    // Scales with the slab, capped at 20 so a single hero trophy does not get a
+    // billboard. Floored at 15 — below that the monoline geometry stops
+    // resolving and the strip reads as smudge rather than as a badge. Three
+    // marks at 19 plus their gaps occupy 65 of the 130px six-slab slot.
+    const markSize = Math.max(15, Math.min(20, Math.round(grid.w / 7)));
 
     const displayName = (bio?.display_name || username).toUpperCase();
     const tagline = bio?.tagline || "";
@@ -837,6 +900,10 @@ export async function GET(
                       overflow: "hidden",
                       border: "2px solid " + tierAccent(t.tier),
                       display: "flex",
+                      // The badge strip below is absolutely positioned against
+                      // this slab, not the case, so it tracks the tile at every
+                      // grid size.
+                      position: "relative",
                       background: "#111",
                       boxShadow: "0 10px 24px rgba(0,0,0,0.5)",
                     }}
@@ -865,6 +932,39 @@ export async function GET(
                         }}
                       >
                         ART UNAVAILABLE
+                      </div>
+                    )}
+                    {/* Badge strip. ⚠ Over a SCRIM, not over bare art — these
+                        are monoline glyphs and Top Shot stills are frequently
+                        near-white at the bottom edge, where a gold medal on a
+                        white jersey is invisible. The scrim is what makes the
+                        badge legible on every Moment rather than on most. */}
+                    {t.marks.length > 0 && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          height: markSize + 8,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 4,
+                          background: "rgba(0,0,0,0.72)",
+                        }}
+                      >
+                        {t.marks.map((m: TrophyMark) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={m.label}
+                            src={m.uri}
+                            alt={m.label}
+                            width={markSize}
+                            height={markSize}
+                            style={{ width: markSize, height: markSize }}
+                          />
+                        ))}
                       </div>
                     )}
                   </div>

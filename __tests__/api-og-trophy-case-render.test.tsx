@@ -31,6 +31,23 @@ vi.mock("@/lib/og/img-data", () => ({
 
 const PNG_MAGIC = "89504e470d0a1a0a"
 
+// The jersey-number read the badge row makes. `jerseyRows` is swapped per test;
+// `jerseyFails` drives the degraded path.
+let jerseyRows: Array<{ external_id: string; collection_id: string; jersey_number: number | null }> = []
+let jerseyFails = false
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: {
+    from: () => ({
+      select: () => ({
+        in: () => ({
+          limit: async () =>
+            jerseyFails ? { data: null, error: { message: "down" } } : { data: jerseyRows, error: null },
+        }),
+      }),
+    }),
+  },
+}))
+
 const payload = (n: number) => ({
   ok: true as const,
   data: {
@@ -42,6 +59,13 @@ const payload = (n: number) => ({
       player_name: `Player ${i}`,
       tier: "LEGENDARY",
       thumbnail_url: "https://assets.nbatopshot.com/x.jpg",
+      // Nothing earned by default, so a test that wants a badge has to say so
+      // and cannot pass on a fixture's accident.
+      badges: null,
+      serial_number: 12,
+      circulation_count: 50,
+      edition_id: `ed-${i}`,
+      collection_id: "c-1",
     })),
     wallets: [],
   },
@@ -58,6 +82,8 @@ async function render() {
 
 beforeEach(() => {
   failingSlot = -1
+  jerseyRows = []
+  jerseyFails = false
   getPublicProfile.mockReset()
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 404 })))
 })
@@ -137,5 +163,72 @@ describe("trophy-case OG card renders the actual case", () => {
       params: Promise.resolve({ username: "trevor" }),
     } as never)
     expect(res.headers.get("Cache-Control")).toContain("s-maxage=")
+  }, 30_000)
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BADGES — Trevor, 2026-09-12: the share image "needs to also include
+// edition-wide badges … along with special serial badges, for each moment
+// displayed."
+//
+// This card has no text per badge, so the assertions are differential: a case
+// whose Moments have earned something must not render identically to one whose
+// Moments have not. Weaker than the moment card's label assertions, and the
+// reason `og-share-cards-draw-moment-badges` pins the derivation directly.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("trophy-case card — badges reach the render", () => {
+  it("a case whose Moments carry badges differs from one whose Moments do not", async () => {
+    getPublicProfile.mockResolvedValue(payload(3))
+    const bare = await render()
+
+    const withBadges = payload(3)
+    withBadges.data.trophies[0].badges = ["Three-Star Rookie"] as never
+    getPublicProfile.mockResolvedValue(withBadges)
+    const badged = await render()
+
+    expect(badged.subarray(0, 8).toString("hex")).toBe(PNG_MAGIC)
+    expect(badged.equals(bare)).toBe(false)
+  }, 30_000)
+
+  it("a special serial reaches the render with no badge data at all", async () => {
+    // #1 and perfect mint are computed from the trophy row — no read, no
+    // badges array, and they must still draw.
+    getPublicProfile.mockResolvedValue(payload(3))
+    const bare = await render()
+
+    const first = payload(3)
+    first.data.trophies[0].serial_number = 1 as never
+    getPublicProfile.mockResolvedValue(first)
+    const medal = await render()
+    expect(medal.equals(bare)).toBe(false)
+  }, 30_000)
+
+  it("⚠ still renders a real card when the jersey read fails", async () => {
+    // Costs the jersey glyph and nothing else. A decoration read must never
+    // take the card down with it.
+    jerseyFails = true
+    const p = payload(3)
+    p.data.trophies[0].badges = ["Rookie Year"] as never
+    getPublicProfile.mockResolvedValue(p)
+    const bytes = await render()
+    expect(bytes.subarray(0, 8).toString("hex")).toBe(PNG_MAGIC)
+    expect(bytes.byteLength).toBeGreaterThan(5_000)
+  }, 30_000)
+
+  it("⚠ does not draw a jersey match from another collection's edition row", async () => {
+    // `editions.external_id` is unique per COLLECTION. The fixtures' Moments are
+    // collection "c-1"; a row for "c-2" with the same external_id must not
+    // decorate them.
+    const p = payload(3)
+    p.data.trophies[0].serial_number = 23 as never
+    getPublicProfile.mockResolvedValue(p)
+
+    jerseyRows = [{ external_id: "ed-0", collection_id: "c-2", jersey_number: 23 }]
+    const wrongCollection = await render()
+
+    jerseyRows = [{ external_id: "ed-0", collection_id: "c-1", jersey_number: 23 }]
+    const rightCollection = await render()
+
+    expect(wrongCollection.equals(rightCollection)).toBe(false)
   }, 30_000)
 })

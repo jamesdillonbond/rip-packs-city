@@ -19,7 +19,18 @@ import { PNG } from "pngjs"
 // brand-exception: PDF drawing can't resolve CSS vars — hex literals mirror
 // app/rpc-tokens.css + the OG tier palette.
 export const RPC_RED_HEX = "#E03A2F"
-export const GOLD_HEX = "#F59E0B"
+
+// ⚠ GOLD_HEX, normBadgeKey, specialCats and SpecialCat MOVED to
+// `lib/badges/glyphs.ts` on 2026-09-12 and are re-exported here, so every
+// existing importer — this module's own test included — keeps working unchanged.
+//
+// They moved because the OG share cards needed them and could not have them:
+// this module imports `pngjs` and `jpeg-js`, and `/api/og/profile/[username]`
+// runs on the `edge` runtime. Copying them across would have been the easy fix
+// and the wrong one — a card and a PDF of the SAME six Moments disagreeing
+// about what a special serial IS is precisely the drift a shared definition
+// exists to prevent.
+export { GOLD_HEX, normBadgeKey, specialCats, type SpecialCat } from "@/lib/badges/glyphs"
 export const TIER_HEX_STR: Record<string, string> = {
   COMMON: "#9CA3AF",
   FANDOM: "#10B981",
@@ -213,27 +224,6 @@ export function encodePng(img: Rgba): Buffer {
   const png = new PNG({ width: img.width, height: img.height })
   png.data.set(img.data)
   return PNG.sync.write(png)
-}
-
-export function normBadgeKey(title: string): string {
-  return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-}
-
-// Special-serial categories per the canonical definition (#1 / jersey /
-// perfect). 1-of-1 renders the medal.
-export type SpecialCat = "first" | "jersey" | "perfect"
-
-export function specialCats(
-  serial: number | null,
-  circ: number | null,
-  jersey: number | null,
-): SpecialCat[] {
-  if (!serial) return []
-  const cats: SpecialCat[] = []
-  if (serial === 1) cats.push("first")
-  if (jersey != null && jersey > 0 && serial === jersey) cats.push("jersey")
-  if (circ != null && circ > 1 && serial === circ) cats.push("perfect")
-  return cats
 }
 
 // Structural font interface — the route passes a pdf-lib PDFFont, but only

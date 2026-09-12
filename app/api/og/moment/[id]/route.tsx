@@ -19,6 +19,7 @@ import { isMarketClosed } from "@/lib/market-closed"
 import { urlSlugForCollection } from "@/lib/moment-detail-format"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks"
 import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
@@ -41,6 +42,8 @@ const TIER_COLORS: Record<string, string> = {
 const FALLBACK_RED = "#E03A2F"
 
 interface MomentEdition {
+  /** UUID. `resolved.edition_id` is the same value; this is the fallback. */
+  id?: string | null
   player_name?: string | null
   character_name?: string | null
   set_name?: string | null
@@ -61,6 +64,8 @@ interface MomentFmv {
 interface MomentResolved {
   kind?: "moment" | "edition" | null
   serial_number?: number | null
+  /** The edition's UUID — what the badge and jersey reads key on. */
+  edition_id?: string | null
 }
 
 interface MomentDetail {
@@ -134,6 +139,61 @@ export async function GET(
   // Pre-fetched to a data URI (failures -> null -> "No media" branch) so a
   // dead/slow upstream can never 500 the card. See lib/og/img-data.ts.
   const image = await ogImageDataUri(e.thumbnail_url)
+
+  // ── Badges: edition-wide, plus the special serials ────────────────────────
+  // Trevor, 2026-09-12 — the share image "needs to also include edition-wide
+  // badges (debut, rookie, championship, etc) along with special serial badges".
+  //
+  // ⚠ Unlike the two trophy cards, this one has to ASK. They read
+  // `get_trophy_slab_data`, which already returns the unified badge list;
+  // `get_moment_detail` does not, so the canonical source is called directly
+  // here rather than inferred from anything already on the page.
+  //
+  // ⚠ AND ITS BUDGET IS A DECORATION BUDGET, deliberately smaller than either
+  // number already in this repo. `lib/og/og-fetch.ts` bounds a card's DATA at
+  // 10s because a card cannot render without it, and `lib/badges/server-art.ts`
+  // bounds badge art at 4s because it blocks a PAGE. This blocks neither: a
+  // failed read costs the badge row and nothing else, while the crawler waits
+  // either way. Sized off the observed band — pg_stat_statements, 23,868 calls
+  // of get_edition_badges_unified: mean 64.9ms, sd 176.4ms, max 3,850ms — so
+  // 2.5s is 38× the mean and only truncates a tail where the whole card is
+  // already at risk. ⚠ A DATED SAMPLE; re-measure before quoting it.
+  const BADGE_BUDGET_MS = 2_500
+  const editionUuid = detail.resolved?.edition_id ?? e.id ?? null
+  let badgeTitles: string[] = []
+  let jerseyNumber: number | null = null
+  if (editionUuid) {
+    const [badgeRes, jerseyRes] = await Promise.all([
+      boundedRead(
+        (supabaseAdmin as any).rpc("get_edition_badges_unified", { p_edition_id: editionUuid }),
+        "og/moment/get_edition_badges_unified",
+        BADGE_BUDGET_MS,
+      ).catch(() => ({ data: null, error: true })),
+      boundedRead(
+        (supabaseAdmin as any).from("editions").select("jersey_number").eq("id", editionUuid).maybeSingle(),
+        "og/moment/jersey_number",
+        BADGE_BUDGET_MS,
+      ).catch(() => ({ data: null, error: true })),
+    ])
+    if (!badgeRes.error && Array.isArray(badgeRes.data)) {
+      badgeTitles = (badgeRes.data as Array<{ title?: string | null }>)
+        .map((b) => (typeof b?.title === "string" ? b.title.trim() : ""))
+        .filter(Boolean)
+    }
+    const jn = (jerseyRes as { data?: { jersey_number?: number | null } | null }).data?.jersey_number
+    if (!jerseyRes.error && jn != null) jerseyNumber = Number(jn)
+  }
+  // Gold special serials first, then edition badges — the order the Trophy Case
+  // PDF and both trophy cards already draw them in.
+  const marks: TrophyMark[] = trophyMarks(
+    {
+      badges: badgeTitles,
+      serial_number: serial,
+      circulation_count: e.circulation_count ?? null,
+    },
+    jerseyNumber,
+    5,
+  )
   const serialText = serial
     ? `#${serial}${e.circulation_count ? `/${e.circulation_count}` : ""}`
     : (e.circulation_count ? `${e.circulation_count} circulation` : "")
@@ -238,6 +298,42 @@ export async function GET(
             {setLabel ? (
               <div style={{ fontSize: 22, color: "#9CA3AF", display: "flex" }}>
                 {setLabel}
+              </div>
+            ) : null}
+            {/* Badge row. This card has room the trophy tiles do not, so each
+                mark is LABELLED — a glyph alone tells a reader who does not
+                already know the vocabulary nothing, and this is the card a
+                collector posts to people outside the hobby. */}
+            {marks.length > 0 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4, maxWidth: 500 }}>
+                {marks.map((m) => (
+                  <div
+                    key={m.label}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "5px 10px 5px 7px",
+                      borderRadius: 999,
+                      border: `1px solid ${m.special ? "rgba(245,158,11,0.45)" : "rgba(255,255,255,0.14)"}`,
+                      background: m.special ? "rgba(245,158,11,0.10)" : "rgba(255,255,255,0.04)",
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={m.uri} alt={m.label} width={20} height={20} style={{ width: 20, height: 20 }} />
+                    <div
+                      style={{
+                        display: "flex",
+                        fontSize: 14,
+                        letterSpacing: 1,
+                        textTransform: "uppercase",
+                        color: m.special ? "#F5C56B" : "#D1D5DB",
+                      }}
+                    >
+                      {m.label}
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : null}
           </div>

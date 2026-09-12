@@ -274,3 +274,134 @@ describe("/api/og/moment/[id] — the data branch", () => {
     expect(capture.c!.options()).toMatchObject({ width: 1200, height: 630 })
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BADGES — Trevor, 2026-09-12: the share image "needs to also include
+// edition-wide badges (debut, rookie, championship, etc) along with special
+// serial badges, for each moment displayed."
+//
+// This card is the one a collector posts about a SINGLE Moment, so unlike the
+// trophy tiles each mark is labelled. The assertions read those labels, which
+// is sharper than asserting bytes changed: it catches a badge row that renders
+// the wrong badge as well as one that renders none.
+//
+// ⚠ The labels are asserted in TITLE CASE even though the card renders them in
+// caps: the caps are `textTransform: uppercase`, a style, and `ogText` walks the
+// element tree rather than laying it out. Asserting "Jersey Match" passes only
+// by accident of how the harness works, and would red the day the style moved.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Like mockDetail, plus the two reads the badge row makes. */
+function mockDetailWithBadges(opts: {
+  detail: Detail
+  badges?: Array<{ title: string }> | null
+  badgesError?: boolean
+  jersey?: number | null
+  jerseyError?: boolean
+}) {
+  vi.doMock("@/lib/supabase", () => ({
+    supabaseAdmin: {
+      rpc: async (fn: string) => {
+        if (fn === "get_edition_badges_unified") {
+          if (opts.badgesError) return { data: null, error: { message: "down" } }
+          return { data: opts.badges ?? [], error: null }
+        }
+        return { data: opts.detail, error: null }
+      },
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () =>
+              opts.jerseyError
+                ? { data: null, error: { message: "down" } }
+                : { data: { jersey_number: opts.jersey ?? null }, error: null },
+          }),
+        }),
+      }),
+    },
+  }))
+  vi.doMock("@/lib/og/img-data", () => ({
+    ogImageDataUri: async (u: string | null | undefined) => (u ? `data:image/png;base64,AAAA` : null),
+  }))
+}
+
+/** Kevin Durant's real Supernova Moment, 2026-09-12: #35/40, jersey 35. */
+const KD: Detail = {
+  ok: true,
+  resolved: { serial_number: 35, edition_id: "ed-uuid" } as Detail["resolved"],
+  edition: {
+    id: "ed-uuid",
+    player_name: "Kevin Durant",
+    set_name: "Supernova",
+    tier: "ULTIMATE",
+    thumbnail_url: "https://example.test/art.png",
+    circulation_count: 40,
+    collection_slug: "nba_top_shot",
+  },
+  fmv: { fmv_usd: 1750 },
+}
+
+describe("/api/og/moment/[id] — the badge row", () => {
+  it("draws the edition badges and the special serial, specials first", async () => {
+    mockDetailWithBadges({
+      detail: KD,
+      badges: [{ title: "Rookie of the Year" }, { title: "Rookie Premiere" }, { title: "Rookie Year" }],
+      jersey: 35,
+    })
+    const text = ogText(await render())
+    expect(text).toContain("Jersey Match")
+    expect(text).toContain("Rookie of the Year")
+    expect(text).toContain("Rookie Premiere")
+    // Gold special first, then the edition badges.
+    expect(text.indexOf("Jersey Match")).toBeLessThan(text.indexOf("Rookie of the Year"))
+  })
+
+  it("⚠ claims NO jersey match when the jersey read fails", async () => {
+    // A badge the Moment has not been shown to earn is a false claim about a
+    // named collector's property on a public timeline. Absent beats invented.
+    mockDetailWithBadges({ detail: KD, badges: [{ title: "Rookie Year" }], jerseyError: true })
+    const text = ogText(await render())
+    expect(text).not.toContain("Jersey Match")
+    // ...and the edition badges are unaffected: the two reads fail apart.
+    expect(text).toContain("Rookie Year")
+  })
+
+  it("⚠ claims NO badges when the badge read fails, and still renders the card", async () => {
+    mockDetailWithBadges({ detail: KD, badgesError: true, jersey: 35 })
+    const text = ogText(await render())
+    expect(text).not.toContain("Rookie")
+    // The special serial is computed from the row, so it survives.
+    expect(text).toContain("Jersey Match")
+    expect(text).toContain("Kevin Durant")
+    expect(text).toContain("$1,750")
+  })
+
+  it("draws no badge row at all for a Moment that has earned nothing", async () => {
+    mockDetailWithBadges({
+      detail: { ...KD, resolved: { serial_number: 12, edition_id: "ed-uuid" } as Detail["resolved"] },
+      badges: [],
+      jersey: 35,
+    })
+    const text = ogText(await render())
+    expect(text).not.toContain("Jersey Match")
+    expect(text).not.toContain("Perfect Mint")
+    expect(text).toContain("Kevin Durant")
+  })
+
+  it("names a perfect mint and a first mint by their canonical labels", async () => {
+    mockDetailWithBadges({
+      detail: { ...KD, resolved: { serial_number: 40, edition_id: "ed-uuid" } as Detail["resolved"] },
+      badges: [],
+      jersey: null,
+    })
+    expect(ogText(await render())).toContain("Perfect Mint")
+
+    vi.resetModules()
+    mockDetailWithBadges({
+      detail: { ...KD, resolved: { serial_number: 1, edition_id: "ed-uuid" } as Detail["resolved"] },
+      badges: [],
+      jersey: null,
+    })
+    expect(ogText(await render())).toContain("First Mint")
+  })
+})
