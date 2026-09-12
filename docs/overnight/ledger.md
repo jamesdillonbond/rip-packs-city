@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-11 · ⭐⭐ THE QUIET WINDOW CAME AND SETTLED JOBID 355 — both proposed fixes were wrong, the index it needs already exists, and the "obvious" 30-day bound is SLOWER THAN NO BOUND · Claude Code on Trevor's box, Trevor: "Keep going until nothing is left unresolved"
+
+**Shipped: docs only — inbox filing `2026-09-12T0115Z-…`, #84 updated, INDEX. No code, no migration, no data mutation.**
+
+⭐ **EVERY FILING ON THIS JOB TODAY WAS GATED ON THE SAME SENTENCE — "measure BUFFERS outside a spell" — AND NONE COULD.** At **18:07 PT** the instance was quiet (1 active backend, 0 IO waiters, 0 startup timeouts in 15 min). **That window is the scarce resource in this whole investigation, and it was open, so I spent it on the measurement rather than on more analysis.**
+
+**Four variants, one instrument, one quiet instance:**
+
+| window | outer rows | plan | **reads** | writes |
+|---|---:|---|---:|---:|
+| unbounded (today) | 148,025 | Parallel Hash | **40,331** | 7,369 |
+| 30 days | 33,749 | **serial** Hash | **TIMEOUT >120 s** | — |
+| 14 days | 8,119 | **Nested Loop** | **2,443** | 0 |
+| 7 days | 1,325 | **Nested Loop** | **372** | 1 |
+
+🚨 **THE CURVE IS NOT MONOTONIC, AND THAT IS THE FINDING MOST LIKELY TO BITE SOMEONE ELSE.** **30 days is SLOWER than no bound at all** — the smaller outer scan drops below the parallel threshold, so the **same** 58k-row hash over `wallet_moments_cache` runs on **one** worker instead of two. **Bounding the outer table does not shrink the dominant cost; it only removes the parallelism that was hiding it.** ⛔ **A team trying "30 days" as the obvious first step would measure a REGRESSION and conclude the lever does not work.**
+
+⛔ **BOTH PROPOSED FIXES ARE REFUTED, INCLUDING THE ONE THAT REPLACED MINE.** (1) my `50000` batch cut — non-binding LIMIT, corrected earlier today. (2) **the expression indexes on `lower(...)` are NOT NEEDED**: the plan never hashes the 3.26 GB table whole (it uses `idx_wmc_collection_id`), and at 7/14 days it switches to a **Nested Loop driven by `idx_wmc_moment_collection_cover` — an index that ALREADY EXISTS** — with `lower(...)` demoted to a cheap per-probe `Filter`. ⭐ **That prescription would have built a large index on a 3.26 GB IO-bound table to buy nothing.**
+
+⭐ **AND THE 8 s-vs-490 s VARIANCE IS CACHE RESIDENCY, NOT WORKLOAD.** The job re-derives **3,728 candidates every run against an existing set of 3,742**, and `ON CONFLICT DO NOTHING` discards them: **3 rows inserted in 24 h, 6 in 7 days.** The work is identical every time; only whether the pages are resident differs.
+
+⚠ **THE SAFETY MARGIN IS MEASURED, AND THE POOLED READ WOULD HAVE BEEN WRONG.** A time bound is only safe if nothing arrives late. Pooled, **65% of rows lag >100 days** — which is the initial backfill's signature, not behaviour. **Split on the change point (backfill drained 08-23→08-30, lags to 242 d), the steady state from 08-31 is 1–3 rows/day with a max lag of 1.1 days**, every one under 1.2. **14 days is a 12.7× margin.**
+
+⛔ **NOT SHIPPED, and the reason is specific rather than general caution:** `moment_acquisitions` feeds `/api/cost-basis`, `/api/wallet-cost-basis`, `/api/wallet-hold-time` and `/api/wallet-search`. **A bound changes what the system CAPTURES on a user-facing path** — if a `wallet_moments_cache` row ever lands >14 days late, that acquisition is skipped and nothing re-scans it. Nothing observed does that, but the steady-state observation window is only ~12 days. **One-line call for Trevor; revert is dropping the `WHERE`, and a one-off unbounded manual run re-catches anything missed.**
+
+**Revert:** docs only — `git revert` the commit.
+
 ### 2026-09-11 · ⛔ MY OWN #84 ACTION IS REFUTED AND I CORRECTED IT — the `50000` batch is a NON-BINDING limit, and the 12Z burst had a different cause than the 13Z one · Claude Code on Trevor's box, Trevor: "Keep going until nothing is left unresolved"
 
 **Shipped: docs only — #84 corrected, three stranded daytime-monitor filings committed with INDEX entries. No code, no migration, no data mutation.**
