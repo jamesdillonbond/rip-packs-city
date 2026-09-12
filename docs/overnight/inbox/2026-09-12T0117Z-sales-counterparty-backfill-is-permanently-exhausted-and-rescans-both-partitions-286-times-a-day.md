@@ -68,3 +68,35 @@ Limit  (cost=0.84..51.98 rows=100 width=56)
 - ⛔ **Not claimed as the cause of today's spells.** It is a standing consumer; the acute spells have named causes elsewhere. In a fleet-wide slowdown every lane is slower, so a 47% timeout rate is partly *symptom*. What is independent of load is the plan shape: 163,942 rows read to return 0, every tick, by construction.
 - ⚠ **Three sampled months are not the whole range.** They are spread across it and all read exactly 0 eligible, but a full count was not taken — deliberately, since it is the same scan that is timing out.
 - ⚠ `rows_found = 0` is a self-report and this estate treats it as a null instrument. It is corroborated here by the independent slice counts, not trusted alone.
+
+---
+
+# ADDENDUM (2026-09-11 18:52 PT) — measured in a genuinely quiet window. The prescription holds THIS time, but an index alone would make the waste cheap without making the lane correct.
+
+The instance went quiet again (**1 active backend — this session — 0 IO waiters, longest statement 0 s**), so the `BUFFERS` reading this filing flagged as missing was taken. `EXPLAIN (ANALYZE, BUFFERS)` on the SELECT half only; nothing was written.
+
+```
+Limit  (actual rows=0 loops=1)
+  Buffers: shared hit=192758 read=2806 written=463
+  ->  Index Scan using idx_sales_2024_nullseller_soldat  (actual rows=0)
+        Rows Removed by Filter: 123132      Buffers: hit=104577 read=1819 written=463
+  ->  Index Scan using idx_sales_2023_nullseller_soldat  (actual rows=0)
+        Rows Removed by Filter:  98051      Buffers: hit=88181  read=987
+Execution Time: 4324.538 ms
+```
+
+**195,564 buffers touched to return ZERO rows. 221,183 rows delivered by the index and then discarded by the post-`Filter`. 4.3 seconds on an idle instance** — and it runs **286×/day**, which is ~20 minutes/day of pure-waste scanning at the *best* case; under load it exceeds the statement budget, which is the 47% failure rate.
+
+⭐ **So the prescription HOLDS here, and the difference from the Pinnacle case is that this one was measured before being asserted.** On jobid 355 I reasoned from a predicate's shape to what the planner "must" do and was refuted; here the plan itself shows 221,183 rows arriving and being thrown away, so moving `source` into the index predicate would genuinely stop them being delivered. ⚠ Same *shape* of claim, opposite outcome — which is exactly why the shape is not evidence and the plan is.
+
+## ⛔ BUT AN INDEX ALONE WOULD FIX THE COST AND NOT THE LANE
+
+**The cursor only advances when rows are claimed, and none ever are.** A perfect index makes each tick find nothing *fast* instead of finding nothing *slowly* — 286 quick no-ops a day instead of 286 expensive ones, forever, with the cursor still pinned at 2024-04-19. **The waste becomes cheap and permanent rather than expensive and permanent.**
+
+**So the ordering is: the EXHAUSTION STATE is the fix, and the index is at best an optimisation of a lane that should not be running at all.** Recommend in this order:
+
+1. **Give the lane a terminal/exhausted state** — when a full pass over the remaining range yields nothing, record that and stop (or drop to a weekly probe), rather than re-deriving the same zero 286 times a day.
+2. **Only then**, if it must keep scanning, put `source NOT IN ('allday_studio_history_v1','ufc_studio_history_v1')` into the partial index predicate — now evidenced by the 221,183 `Rows Removed by Filter`.
+3. ⛔ Still **not** raising `floor_sold_at` — the self-heal reset described above makes that actively worse.
+
+⚠ **One caveat kept explicit:** the 4.3 s is a WARM, quiet-instance reading (`hit=192,758` vs `read=2,806` — almost entirely cache). It is a floor, not a typical cost; the 490 s-class runs happen when that cache is cold and contended, which is precisely the spell condition.
