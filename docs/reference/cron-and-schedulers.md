@@ -2006,3 +2006,35 @@ therefore UNRESOLVED rather than confirmed either way.** Say so instead of guess
 5,721 MCP-issued calls and 918 GB of disk reads in the same window** (`-- source: POST /mcp`), a
 consumer no pipeline table sees at all, alongside its own pg_cron job (jobid 449, every 2 min).
 **"What ran" and "what got logged" are different questions everywhere in this estate.**
+
+## ⭐ THE CONSTANT-FIELD DETECTOR — finding a telemetry number that cannot vary (2026-09-12)
+
+`rows_written = 0` being a null instrument is already in CLAUDE.md. **This is the generalisation: any numeric key in `pipeline_runs.extra` that never moves across runs is a candidate non-measurement** — and two were found this way on 2026-09-12 (`dist_resolved` in #72, a `RETURNING` flag counting rows that already had the value; `blended` / `ask_proxy` in #86, literal `const … = 0` left behind by a path deleted in May).
+
+```sql
+-- numeric extra keys that barely vary. `pipeline_runs` is ~73 h; swap to
+-- `pipeline_runs_daily.extra_num_sums` for an indefinite baseline.
+with kv as (
+  select r.pipeline, e.key, (e.value)::numeric as val
+  from public.pipeline_runs r
+  cross join lateral jsonb_each(r.extra) e
+  where r.started_at > now() - interval '48 hours'
+    and r.extra is not null
+    and jsonb_typeof(e.value) = 'number'
+), agg as (
+  select pipeline, key, count(*) as runs, count(distinct val) as distinct_vals,
+         min(val) as lo, max(val) as hi
+  from kv group by 1,2
+)
+select * from agg where runs >= 20 and distinct_vals <= 3 order by runs desc;
+```
+
+⚠ **Three refinements it needs, each learned by getting it wrong first:**
+
+1. ⛔ **Do NOT filter `mean > 0`.** The most interesting null instrument is pinned at **zero**, and the first pass excluded exactly those. Run it once for `hi = 0` and once for `distinct_vals <= 3`.
+2. ⚠ **Separate SETTINGS from MEASUREMENTS, by name.** Most constant keys are configuration echoed into the payload and are *supposed* to be constant: `batch_size`, `page_size`, `edition_limit`, `spork_floor`, `chain_id`, `soft_deadline_ms`, `stale_ceiling_min`, `min_gap_seconds`, `target_end_block`, `resolver_version`, `sync_round_trip_cap_*`. **These are noise, not findings.**
+3. ⚠ **Separate "zero is the good outcome" from "zero means dead."** `failed`, `decode_failures`, `page_errors`, `blocked_insert_vanished`, `*_skipped` at zero is **health**. `*_enriched`, `*_hydrated`, `resolved_*`, `*_filtered_in`, `blended`, `ask_proxy` at zero is a **dead leg**. The suffix carries it.
+
+⚠ **And a false lead it produced, worth knowing before you follow one:** the two dead `fmv-recalc` fields were also the only two with **no paired `_error` field**, while every leg that has one fires sometimes — a tidy correlation pointing at *"they fail silently"*, which is this repo's own `_error`-pairing rule. **It was wrong; they never ran at all.** ⛔ **A correlation that flatters an existing rule is exactly the one to check against the source before filing.**
+
+⛔ **NOT shipped as a permanent arm.** Without a curated suppression list for (2) it is permanently noisy, and #25 records what a permanently-red instrument costs. **Re-run by hand.** ⚠ Yield so far, stated honestly: **two instances, both fixed** — a real class, but a small one.

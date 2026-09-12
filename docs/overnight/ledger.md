@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ SHIPPED: two `fmv-recalc` telemetry fields were **hardcoded zeros shipped as measurements** — found by a detector, and they cost an investigation first · Claude Code (cloud), autonomous session
+
+**Found by sweeping for the CLASS after fixing one instance**, which is this repo's own *"grep for the EXPRESSION, not the file"* rule applied to an instrument rather than a code shape. `pipeline_runs.extra.blended` and `.ask_proxy` read **0 on every day since the fields began being recorded (08-31)** — 13 days, ~1,700 runs, ~800,000 rows written — while every other leg of the same payload varies (`historical_fallback` 231→1,157/day · `ask_offers_fallback` 0→85 · `parallel_ask_floor` 3→265 · `haircut_rows` 4,075→7,744).
+
+🚨 **The cause is two lines: `const blendedCount = 0` / `const askProxyCount = 0`**, never reassigned, left behind when the Flowty LiveToken blend and floor-ask proxy paths were removed **2026-05-24** — and still emitted on every run since. ⭐ **A hardcoded zero in a pipeline's own record is indistinguishable from a measured one.** A reader sees *"the blend path ran and found nothing to blend"*; the truth is *"that path was deleted in May"*.
+
+⚠ **AND THESE ARE CONFIDENCE-LIFTING METHOD COUNTERS, so they sit exactly where someone auditing go-live M1/M2 would look.** That is not hypothetical: **I chased them** — pulled the 45-day baseline from `pipeline_runs_daily`, built an `_error`-pairing correlation, and only then found the `const`. **That cost is the evidence they were worth deleting rather than documenting.**
+
+⚠⚠ **THE NEAR-MISS, recorded because it nearly became a filing: my first hypothesis was wrong and pointed at the FMV engine.** The two dead fields were also the ONLY two with **no paired `_error` field**, while every leg that HAS one fires sometimes — a tidy correlation suggesting *"they fail silently and nobody can tell"*, which is this repo's own `_error`-pairing rule staring back. ⛔ **It was not that. They never ran at all. A correlation that FLATTERS AN EXISTING RULE is exactly the one to check against the source before filing.**
+
+✅ **Both constants, both payload keys and both log-line tokens removed.** Nothing read either key (full-repo grep — the other `blended` hits are LiveToken `valuations.blended` payloads, and the sniper feed's `confidenceSource = "ask_proxy"` is unrelated). **Retired, not zeroed**, the same reasoning as the `dist_resolved` retirement earlier this morning.
+
+⭐⭐ **The reusable part is the DETECTOR, not the fix, and it is data-driven rather than static.** Explode `extra` over `pipeline_runs` and rank numeric keys by how little they vary. **Three refinements, each learned by getting it wrong:** ⚠ **do not filter `mean > 0`** (the most interesting null instrument is pinned at zero — the first pass excluded exactly those) · ⚠ **separate SETTINGS from MEASUREMENTS by name** (`batch_size`, `spork_floor`, `chain_id`, `edition_limit` are *supposed* to be constant) · ⚠ **separate "zero is the good outcome" from "zero means dead"** (`failed`/`decode_failures`/`page_errors` at zero is health; `*_enriched`/`*_hydrated`/`resolved_*` at zero is a dead leg). ⛔ **NOT shipped as a permanent arm** — without a curated suppression list it is permanently noisy, and #25 records what that costs. Query in [cron-and-schedulers.md](../reference/cron-and-schedulers.md). ⚠ **Yield, honestly: two instances, both now fixed** — a real class, but a small one.
+
+**Verification.** `tsc` clean; 8 `fmv-recalc` test files / 103 tests green; full suite green. **Behaviour unchanged — no pricing path, row or snapshot is affected; two dead constants and their output were deleted.**
+
+**Revert path.** `git revert` the commit whose message begins `chore(fmv-recalc): delete two telemetry fields that were hardcoded zeros`.
+
 ### 2026-09-12 · ✅ SHIPPED: a backfiller reported **96 % success** for **2.8 % progress** — `dist_resolved` counted the rows that already had one · Claude Code (cloud), autonomous session
 
 **Found while re-deriving #72, not from a filing.** `pipeline_runs.extra.dist_resolved` for `backfill-pack-rip-metadata` read **484 / 484 / 488 of 500** on three consecutive runs. ⭐ **The tell is not the size of the number, it is that the three barely move** — a drain working through a backlog reports a figure that falls as the backlog does.
