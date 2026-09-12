@@ -80,6 +80,11 @@ const Q1_CAP = 100
 const Q2_CAP = 50
 const Q3_CAP = 25
 const Q4_CAP = 60
+// How many DISTINCT edition_keys the Q3 disagreement walk covers per tick. The
+// cursor advances on key boundaries, so a full pass over the collection's 423
+// keys (measured 2026-09-11) takes ~17 hourly ticks. Measured cost of one 25-key
+// slice on an idle instance: 1,280 rows, 5,966 buffers, 877 ms cold.
+const Q3_KEYS_PER_TICK = 25
 const PER_CADENCE_CHUNK = 50
 const PER_CALL_TIMEOUT_MS = 15_000
 const SOFT_DEADLINE_MS = 25_000
@@ -272,6 +277,35 @@ function buildEditionKey(p: PinInfo): string {
   return `${p.royaltyCode}:${p.variant}:${p.printing}`
 }
 
+/** Payload of the `pinnacle_metadata_discovery` RPC (see its migration). */
+interface DiscoveryPayload {
+  q3?: Array<{
+    wmc_id: string
+    wallet_address: string
+    moment_id: string
+    wmc_key: string
+    map_key: string
+  }>
+  q4?: Array<{ edition_key: string; wallet_address: string; moment_id: string }>
+  /** Distinct keys covered by THIS tick's Q3 slice. */
+  q3_keys_scanned?: number
+  q3_cursor_before?: string | null
+  q3_cursor_after?: string | null
+  q3_wrapped?: boolean
+  q3_pass?: number
+  /** COMPLETE count of Q4 targets, not just the capped list above. */
+  q4_targets_total?: number
+  /**
+   * Catalog rows the Q4 predicate deliberately EXCLUDES: chain-written
+   * (edition_key + mint_count) but carrying the literal character_name
+   * 'Unknown', because the chain supplies no character for them. Published so
+   * the exclusion is countable — three of these were being re-upserted forever
+   * under the old `character_name <> 'Unknown'` completeness rule.
+   */
+  q4_unknown_name_chain_written?: number
+  distinct_edition_keys?: number
+}
+
 interface WorkItem {
   wallet: string
   momentId: string
@@ -377,127 +411,74 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Q3: disagreements — composite keys on both sides that don't match. Use an
-  // RPC-free approach: pull a small page of wmc + map joined in app code.
-  // First pull candidate wmc rows, then look up corresponding map rows.
+  // Q3 + Q4 discovery — one RPC, `pinnacle_metadata_discovery`.
+  //
+  // These two queues used to read their own candidate pools over PostgREST with
+  // `.limit(5000)` / `.limit(8000)` and NO `.order()`. Measured 2026-09-11: the
+  // matching population is 56,440 rows, so PostgREST returned its 1,000-row cap
+  // and the effective pool was an UNDEFINED physical head that never moved. The
+  // lane's own numbers say what that cost: `q4_eligible` 2-3 and `q3_eligible` 0
+  // on every one of the last 63 hourly runs, while the collection actually holds
+  // 9 Q4 targets and 5 Q3 disagreements. The unreachable ones were unreachable
+  // forever.
+  //
+  // The RPC replaces both reads with a loose index scan over the collection's
+  // distinct edition_keys (423 keys, 2,154 buffers / 255 ms — 18x cheaper than a
+  // DISTINCT ON over the same pool): Q4's coverage is now COMPLETE, and Q3 walks
+  // the same key list behind a persisted cursor, a bounded slice per tick, so a
+  // full pass takes ~17 ticks instead of never finishing. Key-boundary slicing
+  // means a key is always scanned whole; no row can fall between two slices.
+  //
+  // An errored discovery is a 500, never an empty queue — a failed read that
+  // renders as "no work to do" is this platform's most productive defect class,
+  // and here it would additionally advance nothing while reporting ok.
   const q3: Array<{ wmc_id: string; wallet: string; momentId: string; wmcKey: string; mapKey: string }> = []
-  {
-    // Pull a wider pool of wmc rows with composite keys to give the JS-side
-    // join a fair shot at finding disagreements (the disagreement rate is
-    // small, ~39 across the whole collection per CLAUDE.md).
-    const { data: wmcPool, error: wmcErr } = await supabaseAdmin
-      .from("wallet_moments_cache")
-      .select("id, wallet_address, moment_id, edition_key")
-      .eq("collection_id", PINNACLE_COLLECTION_ID)
-      .not("edition_key", "is", null)
-      .ilike("edition_key", "%:%") // composite keys contain colons; cheap pre-filter to skip integer-only keys
-      // postgrest-cap: intentional — the number is KEPT ON PURPOSE and it is NOT
-      // a bound. Measured 2026-09-09: this predicate matches >= 9,000 wmc rows,
-      // so PostgREST returns its 1,000-row cap and the effective pool is the
-      // FIRST 1,000 PHYSICAL ROWS — this read carries no .order(), so which
-      // 1,000 is undefined. Recorded rather than "fixed" for two reasons.
-      // (a) Lowering the number to 1,000 would be behaviour-preserving only if
-      //     the server cap really is 1,000; that is a PostgREST setting, not
-      //     readable from Postgres, and unverifiable from a sandbox with no REST
-      //     egress. A silent coverage cut resting on an unverified premise is
-      //     worse than a stated one.
-      // (b) The real fix is a bounded cursor over the pool, not a bigger limit —
-      //     "a LIMIT bounds a query's OUTPUT, not its COST", and this is the
-      //     queue-walk-from-the-top shape CLAUDE.md names. That is a redesign of
-      //     an ACTIVE cron, not a comment edit.
-      // Bounded blast radius, measured the same day: only 419 DISTINCT composite
-      // edition_keys exist across the whole pool and Q3's cap is 25/tick, so the
-      // exposure is "some keys may be unreachable", not "most are". Registered.
-      .limit(5000)
-    if (wmcErr) {
-      return NextResponse.json({ ok: false, error: `q3 wmc pool: ${wmcErr.message}` }, { status: 500 })
-    }
-    const wmcRows = (wmcPool ?? []) as Array<{ id: string; wallet_address: string; moment_id: string; edition_key: string }>
-    const composite = wmcRows.filter((r) => !/^\d+$/.test(r.edition_key))
-    const idsToCheck = composite.map((r) => r.moment_id)
-    if (idsToCheck.length > 0) {
-      const { data: mapRows, error: mapErr } = await supabaseAdmin
-        .from("pinnacle_nft_map")
-        .select("nft_id, edition_key")
-        .in("nft_id", idsToCheck)
-      if (mapErr) {
-        return NextResponse.json({ ok: false, error: `q3 map lookup: ${mapErr.message}` }, { status: 500 })
-      }
-      const mapByNft = new Map<string, string>()
-      for (const m of (mapRows ?? []) as Array<{ nft_id: string; edition_key: string }>) {
-        mapByNft.set(m.nft_id, m.edition_key)
-      }
-      for (const r of composite) {
-        if (q3.length >= Q3_CAP) break
-        const mapKey = mapByNft.get(r.moment_id)
-        if (!mapKey) continue
-        if (mapKey === r.edition_key) continue
-        if (/^\d+$/.test(mapKey)) continue // only composite-vs-composite per spec
-        q3.push({ wmc_id: r.id, wallet: r.wallet_address, momentId: r.moment_id, wmcKey: r.edition_key, mapKey })
-        tagJob(r.wallet_address, r.moment_id, {
-          kind: "disagreement",
-          wmc_id: r.id,
-          wmc_edition_key: r.edition_key,
-          map_edition_key: mapKey,
-        })
-      }
-    }
-  }
-
-  // Q4: catalog create/repair. Held wmc composite edition_keys (Pinnacle) that
-  // have NO complete pinnacle_editions row — either missing entirely, or a
-  // fetch-missing stub (character_name='Unknown' / edition_key NULL). We read the
-  // authoritative fields straight off chain and upsert (onConflict id). This is
-  // the on-chain replacement for the dead GQL catalog fetch. thumbnail_url is
-  // never written here (see the dead-end note in the header).
   const q4: Array<{ wmc_edition_key: string; wallet: string; momentId: string }> = []
+  let discovery: DiscoveryPayload
   {
-    // The set of pinnacle_editions ids that are already COMPLETE (real name +
-    // edition_key present). Anything not in this set is a create-or-repair target.
-    // pinnacle_editions is ~hundreds of rows, comfortably under the 1000 cap.
-    const { data: peRows, error: peErr } = await supabaseAdmin
-      .from("pinnacle_editions")
-      .select("id, character_name, edition_key")
-      // 569 rows measured 2026-09-09 — the comment above is right that this is
-      // hundreds, and the bound now says so. A larger number is clamped to
-      // PostgREST's 1,000-row cap and would read as a guarantee it is not.
-      .limit(1000)
-    if (peErr) {
-      return NextResponse.json({ ok: false, error: `q4 pe load: ${peErr.message}` }, { status: 500 })
+    const { data, error } = await supabaseAdmin.rpc("pinnacle_metadata_discovery", {
+      p_q3_keys: Q3_KEYS_PER_TICK,
+      p_q3_limit: Q3_CAP,
+      p_q4_limit: Q4_CAP,
+    })
+    if (error) {
+      return NextResponse.json({ ok: false, error: `discovery: ${error.message}` }, { status: 500 })
     }
-    const completeIds = new Set<string>()
-    for (const r of (peRows ?? []) as Array<{ id: string; character_name: string | null; edition_key: string | null }>) {
-      if (r.character_name && r.character_name !== "Unknown" && r.edition_key) {
-        completeIds.add(r.id)
-      }
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      // A null payload is not an empty backlog. Discriminate on the SHAPE, not on
+      // the array lengths inside it, or a dropped response reads as "nothing to do".
+      // `Array.isArray` is not belt-and-braces: `typeof [] === "object"`, so an
+      // array-shaped body (what PostgREST returns for a SET-returning function,
+      // and what a wrong rpc name can yield) would otherwise pass this check and
+      // then read as two empty queues.
+      return NextResponse.json(
+        { ok: false, error: "discovery: empty payload (no rows and no error)" },
+        { status: 500 },
+      )
+    }
+    discovery = data as DiscoveryPayload
+
+    for (const row of discovery.q3 ?? []) {
+      if (q3.length >= Q3_CAP) break
+      q3.push({
+        wmc_id: row.wmc_id,
+        wallet: row.wallet_address,
+        momentId: row.moment_id,
+        wmcKey: row.wmc_key,
+        mapKey: row.map_key,
+      })
+      tagJob(row.wallet_address, row.moment_id, {
+        kind: "disagreement",
+        wmc_id: row.wmc_id,
+        wmc_edition_key: row.wmc_key,
+        map_edition_key: row.map_key,
+      })
     }
 
-    // Pull a pool of Pinnacle wmc rows with composite (royaltyCode:variant:printing)
-    // edition_keys; pick the first unseen sample per key that lacks a complete row.
-    const { data: wmcPool, error: wmcErr } = await supabaseAdmin
-      .from("wallet_moments_cache")
-      .select("wallet_address, moment_id, edition_key")
-      .eq("collection_id", PINNACLE_COLLECTION_ID)
-      .not("edition_key", "is", null)
-      .ilike("edition_key", "%:%:%") // composite keys have two colons; skips integer-only keys
-      // postgrest-cap: intentional — same read, same reasoning as Q3 above (>= 9,000
-      // matching rows, clamped to 1,000, unordered; keeping the number rather than
-      // cutting coverage on an unverified cap). Q4's own target set was 12 rows on
-      // 2026-09-09 out of 419 distinct composite keys, which is why this is filed
-      // as a reachability risk rather than treated as a live data loss.
-      .limit(8000)
-    if (wmcErr) {
-      return NextResponse.json({ ok: false, error: `q4 wmc pool: ${wmcErr.message}` }, { status: 500 })
-    }
-    const seenKeys = new Set<string>()
-    for (const row of (wmcPool ?? []) as Array<{ wallet_address: string; moment_id: string; edition_key: string }>) {
+    for (const row of discovery.q4 ?? []) {
       if (q4.length >= Q4_CAP) break
-      const key = row.edition_key
-      if (seenKeys.has(key)) continue
-      if (completeIds.has(key)) continue // already fully catalogued
-      seenKeys.add(key)
-      q4.push({ wmc_edition_key: key, wallet: row.wallet_address, momentId: row.moment_id })
-      tagJob(row.wallet_address, row.moment_id, { kind: "catalog_upsert", wmc_edition_key: key })
+      q4.push({ wmc_edition_key: row.edition_key, wallet: row.wallet_address, momentId: row.moment_id })
+      tagJob(row.wallet_address, row.moment_id, { kind: "catalog_upsert", wmc_edition_key: row.edition_key })
     }
   }
 
@@ -686,9 +667,28 @@ export async function GET(req: NextRequest) {
       q2_eligible: q2.length,
       q3_eligible: q3.length,
       q4_eligible: q4.length,
+      // Every per-queue WRITE counter, not just two of them. Until 2026-09-11
+      // `extra` published catalog_upserted and serials_filled only, so the three
+      // queues below could report eligible work and write NOTHING on every run
+      // and no instrument could see it — which is exactly what Q1/Q2 were doing
+      // (rows_written matched catalog_upserted alone on all 63 retained runs).
+      // A per-step count with no sibling count is the #70 trap one level down.
+      mint_count_filled: corrections.mint_count_filled.length,
+      edition_keys_resolved: corrections.edition_keys_resolved.length,
+      disagreements_corrected: corrections.disagreements_corrected.length,
       catalog_upserted: corrections.catalog_upserted.length,
       serials_filled: corrections.serials_filled.length,
       q1_skipped_no_sample: q1Skipped.length,
+      // Discovery telemetry: the POPULATION next to the capped list, so a reader
+      // can tell "the cap is binding" from "the backlog is not shrinking", and
+      // the cursor position, so a stalled Q3 walk is visible rather than inferred.
+      q4_targets_total: discovery.q4_targets_total ?? null,
+      q4_unknown_name_chain_written: discovery.q4_unknown_name_chain_written ?? null,
+      distinct_edition_keys: discovery.distinct_edition_keys ?? null,
+      q3_keys_scanned: discovery.q3_keys_scanned ?? null,
+      q3_cursor_after: discovery.q3_cursor_after ?? null,
+      q3_wrapped: discovery.q3_wrapped ?? null,
+      q3_pass: discovery.q3_pass ?? null,
       // thumbnail_url is never filled — Pinnacle images are a documented
       // dead-end (no per-edition image on-chain; GQL 404; Flowty dead).
       images_filled: 0,

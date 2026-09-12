@@ -16,7 +16,26 @@ const { sb } = vi.hoisted(() => {
   for (const m of ["from", "select", "eq", "in", "order", "limit", "gte", "lte", "lt", "gt", "is", "not", "or", "neq", "ilike", "match", "range", "insert", "update", "upsert", "delete", "returns"]) sb[m] = () => sb
   sb.single = async () => ({ data: null, error: null })
   sb.maybeSingle = async () => ({ data: null, error: null })
-  sb.rpc = async () => ({ data: null, error: null })
+  // `pinnacle_metadata_discovery` is the Q3+Q4 discovery seam; an empty payload
+  // is an EMPTY BACKLOG here, and is deliberately distinct from `data: null`,
+  // which the route treats as a failed read and 500s on (see the sibling case in
+  // the -queues suite). Every other rpc (log_pipeline_run) resolves to null.
+  sb.rpc = async (name: string) =>
+    name === "pinnacle_metadata_discovery"
+      ? {
+          data: {
+            q3: [],
+            q4: [],
+            q3_keys_scanned: 0,
+            q3_cursor_after: null,
+            q3_wrapped: false,
+            q3_pass: 0,
+            q4_targets_total: 0,
+            distinct_edition_keys: 0,
+          },
+          error: null,
+        }
+      : { data: null, error: null }
   sb.then = (resolve: any) => resolve({ data: [], error: null })
   return { sb }
 })

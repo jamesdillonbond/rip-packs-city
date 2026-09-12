@@ -108,11 +108,41 @@ function flowScript(bodies: string[]): FetchStub {
 }
 
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
+
+/**
+ * Q3 + Q4 candidates now arrive from ONE rpc, `pinnacle_metadata_discovery`
+ * (migration 20260912042349). The selection rules that used to run here in JS —
+ * composite-vs-composite, per-key dedupe, skip-already-complete — moved into
+ * that function, where they run over the COMPLETE key list instead of over the
+ * undefined 1,000-row physical head PostgREST used to hand back. These cases
+ * therefore drive the payload and assert what the ROUTE still owns: which side
+ * of a disagreement is corrected, the upsert shape, and that a failed discovery
+ * is never rendered as an empty backlog.
+ */
+function discovery(payload: Record<string, unknown> = {}) {
+  return {
+    data: {
+      q3: [],
+      q4: [],
+      q3_keys_scanned: 0,
+      q3_cursor_before: null,
+      q3_cursor_after: null,
+      q3_wrapped: false,
+      q3_pass: 0,
+      q4_targets_total: 0,
+      distinct_edition_keys: 0,
+      ...payload,
+    },
+    error: null,
+  }
+}
+
 function install(fixtures: Fixtures) {
   const spy = makeInstrumentedSupabaseFixture({
     pinnacle_editions: { data: [], error: null },
     wallet_moments_cache: { data: [], error: null },
     pinnacle_nft_map: { data: [], error: null },
+    "rpc:pinnacle_metadata_discovery": discovery(),
     "rpc:log_pipeline_run": { data: null, error: null },
     ...fixtures,
   })
@@ -127,7 +157,8 @@ function req(): NextRequest {
   })
 }
 
-/** Empty Q1 candidate list, so pinnacle_editions[0] is Q1 and [1] is Q4's pe load. */
+/** Empty Q1 candidate list. pinnacle_editions[0] is always the Q1 read; the Q4
+ *  completeness read that used to follow it now lives inside the discovery rpc. */
 const NO_Q1 = { data: [], error: null }
 
 /** Per-queue eligibility only reaches pipeline_runs.extra, never the response. */
@@ -149,11 +180,9 @@ afterEach(() => {
 describe("pinnacle-metadata-backfill — Q2 edition_key resolve", () => {
   it("writes the authoritative key to BOTH wmc and pinnacle_nft_map, and fills the serial", async () => {
     const spy = install({
-      pinnacle_editions: [NO_Q1, { data: [], error: null }],
+      pinnacle_editions: [NO_Q1],
       wallet_moments_cache: [
         { data: [{ id: "w1", wallet_address: "0xw1", moment_id: "777" }], error: null }, // Q2
-        { data: [], error: null }, // Q3 pool
-        { data: [], error: null }, // Q4 pool
         { data: [{ id: "w1" }], error: null }, // serial update .select("id")
         { data: null, error: null }, // edition_key update
       ],
@@ -179,11 +208,9 @@ describe("pinnacle-metadata-backfill — Q2 edition_key resolve", () => {
 
   it("skips the serial fill for an open edition (no on-chain serial) and when the key components are missing", async () => {
     const spy = install({
-      pinnacle_editions: [NO_Q1, { data: [], error: null }],
+      pinnacle_editions: [NO_Q1],
       wallet_moments_cache: [
         { data: [{ id: "w1", wallet_address: "0xw1", moment_id: "777" }], error: null },
-        { data: [], error: null },
-        { data: [], error: null },
       ],
     })
     fetchMock = installFetchMock([
@@ -200,11 +227,9 @@ describe("pinnacle-metadata-backfill — Q2 edition_key resolve", () => {
 
   it("ignores a moment the chain read did not return", async () => {
     install({
-      pinnacle_editions: [NO_Q1, { data: [], error: null }],
+      pinnacle_editions: [NO_Q1],
       wallet_moments_cache: [
         { data: [{ id: "w1", wallet_address: "0xw1", moment_id: "777" }], error: null },
-        { data: [], error: null },
-        { data: [], error: null },
       ],
     })
     fetchMock = installFetchMock([flowScript([pinDict({})])])
@@ -218,56 +243,35 @@ describe("pinnacle-metadata-backfill — Q2 edition_key resolve", () => {
 describe("pinnacle-metadata-backfill — Q3 disagreements", () => {
   it("corrects the map when wmc already matches chain, and wmc otherwise", async () => {
     const spy = install({
-      pinnacle_editions: [NO_Q1, { data: [], error: null }],
-      wallet_moments_cache: [
-        { data: [], error: null }, // Q2
-        {
-          data: [
-            // wmc agrees with chain -> the MAP is the wrong side.
-            { id: "wA", wallet_address: "0xw1", moment_id: "1", edition_key: "RC:Std:1" },
-            // wmc disagrees with chain -> overwrite WMC.
-            { id: "wB", wallet_address: "0xw1", moment_id: "2", edition_key: "RC:Alt:2" },
-            // everything already agrees -> no write at all.
-            { id: "wC", wallet_address: "0xw1", moment_id: "3", edition_key: "RC:Std:3" },
-            // map key is integer-only -> excluded by spec (composite-vs-composite).
-            { id: "wD", wallet_address: "0xw1", moment_id: "4", edition_key: "RC:Std:4" },
-            // no map row at all -> nothing to disagree with.
-            { id: "wE", wallet_address: "0xw1", moment_id: "5", edition_key: "RC:Std:5" },
-            // integer-only wmc key -> filtered out of the composite pool.
-            { id: "wF", wallet_address: "0xw1", moment_id: "6", edition_key: "12345" },
-          ],
-          error: null,
-        }, // Q3 pool
-        { data: [], error: null }, // Q4 pool
-        { data: null, error: null }, // the wmc correction write
-      ],
-      pinnacle_nft_map: [
-        {
-          data: [
-            { nft_id: "1", edition_key: "RC:Alt:1" },
-            { nft_id: "2", edition_key: "RC:Std:2" },
-            { nft_id: "3", edition_key: "RC:Std:3" },
-            { nft_id: "4", edition_key: "9999" },
-          ],
-          error: null,
-        },
-        { data: null, error: null }, // the map correction write
-      ],
+      pinnacle_editions: [NO_Q1],
+      wallet_moments_cache: [{ data: null, error: null }], // the wmc correction write
+      pinnacle_nft_map: [{ data: null, error: null }], // the map correction write
+      // Composite-vs-composite selection is the rpc's job now (it is a SQL
+      // predicate over the full key list); what reaches the route is the
+      // disagreeing pairs, and the route decides which SIDE is wrong.
+      "rpc:pinnacle_metadata_discovery": discovery({
+        q3: [
+          // wmc agrees with chain -> the MAP is the wrong side.
+          { wmc_id: "wA", wallet_address: "0xw1", moment_id: "1", wmc_key: "RC:Std:1", map_key: "RC:Alt:1" },
+          // wmc disagrees with chain -> overwrite WMC.
+          { wmc_id: "wB", wallet_address: "0xw1", moment_id: "2", wmc_key: "RC:Alt:2", map_key: "RC:Std:2" },
+        ],
+        q3_keys_scanned: 25,
+        q3_cursor_after: "RC:Std:9",
+        distinct_edition_keys: 423,
+      }),
     })
     fetchMock = installFetchMock([
       flowScript([
         pinDict({
           "1": { royaltyCode: "RC", variant: "Std", printing: 1 },
           "2": { royaltyCode: "RC", variant: "Std", printing: 2 },
-          "3": { royaltyCode: "RC", variant: "Std", printing: 3 },
         }),
       ]),
     ])
 
     const body = await (await GET(req())).json()
     expect(body.ok).toBe(true)
-    // wD (integer map key) and wE (no map row) never entered the queue; wF was
-    // filtered out before the map lookup.
     expect(logExtra(spy).extra.q3_eligible).toBe(2)
     expect(body.disagreements_corrected).toBe(2)
 
@@ -283,37 +287,72 @@ describe("pinnacle-metadata-backfill — Q3 disagreements", () => {
       edition_key: "RC:Std:2",
     })
   })
+
+  it("publishes the cursor and the Q4 population, so a stalled walk is visible rather than inferred", async () => {
+    const spy = install({
+      pinnacle_editions: [NO_Q1],
+      "rpc:pinnacle_metadata_discovery": discovery({
+        q3_keys_scanned: 25,
+        q3_cursor_before: "AAA:Std:1",
+        q3_cursor_after: "BBB:Std:1",
+        q3_wrapped: true,
+        q3_pass: 3,
+        q4_targets_total: 9,
+        distinct_edition_keys: 423,
+      }),
+    })
+    await GET(req())
+    const { extra } = logExtra(spy)
+    // The population next to the capped list: `q4_eligible` alone cannot tell
+    // "the cap is binding" from "the backlog is not shrinking".
+    expect(extra.q4_targets_total).toBe(9)
+    expect(extra.distinct_edition_keys).toBe(423)
+    expect(extra.q3_keys_scanned).toBe(25)
+    expect(extra.q3_cursor_after).toBe("BBB:Std:1")
+    expect(extra.q3_wrapped).toBe(true)
+    expect(extra.q3_pass).toBe(3)
+  })
+
+  it("publishes every per-queue WRITE counter, not just the two that used to reach the log", async () => {
+    // Until 2026-09-11 `extra` carried catalog_upserted and serials_filled only,
+    // so Q1/Q2/Q3 could report eligible work and write nothing on every run with
+    // no instrument able to see it — which is what Q1 and Q2 were in fact doing.
+    const spy = install({
+      pinnacle_editions: [NO_Q1],
+      wallet_moments_cache: [
+        { data: [{ id: "w1", wallet_address: "0xw1", moment_id: "777" }], error: null }, // Q2
+        { data: [{ id: "w1" }], error: null }, // serial update
+        { data: null, error: null }, // edition_key update
+      ],
+    })
+    fetchMock = installFetchMock([
+      flowScript([pinDict({ "777": { royaltyCode: "RC", variant: "Std", printing: 1, serial: 42 } })]),
+    ])
+
+    await GET(req())
+    const { extra } = logExtra(spy)
+    expect(extra.edition_keys_resolved).toBe(1)
+    expect(extra.serials_filled).toBe(1)
+    expect(extra.mint_count_filled).toBe(0)
+    expect(extra.disagreements_corrected).toBe(0)
+  })
 })
 
 describe("pinnacle-metadata-backfill — Q4 catalog create/repair", () => {
-  it("upserts from chain text with Unknown/trim fallbacks, skips complete rows, dedupes keys, and never writes thumbnail_url", async () => {
+  it("upserts from chain text with Unknown/trim fallbacks and never writes thumbnail_url", async () => {
+    // Skip-already-complete, per-key dedupe and the integer-key filter moved into
+    // `pinnacle_metadata_discovery` — they are asserted against the live catalog
+    // there, not re-simulated here. What stays the route's to get right is the
+    // upsert PAYLOAD and the match-vs-remapped tag.
     const spy = install({
-      pinnacle_editions: [
-        NO_Q1,
-        {
-          data: [
-            // COMPLETE -> its key must be skipped.
-            { id: "RC:Std:9", character_name: "Mickey", edition_key: "RC:Std:9" },
-            // fetch-missing stub -> repair target.
-            { id: "RC:Std:8", character_name: "Unknown", edition_key: null },
-          ],
-          error: null,
-        },
-        { data: null, error: null }, // upsert acks
-      ],
-      wallet_moments_cache: [
-        { data: [], error: null }, // Q2
-        { data: [], error: null }, // Q3 pool
-        {
-          data: [
-            { wallet_address: "0xw1", moment_id: "9", edition_key: "RC:Std:9" }, // complete -> skip
-            { wallet_address: "0xw1", moment_id: "8", edition_key: "RC:Std:8" }, // stub -> repair
-            { wallet_address: "0xw1", moment_id: "88", edition_key: "RC:Std:8" }, // dup key -> deduped
-            { wallet_address: "0xw1", moment_id: "7", edition_key: "RC:Old:7" }, // chain says otherwise
-          ],
-          error: null,
-        }, // Q4 pool
-      ],
+      pinnacle_editions: [NO_Q1, { data: null, error: null }], // Q1 read, then upsert acks
+      "rpc:pinnacle_metadata_discovery": discovery({
+        q4: [
+          { edition_key: "RC:Std:8", wallet_address: "0xw1", moment_id: "8" }, // stub -> repair
+          { edition_key: "RC:Old:7", wallet_address: "0xw1", moment_id: "7" }, // chain says otherwise
+        ],
+        q4_targets_total: 2,
+      }),
     })
     fetchMock = installFetchMock([
       flowScript([
@@ -338,7 +377,7 @@ describe("pinnacle-metadata-backfill — Q4 catalog create/repair", () => {
 
     const body = await (await GET(req())).json()
     expect(body.ok).toBe(true)
-    expect(logExtra(spy).extra.q4_eligible).toBe(2) // 9 skipped as complete, 88 deduped
+    expect(logExtra(spy).extra.q4_eligible).toBe(2)
     expect(body.catalog_upserted).toBe(2)
 
     const rows = (spy.writes.pinnacle_editions ?? [])
@@ -376,32 +415,19 @@ describe("pinnacle-metadata-backfill — load failures + limits", () => {
       pinnacle_editions: [NO_Q1],
       wallet_moments_cache: [{ data: null, error: { message: "q2 down" } }],
     }],
-    ["q3 wmc pool", {
+    ["q3+q4 discovery", {
       pinnacle_editions: [NO_Q1],
-      wallet_moments_cache: [
-        { data: [], error: null },
-        { data: null, error: { message: "q3 pool down" } },
-      ],
+      wallet_moments_cache: [{ data: [], error: null }],
+      "rpc:pinnacle_metadata_discovery": { data: null, error: { message: "discovery down" } },
     }],
-    ["q3 map lookup", {
+    // A null payload with NO error is the same failure wearing a friendlier
+    // face: supabase-js RETURNS errors rather than throwing, and a dropped
+    // response would otherwise read as "both queues are empty" — the lane would
+    // report ok, advance no cursor, and publish a measured zero backlog.
+    ["q3+q4 discovery returning a null payload and no error", {
       pinnacle_editions: [NO_Q1],
-      wallet_moments_cache: [
-        { data: [], error: null },
-        { data: [{ id: "w1", wallet_address: "0xw1", moment_id: "1", edition_key: "RC:Std:1" }], error: null },
-      ],
-      pinnacle_nft_map: [{ data: null, error: { message: "map down" } }],
-    }],
-    ["q4 pe load", {
-      pinnacle_editions: [NO_Q1, { data: null, error: { message: "pe down" } }],
-      wallet_moments_cache: [{ data: [], error: null }, { data: [], error: null }],
-    }],
-    ["q4 wmc pool", {
-      pinnacle_editions: [NO_Q1, { data: [], error: null }],
-      wallet_moments_cache: [
-        { data: [], error: null },
-        { data: [], error: null },
-        { data: null, error: { message: "q4 pool down" } },
-      ],
+      wallet_moments_cache: [{ data: [], error: null }],
+      "rpc:pinnacle_metadata_discovery": { data: null, error: null },
     }],
   ]
 
@@ -418,15 +444,10 @@ describe("pinnacle-metadata-backfill — load failures + limits", () => {
 
   it("counts a Q1 candidate with no sample wmc row as skipped rather than dropping it silently", async () => {
     const spy = install({
-      pinnacle_editions: [
-        { data: [{ id: "pe1", edition_key: "RC:Std:1" }], error: null },
-        { data: [], error: null },
-      ],
+      pinnacle_editions: [{ data: [{ id: "pe1", edition_key: "RC:Std:1" }], error: null }],
       wallet_moments_cache: [
         { data: [], error: null }, // Q1: no wmc row holds that key
         { data: [], error: null }, // Q2
-        { data: [], error: null }, // Q3 pool
-        { data: [], error: null }, // Q4 pool
       ],
     })
     const body = await (await GET(req())).json()
@@ -438,7 +459,7 @@ describe("pinnacle-metadata-backfill — load failures + limits", () => {
 
   it("stops fanning out at the soft deadline instead of running past the lambda budget", async () => {
     install({
-      pinnacle_editions: [NO_Q1, { data: [], error: null }],
+      pinnacle_editions: [NO_Q1],
       wallet_moments_cache: [
         {
           data: [
@@ -447,8 +468,6 @@ describe("pinnacle-metadata-backfill — load failures + limits", () => {
           ],
           error: null,
         }, // Q2 — two distinct wallets = two fan-out iterations
-        { data: [], error: null },
-        { data: [], error: null },
         { data: null, error: null },
       ],
     })

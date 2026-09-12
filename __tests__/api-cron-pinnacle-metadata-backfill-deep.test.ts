@@ -100,6 +100,14 @@ function install(fixtures: Fixtures) {
     pinnacle_editions: { data: [], error: null },
     wallet_moments_cache: { data: [], error: null },
     pinnacle_nft_map: { data: [], error: null },
+    // Q3 + Q4 discovery. Declared explicitly rather than left to the harness's
+    // default empty result: that default is an ARRAY, and an array payload is a
+    // failed read as far as this route is concerned (it 500s on it), so leaving
+    // it implicit would make every case here exercise the failure path.
+    "rpc:pinnacle_metadata_discovery": {
+      data: { q3: [], q4: [], q4_targets_total: 0, distinct_edition_keys: 0 },
+      error: null,
+    },
     "rpc:log_pipeline_run": { data: null, error: null },
     ...fixtures,
   })
@@ -127,8 +135,8 @@ beforeEach(() => {})
 
 describe("pinnacle-metadata-backfill — Q1 mint_count fill", () => {
   it("decodes the on-chain PinInfo and writes the computed edition_key + mint_count", async () => {
-    // pinnacle_editions: [Q1 candidates, Q4 all-pe(empty), the mint_count UPDATE]
-    // wmc: [Q1 lookup(sample), Q2(empty), Q3 pool(empty), Q4 pool(empty)]
+    // pinnacle_editions: [Q1 candidates, the mint_count UPDATE]
+    // wmc: [Q1 lookup(sample), Q2(empty)] — Q3/Q4 discovery is the rpc above.
     const spy = install({
       pinnacle_editions: [
         { data: [{ id: "pe1", edition_key: "RC:Std:1" }], error: null },
