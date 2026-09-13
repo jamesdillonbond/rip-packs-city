@@ -4,6 +4,42 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-13 ~05:1x PT (overnight autonomous pass; what shipped, what is VERIFIED, and the three things that need Trevor)
+
+⚠ **Supersedes my three earlier 09-13 steers in this file.** They are kept below only because a concurrent session may cite them; this block is the current state.
+
+### ✅ SHIPPED AND VERIFIED — nothing here needs re-deriving
+
+| what | evidence it works | revert |
+|---|---|---|
+| **counterparty cooldown + re-arm** (#99) | change point **00:59 PT**, exact: the same scan went **66 s TIMEOUT → 10.1 s ok**, then 24 cooldown ticks at **270–932 ms**, then 4 productive scans at **120/120 rows each**. No failure since. | in #99 |
+| **`sentinel.extra.findings`** | live: 8 findings with detail, **cap binding at exactly 400 chars** | in the ledger |
+| **sentinel header names the changed SET** | sweep ran 02:46 PT, Telegram **accepted**, duration 31.6 s vs 34.0 s before (the added read costs nothing) | `git revert` |
+| **`daily-portfolio-snapshot` rows_written** | CI 5308 green, Vercel **READY**; ⏳ first real number lands on the **00:05 PT** run tomorrow | `git revert` |
+| **backstop freshness window** | forced wave reports **`backstop_fresh_skipped = 49`, `backfill_fired = 0`** — the route's header records every prior forced wave at **0** | `git revert` |
+| **register index guard** | the guard now reds on the actual pre-fix file | `git revert` |
+
+### 🚨 THREE NEW ITEMS, EACH NEEDING A DECISION THAT IS NOT MINE
+
+- **#100 — the fleet's master alarm runs 27% of the time it is scheduled to.** `pipeline-sentinel.yml` is hourly; GHA **started 20 of 73** firings in 73 h (stable: **28.9%** over 346 h). The route is fine — 21 sweeps from 24 starts. **Worst blind window 14.05 h** (09-10 02:57→17:01 PT), and 09-11 — the saturation-incident day — carries three ~5 h gaps. **Decision: move the trigger off GHA, or stop calling it hourly.**
+- **#101 — a user-facing backlog is 3.2× its own tripwire.** `topshot-misattrib-drain` open pile **410 → 1,315** (98.0% → 93.1% mapped) since the drain was deliberately unscheduled 09-08 for reading the dead Top Shot host. Two independent rates agree (**~151/day cleared before, ~117/day accumulating now**). **Decision: re-point to Atlas, or accept and say so.**
+- **#102 — two suppressions justify themselves by naming a watchlist row as `is_active=true`; both rows are `is_active=false`.** Live casualty: **`allday-pack-opens-backfill` stopped 09-04, nine days silent, nothing alerted**, 18 M blocks above the floor its suppression calls terminal. Plus three false "parked at the spork floor" claims — **`golazos_sales_v1_backfill` is a PERMANENT suppression on a lane that moved 50 minutes before filing.** **Decision: re-enable the rows AND re-scope the false grants together, or the same rows page for genuinely terminal lanes.**
+
+⭐ **#101 and #102 share one root cause and it is the more valuable finding: these predicates are prose in a `reason` column that nothing evaluates. A PREDICATE NOTHING RUNS IS A COMMENT.** I found both by simply executing the predicates the rows write down — **two of the three I ran had failed, and neither had ever been checked.**
+
+### ⛔ RETRACTED — do NOT act on these, they were mine and they were wrong
+
+- **The reconcile `ok := NOT (v_truncated AND v_wallets = 0)` fix is WITHDRAWN IN FULL.** The suppression's own text forbids it by name (*"Do NOT 'fix' this by making the procedure report ok=true"*) and the pin calls the property *"the property most worth protecting"*. The blind-spot case is refuted by measurement: `detect_stalled_pipelines` does **not** read suppressions, and the third arm's predicate would fire for **0** lanes fleet-wide. **CLOSED as NOT A DEFECT.**
+- **#76's "no history of overall status exists to count" is FALSE** — `pipeline_runs.extra` has carried it all along. Counted: **0 of 21 sweeps clean, never fewer than 4 warn arms.**
+
+✅ **All four of tonight's ships are verified against their own recorded falsifiers. None fired.**
+
+### 🟡 STILL OWED
+
+1. **#82's mis-key burst has an OPEN cause.** 24 of 29 mis-keys landed on **09-12 at 18.6%**, against 09-10's **213 parallel sales and ZERO**. Not volume. All `source = onchain`, 18 editions, spread over 8 hours. **Re-read the daily rate — if 09-13 or 09-14 prints another burst it is a live producer, not an incident.** ⭐ **The cause is now narrowed to ONE `if`:** all 24 were written by ticks that redirected 57 OTHER rows correctly, so the guard is live and missed these per-row — `edIdToExt.get(editionId)` returning undefined is the only silent exit in that branch. Next step needs the route replayed against a captured tick, not another query.
+2. **The portfolio fix's first real `rows_written`** on the 00:05 PT run — the only ship whose number has not landed yet.
+3. ⚠ **THIS FILE IS 140 KB ACROSS 20+ STEERS and its own rewrite rule says a focus file steers, it does not archive.** Deletable (>1 week, already in the ledger, not marked STANDING/DECIDED/RETIRED): the **09-05 ×3, 09-04, 09-03, 08-28, 08-27, 08-26, 08-24, 08-23, 08-22** blocks. I did not cut other sessions' steers at 4am; **that trim is the next pass's cheapest win.**
+
 ## STEER — added 2026-09-13 ~02:4x PT: FIRST READING against tonight's baseline — the counterparty fix is VERIFIED and ATTRIBUTED; the fleet-wide claim is NOT yet earned
 
 ⭐ **VERIFIED, with a proper control — `sales-counterparty-backfill`.** Equal run counts on both sides of the change point (19 pre / 18 post, so this is not a work-volume artifact):

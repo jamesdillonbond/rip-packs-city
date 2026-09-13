@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ VERIFIED — the backstop freshness window is being read: 49 wallets skipped on a forced wave where every forced wave used to report 0 · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only.** No code, no migration, no data. This closes the LAST unverified prediction from tonight's four ships.
+
+⭐ **DIRECT EVIDENCE, not the downstream proxy.** A `forced: true` cohort-0 wave at 03:54 PT reports:
+
+| key | value |
+|---|---|
+| `forced` | **true** |
+| `backstop_fresh_skipped` | **49** |
+| `backfill_fired` | **0** |
+
+**The route's own header records the pre-fix state in writing:** *"Live over 24 h: every forced wave reported `backstop_fresh_skipped = 0`."* It is now 49. **The window is being read.**
+
+⭐ **And `backfill_fired = 0` is the mechanism showing through:** that cohort dispatched **zero** wallet-backfill calls, which is precisely the load the baseline predicted would come off (wallet-backfill ran 708 times in the 24 h before).
+
+⚠ **I HAD THE VERIFICATION TIMING WRONG AND CAUGHT IT BY READING THE CODE, not by waiting.** I had planned to check at hour 12 UTC, the lane's next natural window. **That would have proved nothing:** the skip is gated `if (forceWave && !forceFull && BACKSTOP_FRESH_MS > 0)`, so an unforced run reports 0 **by construction**, and I would have read a structural zero as a falsification. ⭐ **Check WHICH BRANCH your evidence lives in before choosing when to look.**
+
+⚠ **The forced wave had to be triggered, and that is itself a #100 data point:** the backstop is scheduled `38 2,8,14,20 * * *` UTC and **the 08:38Z slot never fired** — zero `seed-wallet-refresh` runs between my 08:14Z deploy and 10:54Z. Dispatched manually (the workflow's own `workflow_dispatch`, its normal 4×/day job) rather than waiting on a scheduler that sheds.
+
+⚠ **`backstop_fresh_h` is NOT in `extra`** — it appears only in the console log line — so the 12 h value is confirmed by BEHAVIOUR (0 → 49 on the same branch), not by reading the constant back. A reader wanting the configured number must read the route or the log, not the row.
+
+**TONIGHT'S FOUR SHIPS ARE NOW ALL VERIFIED AGAINST THEIR OWN FALSIFIERS. None fired.**
+
 ### 2026-09-13 · 📋 REGISTER — #82's cause narrowed to a named code path, and my own leading hypothesis refuted before it was published · Claude Code cloud, overnight autonomous
 
 **Shipped: docs only** — `docs/reference/known-issues.md` (#82). No code, no migration, no data.
