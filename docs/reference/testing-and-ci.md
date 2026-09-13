@@ -3,6 +3,61 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## ⭐ AN OVER-BROAD MOCK CAN DELETE A TEST'S SUBJECT WHILE LEAVING IT GREEN-ADJACENT (2026-09-12)
+
+`api-og-share-cards-no-false-zero` asserts what badges a share card draws, via a helper that reads every
+`data:image/svg+xml` src out of the rendered tree (`drawnGlyphs()`), because the slabs carry no text. Its
+fixture mocked `lib/og/img-data` like this:
+
+```ts
+ogImageDataUri: async (u) => (u ? "data:image/png;base64,AAAA" : null)
+```
+
+— slab art, for **every** URL. That was correct while the only thing resolving through that helper WAS slab
+art. The moment the cards began resolving official BADGE art through the same helper, each badge became a
+PNG, `drawnGlyphs()` filtered it out as slab art, and two cases failed reading *"expected 2 glyphs, got 1"*
+— i.e. **"the badge vanished"**, which is exactly what it looks like when a real regression drops a badge.
+
+⚠ **The failure was in the harness, and it pointed at the subject.** The badge was being drawn correctly the
+whole time; it had stopped being *countable*. The tell is worth keeping: when a mock's return value is
+**less specific than the set of things now flowing through it**, the test silently changes what it measures
+rather than failing honestly.
+
+**The fix is not to loosen the assertion.** The mock now answers differently for `/api/badge-image` than for
+slab art, so the marks stay countable — and the case was then STRENGTHENED to assert the badge is the
+*official* asset (`data-official="threeStars"`), which is the property the change was actually for. A mock
+narrowed to keep an old assertion passing is a test that has quietly stopped covering the new path.
+
+⚠ **General form:** a fixture that answers ALL inputs identically encodes an assumption that only one kind
+of input exists. That assumption is invisible until a second kind arrives, and it fails as a
+subject-shaped error rather than a harness-shaped one.
+
+## `npm run badges:art:check` — the static badge-art registry vs the live tables (added 2026-09-12)
+
+`lib/badges/official-art.ts` holds a STATIC mirror of which badges have official art
+(`badge_taxonomy.icon_url` + the collection-aware `badge_art_overrides`). Static on purpose: an OG card
+renders while a social crawler holds the connection, and a taxonomy read per card buys nothing for a set
+that changes a few times a year. The cost of that choice is drift, and the drift is **invisible** — a badge
+that GAINS art keeps drawing the RPC fallback glyph, which looks fine.
+
+`scripts/check-badge-art-registry-drift.mjs` diffs it against the live tables. Three properties worth
+copying:
+
+* **BOTH directions.** An entry the DB dropped is as much a defect as one it gained — the card spends a
+  crawler's connection to receive a 400 from the proxy allowlist and fall back to the glyph it already had.
+* **It asserts the COUNT it inspected.** An empty read is not "no drift"; either table returning zero rows
+  exits 2 rather than 0.
+* **It checks the proxy allowlist too**, because `/api/badge-image`'s allowlist is that route's injection
+  guard — a slug it does not know is a 400, so the registry must be a subset of it.
+
+⚠ **It shape-checks every parsed slug (`/^[A-Za-z0-9-]+$/`) INSTEAD OF TRUSTING THE COMMENT STRIPPER,** and
+that earned itself on the first run: the allowlist block contains the prose *"v2's chip"*, whose apostrophe
+a naive quoted-string scan reads as an opening quote — it reported two real slugs as unservable. The
+stripper is applied AND its `endState`/`tplDepth` are asserted, per CLAUDE.md's rule that calling it is not
+proof it stripped; the shape-check is the belt to that braces, because a check that does not NEED the
+stripper to be right is better than one that does.
+
+
 ## ⭐⭐ THE STRIPPER IS FIXED, AND THE THING WORTH KEEPING IS THE ORACLE, NOT THE FIX (2026-09-12, register #87)
 
 `scripts/lib/strip-comments.mjs` DEFECT 4 — a JS/TS parser run over `.tsx` — is repaired at the root:

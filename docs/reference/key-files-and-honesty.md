@@ -3,6 +3,56 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## ⭐ A TIMEOUT IS A CLAIM ABOUT WHAT YOU ARE WAITING ON, NOT ABOUT WHAT YOU CAN AFFORD (2026-09-12/13)
+
+The badge-art change gave the OG cards official platform artwork with an RPC glyph as the guaranteed
+fallback. It shipped with a **2.5s** budget on the fetch, sized by analogy to the jersey-number read —
+described in its own comment as *"the other read on this path whose failure costs a glyph and nothing
+else"*. That analogy is the defect. The jersey read hits **our own database**. This one waits on
+`/api/badge-image`, a **PROXY** that on an edge-cache MISS must itself fetch Dapper's CDN — and that
+route bounds its own upstream at a named constant, `UPSTREAM_TIMEOUT_MS = 8_000`.
+
+⭐ **A client budget below the bound of the thing it is waiting on can only ever truncate a request the
+callee would have served.** The number was already in the repo, in the file being called.
+
+**How it was caught, and the only reason it took an hour.** The module's own warning line — added in the
+same change precisely because *"an RPC glyph is a perfectly good-looking badge, so a card that quietly
+stopped drawing official art looks exactly like a card that never tried"* — fired on the FIRST live
+render after deploy. Reading the logs for that same request: **all 6 `/api/badge-image` requests returned
+200 with `cache=MISS`, and 4 of the 6 marks still fell back.** The proxy served every one; the client gave
+up first. ⚠ **Note the shape of the evidence: a 200 at the callee and a failure at the caller.** Neither
+side logged an error. Anything that reads only one of the two sees a healthy system.
+
+**🚨 The second defect, and the worse one: the memo CACHED THE MISS.** Documented as deliberate — "a badge
+whose art is failing should cost a warm instance one attempt, not one per card". Wrong here, and wrong in
+the way that hides itself:
+
+* the callee is edge-cached for **24h** (`max-age=86400, stale-while-revalidate=604800`), so a failure is
+  almost always a COLD-CACHE failure — **and the act of failing WARMS it**;
+* so the retry a cached miss forbids is exactly the one that would have succeeded, instantly;
+* and the blast radius is unbounded in the wrong direction: **ONE slow cold start poisons every card that
+  lambda serves for the rest of its life**, drawing fallback glyphs on every share while the asset sits
+  warm at the edge, looking perfectly fine throughout.
+
+⚠ **A negative result is not a fact about the world — it is a fact about ONE attempt at ONE moment.**
+Caching it is caching a measurement, which is this repo's "every figure is a DATED SAMPLE" rule showing up
+in control flow instead of in prose. **Cache the success; drop the miss.** (Keep sharing the in-flight
+promise — that is what the dedupe actually needs, and it is a different thing from caching the outcome.)
+
+**The durable checks, before choosing any timeout:**
+
+1. **Read the callee's own bound first.** If it is a route in this repo, the constant has a name. A budget
+   under it is a truncation policy, not a budget.
+2. **Ask what the FIRST caller pays versus the second**, whenever the callee is cached. Those are different
+   numbers and the cold one is the one a social crawler pays.
+3. **Check whether the bound is per-item or per-pass.** These fetches run concurrently in one
+   `Promise.all`, so the per-URL timeout already bounds the whole pass — worst case 4s once, not 4s per
+   badge. A per-item bound on a SEQUENTIAL loop would not have that property.
+4. **Put the numbers in the failure log.** The first warning said "unavailable for 4 mark(s)" — that it was
+   wrong, and nothing about why; diagnosing it cost a round trip. Elapsed-against-budget IS the diagnosis:
+   at the budget means truncated by us, far under it means the callee said no.
+
+
 ## ⭐ THE ELEVENTH SHAPE (2026-09-12): a prefetch that COMPACTS on failure MISATTRIBUTES — the failed read renders as a TRUE-LOOKING claim about the WRONG subject
 
 Every shape above turns a failed read into a false claim about the thing that failed. This one is
