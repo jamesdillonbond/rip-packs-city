@@ -27,6 +27,10 @@
 
 ⭐ **#101 and #102 share one root cause and it is the more valuable finding: these predicates are prose in a `reason` column that nothing evaluates. A PREDICATE NOTHING RUNS IS A COMMENT.** I found both by simply executing the predicates the rows write down — **two of the three I ran had failed, and neither had ever been checked.**
 
+### ⚠ IF YOU WAKE TO A RED BOARD (06:2x PT) — READ THIS FIRST
+
+**A saturation spell was in progress when I stopped watching: ~21 failures / 16 statement timeouts per 30 min, spread across TEN lanes.** Largest current contributors: **`pinnacle-nft-resolver` (7 timeouts, still firing at 06:21)**, **`fmv-recalc`** (4 failures, avg 93 s), `check-alerts`, `allday-price-recover`, `wallet-backfill-allday` (avg **355 s**). ✅ **`sales-counterparty-backfill`'s 4 failures in that list are ALL pre-pause (last 06:01); it has been drained/cheap since 06:04 and is NOT a contributor now.** ⭐ **And that is the useful signal: removing one lane did not clear the spell, which is evidence it is the documented instance-level class (#42, #73, #84, M11) rather than any single lane.** ⚠ **Do not read the counterparty pause as a fix for this** — it was a fix for ONE lane failing every tick, measured separately and honestly.
+
 ### 🚨 TWO THINGS THAT HAPPENED LATE AND CHANGE WHAT YOU SHOULD DO
 
 1. ⚠ **A CONCURRENT SESSION IS SHIPPING TO THE SAME FILES, and a textually-clean rebase produced code that would not compile.** Both sessions bounded the SAME two sentinel sends 13 minutes apart; git kept **both `signal:` keys in one object literal** — legal JavaScript, invisible at runtime and to every behavioural test, **caught only by `tsc` (TS1117)**. Main was red ~14 min; CI 5326 caught it and I fixed it in `a1c7d7c1b`. ⭐ **RULE: after a rebase that touches a file two sessions edited, run the type-checker before assuming a clean merge is a correct one.** ⚠ Two ledger entries describe this ONE incident and **one of them names a revert commit that does not exist** — reconciled in place.
