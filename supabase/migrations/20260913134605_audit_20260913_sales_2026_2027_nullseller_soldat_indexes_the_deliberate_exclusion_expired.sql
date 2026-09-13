@@ -1,0 +1,67 @@
+-- sales-counterparty-backfill: give sales_2026 and sales_2027 the partial index
+-- every other partition has had since 2026-07-24.
+--
+-- THIS OVERTURNS A DELIBERATE EXCLUSION. The 20260724150000 migration wrote:
+--
+--   "sales_2026 is deliberately NOT indexed here: it is the active-ingest
+--    partition (adding an index there costs write-amplification on the hottest
+--    write path) and it already has sales_2026_seller_address_idx which the plan
+--    uses cheaply for its small above-cursor residual. sales_2027 is empty. As the
+--    cursor descends through the past, 2020-2025 coverage is what this query needs."
+--
+-- Both of its premises have since dissolved, and its cost was stated with no number
+-- in it (the shape CLAUDE.md flags as the decision nobody re-checks). Re-measured
+-- 2026-09-13, with numbers on both sides:
+--
+-- PREMISE 1 — "small above-cursor residual" — FALSE. sales_2026 is now the LARGEST
+--   partition in the table: 308 MB / 1,092,476 rows, ahead of sales_2023 (305 MB).
+--
+-- PREMISE 2 — "as the cursor descends through the past" — FALSE as of the SAME DAY.
+--   Migration 20260913074912 gave claim_sales_counterparty_batch() a re-arm branch
+--   that sets cursor_sold_at = NULL and "sweeps from the newest row again". Every
+--   re-arm therefore STARTS inside sales_2026. The access pattern the exclusion was
+--   reasoning about no longer exists; 2026 is now the partition the lane lives in,
+--   not one it passes through.
+--
+-- COST, measured rather than asserted. The index is PARTIAL (WHERE seller_address
+--   IS NULL), so it takes an entry on 6,457 of 1,092,476 rows = 0.59% of inserts.
+--   The partition ALREADY carries sales_2026_seller_address_idx, a FULL btree on
+--   seller_address covering 100% of rows at 15 MB, which the hot write path already
+--   pays on every insert. The write-amplification this exclusion was protecting
+--   against is therefore ~1/170th of an amplification already accepted on the same
+--   column of the same table. Sibling idx_sales_2025_nullseller_soldat covers 89,114
+--   rows; the 2026 twin covers 6,457, so it is the smallest of the seven.
+--
+-- BENEFIT. Without it the claim's 2026 branch is a Bitmap Index Scan on
+--   sales_2026_seller_address_idx -> Bitmap Heap Scan over the 308 MB partition ->
+--   Filter -> SORT, i.e. it materialises and sorts every null-seller row in 2026 to
+--   take 120. That is the 195,564-buffer (~1.5 GB) scan named in the function's own
+--   comment. EXPLAIN before this migration, at cursor 2026-03-28:
+--     Sort (cost=7731.67..7739.04) -> Bitmap Heap Scan on sales_2026 (cost=73.62..7615.16)
+--   Production record of that plan, from pipeline_runs (the real caller, not a probe):
+--   ticks at 53,518 / 57,085 / 58,006 / 59,791 / 60,973 / 61,146 / 74,797 / 93,300 /
+--   100,464 / 115,326 ms, and four outright `claim failed: canceling statement due to
+--   statement timeout` between 05:41 and 06:01 PT on 2026-09-13. With the index the
+--   branch becomes an ordered index scan that stops after the LIMIT is satisfied.
+--
+-- sales_2027 is still empty, so its build is free; indexing it now closes the same
+-- gap BEFORE the year rolls over and the lane inherits an unindexed hot partition
+-- for a third time.
+--
+-- Applied in prod as CREATE INDEX CONCURRENTLY via execute_sql, one partition at a
+-- time (2027 first as a zero-cost check of the DDL, then 2026), validity confirmed
+-- via pg_index.indisvalid after each. Recorded here as plain CREATE INDEX IF NOT
+-- EXISTS for repo/history parity, exactly as 20260724150000 did.
+--
+-- OPERATIONAL NOTE, learned building these: CREATE INDEX CONCURRENTLY on this
+-- instance blocks on `Lock / virtualxid` behind the wallet-backfill* family, whose
+-- individual runs reach 610 s. The 2027 build exceeded the 60 s PostgREST window on
+-- an EMPTY partition for that reason alone. The MCP client timing out does NOT
+-- cancel the build - the backend keeps going; poll pg_index.indisvalid rather than
+-- re-issuing, and never assume a timeout left nothing behind (it leaves
+-- indisready=true / indisvalid=false mid-protocol).
+--
+-- Revert: DROP INDEX CONCURRENTLY IF EXISTS public.idx_sales_2026_nullseller_soldat;
+--         DROP INDEX CONCURRENTLY IF EXISTS public.idx_sales_2027_nullseller_soldat;
+CREATE INDEX IF NOT EXISTS idx_sales_2026_nullseller_soldat ON public.sales_2026 (sold_at DESC) WHERE seller_address IS NULL;
+CREATE INDEX IF NOT EXISTS idx_sales_2027_nullseller_soldat ON public.sales_2027 (sold_at DESC) WHERE seller_address IS NULL;
