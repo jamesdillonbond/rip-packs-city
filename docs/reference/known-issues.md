@@ -167,11 +167,11 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 | **#97** | ✅ closed | CLOSED THE DAY IT BIT FOR THE THIRD TIME, 2026-09-12 (PT)  |
 | **#98** | 🟡 open | OPEN (the SURFACES are fixed; the DATA GAP is not), NEW 2026-09-13 (PT)  |
 | **#99** | 🟡 open | SHIPPED 2026-09-13 (PT), NEW  |
-| **#100** | 🟡 open | OPEN, NEW 2026-09-13 (PT)  |
-| **#101** | 🟡 open | OPEN, NEW 2026-09-13 (PT)  |
+| **#100** | 🟡 open | DECIDED 2026-09-13 (PT) — the on-platform fix is REJECTED with reason; the remaining action is… |
+| **#101** | 🟡 open | DECIDED 2026-09-13 (PT), FIX NOT YET SHIPPED  |
 | **#102** | 🟡 open | DECIDED AND SHIPPED 2026-09-13 (PT)  |
-| **#103** | 🟡 open | OPEN, NEW 2026-09-13 (PT)  |
-| **#104** | 🟡 open | OPEN (TREVOR'S CALL), NEW 2026-09-13 (PT)  |
+| **#103** | 🟡 open | SHIPPED 2026-09-13 (PT) — RETRY SCHEDULED. Original filing follows. — A USER-FACING DAILY SERIE… |
+| **#104** | 🟡 open | DECIDED 2026-09-13 (PT) — ACCEPT for now; do not ship back-pressure. Measurement follows. — THE… |
 | **#105** | ✅ closed | CLOSED 2026-09-13 (PT), the day Cowork filed it  |
 | **#106** | ✅ closed | CLOSED 2026-09-13 (PT), same session it was found  |
 
@@ -1502,7 +1502,9 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     🟡 **Options, aimed correctly, all still Trevor's:** (a) a floor just **below the resolvable window** (~2026-05) — skips the residue, ⚠ and permanently skips anything in it that later becomes resolvable; (b) **per-row attempt tracking** so a failed row is not retried forever — strictly better, strictly more work, no such column today; (c) **accept it** — ⚠ **more defensible than 12 h ago: the DB contention and claim timeouts that motivated the 06:04 PT hand-pause are GONE**; what remains is outbound HTTP volume, not database load. ⏳ **Still untested: behaviour DURING a `wallet-backfill` wave** (see #104) — all readings above came from a quiet fleet.
 
-100. 🔴 **OPEN, NEW 2026-09-13 (PT) — THE FLEET'S MASTER ALARM RUNS 27% OF THE TIME IT IS SCHEDULED TO, AND ITS WORST BLIND WINDOW IN THE RETAINED PERIOD WAS 14 HOURS.** ⭐ **This is the OTHER half of #76, and it is the half nobody measured.** That item established the sentinel's message is *uninformative* (every sweep WARN, fixed 2026-09-13 by naming the changed SET in the header). This item establishes something worse and independent: **most of the time the sweep does not happen at all.**
+100. 🟡 **DECIDED 2026-09-13 (PT) — the on-platform fix is REJECTED with reason; the remaining action is one operator step. Original filing follows. — THE FLEET'S MASTER ALARM RUNS 27% OF THE TIME IT IS SCHEDULED TO, AND ITS WORST BLIND WINDOW IN THE RETAINED PERIOD WAS 14 HOURS.** ⭐ **This is the OTHER half of #76, and it is the half nobody measured.** That item established the sentinel's message is *uninformative* (every sweep WARN, fixed 2026-09-13 by naming the changed SET in the header). This item establishes something worse and independent: **most of the time the sweep does not happen at all.**
+
+    ⛔ **DECISION (Trevor delegated): do NOT trigger the sentinel from pg_cron + pg_net, and the reason is the useful part.** That is the obvious way to bypass GHA's shedding and it would be **actively harmful**: the sentinel runs **119–162 s** against pg_net's **90 s wall**, so it would fail *and* head-of-line block every other pg_net request on the platform — jobid 55's exact failure mode, re-created on the master alarm. ✅ **The correct fix is the cron-job.org console**, which already drives long routes without drift (it ticks the counterparty lane every ~5 min). ⚠ **That needs an operator, so this stays with Trevor — but as a one-line instruction rather than an open question.**
 
     **MEASURED, 73 h to 2026-09-13 ~02:4x PT.** `pipeline-sentinel.yml` is scheduled `34 * * * *` — **73 firings expected**. `pipeline_runs` holds **21 sentinel sweeps (28.8%)**.
 
@@ -1529,7 +1531,9 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     ⚠ **ONE LOOSE END, LEFT EXPLICITLY UNEXAMINED so it is not mistaken for cleared:** 8 of the 24 GHA runs concluded `failure`. Some of that is BY DESIGN — the workflow gate fails on `CRITICAL`, and 4 sweeps in this window were CRITICAL — but I did not read the job logs and cannot say the other ~4 are the same thing. **It does not change this item's finding** (the sweeps that started mostly logged, and the loss is the 53 that never started), but it is a separate question nobody has asked.
 
-101. 🔴 **OPEN, NEW 2026-09-13 (PT) — A USER-FACING CORRECTNESS BACKLOG IS 3.2× ITS OWN TRIPWIRE, AND THE TRIPWIRE WAS NEVER CHECKED BY ANYTHING.** ⭐ **Nothing here is broken. THREE INDIVIDUALLY CORRECT DECISIONS COMBINE INTO AN UNTRACKED DEGRADATION, and that is the transferable part.**
+101. 🟡 **DECIDED 2026-09-13 (PT), FIX NOT YET SHIPPED — and the "delete the suppression" instruction is deliberately NOT followed. Original filing follows. — A USER-FACING CORRECTNESS BACKLOG IS 3.2× ITS OWN TRIPWIRE, AND THE TRIPWIRE WAS NEVER CHECKED BY ANYTHING.** ⭐ **Nothing here is broken. THREE INDIVIDUALLY CORRECT DECISIONS COMBINE INTO AN UNTRACKED DEGRADATION, and that is the transferable part.**
+
+    🟡 **DECISION (Trevor delegated): re-point the drain to `moments`, and do NOT delete the suppression.** ⭐ **Sized first — of the 1,315 open, `moments` (canonical for Top Shot) resolves 612 = 46.5%**, subeditions cover 566. So an on-platform re-point **halves** the backlog; it does not clear it, and the remainder needs a source that is not the dead host. ⛔ **The suppression's own rule says "delete it, do not renew" — NOT followed, because the drain is deliberately unscheduled (it fetches `public-api.nbatopshot.com`, measured dead) so deleting would create a permanently-red arm for a lane with no caller — the exact mistake #102 nearly caused.** ⛔ **And a rushed writer to this map was refused: it decides which owner a Moment displays under.** 📋 **Owed, batch with the next migration rather than paying its own PGRST002 burst: amend the suppression text to record that its predicate has FAILED (1,315 vs ≤500).**
 
     **The `topshot-misattrib-drain` suppression (added 2026-09-05, runs to 2026-12-04) carries an explicit self-test:** *"PREDICATE (must stay TRUE or this suppression is wrong — delete it, do not renew): `count(*) <= 500` … measured 410 at 2026-09-05 16:28Z. **If the open backlog climbs past 500 the drain has stopped keeping up and this suppression must be deleted — a growing backlog means moments are being attributed to the wrong owner on collection pages.**"*
 
@@ -1586,7 +1590,9 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     🟡 **NOT FIXED HERE — every option changes alerting behaviour and the diagnosis matters more than the toggle.** (a) **Re-enable the two `is_active=false` watchlist rows** so the stated nets exist (cheapest, and it is what the suppressions already promise). (b) **Re-scope or expire the three false "parked" suppressions** — a terminal-state grant should not be PERMANENT on a cursor that is still walking. (c) ⭐ **The structural fix: these predicates are prose in a `reason` column that nothing evaluates** — the same root as #101. **A predicate nothing runs is a comment.** ⛔ Do not simply flip `is_active` without deciding (b), or the same rows will page for lanes that really are terminal.
 
-103. 🔴 **OPEN, NEW 2026-09-13 (PT) — A USER-FACING DAILY SERIES HAS HOLES ON 8 OF THE LAST 30 DAYS, AND EVERY ONE IS PERMANENT BECAUSE NOTHING RETRIES.** ⭐ **The fix is idempotent, costs ~10 seconds, and is ONE console edit — the expensive part was proving it safe, which is done below.**
+103. 🟢 **SHIPPED 2026-09-13 (PT) — RETRY SCHEDULED. Original filing follows. — A USER-FACING DAILY SERIES HAS HOLES ON 8 OF THE LAST 30 DAYS, AND EVERY ONE IS PERMANENT BECAUSE NOTHING RETRIES.** ⭐ **The fix is idempotent, costs ~10 seconds, and is ONE console edit — the expensive part was proving it safe, which is done below.**
+
+    ✅ **DECIDED AND SHIPPED (Trevor: "make decisions on these yourself") — migration `20260913161228`, pg_cron jobid 490 `rpc-portfolio-snapshot-retry`, `17 11 * * *`, ACTIVE.** `SELECT public.snapshot_all_user_portfolios();` — **called DIRECTLY by pg_cron, no HTTP and no pg_net** (pg_net answers a batch when its slowest member finishes; that is what made jobid 55 head-of-line block the platform). ⭐ **Idempotence VERIFIED, not assumed: the function ends `ON CONFLICT DO NOTHING`**, so a retry on a day already written inserts nothing and cannot overwrite; `postgres` holds EXECUTE. ⭐ **Slot reasoned:** `CURRENT_DATE` is UTC so any same-UTC-day run fills the same row; the primary fires 07:05 UTC which is **inside a wallet-backfill wave hour** (#104) and the 09-12 failure was the 120 s global cap, so the retry sits in a quiet hour (11:17 UTC = 04:17 PT), slot verified free, minute clear of the 0/1/20/21/40/41 ban. ⚠ **Falsifier: a day still ending with no row while jobid 490 reports success** — then it is not covering the same date. ⚠ **Accepted cost: one extra full execution daily (~10 s) even when the primary succeeded.** **Revert:** `SELECT cron.unschedule('rpc-portfolio-snapshot-retry');`
 
     **`portfolio_snapshots` is missing every row for 08-18, 08-19, 08-20, 08-21, 08-23, 08-26, 08-30 and 09-12** — **8 of 30 days (27%)**, ~22 owners each. A portfolio value-over-time chart has eight gaps in a month.
 
@@ -1605,7 +1611,9 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     ⚠ **Timing note for whoever schedules it:** all eight failures are **statement timeouts**, i.e. saturation-coincident. Put the retry in a **quiet band**, not immediately after 00:05 PT, or it will fail for the same reason the first attempt did.
 
-104. 🟡 **OPEN (TREVOR'S CALL), NEW 2026-09-13 (PT) — THE PLATFORM'S LARGEST LANE HAS NO BACK-PRESSURE, AND 11 OF 11 UNRELATED LANES ARE SLOWER WHEN IT RUNS DEEP.** ⭐ **The measurement the 0800Z inbox filing explicitly deferred when it fixed the backstop window — supplied here, with the number that must NOT be quoted called out.**
+104. 🟡 **DECIDED 2026-09-13 (PT) — ACCEPT for now; do not ship back-pressure. Measurement follows. — THE PLATFORM'S LARGEST LANE HAS NO BACK-PRESSURE, AND 11 OF 11 UNRELATED LANES ARE SLOWER WHEN IT RUNS DEEP.** ⭐ **The measurement the 0800Z inbox filing explicitly deferred when it fixed the backstop window — supplied here, with the number that must NOT be quoted called out.**
+
+    🟡 **DECISION (Trevor delegated): ACCEPT for now.** The measured **FLEET** cost is **~1.8×** median — not the per-lane ratios — the 12 h cadence and the 09-13 backstop fix already removed ~3 spurious sweeps a day, and **a back-pressure bug stalls the platform's largest lane silently**, which is worse than the problem it solves. ✅ **Revisit with a verification window**, using the per-lane table above as a ready-made before/after in which every lane is its own control.
 
     `dispatchPaced` in the `seed-wallet-refresh` orchestrator **awaits a 202, not the work** — each callee runs its own `after()` — so `DISPATCH_BATCH_SIZE = 6` bounds *dispatches* in flight, not *work* in flight. The 0800Z filing established this and said plainly that it *"wants its own measurement of what concurrency the instance can actually absorb"*. That measurement:
 
