@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ #101's PRECONDITION SHIPPED — the misattrib map now has provenance, and its suppression records that its own predicate failed · Claude Code cloud, autonomous
+
+**Shipped: prod migration `20260913164847`**, file committed same push. **Two owed items batched deliberately so they cost ONE PGRST002 burst instead of two.**
+```sql
+-- REVERT:
+ALTER TABLE public.topshot_misattrib_onchain_map DROP COLUMN IF EXISTS source;
+UPDATE public.pipeline_alert_suppression s SET reason = b.reason
+  FROM public.audit_20260913_suppression_stale_net_claims_backup b
+  WHERE s.pipeline = b.pipeline AND s.pipeline = 'topshot_misattrib_drain';
+```
+
+**1. `topshot_misattrib_onchain_map.source` added.** This was the blocker I named when I declined to write 612 derived rows: the table recorded **nothing about where a row came from**, while feeding two drift-pinned functions that **mutate `sales` and `moments`**. An unattributable wrong row rewrites an NFT's identity and cannot be found again. ⭐ **Existing rows are left NULL ON PURPOSE** — NULL now *means* "pre-provenance, host-derived", stated in the column comment rather than bought with a 49,206-row UPDATE that changes no semantics.
+
+⭐ **Safety verified rather than assumed:** a new column breaks a reader only via `SELECT *` or a column-list-less `INSERT`. All four functions referencing this table: **zero of each** — and an earlier loose `ILIKE` that suggested two of them insert into it was **wrong**, checked with an anchored regex. The only writer is the drain route's supabase-js upsert, which sends explicit keys.
+
+**2. The `topshot-misattrib-drain` suppression now records that its own predicate has failed** (`count(*) <= 500`, measured **1,315**), that it is **deliberately not deleted** (the drain has no caller, so deleting creates a permanently-red arm — #102's lesson), and that the backlog number is a **once-daily snapshot**.
+
+⚠ **A FALSE PASS I CAUGHT ON MYSELF, and it is the reusable part.** I verified the new file with a one-liner `psql … | grep -c 'syntax error'` and got **0** — but the local Postgres had died, so **psql never ran and the grep counted nothing.** ⭐ **The committed guard, given the same dead server, exited 2 with *"could not create scratch database"* instead of passing** — the self-test I built into it doing exactly its job. **My ad-hoc check had no such floor.** ⛔ **A grep for an error string returns 0 both when there is no error and when there was no run.** After restarting the cluster: **1,034 files parsed, 0 syntax errors.**
+
 ### 2026-09-13 · ⭐ #101 SOURCE VALIDATED AT 99.8% — NON-CIRCULARLY, ON THE SECOND ATTEMPT, BECAUSE MY FIRST VALIDATION WAS CIRCULAR AND I NEARLY BELIEVED IT · Claude Code cloud, autonomous
 
 **READ-ONLY. Nothing written to the map, deliberately — the reason is at the bottom and it is not timidity.**
