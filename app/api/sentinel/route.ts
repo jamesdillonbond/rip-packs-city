@@ -1325,11 +1325,17 @@ async function runSentinel() {
     const { data, error } = await supabase.rpc("detect_pipelines_without_success");
     if (error || !Array.isArray(data)) {
       const shape = data === null ? "null" : typeof data;
+      // ⚠ Marked INCONCLUSIVE on a saturation error (2026-09-13): this branch
+      // used to say "RPC error: canceling statement due to statement timeout"
+      // with no marker, so the Measurement Blackout arm — which counts warns
+      // carrying the marker — could not see this tripwire go blind. On the
+      // 09:51 PT sweep four arms were blind and only three were counted.
+      const sat = error ? isSaturationError(error.message) : false;
       checks.push({
         name: "Pipeline Success",
         status: "warn",
         detail: error
-          ? `RPC error: ${error.message}`
+          ? `${sat ? INCONCLUSIVE : ""}RPC error: ${error.message}`
           : `RPC returned an unexpected payload shape (${shape}, expected array) — the tripwire did not evaluate`,
       });
     } else {
@@ -1354,10 +1360,11 @@ async function runSentinel() {
       checks.push({ name: "Pipeline Success", status, detail, value: failing.length });
     }
   } catch (e: any) {
+    const sat = isSaturationError(e?.message);
     checks.push({
       name: "Pipeline Success",
       status: "warn",
-      detail: `Exception: ${e.message}`,
+      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
     });
   }
 

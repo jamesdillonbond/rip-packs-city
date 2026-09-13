@@ -386,6 +386,20 @@ describe("sentinel — confidence / coverage / leak arms", () => {
     expect(arm.detail).not.toMatch(/\d+(\.\d+)?\s*%/)
     expect(arm.value ?? "").not.toMatch(/\d+(\.\d+)?\s*%/)
   })
+  it("marks a Pipeline Success RPC timeout INCONCLUSIVE so the blackout arm can count it", async () => {
+    // 2026-09-13 09:51 PT sweep: this arm said "RPC error: canceling statement
+    // due to statement timeout" with no marker while three sibling arms carried
+    // one, so the Measurement Blackout arm counted three blind arms of four.
+    const r = await run({ "rpc:detect_pipelines_without_success": { data: null, error: { message: "canceling statement due to statement timeout" } } as never })
+    const c = chk(r, "Pipeline Success")
+    expect(c.status).toBe("warn")
+    expect(String(c.detail)).toMatch(/^INCONCLUSIVE \(db saturated\)/)
+    expect(String(c.detail)).toContain("RPC error: canceling statement")
+    // A NON-saturation error keeps its plain shape: it is a real failure to read.
+    const r2 = await run({ "rpc:detect_pipelines_without_success": { data: null, error: { message: "permission denied for function detect_pipelines_without_success" } } as never })
+    expect(String(chk(r2, "Pipeline Success").detail)).not.toContain("INCONCLUSIVE")
+  })
+
   it("warns when live edition coverage is below the threshold", async () => {
     const r = await run({ "rpc:sentinel_edition_coverage": { data: [{ scope: "live", editions: 1000, with_fmv: 500 }], error: null } as never })
     expect(chk(r, "Edition Coverage").status).toBe("warn")
