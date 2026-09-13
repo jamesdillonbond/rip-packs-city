@@ -30,24 +30,37 @@ import path from "node:path"
 // here is shipping nothing — silently.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const REPO_ROOT = process.cwd()
 const ignoreCommand: string = JSON.parse(readFileSync(path.join(process.cwd(), "vercel.json"), "utf8")).ignoreCommand
+
+// ⛔ `ignoreCommand` is capped at 256 characters by Vercel's schema, and an
+// over-long one rejects the WHOLE vercel.json — `crons` included — so every
+// deployment errors until it is fixed. That is how this fix first shipped and
+// broke the build, which is why the cap is pinned below rather than remembered.
+const GATE_SCRIPT = "scripts/vercel-ignore-build.sh"
+const gateSource: string = readFileSync(path.join(process.cwd(), GATE_SCRIPT), "utf8")
 
 describe("the deploy gate's comparison base", () => {
   it("asks about the last DEPLOYED commit, not the previous commit", () => {
-    expect(ignoreCommand).toContain("VERCEL_GIT_PREVIOUS_SHA")
+    expect(gateSource).toContain("VERCEL_GIT_PREVIOUS_SHA")
   })
 
   it("⛔ still falls back to HEAD^ — an unknown base must never mean 'skip the build'", () => {
-    expect(ignoreCommand).toContain('base="HEAD^"')
+    expect(gateSource).toContain('base="HEAD^"')
     // The fallback fires on BOTH failure modes: unset (first deploy) and a sha
     // the shallow clone does not have.
-    expect(ignoreCommand).toContain('[ -z "$base" ]')
-    expect(ignoreCommand).toContain("git cat-file -e")
+    expect(gateSource).toContain('[ -z "$base" ]')
+    expect(gateSource).toContain("git cat-file -e")
+  })
+
+  it("⛔ stays under Vercel's 256-character schema cap — over it rejects the WHOLE vercel.json", () => {
+    expect(ignoreCommand.length).toBeLessThanOrEqual(256)
+    expect(ignoreCommand).toContain(GATE_SCRIPT)
   })
 
   it("keeps the docs exclusions the CI classifier is pinned against", () => {
     for (const spec of ["docs/**", "*.md", "*.mdx"]) {
-      expect(ignoreCommand).toContain(`':(exclude)${spec}'`)
+      expect(gateSource).toContain(`':(exclude)${spec}'`)
     }
   })
 })
@@ -61,7 +74,7 @@ describe("the gate, executed against a real repository", () => {
   /** exit 0 = build IGNORED, exit 1 = build PROCEEDS. */
   const gateSkips = (cwd: string, previousSha: string): boolean => {
     try {
-      execFileSync("bash", ["-c", ignoreCommand], {
+      execFileSync("bash", [path.join(REPO_ROOT, GATE_SCRIPT)], {
         cwd,
         env: { ...process.env, VERCEL_ENV: "production", VERCEL_GIT_COMMIT_REF: "main", VERCEL_GIT_PREVIOUS_SHA: previousSha },
       })

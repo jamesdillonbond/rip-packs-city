@@ -35,9 +35,21 @@ import path from "node:path"
 
 const REPO = process.cwd()
 
-/** The `:(exclude)…` pathspecs the deploy gate actually passes to git. */
+/**
+ * The `:(exclude)…` pathspecs the deploy gate actually passes to git.
+ *
+ * ⚠ `ignoreCommand` is capped at 256 chars by Vercel's schema (an over-long one
+ * rejects the WHOLE vercel.json, `crons` included — measured 2026-09-12, #97),
+ * so the gate delegates to a script. FOLLOW THE DELEGATION rather than reading
+ * the one-liner: reading only the one-liner would return ZERO pathspecs and this
+ * whole test would pass vacuously, which is the failure mode it exists to catch.
+ */
 export function deployExcludePathspecs(ignoreCommand: string): string[] {
-  return [...ignoreCommand.matchAll(/':\(exclude\)([^']+)'/g)].map((m) => m[1])
+  const script = ignoreCommand.match(/[\w./-]*scripts\/[\w.-]+\.sh/)?.[0]
+  const source = script ? readFileSync(path.join(REPO, script), "utf8") : ignoreCommand
+  const specs = [...source.matchAll(/':\(exclude\)([^']+)'/g)].map((m) => m[1])
+  if (specs.length === 0) throw new Error("no :(exclude) pathspecs found — the gate's source was not located")
+  return specs
 }
 
 /** The ERE the CI classifier greps `changed` against. */
