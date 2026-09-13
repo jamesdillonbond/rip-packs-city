@@ -16,7 +16,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
-**🔵 #95 — THE OPEN "UNMEASURED" IS NOW HALF-MEASURED, AND THE HALF THAT MATTERS IS THE ONE NOBODY ASKED ABOUT.** Cowork carried *"the `/_next/image` unit cost — still unmeasured"* forward from the optimizer verification. Re-derived from the live DB against the **actual sitemap predicates**: **≈14,462** distinct `(source, w=640, q=75)` transformations — TS statics 8,401 · TS IPFS→our proxy 2,368 · UFC IPFS 518 · Golazos 575 · Pinnacle 2,600 · **All Day 0** (origin pre-sizes, optimizer correctly skips all 6,190) · **Candy MLB 0** (`arweave.net` not in `remotePatterns`).
+**🔵 #95 — THE OPEN "UNMEASURED" IS NOW HALF-MEASURED, AND THE HALF THAT MATTERS IS THE ONE NOBODY ASKED ABOUT.** Cowork carried *"the `/_next/image` unit cost — still unmeasured"* forward from the optimizer verification. Re-derived from the live DB against the **actual sitemap predicates**: **≈14,462** distinct `(source, w=640, q=75)` transformations — TS statics 8,408 · TS IPFS→our proxy 2,361 · UFC IPFS 518 · Golazos 575 · Pinnacle 2,600 · **All Day 0** (origin pre-sizes, optimizer correctly skips all 6,190) · **Candy MLB 0** (`arweave.net` not in `remotePatterns`).
+
+**⚠ SELF-CORRECTION, SAME TURN, AND IT IS THE SUBTRACTION SHAPE.** The two Top Shot legs were first published as 8,401 / 2,368 because I **derived one by subtracting the other from a measured total** and took the 2,368 from a query that counted ROWS, not DISTINCT urls. Measured directly: **8,408 statics · 2,361 IPFS**. ⭐ **The total is unchanged at 10,769 and the errors CANCEL — which is exactly why nothing downstream reddened and why a total agreeing with itself is not evidence that its parts do.** Corrected in #95 and above.
 
 **⭐ THIS CORROBORATES RATHER THAN OVERTURNS.** Tonight's earlier entry put the worst case at **≈14.3k** (TS statics 8,405 · Golazos 575 · IPFS 2,886 · Pinnacle ≤2,412). Three legs match to within four rows and the IPFS leg matches **exactly** (2,368 + 518 = 2,886). The only real delta is Pinnacle, which that entry stated as a **bound** and is now a **measurement**: 2,600.
 

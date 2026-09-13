@@ -1192,8 +1192,8 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     | leg | distinct `(source, w=640, q=75)` | why |
     |---|---|---|
-    | Top Shot statics (`assets.nbatopshot.com`) | **8,401** | `/editions/**.png` — `hiResThumb`'s `?width=640` does not make a static file "already sized" |
-    | Top Shot IPFS → our own proxy | **2,368** | `ipfs.dapperlabs.com` → `/api/public/ipfs-media/<cid>` → LOCAL branch |
+    | Top Shot statics (`assets.nbatopshot.com`) | **8,408** | `/editions/**.png` — `hiResThumb`'s `?width=640` does not make a static file "already sized" |
+    | Top Shot IPFS → our own proxy | **2,361** | `ipfs.dapperlabs.com` → `/api/public/ipfs-media/<cid>` → LOCAL branch |
     | UFC Strike IPFS → our own proxy | **518** | same rewrite; all 518 UFC editions are `ipfs.io` |
     | LaLiga Golazos | **575** | `assets.laligagolazos.com`, in `remotePatterns` |
     | Disney Pinnacle | **2,600** | site-relative `/api/public/pinnacle-image/<render_id>` → LOCAL branch |
