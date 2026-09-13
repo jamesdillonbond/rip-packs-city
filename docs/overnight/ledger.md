@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · 🔍 FINDING — the dead Top Shot API is killing NINE lanes, and the three arms that watch lanes are fed by an allowlist that misses 39 of 187 · Claude Code cloud, Trevor: "keep going"
+
+**Shipped (docs only):** `docs/reference/known-issues.md` — **#81** gains the enumerated blast radius, **#79** gains the allowlist measurement. Revert: `git revert` the commit whose message starts `docs(register): enumerate the 530 blast radius`.
+
+**⭐ #81 says "the lanes are still dead" and never listed them, so nobody could cost the fix. Nine, measured:** `topshot-pack-supply-backfill` (14 d) · `topshot-misattrib-drain` (12) · `ingest-topshot-challenges` (11) · `topshot-catalog-backfill` (8) · `topshot-badge-set-backfill` (7) · `topshot-subedition-circulation-backfill` (6) · `offers-sweep` (5) · `topshot-badge-catalog` (3) · `ingest` (records no OK in the rollup at all). **Every one carries the same `HTTP 530` / `error code: 1033`**, newest **2026-09-12** — one upstream, not nine problems.
+
+⭐ **Derived as *days between last-OK day and last-run day* over `pipeline_runs_daily`, which is cadence-independent.** The live table cannot answer it for anything slower than ~1/day — the #94 lesson, applied deliberately this time rather than tripped over. ⚠ **And my first cut got it wrong in an instructive way:** filtering `ok = 0 over 30 days` returned **one** lane, because most of these had OK runs earlier in the month. **The window silently redefined the population** — *a delta between two stocks is neither a rate nor a sign* — so the query was rebuilt on last-OK rather than on a window.
+
+**✅ THE PAYOFF: the source decision is ONE decision, not four.** #50 (pack-reality pool), #94 (pack supply), the badge/catalog/challenge lanes and #81 are all blocked on the same dead host, and **#65 already re-pointed the SALES feed to Atlas successfully.** "Re-point the rest to Atlas" is now a nine-item list instead of an open question.
+
+**🚨 AND THE SECOND HALF IS STRUCTURAL — #79's arms are fed by an ALLOWLIST.** `check_pipeline_cadence_collapse()`, `check_pipelines_running_but_not_succeeding()` and `check_zero_yield_lanes()` all `JOIN pipeline_cadence_watchlist`, so their population is that table, not the fleet. **187 lanes ran in 14 days · 148 on the watchlist · 136 active · 39 ABSENT — 51 of 187 (27 %) invisible to all three arms**, with absence indistinguishable from health. ⭐ **Three of #81's nine are among the 39**, which is precisely why a 14-day outage got filed as a one-off.
+
+**⛔ AND THE OBVIOUS FIX IS WRONG AS STATED — I checked before proposing it.** "Add the 39" creates permanently-red arms against an upstream that is gone. ⚠ **Worse, ~10 of the 19 unwatched-and-zero-yield lanes are NOT defects at all**: `thp-leg-*` (8), `sentinel`, `seed-wallet-refresh` (433 runs, all ok), `fmv-clamp-disconnected-ask` legitimately write zero rows — they populate the precompute or check something. **A naive "unwatched and zero-yield" sweep is ~50 % false positives**; `rows_written = 0` is a null instrument one level up, unable to separate a broken lane from a checker. ⭐ The shape that works is the inversion — a CI guard that every recent lane is on the watchlist **or** on an explicit suppression list with a reason, seeded and size-pinned like the `security_invoker` grandfather list. **Not built here: it needs a reason per entry for 39 lanes, several of which need someone who knows what they are for.**
+
+**Gates:** docs only; index regenerated (both items keep their existing status, correctly — neither opener changed); `known-issues-index-lists-every-item` 9 pass; `check-memory-doc-links` 196; ledger guards 3 / 0.
+
 ### 2026-09-12 · ✅ REGISTER — #89 was closed hours ago by a change aimed at something else, and the fix that closed it makes #90's cache the WORSE branch · Claude Code cloud, Trevor: "keep going"
 
 **Shipped (docs only):** `docs/reference/known-issues.md` — **#89 CLOSED**, **#90** Pinnacle half retired + the egress contradiction half-measured. Revert: `git revert` the commit whose message starts `docs(register): close #89`.
