@@ -97,6 +97,20 @@ function greenFixtures(): Fixtures {
       },
       error: null,
     },
+    "rpc:check_pg_net_dispatch": {
+      data: {
+        queued: 0,
+        responses_10m: 139,
+        errored_10m: 3,
+        http5xx_10m: 0,
+        last_response_at: "2026-09-13T17:32:15Z",
+        store_bytes: 1.4 * 1024 ** 3,
+        store_rows: 5391,
+        ttl: "6 hours",
+        batch_size: 200,
+      },
+      error: null,
+    },
     "rpc:sentinel_probe_cost": {
       data: {
         since: "2026-09-13T16:30:00Z",

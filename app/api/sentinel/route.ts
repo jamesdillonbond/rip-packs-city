@@ -8,6 +8,7 @@ import { summariseBlindChecks, BLIND_CHECK_NAME } from "@/lib/sentinel/blind-che
 import { summariseCadenceCollapse } from "@/lib/sentinel/cadence-collapse";
 import { summariseWallKills } from "@/lib/sentinel/wall-kills";
 import { summariseProbeCost } from "@/lib/sentinel/probe-cost";
+import { summarisePgNet } from "@/lib/sentinel/pg-net";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 
 // Named once: the arm pushes it, the threshold/ack rows key on it, and the
@@ -16,6 +17,7 @@ import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 const CADENCE_CHECK_NAME = "Cadence Collapse";
 const WALL_KILLS_CHECK_NAME = "Wall Kills (24h)";
 const PROBE_COST_CHECK_NAME = "Ops Probe Cost";
+const PG_NET_CHECK_NAME = "pg_net Dispatch";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 // Bumped 60 -> 180 on 2026-08-08: under pooler saturation the ~8 sequential
@@ -2217,6 +2219,36 @@ async function runSentinel() {
   } catch (e: any) {
     checks.push({
       name: WALL_KILLS_CHECK_NAME,
+      status: "warn",
+      detail: `Exception: ${e?.message ?? e}`,
+    });
+  }
+
+  // ── pg_net DISPATCH + RESPONSE STORE (2026-09-13) ─────────────────────────
+  // Every edge-function lane, Atlas walk and DB-dispatched probe goes out
+  // through pg_net, and nothing watched it: a stalled worker reads as "the lanes
+  // went silent" from every other arm, and the response store — the largest
+  // relation on the instance at 13 GB for ~5,400 rows, its TOAST never
+  // autovacuumed (register #75) — had no instrument reporting its size.
+  // Argument + thresholds: lib/sentinel/pg-net.ts. ~30 buffers per sweep.
+  try {
+    const { data: pnData, error: pnErr } = await supabase.rpc("check_pg_net_dispatch");
+    if (pnErr) {
+      const sat = isSaturationError(pnErr.message);
+      checks.push({
+        name: PG_NET_CHECK_NAME,
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${pnErr.message}`,
+      });
+    } else {
+      // warn_at is the STORE SIZE in bytes (the slow-moving fact an operator tunes);
+      // the queue-depth line stays at one pg_net batch (200) in the summariser.
+      const verdict = summarisePgNet(pnData as any, thr(PG_NET_CHECK_NAME, "warn_at", 8 * 1024 ** 3));
+      checks.push({ name: PG_NET_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
+    }
+  } catch (e: any) {
+    checks.push({
+      name: PG_NET_CHECK_NAME,
       status: "warn",
       detail: `Exception: ${e?.message ?? e}`,
     });
