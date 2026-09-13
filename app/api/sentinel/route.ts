@@ -9,6 +9,7 @@ import { summariseCadenceCollapse } from "@/lib/sentinel/cadence-collapse";
 import { summariseWallKills } from "@/lib/sentinel/wall-kills";
 import { summariseProbeCost } from "@/lib/sentinel/probe-cost";
 import { summarisePgNet } from "@/lib/sentinel/pg-net";
+import { summariseMaintenanceLoad } from "@/lib/sentinel/maintenance-load";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { createWallBudgetFetch, type WallBudgetClock } from "@/lib/sentinel/wall-budget";
 
@@ -19,6 +20,7 @@ const CADENCE_CHECK_NAME = "Cadence Collapse";
 const WALL_KILLS_CHECK_NAME = "Wall Kills (24h)";
 const PROBE_COST_CHECK_NAME = "Ops Probe Cost";
 const PG_NET_CHECK_NAME = "pg_net Dispatch";
+const MAINTENANCE_CHECK_NAME = "Maintenance Load";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 // Bumped 60 -> 180 on 2026-08-08: under pooler saturation the ~8 sequential
@@ -1856,6 +1858,38 @@ async function runSentinel() {
       name: "pg_cron Failures (6h)",
       status: "warn",
       detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e?.message ?? String(e)}`,
+    });
+  }
+
+  // ── MAINTENANCE LOAD (2026-09-13) ─────────────────────────────────────────
+  // Placed right after the pg_cron failure count on purpose: when that number
+  // is bad, THIS line is the one that says why. Today's spell was the
+  // first-ever autovacuum of net._http_response's 12.4 GB TOAST (register #75)
+  // — hours in IO/DataFileRead — and the digest named every symptom (268 cron
+  // failures, three INCONCLUSIVE arms, a lane failing 24 of 27 ticks) and never
+  // the cause, which sat in pg_stat_progress_vacuum unread. Catalog views only,
+  // no relation touched, so it is free to read while saturated — and it runs
+  // EARLY so the wall budget cannot refuse it. Argument: lib/sentinel/maintenance-load.ts.
+  try {
+    const { data: mlData, error: mlErr } = await supabase.rpc("check_maintenance_load");
+    if (mlErr) {
+      const sat = isSaturationError(mlErr.message);
+      checks.push({
+        name: MAINTENANCE_CHECK_NAME,
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${mlErr.message}`,
+      });
+    } else {
+      // warn_at is MINUTES a single operation may have run (config row; default 30).
+      const verdict = summariseMaintenanceLoad(mlData as any, thr(MAINTENANCE_CHECK_NAME, "warn_at", 30));
+      checks.push({ name: MAINTENANCE_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
+    }
+  } catch (e: any) {
+    const sat = isSaturationError(e?.message);
+    checks.push({
+      name: MAINTENANCE_CHECK_NAME,
+      status: "warn",
+      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e?.message ?? e}`,
     });
   }
 

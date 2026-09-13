@@ -141,6 +141,10 @@ function greenFixtures(): Fixtures {
       },
       error: null,
     },
+    "rpc:check_maintenance_load": {
+      data: { vacuums: [], clusters: [], index_builds: [], autovacuum_workers: 0, autovacuum_max_workers: 3, io_waiters: 1, measured_at: "2026-09-13T18:56:01Z" },
+      error: null,
+    },
     "rpc:check_pg_net_dispatch": {
       data: {
         queued: 0,
