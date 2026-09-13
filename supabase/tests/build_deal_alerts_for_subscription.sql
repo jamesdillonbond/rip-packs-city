@@ -37,6 +37,16 @@
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
+-- ⚠ ALSO PINNED HERE (2026-09-13, audit_20260912): THE PREVIEW HONOURS THE
+-- SENDER'S FRESHNESS GATE. An ask nobody has re-confirmed inside ASK_STALE_HOURS
+-- is not previewed, on either pass, and the re-stamped row is previewed again —
+-- both directions, because a preview that lists rows `dispatch_due_deal_alerts`
+-- will never enqueue is this function's ORIGINAL defect in a new costume: a
+-- subscription that looks live and cannot fire.
+-- Mutation-verified 2026-09-13: removing either `ask_is_alertable` predicate
+-- fails a named assertion ('not previewed either' / 'last_seen_at IS a
+-- confirmation').
+
 BEGIN;
 
 CREATE TABLE collections (id uuid PRIMARY KEY, slug text, is_active boolean);
@@ -121,6 +131,30 @@ CREATE OR REPLACE FUNCTION public.get_edition_badges_unified(p_edition_id uuid)
 RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$ SELECT '[]'::jsonb $$;
 
 -- >>> BEGIN verbatim build_deal_alerts_for_subscription (keep byte-identical to the migration) >>>
+-- The gate the scanner below calls. Verbatim from the same migration and
+-- registered in __tests__/db-invariants-drift-guard.test.ts under its own PINS
+-- entry for THIS file, so this copy cannot drift either.
+CREATE OR REPLACE FUNCTION public.ask_is_alertable(
+  p_collection_slug text,
+  p_ask_at          timestamptz,
+  p_now             timestamptz DEFAULT now()
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT CASE
+    -- EXEMPT: event-sourced open-listing books. The stamp is the seller's
+    -- listing date, not a confirmation, and the row leaves the view when the
+    -- listing closes. See the header -- gating these deletes correct rows.
+    WHEN p_collection_slug IN ('nfl_all_day', 'laliga_golazos') THEN true
+    -- Everything else must have been CONFIRMED inside ASK_STALE_HOURS (12 h,
+    -- lib/market/ask-freshness.ts). Unknown (NULL) is not alertable.
+    ELSE p_ask_at IS NOT NULL AND p_ask_at > p_now - interval '12 hours'
+  END
+$function$;
+
 CREATE OR REPLACE FUNCTION public.build_deal_alerts_for_subscription(p_subscription_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -179,6 +213,9 @@ BEGIN
            WHERE v_price_only AND pr.low_ask > 0 AND pr.low_ask <= v_sub.max_price
         ) p
         WHERE p.collection_slug = ANY(v_slugs)
+          -- Never preview an ask the sender is barred from sending
+          -- (audit_20260912).
+          AND public.ask_is_alertable(p.collection_slug, p.ask_updated_at)
           -- A price-only sub has no discount condition at all. Note this is not
           -- the same as ">= 0": discount_pct is NULL in the price pool, and
           -- NULL >= 0 is NULL, which filters the row out. That NULL is the bug.
@@ -244,6 +281,11 @@ BEGIN
       ) AS d
       FROM public.topshot_underpriced_serials_board b
       WHERE b.estimate_quality = 'tight' AND b.ask_usd > 0
+        -- ⚠ The LONG-FORM slug on purpose: this board's payload says
+        -- 'nba-top-shot' (hyphens) and the gate's exempt-list is long-form, so
+        -- passing the payload's spelling would gate correctly by accident here
+        -- and read as an endorsement of mixing the two conventions.
+        AND public.ask_is_alertable('nba_top_shot', b.last_seen_at)
         AND b.discount_pct >= COALESCE(v_sub.min_discount, 25)
         AND (v_sub.max_price IS NULL OR b.ask_usd <= v_sub.max_price)
         AND (v_sub.min_price IS NULL OR b.ask_usd >= v_sub.min_price)
@@ -432,6 +474,66 @@ BEGIN
   PERFORM _assert_eq((r->>'deals_count'), '1', 'so a price-only preview is unchanged by it');
 
   RAISE NOTICE '✓ build_deal_alerts_for_subscription deals_count invariants pass';
+END $$;
+
+-- ── THE PREVIEW MUST NOT SHOW WHAT THE SENDER IS BARRED FROM SENDING ───────
+--
+-- 🚨 A preview that lists rows `dispatch_due_deal_alerts` will never enqueue is
+-- the 2026-08-16 defect one level up: a subscription that looks live and cannot
+-- fire. So the freshness gate (audit_20260912) is asserted on BOTH halves of the
+-- pipeline, in both directions, and the two must agree row for row.
+INSERT INTO edition_current_ask
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  ('73:9002', 'Stale Lillard', 'Damian Lillard', 'Archive Set', 'COMMON', 12000,
+   NULL, NULL, 0.40, NULL, NULL, now() - interval '3 days',
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A9002', NULL,
+   NULL, NULL, false);
+
+-- A second serial row whose listing was last SEEN 20 h ago. The board's
+-- `last_seen_at` IS a confirmation stamp (unlike All Day's listed_at), so this
+-- one is barred while the fresh fixture above stays.
+INSERT INTO topshot_underpriced_serials_board
+  (edition_id, edition_key, external_id, player_name, set_name, tier,
+   circulation_count, thumbnail_url, nft_id, serial_number, ask_usd,
+   listing_resource_id, listing_url, listed_at, last_seen_at, edition_fmv_usd,
+   confidence, serial_bucket, serial_fmv_usd, serial_multiplier, discount_usd,
+   discount_pct, estimate_quality)
+VALUES
+  (gen_random_uuid(), '73:2785', '73:2785', 'Damian Lillard', 'Archive Set', 'COMMON',
+   12000, NULL, 'nft-2', 2, 50.00, NULL, NULL, now() - interval '20 hours',
+   now() - interval '20 hours', 40.00,
+   'HIGH', 'first', 100.00, 2.5, 50.00, 60.0, 'tight');
+
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.build_deal_alerts_for_subscription('11111111-1111-1111-1111-111111111111');
+  PERFORM _assert_eq((r->>'deals_count'), '1',
+    'a raw ask last confirmed 3 days ago is not previewed either');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(r->'deals') d WHERE d->>'external_id' = '73:9002'),
+    'and it is that row specifically that is absent');
+
+  r := public.build_deal_alerts_for_subscription('22222222-2222-2222-2222-222222222222');
+  PERFORM _assert_eq((r->>'serial_deals_count'), '1',
+    'a serial listing last seen 20 h ago is not previewed -- last_seen_at IS a confirmation');
+
+  -- THE OTHER DIRECTION. Nothing changes but the stamps.
+  UPDATE edition_current_ask SET ask_updated_at = now() WHERE external_id = '73:9002';
+  UPDATE topshot_underpriced_serials_board SET last_seen_at = now() WHERE nft_id = 'nft-2';
+
+  r := public.build_deal_alerts_for_subscription('11111111-1111-1111-1111-111111111111');
+  PERFORM _assert_eq((r->>'deals_count'), '2',
+    'the re-confirmed raw ask is previewed again -- the gate is freshness, not the row');
+  r := public.build_deal_alerts_for_subscription('22222222-2222-2222-2222-222222222222');
+  PERFORM _assert_eq((r->>'serial_deals_count'), '2',
+    'and so is the re-confirmed serial listing');
+
+  RAISE NOTICE '✓ build_deal_alerts_for_subscription: the preview honours the freshness gate';
 END $$;
 
 ROLLBACK;

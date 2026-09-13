@@ -650,9 +650,15 @@ const PINS = [
     // SILENCE, so a defect there is unfalsifiable from the outside: the
     // 2026-08-16 migration exists because a saved, "live"-looking $0.60 alert
     // was structurally incapable of firing for weeks.
+    // Re-pointed 2026-09-13: both halves now refuse to build an alert from an ask
+    // nobody has re-confirmed inside ASK_STALE_HOURS (audit_20260912 —
+    // a $0.50 Lillard ask delivered on four consecutive nights off a stamp frozen
+    // three days earlier, against a live floor of $1.03). The preview is pinned
+    // against the sender's rule rather than its own: a preview showing rows the
+    // sender is gated against is the 2026-08-16 defect one level up.
     fn: "build_deal_alerts_for_subscription",
     test: "supabase/tests/build_deal_alerts_for_subscription.sql",
-    migration: "supabase/migrations/20260816161500_audit_20260816_price_only_alerts.sql",
+    migration: "supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql",
   },
   {
     // The SENDING half of the same pipeline, pinned 2026-08-17. Its preview
@@ -661,7 +667,28 @@ const PINS = [
     // rule that `enqueued` counts writes rather than matches.
     fn: "dispatch_due_deal_alerts",
     test: "supabase/tests/dispatch_due_deal_alerts.sql",
-    migration: "supabase/migrations/20260816161500_audit_20260816_price_only_alerts.sql",
+    migration: "supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql",
+  },
+  {
+    // ⚠ THREE ENTRIES, ONE FUNCTION, AND THAT IS THE POINT. `ask_is_alertable`
+    // is embedded in its own pin file AND in each consumer's (the pin files are
+    // self-contained, so the gate has to exist before the body that calls it).
+    // An unregistered copy is the worst miss this guard knows — it reads as
+    // covered from every angle while nothing compares it to the migration — so
+    // every copy gets an entry.
+    fn: "ask_is_alertable",
+    test: "supabase/tests/ask_is_alertable.sql",
+    migration: "supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql",
+  },
+  {
+    fn: "ask_is_alertable",
+    test: "supabase/tests/dispatch_due_deal_alerts.sql",
+    migration: "supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql",
+  },
+  {
+    fn: "ask_is_alertable",
+    test: "supabase/tests/build_deal_alerts_for_subscription.sql",
+    migration: "supabase/migrations/20260913061500_audit_20260912_an_alert_is_never_built_from_an_unconfirmed_ask.sql",
   },
   {
     fn: "detect_concentration_buys",

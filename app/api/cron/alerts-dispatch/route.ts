@@ -45,6 +45,10 @@ async function run(req: NextRequest) {
     let errMsg: string | null = null;
     let enqueuedDeal = 0;
     let enqueuedFmv = 0;
+    // How many candidate rows the freshness gate held back this tick. Null until
+    // a successful deal dispatch reports them — an absent count must not read as
+    // a measured zero (audit_20260912).
+    let unconfirmed: { deal: number; price: number; serial: number } | null = null;
 
     try {
       const deal = await dispatchDueDealAlerts(1000);
@@ -53,6 +57,11 @@ async function run(req: NextRequest) {
         errMsg = `deal: ${deal.error}`;
       } else {
         enqueuedDeal = deal.enqueued ?? 0;
+        unconfirmed = {
+          deal: deal.deal_pool_unconfirmed ?? 0,
+          price: deal.price_pool_unconfirmed ?? 0,
+          serial: deal.serial_pool_unconfirmed ?? 0,
+        };
       }
     } catch (e) {
       ok = false;
@@ -84,6 +93,15 @@ async function run(req: NextRequest) {
         p_extra: {
           enqueued_deal: enqueuedDeal,
           enqueued_fmv: enqueuedFmv,
+          // Spread, so a run that never got a verdict carries NO key rather than
+          // three zeroes that read as "nothing was suppressed".
+          ...(unconfirmed
+            ? {
+                unconfirmed_deal: unconfirmed.deal,
+                unconfirmed_price: unconfirmed.price,
+                unconfirmed_serial: unconfirmed.serial,
+              }
+            : {}),
           duration_ms: Date.now() - startedMs,
         },
       });

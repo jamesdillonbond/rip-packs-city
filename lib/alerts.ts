@@ -154,7 +154,20 @@ export async function dispatchDueDealAlerts(max = 1000) {
     p_max: max,
   });
   if (error) return { error: error.message };
-  return data as { subscriptions_scanned: number; enqueued: number };
+  // ⚠ The `*_unconfirmed` counts are the SUPPRESSION, and they are read rather
+  // than ignored on purpose (audit_20260912). The scanners refuse to build an
+  // alert from an ask nobody has re-confirmed inside ASK_STALE_HOURS; without a
+  // number for how many rows that hid, "the alerts went quiet" is
+  // indistinguishable from "86% of the Top Shot board is unconfirmed because the
+  // upstream ask lane is nine days behind". Fixing a guard without fixing the
+  // field an observer keys on leaves the incidence unmeasurable.
+  return data as {
+    subscriptions_scanned: number;
+    enqueued: number;
+    deal_pool_unconfirmed?: number;
+    price_pool_unconfirmed?: number;
+    serial_pool_unconfirmed?: number;
+  };
 }
 
 export async function dispatchTriggeredFmvAlerts(max = 200) {

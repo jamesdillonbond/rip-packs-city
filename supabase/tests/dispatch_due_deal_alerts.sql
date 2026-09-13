@@ -30,6 +30,14 @@
 --      written with a null target.
 --   6. NO ACTIVE SUBSCRIPTIONS ⇒ skipped: 'no_active_subscriptions', a stated
 --      reason rather than a silent zero that reads as "nothing matched".
+--   7. AN UNCONFIRMED ASK IS NEVER SENT (added 2026-09-13, audit_20260912). Both
+--      passes and both pools refuse a row whose ask nobody has re-confirmed
+--      inside ASK_STALE_HOURS; a NULL stamp fails CLOSED; the exempt arms
+--      (nfl_all_day / laliga_golazos, whose stamp is a LISTING date over an
+--      open-listing index) still deliver at six weeks old; and the suppression is
+--      COUNTED in the return jsonb rather than silent. Asserted in both
+--      directions — the same rows deliver once re-stamped — and at the boundary
+--      (13 h blocked, 11 h delivered), so a widened window cannot pass.
 --
 -- ⚠ NOT pinned, recorded so nobody adds a vacuous version: `bucket` is
 -- to_char(now(),'YYYY-MM-DD'), so a same-transaction second call always lands in
@@ -46,12 +54,23 @@
 -- predicate is the one selecting v_price_cap, and THAT mutation is killed
 -- (case 1). Do not "fix" this by asserting on the IF.
 
--- Mutation-verified 2026-08-17. Each of these fails a NAMED assertion:
+-- 🚨 ONE MUTATION SURVIVED WHEN CASE 7 WAS FIRST WRITTEN, AND THE FIX WAS THE
+-- FIXTURE. This file had NO serial-board rows, so `serial_pool_size` was 0 and
+-- removing `WHERE b.alertable` from pass 2 changed nothing anywhere: a gate over
+-- an empty population reads as covered from every angle. Two serial rows (one
+-- seen now, one seen 20 h ago) were added for exactly that reason, and the
+-- mutation is killed with them present. Do not "simplify" them away.
+--
+-- Mutation-verified 2026-08-17, and again 2026-09-13 for case 7. Each of these
+-- fails a NAMED assertion:
 --   • price-cap predicate drops `COALESCE(min_discount, 25) = 0`   → case 1
 --   • pass 1 reads both pools instead of `pool = CASE WHEN …`      → case 3
 --   • `IF v_target IS NULL THEN CONTINUE` removed                  → case 5
 --   • `IF FOUND THEN v_enqueued := …` counts matches not writes    → case 4
 --   • the no-active-subscriptions early return removed             → case 6
+--   • `AND p.alertable` dropped from pass 1                       → case 7
+--   • `WHERE b.alertable` dropped from pass 2                     → case 7 (serial)
+--   • either pool's `alertable` column hardcoded to `true`        → case 7
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
 -- (supabase/migrations/20260816161500_audit_20260816_price_only_alerts.sql);
@@ -189,6 +208,30 @@ CREATE OR REPLACE FUNCTION public.get_edition_badges_unified(p_edition_id uuid)
 RETURNS jsonb LANGUAGE sql IMMUTABLE AS $$ SELECT '[]'::jsonb $$;
 
 -- >>> BEGIN verbatim dispatch_due_deal_alerts (keep byte-identical to the migration) >>>
+-- The gate the scanner below calls. Verbatim from the same migration and
+-- registered in __tests__/db-invariants-drift-guard.test.ts under its own PINS
+-- entry for THIS file, so this copy cannot drift either.
+CREATE OR REPLACE FUNCTION public.ask_is_alertable(
+  p_collection_slug text,
+  p_ask_at          timestamptz,
+  p_now             timestamptz DEFAULT now()
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SET search_path TO 'public', 'pg_temp'
+AS $function$
+  SELECT CASE
+    -- EXEMPT: event-sourced open-listing books. The stamp is the seller's
+    -- listing date, not a confirmation, and the row leaves the view when the
+    -- listing closes. See the header -- gating these deletes correct rows.
+    WHEN p_collection_slug IN ('nfl_all_day', 'laliga_golazos') THEN true
+    -- Everything else must have been CONFIRMED inside ASK_STALE_HOURS (12 h,
+    -- lib/market/ask-freshness.ts). Unknown (NULL) is not alertable.
+    ELSE p_ask_at IS NOT NULL AND p_ask_at > p_now - interval '12 hours'
+  END
+$function$;
+
 CREATE OR REPLACE FUNCTION public.dispatch_due_deal_alerts(p_max integer DEFAULT 1000)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -213,6 +256,12 @@ DECLARE
   v_price_pool int := 0;
   v_price_cap numeric;
   v_price_only boolean;
+  -- How many of the rows we BUILT are barred from alerting because nobody has
+  -- re-confirmed the ask. Reported so "quiet" and "quiet because the upstream
+  -- ask lane is behind" are distinguishable from outside (audit_20260912).
+  v_deal_pool_unconfirmed int := 0;
+  v_price_pool_unconfirmed int := 0;
+  v_serial_pool_unconfirmed int := 0;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.alert_subscriptions WHERE active = true) THEN
     RETURN jsonb_build_object(
@@ -222,15 +271,23 @@ BEGIN
       'deal_pool_size', 0,
       'serial_pool_size', 0,
       'price_pool_size', 0,
+      'deal_pool_unconfirmed', 0,
+      'serial_pool_unconfirmed', 0,
+      'price_pool_unconfirmed', 0,
       'bucket', v_bucket,
       'ran_at', now(),
       'skipped', 'no_active_subscriptions'
     );
   END IF;
 
+  -- ⚠ `alertable` is computed ONCE here rather than in each per-subscription
+  -- WHERE: the price pool can be thousands of rows and the loop runs per sub, and
+  -- it also makes the unconfirmed counts exact rather than a second scan of a
+  -- view whose Top Shot leg is the expensive one.
   DROP TABLE IF EXISTS tmp_deal_pool;
   CREATE TEMP TABLE tmp_deal_pool ON COMMIT DROP AS
-    SELECT 'deals'::text AS pool, b.*
+    SELECT 'deals'::text AS pool, b.*,
+           public.ask_is_alertable(b.collection_slug, b.ask_updated_at) AS alertable
     FROM public.cross_collection_deals_board b
     WHERE b.low_ask > 0 AND b.fmv_usd > 0;
   GET DIAGNOSTICS v_deal_pool = ROW_COUNT;
@@ -245,17 +302,29 @@ BEGIN
 
   IF v_price_cap IS NOT NULL THEN
     INSERT INTO tmp_deal_pool
-    SELECT 'price'::text, a.*
+    SELECT 'price'::text, a.*,
+           public.ask_is_alertable(a.collection_slug, a.ask_updated_at)
     FROM public.edition_current_ask a
     WHERE a.low_ask > 0 AND a.low_ask <= v_price_cap;
     GET DIAGNOSTICS v_price_pool = ROW_COUNT;
   END IF;
 
+  SELECT count(*) FILTER (WHERE pool = 'deals' AND NOT alertable),
+         count(*) FILTER (WHERE pool = 'price' AND NOT alertable)
+    INTO v_deal_pool_unconfirmed, v_price_pool_unconfirmed
+  FROM tmp_deal_pool;
+
   DROP TABLE IF EXISTS tmp_serial_pool;
   CREATE TEMP TABLE tmp_serial_pool ON COMMIT DROP AS
-    SELECT * FROM public.topshot_underpriced_serials_board
-    WHERE estimate_quality = 'tight' AND ask_usd > 0;
+    SELECT s.*,
+           public.ask_is_alertable('nba_top_shot', s.last_seen_at) AS alertable
+    FROM public.topshot_underpriced_serials_board s
+    WHERE s.estimate_quality = 'tight' AND s.ask_usd > 0;
   GET DIAGNOSTICS v_serial_pool = ROW_COUNT;
+
+  SELECT count(*) FILTER (WHERE NOT alertable)
+    INTO v_serial_pool_unconfirmed
+  FROM tmp_serial_pool;
 
   FOR v_sub IN SELECT * FROM public.alert_subscriptions WHERE active = true LOOP
     v_subs := v_subs + 1;
@@ -303,6 +372,12 @@ BEGIN
       FROM (
         SELECT * FROM tmp_deal_pool p
         WHERE p.pool = CASE WHEN v_price_only THEN 'price' ELSE 'deals' END
+          -- An ask nobody has re-confirmed inside ASK_STALE_HOURS does not get
+          -- to wake a human. This is the ONLY predicate standing between the
+          -- 2026-09-09 $0.50 Lillard ask and its fourth consecutive nightly
+          -- delivery on 09-13, by which time the floor was $1.03
+          -- (audit_20260912).
+          AND p.alertable
           AND p.collection_slug = ANY(v_slugs)
           -- NULL >= 0 is NULL, not true, so a price-only sub must SKIP this
           -- predicate rather than relax it.
@@ -389,7 +464,8 @@ BEGIN
                          LIMIT 1)
         ) AS d
         FROM tmp_serial_pool b
-        WHERE b.discount_pct >= COALESCE(v_sub.min_discount, 25)
+        WHERE b.alertable
+          AND b.discount_pct >= COALESCE(v_sub.min_discount, 25)
           AND (v_sub.max_price IS NULL OR b.ask_usd <= v_sub.max_price)
           AND (v_sub.min_price IS NULL OR b.ask_usd >= v_sub.min_price)
           AND (v_sub.tiers IS NULL OR b.tier = ANY(v_sub.tiers))
@@ -473,6 +549,9 @@ BEGIN
     'deal_pool_size', v_deal_pool,
     'serial_pool_size', v_serial_pool,
     'price_pool_size', v_price_pool,
+    'deal_pool_unconfirmed', v_deal_pool_unconfirmed,
+    'serial_pool_unconfirmed', v_serial_pool_unconfirmed,
+    'price_pool_unconfirmed', v_price_pool_unconfirmed,
     'bucket', v_bucket,
     'ran_at', now()
   );
@@ -624,6 +703,181 @@ BEGIN
   PERFORM _assert(EXISTS (SELECT 1 FROM alert_deliveries WHERE owner_key = 'owner-unver'),
     'and delivers once the channel is verified');
   RAISE NOTICE '✓ dispatch_due_deal_alerts: verification gates delivery';
+END $$;
+
+-- ── (7) AN UNCONFIRMED ASK IS NEVER SENT, AND THE EXEMPTION IS REAL ────────
+--
+-- 🚨 THE CASE THIS FUNCTION EXISTS TO NOT REPEAT. On 2026-09-12 PT Trevor was
+-- sent "Damian Lillard #5735 — $0.50 ask" for the FOURTH night running, off an
+-- `ask_updated_at` frozen at 09-10 04:48Z, while the live floor read $1.03 and
+-- the listing was the one he had already bought. The message was not lying — it
+-- even rendered "ask seen 3d ago — may be gone" — but a notification is the one
+-- surface that cannot report-and-let-the-reader-judge.
+--
+-- ⭐ THIS CASE ALSO PINS THE REPEAT, WITHOUT PINNING THE DEDUPE. `dedup_bucket`
+-- is one calendar day, so ANY row that stays in the pool re-fires nightly for
+-- ever; the rows that do that are exactly the ones nobody re-confirms. Gate the
+-- confirmation and the repeat has no fuel. A future "simplification" that drops
+-- the gate brings BOTH defects back, and case 4 above cannot see either.
+INSERT INTO collections (id, slug, is_active) VALUES
+  ('dee28451-5d62-409e-a1ad-a83f763ac070', 'nfl_all_day', true);
+
+INSERT INTO notification_channels (owner_key, channel, channel_user_id, verified)
+VALUES ('owner-fresh', 'email', 'fresh@example.test', true);
+
+INSERT INTO edition_current_ask
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  -- Top Shot, last confirmed 3 days ago: the exact shape of the row that was
+  -- delivered four times.
+  ('73:9002', 'Stale Lillard', 'Damian Lillard', 'Archive Set', 'COMMON', 12000,
+   NULL, NULL, 0.40, NULL, NULL, now() - interval '3 days',
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A9002', NULL,
+   NULL, NULL, false),
+  -- Top Shot with NO stamp at all. ⚠ "Unknown is not stale" is the right rule
+  -- for RENDERING an age marker and the WRONG one for deciding to wake someone
+  -- up, so this must fail CLOSED.
+  ('73:9003', 'Unstamped Lillard', 'Damian Lillard', 'Archive Set', 'COMMON', 12000,
+   NULL, NULL, 0.41, NULL, NULL, NULL,
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A9003', NULL,
+   NULL, NULL, false),
+  -- All Day, listed six weeks ago and STILL OPEN. 🚨 THE EXEMPTION, ASSERTED
+  -- POSITIVELY: that arm's stamp is `cached_listings_v2.listed_at` — when the
+  -- seller listed it — over an index a row LEAVES when the listing closes. A
+  -- blanket recency predicate would have deleted 1,937 of 1,956 correct All Day
+  -- rows (measured 2026-09-13) to fix the Top Shot ones.
+  ('9:1234', 'Open All Day Ask', 'Ja Marr Chase', 'Base Set', 'COMMON', 9000,
+   NULL, NULL, 0.42, NULL, NULL, now() - interval '42 days',
+   'nfl_all_day', 'NFL All Day', NULL, '/nfl-all-day/edition/9%3A1234', NULL,
+   NULL, NULL, false);
+
+-- A deals-board row whose ask is 13 h old — just past the 12 h marker. Paired
+-- with the 11 h re-stamp below, this pins the THRESHOLD rather than the idea.
+INSERT INTO cross_collection_deals_board
+  (external_id, name, player_name, set_name, tier, circulation_count, fmv_usd,
+   confidence, low_ask, discount_pct, discount_usd, ask_updated_at,
+   collection_slug, collection_name, render_id, detail_url, thumbnail_url,
+   low_ask_serial, low_ask_nft_id, low_confidence_fmv)
+VALUES
+  ('73:5555', 'Stale Deal', 'Damian Lillard', 'Archive Set', 'COMMON', 12000,
+   20.00, 'HIGH', 5.00, 75.0, 15.00, now() - interval '13 hours',
+   'nba_top_shot', 'NBA Top Shot', NULL, '/nba-top-shot/edition/73%3A5555', NULL,
+   NULL, NULL, false);
+
+-- ⚠ TWO SERIAL-BOARD ROWS, BECAUSE PASS 2 HAS ITS OWN GATE AND THIS FILE USED TO
+-- HAVE NO SERIAL FIXTURE AT ALL. Measured 2026-09-13: with the board empty, the
+-- mutation that removes `WHERE b.alertable` from the serial pass SURVIVED every
+-- assertion in this file — `serial_pool_size` was 0, so the pass ran over nothing
+-- and read as covered. A gate over an empty population is not a tested gate.
+-- ⭐ `last_seen_at` on this board IS a confirmation stamp (the verify lane
+-- re-reads the listing), unlike All Day's listed_at — which is why the two
+-- columns get opposite treatment three fixtures apart.
+INSERT INTO topshot_underpriced_serials_board
+  (edition_id, edition_key, external_id, player_name, set_name, tier,
+   circulation_count, thumbnail_url, nft_id, serial_number, ask_usd,
+   listing_resource_id, listing_url, listed_at, last_seen_at, edition_fmv_usd,
+   confidence, serial_bucket, serial_fmv_usd, serial_multiplier, discount_usd,
+   discount_pct, estimate_quality)
+VALUES
+  (gen_random_uuid(), '73:7777', '73:7777', 'Damian Lillard', 'Archive Set', 'COMMON',
+   12000, NULL, 'nft-fresh', 1, 10.00, NULL, NULL, now(), now(), 20.00,
+   'HIGH', 'first', 20.00, 2.0, 10.00, 50.0, 'tight'),
+  (gen_random_uuid(), '73:7778', '73:7778', 'Damian Lillard', 'Archive Set', 'COMMON',
+   12000, NULL, 'nft-stale', 2, 10.00, NULL, NULL, now() - interval '20 hours',
+   now() - interval '20 hours', 25.00,
+   'HIGH', 'perfect', 25.00, 2.5, 15.00, 60.0, 'tight');
+
+-- collection_ids NULL => every ACTIVE collection, so this one subscription sees
+-- the Top Shot rows and the All Day row and can test the asymmetry in one run.
+INSERT INTO alert_subscriptions (id, owner_key, channels, collection_ids, min_discount, max_price, active, serial_only)
+VALUES ('44444444-4444-4444-4444-444444444444', 'owner-fresh', ARRAY['email'],
+        NULL, 0, 0.60, true, false);
+
+DO $$
+DECLARE r jsonb;
+BEGIN
+  r := public.dispatch_due_deal_alerts();
+
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-fresh' AND subject_key = 'nba_top_shot:73:9002'),
+    'an ask last confirmed 3 days ago is NOT sent');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-fresh' AND subject_key = 'nba_top_shot:73:9003'),
+    'an ask with no confirmation stamp at all is NOT sent -- unknown fails CLOSED');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba_top_shot:73:5555'),
+    'a deals-board row whose ask is 13 h old is NOT sent either -- the gate is not price-pool-only');
+
+  -- POSITIVE CONTROLS, both of them. Without these the case above would pass
+  -- against a function that had simply stopped delivering.
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-fresh' AND subject_key = 'nba_top_shot:73:9001'),
+    'the freshly confirmed $0.33 ask IS still sent');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-fresh' AND subject_key = 'nfl_all_day:9:1234'),
+    'and an All Day listing open since six weeks ago IS sent -- listed_at is not a confirmation');
+
+  -- ⭐ THE SUPPRESSION IS COUNTED, NOT SILENT. Fixing a guard without fixing the
+  -- field an observer keys on leaves the incidence unmeasurable: these ride into
+  -- pipeline_runs.extra so "the alerts went quiet" can be told apart from "86% of
+  -- the Top Shot board is unconfirmed".
+  PERFORM _assert_eq((r->>'price_pool_unconfirmed'), '2',
+    'the two barred raw asks are COUNTED, not silently dropped');
+  PERFORM _assert_eq((r->>'deal_pool_unconfirmed'), '1',
+    'and so is the barred deals-board row');
+  PERFORM _assert_eq((r->>'price_pool_size'), '4',
+    'while *_pool_size keeps its old meaning -- rows BUILT -- so its history stays comparable');
+
+  -- PASS 2 CARRIES THE SAME RULE. `owner-deals` (25% off, under $50) is the sub
+  -- that can see these; both rows clear its filters, so only the gate separates
+  -- them.
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba-top-shot:73:7778:#2'),
+    'a serial listing last seen 20 h ago is NOT sent');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba-top-shot:73:7777:#1'),
+    'while the one seen just now IS -- so pass 2 is gated, not switched off');
+  PERFORM _assert_eq((r->>'serial_pool_unconfirmed'), '1',
+    'and the serial suppression is counted too');
+
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: an unconfirmed ask is never sent';
+END $$;
+
+-- ── (7b) THE GATE IS A GATE, NOT A DELETION — the other direction ──────────
+-- Re-stamp the same two rows as confirmed; nothing else changes. Both must now
+-- deliver. ⚠ The deals row goes to 11 h rather than now(), so the pair
+-- (13 h blocked / 11 h delivered) pins the 12 h threshold itself: a mutation
+-- that widened the window to 24 h survives an assertion that only uses now().
+DO $$
+BEGIN
+  UPDATE edition_current_ask SET ask_updated_at = now() WHERE external_id = '73:9002';
+  UPDATE cross_collection_deals_board SET ask_updated_at = now() - interval '11 hours'
+   WHERE external_id = '73:5555';
+  UPDATE topshot_underpriced_serials_board SET last_seen_at = now() WHERE nft_id = 'nft-stale';
+  PERFORM public.dispatch_due_deal_alerts();
+
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries
+    WHERE owner_key = 'owner-fresh' AND subject_key = 'nba_top_shot:73:9002'),
+    'the same row delivers once it is confirmed again -- the gate is freshness, not the row');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba_top_shot:73:5555'),
+    'and an 11 h old deals-board ask is INSIDE the window -- so 13 h was the threshold, not a blanket ban');
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba-top-shot:73:7778:#2'),
+    'and the re-seen serial listing delivers -- pass 2 opens again too');
+  PERFORM _assert(NOT EXISTS (
+    SELECT 1 FROM alert_deliveries WHERE subject_key = 'nba_top_shot:73:9003'),
+    'the unstamped row is still barred -- re-stamping its neighbours did not relax it');
+
+  RAISE NOTICE '✓ dispatch_due_deal_alerts: the freshness gate opens as well as closes';
 END $$;
 
 ROLLBACK;
