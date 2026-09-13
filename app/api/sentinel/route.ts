@@ -1,10 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { redactSecrets } from "@/lib/redact-secrets";
 import { fitTelegramMessage, fitTelegramText } from "@/lib/telegram-message";
 import { summariseAlertDelivery } from "@/lib/sentinel/alert-delivery";
 import { summariseZeroYield } from "@/lib/sentinel/zero-yield";
 import { summariseBlindChecks, BLIND_CHECK_NAME } from "@/lib/sentinel/blind-checks";
+import { summariseCadenceCollapse } from "@/lib/sentinel/cadence-collapse";
+
+// Named once: the arm pushes it, the threshold/ack rows key on it, and the
+// migration that seeds those rows quotes it verbatim. A typo here is a silently
+// unconfigurable check.
+const CADENCE_CHECK_NAME = "Cadence Collapse";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 // Bumped 60 -> 180 on 2026-08-08: under pooler saturation the ~8 sequential
@@ -161,12 +167,45 @@ async function sendEmail(subject: string, html: string): Promise<Delivery> {
   }
 }
 
+// CRON-30S. The sentinel's own measured wall is 62.4s avg / 162.4s max / 16.1s
+// min (pipeline_runs, 21 completed runs, read 2026-09-12) — well past the 30s
+// client timeout cron-job.org enforces, which marks such a run FAILED and then
+// AUTO-DISABLES the entry after enough of them. That is not hypothetical here:
+// nine entries were auto-disabled on 2026-09-10 by exactly that class and ran
+// dead for two days (register #76). So a caller that cannot hold the connection
+// passes `?ack=1` and gets 202 immediately while the sweep runs to completion
+// inside after() on the same invocation (maxDuration 180 covers the 162.4s max).
+//
+// ⚠ 202 means ACCEPTED, NOT HEALTHY. The ack response deliberately carries no
+// status, no check count and no report: a caller that rendered it as a verdict
+// would be reading a dispatch receipt as an all-clear, which is the same class
+// of lie as a failed read rendering as an answer. The report still lands in
+// pipeline_runs (pipeline='sentinel') and in whatever notification channels the
+// run itself fires — those, not the HTTP response, are where the answer lives.
+// GHA and manual callers omit `ack` and keep the full synchronous report.
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization");
   if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (new URL(req.url).searchParams.get("ack") === "1") {
+    after(async () => {
+      try {
+        await runSentinel();
+      } catch (e: any) {
+        // after() rejections are invisible otherwise: the 202 has already been
+        // sent, so a throw here would leave NO trace anywhere but this log.
+        console.error("[sentinel] ack-mode run threw:", redactSecrets(e?.message ?? e));
+      }
+    });
+    return NextResponse.json({ accepted: true, mode: "ack" }, { status: 202 });
+  }
+
+  return NextResponse.json(await runSentinel());
+}
+
+async function runSentinel() {
   const checks: HealthCheck[] = [];
   const now = new Date();
 
@@ -1810,22 +1849,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // A critical check with an UNEXPIRED ack is downgraded to warn — visible, reasoned,
-  // dated, and back to critical the moment the ack lapses. Never to ok: the ack says
-  // "known and owned", not "fine". An expired ack is rendered too, so a reader can
-  // tell "it came back" from "nobody ever looked".
-  for (const c of checks) {
-    const ack = cfgMap[c.name]?.ack;
-    if (!ack || c.status !== "critical") continue;
-    const until = ack.expiresAt.toISOString().slice(0, 10);
-    if (ack.expiresAt.getTime() > now.getTime()) {
-      c.status = "warn";
-      c.detail = `[ACKNOWLEDGED until ${until} — ${ack.reason}] ${c.detail}`;
-    } else {
-      c.detail = `[ACK EXPIRED ${until} — ${ack.reason}] ${c.detail}`;
-    }
-  }
-
   // ── DID ANYONE HEAR THE LAST ALARM? (2026-09-11) ──────────────────────────
   // This route has recorded per-channel delivery in `extra.notifications` since
   // 2026-08-29 — and NOTHING HAS EVER READ IT. Measured today, across all 18 runs
@@ -1912,6 +1935,75 @@ export async function POST(req: NextRequest) {
       status: "warn",
       detail: `Exception: ${e?.message ?? e}`,
     });
+  }
+
+  // ── LANES STILL RUNNING, STILL GREEN, AT A FRACTION OF THEIR CADENCE ──────
+  // The state #76 lived in for two days with every instrument reading fine.
+  // `check_pipeline_cadence_collapse()` shipped 2026-09-12 05:47Z DELIBERATELY
+  // UNWIRED, with its exit condition written into its own migration header:
+  // *"It would fire today for the nine lanes whose cron-job.org entries are
+  // disabled (#76) … Wire it after those entries are back, when a red means
+  // something new."* ✅ Those nine entries were re-enabled 2026-09-12 ~21:55 PT
+  // and their first post-re-enable runs logged `ok = true`, so the precondition
+  // is MET and this is that wiring — not a second arm layered on the first.
+  //
+  // ⚠ The 12 h observed window still contains the outage on the night it was
+  // wired, so the arm is expected to read CRITICAL until roughly 2026-09-13
+  // 10:00 PT. That is handled where it belongs — a dated, reasoned, EXPIRING ack
+  // row seeded by the same migration — and not by softening the threshold, which
+  // would be permanent damage to fix a transient reading.
+  try {
+    const { data: ccData, error: ccErr } = await supabase.rpc("check_pipeline_cadence_collapse");
+    if (ccErr) {
+      const sat = isSaturationError(ccErr.message);
+      checks.push({
+        name: CADENCE_CHECK_NAME,
+        status: sat ? "warn" : "critical",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${ccErr.message}`,
+      });
+    } else {
+      const verdict = summariseCadenceCollapse(
+        ccData as any,
+        thr(CADENCE_CHECK_NAME, "warn_at", 1),
+        thr(CADENCE_CHECK_NAME, "crit_at", 5),
+      );
+      checks.push({
+        name: CADENCE_CHECK_NAME,
+        status: verdict.status,
+        detail: verdict.detail,
+        value: verdict.value,
+      });
+    }
+  } catch (e: any) {
+    checks.push({
+      name: CADENCE_CHECK_NAME,
+      status: "warn",
+      detail: `Exception: ${e?.message ?? e}`,
+    });
+  }
+
+  // A critical check with an UNEXPIRED ack is downgraded to warn — visible, reasoned,
+  // dated, and back to critical the moment the ack lapses. Never to ok: the ack says
+  // "known and owned", not "fine". An expired ack is rendered too, so a reader can
+  // tell "it came back" from "nobody ever looked".
+  //
+  // ⚠ THIS PASS USED TO SIT IN THE MIDDLE OF THE ARMS, which quietly meant an ack
+  // could only ever reach a check DECLARED ABOVE LINE ~1849 — `Alert Delivery`,
+  // `Zero-Yield Lanes` and everything added after it were unackable, and nothing
+  // said so. Moved here 2026-09-12 so the population is "every check", the same
+  // way the disable pass below already works. ⛔ It must stay AHEAD of the
+  // Measurement Blackout arm: that arm counts warns, and an acked critical is a
+  // warn, so running it after would change what blackout measures.
+  for (const c of checks) {
+    const ack = cfgMap[c.name]?.ack;
+    if (!ack || c.status !== "critical") continue;
+    const until = ack.expiresAt.toISOString().slice(0, 10);
+    if (ack.expiresAt.getTime() > now.getTime()) {
+      c.status = "warn";
+      c.detail = `[ACKNOWLEDGED until ${until} — ${ack.reason}] ${c.detail}`;
+    } else {
+      c.detail = `[ACK EXPIRED ${until} — ${ack.reason}] ${c.detail}`;
+    }
   }
 
   // A check explicitly disabled via config (enabled=false) is forced to ok so it
@@ -2070,5 +2162,5 @@ export async function POST(req: NextRequest) {
   }
 
   console.log(`SENTINEL ${overallStatus}`, JSON.stringify(report));
-  return NextResponse.json(report);
+  return report;
 }

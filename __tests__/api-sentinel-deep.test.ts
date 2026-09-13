@@ -103,6 +103,23 @@ function greenFixtures(): Fixtures {
       },
       error: null,
     },
+    // Cadence-collapse arm (wired 2026-09-12, #76/#80). Healthy fixture: a real
+    // population inspected, nothing running below its own cadence. ⚠ Supplied
+    // EXPLICITLY for the same reason as the two arms above — an unreadable
+    // payload reads UNMEASURED, not clean, so forgetting it fails loudly.
+    // ⛔ `stopped` is populated on purpose: this arm reports stopped lanes as
+    // CONTEXT and must never score them, so a healthy fixture with stopped lanes
+    // in it is the control for that.
+    "rpc:check_pipeline_cadence_collapse": {
+      data: {
+        inspected: 98,
+        excluded_heartbeats: 46,
+        window: { window_hours: 12, baseline_days: 14, ratio: 0.4, exclude_days: 3 },
+        degraded: [],
+        stopped: [{ pipeline: "offers-sweep", baseline_per_day: 72, last_run_at: null }],
+      },
+      error: null,
+    },
     v_rpc_trust_health: {
       data: [
         { metric: "topshot_fmv_stale_hours", value: 1, breach_at: 6, status: "ok" },
