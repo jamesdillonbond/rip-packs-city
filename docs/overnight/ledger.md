@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 🚨 FIXED — a clean git merge produced code that does not compile, and my gates were green because I ran them before the rebase · Cowork cloud
+
+**Shipped:** `app/api/sentinel/route.ts` (deduped `signal`), `docs/reference/known-issues.md` (#97). Revert: `git revert` the commit whose message starts `fix(sentinel): dedupe the bounded-send signal`.
+
+**🚨 `main` WAS BROKEN FOR ~20 MINUTES AND THE DEPLOYMENT LIST IS WHAT SAID SO.** `npm run build` on 9dc02bb: *"An object literal cannot have multiple properties with the same name"*, `app/api/sentinel/route.ts:258`. ⭐ **Production never moved** — it stayed on the previous READY deployment, which is the system working.
+
+**⛔ THE MERGE WAS TEXTUALLY CLEAN AND SEMANTICALLY WRONG.** A concurrent session bounded the SAME two sentinel `fetch()` calls, with a named `DELIVERY_TIMEOUT_MS`; I used a `10_000` literal. The two edits touch adjacent lines of one object literal, so git merged them happily into **two `signal` keys**. ⭐ **Two sessions fixing the same defect the same way is precisely the shape that produces this**, and no conflict marker will ever warn about it.
+
+**⭐ THE PROCESS DEFECT IS MINE, AND IT IS THE HALF WORTH KEEPING: I RAN `tsc` AND THE SUITE BEFORE THE REBASE, THEN AMENDED THE COMMIT AFTER IT WITHOUT RE-RUNNING EITHER.** The gate line in that commit message — *"tsc clean, 211 sentinel + 9 ack-mode tests green"* — was true of a tree that was never pushed. **PROMOTE: on a repo with concurrent sessions the rebase is the riskiest edit in the sequence, not a formality. Re-run the type-check and the affected tests AFTER the last rebase.**
+
+**✅ Deduped in favour of the other session's named constant** — theirs is the better spelling, and preferring the incumbent avoids a second merge on the same lines.
+
+**Gates (run AFTER the rebase this time):** `tsc` clean · 33 tests green across the three affected files.
+
 ### 2026-09-13 · 🚨 MAIN WAS RED FROM A CONCURRENT-SESSION MERGE ARTIFACT — two sessions bounded the same two fetches 13 minutes apart and the rebase kept BOTH · Claude Code cloud, overnight autonomous
 
 **Shipped:** `app/api/sentinel/route.ts` — two duplicate `signal:` keys removed. **REVERT:** `git revert <sha>`. **No behavioural change whatsoever** (see below).

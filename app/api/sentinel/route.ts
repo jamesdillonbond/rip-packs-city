@@ -229,15 +229,6 @@ async function sendTelegram(text: string): Promise<Delivery> {
   // cannot be bypassed.
   text = fitTelegramText(text);
   try {
-    // ⛔ BOUNDED ON PURPOSE. `fetch()` has no default timeout, and since ack mode
-    // this route runs inside `after()` under a `maxDuration` — an upstream that
-    // accepts the connection and holds it open would take the whole invocation
-    // with it, so neither the success path nor the catch would run and NO
-    // terminal `pipeline_runs` row would be written. An alarm that hangs on its
-    // own notification channel is a dead alarm that reports nothing at all.
-    // 10s: the send is one small POST; anything slower is a dead channel, and a
-    // dead channel must read as `telegram-FAILED:…` in `extra.notifications`
-    // rather than as silence.
     const res = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
       {
@@ -273,7 +264,6 @@ async function sendTelegram(text: string): Promise<Delivery> {
 async function sendEmail(subject: string, html: string): Promise<Delivery> {
   if (!RESEND_API_KEY || !ALERT_EMAIL) return { ok: false, reason: "not_configured" };
   try {
-    // Same bound, same reason as the Telegram send above.
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
