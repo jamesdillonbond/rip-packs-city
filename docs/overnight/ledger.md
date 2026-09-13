@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ DECISION+CODE+DB — `pull_value_usd` is CURRENT FMV for every collection (#92 closed), and the pager is finally on its own watchlist · Cowork cloud, Trevor: "make these decisions based upon what's best for RPC long term and our users"
+
+**Shipped:** `supabase/migrations/20260913032000_…pull_value_usd_is_current_fmv_for_every_collection.sql` (APPLIED — **both** writers), `…20260913033000_…watch_the_sentinel_heartbeat.sql` (APPLIED), `app/dashboard/packs/PackHistoryClient.tsx`, `docs/reference/known-issues.md` (#92 → closed, #80 → mitigation), `eslint-ratchet.json` (716 → **715**, a gain locked in). Revert paths in each migration header.
+
+---
+
+**⭐ DECISION 1 — ONE BASIS, AND IT IS CURRENT. #92 CLOSED THE NIGHT IT WAS FILED.**
+The column meant CURRENT for Top Shot and AT-OPEN for All Day, and `/dashboard/packs` summed both into one RIPPED VALUE tile and one NET P&L. ⭐ **It is not a coin-flip between two defensible answers, and that is what settled it:** the "at-open is right for EV calibration" argument only ever described All Day. **The entire Top Shot pack-reality / realized-EV estate already reads this column as current** — `mv_topshot_pack_rip_values`, `mv_topshot_pack_realized_ev`, `mv_topshot_pack_reality_{stats,dist}`, `v_topshot_pack_lifecycle{,_global}`. All Day was not a principled choice; it was an accident of having a different writer. Add that Top Shot is **~92% of valued rips**, that the **7-day `stale_valued` re-price loop exists ONLY to keep this column current** (meaningless under at-open), that the user's actual question is "what are my pulls worth NOW against what I paid", and that current **covers MORE** (3,967 vs 3,780 whole packs per 4,000 — 76,376 pulls across 53,309 packs carry an edition with no stored fmv).
+
+**⚠ BOTH WRITERS CHANGED TOGETHER, because changing one alone is how the first attempt failed.** `backfill_pack_rip_metadata` AND `rollup_allday_rip_pull_value()` (pg_cron jobid 72, hourly at `:14`). ⚠ **And the rollup's incremental trigger is now a "new pulls" trigger, not a "value changed" one — which is correct**: under a current basis a pack's value also moves when the SNAPSHOT moves with no pull row changing, and the 7-day stale leg is the drift handler. That is the same division of labour Top Shot has always had. ⛔ Do NOT "fix" the rollup to watch snapshots — 1.48M pull rows re-scanned per tick for no gain.
+
+**Existing rows re-priced and verified: 25,340 computable All Day rips, 0 divergent, $318,641.74 → $312,203.21 (−2.0%).** ⚠ **2 rips are not computable on the new basis and KEEP their old value rather than being nulled** — never destroy a number you cannot recompute. ⚠ **An id-ordered batch loop TIMES OUT** (no index supports `id > last` here); `idx_pack_rips_collection_time_pv` is `(collection_id, sealed_at DESC)`, so sealed_at windows are the cheap axis — recorded because the obvious batching is the one that fails. **Nothing was lost:** the at-open figure is still per-pull in `allday_pack_pull.fmv_usd`.
+
+---
+
+**⭐ DECISION 2 — THE 2024–25 ALL DAY TAIL: DO NOT BUILD IT. Scope the product to what is knowable.** Local mining is exhausted at the grain that matters (**11 of 3,000 packs**, measured at the PACK grain because pricing is all-or-nothing), and resolution needs `/v1/scripts`, which `spork-proxy` does not front. A Flow re-fetch is a real ingest project with an edge deploy, not a tuning change. **The captions keep withholding, and that is the correct product behaviour, not a stopgap.** Filed rather than attempted.
+
+---
+
+**⭐ DECISION 3 — THE PAGER IS NOW WATCHED, AND I REFUSED THE FAST WAY TO FIX IT PROPERLY.**
+⚠ **136 active `pipeline_cadence_watchlist` rows and NEITHER `sentinel` NOR `sentinel-heartbeat` was one of them** — the estate's alerting lane was the only lane with no cadence arm, which is #80's own shape. `sentinel-heartbeat` is now watched at **240 min silent / 480 min without success / `medium`** (joins the warn list; does not page). **Heartbeat and not `sentinel`**, because the heartbeat is written BEFORE the route call and so isolates DELIVERY from ROUTE HEALTH — the exact distinction measured tonight (19 started / 19 completed / **0 died**).
+
+**⚠ 240 min is deliberately ABOVE the ~180 min chronic median.** A "correct" 120-min arm at an hourly cadence would fire on nearly every run and become permanent amber — **an arm that is always amber is an arm nobody reads**, a failure this repo has already paid for. The chronic rate belongs in #80 as a number, not in an alert that cries daily. ⚠⚠ **And it CANNOT fire during a blackout** — the sentinel evaluates it — only on the first run after one ends. It makes an invisible chronic problem visible on the ~37% of ticks that land. **It is a mitigation, not the fix.**
+
+**⛔ I REFUSED THE ONE-INSERT VERSION.** The estate has 20+ pg_cron + pg_net jobs and adding the sentinel would have been one row — but **every one of them carries its secret in the URL query string** (`?key=rpc_pls_…`), which this register already documents as a live leak vector because Supabase edge logs record full request URLs, and `cron.job.command` is itself readable plaintext. **That trades an availability bug for a credential one.** The real fix is cron-job.org, which sends the token as a HEADER and is the transport already measured at 0.86 runs/hour against GitHub's 0.31 — **it needs Trevor's console, and it is the single highest-leverage thing left in this estate.**
+
+**Gates:** `tsc` clean · 131 tests across the pack/cron/sentinel/stripper suites · eslint ratchet **re-baselined 716 → 715** (a real gain, locked in per the tool's own instruction) · register index regenerated, integrity 130 rows, 196 doc links resolve · both migration bodies written from `pg_get_functiondef` read back from production, so the repo provably matches live · ledger guards 3 / 0.
+
 ### 2026-09-12 · ⛔ CORRECTION — I filed #94's causation wrong, the disproof was in my own first query, and the finding already existed · Claude Code cloud, Trevor: "keep going"
 
 **Shipped (docs only):** `docs/reference/known-issues.md` (#94 correction), `docs/overnight/focus.md` (the steer's #94 line rewritten). Revert: `git revert` the commit whose message starts `docs(register): correct #94's causation`.
