@@ -21,6 +21,18 @@ export interface TopshotGraphqlOptions {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+// A Cloudflare 5xx arrives as ~190 KB of HTML (the 1033 tunnel page carries a
+// base64 logo). Embedding it whole made every failed run's error 190 KB in the
+// Vercel log line and the Telegram alert (log_pipeline_run truncates at insert;
+// nothing else did). 512 chars keeps the whole status line and the Cloudflare
+// error-reference number, which is all a reader ever used.
+const ERROR_BODY_CHARS = 512;
+function boundBody(raw: string): string {
+  return raw.length <= ERROR_BODY_CHARS
+    ? raw
+    : `${raw.slice(0, ERROR_BODY_CHARS)} …[${raw.length} chars]`;
+}
+
 // Retry-After is either delta-seconds ("120") or an HTTP-date. Return ms to wait,
 // or null when absent/unparseable so the caller falls back to exponential backoff.
 function parseRetryAfterMs(v: string | null): number | null {
@@ -79,7 +91,7 @@ export async function topshotGraphql<T>(
         continue;
       }
       throw new Error(
-        `Top Shot GraphQL failed with ${response.status}. Response body: ${rawText}`
+        `Top Shot GraphQL failed with ${response.status}. Response body: ${boundBody(rawText)}`
       );
     }
 
@@ -90,7 +102,7 @@ export async function topshotGraphql<T>(
     }
 
     if (!json?.data) {
-      throw new Error(`Top Shot GraphQL returned no data. Raw body: ${rawText}`);
+      throw new Error(`Top Shot GraphQL returned no data. Raw body: ${boundBody(rawText)}`);
     }
 
     return json.data;

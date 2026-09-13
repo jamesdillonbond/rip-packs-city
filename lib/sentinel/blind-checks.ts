@@ -80,8 +80,12 @@ export const INCONCLUSIVE_MARKER = "INCONCLUSIVE";
  * two unlabelled checks are not an oversight to go fix and forget, they are
  * proof that the label will drift again.
  */
+// `sentinel wall budget spent`: the route's own wall budget refused the arm's
+// request before it left the process (lib/sentinel/wall-budget.ts). The arm did
+// not evaluate, for the same underlying reason as the others — the database was
+// too slow for the arms before it — so it counts here.
 const SATURATION_SIGNATURE =
-  /statement timeout|canceling statement|connection pool|timeout acquiring|connection terminated|upstream request timeout|fetch failed|operation was aborted|57014/i;
+  /statement timeout|canceling statement|connection pool|timeout acquiring|connection terminated|upstream request timeout|fetch failed|operation was aborted|sentinel wall budget spent|57014/i;
 
 /** Could this check not be evaluated at all? Condition-based, not label-based. */
 export function isBlind(detail: string | undefined | null): boolean {

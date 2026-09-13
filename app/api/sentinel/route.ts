@@ -10,6 +10,7 @@ import { summariseWallKills } from "@/lib/sentinel/wall-kills";
 import { summariseProbeCost } from "@/lib/sentinel/probe-cost";
 import { summarisePgNet } from "@/lib/sentinel/pg-net";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
+import { createWallBudgetFetch, type WallBudgetClock } from "@/lib/sentinel/wall-budget";
 
 // Named once: the arm pushes it, the threshold/ack rows key on it, and the
 // migration that seeds those rows quotes it verbatim. A typo here is a silently
@@ -36,12 +37,47 @@ const PG_NET_CHECK_NAME = "pg_net Dispatch";
 // `ingested_at`. What was actually done is a partition-key bound that prunes 6
 // of 8 partitions on the healthy path (cost 212,454 -> 107,025), with the
 // unbounded scan kept for the one case that needs it. See the check itself.
-// Still open: per-check timeouts.
+// Per-check timeouts landed 2026-09-13 as ONE wall budget on the client below,
+// not forty-five per-arm edits — see lib/sentinel/wall-budget.ts.
 export const maxDuration = 180;
+
+// ── THE SENTINEL'S OWN WALL BUDGET ───────────────────────────────────────────
+// Every read this route issues goes through a fetch that knows the clock. A
+// saturated arm can no longer wait out a two-minute statement budget three
+// times inside a 180 s wall: each request is bounded to
+// min(SENTINEL_QUERY_CAP_MS, what the budget has left), and once the budget is
+// spent the remaining arms are REFUSED before their request leaves the process,
+// with a message their catch branches classify INCONCLUSIVE. The sweep then
+// still reaches its terminal row, its delivery and its JSON — which a wall kill
+// never does (16:48Z 2026-09-13: "Task timed out after 180 seconds", nothing
+// written anywhere; p90 of the SURVIVING runs was already 153.6 s).
+//
+// ⚠ Derived, not chosen: the cap lets three consecutive worst-case arms fit the
+// budget (3 × 45 s < 140 s); the reserve covers two 10 s delivery bounds plus a
+// terminal write measured at up to 47 s under saturation. The test pins the
+// inequality, so raising either without re-deriving reds the build.
+// ⚠ `sentinelClock` is module state read on EVERY request: runSentinel sets it
+// at its start, flips it to "terminal" after the last arm, and clears it at the
+// end. Sentinel invocations never overlap (a wall kill ends the lambda before a
+// retry lands), which is what makes a single module-level clock sufficient.
+const SENTINEL_WALL_MS = maxDuration * 1000;
+const SENTINEL_RESERVE_MS = 40_000;
+const SENTINEL_QUERY_CAP_MS = 45_000;
+let sentinelClock: WallBudgetClock | null = null;
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    global: {
+      fetch: createWallBudgetFetch({
+        wallMs: SENTINEL_WALL_MS,
+        reserveMs: SENTINEL_RESERVE_MS,
+        perQueryCapMs: SENTINEL_QUERY_CAP_MS,
+        clock: () => sentinelClock,
+      }),
+    },
+  },
 );
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
@@ -390,6 +426,9 @@ export async function POST(req: NextRequest) {
 async function runSentinel() {
   const checks: HealthCheck[] = [];
   const now = new Date();
+  // Start the wall budget's clock (see the client above). Every read from here
+  // to the Measurement Blackout arm is in the "checks" phase.
+  sentinelClock = { startedAtMs: now.getTime(), phase: "checks" };
 
   // Table-driven thresholds (audit_20260627_sentinel_threshold_config). A MISSING
   // row falls back to the hardcoded default below (a config gap can never silently
@@ -2336,6 +2375,11 @@ async function runSentinel() {
     value: blackout.blind,
   });
 
+  // Every arm has run (or been refused). From here the previous-sweep read,
+  // delivery and the terminal write get whatever wall remains and are never
+  // refused: a sweep that spent its budget must still be able to say so.
+  if (sentinelClock) sentinelClock.phase = "terminal";
+
   // The previous sweep's non-ok arm names, for the header delta. Read BEFORE
   // this run is logged and strictly `.lt(now)`, so it can never read itself.
   //
@@ -2544,6 +2588,7 @@ async function runSentinel() {
     console.error("[sentinel] log_pipeline_run failed:", e);
   }
 
+  sentinelClock = null;
   console.log(`SENTINEL ${overallStatus}`, JSON.stringify(report));
   return report;
 }
