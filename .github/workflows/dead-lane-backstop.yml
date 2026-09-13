@@ -33,6 +33,52 @@ name: Dead Lane Backstop
 # action.** This exists so that the next time they die, the lanes degrade instead
 # of stopping.
 #
+# ⚠⚠ SECOND DATED SAMPLE, 2026-09-12 (PT) — THE COVER THIS ACTUALLY BUYS IS
+# ~4x THINNER THAN THE PARAGRAPH ABOVE ESTIMATES, AND THE 45-MINUTE FIGURE
+# SHOULD NOT BE QUOTED. Measured over the 24 h to 2026-09-12 19:37 PT: this
+# workflow delivered **8 of 96 scheduled fires (~8%)**, not one third, with a
+# largest gap of **4 h 49 m** against the 08-27 sample's 191.9 m. Neither
+# number is wrong — they are two dated samples of a rate GitHub sets — but a
+# reader sizing the floor from the 08-27 one will be out by 3-4x. So the honest
+# statement of the floor is **~9 ticks a day, average spacing ~2.7 h, holes up
+# to ~5 h**, whatever the cron here says.
+#
+# 🚨 AND THE SAME MEASUREMENT SETTLES A QUESTION THIS HEADER COULD ONLY ASSUME:
+# THREE DAYS ON, NINE OF THE TEN LANES ARE RECEIVING NOTHING BUT THIS WORKFLOW.
+# The control is exact rather than suggestive — each lane's `pipeline_runs` count
+# equals THIS WORKFLOW'S run count, manual dispatches included: 2026-09-11,
+# 13 runs here (6 scheduled + 7 `workflow_dispatch`) and 13 rows for each of
+# alerts-dispatch, alerts-send, allday-listings-{indexer,retry},
+# golazos-listings-indexer, pinnacle-{events-ingest,listings-retry} and
+# snapshot-pack-asks. If cron-job.org were contributing even one tick, a lane
+# count would EXCEED this one. None does. ⭐ So the operator action named above
+# is not merely still open — it is the ONLY thing running these nine lanes.
+#
+# ⚠ TWO LANES EXCEED THE BACKSTOP COUNT, AND BOTH ARE EXPLAINED RATHER THAN
+# WAVED THROUGH — an unexplained exception would undercut the control above.
+#   ownership-onchain-walk  10 vs 9: one extra fire a day at 13:30Z, on no tick
+#                           of this workflow, so it keeps one other caller.
+#   wmc-fmv-populate        60 vs 9: NOT 60 invocations — the route logs ~7
+#                           `pipeline_runs` rows per call, and every group sits
+#                           on a tick of this workflow. ⭐ But it is separately
+#                           NOT STARVED: pg_cron jobid 486
+#                           (`rpc-wmc-fmv-populate-backstop`, 4,24,44 * * * *)
+#                           succeeded 65 times in the same 24 h. It writes no
+#                           `pipeline_runs` row, so the self-report understates
+#                           it — measure the outcome, not the log.
+#
+# ⛔ WHY THE pg_cron SUBSTRATE THAT SAVES THAT ONE LANE CANNOT SIMPLY BE COPIED
+# FOR THE OTHER NINE, since it is the obvious next move. Job 486 is a pure in-DB
+# call (`SELECT public.<fn>()` — no `net.http`, no credential), and Postgres is
+# the one plane that survived the 09-10 outage, so it is a strictly better
+# substrate than GitHub. The other nine are **Vercel HTTP routes behind
+# INGEST_SECRET_TOKEN**, so a pg_cron lane for them would have to hold that token
+# where `cron.job.command` or a function body can be read back — which is exactly
+# how this estate has burned credentials before. 🚨 **That is a secrets decision
+# for Trevor, not a 2am refactor**: either re-enable the cron-job.org entries (the
+# real fix), or authorise the token into Supabase Vault so a pg_net backstop can
+# replace this one.
+#
 # ⚠ EVERY ROUTE HERE WAS CHECKED FOR IDEMPOTENCY BEFORE BEING ADDED, because a
 # backstop that double-writes is worse than a dead lane:
 #   alerts-dispatch      enqueues alert_deliveries DEDUPED (its own header)
