@@ -184,3 +184,56 @@ describe("sentinel: the measurement-blackout arm", () => {
     )
   })
 })
+
+describe("sentinel: a wall-budget REFUSAL is a finding on its own", () => {
+  // The first production sweep under the wall budget, 2026-09-13 11:41 PT, with
+  // the pg_net toast's first-ever autovacuum saturating the instance: 25 checks,
+  // 7 blind — 4 by statement timeouts, 3 REFUSED at the budget ("sentinel wall
+  // budget spent … this arm did not evaluate"), the sweep at 140.0 s of its
+  // 140.0 s query budget. The arm said `ok`: ceil(24 / 3) = 8, and three arms
+  // added that morning had raised the bar from 6 to 8. The ratio scales with
+  // the arm count; starvation does not.
+  const refusedDetail =
+    "INCONCLUSIVE (db saturated) — Query error: Error: aborted: sentinel wall budget spent (140.0s elapsed of a 140.0s query budget inside a 180.0s wall) — this arm did not evaluate"
+  const timedOut = "INCONCLUSIVE (db saturated) — Query error: canceling statement due to statement timeout"
+  const sweep = (timeouts: number, refused: number, total = 24): BlindCheckInput[] =>
+    Array.from({ length: total }, (_, i) => ({
+      name: `check-${i}`,
+      status: "warn" as const,
+      detail: i < timeouts ? timedOut : i < timeouts + refused ? refusedDetail : "fine",
+    }))
+
+  it("REPLAYS THE 2026-09-13 11:41 PT SWEEP and fires — 7 of 24 with 3 refused", () => {
+    const s = summariseBlindChecks(sweep(4, 3))
+    expect(s.evaluated).toBe(24)
+    expect(s.threshold).toBe(8)
+    expect(s.blind).toBe(7)
+    expect(s.refused).toBe(3)
+    expect(s.status).toBe("warn")
+    expect(s.detail).toMatch(/3 of them were REFUSED by the sentinel's own wall budget/)
+    expect(s.detail).toMatch(/starved/)
+  })
+
+  it("CONTROL: the same 7 of 24 with NO refusal stays below the ratio threshold, as before", () => {
+    // Pins that the refusal is what flipped it — the ratio rule is unchanged.
+    const s = summariseBlindChecks(sweep(7, 0))
+    expect(s.blind).toBe(7)
+    expect(s.refused).toBe(0)
+    expect(s.status).toBe("ok")
+    expect(s.detail).not.toMatch(/REFUSED/)
+  })
+
+  it("ONE refusal is enough, and it is still never critical", () => {
+    const s = summariseBlindChecks(sweep(0, 1))
+    expect(s.refused).toBe(1)
+    expect(s.status).toBe("warn")
+    expect(s.status).not.toBe("critical")
+  })
+
+  it("a refused arm is also blind — refused is a subset of blind, never a second population", () => {
+    const s = summariseBlindChecks(sweep(2, 2))
+    expect(s.blind).toBe(4)
+    expect(s.refused).toBe(2)
+    expect(s.refused).toBeLessThanOrEqual(s.blind)
+  })
+})

@@ -93,6 +93,28 @@ export function isBlind(detail: string | undefined | null): boolean {
   return d.includes(INCONCLUSIVE_MARKER) || SATURATION_SIGNATURE.test(d);
 }
 
+/**
+ * Was this check REFUSED by the sentinel's own wall budget — never issued,
+ * because the arms before it had already spent the sweep's time?
+ *
+ * ⭐ A refusal is a different and stronger statement than a timeout. One arm
+ * timing out is that arm's query being slow. A refusal means the database was
+ * slow enough that the whole sweep was STARVED before this arm ran, which is
+ * the population-level fact this arm exists to state — so ONE refusal is a
+ * finding, whatever the ratio says.
+ *
+ * Measured on the first production sweep under the budget (2026-09-13 11:41
+ * PT, the pg_net toast's first-ever autovacuum saturating the instance): 7 of
+ * 24 arms blind, 3 of them refused, the sweep at its budget to the second —
+ * and this arm said `ok`, because `ceil(24 / 3) = 8` and three new arms had
+ * raised the bar from 6 to 8 between the anchor and the incident. The ratio
+ * threshold scales with the arm count; starvation does not.
+ */
+const WALL_BUDGET_SIGNATURE = /sentinel wall budget spent/i;
+export function isRefused(detail: string | undefined | null): boolean {
+  return WALL_BUDGET_SIGNATURE.test(detail ?? "");
+}
+
 export interface BlindCheckInput {
   name: string;
   status: "ok" | "warn" | "critical";
@@ -102,6 +124,8 @@ export interface BlindCheckInput {
 export interface BlindCheckSummary {
   /** Checks carrying the inconclusive marker, excluding config-disabled ones. */
   blind: number;
+  /** Of those, checks the sentinel's own wall budget refused to issue at all. */
+  refused: number;
   /** Checks considered (excludes config-disabled and this arm itself). */
   evaluated: number;
   /** Count at or above which this arm warns. */
@@ -140,9 +164,11 @@ export function summariseBlindChecks(
   const evaluated = population.length;
   const threshold = blindThreshold(evaluated);
   const blind = blindOnes.length;
+  const refused = blindOnes.filter((c) => isRefused(c.detail)).length;
   // ⛔ Never "critical" — see the header. The cap is structural, not a policy
   // that a future edit can drift past without failing a test that names it.
-  const status: "ok" | "warn" = blind >= threshold ? "warn" : "ok";
+  // A refusal fires on its own (see isRefused): the ratio is for timeouts.
+  const status: "ok" | "warn" = blind >= threshold || refused > 0 ? "warn" : "ok";
   // ⚠ The explanatory clause is appended ONLY when the arm is firing. Caught on
   // the first production payload (2026-09-09 20:52Z, value 1): at `ok` the line
   // still read "this many at once means the database could not answer", which is
@@ -150,11 +176,15 @@ export function summariseBlindChecks(
   // quiet level is the thing this repo keeps writing down — the number was right
   // and the sentence was not.
   const names = blindOnes.map((c) => c.name).join(", ");
+  const refusedClause =
+    refused > 0
+      ? ` ${refused} of them were REFUSED by the sentinel's own wall budget — the arms before them had already spent the sweep's time, so the sweep was starved, not merely slow.`
+      : "";
   const detail =
     blind === 0
       ? `All ${evaluated} checks were evaluated (0 inconclusive).`
-      : blind >= threshold
-        ? `${blind} of ${evaluated} checks could not be evaluated (threshold ${threshold}): ${names}. A check that times out is not data loss on its own — but this many at once means the database could not answer, so every OTHER 'ok' in this report is weaker than it looks.`
+      : blind >= threshold || refused > 0
+        ? `${blind} of ${evaluated} checks could not be evaluated (threshold ${threshold}): ${names}.${refusedClause} A check that times out is not data loss on its own — but this many at once means the database could not answer, so every OTHER 'ok' in this report is weaker than it looks.`
         : `${blind} of ${evaluated} checks could not be evaluated (threshold ${threshold}): ${names}. Below the threshold, so this is reported for the record rather than as a finding.`;
-  return { blind, evaluated, threshold, status, detail, names: blindOnes.map((c) => c.name) };
+  return { blind, refused, evaluated, threshold, status, detail, names: blindOnes.map((c) => c.name) };
 }
