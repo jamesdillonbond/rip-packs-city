@@ -58,6 +58,24 @@
 --
 -- anon-exec: intentional — this migration defines no function, so there is no ACL to reset. The
 -- new audit table is created with no grants, which leaves it service-role only by default.
+--
+-- 🚨 [CORRECTION 2026-09-13, ~20 min after this was applied] **THE SENTENCE DIRECTLY ABOVE IS
+-- FALSE, AND IT IS THE REASONING ERROR THAT CAUSED A REAL (IF MINOR) SECURITY REGRESSION.**
+-- "No grants" is NOT service-role-only in this database: `public` carries a **PUBLIC default
+-- SELECT grant**, so a bare `CREATE TABLE` in that schema lands `relrowsecurity = false` with
+-- **anon able to read it**. This table did, and the GHA smoke gate went hard red on
+-- `rls_off_base_table:audit_20260913_parallel_downgrade_restore` seven minutes later
+-- (run 34775121044). Closed FORWARD by `20260913184500` (ALTER + REVOKE + GRANT, verified
+-- `relrowsecurity` true and anon/authenticated SELECT false); the hourly
+-- `selfheal_audit_table_rls()` would have closed it at :47 anyway. Exposure was ~15 minutes of
+-- edition ids, nft ids and serials — all of which the public site already renders on every moment
+-- page — so the content was not sensitive; the DEFAULT was.
+--
+-- ⭐ THE LESSON IS NOT A MISSING RULE. `docs/reference/database.md` already says it: *"prefer
+-- putting those two lines in the migration that creates the table so the window never opens at
+-- all."* I wrote a plausible mechanism into the header instead of reading the documented one.
+-- **This file is left as applied (history), with the correction appended rather than the sentence
+-- edited.** The RLS guard grandfathers it with a pointer to the forward fix.
 
 CREATE TABLE IF NOT EXISTS public.audit_20260913_parallel_downgrade_restore (
   kind            text        NOT NULL,

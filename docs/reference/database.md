@@ -260,6 +260,17 @@ inside the heal window", not "the estate is missing a rule".** Fix it forward wi
 `ALTER TABLE … ENABLE ROW LEVEL SECURITY` + `REVOKE`, and prefer putting those two lines in the
 migration that creates the table so the window never opens at all.
 
+🔁 **THIRD INSTANCE, 2026-09-13 — and its failure mode is different from the two above, which is
+why it is worth a line.** `audit_20260913_parallel_downgrade_restore` shipped from a bare
+`CREATE TABLE IF NOT EXISTS`, red on the smoke gate 7 minutes later, fixed forward by
+`20260913184500`. ⛔ **The migration did not merely OMIT the two lines — its header asserted they
+were unnecessary**, in these words: *"the new audit table is created with no grants, which leaves
+it service-role only by default."* **That is false: `public` carries a PUBLIC default SELECT, so
+"no grants" means anon CAN read it.** ⭐ **A plausible mechanism written confidently into a header
+is worse than an omission** — an omission is caught by the guard and forgotten, while a stated
+reason gets copied into the next migration by whoever reads it. The correction is appended to that
+file rather than replacing the sentence, so both the claim and its refutation stay readable.
+
 
 ### ⛔ Atlas is NOT a complete census of Top Shot editions — never reconcile by deleting
 
