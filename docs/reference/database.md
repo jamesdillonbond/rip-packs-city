@@ -922,6 +922,46 @@ Guarded repo-side by `__tests__/migration-view-security-invoker-guard.test.ts`: 
 
 ---
 
+## 🚨 `CREATE OR REPLACE` IS A FULL-BODY WRITE — RE-READ THE LIVE OBJECT IMMEDIATELY BEFORE ONE (2026-09-12, near-miss)
+
+**Nothing was broken. It was one verification away from being broken, and the failure would have been invisible.**
+
+Shipping a one-line change to `get_trophy_slab_data` (art resolves live when a pin stored none): the definition was dumped with `pg_get_functiondef`, the migration was written on it, the `supabase/tests/*.sql` pin was rewritten to match, and the drift guard went green. About forty minutes elapsed between the dump and the apply. In that window a **concurrent session applied `20260911093000`** — the impossible-serial guard (`refuse a serial above its own edition's circulation`) — to the same function.
+
+⛔ **Applying the draft would have silently reverted it.** Not "conflicted": reverted. There is no diff to review, because `CREATE OR REPLACE FUNCTION` replaces the whole body; no error, because the SQL is valid; and **no failing test, because the same change rewrites the pin file that would otherwise have disagreed.** The other session's migration would still sit in `supabase/migrations/` and in `schema_migrations`, describing behaviour the database no longer had.
+
+⭐ **What caught it was a LENGTH, not a diff.** Re-reading `length(pg_get_functiondef(oid))` immediately before the apply returned **3,873** against the **3,077** the draft was built on. The fix was to rebase: extract the live definition, re-apply the one-line change on top, rebuild the migration AND the pin from that, re-run the DB-invariant test.
+
+**The rule, stated so it generalises past this object:**
+
+- **Before any `CREATE OR REPLACE` (function, view, trigger, policy), re-read the LIVE object — not the repo, not your own earlier dump.** A cheap discriminator is enough: `length(pg_get_functiondef(...))` or an `md5()` of it, captured at dump time and compared at apply time.
+- **The repo is not the authority on what production runs.** A committed migration proves someone intended a state, not that the state is current — and the concurrent session's file was on `main` before its change was applied, so even a fresh `git pull` would not have revealed it.
+- ⚠ **This is strictly worse than a git conflict, because every instrument agrees with you afterwards.** The pin file, the drift guard and the migration history all describe your version. The only witness is the object itself.
+
+**The same lesson in miniature, five minutes later.** The new DB-invariant fixture was named `mC` — and `mC` already existed in that file, added by the same concurrent session's test block, with a `wallet_moments_cache` row pointing it at a different edition. The assertion failed against `edthumb3` instead of passing wrongly, which is the only reason it surfaced. **Two fixture blocks in one file share one namespace.**
+
+### Displaced from CLAUDE.md 2026-09-12 (verbatim) — the `CREATE OR REPLACE VIEW` bullet, to pay for the full-body-write rule above
+
+- ⚠ **`CREATE OR REPLACE VIEW` with no `WITH` clause RESETS reloptions and silently strips `security_invoker=on`** (four occurrences). `ALTER VIEW … SET (security_invoker = on)` is the repair. It also **cannot rename or reorder columns** (`42P16`) — and the rolled-back SQL test cannot catch that, because it builds the object where no prior definition exists.
+
+### Displaced from CLAUDE.md 2026-09-12 (verbatim) — the `check_*` bullet's long form, condensed there to a pointer
+
+- ⚠ **`check_*` functions have MIXED return shapes.** A jsonb-array one returns `count(*) = 1` when CLEAN — read the array LENGTH; a SETOF one returns **zero rows** when clean. **Check the return type before interpreting the count** (which is which: below).
+
+---
+
+## ⭐ `trophy_moments.thumbnail_url` — why the SNAPSHOT wins where every sibling field loses (2026-09-12)
+
+`get_trophy_slab_data` resolves every display field as `COALESCE(editions.<live>, trophy_moments.<snapshot>)` — player, set, tier, circulation, video, FMV, badges. **`thumbnail_url` had no live side at all**, so a pin that stored a junk URL had nothing to fall back to and published "ART UNAVAILABLE" forever. `lib/profile/trophy-thumbnail.ts` had already recorded that the field was not coalesced, while its own docstring promised a rejected pin "simply falls back" — **a comment that names a gap is not a guard against it.**
+
+⛔ **The consistent-looking fix is a regression.** Making art live-first like its neighbours was measured over the 22 live trophy rows: 13 store art identical to the edition's, 1 has no edition to resolve, and **8 differ — of which 7 store `assets.nbatopshot.com/media/<nft_id>/image?width=180|512`, a per-serial derivative of ~31 KB, against an `editions` master that is a 2880×2880 PNG of 4–7 MB.** Live-first would swap eight working thumbnails for eight masters, several over the OG card's own byte cap.
+
+So it ships as `COALESCE(tm.thumbnail_url, e.thumbnail_url)` — **a fallback, not a preference.** Zero rows changed on the day (no row had a NULL thumbnail); what it buys is that `sanitizeTrophyThumbnail()` rejecting a URL now degrades to the edition's own art. Both directions are pinned in `supabase/tests/get_trophy_slab_data.sql`, and each control fails the OTHER spelling.
+
+⚠ **The writer-side rule is keyed on the `play_` segment, not on the extension.** "An `/editions/` path must end in an image extension" would have rejected **all 6,190 NFL All Day editions**, which address art as the perfectly valid extensionless `/editions/<n>/media/image`. A `play_…` segment is what marks a Top Shot / Golazos STATIC filename, and a static filename that is not the last path segment has been truncated.
+
+---
+
 ## Preserved from the 2026-08-17 CLAUDE.md restructure
 
 > These lines were condensed or dropped in CLAUDE.md when it was cut to fit the memory-file

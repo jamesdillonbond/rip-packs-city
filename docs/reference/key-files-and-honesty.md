@@ -109,6 +109,78 @@ occurrence into a log search.
 A larger Pinnacle `front.png` silently reintroduces exactly this symptom with a different cause, and
 that route takes no width param. Register **#89**.
 
+### ⭐ THE CAP ITSELF WAS THE THIRD DROP, AND IT WAS PERFECTLY CORRELATED WITH VALUE (2026-09-12)
+
+The 4 MB cap removed art from **100% of Ultimates and 0% of Commons** — the worst possible
+correlation, because it blanks exactly the Moments people share. Dapper's artwork gets richer as the
+tier rises (foils, particles, transparency) and that costs bytes in a 2880×2880 PNG. Six random
+`/editions/` files per tier, `Content-Length` measured directly: **ULTIMATE 6/6 over (median
+6.73 MB) · LEGENDARY 5/6 · RARE 4/6 · FANDOM 4/6 · COMMON 0/6 (median 3.21 MB)**. Both ends rendered
+and looked at: edition `220:8093` (ULTIMATE, $1,350) published a **blank 36,440 B card**; `133:4738`
+(COMMON, $0.39) published full art at 167,677 B.
+
+⛔ **RAISING `maxBytes` IS THE WRONG FIX** — at 7 MB the base64 data URI is ~9.3 MB, past the
+7.67 MB satori failure the module already documents. **The cap is correct; the payload was the
+defect**, and the payload is a 2880px master drawn into a 550px pane.
+
+So art that no origin will size for us now goes through **our own `/_next/image?url=…&w=640&q=75`**.
+Three properties were re-derived from the INSTALLED Next (16.2.9) rather than assumed, because the
+whole fix turns on the optimizer returning a format satori can decode:
+
+- ⛔ **`Accept: image/*` IS LOAD-BEARING, NOT DECORATIVE.** `images.formats` defaults to
+  `["image/webp"]` and `getSupportedMimeType` returns a format **only when `accept.includes(it)`**
+  (`image-optimizer.js:222`). `image/*` does not contain the literal `image/webp`, so it negotiates
+  to `""` and a PNG upstream comes back PNG (`:1118`). **Naming webp or avif in that header would
+  blank every card.**
+- `images.qualities` defaults to `[75]` and a quality outside it is a **400**; `w` must be a member
+  of `deviceSizes ∪ imageSizes`, where **640** is the smallest entry still covering the largest slot
+  any card draws (the moment card's 550px pane). Both are pinned by importing `imageConfigDefault`
+  into `__tests__/og-img-data.test.ts`, so a Next bump reds the suite instead of silently 400ing
+  back to blank cards.
+- **The direct fetch stays as the fallback on ONE shared budget**, so the leg can add art and never
+  remove it — a `remotePatterns` drift, an input sharp will not touch, or the `next start` / Vercel
+  difference on a LOCAL url that answers 302 all land on exactly the previous behaviour.
+
+⚠ **A `width=` PARAM IS NOT A TEST OF WHETHER ART IS SIZED.** Two origins genuinely pre-size and are
+skipped (`assets.nbatopshot.com/media/<nft_id>/image?width=400` → 31,507 B;
+`media.nflallday.com/editions/<n>/media/image?width=512` → 45,121 B) — optimizing those would
+**UPSCALE** them, since sharp enlarges by default. But `hiResThumb()` appends `?width=640` to EVERY
+`assets.nbatopshot.com` url including the 2880×2880 statics, where the origin ignores it. The test is
+a size param **on an extensionless render endpoint**; a static image file is never "already sized"
+whatever query it carries. Keying on the param alone would have re-opened this defect on both trophy
+cards — the exact surface it was found from.
+
+⚠ **COST, STATED AS A UNIT COUNT BECAUSE THAT IS WHAT WAS MEASURED.** This overturns half of the
+HeroMontage entry's "routing through `/_next/image` would create a real metered bill": that was right
+for HTML page tiles (five per view, several widths) and this is OG cards only, one width, one
+quality, with the two pre-sized origins (9,416 rows) skipped. Worst case ≈ **14.3k unique
+`(source, w=640, q=75)` transformations** — TS statics 8,405 + Golazos 575 + IPFS proxy 2,886 +
+Pinnacle ≤2,412 — and only for editions a crawler actually fetches inside one cache window. 🚨 **The
+per-transformation rate and the Pro allowance were NOT re-measured** (no Vercel egress from the
+sandbox). The zero-cost alternative is known and unbuilt: Top Shot's own CDN resizes
+`media/<rep_nft_id>/image?width=N`, but the OG routes carry `thumbnail_url`, not a rep nft id.
+
+### ⚠ THE CAPTION BUDGET: an estimate that was wrong by 11% and right by accident (2026-09-12)
+
+Both trophy cards clip detail lines to a CHARACTER budget, because satori's `text-overflow: ellipsis`
+no-ops often enough that counting characters is the thing that holds. A budget that over-counts does
+not clip — it **WRAPS**, and two ~12px lines centred in a 13px box are both sliced through the
+middle. The live instance is Disney Pinnacle's 51-character
+`" Walt Disney Animation Studios • The Lion King Vol.2"`.
+
+⭐ **The first diagnosis estimated the glyph advance at "mono ≈ 0.6em" → 6.3px at 10px → a ~12%
+over-count. Parsing the shipped TTF says otherwise:** `public/fonts/ShareTechMono-Regular.ttf` is
+`unitsPerEm = 1000` with an advance of **540 on 191 of its 194 glyphs** — 0.540em, **5.70px** with
+the 0.3px letter-spacing. The real over-count was **~1.8%**, and it was still enough: at both widths
+with live collectors behind them the old `w / 5.6` overflowed by **exactly one character**
+(w=170 → 171.0px; w=280 → 285.0px). **The conclusion survived the correction and the number did
+not** — which is why the divisor is now derived in `captionCharBudget()` and asserted against the
+font file itself in `__tests__/og-trophy-caption-fits-its-tile.test.ts`, with controls in BOTH
+directions (5.6 fails the fit case, 5.9 fails the tightness case).
+
+⚠ **Nothing else in CI measures layout** — jsdom boxes are zero and the real browser in `e2e/` never
+renders an OG card — so a font swap or a size bump has no other witness.
+
 ## ⭐ THE PAGED-BREAK BAN, AND THE CORRECT IMPLEMENTATION THAT TAUGHT IT (2026-09-12)
 
 CLAUDE.md has long named this class — *"a PAGED read that `break`s on error returns a PARTIAL list no
