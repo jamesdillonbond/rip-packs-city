@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⛔ FIX OF MY OWN SHIP, ~40 MIN LATER — the retry I added today had NO budget and would have been killed at the global 120 s, doing nothing while reporting that it ran · Claude Code on Trevor's box
+
+**Shipped:** `rpc-ccm-step2-retry` (jobid **491, preserved** — `cron.schedule` on an existing name updates in place rather than churning the jobid) now carries **`SET statement_timeout = '300s';`** in its command. Migration `20260913170540_audit_20260913_the_ccm_step2_retry_needs_its_own_300s_budget_…`. **Revert:** `SELECT cron.unschedule('rpc-ccm-step2-retry');`
+
+⛔ **THE DEFECT I SHIPPED:** the job was scheduled with no `statement_timeout` in its command, so it would have inherited the **cluster global 120 s** — and I had *already measured* that a cold call of this function exceeds 120 s on a CALM instance (io_wait 2, active 4). ⭐ **So it would not have been a marginal miss on a bad night; it would have failed on a normal day** — firing, burning 120 s, dying, and leaving the mat exactly as stale as it found it **while `cron.job_run_details` recorded that it ran.** A retry that cannot finish is worse than no retry, because it converts a visible gap into an instrument that says it was covered.
+
+⭐ **WHY THE FUNCTION'S OWN `SET` COULD NOT SAVE IT, and this repo has paid for the lesson before:** `refresh_cross_collection_cohort_step2()` declares `SET statement_timeout TO '300s'` in its `proconfig`, but **the statement timer is armed by `start_xact_command()` BEFORE the function's GUC nest level is entered**, so a function-level declaration can neither raise nor lower the budget of the statement invoking it. The prior instance: **8 pg_cron jobs silently capped at the global 120 s while their functions declared 180–600 s, every one dying at exactly 120.0 s.**
+
+**Verified, not assumed:** `pg_settings.statement_timeout` `reset_val` = **120000**, source `configuration file`; `pg_db_role_setting` overrides exist for anon (3 s), authenticated/authenticator (8 s), service_role (30 s) and **cron_heavy (600 s)** — and **`postgres` has NO entry**, which is the role jobid 491 runs as.
+
+⭐ **THE POSITIVE CONTROL THAT THE IN-COMMAND `SET` DOES BIND IS ALREADY IN THE DATA:** the PRIMARY (jobid 4) carries the same `SET statement_timeout = '300s';` and has a recorded **successful 165.2 s run on 2026-09-10**. A completed run past 120 s is only possible if the in-command SET took effect — so the fix is the mechanism already working one job over, not a hypothesis.
+
+⚠ **HOW IT WAS CAUGHT, because the method is the transferable part:** not by a test and not by a guard — by **reading back the stored `cron.job.command` after shipping**, to check the nested `$job$`/`$retry$` dollar-quoting had survived. The quoting was fine; the **missing budget** was visible in the same row. ⭐ **Verify a scheduled job by SELECTing what the scheduler actually stored, not by trusting the SQL you sent** — the read-back answers a question you did not think to ask.
+
 ### 2026-09-13 · MEASUREMENT — the fallback walk I shipped this morning CANNOT rescue UFC, and the control is what proves it is not a budget problem · Claude Code cloud
 
 **Shipped: comment + register only** (`lib/og/img-data.ts` header, register #106). No behaviour change, no DB write. Revert: `git revert <sha>` (find by message — `cannot rescue`).
