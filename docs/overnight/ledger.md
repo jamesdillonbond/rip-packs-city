@@ -10,6 +10,48 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⭐ #101 SOURCE VALIDATED AT 99.8% — NON-CIRCULARLY, ON THE SECOND ATTEMPT, BECAUSE MY FIRST VALIDATION WAS CIRCULAR AND I NEARLY BELIEVED IT · Claude Code cloud, autonomous
+
+**READ-ONLY. Nothing written to the map, deliberately — the reason is at the bottom and it is not timidity.**
+
+**The question:** the `topshot-misattrib-drain` fetches `public-api.nbatopshot.com` (measured dead), so the 1,315-row backlog of Moments displayed under the **wrong owner** cannot drain. Is `moments` (canonical `nft_id → edition_id` for Top Shot) a valid substitute source?
+
+## ⛔ My first answer was 301/301 and it was WORTHLESS
+
+I compared `topshot_misattrib_onchain_map` against `moments → editions` on a hash sample and got **301 agreements, 0 disagreements**. 🚨 **That is circular and I nearly shipped a decision on it.** `remap_topshot_from_onchain_map()` **UPDATEs `moments`** from the map — verified in its body, which builds `_tgt` from the map and rewrites both `sales` and `moments`. **So for any remapped nft, `moments` agrees with the map BY CONSTRUCTION. I measured the effect of the fix and called it independent corroboration** — CLAUDE.md's *"a pin RE-DERIVED FROM THE OBSERVED STATE can never disagree with reality"*, walked straight into.
+
+## ✅ The non-circular test, and it is a clean one
+
+`moments` rows whose **`updated_at` PREDATES the map row's `resolved_at`** cannot have been written by that map row. On that subset:
+
+| | |
+|---|---|
+| joined sample | 1,470 |
+| **independent rows** (`mom.updated_at < map.resolved_at`) | **516** |
+| **agree** | **515** |
+| **disagree** | **1** |
+| possibly overwritten (excluded) | 954 |
+
+⭐ **99.8% agreement with the dead host's own on-chain resolution, on 516 rows it cannot have authored.** `moments` is a genuinely accurate substitute.
+
+⚠ **THE ONE DISAGREEMENT IS NOT A ROUNDING ARTIFACT — nft `51332372`: the map says set 218 / play 8211, `moments` says set 124 / play 4582 (`external_id 124:4582`).** A **completely different edition**, not a parallel-vs-base subtlety. So the ~0.2% is a real error class, not noise.
+
+## ⛔ Why I did NOT write the 612 rows anyway
+
+**Coverage is 612 of 1,315 (46.5%), so a moments-derived backfill would fix ~610 wrong-owner displays and introduce ~1.2 wrong ones.** A 500:1 ratio, and I still declined. **The asymmetry is not in the count, it is in the consequence:**
+
+- The map is consumed by `remap_topshot_from_onchain_map()` and `remap_topshot_wmc_from_onchain_map()` — **both drift-pinned, both MUTATE `sales` and `moments`.**
+- So a wrong row does not merely fail to fix a Moment — **it actively rewrites that NFT's identity to a different edition**, and there is **no attempt-tracking or provenance column** on the map to find it again. `topshot_misattrib_onchain_map` is `(nft_id, set_id_onchain, play_id_onchain, serial_number, resolved_at)` — nothing records WHERE a row came from.
+- ⭐ **A silent 1-in-500 corruption with no provenance is worse than a visible 1,315-row backlog**, because the backlog is measured and the corruption would not be.
+
+## 🟡 The design this hands over, now specified rather than hand-waved
+
+1. **Require corroboration, do not trust `moments` alone.** `topshot_moment_subeditions` covers **566** of the 1,315 independently; where it and `moments` agree, write. Where they disagree or only one exists, leave open. That trades coverage for a materially lower error rate — **and the error rate of the corroborated subset should be MEASURED the same non-circular way before shipping, not assumed.**
+2. **Add a provenance column to the map first** (`source text`), so moments-derived rows are distinguishable from host-derived ones and reversible as a set. ⭐ **This is the precondition, not a nicety** — without it the write is irreversible in practice.
+3. Only then re-point the drain route, which still hardcodes the dead host at `TS_PROXY_URL_DEFAULT`.
+
+⭐ **THE TRANSFERABLE LESSON, and it is the reason this entry exists: when you validate source B against source A, check whether A WRITES B.** The obvious query gave a perfect score and meant nothing. **The fix was to find the subset where B provably predates A** — a timestamp comparison, thirty seconds of work, and the difference between 301/301 (meaningless) and 515/516 (real).
+
 ### 2026-09-13 · ✅ SHIPPED (DB) — `rpc-ccm-step2` gets a CONDITIONAL retry, and the fix the filing recommended was refuted by the first measurement · Claude Code on Trevor's box, Trevor: "do what you think is best… don't stop until you've exhausted your capabilities"
 
 **Shipped:** pg_cron job **`rpc-ccm-step2-retry`** (jobid 491, `37 4 * * *`, `postgres`-owned, active) — a staleness-gated second attempt at `refresh_cross_collection_cohort_step2()`. Migration `20260913164405_audit_20260913_ccm_step2_gets_a_conditional_retry_…`. **Revert:** `SELECT cron.unschedule('rpc-ccm-step2-retry');`
