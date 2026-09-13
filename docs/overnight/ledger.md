@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ⛔ CORRECTION — my #81 nine-lane table counted stopped lanes as live, and both it and my #79 measurement re-derived a filing marked "do not re-file" · Claude Code cloud, Trevor: "keep working autonomously"
+
+**Shipped (docs only):** `docs/reference/known-issues.md` (#81 correction, #79 attribution), `docs/overnight/focus.md` (steer line rewritten). Revert: `git revert` the commit whose message starts `docs(register): correct #81's liveness claim`.
+
+**⛔ WHAT I GOT WRONG.** My #81 block enumerated **nine lanes** on the dead Top Shot host and said *"the newest is 2026-09-12, i.e. still live at the time of writing"*. **That is true of two lanes, not nine.** Re-measured with `max(day)`: only **`topshot-pack-supply-backfill`** (3 runs in 3 days) is genuinely live, plus **`offers-sweep`**, which is the deliberately-retired lane. **The other seven stopped between 08-30 and 09-08.**
+
+**⭐ AND THE DISPOSITIONS WERE ALREADY MADE.** The **2026-09-04T0220Z** filing named three of them, recorded a decision for each (unscheduled / ported on-chain / paused), and marks its §1 **"✅ RESOLVED — decided, not deferred. Do not re-file it."** `topshot-badge-set-backfill`'s last run is **09-04** — that disposition taking effect. **I re-filed a superset of a section explicitly marked do-not-re-file, and dressed already-handled lanes as live casualties.**
+
+**⚠ The same filing's §2 also already measured #79's watchlist gap** (80 rows at ≥7 active days, including heartbeat twins, with a paste-able query). My 39 excludes heartbeats and drops the day threshold — **the same gap counted two ways, not a new finding.** #79 now cites the 09-04 filing as the original.
+
+**🚨 THE ERROR IS ONE I CAUGHT MYSELF ON EARLIER TONIGHT AND STILL REPEATED.** A few hours ago I wrote, correcting a different query: *"the window silently redefined the population"*. Here I paired every lane with `last_ok_day` and **never with `last_day`** — and `last_day` is the single column that falsifies "still live". A lane that stopped eight days ago still contributes runs to a 14-day sum. ⭐ **PROMOTE: pair every windowed run-count with `max(day)`; without it an aggregate cannot tell a failing lane from a stopped one.**
+
+**⭐⭐ THE PATTERN, now four times in one session, and it is the honest headline of this stretch:** #75 (duplicate, from a truncated read), #94 (wrong causation, from not reading the inbox), and now #81 + #79 (both re-derived from a filing whose §1 says do-not-re-file). **Every one had the answer already on disk.** I wrote the rule after the second — *grep `docs/overnight/inbox/` for the lane or table name before filing* — and then did not apply it to #81 or #79, which I had already written by then. **The rule only works applied BEFORE the measurement, not after it.**
+
+**✅ THE CORRECTED PICTURE IS BETTER NEWS THAN WHAT I FILED:** the dead-host cleanup is largely done — one live failing lane, one retired lane still poked, seven dispositioned. Combined with #94's correction (that lane's 14 failures are two dists, not the 2,083 stale rows), **"nine casualties awaiting a source decision" was wrong in the alarming direction.**
+
+**Gates:** docs only; index regenerated; `check-memory-doc-links` 196; ledger guards 3 / 0.
+
 ### 2026-09-12 · ✅ DECISION+CODE+DB — `pull_value_usd` is CURRENT FMV for every collection (#92 closed), and the pager is finally on its own watchlist · Cowork cloud, Trevor: "make these decisions based upon what's best for RPC long term and our users"
 
 **Shipped:** `supabase/migrations/20260913032000_…pull_value_usd_is_current_fmv_for_every_collection.sql` (APPLIED — **both** writers), `…20260913033000_…watch_the_sentinel_heartbeat.sql` (APPLIED), `app/dashboard/packs/PackHistoryClient.tsx`, `docs/reference/known-issues.md` (#92 → closed, #80 → mitigation), `eslint-ratchet.json` (716 → **715**, a gain locked in). Revert paths in each migration header.
