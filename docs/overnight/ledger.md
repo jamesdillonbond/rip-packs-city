@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · 🔍 MEASURED — the sentinel is landing ~31% of its hourly ticks and nothing could say so; plus the wall I got wrong twice · Cowork cloud, Trevor: "Keep going"
+
+**Shipped (docs only):** `docs/reference/known-issues.md` — a measured update to **#80** and two new items, **#92** and **#93**. Revert: `git revert` the commits whose messages start `docs(register): file #92 and #93` and `docs(register): the sentinel is landing ~31%`.
+
+**⭐ THE SENTINEL — THE ESTATE'S PAGER — IS RUNNING ROUGHLY ONCE EVERY THREE HOURS, NOT HOURLY.** `pipeline-sentinel.yml` is scheduled `34 * * * *`. Measured across the full `pipeline_runs` retention window: **21 runs over 67.1 h = 0.313 runs/hour against 1.0 expected — ~31% delivery**, median gap ~3 h. #80 recorded this as an episodic 2.8-hour outage on 09-10; it is **chronic**.
+
+**⚠ AND MY FIRST MEASUREMENT OF IT WAS WRONG, IN THE WAY THIS TABLE PUNISHES.** I ran a 7-day window and got "2.9 runs/day". `prune_pipeline_runs(3)` cuts `pipeline_runs` at **~73 h**, so any window wider than that reports a rate over a denominator that does not exist. **Measure inside retention or not at all** — the same trap the Ownership arm's comment already warns about for a different reason.
+
+**⭐ THE CONTROL IS WHAT MAKES IT CLEAN.** `backfill-pack-rip-metadata` is also hourly, also writes `pipeline_runs`, pruned identically — but called by **cron-job.org**: **64 runs over 74.0 h = 0.86/hour**. Same table, same retention, same cadence, **~2.8× the delivery**. So this is not a retention artifact and not a logging artifact; it is specific to the GitHub Actions scheduler.
+
+**⭐⭐ THE START TIMES DISCRIMINATE DELAY FROM DROP, which #80 could not.** Only **2 of 20** logged sentinel runs began within ±6 min of minute `:34`; **18 of 20 are off-schedule** (17:22, 19:34, 22:28, 00:08…). A scheduler that merely dropped ticks would still start the survivors on the minute. These are **queued-then-delayed**, not only dropped.
+
+**⚠ A SECOND CAUSE IS ALSO LIVE AND WOULD LOOK IDENTICAL — I am not attributing the whole gap to GitHub.** The sentinel route carries `maxDuration = 180` and measures **p50 38.9 s, max 162.3 s, 4 of 20 runs over 120 s**. It logs itself at the END of the run, so a tick exceeding 180 s dies before `log_pipeline_run` and is **indistinguishable from one that never arrived**. Max observed is **18 s under the wall**. ⛔ The Actions run list is the only artefact that separates the two and it is not readable from a sandbox (no `gh`, no token).
+
+**⚠ AND MY OWN `Portfolio Cache Drain` ARM MAKES THE SECOND CAUSE SLIGHTLY WORSE** — a 21st check on a route already at p50 38.9 s. Cheap (one indexed `pipeline_runs` read) but not free. Recorded on #80 rather than only in its own entry, because **#80 is the page someone will be reading when the sentinel goes quiet.**
+
+**Why this outranks a missed cron:** at ~31% delivery with 3-hour median gaps, **an incident opening just after a tick has a median ~3 h before anything can say so** — and #80's own finding is that every watcher is itself a GHA schedule, so the silence cannot self-report. **Moving this one lane to cron-job.org** — the measured-healthy transport already carrying the control above — is the single highest-leverage fix. **Operator action, not a code change; it is Trevor's.**
+
+**⚠ TWO CORRECTIONS TO ENTRIES I WROTE EARLIER TONIGHT.** (1) **The backfill wall is 60 s, not "~30 s"** (`maxDuration = 60`) — I published that number twice. (2) **Its pre-change duration tail is far heavier than "2 of 62 failed" implies**: p50 **4,738 ms**, **p90 38,621 ms**, **max 60,755 ms**, so ~10% of runs already ran past 38 s and the worst hit the wall exactly. ⛔ **Do NOT raise `v_allday_share` on the two post-change samples** (3,445 / 4,582 ms, 0 failures) — reading a heavy-tailed distribution off a handful of points is the error this session already made once, with `oldest_cache_h`.
+
+**Also filed:** **#92** (`pull_value_usd` means CURRENT for Top Shot and AT-OPEN for All Day and `/dashboard/packs` sums them — the product decision, with the record that unifying it was tried and reverted within the hour) and **#93** (the 363,336 stamped-but-unpriced orphans, why a blanket retry is wrong, and the safe shape).
+
+**Gates:** register index regenerated (91 items) · register integrity 129 rows · `check-memory-doc-links` 196 links resolve · `tsc` clean · ledger guards 3 / 0.
+
 ### 2026-09-12 · ⭐ CODE — the OG byte cap was stripping art from 100% of Ultimates and 0% of Commons; card art now goes through `/_next/image`
 
 **Shipped:** `lib/og/img-data.ts` (new `ogOptimizedTarget()` + an `optimize` opt), `lib/og/official-mark-art.ts` (badge glyphs opt out), `__tests__/og-img-data.test.ts` (+13 cases, 48 total). No DB, no migration. Revert: `git revert` the commit whose message starts `fix(og): route oversized card art through the image optimizer`.
