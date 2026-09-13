@@ -714,8 +714,17 @@ export default async function EditionPage(
                   Mint {fmtCount(detail.circulation_count)}
                 </span>
               )}
-              {detail.team_name && teamHref && (
-                <Link href={teamHref} className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)", textDecoration: "none" }}>{detail.team_name}</Link>
+              {/* ⚠ GATING THE LINK MUST NOT GATE THE LABEL. Until 2026-09-13 this
+                  read `detail.team_name && teamHref &&`, so denylisting the 12
+                  exhibition team hubs did not just drop the link -- it dropped the
+                  TEAM NAME from 100 Top Shot edition pages. The sibling surfaces
+                  (player, moment) already fall back to plain text; this one did not. */}
+              {detail.team_name && (
+                teamHref ? (
+                  <Link href={teamHref} className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)", textDecoration: "none" }}>{detail.team_name}</Link>
+                ) : (
+                  <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)" }}>{detail.team_name}</span>
+                )
               )}
               {isPinnacle && detail.is_chaser && (
                 <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 10, letterSpacing: "0.10em", textTransform: "uppercase", color: "#A855F7", background: "rgba(168,85,247,0.10)", border: "1px solid rgba(168,85,247,0.30)" }}>Chaser</span>
