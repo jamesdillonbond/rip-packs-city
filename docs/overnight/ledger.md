@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ SHIPPED — Top Shot wallet rows get their thumbnails, tier, league and circulation back from the database, two weeks after the GraphQL host died; and the lock they recover carries its PROVENANCE or is not recovered at all · Claude Code on Trevor's box
+
+**The user-facing half of the dead-host work.** `public-api.nbatopshot.com` is decommissioned (530 since ~08-30, re-verified today from a residential IP). #65 re-pointed six consumers onto Atlas-via-DB on 09-06; **wallet-search's per-moment leg was never among them**, so the flagship collection's wallet view has been rendering imageless, tierless, askless rows ever since.
+
+⭐ **Verified as a SYMPTOM before building anything for it** — production, real wallet, `POST /api/wallet-search`: **5 of 5 rows `enrichFailed: true`, every `thumbnailUrl` null, every `tier` empty**, player names present (the on-chain Cadence leg still works). 7,065 ms.
+
+**The data was already there and already paid for.** Whole-table coverage of the 1,767,825 Top Shot `wallet_moments_cache` rows: **`image_url` 98.9% · `tier` 98.9% · `mint_count` 98.9% · `league` 66.3%**. One batched read per request, keyed on (wallet, collection, moment_ids).
+
+⚠ **Two of my own samples on the way to that number were biased in OPPOSITE directions** — a first pass filtered `image_url is not null` (inflating coverage), and a single real wallet had `image_url` and `tier` NULL on all four moments (deflating it). **Neither was the population.** The whole-table read is the only figure quoted here.
+
+## ⛔ The half that matters more than the fill
+
+`wallet_moments_cache.is_locked` is the #112 defect — `column_default false`, **1,160,468 of 1,767,825 rows never checked, `is_locked = true` on exactly ZERO of them**. Copying that column into wallet search would have republished `LOCKED: No` on 1.16M unexamined moments, **reintroducing through a back door the precise defect `eaf0b2b` removed from this same route four hours earlier.**
+
+So the fill copies a lock **only when `lock_checked_at` is non-null**, and stamps `lockKnown: true` to say so. `isLockKnown()` gains a provenance branch that outranks `enrichFailed` — needed because the live enrichment and the lock reading are **separate sources**: `enrichFailed` is true on every Top Shot row now, while the database may still hold a genuinely checked lock. ⭐ That recovers a real reading the surface was throwing away — the production wallet's moment `13845577` **is locked, checked, and was rendering as unknown.**
+
+**Design rules, each one load-bearing:** strictly ADDITIVE (fills only where the row has none, so it can never overwrite a live measurement — worst case it does nothing) · runs BEFORE the per-edition tally so `locked` counts see the recovered readings · a FAILED read fills nothing and is logged (three states: present / never-walked / read-failed, and the last two correctly leave the row saying it does not know) · wrapped so it can never cost the caller rows it already has.
+
+**Guard:** `__tests__/wallet-search-fills-from-cache-without-inventing-lock-state.test.ts`, 8 assertions, **4 of which fail on `origin/main`**. ⚠ **The other 4 pass pre-fix and that is stated rather than hidden** — they are the negative side (never-checked NOT recovered, failed read fills nothing, `enrichFailed` still wins without provenance), which the old code also satisfied by doing nothing at all. They guard the next rewrite, not this one.
+
+**Verified:** `tsc` clean · **1540 files / 17,182 tests green** · `lint:ratchet` baseline **715 / 3060 files**.
+
+**Revert:** `git revert <this sha>` (find by message: `git log --grep="from the database"`). No DB or scheduler state; the read is additive and the fill is guarded.
+
+⚠ **What this does NOT do:** it does not restore asks, last-purchase price, badges or TSS points (those need the Atlas lanes, not wmc), it does nothing for a wallet the platform has never walked, and it does not fix #112 — it refuses to propagate it. **#112 is still open and still needs the function-level provenance change.**
+
 ### 2026-09-13 · 🔴 FILED #112 — 1.16M Top Shot moments publish "not locked" on evidence nobody ever looked; ✅ the lock lane's own revert trigger made incident-proof; ⛔ and THREE of my own findings from earlier today REFUTED by measurement · Claude Code on Trevor's box
 
 **Started from the handoff's parked item ("the 530 is upstream, not fixed, while that lasts") and the first thing measured killed the framing.** `public-api.nbatopshot.com` answers **HTTP 530 from Trevor's own residential IP** — not a Vercel egress or WAF effect. Memory `topshot-moved-to-atlas-and-pgnet-reaches-it` diagnosed it *decommissioning-shaped on 2026-08-30*; that is **14 days**. ⛔ **"While that lasts" describes an event that is not coming, and my own ledger entry two hours ago parked a live defect behind "once Dapper's GraphQL recovers."** It will not. **19 files still import `topshotGraphql`.** #65 already re-pointed six consumers to Atlas-via-DB; wallet-search's per-moment enrichment was never among them.
