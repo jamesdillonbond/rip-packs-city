@@ -10,6 +10,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⛔ RETRACTED — I set out to ship the reconcile `ok` fix and stopped: the operator record forbids it BY NAME, and the blind spot that revived it is refuted · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only** — the inbox filing's fourth pass + its INDEX entry. **No code, no migration, no data.** Nothing to revert.
+
+🚨 **THIS RETRACTS A RECOMMENDATION THAT WAS SITTING IN THE INBOX FOR THE NIGHT PASS TO PICK UP.** The third pass told the next session to ship `ok := NOT (v_truncated AND v_wallets = 0)` as a three-file drift-pinned change. **Withdrawn in full.** Two documents I had not opened both forbid it independently:
+
+- `pipeline_alert_suppression.reason` ends *"⚠ Do NOT 'fix' this by making the procedure report ok=true — the ok=false is deliberate and is the only in-band signal that a sweep did not finish."*
+- The pin calls it *"the property most worth protecting"*: a partial sweep reporting success is a **silently-sliced result**. ⭐ That is CLAUDE.md's own paged-read rule, and my fix was to stop carrying `complete:false`.
+
+⭐⭐ **The pin had already weighed my exact argument and rejected it** — it names the `ufc_fmv_stale_hours` cry-wolf three lines above the assertion. I re-derived one horn of a considered trade-off three passes running and grew more confident each time.
+
+⛔ **And the urgency — "a genuine error now fires NOTHING" — is REFUTED by measurement.** Read from the function bodies, not assumed: `detect_stalled_pipelines` and `check_pipeline_cadence_collapse` do **NOT** read the suppression table, so a total stop still pages and the row's *"WHAT IS NOT LOST"* claim is now verified rather than trusted. Replaying `check_pipelines_running_but_not_succeeding`'s predicate over every active watchlist lane: **0 would fire**, this lane included. ⭐ **Positive control in the same query:** **133** lanes join and **60** satisfy the `work_done = 0` half, so the predicate discriminates — what is absent is the conjunction (`zero_ok_lanes = 0` fleet-wide).
+
+⭐ **One real finding, filed as LATENT rather than dressed up as active:** `check_pipelines_running_but_not_succeeding` — created *because* nothing was alerting on `ingest` — **inherits the suppression meant for the noisy failure_rate arm** across ~20 rows, and **none of the suppression reasons says so**, though several reason carefully about which arms survive. It hides nothing today, so there is no urgency to buy the risk with. Per-arm scoping vs. amending the reason texts is **Trevor's call**, not a 3am edit.
+
+**Lesson, and it is the durable part:** a filed finding is a hypothesis — **and so is the third pass of one.** The refutation was one query away the whole time, in the two places I kept not opening.
+
 ### 2026-09-13 · ✅ CODE — the sentinel has not been clean once in 73 hours, so its WARN header carried no information; it now names the SET that changed · Claude Code cloud, overnight autonomous
 
 **Shipped:** `app/api/sentinel/route.ts` (message header + the previous-run read), `__tests__/sentinel-header-separates-one-sweep-from-the-next.test.ts` (NEW, 11 cases). No migration, no data, no schedule. **REVERT:** `git revert <sha of "fix(sentinel): the header names the set that changed">` — presentation only, no arm's status or threshold moved and `shouldNotify` is untouched.

@@ -122,3 +122,54 @@ So someone reached this diagnosis already and applied the estate's curated, expi
 3. **Then DELETE the suppression rather than letting it expire** — a suppression that outlives its cause is the same trained-to-ignore failure one level up, and this one runs to 2026-11-15.
 
 ⛔ **Still not shipped here**, for the reason §4 gives: it is a change to a drift-pinned PROCEDURE whose test needs its own throwaway database, and the urgency that would justify doing it at 2 a.m. is exactly what this filing spent three passes failing to establish.
+
+---
+
+# 🚨 FOURTH PASS (2026-09-13 ~02:4x PT) — **RETRACTED. DO NOT SHIP THE ONE-EXPRESSION FIX.** The operator record forbids it by name, and the coverage hole I inferred does not exist
+
+**I set out to ship step 1 above and stopped after reading the two things I had not read: the pin's own rationale and the suppression row's full reason.** Both say, independently, that the behaviour is deliberate. This section supersedes the third pass, and the third pass's "revised order" is **withdrawn in full**.
+
+## ⛔ The suppression row forbids exactly this change, in its own text
+
+`pipeline_alert_suppression.reason` for `reconcile-saved-wallet-stats` ends:
+
+> *"⚠ Do NOT \"fix\" this by making the procedure report ok=true — the ok=false is deliberate and is the only in-band signal that a sweep did not finish."*
+
+And the pin (`supabase/tests/reconcile_all_saved_wallet_stats.sql:313`) argues the same property from the other side, calling it *"the property most worth protecting"*:
+
+> *"A partial sweep that reported success would be a silently-sliced result: every wallet it did reach is correct, so nothing downstream looks wrong, and the wallets it never reached keep serving stale figures indefinitely."*
+
+⭐ **That is CLAUDE.md's own paged-read rule** — *"a PAGED read that breaks on error returns a PARTIAL list no caller can distinguish from a complete one… Throw, or carry `complete:false`."* My proposed fix was to stop carrying `complete:false`.
+
+⭐⭐ **And the pin had already considered my argument and rejected it** — the cry-wolf risk I was citing as new is named three lines above the assertion: *"an arm that is permanently red is its own kind of useless (the `ufc_fmv_stale_hours` cry-wolf cost this repo an operator who learned to skim a red board)."* **The author saw both horns and chose this one.** I re-derived one horn, did not read far enough to find the other, and mistook a considered trade-off for an oversight.
+
+## ⛔ And the coverage hole that revived the urgency is REFUTED — measured, with a positive control
+
+The third pass's case was *"with the lane suppressed, a genuine error fires nothing at all."* **Two arms were never suppressed, and I checked which by reading the function bodies rather than assuming:**
+
+| arm | reads `pipeline_alert_suppression`? | covers this lane? |
+|---|---|---|
+| `get_pipeline_alerts_core` (failure_rate) | **yes** | suppressed — deliberately |
+| `check_pipelines_running_but_not_succeeding` | **yes** | suppressed — *not* deliberately (see below) |
+| `detect_stalled_pipelines` (silence) | **NO** | **live** |
+| `check_pipeline_cadence_collapse` | **NO** | **live** |
+
+⭐ **So the suppression's own "WHAT IS NOT LOST … a total stop is still caught" claim is TRUE, and is now verified rather than trusted.** A genuine stop still pages.
+
+**Would the third arm have fired if it were not suppressed? No — measured, not assumed.** Replaying its exact predicate over every active watchlist lane in its own window: **0 lanes satisfy `ok_runs = 0 AND work_done = 0`**, this one included. ⭐ **Positive control in the same query, because a bare zero proves nothing:** the join produces **133** lanes with runs in-window, and **60** of them satisfy the `work_done = 0` half — so the predicate and the window both discriminate; what is absent is the conjunction. **`zero_ok_lanes = 0` fleet-wide**: nothing is failing-and-idle anywhere right now.
+
+**So the suppression currently hides nothing.** The 3 zero-progress runs sit inside 150-minute windows that also contain productive runs, so the conjunction never holds — the arm would stay silent on this lane with or without the row.
+
+## ⭐ What IS real, and it is LATENT, not active — filed as an observation, not a defect
+
+`check_pipelines_running_but_not_succeeding` was created (migration `20260830165431`) precisely because *"NOTHING was alerting on it"* for the `ingest` lane — it is the last-resort arm. **It inherits the suppression meant for the noisy failure_rate arm**, via `w.pipeline NOT IN (SELECT pipeline FROM active_suppressions)`, for all ~20 actively-suppressed pipelines.
+
+⚠ **The evidence that this is unintended is that the suppression reasons themselves do not mention it.** Several reason carefully about which arms survive — *"bounded by the expiry and by the cadence arm"*, *"the failure_rate arm keys on the HYPHENATED pipeline name and is unaffected"* — and **none of them says the running-but-not-succeeding arm is also switched off.** The record of what a suppression disables is incomplete, which is the thing to fix.
+
+⛔ **Not shipped, and this time for a reason that is not fatigue:** suppression is currently pipeline-scoped by design, and making one arm exempt is a change to what "suppressed" MEANS across ~20 rows written by several people over two months. It hides nothing today (measured above), so there is no urgency to buy the risk with. **The honest options are per-arm suppression scoping, or simply amending the reason texts to state what is actually disabled** — a decision for Trevor, not a 3 a.m. edit.
+
+## The one thing worth doing here, and it is not code
+
+**Amend the `reconcile-saved-wallet-stats` suppression reason to note that `check_pipelines_running_but_not_succeeding` is disabled by it too**, so the next reader inherits a complete account instead of re-deriving it. Everything else on this item is **CLOSED as NOT A DEFECT**.
+
+⚠ **The lesson, which is the durable part:** three passes over this item each re-derived the same half of the argument and got more confident. **The refutation was in two places I had not opened — the pin's own comment and the full `reason` text — and both were one query away the whole time.** A filed finding is a hypothesis; so is the third pass of one.
