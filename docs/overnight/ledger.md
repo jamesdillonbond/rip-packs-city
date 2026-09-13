@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ SHIPPED #112's FIX — a lock nobody checked no longer counts as sellable, and Disney Pinnacle stops discarding 370 real locked readings · Claude Code on Trevor's box
+
+**Trevor delegated the trade-off twice, so the call was taken.** #112 was filed earlier today as "needs a decision, not more measurement". A false claim about a user's own assets outranks missing data by this repo's own doctrine, so it is fixed rather than carried.
+
+## ⭐ The measurement widened the item — FOUR collections, four different wrong answers about one field
+
+| collection | rows | ever checked | locked | what the product said |
+|---|---:|---:|---:|---|
+| nba_top_shot | 1,767,936 | **34.4%** | 267,223 | definite `false` on the 65.6% |
+| nfl_all_day | 455,244 | **99.6%** | 140,084 | ⛔ suppressed entirely as "not tracked" |
+| disney_pinnacle | 56,581 | **100%** | **370** | ⛔ hardcoded `false`, discarding all 370 |
+| candy / golazos / ufc | 39,357 | **0%** | 0 | definite `false` |
+
+⭐ **The Pinnacle case is the worst and was not known:** `base_pinnacle` hardcoded `false AS is_locked`, ignoring `wmc.is_locked` — a false claim on data we HAVE, which is strictly worse than #112's false claim on data we lack. ⭐ **The function carried the defect too:** `COALESCE(wmc.is_locked, false)` — the `?? 0` shape in SQL, on top of the column default.
+
+## What shipped
+
+**DB** (`20260913231145`): `lock_known` added to `get_wallet_moments_with_fmv`, the COALESCE removed, Pinnacle's hardcode replaced by the real column. ⚠ **Applied as a GUARDED TRANSFORM of the live definition, not a retyped body** — three replacements each RAISEing unless matched exactly once, so it cannot mis-transcribe 7,747 chars nor clobber a concurrent edit. Verified live: Pinnacle wallet `0x0e4ba505…` returns **18 locked** at the tail page, exactly the 18 wmc holds (0 before); Top Shot `0x6c7a68d2…` returns **7 known / 10 unknown**, matching wmc exactly.
+
+**Surfaces:** `/api/analytics` gains a third bucket (the binary `else` that counted unchecked as sellable is gone) · `CollectionAnalyticsClient` DISCLOSES it under the "Liquid vs Locked" tiles — ⭐ **a bucket nobody can see is the same as not splitting it out** · `/api/portfolio-export` CSV emits `unknown` as a third token · `/api/collection-moments` sends `null` + `lock_known`.
+
+**Guards:** `lock-state-unknown-is-not-counted-as-sellable.test.ts` (12, **9 fail on origin/main**) + two behavioural cases in `api-analytics-root-deep` pinning that an unchecked $1000 stays OUT of `unlocked_fmv` (it read 1010 before) and that an ABSENT `lock_known` means unknown, never a resumed overstatement.
+
+## ⛔ Four traps hit on the way, all caught, one self-inflicted
+
+1. 🚨 **I clobbered three route files by keying backups on the BASENAME** — `analytics/route.ts`, `portfolio-export/route.ts` and `collection-moments/route.ts` all basename to `route.ts`, so one `cp` loop overwrote all three with the same content. **This is verbatim the trap already in CLAUDE.md** ("three `page.tsx` targets shared one `.bak`"). **Nothing was lost only because the edits were SCRIPTED, not hand-typed** — `git checkout` + re-run the patch script restored everything. ⭐ That is the real argument for scripted edits, and it is stronger than the one currently recorded.
+2. **The pin went STALE and `db:pins:check` caught it.** My transform migration has no literal DDL for the pin machinery to compare, so a **snapshot migration** (`20260913232000`) was captured with `pg_get_functiondef()` **straight to disk by script** and the PINS entry repointed.
+3. ⛔ **The pinned SQL fixture had no `lock_checked_at` column** — the new body reads it, so every statement after the CREATE FUNCTION would have failed under psql **in CI only**, invisible here. Fixed, plus a column-level audit script proving every `wmc.*` the body reads exists in the fixture. A new assertion (9) pins the provenance contract.
+4. **A new-function migration must state its anon-exec decision.** The snapshot is marked `intentional` — ⚠ and deliberately NOT given a REVOKE, because `CREATE OR REPLACE FUNCTION` does not reset an ACL, so a revoke there would change production while presenting itself as a no-op.
+
+⚠ **My own first guard regex was a false ALARM** — `/if\s*\(\s*locked\s*\)…else…unlockedCount/` matches the CORRECT `else if (locked)` just as happily as the defect. Rewritten to scan what PRECEDES each occurrence.
+
+**Verified:** `tsc` clean · **1542 files / 17,200 tests green** · `lint:ratchet` baseline **715 / 3062** · `db:pins:check` **202 of 203 clean**.
+
+⚠ **The one remaining stale pin is `reconcile_all_saved_wallet_stats`, NOT mine** — the other session's function from `20260913211500`, which they are actively working. Deliberately not snapshotted: pinning a transient state mid-work is worse than leaving it red for its owner.
+
+⛔ **STILL OPEN and deliberately not shipped:** the **All Day un-suppression**. `lib/portfolio-summary-compute.ts` suppresses All Day lock state as "not tracked" because its flags are *"frozen at a past manual run"* — **measurably false now**: 99.6% checked within 7 days, oldest check 3 days old, `allday-lock-refresh` writing 326,787 rows/day. That hides **140,084 genuinely locked All Day moments** — CLAUDE.md's MIRROR defect (an `unknown` that is actually KNOWN). It routes through `get_wallet_summary`, a DIFFERENT function not audited here, so it deserves its own change and its own attribution.
+
+**Revert:** `git revert <sha>` for the code; for the DB, the inverse transform is spelled out in `20260913231145`'s header.
+
 ### 2026-09-13 · ✅ CI red on `36a576bf2` was a RACE in a dashboard component test, not the diff — two stats-call assertions hardened from a snapshot count to the ratio they actually guard · Claude Code cloud
 
 **Measured:** run 5446 (`Component coverage (vitest jsdom)`) failed `component-DashboardClient.test.tsx:563` with *"expected 2 to be less than or equal to 1"* on a push whose diff was three SQL/test-pin files; the same job was green five minutes earlier on `d2c197f65`, and the file passes 3 of 3 locally. The test rendered the dashboard, waited only for *any* fetch, then asserted the `/api/profile/collection-stats` call count ≤ 1 — a snapshot that a slow runner can take after a SECOND `refresh()` has already issued its stats fetch (the mount effect re-runs on callback identity; `pushToast`/`refreshStats` are stable, so the second refresh's origin is not pinned down here — noted, not chased). **Shipped:** both assertions (the "requests stats for each unique wallet address" and "groups the same address across collections" cases) now wait for at least one stats call and assert the PROPERTY: one distinct URL for the one address, and stats calls ≤ the number of refreshes (one `/api/profile/me` read each) — the per-ROW fetch the tests exist to catch (three rows → three calls per refresh) still fails it; a second refresh no longer does. 152/152 ×3 locally. **Not a fix of the double refresh itself**, if there is one on a real load — a candidate for whoever next touches `DashboardClient`: count `/api/profile/me` per page load in production logs before believing it. **Revert:** `git revert` the test commit.
