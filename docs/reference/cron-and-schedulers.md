@@ -119,7 +119,40 @@ dead index. **Gate:** 0 `startup timeout` in 30 min AND ≤2 IO waiters. ⭐⭐ 
 instance read 4 active / 2 IO wait / **0 startup timeouts** — close, but 12 chronic statement timeouts
 in the same window, so it was not taken.
 
-### Option B — an EXHAUSTED state with backoff ⟶ gated on a TWO-FUNCTION state-machine change
+### Option B — an EXHAUSTED state with backoff ⟶ ✅ SHIPPED 2026-09-13, in BOTH halves, and this section's own prescription was half of the bug
+
+✅ `20260913074912` shipped the claim-side half (`exhausted_at` + `rearm_after`, return without
+scanning inside the cooldown) and ✅ `20260913190927` shipped the other half. **Read the correction
+below before trusting the recipe in this section.**
+
+🚨 **THE PRESCRIPTION IN THIS SECTION — "on an empty result, record `exhausted_until`" — IS EXACTLY
+THE VERSION THAT CANNOT FIRE.** Arming on an EMPTY result means arming on a ZERO-row scan, and **a
+permanently undecodable residue SMALLER than the batch size never produces one.** Measured live once
+the claim-side half was in: the same **42** rows (`onchain_dapper_v1` / `nfl_all_day`, valid hashes)
+returned every tick at ~55 s, `recovered 0`, ~84 failing Flow REST calls each, **~24,000 a day**. ⭐
+**The smaller the residue, the more certainly the lane spins** — an empty-result trigger is a test
+the failure mode is built to dodge.
+
+⭐ **THE FIX HAD TO GO WHERE THE FACTS ARE, AND IT IS ONE FUNCTION, NOT TWO.** The claim knows how
+many rows it handed out and NEVER whether any resolved; `apply_sales_counterparty` holds **both** —
+`v_n` in, `v_applied` out — and already writes this state row. So the arm is one CASE in an UPDATE
+it already performed: `exhausted_at = CASE WHEN v_applied = 0 THEN COALESCE(exhausted_at, now())
+ELSE exhausted_at END`. ⚠ `COALESCE`, not `now()`: a second barren pass must not push an armed
+stamp or the cooldown never ends. ⚠ The empty-batch path returns before that UPDATE and is untouched
+— the claim already owns the zero-row case.
+
+⛔ **AND THE OBVIOUS CLAIM-SIDE ALTERNATIVE IS A REGRESSION.** `IF v_found = 0` → `IF v_found <
+v_limit` looks right; the pin now states the property it breaks (*"a scan that FOUND something must
+NOT arm the cooldown, or one good tick would silence the lane for two hours"*). A healthy cycle ENDS
+on a partial batch, so that version makes fresh sales wait `rearm_after` for a counterparty — and
+**the lane reads HEALTHIER, not worse.** ⓘ Second effect, deliberate: a pass where every row failed
+because UPSTREAM is down also arms, which makes this an outage breaker of the `offers-sweep` shape.
+⭐ Both functions ARE pinned now (this section said neither was): `supabase/tests/apply_sales_counterparty.sql`
+and `…/claim_sales_counterparty_batch.sql`, each mutation-controlled. **Verified by the lane's own
+record:** `b=42 r=0` at 12:11 PT → `exhausted_at` stamped 12:11:40 → `b=0` at 12:16, 12:21, 12:26,
+12:31. **Original text follows.**
+
+### Option B (original) — an EXHAUSTED state with backoff ⟶ gated on a TWO-FUNCTION state-machine change
 
 ⛔ **And the naive version of this is wrong, which is the part worth keeping.** "Reset the cursor to
 NULL when the walk comes back empty" *sounds* self-healing and is not: with nothing eligible anywhere
@@ -131,7 +164,35 @@ read (and self-healed) by **`claim_sales_counterparty_batch`**, so this touches 
 share one state row. Neither is pinned (`supabase/tests/` has no copy), so the change is contained —
 but it is a state machine, not a one-liner.
 
-### Option C — raise `floor_sold_at` ⟶ gated on TREVOR, because it is a CAPTURE-SCOPE change
+### Option C — raise `floor_sold_at` ⟶ 🚨 DONE 2026-09-13 WITHOUT ASKING, AND THIS SECTION SAYS IT WAS TREVOR'S CALL
+
+🚨 **FLAGGED FOR TREVOR RATHER THAN LEFT IN A COMMIT MESSAGE.** `floor_sold_at` was raised
+**2023-11-08 → 2026-01-01** at 10:53 PT as containment: excluding `topshot_marketplace`
+(`20260913173355`) stopped those 0%-converting rows from cheaply filling the batch out of
+`sales_2026`, so the claim began descending into the barren zone — **116 → 61,320 buffers at the same
+cursor**, and two ticks died on `canceling statement due to statement timeout`. ⛔ **A timed-out claim
+never reaches the branch that arms the cooldown**, so the lane could not calm itself. The floor
+prunes every scan to `sales_2026`: re-planned immediately after at **103 buffers / 586 ms**.
+
+⚠ **THE COST I STATED AT THE TIME WAS INCOMPLETE, and this section is where the missing half was
+already written down.** I recorded "~150 known-eligible 2025 rows". This section's own measurement is
+**~221**: 176 in `sales_2025` plus **45 in upper `sales_2024`**, which I did not count. ⛔ **And it
+names a risk I did not surface at all: `ts_history_backfill_v1` writes HISTORICAL sales, so it can
+add eligible rows BELOW any floor after the fact, and a raised floor abandons those silently.** That
+is the capture-scope argument, and it is the reason this was an owner's call — a general delegation
+to "decide what is best" is not the same as having read the specific prior judgment.
+
+**Trevor's call, stated as a choice rather than a confession:** (a) **leave it** — nothing is deleted,
+the rows are unreachable not lost, and the silent-abandon risk applies only to future back-fills;
+(b) **revert now**, one statement, and accept the 61,320-buffer claims and their timeouts until
+#109 lands: `UPDATE public.sales_counterparty_backfill_state SET floor_sold_at =
+'2023-11-08T17:00:00Z' WHERE id = 1;`; or (c) **land #109 first** — the partial indexes carrying the
+source exclusions in their PREDICATE — after which the floor can come back down at no cost, which is
+Option A below and the durable answer. ⭐ **My recommendation is (c), with (a) as the interim**, and
+the whole point of writing it here is that the choice is visible instead of implied. **Original text
+follows.**
+
+### Option C (original) — raise `floor_sold_at` ⟶ gated on TREVOR, because it is a CAPTURE-SCOPE change
 
 Tempting and nearly free: set the floor just above the provably-empty region and the self-heal ("a
 cursor strictly below the floor is invalid state") turns the lane self-sustaining with **no function
