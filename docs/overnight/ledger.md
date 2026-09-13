@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · FIX (someone else's red) — a concurrent session's migration left `main` RED and a public table anon-readable · Claude Code cloud
+
+**Shipped: repo-only, three statements appended to an ALREADY-APPLIED migration file. No DB write, no prod state change.** `supabase/migrations/20260913160549_audit_20260913_two_suppressions_claim_a_safety_net_that_was_deliberately_retired.sql`. Revert: `git revert <sha>` (find by message — `RLS`).
+
+**Not mine, and checked before touching it.** `3b0eeb9d7` (another session, 16:14Z) created `public.audit_20260913_suppression_stale_net_claims_backup` with no RLS, so `migration-new-public-table-enables-rls` went red — **1 failed / 8,421 passed, the SAME single assertion on my commit and on the base**, which is how I established the red was inherited rather than mine.
+
+⚠ **The exposure was real and measured, not inferred: `relrowsecurity = false` with `has_table_privilege('anon', …, 'SELECT') = true` in production.** ⭐ It self-closes — the prefix is `audit_`, and `selfheal_audit_table_rls()` (pg_cron **232**, `47 * * * *`, active) covers exactly that prefix — which is why **no prod write was made**: the healer does it for free at :47, where an `apply_migration` costs a ~10–20 s user-facing `PGRST002` burst.
+
+⚠ **APPENDED TO THE APPLIED FILE rather than fixed forward, against that guard's own stated preference, and the trade is recorded in the file itself.** `check-migration-parity.mjs` matches on **NAME, not content** (read the script, did not assume), so editing a committed+applied file does not break parity; the header's objection is that churn may alter what a replay would do, and these three statements make a replay **strictly more correct**. The alternative grows the grandfather list the guard exists to freeze *and* needs a prod apply. **Idempotent, so the author shipping their own fix on top is harmless.**
+
+⛔ **Not done: messaging the author.** `ListAgents` reports no reachable peer — that session is elsewhere. This entry and the in-file comment are the handoff.
+
 ### 2026-09-13 · ✅ DECISION PASS — Trevor delegated the five open items; here is each call, what shipped, and what I deliberately did NOT ship · Claude Code cloud, autonomous
 
 **Shipped: two prod migrations** — `20260913160549` (#102, suppression texts) and **`20260913161228` (#103, portfolio retry)**. Both files committed in the same push.
