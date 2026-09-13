@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ CONCIERGE PASS — badges + supply on every priced edition, methodology derived from the pricing code, live coverage, page entity, 3 new tools (38) · Claude Code cloud
+
+**Shipped: one code commit to `main`, NO DB change.** Files: `app/api/support-chat/route.ts`, `lib/concierge/edition-metadata.ts` (new), `lib/concierge/fmv-coverage.ts` (new), `components/SupportChat.tsx`, `components/SupportChatConnected.tsx`, `__tests__/concierge-2026-09-13-metadata-badges-context.test.ts` (new), `__tests__/concierge-2026-09-02-ship-guards.test.ts` (allowlist +1 deploy constant). Detail: [concierge.md](../reference/concierge.md) "2026-09-13 pass".
+
+**What it fixes, from the real rows:** (1) the prompt told users HIGH = 5+ sales / MEDIUM = 2+ / "every 20 minutes" while `lib/fmv-confidence.ts` gates HIGH at ≥7 + dispersion and MEDIUM at ≥5 — two real users got the wrong definition; the block now interpolates the constants. (2) Coverage percentages were hardcoded months stale — now read live (`edition_fmv_current` head counts, 30-min cache, a failed count renders as "do not quote", never 0). (3) Trevor's 06-25 badge complaint (#4064) was "shipped" as a prompt rule the price tools could not honour — `get_fmv` / `get_edition_listings` / `explain_fmv` / live deals now carry badges + supply with a three-state `badges_status`. Plus `get_badge_info` / `get_player_editions` / `get_team_intel`, and the edition/player/team page's entity reaching the prompt.
+
+**Cost, measured:** the coverage read is 15 head counts on a 909-buffer table, cached 30 min per lambda; a badge count is 1,576 buffers / 17 ms warm, cached 1 h per title. ⚠ The first badge-census draft was 2,672 buffers and **13.3 s per page cold** — rejected before shipping; the probe would have been the load.
+
+**Revert:** `git revert` the commit found by `git log --grep="concierge: badges, supply and the page"` — self-contained, no migration.
+
 ### 2026-09-13 · ⛔ FIX OF MY OWN SHIP, ~40 MIN LATER — the retry I added today had NO budget and would have been killed at the global 120 s, doing nothing while reporting that it ran · Claude Code on Trevor's box
 
 **Shipped:** `rpc-ccm-step2-retry` (jobid **491, preserved** — `cron.schedule` on an existing name updates in place rather than churning the jobid) now carries **`SET statement_timeout = '300s';`** in its command. Migration `20260913170540_audit_20260913_the_ccm_step2_retry_needs_its_own_300s_budget_…`. **Revert:** `SELECT cron.unschedule('rpc-ccm-step2-retry');`
