@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
 import { repoRelative } from "./helpers/source-files"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // lib/og/brand-fonts — the shared loader, and a ratchet on the cards using it.
@@ -173,6 +174,20 @@ describe("OG card adoption ratchet", () => {
   // lib/og/entity-card.tsx, which is branded and asserted below.
   const viaEntityCard = sources.filter((s) => s.src.includes("@/lib/og/entity-card"))
 
+  /**
+   * Does this source take the SHARED cache policy?
+   *
+   * ⚠ TWO SPELLINGS, ONE PROPERTY. `OG_CACHE_HEADERS` is the constant; since
+   * 2026-09-13 a card that renders degraded picks between it and the short
+   * policy through `ogCacheHeaders(...)` — the same module, the same decision,
+   * a different call shape. Pinning the constant's NAME reddened on a change
+   * that strictly improved the thing this guard exists to protect, which is the
+   * signature of a guard pinning a spelling rather than a property. The ban on
+   * hand-written headers below is what keeps this pair from becoming a hole.
+   */
+  const usesSharedCachePolicy = (src: string) =>
+    src.includes("OG_CACHE_HEADERS") || src.includes("ogCacheHeaders(")
+
   it("EVERY OG card is branded, directly or through the shared entity renderer", () => {
     // ⚠ This started life as a floor ("at least N") while 29 insights cards
     // were still unconverted. It is a COMPLETENESS check now that the family is
@@ -194,7 +209,7 @@ describe("OG card adoption ratchet", () => {
     // Otherwise the exemption above is a hole five cards wide.
     const entity = fs.readFileSync(path.join(process.cwd(), "lib", "og", "entity-card.tsx"), "utf8")
     expect(entity).toContain("@/lib/og/brand-fonts")
-    expect(entity).toContain("OG_CACHE_HEADERS")
+    expect(usesSharedCachePolicy(entity)).toBe(true)
   })
 
   it("still covers the cards most likely to be shared", () => {
@@ -233,7 +248,23 @@ describe("OG card adoption ratchet", () => {
     // evidence that it is used.
     for (const { f, src } of branded) {
       const body = src.replace(/^import[\s\S]*?from\s+["'][^"']+["'];?$/gm, "")
-      expect(body.includes("OG_CACHE_HEADERS"), `${f} has fonts but no cache headers`).toBe(true)
+      expect(usesSharedCachePolicy(body), `${f} has fonts but no cache headers`).toBe(true)
+    }
+  })
+
+  it("no card writes its OWN cache header instead of taking the shared policy", () => {
+    // ⚠ THE HOLE THE PREDICATE ABOVE OPENED WHEN IT STOPPED NAMING ONE SYMBOL,
+    // closed in the same commit. Accepting two spellings is only safe while
+    // there is no THIRD way to set the header, so the third way is banned
+    // outright: a hand-written `s-maxage=` in a card is a policy nobody can
+    // change centrally — which is exactly how 42 of 43 cards once shipped with
+    // no cache policy at all.
+    // ⚠ COMMENTS STRIPPED FIRST, with the shared stripper rather than a fresh
+    // copy of one: `og/insights/squeeze` DOCUMENTS its upstream API's
+    // `s-maxage=300` in prose, and a raw grep reads that as an offender. A
+    // comment is not a header.
+    for (const { f, src } of sources) {
+      expect(/s-maxage=/.test(stripComments(src)), `${f} hardcodes its own cache header`).toBe(false)
     }
   })
 

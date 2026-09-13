@@ -145,6 +145,31 @@ export const OG_OPTIMIZER_HOSTS: readonly string[] = [
 // query it carries, which is why the extension is half of the test.
 const SIZE_PARAM_RE = /[?&](?:width|w)=\d/i
 const STATIC_IMAGE_PATH_RE = /\.(?:png|jpe?g|gif|webp|avif|svg)$/i
+/**
+ * Drop `width=`/`w=` from a url, keeping every other param and the url's own
+ * shape (site-relative stays site-relative — that is what keeps our own urls on
+ * the optimizer's LOCAL branch). Used ONLY for the optimizer cache key; see the
+ * note in `ogOptimizedTarget`.
+ *
+ * ⚠ PARSED, NOT REGEXED. The obvious `/[?&](?:width|w)=\d+/` swallows the
+ * separator it matched and welds the neighbouring params together
+ * (`…png?width=640&foo=1` → `…pngfoo=1`), which silently changes what the
+ * optimizer fetches instead of only changing its key. Caught by running it
+ * before shipping it, on the four query shapes these urls actually take.
+ */
+function stripSizeParams(u: string): string {
+  try {
+    const abs = new URL(u, BASE_URL)
+    if (!abs.searchParams.has("width") && !abs.searchParams.has("w")) return u
+    abs.searchParams.delete("width")
+    abs.searchParams.delete("w")
+    const q = abs.searchParams.toString()
+    const rest = `${abs.pathname}${q ? `?${q}` : ""}`
+    return u.startsWith("/") ? rest : `${abs.origin}${rest}`
+  } catch {
+    return u
+  }
+}
 
 export interface OgImgOpts {
   timeoutMs?: number
@@ -193,9 +218,10 @@ export function ogImageTarget(raw: string): string | null {
 export function ogOptimizedTarget(target: string): string | null {
   const inner = target.startsWith(`${BASE_URL}/`) ? target.slice(BASE_URL.length) : target
   const isLocal = inner.startsWith("/")
+  const isStaticFile = STATIC_IMAGE_PATH_RE.test(inner.split("?")[0])
 
   // Already sized by its origin (see SIZE_PARAM_RE) — nothing to buy.
-  if (SIZE_PARAM_RE.test(inner) && !STATIC_IMAGE_PATH_RE.test(inner.split("?")[0])) return null
+  if (SIZE_PARAM_RE.test(inner) && !isStaticFile) return null
 
   if (!isLocal) {
     let host = ""
@@ -207,7 +233,28 @@ export function ogOptimizedTarget(target: string): string | null {
     if (!OG_OPTIMIZER_HOSTS.includes(host)) return null
   }
 
-  return `${BASE_URL}/_next/image?url=${encodeURIComponent(inner)}&w=${OG_ART_WIDTH}&q=${OG_ART_QUALITY}`
+  // ⭐ A SIZE PARAM ON A STATIC FILE IS A NO-OP AT THE ORIGIN AND A SECOND CACHE
+  // KEY AT OURS, so it is dropped from the key — this is the whole of the
+  // "trophy double-keys" finding (2026-09-13), fixed where it belongs.
+  //
+  // `hiResThumb` (lib/trophy/slab-style.ts) appends `?width=640` to EVERY
+  // assets.nbatopshot.com url because the web slab needs it — stills are stored
+  // at `width=180` and the slab draws them at 640. On a RENDER endpoint the
+  // origin honours it and `SIZE_PARAM_RE` above correctly skips the optimizer.
+  // On a STATIC `/editions/**_2880_2880_*.png` file the origin serves the same
+  // master whatever you ask for (measured 2026-09-12), so the trophy cards were
+  // minting a separate derivative of art the edition and moment cards had
+  // already optimized — 7 of 22 pinned trophies, measured, and every future one.
+  //
+  // ⚠ ONLY THE KEY IS NORMALIZED. The DIRECT fetch below still uses the
+  // caller's original url, so a host that does honour `width` on a file path
+  // loses nothing: the optimizer either serves the same bytes from one key, or
+  // refuses and we fall back exactly as before. ⛔ And it must NOT be done in
+  // `hiResThumb`, which the web slab depends on — that fix was proposed and is
+  // wrong (it would send `components/TrophySlab.tsx` back to 180px art).
+  const keyed = isStaticFile ? stripSizeParams(inner) : inner
+
+  return `${BASE_URL}/_next/image?url=${encodeURIComponent(keyed)}&w=${OG_ART_WIDTH}&q=${OG_ART_QUALITY}`
 }
 
 // ── PINNACLE: THE CACHE IS THE CHEAP SOURCE, AND SOMETIMES THE ONLY ONE ─────

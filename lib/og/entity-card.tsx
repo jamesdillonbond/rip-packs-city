@@ -9,7 +9,7 @@
 
 import { ImageResponse } from "next/og"
 import { ogImageDataUris } from "@/lib/og/img-data"
-import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
+import { brandFonts, brandFamilies, ogCacheHeaders } from "@/lib/og/brand-fonts"
 
 export const FALLBACK_RED = "#E03A2F"
 
@@ -21,6 +21,14 @@ export interface EntityOgOpts {
   images: string[]         // 0 = no media; 1 = single hero; >1 = montage
   statLabel?: string | null
   statValue?: string | null
+  /**
+   * Set by a caller that resolved its own art and came back with nothing, so
+   * the card is cached briefly rather than for a day. `images: []` alone cannot
+   * express this — it is also what a card with genuinely nothing to draw passes
+   * — and the player card resolves its candidates itself (see
+   * `ogImageDataUriFirst`), so by the time it gets here the failure is invisible.
+   */
+  artFailed?: boolean
 }
 
 export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse> {
@@ -35,8 +43,13 @@ export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse>
   // so Satori does zero network I/O — a single dead/slow upstream (e.g. the
   // ipfs.dapperlabs.com art on pre-2022 Top Shot editions) used to 500 the
   // whole card and kill the social preview. See lib/og/img-data.ts.
-  const imgs = await ogImageDataUris((opts.images || []).filter(Boolean).slice(0, 4))
+  const wanted = (opts.images || []).filter(Boolean).slice(0, 4)
+  const imgs = await ogImageDataUris(wanted)
   const single = imgs.length <= 1
+  // ⚠ "ASKED AND GOT NOTHING", not "has no art". A card with no art to draw is
+  // in a stable, correct state and keeps the long cache; a card whose every
+  // upstream failed is a blank that must not outlive the outage that caused it.
+  const degraded = opts.artFailed === true || (wanted.length > 0 && imgs.length === 0)
 
   const MediaPane = (
     <div
@@ -142,7 +155,7 @@ export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse>
       width: 1200,
       height: 630,
       ...(fonts ? { fonts } : {}),
-      headers: OG_CACHE_HEADERS,
+      headers: ogCacheHeaders(degraded),
     },
   )
 }

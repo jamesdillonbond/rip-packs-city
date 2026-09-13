@@ -507,10 +507,43 @@ describe("ogOptimizedTarget — which art is worth a transformation", () => {
     // origin serves the same master whatever you ask for. Treating a width
     // param as proof of sizing would have re-opened this defect on the two
     // trophy cards — the exact surface the blank Ultimates were found on.
-    const withWidth = `${ULTIMATE_ART}?width=640`
-    expect(ogOptimizedTarget(withWidth)).toBe(
-      `${OPTIMIZER_PREFIX}?url=${encodeURIComponent(withWidth)}&w=640&q=75`,
-    )
+    //
+    // ⚠ THE ASSERTION WAS INVERTED 2026-09-13, THE TITLE WAS NOT. This case
+    // used to demand the `?width=640` appear INSIDE the optimizer's `url=`,
+    // which pinned a SPELLING; the property it is named for is that the art
+    // still reaches the optimizer at all. The param is now dropped from the KEY
+    // (see the next case), and that must not read as this guard weakening.
+    expect(ogOptimizedTarget(`${ULTIMATE_ART}?width=640`)).not.toBeNull()
+  })
+
+  it("⭐ keys a STATIC file identically with or without hiResThumb's ?width=", () => {
+    // The "trophy double-keys" finding, as a property. A width param on a file
+    // path is a no-op at the origin and a second cache key at ours, so the
+    // trophy cards were minting their own derivative of art the edition and
+    // moment cards had already optimized — 7 of 22 pinned trophies measured
+    // 2026-09-13, and every future one. Unifying the key means the trophy tile
+    // hits a derivative that is already warm, which is a rendering-speed win
+    // before it is a billing one.
+    expect(ogOptimizedTarget(`${ULTIMATE_ART}?width=640`)).toBe(ogOptimizedTarget(ULTIMATE_ART))
+    expect(ogOptimizedTarget(`${ULTIMATE_ART}?w=640`)).toBe(ogOptimizedTarget(ULTIMATE_ART))
+  })
+
+  it("keeps every OTHER param when it drops the size one", () => {
+    // ⚠ The regex version of this welded the neighbours together
+    // (`…png?width=640&foo=1` → `…pngfoo=1`), which changes what the optimizer
+    // FETCHES rather than only how it is keyed — a silently different image.
+    const keyOf = (u: string) => decodeURIComponent(/url=([^&]+)/.exec(ogOptimizedTarget(u) ?? "")![1])
+    expect(keyOf(`${ULTIMATE_ART}?width=640&foo=1`)).toBe(`${ULTIMATE_ART}?foo=1`)
+    expect(keyOf(`${ULTIMATE_ART}?foo=1&width=640`)).toBe(`${ULTIMATE_ART}?foo=1`)
+    expect(keyOf(`${ULTIMATE_ART}?foo=1&width=640&bar=2`)).toBe(`${ULTIMATE_ART}?foo=1&bar=2`)
+  })
+
+  it("leaves a RENDER endpoint's width alone — there it is load-bearing", () => {
+    // The origin honours `width` on a render endpoint, so that url never
+    // reaches the normalization: it is skipped as already-sized, one case up.
+    // Stated as its own assertion because the two behaviours are one `if`
+    // apart and a future edit could easily collapse them.
+    expect(ogOptimizedTarget("https://assets.nbatopshot.com/media/51976956/image?width=400")).toBeNull()
   })
 
   it("skips a url that is not parseable at all rather than throwing at a card", () => {

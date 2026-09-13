@@ -64,7 +64,8 @@ export async function GET(req: NextRequest) {
   // Already a data URI by the time it reaches the card, which renderEntityOg
   // passes through untouched — so the single-hero layout is preserved rather
   // than turning into a 4-tile montage the moment a fallback is available.
-  const portrait = await ogImageDataUriFirst([detail.headshot_url ?? null, ...thumbs])
+  const candidates = [detail.headshot_url ?? null, ...thumbs].filter(Boolean)
+  const portrait = await ogImageDataUriFirst(candidates)
   const editions = detail.edition_count != null ? Number(detail.edition_count) : null
   return renderEntityOg({
     eyebrow: `${label.toUpperCase()} · ${isCharacter ? "CHARACTER" : "PLAYER"}`,
@@ -72,6 +73,12 @@ export async function GET(req: NextRequest) {
     subtitle: detail.team ?? null,
     accent,
     images: portrait ? [portrait] : [],
+    // ⚠ THE CARD CANNOT SEE THIS FOR ITSELF. Resolving the candidates here is
+    // what keeps the single-hero layout, and it also means a total art failure
+    // reaches `renderEntityOg` as an empty list — indistinguishable from a
+    // player with no art at all. Saying so is what stops a transient upstream
+    // outage from being cached as a blank card for a day.
+    artFailed: candidates.length > 0 && !portrait,
     statLabel: editions ? "Editions" : null,
     statValue: editions ? editions.toLocaleString() : null,
   })

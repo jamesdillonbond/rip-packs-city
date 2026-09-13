@@ -89,6 +89,30 @@ export function clip(s: string, max: number): string {
 }
 
 /**
+ * How many mono characters fit in `px` pixels at `fontSize`.
+ *
+ * ⚠ THE SIZE-AWARE SIBLING of the trophy-case card's `captionCharBudget(w)`,
+ * which bakes in 10px because that card only ever draws at 10px. The profile
+ * card's caption SCALES with the slab (10px in a 130px six-up tile, 14px in a
+ * 240px hero), so a budget that fixes the font size clips one of the two wrong —
+ * and clipping wrong here is not cosmetic: `overflow: hidden` on a CENTRED flex
+ * line eats BOTH ends, so an over-budget name loses its first word as well as
+ * its last. Rendered and looked at, 2026-09-13: a 44-character UFC title in the
+ * hero tile drew as "Adesanya vs Alex Pereira UFC 2" — the "Israel " was gone
+ * from the front with nothing to say it had been.
+ *
+ * 0.540 is Share Tech Mono's own advance, read from the TTF rather than
+ * estimated (a generic "mono is ~0.6em" over-counts by 11%), and `letterSpacing`
+ * is added because the cards set it. Both are asserted against the shipped font
+ * file in `__tests__/og-trophy-caption-fits-its-tile.test.ts`.
+ */
+export function monoCharBudget(px: number, fontSize: number, letterSpacing = 0.4): number {
+  const advance = 0.54 * fontSize + letterSpacing
+  if (advance <= 0) return 0
+  return Math.max(0, Math.floor(px / advance))
+}
+
+/**
  * "#5 / 28", "#1 / 1", or "#56" when circulation is unknown.
  *
  * ⚠ SPACED AROUND THE SLASH. At 11px mono on a dark tile "#56/99" reads as one

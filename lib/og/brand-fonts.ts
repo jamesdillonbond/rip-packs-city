@@ -64,6 +64,42 @@ export const OG_CACHE_HEADERS = {
   "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
 } as const;
 
+/**
+ * Cache policy for a card that rendered WITHOUT the art it asked for.
+ *
+ * 🚨 THE LONG CACHE ABOVE IS CORRECT FOR A GOOD CARD AND A TRAP FOR A BAD ONE.
+ * An hour of shared cache plus a day of stale-while-revalidate means ONE
+ * transient upstream failure at render time publishes a blank card for up to
+ * 25 hours — and the card most likely to be fetched cold is the one someone
+ * just shared, so the blank lands in exactly the timeline that mattered. This
+ * is CLAUDE.md's "ISR caches a failed read for the whole revalidate window"
+ * rule, met on the surface where the failed read is a PICTURE rather than a
+ * number.
+ *
+ * ⚠ NOT HYPOTHETICAL, measured 2026-09-13 from the database's own egress: three
+ * fresh UFC Strike CIDs through `/api/public/ipfs-media/` returned 200, 200 and
+ * **429** — all 518 of that collection's editions resolve through one public
+ * gateway, and when it rate-limits, the art is simply not there for that render.
+ * The same shape is one dead url away on every other collection.
+ *
+ * 60 s is short enough that the next crawl re-renders rather than re-serving the
+ * blank, and long enough to stop a crawler stampede from re-rendering per hit.
+ * ⛔ No `stale-while-revalidate` on purpose: SWR's whole job is to keep serving
+ * the OLD body, which here is the defect.
+ */
+export const OG_DEGRADED_CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=60",
+} as const;
+
+/**
+ * Pick the policy for a render. `degraded` means "this card wanted art and did
+ * not get it" — not "this card has no art", which is a legitimate, stable state
+ * that deserves the long cache like any other.
+ */
+export function ogCacheHeaders(degraded = false): { "Cache-Control": string } {
+  return degraded ? OG_DEGRADED_CACHE_HEADERS : OG_CACHE_HEADERS;
+}
+
 export const FONT_FETCH_TIMEOUT_MS = 5_000;
 
 let fontsPromise: Promise<ArrayBuffer[] | null> | null = null;

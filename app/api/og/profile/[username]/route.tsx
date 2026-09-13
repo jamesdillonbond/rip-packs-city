@@ -55,7 +55,7 @@ import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style";
 import { editionKey, trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks";
 import { withOfficialArt } from "@/lib/og/official-mark-art";
-import { trophyDetail } from "@/lib/og/trophy-detail";
+import { clip, monoCharBudget, trophyDetail } from "@/lib/og/trophy-detail";
 import { GOLD_HEX } from "@/lib/badges/glyphs";
 import {
   brandFonts,
@@ -607,6 +607,54 @@ export async function GET(
     // starts competing with the art it is captioning.
     const capSize = Math.max(10, Math.min(14, Math.round(grid.w / 17)));
     const capHeight = Math.round(capSize * 1.5);
+    // ⭐ THE NAME LINE — shipped 2026-09-13 after a RENDER, not after an argument.
+    //
+    // ⚠ THIS REVERSES A DELIBERATE DECISION MADE ON THIS FILE, so the reason it
+    // was declined is answered rather than ignored. The comment below the tiles
+    // read: *"Deviation from the ordering spec, which asked for a name line too:
+    // there is no name on these slabs today and adding one at 130px would crowd
+    // the art Trevor just had re-cut."* Two things changed:
+    //
+    //   1. The premise was about the SIX-UP slab (130px). It was never measured
+    //      at the HERO slab, which is 240x317 — nearly four times the area — and
+    //      the hero is the MAJORITY case: of the 7 collectors who have pinned
+    //      anything, 4 pinned exactly one and 3 pinned six (measured 2026-09-12,
+    //      nobody in between).
+    //   2. `player_name` was already on the row and already fetched. Its only
+    //      appearance in this route's render path was a `console.warn`. So a card
+    //      that names the Moment costs ZERO extra reads.
+    //
+    // ⚠ THE SIX-UP GETS ONE TOO, and that half was decided by rendering the
+    // WORST case and looking at it rather than by trusting either argument.
+    // Every tile #1/1 carrying three badges — name + serial + badge strip —
+    // covers ~53px of a 130x172 slab (31%); the realistic case (0-1 badges)
+    // covers ~30px (17%), and the hero ~46px of 317 (15%). Dense at the worst
+    // case, legible at every case. ⭐ The deciding argument is what a share card
+    // is FOR: "#1 / 1 ULTIMATE" with no name is an impressive number about an
+    // unidentified object, and identity is the payload when a stranger meets
+    // this in a timeline. It also makes this card agree with the trophy-case
+    // card, which has always named its Moments.
+    //
+    // ⛔ `NAME_MIN_SLAB_W` IS THE DIAL AND IT STAYS: set it to 200 and the
+    // six-up reverts to serial-only while the hero keeps its name. That is one
+    // line if the density reads wrong against REAL art — the renders behind this
+    // decision used a flat placeholder, so how a caption band sits over the
+    // stills Trevor had re-cut is the one thing they could not show.
+    //
+    // ⚠ The strip re-uses `capSize`/`capHeight` on purpose: those are the sizes
+    // the 0.540em caption budget is derived from and the ones Cowork rendered and
+    // looked at (hero 14px / six-up 10px). A second font scale here would put the
+    // widest-name arithmetic out of step with the guard that pins it.
+    const NAME_MIN_SLAB_W = 0;
+    const showTrophyName = grid.w >= NAME_MIN_SLAB_W;
+    // ⛔ CLIPPED BY CHARACTER COUNT, NOT BY CSS, and this one was found by
+    // LOOKING at the render rather than by reasoning about it. The strip is a
+    // CENTRED flex line, so `overflow: hidden` eats BOTH ENDS: a 44-character
+    // UFC title drew as "Adesanya vs Alex Pereira UFC 2" — the "Israel " silently
+    // gone from the FRONT. A caption that removes the first word of a name is
+    // worse than one that ellipses the last, because nothing on the card says it
+    // happened. 8px is the strip's horizontal padding.
+    const nameBudget = monoCharBudget(grid.w - 8, capSize);
 
     const displayName = (bio?.display_name || username).toUpperCase();
     const tagline = bio?.tagline || "";
@@ -984,6 +1032,42 @@ export async function GET(
                         }}
                       >
                         ART UNAVAILABLE
+                      </div>
+                    )}
+                    {/* ⭐ WHO IT IS. Stacked directly above the serial strip
+                        and absolutely positioned for the same reason it is —
+                        a fixed-size slab must not grow a line's worth taller
+                        than its neighbours. Guarded exactly like the serial
+                        line below (maxWidth + nowrap + hidden): the longest
+                        real name in the catalogue is 48 characters and the
+                        hero budget is 30, so the clamp is load-bearing today,
+                        not a precaution. ⛔ nowrap, never wrap — a second line
+                        in a fixed-height strip is sliced through the middle. */}
+                    {showTrophyName && (t.player_name ?? "") !== "" && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          bottom:
+                            (t.marks.length > 0 ? markSize + 8 : 0) +
+                            (t.detail.serial !== "" ? capHeight : 0),
+                          height: capHeight,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "0 4px",
+                          background: "rgba(0,0,0,0.72)",
+                          fontFamily: mono,
+                          fontSize: capSize,
+                          letterSpacing: 0.4,
+                          color: "rgba(255,255,255,0.92)",
+                          maxWidth: grid.w,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {clip(t.player_name ?? "", nameBudget)}
                       </div>
                     )}
                     {/* Serial + tier, sitting directly on top of the badge
