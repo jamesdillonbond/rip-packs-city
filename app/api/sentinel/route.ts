@@ -6,6 +6,7 @@ import { summariseAlertDelivery } from "@/lib/sentinel/alert-delivery";
 import { summariseZeroYield } from "@/lib/sentinel/zero-yield";
 import { summariseBlindChecks, BLIND_CHECK_NAME } from "@/lib/sentinel/blind-checks";
 import { summariseCadenceCollapse } from "@/lib/sentinel/cadence-collapse";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 
 // Named once: the arm pushes it, the threshold/ack rows key on it, and the
 // migration that seeds those rows quotes it verbatim. A typo here is a silently
@@ -228,10 +229,20 @@ async function sendTelegram(text: string): Promise<Delivery> {
   // cannot be bypassed.
   text = fitTelegramText(text);
   try {
+    // ⛔ BOUNDED ON PURPOSE. `fetch()` has no default timeout, and since ack mode
+    // this route runs inside `after()` under a `maxDuration` — an upstream that
+    // accepts the connection and holds it open would take the whole invocation
+    // with it, so neither the success path nor the catch would run and NO
+    // terminal `pipeline_runs` row would be written. An alarm that hangs on its
+    // own notification channel is a dead alarm that reports nothing at all.
+    // 10s: the send is one small POST; anything slower is a dead channel, and a
+    // dead channel must read as `telegram-FAILED:…` in `extra.notifications`
+    // rather than as silence.
     const res = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
       {
         method: "POST",
+        signal: AbortSignal.timeout(10_000),
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: TELEGRAM_CHAT_ID,
@@ -263,8 +274,10 @@ async function sendTelegram(text: string): Promise<Delivery> {
 async function sendEmail(subject: string, html: string): Promise<Delivery> {
   if (!RESEND_API_KEY || !ALERT_EMAIL) return { ok: false, reason: "not_configured" };
   try {
+    // Same bound, same reason as the Telegram send above.
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
+      signal: AbortSignal.timeout(10_000),
       headers: {
         Authorization: `Bearer ${RESEND_API_KEY}`,
         "Content-Type": "application/json",
@@ -319,6 +332,52 @@ export async function POST(req: NextRequest) {
   }
 
   if (new URL(req.url).searchParams.get("ack") === "1") {
+    // ⭐ THE ROUTE WRITES ITS OWN INVOCATION HEARTBEAT IN ACK MODE, AND THIS IS
+    // NOT BOILERPLATE — IT IS THE ONLY THING THAT CAN.
+    // `sentinel-heartbeat` has always been written by the GHA RUNNER, before it
+    // calls this route, and that is what separates "the tick fired and the route
+    // stayed silent" from "the tick never happened" (register #80). ⛔ A
+    // cron-job.org caller has no runner: it fires and forgets. So without this
+    // write, an ack-mode tick killed at `maxDuration` inside `after()` would
+    // produce NO row of any kind — neither the heartbeat nor the terminal
+    // `sentinel` row — and would be indistinguishable from a cron that never
+    // fired. That is precisely the failure class CLAUDE.md's after()-heartbeat
+    // rule exists for, and moving the sentinel to a fire-and-forget caller is
+    // what put this route into that population.
+    //
+    // ⚠ `event: "cron-ack"`, NOT `"schedule"`. `rpc_gha_schedule_watchdog()`
+    // counts only `event = 'schedule'` heartbeats to decide whether GitHub's
+    // scheduler is alive; tagging these as `schedule` would let a healthy
+    // cron-job.org lane mask a total GHA stall — an alarm reporting on the
+    // wrong subject. The two callers stay separately countable.
+    //
+    // ⛔ IT MUST NEVER BLOCK THE DISPATCH. Telemetry does not get to break the
+    // thing it measures: a failed heartbeat costs this run its distinguishability
+    // and nothing else, so the 202 and the sweep both still happen.
+    // ⛔ Through the SHARED helper, not `log_pipeline_run`: that RPC has no
+    // `p_finished_at`, so `finished_at` takes its now() default and the
+    // GENERATED `duration_ms` publishes this INSERT's own latency as a run
+    // duration — measured elsewhere at up to 47 s. The helper writes the table
+    // directly to pin the marker's duration to 0, and it is already non-fatal by
+    // construction, which is what telemetry about an alarm has to be.
+    //
+    // ⛔ AND IT IS GUARDED HERE TOO, even though the helper swallows its own
+    // insert errors. A test written for this call site threw from the helper and
+    // the 202 never went out — so "non-fatal by construction" was a property of
+    // the helper's internals, not of this route, and the alarm's dispatch must
+    // not depend on another module's internal contract. One line, and the class
+    // of failure it removes is "the pager stopped answering because its
+    // telemetry helper changed".
+    try {
+      await writeInvocationHeartbeat({
+        pipeline: "sentinel",
+        startedAtMs: Date.now(),
+        extra: { source: "api-route", event: "cron-ack" },
+      });
+    } catch (e: any) {
+      console.error("[sentinel] ack-mode heartbeat threw:", redactSecrets(e?.message ?? e));
+    }
+
     after(async () => {
       try {
         await runSentinel();

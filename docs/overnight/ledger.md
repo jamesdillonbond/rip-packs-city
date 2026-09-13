@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 🚨 FIXED — my own sentinel change turned `main` red on three ratchets, and every one of them was right · Cowork cloud, Trevor: "exhaust all you can do"
+
+**Shipped:** `app/api/sentinel/route.ts` (ack-mode invocation heartbeat + two bounded fetches), `__tests__/api-sentinel-ack-mode.test.ts` (+3 tests), `docs/cowork-skills/rpc-cron-ops.skill` (repacked), `docs/reference/known-issues.md` (#97). Revert: `git revert` the commit whose message starts `fix(sentinel): the ack tick writes its own heartbeat`.
+
+**🚨 FOUND BY RUNNING THE FULL SUITE, NOT BY AN ALARM.** Vercel was green, the route worked, the deployment list said `READY`. The 16,976-test suite said **3 files failing**, and all three traced to last night's ack-mode commit. ⭐ **None was a test to satisfy; each named a hole the change had opened.**
+
+**⭐ THE SHARPEST ONE REINTRODUCED THE FAILURE IT WAS BUILT TO PREVENT.** `after-route-heartbeat-ratchet` fired because adding `after()` to a route that writes a terminal `pipeline_runs` row put `/api/sentinel` into the population *"where a kill is INVISIBLE"* — with no invocation marker. 🚨 **And the reason is specific to what I shipped: `sentinel-heartbeat` has always been written by the GHA RUNNER before it calls the route, and a cron-job.org caller has no runner.** So an ack tick killed at `maxDuration` would have written **no row of any kind** — indistinguishable from a cron that never fired, which is exactly what `?ack=1` exists to avoid. ✅ The route now writes its own marker through `writeInvocationHeartbeat()` — **not** `log_pipeline_run`, which has no `p_finished_at` and would publish its own INSERT latency as a run duration.
+
+**⚠ TAGGED `cron-ack`, NEVER `schedule`, and that is not cosmetic.** `rpc_gha_schedule_watchdog()` counts only `event = 'schedule'` heartbeats to decide whether GitHub's scheduler is alive. **A healthy cron-job.org lane tagged `schedule` would mask a total GHA stall** — an alarm answering confidently about the wrong subject. Pinned by test.
+
+**⭐ AND THE TEST I WROTE FOR IT FOUND A SECOND DEFECT IMMEDIATELY.** I dropped my `try/catch` when moving to the shared helper, on the strength of a comment saying it is non-fatal by construction. It is — **in its internals.** A throwing helper took the 202 with it, so the alarm's dispatch depended on another module's internal contract. Guarded at the call site. ⚠ **The first version of that test used `spy.mockRejectedValueOnce?.(…)` and PASSED VACUOUSLY** — the optional chain no-ops if the mock is not a spy. Rewritten to drive a flag the mock actually reads, with a control asserting the throwing write was attempted.
+
+**⚠ THE SECOND RATCHET WAS NOT NEW CODE — IT WAS OLD CODE BECOMING DANGEROUS.** The Telegram and Resend sends have been unbounded `fetch()` calls forever; `fetch` has no default timeout. In an ordinary handler that is slow. In `after()` under a `maxDuration` the lambda is killed, **neither the success path nor the catch runs, and no terminal row is written at all**. Both bounded at 10s, so a dead channel reads as `telegram-FAILED:…` in `extra.notifications` rather than as silence. ⭐ **An alarm that hangs on its own notification channel is a dead alarm.**
+
+**⚠ THE THIRD: I EDITED `SKILL.md` AND NOT THE `.skill` BUNDLE BESIDE IT.** `docs/cowork-skills/` stores every skill twice and the `.skill` zip is what gets uploaded — so the corrected secret-safety rule would have been reviewed in the repo and **not installed**. Repacked. ⭐ **That is #32's mechanism firing on the very file written to fix #32.**
+
+**⚠ AND A CONCURRENT SESSION FIXED THE SAME RED THE OTHER WAY — ITS FIX IS CORRECT ABOUT YESTERDAY'S SENTINEL AND SILENTLY WRONG ABOUT TODAY'S.** It added a *"the caller writes the heartbeat"* exemption keyed on `pipeline-sentinel.yml` writing the marker before calling the route. ⭐ **True of the GHA caller. False of the caller `?ack=1` exists to enable** — a cron-job.org entry has no runner; it fires and forgets, so an ack tick killed at the wall still leaves no row at all. ✅ Resolved by keeping the route's own marker and taking it off the exemption list. ⛔ **The exemption MACHINERY and its three controls are deliberately left in place** — it is right for a route whose only caller is a workflow, and deleting a guard because its population fell to one is how the next such route arrives unguarded.
+
+**Gates:** `tsc` clean · the three ratchets green · 211 sentinel tests + 9 ack-mode tests green · eslint ratchet **715**, unchanged.
+
 ### 2026-09-13 · ✅ DOCS — the D25 residual was a RANGE because I sampled a population I could have counted; it is now 696 exactly, the render guard is verified non-vacuous, and `main`'s red is attributed with the fix spelled out · Cowork cloud, Trevor: "make sure nothing is unresolved from this thread"
 
 **Shipped (docs only, no code, no DB):** `docs/audits/deep-audit-register.md` (D25 residual re-measured; R87 caveat resolved + the label regression recorded), this entry. No revert needed — nothing executable changed.

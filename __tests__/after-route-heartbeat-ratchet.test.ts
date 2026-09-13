@@ -538,18 +538,28 @@ describe("the -dispatch/-complete exemption is a PROPERTY, not a name", () => {
     expect(hasMarkerPair('const PIPELINE_NAME = "alerts-dispatch";')).toBe(false)
   })
 
-  it("exempts exactly the two routes instrumented without the helper", () => {
+  it("exempts exactly the ONE route instrumented without the helper", () => {
     // A count assertion, so a future route silently picking up an exemption is
     // visible rather than absorbed.
-    // ⚠ `app/api/sentinel` joined on 2026-09-13 under the THIRD convention (its
-    // caller writes the marker) — see callerWritesHeartbeatBefore. It is listed
-    // here rather than excluded from the query so that the two conventions cannot
-    // quietly merge into "anything that looks instrumented".
+    //
+    // ⚠ `app/api/sentinel` was listed here on 2026-09-13 under the THIRD
+    // convention (its caller writes the marker) and came OFF the same day,
+    // because that convention does not hold for the caller the route was just
+    // opened to. `?ack=1` exists so **cron-job.org** can invoke the sentinel, and
+    // a cron-job.org entry has no runner — it fires and forgets. The GHA workflow
+    // really does write the marker first (the positive control below still
+    // passes, and it is still a true statement about that workflow), but an
+    // ack-mode tick killed at the wall would have left NO row at all.
+    //
+    // ⭐ So the route now writes its own marker through the helper in the ack
+    // branch and needs no exemption. The exemption MACHINERY is deliberately left
+    // in place with its controls: it is correct for a route whose only caller is
+    // a workflow, and deleting a guard because its current population is one is
+    // how the next such route arrives unguarded.
     const exempted = QUALIFYING.filter(
       (r) => r.hasHeartbeat && !/writeInvocationHeartbeat\s*\(/.test(readFileSync(path.join(ROOT, r.rel), "utf8")),
     )
     expect(exempted.map((r) => r.rel).sort()).toEqual([
-      "app/api/sentinel/route.ts",
       "app/api/wallet-backfill-multicollection/route.ts",
     ])
   })

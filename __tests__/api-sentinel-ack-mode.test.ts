@@ -17,6 +17,22 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // notification channels, never in the ack body.
 
 const afterCalls: Array<(...a: any[]) => any> = []
+const heartbeats: Array<Record<string, any>> = []
+
+// ⭐ The ack-mode heartbeat is the half of this that a cron-job.org caller
+// CANNOT supply for itself. `sentinel-heartbeat` has always been written by the
+// GHA runner before it calls the route; a fire-and-forget caller has no runner,
+// so without the route writing its own marker an ack tick killed at maxDuration
+// inside after() would leave NO row of any kind and be indistinguishable from a
+// cron that never fired — the exact class the after()-heartbeat rule exists for.
+let heartbeatThrows = false
+vi.mock("@/lib/pipeline/heartbeat", () => ({
+  writeInvocationHeartbeat: async (opts: Record<string, any>) => {
+    heartbeats.push(opts)
+    if (heartbeatThrows) throw new Error("db down")
+    return true
+  },
+}))
 
 vi.mock("next/server", async (importOriginal) => {
   const mod = await importOriginal<typeof import("next/server")>()
@@ -42,6 +58,8 @@ function post(url: string, auth?: string): NextRequest {
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = TOKEN
   afterCalls.length = 0
+  heartbeats.length = 0
+  heartbeatThrows = false
 })
 
 describe("POST /api/sentinel?ack=1 (CRON-30S)", () => {
@@ -50,6 +68,37 @@ describe("POST /api/sentinel?ack=1 (CRON-30S)", () => {
     expect(res.status).toBe(202)
     expect(afterCalls).toHaveLength(1)
     expect(typeof afterCalls[0]).toBe("function")
+  })
+
+  it("⭐ writes its own invocation heartbeat BEFORE dispatching — the caller cannot", async () => {
+    await POST(post("https://t/api/sentinel?ack=1", `Bearer ${TOKEN}`))
+    expect(heartbeats).toHaveLength(1)
+    // The helper appends the -heartbeat suffix itself; the caller passes the REAL
+    // pipeline name, so a marker can never land under the pipeline's own name and
+    // silence detect_stalled_pipelines() on the outage it was added to expose.
+    expect(heartbeats[0].pipeline).toBe("sentinel")
+    expect(typeof heartbeats[0].startedAtMs).toBe("number")
+  })
+
+  it("⛔ tags the heartbeat `cron-ack`, NEVER `schedule`", async () => {
+    // rpc_gha_schedule_watchdog() counts only event = 'schedule' heartbeats to
+    // decide whether GitHub's scheduler is alive. Tagging these as `schedule`
+    // would let a healthy cron-job.org lane mask a total GHA stall — an alarm
+    // reporting confidently on the wrong subject.
+    await POST(post("https://t/api/sentinel?ack=1", `Bearer ${TOKEN}`))
+    expect(heartbeats[0].extra?.event).toBe("cron-ack")
+    expect(heartbeats[0].extra?.event).not.toBe("schedule")
+  })
+
+  it("⛔ a THROWING heartbeat must not cost the sweep — telemetry never breaks its subject", async () => {
+    // ⚠ The throw is driven by a flag the mock actually reads, not by an
+    // optional-chained spy method that would no-op and pass vacuously. The
+    // control below proves the flag reaches the route.
+    heartbeatThrows = true
+    const res = await POST(post("https://t/api/sentinel?ack=1", `Bearer ${TOKEN}`))
+    expect(heartbeats, "control: the throwing write was actually attempted").toHaveLength(1)
+    expect(res.status, "a dead heartbeat costs this run its distinguishability, nothing else").toBe(202)
+    expect(afterCalls, "and the sweep is still dispatched").toHaveLength(1)
   })
 
   it("⚠ the 202 body carries NO verdict — it is a receipt, not an all-clear", async () => {
