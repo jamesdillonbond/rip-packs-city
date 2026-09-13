@@ -21,6 +21,8 @@ const WALL_KILLS_CHECK_NAME = "Wall Kills (24h)";
 const PROBE_COST_CHECK_NAME = "Ops Probe Cost";
 const PG_NET_CHECK_NAME = "pg_net Dispatch";
 const MAINTENANCE_CHECK_NAME = "Maintenance Load";
+// The Sniper Feed arm's HTTP bound — see the comment at the fetch.
+const SNIPER_FEED_FETCH_MS = 20_000;
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 // Bumped 60 -> 180 on 2026-08-08: under pooler saturation the ~8 sequential
@@ -1974,7 +1976,13 @@ async function runSentinel() {
   try {
     const sniperUrl = `${process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"}/api/sniper-feed`;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    // 8 s → 20 s (2026-09-13). A COLD build of /api/sniper-feed takes longer than
+    // 8 s (its own maxDuration is 45 s; the 12:21 and 12:56 PT sweeps both
+    // aborted at 8 s while the route answered 200 with 56 deals a minute later),
+    // so at 8 s this arm read INCONCLUSIVE on a healthy feed. The sentinel's
+    // wall budget accounts for the time this fetch spends, so 20 s here cannot
+    // push the sweep to its wall; it only lets a real answer arrive.
+    const timeout = setTimeout(() => controller.abort(), SNIPER_FEED_FETCH_MS);
     // /api/sniper-feed is NOT in proxy.ts's public list, so an unauthenticated
     // self-fetch 307s to /login and returns the login HTML as 200 — res.json()
     // then throws "Unexpected token '<'" and the catch marked this CRITICAL on
