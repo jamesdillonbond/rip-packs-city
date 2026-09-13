@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · 🔍 REGISTER — #78 CLOSED on a positive control, and #83's scary-looking growth is a NULL RESULT once you divide by the lane · Claude Code cloud, Trevor: "keep going"
+
+**Shipped (docs only, no code/DB/prod change):** `docs/reference/known-issues.md` (#78 closed + re-check block, #83 re-measurement), index regenerated. Revert: `git revert` the commit whose message starts `docs(register): close #78 on a positive control`.
+
+**#78 — CLOSED.** Its last open thread was *"530 Golazos rows still carry no `completed_at` … re-check after #76's console fix"*. Both frozen clocks restarted: newest `listed_at` **09-12 22:23Z** (was 7.3 d stale) and newest `completed_at` **09-12 22:24Z** (was 10.8 d stale), with 38 closures and 19 new listings in 48 h.
+
+⭐ **But "the lane looks fine now" is not a measurement, so the close rests on a discriminator on an INDEPENDENT table:** if the lane were missing closures, listings whose NFT has since sold would sit open. **0 of 511 do.** ⭐⭐ **And the zero only means something because of the positive control — the same join on CLOSED rows returns `purchased` 291/300 (97 %) and `cancelled` 97/124 (78 %).** The instrument matches; the open set is separated at 0 %. *A null result needs a positive control*, and this one has it.
+
+⚠ **The open rows are AGE, not breakage:** 509 of 511 were listed before 09-10, oldest **2026-05-22**, in a collection holding 935 listing rows total. ⛔ **One thing the instrument cannot see, stated rather than glossed: a missed CANCELLATION leaves no trace in `sales`.** What is excluded at zero is the expensive failure — sold moments still advertised for sale.
+
+🟡 **What remains is #76's, not #78's:** the lane runs **9×/day off the GHA backstop alone** against a 96×/day primary. Recorded so a future reader does not re-open this as a Golazos defect.
+
+**#83 — RE-MEASURED, AND IT GETS SMALLER.** The count grew **9,675 → 9,716** and the growth is fully explained: per-source, `ts_history_backfill_v1` holds **41 rows — a source this item's breakdown never listed**, and 41 is exactly the delta. ✅ The forward fix is intact: newest custodian `sold_at` on the two live lanes is 09-11 20:27Z / 20:22Z, **before the 14:00 PT cutover**.
+
+**🚨 AND I NEARLY FILED THOSE 41 AS A THIRD LEAKING WRITER. The share refutes it where the count alone would have misled.**
+
+| collection · source | lane rows | custodian | share |
+|---|---:|---:|---:|
+| All Day · `onchain_dapper_v1` | 7,702 | 1,974 | **25.63 %** |
+| All Day · `onchain_dapper_v2` | 30,156 | 6,667 | **22.11 %** |
+| Golazos · `onchain_dapper_v2` | 356 | 0 | 0.00 % |
+| Top Shot · `ts_history_backfill_v1` | 1,433,725 | 41 | **0.0029 %** |
+
+⭐ **A ~7,600× separation.** Custodial routing is a fifth to a quarter of a lane; 41 in 1.43 M is background, consistent with the address simply being the buyer on 41 occasions. ✅ **So this CORROBORATES #83's original scoping instead of breaking it** — "Golazos' buyers are organically distributed" and "Top Shot deposits to the real buyer via a different decoder" now both have numbers.
+
+**⭐⭐ PROMOTE — A RAW COUNT NAMING AN ADDRESS IS NOT EVIDENCE OF CUSTODIAL WRITING; ITS SHARE OF THE LANE IS.** *"41 new custodian rows from a source we never listed"* is an alarming sentence and it was one query away from being a filed finding. Dividing by the lane turned it into a null result. **Future re-reads of #83 should quote the share, not the count** — the count rises whenever a historical backfill runs and means nothing by itself. ⛔ The ~9,668 All Day rows are unchanged and the bulk `UPDATE` is still Trevor's.
+
+**⚠ This pass returned "still open" as well as "closed", which is what keeps it from being a closing spree:** #83 stays open (the substance is untouched), #76 stays open and got worse-specified, #90 stays open and is unmeasurable from here.
+
+**Gates:** docs only; issues index regenerated (**#78 now reads ✅ closed**, derived from its own opener, not hand-set); `known-issues-index-lists-every-item` **9 tests pass**; `check-memory-doc-links` **196 links resolve**; ledger guards 3 / 0.
+
 ### 2026-09-12 · 🔍 GO-LIVE — M1 and M2 read as a SERIES for the first time: M1 is above its bar at all four legs, M2 never reaches 30, and the "sweep position" explanation is half wrong · Claude Code cloud, Trevor: "work through any to do list items you can handle"
 
 **Shipped (docs only, no code/DB/prod change):** `docs/strategy/go-live-2026-09.md` (one new dated block in §1). Revert: `git revert` the commit whose message starts `docs(go-live): read M1 and M2 as a series`.
