@@ -399,3 +399,40 @@ describe("existing price tools now carry the metadata block", () => {
     vi.unstubAllGlobals()
   })
 })
+
+// ── 4. Second pass the same day: the remaining edition-returning tools ─────
+
+describe("special-serial and wallet tools carry the same three-state badge block", () => {
+  it("get_special_serial_owners rows carry badges from badge_editions, keyed on edition_key", async () => {
+    install({
+      "rpc:get_special_serial_owners_board": { data: [{ player_name: "Damian Lillard", set_name: "Cosmic", tier: "LEGENDARY", serial: 1, circulation_count: 49, tag: "#1", holder_address: "0x1", edition_fmv: 651.95, edition_key: "8:145" }], error: null },
+      badge_editions: { data: [{ external_id: "8:145", play_tags: [{ title: "Rookie Year" }], circulation_count: 49, burned: 0, locked: 12 }], error: null },
+    })
+    A.state.script = [{ tools: [{ name: "get_special_serial_owners", input: { playerName: "Lillard" } }] }, { text: "done" }]
+    await POST(post({}))
+    const r = toolResult() as { rows: Array<Record<string, unknown>>; badges_note: string }
+    expect(r.rows[0]).toMatchObject({ editionKey: "8:145", badges: ["Rookie Year"], badges_status: "ok" })
+    expect(r.badges_note).toContain("moment tags")
+  })
+  it("search_serial_deals marks badges unavailable — not empty — when the metadata read fails", async () => {
+    install({
+      topshot_active_listings: { data: [{ last_seen_at: new Date().toISOString() }], error: null },
+      topshot_underpriced_serials_board: { data: [{ player_name: "P", set_name: "S", tier: "RARE", serial_number: 1, circulation_count: 100, ask_usd: 10, serial_fmv_usd: 20, edition_fmv_usd: 8, discount_pct: 50, estimate_quality: "tight", confidence: "HIGH", nft_id: "1", edition_key: "1:1", external_id: "1:1" }], error: null },
+      badge_editions: { data: null, error: { message: "timeout" } },
+    })
+    A.state.script = [{ tools: [{ name: "search_serial_deals", input: {} }] }, { text: "done" }]
+    await POST(post({}))
+    const r = toolResult() as { rows: Array<Record<string, unknown>> }
+    expect(r.rows[0]).toMatchObject({ editionKey: "1:1", badges: null, badges_status: "unavailable" })
+  })
+})
+
+describe("entity pages get pills that exercise the entity context", () => {
+  const CHAT = readFileSync(join(ROOT, "components", "SupportChat.tsx"), "utf8")
+  it("PAGE_DEFAULTS carries edition / player / team / set / series / moment keys", () => {
+    for (const key of ["edition:", "player:", "team:", "set:", "series:", "moment:"]) {
+      expect(CHAT, `${key} pills missing`).toMatch(new RegExp(`^\\s+${key} \\[`, "m"))
+    }
+    expect(CHAT).toContain("What's this one worth right now?")
+  })
+})

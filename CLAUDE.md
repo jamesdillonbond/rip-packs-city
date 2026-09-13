@@ -256,7 +256,9 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 1. **RPC is READ-ONLY** — no cart, no gifting, no trading. **Never offer an action the product lacks.** This binds every surface, not just the concierge.
 2. **Pinnacle FMV**: NEVER join by `edition_key` alone — always the triple (`character_name`, `set_name`, `variant_type`) per `92aab30`.
 
-The rest — memory-FMV banned (`a910745`, must tool-call in the same turn), **an errored tool is NOT an empty result**, **a tool cannot observe its own health**, `get_fmv` shape, the `updated_at` trigger, the `feedback_type` filter — plus the tool list: [concierge.md](docs/reference/concierge.md).
+3. **The prompt RECITES the data layer — DERIVE it**: thresholds interpolate `lib/fmv-confidence.ts`, coverage read live, never hand-typed.
+
+The rest (memory-FMV ban, **errored ≠ empty**, **a tool cannot observe its own health**, `badges_status`, tool list): [concierge.md](docs/reference/concierge.md).
 
 ---
 

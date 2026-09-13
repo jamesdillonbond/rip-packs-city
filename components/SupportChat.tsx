@@ -228,6 +228,15 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
   overview: ["Report a bug", "Suggest a feature", "Top sales today", "Where do I start?"],
   market: ["Bug on this page?", "Confusing filter?", "Show everything under $20", "Cheapest legendary right now"],
   analytics: ["A number looks off?", "Suggest a feature", "Top sales this week", "Hottest player this month"],
+
+  // Entity pages (2026-09-13). The chat now receives the page's entity, so
+  // "this one" resolves — these pills demonstrate it rather than describe it.
+  edition: ["What's this one worth right now?", "Is this one listed, and at what?", "What badges does this carry?", "How has it traded over the past year?"],
+  player: ["What's this player's most valuable moment?", "Which of their moments are rookies?", "Any of their moments listed under FMV?", "Bug on this page?"],
+  team: ["Which rookies does this team have?", "What's most locked up for this team?", "What sold for this team today?", "Bug on this page?"],
+  set: ["What would it cost me to finish this set?", "What's the floor across this set?", "Bug on this page?", "Suggest a feature"],
+  series: ["What's the most valuable edition in this series?", "How does this series compare to the others?", "Bug on this page?", "Suggest a feature"],
+  moment: ["What's this moment worth?", "Is this edition listed right now?", "What badges does it carry?", "Bug on this page?"],
 };
 const DEFAULT_SUGGESTIONS = ["Report a bug", "Suggest a feature", "Something looks off", "How does FMV work?"];
 

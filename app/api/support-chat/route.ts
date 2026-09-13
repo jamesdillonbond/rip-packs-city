@@ -1555,11 +1555,13 @@ async function executeTool(
       if (rows && rows.length > 0) {
         const results = rows.map((d: any) => ({
           player: d.player_name,
+          set: d.set_name ?? null,
           tier: d.tier,
           serial: d.serial_number,
           price: Number(d.ask_price),
           fmv: Number(d.fmv),
           discount_pct: Number(d.discount),
+          badges: Array.isArray(d.badge_slugs) ? d.badge_slugs : null,
           source: "catalog",
           buy_url: d.buy_url || "",
         }));
@@ -1858,7 +1860,7 @@ async function executeTool(
           };
           const { data: top } = await (supabase as any)
             .from("wallet_moments_cache")
-            .select("player_name, character_name, set_name, edition_name, tier, serial_number, mint_count, fmv_usd")
+            .select("player_name, character_name, set_name, edition_name, tier, serial_number, mint_count, fmv_usd, edition_key")
             .eq("wallet_address", walletKey)
             .eq("collection_id", effectiveCollectionUuid)
             .not("fmv_usd", "is", null)
@@ -1866,18 +1868,25 @@ async function executeTool(
             .limit(5);
           const dbSlug = APP_ID_TO_DB_SLUG[effectiveCollectionId ?? ""] ?? null;
           const totals = perCollection.find((c: any) => c?.slug === dbSlug) ?? null;
+          // Badges + supply on the top-5 — "what's my best moment and why" is
+          // half metadata. Fail-soft: a failed read shows as badges_status
+          // "unavailable", never as an empty list.
+          const topMeta = await fetchEditionMetadata(supabase, effectiveCollectionUuid, (top ?? []).map((m: any) => m.edition_key));
           collectionDetail = {
             collection: effectiveCollectionId,
             total_moments: totals?.moments ?? 0,
             portfolio_fmv: totals?.fmv ?? 0,
             top_moments: (top ?? []).map((m: any) => ({
+              editionKey: m.edition_key ?? null,
               player: m.player_name ?? m.character_name,
               set: m.set_name ?? m.edition_name,
               tier: m.tier,
               serial: m.serial_number,
               mint_count: m.mint_count,
               fmv: m.fmv_usd,
+              ...metadataFieldsFor(topMeta, m.edition_key, effectiveCollectionUuid),
             })),
+            badges_note: BADGES_NOTE,
           };
         }
         // Best-effort: total of the best standing on-chain bid (DapperOffersV2,
@@ -2347,7 +2356,9 @@ async function executeTool(
         p_offset: 0,
       });
       if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
+      const ownersMeta = await fetchEditionMetadata(supabase, COLLECTION_UUID_BY_SLUG["nba-top-shot"], (data ?? []).map((r: any) => r.edition_key));
       const rows = (data ?? []).map((r: any) => ({
+        editionKey: r.edition_key ?? null,
         player: r.player_name,
         set: r.set_name,
         tier: r.tier,
@@ -2356,10 +2367,12 @@ async function executeTool(
         kind: r.tag, // '#1' | 'perfect' | 'jersey'
         holder: r.holder_address,
         edition_fmv: r.edition_fmv != null ? Number(r.edition_fmv) : null,
+        ...metadataFieldsFor(ownersMeta, r.edition_key, COLLECTION_UUID_BY_SLUG["nba-top-shot"]),
         edition_url: r.edition_key ? `${base}/nba-top-shot/edition/${encodeURIComponent(r.edition_key)}` : null,
       }));
       return JSON.stringify({
         status: "ok",
+        badges_note: BADGES_NOTE,
         note: "Top Shot only. 'holder' is the current owner among tracked wallets (latest seen), not a present-custody guarantee.",
         total: rows.length,
         rows,
@@ -2793,9 +2806,11 @@ async function executeTool(
           Number(b.discount_pct ?? 0) - Number(a.discount_pct ?? 0));
         rows = rows.slice(0, limit);
         if (rows.length > 0) {
+          const serialMeta = await fetchEditionMetadata(supabase, tsUuid, rows.map((r: any) => r.external_id));
           return JSON.stringify({
             status: "ok",
             source: "underpriced_serials_board",
+            badges_note: BADGES_NOTE,
             feed_age_hours: feedAgeHours,
             feed_stale: feedStale,
             // ⚠ The age matters on a NON-empty result too: these rows are a
@@ -2805,6 +2820,7 @@ async function executeTool(
             note: `Top Shot only. Every row is listed BELOW its serial-FMV. serial_fmv_usd is the per-serial estimate; estimate_quality='tight' is more reliable than 'coarse'. fmv on these rows is authoritative. ${feedNote}`,
             total: rows.length,
             rows: rows.map((r: any) => ({
+              editionKey: r.external_id ?? r.edition_key ?? null,
               player: r.player_name,
               set: r.set_name,
               tier: r.tier,
@@ -2818,6 +2834,7 @@ async function executeTool(
               discount_pct: r.discount_pct != null ? Number(r.discount_pct) : null,
               estimate_quality: r.estimate_quality,
               confidence: r.confidence,
+              ...metadataFieldsFor(serialMeta, r.external_id, tsUuid),
               buy_url: buyUrl(r.nft_id),
             })),
           });
@@ -2852,12 +2869,19 @@ async function executeTool(
           return ed?.external_id ?? null;
         });
       }
+      const listedMeta = await fetchEditionMetadata(
+        supabase,
+        tsUuid,
+        raw.map((row: any) => (Array.isArray(row.editions) ? row.editions[0] : row.editions)?.external_id ?? null),
+      );
       let listings = raw.map((row: any) => {
         const ed = Array.isArray(row.editions) ? row.editions[0] : row.editions;
         const ask = row.ask_usd != null ? Number(row.ask_usd) : null;
         const sfmv = row.serial_fmv_usd != null ? Number(row.serial_fmv_usd) : null;
         const discount = ask != null && sfmv != null && sfmv > 0 ? Math.round(((sfmv - ask) / sfmv) * 1000) / 10 : null;
         return {
+          editionKey: ed?.external_id ?? null,
+          ...metadataFieldsFor(listedMeta, ed?.external_id, tsUuid),
           player: ed?.player_name ?? null,
           set: ed?.set_name ?? null,
           tier: ed?.tier ?? null,
@@ -2888,6 +2912,7 @@ async function executeTool(
       return JSON.stringify({
         status: "ok",
         source: "active_listings",
+        badges_note: BADGES_NOTE,
         feed_age_hours: feedAgeHours,
         feed_stale: feedStale,
         note: `Top Shot only. ALL currently-listed special serials — some asks may be ABOVE serial_fmv (a negative discount_pct = overpriced/troll ask); do not call those deals. serial_fmv is authoritative where present; where null, report the ask as-is and say FMV is unavailable. ${feedNote}`,
