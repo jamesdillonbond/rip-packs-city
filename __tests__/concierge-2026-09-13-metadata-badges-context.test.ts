@@ -78,6 +78,18 @@ describe("the concierge's FMV methodology is stated from lib/fmv-confidence, not
   it("the retired plumbing narration is gone from the canned answers", () => {
     expect(ROUTE).not.toContain("Cloudflare blocking is transient")
   })
+
+  it("the badge rule no longer invites the soft price claim the FMV rule bans", () => {
+    // Measured in production 2026-09-13 (probe-claude-2026-09-13-b): asked how
+    // rare Top Shot Debut is, the bot added that it "typically commands a
+    // premium" — the exact phrase the FMV rule lists as a banned directional
+    // claim — because the badge section said a badged moment "is reasonably
+    // worth more ... and you should say so". The two rules must agree: the
+    // badge is context, the premium's SIZE is a price and needs rows this turn.
+    expect(ROUTE).not.toContain("is reasonably worth more than an otherwise-identical plain edition, and you should say so")
+    expect(ROUTE).toContain("the SIZE of a badge premium is a price claim")
+    expect(ROUTE).toContain('never say a badge "typically commands a premium"')
+  })
 })
 
 describe("formatCoverageForPrompt", () => {
