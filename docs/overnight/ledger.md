@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 📋 REGISTER — #82's cause narrowed to a named code path, and my own leading hypothesis refuted before it was published · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only** — `docs/reference/known-issues.md` (#82). No code, no migration, no data.
+
+⭐ **(1) THE AUTHORITY CONFIRMS NONE OF THE 29.** `topshot_moment_subeditions`, the on-chain submap the indexer treats as authoritative, holds a row for only **3** of the 29 mis-keyed sales; **1** claims `subedition_id > 0`; **ZERO agree** with the edition the sale landed on. ⭐ **Control, because "no row" proves nothing against a sparse table: it holds 906,441 rows, 163,043 of them confirmed parallels.** So this is a mis-key, not a circulation problem — #82's thesis confirmed a third independent way.
+
+⛔ **(2) AND MY LEADING HYPOTHESIS — "the Step 4e guard never ran" — IS REFUTED BY ITS OWN COUNTER.** `app/api/sales-indexer/route.ts` writes `source: "onchain"` (so it IS the writer for the 09-12 burst) and its unconfirmed-parallel redirect counts itself in `extra.parallel_redirects`:
+
+| day (PT) | sales_resolved | parallel_redirects | mis-keys |
+|---|---:|---:|---:|
+| **09-12** | **1,336** | **29** | **24** |
+| **09-10** | **1,108** | **12** | **0** |
+| 09-11 | 381 | 4 | 0 |
+
+**The guard fired 29 times on the very day 24 mis-keys landed**, so it is live and the mis-keys come from a path it did not cover — not from its absence. ⭐ **And 09-10 kills the volume explanation a second time: MORE sales resolved, twelve redirects, zero mis-keys.**
+
+⚠ **OPEN, stated narrowly.** Both remaining candidates are **silent skips rather than errors**, which is why nothing logged: `edIdToExt.get(editionId)` undefined (the resolved edition absent from `assignableEdIds`, built from only three maps) or `baseKeyToId.get(base)` missing. **Every READ there binds its error and throws — the code is careful — but a missing MAP ENTRY falls through and keeps the parallel edition.** ⛔ I did not read the 09-12 job logs, and the closeness of 29 redirects to 29 breach rows is **not** offered as a link (the breach includes August rows — diff the SET, not the count).
+
+⭐ **CHEAPEST NEXT STEP, instrument already in place:** join the 24 mis-keyed sales to the tick that wrote them and read that tick's `parallel_redirects` — one query separates "the guard skipped these" from "these came from another resolution path", with no new instrumentation.
+
 ### 2026-09-13 · 🚨 REGISTER — a nine-day-silent lane nobody heard, because the safety net two suppressions NAME is switched off (#102) · Claude Code cloud, overnight autonomous
 
 **Shipped: docs only** — `docs/reference/known-issues.md` (#102 NEW, index 99 → 100). No code, no migration, **no suppression or watchlist row touched.**
