@@ -1657,3 +1657,43 @@ in code"). The NAMES of the sub-classes stay in CLAUDE.md; the parentheticals �
 >   **SWEEP whose `ok` means it COMPLETED, not that its LANES worked** — a lane failing 100% on a dead
 >   host rode under `ok=true` for a month. Group the failures table by reason with
 >   `max(last_failed_at)`; fail the sweep when a lane fails EVERY target on TRANSPORT.
+
+## An ALERT is the one surface that cannot report-and-let-the-reader-judge (2026-09-13)
+
+The canon's four helpers all answer *"the read failed — say so instead of publishing a number."* This
+is the sibling case the table does not cover: **the read SUCCEEDED, the number is real, and sending it
+is still wrong.**
+
+🚨 **THE CASE.** 2026-09-12 PT, Trevor was sent *"Damian Lillard #5735 · $0.50 ask"* on the **fourth
+consecutive night**, off an `ask_updated_at` frozen at 09-10 04:48Z, while the live floor read **$1.03**
+— on the Moment he had already bought. Every layer behaved: the read worked, the row was real, and
+`lib/alerts/format.ts` even rendered *"ask seen 3d ago — may be gone"* from the same stamp. **The
+honest caption did not save it**, because a notification is consumed as an instruction to act, not as
+a report to weigh. The boards may render a stale ask with its age marker; the alert may not send it.
+
+⭐ **SO THE GATE BELONGS IN THE ALERT CHAIN, NOT THE BOARDS.** `public.ask_is_alertable()` filters both
+scanners; `/insights/deals` still shows the same rows with their markers. Putting it in the shared view
+would have silently thinned a public board to fix a notification.
+
+⭐ **AND THE SAME GATE KILLED THE REPEAT WITHOUT TOUCHING THE DEDUPE.** `dedup_bucket` is
+`to_char(now(),'YYYY-MM-DD')` — one calendar day — so **any** row that stays in the pool re-fires every
+night for ever. The rows that do that are exactly the rows nobody re-confirms: a live ask changes,
+sells or gets re-priced; a frozen one does not. Fixing the freshness removed the only rows capable of
+repeating, which is why no notification-frequency behaviour had to be renegotiated.
+
+⚠ **THE TRAP THAT ALMOST MADE IT WORSE, and it is the transferable half.** The obvious implementation —
+one recency predicate over the whole pool — would have deleted **1,937 of 1,956 correct All Day rows**
+(median `listed_at` age 814.7 h), because that arm's stamp is the SELLER's posting time over an
+event-sourced open-listing index, not a confirmation. **Four arms, three meanings for "the ask's
+timestamp"** — the table is in [database.md](database.md). So the `CASE` lists the EXEMPT arms and
+gates everything else, which also makes an unknown slug, the other collection-string convention
+(`nba-top-shot`), and a NULL stamp fail **CLOSED**. ⛔ Written the obvious way round — listing the
+GATED arms — a typo would have disabled the gate and nothing would have said so.
+
+⚠ **AND THE STATED REASON WAS STILL WRONG, WHICH IS THE EXPENSIVE KIND HERE.** The gate shipped
+described as *"never alert on an ask nobody has re-confirmed"*. On Top Shot the column means LAST
+CHANGED, so the real rule is *"the floor changed inside 12 h"* — defensible, and still the fix, but not
+the claim. Corrected in prod (`COMMENT ON FUNCTION`) and in every header the same night, restated
+rather than deleted. **A correct change with a wrong justification is how the next session inherits the
+wrong model** — and the register carries it as #98.
+

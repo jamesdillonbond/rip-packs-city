@@ -113,6 +113,8 @@ function fmtInt(n: number | null): string {
 //
 // A stale "deal" is the single thing this board can do that wastes a collector's
 // trip, and its own lede already warns about "a low-serial / stale listing".
+import { askAgeTitle, askStampKind } from "@/lib/market/ask-freshness"
+
 const ASK_STALE_HOURS = 12
 
 // ⚠ TAKES `nowMs` RATHER THAN READING THE CLOCK, AND THAT IS NOT STYLE.
@@ -597,7 +599,10 @@ export default function DealsBoardClient({
                         return (
                           <span
                             className="rpc-dl-thin-caveat"
-                            title={`We last confirmed this ask ${fmtAge(age)} ago; normally every edition is re-checked about hourly. It may already be sold or repriced — open the listing before acting.`}
+                            // ⚠ Was a HARDCODED COPY of the shared sentence, which is how it
+                            // kept a claim the shared module had already been corrected
+                            // out of. Call the helper; never re-inline this string.
+                            title={askAgeTitle(age, askStampKind(r.collection_slug))}
                           >
                             ⚠ ask unconfirmed {fmtAge(age)}
                           </span>

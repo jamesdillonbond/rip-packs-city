@@ -13,6 +13,14 @@
 -- which carries a $5 floor and FMV gates, so the price intersected an empty set
 -- while 2,640 Top Shot asks at or below $0.60 sat in the raw ask table.
 --
+--
+-- ⛔ CORRECTED 2026-09-13 (audit_20260913_the_ask_stamp_means_three_different_things):
+-- "re-confirmed" is TRUE for Pinnacle and FALSE for Top Shot. `edition_offers.updated_at`
+-- is bumped ONLY WHEN THE FLOOR CHANGES (the Atlas writer's ON CONFLICT carries an
+-- IS DISTINCT FROM guard), so on that arm this file pins "the floor CHANGED inside
+-- ASK_STALE_HOURS". The assertions and the body are unchanged and still correct; the
+-- WORD was wrong. It was a confirmation stamp until offers-sweep died on 2026-08-28 —
+-- the column's meaning changed with its WRITER while its name stayed put.
 -- Pinned here:
 --   1. PRICE-POOL CONSTRUCTION IS CONDITIONAL AND BOUNDED. The raw-ask pool is
 --      built only when some active sub is price-only (max_price set AND

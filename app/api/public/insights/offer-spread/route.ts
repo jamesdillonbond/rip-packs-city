@@ -30,10 +30,18 @@
 // ⚠ THIS USED TO JUSTIFY ITSELF WITH "edition_offers refreshes continuously via the
 // offers-sweep cron, so 5m is well inside the freshness window." The cache window is
 // still right; the JUSTIFICATION was a dependency stated with no expiry. offers-sweep
-// is the ONLY writer of the ask side, and when its upstream died the column froze for
+// was then the writer of the ask side, and when its upstream died the column froze for
 // 30 h at a median age of 30.0 h — the cache was five minutes fresh over data a day
 // old. `updated_at` ships in every row precisely so the reader can tell the two
 // apart; see lib/market/ask-freshness.ts.
+// ⚠ TWO CORRECTIONS TO THE PARAGRAPH ABOVE, both dated 2026-09-13. (1) "the ONLY
+// writer" was already REFUTED by #81 — `edition_offers` has DB-side writers a repo
+// grep cannot see. (2) `offers-sweep` has now written NOTHING since 2026-08-28 and
+// stopped running entirely after 09-07, so the ask side is maintained by
+// `sync_edition_offers_from_atlas()`, which bumps `updated_at` ONLY WHEN THE FLOOR
+// CHANGES. ⭐ So on this board `updated_at` is a LAST-CHANGED stamp, not a
+// last-checked one — the tooltip says so per collection now
+// (`askStampKind`/`askAgeTitle`), and the 5-minute cache argument is unaffected.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";

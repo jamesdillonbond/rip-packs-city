@@ -15,7 +15,7 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
-import { ASK_STALE_HOURS, askAgeHours, askAgeTitle, fmtAskAge } from "@/lib/market/ask-freshness"
+import { ASK_STALE_HOURS, askAgeHours, askAgeTitle, askStampKind, fmtAskAge } from "@/lib/market/ask-freshness"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -415,7 +415,7 @@ export default function OfferSpreadBoardClient({
                         // REPORTS, never concludes: not "sold", not "delisted" —
                         // only that we have not re-checked it since.
                         return (
-                          <span className="rpc-os-thin-caveat" title={askAgeTitle(age)}>
+                          <span className="rpc-os-thin-caveat" title={askAgeTitle(age, askStampKind("nba_top_shot"))}>
                             ⚠ ask unconfirmed {fmtAskAge(age)}
                           </span>
                         )

@@ -69,14 +69,69 @@ export function fmtAskAge(hours: number): string {
 }
 
 /**
+ * WHAT AN ASK TIMESTAMP ACTUALLY MEANS, PER COLLECTION.
+ *
+ * 🚨 THIS EXISTS BECAUSE THE OLD TOOLTIP WAS FALSE ON THE BIGGEST COLLECTION, AND
+ * HAD BEEN SINCE 2026-08-28 (found 2026-09-13). It read *"We last confirmed this
+ * ask Nh ago; normally every edition is re-checked about hourly"* on every surface.
+ * Both halves are wrong for Top Shot:
+ *
+ *   · `edition_offers.updated_at` is written by `sync_edition_offers_from_atlas()`
+ *     under `ON CONFLICT … WHERE low_ask IS DISTINCT FROM EXCLUDED.low_ask` — so it
+ *     is bumped ONLY WHEN THE FLOOR CHANGES, never merely on re-observation. It is
+ *     a **last-changed** stamp wearing a **last-confirmed** name. (It is also
+ *     bumped by `raise_edition_offers_from_chain()` when the OFFER side moves,
+ *     which is not the ask at all.)
+ *   · "about hourly" described `offers-sweep`, which wrapped the catalogue 8-18x a
+ *     day and stamped every row it touched. That lane has written NOTHING since
+ *     2026-08-28 (register #81), and the Atlas writer that replaced it does not
+ *     stamp on re-observation. **The column silently changed meaning when its
+ *     writer was replaced, because the name did not change.**
+ *
+ * ⭐ THE OTHER ARMS ARE GENUINELY DIFFERENT, so one sentence cannot be true of all
+ * three — which is why this is a parameter and not a constant:
+ *   · `disney_pinnacle` — `pinnacle_catalog_set_floor_asks()` writes
+ *     `floor_ask_updated_at = p_checked_at` on EVERY row every sweep (its own
+ *     comment says `= freshness`). A real **checked** stamp.
+ *   · `nfl_all_day` / `laliga_golazos` — `cached_listings_v2.listed_at`, when the
+ *     SELLER posted it, over an index a row LEAVES when the listing closes. A
+ *     **listed** stamp; an old one describes a live listing, not a neglected one.
+ *
+ * ⚠ UNKNOWN FALLS BACK TO THE WEAKEST CLAIM (`changed`), deliberately: a new
+ * collection must not inherit a freshness promise nobody has checked for it.
+ */
+export type AskStampKind = "changed" | "checked" | "listed"
+
+/** Resolve the stamp's meaning from a collection slug. Accepts either spelling
+ *  convention (`nba_top_shot` / `nba-top-shot`) — both are live in this codebase. */
+export function askStampKind(collectionSlug: string | null | undefined): AskStampKind {
+  const s = (collectionSlug ?? "").replace(/-/g, "_").toLowerCase()
+  if (s === "nfl_all_day" || s === "laliga_golazos") return "listed"
+  if (s === "disney_pinnacle") return "checked"
+  return "changed"
+}
+
+/**
  * The tooltip every ask-age marker should carry, so the wording cannot drift
  * between surfaces. Says what we measured and what the reader should do; does not
  * assert anything about the listing itself.
+ *
+ * ⚠ `kind` IS REQUIRED, not defaulted. A default would let a call site keep the
+ * old, false promise silently; making it required means the compiler names every
+ * surface that has to decide. ⛔ No variant may claim a re-check CADENCE —
+ * `__tests__/ask-freshness.test.ts` bans the word, because the cadence claim is
+ * what made the previous version false without anyone editing it.
  */
-export function askAgeTitle(hours: number): string {
+export function askAgeTitle(hours: number, kind: AskStampKind): string {
+  const age = fmtAskAge(hours)
+  const caveat = "It may already be sold or repriced — open the listing before acting."
+  if (kind === "checked") return `We last checked this ask ${age} ago. ${caveat}`
+  if (kind === "listed") {
+    return `This listing was posted ${age} ago and our index still shows it open. ${caveat}`
+  }
   return (
-    `We last confirmed this ask ${fmtAskAge(hours)} ago; normally every edition is ` +
-    `re-checked about hourly. It may already be sold or repriced — open the listing before acting.`
+    `This ask last changed ${age} ago — that is when the price moved, not when we ` +
+    `last re-checked it. ${caveat}`
   )
 }
 

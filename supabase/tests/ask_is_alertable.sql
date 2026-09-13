@@ -17,6 +17,14 @@
 --     other collection-string convention silently disables the gate.
 -- None of those reds anything. All of them are pinned below.
 --
+--
+-- ⛔ CORRECTED 2026-09-13 (audit_20260913_the_ask_stamp_means_three_different_things):
+-- "re-confirmed" is TRUE for Pinnacle and FALSE for Top Shot. `edition_offers.updated_at`
+-- is bumped ONLY WHEN THE FLOOR CHANGES (the Atlas writer's ON CONFLICT carries an
+-- IS DISTINCT FROM guard), so on that arm this file pins "the floor CHANGED inside
+-- ASK_STALE_HOURS". The assertions and the body are unchanged and still correct; the
+-- WORD was wrong. It was a confirmation stamp until offers-sweep died on 2026-08-28 —
+-- the column's meaning changed with its WRITER while its name stayed put.
 -- Pinned here:
 --   1. THE THRESHOLD IS 12 h, AND IT IS A THRESHOLD. 11 h alertable, 13 h not,
 --      and exactly 12 h not — asserted as a pair so a widened window cannot pass

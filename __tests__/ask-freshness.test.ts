@@ -5,6 +5,7 @@ import {
   ASK_STALE_HOURS,
   askAgeHours,
   askAgeTitle,
+  askStampKind,
   askVerifiedAt,
   fmtAskAge,
   isAskStale,
@@ -62,17 +63,81 @@ describe("ask freshness — three states, never two", () => {
     expect(fmtAskAge(72)).toBe("3d")
   })
 
-  it("the tooltip REPORTS and never CONCLUDES", () => {
-    const t = askAgeTitle(30)
-    // It must say when we last looked...
-    expect(t).toMatch(/last confirmed this ask 30h ago/i)
+  it("the tooltip REPORTS and never CONCLUDES, in every variant", () => {
     // ...and must NOT assert anything we did not check. "may already be sold" is a
     // possibility; "is sold" / "no longer listed" would be a claim about a listing
     // nobody has looked at, which is the defect this whole module exists to prevent.
-    expect(t).toMatch(/may already be sold/i)
-    expect(t).not.toMatch(/\bis sold\b/i)
-    expect(t).not.toMatch(/no longer listed/i)
-    expect(t).not.toMatch(/delisted/i)
+    for (const kind of ["changed", "checked", "listed"] as const) {
+      const t = askAgeTitle(30, kind)
+      expect(t, kind).toMatch(/30h/)
+      expect(t, kind).toMatch(/may already be sold/i)
+      expect(t, kind).not.toMatch(/\bis sold\b/i)
+      expect(t, kind).not.toMatch(/no longer listed/i)
+      expect(t, kind).not.toMatch(/delisted/i)
+    }
+  })
+
+  // 🚨 THE ASSERTION THAT WOULD HAVE CAUGHT THE 2026-08-28 REGRESSION, added
+  // 2026-09-13. The old single sentence promised *"we last confirmed this ask Nh
+  // ago; normally every edition is re-checked about hourly"*. When `offers-sweep`
+  // died and the Atlas writer replaced it — bumping `updated_at` only when the
+  // FLOOR CHANGES — both halves became false on Top Shot with nobody editing a
+  // line of this file. A cadence promise is a claim about a LANE, and a lane can
+  // die; so no variant may make one.
+  it("no variant claims a re-check CADENCE — that claim is what went stale", () => {
+    for (const kind of ["changed", "checked", "listed"] as const) {
+      const t = askAgeTitle(30, kind)
+      expect(t, kind).not.toMatch(/hourly|every hour|each hour|daily|continuously|constantly/i)
+      // "normally …" is the shape the false promise took; ban the hedge outright.
+      expect(t, kind).not.toMatch(/\bnormally\b/i)
+    }
+  })
+
+  it("the three kinds say three DIFFERENT things — a shared sentence cannot be true of all", () => {
+    const said = new Set([
+      askAgeTitle(30, "changed"),
+      askAgeTitle(30, "checked"),
+      askAgeTitle(30, "listed"),
+    ])
+    expect(said.size).toBe(3)
+    // And each says the thing its writer actually does.
+    expect(askAgeTitle(30, "changed")).toMatch(/last changed/i)
+    expect(askAgeTitle(30, "changed")).toMatch(/not when we last re-checked/i)
+    expect(askAgeTitle(30, "checked")).toMatch(/last checked/i)
+    expect(askAgeTitle(30, "listed")).toMatch(/posted/i)
+  })
+})
+
+describe("askStampKind — which of the three a collection's ask timestamp IS", () => {
+  it("maps each live collection to the meaning its WRITER gives the column", () => {
+    // nba_top_shot: sync_edition_offers_from_atlas() bumps updated_at only under
+    // `WHERE low_ask IS DISTINCT FROM EXCLUDED.low_ask` -> last CHANGED.
+    expect(askStampKind("nba_top_shot")).toBe("changed")
+    // disney_pinnacle: pinnacle_catalog_set_floor_asks() writes
+    // floor_ask_updated_at on EVERY row every sweep -> last CHECKED.
+    expect(askStampKind("disney_pinnacle")).toBe("checked")
+    // nfl_all_day / laliga_golazos: cached_listings_v2.listed_at -> when the
+    // SELLER posted it, over an index a row leaves when the listing closes.
+    expect(askStampKind("nfl_all_day")).toBe("listed")
+    expect(askStampKind("laliga_golazos")).toBe("listed")
+  })
+
+  it("accepts BOTH collection-string conventions — both are live in this codebase", () => {
+    // The scanners' own payloads carry the hyphen form while the DB carries
+    // underscores; a resolver that knew only one would silently fall through to
+    // the default on half the call sites.
+    expect(askStampKind("nba-top-shot")).toBe("changed")
+    expect(askStampKind("nfl-all-day")).toBe("listed")
+    expect(askStampKind("disney-pinnacle")).toBe("checked")
+  })
+
+  it("an unknown or missing slug falls back to the WEAKEST claim, not the friendliest", () => {
+    // A new collection must not inherit a freshness promise nobody has checked
+    // for it. "changed" is the only one of the three that promises no re-check.
+    expect(askStampKind("some_new_collection")).toBe("changed")
+    expect(askStampKind(null)).toBe("changed")
+    expect(askStampKind(undefined)).toBe("changed")
+    expect(askStampKind("")).toBe("changed")
   })
 })
 

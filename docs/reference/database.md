@@ -2113,3 +2113,57 @@ The FOUR-ways-a-measurement-lies bullet used to carry this instance of *"a readi
 > — 3 of 4 clock-sweep runs measured the instrument, not the suite.
 
 It was displaced by the sharper case from the same day — **the probe and the subject share one IO budget, so the measurement can BE the change** — recorded in full under *"ON THIS TIER, AN EXPLORATORY QUERY IS PRODUCTION LOAD"* above. Both are the same rule; the new instance is the one with production failures attached.
+
+## A unique index on a partitioned table — the two clauses displaced from CLAUDE.md (2026-09-13)
+
+Moved here verbatim when CLAUDE.md hit its character limit; the rule itself still lives there with a
+pointer to this file. Both clauses come from #68 (`sales` is `RANGE (sold_at)`; **33,000 duplicates
+slipped past** a unique key that omitted the partition key, so the constraint was IMPOSSIBLE at the
+parent and had to be built on the PARTITIONS):
+
+- ⭐ **The tell was EXACTLY zero violations, not a small count.** A dedupe check that reports a clean
+  zero against a population you know to be dirty is reporting that it could not be applied, not that
+  the data is clean. A small count would have been believable; zero was the signal.
+- ⚠ **A keep-rule is a CLAIM about the data and a new constraint must be PROVEN to reject.** Adding a
+  constraint that never fires is indistinguishable from adding no constraint at all — demonstrate the
+  rejection on a real duplicate before trusting it.
+
+## 🚨 THE THREE ASK STAMPS MEAN THREE DIFFERENT THINGS (2026-09-13, audit_20260913)
+
+⛔ **Do not read any `*_ask_updated_at` / `updated_at` on an ask as "we checked it then" without
+looking at the WRITER.** Three arms, three meanings, one shared helper that used to treat them alike:
+
+| arm | column | what it ACTUALLY means | why |
+|---|---|---|---|
+| NBA Top Shot | `edition_offers.updated_at` | **LAST CHANGED** | `sync_edition_offers_from_atlas()` upserts under `ON CONFLICT … WHERE low_ask IS DISTINCT FROM EXCLUDED.low_ask` — re-observing the same price writes nothing. `raise_edition_offers_from_chain()` also bumps it when the **offer** rises, which is not the ask at all. |
+| Disney Pinnacle | `pinnacle_catalog.floor_ask_updated_at` | **LAST CHECKED** | `pinnacle_catalog_set_floor_asks()` writes `floor_ask_updated_at = p_checked_at` on EVERY row every sweep; its own inline comment says `= freshness`. |
+| All Day / Golazos | `cached_listings_v2.listed_at` | **WHEN THE SELLER POSTED IT** | `DISTINCT ON (edition_id)` over an event-sourced OPEN-listing index (`completed_at IS NULL AND (expiry_at IS NULL OR expiry_at > now())`) — a row LEAVES when the listing closes, so an old `listed_at` describes a LIVE listing. |
+
+⭐ **THE PROMOTABLE PART IS HOW THE TOP SHOT ONE CHANGED MEANING WITH NOBODY EDITING ANYTHING.** Until
+2026-08-28 `offers-sweep` wrapped the catalogue 8–18×/day and stamped every row it touched, so
+"last confirmed" was TRUE and `ASK_STALE_HOURS = 12` in `lib/market/ask-freshness.ts` was calibrated
+against it. That lane has written nothing since (#81), the Atlas writer replaced it, and the column
+became a last-changed stamp. **A column's contract lives in its writer; replacing the writer
+redefines the column, and no guard fires because the NAME is unchanged.** `col_description()` on it
+was EMPTY, which is exactly why three separate pieces of work read the name and believed it — the
+comment is now written (`audit_20260913`).
+
+⚠ **Consequences that were live before this was found, all since 2026-08-28:**
+- The ask-age tooltip on the edition page, the deals board and the Bid-vs-Floor board said *"We last
+  confirmed this ask Nh ago; normally every edition is re-checked about hourly"* — **both halves
+  false for Top Shot.** Fixed by `askStampKind()` + a `kind`-parameterised `askAgeTitle()`; the
+  cadence claim is now BANNED by test, because a cadence promise is a claim about a LANE and a lane
+  can die.
+- The deals board carried a **hardcoded duplicate** of that sentence rather than calling the shared
+  helper, which is how it kept a claim the shared module would later be corrected out of.
+- `audit_20260912`'s alert gate was justified as "never alert on an unconfirmed ask". On Top Shot it
+  really means "the floor changed inside 12 h" — defensible for an alert and still the fix for the
+  four-nights-running repeat, but not the claim that was made. Corrected in place.
+
+⚠ **A control that does NOT settle liveness, recorded so nobody re-runs it as if it did:**
+`topshot_atlas_market_events` looks like the way to ask "is this listing still open" — it reads 57 of
+3,092 gate-blocked rows and 211 of 769 passed rows as live. **Both numbers are meaningless**: that
+table covers **2,794 distinct editions in 24 h against 12,940 rows with an ask (~22 %)**, so it is
+measuring firehose COVERAGE, not liveness. *A control whose population does not cover the set is not
+a control.*
+

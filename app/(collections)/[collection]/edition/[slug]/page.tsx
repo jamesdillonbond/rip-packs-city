@@ -52,7 +52,7 @@ import {
   fmtUsd,
   relTime,
 } from "@/components/entity/_shared"
-import { ASK_STALE_HOURS, askAgeHours, askAgeTitle, askVerifiedAt, fmtAskAge } from "@/lib/market/ask-freshness"
+import { ASK_STALE_HOURS, askAgeHours, askAgeTitle, askStampKind, askVerifiedAt, fmtAskAge } from "@/lib/market/ask-freshness"
 import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
 import EditionActivity from "@/components/entity/EditionActivity"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
@@ -836,7 +836,7 @@ export default async function EditionPage(
                   ? (
                     // REPORTS, never concludes: it does not say the listing is gone,
                     // only that we have not re-checked it.
-                    <span style={{ color: "var(--rpc-warning)", fontWeight: 600 }} title={askAgeTitle(askAge)}>
+                    <span style={{ color: "var(--rpc-warning)", fontWeight: 600 }} title={askAgeTitle(askAge, askStampKind(collection))}>
                       ⚠ ask unconfirmed {fmtAskAge(askAge)}
                     </span>
                   )
@@ -1031,7 +1031,7 @@ export default async function EditionPage(
                 href="/insights/deals"
                 className="rpc-mono"
                 style={INSIGHT_CHIP_STYLE}
-                title={askAge !== null && askAge >= ASK_STALE_HOURS ? askAgeTitle(askAge) : undefined}
+                title={askAge !== null && askAge >= ASK_STALE_HOURS ? askAgeTitle(askAge, askStampKind(collection)) : undefined}
               >
                 {Math.round(insightLinks.deal_pct)}% below FMV
                 {askAge !== null && askAge >= ASK_STALE_HOURS && (

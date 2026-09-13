@@ -108,6 +108,35 @@
 -- (find it by message -- pre-2026-08-03 shas no longer resolve) plus
 -- `DROP FUNCTION public.ask_is_alertable(text, timestamptz, timestamptz);`.
 
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ⛔ CORRECTED 2026-09-13 by audit_20260913_the_ask_stamp_means_three_different_things.
+-- RESTATED RATHER THAN DELETED, because the failure mode is the lesson.
+--
+-- THE HEADER ABOVE SAYS THIS GATE MEANS "nobody has re-confirmed this ask". That
+-- is TRUE for Pinnacle and FALSE for Top Shot, the biggest arm. Read from the
+-- writers rather than the column name: `sync_edition_offers_from_atlas()` upserts
+-- under `WHERE low_ask IS DISTINCT FROM EXCLUDED.low_ask`, so
+-- `edition_offers.updated_at` is bumped ONLY WHEN THE FLOOR CHANGES — it is a
+-- LAST-CHANGED stamp with a last-confirmed name — and
+-- `raise_edition_offers_from_chain()` bumps the same column when the OFFER moves.
+-- It WAS a confirmation stamp until 2026-08-28, when `offers-sweep` (which stamped
+-- every row it wrapped) died and the Atlas writer replaced it: the meaning changed
+-- because the WRITER changed, and nothing reds when a name stays put.
+--
+-- ✅ THE BODY BELOW IS UNCHANGED AND CORRECT AS SHIPPED. Its Top Shot rule reads
+-- "the floor CHANGED inside 12 h", which still removes the defect it was built for
+-- (one frozen row re-sent four nights running) and still fires on discoveries — a
+-- new cheap listing bumps the stamp at the moment we learn of it. Only the STATED
+-- REASON was wrong, and the live COMMENT ON FUNCTION now says so.
+--
+-- ⚠ ALSO CORRECTED: the "~9-DAY WRAP" figure below describes the per-edition
+-- VERIFY lane (~2 editions / 2 min), not the ask writer. The Atlas sync is a BULK
+-- upsert from the firehose every 2 min; what it does not do is stamp a row whose
+-- price has not moved. The median-age numbers are unaffected — they were measured,
+-- not derived — but they measure age-since-CHANGE, so do not read "median 63.8 h"
+-- as "nobody has looked at these in 63.8 h".
+-- ═══════════════════════════════════════════════════════════════════════════
 -- ── 1. The predicate, in ONE place ──────────────────────────────────────────
 --
 -- ⚠ ONE SPELLING, ON PURPOSE. The repo's standing rule is that a duplicated

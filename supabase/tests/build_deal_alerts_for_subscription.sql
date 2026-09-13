@@ -46,6 +46,14 @@
 -- Mutation-verified 2026-09-13: removing either `ask_is_alertable` predicate
 -- fails a named assertion ('not previewed either' / 'last_seen_at IS a
 -- confirmation').
+--
+-- ⛔ CORRECTED 2026-09-13 (audit_20260913_the_ask_stamp_means_three_different_things):
+-- "re-confirmed" is TRUE for Pinnacle and FALSE for Top Shot. `edition_offers.updated_at`
+-- is bumped ONLY WHEN THE FLOOR CHANGES (the Atlas writer's ON CONFLICT carries an
+-- IS DISTINCT FROM guard), so on that arm this file pins "the floor CHANGED inside
+-- ASK_STALE_HOURS". The assertions and the body are unchanged and still correct; the
+-- WORD was wrong. It was a confirmation stamp until offers-sweep died on 2026-08-28 —
+-- the column's meaning changed with its WRITER while its name stayed put.
 
 BEGIN;
 
