@@ -95,3 +95,30 @@ So `extra::text LIKE '%reconcile-saved-wallet-stats%'` returns 0 for every pipel
 ⭐ **The caps had to be extracted to `buildSentinelFindings()` to be testable at all** — and that is a second instance of tonight's lesson. Inlined, the cap assertion passed **whether or not the cap existed**, because no sentinel fixture produces a 400-character detail: measured by deleting the `.slice()` and watching the suite stay green. The pure function is unit-tested with synthetic inputs so the caps are actually exercised. **5 mutations, 5 caught** (cap removed ×2, redaction removed, ok-checks kept, findings not persisted).
 
 ⚠ **This does NOT answer the §2 question retroactively** — there is no history to recover. It means the same question asked in a week has an answer. **Re-check `extra.findings` after a few days of sentinel runs, and only then judge whether the reconcile `ok=false` wart is misfiring an arm.**
+
+---
+
+# ⭐ THIRD PASS (2026-09-13 ~01:5x PT) — the lane is ALREADY SUPPRESSED for exactly this reason, and that makes the honesty fix MORE valuable rather than less
+
+Checked `pipeline_alert_suppression` before proposing anything further, and found a live row:
+
+| pipeline | reason | expires |
+|---|---|---|
+| `reconcile-saved-wallet-stats` | *"Designed graceful degradation misread as failure — the ok=fa…"* | **2026-11-15** |
+
+So someone reached this diagnosis already and applied the estate's curated, expiring mechanism. ⭐ **That retires the "false amber" argument completely** — it was never going to fire, and §2's question ("did the no-success arm ever breach?") is now doubly moot for alerting purposes.
+
+🚨 **But it sharpens the ONE argument that always mattered, and turns it from a nuisance into a blind spot.** The filing's real point was that a genuine error would be one unfamiliar string among 41 identical benign ones. **With the lane suppressed, a genuine error now fires NOTHING AT ALL** — the `failure_rate` arm is off for it until 2026-11-15. So the estate has traded "55 % noise" for "no signal", on a lane that:
+
+- has produced **zero** non-`soft_deadline` errors in the retained window, so nobody has seen what a real failure here even looks like;
+- **does** have a real failure mode already visible in the data — **3 of 41 truncated runs made ZERO progress**, which is a sweep that could not complete a single wallet inside its budget.
+
+⭐ **So the one-expression fix is now the thing that lets the suppression be LIFTED**, which is the outcome worth having: `ok := NOT (v_truncated AND v_wallets = 0)` makes `ok = false` mean something again (3 events in 7 days instead of 41), at which point the lane can go back to being watched instead of muted.
+
+⚠ **Revised order for whoever picks this up** (supersedes §4):
+
+1. Ship the one-expression fix (three files: migration + verbatim pin + the drift guard's `migration:` registration), covering `candy-offers-indexer` if it shares the shape — the sentinel names both.
+2. Update `app/api/sentinel/route.ts`'s calibration comment, whose "4 false positives in 20 days" arithmetic is the record of why its zero-successes-AND-zero-rows arm looks the way it does.
+3. **Then DELETE the suppression rather than letting it expire** — a suppression that outlives its cause is the same trained-to-ignore failure one level up, and this one runs to 2026-11-15.
+
+⛔ **Still not shipped here**, for the reason §4 gives: it is a change to a drift-pinned PROCEDURE whose test needs its own throwaway database, and the urgency that would justify doing it at 2 a.m. is exactly what this filing spent three passes failing to establish.
