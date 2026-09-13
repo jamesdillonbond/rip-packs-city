@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · GUARD — pin staleness is detectable from the REPO, ten hours before the live sweep sees it · Claude Code cloud, overnight autonomous
+
+**Shipped: repo-only, one new blocking test.** `__tests__/db-pin-points-at-the-newest-defining-migration.test.ts`. Revert: `git revert <sha>` (find by message).
+
+**THE GAP THIS CLOSES, stated as what every existing instrument said while the defect was live.** `rollup_allday_rip_pull_value` was pinned to `20260816080000` while three migrations redefined it the same day. During that window:
+- `db-invariants-drift-guard` — **green**, and green *by construction*: it compares the pin to **the migration the pin names**, so a pointer at a superseded migration agrees with itself perfectly.
+- `migration-parity` — **silent**; it checks the applied-but-**not**-committed direction.
+- the pinned SQL test — **green**; it ran the body it pinned.
+- ⭐ Only `scripts/check-db-pin-staleness.mjs` saw it, **~10 hours later**, and only because it reads production.
+
+⭐ **THE INSIGHT: this is decidable WITHOUT A DATABASE.** If a migration newer than the one a pin names also defines that function, the pin is behind. That needs only the repo — so unlike the live sweep (which needs `SUPABASE_SERVICE_ROLE_KEY` and therefore cannot sit in the blocking job) it runs on every push, in `unit-tests`.
+
+**Measured across the whole population: 202 pins, 0 pointing at a superseded migration, 0 with no committed definition.** Clean ban-at-zero.
+
+⚠ **MY FIRST DRAFT OF THIS GUARD PUBLISHED A FALSE ZERO, and the repo had already recorded both causes.**
+1. It used an **adjacency** regex for the pins and parsed **179 of 202** — the exact bug `check-db-pin-staleness.mjs` documents in its own header (an entry carrying a comment between its fields is silently dropped; it hid two pins from the live check, found 08-08).
+2. It matched `CREATE OR REPLACE FUNCTION` only, so **every PROCEDURE was invisible** — the same mistake the sibling parser made, which "made every PROCEDURE in this database UNPINNABLE" (fixed 08-16).
+👉 **Both were found only because I asserted the count against the live script's own 202 instead of trusting a clean-looking run.** The guard now pins that count as an assertion, so it cannot recur quietly.
+
+**Three controls, all firing:** reverting the pin pointer → fails naming the function and both migrations · adjacency regex → `expected 179 to be 202` · FUNCTION-only needle → fails. Clean run **5/5**.
+
+⚠ **WHAT IT DOES NOT CLAIM.** "Newest file that defines it" is a repo-side **proxy** for "what runs in production", and it is wrong in one direction: a committed migration that was **never applied** would make a correct pin look stale. That case gets an allowlist entry, the allowlist is **two-way** (an entry that stops violating fails), and it is **currently empty** — which is the state to keep it in.
+
 ### 2026-09-13 · GUARD + REPO — a pin that had been green against a dead definition, and a migration file that was never valid SQL · Claude Code cloud, overnight autonomous
 
 **Shipped: repo-only. No DB write, no prod state change, no migration applied.** Revert: `git revert <sha>` (find by message — pre-08-03 shas are dead, these are not).
