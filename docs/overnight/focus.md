@@ -4,6 +4,29 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-13 ~02:4x PT (overnight autonomous; a BASELINE with falsifiers, so tonight's four ships are measurable rather than asserted)
+
+**Four changes shipped tonight reduce instance load. None of them is CLAIMED to have fixed the saturation class (#73, #84, go-live M11) — this block exists so the claim can be TESTED instead.**
+
+🔵 **BASELINE, 24 h to 2026-09-13 08:30Z, taken BEFORE the effects can land** (the backstop fix only bites when a forced wave next fires, and GHA drifts it):
+
+| metric | baseline |
+|---|---:|
+| `wallet-backfill` runs | **708** |
+| `sales-counterparty-backfill` runs / failed | **286 / 99 (34.6 %)** |
+| statement-timeout failures, ALL lanes | **166** |
+| all failures / all runs | **303 / 20,793 (1.46 %)** |
+
+✅ **PREDICTIONS, each with the reading that would falsify it:**
+
+1. **`wallet-backfill` 708 → ~305.** The backstop window fix removes the ~403 runs that three drifted forced sweeps contributed. ⛔ **FALSIFIED if it stays near 708** — then `backstop_fresh_skipped` is still 0 and the window is not being read; check `extra.backstop_fresh_skipped` on a `forced: true` wave first, because that number going positive is the direct evidence and the run count is only downstream of it.
+2. **`sales-counterparty-backfill` failures 99 → ~0.** Already holding: five consecutive ticks at **279–932 ms** against 60,000–67,000 ms before. ⛔ **FALSIFIED if timeouts resume** — most likely cause is the documented hole: the exhausted stamp is written AFTER the scan, so a tick killed by `statement_timeout` never arms it. It re-arms at **10:01Z**; the tick after that re-arm is the one to read.
+3. **Statement timeouts 166 → materially lower**, since the counterparty lane was ~99 of them. ⚠ **NOT a claim about the spells themselves** — in a fleet-wide slowdown every lane times out, so this number is partly symptom. Treat a fall as consistent-with, never as proof.
+
+⚠ **Hour confounds apply**: read these over a FULL 24 h, not over the quiet 02:00–06:00Z band where they were shipped. ⭐ And diff the SET where you can, not just the count — a total can hold while membership turns over.
+
+🔵 **Also newly readable, and empty until now:** `pipeline_runs.extra.findings` on the `sentinel` pipeline now carries `{name, status, detail}` for every non-ok check. **Before tonight the durable row held check NAMES only**, so "did an arm ever name pipeline X?" was unanswerable from the database and a `LIKE` over it returned a meaningless zero (I published one before catching it). No history is recoverable; it accumulates from 2026-09-13 only.
+
 ## STEER — added 2026-09-12 ~23:2x PT (cloud session; one ship, and the two halves of it NOT to re-open)
 
 **Written for the 1am pass, ~1.5 h out.**
