@@ -127,6 +127,30 @@ function greenFixtures(): Fixtures {
       ],
       error: null,
     },
+    // Wall-kills + probe-cost arms (added 2026-09-13). Healthy fixtures: a real
+    // population inspected, nothing over the line. ⚠ Supplied EXPLICITLY — both
+    // arms treat an unreadable payload and an empty population as UNMEASURED,
+    // never as health, so an omission here fails loudly instead of passing.
+    "rpc:check_wall_kills": {
+      data: {
+        window: { hours: 24, grace_minutes: 10, correlation_seconds: 5 },
+        inspected: 45,
+        verified: 44,
+        unverified: [{ pipeline: "dead-lane-backstop", heartbeats: 7 }],
+        offenders: [],
+      },
+      error: null,
+    },
+    "rpc:sentinel_probe_cost": {
+      data: {
+        since: "2026-09-13T16:30:00Z",
+        rows: [
+          { fn: "sentinel_sales_ingest_health", calls: 12, mean_ms: 900, max_ms: 3000, blks_per_call: 5694, total_s: 11 },
+          { fn: "check_wall_kills", calls: 12, mean_ms: 2000, max_ms: 6000, blks_per_call: 33414, total_s: 24 },
+        ],
+      },
+      error: null,
+    },
     "rpc:sentinel_total_sales_estimate": { data: 4200000, error: null },
     // Dune Spend: 20% of the datapoint cycle at 25% elapsed, credits barely
     // touched -> on pace, ok.

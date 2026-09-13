@@ -6,12 +6,16 @@ import { summariseAlertDelivery } from "@/lib/sentinel/alert-delivery";
 import { summariseZeroYield } from "@/lib/sentinel/zero-yield";
 import { summariseBlindChecks, BLIND_CHECK_NAME } from "@/lib/sentinel/blind-checks";
 import { summariseCadenceCollapse } from "@/lib/sentinel/cadence-collapse";
+import { summariseWallKills } from "@/lib/sentinel/wall-kills";
+import { summariseProbeCost } from "@/lib/sentinel/probe-cost";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 
 // Named once: the arm pushes it, the threshold/ack rows key on it, and the
 // migration that seeds those rows quotes it verbatim. A typo here is a silently
 // unconfigurable check.
 const CADENCE_CHECK_NAME = "Cadence Collapse";
+const WALL_KILLS_CHECK_NAME = "Wall Kills (24h)";
+const PROBE_COST_CHECK_NAME = "Ops Probe Cost";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 // Bumped 60 -> 180 on 2026-08-08: under pooler saturation the ~8 sequential
@@ -1074,7 +1078,8 @@ async function runSentinel() {
           detail:
             `BASE HIGH+MED: ${pct(baseHighMed, baseTotal)}% (HIGH ${tally("base", ["HIGH"])} of ${baseTotal}) | ` +
             `PARALLEL HIGH+MED: ${pct(parHighMed, parTotal)}% (${parTotal} editions, ~${pct(parTotal, total)}% of canonical) | ` +
-            `combined ${pct(baseHighMed + parHighMed, total)}% across ${total}`,
+            `combined ${pct(baseHighMed + parHighMed, total)}% across ${total}` +
+            ` (as of the hourly edition_fmv_current refresh)`,
           value: `${basePct}% base high+med`,
         });
       }
@@ -2174,6 +2179,67 @@ async function runSentinel() {
   } catch (e: any) {
     checks.push({
       name: CADENCE_CHECK_NAME,
+      status: "warn",
+      detail: `Exception: ${e?.message ?? e}`,
+    });
+  }
+
+  // ── WALL KILLS (2026-09-13) ──────────────────────────────────────────────
+  // A `maxDuration` kill writes NO terminal pipeline_runs row, so it is
+  // invisible to every arm above: Pipeline Silence sees the marker and stays
+  // quiet, the failure-rate view sees no ok=false row, Zero-Yield sees no row,
+  // and pipeline_runs_daily reads the missing tick as 100% ok. The heartbeat
+  // correlation in lib/pipeline/kill-rate.ts is the ONLY instrument, and it
+  // ran only when an operator typed `npm run pipelines:kills`. On 2026-09-12
+  // apply-fmv-haircut was killed at 300 s and the first thing to notice was
+  // the 30 h silence arm a day later; the same 24 h held 31 kills on
+  // fmv-recalc that nothing reported. Argument + rules: lib/sentinel/wall-kills.ts.
+  try {
+    const { data: wkData, error: wkErr } = await supabase.rpc("check_wall_kills");
+    if (wkErr) {
+      const sat = isSaturationError(wkErr.message);
+      checks.push({
+        name: WALL_KILLS_CHECK_NAME,
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${wkErr.message}`,
+      });
+    } else {
+      const verdict = summariseWallKills(wkData as any, thr(WALL_KILLS_CHECK_NAME, "warn_at", 3));
+      checks.push({ name: WALL_KILLS_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
+    }
+  } catch (e: any) {
+    checks.push({
+      name: WALL_KILLS_CHECK_NAME,
+      status: "warn",
+      detail: `Exception: ${e?.message ?? e}`,
+    });
+  }
+
+  // ── OPS PROBE COST (2026-09-13) ──────────────────────────────────────────
+  // The sentinel reads its own weight. Two of its arms had been reporting
+  // "INCONCLUSIVE (db saturated)" while costing ~72k and ~467k buffers per
+  // sweep on the instance's hottest table — the probe WAS the load, and no
+  // instrument could have said so. This one reads pg_stat_statements for every
+  // ops RPC and warns when one exceeds a buffers-per-call line that sits above
+  // everything known and sized and below the class that was found. It is
+  // deliberately the LAST arm that issues a query, so the row it reads for the
+  // arms above is as fresh as this sweep. Argument: lib/sentinel/probe-cost.ts.
+  try {
+    const { data: pcData, error: pcErr } = await supabase.rpc("sentinel_probe_cost");
+    if (pcErr) {
+      const sat = isSaturationError(pcErr.message);
+      checks.push({
+        name: PROBE_COST_CHECK_NAME,
+        status: "warn",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${pcErr.message}`,
+      });
+    } else {
+      const verdict = summariseProbeCost(pcData as any, thr(PROBE_COST_CHECK_NAME, "warn_at", 50_000));
+      checks.push({ name: PROBE_COST_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
+    }
+  } catch (e: any) {
+    checks.push({
+      name: PROBE_COST_CHECK_NAME,
       status: "warn",
       detail: `Exception: ${e?.message ?? e}`,
     });
