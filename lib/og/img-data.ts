@@ -460,6 +460,54 @@ export async function ogImageDataUris(
   return (await ogImageDataUriSlots(urls, opts)).filter((u): u is string => !!u)
 }
 
+/**
+ * The FIRST candidate that actually resolves to art, or null when none does.
+ *
+ * ⚠ THIS IS THE FALLBACK THE SINGLE-HERO CARDS NEVER HAD, and the gap was not
+ * theoretical. `/api/og/player` asked `get_player_editions` for ONE row and
+ * rendered whatever came back, so a single dead url published a blank card:
+ * LeBron James' top-FMV edition art
+ * (`…/play_c1705022-…_Hero_2880_2880_Transparent.png`, $8,750) answers **404**
+ * while his next two candidates answer 206 — measured 2026-09-13 from the DB's
+ * own egress, since this sandbox cannot reach assets.nbatopshot.com. ⭐ And the
+ * blast radius is every player page, not one: `players.headshot_url` is null
+ * for **0 of 3,869** rows (same read), so an edition thumbnail is the ONLY art
+ * any player card has ever had.
+ *
+ * ⚠ SEQUENTIAL, NOT PARALLEL, and that is a cost decision rather than a style
+ * one. A parallel probe would spend N `/_next/image` transformations on every
+ * card to save latency on the rare one that needs it — and transformations are
+ * the metered leg (#95). The common case here (first candidate live; 24 of 24
+ * sampled thumbnails were) costs exactly ONE fetch, which is what the
+ * single-candidate code cost before this existed.
+ *
+ * ⚠ ONE BUDGET ACROSS ALL CANDIDATES, for the same reason `ogImageDataUri`
+ * spends one across its own two legs: a crawler's patience does not grow with
+ * the number of ways we are willing to ask. A candidate that cannot finish
+ * inside what is LEFT is not started.
+ *
+ * Duplicate and falsy candidates are skipped without spending anything — a
+ * caller that concatenates a portrait column with a list of edition thumbnails
+ * should not pay twice when they happen to be the same url.
+ */
+export async function ogImageDataUriFirst(
+  urls: Array<string | null | undefined>,
+  opts: OgImgOpts = {},
+): Promise<string | null> {
+  let budget = opts.timeoutMs ?? 4500
+  const seen = new Set<string>()
+  for (const u of urls) {
+    if (!u || typeof u !== "string" || seen.has(u)) continue
+    seen.add(u)
+    const t0 = Date.now()
+    const hit = await ogImageDataUri(u, { ...opts, timeoutMs: budget })
+    if (hit) return hit
+    budget -= Date.now() - t0
+    if (budget < MIN_FALLBACK_MS) return null
+  }
+  return null
+}
+
 function sniff(buf: Buffer): string | null {
   if (buf.length < 12) return null
   if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png"

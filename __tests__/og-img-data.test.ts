@@ -20,6 +20,7 @@ import { imageConfigDefault } from "next/dist/shared/lib/image-config"
 import {
   OG_OPTIMIZER_HOSTS,
   ogImageDataUri,
+  ogImageDataUriFirst,
   ogImageDataUris,
   ogImageDataUriSlots,
   ogImageTarget,
@@ -623,3 +624,80 @@ describe("ogImageDataUri — the optimizer leg can only ADD art, never remove it
   })
 })
 
+describe("ogImageDataUriFirst — the fallback the single-hero cards never had", () => {
+  // ⚠ EVERY URL HERE CARRIES `?width=`, deliberately. An already-sized origin
+  // skips the optimizer leg (see SIZE_PARAM_RE), so one candidate costs exactly
+  // one fetch and a call COUNT means "how many candidates did we try" rather
+  // than "how many legs did each one spend". The cases below are about the walk,
+  // not about the optimizer.
+  const A = "https://assets.nbatopshot.com/media/1/image?width=512"
+  const B = "https://assets.nbatopshot.com/media/2/image?width=512"
+  const C = "https://assets.nbatopshot.com/media/3/image?width=512"
+
+  it("⭐ WALKS PAST A DEAD CANDIDATE TO A LIVE ONE — the LeBron card's blank art", async () => {
+    // The measured production shape (2026-09-13): the highest-FMV edition art
+    // 404s, the next one answers with real bytes. Before this helper the card
+    // published the placeholder tile.
+    fetchMock.mockImplementation(async (u: string) =>
+      String(u) === A ? res([], "application/xml", { ok: false, status: 404 }) : res(PNG_BYTES, "image/png"),
+    )
+    expect(await ogImageDataUriFirst([A, B, C])).toBe(
+      `data:image/png;base64,${Buffer.from(PNG_BYTES).toString("base64")}`,
+    )
+  })
+
+  it("NO-CHANGE CONTROL: that same dead candidate ALONE is still no art", async () => {
+    // Without this the case above would pass against a mock that returned bytes
+    // for anything — it would be measuring the stub, not the fallback.
+    fetchMock.mockResolvedValue(res([], "application/xml", { ok: false, status: 404 }))
+    expect(await ogImageDataUriFirst([A])).toBeNull()
+  })
+
+  it("stops at the FIRST success — later candidates are never fetched", async () => {
+    // The cost property. Transformations are the metered leg (#95), and the
+    // common case (top candidate live) must cost exactly what asking for one
+    // candidate cost before this existed.
+    fetchMock.mockResolvedValue(res(PNG_BYTES, "image/png"))
+    await ogImageDataUriFirst([A, B, C])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0][0])).toBe(A)
+  })
+
+  it("skips falsy and DUPLICATE candidates without spending a fetch", async () => {
+    // A caller concatenating a portrait column with a list of edition thumbnails
+    // should not pay twice when they are the same url.
+    fetchMock.mockResolvedValue(res([], "application/xml", { ok: false, status: 404 }))
+    expect(await ogImageDataUriFirst([null, A, undefined, A, "", A])).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("returns null when every candidate is dead", async () => {
+    fetchMock.mockResolvedValue(res([], "application/xml", { ok: false, status: 404 }))
+    expect(await ogImageDataUriFirst([A, B, C])).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it("spends ONE budget across ALL candidates, not one each", async () => {
+    // A crawler's patience does not grow with the number of ways we are willing
+    // to ask, so a candidate that cannot finish inside what is LEFT is not
+    // started. With the whole budget below MIN_FALLBACK_MS after the first try,
+    // the second is never attempted.
+    fetchMock.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 20))
+      return res([], "application/xml", { ok: false, status: 404 })
+    })
+    expect(await ogImageDataUriFirst([A, B, C], { timeoutMs: 30 })).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("passes a data: candidate straight through", async () => {
+    const dataUri = "data:image/png;base64,AAAA"
+    expect(await ogImageDataUriFirst([dataUri, A])).toBe(dataUri)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("returns null for an empty candidate list without fetching", async () => {
+    expect(await ogImageDataUriFirst([])).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
