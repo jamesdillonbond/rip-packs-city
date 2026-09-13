@@ -69,8 +69,12 @@
 -- saved-wallet rips to find 602 with pulls. Worse, that cost is PERMANENT --
 -- once the ~600 recoverable rows are valued the leg still pays the full scan
 -- every run and returns nothing. On a function that already times out on 2 of 62
--- runs against a ~30 s wall, a permanent 4.3 s for a one-time 600-row benefit is
--- the wrong trade.
+-- runs, a permanent 4.3 s for a one-time 600-row benefit is the wrong trade.
+-- ⚠ CORRECTED LATER THE SAME NIGHT: this paragraph originally said "against a
+-- ~30 s wall". The wall is **60 s** -- `maxDuration = 60` in
+-- app/api/cron/backfill-pack-rip-metadata/route.ts. The conclusion is unchanged
+-- (the tail already touches the wall; see the exit note below) but the number
+-- was wrong and I had published it twice.
 --
 -- ⚠ `pull_value_usd` NO LONGER GETS CLOBBERED TO NULL. The UPDATE used to
 -- `SET pull_value_usd = pv.pull_value_usd` unconditionally, so any candidate the
@@ -84,9 +88,17 @@
 --
 -- Exit (24 h): pipeline_runs `backfill-pack-rip-metadata`.extra carries
 -- `allday_resolved` > 0 every run, All Day valued rips climb ~1,200/day from
--- 25,095 toward ~77,800 (~44 days), and run duration stays inside the ~30 s wall
--- (2 of 62 timed out BEFORE this change -- if that rate rises, cut
--- v_allday_share, which is the one tuning knob here).
+-- 25,095 toward ~77,800 (~44 days), and run duration stays inside the **60 s**
+-- wall (`maxDuration = 60` on the route).
+-- ⚠ THE PRE-CHANGE TAIL IS MUCH HEAVIER THAN "2 of 62 FAILED" SUGGESTS, measured
+-- over those 62 runs: p50 4,738 ms but **p90 38,621 ms and max 60,755 ms** --
+-- i.e. ~10% of runs already run past 38 s and the worst one hit the wall. So the
+-- headroom is real (60 s, not 30) but the tail genuinely touches it.
+-- ⛔ DO NOT RAISE v_allday_share ON THE FIRST FEW SAMPLES. Two post-change runs
+-- measured 3,445 / 4,582 ms with 0 failures, which is encouraging and is NOT
+-- enough to characterise a p90 -- reading a heavy-tailed distribution off a
+-- handful of points is the exact error this session made once already. Wait for
+-- 24 h, then compare p90 and the failure rate against the numbers above.
 -- Falsifier: allday_resolved stays 0 -> candidates are not reaching the new CTE
 -- (check the collection_id literal) rather than the data being absent.
 -- REVERT: re-apply the prior body from migration 20260830153041; it is this file
