@@ -1982,6 +1982,19 @@ const PINS = [
     // rows that arrived above it are ever seen), `rearm_after` must be READ from the
     // column rather than hardcoded, and the pre-existing below-floor self-heal from
     // 20260902042214 must survive the rewrite.
+    // The WRITE half of the same lane, pinned 2026-09-13 because it acquired a
+    // load-bearing property that day: a pass that took rows in and applied NONE arms
+    // the lane's cooldown. That decision cannot live in the claim — the claim knows
+    // only how many rows it handed out, never whether any resolved — and the
+    // claim-side alternative (arm on a partial batch) breaks the sibling pin's
+    // "a productive scan must not silence the lane" property. The file also pins
+    // fill-only semantics and that an EMPTY batch arms nothing.
+    fn: "apply_sales_counterparty",
+    test: "supabase/tests/apply_sales_counterparty.sql",
+    migration:
+      "supabase/migrations/20260913190927_audit_20260913_a_barren_apply_pass_arms_the_counterparty_cooldown.sql",
+  },
+  {
     fn: "claim_sales_counterparty_batch",
     test: "supabase/tests/claim_sales_counterparty_batch.sql",
     migration:
