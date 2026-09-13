@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ CI — `main` was RED on a marker a sibling migration carried and this one dropped; the guard is per-file BY DESIGN · Claude Code cloud, Trevor: "work through any to do list items you can handle"
+
+**Shipped (one comment, no SQL, no DB change):** `supabase/migrations/20260913021000_audit_20260913_allday_pull_value_realigns_with_the_rollup_at_open_basis.sql`. Revert: `git revert` the commit whose message starts `fix(ci): state the anon-exec decision`.
+
+**The failure.** CI run 5244 on tip `c80b371e6` — shard 2/2, `migration-new-function-states-its-anon-exec-decision`, one offender: `20260913021000… → public.backfill_pack_rip_metadata`. Run 5243 failed identically. ⭐ **The body is byte-identical to a migration that went green two runs earlier** (`20260913014000`, run 5242) — the difference is one comment line. That file states the decision at its line 82; the realign migration, which re-applies the same body, did not carry it forward.
+
+**⭐ THAT IS THE GUARD WORKING, NOT A FALSE POSITIVE, and the test says so in its own header:** the check is keyed **PER FUNCTION NAME PER FILE** precisely so "a file hardening function A must not vouch for function B" — and by the same construction a decision stated in one file cannot vouch for another. A same-body re-apply is exactly the case that feels like it should inherit and must not.
+
+**The decision was MEASURED before it was written, not copied.** Read live after the migration had been applied: `has_function_privilege` anon **false**, authenticated **false**, service_role **true**; sole caller `/api/cron/backfill-pack-rip-metadata` on the service role. ⚠ And a REVOKE would have been the wrong repair even though it would also have gone green: `CREATE OR REPLACE FUNCTION` does not reset a function ACL, so a revoke inside a re-apply is *a change dressed as a no-op* — the test's own header calls this out for snapshot migrations. The marker is the correct form here.
+
+**⚠ Editing an APPLIED migration file is safe here and the reason is worth stating:** the edit is a comment, the SQL body is untouched, and nothing re-applies the file — `apply_migration` already ran. Checked for a checksum/immutability guard over applied migrations before touching it: there is none.
+
+**⚠ A FALSE LEAD I FOLLOWED AND THE REPO ALREADY HAS THE RULE FOR IT.** Enumerating the backstop's lanes with `grep -n 'label:'` returned **eleven**, including `offers-sweep` — which is **commented out**, deliberately, with a long justification directly above it. *Strip comments before grepping source.* The live count is ten.
+
+**Gates:** `npm test` **1512 files / 16,901 tests, all pass** · `tsc` clean · the previously-failing guard green in isolation · ledger guards 3 / 0.
+
 ### 2026-09-12 · 📝 DOCS — session close-out: the coverage blind spot written where the next reader meets it, and two rules into CLAUDE.md by DISPLACEMENT · Claude Code cloud, Trevor: "update memory or any relevant documentation"
 
 **Shipped (docs + one comment-only config edit, no behaviour change):** `vitest.config.ts` (comment), `CLAUDE.md`, `docs/reference/testing-and-ci.md`, `docs/reference/claude-md-condensed-originals.md`. Revert: `git revert` the commit whose message starts `docs: close out the testing/CI session`.
