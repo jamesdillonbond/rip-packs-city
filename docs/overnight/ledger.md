@@ -32,6 +32,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **`backstop_fresh_h` is NOT in `extra`** — it appears only in the console log line — so the 12 h value is confirmed by BEHAVIOUR (0 → 49 on the same branch), not by reading the constant back. A reader wanting the configured number must read the route or the log, not the row.
 
+⭐⭐ **ALL FOUR COHORTS NOW IN, and the magnitude is the headline** — the n=1 above was the weakest version of this result:
+
+| cohort | `backstop_fresh_skipped` | `backfill_fired` |
+|---|---:|---:|
+| 0 | 49 | 0 |
+| 1 | 44 | **3** |
+| 2 | 51 | 0 |
+| 3 | 49 | 0 |
+| **wave total** | **193** | **3** |
+
+🚨 **One forced wave now dispatches 3 wallet-backfill calls where it would previously have dispatched ~196** — because `backstop_fresh_skipped` was **0 on every forced wave** before the change, so all 193 were walked. **That is the backstop's load down ~98%**, and it is consistent with the filed 24 h baseline of **708** wallet-backfill runs being dominated by this lane: 4 scheduled waves × ~196 ≈ 784/day.
+
+⚠ **The downstream run-count drop is therefore PREDICTED, not yet observed** — it only materialises as forced waves actually fire, and the scheduler shed the 08:38Z slot entirely. **Read `wallet-backfill` runs/24 h against the 708 baseline in a day or two, not now.**
+
+⭐ **SEPARATELY, THE `?? 0` CLASS WAS SWEPT AND IT HAS EXACTLY ONE LIVE INSTANCE — the one fixed tonight.** A detector over `pipeline_runs` (flattening `extra` one level, keys matching `inserted|written|upserted|saved|recovered|created|applied`, where the lane's `rows_written` total is 0) returns **`daily-portfolio-snapshot / result.inserted` and nothing else**; every other lane matches its own counter (206/206, 208/208, 857/857, 356/356…). ⭐ **Positive control is the detector's own first hit** — it finds the known defect, and an earlier version that did NOT flatten nested keys returned a clean empty, which would have been a false all-clear. ⛔ **So this one did NOT spread by copy-paste**, against this file's standing expectation that it has five times — worth recording because a negative result nobody measures gets re-searched forever.
+
 **TONIGHT'S FOUR SHIPS ARE NOW ALL VERIFIED AGAINST THEIR OWN FALSIFIERS. None fired.**
 
 ### 2026-09-13 · 📋 REGISTER — #82's cause narrowed to a named code path, and my own leading hypothesis refuted before it was published · Claude Code cloud, overnight autonomous

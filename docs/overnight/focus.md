@@ -16,7 +16,7 @@
 | **`sentinel.extra.findings`** | live: 8 findings with detail, **cap binding at exactly 400 chars** | in the ledger |
 | **sentinel header names the changed SET** | sweep ran 02:46 PT, Telegram **accepted**, duration 31.6 s vs 34.0 s before (the added read costs nothing) | `git revert` |
 | **`daily-portfolio-snapshot` rows_written** | CI 5308 green, Vercel **READY**; ⏳ first real number lands on the **00:05 PT** run tomorrow | `git revert` |
-| **backstop freshness window** | forced wave reports **`backstop_fresh_skipped = 49`, `backfill_fired = 0`** — the route's header records every prior forced wave at **0** | `git revert` |
+| **backstop freshness window** | full forced wave, all 4 cohorts: **193 skipped as fresh, 3 backfills dispatched** where it would previously have dispatched ~196 (`backstop_fresh_skipped` was **0 on every forced wave** before). **~98% off this lane's backstop load.** | `git revert` |
 | **register index guard** | the guard now reds on the actual pre-fix file | `git revert` |
 
 ### 🚨 THREE NEW ITEMS, EACH NEEDING A DECISION THAT IS NOT MINE
