@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⛔ #102's RECOMMENDATION IS REFUTED — I was asked to decide, and the decision is NOT to re-enable those watchlist rows · Claude Code cloud, autonomous (Trevor: "make decisions on these yourself")
+
+**Shipped: one prod DB migration `20260913160549`** (`audit_20260913_two_suppressions_claim_a_safety_net_that_was_deliberately_retired`), file committed in the same push.
+```sql
+-- REVERT:
+UPDATE public.pipeline_alert_suppression s SET reason = b.reason
+FROM public.audit_20260913_suppression_stale_net_claims_backup b
+WHERE s.pipeline = b.pipeline;
+```
+
+**#102 said:** two suppressions justify muting by naming a `pipeline_cadence_watchlist` row as `is_active=true`; both rows read **false**; **"re-enable the rows"**. 🚨 **I did not, and re-deriving it first is the whole point.**
+
+⛔ **BOTH ROWS WERE SWITCHED OFF ON PURPOSE, TOGETHER WITH THE LANES THEY WATCH.** The 2026-09-03 ledger entry records pg_cron **jobid 55 UNSCHEDULED** because *"25 of 25 ticks in four hours died at pg_net's 90 s wall, and because pg_net answers a batch when its slowest member finishes, **every other pg_net request on the platform queued behind it**"* — AllDay is sunset, and that entry states in terms: *"Its watchlist arm is retired with it per that arm's own rule"*, leaving `audit_20260904_jobid55_watchlist_retire_backup` as the revert. **Verified live: jobid 55 does not exist, its last run was 09-03 23:36 PT, and the backup table is there.** The UFC twin is the same shape — market closed, trigger separately recorded dead (operator/auth).
+
+🚨 **SO RE-ENABLING WOULD HAVE BEEN WRONG TWICE OVER.** It would create **permanently-firing alarms for lanes that are deliberately stopped** — this estate's own named failure mode — and it would read as reversing a change that fixed **platform-wide pg_net head-of-line blocking**. ⚠ **`allday-pack-opens-backfill` has NO caller at all, so its alarm could never go green.** An alarm that cannot clear is not detection, it is noise that trains people to ignore the board.
+
+⭐ **THE REAL DEFECT IS THE STALE JUSTIFICATION, and that is what shipped.** Both `reason` texts now carry a dated correction saying the net does not exist, why it was retired, where the revert lives, and — for AllDay — **what must be true before anyone "restores" it: give the lane a caller AND re-check the pg_net blocking that killed it.** A reader checking whether muting is safe previously found a net that had not existed for nine days. **That is exactly how #102 came to be filed, so the fix has to be the text.**
+
+⚠ **AND #102's HEADLINE FRAMING IS CORRECTED TOO: *"nine days silent and nothing alerted"* is TRUE but is NOT a defect.** Nothing alerted because the lane was deliberately stopped and its arm retired in the same action. **A deliberate retirement read as an accident.** The `~18M blocks still recoverable` observation stands on its own merits and is now the only live question — and it is a product call about a **sunset collection**, not an alerting bug.
+
+⭐ **THE TRANSFERABLE LESSON, and it nearly cost me a bad ship: a finding that recommends re-enabling something must first establish WHY IT WAS DISABLED.** #102 measured the state (`is_active=false`) correctly and inferred the cause (oversight) without checking. The ledger had the answer in one grep. ⛔ **State-is-wrong and state-was-set-deliberately are indistinguishable from the state alone.**
+
 ### 2026-09-13 · ✅ SHIPPED — the sentinel's coverage arm was its own load (71,800 → 5,071 buffers per sweep), the haircut lane now logs its kills instead of vanishing, and three retired dead-host lanes stop paging · Claude Code cloud, Trevor: "Can you address these from sentinel?"
 
 **Input:** the 07:36 AM PT sweep (0 critical / 9 warn of 22) plus the 2-row Pipeline Alert (`offers-sweep` failure_rate, `pg_net_http_429`). Each item below was re-derived live before anything was touched; three of the nine warns turned out to be self-clearing tails or configured stops, and are stated as such rather than "fixed".
