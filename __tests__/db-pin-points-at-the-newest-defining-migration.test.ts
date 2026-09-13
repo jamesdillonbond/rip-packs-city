@@ -39,6 +39,18 @@ import { join } from "node:path"
 // database UNPINNABLE" when the sibling parser had it (fixed 2026-08-16). Same
 // mistake was in this file's first draft.
 
+// ⚠ KNOWN LIMIT, MEASURED RATHER THAN ASSUMED (2026-09-13). The definition scan
+// strips `--` comments but NOT dollar-quoted blocks, so a `CREATE OR REPLACE
+// FUNCTION` emitted as DYNAMIC SQL inside a `$$ ... $$` body counts as a
+// definition here. Swept all migrations: exactly TWO such sites exist
+// (`get_pipeline_alerts_core` in 20260905163444, `check_edge_fn_http_failures` in
+// 20260911041900) and NEITHER function is pinned, so this cannot mis-point a pin
+// today. It becomes live only if one of those is pinned later, or if a pinned
+// function's definition is wrapped in dynamic SQL — at which point the fix is to
+// exclude dollar-quoted spans from the scan, not to allowlist the function.
+// Recorded so a future false positive reads as a known shape rather than a
+// mystery.
+
 const ROOT = join(__dirname, "..")
 const GUARD = "__tests__/db-invariants-drift-guard.test.ts"
 const MIGRATIONS = "supabase/migrations"
