@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ SHIPPED — the dead Top Shot host gets a RATCHET, not an alarm: 19 consumers, a number that can only go down · Claude Code on Trevor's box
+
+⛔ **CORRECTING MY OWN RECOMMENDATION FROM AN HOUR AGO.** I closed the earlier handoff item with *"someone should decide whether a Top Shot GQL outage deserves its own sentinel arm; right now nothing pages on it."* **That advice was wrong and I am glad it was not taken.** `public-api.nbatopshot.com` is DECOMMISSIONED, not down — so that arm would be **red forever**, and this estate's own register says a permanently-red instrument is indistinguishable from a broken one at a glance. There is nothing to page about: the answer is known and permanent.
+
+⭐ **What is actually unfinished is the MIGRATION, so the instrument measures the migration.** `__tests__/dead-topshot-host-consumers-only-decrease.test.ts` pins the number of files importing `topshotGraphql` at **19** (excluding `lib/chains/flow/topshot.ts`, which owns the endpoint). It fails if the count grows — a new caller of a dead host is a defect on its way to production, not a number to adjust — **and equally if it shrinks without the baseline being lowered**, so the figure cannot rot into a permissive ceiling that constrains nothing.
+
+**The failure this really prevents is REDISCOVERY.** The host's death was established 2026-08-30 and then independently re-derived from scratch today, at real cost, because **nothing in the tree recorded how much of the estate still depended on it.** A monotonic count turns "someone should look at that again" into visible, finite work. ⚠ **The target is NOT zero:** `topshot-username-resolve.ts` keeps its dead call deliberately, as a fallback reached only when the Atlas read FAILS (#65) — a dead fallback behind a live primary is harmless. Decide per consumer; the ratchet only forbids growth.
+
+**Non-vacuity proven by INJECTION, not by argument:** a throwaway route importing `topshotGraphql` was added, the guard went red on 2 assertions naming `20 files … (baseline 19)`, and the probe was deleted (tree verified clean after). ⚠ The "walk inspected something" assertion is deliberately **satisfiable at a population of zero** — it asserts the walker's REACH (>500 files), not the hit count, so a completed migration cannot make the guard punish its own success. Paths are normalised to forward slashes, per the Windows tree-walk trap already in the register.
+
+**Verified:** `tsc` clean · **1541 files / 17,186 tests green** · `lint:ratchet` baseline **715 / 3061 files**.
+
+**Revert:** delete the test file; it constrains nothing else.
+
 ### 2026-09-13 · ✅ VERIFIED IN PRODUCTION — the wallet-search database refill fills exactly where data exists and nowhere else, field for field · Claude Code on Trevor's box
 
 `2bcd3c5f2` deployed READY (`dpl_FjU7Uhs…`, `lambdaRuntimeStats` attached) after an unusually slow ~35 min build. Verified by REQUEST against `POST /api/wallet-search`, with the before-reading taken on the same wallet while the old build was still serving.
