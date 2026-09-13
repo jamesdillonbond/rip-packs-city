@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ⛔ CORRECTION — I filed #94's causation wrong, the disproof was in my own first query, and the finding already existed · Claude Code cloud, Trevor: "keep going"
+
+**Shipped (docs only):** `docs/reference/known-issues.md` (#94 correction), `docs/overnight/focus.md` (the steer's #94 line rewritten). Revert: `git revert` the commit whose message starts `docs(register): correct #94's causation`.
+
+**⛔ WHAT I GOT WRONG.** #94 pairs *"2,083 of 2,085 rows > 7 d stale"* with *"14 consecutive days 0-ok, HTTP 530"*, and its EXIT told the reader to re-point pack supply to Atlas as #65 did. **That would not unfreeze a single one of the 2,083 rows.**
+
+**🔵 THE MEASUREMENT.** `topshot_pack_supply` holds **2,085 rows of which 2,083 have `supply_ok = true`**, and the lane's candidate predicate is `NOT EXISTS (… supply_ok = true)` — *"never successfully fetched"*. **The live candidate set is TWO dists** (8327, 8125, both `HTTP 530`), so the 14 daily failures are 14 attempts at those two. Its own `extra` says so every run: `processed: 2 · ok_count: 0 · fail_count: 2`. **The 2,083 are stale because the predicate selects on the very column it fills — a row that succeeds leaves the candidate set forever.**
+
+**⭐ THE DISPROOF WAS IN MY OWN FIRST QUERY.** That query returned `never_succeeded: 2` on the same line as `stale_over_7d: 2083`. **Two numbers one column apart, and the pair settles the causation** — if the upstream were the cause, the stale set and the never-succeeded set would be the same set. I read the 2,083 and not the 2.
+
+**⚠⚠ AND IT WAS ALREADY DIAGNOSED — the second time in one night I filed over existing work.** The **2026-09-12T0730Z** inbox filing has it exactly, warns in as many words that *"fixing #81's 530 would NOT unfreeze the 2,083 rows"*, and names the same shape in All Day (`backfill-allday-dist-opened`, `.is('opened_count', null)`, 3,020 rows hydrated in one window on 2026-06-30) — which is why `allday_pack_supply` reads one distinct day. Migration `20260901071258`'s header **predicted the recurrence in writing**. ⭐ **So the two tables in #94 share ONE defect — a one-shot hydrator masquerading as a refresher — and it is not #81's.**
+
+**⭐⭐ THE PATTERN IS THE LESSON, because it is now twice in one session:** #75 (a duplicate, caused by a truncated read) and now #94 (a wrong cause, caused by not reading the inbox at all). **Both times the answer was already on disk and I measured my way to a worse version of it.** The inbox is 477 filings and there is no index by SUBJECT — only by filename — so "has this been found already?" is expensive to ask and I skipped it twice. ⚠ **Before filing anything about a lane or a table, grep `docs/overnight/inbox/` for its name.** That is two minutes against a wrong register entry that a future session would have acted on.
+
+**✅ CORRECTED EXIT on #94:** the real fix is a **refresh predicate** — revisit on age, not on emptiness — for both lanes; the Atlas/source decision (#50, #81) is a separate question that fixes the 2 dists and nothing else.
+
+**Gates:** docs only; index regenerated; `check-memory-doc-links` 196; ledger guards 3 / 0.
+
 ### 2026-09-12 · ⚠ CORROBORATION (and a near-duplicate I caught) — #75's TOAST defect was already filed hours earlier; three things I added, and the read that nearly produced a second filing · Claude Code cloud, Trevor: "keep going"
 
 **Shipped (docs only):** `docs/reference/known-issues.md` (#75, a short delta). Revert: `git revert` the commit whose message starts `docs(register): #75 second sample`.
