@@ -26,6 +26,38 @@
 // cannot also promise to always draw without a network, so the tiering had to
 // sit ABOVE it rather than inside it.
 //
+// ── ⚠ WHY THIS IS A FIFTH FILE AND NOT A CALL INTO (2) ──────────────────────
+// The correction that ordered this work said, correctly, to check
+// `lib/badges/server-art.ts` before writing another resolver. It was checked,
+// and it is NOT duplicated here — it keeps every caller it has. It answers the
+// same question this file answers, from the database:
+// `fetchBadgeArt(titles, collectionId)` calls `get_badge_display_metadata`,
+// which resolves `COALESCE(badge_art_overrides.icon_url, badge_taxonomy.
+// icon_url)`. That is the RIGHT shape for its callers — `/moment/[id]` and
+// `/[collection]/edition/[slug]`, server PAGES that are already making DB reads
+// and whose badge set is not known ahead of time.
+//
+// It is the wrong shape for an OG card, for three reasons, and the third is
+// decisive:
+//   * it costs a DB round trip on the path a social crawler is holding open,
+//     for a set of 17 rows that changes a few times a year;
+//   * its budget is a PAGE budget (BADGE_ART_TIMEOUT_MS = 4s, sized to block a
+//     loading skeleton), not a card's decoration budget;
+//   * it imports `supabaseAdmin`, and `/api/og/profile/[username]` is `edge`.
+//     Reaching for it there would drag a service-role Node client onto an edge
+//     route — the same reason `glyphs.ts` could not simply import from the PDF.
+//
+// So the SPLIT IS BY RUNTIME AND BUDGET, not by vocabulary: both resolve the
+// same (title, collection) -> icon_url mapping, and `scripts/check-badge-art-
+// registry-drift.mjs` is what keeps this file's static copy honest against the
+// tables (2) reads live. If that guard ever has to be deleted, collapse this
+// into (2) instead — a static mirror with no drift check is strictly worse than
+// a DB read.
+//
+// (3), the PDF route, is left ALONE deliberately: it already fetches official
+// art with an RPC fallback, which is the behaviour this change gives the cards.
+// It and the cards now AGREE about the same six Moments, which was the point.
+//
 // ── WHAT IS AND IS NOT AVAILABLE ────────────────────────────────────────────
 // ⚠ THE SPEC THAT ORDERED THIS WORK SAID "53 BADGES, PREFETCH ALL 53". That is
 // not what the database holds. Measured live 2026-09-12:
