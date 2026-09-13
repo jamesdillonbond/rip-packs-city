@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ THE SPELL ENDED AT 12:05 PM PT — the toast's first autovacuum completed; the IO shed restored EARLY (12:2x PM, not 3:45 PM) and its one-off + suppressions removed · Claude Code cloud
+
+**Measured, not inferred:** `pg_stat_all_tables` for `pg_toast_51873` now reads `autovacuum_count 1 · last_autovacuum 12:04:58 PM PT · n_live 153,732 · n_dead 9,838`; `pg_stat_progress_vacuum` holds only a 2-minute `wallet_moments_cache` pass; client IO waiters **19 → 2–4**. The 12:21 PM sentinel sweep ran in **108 s with no wall-budget refusal** (11:41: 140.6 s, 3 refused) and the new `Maintenance Load` arm read `ok` — correctly, the long vacuum was gone. ⚠ **The TOAST is still 12.6 GB** (plain vacuum marks space reusable; it does not return it) — so the 7:05 PM `VACUUM FULL` question is now purely disk reclaim + read locality, decided at the 7:00 PM check-in with the corrected protocol (#75).
+
+**Restored (12:2x PM PT):** `cron.alter_job(466, active := true)`, `cron.alter_job(464, active := true)`, `cron.unschedule('rpc-shed-restore-20260913')`, and the two `pipeline_alert_suppression` rows deleted — a lane failing NOW is a real signal again, not the spell. Positive control owed at 12:45 PM: the Atlas tick's next runs should succeed in its 16–60 s band (it was 24 of 27 failed at 120 s under the spell).
+
+**The shed's own reading is confounded and is recorded as such:** it ran 11:52 → 12:2x, and the autovacuum — the cause — ended at 12:05 inside that window, so no clean before/after exists for the shed alone. What is measurable: the two lanes did not add 60 failing busy-minutes to the last half-hour of the spell.
+
+
 ### 2026-09-13 · ✅ `pinnacle-metadata-backfill` answers cron-job.org inside 30 s whatever the DB is doing — heartbeat first, work deferred to after() past a 20 s sync budget, wall 30 → 120 s · Claude Code cloud
 
 **The state:** hourly cron-job.org tick at :22, a synchronous 718-line route with `maxDuration = 30` and unbounded reads on `wallet_moments_cache` (the table being autovacuumed today). Under the spell it **504'd at its own 30 s wall on three consecutive ticks** (9:22, 10:22, 11:22 AM PT: `Task timed out after 30 seconds`), wrote **no terminal row** (a kill runs neither branch), so Pipeline Silence read `silent 200m` and nothing said why — and each 30 s timeout is a cron-job.org FAILURE, the class that **auto-disabled nine entries on 09-10 (#76)**. One more tick from being switched off by its own scheduler.
