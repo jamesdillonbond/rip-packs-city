@@ -102,6 +102,19 @@ export function getLocked(row: MomentRow) { return Boolean(row.isLocked ?? row.l
  * filter and total semantics. The tri-state is exposed, not imposed.
  */
 export function isLockKnown(row: MomentRow) {
+  // ⭐ An explicit provenance flag wins over `enrichFailed`. The live per-moment
+  // enrichment and the lock reading are SEPARATE sources: Top Shot's GraphQL
+  // host is decommissioned, so `enrichFailed` is true on every Top Shot row,
+  // while `wallet_moments_cache` may still hold a lock that was genuinely
+  // checked. Without this branch that recovered reading would be discarded and
+  // the column would say "unknown" about something we measured.
+  //
+  // ⛔ `lockKnown` may ONLY be set by a source that records HAVING CHECKED —
+  // never from a bare boolean. `wallet_moments_cache.is_locked` defaults to
+  // `false` on 1,160,468 never-checked Top Shot rows (register #112), so a
+  // producer that sets this without consulting `lock_checked_at` reintroduces
+  // the exact defect the rest of this comment block exists to prevent.
+  if (row.lockKnown === true) return true
   if (row.enrichFailed) return false
   return (row.isLocked ?? row.locked) != null
 }

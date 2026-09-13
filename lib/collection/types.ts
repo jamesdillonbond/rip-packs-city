@@ -23,6 +23,13 @@ export type BadgeInfo = {
 export type MomentRow = {
   /** True when per-moment enrichment failed: lock state, badges and traits are UNKNOWN, not absent. */
   enrichFailed?: boolean
+  /**
+   * True when `isLocked` came from a source that RECORDS having checked, so it
+   * outranks `enrichFailed` in `isLockKnown`. ⛔ Only a producer that consulted
+   * a check timestamp may set it — `wallet_moments_cache.is_locked` defaults to
+   * `false` on 1.16M never-checked rows (register #112).
+   */
+  lockKnown?: boolean
   momentId: string
   playerName: string
   team?: string

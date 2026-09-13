@@ -61,6 +61,19 @@ type WalletRow = {
    * lib/collection/helpers.ts.
    */
   enrichFailed?: boolean
+  /**
+   * True when `isLocked` on this row came from a source that RECORDS having
+   * checked (today: `wallet_moments_cache.lock_checked_at IS NOT NULL`), so
+   * it is a reading rather than a default. Needed because `enrichFailed`
+   * short-circuits `isLockKnown` — a row whose live enrichment failed can
+   * still have a genuinely known lock from the database.
+   *
+   * ⛔ NEVER set this from `wallet_moments_cache.is_locked` alone. That
+   * column defaults to `false` and 1,160,468 of 1,767,825 Top Shot rows have
+   * never been checked (register #112) — copying it without the timestamp
+   * would import the exact defect this field exists to prevent.
+   */
+  lockKnown?: boolean
 }
 
 type AcquisitionStats = {
@@ -390,6 +403,103 @@ async function mapWithConcurrency<T, R>(
     Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, () => runWorker())
   )
   return results
+}
+
+/**
+ * Fill the fields the DEAD Top Shot GraphQL host used to supply, from data
+ * the platform already maintains.
+ *
+ * ── WHY ────────────────────────────────────────────────────────────────────
+ * `public-api.nbatopshot.com` is decommissioned (530 since ~2026-08-30,
+ * re-verified from a residential IP 2026-09-13 — it is not an outage and it
+ * is not coming back). #65 re-pointed six other consumers onto Atlas-via-DB;
+ * this route's per-moment leg was never among them, so EVERY Top Shot row in
+ * wallet search renders with no thumbnail, no tier and no ask. Verified in
+ * production 2026-09-13 on a real wallet: 5 of 5 rows `enrichFailed`, every
+ * `thumbnailUrl` null.
+ *
+ * `wallet_moments_cache` already carries it for wallets the platform has
+ * walked — whole-table coverage of the 1,767,825 Top Shot rows, measured:
+ * `image_url` 98.9%, `tier` 98.9%, `mint_count` 98.9%, `league` 66.3%.
+ *
+ * ── THE RULES THIS OBEYS ──────────────────────────────────────────────────
+ * ⛔ STRICTLY ADDITIVE. It fills a field only where the row has none, so it
+ *    can never overwrite something the live read actually measured. Worst
+ *    case it does nothing.
+ * ⛔ LOCK STATE NEEDS PROVENANCE. `is_locked` is copied ONLY when
+ *    `lock_checked_at` is non-null, because the column defaults to `false`
+ *    and 65.6% of rows were never checked (#112). Without that gate this
+ *    would publish `LOCKED: No` on 1.16M unexamined moments — the defect
+ *    `eaf0b2b` removed from this very route.
+ * ⚠ A FAILED READ FILLS NOTHING. Three states, not two: row present, row
+ *    genuinely absent (a wallet we have never walked), and read failed. The
+ *    last two both leave the row exactly as it was, which is honest — the
+ *    row keeps saying it does not know.
+ */
+async function fillFromWalletCache(
+  rows: WalletRow[],
+  wallet: string,
+  collectionId: string,
+): Promise<void> {
+  const needy = rows.filter(
+    (r) =>
+      r.thumbnailUrl == null ||
+      r.tier == null ||
+      r.circulationCount == null ||
+      r.league == null ||
+      r.isLocked == null,
+  );
+  if (needy.length === 0) return;
+
+  const { data, error } = await supabaseAdmin
+    .from("wallet_moments_cache")
+    .select("moment_id, image_url, tier, mint_count, league, is_locked, lock_checked_at")
+    .eq("wallet_address", wallet)
+    .eq("collection_id", collectionId)
+    .in("moment_id", needy.map((r) => String(r.momentId)));
+
+  // ⚠ supabase-js RETURNS errors rather than throwing, so this branch is the
+  // only thing standing between a failed read and a silently unfilled row
+  // that looks identical to a wallet we have never walked. Fill nothing and
+  // say so in the log; the rows already report themselves as unknown.
+  if (error || !Array.isArray(data)) {
+    console.warn(
+      `[wallet-search] wmc fill unavailable for ${wallet.slice(0, 10)}: ${error?.message ?? "no rows payload"}`,
+    );
+    return;
+  }
+
+  const byMoment = new Map<string, Record<string, unknown>>();
+  for (const r of data as Array<Record<string, unknown>>) {
+    byMoment.set(String(r.moment_id), r);
+  }
+
+  for (const row of needy) {
+    const c = byMoment.get(String(row.momentId));
+    if (!c) continue;
+
+    if (row.thumbnailUrl == null && typeof c.image_url === "string" && c.image_url) {
+      row.thumbnailUrl = c.image_url;
+    }
+    if (row.tier == null && typeof c.tier === "string" && c.tier) {
+      row.tier = c.tier;
+    }
+    if (row.league == null && typeof c.league === "string" && c.league) {
+      row.league = c.league;
+    }
+    if (row.circulationCount == null && c.mint_count != null) {
+      const mint = toNum(c.mint_count);
+      if (mint != null) {
+        row.circulationCount = mint;
+        if (row.mintSize == null) row.mintSize = mint;
+      }
+    }
+    // ⛔ The timestamp is the whole gate — see the header and register #112.
+    if (row.isLocked == null && c.lock_checked_at != null && typeof c.is_locked === "boolean") {
+      row.isLocked = c.is_locked;
+      row.lockKnown = true;
+    }
+  }
 }
 
 async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
@@ -1433,6 +1543,19 @@ export async function POST(req: NextRequest) {
         } as WalletRow;
       }
     }))
+
+    // Recover what the dead Top Shot host used to supply, from the database.
+    // Runs BEFORE the per-edition tally below so `locked` counts see the
+    // recovered readings. Never throws: a failure here must not cost the
+    // caller the rows it already has.
+    try {
+      const wmcCollectionId = await getCollectionId()
+      if (wmcCollectionId) await fillFromWalletCache(baseRows, wallet, wmcCollectionId)
+    } catch (e) {
+      console.warn(
+        `[wallet-search] wmc fill threw: ${e instanceof Error ? e.message : String(e)}`,
+      )
+    }
 
     const editionCounts = new Map<string, { owned: number; locked: number }>()
     for (const row of baseRows) {
