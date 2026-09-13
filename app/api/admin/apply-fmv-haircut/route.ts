@@ -14,6 +14,35 @@
 // The RPC itself filters to LOW + ASK_ONLY confidence — HIGH/MEDIUM are
 // untouched. Returns rows_examined / rows_haircut / total_dollars_removed.
 //
+// ⭐ IT IS SAFE TO RE-FIRE, AND THAT IS NOT OBVIOUS FROM THE WRITE — documented
+// 2026-09-13 because the natural reading is the opposite one. The UPDATE is
+// MULTIPLICATIVE (`fmv_usd = ROUND(fmv_usd * 0.85|0.75|0.65|0.55, 2)`) and there
+// is no `haircut_applied` flag, no cursor and no time window, so a reader
+// reasonably concludes that a second run compounds the discount — and then
+// either refuses to give this lane a backstop or "fixes" the guard.
+//
+// The idempotence is carried by one clause in the RPC's WHERE:
+//     AND ABS(fs.fmv_usd - fs.floor_price_usd) < 0.01
+// A row only qualifies while its FMV still EQUALS its floor. Applying the
+// haircut is exactly what breaks that equality, so the row excludes itself from
+// every later run. ⚠ The `algo_version || '_haircut'` marker is a RECORD, not the
+// guard — nothing reads it back.
+//
+// ⭐ MEASURED, not argued (2026-09-13, live): of 190,851 snapshot rows whose
+// `algo_version` carries a haircut marker, **189,193 were haircut exactly once,
+// 1,657 were haircut then `_p90clamp`ed by a later writer, and exactly ONE shows
+// `_haircut_haircut`.** So the guard holds ~1 in 190k.
+// ⚠ THE LEAK HAS A MECHANISM, so it is not noise: if some other writer later
+// re-syncs `floor_price_usd` down to the already-haircut `fmv_usd`, the equality
+// is restored and the row becomes eligible again. One row today; it would grow if
+// floor re-sync ever became routine. `_haircut_haircut` is the query that finds it.
+//
+// ⛔ DO NOT add this to `dead-lane-backstop.yml` on the strength of "safe to
+// re-fire". It is safe, but that backstop fires every 15 minutes and this RPC
+// walks `DISTINCT ON (edition_id)` over `fmv_snapshots` — a table CLAUDE.md books
+// at 13.9% of all instance disk reads. 96 no-op walks a day is a real cost for a
+// lane that runs once. A daily lane needs a daily backstop with a ran-today gate.
+//
 // Auth: Bearer RPC_ADMIN_TOKEN (or ?token=) via verifyAdminRequest.
 
 import { NextRequest, NextResponse, after } from "next/server";
