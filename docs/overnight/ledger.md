@@ -10,6 +10,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ CONCIERGE PASS, fourth commit — verified in production with two real turns; one prompt contradiction fixed; key-files updated · Claude Code cloud
+
+**DATA (prod, deliberate):** two real `support_conversations` rows, sessions `probe-claude-2026-09-13-a` / `-b`, written by firing the deployed `/api/support-chat` from Postgres (`net.http_post` ids 339801 / 339802; the sandbox egress proxy 403s the apex). ~2 Anthropic turns of spend (~54 s of model time). They are real traffic by design — not smoke-flagged — so the degraded-share check's `low_sample` denominator gains 2 successes. **Revert:** none needed; `delete from support_conversations where session_id like 'probe-claude-2026-09-13-%'` if they must not count.
+
+**What they proved:** entity context resolves the page's edition key unprompted; badges + supply reach the answer (`badges_status: ok` + `[]` rendered honestly as "no tags"); a failed live-floor check is reported as failed with the link; `get_badge_info` returns live per-tier counts (2,282 Top Shot Debut editions); the confidence tiers are recited from `lib/fmv-confidence.ts`; `cache_read` 23,322 on iteration 2 — the prompt cache survived the methodology block. Detail: concierge.md "Production verification".
+
+**Code, one commit:** `app/api/support-chat/route.ts` — the "Factor badges" rule said a badged moment "is reasonably worth more … and you should say so", and the probe answered "typically commands a premium" — the exact soft price claim the FMV rule bans. Reconciled: badge = context and ranking reason; the premium's SIZE needs two priced rows this turn. Guard added to `__tests__/concierge-2026-09-13-metadata-badges-context.test.ts`. `docs/reference/key-files-and-honesty.md` — tool count 33 → 38, the two new `lib/concierge/*` modules listed. **Revert:** `git revert` the commit found by `git log --grep="badge rule no longer invites"`.
+
 ### 2026-09-13 · ⚠ CORRECTION TO MY OWN SHIP 20 MIN LATER — the topshot_marketplace exclusion is RIGHT and it made the CLAIM 528× more expensive; floor raised to 2026-01-01 to contain it · Claude Code cloud
 
 **The A/B I should have run before shipping, run after (same cursor, `EXPLAIN (ANALYZE, BUFFERS)`):**
