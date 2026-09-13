@@ -10,6 +10,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ DB — the trophy render fix was ON MAIN BUT NOT IN THE DATABASE; applied, and the impossible `#1017/50` now reads `#1017/2034` · Cowork (cloud), Trevor: "take care of that yourself"
+
+The 2026-09-11 Cowork series landed on `main` through `cowork-push` (five commits,
+`e35da49`…`ca9a9c4`), and `ca9a9c48` deployed **READY** to production — the docs
+commit was deliberately ordered FIRST so the tip was a code commit, because
+Vercel's `ignoreCommand` diffs `HEAD^..HEAD` and a docs-only tip is skipped. The
+sibling `2d69574` pushed right after is CANCELED in the deployment list, which is
+that mechanism working and is the control for the ordering claim.
+
+⚠ **But a migration FILE on main is not a migration APPLIED.** Checked after the
+push: `schema_migrations` had no row for
+`audit_20260911_trophy_slab_refuses_an_impossible_serial_over_circulation`, the
+live `get_trophy_slab_data` had no `serial_number > e.circulation_count` guard,
+and the impossible pair was still live. **Repo-ahead-of-DB is the drift direction
+nobody watches** — the usual worry is a fileless migration, and this is its
+mirror — and the render fix was inert until this was applied.
+
+**Applied** with the file's exact contents, named to match the repo file's name
+portion so `migration-parity` (which matches on NAME) is satisfied.
+
+⭐ **Verified byte-identical rather than "looks right": live `prosrc` md5
+`fb9adee26ae7d6818bf03fb285bb21bc`, 3,680 bytes — EQUAL to the repo file's
+function body.** ⚠ And a gotcha worth keeping: the first comparison used a
+NORMALISED hash and came back DIFFERENT at identical length, because Postgres
+`regexp_replace(…, '\s+', ' ')` and JavaScript `\s` do not agree on what
+whitespace is. **Compare RAW hashes across engines; a normalised hash is only
+comparable within one engine.**
+
+**Live result:** `get_trophy_slab_data` for the QA account now returns slot 4 as
+serial **1017 / circulation 2034** — the rescued branch (the pinned per-moment
+mint can hold the serial, so it is preferred over dropping the denominator),
+where it previously published `#1017/50`. The repo's drift pin
+(`supabase/tests/get_trophy_slab_data.sql`) and the migration still match.
+
+**Revert:** re-run
+`20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql`,
+restore the verbatim block in the pinned test from it, and repoint the guard row
+in `__tests__/db-invariants-drift-guard.test.ts`.
+
 ### 2026-09-12 · 🔴 FINDING — both pack-supply tables are weeks stale, one lane has failed 14 days straight, and the monitor called it "a one-off" on day nine · Claude Code cloud, Trevor: "keep going"
 
 **Shipped (docs only):** `docs/reference/known-issues.md` — **new item #94** (filed as #92; **renumbered on rebase — a concurrent session had already taken #92 and #93 for unrelated items**). Revert: `git revert` the commit whose message starts `docs(register): file #94`.
