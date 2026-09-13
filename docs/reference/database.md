@@ -340,6 +340,26 @@ SELECT (SELECT count(*) FROM public.check_public_security_invariants()) AS sec_v
        jsonb_array_length(public.check_secdef_anon_execute_violations()) AS secdef;        -- 0 = clean
 ```
 
+## ⛔ A SIZE COMPARISON ACROSS TWO DIFFERENT SIZE FUNCTIONS IS NOT A MEASUREMENT OF GROWTH (2026-09-13, a false correction caught one step before filing)
+
+Diagnosing why `refresh_cross_collection_cohort_step2()` timed out, I read `pg_total_relation_size('wallet_moments_cache')` = **2,507 MB** against the function's own code comment, which had justified its plan fix against a **"927 MB table"**. That reads as **2.7x growth in three weeks** — and I was one step from filing *"the table grew, the median has left 25 s, bound the aggregate now"*, **a correction that would have overturned a correct conclusion and sent the next session rewriting a working query.**
+
+⭐ **The apples-to-apples check refuted it in one query:**
+
+```sql
+select pg_size_pretty(pg_relation_size('wallet_moments_cache'))       as heap_only,  -- 940 MB
+       pg_size_pretty(pg_indexes_size('wallet_moments_cache'))        as indexes,    -- 1567 MB
+       pg_size_pretty(pg_total_relation_size('wallet_moments_cache')) as total;      -- 2507 MB
+```
+
+**The heap is 940 MB against that comment's 927 MB — flat, +1.4 % in three weeks.** The 2,507 MB is heap **plus 1,567 MB of indexes**, and the comment had been measuring the heap. **Nothing grew.**
+
+⚠ **THE GENERAL RULE: a recorded size figure rarely says WHICH function produced it**, and on an index-heavy table the three differ by more than 2x. Before comparing against any historical size, read **all three** for the current object and ask which one the old number could have been. The comparison is only meaningful within one function. Same family as the standing rule *never pair a count from one table with a property from another*.
+
+⚠ **Corollary, from the same table:** `pg_indexes_size` **exceeds** `pg_relation_size` here (1,567 MB of indexes on a 940 MB heap), so "total size" is **dominated by indexes** and moves whenever someone adds one. ⭐ **An index build looks exactly like data growth in a `pg_total_relation_size` trend** — which matters on this estate, where index builds are a routine lever and DB size is a watched number.
+
+⚠ **Cheaper still, and do it FIRST: `EXPLAIN` without `ANALYZE` to confirm the PLAN has not changed** before theorising about volume at all. Here it had not — Hash Joins throughout and the intended `Index Only Scan` on `idx_wmc_wallet_coll_ek_fmv`, i.e. the `SET LOCAL enable_nestloop = off` in the function body was still doing its job, which alone ruled out "the planner flipped back to a nested loop".
+
 ## 🚨 A SELF-HEAL CAN BE THE BUG AND THE `BEFORE` TRIGGER THE PROTECTION — an impossible value has TWO causes and the obvious repair fixes the wrong one (2026-09-12, register #82)
 
 **`observed > capacity` never tells you which side is wrong.** It can mean capacity is understated, or

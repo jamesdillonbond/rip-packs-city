@@ -2,6 +2,80 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⛔ A NEW pg_cron JOB NEEDS ITS `statement_timeout` IN THE COMMAND — the global is 120 s and the function's own declaration is INERT (2026-09-13, caught 40 min after shipping it wrong)
+
+**I shipped `rpc-ccm-step2-retry` with no `statement_timeout` in its command and it would have been killed at the cluster global 120 s**, doing nothing while `cron.job_run_details` recorded a run. ⛔ **A retry that cannot finish is worse than no retry: it converts a visible gap into an instrument reporting the gap was covered.**
+
+**Verified, not assumed** — run this before scheduling anything expensive:
+
+```sql
+select 'cluster' as scope, reset_val, source from pg_settings where name='statement_timeout'
+union all
+select 'role: '||coalesce(r.rolname,'ALL'), array_to_string(s.setconfig,' | '), ''
+from pg_db_role_setting s left join pg_roles r on r.oid=s.setrole
+where array_to_string(s.setconfig,' ') ilike '%statement_timeout%';
+```
+
+**Measured 2026-09-13 (a dated sample):** cluster `reset_val` = **120000**, source `configuration file`. Role overrides exist for `anon` 3 s, `authenticated` 8 s, `authenticator` 8 s, `service_role` 30 s, **`cron_heavy` 600 s** — and **`postgres` has NO entry.** ⭐ **So a `postgres`-owned pg_cron job gets 120 s unless its COMMAND says otherwise, while a `cron_heavy`-owned one gets 600 s for free.** The owner decides the default, and the two most common owners here differ by 5x.
+
+⛔ **The function's own `SET statement_timeout` in `proconfig` cannot rescue it** — the statement timer is armed by `start_xact_command()` *before* the function's GUC nest level is entered, so a declaration inside the function can neither raise nor lower the budget of the statement invoking it. Prior instance: **8 pg_cron jobs silently capped at the global 120 s while their functions declared 180–600 s, every one dying at exactly 120.0 s.**
+
+⭐ **THE POSITIVE CONTROL IS USUALLY ALREADY IN THE DATA — find a sibling that carries an in-command SET and has a recorded run LONGER than the global cap.** Here jobid 4 (`rpc-ccm-step2`) carries `SET statement_timeout = '300s';` and has a successful **165.2 s** run (2026-09-10). A completed run past 120 s is only possible if the in-command SET binds, which proves the mechanism without a test.
+
+### ⭐ VERIFY A SCHEDULED JOB BY READING BACK WHAT THE SCHEDULER STORED
+
+**This is how the defect above was found, and the method is the transferable part.** I selected `cron.job.command` *only* to check that nested `$job$` / `$retry$` dollar-quoting had survived. It had. **The missing budget was sitting in the same row.** ⭐ **The read-back answers questions you did not think to ask** — trusting the SQL you sent cannot.
+
+```sql
+select jobid, jobname, schedule, username, active,
+       command like '%statement_timeout%' as has_own_budget,
+       command
+from cron.job where jobname = '<name>';
+```
+
+⚠ `cron.schedule` on an EXISTING jobname **updates in place and PRESERVES the jobid** — use it to amend a command. Do not unschedule+reschedule, which churns the jobid and breaks anything keyed on it.
+
+## ⛔ PICK A CRON SLOT FROM THE MEASURED HOURLY DISTRIBUTION — "the nightly band is busy" is BACKWARDS on this estate (2026-09-13)
+
+When `rpc-ccm-step2` (jobid 4, `25 23 * * *`) died on a 300 s timeout, the inbox filing's suggested durable fix was the intuitive one: **"move step2 off the spell band."** ⛔ **Refuted by the first query, before any work was done on it.**
+
+```sql
+select extract(hour from start_time at time zone 'UTC')::int as hour_utc,
+       count(*) as runs, count(*) filter (where status='failed') as failed,
+       round(100.0*count(*) filter (where status='failed')/nullif(count(*),0),1) as fail_pct,
+       round(avg(extract(epoch from (end_time-start_time)))::numeric,1) as avg_secs,
+       round(max(extract(epoch from (end_time-start_time)))::numeric,1) as max_secs
+from cron.job_run_details
+where start_time > now() - interval '7 days' and end_time is not null
+group by 1 order by 1;
+```
+
+**Measured 2026-09-13, 7-day window (a dated sample — re-run it, do not quote it):**
+
+| hour UTC | fail % | avg s | note |
+|---|---|---|---|
+| 02–05 | **0.0** | 3.3–3.8 | quietest; hour 04 has the lowest tail (max 113 s) |
+| 23 | 0.4 | 6.0 | where step2 already ran — **among the quietest** |
+| 00, 06 | 0.3 | 4.8–7.0 | |
+| 07 | 5.5 | 13.1 | |
+| 12, 13 | **19.5 / 22.8** | 30–39 | **the real spell band** |
+| 18 | 10.9 | 27.6 | second worst |
+
+⭐ **So "late at night" is not the quiet window here and a slot chosen by intuition can be near the worst hour of the day.** The query is one tool call.
+
+⚠ **AND THE HOUR MAY NOT BE THE VARIABLE AT ALL — read the JOB's own run-duration distribution FIRST.** For jobid 4 it was not the hour: its last 14 runs read 9.7, 10.1, 32.8, 34.3, 43.2, 18.6, 29.2, 25.8, 20.3, 22.8, 22.8, **165.2**, 30.9, then TIMEOUT — a **median ~25 s against a 300 s cap** with two of the last four runs at 55 % and 100 % of it. **A fat tail against its own ceiling, not a bad hour.** The two distributions answer different questions and only the job's own says whether moving it could possibly help.
+
+## ⛔ DO NOT COPY A RETRY PATTERN FROM A SIBLING WITHOUT READING THE PIN ON THE OBJECT (2026-09-13)
+
+Two retries shipped the same day, and **the right shape differed** because the functions differ:
+
+- `rpc-portfolio-snapshot-retry` (register #103) is **UNCONDITIONAL** — safe because `snapshot_all_user_portfolios()` ends `ON CONFLICT DO NOTHING`, so a second run on an already-written day inserts nothing.
+- `rpc-ccm-step2-retry` (jobid 491) is **STALENESS-GATED** — because `refresh_cross_collection_cohort_step2()` **TRUNCATEs `cross_collection_ts_set_overlap_mat`**, a table read by the **public, crawlable** `/insights/cross-collection` board. That ACCESS EXCLUSIVE window was **deliberately shrunk on 2026-08-21** and is pinned by `supabase/tests/refresh_cross_collection_cohort_lock_window.sql`, which asserts the reorder is output-equivalent. **An unconditional retry would have taken that lock a second time every day and partly undone a considered prior optimisation.**
+
+⭐ **Grep for a pin on the object before reusing a pattern near it.** The gate takes the lock on the ~7 % of days the primary actually fails.
+
+⚠ **The gate's guard clause is load-bearing:** `COALESCE(MAX(computed_at), '-infinity')`. An EMPTY table makes `MAX()` NULL and `NULL < x` is NULL — which reads as **fresh** exactly when there is no data at all. Same shape as `?? 0` on a count. **Controls were taken in both directions (6 cases) before shipping:** fires at 29.2 h / 41.3 h / 12.1 h / empty; does NOT fire at 5.2 h or 11.9 h.
+
 ## ⭐ `sales-counterparty-backfill` — the THREE remaining fixes, each gated on something different, with the waste finally quantified (2026-09-12)
 
 The cursor reset (migration `20260912192653`) got this lane working — verified at 120 rows/tick, three
