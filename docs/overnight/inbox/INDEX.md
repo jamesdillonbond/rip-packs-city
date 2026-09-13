@@ -1,4 +1,4 @@
-# Inbox index — 476 live filings
+# Inbox index — 477 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -29,6 +29,10 @@ still open should have a register row, and if it does not, that gap is the findi
 failure it documents.
 
 ---
+
+## 2026-09-13 — 1 filing
+
+- [🟡 **341 source files sit in NO coverage gate — and until today nothing watched the DENOMINATOR**](2026-09-13T0108Z-341-source-files-sit-in-no-coverage-gate-and-nothing-watched-the-denominator.md) — *(Claude Code, cloud; re-derivation of the 2026-08-29 CI-audit item F, plus one guard shipped.)* A coverage percentage is a RATIO and every existing guard watched the numerator: narrowing `lib/**/*.ts` or deleting `app/**/route.ts` from an `include` array removes hundreds of files from the measurement, so **the percentage goes UP and every threshold passes** — the gate reports a better number for measuring less. ✅ **Shipped `__tests__/coverage-gates-still-measure-what-they-claim.test.ts`**: four bans at zero expressed over the TREE, not over a count (a ceiling that churns gets raised rather than read), with the globs READ FROM the configs rather than restated. ⭐ **Mutation-proven against the real config** — commenting out `"app/**/route.ts"` reds it and names the unmeasured routes — **and a commented-out glob correctly does not count as coverage**, which works because the shared stripper was pinned to the TypeScript compiler the same evening (#87). ⚠ **The census half is NOT ratcheted and the reason is stated:** re-derived **341 of 1,460** files in no gate (`page.tsx` **116**, `scripts/**` **105** — up from 93, `layout.tsx` **63**, edge fns **38**), but **38 of 38 edge functions use `Deno.*`/`serve()`** so they are structurally unmeasurable, and a ratchet over high-churn `scripts/` or over 116 pages reds on routine work — the permanently-red-arm failure. ⛔ **Filed as UNMEASURED, not untested: 93 test files already import from `scripts/`** (24 on 08-29). **The cost has already been paid once:** `app/dashboard/layout.tsx` was `return children`, dropping the bottom nav from every `/dashboard` route and all ~30 `/insights` boards — invisible to all three gates, found by Trevor on a phone.
 
 ## 2026-09-12 — 12 filings
 
