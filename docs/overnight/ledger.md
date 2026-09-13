@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ DOCS+DB — a money-affecting function is SAFE to re-fire and everything about the write says otherwise; now measured and written down where both readers look · Claude Code cloud, overnight autonomous
+
+**Shipped:** `supabase/migrations/20260913085204_…fmv_haircut_idempotence_guard_is_documented_where_a_sql_reader_looks.sql` (APPLIED — **COMMENT ONLY**, no body, no data, no schedule), `app/api/admin/apply-fmv-haircut/route.ts` (header). Revert in the migration header.
+
+**⭐ FOUND BY FOLLOWING A `cron_silent` ALERT TO ITS END INSTEAD OF ITS FIRST ANSWER.** `apply-fmv-haircut` is alerting *"Last run > 1800 min ago"*. `pipeline_runs_daily` (indefinite, so it can see past the 73 h table) shows **1 run/day, ok, every day from 09-02 to 09-11, writing 109–229 rows — and then nothing.** It missed its **2026-09-12 22:35Z** slot. It is a cron-job.org entry (no pg_cron row) and is **not** one of the ten lanes `dead-lane-backstop.yml` covers, so nothing recovers a dropped trigger.
+
+**🚨 THE INTERESTING PART IS THE QUESTION THAT FOLLOWS: is it safe to just re-fire it? Everything visible says NO, and the answer is YES.** The write is **multiplicative** — `fmv_usd = ROUND(fmv_usd * (0.85|0.75|0.65|0.55), 2)` — with **no `haircut_applied` flag, no cursor and no time window**. I read that and concluded "not idempotent, do not re-fire, do not backstop", which is the conclusion any careful reader reaches.
+
+**⭐ THE IDEMPOTENCE IS CARRIED BY ONE CLAUSE IN THE `WHERE`, AND NOTHING SAID SO:**
+```sql
+AND ABS(fs.fmv_usd - fs.floor_price_usd) < 0.01
+```
+**A row qualifies only while its FMV still EQUALS its floor, and applying the haircut is exactly what breaks that equality** — so the row excludes itself from every later run. ⚠ The `algo_version || '_haircut'` marker is a **RECORD, not the guard**: nothing reads it back.
+
+**⭐⭐ AND THE MARKER IS WHAT MADE IT TESTABLE RATHER THAN ARGUABLE — it ACCUMULATES even though no query uses it, so a double-application leaves a fingerprint.** Live count: of **190,851** rows carrying a haircut marker, **189,193 read exactly one `_haircut`**, **1,657** read `_haircut_p90clamp` (a later writer, not a second haircut), and **exactly ONE reads `_haircut_haircut`**. ⭐ **The guard holds ~1 in 190k, measured, not reasoned.**
+
+**⚠ THAT ONE ROW HAS A MECHANISM, so it is recorded as a leak rather than dismissed as noise:** if another writer later re-syncs `floor_price_usd` DOWN to the already-haircut `fmv_usd`, the equality is restored and the row becomes eligible again. One row today; it would grow if floor re-sync ever became routine. The finding query is in both comments.
+
+**⛔ AND THE OBVIOUS FOLLOW-ON IS EXPLICITLY WARNED AGAINST: do NOT add this to `dead-lane-backstop.yml`.** Safe to re-fire is not the same as cheap. That backstop fires **every 15 minutes** and this RPC walks `DISTINCT ON (edition_id)` over `fmv_snapshots` — a table CLAUDE.md books at **13.9 % of all instance disk reads**. 96 no-op walks a day is a real cost for a lane that runs once; a daily lane needs a daily backstop with a ran-today gate. **Written down so "it's idempotent, just back it up" does not become tonight's saving spent twice over.**
+
+**⚠ THE MISSED DAY ITSELF IS LOW-HARM AND IS NOT FIXED HERE.** Because the guard is a standing predicate rather than a cursor, the next run picks up every row still eligible — a skipped day delays haircuts, it does not lose them. **One missed slot is within cron-job.org's documented dropout rate**; if it recurs, the ran-today backstop above is the shape, and it needs the console (Trevor) or a new GHA lane.
+
+**Verification:** comment applied in a measured idle window (**0 active backends**) · comment read back from `obj_description` · `anon` EXECUTE still **false**, `check_secdef_anon_exec_drift()` **0** · migration file renamed to its applied version `20260913085204` so migration-parity matches · `tsc` clean · full suite green · ledger guards 3 / 0.
+
 ### 2026-09-13 · ✅ CODE — a REFUTED claim was still being ACTED on, and it was dropping Pinnacle art from a PDF people share (#90) · Claude Code cloud, overnight autonomous
 
 **Shipped:** `app/api/profile/trophy-case/pdf/route.tsx` (a cache miss now tries the live render), `__tests__/api-profile-trophy-case-pdf.test.ts` (1 assertion INVERTED, 1 case added), `docs/reference/known-issues.md` (#90). Revert: `git revert` the commit whose message starts `fix(pdf): a Pinnacle cache miss tries the live render`.
