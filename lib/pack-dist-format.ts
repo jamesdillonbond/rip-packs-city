@@ -5,6 +5,8 @@
 // sees a pack's per-edition EV, pull odds, and sale prices, and each carries a
 // documented prior regression.
 
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
+
 /** Split an "Player — Set" edition name on the em-dash, guarding null / no-dash. */
 export function splitEditionName(name: string | null): { player: string; setName: string } {
   if (!name) return { player: "Unknown", setName: "" }
@@ -115,5 +117,12 @@ export function tsTileImg(
   if (collectionSlug === "nba-top-shot" && repNftId && /^\d+$/.test(repNftId)) {
     return `https://assets.nbatopshot.com/media/${repNftId}/image?width=400`
   }
-  return thumbnailUrl ?? null
+  // ⚠ A PUBLIC IPFS GATEWAY URL GOES THROUGH OUR PROXY, and it is done HERE
+  // rather than at the call site that noticed — every caller of this helper
+  // inherits the hole otherwise, which is why `ogImageTarget` normalizes in the
+  // same place. Measured 2026-09-13: all 518 UFC Strike editions store an
+  // `ipfs.io` url and 5 of 6 sampled TIMED OUT at 15 s, so a raw render is a
+  // broken tile. `proxyIpfsUrl` passes a non-gateway url through untouched, so
+  // Top Shot / All Day / Golazos / Pinnacle art cannot change.
+  return proxyIpfsUrl(thumbnailUrl) ?? null
 }

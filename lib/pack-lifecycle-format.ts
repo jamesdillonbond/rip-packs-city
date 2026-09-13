@@ -4,6 +4,8 @@
 // measured by either coverage gate). Bodies are byte-identical to the originals;
 // the component imports them.
 
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
+
 export function shortAddr(addr: string | null | undefined): string {
   if (!addr) return "—"
   const a = addr.trim()
@@ -103,7 +105,10 @@ export function resizedThumb(url: string | null | undefined, width: number = 900
     )
     return `${resized}?format=webp&quality=80&width=${width}`
   }
-  return url
+  // ⚠ A PUBLIC IPFS GATEWAY URL GOES THROUGH OUR PROXY (lib/ipfs-media.ts). The
+  // Top Shot resize branch above is untouched, and a non-gateway url passes
+  // through unchanged, so this is strictly-no-worse for every other collection.
+  return proxyIpfsUrl(url) ?? url
 }
 
 /* Tier display-name → CSS token key (drives `var(--tier-*)`). Extracted verbatim

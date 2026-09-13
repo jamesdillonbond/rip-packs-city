@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { tierColor, fmtUsd, fmtPct, atLeastOnce, selectPackPrice } from '@/lib/grail-format'
 import { tierColorAlpha } from '@/lib/tier-color'
+import { proxyIpfsUrl } from '@/lib/ipfs-media'
 
 interface GrailRow {
   collection_id: string
@@ -208,7 +209,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
     <article style={{ background: '#0d0d0d', border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <div style={{ position: 'relative', aspectRatio: '5 / 7', background: '#080808' }}>
         {row.meta?.image_url ? (
-          <img src={row.meta.image_url} alt={row.meta?.title ?? row.dist_id} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src={proxyIpfsUrl(row.meta.image_url) ?? undefined} alt={row.meta?.title ?? row.dist_id} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.25)', fontFamily: "var(--font-mono)", fontSize: 28 }}>?</div>
         )}
@@ -216,7 +217,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
         {row.max_pull_fmv != null && (
           <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, background: 'var(--rpc-red)', color: '#fff', padding: '6px 9px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 14px rgba(0,0,0,0.5)' }}>
             {row.max_pull_thumbnail && (
-              <img src={row.max_pull_thumbnail} alt={row.max_pull_player ?? 'Chase moment'} style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: 2, border: `2px solid ${tierBorder}`, flexShrink: 0 }} />
+              <img src={proxyIpfsUrl(row.max_pull_thumbnail) ?? undefined} alt={row.max_pull_player ?? 'Chase moment'} style={{ width: 30, height: 30, objectFit: 'cover', borderRadius: 2, border: `2px solid ${tierBorder}`, flexShrink: 0 }} />
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', opacity: 0.9 }}>CHASE</div>

@@ -32,6 +32,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { searchKindLabel } from "@/lib/search/href";
+import { proxyIpfsUrl } from "@/lib/ipfs-media";
 
 interface Hit {
   kind: string;
@@ -171,7 +172,7 @@ export default function GlobalSearch() {
             >
               {h.thumbnailUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={h.thumbnailUrl} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
+                <img src={proxyIpfsUrl(h.thumbnailUrl) ?? undefined} alt="" style={{ width: 28, height: 28, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />
               ) : (
                 <span style={{ width: 28, height: 28, borderRadius: 4, flexShrink: 0, background: "var(--rpc-surface)" }} />
               )}

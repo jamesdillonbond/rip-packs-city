@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { getOwnerKey } from "@/lib/owner-key"
 import { getCollection, toDbSlug, fromDbSlug } from "@/lib/collections"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import {
   fmtSoldUsd,
   relativeSaleTime,
@@ -213,7 +214,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
                         <span style={{ width: 52, height: 52, borderRadius: 6, background: "var(--rpc-surface-hover)", overflow: "hidden", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "var(--rpc-text-ghost)" }}>
                           {r.thumbnail_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={r.thumbnail_url} alt="" width={52} height={52} style={{ objectFit: "cover", width: 52, height: 52 }} />
+                            <img src={proxyIpfsUrl(r.thumbnail_url) ?? undefined} alt="" width={52} height={52} style={{ objectFit: "cover", width: 52, height: 52 }} />
                           ) : (
                             <span aria-hidden>🏀</span>
                           )}

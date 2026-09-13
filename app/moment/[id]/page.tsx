@@ -1506,7 +1506,7 @@ export default async function MomentPage(
                   {p.thumbnail_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={p.thumbnail_url}
+                      src={proxyIpfsUrl(p.thumbnail_url) ?? undefined}
                       alt={p.player_name ?? "parallel"}
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
                       loading="lazy"
@@ -1566,7 +1566,7 @@ export default async function MomentPage(
                   {s.thumbnail_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={s.thumbnail_url}
+                      src={proxyIpfsUrl(s.thumbnail_url) ?? undefined}
                       alt={s.player_name ?? "moment"}
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
                       loading="lazy"
@@ -1723,7 +1723,7 @@ function PinnacleDisambiguation({ renders }: { renders: PinnacleRender[] }) {
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={r.thumbnail_url ?? `/api/public/pinnacle-image/${encodeURIComponent(r.render_id)}`}
+                src={proxyIpfsUrl(r.thumbnail_url) ?? `/api/public/pinnacle-image/${encodeURIComponent(r.render_id)}`}
                 alt={r.character_name ?? "Pinnacle pin"}
                 width={72}
                 height={72}

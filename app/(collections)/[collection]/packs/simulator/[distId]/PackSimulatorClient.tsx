@@ -13,6 +13,7 @@ import { animateFlips } from "@/lib/packs/animate-flips"
 import { tierColor, fmtUsd, fmtPct, buildCdf, sampleEdition, stddev } from "@/lib/pack-simulator-math"
 import Link from "next/link"
 import { COLLECTION_UUID_BY_SLUG, getCollection } from "@/lib/collections"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 interface PackInfo {
   dist_id: string
@@ -338,7 +339,7 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
       <div style={{ display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "wrap", padding: "14px 0 18px", borderBottom: `1px solid ${accent}33` }}>
         <div style={{ flexShrink: 0, width: 160, aspectRatio: "5 / 7", background: "#0d0d0d", border: `1px solid ${accent}55`, borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
           {pack.image_url ? (
-            <img src={pack.image_url} alt={pack.title ?? "Pack"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <img src={proxyIpfsUrl(pack.image_url) ?? undefined} alt={pack.title ?? "Pack"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           ) : (
             <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontSize: 48 }}>?</div>
           )}
@@ -360,7 +361,7 @@ export default function PackSimulatorClient({ collectionSlug, distId }: Props) {
           </div>
           {metrics.max_pull_fmv != null && (
             <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: `${accent}11`, border: `1px solid ${accent}55`, borderRadius: 6 }}>
-              {metrics.max_pull_thumbnail && <img src={metrics.max_pull_thumbnail} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, border: `1px solid ${tierColor(metrics.max_pull_tier)}` }} />}
+              {metrics.max_pull_thumbnail && <img src={proxyIpfsUrl(metrics.max_pull_thumbnail) ?? undefined} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 4, border: `1px solid ${tierColor(metrics.max_pull_tier)}` }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="rpc-sim-stat" style={{ fontSize: 10, color: accent, letterSpacing: "0.12em" }}>CHASE</div>
                 <div className="rpc-sim-header" style={{ fontSize: 14, fontWeight: 800, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -545,7 +546,7 @@ function PullsGrid({ result, accent, flipIndex, slots, collectionSlug }: { resul
                 const cardInner = (
                   <>
                     {pull.edition.thumbnail_url ? (
-                      <img src={pull.edition.thumbnail_url} alt={pull.edition.player_name ?? "Pulled moment"} style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover" }} />
+                      <img src={proxyIpfsUrl(pull.edition.thumbnail_url) ?? undefined} alt={pull.edition.player_name ?? "Pulled moment"} style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover" }} />
                     ) : (
                       <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#0d0d0d" }} />
                     )}

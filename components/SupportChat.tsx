@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { track } from "@/lib/telemetry/track";
 import { tierColorAlpha } from "@/lib/tier-color";
 import { parseRichText, isExternalHref } from "@/lib/concierge/rich-text";
+import { proxyIpfsUrl } from "@/lib/ipfs-media";
 
 interface MomentCard {
   playerName: string; setName?: string; tier?: string; series?: string;
@@ -64,7 +65,7 @@ function MomentCardUI({ card }: { card: MomentCard }) {
     <div style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: 12, overflow: "hidden", marginTop: 6, marginBottom: 4 }}>
       <div style={{ display: "flex", gap: 10, padding: "10px 12px 8px" }}>
         {card.thumbnailUrl ? (
-          <img src={card.thumbnailUrl} alt={card.playerName} style={{ width: 52, height: 52, borderRadius: 8, objectFit: "cover", background: "var(--rpc-surface-hover)", flexShrink: 0 }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          <img src={proxyIpfsUrl(card.thumbnailUrl) ?? undefined} alt={card.playerName} style={{ width: 52, height: 52, borderRadius: 8, objectFit: "cover", background: "var(--rpc-surface-hover)", flexShrink: 0 }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
         ) : (
           <div style={{ width: 52, height: 52, borderRadius: 8, background: `linear-gradient(135deg, ${tierColorAlpha(tierColor(card.tier), 20)}, var(--rpc-surface-hover))`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>🏀</div>
         )}

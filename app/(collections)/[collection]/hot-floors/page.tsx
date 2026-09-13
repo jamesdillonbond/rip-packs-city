@@ -10,6 +10,7 @@
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
 import { fetchHotFloors } from "@/lib/hot-floors/fetchers"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 export const revalidate = 300
 
@@ -111,7 +112,7 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
                         <span style={{ width: 34, height: 44, flexShrink: 0, borderRadius: 4, overflow: "hidden", background: "var(--rpc-surface-hover)", display: "inline-block" }}>
                           {e.thumbnail_url && (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={e.thumbnail_url} alt="" width={34} height={44} style={{ objectFit: "cover", width: 34, height: 44 }} />
+                            <img src={proxyIpfsUrl(e.thumbnail_url) ?? undefined} alt="" width={34} height={44} style={{ objectFit: "cover", width: 34, height: 44 }} />
                           )}
                         </span>
                         <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>

@@ -32,6 +32,7 @@ import {
   filterSortMoments,
 } from "@/lib/trophy-picker-format";
 import { NEUTRAL_TIER_COLOR, tierColorAlpha } from "@/lib/tier-color";
+import { proxyIpfsUrl } from "@/lib/ipfs-media";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -684,7 +685,7 @@ function PickPreview({ m, children }: { m: PickerMoment; children: React.ReactNo
       {m.image_url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={m.image_url}
+          src={proxyIpfsUrl(m.image_url) ?? undefined}
           alt=""
           style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 6 }}
         />
@@ -838,7 +839,7 @@ function MomentRow({
         {m.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={m.image_url}
+            src={proxyIpfsUrl(m.image_url) ?? undefined}
             alt={displayName(m)}
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />

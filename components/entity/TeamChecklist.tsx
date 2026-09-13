@@ -22,6 +22,7 @@ import Link from "next/link"
 import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import type { EditionTile } from "./EditionsGridPaginated"
 import { topshotSeriesLabel, TOPSHOT_SERIES_ORDER } from "@/lib/analytics/series-labels"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 interface ChecklistTile extends EditionTile {
   owned?: boolean | null
@@ -478,7 +479,7 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
         {e.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={e.thumbnail_url}
+            src={proxyIpfsUrl(e.thumbnail_url) ?? undefined}
             alt={tileSubject(e)}
             width={200}
             height={200}

@@ -18,6 +18,7 @@ import {
   VERIFIED_WALLETS_UNAVAILABLE,
   type VerifiedWallet as SavedWallet,
 } from "@/lib/wallet/verified-wallets"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
@@ -877,7 +878,7 @@ function LifecycleDetail({ lifecycle, row }: { lifecycle: any; row: HistoryRow }
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 6 }}>
             {pulls.map((p: any, i: number) => (
               <div key={i} style={{ background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 4, padding: 4 }}>
-                {p.thumbnail_url ? <img src={p.thumbnail_url} alt="" style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 2 }} /> : <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#1a1a1d", borderRadius: 2 }} />}
+                {p.thumbnail_url ? <img src={proxyIpfsUrl(p.thumbnail_url) ?? undefined} alt="" style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 2 }} /> : <div style={{ width: "100%", aspectRatio: "1 / 1", background: "#1a1a1d", borderRadius: 2 }} />}
                 <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 11, color: "#fff", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.player_name ?? p.character_name ?? "—"}</div>
                 <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.6)" }}>{fmtUsd(p.fmv_usd)}</div>
               </div>
