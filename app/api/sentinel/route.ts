@@ -143,6 +143,82 @@ export function buildSentinelFindings(
     }));
 }
 
+// How many changed arm names the header will list before it stops naming them.
+// The header is never dropped by `fitTelegramMessage`, so an unbounded list here
+// would eat the budget the per-check lines need.
+const SENTINEL_MAX_DELTA_NAMES = 6;
+
+/**
+ * What the previous sentinel run found, or why that is unknown.
+ *
+ * ⚠ THE `ok: false` ARM IS THE WHOLE POINT. A failed read of the previous run
+ * must render as "unavailable", never as "no change" — "no change" is a claim
+ * about the fleet, and publishing it out of a failed read is this repo's most
+ * productive defect class, committed inside an alarm.
+ */
+export type SentinelPrevious =
+  | { ok: true; names: string[]; at: string | null }
+  | { ok: false; reason: string };
+
+/** PT, because this string is read by Trevor. Never a UTC/`Z` time. */
+export function formatPT(iso: string | null): string {
+  if (!iso) return "unknown time";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "unknown time";
+  return (
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(d) + " PT"
+  );
+}
+
+/**
+ * The one line that separates today's WARN from yesterday's.
+ *
+ * ⭐ WHY THIS EXISTS. Overall status is `checks.some(c => c.status === "warn")`,
+ * so one warn and thirteen warns are the identical `WARN`, and at least two arms
+ * are CHRONICALLY warn by design (`Detector Health`, acknowledged to 2026-10-03;
+ * `Dune Spend`, a spent cycle that is a CONFIGURED stop). Measured 2026-09-13
+ * over the 21 runs in retention: **every single run was WARN or CRITICAL, with a
+ * minimum of 4 warn arms** — the sweep has not been clean once. So the header has
+ * been byte-identical on a quiet afternoon and during the nine-hour 09-11
+ * saturation incident, which is the documented reason that incident's Telegram
+ * was indistinguishable from routine noise.
+ *
+ * ⚠ Names the SET that changed, never a count of it: a count reads "no change"
+ * across a fix landing and a new arm firing in the same window.
+ */
+export function summarizeSentinelChange(
+  checks: Array<{ name: string; status: string }>,
+  previous: SentinelPrevious,
+  maxNames: number = SENTINEL_MAX_DELTA_NAMES,
+): string {
+  const nonOk = checks.filter((c) => c.status !== "ok").map((c) => c.name);
+  if (!previous.ok) return `change vs last run UNAVAILABLE (${previous.reason})`;
+
+  const when = formatPT(previous.at);
+  const prev = new Set(previous.names);
+  const now = new Set(nonOk);
+  const added = nonOk.filter((n) => !prev.has(n));
+  const cleared = previous.names.filter((n) => !now.has(n));
+
+  const list = (names: string[]) =>
+    names.length > maxNames
+      ? `${names.slice(0, maxNames).join(", ")} +${names.length - maxNames} more`
+      : names.join(", ");
+
+  const parts: string[] = [];
+  if (added.length) parts.push(`NEW: ${list(added)}`);
+  if (cleared.length) parts.push(`cleared: ${list(cleared)}`);
+  if (!parts.length) return `no change since ${when}`;
+  return `${parts.join(" | ")} (vs ${when})`;
+}
+
 async function sendTelegram(text: string): Promise<Delivery> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return { ok: false, reason: "not_configured" };
   // 🚨 The cap is enforced HERE, at the boundary, not only at the call site.
@@ -2087,6 +2163,52 @@ async function runSentinel() {
     value: blackout.blind,
   });
 
+  // The previous sweep's non-ok arm names, for the header delta. Read BEFORE
+  // this run is logged and strictly `.lt(now)`, so it can never read itself.
+  //
+  // ⚠ Every failure arm returns `ok: false` with a reason rather than an empty
+  // list. An empty list means "the last sweep was clean", which is a strong
+  // claim about the fleet — and in 21 runs of retention it has never once been
+  // true. Manufacturing it out of a failed read would put this repo's worst
+  // defect class inside the alarm itself.
+  let previous: SentinelPrevious;
+  try {
+    const { data: prevRows, error: prevErr } = await supabase
+      .from("pipeline_runs")
+      .select("started_at, extra")
+      .eq("pipeline", "sentinel")
+      .lt("started_at", now.toISOString())
+      .order("started_at", { ascending: false })
+      .limit(1);
+    const prevRow = Array.isArray(prevRows) ? prevRows[0] : null;
+    const prevExtra = (prevRow?.extra ?? null) as Record<string, any> | null;
+    if (prevErr) {
+      previous = { ok: false, reason: `read failed: ${prevErr.message}` };
+    } else if (!prevRow) {
+      // `pipeline_runs` retains ~73h and this sweep runs ~3-hourly, so this is
+      // a real anomaly rather than a cold start — say so instead of implying
+      // the fleet was clean.
+      previous = { ok: false, reason: "no earlier sweep in retention" };
+    } else if (
+      !prevExtra ||
+      (!Array.isArray(prevExtra.warn) && !Array.isArray(prevExtra.critical))
+    ) {
+      // A row whose `extra` carries neither key is not a measured zero: older
+      // rows predate those keys, and a partial write leaves them absent.
+      previous = { ok: false, reason: "earlier sweep stored no check names" };
+    } else {
+      const w = Array.isArray(prevExtra.warn) ? prevExtra.warn : [];
+      const c = Array.isArray(prevExtra.critical) ? prevExtra.critical : [];
+      previous = {
+        ok: true,
+        names: [...c, ...w].map((n) => String(n)),
+        at: prevRow.started_at ?? null,
+      };
+    }
+  } catch (e: any) {
+    previous = { ok: false, reason: `read threw: ${e?.message ?? "unknown"}` };
+  }
+
   const hasCritical = checks.some((c) => c.status === "critical");
   const hasWarn = checks.some((c) => c.status === "warn");
   const overallStatus = hasCritical
@@ -2115,6 +2237,18 @@ async function runSentinel() {
         ? "\u26A0\uFE0F"
         : "\u2705";
 
+    // ⭐ THE TWO LINES THAT MAKE ONE SWEEP DISTINGUISHABLE FROM THE NEXT.
+    // `overallStatus` alone has been WARN or CRITICAL on 21 of 21 runs in
+    // retention, so it is effectively a constant; the counts and the changed
+    // SET are what carry information. Both go in the HEADER because
+    // `fitTelegramMessage` drops per-check lines first and never the header —
+    // so on the largest incident, when the body is being truncated, this is the
+    // part that survives.
+    const warnCount = checks.filter((c) => c.status === "warn").length;
+    const critCount = checks.filter((c) => c.status === "critical").length;
+    const countLine = `${critCount} critical, ${warnCount} warn of ${checks.length} checks`;
+    const changeLine = summarizeSentinelChange(checks, previous);
+
     {
       // ⚠ ONE LINE PER CHECK MEANS THE MESSAGE GROWS WITH THE INCIDENT —
       // `Pipeline Silence` names every silent lane, so a fleet-wide outage
@@ -2128,7 +2262,8 @@ async function runSentinel() {
         text: `${emoji(c.status)} <b>${c.name}</b>: ${c.detail}`,
       }));
       const tgMsg = fitTelegramMessage(
-        `${statusEmoji} <b>RPC Sentinel - ${overallStatus}</b>\n${now.toUTCString()}`,
+        `${statusEmoji} <b>RPC Sentinel - ${overallStatus}</b> \u00B7 ${countLine}\n` +
+          `${formatPT(now.toISOString())}\n${changeLine}`,
         tgLines,
       );
       const tg = await sendTelegram(tgMsg);
@@ -2138,14 +2273,14 @@ async function runSentinel() {
     }
 
     {
-      const emailSubject = `${statusEmoji} RPC Sentinel: ${overallStatus}`;
+      const emailSubject = `${statusEmoji} RPC Sentinel: ${overallStatus} - ${countLine}`;
       const rows = checks
         .map(
           (c) =>
             `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee">${emoji(c.status)}</td><td style="padding:6px 12px;border-bottom:1px solid #eee"><strong>${c.name}</strong></td><td style="padding:6px 12px;border-bottom:1px solid #eee">${c.detail}</td></tr>`,
         )
         .join("");
-      const emailHtml = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h2 style="color:${hasCritical ? "#E03A2F" : hasWarn ? "#F59E0B" : "#22C55E"}">${statusEmoji} Pipeline Sentinel - ${overallStatus}</h2><p style="color:#64748B">${now.toUTCString()}</p><table style="width:100%;border-collapse:collapse;margin-top:16px"><thead><tr style="background:#1E293B;color:white"><th style="padding:8px 12px;text-align:left"></th><th style="padding:8px 12px;text-align:left">Check</th><th style="padding:8px 12px;text-align:left">Detail</th></tr></thead><tbody>${rows}</tbody></table><p style="color:#94A3B8;font-size:12px;margin-top:24px">Rip Packs City - Pipeline Sentinel - Automated Report</p></div>`;
+      const emailHtml = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h2 style="color:${hasCritical ? "#E03A2F" : hasWarn ? "#F59E0B" : "#22C55E"}">${statusEmoji} Pipeline Sentinel - ${overallStatus}</h2><p style="color:#64748B">${formatPT(now.toISOString())}</p><p style="color:#64748B;font-size:13px">${countLine} · ${changeLine}</p><table style="width:100%;border-collapse:collapse;margin-top:16px"><thead><tr style="background:#1E293B;color:white"><th style="padding:8px 12px;text-align:left"></th><th style="padding:8px 12px;text-align:left">Check</th><th style="padding:8px 12px;text-align:left">Detail</th></tr></thead><tbody>${rows}</tbody></table><p style="color:#94A3B8;font-size:12px;margin-top:24px">Rip Packs City - Pipeline Sentinel - Automated Report</p></div>`;
       const em = await sendEmail(emailSubject, emailHtml);
       report.notifications.push(em.ok ? "email" : `email-FAILED:${em.reason}`);
     }
