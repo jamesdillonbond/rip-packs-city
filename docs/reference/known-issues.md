@@ -169,7 +169,7 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 | **#99** | 🟡 open | SHIPPED 2026-09-13 (PT), NEW  |
 | **#100** | 🟡 open | OPEN, NEW 2026-09-13 (PT)  |
 | **#101** | 🟡 open | OPEN, NEW 2026-09-13 (PT)  |
-| **#102** | 🟡 open | OPEN, NEW 2026-09-13 (PT)  |
+| **#102** | 🟡 open | DECIDED AND SHIPPED 2026-09-13 (PT)  |
 | **#103** | 🟡 open | OPEN, NEW 2026-09-13 (PT)  |
 | **#104** | 🟡 open | OPEN (TREVOR'S CALL), NEW 2026-09-13 (PT)  |
 | **#105** | ✅ closed | CLOSED 2026-09-13 (PT), the day Cowork filed it  |
@@ -1552,7 +1552,17 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     🟡 **WHAT TO DO — not done here, because each option is a real decision:** (a) **re-point the drain at Atlas**, which is what the 09-08 cron note already prescribes (*"Re-add an entry only after a manual run writes rows, or re-point the lane to Atlas first"*) and the only option that actually drains; (b) accept the drift while #81 is unresolved and **say so where a reader meets it**, rather than leaving a suppression whose stated predicate is false; (c) **make the predicate executable** — a cheap arm over this one count would have caught it on 09-09 instead of 09-13. ⛔ **Do NOT simply renew or extend the suppression**: its own text forbids that, and the condition it was granted under is measurably gone.
 
-102. 🔴 **OPEN, NEW 2026-09-13 (PT) — TWO SUPPRESSIONS JUSTIFY THEMSELVES BY NAMING A WATCHLIST ROW AND ASSERTING `is_active=true`. BOTH ROWS ARE `is_active=false`.** ⭐ **This is CLAUDE.md's *"an exclusion justified by ANOTHER instrument is a claim about it — check that one can SEE the property"* rule, caught with three instances and one live casualty.**
+102. 🟢 **DECIDED AND SHIPPED 2026-09-13 (PT) — THE RECOMMENDATION BELOW ("re-enable the rows") IS REFUTED; THE STALE TEXT WAS THE DEFECT AND IS FIXED. Original filing follows. — TWO SUPPRESSIONS JUSTIFY THEMSELVES BY NAMING A WATCHLIST ROW AND ASSERTING `is_active=true`. BOTH ROWS ARE `is_active=false`.** ⭐ **This is CLAUDE.md's *"an exclusion justified by ANOTHER instrument is a claim about it — check that one can SEE the property"* rule, caught with three instances and one live casualty.**
+
+    ✅⛔ **DECISION 2026-09-13 (Trevor: "make decisions on these yourself") — I did NOT re-enable the watchlist rows, and re-deriving first is why.** Both were switched off **on purpose, together with the lanes they watch.** The 2026-09-03 ledger entry records pg_cron **jobid 55 UNSCHEDULED** because *"25 of 25 ticks in four hours died at pg_net's 90 s wall, and because pg_net answers a batch when its slowest member finishes, **every other pg_net request on the platform queued behind it**"*; AllDay is sunset; and it states *"Its watchlist arm is retired with it per that arm's own rule"*, leaving `audit_20260904_jobid55_watchlist_retire_backup`. **Verified live: jobid 55 does not exist, last run 09-03 23:36 PT, backup table present.** UFC is the same shape — market closed, trigger separately recorded dead (operator/auth).
+
+    🚨 **Re-enabling would have been wrong twice over:** permanently-firing alarms for deliberately-stopped lanes (this estate's own named failure mode — **`allday-pack-opens-backfill` has NO caller, so its alarm could never go green**), and it would read as reversing a fix for **platform-wide pg_net head-of-line blocking**.
+
+    ✅ **SHIPPED INSTEAD — migration `20260913160549`:** both `reason` texts now carry a dated correction stating the net does not exist, why it was retired, where the revert lives, and for AllDay **what must be true before anyone restores it (give the lane a caller AND re-check the pg_net blocking that killed it)**. **Revert:** `UPDATE public.pipeline_alert_suppression s SET reason = b.reason FROM public.audit_20260913_suppression_stale_net_claims_backup b WHERE s.pipeline = b.pipeline;`
+
+    ⚠ **The headline framing is corrected too: "nine days silent and nothing alerted" is TRUE but is NOT a defect** — nothing alerted because the lane was deliberately stopped and its arm retired in the same action. **A deliberate retirement was read as an accident.** What survives is the ~18M recoverable blocks, which is a product call about a **sunset** collection, not an alerting bug.
+
+    ⭐ **LESSON: a finding that recommends RE-ENABLING something must first establish WHY IT WAS DISABLED.** The state (`is_active=false`) was measured correctly; the cause (oversight) was inferred without checking, and one grep of the ledger had the answer. **State-is-wrong and state-was-set-deliberately are indistinguishable from the state alone.**
 
     🚨 **THE LIVE CASUALTY: `allday-pack-opens-backfill` STOPPED 2026-09-04 AND NOTHING ALERTED — it is nine days silent as of this filing.** `pipeline_runs_daily` (indefinite) shows **367 runs and 67,763 rows written in the trailing 30 days, newest day 09-04**, then nothing. Its cursor sits at **83,276,329** against its stated floor of **65,264,619**, so it did **NOT** reach the terminal state its suppression describes — **it stopped ~18 million blocks short, with that history still recoverable.**
 
