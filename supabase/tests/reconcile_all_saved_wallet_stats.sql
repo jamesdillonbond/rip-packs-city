@@ -503,10 +503,19 @@ SELECT _assert_eq((SELECT rows_skipped::text FROM public._runs ORDER BY started_
 SELECT _assert(
   (SELECT (extra->>'oldest_big_cache_h')::numeric FROM public._runs ORDER BY started_at DESC LIMIT 1) >= 29,
   'the skipped population has its OWN staleness figure, and it is the whale''s ~30 h');
+-- The population of oldest_cache_h is "holds moments AND under the gate", NOT "was
+-- queued": 0xnouser (10 h stale, no user_id, holds moments) is never queued but IS
+-- in the figure — a pre-existing definition this case does not change (a NULL
+-- user_id cannot occur through the app's writer; it is here so the zero pass has
+-- a row). So the reading is 0xnouser's 10 h, and the property under test is that
+-- the whale's 30 h is ABSENT from it. ⚠ CI caught the first draft asserting < 1 h
+-- (2026-09-13): it forgot this row, which is the kind of miss the figure itself
+-- exists to prevent.
 SELECT _assert(
-  (SELECT (extra->>'oldest_cache_h')::numeric FROM public._runs ORDER BY started_at DESC LIMIT 1) < 1,
-  'oldest_cache_h EXCLUDES the skipped whale — every attempted wallet was just refreshed, so '
-  'a figure near 30 h here would be the pinned-metric trap this procedure already records');
+  (SELECT (extra->>'oldest_cache_h')::numeric FROM public._runs ORDER BY started_at DESC LIMIT 1)
+    BETWEEN 9.9 AND 10.1,
+  'oldest_cache_h EXCLUDES the skipped whale (30 h): it reads the 10 h of the stalest '
+  'in-gate wallet that holds moments, never the figure of a wallet the sweep will not attempt');
 
 -- Control: a gate high enough admits the whale, so the gate — not something else —
 -- is what kept it out.

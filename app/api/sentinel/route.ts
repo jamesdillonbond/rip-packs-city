@@ -12,6 +12,7 @@ import { summarisePgNet } from "@/lib/sentinel/pg-net";
 import { summariseMaintenanceLoad } from "@/lib/sentinel/maintenance-load";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { createWallBudgetFetch, type WallBudgetClock } from "@/lib/sentinel/wall-budget";
+import { currentSentinelClock, withSentinelClock } from "@/lib/sentinel/clock-store";
 
 // Named once: the arm pushes it, the threshold/ack rows key on it, and the
 // migration that seeds those rows quotes it verbatim. A typo here is a silently
@@ -60,14 +61,16 @@ export const maxDuration = 180;
 // budget (3 × 45 s < 140 s); the reserve covers two 10 s delivery bounds plus a
 // terminal write measured at up to 47 s under saturation. The test pins the
 // inequality, so raising either without re-deriving reds the build.
-// ⚠ `sentinelClock` is module state read on EVERY request: runSentinel sets it
-// at its start, flips it to "terminal" after the last arm, and clears it at the
-// end. Sentinel invocations never overlap (a wall kill ends the lambda before a
-// retry lands), which is what makes a single module-level clock sufficient.
+// ⚠ The clock is PER INVOCATION (lib/sentinel/clock-store.ts), read on EVERY
+// request from the async context of the sweep that issued it. It was module
+// state for one afternoon, on the premise that sentinel invocations never
+// overlap — and the redundant cron-job.org caller (register #79) overlapped the
+// delayed GitHub tick by 50.8 s the same day. Two sweeps on one warm instance
+// must each keep their own start and phase, or one runs into its wall and the
+// other loses its budget; the store guarantees that, with nothing to clear.
 const SENTINEL_WALL_MS = maxDuration * 1000;
 const SENTINEL_RESERVE_MS = 40_000;
 const SENTINEL_QUERY_CAP_MS = 45_000;
-let sentinelClock: WallBudgetClock | null = null;
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -78,7 +81,7 @@ const supabase: any = createClient(
         wallMs: SENTINEL_WALL_MS,
         reserveMs: SENTINEL_RESERVE_MS,
         perQueryCapMs: SENTINEL_QUERY_CAP_MS,
-        clock: () => sentinelClock,
+        clock: currentSentinelClock,
       }),
     },
   },
@@ -449,11 +452,15 @@ export async function POST(req: NextRequest) {
 }
 
 async function runSentinel() {
+  // Start the wall budget's clock (see the client above) and scope it to THIS
+  // invocation. Every read from here to the Measurement Blackout arm is in the
+  // "checks" phase.
+  return withSentinelClock({ startedAtMs: Date.now(), phase: "checks" }, runSentinelWithin);
+}
+
+async function runSentinelWithin(clock: WallBudgetClock) {
   const checks: HealthCheck[] = [];
-  const now = new Date();
-  // Start the wall budget's clock (see the client above). Every read from here
-  // to the Measurement Blackout arm is in the "checks" phase.
-  sentinelClock = { startedAtMs: now.getTime(), phase: "checks" };
+  const now = new Date(clock.startedAtMs);
 
   // Table-driven thresholds (audit_20260627_sentinel_threshold_config). A MISSING
   // row falls back to the hardcoded default below (a config gap can never silently
@@ -2458,7 +2465,7 @@ async function runSentinel() {
   // Every arm has run (or been refused). From here the previous-sweep read,
   // delivery and the terminal write get whatever wall remains and are never
   // refused: a sweep that spent its budget must still be able to say so.
-  if (sentinelClock) sentinelClock.phase = "terminal";
+  clock.phase = "terminal";
 
   // The previous sweep's non-ok arm names, for the header delta. Read BEFORE
   // this run is logged and strictly `.lt(now)`, so it can never read itself.
@@ -2668,7 +2675,6 @@ async function runSentinel() {
     console.error("[sentinel] log_pipeline_run failed:", e);
   }
 
-  sentinelClock = null;
   console.log(`SENTINEL ${overallStatus}`, JSON.stringify(report));
   return report;
 }
