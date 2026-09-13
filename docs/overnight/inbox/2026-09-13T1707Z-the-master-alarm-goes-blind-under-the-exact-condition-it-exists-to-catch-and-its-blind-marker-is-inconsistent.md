@@ -48,3 +48,30 @@ Live read, sentinel run **09:51 PT**, 11 findings:
 ## 4. ⛔ What this does NOT say
 
 **FMV is NOT stale despite all of the above, and that surprised me.** Measured directly: newest `fmv_snapshots.computed_at` is **0.2 h old**, **24,716** snapshots computed in 24 h, **116,921** in 7 d. ⭐ **So `fmv-recalc` being wall-killed on 21% of ticks has NOT produced user-visible staleness** — the kills are partial and the surviving ticks keep the surface current. **Do not escalate #107 on a staleness argument without re-deriving that; the obvious inference is refuted.**
+
+---
+
+# ⛔ ADDENDUM, SAME SESSION — DE-CLUSTERING THE SCHEDULES IS REFUTED FOR THE STARTUP TIMEOUTS. Do not attempt it.
+
+The obvious response to *"102 worker-slot `startup timeout`s against `max_worker_processes = 6`"* is to spread the schedules out. **Measured over 12 h, it would change nothing — and the data points the opposite way to the intuition.**
+
+Startup timeouts per minute-of-hour, against how many **fixed-minute** jobs are scheduled on that minute:
+
+| minute | startup timeouts | fixed jobs on that minute |
+|---:|---:|---:|
+| 52 | **9** | 2 |
+| 50 | 7 | 5 |
+| **36** | **7** | **0** |
+| 54 | 7 | 1 |
+| **6** | **6** | **0** |
+| **2** | **6** | **0** |
+| **18** | **6** | **0** |
+| **4** | **6** | **0** |
+
+⭐ **Six of the ten worst minutes have ZERO fixed-schedule jobs on them.** The heaviest fixed minute in the whole fleet (minute 48, 6 jobs) does not appear in the top ten at all. **There is no relationship between fixed-minute pileups and worker-slot starvation.**
+
+**Why, and it matches this estate's existing model:** a startup timeout means no worker slot was free, and slots are held by whatever is *already running* — `*/N` lanes and long jobs — not by whatever happens to START on that minute. ⭐ **CLAUDE.md already records the general form of this** (*"the old framing sends you to de-cluster schedules, which would change nothing"*) for the `statement timeout` class; **this is the same conclusion re-derived independently for the `startup timeout` class, which the register notes had RETURNED with the IO.**
+
+👉 **So the lever is the long-running work holding slots — register #104's fan-out is the largest single source — not the schedule layout.** ⚠ **And raising `max_worker_processes` is a postmaster setting: it needs a restart, and this instance has not restarted in ~81 days. That is an infrastructure decision, not an engineering one.**
+
+⛔ **Recorded because the reschedule is cheap, obvious, reversible and USELESS — exactly the shape of work that gets done because it is easy rather than because it helps.**
