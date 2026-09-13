@@ -10,6 +10,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ TIME-BOXED IO SHED (state, not DDL): pg_cron jobids 466 + 464 paused until 3:45 PM PT with a self-restoring one-off, while the pg_net toast's first autovacuum saturates the instance · Claude Code cloud
+
+**Why now and not "capacity is Trevor's":** the spell has a known, finite cause (register #75 addendum: the 12.4 GB toast's first-ever autovacuum, 978,760 of 1,627,612 blocks vacuumed at 11:53 AM PT, ~90 min to go at its current rate), and under it two lanes were pure load: `rpc-ts-listings-atlas-sync` (466, `*/2`) **24 of 27 ticks failed at the 120 s budget, 3,371 busy-seconds in the last hour (56 of 60 min), verifying nothing**; `rpc-allday-unmapped-atlas-resolver` (464) 9 of 11 failed. Users were paying for them: **12 `/api/market` 5xx in the last hour**, 19 IO waiters at the moment of the shed. Trevor's standing instruction this session: decide for RPC and its users.
+
+**Shipped (11:52 AM PT):** `cron.alter_job(466, active := false)`, `cron.alter_job(464, active := false)`; **the revert was scheduled BEFORE the pause** — pg_cron one-off **`rpc-shed-restore-20260913` (jobid 494, `45 22 * * *` = 3:45 PM PT)** re-enables both and unschedules itself, so the shed reverts without this session. `pipeline_alert_suppression` rows for `ts-listings-atlas-sync` and `allday-unmapped-atlas-resolver` expire 4:00 PM PT with the reason in the row. ⚠ The sentinel's Pipeline Silence arm will still name `ts-listings-atlas-sync` — it was ALREADY silent since 10:56 AM from the failures, and "not running" is the true state.
+
+**Baseline for the 12:45 PM / 3:50 PM readings (same instruments):** last 60 min — cron 370 runs / 56 failed; 466 = 24/27 failed; IO waiters 19; `/api/market` 5xx 12; toast vacuum 978,760 / 1,627,612.
+
+**Revert early:** `select cron.alter_job(466, active := true); select cron.alter_job(464, active := true); select cron.unschedule('rpc-shed-restore-20260913');` and delete the two suppression rows.
+
+**What this does NOT claim:** that the lanes were the CAUSE — the autovacuum is; this removes 60 wasted busy-minutes per hour from the same IO budget users read from, and costs ~4 h of a delisting detector that #85 already records as 428× under-provisioned.
+
+
 ### 2026-09-13 · ✅ THE WALL BUDGET VERIFIED IN PRODUCTION UNDER THE SPELL IT WAS BUILT FOR — and it exposed the blackout arm reading `ok` while starved; a refusal now fires on its own · Claude Code cloud
 
 **Before/after on the same spell, 24 minutes apart.** The 11:17 AM PT scheduled tick (GitHub delivered the 10:34 slot 43 min late) hit the OLD deploy and **504'd three times** — the runner wrote `the sentinel route did not answer - HTTP 504 after 3 attempts` at 11:27 AM, no report anywhere. The 11:41 AM dispatch hit the wall-budget deploy under the same autovacuum spell (8 IO waiters): **completed in 140.6 s, 25 checks, WARN, terminal row written, Telegram delivered**, and the three arms it could not afford (`Wall Kills`, `pg_net Dispatch`, `Ops Probe Cost`) are NAMED as refused — `aborted: sentinel wall budget spent (140.0s elapsed of a 140.0s query budget inside a 180.0s wall) — this arm did not evaluate`. Four more were INCONCLUSIVE on statement timeouts.
