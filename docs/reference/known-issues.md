@@ -174,7 +174,7 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 | **#104** | 🟡 open | DECIDED 2026-09-13 (PT) — ACCEPT for now; do not ship back-pressure. Measurement follows. — THE… |
 | **#105** | ✅ closed | CLOSED 2026-09-13 (PT), the day Cowork filed it  |
 | **#106** | ✅ closed | CLOSED 2026-09-13 (PT), same session it was found  |
-| **#107** | 🟡 open | OPEN, NEW 2026-09-13 (PT)  |
+| **#107** | 🟡 open | DECIDED 2026-09-13 (PT), same session  |
 
 <!-- END:ITEM-INDEX -->
 
@@ -1655,6 +1655,18 @@ date stamp, and this file's standing rule that every recorded status has a shelf
     **Checked and NOT widened:** `og/edition` and `og/moment` render that entity's own art, where no successor exists; `og/{set,team,series}` already ask for four and drop failures into a smaller montage. The player card was the only instance of the shape.
 
     ⛔ **AND THE LIMIT OF THE 09-13 FALLBACK WALK, MEASURED RATHER THAN ASSUMED — #105's fix cannot rescue UFC, and nothing said so until this was run.** `ogImageDataUriFirst` spends ONE budget across all candidates, which is right for a sparse dead url and useless when every candidate resolves through the SAME slow path. All 518 UFC editions do. Two cold CIDs, same url shape, same instrument, from the database's egress: `/_next/image?url=/api/public/ipfs-media/<ufc cid>&w=640&q=75` **TIMED OUT at 4,500.8 ms** against a card's 4,500 ms art budget, and returned **200 image/png at 20,000 ms**. ⭐ **The control is what makes this a UFC finding and not a budget one: the same url over a pre-2022 TOP SHOT CID (`ipfs.dapperlabs.com`, 2,368 editions) came back 200 on 2 of 2 cold fetches INSIDE the budget.** So a UFC card publishes art-less on any cold path; `artFailed` + the 60 s degraded cache make that honest, not fixed. ⚠ **A trap this turned up on the way: `ufc-strike` is NOT a url slug (it is `ufc`), so an earlier probe of `/api/og/player?collection=ufc-strike&…` rendered the GUARD card and returned a perfectly healthy 200 — a 200 on a card route proves only that something rendered.** ⛔ **Not fixed on purpose:** the lever is pre-warming the 518 derivatives into the image cache, which spends metered transformations on a market closed since 2026-05-13. **Revisit if UFC reopens or any LIVE collection's art lands on a slow gateway; the test is one cold fetch at 4,500 ms, not a re-read of this row.**
+
+    ✅ **VERIFIED IN PRODUCTION ACROSS THE WHOLE POPULATION, 2026-09-13 ~10:1x PT — 4 of 5 collections render art on the player card, and the fifth is the measured exception above.** Payload of the live card against a deliberately art-less control on the SAME route (`slug=zzz-not-a-real-player`, **65,351** chars — the discriminator, because a 200 on a card route only proves something rendered):
+
+    | collection | card | verdict |
+    |---|---|---|
+    | NBA Top Shot (`lebron-james`) | **417,380** | art (6.4× the control — this is the card the item was filed for) |
+    | Disney Pinnacle (`mickey-mouse`) | **234,300** | art ⭐ — Pinnacle art had NEVER rendered on any OG card before the 09-12 site-relative fix |
+    | LaLiga Golazos (`antoine-griezmann`) | **226,772** | art |
+    | NFL All Day (`josh-allen`) | **216,672** | art |
+    | UFC Strike (`israel-adesanya`) | **69,092** | ⛔ art-less — the 4,500 ms budget, measured above |
+
+    ⚠ **One card per collection, not a census** — this proves the PATH works per collection, not that every player's art resolves.
 
 106. ✅ **CLOSED 2026-09-13 (PT), same session it was found — A TRANSIENT ART FAILURE WAS PUBLISHED AS A BLANK CARD AND CACHED FOR UP TO 25 HOURS.** ⭐ **Found by finishing someone else's parked item: the UFC "zero edge caching" observation was refuted in production and the probe that refuted it turned up something worse.**
 
