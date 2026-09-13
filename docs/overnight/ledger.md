@@ -36,7 +36,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **THE LESSON, and it is about how this failure HID.** A duplicate object key is **legal JavaScript** — nothing throws, nothing warns at runtime, and the alarm kept working. **Only the type-checker sees it**, so the defect was invisible to every behavioural test and to production. ⭐ **And it is invisible to code review too: the two lines are 13 lines apart, separated by a `body:` block**, so neither reads as a duplicate of the other.
 
-⭐ **Found by running `tsc` after resolving an unrelated rebase conflict** — not by an alarm. **After a rebase that touches a file two sessions edited, run the type-checker before assuming a clean merge is a correct one.**
+⭐ **Found by running `tsc` after resolving an unrelated rebase conflict. ⚠ CI CAUGHT IT TOO — said plainly so this does not read as a guard failure, because it was not one:** the other session's push at **11:41:18Z** reddened **CI run 5326**, which reported failure at **11:48:12Z**; I pushed the fix at **11:48:52Z**, having found it independently 30 seconds earlier. **Main was red for ~14 minutes and the gate worked.** ⭐ The transferable rule is still worth keeping: **after a rebase that touches a file two sessions edited, run the type-checker before assuming a clean merge is a correct one** — it is the difference between finding this in your own working tree and finding it in CI.
 
 **Verified:** `tsc` exit 0; 7 sentinel/ratchet suites, **109 tests**, including `unbounded-fetch-in-after-routes-ratchet` and `after-route-heartbeat-ratchet` — the two guards that actually care about these bounds.
 
