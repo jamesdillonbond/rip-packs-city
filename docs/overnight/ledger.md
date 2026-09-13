@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 📋 REGISTER — a user-facing correctness backlog is 3.2× its own tripwire, and the tripwire was prose nothing ever ran (#101) · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only** — `docs/reference/known-issues.md` (#101 NEW, index 98 → 99). No code, no migration, no data.
+
+⭐ **Found by doing the thing nobody does: RUNNING the predicates that suppression rows write down.** Three `pipeline_alert_suppression` rows carry an explicit *"must stay TRUE or this suppression is wrong — delete it, do not renew"* self-test. Two hold (`ingest-topshot-challenges` — challenges updated 00:20 PT today; `topshot-catalog-backfill` — 2,328 editions in 24 h against a floor of 500). **The third has failed.**
+
+🚨 **`topshot-misattrib-drain`: the open backlog is 1,315 against its own `<= 500` tripwire, baseline 410.** In the row's own units: **98.0% → 93.1% mapped**. The row states the consequence itself — *"moments are being attributed to the wrong owner on collection pages."*
+
+⭐ **THE DENOMINATOR MOVED THE HELPFUL WAY, so it is not an accounting artifact:** candidates **SHRANK** 20,128 → 18,959 while the open pile **GREW** 905.
+
+**NOTHING IS BROKEN — three correct decisions combine into an untracked degradation.** (1) 09-05: alerts suppressed as *"caught up, not broken"*, with that tripwire as the stated safety net. (2) 09-08: the drain **deliberately** removed from `vercel.json` with two siblings, because all three read `public-api.nbatopshot.com` — dead since 08-28, **re-measured still dead 2026-09-13 01:15 PT**. (3) **Nobody re-evaluated (1) after (2)** — retiring the drain does not risk the predicate failing, it guarantees it.
+
+⭐⭐ **THE RATE IS CORROBORATED BY TWO INDEPENDENT NUMBERS.** `pipeline_runs_daily` shows the drain ran **26 days / 26 runs, 07-31 → 09-08, 3,927 rows ≈ 151/day**, then stopped dead. The pile has grown **905 in ~7.75 days ≈ 117/day**. **What it used to clear and what is now accumulating agree.**
+
+⚠ **I FIRST READ IT AS A SILENT FAILURE AND IT IS NOT.** `pipeline_runs` retains ~73 h, so "no runs" there is a RETENTION ARTIFACT; the daily rollup showed the 26-day working history and the exact stop date. **Check the rollup before calling a lane dead.**
+
+⛔ **AND DELETING THE SUPPRESSION — what its own text instructs — WOULD ACHIEVE NOTHING.** The `failure_rate` arm keys on `pipeline_runs` rows and this lane now writes none, so **both the suppression and its removal are inert**. **A predicate nothing runs is a comment.** No suppression row was touched; the options (re-point to Atlas, accept-and-say-so, or make the predicate executable) are each a real decision.
+
 ### 2026-09-13 · ✅ VERIFIED — the counterparty re-arm fired and recovered the lane into real work; tonight's last open verification is closed · Claude Code cloud, overnight autonomous
 
 **Shipped: docs only** — #99 updated with the end-to-end result. No code, no migration, no data.
