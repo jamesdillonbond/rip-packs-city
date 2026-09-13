@@ -267,3 +267,34 @@ already encodes the `&&` form; **hand splices must borrow it.** Anchor on a stri
 unique in the freshly-read file first (`grep -c`), never on the first `^### ` alone when the
 payload could match twice.
 
+
+## ⚠ 2026-09-13 — a `Shipped:` line is a claim with a SHELF LIFE, and the session that wrote it is the one that falsifies it
+
+A new shape, found by a hook rather than by a person. The 2026-09-12 `🔵 MEASUREMENT+CORRECTION`
+entry opened **`Shipped: … No code, no DB, no deploy wanted`**, and that was **true when written**:
+the work was two register items. Two commits later the same session shipped a comment fix to
+`lib/sitemap-data.ts` — a `.ts` file, so it deploys — and the entry now **under-reported its own
+blast radius**, still reading "no code" over a commit range that contained some.
+
+⭐ **THE ENTRY DID NOT DRIFT; THE SESSION MOVED PAST IT.** Every other failure in this file is a
+*write-path* defect — a bad splice, a clobbered heading, a marker committed. This one needs no
+mistake at all: an accurate entry plus ordinary later work equals an inaccurate entry. So the
+usual defences are blind to it. `grep -c '^### '` is unchanged, the swallowed-heading count is
+unchanged, the rebase resolver never runs, and **nothing in CI reads a `Shipped:` line at all**.
+
+⚠ **WHY IT MATTERS IS THE REVERT PATH, NOT THE PROSE.** A reader reverting that night's work
+reads "no code" and reverts one docs commit, leaving the code commit live — the precise failure
+the revert-path convention exists to prevent. **A `Shipped:` line is the index to a revert, and
+an index that omits an entry is worse than no index**, because it is consulted and believed.
+
+**The rule: before ending a turn, re-read the `Shipped:` line of every entry you wrote THIS
+SESSION and check it against `git log origin/main..HEAD` (or the session's actual commit range),
+not against what you intended when you wrote it.** Cheap, and it is the only check that can
+see this. ⚠ **Correct it IN PLACE** — do not add a second heading for it, or the count check
+that guards this file starts reporting growth for a correction. (Verified 2026-09-13: heading
+count held at 1919 across both in-place corrections.)
+
+⭐ **AND THE GENERALISATION, which is this repo's own rule pointed at its own bookkeeping:
+*a recorded fact has a shelf life, and the entry most likely to be stale is the one nobody
+re-reads because they wrote it.*** The measurement discipline in CLAUDE.md says re-derive a
+number rather than quote it. A `Shipped:` line is a number of that kind.
