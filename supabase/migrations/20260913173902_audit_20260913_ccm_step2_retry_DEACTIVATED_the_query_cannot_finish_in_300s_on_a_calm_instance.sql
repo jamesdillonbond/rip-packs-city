@@ -1,0 +1,58 @@
+-- ⛔ DEACTIVATES `rpc-ccm-step2-retry` (jobid 491) — the retry shipped EARLIER TODAY was
+-- built on a premise that direct measurement has now REFUTED, and left active it would
+-- burn 300 s of IO every day and always fail.
+--
+-- ⛔⛔ WHAT WAS REFUTED — MY OWN CLAIM, FROM TWO MIGRATIONS AGO TODAY. Those files argue
+-- the 2026-09-12 timeout was "a fat tail against its own ceiling… A spell, not steady
+-- growth", with a "median ~25 s against a 300 s cap". **That is wrong, and the evidence
+-- is a controlled run rather than an inference:** a pg_cron one-shot
+-- (`rpc-ccm-step2-oneshot`, since unscheduled) executed
+-- `refresh_cross_collection_cohort_step2()` with a real 300 s budget on a demonstrably
+-- CALM instance — `pg_stat_activity` io_wait = 4, active = 6, 38 connections, no spell —
+-- and it **FAILED AT EXACTLY 300.0 s** in the same `CREATE TEMP TABLE _ccm_step2_next`
+-- step. The lane is not unlucky. It can no longer finish.
+--
+-- ⭐ THAT RUN ALSO PROVED THE FIX IT INVALIDATES. Reaching 300.0 s (not 120.0 s) is a
+-- positive control that the in-command `SET statement_timeout = '300s'` added to jobid 491
+-- an hour earlier DOES bind. The budget fix was correct; the budget is simply not the
+-- binding constraint.
+--
+-- FOUR INDEPENDENT FAILURES, not one bad night:
+--   · 2026-09-12 23:25 UTC — the nightly primary, 300 s timeout.
+--   · 2026-09-13 ~17:0x UTC — a manual MCP call, killed by that path's 120 s cap.
+--   · 2026-09-13 17:27 UTC — this one-shot, 300.0 s, calm instance.
+--   · 2026-09-13 ~17:3x UTC — a bare `SELECT count(*) FROM wallet_moments_cache WHERE
+--     collection_id = <top shot>` ALSO exceeded 120 s. The aggregate is not the problem;
+--     reading the scan's input is.
+-- Trend, consistent with degradation rather than noise: 09-08 22.8 s · 09-09 22.8 s ·
+-- 09-10 **165.2 s** · 09-11 30.9 s · 09-12 FAIL · 09-13 FAIL.
+--
+-- ⭐ WHERE THE COST IS, measured from the catalogue (cheap, no scan needed):
+-- `wallet_moments_cache` is `relpages` 120,286 with `relallvisible` 93,742 — only
+-- **77.9 % of pages are ALL-VISIBLE**, so an Index Only Scan must fall back to heap
+-- fetches for the other ~26,500 pages, on an instance whose IO budget is the documented
+-- constraint. It also carries **19 indexes** (1,567 MB against a 940 MB heap). ⚠ AND THE
+-- SCAN CANNOT SEEK: `idx_wmc_wallet_coll_ek_fmv` leads on `wallet_address`, while the
+-- query's only predicate is `collection_id`, so the "Index Cond" in the plan is applied
+-- across a FULL index traversal rather than a range seek.
+--
+-- ⚠ NOT FIXED HERE, and deliberately so. The repair is real engineering on the platform's
+-- hottest cache table — a covering/leading index on `collection_id`, or a rewritten
+-- aggregate, or a VACUUM strategy to hold the visibility map up — and it needs its own
+-- measurement and its own quiet window. Register #108 carries the findings. Deactivating
+-- is the honest interim: it stops a guaranteed-failing 300 s burn without pretending the
+-- underlying lane is healthy.
+--
+-- ⚠ THE PRIMARY (jobid 4) IS LEFT ACTIVE ON PURPOSE. It is the only thing that would
+-- record a recovery if the cost ever comes back down, and turning it off would remove the
+-- signal along with the waste. `cross_collection_ts_set_overlap_mat` therefore stays
+-- frozen (42 h stale at time of writing) — ⭐ but the board renders the overlap table's
+-- OWN `computed_at`, so the staleness is VISIBLE to users rather than silently wrong.
+--
+-- ⭐ `active := false` rather than `unschedule` — it preserves jobid 491 and its (correct)
+-- command for the day the query is fixed. Re-enable with:
+--   SELECT cron.alter_job(491, active := true);
+--
+-- REVERT: SELECT cron.alter_job(491, active := true);
+
+SELECT cron.alter_job(491, active := false);
