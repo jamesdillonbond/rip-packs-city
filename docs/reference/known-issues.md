@@ -1511,3 +1511,14 @@ Moved here to pay for two new standing rules; nothing deleted. The one-line poin
 carries only the verdict.
 
 > - **The sports-proxy `403` — NOT a secret, and ⛔ "PROXY ESPN" IS MEASURED DEAD.** ⚠ **"ESPN: 200 residential ⇒ proxy it" was a DATED SAMPLE and it EXPIRED — re-measured 08-22, ESPN 403s residentially too**, so a CF Worker is just another egress. ⛔ UA-refresh and 403-retry stay useless. ⚠ Restoring ESPN alone still would NOT refill `nba_players` (SLATE-GATED). ⚠ **The "no alert" gap is a MYTH** — the failure-rate arm reads 100%, deliberately SUPPRESSED to 2026-10-14.
+
+    ⭐ **THE ALLDAY HALF IS FULLY DIAGNOSED, and the asymmetry is exact — read from `cron.job` by SUBSTRING TEST, never by printing the command (these carry live gate keys).** `allday-pack-opens-backfill` is the edge function `ingest-allday-pack-opens`, so its caller must be pg_cron/pg_net. There are exactly two pack-opens jobs:
+
+    | jobid | jobname | schedule | calls the AllDay fn | mentions `backfill` | active |
+    |---|---|---|---|---|---|
+    | 20 | `rpc-allday-pack-opens-forward` | `9,39 * * * *` | **yes** | **no** (mode=forward) | true |
+    | 56 | `rpc-topshot-pack-opens-history` | `11,26,41,56 * * * *` | no | **yes** | true |
+
+    ⛔ **So the AllDay side is scheduled FORWARD-ONLY, while its Top Shot twin has BOTH.** There is no AllDay pack-opens backfill job anywhere — which is why the lane's death on 09-04 left no trace: **nothing in this database was ever calling it.**
+
+    ⛔ **NOT RESCHEDULED, and the reason is not timidity.** A pg_cron schedule IS a lever available without a push, but this one would **resume a data-writing backfill that stopped for a reason nobody has established** — and its sibling lane was deliberately unscheduled on 09-08 for a good one (#101). ⭐ **The decision is now a one-minute one for an operator:** either add the missing backfill job in the shape of jobid 56, or accept the coverage gap and **rewrite the suppression, which currently calls a stop at 83,276,329 “terminal” when the floor is 65,264,619.**
