@@ -10,6 +10,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ 12:45 PM READING: the spell's CAUSE ended but the instance did not calm — three routine autovacuums took its place; the Atlas tick re-paused until 7:10 PM PT with a self-restore; `/api/market` 503s unchanged and named as their own item · Claude Code cloud
+
+**Same instruments as the 11:52 AM baseline (last 60 min, 12:46 PM):** cron **360 runs / 47 failed** (baseline 370 / 56; last 20 min **130 / 22**); client IO waiters **4** (baseline 19); `/api/market` 5xx **13** (baseline 12); toast vacuum **done** (`autovacuum_count` 1, 12:04:58 PM, still 12.6 GB). `pg_stat_progress_vacuum` now shows `wallet_moments_cache`, `topshot_pack_sales_history` and `fmv_snapshots_2026` — the autovacuum backlog the toast pass had been holding back. **The shed's own effect is unmeasurable and is recorded as such**: the cause changed inside every window.
+
+**Atlas tick after the 12:26 PM restore: 7 of 8 failed at the 120 s budget** (12:28–12:44; the one success took 101 s). Its cost is its own once the instance is merely busy rather than saturated (#85). **Re-paused 12:47 PM** — `cron.alter_job(466, active := false)`; pg_cron one-off **`rpc-shed-restore-20260913b` (jobid 495, `10 2 * * *` = 7:10 PM PT)** re-enables it five minutes before the 7:15 PM quiet-window measurement and unschedules itself; suppression row for `ts-listings-atlas-sync` until 7:30 PM PT. 464 stays active (its 12:29 run succeeded). **Revert early:** `select cron.alter_job(466, active := true); select cron.unschedule('rpc-shed-restore-20260913b');` + delete the suppression row.
+
+**`reconcile-saved-wallet-stats` (pg_cron 259) failed again at 12:44** — statement timeout on its `wallet_moments_cache` aggregate, the table under autovacuum; Portfolio Cache Drain keeps aging. Not touched: the next tick is 1:44 PM.
+
+**Named, not fixed: `/api/market` Top Shot leg.** Every 503 is `get_topshot_sniper_deals … read exceeded 8000ms` then the `cached_listings` fallback exceeding 8 s too. `pg_stat_statements` since 08-12: **8,309 calls · mean 6.2 s · max 30 s · 43,065 blocks/call · 1,341 physical/call** — a mean within 2 s of its own bound in calm weather, so cold CDN hits 503 whenever the instance is busy. The function already ranks on `edition_fmv_current` (08-30); the remaining cost is being measured next.
+
+
 ### 2026-09-13 · ✅ SHIPPED — a barren apply pass now arms the counterparty cooldown; the lane could not stop on a residue smaller than its batch, BY CONSTRUCTION · Claude Code cloud
 
 **Migration `20260913190927`, applied ~12:0x PT.** One CASE in an UPDATE `apply_sales_counterparty()` already performed: `exhausted_at = CASE WHEN v_applied = 0 THEN COALESCE(exhausted_at, now()) ELSE exhausted_at END`.
