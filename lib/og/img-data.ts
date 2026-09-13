@@ -218,11 +218,17 @@ export function ogOptimizedTarget(target: string): string | null {
 // parameter on that route, so there is no cheaper ask to make of it).
 //
 // ⭐ `pinnacle_render_cache` holds the SAME render, downscaled to ≤800px, at
-// 316,140 B — 9× smaller, already base64, one indexed read away. Preferring it
-// does two things at once: it buys back most of the Pinnacle share of the
-// cold-render regression, and it retires the risk that a larger render one day
-// crosses the 4 MB cap below and silently reintroduces the art drop that this
-// module's own 09-12 fix just closed.
+// 316,140 B — 9× smaller than THAT, already base64, one indexed read away. It
+// retires the risk that a larger render one day crosses the 4 MB cap below and
+// silently reintroduces the art drop that this module's own 09-12 fix closed.
+//
+// 🚨 BUT IT IS NO LONGER THE CHEAPEST SOURCE, AND THE ORDERING MOVED ON
+// 2026-09-13 BECAUSE OF IT. The optimizer leg added later the same day returns
+// **61,788 B** for this render, so the cache is **5.1× LARGER than the branch it
+// used to pre-empt**. It now runs AFTER the optimizer and before the direct
+// fetch — see the ordering comment in `ogImageDataUri`. ⛔ Do not "restore" the
+// cache-first read on the strength of the 9× figure above: that comparison is
+// against the 2.9 MB live render, which is the LAST resort, not the next one.
 //
 // ⚠ TWO CAVEATS, BOTH STATED RATHER THAN DESIGNED AROUND.
 //  1. THE CACHE HOLDS ONE ROW. It is a proven mechanism, not a populated
@@ -340,14 +346,6 @@ export async function ogImageDataUri(
 
   const timeoutMs = opts.timeoutMs ?? 4500
 
-  // Cache first, live render second. A cache miss costs one indexed lookup and
-  // falls through to exactly the behaviour this module had before.
-  const pin = target.match(PINNACLE_RENDER_RE)
-  if (pin) {
-    const cached = await pinnacleCachedDataUri(pin[1], timeoutMs)
-    if (cached) return cached
-  }
-
   // 4MB cap — measured live: satori/resvg renders a 2.85MB 2880px PNG fine
   // (Blazers montage) but dies on a 7.67MB one (Lakers/Wilt Chamberlain,
   // 2026-07-07). Oversized art drops to the placeholder tile instead.
@@ -369,6 +367,39 @@ export async function ogImageDataUri(
     const t0 = Date.now()
     const hit = await fetchAsDataUri(optimized, budget, maxBytes)
     if (hit) return hit
+    budget -= Date.now() - t0
+    if (budget < MIN_FALLBACK_MS) return null
+  }
+
+  // ── PINNACLE CACHE: SECOND NOW, NOT FIRST (register #90, 2026-09-13) ───────
+  // ⚠ THIS READ USED TO RUN BEFORE THE OPTIMIZER LEG AND RETURN ON A HIT, WHICH
+  // MADE IT THE MORE EXPENSIVE BRANCH. Both halves re-measured rather than
+  // quoted: the one cached row is **316,140 B** (`b64` 421,520 chars, live read
+  // 2026-09-13) against the optimizer's **61,788 B** for the same render
+  // (production, 2026-09-12) — so cache-first shipped ~5.1× MORE bytes on the
+  // single card it covers than doing nothing would have.
+  //
+  // ⛔ NOT AN ERROR BY ITS AUTHOR, and worth saying so: the cache-first read
+  // landed HOURS BEFORE the optimizer leg existed, on the same day. Against the
+  // 2,896,041 B live render it was a 9× win and the comment above still reads
+  // that way. It was overtaken, not wrong.
+  //
+  // ⭐ MOVED RATHER THAN DELETED, because its second justification survives the
+  // first one dying: if the optimizer refuses this art — a `remotePatterns`
+  // drift, a 400, a platform difference, or `optimize: false` — the cache is
+  // still 316 KB against a 2.9 MB direct fetch that may not even clear the 4 MB
+  // cap. As a FALLBACK it can only help; as a first choice it could only hurt.
+  // ⚠ It therefore also runs ahead of the direct fetch when `optimize` is off,
+  // which is the ordering that was right about this cache all along.
+  //
+  // ⚠ The cache still holds ONE ROW, two months stale (`fetched_at`
+  // 2026-07-16), and this change does not populate it — see #90 for the
+  // writer-ownership question, which is Trevor's and unaffected by any of this.
+  const pin = target.match(PINNACLE_RENDER_RE)
+  if (pin) {
+    const t0 = Date.now()
+    const cached = await pinnacleCachedDataUri(pin[1], budget)
+    if (cached) return cached
     budget -= Date.now() - t0
     if (budget < MIN_FALLBACK_MS) return null
   }

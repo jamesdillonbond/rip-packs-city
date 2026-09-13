@@ -110,21 +110,67 @@ describe("ogImageDataUri — input guards", () => {
   })
 })
 
-describe("Pinnacle art comes from the render cache before the 2.9MB live render", () => {
+describe("Pinnacle art prefers the OPTIMIZER, then the render cache, then the 2.9MB live render", () => {
   // ⭐ `/api/public/pinnacle-image/<id>` 302s to a FULL-RESOLUTION Dapper
   // render — LEV2-LION-CARE-S6 measured 2,896,041 B at 2880×2880 on
   // 2026-09-12, against this module's own 4MB cap. `pinnacle_render_cache`
-  // holds the same render downscaled to 316,140 B. Preferring it buys back
-  // most of the Pinnacle share of the cold-render cost AND retires the risk
-  // that a larger render silently re-opens the art drop fixed on 09-12.
+  // holds the same render downscaled to 316,140 B (re-read live 2026-09-13).
+  //
+  // 🚨 THIS BLOCK WAS INVERTED ON 2026-09-13, NOT DELETED, AND THE REASON IS
+  // THE WHOLE POINT. Its first test used to assert the cache is consulted FIRST
+  // and "never touches the live route" — correct when written, hours before the
+  // optimizer leg existed. The optimizer returns **61,788 B** for this render,
+  // so cache-first was shipping **5.1× MORE bytes** than doing nothing. A test
+  // that pins an ordering keeps that ordering alive long after the measurement
+  // under it has moved, so the assertion is now the OPPOSITE one and the old
+  // claim survives only as this comment. (register #90)
   const CACHE_RE = /rest\/v1\/pinnacle_render_cache/
+  const OPTIMIZER_RE = /\/_next\/image\?/
 
   beforeEach(() => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://test.supabase.co")
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key")
   })
 
-  it("serves the cached render and never touches the live route", async () => {
+  it("🚨 THE OPTIMIZER WINS OVER THE CACHE — the cache is not even consulted on an optimizer hit", async () => {
+    // The inverted assertion. A cache hit is available here and must NOT be
+    // taken: at 316,140 B it is 5.1× the optimizer's 61,788 B for the same art.
+    const b64 = Buffer.from(new Uint8Array(PNG_BYTES)).toString("base64")
+    fetchMock.mockImplementation(async (url: string) => {
+      if (OPTIMIZER_RE.test(String(url))) return res(PNG_BYTES, "image/png")
+      if (CACHE_RE.test(String(url))) {
+        throw new Error("the render cache must not be read when the optimizer answers")
+      }
+      throw new Error("live Pinnacle route must not be fetched when the optimizer answers")
+    })
+    const out = await ogImageDataUri("/api/public/pinnacle-image/LEV2-LION-CARE-S6")
+    expect(out).toBe(`data:image/png;base64,${b64}`)
+    expect(fetchMock.mock.calls.some((c) => OPTIMIZER_RE.test(String(c[0])))).toBe(true)
+    expect(fetchMock.mock.calls.some((c) => CACHE_RE.test(String(c[0])))).toBe(false)
+  })
+
+  it("⭐ the cache is the SECOND choice — taken when the optimizer refuses, ahead of the 2.9MB direct fetch", async () => {
+    // The half of the cache's justification that SURVIVED the optimizer landing:
+    // when the optimizer cannot serve the art, 316 KB still beats a 2.9 MB direct
+    // fetch that may not even clear the 4 MB cap. Moving the read was a demotion,
+    // not a removal, and this is the case that says so.
+    const b64 = Buffer.from(new Uint8Array(PNG_BYTES)).toString("base64")
+    fetchMock.mockImplementation(async (url: string) => {
+      if (OPTIMIZER_RE.test(String(url))) return { ok: false, status: 400, headers: { get: () => null } }
+      if (CACHE_RE.test(String(url))) {
+        return { ok: true, status: 200, headers: { get: () => "application/json" }, json: async () => [{ mime: "image/png", b64 }] }
+      }
+      throw new Error("the direct 2.9MB render must not be fetched when the cache can answer")
+    })
+    const out = await ogImageDataUri("/api/public/pinnacle-image/LEV2-LION-CARE-S6")
+    expect(out).toBe(`data:image/png;base64,${b64}`)
+    expect(fetchMock.mock.calls.some((c) => CACHE_RE.test(String(c[0])))).toBe(true)
+  })
+
+  it("⭐ with `optimize: false` the cache is FIRST again — 316KB still beats 2.9MB", async () => {
+    // The ordering has to be right in both worlds. With no optimizer leg the
+    // cache is the cheapest source available, and skipping it would hand satori
+    // the full-resolution render for no reason.
     const b64 = Buffer.from(new Uint8Array(PNG_BYTES)).toString("base64")
     fetchMock.mockImplementation(async (url: string) => {
       if (CACHE_RE.test(String(url))) {
@@ -132,7 +178,7 @@ describe("Pinnacle art comes from the render cache before the 2.9MB live render"
       }
       throw new Error("live Pinnacle route must not be fetched when the cache hits")
     })
-    const out = await ogImageDataUri("/api/public/pinnacle-image/LEV2-LION-CARE-S6")
+    const out = await ogImageDataUri("/api/public/pinnacle-image/LEV2-LION-CARE-S6", { optimize: false })
     expect(out).toBe(`data:image/png;base64,${b64}`)
     expect(fetchMock.mock.calls.every((c) => CACHE_RE.test(String(c[0])))).toBe(true)
   })
