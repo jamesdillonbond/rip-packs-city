@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ CODE — I reddened `main`: the TS-oracle's non-vacuity control walked the tree twice and timed out on CI · Claude Code cloud, self-inflicted
+
+**Shipped:** `__tests__/strip-comments-matches-typescript.test.ts`. Revert: `git revert` the commit whose message starts `fix(tests): the TS-oracle's non-vacuity control walked the tree twice`.
+
+**What happened.** The oracle shipped an hour earlier (register #87) carried a control — *"the comparison is not simply reporting zero for everything"* — that re-parsed all **3,008 files** with the TypeScript compiler **inside an `it()`**, to re-derive a number the sweep above had already computed. **7.4 s on this 16-core idle box; over the 30 s `testTimeout` on a 2-core CI runner under coverage instrumentation.** CI shard 1/2 failed; 17 of 18 jobs were green and shard 2/2 finished in 2m40s against shard 1's 309 s.
+
+⭐ **THE FULL SUITE HAD JUST PASSED LOCALLY, AND THAT READING WAS WORTH NOTHING.** *A probe whose HARNESS differs from production in the one dimension the answer depends on is not a measurement of production* — the dimension here was CPU count and coverage instrumentation, and "it passed on my box" is exactly that probe. The repo's own rule, applied to a test rather than to a fetch.
+
+**Fix:** the count comes off the single sweep that already parses every file; the two positive controls drop 400 → 150 files. TypeScript parsing now happens **exactly once** in this file. Worst test under coverage **7.4 s → 1.47 s**, file test time **11 s → 2.9 s**. ⚠ The expensive sweep **stays at describe scope deliberately** — collection is not bounded by `testTimeout`, and moving it to a `beforeAll` would bound it by the **30 s `hookTimeout`**, which is the same trap one level over.
+
+⚠ **A SECOND LESSON, about the instrument I used to check my own work.** `get_job_logs(failed_only: true)` returned **"No failed jobs found, 18 total"** while shard 1/2 had ALREADY failed at 00:44 — the run list still showed it `in_progress`. **A "no failures" reading on a run that has not concluded is not evidence of green**, and it reads identically to success. Read the JOB's log, not the run's summary, and check the job's own `completed_at`.
+
+**Gates:** `npm test` **1510 files / 16,842 tests, all pass**; the oracle re-verified under `--coverage`, the way CI runs it, not bare.
+
 ### 2026-09-12 · ✅ CODE — the share cards draw OFFICIAL badge art, the trophy card stops discarding its scarcity facts, and Pinnacle art comes from the 316 KB cache · Cowork buildspec 09-12(d), Trevor: "Proceed with all"
 
 **Shipped:** `lib/badges/official-art.ts` + `lib/og/official-mark-art.ts` + `lib/og/trophy-detail.ts` (new), `lib/og/trophy-marks.ts`, `lib/og/img-data.ts`, `lib/badges/glyphs.ts` (header), the three OG card routes, `scripts/check-badge-art-registry-drift.mjs` (+ `npm run badges:art:check`), and `__tests__/og-cards-use-official-badge-art.test.ts` at 35 tests. Revert: `git revert` the commit whose message starts `feat(og): official badge art, moment detail lines, Pinnacle cache-first art`.
