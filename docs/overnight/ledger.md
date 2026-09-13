@@ -44,6 +44,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **⚠ WHAT IT DOES NOT FIX:** a long red streak widens the diff window rather than narrowing it, because the base stays at the last *successful* deploy. That is the safe direction, and it is stated so a large post-outage build is not read as a bug.
 
+**⭐⭐ AND THE TRADE IS NOW MEASURED RATHER THAN ARGUED, WITH A REPLAY THAT VALIDATES ITSELF.** Both rules were run against the real tree for **60 consecutive production pushes** (9.6 h, multi-session): **OLD 35 builds · NEW 38 · 0 dropped.** ✅ **"35" is not a model output — the window holds exactly 35 `READY` deployments**, so the old-rule replay lands on the record it is replaying; the 36th real build is the `ERROR` that already ran under the new rule. 🚨 **The three pushes the new rule adds are one-for-one the bug:** `de0c8b3`, **`55f8055` (tonight's sentinel commit)** and `1564788` (the push that surfaced the 256-char cap — under the old rule a broken `vercel.json` would have sat on `main` unbuilt). ⭐ **So the rate is not "three times ever" but 3 of 60 — about one push in twenty shipping nothing.** ⚠ **Cost, filed to #61: +8.6 % on build count, nothing saved back**, and the window is dense enough that the ratio transfers while the absolute rate does not.
+
 **Gates:** 8 deploy-gate tests green (including the control) · index regenerated (93 items) · `check-memory-doc-links` 197 · ledger guards 3 / 0.
 
 ### 2026-09-12 · 🔵 MEASUREMENT+CORRECTION (docs only) — the `/_next/image` ceiling is ≈14,462 and it CONFIRMS tonight's earlier estimate; plus Cowork's player-name finding is real but scoped to the wrong card · Claude Code, from Cowork verification `2026-09-12(h)`
