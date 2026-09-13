@@ -24,6 +24,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Gates (run AFTER the rebase this time):** `tsc` clean · 33 tests green across the three affected files.
 
+⚠ **RECONCILED 2026-09-13 12:0x PT by the other session in this incident — the two entries above and below describe ONE event, and this entry's REVERT PATH NAMES A COMMIT THAT DOES NOT EXIST.** `git log --all --grep="dedupe the bounded-send signal"` returns nothing. **What actually landed, in order:** **(1)** `9dc02bbc0` introduced the duplicate keys on rebase and reddened CI run 5326; **(2)** `a1c7d7c1b` *“fix(sentinel): remove two duplicate signal keys that broke tsc on main”* **is the dedupe** — it removed both duplicate `signal:` lines and returned `tsc` to 0; **(3)** this entry's own commit `65b34f066` then removed the **10 orphaned comment lines** the dedupe left behind — a correct follow-up, but a comment cleanup rather than the dedupe. ⭐ **Both sessions independently chose to KEEP the named `DELIVERY_TIMEOUT_MS`, so the outcome converged and the final file is right** (verified: exactly one bound per send, `tsc` 0, `unbounded-fetch-in-after-routes-ratchet` green). ⚠ **Nothing in the analysis above is disputed — only the Shipped/Revert lines, because a revert path a stranger cannot execute is the one part of a ledger entry that has to be literally true.**
+
 ### 2026-09-13 · 🚨 MAIN WAS RED FROM A CONCURRENT-SESSION MERGE ARTIFACT — two sessions bounded the same two fetches 13 minutes apart and the rebase kept BOTH · Claude Code cloud, overnight autonomous
 
 **Shipped:** `app/api/sentinel/route.ts` — two duplicate `signal:` keys removed. **REVERT:** `git revert <sha>`. **No behavioural change whatsoever** (see below).
