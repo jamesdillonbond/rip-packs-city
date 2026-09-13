@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · FIX — 13 surfaces hotlinked a public IPFS gateway that currently TIMES OUT, and one of them was proven broken in production · Claude Code cloud
+
+**Shipped: repo-only.** 13 `.tsx` surfaces + 2 shared helpers (`lib/pack-dist-format.ts` `tsTileImg`, `lib/pack-lifecycle-format.ts` `resizedThumb`) + new ban-at-zero guard `__tests__/moment-art-reaches-the-proxy-ratchet.test.ts`. No DB write, no prod state change. Revert: `git revert <sha>` (find by message — `IPFS proxy`).
+
+**Found while waiting on something else, by asking what the UFC gateway measurement implied for PAGES rather than for cards.**
+
+⭐ **THE PROOF IS A PRODUCTION READ, NOT A CODE REVIEW:** `GET /api/search?q=adesanya` returns **3 raw `ipfs.io` urls and 0 proxied**, and `components/search/GlobalSearch.tsx` rendered `h.thumbnailUrl` straight into an `<img src>`. Every one of those tiles points at a host that, sampled from the database's egress the same hour, **timed out 5 of 6 times at 15,001 ms** (DNS and TLS fine, then nothing) and separately answered **429 with a gateway RETIREMENT notice**.
+
+**Population, measured live rather than assumed: 2,886 editions store a public-gateway url** — `ufc_strike` **518** (all of them, `ipfs.io`) and `nba_top_shot` **2,368** (pre-2022, `ipfs.dapperlabs.com`). ⚠ **The Top Shot half is FINE today — 10 of 10 sampled alive**, because Dapper serves its own pinned CIDs. **So this is a UFC outage now and a 2,886-row exposure one gateway policy away**, and saying only the first would misstate the risk.
+
+**Fixed by construction, not by case analysis:** `proxyIpfsUrl()` passes a non-gateway url through untouched, so wrapping is **strictly-no-worse** for Top Shot / All Day / Golazos / Pinnacle art. Two of the fixes went into the shared HELPERS rather than the call sites that noticed — the same reason `ogImageTarget` normalizes centrally: every future caller inherits the hole otherwise.
+
+⚠ **The guard is a TREE WALK, and the reason is in the numbers: the rewrite already existed and was applied in 9 places and skipped in 13.** A curated list of "surfaces that show Moments" is exactly what went stale. One suppression, and it is a limit of the MATCHER not of the rule (`CollectionMomentTable` proxies one line earlier, which an expression-local check cannot see).
+
+⭐ **AND THE GUARD'S FIRST DRAFT WAS VACUOUS IN THE WAY THIS REPO KEEPS RE-LEARNING.** Its "the exempted helpers really do rewrite" case asserted `toContain("proxyIpfsUrl")` on RAW source — and a mutation that deleted the actual call still passed, because **the comment I had written above it explaining the rewrite contained the word.** Caught by mutating, not by reading; fixed with `stripComments` + `proxyIpfsUrl(`. **Both mutations now fire:** restoring the raw binding names the file and line; breaking `tsTileImg` fails the exemption case.
+
+Gates: `npx tsc --noEmit` exit 0 · `npm test` **17,066 passed**, exit 0 · `npm run lint:ratchet` exit 0 (715/715 baseline).
+
+⛔ **NOT fixed and stated: pack art / listing art** (`pack.image_url`, `d.imageUrl`, Panini `listing.image_url`) is outside the guard's population on purpose — different upstreams, never IPFS today. If a pack image ever lands on a gateway, this guard will NOT see it.
+
 ### 2026-09-13 · ✅ VERIFIED IN PRODUCTION — both new sentinel arms reported on the first dispatched sweep, the rewritten probes read ~5k buffers, and one more arm learns to say INCONCLUSIVE · Claude Code cloud
 
 **Sweep dispatched by hand at 09:48 PT against deploy `8c372abb8` (READY 09:45 PT); it logged at 09:51:53 PT, 140.8 s, WARN, 0 critical.** `Wall Kills (24h)` **warned on production with six pipelines named** — `fmv-recalc` 32/151 (21.2%, last **09:31 PT**), `drain-fmv-cold-tail` 11/46 (23.9%, last 09:17 PT), `panini-ingest` 26/789, `wallet-backfill` 24/735, `classify-acquisitions-multicollection` 4/24, `wmc-fmv-populate` 4/150 — that is the positive control: the watcher can see a failure (register #107). `Ops Probe Cost` read **ok**: after the 09:33 PT stats reset the two rewritten probes show `sentinel_fmv_confidence_canonical_ts_split` **5,209** and `sentinel_edition_coverage` **4,967** buffers/call (2 calls each); the heaviest ops RPC on the instance is now `check_public_security_invariants` at 26,193. `Edition Coverage` and `FMV Confidence` both **ok** on a sweep during which four other arms went INCONCLUSIVE — the same saturation that had blinded them this morning. `Dune Spend` renders **EXHAUSTED … a configured stop**.
