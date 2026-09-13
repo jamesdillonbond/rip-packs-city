@@ -27,6 +27,14 @@
 
 ⭐ **#101 and #102 share one root cause and it is the more valuable finding: these predicates are prose in a `reason` column that nothing evaluates. A PREDICATE NOTHING RUNS IS A COMMENT.** I found both by simply executing the predicates the rows write down — **two of the three I ran had failed, and neither had ever been checked.**
 
+### 📈 ALSO RE-MEASURED TONIGHT — numbers in the register that had moved
+
+- **#42 — pg_cron waste is 39.6%, NOT the filed 22.6%.** 24 h: 9,287 runs, **47.0 h busy, 18.6 h wasted**, against a FLAT run count across three days (29.0% → 37.6% → 39.6%), so it is a level, not a spell. ⭐ **The frame worth keeping: 47–56 busy hours per 24-hour day on a 2-core instance** — cron alone asks for ~2 cores continuously. ⭐ **`rpc-ts-listings-atlas-sync` alone is 6.7 h = 36% of ALL fleet waste** (ok runs 25 s, its 200 failures 121 s each). ⛔ **Its failure mode has FLIPPED**: the register documents it as the worst `job startup timeout` victim; today **189 of 201 failures are `statement timeout`**. **Opposite levers** — the old framing sends you to de-cluster schedules, which would change nothing. ⛔ **And overlap is refuted two ways (zero overlapping pairs in 720 runs) — pg_cron serialises a job against itself.**
+- **#82 — the mis-key cause is narrowed to ONE `if`.** All 24 were written by ticks that redirected 57 OTHER rows correctly, so the guard is live and missed these per-row; `edIdToExt.get(editionId)` returning undefined is the only silent exit in that branch. Needs the route replayed against a captured tick.
+- **#69 re-verified** — zero genuine user-facing client errors in 7 days (75 of 77 are one `Lightpanda/1.0` crawler; the other 2 are the beacon's own probes).
+- **An EXIT CONDITION was mis-specified and would have closed itself** — *“`max(last_success_at)` moves past 2026-08-26”* against a stamp that IS 2026-08-26 08:15:05Z. Restated as the instant to beat. **State an exit as the instant, never the date it fell on.**
+- ✅ **The `?? 0` class was SWEPT and has exactly ONE live instance — the one fixed tonight.** Detector over `pipeline_runs` (flatten `extra` one level, write-shaped keys vs `rows_written`); every other lane matches its own counter. **It did NOT spread by copy-paste**, against this file's standing expectation.
+
 ### ⛔ RETRACTED — do NOT act on these, they were mine and they were wrong
 
 - **The reconcile `ok := NOT (v_truncated AND v_wallets = 0)` fix is WITHDRAWN IN FULL.** The suppression's own text forbids it by name (*"Do NOT 'fix' this by making the procedure report ok=true"*) and the pin calls the property *"the property most worth protecting"*. The blind-spot case is refuted by measurement: `detect_stalled_pipelines` does **not** read suppressions, and the third arm's predicate would fire for **0** lanes fleet-wide. **CLOSED as NOT A DEFECT.**
