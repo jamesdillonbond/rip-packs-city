@@ -10,6 +10,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · GUARD + REPO — a pin that had been green against a dead definition, and a migration file that was never valid SQL · Claude Code cloud, overnight autonomous
+
+**Shipped: repo-only. No DB write, no prod state change, no migration applied.** Revert: `git revert <sha>` (find by message — pre-08-03 shas are dead, these are not).
+
+**1. `rollup_allday_rip_pull_value` was pinned to a body that stopped running on 2026-09-12.** The daily `DB pin staleness` workflow went RED at 12:46Z today: *"checked 202 pins — 201 clean, 1 needing attention"*. ⚠ **This is the ONE rot class the blocking CI job structurally cannot see** — the in-CI drift guard compares pin↔migration (repo-vs-repo) and was green the whole time. Three migrations redefined the function today (`…020000`, `…021000`, `…032000`) and none repointed the pin.
+
+⚠ **THE PIN'S FIXTURES WERE NOT MERELY STALE, THEY WERE UNRUNNABLE AGAINST THE LIVE BODY.** The #92 decision moved `pull_value_usd` from the at-open `allday_pack_pull.fmv_usd` to CURRENT fmv via `LEFT JOIN LATERAL` on `fmv_snapshots`, so the pinned test had no `edition_id` column and no `fmv_snapshots` table at all — it would have ERRORED, not just disagreed. Re-pinned to `20260913032000`, fixtures rebuilt, and the registration comment now records why.
+
+⭐ **THE NEW PIN ASSERTS THE #92 DECISION INSTEAD OF DESCRIBING IT.** Every fixture pull carries an at-open `fmv_usd` of **1000.00** while its snapshot says 10.00/20.00/5.505. A revert to `sum(p.fmv_usd)` publishes 3000.00 where the assertion demands **35.51** — so the file now FAILS on the old body rather than passing on it. Two further properties pinned: the **latest** snapshot wins, and a pull with a NULL `edition_id` counts as unpriced.
+
+⚠ **MUTATION-PROVEN, AND THE FIRST DRAFT FAILED THAT PROOF.** M1 (revert to at-open) and M3 (relax all-or-nothing) were caught immediately; **M2 (drop `ORDER BY computed_at DESC`) SURVIVED** — my stale fixture row was inserted *second*, so a no-ORDER-BY scan returned the right row by luck, and my header comment claimed the opposite. Reordering the two rows made the mutation fail; the comment now says the insert order is load-bearing and that heap order makes this *detectable*, not *impossible*. **All three now caught; clean run exit 0.**
+
+**Verified against LIVE, not just the repo:** pin body vs `prosrc` md5 under both of the staleness script's normalizations — `3266c418…` and `74624ea3…`, **identical on both**.
+
+**2. Migration `20260913032000` WAS NOT VALID SQL, from the day it landed.** One line had lost its `-- ` prefix:
+```
+CREATE OR REPLACE FUNCTION` does not reset a function ACL, so this
+```
+`ERROR: syntax error at or near "`"`, proven by feeding that single line to psql. It had been applied through MCP, so the DB was correct and `migration-parity` — which checks the applied-but-**not**-committed direction — had nothing to say. ⛔ **The committed record of a production change could not be replayed, and read as authoritative anyway.** Restored as a comment verbatim rather than reworded, so the stray backtick stays visible as residue.
+
+**3. NEW GUARD — `scripts/check-migration-sql-parses.sh`, wired into the `db-tests` CI job** (the only job with a Postgres). Every file in `supabase/migrations/` is fed to a scratch database; only `syntax error` counts, because that is decided at parse time and is never a consequence of the empty schema. **~50 s for 1,028 files.**
+- **Tree walk, not a curated list**; **ban at zero**; satisfiable at a population of zero.
+- ⚠ **It asserts the COUNT it inspected** — an empty glob exits **2**, not 0.
+- ⚠ **It proves it can FAIL on every run**: a self-test feeds a known-bad statement through the same psql path and **refuses to pass** if that is not detected. Blinding the needle exits **2**, not a false clean.
+- Controls run, all three behaving: re-breaking the real file → **exit 1**, naming file and line; blinded needle → **exit 2**; empty dir → **exit 2**.
+- ⛔ **The cheap version was measured and REJECTED**: "no backtick outside a comment" scores **37 violations**, every one a legitimate backtick inside a `COMMENT ON … IS '…'` literal. The parse check is the honest instrument.
+
+**Sweep result across all 1,028 migration files: ZERO other syntax errors** — and that zero has a positive control (re-breaking the file is detected), so it means "only this one", not "the detector saw nothing".
+
+**4. ⚠ A DOC I WROTE AN HOUR EARLIER WAS WRONG, AND THE CORRECTION IS THE LESSON.** Running the DB suite locally gave 188/191 with three failures (`norm_player`, `get_player_detail`, `get_team_detail`) on `function extensions.unaccent(text) does not exist`. I recorded that as a pre-existing environment quirk of the vanilla recipe. **It was caused by my own first command.** The test files provision the extension themselves into the `extensions` schema; my bare `CREATE EXTENSION unaccent` put it in `public` first, turning their `IF NOT EXISTS` into a silent no-op. A/B on two fresh databases: pristine **exit 0**, pre-created **exit 3**. ⛔ **The error names a missing FUNCTION, not a missing extension, so it reads like a fixture bug in three files I never touched — and `git status` "confirms" they are unmodified, which is exactly what makes the wrong answer comfortable.** [tooling-gotchas.md](../reference/tooling-gotchas.md) now carries the corrected version.
+
+**Gate:** `tsc` **0**; full suite **1,522 files / 17,015 tests passed**; DB-invariant suite **191/191 on a PRISTINE database**, exit 0; drift guard 210/210; the four ci.yml-reading guards 31/31.
+
 ### 2026-09-13 · DB INDEX — sales_2026/2027 get the nullseller partial index; a deliberate 2026-07-24 exclusion re-litigated with numbers · Claude Code cloud, overnight autonomous
 
 **Shipped: two `CREATE INDEX CONCURRENTLY` via `execute_sql`, plus the repo-parity migration file.**
