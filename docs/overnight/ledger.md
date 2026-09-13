@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ VERIFIED IN PRODUCTION — the wallet-search database refill fills exactly where data exists and nowhere else, field for field · Claude Code on Trevor's box
+
+`2bcd3c5f2` deployed READY (`dpl_FjU7Uhs…`, `lambdaRuntimeStats` attached) after an unusually slow ~35 min build. Verified by REQUEST against `POST /api/wallet-search`, with the before-reading taken on the same wallet while the old build was still serving.
+
+**Wallet `0x6c7a68d2e80cdede`, all 17 Top Shot rows — predicted from `wallet_moments_cache` BEFORE the probe, then matched:**
+
+| field | before | predicted | measured |
+|---|---:|---:|---:|
+| thumbnails | 0 | 17 | **17** |
+| tier | 0 | 7 | **7** |
+| lockKnown | 0 | 7 | **7** |
+
+⭐ **The 7 tier-filled moment ids are exactly the 7 the table says carry a tier** (`14864516, 15130475, 48079602, 50831248, 51218113, 51519840, 51533049`). Not a count that happens to agree — the same rows.
+
+⚠ **The first probe read `tier 0` and I nearly filed it as a bug.** A 10-row page returned zero tiers against a predicted 10. Cross-referencing the page's ids against the table showed **all ten were in the `tier IS NULL` group** — the page contained none of the seven tier-bearing rows. **The prediction was wrong, not the code: `with_tier = 7` and `lock_known = 7` are SEVEN EACH BUT NOT THE SAME SEVEN** (they overlap by 4), and I had silently assumed one set. ⭐ **Two equal counts are not evidence of the same population — diff the SET.** The register already says this; it cost a probe here rather than a filing.
+
+✅ **Strict additivity confirmed by accident, which is the best way:** three moments read `circulationCount 4099` in the response while `wmc.mint_count` says `4000`. Another source had already populated the field and **the fill correctly declined to overwrite it** — exactly the "worst case it does nothing" property, observed rather than asserted. ⚠ The 4000/4099 disagreement between `wallet_moments_cache` and the response's source is a separate, pre-existing data question, **not introduced here** and not chased.
+
+⛔ **Still absent and still correct to be absent:** asks, last-purchase price, badges and TSS points — those need the Atlas lanes rather than `wmc` — and lock stays unknown on the 10 of 17 rows never checked (#112).
+
 ### 2026-09-13 · ✅ SHIPPED — Top Shot wallet rows get their thumbnails, tier, league and circulation back from the database, two weeks after the GraphQL host died; and the lock they recover carries its PROVENANCE or is not recovered at all · Claude Code on Trevor's box
 
 **The user-facing half of the dead-host work.** `public-api.nbatopshot.com` is decommissioned (530 since ~08-30, re-verified today from a residential IP). #65 re-pointed six consumers onto Atlas-via-DB on 09-06; **wallet-search's per-moment leg was never among them**, so the flagship collection's wallet view has been rendering imageless, tierless, askless rows ever since.
