@@ -1245,8 +1245,12 @@ const PINS = [
     // cannot pin to a wallet the sweep will never attempt. The three-argument
     // signature is dropped in the same migration (an added overload would make
     // pg_cron's three-argument CALL ambiguous).
+    // ⚠ Repointed again 2026-09-13 4:3x PM: oldest_cache_h / oldest_big_cache_h
+    // now split on the PAIR's summed count (the queue's own test) instead of the
+    // row's — the whale's own 4,580-row All Day row had pinned oldest_cache_h at
+    // 17 h while every queued wallet was fresh. Same signature, no DROP.
     migration:
-      "supabase/migrations/20260913211500_audit_20260913_the_saved_wallet_sweep_stops_dying_on_one_whale_and_says_whom_it_skipped.sql",
+      "supabase/migrations/20260913233500_audit_20260913_oldest_cache_h_excludes_the_whole_pair_the_size_gate_skips.sql",
   },
   {
     // pg_cron `10 9 * * *` (jobid 201). Holds a deliberate opt-in past the

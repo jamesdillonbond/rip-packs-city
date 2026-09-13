@@ -7,7 +7,7 @@
 --   * its only committed migration was STALE — a zero-argument FUNCTION, where live is a
 --     PROCEDURE with three arguments, a soft deadline and per-wallet COMMITs. That drift
 --     was invisible to `npm run db:pins:check`, which only reads functions already in the
---     PINS array. supabase/migrations/20260828055500_audit_20260828_oldest_cache_h_scoped_to_the_queue_population.sql (was 20260816181600_audit_20260816_snapshot_reconcile_
+--     PINS array. supabase/migrations/20260913233500_audit_20260913_oldest_cache_h_excludes_the_whole_pair_the_size_gate_skips.sql (was 20260913211500 → 20260828055500_audit_20260828_oldest_cache_h_scoped_to_the_queue_population.sql → 20260816181600_audit_20260816_snapshot_reconcile_
 --     all_saved_wallet_stats.sql captures the live body so the checker can watch it.
 --
 -- ⚠ THIS FILE DOES NOT USE THE SUITE'S USUAL BEGIN/ROLLBACK ISOLATION, AND CANNOT.
@@ -227,16 +227,26 @@ BEGIN
   -- ⚠ AND SINCE 2026-09-13 IT EXCLUDES THE ROWS THE SIZE GATE SKIPS, for the same
   -- reason: a wallet the sweep will never attempt would pin this figure forever
   -- and hide a starving QUEUED wallet behind it. The skipped population gets its
-  -- own figure below (oldest_big_cache_h). Per-row count here against a per-pair
-  -- SUM in the queue: a pair can only exceed the gate if some row is large, and a
-  -- row above the gate is never attempted, so the two populations agree except
-  -- for a pair of mid-sized rows summing past it, which reads as eligible here
-  -- and skipped there -- a bounded, stated approximation.
+  -- own figure below (oldest_big_cache_h). ⚠ The first version (2:00 PM PT) tested
+  -- the ROW's count here against the PAIR's sum in the queue and called the gap a
+  -- "bounded, stated approximation"; it bit the same afternoon: the whale's OWN
+  -- 4,580-row All Day row (and its 25/32/61-row ones) passed the per-row test,
+  -- so at the 3:44 PM tick -- every queued wallet just refreshed -- oldest_cache_h
+  -- still read 17 h and the Portfolio Cache Drain arm warned on a wallet the
+  -- sweep will never attempt. Since 4:3x PM the test is the QUEUE's test: the
+  -- pair's sum, so the two populations are the same population.
   SELECT ROUND(EXTRACT(epoch FROM (now() - MIN(sw.cache_updated_at))) / 3600.0, 1)
     INTO v_oldest_h
     FROM public.saved_wallets sw
    WHERE sw.wallet_addr IS NOT NULL
-     AND COALESCE(sw.cached_moment_count, 0) <= GREATEST(p_max_moments, 0)
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.saved_wallets b
+        WHERE b.user_id = sw.user_id
+          AND b.wallet_addr = sw.wallet_addr
+        GROUP BY b.user_id, b.wallet_addr
+       HAVING COALESCE(SUM(b.cached_moment_count), 0) > GREATEST(p_max_moments, 0)
+     )
      AND EXISTS (
        SELECT 1
          FROM public.wallet_moments_cache w
@@ -248,7 +258,14 @@ BEGIN
     INTO v_oldest_big_h
     FROM public.saved_wallets sw
    WHERE sw.wallet_addr IS NOT NULL
-     AND COALESCE(sw.cached_moment_count, 0) > GREATEST(p_max_moments, 0)
+     AND EXISTS (
+       SELECT 1
+         FROM public.saved_wallets b
+        WHERE b.user_id = sw.user_id
+          AND b.wallet_addr = sw.wallet_addr
+        GROUP BY b.user_id, b.wallet_addr
+       HAVING COALESCE(SUM(b.cached_moment_count), 0) > GREATEST(p_max_moments, 0)
+     )
      AND EXISTS (
        SELECT 1
          FROM public.wallet_moments_cache w
@@ -484,9 +501,17 @@ SELECT _assert(
 -- never touch (the 08-28 trap above, in a new place).
 INSERT INTO public.saved_wallets VALUES
   ('55555555-5555-5555-5555-555555555555','0xwhale','aaaaaaaa-0000-0000-0000-000000000001',
-   50000, 50000.00, 'LEGENDARY', now() - interval '30 hours');
+   50000, 50000.00, 'LEGENDARY', now() - interval '30 hours'),
+  -- ⚠ (2026-09-13, 4:3x PM) the same PAIR also holds a SMALL row on another
+  -- collection. Production's whale owns a 4,580-row All Day row beside its 40k
+  -- Top Shot one; a per-ROW test let that row pin oldest_cache_h at 17 h while
+  -- every queued wallet was fresh. The gate is a PAIR test, so this row is
+  -- skipped with its pair and must be absent from oldest_cache_h too.
+  ('55555555-5555-5555-5555-555555555555','0xwhale','aaaaaaaa-0000-0000-0000-000000000002',
+   10, 10.00, 'COMMON', now() - interval '30 hours');
 INSERT INTO public.wallet_moments_cache VALUES
-  ('0xwhale','aaaaaaaa-0000-0000-0000-000000000001');
+  ('0xwhale','aaaaaaaa-0000-0000-0000-000000000001'),
+  ('0xwhale','aaaaaaaa-0000-0000-0000-000000000002');
 
 DELETE FROM public._refreshed;
 DELETE FROM public._runs;
