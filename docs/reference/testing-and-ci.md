@@ -2575,3 +2575,46 @@ the pin **unextractable**, and the failure reads `"<fn> not found in supabase/te
 which looks like a wrong path or a renamed function, not like casing. (`PROCEDURE` is matched
 too; `prokind` does not matter.) The casing of the `CREATE` line is **not** stored in `prosrc`,
 so fixing it in the file is free and does not touch production.
+
+## "The tip went green" can be evidence of NOTHING — a docs-only push SKIPS the shards (2026-09-13)
+
+⚠ **Measured while watching a red main recover, and it nearly shipped a false all-clear.** A concurrent
+session's migration created a public table with no RLS and reddened
+`migration-new-public-table-enables-rls`. The next commit to land was that session's **docs-only**
+push, and its run came back **success** — so a watcher keyed on "is the tip green" reported MAIN GREEN
+while the guard had not run at all.
+
+**Read the JOB LIST, not the conclusion.** On the docs-only run: 7 doc guards `success`, and
+**11 jobs `skipped`** — both `Unit tests (vitest)` shards, `TypeScript`, `ESLint ratchet`,
+`DB invariants (SQL)`, component and worker coverage, the merge + coverage ratchet. The run that
+actually proved the fix was a `supabase/migrations/**` push, where all of those ran.
+
+⭐ **The generalisation is this file's own rule pointed at the WATCHER rather than at the guard:
+*ask what RUNS, not only whether it passes*.** A CI-status monitor is an instrument, and an instrument
+whose success condition cannot distinguish "the gate passed" from "the gate was skipped" is the
+permanently-green twin of the permanently-red arm.
+
+👉 **When you need a specific guard's verdict, watch the run for a commit that TOUCHES CODE** — and if
+the only recent push is docs, the honest statement is "not yet exercised", not "green".
+
+## ⛔ A GUARD SATISFIED BY ITS OWN COMMENT — the vacuity that survives a mutation test (2026-09-13)
+
+A new ratchet exempted three helpers on the grounds that each proxies internally, and asserted the
+exemption held with `expect(src).toContain("proxyIpfsUrl")` over **raw** source. **A mutation that
+deleted the actual `proxyIpfsUrl(...)` call still PASSED** — because the comment written above it,
+explaining that the helper rewrites IPFS urls, contained the word.
+
+⚠ **Neither half of the usual defence catches this.** The assertion is not vacuous in the "asserts
+nothing" sense — it asserts a real string over a real file — and mutation testing only found it
+because the mutation happened to delete the call and leave the prose. Had the mutation deleted both,
+it would have "passed the test" and taught nothing.
+
+**Two rules, and the first is already in CLAUDE.md:**
+- **Strip comments before grepping source** (`scripts/lib/strip-comments.mjs`, never a fresh copy) —
+  the more so when the thing you are grepping for is a word you are also likely to *write about*.
+- **Match the CALL, not the NAME**: `toContain("proxyIpfsUrl(")` cannot be satisfied by prose that
+  mentions the helper. A bare identifier is a word; a word with its open-paren is a use.
+
+⭐ **And the tell for finding more of these: any guard that greps for a symbol whose own documentation
+would naturally name it.** `stripComments` + the open-paren is the cheap fix; running the mutation is
+what proves it.

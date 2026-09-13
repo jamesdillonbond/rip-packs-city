@@ -702,6 +702,15 @@ That one line settled an item that had been parked as unanswerable: three fresh 
 
 **6.4×** — the art pane is the only thing that can account for it. ⭐ This is how a cloud session verifies an art fix in production without ever seeing the picture; the control is what makes it a measurement rather than a number.
 
+⛔ **AND THE CONTROL IS NOT OPTIONAL, BECAUSE A CARD ROUTE ANSWERS 200 FOR ITS GUARD BRANCH TOO.**
+`/api/og/player?collection=ufc-strike&…` returned **200 image/png** and I counted it as a UFC card
+rendering. It was the **guard card** — `ufc-strike` is not a url slug (it is **`ufc`**;
+`SLUG_TO_DB_SLUG` in `lib/collections.ts` is the authority), so `getCollectionByUrlSlug` returned null
+and the route drew its generic brand card, exactly as designed. ⭐ **A 200 on a card route proves that
+SOMETHING rendered and nothing else** — every one of these routes is built to answer 200 on its worst
+day, which is the whole point of them. **Check the slug against the map, and discriminate on payload
+size against a deliberately art-less control on the SAME route.**
+
 ## Displaced from CLAUDE.md 2026-08-23 — the two long Vercel bullets, verbatim
 
 Condensed to their rule in CLAUDE.md to keep the memory file under its character limit while three

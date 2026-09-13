@@ -1710,3 +1710,38 @@ the claim. Corrected in prod (`COMMENT ON FUNCTION`) and in every header the sam
 rather than deleted. **A correct change with a wrong justification is how the next session inherits the
 wrong model** — and the register carries it as #98.
 
+
+## A DEGRADED CARD MUST NOT OUTLIVE THE OUTAGE THAT CAUSED IT (2026-09-13)
+
+⚠ **The long cache is right for a card that rendered and a trap for one that did not.** Every
+`/api/og/**` card ships `OG_CACHE_HEADERS` — `public, s-maxage=3600, stale-while-revalidate=86400` —
+so **one transient upstream failure at render time publishes an art-less card for up to 25 hours**,
+and the card most likely to be fetched cold is the one somebody has just shared. This is this file's
+own *"ISR caches a failed read for the whole `revalidate` window"* rule, met where the failed read is
+a **picture** rather than a number.
+
+**Not hypothetical.** Three fresh UFC Strike CIDs through `/api/public/ipfs-media/` in production
+answered **200 · 200 · 429** within minutes of each other (measured from the database's egress,
+2026-09-13): all 518 of that collection's editions resolve through one public gateway, and a public
+gateway rate-limits.
+
+✅ **The helper: `ogCacheHeaders(degraded)` in `lib/og/brand-fonts.ts`.** A card that ASKED for art and
+got none is cached **60 s with no `stale-while-revalidate`** — ⛔ SWR's whole job is to keep serving
+the OLD body, which here is the defect.
+
+⭐ **THE DISTINCTION THE WHOLE POLICY TURNS ON: "asked for art and got none" is NOT "has no art".** A
+legitimately art-less card is stable and correct and keeps the long cache, or the fix punishes its own
+success by re-rendering a perfectly good card every minute forever. Where a route resolves its own art
+(the player card walks candidates before the renderer sees them), it must say so explicitly with
+`artFailed` — an empty `images: []` array reaches `renderEntityOg` looking identical to "this entity
+has no art".
+
+⚠ **Wired on the entity cards (`edition`/`player`/`set`/`team`/`series`), the profile card and the
+trophy-case card.** The last two were added in the same session after landing on the first group —
+*"fix per PANEL, not per page"*, and they are both the most-shared surfaces AND the only ones whose art
+comes from six independent upstreams at once. **A new card that fetches art should take
+`ogCacheHeaders(...)`, not `OG_CACHE_HEADERS`.**
+
+⚠ **It is not observable from outside.** Vercel consumes `s-maxage` and does not echo it, so a
+client-side probe reads a bare `public` either way — the policy is pinned by
+`__tests__/og-degraded-card-is-not-cached-for-a-day.test.tsx`, not by a header read.
