@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ THE SNIPER FEED WAS ANSWERING "0 DEALS, NOTHING DEGRADED" FOR HOURS — its Top Shot pool was 200 rows over FIVE editions and the sparse-pool augmentation counted rows, not editions · Claude Code cloud
+
+**Found by reading the route's own production logs, not the arm.** The sentinel said `Sniper Feed: 0 deals returned` (11:41 AM PT) and the smoke test said `count 0 · sourcesFailed [] · degraded false`. Vercel logs for `/api/sniper-feed` at 11:58–12:08 PM: `ts_listings: 200 rows, 0 edition keys resolved` → `built ts=0` → `DONE ts=0 total=0`, every request. `ts_listings` holds **93,425** rows, but the pool is the newest **200 by `ingested_at`** — the last sync tick's batch (10:55 AM, the tick then failed and was paused) — and those 200 rows are **5 distinct editions** (measured: `distinct_keys 5`, all 5 present in `editions` by `set_id:play_id`). Five moments, none a deal → an empty board that CONCLUDED, with `degraded: false`, on the product's headline surface. The edition-level RPC augmentation built for exactly this never fired: its gate was `tsListings.length < 25`, and 200 ≥ 25.
+
+**Shipped (`app/api/sniper-feed/route.ts`):** the gate is now sparse by EDITIONS as well as rows — `distinct set:play in the pool < 25` augments with `get_topshot_sniper_deals` (2,400+ priced editions). Under saturation that RPC times out at the 8 s bound and the existing `sink.note("topshot-deals-rpc")` makes the board **degraded** — the honest state — instead of a quiet floor. 4 tests in `__tests__/api-sniper-feed-sparse-by-editions.test.ts`: the 200/5 replay augments; 200/40 does not (control); 10/10 still does (the row gate alone); 200/5 + RPC failure → `degraded: true`. Family: 15 files / 138 tests green.
+
+**Not fixed, named:** the pool SELECTION is still "newest 200 rows", which is a batch of whatever was listed last, not a deal-selected sample; the RPC leg is the heavy user-facing query (`get_topshot_sniper_deals`, ~10 s mean, 142k blocks/call under load). The right pool is a listings→FMV ordered read (a function, pinned); filed in the session log as the next step. **Revert:** `git revert` the code commit.
+
+
 ### 2026-09-13 · ✅ SENTINEL ARM `Maintenance Load` — the digest now names a running vacuum / VACUUM FULL / index build next to the symptoms it causes · Claude Code cloud
 
 **The gap, measured today:** the multi-hour spell's cause — the first-ever autovacuum of `pg_toast_51873` (net._http_response's 12.4 GB TOAST, #75), hours in `IO/DataFileRead` — existed only in `pg_stat_progress_vacuum`, which no arm read. The digest carried 268 cron failures, three INCONCLUSIVE arms and a lane failing 24 of 27 ticks, and that lane was minutes from being blamed for the spell.
