@@ -387,3 +387,87 @@ describe("GET /api/market — Top Shot FMV display guard", () => {
     expect(row.editionKey).toBe("3:45") // TS uses set_id_onchain:play_id_onchain
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Candy MLB (Solana) — the only non-Flow arm in this route (2026-09-12)
+//
+// Candy has none of the Flow furniture the rest of the file assumes: no
+// `flow_id`, no listing resource id, no storefront address, no lock. The arm
+// reads `candy_market_board` (every ACTIVE priced listing) and NOT
+// `candy_deals_board`, which keeps only listings below BOTH FMV and the median
+// sale — 233 of the 1,821 active listings measured the day this shipped.
+const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
+
+function candyRows() {
+  return {
+    candy_market_board: {
+      data: [
+        { token_mint: "mintA", edition_id: "e1", external_id: "x1", player_name: "Aaron Judge", edition_name: "ICON", set_name: "Series 1", team_name: "NYY", tier: "LEGENDARY", circulation_count: 25, thumbnail_url: "https://img/a.png", serial_number: 7, ask_usd: 120, fmv_usd: 200, confidence: "HIGH", discount_pct: 40, seller: "sellerA", first_seen_at: "2026-09-10T00:00:00Z", last_seen_at: "2026-09-12T00:00:00Z" },
+        { token_mint: "mintB", edition_id: "e2", external_id: "x2", player_name: "Shohei Ohtani", edition_name: "BASE", set_name: "Series 1", team_name: "LAD", tier: "COMMON", circulation_count: 500, thumbnail_url: "https://img/b.png", serial_number: 311, ask_usd: 5, fmv_usd: 4, confidence: "MEDIUM", discount_pct: -25, seller: "sellerB", first_seen_at: "2026-09-11T00:00:00Z", last_seen_at: "2026-09-12T00:00:00Z" },
+      ],
+      error: null,
+    },
+    editions: { data: [], error: null },
+  }
+}
+
+describe("GET /api/market — Candy MLB (Solana) arm", () => {
+  it("serves candy_market_board rows with the Magic Eden buy link and no Flow furniture", async () => {
+    install(candyRows())
+    const body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    expect(body.listings.length).toBe(2)
+    const a = body.listings.find((r: any) => r.momentId === "mintA" || r.moment_id === "mintA" || r.id === "mintA")
+    expect(a, "the mint must survive as the listing identity").toBeTruthy()
+    const raw = JSON.stringify(body)
+    expect(raw).toContain("https://magiceden.io/item-details/mintA")
+    // ⚠ token_mint must NOT be smuggled into flow_id: a Solana mint address in a
+    // column that names a Flow NFT flows into every downstream reader that
+    // believes it. Asserted on the payload, because a reshape is exactly where
+    // that kind of substitution happens and nothing else would notice.
+    expect(raw).not.toContain('"flowId":"mintA"')
+    expect(raw).not.toContain('"flow_id":"mintA"')
+  })
+
+  // ⚠ Candy is MAGIC EDEN-only in the data, not by assumption: a census of all
+  // 1,821 active listings on 2026-09-12 found a single auction house (Magic Eden
+  // v2). The label is the venue we can observe, not the venue set we hope for.
+  it("labels the source as the one venue actually observed", async () => {
+    install(candyRows())
+    const body = await (await GET(req(`https://t/api/market?collectionId=${CANDY}`))).json()
+    expect(JSON.stringify(body)).toContain("magic_eden")
+  })
+
+  // ⭐⭐ THE ONE THAT MATTERS. The generic path falls through to `cached_listings`
+  // when the modern fetch comes back empty — and `cached_listings` is a FLOW
+  // table with ZERO Candy rows, so for Candy it can only ever return []. Without
+  // the guard, a FAILED READ renders as "no listings": a confident, correct-
+  // looking claim about a market that had 1,821 active listings. An empty market
+  // and a broken market look identical on the page.
+  it("⭐ 503s instead of falling through to cached_listings when the Candy read FAILS", async () => {
+    install({
+      candy_market_board: { data: null, error: { message: "canceling statement due to statement timeout" } },
+      cached_listings: { data: [], error: null },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${CANDY}`))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.error).toBe("market_unavailable")
+    expect(body.retry).toBe(true)
+  })
+
+  // The converse: a genuine zero is a 200 with an empty board, and it must carry
+  // the SAME envelope the populated path returns. A flat {total, has_more} would
+  // leave `pagination.total` undefined and the client would render its loading
+  // skeleton forever on an empty market.
+  it("returns an empty board in the NORMAL envelope when the market is genuinely empty", async () => {
+    install({ candy_market_board: { data: [], error: null }, editions: { data: [], error: null } })
+    const res = await GET(req(`https://t/api/market?collectionId=${CANDY}`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.listings).toEqual([])
+    expect(body.pagination).toBeTruthy()
+    expect(body.pagination.total).toBe(0)
+    expect(body.pagination.hasMore).toBe(false)
+  })
+})

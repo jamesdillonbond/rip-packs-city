@@ -26,8 +26,16 @@ describe("getPublishedCollection", () => {
     expect(unpublished.length).toBeGreaterThan(0)
     for (const c of unpublished) expect(getPublishedCollection(c!.id)).toBeUndefined()
   })
-  it("returns the published thin collection (Candy MLB, overview only)", () => {
-    expect(getPublishedCollection("candy-mlb")?.pages).toEqual(["overview"])
+  // ⚠ Candy was "overview only" until 2026-09-12, when it gained a Market tab
+  // WITH a Solana dispatch (/api/market → candy_market_board). This test is
+  // about getPublishedCollection RESOLVING a published non-Flow collection, not
+  // about how many tabs it has — which page set is correct is pinned in
+  // collections-chain-dispatch.test.ts, against the dispatches that exist.
+  it("resolves the published non-Flow collection (Candy MLB)", () => {
+    const c = getPublishedCollection("candy-mlb")
+    expect(c?.id).toBe("candy-mlb")
+    expect(c?.dbChain).toBe("solana")
+    expect(c?.pages).toContain("overview")
   })
 })
 

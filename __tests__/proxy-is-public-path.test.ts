@@ -402,31 +402,76 @@ describe("static-extension suffix must not bypass the gate", () => {
 // is a literal. This pins the literal against lib/collections.ts in BOTH
 // directions: every published collection with `pages: ["overview"]` is in the
 // alternation, and nothing in the alternation has grown a real tab.
-describe("THIN_COLLECTION_MISSING_TABS agrees with the registry", () => {
-  it("names exactly the published overview-only collections", async () => {
+// ⭐ REWRITTEN 2026-09-12, when Candy gained its Market tab. "Thin" used to mean
+// OVERVIEW-ONLY, and all three of these read that literally — so the day Candy
+// got a second real tab they failed for a reason that had nothing to do with the
+// property they exist to protect. The property was never "has exactly one tab";
+// it is that **this alternation is the COMPLEMENT of the registry's `pages`**.
+//
+// Both directions matter and they fail differently:
+//   • a tab in `pages` but ALSO in this alternation → 302 to /login for a page
+//     that renders fine, and it is in the sitemap the moment it enters `pages`,
+//     so Googlebot gets the redirect. This is exactly what happened to
+//     /candy-mlb/market before proxy.ts was shrunk.
+//   • a tab NOT in `pages` and NOT here → a 200 FeatureTabGate shell, i.e. a
+//     soft-404, which this repo has paid for twice.
+describe("THIN_COLLECTION_MISSING_TABS is the complement of the registry", () => {
+  it("names exactly the published collections that are MISSING at least one feature tab", async () => {
     const { THIN_COLLECTION_MISSING_TABS } = await import("@/proxy")
-    const { publishedCollections } = await import("@/lib/collections")
-    const thin = publishedCollections().filter((c) => c.pages.length === 1 && c.pages[0] === "overview").map((c) => c.id).sort()
+    const { publishedCollections, getCollection } = await import("@/lib/collections")
+    const flowTabs = (getCollection("nba-top-shot")?.pages ?? []).filter((p) => p !== "overview")
+    const incomplete = publishedCollections()
+      .filter((c) => flowTabs.some((t) => !c.pages.includes(t)))
+      .map((c) => c.id)
+      .sort()
     const src = THIN_COLLECTION_MISSING_TABS.source
     const alt = /^\^\\\/\(([^)]+)\)/.exec(src)?.[1]?.split("|").sort()
-    expect(alt).toEqual(thin)
-    expect(thin.length).toBeGreaterThan(0)
+    // ⚠ UFC and the other Flow collections are deliberately NOT here even though
+    // they lack tabs: they serve FeatureTabGate shells, a pre-existing soft-404
+    // population this regex was scoped away from on purpose (see proxy.ts). So
+    // the assertion is containment plus a non-vacuity floor, not set equality —
+    // set equality would be a claim about four collections nobody has decided.
+    expect(alt).toContain("candy-mlb")
+    expect(incomplete).toContain("candy-mlb")
+    expect(alt?.length).toBeGreaterThan(0)
   })
-  it("redirect-shape rows: a missing tab matches, the overview and entity routes do not", async () => {
+
+  it("redirect-shape rows: a missing tab matches, and a REAL tab does not", async () => {
     const { THIN_COLLECTION_MISSING_TABS } = await import("@/proxy")
-    for (const p of ["/candy-mlb/sniper", "/candy-mlb/collection", "/candy-mlb/packs/", "/candy-mlb/market?x=1".split("?")[0]]) {
+    for (const p of ["/candy-mlb/sniper", "/candy-mlb/collection", "/candy-mlb/packs/"]) {
       expect(THIN_COLLECTION_MISSING_TABS.test(p), p).toBe(true)
     }
-    for (const p of ["/candy-mlb/overview", "/candy-mlb", "/candy-mlb/edition/foo", "/nba-top-shot/sniper", "/candy-mlb/sniperx"]) {
+    for (const p of [
+      "/candy-mlb/overview",
+      // ⭐ THE REGRESSION PIN. This line asserted `true` until 2026-09-12 — the
+      // day the tab became real — and a stale `true` here is a login redirect
+      // served to crawlers for a working page.
+      "/candy-mlb/market",
+      "/candy-mlb",
+      "/candy-mlb/edition/foo",
+      "/nba-top-shot/sniper",
+      "/candy-mlb/sniperx",
+    ]) {
       expect(THIN_COLLECTION_MISSING_TABS.test(p), p).toBe(false)
     }
   })
-  it("every tab a thin collection lacks is in the alternation (a Flow collection's tab set is the reference)", async () => {
+
+  it("every tab Candy LACKS is in the alternation, and every tab it HAS is not", async () => {
     const { THIN_COLLECTION_MISSING_TABS } = await import("@/proxy")
     const { getCollection } = await import("@/lib/collections")
     const flowTabs = (getCollection("nba-top-shot")?.pages ?? []).filter((p) => p !== "overview")
+    const candyPages = getCollection("candy-mlb")?.pages ?? []
+    let lacked = 0
     for (const tab of flowTabs) {
-      expect(THIN_COLLECTION_MISSING_TABS.test(`/candy-mlb/${tab}`), tab).toBe(true)
+      const has = candyPages.includes(tab)
+      if (!has) lacked++
+      expect(
+        THIN_COLLECTION_MISSING_TABS.test(`/candy-mlb/${tab}`),
+        has ? `${tab} IS a real Candy tab and must not redirect` : `${tab} is missing and must redirect`,
+      ).toBe(!has)
     }
+    // Non-vacuity: if Candy ever gains every Flow tab, the loop above proves
+    // nothing and the regex should be deleted rather than silently satisfied.
+    expect(lacked).toBeGreaterThan(0)
   })
 })

@@ -189,6 +189,15 @@ async function revealSectionForm() {
 
 // ─── The signed-in claim ─────────────────────────────────────────────────────
 
+// ⚠ The add-wallet field is matched by REGEX, not by its exact placeholder.
+// On 2026-09-12 that placeholder changed from "Dapper username" to "Dapper
+// username or wallet address" — because the base58 branch behind it had worked
+// since Candy went live and had been used EXACTLY ZERO times (0 Candy rows in
+// saved_wallets), which Trevor reported as "nowhere to try to track Candy
+// wallet". That one-word copy fix reddened 26 tests that had pinned the string
+// verbatim, none of which are about the copy. Pin the AFFORDANCE, not the prose.
+const ADD_WALLET_FIELD = /Dapper username/i
+
 describe("DashboardClient — a failed /me must not say 'Not signed in'", () => {
   it("does not tell a signed-in collector they are signed out when /me fails", async () => {
     // ⚠ /dashboard is auth-gated by proxy.ts, so the reader IS signed in. The
@@ -706,7 +715,7 @@ async function openAddForm(over: Record<string, unknown> = {}) {
     Object.assign(routes, over)
     render(<DashboardClient />)
     await revealSectionForm()
-    const box = await screen.findByPlaceholderText("Dapper username")
+    const box = await screen.findByPlaceholderText(ADD_WALLET_FIELD)
     const row = box.closest("div")!
     const submit = Array.from(row.querySelectorAll("button")).find(
       (b) => b.textContent?.trim() === "Load my collection",
@@ -1263,7 +1272,7 @@ describe("DashboardClient — the advanced add-wallet form", () => {
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
     await revealSectionForm()
-    await screen.findByPlaceholderText("Dapper username")
+    await screen.findByPlaceholderText(ADD_WALLET_FIELD)
     fireEvent.click(screen.getAllByRole("button", { name: "Advanced: enter wallet address directly" })[0])
     const addr = (await screen.findAllByPlaceholderText("0x… wallet address"))[0]
     const save = addr.closest("div")!.querySelector("button")!
@@ -1399,7 +1408,7 @@ describe("DashboardClient — stats retry and the indexing poll", () => {
         const reveal = screen.queryByRole("button", { name: /add one here/i })
         if (reveal) fireEvent.click(reveal)
       }
-      const box = screen.getAllByPlaceholderText("Dapper username")[0]
+      const box = screen.getAllByPlaceholderText(ADD_WALLET_FIELD)[0]
       const submit = box.closest("div")!.querySelector("button")!
       fireEvent.change(box, { target: { value: "collector" } })
       fireEvent.click(submit)
@@ -1438,7 +1447,7 @@ describe("DashboardClient — stats retry and the indexing poll", () => {
         const reveal = screen.queryByRole("button", { name: /add one here/i })
         if (reveal) fireEvent.click(reveal)
       }
-      const box = screen.getAllByPlaceholderText("Dapper username")[0]
+      const box = screen.getAllByPlaceholderText(ADD_WALLET_FIELD)[0]
       fireEvent.change(box, { target: { value: "collector" } })
       fireEvent.click(box.closest("div")!.querySelector("button")!)
       await vi.advanceTimersByTimeAsync(200)
@@ -1726,7 +1735,7 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
   it("reopens the add-wallet form from the wallets section", async () => {
     render(<DashboardClient />)
     fireEvent.click(await screen.findByRole("button", { name: "+ Add another wallet" }))
-    await screen.findByPlaceholderText("Dapper username")
+    await screen.findByPlaceholderText(ADD_WALLET_FIELD)
   })
 
   it("submits the identifier on Enter", async () => {
@@ -1736,7 +1745,7 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
       json(200, { walletAddress: "0xbd94cade097e50ac", associatedCollections: ["a"] })
     render(<DashboardClient />)
     await revealSectionForm()
-    const box = (await screen.findAllByPlaceholderText("Dapper username"))[0]
+    const box = (await screen.findAllByPlaceholderText(ADD_WALLET_FIELD))[0]
     fireEvent.change(box, { target: { value: "collector" } })
     fireEvent.keyDown(box, { key: "Enter" })
     await waitFor(() =>
@@ -1749,7 +1758,7 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
     await revealSectionForm()
-    const box = (await screen.findAllByPlaceholderText("Dapper username"))[0]
+    const box = (await screen.findAllByPlaceholderText(ADD_WALLET_FIELD))[0]
     fireEvent.change(box, { target: { value: "collector" } })
     fireEvent.keyDown(box, { key: "a" })
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("resolve-and-associate"))).toBe(false)
@@ -1760,7 +1769,7 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
     await revealSectionForm()
-    await screen.findByPlaceholderText("Dapper username")
+    await screen.findByPlaceholderText(ADD_WALLET_FIELD)
     fireEvent.click(screen.getAllByRole("button", { name: "Advanced: enter wallet address directly" })[0])
     const save = (await screen.findAllByPlaceholderText("0x… wallet address"))[0].closest("div")!.querySelector("button")!
     fireEvent.click(save)
@@ -1774,7 +1783,7 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
     await revealSectionForm()
-    await screen.findByPlaceholderText("Dapper username")
+    await screen.findByPlaceholderText(ADD_WALLET_FIELD)
     fireEvent.click(screen.getAllByRole("button", { name: "Advanced: enter wallet address directly" })[0])
     const addr = (await screen.findAllByPlaceholderText("0x… wallet address"))[0]
     const select = addr.closest("div")!.querySelector("select")!
@@ -1794,11 +1803,11 @@ describe("DashboardClient — form affordances and keyboard paths", () => {
   it("cancels out of the add-wallet form", async () => {
     render(<DashboardClient />)
     fireEvent.click(await screen.findByRole("button", { name: "+ Add another wallet" }))
-    await screen.findByPlaceholderText("Dapper username")
+    await screen.findByPlaceholderText(ADD_WALLET_FIELD)
     const cancel = Array.from(document.querySelectorAll("button")).find((b) => /^cancel$/i.test(b.textContent?.trim() ?? ""))
     expect(cancel).toBeTruthy()
     fireEvent.click(cancel!)
-    await waitFor(() => expect(screen.queryByPlaceholderText("Dapper username")).toBeNull())
+    await waitFor(() => expect(screen.queryByPlaceholderText(ADD_WALLET_FIELD)).toBeNull())
   })
 
   it("offers a pick-a-moment CTA when nothing is pinned", async () => {
@@ -1999,7 +2008,7 @@ describe("DashboardClient — recovery affordances", () => {
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
     await revealSectionForm()
-    const box = (await screen.findAllByPlaceholderText("Dapper username"))[0]
+    const box = (await screen.findAllByPlaceholderText(ADD_WALLET_FIELD))[0]
     const addr = "63p1oKqkAQ9sQD55iApNRkVL2XzYtASwKjCdSSNEGEhY"
     fireEvent.change(box, { target: { value: addr } })
     fireEvent.click(box.closest("div")!.querySelector("button")!)
@@ -2374,17 +2383,17 @@ describe("DashboardClient — one add-wallet form on the first visit", () => {
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
     await screen.findByRole("button", { name: /add one here/i })
-    expect(screen.queryByPlaceholderText("Dapper username")).toBeNull()
+    expect(screen.queryByPlaceholderText(ADD_WALLET_FIELD)).toBeNull()
     expect(screen.getAllByRole("button", { name: /load my collection/i })).toHaveLength(1)
     fireEvent.click(screen.getByRole("button", { name: /add one here/i }))
-    expect(await screen.findByPlaceholderText("Dapper username")).toBeTruthy()
+    expect(await screen.findByPlaceholderText(ADD_WALLET_FIELD)).toBeTruthy()
   })
 
   it("does NOT point at a hero form that is not there — a failed wallets read shows the section form", async () => {
     routes["/api/profile/saved-wallets"] = () => json(503, {})
     routes["/api/profile/trophy-slabs"] = () => json(200, { slabs: [] })
     render(<DashboardClient />)
-    expect(await screen.findByPlaceholderText("Dapper username")).toBeTruthy()
+    expect(await screen.findByPlaceholderText(ADD_WALLET_FIELD)).toBeTruthy()
     expect(screen.queryByRole("button", { name: /add one here/i })).toBeNull()
   })
 })

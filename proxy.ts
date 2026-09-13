@@ -312,11 +312,26 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // anon-reachable (or a launch flag silently no-op'd) is a bug in THIS function.
 // Next.js middleware only consumes the `proxy` + `config` exports, so an extra
 // named export changes no runtime behaviour.
-// Thin collections (overview only) × the feature tabs a Flow collection has.
-// Kept literal (no registry import at the edge). Extend the alternation when a
-// second thin collection publishes; shrink it when Candy gains a real tab.
+// Thin collections × the feature tabs they do NOT have. Kept literal (no
+// registry import at the edge). Extend the alternation when a second thin
+// collection publishes; SHRINK it when Candy gains a real tab.
+//
+// ⚠ SHRUNK 2026-09-12: `market` is GONE from this list because Candy now has a
+// real Market tab — /api/market dispatches its collection id to
+// fetchCandyMarketListings → candy_market_board (1,821 active listings). Leaving
+// it here would 302 /candy-mlb/market to /login, and the tab is in the sitemap
+// the moment it enters `pages`, so Googlebot would have been handed a login
+// redirect for a page that renders fine. That is not hypothetical — it is what
+// __tests__/sitemap-urls-are-anon-public.test.ts reported the first time the tab
+// was switched on, before this line changed.
+//
+// ⚠ THE INVARIANT IS THAT THIS ALTERNATION IS THE COMPLEMENT OF THE REGISTRY'S
+// `pages`. A tab added to lib/collections.ts and not removed here is silently
+// unreachable to anonymous visitors AND still listed for crawlers; a tab removed
+// there and not added here serves a soft-404. Both directions are pinned in
+// __tests__/proxy-is-public-path.test.ts.
 export const THIN_COLLECTION_MISSING_TABS =
-  /^\/(candy-mlb)\/(collection|packs|sniper|market|sets|analytics|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
+  /^\/(candy-mlb)\/(collection|packs|sniper|sets|analytics|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
 
 // A PUBLISHED collection that has most tabs but not this one. The thin regex
 // above covers overview-only collections; this covers the partial case, and the
@@ -829,6 +844,30 @@ export function isPublicPath(pathname: string, method: string): boolean {
   if (
     (method === "GET" || method === "HEAD") &&
     /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc)\/(?:collection|market|sniper|sets|packs|pack-sniper|challenges|hot-floors|play|analytics)$/.test(pathname)
+  ) {
+    return true
+  }
+
+  // Candy MLB's Market tab — anon-public, 2026-09-12.
+  //
+  // ⚠ ITS OWN RULE, NOT candy-mlb APPENDED TO THE ALTERNATION ABOVE. Adding the
+  // slug there would open TEN Candy URLs at once, and nine of them are tabs
+  // Candy does not have — `/candy-mlb/collection`, `/candy-mlb/sniper` and the
+  // rest are Flow-dispatched pages with no Solana arm. They are redirected today
+  // by THIN_COLLECTION_MISSING_TABS, so the widening would be invisible right up
+  // until someone shrinks that regex for the NEXT real tab and silently un-gates
+  // eight others along with it. One tab, one rule.
+  //
+  // Anon-safety is the same argument as the five above and was re-checked, not
+  // inherited: /api/market's Candy arm is a service-role read of
+  // `candy_market_board` — public Magic Eden listing data plus on-chain holdings
+  // that /share and /profile already expose anonymously. No session-scoped data,
+  // no cost basis, no saved wallets. The comment above says "Panini/Candy tabs
+  // stay gated (no multi-chain pre-launch)"; that was written on 2026-07-17,
+  // before Candy published on 09-06. Panini is still unpublished and still out.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    pathname === "/candy-mlb/market"
   ) {
     return true
   }

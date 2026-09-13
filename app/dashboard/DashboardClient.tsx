@@ -1224,7 +1224,7 @@ function ProfilePageInner() {
           {(groupedWallets.length === 0 && !heroFormShown) || showAddWallet ? (
           <>
           <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
-            Add a wallet by entering your Dapper username — we'll associate it with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike automatically.
+            Add a wallet by entering your Dapper username or a wallet address — we'll associate a Dapper username or Flow address with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle and UFC Strike automatically, and a Solana address with Candy MLB.
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
@@ -1232,7 +1232,16 @@ function ProfilePageInner() {
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") resolveAndAssociate(); }}
-              placeholder="Dapper username"
+              // ⚠ THE PLACEHOLDER IS AN AFFORDANCE, NOT DECORATION. The
+              // base58 branch in resolveAndAssociate has worked since Candy
+              // went live on 2026-09-06, and on 2026-09-12 it had been used
+              // EXACTLY ZERO times — `saved_wallets` held 0 rows for the Candy
+              // collection. Trevor reported it as "nowhere to try to track
+              // Candy wallet or activity", which was the correct reading of the
+              // page: this field said "Dapper username" and the copy above it
+              // named five Flow collections. The capability shipped; the way in
+              // did not.
+              placeholder="Dapper username or wallet address"
               style={{ flex: 1, minWidth: 220, padding: "10px 12px", background: "var(--rpc-surface)", border: `1px solid ${ACCENT_RED}66`, borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 13 }}
             />
             <button onClick={resolveAndAssociate} disabled={usernameSaving} style={primaryBtnStyle}>
@@ -1272,9 +1281,13 @@ function ProfilePageInner() {
                   onChange={(e) => setWalletForm({ ...walletForm, collectionId: e.target.value })}
                   style={{ padding: "8px 10px", background: "var(--rpc-black)", border: "1px solid var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 12 }}
                 >
-                  {/* Flow collections only: the input beside this is a 0x… Flow
-                      address; a Solana wallet goes through the one-field add
-                      above, which chain-detects base58 and saves it to Candy. */}
+                  {/* Flow collections only, and that is correct: the input
+                      beside this is a 0x… Flow address, and a Candy row keyed by
+                      one would be a "0 moments" tile we manufactured. A Solana
+                      wallet goes through the one-field add above, which
+                      chain-detects base58 and saves it to Candy — verified in
+                      `resolveAndAssociate`, not assumed. The note under that
+                      field now says so, which it did not until 2026-09-12. */}
                   {publishedCollections().filter((c) => c.dbChain === "flow").map((c) => (
                     <option key={c.id} value={c.id}>{c.icon} {c.shortLabel}</option>
                   ))}

@@ -36,8 +36,22 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
     // The published registry = the entity-page set + the thin ones, exactly.
     expect(publishedCollections().map((c) => c.id).sort()).toEqual([...ENTITY_PAGE_URL_SLUGS, ...THIN_PUBLISHED].sort())
     // And a thin collection exposes nothing the facade would have to route.
+    //
+    // ⚠ ASSERTED AS "NO ENTITY-CORPUS PAGE", not as `pages === ["overview"]`.
+    // The old form was a proxy that stopped being true the moment Candy gained
+    // a legitimate non-entity tab (Market, 2026-09-12, with its own Solana
+    // dispatch) — and "the proxy broke" would have read as "the invariant
+    // broke". What this facade actually routes is the ENTITY corpus
+    // (/edition, /set, /player, /team, /series), and those come from the pages
+    // below; `overview` and `market` imply no entity pages at all.
+    const ENTITY_CORPUS_PAGES = ["collection", "sets", "play", "challenges", "hot-floors", "pack-sniper", "packs", "sniper", "analytics"]
     for (const id of THIN_PUBLISHED) {
-      expect(publishedCollections().find((c) => c.id === id)?.pages).toEqual(["overview"])
+      const pages = publishedCollections().find((c) => c.id === id)?.pages ?? []
+      expect(
+        pages.filter((p) => ENTITY_CORPUS_PAGES.includes(p)),
+        `${id} exposes an entity-corpus page but is not in the facade`,
+      ).toEqual([])
+      expect(facadeSlugs).not.toContain(id)
     }
   })
 

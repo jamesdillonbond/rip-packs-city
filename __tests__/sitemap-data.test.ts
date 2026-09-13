@@ -111,7 +111,14 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // 2026-05-13), so /ufc/sniper stops being advertised. The count is derived
     // from `pages` ∩ PUBLIC_TAB_PAGES, so this moved on its own — the number
     // below is the RECORD of that, not the cause. Pinned as an absence too.
-    expect(s).toHaveLength(73)
+    // 73 → 74 on 2026-09-12: Candy MLB gained a real Market tab (/api/market now
+    // dispatches its collection id to a Solana arm), and segment 0 derives tab
+    // URLs from `pages` ∩ PUBLIC_TAB_PAGES — so /candy-mlb/market entered the
+    // sitemap the moment the registry changed, with no edit here. That coupling
+    // is the feature: it is what made the anon-gating arm in
+    // sitemap-urls-are-anon-public.test.ts fire on the same commit, catching
+    // that proxy.ts would have 302'd the new URL to /login for Googlebot.
+    expect(s).toHaveLength(74)
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/ufc/sniper`)).toBeUndefined()
     // …and the no-change control: the other collections still advertise theirs.

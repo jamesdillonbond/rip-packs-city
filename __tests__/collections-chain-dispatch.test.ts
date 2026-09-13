@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { describe, it, expect } from "vitest"
 import {
   COLLECTIONS,
@@ -52,18 +54,55 @@ describe("dbChain registry invariant", () => {
 
   // REWRITTEN 2026-09-06: this guard used to pin "every published collection is
   // Flow". Candy MLB (Solana) is published now — deliberately, Trevor's
-  // delegated decision, thin (overview only) — so the invariant that still holds
-  // is narrower and load-bearing: a NON-Flow published collection may expose
-  // ONLY the pages that have a chain dispatch. Today that is `overview`; the
-  // Collection / Packs / Sniper tabs are Flow-dispatched with zero Solana arms.
-  // Adding a tab here without its dispatch would render a Flow page for a
-  // Solana wallet — this test is what stops that.
-  it("every published NON-Flow collection is thin — overview only, until its tabs have a chain dispatch", () => {
+  // delegated decision — so the invariant that still holds is narrower and
+  // load-bearing: a NON-Flow published collection may expose ONLY the pages that
+  // have a dispatch for ITS chain. Adding a tab without one renders a
+  // Flow-shaped page for a Solana wallet.
+  //
+  // ⭐ REWRITTEN AGAIN 2026-09-12, and the shape of the rewrite is the point.
+  // The old form asserted `pages` equals `["overview"]` — a hardcoded answer, so
+  // the only way to add a legitimate tab was to edit the expected value, which
+  // is indistinguishable from editing it to smuggle a tab through. It taught the
+  // next person that this guard is something you update, not something you
+  // satisfy. It now names the (chain, page) pairs that HAVE a dispatch, so
+  // widening it is a deliberate, reviewable claim about code that exists — and
+  // the next test makes that claim FALSIFIABLE rather than clerical.
+  const DISPATCHED: Record<string, string[]> = {
+    // `overview` is chain-agnostic (it reads collection-level aggregates).
+    // `market` gained its Solana arm on 2026-09-12: /api/market dispatches
+    // Candy's collection id to fetchCandyMarketListings → candy_market_board,
+    // 1,821 active listings, all with price + serial + FMV + thumbnail.
+    solana: ["overview", "market"],
+    ethereum: ["overview"],
+  }
+
+  it("every published NON-Flow collection exposes only pages that have a dispatch for its chain", () => {
     const nonFlow = COLLECTIONS.filter((c) => c.published && c.dbChain !== "flow")
     expect(nonFlow.map((c) => c.id)).toEqual(["candy-mlb"])
     for (const c of nonFlow) {
-      expect(c.pages, `${c.id} exposes a tab with no ${c.dbChain} dispatch`).toEqual(["overview"])
+      const allowed = DISPATCHED[c.dbChain ?? ""] ?? []
+      for (const page of c.pages) {
+        expect(
+          allowed.includes(page),
+          `${c.id} exposes "${page}" with no ${c.dbChain} dispatch — add the arm before the tab`,
+        ).toBe(true)
+      }
     }
+  })
+
+  // ⚠ THE HALF THAT MAKES THE LIST ABOVE MEAN SOMETHING. Without this, a future
+  // session can add "sniper" to DISPATCHED[solana], get green, and ship a Flow
+  // page to a Solana collection — the allow-list would just be the assertion
+  // restating itself. Pinned as a SOURCE fact because there is no route-level
+  // harness here and the failure is silent: a Flow-dispatched page pointed at a
+  // Solana collection renders an empty board, not an error.
+  it("⚠ the Solana `market` permission is backed by an actual arm in /api/market", () => {
+    const route = readFileSync(join(process.cwd(), "app/api/market/route.ts"), "utf8")
+    expect(route).toContain("fetchCandyMarketListings")
+    expect(route).toContain("candy_market_board")
+    // Candy's collection id must be a dispatch branch, not just a mention.
+    expect(route).toContain("CANDY_COLLECTION_ID_FOR_DISPATCH")
+    expect(route).toContain("209ade70-32c5-4470-bc7c-4793d660f713")
   })
   it("every published FLOW collection still declares dbChain flow (the chain filters key on it)", () => {
     for (const c of COLLECTIONS) {

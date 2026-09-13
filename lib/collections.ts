@@ -266,7 +266,15 @@ export const COLLECTIONS: Collection[] = [
     // are Flow-dispatched components with zero Solana arms, and a dead tab is
     // worse than no tab; the full board lives at /insights/candy-mlb and the
     // overview links it. Re-add tabs here only WITH their Solana dispatch.
-    pages: ["overview"],
+    //
+    // 2026-09-12 — MARKET added, and strictly on that condition: /api/market now
+    // has a real Solana arm (`fetchCandyMarketListings` → `candy_market_board`),
+    // so this tab is not a Flow component pointed at a Solana collection. The
+    // feed measured 1,821 active listings the day it shipped, every one carrying
+    // a price, a serial, an FMV and a thumbnail — MarketClient renders it with
+    // no Candy-specific branch. Collection / Packs / Sniper still have no Solana
+    // dispatch and so are still absent.
+    pages: ["overview", "market"],
     published: true,
     supabaseCollectionId: "209ade70-32c5-4470-bc7c-4793d660f713",
     pitch: "Wallet analytics, FMV, and pack/edition intelligence for Candy MLB on Solana — Metaplex Core, secondary on Magic Eden.",

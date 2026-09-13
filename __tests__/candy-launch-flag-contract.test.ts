@@ -64,27 +64,32 @@ describe("shipped state — Candy is LIVE (2026-07-31 go-live)", () => {
     expect(entry).toBeDefined()
     expect(entry!.priority).toBe(0.8)
     expect(entry!.changeFrequency).toBe("daily")
-    // Static skeleton grew by 2 on 2026-08-01 (/pricing + /nba/fast-break, both
-    // long-public but never enumerated), and by 28 on 2026-08-20 (the
-    // per-collection feature tabs proxy.ts un-gated on 2026-07-17, same class
-    // again). ⚠ THIRD unrelated bump to these totals in three weeks: the launch
-    // contract this file actually asserts is PRESENT-when-on / ABSENT-when-off,
-    // and the length pin is standing in for "nothing else moved". It keeps
-    // redding on changes that have nothing to do with either flag. Left as an
-    // absolute pin rather than restructured here, because rewriting a go-live
-    // contract test's semantics while shipping an unrelated sitemap change is
-    // how a safety net gets loosened by accident — flagged for a deliberate pass.
-    // 74 = the historical 44 + candy-mlb (2026-07-31) + panini-squeeze
-    // (2026-08-01), both live, + 28 feature tabs (2026-08-20).
-    // 75 on 2026-09-06: Candy MLB is PUBLISHED (thin — `pages: ["overview"]`),
-    // so publishedCollections() contributes /candy-mlb/overview. That page is
-    // flag-INDEPENDENT (registry, not launch-flags), so both directions move by 1.
-    // 74 on 2026-09-07: /pricing left the sitemap (footer + index too). Fourth
-    // unrelated bump — the deliberate restructure above is still owed.
-    // 73 on 2026-09-07: UFC's sniper tab retired from the registry (no market
-    // since 2026-05-13). FIFTH unrelated bump, and still flag-independent —
-    // which is exactly what this test is asserting about the Candy flag.
-    expect(s).toHaveLength(73)
+    // ⭐ THE DELIBERATE PASS THIS FILE ASKED FOR, done 2026-09-12.
+    //
+    // There used to be an absolute `toHaveLength(N)` here, standing in for
+    // "nothing else moved". It was re-baselined FIVE times in six weeks —
+    // /pricing + /nba/fast-break (08-01), 28 un-gated feature tabs (08-20),
+    // /candy-mlb/overview (09-06), /pricing leaving (09-07), UFC's sniper
+    // retiring (09-07) — and not once for a reason connected to either launch
+    // flag. Candy's Market tab (09-12) would have been the sixth. Its own
+    // comment had been asking for this restructure since the third.
+    //
+    // ⚠ A pin that reds on unrelated changes does not stay strict; it gets
+    // re-baselined by whoever is holding an unrelated diff, which is the one
+    // moment nobody is thinking about go-live semantics. That is the failure
+    // mode, and five re-baselines is the evidence.
+    //
+    // So assert the PROPERTY instead, and it is strictly stronger than the count
+    // for the thing this file protects: the flag-controlled URLs are EXACTLY the
+    // two named ones, and flipping the flags off changes NOTHING ELSE. An
+    // unrelated sitemap addition now moves both sides together and says nothing;
+    // a leak of some third URL into flag control fails, which the length pin
+    // could never have detected on its own.
+    const { CANDY_MLB_PUBLIC } = await import("@/lib/launch-flags")
+    expect(CANDY_MLB_PUBLIC, "this arm describes the flag ON").toBe(true)
+    expect(s.some((x: any) => x.url === `${BASE}/insights/candy-mlb`)).toBe(true)
+    // Non-vacuity: the walker has to be seeing a real skeleton, not an empty one.
+    expect(s.length).toBeGreaterThan(40)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
@@ -99,12 +104,30 @@ describe("rollback direction — flipping the flag off re-gates the launch", () 
     const { buildSitemapSegment } = await import("@/lib/sitemap-data")
     const s = await buildSitemapSegment(0)
     expect(s.some((x: any) => x.url === `${BASE}/insights/candy-mlb`)).toBe(false)
-    // Back to the historical 44-entry skeleton + the feature tabs + the
-    // registry-published /candy-mlb/overview (all flag-independent) — proof
-    // rollback is a clean no-op. 72 -> 71 on 2026-09-07: one fewer feature tab,
-    // UFC's retired sniper. Both directions move by the same 1, which is the
-    // property that keeps this pair meaningful.
-    expect(s).toHaveLength(71)
+
+    // ⭐ ROLLBACK IS A CLEAN NO-OP, asserted as a SET DIFFERENCE rather than a
+    // count (see the long note on the ON arm). Flipping both flags off must
+    // remove exactly the two flag-controlled boards and touch nothing else.
+    //
+    // ⚠ /candy-mlb/overview and /candy-mlb/market survive the rollback ON
+    // PURPOSE and that is not a leak: they come from `publishedCollections()` in
+    // the REGISTRY, not from launch-flags. Candy publishing (2026-09-06) and its
+    // Market tab (2026-09-12) are registry decisions; CANDY_MLB_PUBLIC governs
+    // the /insights board. Two different switches, and a rollback of one is not
+    // a rollback of the other — worth stating because "flag off" reads like
+    // "Candy is gone" and it is not.
+    vi.resetModules()
+    vi.doUnmock("@/lib/launch-flags")
+    const { buildSitemapSegment: buildOn } = await import("@/lib/sitemap-data")
+    const on = await buildOn(0)
+    const onUrls = new Set(on.map((x: any) => x.url))
+    const offUrls = new Set(s.map((x: any) => x.url))
+    const removed = [...onUrls].filter((u) => !offUrls.has(u)).sort()
+    const added = [...offUrls].filter((u) => !onUrls.has(u))
+    expect(removed).toEqual([`${BASE}/insights/candy-mlb`, `${BASE}/insights/panini-squeeze`].sort())
+    expect(added, "turning a launch flag OFF must never ADD a url").toEqual([])
+    expect(offUrls.has(`${BASE}/candy-mlb/overview`), "registry-published, not flag-controlled").toBe(true)
+    expect(offUrls.has(`${BASE}/candy-mlb/market`), "registry-published, not flag-controlled").toBe(true)
   })
 
   it("restores robots:noindex when the flag is off", async () => {

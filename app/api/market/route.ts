@@ -229,6 +229,7 @@ async function loadEditionLookup(collectionId: string): Promise<Map<string, Edit
 const TS_COLLECTION_ID_FOR_DISPATCH = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const ALLDAY_COLLECTION_ID_FOR_DISPATCH = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const PINNACLE_COLLECTION_ID_FOR_DISPATCH = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+const CANDY_COLLECTION_ID_FOR_DISPATCH = "209ade70-32c5-4470-bc7c-4793d660f713"
 
 // Pinnacle Market source (edition-level, 2026-07-18). Trevor's Market=edition /
 // Sniper=serial split: Market shows ONE row per Pinnacle render (= edition) with
@@ -368,10 +369,95 @@ async function fetchAllDayMarketEditions(
   }))
 }
 
+// Candy MLB (Solana / Metaplex Core) — the ONLY non-Flow arm in this route.
+//
+// ⚠ THE REST OF THIS FILE IS FLOW-SHAPED, and Candy has none of the Flow
+// furniture: no `flow_id`, no listing resource id, no storefront address, no
+// lock. Those fields are emitted as NULL rather than filled with a plausible
+// stand-in — `token_mint` is the Solana per-serial identity and putting it in
+// `flow_id` would make a Solana mint address flow into every downstream reader
+// that believes that column names a Flow NFT.
+//
+// ⚠ SOURCE IS candy_market_board, NOT candy_deals_board. The deals view keeps
+// only listings priced below BOTH FMV and the median sale — measured
+// 2026-09-12, 233 of the 1,821 active listings. Browsing a market through a
+// deals filter would publish "the Candy market" about 13% of it with the
+// expensive 87% silently gone, and nothing on the page would say so.
+//
+// ⚠ CANDY IS MAGIC EDEN ONLY, and `source` says so literally rather than
+// implying a venue set. Census of the 1,821 active listings on 2026-09-12:
+// ALL of them sit at one auction house (E8cU1WiRW…fkgUWe, Magic Eden v2). Candy
+// became an OpenSea Solana launch partner on 2026-08-31, but nothing in the
+// ingest can currently detect a second venue, so the honest label is the one
+// venue we can actually observe. See docs/reference/chain-strategy.md.
+async function fetchCandyMarketListings(
+  filters: { tier: string; maxPrice: number; sortBy: string; limit: number }
+): Promise<any[] | null> {
+  let q = (supabaseAdmin as any)
+    .from("candy_market_board")
+    .select(
+      "token_mint, edition_id, external_id, player_name, edition_name, set_name, team_name, tier, circulation_count, thumbnail_url, serial_number, ask_usd, fmv_usd, confidence, discount_pct, seller, first_seen_at, last_seen_at"
+    )
+  if (filters.tier && filters.tier !== "all") q = q.eq("tier", filters.tier.toUpperCase())
+  if (filters.maxPrice > 0) q = q.lte("ask_usd", filters.maxPrice)
+
+  // Sort is pushed to Postgres so the limit below takes the RIGHT rows, not an
+  // arbitrary 500 that the client then sorts into a wrong answer.
+  if (filters.sortBy === "price_desc") q = q.order("ask_usd", { ascending: false })
+  else if (filters.sortBy === "fmv_desc") q = q.order("fmv_usd", { ascending: false, nullsFirst: false })
+  else if (filters.sortBy === "discount_desc") q = q.order("discount_pct", { ascending: false, nullsFirst: false })
+  else if (filters.sortBy === "recent" || filters.sortBy === "listed_desc") q = q.order("first_seen_at", { ascending: false, nullsFirst: false })
+  else q = q.order("ask_usd", { ascending: true })
+
+  const { data, error } = await boundedRead(q.limit(Math.max(filters.limit, 500)), "api/market/candy_market_board")
+  if (error) {
+    console.log("[/api/market] candy fetch err:", error.message)
+    // ⚠ null, NOT []. An empty array reads as "the Candy market is empty" and
+    // falls through to the legacy cached_listings query, which holds no Candy
+    // rows at all — so a failed read would render as a confidently empty market.
+    return null
+  }
+
+  return (data ?? []).map((r: any) => ({
+    id: r.token_mint ?? `${CANDY_COLLECTION_ID_FOR_DISPATCH}:${r.edition_id}`,
+    flow_id: null,
+    moment_id: r.token_mint ?? null,
+    player_name: r.player_name ?? null,
+    team_name: r.team_name ?? null,
+    set_name: r.set_name ?? r.edition_name ?? null,
+    series_name: null,
+    tier: r.tier ? String(r.tier).toUpperCase() : null,
+    subedition_name: null,
+    serial_number: r.serial_number ?? null,
+    circulation_count: r.circulation_count ?? null,
+    ask_price: r.ask_usd != null ? Number(r.ask_usd) : null,
+    fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
+    adjusted_fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
+    discount: r.discount_pct != null ? Number(r.discount_pct) : null,
+    confidence: r.confidence ?? null,
+    source: "magic_eden",
+    buy_url: r.token_mint ? `https://magiceden.io/item-details/${r.token_mint}` : null,
+    thumbnail_url: r.thumbnail_url ?? null,
+    badge_slugs: null,
+    listing_resource_id: null,
+    storefront_address: null,
+    is_locked: false,
+    raw_data: null,
+    listed_at: r.first_seen_at ?? null,
+    cached_at: r.last_seen_at ?? null,
+    collection_id: CANDY_COLLECTION_ID_FOR_DISPATCH,
+  }))
+}
+
 async function fetchModernListings(
   collectionId: string,
   filters: { tier: string; team: string; maxPrice: number; minDiscount: number; sortBy: string; limit: number }
 ): Promise<any[] | null> {
+  if (collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH) {
+    return fetchCandyMarketListings({
+      tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
+    })
+  }
   if (collectionId === PINNACLE_COLLECTION_ID_FOR_DISPATCH) {
     return fetchPinnacleModernListings(collectionId, { tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy })
   }
@@ -530,6 +616,38 @@ export async function GET(req: NextRequest) {
     // the legacy table is stale-but-non-empty for those cases.
     if (modernRows !== null && modernRows.length === 0) {
       console.log(`[/api/market] modern returned 0 rows for ${collectionId} — falling through to cached_listings`)
+    }
+    // ⛔ CANDY NEVER FALLS THROUGH, and this guard is the whole reason the Candy
+    // arm can exist safely. The fall-through below re-queries `cached_listings`,
+    // which is a FLOW table holding ZERO Candy rows — so for Candy it cannot
+    // return anything but an empty array. A failed read would therefore render
+    // as "no listings", a confident, correct-looking claim about a market that
+    // had 1,821 active listings the day this shipped. That is the honesty shape
+    // this codebase exists to refuse, and it would be invisible: an empty market
+    // and a broken market look identical on the page.
+    //
+    // A genuine zero short-circuits here too — not because it would be wrong to
+    // fall through, but because spending a second query to reach the same empty
+    // answer only widens the window in which the two can disagree.
+    if (collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH && (modernRows === null || modernRows.length === 0)) {
+      if (modernRows === null) {
+        return NextResponse.json(
+          { error: "market_unavailable", retry: true, collection_id: collectionId },
+          { status: 503 }
+        )
+      }
+      // ⚠ The SAME envelope the modern branch returns. MarketClient reads
+      // `pagination.total` / `.hasMore`; a flat `{total, has_more}` here would
+      // leave those undefined and the page would render its loading skeleton
+      // forever on a legitimately empty market.
+      return NextResponse.json({
+        listings: [],
+        pagination: { total: 0, page, limit, hasMore: false, totalIsExact: true, matchedBeforeFilters: null },
+        clamp: { applied: true, ceilings: TIER_CEILING },
+        diagnostics: { rawCount: 0, postClampCount: 0, postFilterCount: 0, source: "candy_market_board", windowTruncated: false },
+      }, {
+        headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },
+      })
     }
     if (modernRows !== null && modernRows.length > 0) {
       // Reuse the existing edition-lookup + clamp + discount + sort + paginate
