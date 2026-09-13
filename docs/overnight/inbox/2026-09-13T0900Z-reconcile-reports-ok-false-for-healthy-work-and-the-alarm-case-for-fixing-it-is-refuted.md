@@ -58,3 +58,40 @@ So the zero-successes-AND-zero-rows arm was **calibrated against 20 days of hist
 3. Update the sentinel's calibration comment in the same commit — its "4 false positives" arithmetic is the record of why that arm looks the way it does.
 
 ⭐ **PROMOTE, because it nearly cost an hour tonight: an alarm you have not seen fire is a HYPOTHESIS, not a justification.** The watchlist row, the threshold and the streak length were all real and all pointed the same way; the alert still never happened. Check the instrument's own output before spending anything on the strength of it.
+
+---
+
+# ⛔⛔ SECOND CORRECTION, SAME SESSION (2026-09-13 ~02:2x PT) — **MY REFUTATION WAS ITSELF INVALID, AND THE INSTRUMENT THAT MADE IT INVALID IS NOW FIXED**
+
+**§2 above says the alarm case is refuted because the lane is "not named once" in 21 sentinel runs. That query could not have matched for ANY pipeline.**
+
+## What the zero actually measured
+
+`pipeline_runs.extra` for the `sentinel` pipeline has exactly these keys — enumerated with `jsonb_object_keys` over every run in the window, not assumed:
+
+```
+checks_run · critical · duration_ms · http_code · marker ·
+notifications · observed · run_attempt · run_id · source · status · warn
+```
+
+⛔ **`critical` and `warn` are arrays of check NAMES** (`checks.filter(...).map((c) => c.name)`), and `observed` is a single status string (`"route_unreachable"`). **No key has ever held a pipeline name.** The per-check `detail` — which pipeline, how many minutes, against which threshold — was built, sent to Telegram/email, and then dropped on the floor.
+
+So `extra::text LIKE '%reconcile-saved-wallet-stats%'` returns 0 for every pipeline on every run, forever, whatever the arms did. **I ran it, got a clean zero, wrote "it has never fired", and supported it with a positive control that proved only that the sentinel writes `warn` entries — not that `extra` can contain a pipeline name.** The control was real and it tested the wrong proposition.
+
+⭐ **This is the estate's own rule breaking on the instrument that exists to make other instruments checkable:** *a zero needs a positive control IN THE SAME INSTRUMENT*, and the control has to be for the thing you are claiming, not for the instrument being alive.
+
+## Where that leaves the original question
+
+🟡 **UNDETERMINED, not refuted.** The no-success arm (`detect_pipelines_without_success`) is correct on its face — `now() - max(started_at WHERE ok) > max_minutes_without_success`, with a grace window for young rows — and it returns **empty right now**, which is consistent with the lane having succeeded recently. Whether it fired during the 16.2 h streak **cannot be answered from the database at all**, and could not have been. Telegram history is the only record.
+
+## ✅ Shipped, because the gap is worth more than the answer
+
+`app/api/sentinel/route.ts` now persists `extra.findings` — `{name, status, detail}` for every **non-ok** check:
+
+- **ok checks are excluded** (an all-clear has nothing to explain, and this row is joined by the alert views on every tick);
+- **capped** at 25 findings × 400 chars, so a pathological arm cannot bloat every row;
+- **redacted** through `redactSecrets`, which is load-bearing rather than tidy: a detail can quote an upstream URL and this estate keeps a **Telegram bot token in a URL path**, while `extra` is far more widely readable than a log line.
+
+⭐ **The caps had to be extracted to `buildSentinelFindings()` to be testable at all** — and that is a second instance of tonight's lesson. Inlined, the cap assertion passed **whether or not the cap existed**, because no sentinel fixture produces a 400-character detail: measured by deleting the `.slice()` and watching the suite stay green. The pure function is unit-tested with synthetic inputs so the caps are actually exercised. **5 mutations, 5 caught** (cap removed ×2, redaction removed, ok-checks kept, findings not persisted).
+
+⚠ **This does NOT answer the §2 question retroactively** — there is no history to recover. It means the same question asked in a week has an answer. **Re-check `extra.findings` after a few days of sentinel runs, and only then judge whether the reconcile `ok=false` wart is misfiring an arm.**

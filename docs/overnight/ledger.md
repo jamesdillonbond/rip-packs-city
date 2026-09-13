@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ CODE — I published a refutation from a query that could never have matched, and the instrument that allowed it now records what it decided · Claude Code cloud, overnight autonomous
+
+**Shipped:** `app/api/sentinel/route.ts` (new exported `buildSentinelFindings()`; `extra.findings` persisted), `__tests__/sentinel-findings-carry-the-detail.test.ts` (NEW, 6 cases), `__tests__/api-sentinel-deep.test.ts` (+1 case), inbox filing `2026-09-13T0900Z-…` (+ second correction) and INDEX. Revert: `git revert` the commit whose message starts `fix(sentinel): persist each non-ok check's detail`.
+
+**⛔⛔ THE MISTAKE IS THE ENTRY, AND I MADE IT WITH A POSITIVE CONTROL IN HAND.** Investigating `reconcile-saved-wallet-stats` (it reports `ok = false` on its healthy soft-deadline path: 41 of 41 "failures" are one benign string), I built a case that its 16.2-hour `ok=false` streaks were misfiring the watchlist's 360-minute no-success arm — then tested it, found the lane *"not named once in 21 sentinel runs"*, and wrote **"it has never fired"** into a filing.
+
+**🚨 THAT QUERY COULD NOT HAVE MATCHED FOR ANY PIPELINE, EVER.** `sentinel.extra`'s keys — enumerated with `jsonb_object_keys` rather than assumed — are `checks_run · critical · duration_ms · http_code · marker · notifications · observed · run_attempt · run_id · source · status · warn`. **`critical` and `warn` are `checks.filter(…).map((c) => c.name)` — NAMES.** The per-check `detail`, which is the only place a pipeline name, a minute count or a threshold ever appeared, was built, sent to Telegram/email, and dropped on the floor.
+
+**⭐ AND THE CONTROL I RAN WAS REAL BUT TESTED THE WRONG PROPOSITION.** I checked that those runs carry 7–9 warns each and that `get_pipeline_alerts()` returns 13 alerts across 5 types — which proves **the sentinel is alive**, not **that `extra` can contain a pipeline name**. ⭐ **PROMOTE: a zero needs a positive control for THE CLAIM, not for the instrument being awake.** The estate's own rule, failing on the one instrument whose job is to make other instruments checkable.
+
+**⚠ I also nearly spent an hour on the strength of it in the other direction** — a three-file change to a drift-pinned PROCEDURE (migration + verbatim pin + guard registration, with an inverted assertion in a test that needs its own throwaway database) to fix the `ok=false` wart. The filing now says **UNDETERMINED, not refuted**, and the reconcile question is left open with its exit condition.
+
+**✅ WHAT SHIPPED IS THE GAP, NOT THE ANSWER — there is no history to recover.** The sentinel now persists `extra.findings`: `{name, status, detail}` for every **non-ok** check. ok checks are excluded (an all-clear has nothing to explain and this row is joined by the alert views on every tick); capped at **25 × 400 chars** so a pathological arm cannot bloat every row; and **redacted through `redactSecrets`**, which is load-bearing rather than tidy — a detail can quote an upstream URL and this estate keeps a **Telegram bot token in a URL PATH**, while `extra` is far more widely readable than a log line.
+
+**⭐ THE CAPS HAD TO BE EXTRACTED TO BE TESTABLE, AND THAT IS TONIGHT'S LESSON TWICE IN ONE FILE.** Inlined at the call site, the cap assertion passed **whether or not the cap existed** — no sentinel fixture produces a 400-character detail — measured by deleting the `.slice()` and watching the suite stay green, exactly as the AllDay pin's evidence predicate had survived its own mutation earlier tonight. `buildSentinelFindings()` is now pure and exported, unit-tested with synthetic inputs. **5 mutations, 5 caught:** detail cap removed, count cap removed, redaction removed, ok-checks kept, findings not persisted.
+
+**⚠ EXIT for the reconcile question this came from:** `extra.findings` only starts accumulating now. **Re-check it after a few days of sentinel runs, and only then judge whether the `ok=false` wart misfires an arm.** Until then neither "it fires" nor "it never fires" is supportable.
+
+**Verification:** `tsc` clean · full suite green · 5 mutations caught · route unchanged in behaviour apart from one extra `extra` key · no collision (last commit touching the sentinel was my own earlier tonight, origin had nothing new) · ledger guards 3 / 0.
+
 ### 2026-09-13 · ✅ CODE — a 2026-08-30 guard on the platform's largest compute consumer was skipping ZERO, and the backstop had quietly become a bigger consumer than the waves it backs up · Claude Code cloud, overnight autonomous
 
 **Shipped:** `app/api/seed-wallet-refresh/route.ts` (new `WAVE_CADENCE_HOURS` constant; backstop window 3 h → the cadence), `__tests__/api-seed-wallet-refresh-deep.test.ts` (the leaking case pinned, plus its opposite), `docs/overnight/inbox/2026-09-13T0800Z-…` (+ INDEX). Revert: `git revert` the commit whose message starts `fix(wallet): the backstop freshness window is the wave cadence`.
