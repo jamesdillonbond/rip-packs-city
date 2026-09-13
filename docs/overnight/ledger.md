@@ -10,6 +10,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ VERIFIED — the counterparty re-arm fired and recovered the lane into real work; tonight's last open verification is closed · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only** — #99 updated with the end-to-end result. No code, no migration, no data.
+
+⭐ **THE HALF THAT WAS STILL OWED IS NOW MEASURED, and it did better than "no regression".** The cooldown held the full two hours (**270–954 ms** ticks, `note: drained`, zero work, zero timeouts), then at the boundary:
+
+| tick (PT) | note | rows_found | rows_written | duration |
+|---|---|---:|---:|---:|
+| 02:55 | drained | 0 | 0 | 304 ms |
+| 03:01 | drained | 0 | 0 | 671 ms |
+| **03:05** | **scan** | **120** | **120** | **18,045 ms** |
+| **03:10** | **scan** | **120** | **120** | **52,207 ms** |
+
+`exhausted_at` cleared on the first productive scan. ⭐ **That is the whole contract: the lane was STRANDED, not drained, and the re-arm recovered it into useful work rather than back into a 66,147 ms timeout.** The recorded falsifier — *"FALSIFIED if timeouts resume"* — did not fire.
+
+⚠ **ONE WATCH, and it is the hole the fix already documented rather than a new one: scan cost climbed 18.0 s → 52.2 s across two consecutive ticks.** Both wrote the full 120-row batch, so that is the cost of REAL WORK, not waste. But the exhausted stamp is written **after** the scan, so a scan killed at `statement_timeout` never arms the cooldown and the lane re-strands silently. **If durations pass ~60 s, cut ITEMS per tick — never the clock.**
+
 ### 2026-09-13 · ✅ CODE — a working user-facing lane reported `rows_written = 0` on every run for as long as it has existed, and the real count was in the same object · Claude Code cloud, overnight autonomous
 
 **Shipped:** `app/api/cron/daily-portfolio-snapshot/route.ts`, `__tests__/api-cron-daily-portfolio-snapshot.test.ts` (12 → 15 cases, **2 INVERTED**). No migration, no data, no schedule. **REVERT:** `git revert <sha of "fix(portfolio): log the count the RPC actually returns">` — it changes only what is LOGGED, never what is written.

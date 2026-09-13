@@ -1350,6 +1350,19 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     **EXIT (first 24 h):** the drained scan stops being paid for every tick; `rows_found > 0` returns in bursts every `rearm_after`; the statement-timeout failures fall toward zero. ⛔ **FALSIFIER:** if `rows_found` stays 0 across a full re-arm, the >= 5,000 rows are not reachable from the top branch and this diagnosis is wrong — revert before trying anything else.
 
+    ✅ **BOTH HALVES NOW VERIFIED END-TO-END, 2026-09-13 03:0x PT — and the re-arm did better than “no regression”.** The cooldown held for the full two hours (ticks **270–954 ms**, `note: drained`, zero work, zero timeouts) and then at the boundary the lane **re-armed, scanned, and wrote real rows**:
+
+    | tick (PT) | note | rows_found | rows_written | duration |
+    |---|---|---:|---:|---:|
+    | 02:55 | drained | 0 | 0 | 304 ms |
+    | 03:01 | drained | 0 | 0 | 671 ms |
+    | **03:05** | **scan** | **120** | **120** | **18,045 ms** |
+    | **03:10** | **scan** | **120** | **120** | **52,207 ms** |
+
+    ⭐ **`exhausted_at` cleared on the first productive scan**, which is the whole contract: the lane was **STRANDED, not drained**, and the re-arm recovered it into useful work rather than back into a 66,147 ms timeout. Against the pre-fix baseline of **288 scans/day each burning up to 66 s to find NOTHING**, the lane now costs ~24 cheap ticks an hour plus a productive scan every two hours.
+
+    ⚠ **WATCH, and it is the documented hole rather than a new one: the scan cost climbed 18.0 s → 52.2 s across two consecutive ticks.** Both wrote the full 120-row batch, so this is the COST OF REAL WORK and not waste — but the exhausted stamp is written **after** the scan, so a scan killed at `statement_timeout` never arms the cooldown and the lane would re-strand silently. **If durations keep climbing past ~60 s, cut ITEMS per tick (the batch limit), never the clock.**
+
 100. 🔴 **OPEN, NEW 2026-09-13 (PT) — THE FLEET'S MASTER ALARM RUNS 27% OF THE TIME IT IS SCHEDULED TO, AND ITS WORST BLIND WINDOW IN THE RETAINED PERIOD WAS 14 HOURS.** ⭐ **This is the OTHER half of #76, and it is the half nobody measured.** That item established the sentinel's message is *uninformative* (every sweep WARN, fixed 2026-09-13 by naming the changed SET in the header). This item establishes something worse and independent: **most of the time the sweep does not happen at all.**
 
     **MEASURED, 73 h to 2026-09-13 ~02:4x PT.** `pipeline-sentinel.yml` is scheduled `34 * * * *` — **73 firings expected**. `pipeline_runs` holds **21 sentinel sweeps (28.8%)**.
