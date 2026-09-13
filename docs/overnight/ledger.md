@@ -10,6 +10,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ⚠ CORROBORATION (and a near-duplicate I caught) — #75's TOAST defect was already filed hours earlier; three things I added, and the read that nearly produced a second filing · Claude Code cloud, Trevor: "keep going"
+
+**Shipped (docs only):** `docs/reference/known-issues.md` (#75, a short delta). Revert: `git revert` the commit whose message starts `docs(register): #75 second sample`.
+
+**⚠ WHAT HAPPENED FIRST, because it is the more useful half.** I re-derived #75's exit condition, found that the 09-10 `ANALYZE` had cured the parent but that the **TOAST relation `pg_toast_51873` still carries the identical zeroed-stats defect and has never been autovacuumed** — and wrote it up as a finding. **It was already in the item**, filed by a concurrent session at **02:0x PT**, with a better lever than mine (`SET vacuum_cost_delay = 2; VACUUM …` — throttled like autovacuum, where I had only proposed a plain VACUUM). **My block was cut down to a delta rather than left to duplicate.**
+
+**⭐ THE CAUSE IS WORTH PROMOTING: I read the item with `cut -c1-1500`, and their re-derivation sits past the cut.** This register's items run to many thousands of characters on a single line. **Truncating one and acting on the remainder reads as an absence of prior work** — which is how the same thing gets filed twice, and this register already pays for duplicate findings.
+
+**What genuinely was new, and stays:**
+1. ✅ **The parent-side fix is demonstrably working** — `autovacuum_count` **27**, last **20:41 PT today**, against the lifetime 0 the item was filed on. The 02:0x block says "the fix never reached the 10 GB", which is true; the sharper statement is **the ANALYZE cured the parent, and only the parent.**
+2. 🔴 **A second, later sample of the accrual: TOAST 10 GB (02:0x) → 12 GB (20:4x), ~+2 GB in ~18 h**, consistent with their ~1.6 GB/9 h. **Two independent readings, same direction — the growth is not a measurement artefact.**
+3. ⭐ **Two controls the item lacked:** `pg_stat_database.stats_reset` is **NULL**, so the toast relation's `autovacuum_count = 0` is a genuine LIFETIME zero and not a cleared counter; and **pg_net's pruning is blameless** — 10,512 rows spanning exactly six hours, matching `ttl = 6 hours` to the minute, so the 11 GB is entirely dead tuples.
+
+**⛔ I ran no VACUUM**, for the reasons the item already establishes (a previous manual VACUUM was cancelled for measured IO harm; the estate is in an M11 spell run) — and because their throttled form is the better one to schedule.
+
+**Gates:** docs only; index regenerated; `check-memory-doc-links` 196; ledger guards 3 / 0.
+
 ### 2026-09-12 · ✅ CODE — two files decide whether a push deploys and whether its tests run, in two syntaxes, and nothing tied them together; plus #61's biggest lever is now sized at 26.7% of builds · Claude Code cloud, Trevor: "keep going"
 
 **Shipped:** `__tests__/deploy-and-ci-agree-on-what-docs-means.test.ts` (new), `docs/reference/known-issues.md` (#61). Revert: `git revert` the commit whose message starts `test(ci): pin the deploy gate and the CI classifier`. **Test-only — no route, config or DB change.**
