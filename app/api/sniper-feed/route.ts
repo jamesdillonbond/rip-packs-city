@@ -1643,8 +1643,18 @@ async function computeSniperFeed(opts: {
   // Per-listing fields (serial_number, listing_resource_id) are NULL on RPC
   // rows because the RPC is edition-level, not per-moment.
   let rpcDeals: SniperDeal[] = [];
-  if (tsListings.length < TS_GQL_SPARSE_THRESHOLD) {
-    console.log(`[sniper-feed] TS GQL sparse (${tsListings.length} listings) — augmenting with get_topshot_sniper_deals RPC`);
+  // ⚠ Sparse by EDITIONS, not by rows (2026-09-13). The pool is the newest 200
+  // ts_listings rows by ingested_at — i.e. the last sync tick's batch — and one
+  // batch is a handful of moments listed many times over. Measured in production
+  // logs: `ts_listings: 200 rows` over FIVE distinct editions, `built ts=0`,
+  // and the feed answering `0 deals, degraded: false` for hours while the sync
+  // tick was down — an empty state that CONCLUDED. 200 rows is not a pool when
+  // they price five moments; count what can actually become distinct deals.
+  const tsDistinctEditions = new Set(
+    tsListings.map((l) => `${l.setPlay?.setID ?? ""}:${l.setPlay?.playID ?? ""}`),
+  ).size;
+  if (tsListings.length < TS_GQL_SPARSE_THRESHOLD || tsDistinctEditions < TS_GQL_SPARSE_THRESHOLD) {
+    console.log(`[sniper-feed] TS pool sparse (${tsListings.length} listings over ${tsDistinctEditions} editions) — augmenting with get_topshot_sniper_deals RPC`);
     const { data: rpcRows, error: rpcErr } = await boundedRead(
       (supabase as any).rpc("get_topshot_sniper_deals", {
         p_min_discount: minDiscount,
