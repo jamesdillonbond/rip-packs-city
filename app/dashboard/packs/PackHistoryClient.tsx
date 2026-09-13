@@ -90,17 +90,23 @@ interface SummaryTotals {
  * before its watermark were never swept. That is the whole gap: 77,800 priceable
  * packs against 25,195 valued rips.
  *
- * ⛔⛔ `pull_value_usd` MEANS TWO DIFFERENT THINGS BY COLLECTION, AND THIS FILE
- * SUMS THEM. Top Shot sums the LATEST `fmv_snapshots` row per edition (CURRENT
- * value); All Day sums `allday_pack_pull.fmv_usd` (value AT OPEN). Measured on
- * 500 resolved 2026-06+ pulls: at-open mean **$8.97**, current mean **$3.14**,
- * agreeing on 22 of 500. RIPPED VALUE and NET P&L add both together. ⚠ This
- * PREDATES the All Day arm — the arm was briefly changed to current FMV on
- * 2026-09-12 and REVERTED within the hour, because the rollup above would have
- * fought it and flipped rows between bases with nothing recording which. Both
- * bases are correct for different consumers (realized-EV calibration wants
- * at-open; a user's NET P&L wants current), so one column cannot serve both.
- * Splitting it is a product decision, not a code fix — do not resolve it here.
+ * ✅ `pull_value_usd` IS NOW **CURRENT FMV FOR EVERY COLLECTION** (2026-09-12,
+ * Trevor's delegated call; register #92 closed). It used to mean two different
+ * things and this file summed them: Top Shot the LATEST `fmv_snapshots` row per
+ * edition (CURRENT), All Day `allday_pack_pull.fmv_usd` (AT OPEN) — measured on
+ * 500 resolved 2026-06+ pulls at a mean of **$3.14 vs $8.97**, agreeing on 22 of
+ * 500, with RIPPED VALUE and NET P&L adding both together.
+ *
+ * ⭐ CURRENT WON BECAUSE IT WAS ALREADY THE HOUSE BASIS, not as a coin-flip: the
+ * whole Top Shot pack-reality / realized-EV estate already read this column as
+ * current, Top Shot is ~92% of valued rips, and the 7-day `stale_valued`
+ * re-price loop exists ONLY to keep it current — that machinery is meaningless
+ * under an at-open basis. It also covers MORE (3,967 vs 3,780 whole packs per
+ * 4,000). **Both writers were changed together** — `backfill_pack_rip_metadata`
+ * AND `rollup_allday_rip_pull_value()` (pg_cron jobid 72) — because changing one
+ * alone makes them fight, which is how the first attempt at this failed.
+ * ⚠ Nothing was lost: the at-open number is still per-pull in
+ * `allday_pack_pull.fmv_usd`, so at-open realized value stays computable.
  *
  * ⚠ ALL DAY HAS ITS OWN CEILING, and it is well under 100%: only **419,012 of
  * its 2,816,589 rips (14.9%)** appear in `allday_pack_pull` at all — the table
