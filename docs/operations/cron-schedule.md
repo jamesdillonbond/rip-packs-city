@@ -14,6 +14,15 @@ The 2026-06-07 stagger pass eliminated the :00/:20/:40 anchor pile-up (was ~15 j
 - Aim for ≤2-3 light jobs per minute. Current per-minute load is mapped below — pick an empty trio for anything new.
 - Routes that can run >30s MUST return 202 + `after()` (cron-job.org marks >30s as failed and can auto-disable persistently-failing jobs — the silent-kill class).
 - Console automation: stay on each job's COMMON tab only (Advanced holds auth secrets). See the cron memory for the working edit recipe.
+- ⚠ **Console saves are SILENTLY DISCARDED unless each edit is one synchronous action per call with an explicit wait after every navigate** — measured 2026-09-12, when 8 of 9 "saves" did nothing and every per-job field re-read still showed the new value. **The jobs LIST page's next-execution column is the only server truth; check it after every write.**
+- ⭐ **Turn ON "Notify me when the cronjob will be disabled because of too many failures" on every entry you create.** It was off on the nine entries auto-disabled 2026-09-10, which is why a recoverable budget pause became a two-day outage nobody could see (#76). It is the one event that turns a transient failure into a permanent one.
+
+### Re-enabled 2026-09-12 ~21:55 PT after the 2026-09-10 auto-disable (#76)
+
+`RPC Alerts Send` (#7842919) · `RPC Alerts Dispatch` (#7842915) · `RPC wmc-fmv-populate` (#7578340) · `RPC Pack Sniper Ask Snapshot` (#7878615) · `RPC AllDay Listings Indexer` (#7581794) · `RPC AllDay Listings Retry` (#7587762) · `RPC Golazos Listings Indexer` (#7620374) · `RPC Pinnacle Events Ingest` (#7588636) · `RPC Pinnacle Listings Retry` (#7595683).
+
+⚠ **Twenty-six entries read `Inactive` in that console; SEVENTEEN of them are deliberate and must be left alone.** The nine above are the only ones the spend-cap pause killed — identified by their last execution being a `Failed (HTTP error)` on 2026-09-10, not by being inactive.
+
 
 ## Active cron-job.org — Vercel routes (https://www.rippackscity.com/api/*)  ·  64 active
 
