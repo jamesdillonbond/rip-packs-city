@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · 🔵 MEASUREMENT+CORRECTION (docs only) — the `/_next/image` ceiling is ≈14,462 and it CONFIRMS tonight's earlier estimate; plus Cowork's player-name finding is real but scoped to the wrong card · Claude Code, from Cowork verification `2026-09-12(h)`
+
+**Shipped:** `docs/reference/known-issues.md` (new items **#95**, **#96**). **No code, no DB, no deploy wanted** — ⚠ a docs-only tip suppresses the Vercel build, which is correct here rather than the trap this file warns about. **Revert:** `git revert` the commit whose message starts `docs(register): the /_next/image ceiling is measured`.
+
+---
+
+**🔵 #95 — THE OPEN "UNMEASURED" IS NOW HALF-MEASURED, AND THE HALF THAT MATTERS IS THE ONE NOBODY ASKED ABOUT.** Cowork carried *"the `/_next/image` unit cost — still unmeasured"* forward from the optimizer verification. Re-derived from the live DB against the **actual sitemap predicates**: **≈14,462** distinct `(source, w=640, q=75)` transformations — TS statics 8,401 · TS IPFS→our proxy 2,368 · UFC IPFS 518 · Golazos 575 · Pinnacle 2,600 · **All Day 0** (origin pre-sizes, optimizer correctly skips all 6,190) · **Candy MLB 0** (`arweave.net` not in `remotePatterns`).
+
+**⭐ THIS CORROBORATES RATHER THAN OVERTURNS.** Tonight's earlier entry put the worst case at **≈14.3k** (TS statics 8,405 · Golazos 575 · IPFS 2,886 · Pinnacle ≤2,412). Three legs match to within four rows and the IPFS leg matches **exactly** (2,368 + 518 = 2,886). The only real delta is Pinnacle, which that entry stated as a **bound** and is now a **measurement**: 2,600.
+
+**⚠ AND I WALKED INTO THIS FILE'S OWN POPULATION TRAP ON THE WAY, which is the transferable part.** A first pass measured Pinnacle from **`pinnacle_editions`** — 570 rows, 270 distinct art urls — and produced a confident **≈12,130**, i.e. a ~16% *improvement* on the prior estimate. **The sitemap does not read that table.** `getPinnacleRenderRows()` reads **`pinnacle_catalog`**: 2,600 rows, every one with art, a **9.6× larger** population. *A control's population must be the set the property is true of, not a same-named table that coincides.* The wrong number was the flattering one, and nothing about its shape said so.
+
+**⭐ THE ENTITY CARDS ADD ~ZERO, and that is a property worth keeping.** `app/api/og/edition/route.tsx` draws art through `entityCard` → `ogImageDataUris` on the **same** `editions.thumbnail_url` at the **same** `w`/`q`. A transformation is keyed on `(source, w, q)`, so player / team / set / series pages re-request keys the edition pages already created. ⚠ **I got this wrong first too** — `app/api/og/edition` does not import `img-data`, so a grep for `ogImageDataUri` callers reads as "the edition card draws no art". It draws art one import deeper. **The ceiling is bounded by distinct art URLs, not by page count.**
+
+**🔵 THE REPEAT-COST LEVER WE CONTROL IS UNSET, AND THE QUESTION UNDER IT IS BETTER THAN THE PRICE QUESTION.** `next.config.ts › images` declares `remotePatterns` and nothing else, so `minimumCacheTTL` is Next **16.2.9**'s default — read from the installed package the way the sibling test already reads `imageConfigDefault`, not from memory: **14,400 s = 4 h**. Effective TTL is the max of that and the upstream `Cache-Control`. ⛔ **That header was NOT measured — egress to `assets.nbatopshot.com`, `assets.laligagolazos.com` and `ipfs.io` is policy-denied from this sandbox (403 at the agent proxy, not at the CDN), as is egress to our own domain.** So **whether ≈14,462 is one-time or recurring is genuinely open**, and it is worth more than the per-unit rate: art on these CDNs is edition-keyed or content-addressed and effectively immutable, so an explicit long `minimumCacheTTL` is the lever if the answer is "recurring". **Trevor's one-glance check at Usage → Image Optimization now has a number to compare against instead of a blank.**
+
+---
+
+**⚠ #96 — COWORK'S LAST OPEN FINDING IS REAL, AND ITS SCOPE IS WRONG IN THE DIRECTION THAT MAKES IT BIGGER.** It was filed as a hero-vs-grid inconsistency — *"the single-trophy hero card never names the player … the six-up layout leads with the player name on every tile"* — affecting *"4 of the 7 collectors"*. **Those are two different CARDS, not two layouts of one card.** `trophy-case/[username]` renders `player`; `profile/[username]` renders **only serial + tier on every tile at every grid size**. ⭐ **`player_name` is already on the row and already fetched — its sole appearance in that route's render path is a `console.log`.** So the question is not *"give the hero a name line to match the grid"* but *"should the profile card name players at all"* — **7 of 7 collectors, every layout.**
+
+**🔵 IT FITS TODAY, MEASURED OVER THE WHOLE POPULATION, using the TTF-derived 0.540em already pinned by the caption guard.** Hero (240px, 14px cap): budget **30** chars, longest pinned name **17**. Six-up (130px, 10px cap): budget **22**, longest **17**. **Nobody pinned today would be clamped.** ⚠ **The tail is still real and the clamp is still required:** across all **21,234** named editions, **9** exceed the hero budget (all UFC Strike, longest **48**) and **221** exceed the six-up budget (190 TS · 15 UFC · 15 AllDay · 1 Golazos) — 0.04% and 1.0%.
+
+**⛔ NOT SHIPPED, AND THE REASON IS NOT DEFERENCE TO A PRODUCT CALL.** It could not be **rendered** from this session — all four card fetches returned `000`. Every caption-geometry defect fixed today was found by looking at a PNG, not by reading JSX, and the Simba slice-through-the-middle bug is what shipping unverifiable caption geometry looks like. **The measurements make this a one-line decision for whoever can see the output.**
+
+---
+
+**✅ AND ONE THING COWORK PROPOSED IS ALREADY DONE.** Its closing suggestion — *"pinning it by importing `imageConfigDefault` is the right shape"* — is in `__tests__/og-img-data.test.ts` as of `0f9196dac`: the `w`/`q` cases assert against `deviceSizes ∪ imageSizes` and `qualities`, and the Accept case asserts `imageConfigDefault.formats.filter(f => accept.includes(f))` is **empty** — a property that survives a future Next release adding a format, rather than a literal that would not. No action needed.
+
 ### 2026-09-12 · ⛔ CODE — gating the team LINK also gated the team NAME: the denylist fix dropped "OGs" off 100 edition pages, and only the RENDERED PAGE showed it · Cowork (cloud), Trevor: "keep going"
 
 Verifying the 2026-09-11 denylist fix on the live page rather than on the diff:
