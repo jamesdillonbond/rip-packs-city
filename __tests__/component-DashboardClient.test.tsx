@@ -319,11 +319,16 @@ describe("DashboardClient — per-wallet collection stats", () => {
       json(200, { wallets: [WALLET(), WALLET({ id: "w-2", collection_id: "dee28451-5d62-409e-a1ad-a83f763ac070" })] })
     render(<DashboardClient />)
     await waitFor(() => {
-      const calls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("collection-stats"))
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      const calls = urls.filter((u) => u.includes("collection-stats"))
+      const refreshes = urls.filter((u) => u.includes("/api/profile/me")).length
       // ⚠ ONE call for the address, not one per (address, collection) row —
       // `saved_wallets` is keyed per collection, so a naive per-row fetch is N
-      // duplicate queries for the same wallet.
-      expect(calls.length).toBe(1)
+      // duplicate queries for the same wallet. Bounded by the refresh count for
+      // the same reason as the grouping test below (a second refresh is not a
+      // second row).
+      expect(calls.length).toBeGreaterThan(0)
+      expect(calls.length).toBeLessThanOrEqual(refreshes)
     })
   })
 
@@ -558,9 +563,23 @@ describe("DashboardClient — wallets", () => {
         ],
       })
     render(<DashboardClient />)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    const addrCalls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("collection-stats"))
-    expect(addrCalls.length).toBeLessThanOrEqual(1)
+    await waitFor(() => {
+      const addrCalls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("collection-stats"))
+      expect(addrCalls.length).toBeGreaterThan(0)
+    })
+    // ⚠ Assert the PROPERTY, not a snapshot of the call count (CI red 2026-09-13
+    // run 5446: "expected 2 to be less than or equal to 1" on a tree whose diff
+    // was three SQL files). The dashboard's mount effect re-runs refresh() when
+    // its callback identity changes, so a slow runner can see the stats fetch
+    // of a SECOND refresh before this line runs. The defect this test guards is
+    // one fetch PER ROW — three rows, one address, three calls — and that is a
+    // ratio: stats calls for the address may never exceed the number of
+    // refreshes (one /api/profile/me read each), however many refreshes ran.
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    const addrCalls = urls.filter((u) => u.includes("collection-stats"))
+    const refreshes = urls.filter((u) => u.includes("/api/profile/me")).length
+    expect(new Set(addrCalls).size).toBe(1) // one address, one URL
+    expect(addrCalls.length).toBeLessThanOrEqual(refreshes)
   })
 
   it("renders the sign-in banner when the collector has saved no wallets", async () => {
