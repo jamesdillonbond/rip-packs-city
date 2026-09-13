@@ -79,6 +79,12 @@ export const INCONCLUSIVE_MARKER = "INCONCLUSIVE";
  * has to remember to prepend is the "guard that names its instances" trap: the
  * two unlabelled checks are not an oversight to go fix and forget, they are
  * proof that the label will drift again.
+ *
+ * ⚠ BOTH WERE LABELLED ON 2026-09-13, and that does NOT retire the argument —
+ * it confirms it. They sat unlabelled for four days while this very comment
+ * named them, which is what a rule depending on somebody remembering looks
+ * like. The condition test stays the load-bearing one; the label is for the
+ * human reading the report.
  */
 // `sentinel wall budget spent`: the route's own wall budget refused the arm's
 // request before it left the process (lib/sentinel/wall-budget.ts). The arm did
@@ -87,8 +93,44 @@ export const INCONCLUSIVE_MARKER = "INCONCLUSIVE";
 const SATURATION_SIGNATURE =
   /statement timeout|canceling statement|connection pool|timeout acquiring|connection terminated|upstream request timeout|fetch failed|operation was aborted|sentinel wall budget spent|57014/i;
 
-/** Could this check not be evaluated at all? Condition-based, not label-based. */
-export function isBlind(detail: string | undefined | null): boolean {
+/**
+ * Could this check not be evaluated at all? Condition-based, not label-based.
+ *
+ * ⚠⚠ THE CONDITION TEST CANNOT TELL A FAILED READ FROM A SUCCESSFUL READ OF
+ * SOMEONE ELSE'S FAILURE, and it over-counted in production before anyone
+ * noticed (measured 2026-09-13 off the retained sweeps, 02:46 and 03:31 PT).
+ *
+ * `Pipeline Success Coverage` evaluated perfectly on both runs and correctly
+ * reported a real dead pipeline, quoting that pipeline's OWN `last_error` out
+ * of `pipeline_runs_daily`:
+ *   "daily-portfolio-snapshot 0/1 ok, 0 rows — canceling statement due to
+ *    statement timeout (since 2026-09-12, rollup 260m old, 23 suppressed)"
+ * The signature matches, so this arm scored it blind. Blackout read 1 and 2
+ * when the true counts were 0 and 1. That is this repo's own honesty class
+ * INVERTED and sitting one level up: a SUCCESSFUL read published as a failed
+ * one, by the arm whose entire subject is whether reads succeeded.
+ *
+ * ⭐ So a check may now state the fact authoritatively, and only in the
+ * direction the heuristic gets wrong. `didEvaluate === true` means "I
+ * evaluated — any error text below is something I successfully OBSERVED, not
+ * something that happened to me". Forgetting to set it leaves the old
+ * conservative behaviour (counted blind), so an unconverted arm OVER-counts and
+ * can never silently under-count. The signature stays the DEFAULT precisely
+ * because the argument above still holds: a label somebody has to remember to
+ * prepend WILL drift.
+ *
+ * ⚠ Deliberately NOT named `evaluated` — `BlindCheckSummary.evaluated` is a
+ * COUNT of the population, and one word for two things in one module is how the
+ * next reader gets it backwards.
+ */
+export function isBlind(
+  detail: string | undefined | null,
+  didEvaluate?: boolean,
+): boolean {
+  // An arm that affirmatively declares it evaluated is believed; one that
+  // declares itself blind is believed too. Silence falls back to the condition.
+  if (didEvaluate === true) return false;
+  if (didEvaluate === false) return true;
   const d = detail ?? "";
   return d.includes(INCONCLUSIVE_MARKER) || SATURATION_SIGNATURE.test(d);
 }
@@ -119,6 +161,12 @@ export interface BlindCheckInput {
   name: string;
   status: "ok" | "warn" | "critical";
   detail: string;
+  /**
+   * Optional, and only worth setting on a check whose detail QUOTES an upstream
+   * error string. `true` = this check evaluated; do not read the quoted error as
+   * my own failure. Omitted = fall back to the condition heuristic. See isBlind.
+   */
+  didEvaluate?: boolean;
 }
 
 export interface BlindCheckSummary {
@@ -160,7 +208,7 @@ export function summariseBlindChecks(
   disabled: ReadonlySet<string> = new Set(),
 ): BlindCheckSummary {
   const population = checks.filter((c) => c.name !== BLIND_CHECK_NAME && !disabled.has(c.name));
-  const blindOnes = population.filter((c) => isBlind(c.detail));
+  const blindOnes = population.filter((c) => isBlind(c.detail, c.didEvaluate));
   const evaluated = population.length;
   const threshold = blindThreshold(evaluated);
   const blind = blindOnes.length;

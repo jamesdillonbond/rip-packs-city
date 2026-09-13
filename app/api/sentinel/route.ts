@@ -94,6 +94,13 @@ interface HealthCheck {
   status: "ok" | "warn" | "critical";
   detail: string;
   value?: string | number;
+  // ⚠ Set `didEvaluate: true` ONLY on a branch that successfully evaluated AND
+  // QUOTES an upstream error string in its detail. The Measurement Blackout arm
+  // detects blindness by CONDITION (it sniffs the detail for a saturation
+  // signature), which cannot tell "my read failed" from "I successfully read
+  // that something else's read failed" — measured over-counting on the 09-13
+  // 02:46 and 03:31 PT sweeps. See lib/sentinel/blind-checks.ts.
+  didEvaluate?: boolean;
 }
 
 // A DB statement timeout, connection-pool exhaustion, or fetch abort under DB
@@ -1089,10 +1096,15 @@ async function runSentinel() {
       "sentinel_fmv_confidence_canonical_ts_split",
     );
     if (error) {
+      // ⚠ Was `RPC error (${message})` with no marker (fixed 2026-09-13, one of
+      // the two instances blind-checks.ts names in its header). The Blackout arm
+      // still caught it by condition, but the line a HUMAN reads said nothing
+      // about being inconclusive while every sibling arm did.
+      const sat = isSaturationError(error.message);
       checks.push({
         name: "FMV Confidence (canonical TS)",
         status: "warn",
-        detail: `RPC error (${error.message})`,
+        detail: `${sat ? INCONCLUSIVE : ""}RPC error (${error.message})`,
       });
     } else if (data) {
       const rows: any[] = data;
@@ -1215,7 +1227,7 @@ async function runSentinel() {
             ? "ok"
             : "warn",
         detail: covErr
-          ? `Coverage RPC error: ${covErr.message}`
+          ? `${isSaturationError(covErr.message) ? INCONCLUSIVE : ""}Coverage RPC error: ${covErr.message}`
           : `${liveWithFmv} of ${liveEditions} live editions have an FMV snapshot (${coverage}%)` +
             ` — excludes ${Number(inert?.editions || 0)} inert UUID-keyed TS rows` +
             ` (lower bound: read from edition_fmv_current, refreshed hourly — a first snapshot younger than the last refresh counts as uncovered)`,
@@ -1652,6 +1664,13 @@ async function runSentinel() {
                   )
                   .join("; ")} (since ${fromDay}, ${ageNote}${suppNote})`,
           value: dead.length,
+          // ⭐ THIS BRANCH IS WHY `didEvaluate` EXISTS. The detail quotes each
+          // dead pipeline's own `last_error`, which is very often a statement
+          // timeout — so the Blackout arm's signature matched and scored this
+          // arm BLIND on the 09-13 02:46 and 03:31 PT sweeps while it was
+          // working perfectly and reporting a REAL dead pipeline. The read
+          // succeeded; the thing it read ABOUT had failed.
+          didEvaluate: true,
         });
       }
     }
@@ -1865,6 +1884,11 @@ async function runSentinel() {
                 "scan covered the whole window is UNKNOWN, not confirmed."
               : ""),
           value: fails,
+          // Same reason as Pipeline Success Coverage: this branch ANSWERED, and
+          // its detail quotes timeout taxonomy ("startup timeout", "cancelled at
+          // a statement budget") that sits one wording change away from the
+          // Blackout signature.
+          didEvaluate: true,
         });
       }
     }

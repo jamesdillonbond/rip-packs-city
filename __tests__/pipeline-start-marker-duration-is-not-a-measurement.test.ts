@@ -31,11 +31,33 @@ function markerWriters(): string[] {
   // ⚠ WAS a shelled-out grep whose pattern carries BOTH a space and nested
   // double quotes — the exact shape that killed metadata-catch-branch on
   // Windows. It returned the right answer here by luck, not by construction.
-  return filesMatching("app", (n) => n === "route.ts", 'phase: "started"')
+  //
+  // ⚠⚠ AND THE POPULATION USED TO BE READ OUT OF COMMENTS (fixed 2026-09-13).
+  // The assertions below already ran on `stripComments(src)`; this discovery
+  // step did not, so ANY route whose PROSE quoted the marker literal was pulled
+  // into the population and then failed for having no `.insert(` — which is
+  // exactly what happened to pinnacle-metadata-backfill the day it started
+  // writing its marker through the shared helper and said so in a comment.
+  //
+  // ⭐ Two distinct bugs in one, and the second is the dangerous one:
+  //   • a false POSITIVE — a comment dragged an innocent file in (loud, this).
+  //   • a false NEGATIVE — a route that writes the marker through
+  //     `writeInvocationHeartbeat` has no literal in its own code at all, so it
+  //     is correctly OUT of this population. That is not a hole: the helper pins
+  //     `finished_at` in one place and pipeline-heartbeat.test.ts asserts it
+  //     there. This guard covers the INLINE writers, and only those.
+  // CLAUDE.md's rule, on the guard that exists to enforce guard rules: strip
+  // comments before grepping source.
+  return filesMatching("app", (n) => n === "route.ts", 'phase: "started"').filter(
+    (f) => stripComments(readFileSync(f, "utf8")).includes('phase: "started"'),
+  )
 }
 
 /** The object literal passed to the marker .insert(...), roughly bounded. */
-function markerInsertBlock(src: string): string | null {
+function markerInsertBlock(rawSrc: string): string | null {
+  // Stripped, to agree with markerWriters above: a comment must not be able to
+  // supply the population OR the evidence.
+  const src = stripComments(rawSrc)
   const idx = src.indexOf('phase: "started"')
   if (idx === -1) return null
   // Walk back to the nearest `.insert(` that precedes it.

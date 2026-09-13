@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import {
   isBlind,
   summariseBlindChecks,
@@ -145,6 +146,61 @@ describe("sentinel: the measurement-blackout arm", () => {
     expect(s.names).not.toContain("Pipeline Silence")
     expect(s.names).not.toContain("Dune Spend (cycle)")
     expect(s.names).not.toContain("Detector Health (GitHub Actions)")
+  })
+
+  // ── A SUCCESSFUL READ OF SOMEONE ELSE'S FAILURE IS NOT BLINDNESS ──────────
+  // Regression pin for the production over-count measured 2026-09-13 on the
+  // retained 02:46 and 03:31 PT sweeps. `Pipeline Success Coverage` evaluated
+  // fine and correctly reported a real dead pipeline, quoting THAT pipeline's
+  // own `last_error` — a statement timeout — out of `pipeline_runs_daily`.
+  // The condition heuristic matched the quote and scored the arm blind.
+  //
+  // ⚠ ASSERTED AS THE ABSENCE OF THE FALSE CLAIM (the count, and the name in
+  // the list), not as the presence of the flag: a test that only checked the
+  // flag was passed through would still pass if summariseBlindChecks ignored it.
+  it("does not count an arm that merely QUOTES an upstream timeout it observed", () => {
+    // The exact string production emitted on the 2026-09-13 03:31 PT sweep.
+    const quoted =
+      "daily-portfolio-snapshot 0/1 ok, 0 rows — canceling statement due to " +
+      "statement timeout (since 2026-09-12, rollup 260m old, 23 suppressed)"
+
+    // Without the flag the heuristic still fires — that default is deliberate,
+    // so an arm nobody converted OVER-counts rather than silently vanishing.
+    expect(isBlind(quoted)).toBe(true)
+    // With it, the arm's own word wins.
+    expect(isBlind(quoted, true)).toBe(false)
+
+    const checks: BlindCheckInput[] = [
+      { name: "Pipeline Success Coverage", status: "warn", detail: quoted, didEvaluate: true },
+      { name: "Trust Health", status: "warn", detail: "INCONCLUSIVE (db saturated) — Query error: canceling statement due to statement timeout" },
+      { name: "Total Sales", status: "ok", detail: "~4,864,327 total sales in database" },
+    ]
+    const s = summariseBlindChecks(checks)
+    expect(s.blind, "only the genuinely blind arm counts").toBe(1)
+    expect(s.names).not.toContain("Pipeline Success Coverage")
+    expect(s.names).toContain("Trust Health")
+
+    // ⛔ The control in the other direction: an arm that declares itself blind
+    // is counted even when its detail carries no signature at all — so the flag
+    // is a two-way statement, not just an escape hatch.
+    const declared = summariseBlindChecks([
+      { name: "Some Arm", status: "warn", detail: "no signature here", didEvaluate: false },
+    ])
+    expect(declared.blind).toBe(1)
+  })
+
+  // ⚠ The unit test above proves the HELPER honours the flag; this proves the
+  // ROUTE sets it on the branch that produced the false positive. Without this,
+  // the fix passes every test while the defect stays live in production.
+  it("the sentinel route marks its quoting branches as evaluated", () => {
+    const route = readFileSync(join(process.cwd(), "app/api/sentinel/route.ts"), "utf8")
+    // Pipeline Success Coverage's dead-pipeline detail interpolates `a.err`.
+    const idx = route.indexOf("`${p} 0/${a.runs} ok, 0 rows")
+    expect(idx, "the quoting branch must still exist").toBeGreaterThan(-1)
+    expect(
+      route.slice(idx, idx + 1200),
+      "the branch that quotes last_error must declare it evaluated",
+    ).toMatch(/didEvaluate:\s*true/)
   })
 
   it("distinguishes a saturation failure from an ordinary threshold breach", () => {
