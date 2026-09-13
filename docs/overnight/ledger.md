@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ⭐ DECISION — keep the dead-lane backstop, because the alarm it substituted for now exists (#76, #48 answered) · Cowork cloud
+
+**Shipped (docs only):** `docs/reference/known-issues.md` (#76 decision block, #48 answered). Revert: `git revert` the commit whose message starts `docs(register): keep the dead-lane backstop`.
+
+**⭐ THE DECISION: KEEP IT, AND ITS ROLE CHANGED RATHER THAN ENDED.** With the nine entries restored the backstop backstops nothing currently dead — **9 of its 11 lanes have their primary back and are green**, `ownership-onchain-walk` is healthy at its **real 1/day baseline** (10 of the last 20 days are single-run days; the 14 and 10 on 09-11/09-12 were backstop and hand fires, not cadence), and `offers-sweep` is the deliberately-retired dead-host lane. ⚠ **Retiring a safety net the same hour the thing it protects came back, before the restoration has held one full cycle, is the worst available timing.**
+
+**⭐⭐ WHAT ACTUALLY CHANGED IS THAT THE MISSING ALARM NOW EXISTS.** The backstop was built because a cron-job.org auto-disable was **silent**. It is not any more — the notification flag is on for all nine. **So its job is no longer "be the only thing that notices"; it is "keep the lanes degrading rather than stopping between the email and a human".** ⛔ **That also answers #48 in the negative:** an ~8 %-delivery floor does not deserve a cron-job.org slot.
+
+**⚠ AND THE RISK I CREATED TONIGHT WAS CHECKED RATHER THAN ASSUMED.** Two callers on these nine lanes is a **NEW** combination — before tonight the backstop was the only one. Safe by construction: `alerts-send` claims work `FOR UPDATE SKIP LOCKED`, `alerts-dispatch` dedupes `alert_deliveries`, the listings legs upsert on unique keys. Load is ~8 of 96 fires a day, ~88 extra route calls across 11 lanes.
+
+**✅ RE-EVALUATION TRIGGER, dated and measurable:** if none of the nine reappears in `check_pipeline_cadence_collapse()`'s `degraded` list after a week, thin the backstop to the lanes that still lack a primary.
+
+**Gates:** docs only; index regenerated; `check-memory-doc-links` 197; ledger guards 3 / 0.
+
 ### 2026-09-12 · 🚨 SECOND LEAK OF THE SAME TOKEN, BY THE SAME MECHANISM, WITH THE RULE ALREADY WRITTEN — and the false premise that let it through is retracted (#32) · Cowork cloud
 
 **Shipped (docs + a skill proposal):** `docs/cowork-skills/rpc-cron-ops/SKILL.md` (three corrections), `docs/reference/known-issues.md` (#32, #80). **Trevor notified in-session; `INGEST_SECRET_TOKEN` rotation is his action.** Revert: `git revert` the commit whose message starts `docs(skill+register): the cron console's auth header is on the COMMON tab`.
