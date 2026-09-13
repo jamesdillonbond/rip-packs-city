@@ -675,6 +675,33 @@ SELECT status_code, content FROM net._http_response WHERE id = <id>;
 ⚠ **Running the DB-invariant suite locally is documented in [testing-and-ci.md](testing-and-ci.md) → "Provisioning the DB-invariant suite locally" — do not duplicate the recipe here.** Two things that section's recipe assumes and that cost time on 2026-08-22: `initdb` refuses to run as **root**, and **piping its error to `/dev/null` makes the whole failure silent** (`pg_isready` is then the only tell). Also, a `/tmp/claude-*` scratch dir is **not readable by the `postgres` user** — use a `/var/tmp/...` path chowned to it.
 
 
+### ⭐ AND POINT IT AT OUR OWN DOMAIN — a no-egress session CAN probe production (2026-09-13)
+
+⚠ **The section above says `www.rippackscity.com` is blocked from the sandbox and stops there, and that full stop cost a whole filing.** A 2026-09-13 inbox filing recorded *"not established: what production's fetch gets — the discriminating probe needs egress this sandbox does not have"* while the instrument was already in use **three queries earlier against the upstream gateways**. `net.http_get` does not care whose domain it is:
+
+```sql
+SELECT net.http_get('https://www.rippackscity.com/api/public/ipfs-media/<cid>');
+-- then: SELECT status_code, headers->>'cache-control', headers->>'x-vercel-cache' FROM net._http_response WHERE id = <id>;
+```
+
+That one line settled an item that had been parked as unanswerable: three fresh UFC CIDs came back **200 `immutable` (MISS) · 200 · 429 `public, max-age=0, must-revalidate`**, repeats **HIT** — refuting *"no edge caching"* and reproducing the reported header as a **failure path** in the same minute. **⭐ The generalisation: before writing "needs egress I do not have", ask whether the instrument you just used on someone else's host works on ours.**
+
+⚠ **THREE CAVEATS, each of which can make this probe lie:**
+1. ⛔ **`content` is a TEXT column, so a BINARY body is lossy.** A 1200×630 PNG stores as ~8 characters — `length(content)` is **not** the response size and cannot tell an art-bearing card from a blank one. Read `status_code` and `headers`; for bytes use something else.
+2. ⚠ **`headers->>'cache-control'` from OUR domain reads a bare `public`** — Vercel consumes the CDN directives (`s-maxage`, `stale-while-revalidate`) and does not echo them. **So a card's cache POLICY is not observable from outside**, and a probe designed around reading it back measures nothing.
+3. ⚠ **The request leaves SUPABASE's IP, not Vercel's.** A 403/429 from a public gateway is reputation- and account-dependent, so a failure here is evidence about that IP, not proof about production's fetch. (And ⛔ **your own probes are the load**: six requests to `gateway.pinata.cloud` in a few minutes preceded the 429 that turned up in the sample.)
+
+### Did a rendered card actually get its ART? A/B the payload with `web_fetch_vercel_url` (2026-09-13)
+
+`mcp__Vercel__web_fetch_vercel_url` fetches a production URL and saves the body when it is too large to inline — and for an OG card the **saved size is the signal**, because the body is a PNG. ⚠ **Absolute size means nothing on its own** (the text is a lossy decode); **the A/B against a deliberately art-less control does**:
+
+| probe | saved payload |
+|---|---|
+| `/api/og/player?…&slug=lebron-james` | **417,380 chars** |
+| `/api/og/player?…&slug=zzz-not-a-real-player` (the no-art fallback card) | **65,351 chars** |
+
+**6.4×** — the art pane is the only thing that can account for it. ⭐ This is how a cloud session verifies an art fix in production without ever seeing the picture; the control is what makes it a measurement rather than a number.
+
 ## Displaced from CLAUDE.md 2026-08-23 — the two long Vercel bullets, verbatim
 
 Condensed to their rule in CLAUDE.md to keep the memory file under its character limit while three

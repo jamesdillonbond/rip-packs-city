@@ -168,6 +168,19 @@ not clip — it **WRAPS**, and two ~12px lines centred in a 13px box are both sl
 middle. The live instance is Disney Pinnacle's 51-character
 `" Walt Disney Animation Studios • The Lion King Vol.2"`.
 
+🚨 **AND THE SECOND FAILURE MODE, found 2026-09-13 BY LOOKING AT A RENDER RATHER THAN BY REASONING:
+a CENTRED flex line with `overflow: hidden` EATS BOTH ENDS.** The profile card's new name strip drew
+a 44-character UFC title as **"Adesanya vs Alex Pereira UFC 2"** — `"Israel "` silently gone from the
+**FRONT**, with nothing on the card to say a clip had happened. ⛔ **A caption that removes the first
+word of a NAME is worse than one that ellipses the last**, because a truncated tail still identifies
+the subject and a truncated head can identify the wrong one — the misattribution class, arriving
+through the layout instead of through an index. The prior analysis of this exact strip had predicted
+*"clean ellipsis, one line"*, which is what CSS would do if satori honoured it. ⭐ **The rule: clip by
+CHARACTER COUNT before the text reaches a centred box, and prove it with a rendered PNG — the
+difference between a tail clip and a both-ends clip is invisible to every assertion that only checks
+the text FITS.** `monoCharBudget(px, fontSize)` in `lib/og/trophy-detail.ts` is the size-aware
+sibling of `captionCharBudget(w)` for cards whose caption scales with the tile.
+
 ⭐ **The first diagnosis estimated the glyph advance at "mono ≈ 0.6em" → 6.3px at 10px → a ~12%
 over-count. Parsing the shipped TTF says otherwise:** `public/fonts/ShareTechMono-Regular.ttf` is
 `unitsPerEm = 1000` with an advance of **540 on 191 of its 194 glyphs** — 0.540em, **5.70px** with
