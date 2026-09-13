@@ -10,6 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ SHIPPED (code) — a failed Top Shot enrichment was publishing `LOCKED: No` as a measured fact, on 100% of Top Shot moments in wallet search · Cowork cloud
+
+**Found from production, not from the source:** `/api/wallet-search` logged **200 occurrences of `Top Shot GraphQL failed with 530` in 24 h**, and every sampled request failed **all** of its moments (24/24, 50/50) while still returning HTTP 200. The route's per-moment `catch` builds a replacement row, and it was honest about exactly ONE field — `playerName: "Unknown (error loading)"` — while asserting the rest: `isLocked: false`, `officialBadges: []`, `specialSerialTraits: []`. ⭐ **The author was plainly thinking about failure and did not carry it to the boolean and the arrays, where `false` and `[]` are indistinguishable from a reading.**
+
+**It reached the user, and that was verified by the render path rather than inferred.** `getLocked` is `Boolean(row.isLocked ?? row.locked)` — the documented `?? 0` fabricated-value shape in boolean form — and `CollectionMomentTable` renders `LOCKED` as `isLocked ? "Yes" : "No"` with its honest `"—"` branch **hardcoded to `collectionSlug === "nfl-all-day"`**. So for Top Shot a failed read published a definite **"No"**: a false claim about whether the user can sell their own asset. Blast radius of the same helper: the locked/unlocked filter and the locked totals (those UNDER-count rather than over-claim, and are deliberately unchanged).
+
+**Shipped:** `enrichFailed?: boolean` on `WalletRow` + `MomentRow`, set in the catch; the catch now returns `undefined` for badges/traits/lock instead of `[]`/`false`; new `isLockKnown(row)` in `lib/collection/helpers.ts`; the table's LOCKED field gates on it. ⚠ **`getLocked` is deliberately NOT changed** — four call sites treat a falsy return as "not locked", so the tri-state is EXPOSED, not imposed, and a pin holds the two apart.
+
+**Guard:** `__tests__/failed-enrichment-does-not-assert-lock-state.test.ts` — **proven non-vacuous: all 8 assertions fail on `origin/main` and pass on the fix.** ⚠ The sibling guard `catch-blocks-do-not-assert-completeness` could never have caught this: it matches paged-list termination FLAGS (`setExhausted(true)`), and this claim is a VALUE in a returned object. Same family, adjacent sub-class.
+
+**Verified:** `tsc --noEmit` clean · **75 test files / 1006 tests green** (all wallet-search, collection helpers/totals/filter-sort/filter-options, and the sibling catch guard) · `lint:ratchet` at baseline 715, no increase.
+
+⛔ **The 530 itself is UPSTREAM and is NOT fixed here** — Dapper's GraphQL is answering 530/429; this change only stops the product asserting a negative finding while that lasts. **Revert:** `git revert` the code commit; DB untouched.
+
+
 ### 2026-09-13 · ✅ `get_topshot_sniper_deals` 7.4 s → 0.12 s — the heaviest user-facing RPC was running a parameter-blind plan; it now plans with its values (`RETURN QUERY EXECUTE … USING`) · Claude Code cloud
 
 **The measurement that found it:** `/api/market`'s Top Shot leg was still 503ing after the spell (13/hour, every one `get_topshot_sniper_deals … read exceeded 8000ms`), and `pg_stat_statements` since 08-12 read **8,309 calls · mean 6.2 s · max 30 s · 43,065 blocks/call** — a mean 2 s inside its own 8 s bound in calm weather. `EXPLAIN` on the function call: **7,374 ms · 89,314 buffers**. The same body with the parameters written in as literals: **848 ms · 7,642 buffers**. `PREPARE` + `plan_cache_mode = force_generic_plan` reproduced the slow shape to the buffer (3.7 s · 86,712): with `$3`/`$4` unknown the planner estimates every join at `rows=1` and nests 13,341 index probes into `editions` and `edition_fmv_current` instead of two hash joins. A non-inlined `LANGUAGE sql` function gets that generic plan on every call.
