@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ CODE — the nav's active tab was signalled by COLOUR ALONE, and the one active tab announced `aria-pressed="false"` · Cowork cloud, production verification of the re-slot
+
+**Shipped:** `components/MobileNav.tsx` (`aria-current` on the active tab) and `__tests__/component-MobileNav.test.tsx` (+4 tests, and an annotation on the focus test that matters more than the fix). Revert: `git revert` the commit whose message starts `fix(nav): announce the active tab, not just colour it`.
+
+**Found by walking the re-slot in production**, not by reading the diff. On `/nba-top-shot/overview` the COLLECTIONS tab rendered in the active red while carrying **`aria-pressed="false"` and no `aria-current`** — so the one tab that WAS the answer told a screen reader it was not pressed, and **no tab anywhere exposed "you are here" at all**. Colour was the entire active signal, which is also the signal that fails for anyone who cannot separate `#e03a2f` from 55% white. Read from the live DOM on the deploy, all five tabs, `aria-current: null` on every one.
+
+**⚠ THE TWO ATTRIBUTES ANSWER DIFFERENT QUESTIONS, and COLLECTIONS needs both.** `aria-pressed` is about the **sheet** (it is a disclosure control); `aria-current` is about the **location**. On a collection page with the sheet closed they correctly disagree — `aria-current="page"` and `aria-pressed="false"` — and a test now pins exactly that pair, because the tempting "fix" is to make `aria-pressed` track the route, which would then lie about whether the sheet is open. SEARCH is a pure disclosure and never claims a location.
+
+**⭐⭐ THE FINDING THAT MATTERS MORE THAN THE FIX: AN OCCLUDED CHROME WINDOW MAKES EVERY rAF BEHAVIOUR READ AS BROKEN.** While verifying the new Search sheet I measured that focus never entered it — **zero `focusin` events across a close and a reopen**, on the Collections sheet too, which has shipped for weeks. The obvious conclusion was that `useModalA11y`'s focus trap does not work in a real browser and the jsdom test only passes because it **mocks `requestAnimationFrame` to fire synchronously**. That conclusion was WRONG, and one probe away from being filed as a defect: the Chrome window was **occluded behind File Explorer**, `document.visibilityState === "hidden"`, and **a probe `requestAnimationFrame` never fired in 1500 ms**. Chrome suspends rAF entirely in a hidden tab.
+
+⚠ **So the browser harness used for this project's UI verification cannot measure anything deferred to a frame** — focus traps, transitions, animations, lazy mounts, IntersectionObserver work — and each will present as a confident, reproducible, *false* defect. Recorded at the focus test itself, where the next person to doubt it will be standing. **Raise the window first, or the finding is about the harness and not the product.**
+
+**What DID verify in production** on `b0c7762`: exactly **one** nav bar on `/dashboard/packs` (no double mount) · labels 🏠HOME 🔍SEARCH ⚡SNIPER 👤MY STUFF 🗂COLLECTIONS · hrefs `/`, `/nba-top-shot/sniper`, **`/profile`** — the login wall stays closed · **`/nba-top-shot/overview` lights COLLECTIONS** (`rgb(224,58,47)` against `rgba(255,255,255,0.55)`), the gap that used to light nothing · `/insights/candy-mlb` has a bar at all · the Search sheet opens with its input, and opening it closes the Collections sheet.
+
+**Gates:** `tsc` clean · 28 MobileNav tests · eslint ratchet 716 vs baseline 716 · ledger guards 3 / 0.
+
 ### 2026-09-12 · ✅ CODE — sentinel arm `Portfolio Cache Drain`: the reconciler can succeed, write rows and still lose ground, and every existing instrument reads that as healthy · Cowork cloud, Trevor: "the sentinel blind spot"
 
 **Shipped:** `app/api/sentinel/route.ts` (one new arm, no DDL — `thr()` falls back to hardcoded thresholds) and `__tests__/api-sentinel-deep.test.ts` (+8 tests, plus the `pipeline_runs` fixture turned into a sequence). Revert: `git revert` the commit whose message starts `feat(sentinel): watch the portfolio cache DEPTH, not the reconciler's success`.
