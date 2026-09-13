@@ -536,6 +536,31 @@ export async function ogImageDataUris(
  * Duplicate and falsy candidates are skipped without spending anything — a
  * caller that concatenates a portrait column with a list of edition thumbnails
  * should not pay twice when they happen to be the same url.
+ *
+ * ⛔ WHAT THIS CANNOT RESCUE, MEASURED THE SAME DAY IT SHIPPED — A CANDIDATE SET
+ * THAT SHARES ONE SLOW PATH. The walk spends ONE budget across every candidate,
+ * which is right for a sparse dead url and useless when the candidates differ
+ * only in which CID they name. UFC Strike is exactly that case: all 518 editions
+ * resolve through `/api/public/ipfs-media/`, and a COLD fetch of that art does
+ * not finish inside a card's 4,500 ms budget. Measured 2026-09-13 from the
+ * database's egress, two cold CIDs, same url shape, same instrument:
+ *
+ *   · `/_next/image?url=/api/public/ipfs-media/<ufc cid>&w=640&q=75`
+ *     at 4,500 ms → **TIMEOUT at 4,500.8 ms**;  at 20,000 ms → **200 image/png**.
+ *   · ⭐ CONTROL, and it is what makes this a UFC finding rather than a budget
+ *     one: the same url over a pre-2022 TOP SHOT CID (`ipfs.dapperlabs.com`,
+ *     2,368 editions) came back **200 on 2 of 2 cold fetches INSIDE 4,500 ms**.
+ *
+ * So a UFC card publishes art-less on any cold path, and no fallback ordering
+ * changes that — the first candidate's timeout consumes the shared budget, and
+ * the second would take the same route. ⚠ `artFailed` + `ogCacheHeaders` make
+ * that honest (60 s rather than 25 h) but they do not make it art.
+ *
+ * ⛔ DELIBERATELY NOT FIXED: the lever is pre-warming the 518 derivatives so the
+ * card's fetch is a cache HIT, and that spends metered transformations on a
+ * market closed since 2026-05-13. **Revisit if UFC reopens, or the moment any
+ * LIVE collection's art lands on a slow gateway — the test is one cold fetch at
+ * 4,500 ms, not a reading of this comment.**
  */
 export async function ogImageDataUriFirst(
   urls: Array<string | null | undefined>,

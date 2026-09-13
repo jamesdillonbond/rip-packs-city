@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · MEASUREMENT — the fallback walk I shipped this morning CANNOT rescue UFC, and the control is what proves it is not a budget problem · Claude Code cloud
+
+**Shipped: comment + register only** (`lib/og/img-data.ts` header, register #106). No behaviour change, no DB write. Revert: `git revert <sha>` (find by message — `cannot rescue`).
+
+⛔ **#105's fallback walk spends ONE budget across all candidates — right for a sparse dead url, useless when every candidate resolves through the SAME slow path.** All 518 UFC editions do. Measured from the database's egress, two COLD CIDs, same url shape, same instrument:
+
+- `/_next/image?url=/api/public/ipfs-media/<ufc cid>&w=640&q=75` at **4,500 ms** (a card's art budget) → **TIMEOUT at 4,500.8 ms**
+- the same url at **20,000 ms** → **200 image/png**, `x-vercel-cache: MISS`
+- ⭐ **CONTROL — and it is the whole finding:** the same url over a pre-2022 **TOP SHOT** CID (`ipfs.dapperlabs.com`, 2,368 editions) → **200 on 2 of 2 cold fetches INSIDE 4,500 ms.** So the budget is fine and UFC's only working gateway is not.
+
+**Consequence, stated plainly: a UFC card publishes art-less on any cold path, and no fallback ordering changes it.** `artFailed` + the 60 s degraded cache make that HONEST, not fixed — and that is worth saying, because "the player card is fixed" is exactly what a reader would otherwise take from this morning's entry.
+
+⚠ **A REAL TRAP FOUND ON THE WAY, and it invalidates one of my own earlier probes: `ufc-strike` is NOT a url slug — it is `ufc`.** `/api/og/player?collection=ufc-strike&slug=…` rendered the **guard card** and returned a perfectly healthy **200 image/png**, which I had counted as a UFC card rendering. ⭐ **A 200 on a card route proves only that SOMETHING rendered**; the discriminator is the payload size against an art-less control (69,092 chars for the real UFC card vs 65,351 for the no-art fallback — i.e. no art).
+
+⛔ **Deliberately not fixed:** the lever is pre-warming those 518 derivatives so a card's fetch is a HIT, and that spends metered transformations on a market closed since 2026-05-13. **Exit condition: UFC reopens, or any LIVE collection's art lands on a slow gateway — and the test is one cold fetch at 4,500 ms, not a re-read of the note.**
+
 ### 2026-09-13 · FIX — 13 surfaces hotlinked a public IPFS gateway that currently TIMES OUT, and one of them was proven broken in production · Claude Code cloud
 
 **Shipped: repo-only.** 13 `.tsx` surfaces + 2 shared helpers (`lib/pack-dist-format.ts` `tsTileImg`, `lib/pack-lifecycle-format.ts` `resizedThumb`) + new ban-at-zero guard `__tests__/moment-art-reaches-the-proxy-ratchet.test.ts`. No DB write, no prod state change. Revert: `git revert <sha>` (find by message — `IPFS proxy`).
