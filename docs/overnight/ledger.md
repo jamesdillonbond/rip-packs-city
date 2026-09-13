@@ -10,6 +10,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ Sentinel `Sniper Feed` arm: its HTTP bound 8 s → 20 s, because a COLD feed build takes longer than 8 s and the arm was reading INCONCLUSIVE on a healthy board · Claude Code cloud
+
+**Measured:** the 12:21 and 12:56 PM PT sweeps both aborted the `/api/sniper-feed` fetch at 8 s (`INCONCLUSIVE — This operation was aborted`) while the route's own logs show it answering 200 with **56 deals** a minute later; the route's `maxDuration` is 45 s and a cold build (badge join, jersey numbers, FMV, serial estimates) runs past 8 s under load. With the sentinel's wall budget now accounting for every second the sweep spends, a 20 s HTTP bound cannot push the sweep to its wall — it only lets a real answer arrive. `SNIPER_FEED_FETCH_MS = 20_000` in `app/api/sentinel/route.ts`; sentinel suites 4 files / 133 tests green. **Revert:** `git revert` the code commit.
+
+
 ### 2026-09-13 · ✅ SHIPPED (code) — a failed Top Shot enrichment was publishing `LOCKED: No` as a measured fact, on 100% of Top Shot moments in wallet search · Cowork cloud
 
 **Found from production, not from the source:** `/api/wallet-search` logged **200 occurrences of `Top Shot GraphQL failed with 530` in 24 h**, and every sampled request failed **all** of its moments (24/24, 50/50) while still returning HTTP 200. The route's per-moment `catch` builds a replacement row, and it was honest about exactly ONE field — `playerName: "Unknown (error loading)"` — while asserting the rest: `isLocked: false`, `officialBadges: []`, `specialSerialTraits: []`. ⭐ **The author was plainly thinking about failure and did not carry it to the boolean and the arrays, where `false` and `[]` are indistinguishable from a reading.**
