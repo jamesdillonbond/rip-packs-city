@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ CODE — the bottom nav re-slotted (HOME · SEARCH · SNIPER · MY STUFF · COLLECTIONS) and its eleven ad-hoc mounts collapsed to one · Cowork cloud, Trevor: "Re-slot as proposed" + "the 11-site nav consolidation"
+
+**Shipped:** `components/MobileNav.tsx` (re-slot + a Search sheet), `app/layout.tsx` (the one mount), the eleven ad-hoc mount sites emptied, and `__tests__/component-MobileNav.test.tsx` at 24 tests. Revert: `git revert` the commit whose message starts `fix(nav): re-slot the five tabs and collapse eleven mounts into one`.
+
+**The re-slot.** Was **PROFILE · SNIPER · PACKS · WALLET · COLLECTIONS** — four of five slots spent on one collection's sub-pages, no way back to the homepage, no entry to search at all, and the centre slot (the best thumb position on a phone) given to Packs. Now **HOME · SEARCH · SNIPER · MY STUFF · COLLECTIONS**, with Sniper in the centre. Packs and Wallet are not lost: Wallet is already a chip inside the Collections sheet, and Packs is reached through Market per the 2026-07-18 IA reorg that folded it there.
+
+**⭐ The `/overview` gap closes by OWNERSHIP, not by a sixth tab.** `activeTabFor` used to return `null` for every collection page that was not `sniper` / `packs` / `collection` — so a collection's own `/overview`, the most common entry point in the product, lit nothing. Overview was never going to be one of five slots. COLLECTIONS now owns every non-sniper collection page, which is also what it *means*: the sheet is how you move between them. `/` lights HOME, the five account prefixes light MY STUFF.
+
+**⚠ MY STUFF POINTS AT `/profile`, AND A GUARD NOW FAILS IF THAT CHANGES.** `/dashboard` is auth-gated and this is the first tab a first-run visitor scans; the measured chain was `/profile → 308 → /dashboard → 307 → /login?next=…` — two hops into a login wall from the first tap. `app/profile/page.tsx` exists specifically to end that (register R36): it is public, `proxy.ts` allows it explicitly, and it server-redirects a signed-in visitor onward. Re-pointing the href at `/dashboard` silently reinstates the wall, so it is pinned.
+
+**Search had no entry point on a phone at all.** `GlobalSearch` is the header's box — already wired to `/api/search`, with its own keyboard handling — and the header is collapsed at mobile width. It is **reused, not reimplemented**, inside the same sheet pattern the Collections sheet uses (`useModalA11y`: Escape, focus-in, Tab trap, focus restore). The two sheets are mutually exclusive; opening either closes the other.
+
+**⭐ ELEVEN MOUNTS → ONE, and the previous pass's fix was the wrong SHAPE.** Last night's commit mounted the bar in two more layouts to cover `/dashboard/*` and `/insights/*`. That closed those two holes and left intact the thing that produced them: a bar whose presence is decided per-file, where a page that forgets to mount it is indistinguishable from a page that should not have one. It now mounts once in `app/layout.tsx`; it hides itself above 768px in its own stylesheet, so this is inert on desktop.
+
+**The guard counts the TREE, not a list of files.** Naming the eleven would pass happily the day someone adds a twelfth, and the failure is silent in both directions — a missing mount looks fine in every component test, and so does a duplicate, because two `position: fixed; bottom: 0` bars stack exactly on top of each other and read as one bar with doubled tap targets. So the test walks `app/` + `components/` and asserts the set of files containing `<MobileNav` is **exactly `["app/layout.tsx"]`**. That assertion is also what verified the consolidation was complete: it passes, so there is no twelfth site.
+
+**Icons are one family.** The old set mixed emoji (👤 ⚡) with geometric glyphs (▣ ◈ ▦), and ▣ vs ▦ were near-identical squares at 18px. Now 🏠 🔍 ⚡ 👤 🗂.
+
+**Gates:** `tsc` clean · 24 MobileNav tests + 232 across the four affected suites · eslint ratchet **716 vs baseline 716** · ledger guards 3 / 0.
+
 ### 2026-09-12 · ✅ CODE — Pack History and all ~30 `/insights` boards had NO bottom nav; the two layouts that should have mounted it now do · Cowork cloud, Trevor: "Keep going"
 
 **Shipped:** `app/dashboard/layout.tsx` (was literally `return children`), `app/insights/layout.tsx`, the two now-duplicate child mounts removed from `app/dashboard/DashboardClient.tsx` and `app/dashboard/api-keys/ApiKeysClient.tsx`, and 2 source-pinned tests. Revert: `git revert` the commit whose message starts `fix(nav): mount the bottom bar on the two route families that had none`.
