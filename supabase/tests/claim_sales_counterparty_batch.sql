@@ -20,7 +20,7 @@
 -- DROPPED, and the call must still succeed. A function that scans cannot.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260913074912_audit_20260913_sales_counterparty_claim_rearms_instead_of_rescanning_a_drained_range.sql);
+-- (supabase/migrations/20260913173355_audit_20260913_claim_excludes_topshot_marketplace_because_the_rearm_dissolved_its_bounded_argument.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -51,10 +51,19 @@ CREATE TABLE sales_counterparty_backfill_state (
 -- that the claim must never return. The excluded row is what makes "found nothing"
 -- reachable without emptying the table — the production shape exactly: a drained
 -- range that still contains hundreds of thousands of ineligible rows.
+--
+-- ⭐ THE topshot_marketplace ROW IS THE NEWEST ROW IN THE TABLE, DELIBERATELY
+-- (20260913173355). Placed at the top, a claim that stops excluding it fails TWO
+-- independent assertions rather than one: every `count = 2` below becomes 3, AND
+-- the newest-first ordering assertion returns this row's id instead of 1111….
+-- Placed at the bottom it would have been invisible to the ordering check and to
+-- section B, whose stranded cursor sits above it. A skipped population needs a
+-- fixture where a regression cannot hide.
 INSERT INTO sales (id, seller_address, collection, transaction_hash, sold_at, source) VALUES
   ('11111111-1111-1111-1111-111111111111', NULL, 'nba_top_shot', repeat('a',64), '2026-05-01 00:00:00+00', 'onchain'),
   ('22222222-2222-2222-2222-222222222222', NULL, 'nfl_all_day',  repeat('b',64), '2026-04-01 00:00:00+00', 'onchain'),
-  ('33333333-3333-3333-3333-333333333333', NULL, 'nfl_all_day',  repeat('c',64), '2024-01-01 00:00:00+00', 'allday_studio_history_v1');
+  ('33333333-3333-3333-3333-333333333333', NULL, 'nfl_all_day',  repeat('c',64), '2024-01-01 00:00:00+00', 'allday_studio_history_v1'),
+  ('44444444-4444-4444-4444-444444444444', NULL, 'nba_top_shot', repeat('d',64), '2026-06-01 00:00:00+00', 'topshot_marketplace');
 
 INSERT INTO sales_counterparty_backfill_state (id, cursor_sold_at, floor_sold_at, exhausted_at, updated_at)
 VALUES (1, NULL, '2023-11-08 17:00:00+00', NULL, now());
@@ -63,7 +72,7 @@ VALUES (1, NULL, '2023-11-08 17:00:00+00', NULL, now());
 CREATE OR REPLACE FUNCTION public.claim_sales_counterparty_batch(p_limit integer DEFAULT 100)
  RETURNS TABLE(sale_id uuid, tx_hash text, sold_at timestamp with time zone)
  LANGUAGE plpgsql
- VOLATILE SECURITY DEFINER
+ SECURITY DEFINER
  SET search_path TO 'public'
  SET statement_timeout TO '60s'
 AS $function$
@@ -122,6 +131,10 @@ BEGIN
         -- right default; the other way a new writer that forgets `source` disappears silently.
         AND s.source IS DISTINCT FROM 'allday_studio_history_v1'
         AND s.source IS DISTINCT FROM 'ufc_studio_history_v1'
+        -- KNOWN-UNDECODABLE (20260913, this migration): 4,959 rows, 0.00% conversion measured as a
+        -- WHOLE POPULATION over 11 days and at least two full walks, against 5,507 recovered from
+        -- other sources in the same 24 h. Excluded only because the re-arm made the walk cyclic.
+        AND s.source IS DISTINCT FROM 'topshot_marketplace'
       ORDER BY s.sold_at DESC
       LIMIT v_limit;
   ELSE
@@ -135,14 +148,15 @@ BEGIN
         AND s.sold_at >= v_floor
         AND s.source IS DISTINCT FROM 'allday_studio_history_v1'
         AND s.source IS DISTINCT FROM 'ufc_studio_history_v1'
+        AND s.source IS DISTINCT FROM 'topshot_marketplace'
       ORDER BY s.sold_at DESC
       LIMIT v_limit;
   END IF;
 
-  -- ⚠ GET DIAGNOSTICS AFTER `RETURN QUERY` REPORTS THE ROWS THAT QUERY ADDED TO THE RESULT
-  -- SET, which is exactly what "did this scan find anything" means here. A zero is the
-  -- drained signal — record it, so the NEXT tick takes the free branch above instead of
-  -- paying for the same discovery again.
+  -- GET DIAGNOSTICS AFTER `RETURN QUERY` REPORTS THE ROWS THAT QUERY ADDED TO THE RESULT SET,
+  -- which is exactly what "did this scan find anything" means here. Verified on PG 16 before
+  -- shipping (3 rows -> 3, empty -> 0). A zero is the drained signal - record it, so the NEXT
+  -- tick takes the free branch above instead of paying for the same discovery again.
   GET DIAGNOSTICS v_found = ROW_COUNT;
   IF v_found = 0 THEN
     UPDATE public.sales_counterparty_backfill_state
@@ -156,6 +170,11 @@ $function$;
 -- ── A. A NORMAL SCAN STILL WORKS, AND STILL EXCLUDES WHAT IT ALWAYS DID ─────
 SELECT _assert_eq((SELECT count(*)::text FROM claim_sales_counterparty_batch(10)), '2', 'both decodable rows are claimable from a NULL cursor');
 SELECT _assert_eq((SELECT count(*)::text FROM claim_sales_counterparty_batch(10) WHERE sale_id = '33333333-3333-3333-3333-333333333333'), '0', 'a studio-history row is never claimed');
+-- 20260913173355: topshot_marketplace converts at 0.00% as a WHOLE POPULATION (4,959 rows,
+-- unchanged across 11 days and two full walks) while the same lane recovered 5,507 rows from
+-- other sources in the same 24 h. The exclusion is a SKIP, not a deletion — assert it directly
+-- so the predicate cannot be dropped as redundant by someone reading only the WHERE clause.
+SELECT _assert_eq((SELECT count(*)::text FROM claim_sales_counterparty_batch(10) WHERE sale_id = '44444444-4444-4444-4444-444444444444'), '0', 'a topshot_marketplace row is never claimed');
 SELECT _assert_eq((SELECT count(*)::text FROM claim_sales_counterparty_batch(1)), '1', 'p_limit still bounds the batch');
 -- Newest first: the ordering the cursor depends on.
 SELECT _assert_eq((SELECT sale_id::text FROM claim_sales_counterparty_batch(1)), '11111111-1111-1111-1111-111111111111', 'newest-first ordering is preserved');

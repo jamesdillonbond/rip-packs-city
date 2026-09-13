@@ -1984,7 +1984,7 @@ const PINS = [
     fn: "claim_sales_counterparty_batch",
     test: "supabase/tests/claim_sales_counterparty_batch.sql",
     migration:
-      "supabase/migrations/20260913074912_audit_20260913_sales_counterparty_claim_rearms_instead_of_rescanning_a_drained_range.sql",
+      "supabase/migrations/20260913173355_audit_20260913_claim_excludes_topshot_marketplace_because_the_rearm_dissolved_its_bounded_argument.sql",
   },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
