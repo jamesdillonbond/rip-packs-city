@@ -82,6 +82,28 @@ Three shapes, in the order I would try them:
 3. **Accept and bound.** Leave it, and rely on the residue staying small. ⚠ It will not: every
    undecodable row that the walk ever reaches joins this set permanently.
 
+## ⛔ A second fix considered and REJECTED: raising the floor past them
+
+The cheapest containment is one UPDATE. `floor_sold_at` is already at 2026-01-01 (raised today to
+contain a scan cost), and **the entire eligible pool above it is now exactly these 42 rows** — the
+population query returns one group and nothing else. Moving the floor to 2026-02-12 would empty the
+range, the scan would return ZERO, `exhausted_at` would arm, and the lane would drop straight back
+into its healthy 2-hour cycle. New sales are unaffected: they arrive at the head, far above any
+floor. Cost: 42 rows that have already been proven undecodable.
+
+**It is still the wrong move, and the reason is not caution.** ⭐ **It removes the only symptom of a
+defect that is going to recur.** The residue is not static — *every* undecodable row the walk ever
+reaches joins this set permanently — so the next one recreates the spin above whatever floor was
+chosen, with nobody watching, and the answer next time will be to raise the floor again. **A lane
+that looks healthy because its symptom was moved out of range is worse than a lane that visibly
+spins**, and this repo has the rule for it already: fixing the instrument without fixing the record
+leaves the incidence unmeasurable.
+
+So the spin is deliberately LEFT RUNNING and visible, at a measured price of ~84 failing Flow REST
+calls a tick (~24,000/day, bounded, non-destructive, no DB cost of note). **If someone decides that
+price is too high before the structural fix lands, raise the floor — but record it here as a
+deliberate mask with an expiry, not as a fix.**
+
 ## Exit condition and falsifier
 
 **Exit:** a tick that finds rows and recovers none is followed by a cooldown rather than an
