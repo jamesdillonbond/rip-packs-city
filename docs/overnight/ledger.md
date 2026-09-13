@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ CODE — the sentinel has not been clean once in 73 hours, so its WARN header carried no information; it now names the SET that changed · Claude Code cloud, overnight autonomous
+
+**Shipped:** `app/api/sentinel/route.ts` (message header + the previous-run read), `__tests__/sentinel-header-separates-one-sweep-from-the-next.test.ts` (NEW, 11 cases). No migration, no data, no schedule. **REVERT:** `git revert <sha of "fix(sentinel): the header names the set that changed">` — presentation only, no arm's status or threshold moved and `shouldNotify` is untouched.
+
+**🚨 THE REGISTER SAID THIS WAS UNCOUNTABLE, AND IT HAS BEEN COUNTABLE ALL ALONG.** #76's instrument finding states the desensitisation claim as *"an inference from those two arms, not a measured rate — the report is persisted nowhere, so no history of overall status exists to count."* That is **false**: `pipeline_runs.extra->>'status'` and `extra->'warn'` have been persisted on every sweep. Counted over the 21 runs in retention:
+
+- **0 of 21 sweeps were clean.** 16 WARN, 4 CRITICAL, 1 null-status. **Minimum warn arms on any run: 4. Maximum: 12.**
+- `Detector Health (GitHub Actions)` and `Dune Spend (cycle)` each warn in **20 of 21** (95%).
+- ⭐ **The positive control is in the same instrument:** `Sales Ingest (2h)` and `Sales Ingest by Collection` warn in **2 of 21** (10%), `Edition Coverage` 4 of 21. Arms here CAN be quiet, so the 95% pair is a property of those arms, not of the query.
+
+So the inference was right and is now a measurement, and it is worse than stated: the header is not merely identical across two chronic arms, it has been identical across **every sweep this estate retains**.
+
+**⛔ AND THE OBVIOUS FIX IS THE WRONG ONE — I checked before touching it.** `Dune Spend` at 103.5% looks like a live 5-day outage (`can_start: false`, last Dune call 09-08 08:59Z). It is not: the 09-08 entries below record that cycle being **deliberately spent out** (84,868 Top Shot sellers recovered) and the lane's own gate refusing in ~400 ms — a CONFIGURED stop. Nothing about the Dune budget was changed, and metered spend stays off-limits to this pass regardless.
+
+**The fix is at the report level, which is where #76 said the gap was.** The header now carries `0 critical, 8 warn of 21 checks` and a change line naming the arms that are new or cleared since the previous sweep, in PT. Two properties are load-bearing:
+
+1. ⭐ **It diffs the SET, never the count.** A count reads "no change" across a fix landing and a new arm firing in the same window — the documented trap, and here it would sit inside an alarm. Pinned by a case where both sweeps have exactly 8 non-ok arms and one member is swapped.
+2. 🚨 **A failed read of the previous sweep renders as `UNAVAILABLE (<reason>)`, never as "no change".** "No change" is a claim about the fleet; manufacturing it out of a failed read would put this repo's most productive defect class inside the alarm meant to catch it. The test asserts the ABSENCE of the false claim, not the presence of the word.
+
+`extra.warn` being absent (older rows, partial writes) is treated as unavailable, not as a measured zero. Both lines go in the HEADER because `fitTelegramMessage` drops per-check lines first and never the header — so on the largest incident, when the body is being truncated, this is the part that survives.
+
+**Also: the message timestamp is now PT, not `toUTCString()`.** This is a Telegram Trevor reads at 3am, and the standing rule has no exception for machine-generated reports. Pinned (`not.toMatch(/GMT|UTC|Z$/)`).
+
+**5 mutations, 5 caught** — honesty arm deleted (3 fail), name cap removed (1), `formatPT` switched to UTC (1), the cleared half dropped (3), and the delta made count-shaped (2). Existing sentinel + telegram suites: 147 pass, unchanged.
+
+**EXIT CONDITION:** the next sweep's Telegram/email header shows the counts and a change line. **FALSIFIER:** if it reads `UNAVAILABLE (read failed: …)` on a healthy tick, the added `pipeline_runs` read is contending under saturation and should be dropped — it is presentation, not a check, and must never cost a sweep.
+
 ### 2026-09-13 · ✅ DOCS+DB — a money-affecting function is SAFE to re-fire and everything about the write says otherwise; now measured and written down where both readers look · Claude Code cloud, overnight autonomous
 
 **Shipped:** `supabase/migrations/20260913085204_…fmv_haircut_idempotence_guard_is_documented_where_a_sql_reader_looks.sql` (APPLIED — **COMMENT ONLY**, no body, no data, no schedule), `app/api/admin/apply-fmv-haircut/route.ts` (header). Revert in the migration header.
