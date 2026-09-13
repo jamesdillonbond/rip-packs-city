@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⚠ THE COUNTERPARTY INDEX FIXED THE CLAIM, NOT THE LANE — verified by the real caller, and the second and third ticks overturn what the first one implied · Claude Code cloud, overnight autonomous
+
+**No new ship. Exit-condition reading for the `idx_sales_2026/2027_nullseller_soldat` entry below.** Revert unchanged, one statement each: `DROP INDEX CONCURRENTLY IF EXISTS public.idx_sales_2026_nullseller_soldat;` / `..._2027_...`.
+
+🚨 **TWO THINGS I HAVE TO SAY BEFORE THE GOOD NEWS. (1) My own falsifier — *"FALSIFIED if the re-arm takes >10 s"* — FIRED: the sweep took 23.7 s. (2) I nearly published after ONE tick, and the next two overturned the reading.**
+
+**Three consecutive ticks, PT:**
+
+| tick | rows_found | rows_written | duration | error |
+|---|---|---|---|---|
+| **08:05:58** (the re-arm sweep) | 120 | **110** | **23.7 s** | none |
+| 08:11:32 | 120 | **0** | **53.6 s** | none |
+| 08:16:08 | 120 | **0** | **53.7 s** | none |
+
+## What the index DID fix — and this part is solid
+
+⭐ **The claim is now provably trivial.** `idx_scan` on `idx_sales_2026_nullseller_soldat` went **0 → 3** across these ticks with **1,723 index tuples read in total** — about 120 per tick. Before, the same claim was a Bitmap Heap Scan over **6,457** null-seller rows in a 308 MB partition **plus a Sort**, and the EXPLAIN flip is `7732.93..7776.54` → `1.67..47.10` with the Sort node gone. ⭐ **The `idx_scan = 0` baseline was captured deliberately beforehand so this is proven, not inferred.**
+
+⭐ **The claim timeouts are GONE and the variance with them.** Before (05:31–06:01 PT): 57.1 / 58.0 / 59.8 / 61.0 / 61.1 / 74.8 / 93.3 / 100.5 / 115.3 s **plus four `claim failed: canceling statement due to statement timeout` in twenty minutes**. After: **53.6 and 53.7 s, no errors** — a flat floor instead of a ragged ceiling.
+
+⭐ **And the re-arm recovered real data, confirmed by THREE instruments** (`rows_written` is a documented null instrument, so it does not get to answer alone): `rows_written = 110`; `sales_counterparty_recovered` gained **exactly 110 rows at 08:06:16 PT**, all with a non-null `seller_address`; and joining those 110 `sale_id`s back to **`sales` itself** — the table a user reads — **110 of 110 match and 110 of 110 now carry a seller, 0 still null.**
+
+## ⛔ What it did NOT fix, which the first tick hid
+
+🚨 **THE ~53 s WAS NEVER MOSTLY THE SCAN.** With the claim now reading ~120 index tuples, a zero-yield tick **still costs 53.6 s** — so the residual is the **apply path: 120 external transaction fetches that resolve nothing**. (An inference, but a well-supported one now: the claim's cost is measured and trivial, and with `rows_written = 0` the DB write work is negligible.)
+
+⛔ **So the lane is back to ~18% duty cycle producing ZERO rows**, exactly as before, in a band where nothing has been recoverable since **2026-04-11**. **The index removed the timeouts and the variance; it did not remove the waste.** ⚠ **Anyone reading only the 08:05:58 tick would conclude the opposite — 120 found, 110 written, 23.7 s looks like a lane restored.** It was the re-arm sweeping the *newest* rows, which are resolvable; the walk then descends straight back into the band that is not.
+
+🟡 **THIS STRENGTHENS THE CASE FOR `floor_sold_at`, it does not retire it.** That remains Trevor's call and is now better sized: the lever is worth **~53 s per 5-minute tick of futile external fetching**, and the index cannot touch it because the cost is not in the database.
+
+## Still open, stated as conditions rather than hopes
+
+⚠ **The load test has NOT happened.** All three ticks ran against a **quiet fleet** (0 `wallet-backfill` runs in the preceding 30 min); the before-readings came from a wave **and** a saturation spell. **REAL EXIT CONDITION: a claim that completes without a statement timeout DURING a wallet-backfill wave** (hours 0/1 and 12/13 PT, drifting ~+45 min median). Register **#104** measures why that is the hard case — 11 of 11 unrelated lanes slow under that fan-out.
+
+⚠ **Cost side, partly answered:** 12 post-index runs on 4 `*-sales-indexer` lanes, **0 failures**, p50 2,874 ms vs 3,292 ms before — **no write regression visible, but confounded** by the spell easing across the same boundary. Rules out a large regression, not a small one. The structural basis stands: a PARTIAL index over **0.59%** of rows beside a FULL btree over **100%** that the write path already pays.
+
+⭐ **TWO LESSONS, and the second is the one that nearly cost me.**
+1. **State an exit condition against the WORK CLASS it will be judged on, never as a bare duration.** My 10 s bar was calibrated on *drained* ticks doing zero work and then applied to a *productive* one. Read literally it said revert — a change that removed four timeouts and recovered 110 rows. ⛔ **I am overriding it deliberately and saying so, not quietly restating it.**
+2. 🚨 **ONE TICK IS NOT A VERIFICATION.** The first tick after a re-arm is the *most* favourable sample the lane will ever produce, because a re-arm sweeps the newest and most resolvable rows. **Verify a cursored lane across at least one full descent into its steady state**, or the exit reading measures the re-arm rather than the fix.
+
 ### 2026-09-13 · ✅ DOCS — the 696 does not need a manual re-key: a live lane is draining it, the target is proven for 668 of 668, and the burst pattern means the 24h average is not a rate · Cowork cloud, Trevor: "exhaust all you can do"
 
 **Shipped (docs only):** `docs/audits/deep-audit-register.md` (D25 amended), this entry. Nothing executable changed.
