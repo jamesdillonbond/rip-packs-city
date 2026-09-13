@@ -3,6 +3,17 @@
 *(Claude Code, cloud, 2026-09-13 ~11:5x PT. **MEASURED, NOT SHIPPED** — and the point of this
 filing is as much the fix I did NOT ship as the defect.)*
 
+> ✅ **RESOLVED ~12:1x PT the same day by migration `20260913190927`, and NOT by any of the three
+> shapes ranked below — shape 1 without the Worker deploy it was assumed to need.** The arm lives in
+> `apply_sales_counterparty()`, the DB function the worker ALREADY calls on every tick with both
+> facts in hand (`v_n` rows in, `v_applied` rows out): `exhausted_at = CASE WHEN v_applied = 0 THEN
+> COALESCE(exhausted_at, now()) ELSE exhausted_at END`. ⭐ **The filing's own framing — "the signal
+> lives in the worker, not the SQL" — was half wrong: the signal is produced by the worker but
+> RECORDED in SQL, one function further along than I had looked.** Everything below stands as the
+> diagnosis and as the record of two fixes correctly refused; the function is now pinned
+> (`supabase/tests/apply_sales_counterparty.sql`, mutation-controlled). **Left un-archived on
+> purpose until the exit condition below is observed on the real lane.**
+
 ## What is happening
 
 After today's two changes to `claim_sales_counterparty_batch` (`20260913173355` excluded
