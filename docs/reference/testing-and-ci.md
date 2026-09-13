@@ -58,6 +58,83 @@ proof it stripped; the shape-check is the belt to that braces, because a check t
 stripper to be right is better than one that does.
 
 
+## ⭐⭐ A COVERAGE PERCENTAGE IS A RATIO, AND EVERY GUARD HERE WATCHED THE NUMERATOR (2026-09-12)
+
+Three gates ratchet a coverage percentage. The thresholds red when coverage DROPS,
+`coverage-gates-are-wired-to-ci` checks the gates run in CI, `component-gate-include-completeness`
+checks no new `components/` subtree is silently ungated. **Nothing watched the denominator.**
+
+🚨 **Narrowing `lib/**/*.ts` to `lib/analytics/**`, or deleting `app/**/route.ts` from an
+`include` array, removes hundreds of files from the measurement — and because the files that
+remain are the well-tested ones, the percentage goes UP and every threshold passes.** The gate
+reports a better number for measuring less. That is the repo's most-feared shape — a guard that
+inspected nothing, reading as a pass — turned on the coverage gates themselves.
+
+✅ **`__tests__/coverage-gates-still-measure-what-they-claim.test.ts`**: four bans at zero, one per
+surface the gates claim. ⚠ **Expressed over the TREE, not over a count** — a first cut asserted
+"matches at least N files", which reds the day somebody legitimately deletes N+1. *A ceiling that
+churns gets raised rather than read.* ⚠ **The globs are READ FROM the configs, never restated** —
+a copy is a claim about the configs that goes stale silently. ⭐ Mutation-proven against the real
+config, and **a commented-out glob correctly does not count as coverage** (the array is read
+through `stripComments`), which is the subtle death: the glob is still visible, so a reviewer
+skimming the config sees the surface named.
+
+⚠ **The census half is deliberately NOT ratcheted:** 341 of 1,460 files sit in no gate, but
+**38 of 38 edge functions use `Deno.*`/`serve()`** (re-derived, not inherited) so they are
+structurally unmeasurable, and a ratchet over high-churn `scripts/` or over 116 pages reds on
+routine work. ⛔ **Filed as UNMEASURED, not untested — 93 test files already import from
+`scripts/`.** [inbox 2026-09-13T0108Z](../overnight/inbox/2026-09-13T0108Z-341-source-files-sit-in-no-coverage-gate-and-nothing-watched-the-denominator.md)
+
+## 🚨 TWO WAYS A GREEN TEST STOPS MEANING WHAT IT SAYS — both found redding `main` on 2026-09-12
+
+A concurrent session shipped Candy MLB a Market tab. Nothing about it was wrong, and it broke
+three guards. Both mechanisms generalise well past this repo.
+
+### ⛔ 1. A PIN RE-DERIVED FROM THE OBSERVED STATE CAN NEVER DISAGREE WITH REALITY
+
+`panini-launch-flag-contract` pinned two absolute sitemap lengths (`toHaveLength(73)` / `(72)`).
+Candy's new tab made it 74, and the file's own comment had flagged the restructure as owed since
+its **third** bump — this was the **sixth**.
+
+⭐ **The churn was the symptom; the disease is that the expected number was recomputed from the
+tree every time it broke.** Whoever tripped it read the new value off the failure message and
+wrote it in. A number maintained that way is not an assertion — it is a record of the last time
+someone looked. **This is the `fix-inbox-index-counts.mjs` shape** already recorded here (a fixer
+that derives its expected value from the observed state launders an error into internal
+consistency), in the costume nobody recognises: a hand-maintained constant.
+
+✅ **The repair is to assert the claim the number stood in for.** Here that was *"nothing ELSE
+moved when the flag flips"* — a **DELTA between two builds**, not an absolute count of one. The
+symmetric difference between the flag-on and flag-off sitemaps must be exactly the panini entry.
+**Unrelated growth cancels**, so it cannot churn, and it is strictly stronger than the two counts
+it replaced. ⚠ Non-vacuity first: two empty lists also have an empty symmetric difference, so the
+build is asserted substantial before the difference is read.
+
+### ⛔ 2. A CONTROL'S POPULATION MUST BE THE SET THE PROPERTY IS TRUE OF, NOT A PROXY THAT COINCIDES TODAY
+
+`ufc-sniper-is-retired`'s NO-CHANGE CONTROL read *"every OTHER multi-tab published collection
+keeps its sniper"* and failed with **`candy-mlb lost its sniper` — a sentence describing something
+that never happened.** Candy is published, now multi-tab, on Solana, thin, and deliberately
+sniper-less.
+
+⭐ **`pages.length > 1` was standing in for "is a Flow collection with a marketplace", and the two
+stopped being the same set the moment a sixth collection shipped a tab.** The control was not
+wrong when written; it was *underdetermined*, and a proxy population is a claim that silently
+expires. Re-keyed on the sniper set itself with a floor, so a shared-list deletion still reds
+(mutation-proven: removing all 8 entries reds it) while a new sniper-less collection cannot.
+
+### ⭐ AND ONE GUARD BEHAVED PERFECTLY, WHICH IS WORTH RECORDING TOO
+
+`migration-view-security-invoker-guard` caught a **true positive** — `candy_market_board` created
+with no stated security mode. ⚠ **Live state was read before acting rather than inferred:**
+`reloptions` NULL, but anon and authenticated SELECT already false, because the same session had
+revoked them one migration later. **So there was no hole, only the latent half.** Fixed forward
+with an `ALTER` (the convention for an already-applied migration) and the applied file
+grandfathered. ⭐⭐ **The grandfather list's SIZE PIN then reddened on that entry** — so growing the
+list could not happen as a side effect of silencing the other case. *That is what a size pin on an
+allowlist is for, and it is the cheapest guard in this whole file.*
+
+
 ## ⭐⭐ THE STRIPPER IS FIXED, AND THE THING WORTH KEEPING IS THE ORACLE, NOT THE FIX (2026-09-12, register #87)
 
 `scripts/lib/strip-comments.mjs` DEFECT 4 — a JS/TS parser run over `.tsx` — is repaired at the root:
