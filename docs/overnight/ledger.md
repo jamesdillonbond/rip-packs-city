@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ THE SENTINEL HEADER CHANGE PROVED ITSELF ON A REAL CHANGE, UNPROMPTED — and the counterparty lane has recovered 1,800 rows · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only.** No code, no migration, no data.
+
+⭐⭐ **THE BEST AVAILABLE DEMONSTRATION, and it was not staged.** The 03:30 PT sweep ran **on GitHub's own schedule** (not the manual dispatch I used at 02:46) and its findings went **8 → 9**. The new arm is **`Sniper Feed` — `INCONCLUSIVE (db saturated) — Timeout or error: This operation was aborted`**.
+
+So that Telegram read `NEW: Sniper Feed (vs Sep 13, 2:46 AM PT)`. ⛔ **Before tonight that message would have been BYTE-IDENTICAL to the previous one** — same `WARN`, same timestamp format, same arm list rendered as prose — and there was no way to see that an arm had started warning. **That is exactly the failure #76 described and the reason the 09-11 nine-hour incident read like a quiet afternoon.**
+
+⭐ **And the content is honest rather than alarming:** the arm is INCONCLUSIVE because the DB was saturated, not because the Sniper Feed broke — which is the route's intended degrade-to-warn behaviour, now legible instead of buried.
+
+✅ **COUNTERPARTY, same window:** 1,800 rows recovered in 3 h, **23 runs, 0 failures**, max duration **52.2 s** — the duration watch has not tripped (threshold ~60 s). Against the pre-fix state of **0 rows in 6 h while burning 66 s per tick**, the lane is now doing ~600 rows/h of real backfill.
+
+✅ **Fleet health at 04:19 PT: 1 failure in 632 runs in the trailing hour (0.16%).**
+
 ### 2026-09-13 · 📋 REGISTER — a user-facing daily series has 8 permanent holes in 30 days, and the fix is one console edit (#103) · Claude Code cloud, overnight autonomous
 
 **Shipped: docs only** — `docs/reference/known-issues.md` (#103 NEW, index 100 → 101). No code, no migration, **no data** — and deliberately no backfill, see below.
