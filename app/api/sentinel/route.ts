@@ -111,6 +111,38 @@ type Delivery = { ok: true } | { ok: false; reason: string };
 // 180s budget with room to spare.
 const DELIVERY_TIMEOUT_MS = 10_000;
 
+// Bounds on the per-check detail persisted into `pipeline_runs.extra.findings`
+// (see the comment at the log_pipeline_run call). Sized so a worst-case run —
+// every check non-ok — stays a few KB: this row is joined by the alert views on
+// every tick, so it must not grow with the size of an incident.
+const SENTINEL_MAX_FINDINGS = 25;
+const SENTINEL_DETAIL_CHARS = 400;
+
+/**
+ * The non-ok checks, with their DETAIL, shaped for `pipeline_runs.extra.findings`.
+ *
+ * ⚠ EXPORTED AND PURE ON PURPOSE. Inlined at the call site, the two caps were
+ * untestable through the route: no fixture produces a 400-character detail, so an
+ * assertion on the cap passed whether or not the cap existed — measured, by
+ * deleting `.slice()` and watching the suite stay green. A guard that cannot fail
+ * is not a guard, and the caps are the part protecting a row the alert views join
+ * on every tick.
+ */
+export function buildSentinelFindings(
+  checks: Array<{ name: string; status: string; detail?: string }>,
+  maxFindings: number = SENTINEL_MAX_FINDINGS,
+  detailChars: number = SENTINEL_DETAIL_CHARS,
+): Array<{ name: string; status: string; detail: string }> {
+  return checks
+    .filter((c) => c.status !== "ok")
+    .slice(0, maxFindings)
+    .map((c) => ({
+      name: c.name,
+      status: c.status,
+      detail: redactSecrets(String(c.detail ?? "")).slice(0, detailChars),
+    }));
+}
+
 async function sendTelegram(text: string): Promise<Delivery> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return { ok: false, reason: "not_configured" };
   // 🚨 The cap is enforced HERE, at the boundary, not only at the call site.
@@ -2173,6 +2205,28 @@ async function runSentinel() {
         checks_run: checks.length,
         critical: checks.filter((c) => c.status === "critical").map((c) => c.name),
         warn: checks.filter((c) => c.status === "warn").map((c) => c.name),
+        // 🚨 THE DETAIL, NOT JUST THE NAME — ADDED 2026-09-13 BECAUSE THIS ROW
+        // COULD NOT ANSWER "DID AN ARM EVER NAME PIPELINE X?" AND I BELIEVED IT
+        // COULD. `critical`/`warn` above are `c.name` only, so every per-pipeline
+        // fact an arm produces — which pipeline, how many minutes, against which
+        // threshold — existed ONLY in the Telegram/email body. Asking the database
+        // "has the no-success arm ever fired for `reconcile-saved-wallet-stats`?"
+        // returned a confident zero from 21 runs, and that zero was MEANINGLESS:
+        // no key in this object has ever held a pipeline name, so the query could
+        // not have matched for ANY pipeline. I nearly published it as a refutation.
+        // ⭐ That is the estate's own rule — *a zero needs a positive control in
+        // the same instrument* — failing on the instrument that exists to make
+        // other instruments checkable.
+        //
+        // Only non-ok checks are kept: an all-clear run has nothing to explain,
+        // and this row is read far more often than it is written. Each detail is
+        // capped and the list is capped, so a pathological arm cannot bloat every
+        // sentinel row (`pipeline_runs` is read by the alert views on every tick).
+        // ⚠ REDACTED, and that is load-bearing rather than tidy: a check's detail
+        // can quote an upstream URL, and this estate has a Telegram bot token IN A
+        // URL PATH. `extra` is far more widely readable than a log line, so a raw
+        // detail here would be a credential in a table the alert views join.
+        findings: buildSentinelFindings(checks),
         notifications: report.notifications,
         duration_ms: Date.now() - now.getTime(),
       },

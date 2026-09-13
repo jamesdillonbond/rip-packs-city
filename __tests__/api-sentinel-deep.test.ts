@@ -1133,6 +1133,58 @@ describe("POST /api/sentinel — records its own run durably", () => {
     expect(extra.critical).toEqual(breaching)
   })
 
+  it("🚨 the durable row stores each non-ok check's DETAIL, not just its name", async () => {
+    // ⚠ WHY THIS EXISTS, and it is a measurement rather than a worry. Until
+    // 2026-09-13 `extra` held `critical`/`warn` as NAMES only, so every
+    // per-pipeline fact an arm produced — which pipeline, how many minutes,
+    // against which threshold — lived ONLY in the Telegram/email body. Asking the
+    // database "has the no-success arm ever named `reconcile-saved-wallet-stats`?"
+    // returned a confident ZERO across 21 sentinel runs, and that zero was
+    // meaningless: no key in the row had ever held a pipeline name, so the query
+    // could not have matched for ANY pipeline. It was nearly published as a
+    // refutation of a real defect.
+    // ⭐ So the property is not "findings exists" — it is that a fact visible in
+    // the REPORT survives into the ROW, which is the only thing that makes the
+    // sentinel's own history checkable.
+    const f = greenFixtures()
+    f.sales = { count: 0, error: null } as never
+    const spy = install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+
+    const report = await (await POST(post())).json()
+
+    const nonOk = report.checks.filter((c: Check) => c.status !== "ok")
+    expect(nonOk.length).toBeGreaterThan(0) // positive control on the fixture
+
+    const args = spy.rpcCalls.find((c) => c.name === "log_pipeline_run")!.args as Record<
+      string,
+      unknown
+    >
+    const extra = args.p_extra as Record<string, unknown>
+    const findings = extra.findings as Array<{ name: string; status: string; detail: string }>
+    expect(Array.isArray(findings)).toBe(true)
+
+    // Every non-ok check is represented, and its DETAIL travels with it.
+    const withDetail = nonOk.find((c: Check) => (c.detail ?? "").length > 0) as Check | undefined
+    expect(withDetail).toBeTruthy()
+    const stored = findings.find((f) => f.name === withDetail!.name)
+    expect(stored).toBeTruthy()
+    expect(stored!.status).toBe(withDetail!.status)
+    // The detail is the reported one (possibly capped), not a placeholder.
+    expect(withDetail!.detail.startsWith(stored!.detail.slice(0, 40))).toBe(true)
+    expect(stored!.detail.length).toBeGreaterThan(0)
+
+    // ⚠ ok checks are NOT stored: an all-clear has nothing to explain and this
+    // row is read on every alert tick. Without this the row grows with the
+    // check count rather than with the incident.
+    const okNames = report.checks.filter((c: Check) => c.status === "ok").map((c: Check) => c.name)
+    for (const f of findings) expect(okNames).not.toContain(f.name)
+
+    // Bounded in both dimensions, so a pathological arm cannot bloat every row.
+    expect(findings.length).toBeLessThanOrEqual(25)
+    for (const f of findings) expect(f.detail.length).toBeLessThanOrEqual(400)
+  })
+
   it("a dead alert channel is recorded as FAILED in the durable row, not omitted", async () => {
     // The silent-alert-failure class, made queryable. Before this row existed the
     // only trace of a dead Telegram bot was a string in a response body nobody
