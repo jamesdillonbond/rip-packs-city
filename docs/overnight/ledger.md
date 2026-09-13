@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ SHIPPED (scheduler) — the sentinel's cron-job.org entry is live and PROVEN on its own schedule; ⛔ and it falsifies the route's "invocations never overlap" invariant · Cowork cloud
+
+**`RPC Pipeline Sentinel`, cron-job.org job 8442690**, created by CLONING `RPC Refresh Error Triage` (same host, same POST, same `INGEST_SECRET_TOKEN`), so no token was read — register #32's rule obeyed by construction. `POST https://www.rippackscity.com/api/sentinel?ack=1`, `4 * * * *` in the job's own UTC timezone, enabled, auto-disable notify ON. **Confirmed on the jobs LIST page, not the edit form** — this console silently discarded 8 of 9 saves on 09-12, and ⚠ **`form_input` on the URL field silently no-ops**, reporting the old value as both previous and new; type into the focused field instead.
+
+**Proven end to end, three times.** Two manual test runs (202 in 857 ms / 678 ms) and then **the first unattended scheduled fire at 2:04:07 PM PT**: `sentinel-heartbeat` `source=api-route` `event=cron-ack`, terminal `sentinel` row 102,602 ms, 11 findings, ok. ⭐ **This is the first time the ack path has ever run** — it shipped ~02:46 PT today and no real caller had exercised it.
+
+⚠ **I nearly filed it broken.** At +2 min there was a heartbeat and no terminal row, which is EXACTLY the documented `after()`-kill signature. The sweep took 140.6 s and landed after my query window. **An absence claim needs its sample window stated, and mine was shorter than the job.**
+
+⭐ **The two callers are correctly distinguishable, now proven with both live in one window:** GHA tagged `schedule`, cron-job.org tagged `cron-ack`. `rpc_gha_schedule_watchdog()` counts only `schedule`, so the new lane cannot mask a GHA stall.
+
+## ⛔ The cost, caused by this change and stated rather than discovered later
+
+**The two lanes overlapped for 50.8 s.** GHA's delayed tick started 2:02:46 and ran 131.8 s (to 2:04:57); the cron-job.org tick started 2:04:07 and ran 102.6 s. Both completed ok — **but `app/api/sentinel/route.ts:63` states *"Sentinel invocations never overlap (a wall kill ends the lambda before a retry lands), which is what makes a single module-level clock sufficient"*, and `sentinelClock` is module state read on every request.** With a second independent caller that premise is no longer true. Nothing broke this run; the INVARIANT is what broke. ⚠ **Whoever owns that file should either make the clock per-invocation or space the two lanes so GitHub's delay cannot collide them** — `4 * * * *` vs `34 * * * *` is 30 min apart by design, and GitHub's median delay is ~45 min, so collision is the expected case, not the edge case.
+
+⚠ **Second cost, smaller:** two full ~2-minute sweeps inside one 3-minute window is real IO on a Small instance, on the day a saturation spell was being worked.
+
+## ⚠ GHA scheduled delivery, measured at the heartbeat
+
+`event='schedule'` heartbeats in the 14 h to 1:48 PM PT: **3** (03:30, 07:36, 11:17) against 14 due on `34 * * * *`. ⛔ **Do NOT read that as 11 shed** — the 1:34 tick arrived at **2:02:45, 28 minutes late**, so delay and loss are not separable from heartbeats alone, and a late tick lands in a later hour's window. What IS established: the scheduled lane delivered 3 heartbeats in 14 hours and the gaps between them were 4h06m and 3h41m. That is the case for the redundant caller, and it is a measurement rather than #80's inference.
+
+**Revert:** set job 8442690 inactive (or delete it) in the cron-job.org console; nothing in the repo or DB to undo.
+
+
 ### 2026-09-13 · ✅ SHIPPED — the Measurement Blackout arm was counting a SUCCESSFUL read as a blind one, and a guard was discovering its population out of COMMENTS · Claude Code on Trevor's box, from the 1:40 PM PT Cowork handoff
 
 **1 · ⛔ THE HANDOFF'S TWO "BLIND MARKER" ITEMS SPLIT ON RE-DERIVATION — one was real, the other was the opposite of a defect.** Per CLAUDE.md's rule that a filed finding is a hypothesis, both were re-read out of `sentinel.extra.findings` before anything was touched.
