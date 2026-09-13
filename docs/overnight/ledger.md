@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ DOCS — the 696 does not need a manual re-key: a live lane is draining it, the target is proven for 668 of 668, and the burst pattern means the 24h average is not a rate · Cowork cloud, Trevor: "exhaust all you can do"
+
+**Shipped (docs only):** `docs/audits/deep-audit-register.md` (D25 amended), this entry. Nothing executable changed.
+
+**⛔ I WAS ABOUT TO RECOMMEND THE WRONG THING.** The previous entry closed with "re-key the 696 — now an exact, enumerable set", handed to Trevor. Before writing that into a handoff I checked whether anything was already working on them, and something is: **`wmc-parallel-rekey` (pg_cron) re-keyed 461 rows in the 24 h to 14:41Z**, and the population fell **696 (07:00Z) → 668 (14:41Z)** under the same serial>circulation test. **The right answer is to do nothing.**
+
+**⭐ THE RE-KEY TARGET IS PROVEN, NOT ASSUMED.** For **668 of 668** rows, stripping `::N` lands on a base edition that exists and whose circulation admits the serial: **0 with no base row, 0 with a null circulation, 0 still impossible after the move.** That is what makes the lane's behaviour trustworthy rather than merely active.
+
+**⚠ THE YIELD IS BURSTY AND PERIODIC, SO THE TRAILING AVERAGE IS NOT A RATE.** Bucketed 6-hourly, essentially every fix lands in the **00:00–06:00Z** window — **448** there on 09-13 and **396** on 09-12, against **0** across the three preceding buckets on 09-12 (295,000 rows scanned, 19 consecutive zero-yield ticks). **22 of 31 ticks in 24 h wrote zero rows.** Read as a 24 h average it clears in ~1.5 days; read as the most recent 7.5 h it takes ~7.5 days. **The honest projection is two more nightly bursts, not a number.** This is the mirror of [[a-ratio-of-two-windows-is-not-a-liveness-test]]: a bursty lane makes a trailing average look like a rate, and I nearly published the 10-tick figure before widening the window.
+
+**⚠ NO EVIDENCE OF REGENERATION.** The population's net direction is down in every window measured, so the 09-11 producer fix (`wallet-search` canonical-key tie-break) is holding — these are pre-existing stock, not new arrivals. That is a better check on that fix than anything the fix's own tests can assert.
+
+**⚠ THE LANE DRIVES FROM THE WRONG SIDE — this row's own lesson, one table over.** Each tick is a cursored **20,000-row scan** of the 2.33M-row `wallet_moments_cache`, costing up to **107 s**, to find one or two rows. The index-driven query recorded on D25 earlier today (drive `editions` → `idx_wmc_coll_ek_serial_cover`) enumerates **all 668 in seconds**. Not urgent while the stock clears itself, and deliberately NOT changed here: rewriting a live pg_cron lane at the end of a session, against a concurrent session, to speed up something that finishes in two days is a bad trade. Filed so the next person to open that lane takes the candidate set rather than sweeping for it.
+
+**⛔ AND DO NOT HAND-RE-KEY THESE.** A manual pass would also have to repoint FMV — the 09-11 re-key left the price behind and needed a second migration — against a lane already doing it correctly.
+
+**Gates:** `check-register-integrity` green (130 rows); ledger guards swallowed **3** (unchanged baseline), future-dated **0**, clobbered **0**.
+
 ### 2026-09-13 · GUARD — pin staleness is detectable from the REPO, ten hours before the live sweep sees it · Claude Code cloud, overnight autonomous
 
 **Shipped: repo-only, one new blocking test.** `__tests__/db-pin-points-at-the-newest-defining-migration.test.ts`. Revert: `git revert <sha>` (find by message).
