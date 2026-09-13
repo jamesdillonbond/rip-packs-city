@@ -10,6 +10,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ CONCIERGE PASS, third commit (Trevor: "handle these yourself") — #4067 flipped to shipped (DATA), /api/market's unbounded fallback bounded, the FMV display guard pages + bounds · Claude Code cloud
+
+**DATA mutation (prod, one row):** `support_conversations` id **4067** (`feature_request`, "Alerts page filter UI: toggleable + type-to-fill", `new` since 06-25) → `feedback_status = 'shipped'`, `admin_note` says why; the trigger stamped `shipped_at` 10:41 PT. The feature was already built (`app/alerts/AlertsClient.tsx`: `ChipTypeahead` for players / sets / teams, `Chip` toggles for channels / badges / jersey / last-mint / never-sold). **Revert:** `update support_conversations set feedback_status='new' where id=4067;` (the trigger re-owns the stamps).
+
+**Code, one commit:** (1) `app/api/market/route.ts` — the legacy `cached_listings` fallback read is now `boundedRead`. Measured on the 09-13 deploy's runtime logs: the modern read hit its 8 s bound → "falling through to cached_listings" → **"Task timed out after 30 seconds"**, a 504 where the honest 503 sits three lines below; 24 h census on `/api/market`: **569 × 200, 12 × 504, 6 × 500**. (2) `lib/fmv-display-guard.ts` — the guard loader was a bare `.select()` (PostgREST clamps at 1,000, `error` stays null) with no time bound, awaited by `/api/market` BEFORE its own bounded reads. 356 rows today so nothing was lost — ⚠ but the file's own header expected "~1.4k rows", at which the clamp would have silently un-guarded 400 editions. Now `fetchAllPaged` behind `order(external_id)` (a truncated page budget serves a partial map and does NOT write the cache) and raced against `apiReadTimeoutMs()`; a timeout serves the last good map — the same fail-open the error branch already chose, stated in the code. Tests: the stub is chain-aware and a new case proves the second page is requested at exactly `[1000, 1999]`.
+
+**Verified:** tsc clean; display-guard, sniper, market and PostgREST-cap suites green; per-rule lint counts unchanged on both files. **Revert (code):** `git revert` the commit found by `git log --grep="market fallback bounded"`.
+
 ### 2026-09-13 · ✅ SHIPPED — `topshot_marketplace` leaves the counterparty walk: a deliberate 09-02 "do not exclude" overturned because MY OWN re-arm, shipped this morning, dissolved its premise · Claude Code cloud
 
 **Migration `20260913173355`, applied ~10:3x PT.** One predicate in each branch of `claim_sales_counterparty_batch`: `AND s.source IS DISTINCT FROM 'topshot_marketplace'`.
