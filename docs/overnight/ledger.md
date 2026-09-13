@@ -10,6 +10,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⛔ THE `floor_sold_at` LEVER IS AIMED AT THE WRONG RANGE — the walk never reaches deep history, because the claim's own filters already exclude it · Claude Code cloud, overnight autonomous
+
+**READ-ONLY. Nothing shipped.** This re-derives a lever this register and `focus.md` have both been carrying as "the real fix", and the model behind it is wrong.
+
+**THE STANDING RECOMMENDATION was: *"set `floor_sold_at` so the walk stops above the range Flow REST no longer decodes"*.** It assumes the lane burns its time down in 2023–2025. **Measured: it never gets there.**
+
+**Pass rate against the claim's OWN filters** (`collection IN 3` · 64-hex `transaction_hash` · `source IS DISTINCT FROM` the two studio-history sources), by month of `sold_at`:
+
+| month | null-seller rows | pass the claim | % |
+|---|---|---|---|
+| 2026-03 | 1,369 | 1,364 | **99.6%** |
+| 2026-02 | 1,762 | 1,755 | **99.6%** |
+| 2026-01 | 466 | 445 | 95.5% |
+| 2025-12 | 172 | 17 | **9.9%** |
+| 2025-09 | 21,178 | 15 | **0.1%** |
+| 2025-01 | 5,037 | 16 | 0.3% |
+| 2024-06 | 19,334 | **0** | **0%** |
+
+⭐ **AND THE 2024 ZERO IS FULLY EXPLAINED, not a mystery:** every one of those 19,334 rows is `allday_studio_history_v1` (15,125), `ufc_studio_history_v1` (4,150) or `golazos_studio_history_v1` (59) — **excluded by the claim's `source` and `collection` filters by design.** The studio-history rows are known-undecodable and are already skipped.
+
+🚨 **CONSEQUENCE: `floor_sold_at = 2023-11-08` IS INERT. It never binds**, because nothing that old passes the filters in the first place. **Raising it to stop a deep-history walk would change nothing, because there is no deep-history walk.**
+
+## Where the cost actually is, measured
+
+**~4,000 rows in 2026-01 … 2026-04-14** pass the claim *and* fail to resolve. That is what the lane re-walks: two consecutive ticks (08:11:32, 08:16:08) each claimed **120 rows, wrote 0, and took 53.6 s**. Below the cursor the claimable pool is ~**4,000**, not the 337,188 the planner's row estimate suggests — so **the walk is ~35 ticks ≈ 3 hours, then `rows_found` hits 0 and the lane arms its own cooldown.** ⛔ **The 10-day figure implied by the raw 412,696 null-seller count below the cursor is WRONG and should not be quoted** — 412,696 is the null-seller population; the claimable subset is two orders of magnitude smaller.
+
+⚠ **So the steady state is a ~5-hour cycle: ~3 h of futile walking, then exhaust, then a 2 h cooldown, then a re-arm that sweeps the newest and recovers real rows.** The re-arm half genuinely works — its 110 rows today were **sold 2026-09-12/13**, and over 7 days the lane recovered **2,624** rows sold in 2026-09, **1,745** in 2026-01, **1,118** in 2026-02 and **79,074** in 2023-08. **The band being re-walked has already given up its resolvable rows; what remains there is residue.**
+
+## What the lever should be instead — stated as options, not a decision
+
+🟡 **Still Trevor's call, but aimed correctly now.** (a) A floor just **below the resolvable window** (~2026-05) skips the ~4,000-row residue — ⚠ and permanently skips anything in it that might become resolvable later, which is a real cost, not a free win. (b) **Per-row attempt tracking** so a row that failed to decode is not retried every cycle — strictly better, and strictly more work; there is no such column today. (c) **Accept it**: the waste is ~53 s per 5-minute tick of *external HTTP*, not database load, and since this morning's index the claim itself is trivial and no longer times out.
+
+⚠ **(c) is more defensible than it was 12 hours ago and that is worth saying plainly** — the harm that motivated the 06:04 PT hand-pause was DB contention and claim timeouts, and both are gone. What remains is outbound fetch volume.
+
+⭐ **THE TRANSFERABLE LESSON: a lever's target range is a CLAIM, and this one was never measured.** *"Stop the walk above the undecodable range"* sounds obviously right and had been restated across a register row, a focus steer and two of my own entries tonight. One pass-rate query by month refuted it. ⚠ **The tell was that the cost was stated as a range ("deep history") rather than as a row count.**
+
 ### 2026-09-13 · ⚠ THE COUNTERPARTY INDEX FIXED THE CLAIM, NOT THE LANE — verified by the real caller, and the second and third ticks overturn what the first one implied · Claude Code cloud, overnight autonomous
 
 **No new ship. Exit-condition reading for the `idx_sales_2026/2027_nullseller_soldat` entry below.** Revert unchanged, one statement each: `DROP INDEX CONCURRENTLY IF EXISTS public.idx_sales_2026_nullseller_soldat;` / `..._2027_...`.
