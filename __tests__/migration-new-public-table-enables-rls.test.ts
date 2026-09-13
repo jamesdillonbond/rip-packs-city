@@ -78,6 +78,12 @@ const GRANDFATHERED = new Set([
   "20260905061815_audit_20260904_sixteen_ultimate_one_of_one_editions_atlas_has_and_we_never_had_five_of_them_in_user_collections.sql",
   "20260905062040_audit_20260904_propagate_the_sixteen_new_ultimate_editions_into_the_holder_denorm_now_not_a_rotation_later.sql",
   "add_profile_bio_table.sql",
+  // Same shape as the two above, 2026-09-13: a revert-path audit table shipped by a
+  // concurrent session with a bare CREATE TABLE IF NOT EXISTS. Caught by the GHA
+  // smoke gate (run 34775121044, rls_off_base_table) 7 minutes after it landed and
+  // fixed FORWARD by 20260913184500_audit_20260913_rls_on_the_parallel_downgrade_restore_audit_table.sql
+  // (ALTER + REVOKE + GRANT, applied live first; relrowsecurity verified true).
+  "20260913183030_audit_20260913_restore_the_rows_the_unguarded_rekey_downgraded_from_parallel_to_base.sql",
 ])
 
 /**
@@ -191,7 +197,8 @@ describe("migrations must enable RLS on every public table they create", () => {
     for (const f of GRANDFATHERED) expect(present.has(f), `grandfathered file is gone: ${f}`).toBe(true)
     // A stale entry is worse than none: it silently re-permits the defect for a
     // filename someone could reintroduce. Pin the size so growth is a visible diff.
-    expect(GRANDFATHERED.size).toBe(11)
+    // 11 -> 12 on 2026-09-13: the concurrent-session audit table, fixed forward (see the list).
+    expect(GRANDFATHERED.size).toBe(12)
   })
 
   it("the two audit tables were repaired forward by an ALTER, not by editing history", () => {
