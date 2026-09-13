@@ -903,7 +903,7 @@ date stamp, and this file's standing rule that every recorded status has a shelf
     ⛔ **NOT BUILT TONIGHT, deliberately.** The rule is calibrated but the suppression list is a per-lane judgement Trevor owns, and standing up a guard against ~140 lanes in the last hour of a session is how this repo acquires half-calibrated guards it later has to repair. **Filed with the rule, its measured population and its first five hits, so building it starts from measurement rather than from scratch.**
 
 
-    ⭐⭐ **MEASURED 2026-09-12 (PT) — THE THREE ARMS THAT WATCH LANES ARE FED BY A CURATED ALLOWLIST, AND 39 ACTIVE LANES ARE OUTSIDE IT.** `check_pipeline_cadence_collapse()`, `check_pipelines_running_but_not_succeeding()` and `check_zero_yield_lanes()` all `JOIN public.pipeline_cadence_watchlist`, so **their population is that table, not the fleet.** Counted over `pipeline_runs_daily`, last 14 days, excluding `-heartbeat` partners: **187 lanes ran · 148 are on the watchlist · 136 of those are `is_active` · 39 are ABSENT entirely.** So **51 of 187 (27 %) are invisible to all three arms**, and absence is indistinguishable from health in every one of them.
+    ⭐⭐ **RE-MEASURED 2026-09-12 (PT) — THE THREE ARMS THAT WATCH LANES ARE FED BY A CURATED ALLOWLIST, AND 39 ACTIVE LANES ARE OUTSIDE IT.** ⚠ **NOT a new finding — the 2026-09-04T0220Z filing §2 measured this first** (**80 rows** at ≥ 7 active days, *including* `-heartbeat` twins, with the paste-able query) and I did not check it before re-deriving. This reading excludes heartbeats and drops the day threshold, so **39** and **80** are the same gap counted two ways, not a change. **Cite the 09-04 filing as the original.** `check_pipeline_cadence_collapse()`, `check_pipelines_running_but_not_succeeding()` and `check_zero_yield_lanes()` all `JOIN public.pipeline_cadence_watchlist`, so **their population is that table, not the fleet.** Counted over `pipeline_runs_daily`, last 14 days, excluding `-heartbeat` partners: **187 lanes ran · 148 are on the watchlist · 136 of those are `is_active` · 39 are ABSENT entirely.** So **51 of 187 (27 %) are invisible to all three arms**, and absence is indistinguishable from health in every one of them.
 
     ⭐ **THIS IS THE ALLOWLIST SHAPE THIS REPO ALREADY HAS A RULE ABOUT** — *prefer a tree walk over a curated list and a ban at zero over an allowlist; make SUPPRESSION the curated list.* The watchlist is the allowlist, and it is doing exactly what the rule predicts: **three of the nine lanes killed by the dead Top Shot upstream (#81) are among the 39**, including `topshot-pack-supply-backfill`, whose 14-day outage was consequently filed as a one-off (#94).
 
@@ -1158,6 +1158,26 @@ date stamp, and this file's standing rule that every recorded status has a shelf
     ⚠⚠ **AND THIS WAS ALREADY DIAGNOSED, ELEVEN DAYS AND ONE COLLECTION EARLIER — second time in one night I filed over an existing finding.** The 2026-09-12T0730Z inbox filing states it exactly, warns that *"fixing #81's 530 would NOT unfreeze the 2,083 rows"*, and names the same shape in **All Day** (`backfill-allday-dist-opened`, `.is('opened_count', null)` — 3,020 rows hydrated in one window on 2026-06-30, never revisited), which is also why `allday_pack_supply` reads one distinct day. Migration `20260901071258`'s header had **predicted the recurrence in writing**. ⭐ **So the two tables in this item share ONE defect — a one-shot hydrator masquerading as a refresher — and it is not #81's.**
 
     ✅ **CORRECTED EXIT:** (1) the real fix is a **refresh predicate** — revisit on age, not on emptiness — for both lanes; the Atlas/source decision (#50, #81) is a **separate** question that fixes the 2 dists and nothing else. (2) unchanged: `allday_pack_supply` needs a lane that logs. (3) unchanged: the as-of work (#74) already keeps the surfaces honest about the age. ⛔ **Do not cite this item as evidence that the dead Top Shot upstream froze pack supply — that is the inference #74 made and this filing refuted.**
+
+    ⛔⛔ **CORRECTION TO THE NINE-LANE TABLE ABOVE (#81), SAME NIGHT, AGAINST MYSELF — SEVEN OF THE NINE HAD ALREADY STOPPED, AND THE CLEANUP IS MOSTLY DONE.** My table counts runs over a 14-day window and says *"the newest is 2026-09-12, i.e. still live at the time of writing"*. **That is true of two lanes, not nine.** Re-measured with `max(day)` per lane:
+
+    | lane | last run | runs in last 3 d | status |
+    |---|---|---:|---|
+    | `topshot-pack-supply-backfill` | **09-12** | **3** | 🔴 genuinely live and failing daily |
+    | `offers-sweep` | **09-12** | 7 | ⚠ deliberately RETIRED lane still being poked (#50) |
+    | `topshot-misattrib-drain` | 09-08 | 0 | stopped |
+    | `ingest-topshot-challenges` | 09-08 | 0 | stopped |
+    | `ingest` | 09-07 | 0 | stopped |
+    | `topshot-subedition-circulation-backfill` | 09-07 | 0 | stopped |
+    | `topshot-catalog-backfill` | 09-05 | 0 | stopped |
+    | `topshot-badge-set-backfill` | **09-04** | 0 | stopped — **the exact day it was unscheduled** |
+    | `topshot-badge-catalog` | 08-30 | 0 | stopped |
+
+    ⭐ **AND THE DISPOSITIONS WERE ALREADY MADE AND ALREADY WORKED.** The 2026-09-04T0220Z inbox filing named three of these lanes, recorded a decision for each (unscheduled / ported on-chain / paused), and marks its §1 **"✅ RESOLVED 2026-09-04 — decided, not deferred. Do not re-file it."** `topshot-badge-set-backfill`'s last run is **09-04**, which is that disposition taking effect. **I re-filed a superset of a section explicitly marked do-not-re-file, and presented already-dispositioned lanes as live casualties.**
+
+    ⚠⚠ **THE ERROR IS THE ONE I CAUGHT MYSELF ON EARLIER THE SAME NIGHT AND STILL REPEATED: a run-count over a window is not evidence a lane is LIVE.** A lane that stopped eight days ago still shows runs in a 14-day sum. I paired every lane with `last_ok_day` and never with `last_day` — and `last_day` is the column that falsifies "still live". ⭐ **PROMOTE: pair every windowed run-count with `max(day)`; without it an aggregate cannot distinguish a failing lane from a stopped one.**
+
+    ✅ **THE CORRECTED PICTURE, which is much better news:** the dead-host cleanup has largely been done. **ONE lane is still live and failing daily** — `topshot-pack-supply-backfill` — and per #94's own correction even that one's 14 daily failures are two dists, not the 2,083 stale rows. **So "nine casualties awaiting a source decision" overstates it; the honest statement is one live lane, one retired lane still being poked, and seven already dispositioned.**
 ### Resolved (verified 2026-05-23)
 
 > ⚠ **THIS IS THE MAY-2026 RESOLVED SET, AND IT IS CLOSED TO NEW ENTRIES (noted 2026-08-27).** A newly resolved item does **NOT** move here: it keeps its number under `### Open` and the STATUS INDEX at the top of that section marks it `✅ closed`.
