@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ⛔ CODE — gating the team LINK also gated the team NAME: the denylist fix dropped "OGs" off 100 edition pages, and only the RENDERED PAGE showed it · Cowork (cloud), Trevor: "keep going"
+
+Verifying the 2026-09-11 denylist fix on the live page rather than on the diff:
+`/nba-top-shot/edition/181:6363` (team **OGs**, a denylisted exhibition roster)
+has **zero `/team/` hrefs** — the guaranteed-404 link is gone, which is the fix
+working — and **zero occurrences of "OGs" anywhere in the HTML**. The team had
+disappeared entirely.
+
+**Cause.** That surface rendered the label as
+`{detail.team_name && teamHref && (<Link …>)}`, so nulling `teamHref` dropped the
+LABEL with the LINK — on exactly the 100 Top Shot edition pages the denylist fix
+was aimed at. Fixed to fall back to a plain `<span>`, matching what the siblings
+already did (`app/moment/[id]/page.tsx:1280` and the player page both read
+`teamHref ? <Link …> : name`).
+
+⭐ **The inconsistency was mine, and I had argued it the RIGHT way one file
+over.** In the same series `app/my-teams/page.tsx` got a non-link `CardShell`
+because "dropping the card would under-report the reader's own follows" — and
+then the weaker behaviour shipped on the surface that actually carried the
+defect. **When you gate a link, decide what happens to its LABEL, in every file
+that renders one.**
+
+⚠ **The guard could not have caught it and still cannot.** The
+`team-hub-links-respect-the-exhibition-denylist` walk asserts the denylist is
+CONSULTED — this file always did. What broke is a RENDER SHAPE ("the label
+survives a null href"), whose honest instrument is the rendered DOM, not a source
+grep; a static check for `&& teamHref &&` would pin a spelling. Left uncovered on
+purpose, noted for e2e.
+
+⭐ **The method is the lesson: a diff that removes a bad link looks identical to
+a diff that removes the whole element.** Read the served HTML for the thing that
+should STILL be there, not only for the thing that should be gone.
+
+**Revert:** `git revert` this commit; the label returns to being link-gated.
+
 ### 2026-09-12 · ✅ OPS+CODE+DB — the nine auto-disabled cron entries are back, the auto-disable itself now alarms, and the arm built for this state is finally wired · Cowork cloud, Trevor: "use chrome to access cron job … address anywhere else in the project that requires cron job site access, and do it all at once"
 
 **Shipped:** cron-job.org console (9 entries re-enabled + a notification flag on each), `app/api/sentinel/route.ts`, `lib/sentinel/cadence-collapse.ts`, `supabase/migrations/20260913052000_…wire_the_cadence_collapse_arm_with_an_expiring_ack.sql` (APPLIED), three test files. Revert: `git revert` the commit whose message starts `feat(sentinel): ack-mode dispatch`; `DELETE FROM public.sentinel_threshold_config WHERE check_name = 'Cadence Collapse';` for the DB half. **Re-disabling the nine entries is console-only and deliberate — no revert path is wanted.**
