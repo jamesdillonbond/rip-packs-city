@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/react"
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 
 // MobileNav (0% before this) is the bottom mobile tab bar + the slide-up
@@ -23,11 +23,37 @@ afterEach(() => {
 })
 
 describe("MobileNav", () => {
-  it("renders the bottom tab bar with the wallet + collections tabs", () => {
+  // ⭐ RE-SLOTTED 2026-09-12: HOME · SEARCH · SNIPER · MY STUFF · COLLECTIONS.
+  // Was PROFILE · SNIPER · PACKS · WALLET · COLLECTIONS — four of five slots on
+  // one collection's sub-pages, no way back to the homepage, no entry to search
+  // at all, and the centre (best thumb position) spent on Packs.
+  it("renders the re-slotted bottom tab bar", () => {
     const { getByText, container } = render(<MobileNav />)
     expect(container.querySelector("nav.rpc-mobile-nav")).toBeTruthy()
-    expect(getByText("WALLET")).toBeTruthy()
-    expect(getByText("COLLECTIONS")).toBeTruthy()
+    for (const label of ["HOME", "SEARCH", "SNIPER", "MY STUFF", "COLLECTIONS"]) {
+      expect(getByText(label), label).toBeTruthy()
+    }
+  })
+
+  // ⛔ THE ONE HREF THAT MUST NOT DRIFT. /dashboard is auth-gated, and this is the
+  // tab a first-run visitor scans first: the measured chain used to be
+  // `/profile → 308 → /dashboard → 307 → /login?next=…`, two hops into a login
+  // wall from the first tap. app/profile/page.tsx exists specifically to end that
+  // (register R36) — it is PUBLIC (proxy.ts allows it explicitly) and
+  // server-redirects a signed-in visitor onward. Re-pointing MY STUFF at
+  // /dashboard silently reinstates the wall, and nothing else would catch it.
+  it("⛔ MY STUFF points at the PUBLIC /profile, never at auth-gated /dashboard", () => {
+    const { container } = render(<MobileNav />)
+    const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
+    const links = Array.from(bar.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(links).toContain("/profile")
+    expect(links).not.toContain("/dashboard")
+  })
+
+  it("gives the bar a way home, which it did not have", () => {
+    const { container } = render(<MobileNav />)
+    const bar = container.querySelector("nav.rpc-mobile-nav") as HTMLElement
+    expect(Array.from(bar.querySelectorAll("a")).map((a) => a.getAttribute("href"))).toContain("/")
   })
 
   // ⚠ MEASURED, then pinned. In Chromium at 390x844 the five tabs were
@@ -112,8 +138,11 @@ describe("MobileNav — thin collections (2026-09-06)", () => {
     for (const dead of ["/candy-mlb/sniper", "/candy-mlb/packs", "/candy-mlb/collection"]) {
       expect(links, dead).not.toContain(dead)
     }
+    // After the 2026-09-12 re-slot only ONE tab is collection-scoped (Sniper);
+    // Home, Search, My Stuff and Collections are not, so a thin collection can
+    // only ever render one inert tab.
     const inert = Array.from(bar.querySelectorAll("[aria-disabled='true']"))
-    expect(inert.length).toBe(3)
+    expect(inert.length).toBe(1)
     nav.pathname = "/nba-top-shot/collection"
   })
 })
@@ -136,30 +165,42 @@ describe("MobileNav — thin collections (2026-09-06)", () => {
 // These drive `activeTabFor` directly so the map is pinned independently of how
 // the bar happens to render it.
 describe("MobileNav — which tab owns the route", () => {
-  it("lights the collection tab the page actually lives on", () => {
+  it("lights Sniper on the sniper page, and hands every other collection page to the sheet", () => {
     expect(activeTabFor("/nba-top-shot/sniper", "sniper", true)).toBe("sniper")
-    expect(activeTabFor("/nba-top-shot/packs", "packs", true)).toBe("packs")
-    expect(activeTabFor("/nba-top-shot/collection", "collection", true)).toBe("wallet")
+    // Packs and Wallet left the bar in the re-slot; the Collections sheet is how
+    // you move between a collection's pages, so it owns them.
+    expect(activeTabFor("/nba-top-shot/packs", "packs", true)).toBe("collections")
+    expect(activeTabFor("/nba-top-shot/collection", "collection", true)).toBe("collections")
   })
 
-  it("⚠ does NOT light the Packs tab on /dashboard/packs — that tab links elsewhere", () => {
-    // The account surface owns this route; Packs would send the reader away.
-    expect(activeTabFor("/dashboard/packs", "packs", false)).toBe("profile")
-    expect(activeTabFor("/dashboard/packs", "packs", false)).not.toBe("packs")
+  it("⚠ lights a tab on a collection's own /overview — the gap the re-slot closed", () => {
+    // Overview is the most common entry point in the product and was never one
+    // of the five tabs, so before 2026-09-12 it lit nothing at all. Confirmed
+    // live that day: five identical glyphs, none active.
+    expect(activeTabFor("/nba-top-shot/overview", "overview", true)).toBe("collections")
   })
 
-  it("⚠ lights Profile on every account surface, not just /profile", () => {
+  it("lights Home on the homepage", () => {
+    expect(activeTabFor("/", "", false)).toBe("home")
+  })
+
+  it("⚠ does NOT light a collection tab on /dashboard/packs — that tab links elsewhere", () => {
+    // `segments[1]` is "packs" here, and the old rule lit the Packs tab, whose
+    // href is /{collection}/packs — the market page. Tapping the active tab left.
+    expect(activeTabFor("/dashboard/packs", "packs", false)).toBe("mystuff")
+  })
+
+  it("⚠ lights My Stuff on every account surface, not just /profile", () => {
     for (const p of ["/profile", "/profile/someone", "/dashboard", "/dashboard/history", "/alerts", "/rewards", "/my-teams"]) {
-      expect(activeTabFor(p, "", false), p).toBe("profile")
+      expect(activeTabFor(p, "", false), p).toBe("mystuff")
     }
   })
 
   it("does not claim a tab for a route none of them own", () => {
-    // /insights/* and / genuinely belong to no tab. Returning null is the honest
-    // answer; the bug was that EVERY collection page also returned null.
+    // /insights/* genuinely belongs to no tab — it is cross-collection. Returning
+    // null is the honest answer; the bug was that every COLLECTION page did too.
     expect(activeTabFor("/insights/candy-mlb", "candy-mlb", false)).toBeNull()
-    expect(activeTabFor("/", "", false)).toBeNull()
-    expect(activeTabFor("/nba-top-shot/overview", "overview", true)).toBeNull()
+    expect(activeTabFor("/blog", "", false)).toBeNull()
   })
 
   it("⚠ a prefix match must not swallow an unrelated route", () => {
@@ -198,10 +239,10 @@ describe("MobileNav — which tab owns the route", () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WHERE the bar is mounted (2026-09-12)
+// WHERE the bar is mounted — ONE PLACE, as of 2026-09-12
 //
-// ⚠ The bar is mounted AD HOC — eleven call sites, not the root layout — and two
-// whole route families had none. Measured that day:
+// It used to be mounted AD HOC in ELEVEN files, and two whole route families
+// fell through the gaps. Measured that day:
 //   * /dashboard/packs (the surface Trevor screenshotted), /dashboard/history,
 //     /dashboard/alerts and /dashboard/notifications: `app/dashboard/layout.tsx`
 //     was `return children`, and only two of the six routes under it carried the
@@ -211,23 +252,108 @@ describe("MobileNav — which tab owns the route", () => {
 //     pages:["overview"]. On a phone the largest anonymous surface in the product
 //     was a dead end.
 //
-// Pinned as a SOURCE fact because there is no route-level render harness here,
-// and the failure mode is silent: a layout that stops mounting it looks fine in
-// every component test. The second half is the mirror — a child that ALSO mounts
-// it renders two fixed bars stacked exactly on top of each other, which looks
-// like one bar with doubled tap targets.
-describe("MobileNav — the layouts that mount it", () => {
+// ⭐ The fix is not "mount it in two more layouts" — that is what the previous
+// pass did, and it leaves the same shape that produced the gap. The bar now
+// mounts ONCE, in `app/layout.tsx`, and the eleven ad-hoc sites are gone.
+//
+// Pinned as a SOURCE fact because there is no route-level render harness here
+// and the failure is silent BOTH WAYS: a layout that stops mounting the bar
+// looks fine in every component test, and so does a file that mounts a SECOND
+// one — two `position: fixed; bottom: 0` bars stack exactly on top of each other
+// and read as one bar with doubled tap targets. So this counts the whole tree
+// rather than naming the eleven files it replaced: naming them would pass
+// happily the day someone adds a twelfth.
+describe("MobileNav — the single mount", () => {
   const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8")
 
-  it("is mounted by the /dashboard and /insights layouts", () => {
-    for (const p of ["app/dashboard/layout.tsx", "app/insights/layout.tsx"]) {
-      expect(read(p), p).toContain("<MobileNav />")
+  const walk = (dir: string, out: string[] = []): string[] => {
+    for (const name of readdirSync(join(process.cwd(), dir))) {
+      if (name === "node_modules" || name.startsWith(".")) continue
+      const rel = `${dir}/${name}`
+      if (statSync(join(process.cwd(), rel)).isDirectory()) walk(rel, out)
+      else if (/\.(tsx|jsx)$/.test(name)) out.push(rel)
     }
+    return out
+  }
+
+  it("is mounted by the ROOT layout", () => {
+    expect(read("app/layout.tsx")).toContain("<MobileNav />")
   })
 
-  it("⚠ is NOT also mounted by a child of those layouts — two fixed bars stack invisibly", () => {
-    for (const p of ["app/dashboard/DashboardClient.tsx", "app/dashboard/api-keys/ApiKeysClient.tsx"]) {
-      expect(read(p), p).not.toContain("<MobileNav />")
-    }
+  it("⚠ is mounted in EXACTLY ONE file across app/ and components/", () => {
+    const mounts = [...walk("app"), ...walk("components")].filter((p) => /<MobileNav\b/.test(read(p)))
+    expect(mounts).toEqual(["app/layout.tsx"])
+  })
+
+  it("⚠ none of the eleven former ad-hoc sites mounts it any more", () => {
+    const FORMER = [
+      "app/(analytics)/analytics/layout.tsx",
+      "app/(collections)/layout.tsx",
+      "app/alerts/AlertsClient.tsx",
+      "app/dashboard/layout.tsx",
+      "app/dashboard/DashboardClient.tsx",
+      "app/dashboard/api-keys/ApiKeysClient.tsx",
+      "app/insights/layout.tsx",
+      "app/my-teams/layout.tsx",
+      "app/pinnacle/moment/[id]/page.tsx",
+      "app/rewards/page.tsx",
+      "app/special-serial-owners/SpecialSerialOwnersClient.tsx",
+      "components/HomePageMarketing.tsx",
+    ]
+    for (const p of FORMER) expect(read(p), p).not.toContain("<MobileNav")
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The Search sheet (2026-09-12)
+//
+// The bar had NO entry to search at all. `GlobalSearch` is the header's search
+// box — already wired to /api/search with its own keyboard handling — and on a
+// phone the header is collapsed, so there was no way to reach it. Reused rather
+// than reimplemented, inside the same sheet pattern (Escape, focus trap, focus
+// restore) the Collections sheet already uses.
+describe("MobileNav — the Search sheet", () => {
+  // ⚠ Queried through the DOM, not `getByRole`: the sheets carry
+  // `.rpc-mobile-sheet { display: none !important }` outside the mobile media
+  // query, jsdom applies it, and a display:none node is absent from the a11y
+  // tree — so `queryByRole("dialog")` never matches here. The file's existing
+  // sheet tests already do it this way.
+  const dialogNamed = (c: HTMLElement, name: string) =>
+    Array.from(c.querySelectorAll('[role="dialog"]')).find((d) => d.getAttribute("aria-label") === name) ?? null
+
+  it("opens a labelled modal from the Search tab and closes it again", () => {
+    const { getByText, getByLabelText, container } = render(<MobileNav />)
+    expect(dialogNamed(container, "Search")).toBeNull()
+    fireEvent.click(getByText("SEARCH").closest("button")!)
+    expect(dialogNamed(container, "Search")).toBeTruthy()
+    fireEvent.click(getByLabelText("Close search"))
+    expect(dialogNamed(container, "Search")).toBeNull()
+  })
+
+  it("puts the real search input in it, not a placeholder", () => {
+    const { getByText, getByLabelText } = render(<MobileNav />)
+    fireEvent.click(getByText("SEARCH").closest("button")!)
+    // GlobalSearch's own input, by its own aria-label.
+    expect(getByLabelText("Search the catalog")).toBeTruthy()
+  })
+
+  it("⚠ the two sheets are mutually exclusive — one bar, one surface at a time", () => {
+    const { getByText, container } = render(<MobileNav />)
+    fireEvent.click(getByText("COLLECTIONS").closest("button")!)
+    expect(dialogNamed(container, "Collections")).toBeTruthy()
+    fireEvent.click(getByText("SEARCH").closest("button")!)
+    expect(dialogNamed(container, "Search")).toBeTruthy()
+    expect(dialogNamed(container, "Collections")).toBeNull()
+    fireEvent.click(getByText("COLLECTIONS").closest("button")!)
+    expect(dialogNamed(container, "Collections")).toBeTruthy()
+    expect(dialogNamed(container, "Search")).toBeNull()
+  })
+
+  it("closes on Escape like the Collections sheet", () => {
+    const { getByText, container } = render(<MobileNav />)
+    fireEvent.click(getByText("SEARCH").closest("button")!)
+    expect(dialogNamed(container, "Search")).toBeTruthy()
+    fireEvent.keyDown(window, { key: "Escape" })
+    expect(dialogNamed(container, "Search")).toBeNull()
   })
 })

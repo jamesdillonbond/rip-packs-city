@@ -27,7 +27,6 @@ import { WalletLink } from "@/components/entity/_shared"
 import PinnacleFmvChart from "@/components/pinnacle/PinnacleFmvChart"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
 import SiteFooter from "@/components/SiteFooter"
-import MobileNav from "@/components/MobileNav"
 import SupportChatConnected from "@/components/SupportChatConnected"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -481,7 +480,6 @@ function PinnacleShell({ children }: { children: ReactNode }) {
       {children}
       <SiteFooter />
       <SupportChatConnected />
-      <MobileNav />
     </div>
   )
 }

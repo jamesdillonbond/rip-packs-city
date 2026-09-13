@@ -10,7 +10,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
@@ -360,7 +359,6 @@ export default function RewardsPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#0a0a0a", color: "#e7e7e7" }}>
-      <MobileNav />
       <SupportChatConnected />
 
       <main style={{ maxWidth: 1080, margin: "0 auto", padding: "24px 16px 96px" }}>

@@ -15,7 +15,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fmtMoney, fmtInt, truncAddr, tierColor, tagLabel, serialLabel, editionHref, momentImg } from "@/lib/special-serial-owners-format";
 import Link from "next/link";
-import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph";
 import type { OwnerRow, SpecialSerialTag, OwnersSortKey } from "@/lib/special-serial-owners-board";
@@ -161,7 +160,6 @@ export default function SpecialSerialOwnersClient() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
-      <MobileNav />
       <style>{CSS}</style>
       <main className="rpc-sso-main">
         <section className="rpc-sso-head">

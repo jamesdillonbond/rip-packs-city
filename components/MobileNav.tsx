@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import { getLastCollection } from "@/lib/active-collection";
 import ThemeToggle from "@/components/ThemeToggle";
+import GlobalSearch from "@/components/search/GlobalSearch";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import {
   PAGE_LABELS,
@@ -53,18 +54,23 @@ const NAV_HEIGHT = 60;
 const ACCOUNT_PREFIXES = ["/profile", "/dashboard", "/alerts", "/rewards", "/my-teams"];
 
 export function activeTabFor(pathname: string, pageSegment: string, isCollectionRoute: boolean): string | null {
-  if (ACCOUNT_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) return "profile";
+  if (pathname === "/") return "home";
+  if (ACCOUNT_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) return "mystuff";
   if (!isCollectionRoute) return null;
   if (pageSegment === "sniper") return "sniper";
-  if (pageSegment === "packs") return "packs";
-  if (pageSegment === "collection") return "wallet";
-  return null;
+  // ⭐ 2026-09-12 re-slot: every OTHER page of a collection belongs to the
+  // Collections sheet, which is how you move between them. Before this, a
+  // collection's own `/overview` — the most common entry point in the product —
+  // lit nothing at all, because Overview was not one of the five tabs and never
+  // could be. Owning it here is what closes that gap rather than adding a sixth.
+  return "collections";
 }
 
 export default function MobileNav() {
   const pathname = usePathname() ?? "/";
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [fallbackCollection, setFallbackCollection] = useState("nba-top-shot");
   const [hoverChip, setHoverChip] = useState<string | null>(null);
 
@@ -93,14 +99,42 @@ export default function MobileNav() {
   const isCollectionRoute = !!getCollection(segments[0] ?? "");
   const activeTab = activeTabFor(pathname, pageSegment, isCollectionRoute);
 
+  // ⭐ RE-SLOTTED 2026-09-12 (Trevor's call, after the audit).
+  //
+  // Was: PROFILE · SNIPER · PACKS · WALLET · COLLECTIONS — four of five slots
+  // spent on one collection's sub-pages, with no way back to the homepage and no
+  // entry to search at all, while the centre (best thumb position) went to Packs.
+  //
+  // Now: HOME · SEARCH · SNIPER · MY STUFF · COLLECTIONS. Packs and Wallet are
+  // not lost — Wallet is a chip in the Collections sheet and Packs is reached
+  // through Market, per the 2026-07-18 IA reorg that already folded it there.
+  //
+  // ⚠ MY STUFF MUST POINT AT `/profile`, NEVER `/dashboard`. `/dashboard` is
+  // auth-gated, and this is the tab a first-run visitor scans first: the measured
+  // chain used to be `/profile → 308 → /dashboard → 307 → /login?next=…`, two
+  // hops into a login wall from the first tap. `app/profile/page.tsx` exists
+  // specifically to end that (register R36) — it is PUBLIC (proxy.ts allows it
+  // explicitly) and server-redirects a signed-in visitor onward. Re-pointing this
+  // href at /dashboard silently reinstates the wall.
+  //
+  // Icons are one family now. The old set mixed emoji (👤 ⚡) with geometric
+  // glyphs (▣ ◈ ▦), and ▣ vs ▦ were near-identical squares at 18px.
   const tabs = [
     {
-      key: "profile",
-      label: "PROFILE",
-      icon: "\u{1F464}",
-      href: "/profile",
-      isActive: activeTab === "profile",
+      key: "home",
+      label: "HOME",
+      icon: "\u{1F3E0}",
+      href: "/",
+      isActive: activeTab === "home",
       kind: "link" as const,
+    },
+    {
+      key: "search",
+      label: "SEARCH",
+      icon: "\u{1F50D}",
+      href: "",
+      isActive: searchOpen,
+      kind: "search" as const,
     },
     {
       key: "sniper",
@@ -111,38 +145,36 @@ export default function MobileNav() {
       kind: "link" as const,
     },
     {
-      key: "packs",
-      label: "PACKS",
-      icon: "▣",
-      href: `/${collection}/packs`,
-      isActive: activeTab === "packs",
-      kind: "link" as const,
-    },
-    {
-      key: "wallet",
-      label: "WALLET",
-      icon: "◈",
-      href: `/${collection}/collection`,
-      isActive: activeTab === "wallet",
+      key: "mystuff",
+      label: "MY STUFF",
+      icon: "\u{1F464}",
+      href: "/profile",
+      isActive: activeTab === "mystuff",
       kind: "link" as const,
     },
     {
       key: "collections",
       label: "COLLECTIONS",
-      icon: "▦",
+      icon: "\u{1F5C2}",
       href: "",
-      isActive: sheetOpen,
+      isActive: sheetOpen || activeTab === "collections",
       kind: "button" as const,
     },
   ];
 
   const closeSheet = () => setSheetOpen(false);
+  const closeSearch = () => setSearchOpen(false);
 
   // Modal a11y for the collections bottom-sheet: Escape-to-close, focus into
   // the sheet on open, Tab/Shift+Tab trap, and focus restore to the trigger on
   // close. The sheet had a backdrop-click close + role="dialog" but no keyboard
   // or focus handling. Ref attaches to the sheet content container below.
   const sheetRef = useModalA11y<HTMLDivElement>(sheetOpen, closeSheet);
+  // The search sheet gets the same treatment — Escape, focus-in, focus trap,
+  // focus restore. `GlobalSearch` is reused rather than reimplemented: it is the
+  // header's search box, already wired to /api/search with its own keyboard
+  // handling, and it had NO entry point at all on a phone.
+  const searchRef = useModalA11y<HTMLDivElement>(searchOpen, closeSearch);
 
   const goTo = (href: string) => {
     closeSheet();
@@ -151,6 +183,75 @@ export default function MobileNav() {
 
   return (
     <>
+      {searchOpen && (
+        <>
+          <div
+            onClick={closeSearch}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 199 }}
+            className="rpc-mobile-sheet"
+            aria-hidden
+          />
+          <div
+            ref={searchRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Search"
+            style={{
+              position: "fixed",
+              bottom: `calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
+              left: 0,
+              right: 0,
+              background: "var(--rpc-surface)",
+              borderTop: "1px solid var(--rpc-red-border)",
+              zIndex: 201,
+              maxHeight: "70vh",
+              overflowY: "auto",
+              fontFamily: "var(--font-mono)",
+              padding: 14,
+            }}
+            className="rpc-mobile-sheet"
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 10,
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 900,
+                  fontSize: 14,
+                  letterSpacing: "0.16em",
+                  textTransform: "uppercase",
+                  color: "var(--rpc-text-primary)",
+                }}
+              >
+                SEARCH
+              </span>
+              <button
+                onClick={closeSearch}
+                aria-label="Close search"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--rpc-text-secondary)",
+                  fontSize: 20,
+                  lineHeight: 1,
+                  cursor: "pointer",
+                  padding: 4,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <GlobalSearch />
+          </div>
+        </>
+      )}
+
       {sheetOpen && (
         <>
           <div
@@ -390,12 +491,21 @@ export default function MobileNav() {
             fontFamily: "inherit",
           };
 
-          if (tab.kind === "button") {
+          if (tab.kind === "button" || tab.kind === "search") {
+            const isSearch = tab.kind === "search";
             return (
               <button
                 key={tab.key}
-                onClick={() => setSheetOpen((v) => !v)}
-                aria-pressed={tab.isActive}
+                onClick={() => {
+                  if (isSearch) {
+                    setSheetOpen(false);
+                    setSearchOpen((v) => !v);
+                  } else {
+                    setSearchOpen(false);
+                    setSheetOpen((v) => !v);
+                  }
+                }}
+                aria-pressed={isSearch ? searchOpen : sheetOpen}
                 style={baseStyle}
               >
                 {inner}

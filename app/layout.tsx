@@ -1,6 +1,7 @@
 import "./globals.css"
 import type { Metadata } from "next"
 import { Barlow_Condensed, Share_Tech_Mono } from "next/font/google"
+import MobileNav from "@/components/MobileNav"
 import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Analytics } from "@vercel/analytics/next"
 import WarmupProvider from "@/lib/warmup/WarmupContext"
@@ -77,6 +78,20 @@ export default function RootLayout({
         <RefCapture />
         <DeadImageGuard />
         <ClientErrorBeacon />
+        {/* ⭐ THE ONE MOUNT (2026-09-12). It used to be mounted AD HOC in ELEVEN
+            places, and the consequence was not theoretical: measured that day,
+            there was no bottom nav at all on /dashboard/packs, /dashboard/history,
+            /dashboard/alerts, /dashboard/notifications, or on ANY of the ~30
+            boards under /insights — including /insights/candy-mlb, the only Candy
+            surface that exists. On a phone the largest anonymous surface in the
+            product was a dead end, and nothing could notice: a page that forgets
+            to mount a bar looks identical to one that should not have it.
+            ⚠ Do NOT re-add it anywhere else. Two `position: fixed; bottom: 0`
+            bars stack exactly on top of each other and read as one bar with
+            doubled tap targets — a guard in component-MobileNav.test.tsx now
+            fails on a second mount. The bar hides itself above 768px via its own
+            stylesheet, so this is inert on desktop. */}
+        <MobileNav />
         <WarmupProvider>
             <WalletPreloader />
             {children}

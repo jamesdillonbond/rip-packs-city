@@ -10,7 +10,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import MobileNav from "@/components/MobileNav";
 import { csvToArr, arrToCsv, toggle, alertPayloadFromForm, subscriptionFilterSummary } from "@/lib/alerts/form";
 import { FMV_ALERT_LABEL, editionHref } from "@/lib/alerts/edition-link";
 import SupportChatConnected from "@/components/SupportChatConnected";
@@ -339,7 +338,6 @@ export default function AlertsClient() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "#fafafa" }}>
-      <MobileNav />
       <main style={{ maxWidth: 880, margin: "0 auto", padding: "24px 16px 96px" }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <h1 style={{ fontFamily: DISPLAY, fontSize: 30, letterSpacing: "0.04em", textTransform: "uppercase", margin: 0 }}>

@@ -7,7 +7,6 @@
 import type { Metadata } from "next"
 import InsightsEmailCapture from "@/components/insights/InsightsEmailCapture"
 import FunnelTracker from "@/components/FunnelTracker"
-import MobileNav from "@/components/MobileNav"
 import SiteFooter from "@/components/SiteFooter"
 import SupportChatConnected from "@/components/SupportChatConnected"
 import WalletSearchBand from "@/components/WalletSearchBand"
@@ -87,7 +86,6 @@ export default function InsightsLayout({ children }: { children: React.ReactNode
           surface in the product a dead end.
           Mounted at the LAYOUT, not per board: the layout persists across
           /insights/* navigations, and each board owns its own <main>. */}
-      <MobileNav />
 
       {/* The concierge. Mounted here 2026-09-02 because it was absent from every
           public entry point: it lives in the (collections) and (analytics)

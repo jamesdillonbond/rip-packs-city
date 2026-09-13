@@ -3,7 +3,6 @@ import { ProBadge } from "@/components/auth/ProBadge"
 import SignOutButton from "@/components/auth/SignOutButton"
 import SupportChatConnected from "@/components/SupportChatConnected"
 import SiteFooter from "@/components/SiteFooter"
-import MobileNav from "@/components/MobileNav"
 import RpcLogo from "@/components/RpcLogo"
 import TopNav from "@/components/TopNav"
 import ThemeToggle from "@/components/ThemeToggle"
@@ -23,7 +22,6 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
       </div>
       <SiteFooter />
       <SupportChatConnected />
-      <MobileNav />
     </div>
   )
 }

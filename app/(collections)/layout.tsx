@@ -1,6 +1,5 @@
 import SupportChatConnected from "@/components/SupportChatConnected"
 import SiteFooter from "@/components/SiteFooter"
-import MobileNav from "@/components/MobileNav"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
 
 // ── Layout ─────────────────────────────────────────────────────────────────────
@@ -33,7 +32,6 @@ export default async function CollectionLayout(props: any) {
       {props.children}
       <SiteFooter />
       <SupportChatConnected />
-      <MobileNav />
     </div>
   )
 }

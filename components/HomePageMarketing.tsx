@@ -6,7 +6,6 @@ import { trackFunnelEvent } from "@/lib/track-funnel";
 import WalletSearch from "@/components/WalletSearch";
 import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
-import MobileNav from "@/components/MobileNav";
 import PinwheelDivider from "@/components/visual/PinwheelDivider";
 import HomeFmvPreview from "@/components/HomeFmvPreview";
 import { publishedCollections } from "@/lib/collections";
@@ -767,7 +766,6 @@ export default function HomePageMarketing() {
       </section>
 
       <SiteFooter />
-      <MobileNav />
     </div>
   );
 }
