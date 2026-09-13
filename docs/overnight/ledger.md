@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ VERIFIED — the `Cadence Collapse` arm is live and reads ok, and the ack it shipped with was never needed · Cowork cloud
+
+**Shipped (docs only):** `docs/reference/known-issues.md` (#80). No code, no DB.
+
+**✅ THE EXIT CRITERION IS MET, FROM THE DATABASE RATHER THAN FROM A DEPLOYMENT ROW.** `extra.checks_run` went **21 → 22** on the 02:46 PT sentinel run and held at 22 at 03:30 PT. ⭐ **And `Cadence Collapse` is in NEITHER the `critical` nor the `warn` list — it evaluated `ok`.**
+
+**⭐ BETTER THAN THE DESIGN ANTICIPATED: THE ACK WAS NEVER NEEDED.** It was seeded because the arm's 12 h observed window still contained the outage at wiring time. By 02:46 PT the nine restored lanes had run enough full-cadence hours to clear the 0.40 ratio on their own. **It lapses at 12:00 PT and will expire unused** — the correct end state for a dated acknowledgement, and exactly why it was written with an expiry instead of as a threshold change. ⛔ **Do not read "the ack went unused" as "the ack was unnecessary"**: at wiring time the arm genuinely read critical on eleven already-fixed lanes, and the alternative on the table was loosening the threshold permanently.
+
+**⚠ AND THE THING THAT MADE THIS TAKE ALL NIGHT IS ITSELF THE MEASUREMENT.** GitHub shed the **23:34 and 00:34** ticks outright — no `sentinel` row and no `sentinel-heartbeat` row for either — so the estate's pager was silent from **22:13 PT to 02:46 PT, ~4.5 hours**. The tick that finally landed was a `workflow_dispatch`; **the first SCHEDULED delivery after the deploy was 03:30 PT.** ⭐ **#80 demonstrating itself on the night it was documented**, and the strongest argument for the cron-job.org entry — which is Trevor's, behind the token rotation.
+
+**Gates:** docs only; index regenerated; ledger guards 3 / 0.
+
 ### 2026-09-13 · 🚨 FIXED — my own sentinel change turned `main` red on three ratchets, and every one of them was right · Cowork cloud, Trevor: "exhaust all you can do"
 
 **Shipped:** `app/api/sentinel/route.ts` (ack-mode invocation heartbeat + two bounded fetches), `__tests__/api-sentinel-ack-mode.test.ts` (+3 tests), `docs/cowork-skills/rpc-cron-ops.skill` (repacked), `docs/reference/known-issues.md` (#97). Revert: `git revert` the commit whose message starts `fix(sentinel): the ack tick writes its own heartbeat`.
