@@ -31,6 +31,10 @@ UPDATE public.sales_counterparty_backfill_state SET exhausted_at = NULL;
 
 ⛔ **THIS IS A RATE REDUCTION, NOT A REPAIR, AND IT MUST NOT READ AS ONE.** The lane will re-arm at 08:04 PT, retry, and **very likely fail the same way** — the condition stays visible rather than hidden. **The real fix is one of two, and both are Trevor's:** (a) make the claim cheap at deep-history cursors (it is scanning ~195k buffers to find 120 rows), or (b) set `floor_sold_at` so the walk stops above the range where Flow REST no longer decodes — **the lane has recovered nothing since 2026-04-11 and the cursor is now at 2026-03-28.**
 
+✅ **VERIFIED 9 MINUTES LATER — the pause took effect on the first tick after it.** 05:55 `scan` **60,535 ms FAILED** · 06:01 `scan` **95,828 ms FAILED** · **06:05 `drained` 1,382 ms ok** · **06:11 `drained` 772 ms ok**. **~70× cheaper per tick and the failures stopped**, which is the cooldown branch doing exactly what its comment says (return without scanning).
+
+⚠ **THE FLEET-LEVEL CLAIM IS NOT EARNED AND I AM NOT MAKING IT.** Failures/hour read **36.6 before → 26.8 after**, which is directionally right but rests on a **9-minute** window against 40, and the counterparty lane was only ~4 of the 24 pre-pause failures. **The spell is easing, not cleared; the honest statement is that ONE lane's contribution was removed and measured, and the rest is unattributed.**
+
 ✅ **What this does NOT undo: the 1,849 rows recovered in the first four hours are banked and real.** The fix's first half (stop re-deriving one zero; re-arm; drain the productive range) worked exactly as claimed. **What failed is the second half's assumption that an unproductive range always presents as `rows_found = 0`.**
 
 ### 2026-09-13 · 🚨 FIXED — a clean git merge produced code that does not compile, and my gates were green because I ran them before the rebase · Cowork cloud
