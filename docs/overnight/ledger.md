@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · 🔍 GO-LIVE — M1 and M2 read as a SERIES for the first time: M1 is above its bar at all four legs, M2 never reaches 30, and the "sweep position" explanation is half wrong · Claude Code cloud, Trevor: "work through any to do list items you can handle"
+
+**Shipped (docs only, no code/DB/prod change):** `docs/strategy/go-live-2026-09.md` (one new dated block in §1). Revert: `git revert` the commit whose message starts `docs(go-live): read M1 and M2 as a series`.
+
+**Why now:** both rows in that file say *never quote a leg*, and until 09-12 there was no alternative — the precompute is keyed on `metric` alone and kept no history, which is exactly why every reading in the file was hand-captured. `rpc_trust_health_history` (pg_cron **jobid 488**) has a day of data and **nobody had read it as a series yet**; the file itself asks for that in as many words ("Read the series, not the row").
+
+| leg computed (PT) | M1 share | M1 sweep | M1 fresh | M2 share | M2 sweep | M2 fresh |
+|---|---:|---:|---:|---:|---:|---:|
+| 00:48 | 56.3 | 80.0 | 70.3 | 29.9 | 55.4 | 53.8 |
+| 06:48 | 55.4 | 82.0 | 67.5 | 29.1 | 55.8 | 52.0 |
+| 12:48 | **51.3** | 82.0 | 62.5 | **24.3** | 55.3 | 44.0 |
+| 18:48 | 55.6 | 81.6 | 68.1 | 29.9 | 53.8 | 55.6 |
+
+**🔵 M1: four of four legs ABOVE the 50 % bar (51.3–56.3).** ⛔ **This matters because of what it does NOT license.** The 09-10 trigger fired on 47.9/47.9 and its documented response is the denormalised-priority walk order — **designed, costed, and DECLINED by Trevor on cost**. The file records it as *due for re-evaluation*. On the series the trigger's premise does not hold: the day's LOW is 1.3 points above the bar. **So the right action is to leave a declined decision declined**, not to re-open it. ⚠ One day is four points — a distribution, not a trend.
+
+**🔴 M2: four of four legs BELOW the 30 % bar (24.3–29.9), touching 29.9 twice and not crossing.** NOT MET, consistent with every lever sizing already in the file.
+
+**⭐⭐ THE AMPLITUDE IS NOW A NUMBER INSTEAD OF A WARNING: within-day range 5.0 pts (M1), 5.6 pts (M2).** Both rows tell a reader not to quote a leg; neither could say *how wrong* one would be. **A leg is worth ±~2.5 pts on M1, ±~2.8 on M2** — so a claimed move smaller than that is unreadable from one reading. ⭐ And the 09-10 pair that fired the trigger (47.9/47.9) sits **below today's entire band**, not inside it, which is the honest way to say the situation changed.
+
+**🚨 THE CORRECTION THE SERIES FORCES: the swings are NOT sweep completion.** Both rows attribute them to "sweep position", which reads naturally as *how much has been swept*. **Sweep % is FLAT across all four legs** (M1 80.0/82.0/82.0/81.6; M2 55.4/55.8/55.3/53.8) while the share moves 5 points. **What tracks the share is the FRESH-COHORT rate** (M1 70.3→62.5→68.1; M2 53.8→44.0→55.6) — *which* editions the cursor touched, not *how many*. The two readings point at opposite conclusions about the "finish the sweep" lever, and only the second one is right (the 09-10 note reached that by a different route).
+
+**⭐ BOTH COLLECTIONS DIP AT THE SAME LEG, AND I VERIFIED THE MECHANISM RATHER THAN ASSUMING IT:** `fmv-recalc` is a **single paginated sweep on one offset cursor**, passing the Top Shot / All Day / Pinnacle collection ids into one RPC per page. One cursor for the estate — so **M1 and M2 moving together is ONE observation, not two independent ones.**
+
+**⚠ ONE HYPOTHESIS, FLAGGED AS SUCH, WITH A FALSIFIER: the dip may be DIURNAL.** 12:48 PT is today's low on both metrics, and 09-10's second trigger reading (19:48Z) was the same slot. **Falsifier: if 12:48 PT is not the low on 09-13 and 09-14, strike it.** Two days is not a pattern and I am not acting on it.
+
+**⚠ AND THE SERIES IS COARSER THAN ITS CADENCE SUGGESTS — stated so nobody over-reads it.** Job 488 fires `*/10` and **succeeded 99 times in 24 h**, but rows dedupe on `computed_at` and the precompute recomputes **six-hourly**: **4 points per metric per day is the ceiling**, and more capturing cannot change that. ⚠ **A wrong turn I caught before writing it down:** the tick logs `INSERT 0 20` against 29 metrics in the table, which reads like nine metrics silently uncovered. It is not — all 29 have points; the 20 is a partial write of a set whose members carry different `computed_at`. **Checked before claiming a gap, which is the only reason it is not in this entry as a finding.**
+
+**Gates:** docs only; `check-memory-doc-links` **196 links resolve**; no guard reads this file (grepped `__tests__/` and `scripts/`); ledger guards 3 / 0.
+
 ### 2026-09-12 · 🔍 MEASUREMENT — nine lanes have been running on the GHA backstop ALONE for three days, and the backstop buys ~4x less cover than its own header claims · Claude Code cloud, Trevor: "work through any to do list items you can handle"
 
 **Shipped (docs only, no code/DB/prod change):** `.github/workflows/dead-lane-backstop.yml` (header comment), `docs/reference/known-issues.md` (#76). Revert: `git revert` the commit whose message starts `docs(backstop): record the measured cover`.
