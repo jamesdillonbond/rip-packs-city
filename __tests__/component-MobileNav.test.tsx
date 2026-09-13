@@ -110,6 +110,18 @@ describe("MobileNav", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull()
   })
 
+  // ⚠ THIS TEST FORCES requestAnimationFrame SYNCHRONOUS, and that is load-bearing
+  // — useModalA11y defers `focusFirst` to the next frame. Read the pass for what
+  // it is: the hook's LOGIC is correct (it finds the first focusable and focuses
+  // it). It is not evidence about frame timing in a real browser.
+  // ⚠⚠ AND DO NOT TRY TO CONFIRM IT THE OBVIOUS WAY. Attempted 2026-09-12 against
+  // production and the sheet appeared to never take focus — no focusin fired at
+  // all. The cause was the MEASUREMENT: the Chrome window was occluded behind
+  // another app, and Chrome suspends rAF entirely in a hidden tab
+  // (`document.visibilityState === "hidden"`, and a probe rAF never fired in
+  // 1500ms). Every rAF-dependent behaviour in this app is UNMEASURABLE through a
+  // backgrounded browser and will read as broken. Raise the window first, or the
+  // finding is about the harness and not the product.
   it("moves focus into the sheet when opened and marks it aria-modal", () => {
     const rafSpy = vi
       .spyOn(window, "requestAnimationFrame")
@@ -235,6 +247,66 @@ describe("MobileNav — which tab owns the route", () => {
     const css = container.querySelector("nav.rpc-mobile-nav style")?.textContent ?? ""
     expect(css).toContain("padding-bottom: env(safe-area-inset-bottom")
     expect(css).toContain("box-sizing: content-box")
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The active tab has to be announced, not just COLOURED (2026-09-12)
+//
+// Measured in production the day the re-slot shipped: on /nba-top-shot/overview
+// the COLLECTIONS tab rendered in the active red and carried `aria-pressed=
+// "false"` with no `aria-current` — so the one tab that WAS the answer told a
+// screen reader it was not pressed, and no tab anywhere exposed "you are here".
+// Colour was the entire active signal, which is also the signal that fails for
+// anyone who cannot separate #e03a2f from 55% white.
+//
+// ⚠ The two attributes answer DIFFERENT questions on COLLECTIONS and both are
+// correct at once: `aria-pressed` is about the SHEET (a disclosure control),
+// `aria-current` is about the LOCATION. A test that conflates them would push
+// someone to "fix" it by making aria-pressed track the route, which would then
+// lie about whether the sheet is open.
+describe("MobileNav — the active tab is announced, not just coloured", () => {
+  // ⚠ Scoped to the BAR. An unscoped text match finds the Search SHEET's own
+  // "SEARCH" heading first — the sheet renders ahead of the nav in the DOM — so
+  // the assertion would silently be about a heading that has no aria at all.
+  const tab = (c: HTMLElement, label: string) =>
+    Array.from(
+      c.querySelectorAll("nav.rpc-mobile-nav a, nav.rpc-mobile-nav button, nav.rpc-mobile-nav span"),
+    ).find((e) => (e.textContent ?? "").includes(label)) as HTMLElement
+
+  it("marks the active LINK tab with aria-current=page", () => {
+    nav.pathname = "/profile/settings"
+    const { container } = render(<MobileNav />)
+    expect(tab(container, "MY STUFF").getAttribute("aria-current")).toBe("page")
+    expect(tab(container, "HOME").getAttribute("aria-current")).toBeNull()
+    expect(tab(container, "SNIPER").getAttribute("aria-current")).toBeNull()
+  })
+
+  it("marks HOME on the homepage and nothing else", () => {
+    nav.pathname = "/"
+    const { container } = render(<MobileNav />)
+    expect(tab(container, "HOME").getAttribute("aria-current")).toBe("page")
+    expect(tab(container, "MY STUFF").getAttribute("aria-current")).toBeNull()
+  })
+
+  // The case that was measured wrong in production.
+  it("⚠ marks COLLECTIONS on a collection page while aria-pressed still describes the SHEET", () => {
+    nav.pathname = "/nba-top-shot/overview"
+    const { container } = render(<MobileNav />)
+    const t = tab(container, "COLLECTIONS")
+    expect(t.getAttribute("aria-current")).toBe("page")
+    // Closed sheet — the two attributes disagree, and that is CORRECT.
+    expect(t.getAttribute("aria-pressed")).toBe("false")
+  })
+
+  // SEARCH is a pure disclosure: it is never a location, so it never claims one.
+  it("never marks SEARCH as the current page, even while its sheet is open", () => {
+    nav.pathname = "/nba-top-shot/overview"
+    const { container, getByText } = render(<MobileNav />)
+    fireEvent.click(getByText("SEARCH").closest("button")!)
+    const t = tab(container, "SEARCH")
+    expect(t.getAttribute("aria-pressed")).toBe("true")
+    expect(t.getAttribute("aria-current")).toBeNull()
   })
 })
 

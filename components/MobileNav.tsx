@@ -505,7 +505,18 @@ export default function MobileNav() {
                     setSheetOpen((v) => !v);
                   }
                 }}
+                // ⚠ TWO DIFFERENT QUESTIONS, and COLLECTIONS answers both.
+                // `aria-pressed` describes the SHEET (open/closed) — it is a
+                // disclosure control, so that stays bound to the sheet state.
+                // `aria-current` describes the LOCATION. Measured in production
+                // 2026-09-12 before this line existed: on /nba-top-shot/overview
+                // the COLLECTIONS tab rendered in the active red while announcing
+                // `aria-pressed="false"` and no `aria-current` — so the one tab
+                // that WAS the answer told a screen reader it was not pressed,
+                // and no tab anywhere exposed "you are here" at all. The colour
+                // was the entire signal.
                 aria-pressed={isSearch ? searchOpen : sheetOpen}
+                aria-current={!isSearch && activeTab === "collections" ? "page" : undefined}
                 style={baseStyle}
               >
                 {inner}
@@ -535,7 +546,15 @@ export default function MobileNav() {
           }
 
           return (
-            <Link key={tab.key} href={tab.href} style={baseStyle}>
+            <Link
+              key={tab.key}
+              href={tab.href}
+              // See the note on the buttons above: the active tab was signalled
+              // by COLOUR ALONE, which is invisible to a screen reader and to
+              // anyone who cannot separate #e03a2f from 55% white.
+              aria-current={tab.isActive ? "page" : undefined}
+              style={baseStyle}
+            >
               {inner}
             </Link>
           );
