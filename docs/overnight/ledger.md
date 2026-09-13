@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ CODE — a working user-facing lane reported `rows_written = 0` on every run for as long as it has existed, and the real count was in the same object · Claude Code cloud, overnight autonomous
+
+**Shipped:** `app/api/cron/daily-portfolio-snapshot/route.ts`, `__tests__/api-cron-daily-portfolio-snapshot.test.ts` (12 → 15 cases, **2 INVERTED**). No migration, no data, no schedule. **REVERT:** `git revert <sha of "fix(portfolio): log the count the RPC actually returns">` — it changes only what is LOGGED, never what is written.
+
+🚨 **`snapshot_all_user_portfolios()` returns `{"inserted": N, "snapshot_date": …}`. The route read `result?.snapshots_written ?? result?.rows_written ?? 0`** — **neither key has ever existed**, so every run fell through to `?? 0` and logged a **measured zero while the lane was working**.
+
+**The proof is in the lane's own row.** The newest ok run logged `rows_written = 0` against its own `extra.result = {"inserted": 25, "snapshot_date": "2026-09-13"}`, and `portfolio_snapshots` holds **exactly 25 rows for that date** (22–25/day, 8 days straight). ⭐ **The true count was sitting in the SAME OBJECT the fallback chain was reading.**
+
+⭐⭐ **AND THE CORRECT CHAIN ALREADY EXISTED ONE DIRECTORY AWAY.** `classify-acquisitions-multicollection` reads `inserted` and reports **1,194 rows over 58 runs**. **It was the FIX that failed to spread, not the defect** — the same shape this file records for `solUsd()`. ⚠ Its plain sibling `classify-acquisitions` also omits `inserted`, but it has **0 runs in 73 h**, so that is unmeasurable and was left alone rather than "fixed" blind.
+
+⚠ **AN UNRECOGNISED SHAPE NOW LOGS NULL, NOT 0.** `rows_written = 0` is supposed to mean a MEASURED zero — the column is nullable precisely so "unmeasured" has its own value — and a fabricated zero made a live lane read as dead to every rollup and to the Zero-Yield arm. **An explicit `inserted: 0` still logs 0**, because that one is measured. ⭐ **Checked the consumer before changing the value:** `check_zero_yield_lanes` sums over `pipeline_runs_daily` (`sum()` ignores NULL) and keys `last_find` on `rows_found`, so NULL is safe there.
+
+⭐ **TWO TESTS WERE INVERTED, NOT DELETED** — *"coerces an absent count to 0 rather than NaN"* asserted the fabricated zero directly, and the error-path case asserted 0 for a run that measured nothing. **A passing test asserting the defect is what held it in place**, and the next session to fix this would have watched green turn red and concluded they were wrong. ⚠ **The file's other fixtures were testing a contract production has never implemented** (`snapshots_written`, `rows_written`) — a pin inheriting its fixture's world rather than production's, which is the same failure #82 records for `raise_impossible_parallel_circ`. The real payload is now a fixture.
+
+**3 mutations, 3 caught** — dropping `inserted` (the original bug) reds 3; restoring `?? 0` reds 2; always-NULL reds 5.
+
+⚠ **ONE THING FOUND AND NOT FIXED, because fixing it would mean fabricating data:** `portfolio_snapshots` has **no rows at all for 09-12** — that day's run hit a 120,572 ms statement timeout during the saturation spell, and the lane is date-keyed daily with no backfill. **24 owners have a permanent one-day hole in their portfolio history.** Re-running today would compute TODAY's values and stamp them 09-12, which is a fabricated reading, so it was not done.
+
 ### 2026-09-13 · 📋 REGISTER — #82's mis-key breach is 29, not 6, and 24 of them landed in ONE DAY at an 18.6% rate · Claude Code cloud, overnight autonomous
 
 **Shipped: docs only** — `docs/reference/known-issues.md` (#82 re-measured). No code, no migration, **no data mutation** — the remap stays Trevor's call.
