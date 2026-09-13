@@ -11,6 +11,10 @@ type Identity = {
   walletAddr: string | null;
 };
 
+// Collection sub-pages whose third segment names one entity. Mirrors
+// PAGE_ENTITY_KINDS in app/api/support-chat/route.ts (which validates them).
+const ENTITY_PAGE_KINDS = new Set(["edition", "player", "team", "set", "series", "moment"]);
+
 export default function SupportChatConnected() {
   const pathname = usePathname();
   const [identity, setIdentity] = useState<Identity>({
@@ -37,9 +41,26 @@ export default function SupportChatConnected() {
 
   let collectionId = "";
   let pageLabel: string;
+  // The entity the page is ABOUT. Until 2026-09-13 an edition page reported only
+  // "edition (nba-top-shot)", so "what's this one worth?" could not be answered
+  // without the user re-typing the moment's name. The label keeps its shape
+  // (SupportChat's PAGE_DEFAULTS keys on it); the entity travels separately.
+  let pageEntity: { kind: string; slug: string } | null = null;
   if (isCollectionRoute) {
     collectionId = maybeCollection;
     pageLabel = `${segments[1] || "overview"} (${collectionId})`;
+    const kind = segments[1] || "";
+    const raw = segments[2] || "";
+    if (raw && ENTITY_PAGE_KINDS.has(kind)) {
+      let slug = raw;
+      try { slug = decodeURIComponent(raw); } catch { /* keep raw */ }
+      pageEntity = { kind, slug: slug.slice(0, 120) };
+    }
+  } else if (maybeCollection === "pinnacle" && segments[1] === "moment" && segments[2]) {
+    // /pinnacle/moment/<render_id> — the per-render Pinnacle pin page.
+    pageLabel = "moment (pinnacle)";
+    collectionId = "disney-pinnacle";
+    pageEntity = { kind: "pinnacle_render", slug: segments[2].slice(0, 120) };
   } else if (maybeCollection === "insights") {
     // Keep the "(insights)" suffix: SupportChat's PAGE_DEFAULTS lookup splits on
     // "(" and the board name alone would collide with collection page keys
@@ -89,6 +110,7 @@ export default function SupportChatConnected() {
   return (
     <SupportChat
       pageContext={pageLabel}
+      pageEntity={pageEntity}
       collectionId={collectionId || null}
       ownerKey={ownerKey}
       userWallet={userWallet}

@@ -53,12 +53,14 @@ describe("prompt-cache breakpoint holds only invariant text", () => {
     expect(end).toBeGreaterThan(start)
     const cacheable = ROUTE.slice(start, end)
     const interpolations = [...cacheable.matchAll(/\$\{([^}]*)\}/g)].map((m) => m[1].trim())
-    // publishedLabels is derived from lib/collections.ts and is therefore
-    // constant for a given deploy — it is the ONE allowed interpolation. A new
-    // name showing up here means someone moved a per-user or per-page value
-    // above the breakpoint; move it into `dynamic` instead of widening this.
+    // publishedLabels is derived from lib/collections.ts and
+    // FMV_METHODOLOGY_BLOCK from lib/fmv-confidence.ts (2026-09-13) — both are
+    // constant for a given deploy, so they are the ONLY allowed interpolations.
+    // A new name showing up here means someone moved a per-user or per-page
+    // value above the breakpoint; move it into `dynamic` instead of widening this.
+    const DEPLOY_CONSTANT = new Set(["publishedLabels", "FMV_METHODOLOGY_BLOCK"])
     expect(
-      interpolations.filter((n) => n !== "publishedLabels"),
+      interpolations.filter((n) => !DEPLOY_CONSTANT.has(n)),
       "per-request values must live in `dynamic`, BELOW the cache breakpoint — " +
         "anything here is re-sent uncached on every request and every tool-loop iteration",
     ).toEqual([])

@@ -265,8 +265,8 @@ const PUBLIC_PAGE_DEFAULTS: Record<string, string[]> = {
   "early-access": ["What do I get with an account?", "Is it free?", "What's my collection worth?", "How is FMV calculated?"],
 };
 
-export default function SupportChat({ pageContext, collectionId, userWallet, ownerKey, walletConnected, signedInLabel }: {
-  pageContext?: string; collectionId?: string | null; userWallet?: string | null; ownerKey?: string | null; walletConnected?: boolean; signedInLabel?: string | null;
+export default function SupportChat({ pageContext, pageEntity, collectionId, userWallet, ownerKey, walletConnected, signedInLabel }: {
+  pageContext?: string; pageEntity?: { kind: string; slug: string } | null; collectionId?: string | null; userWallet?: string | null; ownerKey?: string | null; walletConnected?: boolean; signedInLabel?: string | null;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -490,6 +490,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
           ownerKey: ownerKey || null,
           userWallet: userWallet || null,
           pageContext: pageContext || null,
+          pageEntity: pageEntity ?? null,
           collectionId: collectionId || null,
           walletConnected: !!walletConnected,
           conversationHistory: history,
@@ -556,7 +557,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
       setMessages((prev) => prev.filter((m) => m.id !== "typing"));
       setMessages((prev) => [...prev, { id: `e_${Date.now()}`, role: "assistant", text: "Connection issue. Try again in a moment.", timestamp: new Date() }]);
     } finally { setIsLoading(false); }
-  }, [input, isLoading, sessionId, ownerKey, userWallet, pageContext, collectionId, walletConnected, isOpen, messages]);
+  }, [input, isLoading, sessionId, ownerKey, userWallet, pageContext, pageEntity, collectionId, walletConnected, isOpen, messages]);
 
   useEffect(() => {
     function handleAsk(e: Event) {
