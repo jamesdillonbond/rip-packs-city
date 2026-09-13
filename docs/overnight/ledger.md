@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ CODE — the Pinnacle render cache was the EXPENSIVE branch, and the test pinning it there was inverted rather than deleted (#90) · Claude Code cloud, overnight autonomous
+
+**Shipped:** `lib/og/img-data.ts` (cache read demoted below the optimizer leg), `__tests__/og-img-data.test.ts` (1 assertion inverted, 2 cases added), `docs/reference/known-issues.md` (#90). No DB. Revert: `git revert` the commit whose message starts `fix(og): the Pinnacle render cache is the second choice`.
+
+**⭐ THE DEFECT IS AN ORDERING THAT WAS CORRECT WHEN IT SHIPPED AND WAS OVERTAKEN HOURS LATER, BY THE SAME AUTHOR, ON THE SAME DAY.** `ogImageDataUri` read `pinnacle_render_cache` FIRST and returned on a hit. Against the 2,896,041 B live render that was a 9× win and the code says so. **Then the optimizer leg landed later the same day and returns 61,788 B for the same render** — so the cache-first read was short-circuiting a cheaper branch and shipping **5.1× more bytes** on the one card it covers. ⛔ **Not an error by its author**, and the register and the code both now say that explicitly, because "this was wrong" and "this was overtaken" call for different amounts of caution from the next reader.
+
+**⭐ BOTH NUMBERS RE-MEASURED, NOT QUOTED**, per the dated-sample rule: the cached row is **316,140 B** (`b64` 421,520 chars) and is still the ONLY row, `fetched_at` **2026-07-16** — read live tonight. The 61,788 B optimizer figure is the 09-12 production measurement and is cited as dated, because this sandbox's own agent proxy blocks `www.rippackscity.com` at CONNECT and cannot re-take it (the documented trap: that denial reads exactly like a WAF 403 and is not one).
+
+**⭐ A DEMOTION, NOT A DELETION, AND THE REASON IS THAT HALF THE JUSTIFICATION SURVIVED.** #90's recommendation was "drop the read or move it after the optimizer". Dropping it would have been wrong: when the optimizer refuses the art — a `remotePatterns` drift, a 400, a platform difference, or any `optimize: false` caller — **316 KB still beats a 2.9 MB direct fetch that may not even clear the 4 MB cap.** So the read now sits BELOW the optimizer and ABOVE the direct fetch, which also means that with `optimize: false` it is FIRST again. That is the ordering that was right about this cache all along; only its position relative to a branch that did not exist yet was wrong.
+
+**🚨 THE TEST WAS THE INTERESTING PART. `serves the cached render and never touches the live route` was a PASSING test asserting the defect.** This repo's rule is that such tests get INVERTED, never deleted, because a passing test asserting a promise is what holds that promise in place — and this one would have held the 5.1× regression in place indefinitely, since any future session removing the cache-first read would have seen a green test go red and concluded they were wrong. It now asserts **`THE OPTIMIZER WINS — the cache is not even consulted on an optimizer hit`**, and the old claim survives as the comment explaining the move. Two cases added for the surviving justification. **Mutation-proven: removing the cache read ✅ caught; disabling the optimizer leg ✅ caught.**
+
+**⚠ The concurrent-session hazard #90 recorded had cleared** — the file's last touch was `0f9196dac` at 19:58 PT, ~5 h before, and that session had moved on to alerts/sentinel work. Checked `git log` on the file before editing, which is what the item asked for.
+
+**⚠ NOTHING HERE TOUCHES THE REST OF #90**, which is the writer-ownership question (two harvest caches with no cloud writer) and is still Trevor's. The cache is one row and two months stale; this change makes that cheaper to live with, it does not fix it.
+
+**Verification:** full suite **1,520 files / 16,987 tests, 0 failures** · `tsc` clean · 2 mutations, both caught · register index regenerated, 201 doc links resolve · ledger guards 3 / 0.
+
 ### 2026-09-13 · ✅ CI — `main` was red for ~4 hours and none of the three failures was a code fault; one "obvious" fix would have blinded the pager's own alarm · Claude Code cloud, Trevor: "keep going … work autonomously"
 
 **Shipped:** `app/api/sentinel/route.ts` (two pager sends bounded), `__tests__/after-route-heartbeat-ratchet.test.ts` (third exemption convention + 4 controls), `docs/cowork-skills/rpc-cron-ops.skill` (re-packed). Revert: `git revert` the commit whose message starts `fix(ci): bound the pager sends`.
