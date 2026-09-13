@@ -477,7 +477,12 @@ async function getPinnacleRenderRows(): Promise<PinnacleRenderRow[]> {
   // One sitemap entry per Pinnacle render → /pinnacle/moment/<render_id> (the
   // render-keyed per-pin page, Wave 1b). pinnacle_catalog has no collection_id
   // (it's all Pinnacle), so page it directly rather than via fetchAllByCollection.
-  // Limited to catalogued pins (character_name present) — ~2,079 rows.
+  // Limited to catalogued pins (character_name present) — a DATED SAMPLE:
+  // ~2,079 rows when written, re-derived 2026-09-12 (PT) as 2,600. Re-measure
+  // before quoting it; it is the population the OG-card transformation ceiling
+  // is counted over (known-issues #95), and reading the ~2,079 as current — or
+  // reaching for pinnacle_editions, which is a DIFFERENT and 9.6x smaller set —
+  // is how that count was got wrong the first time.
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   // ⚠ A MISSING KEY IS NOT AN EMPTY CATALOGUE. `return []` here published a
