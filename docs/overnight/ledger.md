@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 🚨 DB DATA — the counterparty falsifier FIRED: timeouts resumed, the cooldown could not engage, and I paused the lane by hand · Claude Code cloud, overnight autonomous
+
+**Shipped: a ONE-ROW DB UPDATE, no code, no migration.**
+```sql
+-- APPLIED 2026-09-13 06:04 PT
+UPDATE public.sales_counterparty_backfill_state SET exhausted_at = now();
+-- REVERT (resumes the walk immediately):
+UPDATE public.sales_counterparty_backfill_state SET exhausted_at = NULL;
+```
+**Cursor is PRESERVED at `2026-03-28 12:27Z`** — nothing about the walk's progress is discarded; only the next ~2 h of attempts are skipped. Re-arms **08:04 PT** on its own.
+
+🚨 **THE FALSIFIER I RECORDED AT SHIP TIME — *"FALSIFIED if timeouts resume"* — HAS FIRED.** Last seven ticks: **4 of 7 failed** with `claim failed: canceling statement due to statement timeout` (05:41, 05:51, 05:55, 06:01), and the three that succeeded ran **61.1 s, 100.5 s and 115.3 s**.
+
+⛔ **AND IT IS THE HOLE THE FIX DOCUMENTED IN ITS OWN HEADER: the exhausted stamp is written AFTER the scan, so a claim killed at `statement_timeout` never arms the cooldown.** The lane could not reach the state built for it, so it retried the same ~195,000-buffer scan every ~5 minutes indefinitely.
+
+⚠ **THIS OVERTAKES MY OWN READING FROM 40 MINUTES EARLIER.** I wrote that the zero-yield run was *"a TRANSIT, not a strand"* because the cursor was advancing ~0.67 d/tick. **That was true when measured and is now false:** the CLAIM itself times out, so the cursor cannot advance at all. **A conclusion that depended on the cursor moving stopped holding the moment it stopped moving — and the walk into deeper history is what made the claim expensive enough to time out.**
+
+**WHY I INTERVENED rather than only filing it.** The lane was **failing every tick, producing nothing**, burning 60–115 s of a ~195k-buffer scan each time, during an **active saturation spell (22 fleet failures in 30 minutes)** — and Trevor is asleep for hours yet. Setting the stamp is **exactly the state the fix intends for an unproductive range**; it simply could not get there. Cost/benefit: **~24× fewer harmful attempts** (1 per 2 h instead of 12 per hour), **one row**, **one statement to undo**, **no data discarded**.
+
+⛔ **THIS IS A RATE REDUCTION, NOT A REPAIR, AND IT MUST NOT READ AS ONE.** The lane will re-arm at 08:04 PT, retry, and **very likely fail the same way** — the condition stays visible rather than hidden. **The real fix is one of two, and both are Trevor's:** (a) make the claim cheap at deep-history cursors (it is scanning ~195k buffers to find 120 rows), or (b) set `floor_sold_at` so the walk stops above the range where Flow REST no longer decodes — **the lane has recovered nothing since 2026-04-11 and the cursor is now at 2026-03-28.**
+
+✅ **What this does NOT undo: the 1,849 rows recovered in the first four hours are banked and real.** The fix's first half (stop re-deriving one zero; re-arm; drain the productive range) worked exactly as claimed. **What failed is the second half's assumption that an unproductive range always presents as `rows_found = 0`.**
+
 ### 2026-09-13 · 🚨 FIXED — a clean git merge produced code that does not compile, and my gates were green because I ran them before the rebase · Cowork cloud
 
 **Shipped:** `app/api/sentinel/route.ts` (deduped `signal`), `docs/reference/known-issues.md` (#97). Revert: `git revert` the commit whose message starts `fix(sentinel): dedupe the bounded-send signal`.
