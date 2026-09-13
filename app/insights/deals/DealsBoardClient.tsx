@@ -19,6 +19,7 @@ import type { DegradedSummary } from "@/lib/insights/board-status"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { feeNetDeal } from "@/lib/marketplace-fees"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { askAgeTitle, askStampKind } from "@/lib/market/ask-freshness"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -113,8 +114,6 @@ function fmtInt(n: number | null): string {
 //
 // A stale "deal" is the single thing this board can do that wastes a collector's
 // trip, and its own lede already warns about "a low-serial / stale listing".
-import { askAgeTitle, askStampKind } from "@/lib/market/ask-freshness"
-
 const ASK_STALE_HOURS = 12
 
 // ⚠ TAKES `nowMs` RATHER THAN READING THE CLOCK, AND THAT IS NOT STYLE.
