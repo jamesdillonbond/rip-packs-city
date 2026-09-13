@@ -3,6 +3,89 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## ⭐⭐ THE STRIPPER IS FIXED, AND THE THING WORTH KEEPING IS THE ORACLE, NOT THE FIX (2026-09-12, register #87)
+
+`scripts/lib/strip-comments.mjs` DEFECT 4 — a JS/TS parser run over `.tsx` — is repaired at the root:
+two new states, `jsxTag` (quotes ARE attribute delimiters, `{` opens an expression container) and
+`jsxText` (quotes, `//` and `/* */` are all prose). Census **10 files / 899 lines → 0 / 0**; both
+ratchets are bans at zero. That is the boring half.
+
+⭐⭐ **THE DELIVERABLE IS `__tests__/strip-comments-matches-typescript.test.ts`.** It parses every file
+in the tree with the TypeScript compiler and asserts its comment ranges are EXACTLY the ranges the
+stripper blanks — both directions, two bans at zero, **3,008 / 3,008 files agreeing**. The argument for
+it generalises past this helper:
+
+> **Every one of the five defects in this file was found by accident, weeks or months late, and then
+> pinned by a fixture written to describe the case that had just been found. A fixture can only assert
+> the defect its author already knows about.** The contract was never a list of cases — it is *"blank
+> exactly the comments and nothing else"*, and that is checkable against an INDEPENDENT instrument
+> over the real tree.
+
+TypeScript is independent in the way that matters: it *defines* what a comment is, it resolves JSX by
+file extension (which the helper cannot), and it shares no code, author or assumption with the state
+machine. ⚠ **Mutation-proven** — disabling the JSX branch reds both directions with file and line.
+
+### ⛔ THE ORACLE WAS WRONG TWICE BEFORE THE STRIPPER WAS, AND BOTH LOOKED LIKE REAL FINDINGS
+
+A cross-instrument check is only evidence once the *other* instrument is right, and a wrong oracle
+produces confident, specific, entirely false findings. Both cuts here named real files and real lines:
+
+| cut | reported | actually |
+|---|---:|---|
+| char mask over all characters | 2,945 files "keep a comment" | blanking maps comments to SPACES, so an original space is indistinguishable — compare only NON-WHITESPACE |
+| node walk for comment ranges | 525 files "destroy source" | no node starts before a closing brace, so comments there are missed — walk LEAF TOKENS |
+| leading trivia only | 905 more files "destroy source" | a comment on the same line as the preceding token is TRAILING trivia; `getLeadingCommentRanges` excludes it by design |
+
+⭐ **The tell was the CONTENT of the first finding, not its size** — `" @vitest-environment jsdom"` and
+`// trimmed` are obviously comments, so "the stripper keeps them" was obviously wrong. *When a new
+instrument's first finding is surprising, establish that the INSTRUMENT is right before believing WHAT
+it says.* Final residue after the third cut: 22 files, all genuine.
+
+### 🚨 THE FIX REFUTED THE DEFECT'S OWN SAFETY CLAIM — a symptom-based census can only report the safe half
+
+The header said DEFECT 4 *"fails in the SAFE direction … KEEPS too much and never blanks code"*, and
+the register repeated it. **False.** Measured against TypeScript on the shipped stripper: **2 files, 46
+characters of real source BLANKED** — DEFECT 3's direction, the one that hid a live P0. JSX text was
+never a string state at all; it was parsed as CODE, so `//` in a URL opened a line comment.
+`app/(analytics)/analytics/api/page.tsx:116` handed every guard:
+
+```
+            https:                      
+```
+
+— the production base URL, printed on a public page, cut at the scheme.
+
+⭐⭐ **WHY IT SURVIVED SIXTEEN DAYS, and this is the transferable rule.** The census counted `sq`/`dq`
+line states. Those really are verbatim and really do only keep too much, so a census built on them
+reports the safe half **completely and correctly**. The unsafe half of the *same root cause* is
+invisible to it **by construction**. **Never derive a claim about a DEFECT from an instrument that
+measures one of its SYMPTOMS** — and ask what a passing guard is structurally silent about *before*
+quoting it as a safety property, not after.
+
+### ⭐ A FIFTH DEFECT FELL OUT OF THE SAME SWEEP AND HAS NOTHING TO DO WITH JSX
+
+`word` accumulated identifier characters **across whitespace**: `continue` on one line and `return` on
+the next made `continuereturn`, which is not a keyword, so the regex after it read as DIVISION and the
+machine desynced. ⚠ **An identical regex desynced or not depending only on what sat on the PREVIOUS
+LINE** — proven by running the same two lines with and without the preceding identifier. It had
+desynced `__tests__/helpers-client-directive.test.ts` for months, attributed to nothing, because its
+symptom (`dq`) is indistinguishable from DEFECT 4's. ⚠ **The code's own comment described the correct
+behaviour while the code did the opposite** (*"a run of whitespace ends the word"* — it did not).
+
+### ⚠ TWO SMALLER TRAPS, both of which read as extra coverage
+
+- ⛔ **IMPORTING A `*.test.ts` FROM ANOTHER `*.test.ts` RE-REGISTERS ITS SUITES.** The oracle imported
+  `walk` from the census file; the entire census then ran a second time, its 12 tests attributed to the
+  oracle's filename. **A duplicated suite is worse than a missing one** — it reads as coverage while
+  doubling cost and hiding which file actually failed. Caught by counting tests per file (48 where 37
+  were expected), not by any failure. The walk now lives in `__tests__/helpers/source-files.ts`.
+- ⚠ **A GUARD'S POPULATION MUST BE COUNTED BY THE GUARD'S OWN PREDICATE, NOT BY A REGEX THAT RESEMBLES
+  IT.** Sizing the residual `<`-ambiguity, I grepped `<tag>(`, found every hit identifier-preceded and
+  therefore already blocked, and wrote *"zero instances exist in this tree"* into the header. The census
+  then failed on `<> (last updated {d})</>` — a FRAGMENT, which the pattern could not match because it
+  required an identifier between the brackets. The grep answered a narrower question than the code asks.
+
+
 ## 🚨 THE SHARED COMMENT STRIPPER'S DEFECT 4 IS TWICE THE SIZE ITS OWN CENSUS SAID, AND THE PROXY IS WHY (2026-09-12)
 
 `scripts/lib/strip-comments.mjs` DEFECT 4 — a JS/TS parser run over `.tsx`, where an apostrophe in
