@@ -87,6 +87,26 @@ export function getMint(row: MomentRow) { return row.mintCount ?? row.mintSize ?
 export function getTraits(row: MomentRow) { return row.specialSerialTraits ?? row.traits ?? [] }
 export function getLocked(row: MomentRow) { return Boolean(row.isLocked ?? row.locked) }
 
+/**
+ * Whether this row's lock state was actually READ.
+ *
+ * ⛔ `getLocked` above collapses three states into two — `Boolean(undefined)` is
+ * `false`, so a row whose enrichment FAILED is indistinguishable from one
+ * measured as unlocked. That is the repo's documented fabricated-value shape
+ * (`?? 0` / `|| 1`) in boolean form. Callers that ASSERT lock state to the user
+ * must gate on this; callers that merely COUNT locked rows do not, because an
+ * unknown simply does not increment.
+ *
+ * Deliberately NOT folded into `getLocked`: four call sites treat a falsy
+ * return as "not locked" and changing that return type would silently alter
+ * filter and total semantics. The tri-state is exposed, not imposed.
+ */
+export function isLockKnown(row: MomentRow) {
+  if (row.enrichFailed) return false
+  return (row.isLocked ?? row.locked) != null
+}
+
+
 // Map the sort UI state (SortKey + direction) to the server's `sortBy` param.
 // Only fmv/serial/acquired/paid are server-sortable; every other key is sorted
 // client-side, so this only needs those four (with an fmv fallback). A wrong

@@ -41,6 +41,7 @@ import {
   getMint,
   getTraits,
   getLocked,
+  isLockKnown,
   getThumbnailUrl,
   getBestAsk,
   getPrimarySerialBadge,
@@ -824,7 +825,7 @@ export default function CollectionMomentTable(props: {
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Locked</div>
-                                  <div className="rpc-expand-field-value">{lockUntracked ? "—" : (isLocked ? "Yes" : "No")}</div>
+                                  <div className="rpc-expand-field-value">{lockUntracked || !isLockKnown(row) ? "—" : (isLocked ? "Yes" : "No")}</div>
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Edition Key</div>

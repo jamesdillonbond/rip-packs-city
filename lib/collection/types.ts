@@ -21,6 +21,8 @@ export type BadgeInfo = {
 }
 
 export type MomentRow = {
+  /** True when per-moment enrichment failed: lock state, badges and traits are UNKNOWN, not absent. */
+  enrichFailed?: boolean
   momentId: string
   playerName: string
   team?: string

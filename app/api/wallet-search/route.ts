@@ -53,6 +53,14 @@ type WalletRow = {
   acquisitionConfidence?: string | null
   costBasis?: number | null
   costBasisLabel?: string | null
+  /**
+   * True when per-moment enrichment FAILED for this row, so every field the
+   * enrichment would have supplied (lock state, badges, special-serial traits,
+   * asks/offers) is UNKNOWN rather than measured. Readers must not render an
+   * absent value here as a negative finding — see `isLockKnown` in
+   * lib/collection/helpers.ts.
+   */
+  enrichFailed?: boolean
 }
 
 type AcquisitionStats = {
@@ -1374,9 +1382,16 @@ export async function POST(req: NextRequest) {
           mintSize: toNum(meta.mint) ?? undefined,
           serialNumber: toNum(meta.serial) ?? null,
           circulationCount: toNum(meta.mint) ?? null,
-          officialBadges: [],
-          specialSerialTraits: [],
-          isLocked: false,
+          // ⛔ NOT `[]` / `false`. This block runs BECAUSE the read failed, so
+          // these are UNKNOWN, and an empty array or a `false` is indistinguishable
+          // from a measured "this moment has no badges / is not locked". Measured
+          // 2026-09-13: Top Shot GraphQL was answering 530 for 100% of moments, so
+          // every Top Shot row in wallet search took this path and the table
+          // rendered LOCKED = "No" on evidence that nothing was read.
+          officialBadges: undefined,
+          specialSerialTraits: undefined,
+          isLocked: undefined,
+          enrichFailed: true,
           bestAsk: null,
           lowAsk: null,
           bestOffer: null,
