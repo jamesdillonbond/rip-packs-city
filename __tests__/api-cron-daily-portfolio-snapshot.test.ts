@@ -131,8 +131,31 @@ describe("GET /api/cron/daily-portfolio-snapshot — deferred snapshot body", ()
     expect((await accept()).p_rows_written).toBe(3)
   })
 
-  it("coerces a non-numeric/absent count to 0 rather than NaN", async () => {
+  // ⭐ THE KEY THE RPC ACTUALLY RETURNS, and the reason this file's other fixtures
+  // were testing a contract production has never implemented. Live payload,
+  // copied from `pipeline_runs.extra.result` on 2026-09-13.
+  it("logs the RPC's REAL shape — `inserted` — which is what production returns", async () => {
+    dst.snapshot = { data: { inserted: 25, snapshot_date: "2026-09-13" }, error: null }
+    expect((await accept()).p_rows_written).toBe(25)
+  })
+
+  it("prefers `inserted` over the two legacy keys when more than one is present", async () => {
+    dst.snapshot = { data: { inserted: 25, snapshots_written: 7, rows_written: 3 }, error: null }
+    expect((await accept()).p_rows_written).toBe(25)
+  })
+
+  // 🚨 INVERTED 2026-09-13, NOT DELETED. This asserted `.toBe(0)` for an
+  // unreadable count, which is exactly the `?? 0` fabricated-number shape — and a
+  // passing test asserting it is what held the defect in place. An absent or
+  // unparseable count is UNMEASURED and must log NULL; the next session to fix
+  // this would otherwise have seen green turn red and concluded they were wrong.
+  it("logs NULL, never a fabricated 0, when the count cannot be read", async () => {
     dst.snapshot = { data: { snapshots_written: "not-a-number" }, error: null }
+    expect((await accept()).p_rows_written).toBeNull()
+  })
+
+  it("an EXPLICIT zero is still a measured zero and logs 0", async () => {
+    dst.snapshot = { data: { inserted: 0, snapshot_date: "2026-09-13" }, error: null }
     expect((await accept()).p_rows_written).toBe(0)
   })
 
@@ -141,7 +164,9 @@ describe("GET /api/cron/daily-portfolio-snapshot — deferred snapshot body", ()
     const run = await accept()
     expect(run.p_ok).toBe(false)
     expect(run.p_error).toBe("snapshot rpc failed")
-    expect(run.p_rows_written).toBe(0)
+    // ⚠ Also inverted: a run that ERRORED measured nothing, so its count is NULL
+    // rather than a zero that reads as "ran fine, wrote nothing".
+    expect(run.p_rows_written).toBeNull()
   })
 
   it("logs ok:false when the snapshot RPC throws outright", async () => {
