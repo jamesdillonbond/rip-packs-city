@@ -10,6 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ THE SENTINEL GETS A WALL BUDGET — a sweep can no longer die at its own 180 s wall and report nothing; the dead offers-sweep lane is suppressed from Zero-Yield with a re-check condition; Top Shot error bodies bounded · Claude Code cloud
+
+**The state that motivated it:** the 9:45 AM PT tick today 504'd (`Task timed out after 180 seconds`) — no terminal row, no Telegram, nothing for the GHA runner but a red badge after three attempts. The 24 SURVIVING `sentinel` rows read p50 39.6 s / p90 153.6 s / max 162.4 s of 180 s, four over 150 s, and the route's own header had carried "Still open: per-check timeouts" since the 60 → 180 s raise. Under saturation three arms each waiting out a two-minute statement budget is 360 s inside a 180 s wall.
+
+**Code (`lib/sentinel/wall-budget.ts`, wired in `app/api/sentinel/route.ts`):** ONE fetch wrapper on the route's supabase client, not forty-five per-arm edits. Every request is bounded to `min(45 s, what the 140 s query budget has left)`; once the budget is spent the remaining arms are REFUSED before their request leaves the process with `aborted: sentinel wall budget spent (…) — this arm did not evaluate`, which the arms' existing catch branches prefix INCONCLUSIVE and the Measurement Blackout arm now counts (signature extended in `lib/sentinel/blind-checks.ts`). Two phases: the terminal phase (previous-sweep read, delivery, `log_pipeline_run`) gets whatever wall remains and is never refused. Numbers derived, not chosen — the test pins `3 × cap < wall − reserve`. 14 tests in `__tests__/sentinel-wall-budget.test.ts`, incl. a real 1 s abort. ⚠ Aborting the client does NOT cancel the statement in Postgres; this stops the sentinel WAITING, it does not reduce the probe's load.
+
+**Data (prod):** `pipeline_zero_yield_suppressions` row for `offers-sweep` — every run since the arm's "last find" 08-28 was HTTP 530 / Cloudflare Tunnel 1033 from the dead `public-api.nbatopshot.com` (#50/#65), and the lane now has NO caller (0 hits on `/api/cron/offers-sweep` in 24 h of Vercel logs, last run 09-11 7:31 PM PT, watchlist inactive). Re-check condition in the row: remove it the day the lane writes `ok=true`.
+
+**Hygiene (`lib/chains/flow/topshot.ts`):** a Cloudflare 5xx page is ~190 KB of HTML (base64 logo); it was embedded whole in every failure's error string across 20 callers. Bounded to 512 chars + the original length.
+
+**Revert:** `git revert` the code commit (message `feat(sentinel): a wall budget on every read …`); `DELETE FROM pipeline_zero_yield_suppressions WHERE pipeline = 'offers-sweep'`.
+
+**Not touched, decided:** the hourly GHA schedule delivered 6 of ~19 slots today (~32%, the recorded #80 rate) — the watchdog design in cron-and-schedulers.md stands and the only cadence lever is cron-job.org (operator).
+
+
 ### 2026-09-13 · ✅ SHIPPED — a daily job was downgrading correctly-attributed PARALLEL moments to their base on ABSENCE of evidence; the repo's own rule, written down in another function, says don't · Claude Code cloud
 
 **Migration `20260913181737`, applied ~11:1x PT.** `remap_topshot_from_onchain_map()` (pg_cron `rpc-topshot-onchain-rekey`, jobid 434, 04:33 PT daily) resolves each mapped nft as `COALESCE(epar.id, ebase.id)`, where the parallel leg exists only when `topshot_moment_subeditions` carries a POSITIVE `subedition_id`. **When that row is merely MISSING the target collapses to the base, and the sales re-key then moves a sale that was already on the correct parallel down onto it.** ⭐ A missing subeditions row is absence of evidence; the function was reading it as evidence of absence — the failed-read-published-as-fact shape, one layer below any surface. Nothing renders an error; a Moment just starts displaying under the wrong edition.
