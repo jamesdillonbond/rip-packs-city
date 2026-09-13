@@ -9,11 +9,21 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // ~10MB total-payload budget. global fetch is stubbed to return controlled
 // bytes + content-type so every branch is deterministic.
 
+import { readFileSync } from "node:fs"
+import path from "node:path"
+
+// ⚠ THE INSTALLED NEXT'S OWN DEFAULTS, imported rather than restated. The
+// optimizer url below is only valid against these; a version bump that moves
+// `qualities`, `deviceSizes` or `formats` must red these cases, not pass them.
+import { imageConfigDefault } from "next/dist/shared/lib/image-config"
+
 import {
+  OG_OPTIMIZER_HOSTS,
   ogImageDataUri,
   ogImageDataUris,
   ogImageDataUriSlots,
   ogImageTarget,
+  ogOptimizedTarget,
 } from "@/lib/og/img-data"
 
 const fetchMock = vi.fn()
@@ -27,6 +37,20 @@ function res(bytes: number[] | Uint8Array, contentType: string | null, init?: { 
     headers: { get: (_k: string) => contentType },
     arrayBuffer: async () => arr.buffer.slice(arr.byteOffset, arr.byteOffset + arr.byteLength),
   }
+}
+
+// ⚠ EVERY "which url did we fetch" ASSERTION BELOW GOES THROUGH
+// `effectiveTarget`. Since 2026-09-12 art that no origin will size for us is
+// fetched through our own `/_next/image`, so the raw target moved from the
+// fetch url into its `url=` parameter. Unwrapping it keeps each case pinning
+// the property it is NAMED for (the IPFS proxy rewrite, the site-relative
+// resolve) instead of accidentally pinning whether the optimizer leg exists.
+function effectiveTarget(u: unknown): string {
+  const s = String(u)
+  const m = /^https:\/\/www\.rippackscity\.com\/_next\/image\?url=([^&]+)/.exec(s)
+  if (!m) return s
+  const inner = decodeURIComponent(m[1])
+  return inner.startsWith("/") ? `https://www.rippackscity.com${inner}` : inner
 }
 
 const PNG_BYTES = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 1, 2, 3, 4]
@@ -80,7 +104,7 @@ describe("ogImageDataUri — input guards", () => {
     // this to `calls[0]` pinned the ORDER of an unrelated read rather than the
     // property this case is named for — which is that a site-relative path
     // resolves against our own origin at all.
-    expect(fetchMock.mock.calls.map((c) => c[0])).toContain(
+    expect(fetchMock.mock.calls.map((c) => effectiveTarget(c[0]))).toContain(
       "https://www.rippackscity.com/api/public/pinnacle-image/LEV2-LION-CARE-S6",
     )
   })
@@ -125,7 +149,7 @@ describe("Pinnacle art comes from the render cache before the 2.9MB live render"
     })
     const out = await ogImageDataUri("/api/public/pinnacle-image/OEV1-SOUL-JGAR-S2")
     expect(out).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString("base64")}`)
-    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toContain(
+    expect(fetchMock.mock.calls.map((c) => effectiveTarget(c[0]))).toContain(
       "https://www.rippackscity.com/api/public/pinnacle-image/OEV1-SOUL-JGAR-S2",
     )
   })
@@ -195,14 +219,14 @@ describe("ogImageDataUri — IPFS gateway rewrite", () => {
   it("rewrites a public IPFS gateway url to the edge-cached proxy", async () => {
     fetchMock.mockResolvedValue(res(PNG_BYTES, "image/png"))
     await ogImageDataUri("https://ipfs.dapperlabs.com/ipfs/QmABC123")
-    const target = fetchMock.mock.calls[0][0]
+    const target = effectiveTarget(fetchMock.mock.calls[0][0])
     expect(target).toBe("https://www.rippackscity.com/api/public/ipfs-media/QmABC123")
   })
 
   it("leaves a non-IPFS url untouched", async () => {
     fetchMock.mockResolvedValue(res(PNG_BYTES, "image/png"))
     await ogImageDataUri("https://assets.nbatopshot.com/foo.png")
-    expect(fetchMock.mock.calls[0][0]).toBe("https://assets.nbatopshot.com/foo.png")
+    expect(effectiveTarget(fetchMock.mock.calls[0][0])).toBe("https://assets.nbatopshot.com/foo.png")
   })
 })
 
@@ -377,3 +401,179 @@ describe("ogImageDataUriSlots — position is the contract", () => {
     expect(out[2]).not.toBeNull() // small enough to still fit, and still at index 2
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE `/_next/image` LEG (2026-09-12)
+//
+// ⭐ THE DEFECT THESE PIN: the 4MB cap below was perfectly correlated with how
+// valuable the Moment is. Dapper's art gets richer as the tier rises, so six
+// random `/editions/` files per tier measured ULTIMATE 6/6 over the cap (median
+// 6.73 MB) and COMMON 0/6 (median 3.21 MB) — edition 220:8093 (ULTIMATE,
+// $1,350) published a blank grey placeholder while 133:4738 (COMMON, $0.39)
+// published full art. The cap is correct; 2880×2880 art in a 550px slot is not.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The real shape, from the live DB: 8,405 of the 8,405 Top Shot rows on this
+// path are 2880×2880 statics with no size control of any kind.
+const ULTIMATE_ART =
+  "https://assets.nbatopshot.com/editions/8_wnba_base_set_common/b4284ee2-dfd6-4547-9ecd-d42d7b6382bc/play_b4284ee2_capture_Hero_2880_2880_Transparent.png"
+const OPTIMIZER_PREFIX = "https://www.rippackscity.com/_next/image"
+
+function oversized(): Uint8Array {
+  const b = new Uint8Array(5 * 1024 * 1024)
+  b.set(PNG_BYTES)
+  return b
+}
+
+describe("ogOptimizedTarget — which art is worth a transformation", () => {
+  it("wraps a 2880px static edition render", () => {
+    const out = ogOptimizedTarget(ULTIMATE_ART)
+    expect(out).toBe(
+      `${OPTIMIZER_PREFIX}?url=${encodeURIComponent(ULTIMATE_ART)}&w=640&q=75`,
+    )
+  })
+
+  it("hands OUR OWN urls over as a LOCAL PATH, never as an absolute url", () => {
+    // The optimizer checks an absolute url against `remotePatterns` — where our
+    // own domain does not appear and must never be added, because that makes us
+    // an open image proxy for ourselves. A relative url goes to `localPatterns`,
+    // which is undefined and therefore allows everything local.
+    const out = ogOptimizedTarget("https://www.rippackscity.com/api/public/ipfs-media/QmABC")
+    expect(out).toBe(`${OPTIMIZER_PREFIX}?url=%2Fapi%2Fpublic%2Fipfs-media%2FQmABC&w=640&q=75`)
+    const inner = decodeURIComponent(/url=([^&]+)/.exec(out!)![1])
+    expect(inner.startsWith("/")).toBe(true)
+    expect(inner).not.toContain("rippackscity.com")
+  })
+
+  it("skips a render endpoint whose origin has ALREADY sized the art", () => {
+    // Measured 2026-09-12: 31,507 B and 45,121 B respectively. Optimizing these
+    // buys nothing and would UPSCALE them — sharp enlarges by default.
+    expect(ogOptimizedTarget("https://assets.nbatopshot.com/media/51976956/image?width=400")).toBeNull()
+    expect(
+      ogOptimizedTarget("https://media.nflallday.com/editions/2835/media/image?width=512&format=png&quality=90"),
+    ).toBeNull()
+  })
+
+  it("⚠ does NOT read hiResThumb's ?width= on a STATIC file as 'already sized'", () => {
+    // `hiResThumb` (lib/trophy/slab-style.ts) appends `?width=640` to EVERY
+    // assets.nbatopshot.com url, the 2880×2880 statics included, where the
+    // origin serves the same master whatever you ask for. Treating a width
+    // param as proof of sizing would have re-opened this defect on the two
+    // trophy cards — the exact surface the blank Ultimates were found on.
+    const withWidth = `${ULTIMATE_ART}?width=640`
+    expect(ogOptimizedTarget(withWidth)).toBe(
+      `${OPTIMIZER_PREFIX}?url=${encodeURIComponent(withWidth)}&w=640&q=75`,
+    )
+  })
+
+  it("skips a url that is not parseable at all rather than throwing at a card", () => {
+    // ogImageTarget gates on ^https?:// before this runs, so this is a guard
+    // against a future caller, not a live shape — but a throw here would 500
+    // the whole card, which is the one thing this module exists to prevent.
+    expect(ogOptimizedTarget("https://exa mple.com/a.png")).toBeNull()
+  })
+
+  it("skips a host next.config.ts does not admit, rather than buying a 400", () => {
+    // Candy MLB art (125 rows) and 16 legacy Top Shot rows. Not a defect: they
+    // take the direct fetch, which is what they do today.
+    expect(ogOptimizedTarget("https://arweave.net/iKT2pAHeP1QA1jZn")).toBeNull()
+    expect(ogOptimizedTarget("https://storage.googleapis.com/content-pipeline/x.png")).toBeNull()
+  })
+})
+
+describe("the optimizer url is DERIVED from the installed next config, not remembered", () => {
+  // ⚠ A `w` outside deviceSizes ∪ imageSizes or a `q` outside `qualities` is a
+  // 400, and a 400 is invisible here — it degrades to the direct fetch and the
+  // Ultimates go back to publishing blank. Reading the defaults off the
+  // installed Next means a version bump that moves them reds this instead.
+  const url = new URL(ogOptimizedTarget(ULTIMATE_ART)!)
+
+  it("w is an allowed size", () => {
+    const sizes = [...imageConfigDefault.deviceSizes, ...imageConfigDefault.imageSizes]
+    expect(sizes).toContain(Number(url.searchParams.get("w")))
+  })
+
+  it("q is an allowed quality", () => {
+    expect(imageConfigDefault.qualities).toContain(Number(url.searchParams.get("q")))
+  })
+
+  it("w still covers the largest slot any card draws (the moment card's 550px pane)", () => {
+    expect(Number(url.searchParams.get("w"))).toBeGreaterThanOrEqual(550)
+  })
+
+  it("every OG_OPTIMIZER_HOSTS entry is in next.config.ts remotePatterns", () => {
+    const cfg = readFileSync(path.join(process.cwd(), "next.config.ts"), "utf8")
+    const admitted = new Set(
+      Array.from(cfg.matchAll(/hostname:\s*"([^"]+)"/g)).map((m) => m[1]),
+    )
+    expect(OG_OPTIMIZER_HOSTS.length).toBeGreaterThan(0)
+    for (const h of OG_OPTIMIZER_HOSTS) expect(admitted).toContain(h)
+  })
+})
+
+describe("ogImageDataUri — the optimizer leg can only ADD art, never remove it", () => {
+  it("⭐ RENDERS ART THE CAP WAS DROPPING: oversized upstream, optimized derivative", async () => {
+    fetchMock.mockImplementation(async (u: string) =>
+      String(u).startsWith(OPTIMIZER_PREFIX) ? res(PNG_BYTES, "image/png") : res(oversized(), "image/png"),
+    )
+    const out = await ogImageDataUri(ULTIMATE_ART)
+    expect(out).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString("base64")}`)
+  })
+
+  it("NO-CHANGE CONTROL: the same art with the leg off is still the blank card", async () => {
+    // The cap is untouched. This is the behaviour every Ultimate got until
+    // 2026-09-12, reproduced deliberately so the case above is measuring the
+    // optimizer rather than a mock that would have passed either way.
+    fetchMock.mockResolvedValue(res(oversized(), "image/png"))
+    expect(await ogImageDataUri(ULTIMATE_ART, { optimize: false })).toBeNull()
+    expect(fetchMock.mock.calls.every((c) => !String(c[0]).startsWith(OPTIMIZER_PREFIX))).toBe(true)
+  })
+
+  it("falls back to the direct fetch when the optimizer refuses it", async () => {
+    // A remotePatterns drift, an input sharp will not touch, a platform
+    // difference. Art that renders today must keep rendering.
+    fetchMock.mockImplementation(async (u: string) =>
+      String(u).startsWith(OPTIMIZER_PREFIX)
+        ? res(PNG_BYTES, "image/png", { ok: false, status: 400 })
+        : res(JPEG_BYTES, "image/jpeg"),
+    )
+    const out = await ogImageDataUri(ULTIMATE_ART)
+    expect(out).toBe(`data:image/jpeg;base64,${Buffer.from(JPEG_BYTES).toString("base64")}`)
+  })
+
+  it("⛔ never names webp or avif in Accept — that is what keeps the PNG a PNG", async () => {
+    // next/dist/server/image-optimizer.js:222 returns a negotiated format ONLY
+    // when `accept.includes(it)`; `images.formats` is ["image/webp"], and
+    // "image/*" does not contain that literal, so the optimizer converts
+    // nothing and a PNG upstream comes back PNG. Naming webp here would hand
+    // satori the one format it cannot decode — every card would go blank.
+    fetchMock.mockResolvedValue(res(PNG_BYTES, "image/png"))
+    await ogImageDataUri(ULTIMATE_ART)
+    const init = fetchMock.mock.calls[0][1] as { headers: Record<string, string> }
+    const accept = init.headers.Accept
+    expect(accept).toBe("image/*")
+    // Next's own predicate, re-run against the installed config rather than
+    // restated: a format is negotiated only if the Accept header CONTAINS its
+    // literal. Asserting the ABSENCE of a conversion is the property; asserting
+    // that the header merely lacks the word "webp" would keep passing if
+    // `images.formats` ever gained a type our Accept does spell out.
+    expect(imageConfigDefault.formats.filter((f) => accept.includes(f))).toEqual([])
+  })
+
+  it("spends ONE budget across both legs, not one each", async () => {
+    // A card's art budget is what a crawler will wait. A dead upstream must not
+    // cost double just because we asked two ways, so a fallback that cannot
+    // finish inside what is LEFT is not started.
+    fetchMock.mockResolvedValue(res(WEBP_BYTES, "image/webp")) // undecodable -> null
+    expect(await ogImageDataUri(ULTIMATE_ART, { timeoutMs: 100 })).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("asks ONCE for art an origin already sized", async () => {
+    fetchMock.mockResolvedValue(res(PNG_BYTES, "image/png"))
+    await ogImageDataUri("https://media.nflallday.com/editions/2835/media/image?width=512&format=webp")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain("/_next/image")
+  })
+})
+

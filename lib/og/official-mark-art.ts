@@ -121,6 +121,12 @@ function fetchOfficial(url: string): Promise<string | null> {
   const p = ogImageDataUri(url, {
     timeoutMs: OFFICIAL_ART_BUDGET_MS,
     maxBytes: MAX_BADGE_BYTES,
+    // ⛔ NOT THROUGH `/_next/image`. These are 20px glyphs under a 64 KB cap;
+    // the optimizer's 640px derivative would be LARGER than the original (sharp
+    // enlarges by default), so it would buy a transformation, an extra round
+    // trip inside a 4s decoration budget, and a worse chance of clearing the
+    // cap. The optimizer leg exists for 2880px card art — see lib/og/img-data.ts.
+    optimize: false,
   })
     .catch(() => null)
     .then((art) => {

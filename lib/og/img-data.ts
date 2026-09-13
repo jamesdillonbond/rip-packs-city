@@ -9,9 +9,10 @@
 //
 // ogImageDataUri() fetches the image server-side with a hard timeout + byte
 // cap, rewrites slow public IPFS gateways to our own edge-cached proxy
-// (/api/public/ipfs-media/<cid>), and returns a base64 data URI Satori can
-// embed with ZERO network I/O — or null, so callers degrade to their existing
-// "no media" branch instead of 500ing.
+// (/api/public/ipfs-media/<cid>), asks our own image optimizer for a card-sized
+// derivative of any art the origin will not size for us, and returns a base64
+// data URI Satori can embed with ZERO network I/O — or null, so callers degrade
+// to their existing "no media" branch instead of 500ing.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // 2026-09-12 — TWO WHOLE COLLECTIONS OF ART WERE BEING DROPPED HERE, SILENTLY,
@@ -39,6 +40,47 @@
 // passes `thumbnail_url` straight in, and every future caller would inherit the
 // same two holes.
 // ─────────────────────────────────────────────────────────────────────────────
+// 2026-09-12 (later the same day) — ⭐ THE BYTE CAP WAS STRIPPING ART FROM 100%
+// OF ULTIMATES AND 0% OF COMMONS, which is the worst possible correlation: the
+// cap removes art from exactly the Moments people share. Two production cards,
+// same route, same day: edition 220:8093 (Walter Clayton Jr., ULTIMATE, $1,350)
+// published a blank grey placeholder at 36,440 B; edition 133:4738 (Marcus
+// Smart, COMMON, $0.39) published full art at 167,677 B. The only difference is
+// the source PNG — 7,677,876 B against 3,754,556 B, either side of the 4 MB cap
+// below. Six random `/editions/` art files per tier, Content-Length measured
+// directly: ULTIMATE 6/6 over (median 6.73 MB), LEGENDARY 5/6, RARE 4/6,
+// FANDOM 4/6, COMMON 0/6 (median 3.21 MB). Higher tiers buy more elaborate
+// artwork — foils, particles, transparency — and that costs bytes in a
+// 2880×2880 PNG.
+//
+// ⚠ THE CAP IS NOT THE DEFECT AND RAISING IT IS THE WRONG FIX: at 7 MB the
+// base64 data URI is ~9.3 MB, past the 7.67 MB satori failure this module
+// already documents below. The PAYLOAD is the defect, and the payload is
+// 2880×2880 art drawn into a 550px slot on a 1200×630 card.
+//
+// So art nobody will size for us now goes through OUR OWN image optimizer —
+// `/_next/image?url=…&w=640&q=75`, already deployed, already crawlable
+// (`app/robots.ts` allows `/_next/image`), already permitted for these hosts by
+// `next.config.ts` `images.remotePatterns`. Cowork measured 119,162 B of PNG
+// back for that 7,677,876 B Ultimate: 64× smaller, three orders of magnitude
+// under the cap.
+//
+// ⚠ RE-DERIVED HERE FROM THE INSTALLED NEXT (16.2.9) RATHER THAN TAKEN ON
+// FAITH, because the whole fix turns on the optimizer handing back a format
+// satori can decode:
+//   · `images.formats` defaults to `["image/webp"]`, and
+//     `getSupportedMimeType` returns a format ONLY when `accept.includes(it)`
+//     — `image/*` does not contain the literal `image/webp`, so it negotiates
+//     to "", and a PNG upstream comes back PNG (image-optimizer.js:222, 1118).
+//     ⛔ THE `Accept: image/*` HEADER BELOW IS THEREFORE LOAD-BEARING: naming
+//     webp or avif in it would hand satori exactly the formats it cannot
+//     decode. Pinned in __tests__/og-img-data.test.ts.
+//   · `images.qualities` defaults to `[75]` and a quality outside it is a 400,
+//     so `q` is 75 and not a taste call; `w` must be one of
+//     deviceSizes ∪ imageSizes, where 640 is the smallest entry that still
+//     covers the largest slot any card draws (the moment card's 550px pane).
+//     Both pinned against the installed config rather than as literals.
+// ─────────────────────────────────────────────────────────────────────────────
 
 const IPFS_GATEWAY_RE =
   /^https?:\/\/(?:ipfs\.io|ipfs\.dapperlabs\.com|cloudflare-ipfs\.com)\/ipfs\/([A-Za-z0-9]+)/
@@ -57,9 +99,63 @@ const OK_TYPES = /^image\/(png|jpe?g|gif|svg\+xml)/i
 // hand the next time a collection lands, which is how All Day got here.
 const RENDER_FORMAT_RE = /([?&]format=)(?:webp|avif)(?=&|$)/i
 
+// ── THE OPTIMIZER LEG ────────────────────────────────────────────────────────
+// `w` must be a member of `images.deviceSizes ∪ images.imageSizes` and `q` a
+// member of `images.qualities`, or the optimizer answers 400. Neither is a
+// preference; both are pinned against the installed Next defaults.
+const OG_ART_WIDTH = 640
+const OG_ART_QUALITY = 75
+
+/**
+ * Hosts `next.config.ts` `images.remotePatterns` admits. The optimizer 400s on
+ * anything else, so asking for one would cost a wasted round trip and land us
+ * back on the direct fetch anyway.
+ *
+ * ⚠ THIS LIST IS A CLAIM ABOUT ANOTHER FILE, so it is asserted against that
+ * file rather than maintained by memory — `__tests__/og-img-data.test.ts` reads
+ * `next.config.ts` and fails if an entry here is not in `remotePatterns`.
+ * Absent hosts (arweave.net for Candy MLB, storage.googleapis.com for 16 legacy
+ * Top Shot rows) are not a defect here: they skip the optimizer and take the
+ * direct fetch, which is exactly what they do today.
+ */
+export const OG_OPTIMIZER_HOSTS: readonly string[] = [
+  "assets.nbatopshot.com",
+  "asset-preview.nbatopshot.com",
+  "media.nflallday.com",
+  "assets.laligagolazos.com",
+  "ipfs.io",
+  "gateway.pinata.cloud",
+]
+
+// An origin that has ALREADY sized the art for us. Measured shapes, 2026-09-12:
+//
+//   assets.nbatopshot.com/media/<nft_id>/image?width=400        31,507 B
+//   media.nflallday.com/editions/<n>/media/image?width=512      45,121 B
+//
+// Both are render endpoints — no file extension on the path — and both honour
+// `width`. Handing those to the optimizer buys nothing and would UPSCALE them
+// (sharp enlarges by default), so they skip it.
+//
+// ⚠ A `width=` PARAM IS NOT ITSELF THE TEST, and getting that wrong would have
+// re-opened this defect on the very population it was filed for: `hiResThumb`
+// (lib/trophy/slab-style.ts) appends `?width=640` to EVERY assets.nbatopshot.com
+// url, including the `/editions/**_2880_2880_*.png` STATIC files, where the
+// origin serves the same 2880px master whatever you ask for. A static file —
+// the path ends in an image extension — is never "already sized" no matter what
+// query it carries, which is why the extension is half of the test.
+const SIZE_PARAM_RE = /[?&](?:width|w)=\d/i
+const STATIC_IMAGE_PATH_RE = /\.(?:png|jpe?g|gif|webp|avif|svg)$/i
+
 export interface OgImgOpts {
   timeoutMs?: number
   maxBytes?: number
+  /**
+   * Route the art through `/_next/image` (default true). Pass false for art
+   * that is already small and drawn small — `lib/og/official-mark-art.ts`
+   * fetches 20px badge glyphs under a 64 KB cap, where a 640px derivative is
+   * both larger than the original and a transformation bought for nothing.
+   */
+  optimize?: boolean
 }
 
 /**
@@ -80,6 +176,38 @@ export function ogImageTarget(raw: string): string | null {
   if (m) return `${BASE_URL}/api/public/ipfs-media/${m[1]}`
 
   return url.replace(RENDER_FORMAT_RE, "$1png")
+}
+
+/**
+ * The `/_next/image` url for a resolved target, or null when the optimizer
+ * cannot or need not serve it. Exported so the four measured url shapes are
+ * pinned directly rather than inferred from a mocked fetch.
+ *
+ * ⚠ OUR OWN URLS ARE HANDED OVER SITE-RELATIVE, deliberately. The optimizer
+ * checks an absolute url against `remotePatterns` (where our own domain does
+ * not appear and must not be added — that would make us an open image proxy for
+ * ourselves) and a relative one against `localPatterns`, which is undefined and
+ * therefore allows everything local. Stripping BASE_URL back off is what keeps
+ * the IPFS proxy and the Pinnacle resolver on the local branch.
+ */
+export function ogOptimizedTarget(target: string): string | null {
+  const inner = target.startsWith(`${BASE_URL}/`) ? target.slice(BASE_URL.length) : target
+  const isLocal = inner.startsWith("/")
+
+  // Already sized by its origin (see SIZE_PARAM_RE) — nothing to buy.
+  if (SIZE_PARAM_RE.test(inner) && !STATIC_IMAGE_PATH_RE.test(inner.split("?")[0])) return null
+
+  if (!isLocal) {
+    let host = ""
+    try {
+      host = new URL(inner).hostname.toLowerCase()
+    } catch {
+      return null
+    }
+    if (!OG_OPTIMIZER_HOSTS.includes(host)) return null
+  }
+
+  return `${BASE_URL}/_next/image?url=${encodeURIComponent(inner)}&w=${OG_ART_WIDTH}&q=${OG_ART_QUALITY}`
 }
 
 // ── PINNACLE: THE CACHE IS THE CHEAP SOURCE, AND SOMETIMES THE ONLY ONE ─────
@@ -156,6 +284,50 @@ async function pinnacleCachedDataUri(
   }
 }
 
+/**
+ * One bounded fetch → data URI, or null. Every degradation this module promises
+ * (non-2xx, empty body, oversize body, undecodable format, timeout, network
+ * error) resolves to null here rather than throwing at a card renderer.
+ */
+async function fetchAsDataUri(
+  target: string,
+  timeoutMs: number,
+  maxBytes: number,
+): Promise<string | null> {
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), timeoutMs)
+  try {
+    const res = await fetch(target, {
+      signal: ac.signal,
+      // OG cards are re-rendered on every crawler hit; let the platform cache
+      // the upstream bytes where it can.
+      cache: "no-store",
+      // ⛔ LOAD-BEARING, NOT DECORATIVE — see the optimizer note in this file's
+      // header. `image/*` negotiates to no format at all, which is what makes
+      // `/_next/image` hand back the PNG it was given instead of the WebP
+      // satori cannot decode.
+      headers: { Accept: "image/*" },
+    })
+    if (!res.ok) return null
+    const ct = res.headers.get("content-type") || ""
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (buf.byteLength === 0 || buf.byteLength > maxBytes) return null
+    // Sniff when the content-type is missing/generic (some gateways serve
+    // application/octet-stream).
+    const type = OK_TYPES.test(ct) ? ct.split(";")[0].trim() : sniff(buf)
+    if (!type) return null
+    return `data:${type};base64,${buf.toString("base64")}`
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Below this, a fallback fetch cannot finish inside what is left of the card's
+// budget, so it is not started.
+const MIN_FALLBACK_MS = 250
+
 export async function ogImageDataUri(
   url: string | null | undefined,
   opts: OgImgOpts = {},
@@ -166,53 +338,48 @@ export async function ogImageDataUri(
   const target = ogImageTarget(url)
   if (!target) return null
 
+  const timeoutMs = opts.timeoutMs ?? 4500
+
   // Cache first, live render second. A cache miss costs one indexed lookup and
   // falls through to exactly the behaviour this module had before.
   const pin = target.match(PINNACLE_RENDER_RE)
   if (pin) {
-    const cached = await pinnacleCachedDataUri(pin[1], opts.timeoutMs ?? 4500)
+    const cached = await pinnacleCachedDataUri(pin[1], timeoutMs)
     if (cached) return cached
   }
 
-  const timeoutMs = opts.timeoutMs ?? 4500
   // 4MB cap — measured live: satori/resvg renders a 2.85MB 2880px PNG fine
   // (Blazers montage) but dies on a 7.67MB one (Lakers/Wilt Chamberlain,
   // 2026-07-07). Oversized art drops to the placeholder tile instead.
   //
-  // ⚠ Pinnacle `front.png` renders are full-resolution and sit uncomfortably
-  // close to it: LEV2-LION-CARE-S6 measured 2,896,041 B on 2026-09-12. It fits,
-  // but a larger Pinnacle render will silently reintroduce the drop this
-  // module's 09-12 fix just closed, with a different cause. That route takes no
-  // width param, so there is no cheaper ask to make OF IT — but there is a
-  // cheaper SOURCE, and the cache-first branch above now takes it wherever the
-  // render has been harvested. This cap still guards every row the cache
-  // misses, which today is all of them but one.
+  // ⚠ THE CAP IS THE LAST LINE, NOT THE FIRST. Until 2026-09-12 it was also the
+  // only one, and it was silently blanking every Ultimate on the site (header).
+  // It still guards everything the optimizer leg below cannot reach: a host
+  // outside `remotePatterns`, an optimizer failure (Next falls back to the
+  // UNOPTIMIZED buffer when sharp throws), a bypassed format, and every
+  // `optimize: false` caller.
   const maxBytes = opts.maxBytes ?? 4 * 1024 * 1024
 
-  const ac = new AbortController()
-  const timer = setTimeout(() => ac.abort(), timeoutMs)
-  try {
-    const res = await fetch(target, {
-      signal: ac.signal,
-      // OG cards are re-rendered on every crawler hit; let the platform cache
-      // the upstream bytes where it can.
-      cache: "no-store",
-      headers: { Accept: "image/*" },
-    })
-    if (!res.ok) return null
-    const ct = res.headers.get("content-type") || ""
-    const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.byteLength === 0 || buf.byteLength > maxBytes) return null
-    // Sniff when the content-type is missing/generic (some gateways serve
-    // application/octet-stream).
-    let type = OK_TYPES.test(ct) ? ct.split(";")[0].trim() : sniff(buf)
-    if (!type) return null
-    return `data:${type};base64,${buf.toString("base64")}`
-  } catch {
-    return null
-  } finally {
-    clearTimeout(timer)
+  // ⚠ ONE BUDGET ACROSS BOTH LEGS, not one each. A card's art budget is 4.5s
+  // because that is what a crawler will wait, and a dead upstream must not cost
+  // 9s just because we asked two ways.
+  let budget = timeoutMs
+  const optimized = opts.optimize === false ? null : ogOptimizedTarget(target)
+  if (optimized) {
+    const t0 = Date.now()
+    const hit = await fetchAsDataUri(optimized, budget, maxBytes)
+    if (hit) return hit
+    budget -= Date.now() - t0
+    if (budget < MIN_FALLBACK_MS) return null
   }
+
+  // ⚠ THE DIRECT FETCH IS ALWAYS THE FALLBACK, so this change is STRICTLY
+  // NO-WORSE: art that renders today keeps rendering if the optimizer refuses
+  // it (a `remotePatterns` drift, a 400 on an input it will not touch, a
+  // platform difference between `next start` and Vercel's own optimizer — the
+  // Pinnacle resolver answers 302, and only Vercel's implementation follows a
+  // redirect on a LOCAL url). The optimizer can only add art, never remove it.
+  return fetchAsDataUri(target, budget, maxBytes)
 }
 
 /**
