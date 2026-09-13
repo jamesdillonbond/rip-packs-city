@@ -52,3 +52,28 @@ GET https://www.rippackscity.com/api/public/ipfs-media/<any UFC cid>   → read 
 ⛔ **Do not add a `minimumCacheTTL` or a header tweak for UFC on the strength of the close-out's table.** At 16 transformations in the closed cycle it is still a **$0** problem either way, and if §3 comes back non-200 the TTL change would be tuning the cache of a response that has no bytes in it.
 
 ⛔ **Do not drop `ipfs.io` from `GATEWAYS` yet either.** It is the only leg with a published deprecation path, but each entry is an SSRF-relevant constant paired with a `proxy.ts` CSP `img-src`/`media-src` allowance, and a UFC market that has been closed since 2026-05-13 does not earn a rushed edit to a shared art path.
+
+---
+
+## ✅ ANSWERED THE SAME DAY — and the answer is BOTH branches, which is why it mattered
+
+**Appended 2026-09-13 ~08:5x PT.** The filing above named one probe as the thing that would settle it and said this sandbox could not run it. ⭐ **It could — through the DATABASE's egress** (`net.http_get` against our own domain), which is the same instrument the filing used for the gateways and which I did not think to point at our own route. *The missing measurement was one line away from the one I had already taken.*
+
+**Three fresh UFC CIDs through `/api/public/ipfs-media/`, production:**
+
+| probe | status | `Cache-Control` | `x-vercel-cache` |
+|---|---|---|---|
+| CID A | **200** | `public, max-age=86400, immutable` | MISS (a real origin fetch) |
+| CID A, repeated | **200** | same | **HIT** |
+| CID B | **200** | same | MISS |
+| CID C | **429** | ⭐ **`public, max-age=0, must-revalidate`** | MISS |
+| `/_next/image` over CID A | **200** | `public, max-age=86400, immutable` | MISS |
+
+⭐ **So the "zero edge caching" reading is REFUTED and REPRODUCED at the same time.** The edge caches UFC art for 24 h (MISS→HIT on the same url), and `max-age=0, must-revalidate` is exactly what the route's FAILURE path returns — the framework default on a response that sets no header of its own. **It was never a caching policy; it was a failure, rendered.** The gateway sample explains the failure: of the three legs, dapperlabs 403s these CIDs and ipfs.io now answers a **retirement notice**, so every UFC render depends on `gateway.pinata.cloud` alone, and a public gateway rate-limits.
+
+🚨 **AND THE ONE-LEVEL-UP DEFECT IS THE ONE WORTH HAVING FOUND.** Every OG card ships `s-maxage=3600, stale-while-revalidate=86400`, so a card that loses its art to a 429 is **published blank and served blank for up to 25 hours** — on the surface where the cold fetch is usually the share that mattered. ✅ **Fixed and shipped the same session:** `ogCacheHeaders(degraded)` caches an art-less-but-wanted card for **60 s with no `stale-while-revalidate`**. Register **#106**.
+
+⚠ **Two corrections to my own text above, in place rather than by re-filing:**
+
+1. *"Do not act on this yet"* was right about the TTL and wrong about the item — there WAS something to act on, one level up from where both of us were looking.
+2. The hypothesis I recorded as refuted (*"every gateway refuses UFC, so the 518 render nothing"*) was refuted correctly, but the sampling that refuted it was **2 CIDs**. At 3 CIDs one failed. **The honest shape is intermittent, not binary** — and an intermittent art failure is precisely the kind the long cache made permanent.
