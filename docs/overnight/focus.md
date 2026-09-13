@@ -4,6 +4,17 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-13 ~03:0x PT (overnight autonomous; an AUDIT RESULT, so nobody re-derives the hour it cost)
+
+⛔ **DO NOT RE-INVESTIGATE THE TWELVE LAPSED `pipeline_alert_suppression` ROWS. They are all in a CORRECT state — audited to the bottom 2026-09-13.** A reader who lists that table sees ten rows that expired **2026-09-12** and one each on 09-07/09-08, all carrying the alarming reason *"dead host 2026-08-30: public-api.nbatopshot.com 530/1033"*. That reads as twelve alerts about to storm. It is not.
+
+- ⭐ **The lanes are PAUSED OR RETIRED, not failing — so a lapsed suppression suppresses nothing because nothing is firing.** Measured over the full 73 h window: `compute-topshot-pack-ev`, `ingest`, `topshot-badge-catalog`, `topshot-badge-set-backfill`, `topshot-deal-floor-serials`, `topshot-fmv-populate`, `topshot-moments-hydrator`, `topshot-pack-pool-backfill`, `wallet-username-resolver` all show **0 runs**, and most are not on `pipeline_cadence_watchlist` either.
+- ⭐ **`ingest`'s exit condition was DUE TODAY and is ALREADY SATISFIED.** Its reason said *"the arm re-fires when this lapses 2026-09-13; if the host is still dead, RETIRE the ingest step in `rpc-pipeline.yml` rather than suppress a third time."* The step was **already retired 2026-09-07** (`rpc-pipeline.yml:57`, known-issues #67(3)), six days before its own deadline. **Nothing to do.**
+- 🚨 **THE HOST IS STILL DEAD, and that is MEASURED TODAY rather than carried forward:** `topshot-pack-supply-backfill` logged **`HTTP 530` at 2026-09-13 01:15 PT**, ~1 h before this was written. Its edge function refuses to start without the proxy (`"proxy env missing"`), so the 530 is origin-side — consistent with the Cloudflare 1033 tunnel diagnosis.
+- ⭐ **AND SOMETHING IS STILL WATCHING, which I assumed was false and checked:** I expected that with every caller paused, nothing would notice the host recovering. Wrong — **`topshot-pack-supply-backfill` is a live prober** (3 × 530 across the window, most recent 01:15 PT today). **If it ever logs a non-530, the host is back** and the nine paused lanes become a re-enable decision. That is the cheapest available recovery signal; do not build another one.
+
+⚠ **What WOULD need attention, stated so it is not mistaken for "all clear":** the suppressions are harmless *because the lanes are stopped*. **If anyone un-pauses a Top Shot lane while the host is dead, the failure storm returns with no suppression left to absorb it.** Re-enable and un-suppress are the same decision, not two.
+
 ## STEER — added 2026-09-13 ~02:0x PT (overnight autonomous; two things NOT to chase, each already checked to the bottom)
 
 1. ⛔ **DO NOT CHASE THE `offers-sweep` HIGH ALERT — the lane stopped 30 hours ago and the alert is residual.** `get_pipeline_alerts()` currently reports *"7/7 runs failed (100.0%), severity **high**"*, which reads as an active outage. **Its last run was 2026-09-12 02:31Z**; a concurrent session disabled the backstop step that was reviving it (`a79b553f0`, 09-11 22:00 PT, *"it revives a lane retired on purpose, against a decommissioned host"*) and nothing has called it since. The seven rows are simply still inside the arm's 2-day window; it self-clears ~09-14 02:31Z.
