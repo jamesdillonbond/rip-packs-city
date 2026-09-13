@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ RLS ON `audit_20260913_parallel_downgrade_restore` — a concurrent session's revert-path table shipped anon-readable with RLS off; fixed forward in 8 minutes · Claude Code cloud
+
+**Found by CI, not by looking:** the GHA `smoke` run on my sentinel push (34775121044, 11:36 AM PT) went HARD red on `rls_off_base_table:audit_20260913_parallel_downgrade_restore` — the table `20260913183030` (another session, 11:3x AM PT) created with a bare `CREATE TABLE IF NOT EXISTS`. Live read: `relrowsecurity=false`, `anon` SELECT true. Same shape as the 09-05 pair that motivated the `migration-new-public-table-enables-rls` guard, and that guard was red on main from their commit too (`7483f6437`).
+
+**Shipped:** migration `20260913184500_audit_20260913_rls_on_the_parallel_downgrade_restore_audit_table` — `ENABLE ROW LEVEL SECURITY` + `REVOKE ALL … FROM PUBLIC, anon, authenticated` (one statement) + `GRANT ALL TO postgres, service_role`. Applied live first, verified `relrowsecurity=true`, anon/authenticated SELECT false, service_role true, **0 RLS-off public tables**. Their file added to the guard's GRANDFATHERED list with a pointer to this fix — the 09-05 convention exactly (applied migrations are history; fix forward).
+
+**Revert:** none wanted — `ALTER TABLE … DISABLE ROW LEVEL SECURITY` would recreate the finding. The hourly `selfheal_audit_table_rls()` (jobid 232, :47) would have closed the anon read at 11:47 PT on its own; this closes it now and makes the guard green.
+
+
 ### 2026-09-13 · ✅ SHIPPED (data) + ⚠ CORRECTION TO MY OWN NUMBER — the 136 sales and 7 moments the unguarded rekey had downgraded are back on their parallel editions; "330 sales rows" was a fan-out, the real figure is 140 · Claude Code cloud
 
 **1 · ⚠ THE CORRECTION FIRST, because I published the wrong number an hour ago.** The entry and register #110 for `20260913181737` say the defect moved **"330 sales rows"**. That is a **JOIN FAN-OUT, not a count** — it came from joining the audit rows to `sales` on `nft_id`, which multiplies by every sale that nft ever had. Joined on the audit's own `sale_id`: **140 audit rows across 130 distinct nfts · 140 sales still exist · 137 still sitting on the base · 3 moved elsewhere since · 0 already back.** ⭐ The direction and the argument are unchanged; the magnitude was overstated **2.4×**. **A count taken through a fan-out join is not a count** — and the tell needed no re-query: 330 sales rows cannot come from 124 nfts in a table holding one row per SALE.
