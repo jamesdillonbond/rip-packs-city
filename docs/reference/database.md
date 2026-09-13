@@ -482,6 +482,19 @@ default, not a constraint. `SET vacuum_cost_delay = 2; VACUUM <table>;` throttle
 autovacuum is throttled, and a parent `VACUUM` **does** process its TOAST. ⛔ Neither reclaims space
 to the OS: that needs `VACUUM FULL` (ACCESS EXCLUSIVE) or `pg_repack`.
 
+## ⭐ READ `pg_stat_progress_vacuum` BEFORE BLAMING A LANE FOR A SPELL — a saturation spell's cause can be MAINTENANCE, and maintenance was invisible to every instrument (2026-09-13)
+
+**The instance:** from ~10:37 AM PT the estate read like a lane defect — `rpc-ts-listings-atlas-sync` failed **30 of 35 ticks** from 10:58, each cancelled at the 120 s budget on a DIFFERENT statement every time (`count(*)`, `CREATE TEMP TABLE _tsl_want`, `_cl_want`, the `floor` CTE, the `up` INSERT); `pg_cron Failures (6h)` 268; Trust Health / Pipeline Success / Sniper Feed INCONCLUSIVE; `/api/market` 503s; 8–19 client backends in `IO/DataFileRead`. The sentinel 504'd at its own wall. A cadence cut for the lane was one decision away.
+
+**The cause, read by hand:** `pg_stat_progress_vacuum` showed **the FIRST-EVER autovacuum of `pg_toast.pg_toast_51873`** — `net._http_response`'s 12.4 GB TOAST (register #75, the relation whose stats had been pinned at zero) — `vacuuming heap`, all 1,627,612 blocks scanned, 6.4 M dead item ids collected, **57 min in `IO/DataFileRead`** and, at the throttled autovacuum rate, hours to go. Its start matched the lane's first failure to the minute. `wallet_moments_cache` and later `sales_2026` were being autovacuumed alongside it.
+
+**Two tells that it is whole-instance IO and not one bad query:** (1) the SAME job dies on a DIFFERENT statement each tick — a bad query dies on the same one; (2) `pg_stat_activity` shows the waiters in `IO/DataFileRead`, zero on any lock. **The error string is identical in both cases** (`canceling statement due to statement timeout`), which is why the duration and the string cannot settle it; only the wait state and the progress views can.
+
+**What was done, and what was not:** the autovacuum was left to finish (cancelling wastes the work and it restarts); two lanes that were pure load under it (56 busy-minutes/hour, verifying nothing) were paused with a **self-restoring pg_cron one-off scheduled BEFORE the pause**; and the sentinel gained the instrument that was missing — the **`Maintenance Load` arm** (`check_maintenance_load()`, catalog views only, placed right after `pg_cron Failures` so the wall budget cannot refuse it) that names every running vacuum / `VACUUM FULL` / index build with phase, percent and minutes in the same digest as the symptoms.
+
+⚠ **Autovacuum throughput here is small and sets the spell's LENGTH:** `autovacuum_vacuum_cost_delay = 2 ms`, `vacuum_cost_limit = 200` — the toast's heap pass moved ~29k–90k blocks per 10 min, so a 12 GB relation is a multi-hour event on this tier. That is also why a manual `VACUUM FULL` (unthrottled, `vacuum_cost_delay = 0`) needs a role with no statement timeout and is a 10–30 min ACCESS EXCLUSIVE window: sized in #75, not guessed.
+
+
 ## 🚨 `EXCEPTION WHEN OTHERS` DOES NOT CATCH A STATEMENT TIMEOUT — so an isolation block built on it cannot survive the only failure this instance actually produces (promoted here 2026-08-26)
 
 **PostgreSQL: *"the special condition name `OTHERS` matches every error type EXCEPT `QUERY_CANCELED`
