@@ -290,6 +290,46 @@ describe("withOfficialArt — dedupes, and never costs a Moment its badge", () =
     }
   })
 
+  it("🚨 RETRIES after a failure instead of caching the miss for the lambda's life", async () => {
+    // THE DEFECT THIS PINS WAS SHIPPED, AND PRODUCTION FOUND IT. The memo
+    // originally kept failures, reasoned as "one attempt per instance, not one
+    // per card". But `/api/badge-image` is edge-cached for 24h, so a failure is
+    // almost always a COLD-CACHE failure and the act of failing WARMS it — the
+    // retry a cached miss forbids is precisely the one that would have
+    // succeeded. One slow cold start would otherwise draw RPC glyphs on every
+    // card that lambda served for the rest of its life, looking perfectly fine
+    // the whole time.
+    let attempt = 0
+    vi.stubGlobal("fetch", async () => {
+      attempt += 1
+      // First render: the cold proxy is too slow and we give up. Second: warm.
+      if (attempt === 1) return new Response(null, { status: 504 })
+      return new Response(
+        new Uint8Array([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10, 0, 0, 0, 13]),
+        { status: 200, headers: { "content-type": "image/png" } },
+      )
+    })
+    const { withOfficialArt } = await load()
+
+    const row = () =>
+      trophyMarks(
+        { badges: ["Rookie Year"], serial_number: 5, circulation_count: 9, collection_slug: "nfl_all_day" },
+        null,
+        4,
+      )
+
+    const [cold] = await withOfficialArt([row()])
+    expect(cold[0].uri.startsWith("data:image/svg+xml")).toBe(true) // fell back
+
+    const [warm] = await withOfficialArt([row()])
+    expect(warm[0].uri.startsWith("data:image/png")).toBe(true) // retried, got official art
+    expect(attempt).toBe(2)
+
+    // And the SUCCESS is cached — a third render must not re-fetch.
+    await withOfficialArt([row()])
+    expect(attempt).toBe(2)
+  })
+
   it("does not fetch at all for a card whose marks have no official art", async () => {
     // A Pinnacle / UFC / Golazos case must cost exactly zero requests — the
     // fallback tier is not a degraded state there, it is the correct one.
