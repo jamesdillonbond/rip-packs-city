@@ -172,6 +172,8 @@ describe("seed-wallet-refresh — backstop freshness gate (?force=1)", () => {
   // unforced primary wave ignores the gate entirely.
   const oneHourAgo = () => new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString()
   const fiveHoursAgo = () => new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
+  const sixHoursAgo = () => new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()
+  const thirteenHoursAgo = () => new Date(Date.now() - 13 * 60 * 60 * 1000).toISOString()
 
   it("forced wave skips wallets walked within the fresh window, whatever their priority", async () => {
     install({
@@ -179,8 +181,21 @@ describe("seed-wallet-refresh — backstop freshness gate (?force=1)", () => {
         data: [
           // High priority, per-collection stamp 1h old -> skipped on a forced wave.
           seeded({ id: 1, username: "highpri-fresh", wallet_address: "0x1111111111111111", priority: 1, last_refreshed_at: fiveHoursAgo(), last_refreshed_per_collection: { nfl_all_day: oneHourAgo() } }),
-          // Stale everywhere -> still refreshed (this is what a backstop is for).
-          seeded({ id: 2, username: "highpri-stale", wallet_address: "0x2222222222222222", priority: 1, last_refreshed_at: fiveHoursAgo(), last_refreshed_per_collection: { nfl_all_day: fiveHoursAgo() } }),
+          // 🚨 SIX HOURS OLD -> SKIPPED, AND THIS IS THE CASE THAT WAS LEAKING.
+          // Primaries run at hours 0/1 and 12/13; the GHA backstop drifts (median
+          // +45 min, p90 +205 min) and landed at hours 07, 17 and 22 on
+          // 2026-09-13, where the wallets a SUCCESSFUL primary had just walked
+          // were 4-11 h old. Against the old 3 h window every one of them was
+          // re-dispatched: three sweeps fired 403 wallet-backfill runs against
+          // 303 from the four sanctioned waves, with `backstop_fresh_skipped = 0`
+          // on every wave. The window is now the wave cadence, so a wallet a
+          // primary already covered is skipped however late the backstop lands.
+          seeded({ id: 2, username: "highpri-6h", wallet_address: "0x2222222222222222", priority: 1, last_refreshed_at: sixHoursAgo(), last_refreshed_per_collection: { nfl_all_day: sixHoursAgo() } }),
+          // ⭐ OLDER THAN ONE CADENCE -> STILL REFRESHED. This is the redundancy
+          // the ?force=1 bypass exists for: a wallet this stale was MISSED by a
+          // primary, which is exactly when the backstop should do real work.
+          // Asserting it is what stops the widened window silencing the backstop.
+          seeded({ id: 5, username: "highpri-13h", wallet_address: "0x5555555555555555", priority: 1, last_refreshed_at: thirteenHoursAgo(), last_refreshed_per_collection: { nfl_all_day: thirteenHoursAgo() } }),
           // Never walked -> refreshed.
           seeded({ id: 3, username: "never", wallet_address: "0x3333333333333333", priority: 1, last_refreshed_at: null, last_refreshed_per_collection: null }),
           // Fresh but truncation-signature count -> repair bypasses the gate.
@@ -194,7 +209,7 @@ describe("seed-wallet-refresh — backstop freshness gate (?force=1)", () => {
     await runDeferred()
 
     const wallets = dispatchBodies(fetchMock!).map((b) => b.wallet).sort()
-    expect(wallets).toEqual(["0x2222222222222222", "0x3333333333333333", "0x4444444444444444"])
+    expect(wallets).toEqual(["0x3333333333333333", "0x4444444444444444", "0x5555555555555555"])
   })
 
   it("an unforced primary wave does not apply the backstop gate", async () => {

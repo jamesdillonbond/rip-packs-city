@@ -212,6 +212,15 @@ const LOW_PRIORITY_INTERVAL_HOURS = Number(
 const LOW_PRIORITY_INTERVAL_MS =
   Math.max(0, LOW_PRIORITY_INTERVAL_HOURS) * 60 * 60 * 1000
 
+// ── THE WAVE CADENCE, IN ONE PLACE (2026-09-13) ──────────────────────────
+// How often a primary wave actually runs, in hours. Used by BOTH the cadence
+// gate that decides whether a wave executes at all AND the backstop freshness
+// window below. ⚠ THEY ARE THE SAME FACT AND THEY MUST NOT BE TWO LITERALS:
+// the cadence moved 6h -> 12h on 2026-07-18 and the backstop window did not
+// follow, which left the backstop guard skipping ZERO for six weeks (measured
+// 2026-09-13 — see the block below). Change this one constant and both move.
+const WAVE_CADENCE_HOURS = 12
+
 // ── Backstop freshness gate (2026-08-30) ─────────────────────────────────
 // A FORCED wave is the GHA backstop (wallet-backfill-backstop.yml, ?force=1),
 // whose one job is to refresh wallets a primary cohort MISSED. It used to
@@ -227,10 +236,39 @@ const LOW_PRIORITY_INTERVAL_MS =
 // than last_refreshed_at (stamped only when rows changed or stats aged past
 // 6h). Never-seeded / truncation-signature wallets still bypass. Primaries
 // (unforced waves) are untouched. 0 disables.
-//   SEED_REFRESH_BACKSTOP_FRESH_HOURS (default 3)
-const BACKSTOP_FRESH_HOURS = Number(process.env.SEED_REFRESH_BACKSTOP_FRESH_HOURS ?? 3)
+// 🚨 THE 3-HOUR DEFAULT WAS SIZED FOR ONE LANDING AND MISSED EVERY OTHER ONE —
+// MEASURED 2026-09-13, AND THE GUARD WAS SKIPPING **ZERO**.
+// The motivating incident above is a backstop landing RIGHT AFTER a primary
+// (13:58Z against a 12/13Z wave, ~1 h old), which 3 h catches. But the waves run
+// on a 12 h cadence at hours 0/1 and 12/13, and the drift measured in that same
+// comment (median +45 min, p90 +205 min) puts a landing anywhere in the 10 hours
+// AFTER a primary — where the wallets are 4–11 h old and 3 h catches nothing.
+// Live over 24 h: every forced wave reported `backstop_fresh_skipped = 0` with
+// `backfill_fired == processed` (39/39, 37/37, 33/33, 47/47), while the
+// neighbouring low-priority gate skipped 17–36 per wave, so the mechanism works
+// and only the NUMBER was wrong. Three drifted backstop sweeps (hours 07, 17, 22)
+// fired **403** wallet-backfill runs against **303** from the four sanctioned
+// waves — i.e. the backstop had become the LARGER consumer of the platform's
+// single largest compute consumer, and the 2026-07-18 cost lever above was
+// substantially unrealised.
+//
+// ⭐ THE WINDOW IS NOW THE CADENCE ITSELF, because they are the same fact: the
+// question this gate asks is "did the most recent primary already refresh this
+// wallet?", and a primary runs every WAVE_CADENCE_HOURS. Anything younger than
+// one cadence was covered by a primary that SUCCEEDED; anything older was missed
+// by one that did not — which is exactly when the backstop should fire. That
+// keeps the redundancy this bypass exists for (cron-job.org trigger dropout)
+// fully intact, and it is why the two constants are now coupled in code rather
+// than being two literals that drifted apart for six weeks.
+//   SEED_REFRESH_BACKSTOP_FRESH_HOURS (default WAVE_CADENCE_HOURS = 12)
+const BACKSTOP_FRESH_HOURS = Number(
+  process.env.SEED_REFRESH_BACKSTOP_FRESH_HOURS ?? WAVE_CADENCE_HOURS
+)
 const BACKSTOP_FRESH_MS =
-  (Number.isFinite(BACKSTOP_FRESH_HOURS) ? Math.max(0, BACKSTOP_FRESH_HOURS) : 3) * 60 * 60 * 1000
+  (Number.isFinite(BACKSTOP_FRESH_HOURS) ? Math.max(0, BACKSTOP_FRESH_HOURS) : WAVE_CADENCE_HOURS) *
+  60 *
+  60 *
+  1000
 
 // Most recent walk of any collection for this wallet, as epoch ms; NaN when
 // the wallet has never been walked (or the stamps are unparseable).
@@ -341,7 +379,7 @@ export async function GET(req: NextRequest) {
   const gateSkips =
     !forceWave &&
     process.env.SEED_WALLET_REFRESH_EVERY_WAVE !== "1" &&
-    utcHour % 12 >= 2
+    utcHour % WAVE_CADENCE_HOURS >= 2
 
   // ── Invocation record, BOTH branches (2026-08-28) ─────────────────────────
   // ⚠ Until this landed the gate above `return`ed before ANY pipeline_runs
