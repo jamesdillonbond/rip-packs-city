@@ -1522,6 +1522,8 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     🚨 **MEASURED 2026-09-13: the open backlog is 1,315.** Against its own baseline: **410 → 1,315 open**, i.e. **98.0% → 93.1% of candidates mapped**.
 
+    ⚠ **MEASUREMENT HYGIENE, ADDED 08:3x PT — THIS NUMBER IS A ONCE-DAILY SNAPSHOT, SO RE-READING IT WITHIN A DAY CANNOT SHOW MOVEMENT.** `mv_topshot_misattrib_candidates` is a MATERIALIZED view refreshed by pg_cron **jobid 70 `rpc-refresh-misattrib-candidates`, schedule `35 23 * * *` — once a day at 16:35 PT**; last run **2026-09-12 16:35:00 PT, succeeded**. I re-derived the predicate at 08:29 PT today and got **18,959 candidates / 1,315 open — byte-identical to the figure filed hours earlier**, because both reads hit the SAME snapshot. ⛔ **Do NOT read that as “the backlog has stabilised”** — it is the instrument's cadence, not the data. ⭐ **The suppression's own tripwire inherits this: it can only change once a day, so it lags a real breach by up to 24 h.** The next genuinely new reading is after **16:35 PT**.
+
     ⭐ **AND THE DENOMINATOR MOVED THE HELPFUL WAY, so this is not an artifact:** the candidate set **SHRANK** (20,128 → **18,959**) while the open pile **GREW** by 905. A growing numerator against a shrinking denominator cannot be explained by inflow accounting.
 
     **THE THREE DECISIONS, each right on its own terms:**
