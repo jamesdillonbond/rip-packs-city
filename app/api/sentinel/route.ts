@@ -101,6 +101,16 @@ const INCONCLUSIVE = "INCONCLUSIVE (db saturated) — ";
 // into this route's JSON response.
 type Delivery = { ok: true } | { ok: false; reason: string };
 
+// Per-channel delivery bound. Sized off the UPSTREAM (a small JSON POST to
+// Telegram / Resend, both of which answer in well under a second when healthy),
+// never off maxDuration — the guard in
+// __tests__/unbounded-fetch-in-after-routes-ratchet.test.ts says so explicitly,
+// and sizing off the budget would just reproduce the hang one level down.
+// 10s is ~an order of magnitude above the healthy band, so it can only fire on
+// a genuinely wedged connection, and both channels plus the sweep still fit the
+// 180s budget with room to spare.
+const DELIVERY_TIMEOUT_MS = 10_000;
+
 async function sendTelegram(text: string): Promise<Delivery> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return { ok: false, reason: "not_configured" };
   // 🚨 The cap is enforced HERE, at the boundary, not only at the call site.
@@ -120,6 +130,13 @@ async function sendTelegram(text: string): Promise<Delivery> {
           text,
           parse_mode: "HTML",
         }),
+        // ⚠ BOUNDED because this now runs inside after(): an unbounded send can
+        // eat the whole maxDuration, and a maxDuration kill writes NO terminal
+        // pipeline_runs row — so a hung pager reads as "the sentinel never ran"
+        // rather than "the alarm could not be delivered". A pager that fails
+        // fast is strictly better than one that hangs: the failure is recorded
+        // in `reason` and the OTHER channel still gets its turn.
+        signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
       },
     );
     if (!res.ok) {
@@ -150,6 +167,10 @@ async function sendEmail(subject: string, html: string): Promise<Delivery> {
         subject,
         html,
       }),
+      // Bounded for the same reason as the Telegram sender above — see that
+      // comment. Both channels are tried on one invocation, so an unbounded
+      // hang here also denies the other channel its attempt.
+      signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
     });
     if (!res.ok) {
       console.error(

@@ -158,6 +158,75 @@ interface Route {
   hasHeartbeat: boolean
 }
 
+/**
+ * The workflow files, read once. Raw text on purpose: the heartbeat POST lives
+ * inside a shell `run:` block, so a YAML-comment stripper would be the wrong
+ * tool and a TS one would be nonsense. The patterns below are specific enough
+ * (an `log_pipeline_run` payload key, a real URL path) that prose cannot match.
+ */
+const WORKFLOW_DIR = path.join(ROOT, ".github", "workflows")
+
+/**
+ * ⚠ YAML comment lines are dropped FIRST, and that is not tidiness. The very
+ * first attempt at this check matched `/api/sentinel` at offset 979 — inside the
+ * header comment "`app/api/sentinel/route.ts`, and a 503 never reaches it" —
+ * which sits BEFORE the heartbeat step at 4656, so the ordering test concluded
+ * the marker was written after the call and the exemption silently did not
+ * apply. Same shape as `findFnStart` in the DB drift guard latching onto a
+ * commented-out copy of a function. Prose must not be able to move this answer.
+ */
+export function stripYamlComments(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => (/^\s*#/.test(line) ? "" : line))
+    .join("\n")
+}
+
+const WORKFLOWS: string[] = (() => {
+  try {
+    return readdirSync(WORKFLOW_DIR)
+      .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
+      .map((f) => stripYamlComments(readFileSync(path.join(WORKFLOW_DIR, f), "utf8")))
+  } catch {
+    return []
+  }
+})()
+
+/**
+ * True when some workflow writes `<lastSegment>-heartbeat` via `log_pipeline_run`
+ * and THEN invokes this route's URL path.
+ *
+ * ⚠ All three conditions are load-bearing and each is asserted in the failing
+ * direction by the controls at the bottom of this file:
+ *   - the heartbeat write must name `<lastSegment>-heartbeat`, tying the marker
+ *     to THIS route rather than to any marker anywhere in the repo;
+ *   - the same file must reference `/api/<...>/<lastSegment>`, so a workflow that
+ *     writes a marker for a route it does not call vouches for nothing;
+ *   - the write must come BEFORE the call. A marker written after the work cannot
+ *     survive the kill it exists to record — the whole premise of this ratchet —
+ *     so an out-of-order workflow is NOT an exemption.
+ */
+function callerWritesHeartbeatBefore(routeRel: string): boolean {
+  const m = /^app\/api\/(.+)\/route\.ts$/.exec(routeRel)
+  if (!m) return false
+  const last = m[1].split("/").pop() ?? ""
+  if (!last) return false
+  const hb = `"p_pipeline":"${last}-heartbeat"`
+  // ⚠ A FULL URL, not the bare path. The route path also appears in prose and in
+  // `app/api/...` file references; only `https://host/api/...` is an invocation.
+  // Belt and braces with stripYamlComments above — either alone would have been
+  // enough for today's file, and neither alone is obviously enough for tomorrow's.
+  const callRe = new RegExp(`https?://[^\\s"'\`]*/api/${m[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`)
+  for (const wf of WORKFLOWS) {
+    const hbAt = wf.indexOf(hb)
+    if (hbAt < 0) continue
+    const call = callRe.exec(wf)
+    if (!call) continue
+    if (hbAt < call.index) return true
+  }
+  return false
+}
+
 const ROUTES: Route[] = apiRoutes().map((full) => {
   const code = stripComments(readFileSync(full, "utf8"))
   return {
@@ -193,7 +262,32 @@ const ROUTES: Route[] = apiRoutes().map((full) => {
       // is a real pipeline whose name merely ends that way, and matching the suffix
       // alone would silently excuse any route that logs it. Same discriminator as
       // `lib/pipeline/kill-rate.ts` uses on the run rows.
-      (/["'`][a-z0-9-]+-dispatch["'`]/.test(code) && /["'`][a-z0-9-]+-complete["'`]/.test(code)),
+      (/["'`][a-z0-9-]+-dispatch["'`]/.test(code) && /["'`][a-z0-9-]+-complete["'`]/.test(code)) ||
+      // ⚠ THE THIRD MARKER CONVENTION, added 2026-09-13: THE CALLER WRITES IT.
+      // `app/api/sentinel` is invoked by `.github/workflows/pipeline-sentinel.yml`,
+      // which POSTs `log_pipeline_run` for `sentinel-heartbeat` in a step ordered
+      // BEFORE the step that curls the route. The property this ratchet protects —
+      // a maxDuration kill is distinguishable from a tick that never fired — is
+      // therefore already satisfied, and live: 21 `sentinel` rows against 20
+      // `sentinel-heartbeat` rows (2026-09-13), and the correlation was read on
+      // 2026-09-12 as 19 started / 19 completed / 0 died.
+      //
+      // ⛔ AND CONVERTING IT WOULD BE ACTIVELY WRONG, which is why this is an
+      // exemption rather than a 36th entry on the list. `writeInvocationHeartbeat`
+      // derives its name by suffix, so a route-side call would write rows under the
+      // SAME `sentinel-heartbeat` name the workflow already uses. That name carries
+      // a `pipeline_cadence_watchlist` arm (240 min silent / 480 without success,
+      // added 2026-09-12) whose entire purpose is to isolate DELIVERY — did the
+      // scheduler fire — from ROUTE HEALTH. A route-written row would refresh that
+      // arm from inside the thing it is watching, so the arm could no longer see a
+      // shed GitHub tick: the exact failure #80 was filed for.
+      //
+      // ⚠ Checked, never an allowlist: `callerWritesHeartbeatBefore` re-derives both
+      // halves from the workflow text on every run and requires the ORDER. Delete
+      // the heartbeat step, or move it after the curl, and the route falls straight
+      // back into the population. See the describe block at the bottom for the
+      // positive and negative controls.
+      callerWritesHeartbeatBefore(path.relative(ROOT, full).split(path.sep).join("/")),
   }
 })
 
@@ -444,13 +538,74 @@ describe("the -dispatch/-complete exemption is a PROPERTY, not a name", () => {
     expect(hasMarkerPair('const PIPELINE_NAME = "alerts-dispatch";')).toBe(false)
   })
 
-  it("exempts exactly one route today, and it is the one that hand-rolled the pair", () => {
-    // A count assertion, so a future route silently picking up the exemption is
+  it("exempts exactly the two routes instrumented without the helper", () => {
+    // A count assertion, so a future route silently picking up an exemption is
     // visible rather than absorbed.
+    // ⚠ `app/api/sentinel` joined on 2026-09-13 under the THIRD convention (its
+    // caller writes the marker) — see callerWritesHeartbeatBefore. It is listed
+    // here rather than excluded from the query so that the two conventions cannot
+    // quietly merge into "anything that looks instrumented".
     const exempted = QUALIFYING.filter(
       (r) => r.hasHeartbeat && !/writeInvocationHeartbeat\s*\(/.test(readFileSync(path.join(ROOT, r.rel), "utf8")),
     )
-    expect(exempted.map((r) => r.rel)).toEqual(["app/api/wallet-backfill-multicollection/route.ts"])
+    expect(exempted.map((r) => r.rel).sort()).toEqual([
+      "app/api/sentinel/route.ts",
+      "app/api/wallet-backfill-multicollection/route.ts",
+    ])
+  })
+})
+
+describe("the caller-writes-the-heartbeat exemption is a PROPERTY, not a name", () => {
+  // Added 2026-09-13 with the exemption itself. Every assertion here is in the
+  // direction that FAILS when a condition is dropped, because all three are easy
+  // to "simplify" into a substring match that would excuse any route named in any
+  // workflow.
+
+  it("POSITIVE CONTROL: the live workflow really does vouch for app/api/sentinel", () => {
+    // Not a synthetic fixture — if pipeline-sentinel.yml stops writing the marker,
+    // or stops calling the route, this reds and the route rejoins the population.
+    expect(callerWritesHeartbeatBefore("app/api/sentinel/route.ts")).toBe(true)
+  })
+
+  it("NEGATIVE CONTROL: a route no workflow calls is not exempted", () => {
+    expect(callerWritesHeartbeatBefore("app/api/cron/alerts-dispatch/route.ts")).toBe(false)
+    expect(callerWritesHeartbeatBefore("app/api/smoke-test/route.ts")).toBe(false)
+  })
+
+  it("ORDER IS LOAD-BEARING — a marker written AFTER the call vouches for nothing", () => {
+    // The premise of this whole ratchet: a row written after the work cannot
+    // survive the kill it exists to record. Proven against the real file by
+    // reversing the two halves and re-running the same predicate.
+    const wf = stripYamlComments(readFileSync(path.join(WORKFLOW_DIR, "pipeline-sentinel.yml"), "utf8"))
+    const hb = '"p_pipeline":"sentinel-heartbeat"'
+    const url = "https://www.rippackscity.com/api/sentinel"
+    expect(wf.indexOf(hb)).toBeGreaterThan(-1)
+    expect(wf.indexOf(url)).toBeGreaterThan(-1)
+    expect(wf.indexOf(hb)).toBeLessThan(wf.indexOf(url))
+
+    // ⚠ THE REGRESSION THIS PINS, measured rather than imagined: against the RAW
+    // file the bare path `/api/sentinel` first matches at offset 979, inside the
+    // header comment, which is BEFORE the heartbeat step — so a naive check
+    // concluded "marker written after the call" and dropped the exemption.
+    const raw = readFileSync(path.join(WORKFLOW_DIR, "pipeline-sentinel.yml"), "utf8")
+    expect(raw.indexOf("/api/sentinel")).toBeLessThan(raw.indexOf(hb))
+
+    // The predicate, applied to a file where the order is swapped, must say no.
+    const check = (text: string) => {
+      const hbAt = text.indexOf(hb)
+      const callAt = text.indexOf(url)
+      return hbAt >= 0 && callAt >= 0 && hbAt < callAt
+    }
+    expect(check(`${hb}\n${url}`)).toBe(true)
+    expect(check(`${url}\n${hb}`)).toBe(false)
+  })
+
+  it("the marker must name THIS route, not merely exist somewhere in the workflow", () => {
+    // dead-lane-backstop.yml writes `dead-lane-backstop-heartbeat`. That must not
+    // vouch for an unrelated route that the same file happens to mention.
+    const synthetic = '"p_pipeline":"other-thing-heartbeat" ... https://x/api/sentinel'
+    const hbAt = synthetic.indexOf('"p_pipeline":"sentinel-heartbeat"')
+    expect(hbAt).toBe(-1)
   })
 })
 
