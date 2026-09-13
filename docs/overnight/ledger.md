@@ -10,6 +10,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ THE WALL BUDGET VERIFIED IN PRODUCTION UNDER THE SPELL IT WAS BUILT FOR — and it exposed the blackout arm reading `ok` while starved; a refusal now fires on its own · Claude Code cloud
+
+**Before/after on the same spell, 24 minutes apart.** The 11:17 AM PT scheduled tick (GitHub delivered the 10:34 slot 43 min late) hit the OLD deploy and **504'd three times** — the runner wrote `the sentinel route did not answer - HTTP 504 after 3 attempts` at 11:27 AM, no report anywhere. The 11:41 AM dispatch hit the wall-budget deploy under the same autovacuum spell (8 IO waiters): **completed in 140.6 s, 25 checks, WARN, terminal row written, Telegram delivered**, and the three arms it could not afford (`Wall Kills`, `pg_net Dispatch`, `Ops Probe Cost`) are NAMED as refused — `aborted: sentinel wall budget spent (140.0s elapsed of a 140.0s query budget inside a 180.0s wall) — this arm did not evaluate`. Four more were INCONCLUSIVE on statement timeouts.
+
+**The gap it exposed:** `Measurement Blackout` read **`ok`** on that sweep — 7 of 24 blind against a threshold of `ceil(24/3) = 8`, which the three arms added this morning had raised from 6. A refusal is a stronger statement than a timeout (the SWEEP was starved, not one query), so `lib/sentinel/blind-checks.ts` now counts `refused` and warns on ANY refusal; the ratio rule for timeouts is unchanged (control test: 7 of 24 with 0 refused still `ok`). Replay of the 11:41 sweep pinned as the positive anchor.
+
+**Revert:** `git revert` the code commit (`feat(sentinel): a wall-budget refusal …`). No DB change.
+
+**Also read, not acted on:** the toast autovacuum is at 889k of 1.63M blocks in the heap phase and moving ~29k blocks per 10 min — **hours more at the throttled rate**; cancelling would waste 70 min of work and it would restart, so it runs. The Atlas verify tick and `/api/market` 503s track it.
+
+
 ### 2026-09-13 · ✅ RLS ON `audit_20260913_parallel_downgrade_restore` — a concurrent session's revert-path table shipped anon-readable with RLS off; fixed forward in 8 minutes · Claude Code cloud
 
 **Found by CI, not by looking:** the GHA `smoke` run on my sentinel push (34775121044, 11:36 AM PT) went HARD red on `rls_off_base_table:audit_20260913_parallel_downgrade_restore` — the table `20260913183030` (another session, 11:3x AM PT) created with a bare `CREATE TABLE IF NOT EXISTS`. Live read: `relrowsecurity=false`, `anon` SELECT true. Same shape as the 09-05 pair that motivated the `migration-new-public-table-enables-rls` guard, and that guard was red on main from their commit too (`7483f6437`).
