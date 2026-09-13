@@ -1,4 +1,10 @@
-// The POPULATION pin for the shared comment stripper's known-unfixed boundary.
+// The POPULATION pin for the shared comment stripper's DEFECT 4 boundary.
+//
+// ✅ **THE BOUNDARY IS CLOSED (2026-09-12): every count below is now a BAN AT
+// ZERO.** This file kept its shape rather than being deleted — the counts are
+// what would notice the boundary reopening, and the header it corrects is worth
+// more than the number it reports. Read it as "how this was made countable",
+// not as a description of a live defect.
 //
 // WHY THIS FILE EXISTS, and it is not the reason you would guess. DEFECT 4 in
 // `scripts/lib/strip-comments.mjs` (JSX text is not JS, so an apostrophe in
@@ -24,6 +30,20 @@
 // `sq`/`dq` copy verbatim: the machine KEEPS too much, so a guard may
 // over-report but can never go blind. That is the safe direction, and it gets a
 // down-only RATCHET.
+//
+// 🚨 **READ THAT SENTENCE NARROWLY — GENERALISING IT IS THE MISTAKE THIS FILE
+// HELPED CAUSE.** It is true of the `sq`/`dq` STATES and it was repeated, in
+// the stripper's header and in register #87, as a claim about **DEFECT 4** —
+// *"this one fails in the SAFE direction … never blanks code."* That was false.
+// The same root cause (JSX text is not JS) also parsed JSX text as CODE, where
+// `//` in a URL opens a line comment: **2 files, 46 characters of real source
+// blanked**, measured 2026-09-12 against the TypeScript compiler. ⭐ **A census
+// keyed on one SYMPTOM reports that symptom completely and is silent about
+// every other symptom of the same defect** — so it can only ever tell you the
+// safe half, which reads exactly like "the whole thing is safe". Never derive a
+// claim about a DEFECT from an instrument that measures one of its symptoms;
+// `strip-comments-matches-typescript.test.ts` exists because it has no symptom
+// in it at all.
 // `block`/`regex`/`class`/`tpl`, and any unclosed `${` interpolation, BLANK
 // source. That is DEFECT 3's direction — the one that hid a live P0 — and it
 // gets a BAN AT ZERO, because there is no acceptable number of files whose real
