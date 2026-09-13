@@ -1,0 +1,53 @@
+-- audit_20260913_wmc_wallet_coll_ek_fmv_index_carries_tier_so_the_wallet_aggregate_is_index_only
+--
+-- RECORD-ONLY. `CREATE INDEX CONCURRENTLY` cannot run inside a transaction block,
+-- so the real work was executed as a one-off pg_cron job (the recipe in
+-- docs/reference/database.md and migration 20260826153459). This file exists so
+-- the change has a committed artefact and so the revert path is in the repo.
+-- Applying it a second time changes nothing (`IF NOT EXISTS`).
+--
+-- ── WHAT WAS WRONG (register #111) ─────────────────────────────────────────────
+-- `aggregate_saved_wallet_stats(user, wallet)` reads exactly five columns of
+-- `wallet_moments_cache` — wallet_address, collection_id, edition_key, fmv_usd,
+-- tier. `idx_wmc_wallet_coll_ek_fmv` carried the first four
+-- (`(wallet_address, collection_id, edition_key) INCLUDE (fmv_usd)`), so the one
+-- uncovered column, `tier`, forced a heap fetch for every row. For the two saved
+-- wallets above the hourly sweep's size gate (44,646 and 34,860 cached moments)
+-- that is the whole of the physical IO.
+--
+-- ── MEASURED 2026-09-13 ~4:0x PM PT, QUIET INSTANCE (io_waiters 1) ─────────────
+-- The whale's aggregate, address as a literal (the custom-plan shape):
+--   Bitmap Heap Scan on wallet_moments_cache — Heap Blocks: exact=35,430,
+--   shared hit=12,768 read=22,749 — inside 40,360 buffers / 6.6 s total.
+-- The same aggregate with the address as an unknown (the generic-plan shape the
+-- procedure's 6th+ call gets under plan_cache_mode=auto): nested loops,
+-- 356,328 buffers / 24.2 s, 38,501 of them physical reads on the wmc heap.
+-- Either way the heap reads ARE the IO cost; an index-only scan removes them
+-- for every page the visibility map marks all-visible.
+--
+-- ── EXECUTED 2026-09-13 (PT) as a one-off pg_cron job ──────────────────────────
+--   ALTER ROLE postgres IN DATABASE postgres SET statement_timeout = '30min';
+--   SELECT cron.schedule('oneoff-wmc-wallet-coll-ek-fmv-tier-idx', '08 23 * * *',
+--     $$CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_wmc_wallet_coll_ek_fmv_tier
+--       ON public.wallet_moments_cache USING btree
+--       (wallet_address, collection_id, edition_key) INCLUDE (fmv_usd, tier)$$);
+--   -- jobid 496; once it appeared in pg_stat_progress_create_index:
+--   SELECT cron.alter_job(496, schedule := '55 5 1 1 *');   -- cannot re-fire
+--   -- after `indisvalid`:
+--   SELECT cron.unschedule(496);
+--   ALTER ROLE postgres IN DATABASE postgres RESET statement_timeout;
+--
+-- ⏳ FOLLOW-UP, deliberately NOT done in the same change: the older
+-- `idx_wmc_wallet_coll_ek_fmv` (263 MB, `INCLUDE (fmv_usd)`) is now a strict
+-- SUBSET of the new index and is a drop candidate — the table already carries
+-- 19 indexes / 1.6 GB against a 940 MB heap. Drop it CONCURRENTLY via the same
+-- route once production has been observed using the new one, not before.
+--
+-- ── REVERT ──────────────────────────────────────────────────────────────────────
+-- The old index was NOT touched, so reverting is dropping the new one (via the
+-- same one-off pg_cron route, CONCURRENTLY):
+--   DROP INDEX CONCURRENTLY IF EXISTS public.idx_wmc_wallet_coll_ek_fmv_tier;
+
+CREATE INDEX IF NOT EXISTS idx_wmc_wallet_coll_ek_fmv_tier
+  ON public.wallet_moments_cache USING btree
+  (wallet_address, collection_id, edition_key) INCLUDE (fmv_usd, tier);
