@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
 // Pinnacle metadata + catalog backfill via on-chain Cadence reads.
 //
@@ -63,8 +64,26 @@ import { createClient } from "@supabase/supabase-js"
 // Bearer auth on INGEST_SECRET_TOKEN. Trevor schedules at cron-job.org hourly
 // at :22 (offset from populate-pinnacle-wmc-fmv and listing-alert).
 
-export const maxDuration = 30
+// 30 → 120 on 2026-09-13. The caller is cron-job.org, which drops the
+// connection at 30 s and AUTO-DISABLES an entry after enough of those (register
+// #76: nine entries died that way on 09-10). Under the day's IO spell this
+// route 504'd at its own 30 s wall on three consecutive hourly ticks (16:22,
+// 17:22, 18:22Z), wrote no terminal row (the kill runs neither branch), and was
+// one more tick from being switched off by its scheduler. So the response and
+// the work are now separated: the work gets a real wall, the caller gets an
+// answer inside its 30 s — see GET.
+export const maxDuration = 120
 export const dynamic = "force-dynamic"
+
+// How long GET waits for the work before answering 202 and letting after()
+// carry it. cron-job.org's client timeout is 30 s; 20 s leaves the response
+// its own margin. Overridable for tests only, so the deferral can be proven
+// without a twenty-second wait.
+const SYNC_BUDGET_MS_DEFAULT = 20_000
+function syncBudgetMs(): number {
+  const raw = Number(process.env.PINNACLE_BACKFILL_SYNC_BUDGET_MS ?? "")
+  return Number.isFinite(raw) && raw > 0 ? raw : SYNC_BUDGET_MS_DEFAULT
+}
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -330,6 +349,58 @@ export async function GET(req: NextRequest) {
   const started = Date.now()
   const startedAtIso = new Date(started).toISOString()
 
+  // Invocation marker BEFORE any work: a maxDuration kill runs neither the
+  // success path nor a catch, so without this row a killed tick is
+  // indistinguishable from a tick that never fired (CLAUDE.md, after()
+  // routes). The helper is non-fatal by construction; guarded here anyway so
+  // telemetry can never stop the lane it measures.
+  try {
+    await writeInvocationHeartbeat({
+      pipeline: PIPELINE_NAME,
+      startedAtMs: started,
+      extra: { source: "cron-job.org", event: "hourly" },
+    })
+  } catch (e: any) {
+    console.error(`[${PIPELINE_NAME}] heartbeat threw:`, e?.message ?? e)
+  }
+
+  // Answer inside the caller's 30 s, whatever the database is doing. If the
+  // work finishes within the sync budget the response is exactly what it was
+  // (200 + the corrections body); if it does not, after() carries it to its
+  // terminal row and the caller gets a 202 dispatch receipt — which carries NO
+  // counts, because a receipt rendered as a result is the same lie as a failed
+  // read rendered as an answer.
+  const work = runBackfill(started, startedAtIso)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const budget = new Promise<"deferred">((resolve) => {
+    timer = setTimeout(() => resolve("deferred"), syncBudgetMs())
+  })
+  const outcome = await Promise.race([work.then((res) => ({ res })), budget])
+  if (timer) clearTimeout(timer)
+  if (outcome !== "deferred") return outcome.res
+
+  after(async () => {
+    try {
+      await work
+    } catch (e: any) {
+      // The 202 has gone out; a throw here would otherwise vanish.
+      console.error(`[${PIPELINE_NAME}] deferred run threw:`, e?.message ?? e)
+    }
+  })
+  return NextResponse.json(
+    {
+      accepted: true,
+      deferred: true,
+      pipeline: PIPELINE_NAME,
+      started_at: startedAtIso,
+      sync_budget_ms: syncBudgetMs(),
+      note: "work exceeded the sync budget and continues in after(); the outcome lands in pipeline_runs, not in this body",
+    },
+    { status: 202 },
+  )
+}
+
+async function runBackfill(started: number, startedAtIso: string): Promise<NextResponse> {
   // ── Build work list ────────────────────────────────────────────────────
   const workByWallet = new Map<string, Map<string, WorkItem>>()
   const tagJob = (wallet: string, momentId: string, job: WorkItem["jobs"][number]) => {
