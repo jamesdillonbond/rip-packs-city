@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ CODE — a REFUTED claim was still being ACTED on, and it was dropping Pinnacle art from a PDF people share (#90) · Claude Code cloud, overnight autonomous
+
+**Shipped:** `app/api/profile/trophy-case/pdf/route.tsx` (a cache miss now tries the live render), `__tests__/api-profile-trophy-case-pdf.test.ts` (1 assertion INVERTED, 1 case added), `docs/reference/known-issues.md` (#90). Revert: `git revert` the commit whose message starts `fix(pdf): a Pinnacle cache miss tries the live render`.
+
+**⭐ FOUND BY APPLYING THIS REPO'S OWN RULE TO MY OWN CHANGE.** Having inverted the Pinnacle cache ordering in `lib/og/img-data.ts` earlier tonight, I grepped for the CLAIM rather than re-reading the file — *“when you find one, grep for the EXPRESSION, not the file”* — and the grep turned up a second consumer of the same cache making a much stronger claim.
+
+**🚨 THE DEFECT: `trophy-case/pdf` did not merely STATE the blanket-403 claim, it ACTED on it.** A `pinnacle_render_cache` miss ended in `return null` with *“direct fetch would 403 — don't waste the timeout budget”*. **That cache holds ONE ROW** (re-read live tonight, `fetched_at` **2026-07-16**), so **every other Pinnacle pin rendered as a PLACEHOLDER in a document built to be shared.**
+
+**⭐ AND THE CLAIM WAS ALREADY MEASURED FALSE BY THIS REGISTER, NAMING THIS FILE.** #90 records that `/api/public/pinnacle-image/<id>` from Vercel 302s to a freshly-signed `assets.disneypinnacle.com` Location (`x-vercel-id: iad1`) and the render then fetches — **61,788 B came back**. A datacenter DOES read the SIGNED render. ⚠ What was never measured is the UNSIGNED/durable url, which nothing here asks for — so that half of the contradiction stands, and the register still says so.
+
+**✅ THE FIX IS A DELETED `return null`.** The generic path was already sitting directly below it and already does everything needed: absolutize (its own comment names Pinnacle), a 6 s bounded fetch under the browser UA its comment says Dapper asset CDNs require, size cap, format sniff, background strip, 640 px downscale. Nothing new was written.
+
+**⭐ STRICTLY NO-WORSE IS WHAT MADE IT SHIPPABLE ON SOMEONE ELSE'S MEASUREMENT.** I cannot repeat that production probe — our own agent proxy denies both hosts at CONNECT, which reads exactly like a WAF 403 and is not one, a trap this register already records. So the change was built so being WRONG costs nothing: a cache hit is unchanged, and a 403 on the live fetch returns null and draws the same placeholder as today. **Both halves are pinned**, the second explicitly (*“a failing live render still yields a PDF”*).
+
+**🚨 AND A PASSING TEST WAS HOLDING THE PLACEHOLDER IN PLACE — the second time tonight.** `NEVER fetches a Pinnacle render directly — cache or nothing` asserted the defect, with *“guaranteed to 403”* as its stated reason. **INVERTED, not deleted**, with the refutation and the one-row measurement written into it, because the next session to try this fix would otherwise have seen a green test go red and concluded they were wrong. (The OG cache-ordering test earlier tonight was the same shape — that is two in one night, both on claims that were true when written and were overtaken.)
+
+**Verification:** `tsc` clean · 2 mutations, both caught (restoring `return null`; removing the cache preference) · full suite green · register index + 201 doc links · ledger guards 3 / 0.
+
 ### 2026-09-13 · ✅ DOCS — a 🔴 go-live item was carrying an ALREADY-ANSWERED question under a "nothing explains it" heading, and the last loose end is now closed · Claude Code cloud, overnight autonomous
 
 **Shipped (docs only):** `docs/reference/known-issues.md` (#70). Revert: `git revert` the commit whose message starts `docs(register): #70's "unexplained" cadence line`.
