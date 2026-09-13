@@ -53,6 +53,8 @@
 // other protecting the user-facing surface.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllPaged } from "@/lib/supabase-paginate";
+import { apiReadTimeoutMs } from "@/lib/api/bounded-read";
 
 export const TS_COLLECTION_ID_GUARD = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
@@ -73,21 +75,58 @@ export type FmvGuardMap = Map<string, FmvGuardEntry>;
 let _cache: { map: FmvGuardMap; at: number } | null = null;
 const TTL_MS = 5 * 60_000;
 
+/** Test hook — the cache is module-level and fake timers do not reset it. */
+export function _resetFmvGuardCacheForTests(): void {
+  _cache = null;
+}
+
 export async function loadTopshotFmvGuard(supabase: SupabaseClient): Promise<FmvGuardMap> {
   const now = Date.now();
   if (_cache && now - _cache.at < TTL_MS) return _cache.map;
 
   const map: FmvGuardMap = new Map();
   try {
-    const { data, error } = await (supabase as any)
-      .from("topshot_fmv_display_guard")
-      .select("external_id, max_sale_90d, is_thin, fmv_exceeds_max, fmv_disconnected, clamp_target");
+    // ⚠ PAGED behind a deterministic UNIQUE order, and TIME-BOUNDED (2026-09-13).
+    // The previous bare `.select()` was clamped by PostgREST at 1,000 rows with
+    // no error — 356 rows today, so nothing was lost yet, but the day the guard
+    // crosses 1,000 the clamp would silently un-guard every edition past the
+    // first page while `error` stayed null. And the read had no time bound:
+    // /api/market awaits it before its own bounded reads, so a slow read here
+    // spent the lambda's wall before the honest 503 branch could run.
+    // Serving the last good map on a timeout is the SAME fail-open the error
+    // branch below already chose; a first-ever load that times out yields an
+    // empty guard (no clamp), which is what the sniper feed's `.catch` accepts.
+    const read = fetchAllPaged<{
+      external_id: string;
+      max_sale_90d: number | string | null;
+      is_thin: boolean | null;
+      fmv_exceeds_max: boolean | null;
+      fmv_disconnected: boolean | null;
+      clamp_target: number | string | null;
+    }>(
+      (from, to) =>
+        (supabase as any)
+          .from("topshot_fmv_display_guard")
+          .select("external_id, max_sale_90d, is_thin, fmv_exceeds_max, fmv_disconnected, clamp_target")
+          .order("external_id", { ascending: true })
+          .range(from, to),
+      { pageSize: 1000, maxPages: 10, label: "fmv-display-guard" },
+    );
+    const timeout = new Promise<{ rows: never[]; truncated: true; error: string }>((resolve) =>
+      setTimeout(() => resolve({ rows: [], truncated: true, error: `read exceeded ${apiReadTimeoutMs()}ms` }), apiReadTimeoutMs()),
+    );
+    const { rows, truncated, error } = await Promise.race([read, timeout]);
     if (error) {
-      console.log("[fmv-display-guard] load error: " + error.message);
+      console.log("[fmv-display-guard] load error: " + error);
       // Serve the last good map rather than dropping the guard entirely.
       return _cache?.map ?? map;
     }
-    for (const r of (data ?? []) as Array<{
+    if (truncated) {
+      // Known-incomplete: a partial guard is served (better than none) but the
+      // cache is NOT written, so the next call retries the full read.
+      console.log(`[fmv-display-guard] page budget hit after ${rows.length} rows — guard is PARTIAL this call`);
+    }
+    for (const r of rows as Array<{
       external_id: string;
       max_sale_90d: number | string | null;
       is_thin: boolean | null;
@@ -104,7 +143,7 @@ export async function loadTopshotFmvGuard(supabase: SupabaseClient): Promise<Fmv
         clampTarget: r.clamp_target != null ? Number(r.clamp_target) : 0,
       });
     }
-    _cache = { map, at: now };
+    if (!truncated) _cache = { map, at: now };
   } catch (err) {
     console.log("[fmv-display-guard] threw: " + (err instanceof Error ? err.message : String(err)));
     return _cache?.map ?? map;

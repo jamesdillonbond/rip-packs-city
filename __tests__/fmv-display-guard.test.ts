@@ -1,11 +1,27 @@
 import { describe, it, expect, vi } from "vitest"
-import { guardTopshotFmv, loadTopshotFmvGuard, type FmvGuardMap, type FmvGuardEntry } from "@/lib/fmv-display-guard"
+import { guardTopshotFmv, loadTopshotFmvGuard, _resetFmvGuardCacheForTests, type FmvGuardMap, type FmvGuardEntry } from "@/lib/fmv-display-guard"
 
-// A minimal supabase-shaped stub: .from(table).select(cols) resolves {data,error}.
-function sbStub(result: { data: any[] | null; error: { message: string } | null }) {
-  const select = vi.fn().mockResolvedValue(result)
+// A minimal supabase-shaped stub: .from(table).select(cols).order().range()
+// resolves {data,error}. The loader PAGES (2026-09-13) behind a deterministic
+// order, so the builder must be chainable; `select` is still the call counted.
+// Pass an ARRAY of results to serve successive pages.
+function sbStub(result: { data: any[] | null; error: { message: string } | null } | Array<{ data: any[] | null; error: { message: string } | null }>) {
+  const pages = Array.isArray(result) ? result : [result]
+  let i = 0
+  const range = vi.fn()
+  const select = vi.fn().mockImplementation(() => {
+    const b: any = {}
+    b.order = () => b
+    b.range = (...args: unknown[]) => { range(...args); return b }
+    b.then = (onF?: (v: unknown) => unknown, onR?: (e: unknown) => unknown) => {
+      const r = pages[Math.min(i, pages.length - 1)]
+      i += 1
+      return Promise.resolve(r).then(onF, onR)
+    }
+    return b
+  })
   const from = vi.fn().mockReturnValue({ select })
-  return { client: { from } as any, from, select }
+  return { client: { from } as any, from, select, range }
 }
 
 // Pins the Top Shot FMV display clamp — the guard that stops a stored FMV
@@ -118,7 +134,7 @@ describe("loadTopshotFmvGuard", () => {
 
       // and a THROW also serves the last good map
       vi.advanceTimersByTime(6 * 60_000)
-      const throwSb = { from: () => ({ select: () => Promise.reject(new Error("network")) }) } as any
+      const throwSb = { from: () => ({ select: () => ({ order: () => ({ range: () => Promise.reject(new Error("network")) }) }) }) } as any
       const afterThrow = await loadTopshotFmvGuard(throwSb)
       expect(afterThrow.get("1:2")?.maxSale90d).toBe(12.5)
     } finally {
@@ -135,6 +151,28 @@ describe("loadTopshotFmvGuard", () => {
       const map = await loadTopshotFmvGuard(client)
       // null data → the ?? [] branch → empty map is cached and returned
       expect(map.size).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe("loadTopshotFmvGuard pages past PostgREST's 1,000-row clamp", () => {
+  it("requests a second page when the first comes back full, and keeps every row", async () => {
+    vi.useFakeTimers()
+    try {
+      _resetFmvGuardCacheForTests() // the suite above leaves a warm module cache
+      const full = Array.from({ length: 1000 }, (_, k) => ({ external_id: `p:${k}`, max_sale_90d: 1, is_thin: false, fmv_exceeds_max: false, fmv_disconnected: false, clamp_target: 0 }))
+      const tail = [{ external_id: "tail:1", max_sale_90d: 2, is_thin: true, fmv_exceeds_max: true, fmv_disconnected: false, clamp_target: 1 }]
+      const { client, range } = sbStub([{ data: full, error: null }, { data: tail, error: null }])
+      const map = await loadTopshotFmvGuard(client)
+      // The old bare .select() would have stopped at 1,000 with error null —
+      // the 1,001st row (and every later one) silently un-guarded.
+      expect(range).toHaveBeenCalledTimes(2)
+      expect(range.mock.calls[0]).toEqual([0, 999])
+      expect(range.mock.calls[1]).toEqual([1000, 1999])
+      expect(map.size).toBe(1001)
+      expect(map.get("tail:1")?.isThin).toBe(true)
     } finally {
       vi.useRealTimers()
     }

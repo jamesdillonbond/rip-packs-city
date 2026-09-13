@@ -849,8 +849,16 @@ export async function GET(req: NextRequest) {
     q = q.range(0, fetchLimit - 1)
 
     // Run editions lookup in parallel with the main query.
+    // ⚠ BOUNDED (2026-09-13). The modern path above is bounded at 8 s and,
+    // when it times out, falls through HERE — where this read ran with no
+    // bound and the lambda was killed at its 30 s wall: measured on the
+    // 2026-09-13 production deploy, `get_topshot_sniper_deals` "read exceeded
+    // 8000ms" → "falling through to cached_listings" → "Task timed out after
+    // 30 seconds", a 504 in place of the honest 503 three lines below (12 of
+    // 587 /api/market responses in 24 h were 504s). A read that is merely slow
+    // errors nowhere on its own; this makes it reach the branch that exists.
     const [{ data, error, count }, editionLookup] = await Promise.all([
-      q,
+      boundedRead(q, "api/market/cached_listings"),
       loadEditionLookup(collectionId),
     ])
 
