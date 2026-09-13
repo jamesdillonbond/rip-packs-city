@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 🚨 MAIN WAS RED FROM A CONCURRENT-SESSION MERGE ARTIFACT — two sessions bounded the same two fetches 13 minutes apart and the rebase kept BOTH · Claude Code cloud, overnight autonomous
+
+**Shipped:** `app/api/sentinel/route.ts` — two duplicate `signal:` keys removed. **REVERT:** `git revert <sha>`. **No behavioural change whatsoever** (see below).
+
+🚨 **`npx tsc --noEmit` FAILED ON `main`:** `TS1117: An object literal cannot have multiple properties with the same name` at `route.ts:258` and `:294`.
+
+⭐ **NEITHER SESSION'S CHANGE WAS WRONG — the MERGE was.** Both bounded the Telegram and Resend sends on the same night: mine at **07:27Z** as `signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS)` (a named constant), the other session's at **07:40Z** as an inline `signal: AbortSignal.timeout(10_000)`. Rebased together, git kept **both keys in the same object literal** — textually a clean merge, semantically a duplicate.
+
+⭐ **THE FIX IS BEHAVIOUR-PRESERVING AND THAT IS CHECKABLE, NOT ASSERTED.** Both values are **10,000 ms**, and in a JS object literal **the LAST duplicate key wins** — which was already `DELIVERY_TIMEOUT_MS`. So the runtime bound before and after this commit is the same constant with the same value; only the dead line is gone. The named constant is kept (single source of truth) along with the other session's comment, which is the better one.
+
+⚠ **THE LESSON, and it is about how this failure HID.** A duplicate object key is **legal JavaScript** — nothing throws, nothing warns at runtime, and the alarm kept working. **Only the type-checker sees it**, so the defect was invisible to every behavioural test and to production. ⭐ **And it is invisible to code review too: the two lines are 13 lines apart, separated by a `body:` block**, so neither reads as a duplicate of the other.
+
+⭐ **Found by running `tsc` after resolving an unrelated rebase conflict** — not by an alarm. **After a rebase that touches a file two sessions edited, run the type-checker before assuming a clean merge is a correct one.**
+
+**Verified:** `tsc` exit 0; 7 sentinel/ratchet suites, **109 tests**, including `unbounded-fetch-in-after-routes-ratchet` and `after-route-heartbeat-ratchet` — the two guards that actually care about these bounds.
+
 ### 2026-09-13 · ⚠️ A REAL LIMIT OF TONIGHT'S COUNTERPARTY FIX, found by watching it rather than by being told · Claude Code cloud, overnight autonomous
 
 **Shipped: docs only** — #99 updated. No code, no migration, no data. **Nothing was acted on, and the reason is a comparison, not caution.**
