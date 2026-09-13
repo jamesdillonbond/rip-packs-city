@@ -100,6 +100,20 @@ interface HealthCheck {
 // CRITICAL (the 2026-06-10 12:44Z Telegram CRITICAL was 4 parts timeout noise,
 // 0 parts data loss). Genuine threshold breaches (zero sales, stale FMV) still
 // evaluate normally and stay CRITICAL.
+// The text a check quotes for a failed read. supabase-js surfaces a request
+// that was aborted or dropped under load as { message: "" }, and thirteen arms
+// interpolate that message directly — so a sweep under saturation printed
+// "Query error: " with nothing after it (09:51 and 11:41 PT, 2026-09-13), a
+// detail that reads like a truncated line rather than a stated condition. The
+// classification (isSaturationError treats empty as inconclusive) was already
+// right; the sentence was not.
+function errorText(msg: string | undefined | null): string {
+  const m = String(msg ?? "").trim();
+  return m.length > 0
+    ? m
+    : "(empty error message — supabase-js reports a request aborted or dropped under load as an empty error; the read did not complete)";
+}
+
 function isSaturationError(msg: string | undefined | null): boolean {
   // Empty/missing message: supabase-js surfaces aborted/undici failures under
   // load as { message: "" }. An empty error can never PROVE data loss, so treat
@@ -574,7 +588,7 @@ async function runSentinel() {
       checks.push({
         name: "Sales Ingest (2h)",
         status: sat ? "warn" : "critical",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${error.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(error.message)}`,
       });
     } else {
       const forwardCount = count || 0;
@@ -807,7 +821,7 @@ async function runSentinel() {
       checks.push({
         name: "FMV Freshness",
         status: sat ? "warn" : "critical",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${error.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(error.message)}`,
       });
     } else if (!data || data.length === 0) {
       checks.push({
@@ -878,7 +892,7 @@ async function runSentinel() {
       checks.push({
         name: "Ownership Index Freshness",
         status: sat ? "warn" : "critical",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${ownErr.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(ownErr.message)}`,
       });
     } else if (!ownRows || ownRows.length === 0) {
       // ⚠ NOT healthy, and NOT a number we can state. pipeline_runs prunes at ~73h
@@ -995,7 +1009,7 @@ async function runSentinel() {
       checks.push({
         name: "Portfolio Cache Drain",
         status: sat ? "warn" : "critical",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${drainErr.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(drainErr.message)}`,
       });
     } else if (!drainRows || drainRows.length === 0) {
       // Same reasoning as Ownership above: pipeline_runs prunes at ~73h, so an
@@ -1663,7 +1677,7 @@ async function runSentinel() {
       checks.push({
         name: "Dune Spend (cycle)",
         status: "warn",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${duneErr.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(duneErr.message)}`,
       });
     } else if (!dune || typeof dune !== "object") {
       // ⚠ An unreadable meter is reported as unreadable. Rendering it as 0%
@@ -1877,7 +1891,7 @@ async function runSentinel() {
       checks.push({
         name: MAINTENANCE_CHECK_NAME,
         status: "warn",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${mlErr.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(mlErr.message)}`,
       });
     } else {
       // warn_at is MINUTES a single operation may have run (config row; default 30).
@@ -1907,7 +1921,7 @@ async function runSentinel() {
       checks.push({
         name: "Trust Health",
         status: "warn",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${trustErr.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(trustErr.message)}`,
       });
     } else {
       const rows: any[] = trustRows ?? [];
@@ -2164,7 +2178,7 @@ async function runSentinel() {
       checks.push({
         name: "Alert Delivery",
         status: sat ? "warn" : "critical",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${delErr.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(delErr.message)}`,
       });
     } else {
       // ⚠ A failed read must not render as an answer, and `[]` from a successful
@@ -2207,7 +2221,7 @@ async function runSentinel() {
       checks.push({
         name: "Zero-Yield Lanes",
         status: sat ? "warn" : "critical",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${zyErr.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(zyErr.message)}`,
       });
     } else {
       const verdict = summariseZeroYield(zyData as any);
@@ -2243,7 +2257,7 @@ async function runSentinel() {
       checks.push({
         name: CADENCE_CHECK_NAME,
         status: sat ? "warn" : "critical",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${ccErr.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(ccErr.message)}`,
       });
     } else {
       const verdict = summariseCadenceCollapse(
@@ -2283,7 +2297,7 @@ async function runSentinel() {
       checks.push({
         name: WALL_KILLS_CHECK_NAME,
         status: "warn",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${wkErr.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(wkErr.message)}`,
       });
     } else {
       const verdict = summariseWallKills(wkData as any, thr(WALL_KILLS_CHECK_NAME, "warn_at", 3));
@@ -2311,7 +2325,7 @@ async function runSentinel() {
       checks.push({
         name: PG_NET_CHECK_NAME,
         status: "warn",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${pnErr.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(pnErr.message)}`,
       });
     } else {
       // warn_at is the STORE SIZE in bytes (the slow-moving fact an operator tunes);
@@ -2343,7 +2357,7 @@ async function runSentinel() {
       checks.push({
         name: PROBE_COST_CHECK_NAME,
         status: "warn",
-        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${pcErr.message}`,
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(pcErr.message)}`,
       });
     } else {
       const verdict = summariseProbeCost(pcData as any, thr(PROBE_COST_CHECK_NAME, "warn_at", 50_000));

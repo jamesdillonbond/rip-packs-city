@@ -690,6 +690,10 @@ describe("POST /api/sentinel — full battery", () => {
     const sales = check(report, "Sales Ingest (2h)")
     expect(sales.status).toBe("warn")
     expect(report.status).not.toBe("CRITICAL")
+    // And the SENTENCE states the condition: "Query error: " with nothing after
+    // it read like a truncated line on two real sweeps (2026-09-13).
+    expect(sales.detail).not.toMatch(/Query error:\s*$/)
+    expect(sales.detail).toMatch(/empty error message/)
   })
 
   // ── Sales Ingest (2h): partition pruning + the forward/total distinction ──
