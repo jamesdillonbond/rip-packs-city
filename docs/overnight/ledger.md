@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ✅ REGISTER — #89 was closed hours ago by a change aimed at something else, and the fix that closed it makes #90's cache the WORSE branch · Claude Code cloud, Trevor: "keep going"
+
+**Shipped (docs only):** `docs/reference/known-issues.md` — **#89 CLOSED**, **#90** Pinnacle half retired + the egress contradiction half-measured. Revert: `git revert` the commit whose message starts `docs(register): close #89`.
+
+**⭐ #89 IS CLOSED, AND IT WAS CLOSED SIDEWAYS.** `0f9196dac` ("route oversized card art through the image optimizer") was written for Top Shot Ultimates — its measurements are six `/editions/` files per tier, **no Pinnacle**. But Pinnacle is covered by design: `ogOptimizedTarget()` strips `BASE_URL` so our own urls take the LOCAL branch, and the docstring says exactly that (*"what keeps the IPFS proxy and the Pinnacle resolver on the local branch"*).
+
+**🔵 MEASURED IN PRODUCTION, the same render #89 is written about:** `/_next/image?url=%2Fapi%2Fpublic%2Fpinnacle-image%2FLEV2-LION-CARE-S6&w=640&q=75` → **200, `image/png`, 61,788 B, `x-vercel-cache: MISS`** (cold, not a cached artifact). Against **2,896,041 B**: **47× smaller, ~68× under the 4 MB cap.** ⛔ **All three options #89 lists — a width param on `/api/public/pinnacle-image`, a per-host cap, accepting the placeholder — are moot.** ⚠ n=1 render, but the mechanism is the OPTIMIZER, not the asset, so it generalises where a single asset measurement would not.
+
+**⚠ NEITHER ITEM SAID SO, WHICH IS THE POINT.** The closing commit does not mention Pinnacle or #89, and #89 still read 🟡 with three live options and a "next larger render reintroduces the drop" warning. **A fix landing sideways is exactly how an item stays open long after it is dead** — this register's own *rots in the reassuring direction* rule.
+
+**🚨 AND THE SAME MEASUREMENT INVERTS #90.** That item's Pinnacle argument is *"`pinnacle_render_cache` is the one that now matters — load-bearing for #89"*. With #89 closed it is load-bearing for nothing — **and it is now the worse branch.** `ogImageDataUri` reads the cache FIRST and returns on a hit, short-circuiting the optimizer leg: cached row **316,140 B** vs optimizer **61,788 B**, so **the cache is 5.1× LARGER than the fallback it pre-empts.** ⛔ **Not an error by its author** — the cache-first read shipped hours *before* the optimizer leg, the same day, and was overtaken.
+
+**✅ So #90's blocker dissolves: populating the cache buys nothing, and the residential-IP question no longer needs answering for Pinnacle.** Options narrow to *drop the Pinnacle cache read* or *move it after the optimizer* — neither needs Trevor, a home scheduler, or an egress decision. ⛔ **NOT changed here on purpose: `lib/og/img-data.ts` took three commits from a concurrent session inside the hour**, and editing a file another session is working in is how this estate loses work.
+
+**⭐ HALF THE EGRESS CONTRADICTION IS NOW MEASURED.** #90 called the reconciliation *"inferred, not measured"*. The **signing hop demonstrably works from datacenter egress**: our route returns a 302 with a freshly-signed CDN Location from Vercel (`x-vercel-id: iad1`), and the optimizer then reads that asset — 61,788 B came back. **That refutes `trophy-case/pdf`'s blanket "the asset CDN 403s all datacenter egress" as stated.** Only the unsigned/durable url remains unmeasured.
+
+**🚨 AND A TRAP THIS ENVIRONMENT SETS, recorded so the next session does not file a false confirmation.** Our **own agent proxy** blocks `www.rippackscity.com` AND `assets.disneypinnacle.com`, and it denies with **403**. A probe here returns `curl: (56) CONNECT tunnel failed, response 403` — which reads exactly like Dapper's WAF confirming #90's claim, **and is not**. ⭐ **Discriminator: the proxy denies at CONNECT with no HTTP response body; a real WAF 403 is an HTTP response.** *Read the error string, not the number* — the same rule this repo already has for push failures.
+
+**⚠ The `badge_icon_cache` half of #90 is untouched and stays open** — different table, different consumer, its 0-of-15 key-join finding unaffected.
+
+**Gates:** docs only; index regenerated (**#89 now ✅ closed**, derived from its own opener; #90 correctly still open); `known-issues-index-lists-every-item` 9 pass; `check-memory-doc-links` 196; ledger guards 3 / 0.
+
 ### 2026-09-12 · ✅ DB — the trophy render fix was ON MAIN BUT NOT IN THE DATABASE; applied, and the impossible `#1017/50` now reads `#1017/2034` · Cowork (cloud), Trevor: "take care of that yourself"
 
 The 2026-09-11 Cowork series landed on `main` through `cowork-push` (five commits,
