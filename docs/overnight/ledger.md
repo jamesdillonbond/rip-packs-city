@@ -48,7 +48,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ### 2026-09-12 · 🔵 MEASUREMENT+CORRECTION (docs only) — the `/_next/image` ceiling is ≈14,462 and it CONFIRMS tonight's earlier estimate; plus Cowork's player-name finding is real but scoped to the wrong card · Claude Code, from Cowork verification `2026-09-12(h)`
 
-**Shipped:** `docs/reference/known-issues.md` (new items **#95**, **#96**). **No code, no DB, no deploy wanted** — ⚠ a docs-only tip suppresses the Vercel build, which is correct here rather than the trap this file warns about. **Revert:** `git revert` the commit whose message starts `docs(register): the /_next/image ceiling is measured`.
+**Shipped:** `docs/reference/known-issues.md` (new items **#95**, **#96**), this entry, and — in the third commit below — a **comment-only** correction to `lib/sitemap-data.ts`. **No DB.** ⚠ **THIS LINE SAID "No code" AND WAS TRUE WHEN WRITTEN; THE THIRD COMMIT MADE IT FALSE AND IT IS CORRECTED HERE RATHER THAN LEFT** — a `Shipped:` line that under-reports its own blast radius is how a revert path goes stale. The first two commits are docs-only (a docs tip suppresses the Vercel build, correct here rather than the trap this file warns about); the third touches a `.ts` file and therefore deploys, carrying **no behaviour change** — the edit is inside a comment and `tsc` + the sitemap suites are green. **Revert:** `git revert` each of `docs(register): the /_next/image ceiling is measured`, `docs(register): correct #95's two Top Shot legs`, and `fix(sitemap): the Pinnacle row count is a dated sample` — independent of one another, and none has a DB half.
 
 ---
 
