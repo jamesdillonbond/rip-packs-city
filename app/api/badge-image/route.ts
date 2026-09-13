@@ -32,6 +32,24 @@ const TOPSHOT_SLUGS = new Set([
 // 2026-07-27). A bound only helps if it fires FIRST.
 const UPSTREAM_TIMEOUT_MS = 8_000
 
+// Log the upstream round-trip only when it is SLOW, and the threshold is a
+// deliberate censor rather than a rounding of "noisy".
+//
+// ⭐ WHY THIS EXISTS AT ALL (register #91). The caller
+// (`lib/og/official-mark-art.ts`) bounds these fetches at
+// `OFFICIAL_ART_BUDGET_MS = 4_000` and logs "unavailable after <elapsed>ms".
+// ⛔ THAT LOG CAN NEVER ANSWER THE QUESTION IT WAS ADDED FOR: because the
+// caller truncates itself at the budget, its elapsed is always ~= the budget
+// (4007ms and 4013ms are the two observed instances). It records THAT we gave
+// up, never WHAT WE WOULD HAVE WAITED -- and #91's option (a), "raise the
+// budget to ~6-7s", can only be sized from the latter. The callee is the only
+// place the true cold latency is observable, and it logged nothing on success.
+//
+// ⚠ CENSORED BELOW THE THRESHOLD ON PURPOSE, so a reader does not mistake this
+// for a full distribution: warm hits are the overwhelming majority and would
+// bury the tail. The question is the UPPER tail, so only that is recorded.
+const SLOW_UPSTREAM_LOG_MS = 1_000
+
 const ALLDAY_SLUGS = new Set([
   'all-day-debut','rookie-year','rookie-mint','challenge-reward',
   'championship-year','dynamic-moment','hall-of-fame','crafted-reward',
@@ -74,6 +92,7 @@ export async function GET(request: NextRequest) {
   // (see `scripts/check-unbounded-server-reads.mjs`, which records the same
   // shape for the Supabase-read class).
   let upstream: Response
+  const startedAt = Date.now()
   try {
     upstream = await fetch(upstreamUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -87,9 +106,17 @@ export async function GET(request: NextRequest) {
     // `AbortSignal.timeout` rejects with a DOMException named "TimeoutError",
     // anything else is a genuine transport fault, and raising the bound only
     // helps the first kind.
-    const name = err instanceof Error ? err.name : 'unknown'
+    // ⚠ `errName`, NOT `name`. This was `const name = err.name`, which SHADOWED
+    // the badge slug read at the top of the handler -- so this line printed
+    // `name=TimeoutError` while the success line prints `name=rookieMint`, and
+    // one key meant two different things depending on which branch emitted it.
+    // The slug is the field a reader actually needs here: #91's caller names the
+    // URLs it gave up on, and this is where they should be matched.
+    const errName = err instanceof Error ? err.name : 'unknown'
     console.log(
-      `[badge-image] upstream fetch failed src=${src} name=${name} reason=${name === 'TimeoutError' ? 'abort_timeout' : 'transport'}`,
+      `[badge-image] upstream fetch failed src=${src} name=${name} err=${errName} ` +
+        `reason=${errName === 'TimeoutError' ? 'abort_timeout' : 'transport'} ` +
+        `elapsed_ms=${Date.now() - startedAt}`,
     )
     return new NextResponse(null, { status: 502 })
   }
@@ -120,11 +147,25 @@ export async function GET(request: NextRequest) {
   try {
     buf = await upstream.arrayBuffer()
   } catch (err) {
-    const name = err instanceof Error ? err.name : 'unknown'
+    // Same shadowing fix as the fetch branch above -- see the note there.
+    const errName = err instanceof Error ? err.name : 'unknown'
     console.log(
-      `[badge-image] upstream body failed src=${src} name=${name} reason=${name === 'TimeoutError' ? 'abort_body' : 'transport_body'}`,
+      `[badge-image] upstream body failed src=${src} name=${name} err=${errName} ` +
+        `reason=${errName === 'TimeoutError' ? 'abort_body' : 'transport_body'} ` +
+        `elapsed_ms=${Date.now() - startedAt}`,
     )
     return new NextResponse(null, { status: 502 })
+  }
+  // ⭐ THE MEASUREMENT #91 NEEDS. Timed across fetch AND body read, because the
+  // caller's budget covers both and a bound that stopped at the headers would
+  // under-report exactly the slow case. `name` is included so a line here can be
+  // matched to the specific URLs the caller names when it gives up.
+  const upstreamMs = Date.now() - startedAt
+  if (upstreamMs >= SLOW_UPSTREAM_LOG_MS) {
+    console.log(
+      `[badge-image] upstream slow src=${src} name=${name} elapsed_ms=${upstreamMs} ` +
+        `(threshold ${SLOW_UPSTREAM_LOG_MS}ms, timeout ${UPSTREAM_TIMEOUT_MS}ms)`,
+    )
   }
   const contentType = upstream.headers.get('content-type') ?? 'image/webp'
   return new NextResponse(buf, {
