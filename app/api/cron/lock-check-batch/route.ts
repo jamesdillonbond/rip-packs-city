@@ -77,6 +77,30 @@ const BATCH_LIMIT = 400
 // caught (see the heartbeat note below), and the 202 has already told the caller
 // the tick succeeded.
 //
+// 🚨 HOW TO EVALUATE THAT TRIGGER — IT IS NOT A 24-HOUR p90, AND READING IT AS
+// ONE REVERTS A HEALTHY SETTING. Measured 2026-09-13: the pooled 24 h p90 was
+// 242,273ms, 34% over the trigger, with 13 of 48 runs failing — which reads as
+// a clear revert. Split by hour it is entirely an instance-wide IO-saturation
+// spell, not this batch:
+//
+//   09-12 16:00 → 09-13 02:00 PT (healthy)   p90 36–89s      0 failures
+//   09-13 04:00 → 14:00 PT (saturation)      p90 217–271s    1–2 per hour
+//   09-13 15:00 PT (recovered)               p90 28.5s       0 failures
+//
+// Every failure was `get_lock_check_batch: … canceling statement due to
+// statement timeout` with rows_written 0 — CANDIDATE SELECTION dying on the
+// statement budget, i.e. the DB being slow, not the Cadence leg being too big.
+// BATCH_LIMIT cannot move that, so reverting would have cost half the breadth
+// coverage and fixed nothing.
+//
+// ⭐ So: evaluate the p90 over a SATURATION-FREE window, and before believing a
+// breach, check whether unrelated lanes moved with it (`table:cached_listings`
+// in smoke_test_results went 8,505ms → 745ms across the same recovery — a
+// control this batch cannot influence). A threshold on a pooled statistic with
+// no exclusion for instance-wide saturation is not a trigger this lane owns.
+// The repo's rule in one line: a rate pooled across an incident measures the
+// incident.
+//
 // ⚠ This doubles BREADTH COVERAGE, not the user-facing freshness guarantee —
 // that is the on-view refresh described below. Do not describe it as making
 // displayed locks more trustworthy; it makes the background sweep reach twice as
