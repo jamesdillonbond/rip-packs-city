@@ -1,30 +1,55 @@
 {
-  "generated_at_pt": "2026-09-12 01:0x PT",
-  "generated_at_utc": "2026-09-12T08:0xZ",
-  "pass": "rpc-nightly-autonomous-pass (desktop, NO-PUSH — bash/git mount dead 4th night, Sept-8 Windows Plan9 breakage; DB/Vercel/Sentry/artifacts + file tools only). Handoff/ledger/metrics UNCOMMITTED on mount; commit from desktop.",
+  "generated_at_pt": "2026-09-13 01:1x PT",
+  "generated_at_utc": "2026-09-13T08:1xZ",
+  "pass": "rpc-nightly-autonomous-pass (desktop, NO-PUSH — sandbox shell dead 5th night, Sept-8 Windows Plan9 breakage; DB/Vercel/Sentry reads + file-tool mount writes only). Handoff/ledger/metrics UNCOMMITTED on mount; commit from desktop.",
   "shipped": 0,
   "reverted": 0,
-  "verdict": "QUIET / QUEUE-ONLY — nothing clearly-safe to ship; acute fixes are Trevor-gated behavioral changes; instance IO-contended.",
-  "health_at_close": "security 4/4 clean; 1 trust BREACH topshot_impossible_parallel_serials=5 (known #82, was 4); all other 38 trust arms ok+fresh (trust_precompute_max_age_hours 5.27); rpc_ops_snapshot() runs clean again (Q1 regression resolved).",
+  "verdict": "QUIET / QUEUE-ONLY — NO-PUSH removes code/deploys AND a concurrent session was actively pushing to main (prod BUILDING + CANCELED burst) => collision gate => queue-only. Only DB candidate (Q-SCB partial index) is a deferred heavy CONCURRENTLY build; instance spell-prone. Nothing clearly-safe to ship.",
+  "health_at_close": "security 4/4 clean; 1 trust BREACH topshot_impossible_parallel_serials=29 (was 5 on 09-12; #82 mis-keyed-sales detector working as designed, repair Trevor-gated destructive); 37 other trust arms ok+fresh; rpc_ops_snapshot() clean.",
   "security_public_invariants_rows": 0,
   "security_anon_write_surface_rows": 0,
   "security_secdef_anon_exec_drift": "[]",
-  "trust_breaches": ["topshot_impossible_parallel_serials=5 (breach_at 3, known #82)"],
-  "trust_precompute_max_age_hours": 5.27,
+  "trust_breaches": [
+    "topshot_impossible_parallel_serials=29 (breach_at 3, #82; was 5 on 09-12 — detector working, repair is destructive re-key, Trevor)"
+  ],
+  "trust_precompute_max_age_hours": 5.26,
   "board_mv_refresh_stale_hours": 1.94,
-  "rpc_ops_snapshot_status": "OK (completed clean; last night it timed out inside board_mv_refresh_max_stale_hours — Q1, now resolved)",
-  "saturation_m11": {"startup_timeouts_24h": 261, "startup_timeouts_30m": 15, "spell_hours_72h": 14, "bar": "0 in 7 days", "named_culprit": "pg_cron jobid 355 rpc-backfill-pinnacle-trade-acquisitions (Q-355)"},
-  "pipeline_alerts_notable": "fmv-backfill 66.7% + price-snapshots 33% + sales-counterparty-backfill 47% (Q-SCB) + run-insider-detectors 28% timeout-under-load (chronic); pack_distributions 9d 'stale' = BENIGN (updated 06:17Z fresh); snapshot-institutional-wallets silent 41h (Q-INST); match-topshot-players weekly full run upstream-timeout (Q-MTP)",
-  "db_size_mb": 28343,
-  "db_size_mb_prev_0911": 26796,
-  "db_growth_note": "+1547 MB in ~24h — Atlas events + cron.job_run_details (no retention).",
-  "fmv_high_med_share_pct_by_collection_note": "from rpc_ops_snapshot fmv_by_collection: TS HIGH 1470 + MED 6420 of ~14431 non-empty-ex-STALE => ~M1 leg; NFL HIGH 120 + MED 1730; candy/pinnacle in own tables. Read as RANGE, swings on sweep position.",
-  "editions_by_collection": {"nba_top_shot": 14015, "nfl_all_day": 6190, "ufc_strike": 518, "laliga_golazos": 575, "candy_mlb": 125},
+  "rpc_ops_snapshot_status": "OK (completed clean)",
+  "pipeline_alerts_notable": "offers-sweep 100% dead (#81 Top Shot 530/1033 since 08-28, Trevor retire/re-key); apply-fmv-haircut cron_silent ~33h (last 09-11 22:35Z, cron-job.org caller, Trevor); chronic timeout-under-load: sales-counterparty-backfill 38.3%, fmv-backfill 43.8%, lock-check-batch 36.4%, price-snapshots 37.5%, run-insider-detectors 40.7%, allday-buyer-backfill 33.3%; pack_distributions 10d 'stale' = BENIGN; unmapped-nfl_all_day 30326 actionable draining ~18d; Atlas 403/moment-moved 400 arms all info+attributed",
+  "sentry_24h": "8 unresolved, all 'Consecutive HTTP' perf spans on /api/wallet-backfill-allday & /api/wallet-backfill-pinnacle, 0 users, 1-6 events each — known sequential-fetch shape on backfill crons; browser SDK off by decision (#34)",
+  "db_size_mb": 29215,
+  "db_size_mb_prev_0912": 28343,
+  "db_growth_note": "+872 MB in ~24h — Atlas events + cron.job_run_details (no retention).",
+  "fmv_high_med_share_pct_by_collection_note": "from rpc_ops_snapshot fmv_by_collection: TS HIGH 1536 + MED 6368; NFL HIGH 131 + MED 1676; candy/pinnacle in own tables. Read as RANGE, swings on sweep position.",
+  "editions_by_collection": {
+    "nba_top_shot": 14015,
+    "nfl_all_day": 6190,
+    "ufc_strike": 518,
+    "laliga_golazos": 575,
+    "candy_mlb": 125
+  },
   "sentinel_ts_uuid_editions_48h": 0,
-  "vercel": "not re-polled deep this run (no code change); prior run healthy. No ERROR deploys observed.",
-  "artifacts": "11 enumerated, none flagged broken, none repaired (flagship rpc-live-health validated clean by 20:09 PT monitor)",
-  "post_ship_watch": {"pinnacle_discovery_cursored": "HEALTHY (q4_targets 7->6, extra fields live ~05:22Z)", "offers_sweep_disable": "NOT effective (still 3x/12h @ 02:31Z; workflow commit push-gated)", "q1_board_mv": "resolved (snapshot clean)"},
-  "queued": ["Q-355 pinnacle-trade-acquisitions 14-day window (Trevor; batch-cut + expr-index REFUTED)", "Q-SCB sales-counterparty-backfill exhaustion state + partial-index source predicate (quiet-window)", "Q-INST snapshot-institutional-wallets silent 41h (cron console)", "Q-MTP match-topshot-players weekly upstream-timeout (retry or wait 09-18)", "Q-PACKREALITY board empty legit; route-honesty read deferred"],
-  "needs_trevor": ["cron.job_run_details retention (destructive)", "Atlas-events retention (destructive; DB growth)", "#55 Routines enabled:false", "#22 credential-purge GC + rotate", "inbox archival (435 files, needs push-capable pass)"],
-  "ops_note": "NO-PUSH: handoff + ledger entry + this file sit UNCOMMITTED on the mount. Mount tree is stale vs origin (recent Claude Code commits not pulled) — on desktop git fetch + reconcile, re-splice the ledger entry at the first ^### if needed, run the three ledger guards, then commit."
+  "vercel": "prod READY; current tip BUILDING from concurrent 'Claude' docs(inbox) push; no active ERROR prod (2 ERRORs in 20-window are oldest, superseded by later READYs).",
+  "artifacts": "11 enumerated, none flagged broken, none repaired (flagship rpc-live-health validated clean by 09-12 monitor; no logic drift; data fresh-on-open).",
+  "post_ship_watch": {
+    "sales_counterparty_cursor_reset_0912": "WORKED — ~3,659 claimable 2026 rows drained (cheap 10s branch rows_found=0), lane descended back into exhausted zone as predicted; durable fix stays Q-SCB; NOT a regression",
+    "cloud_migrations_0912": "20260912143408 + 20260912152337 inside 24-48h no-edit window, untouched, no correlated regression"
+  },
+  "queued": [
+    "Q-MISKEY topshot mis-keyed-sales pile climbing 4->5->29; remap_topshot_parallel_to_base_misattributed() has no cron, destructive UPDATE (Trevor)",
+    "Q-SCB sales-counterparty source-predicate partial index (1.47GB CONCURRENTLY, quiet-window; DB-only so NO-PUSH-eligible when instance calm)",
+    "Q-81 offers-sweep/deal-floor-serials dead (Top Shot host down; find successor or retire)",
+    "Q-HAIRCUT apply-fmv-haircut silent ~33h (cron-job.org re-enable, Trevor)"
+  ],
+  "needs_trevor": [
+    "Q-MISKEY destructive sales re-key",
+    "cron.job_run_details retention (destructive)",
+    "Atlas-events retention (destructive; DB growth)",
+    "#55 Routines enabled:false",
+    "#22 credential-purge GC + rotate",
+    "cron-job.org re-enables (offers-sweep, apply-fmv-haircut, #80 dead lanes)",
+    "inbox archival (needs push-capable pass)"
+  ],
+  "ops_note": "NO-PUSH: handoff + ledger entry + this file UNCOMMITTED on mount. Origin is AHEAD (concurrent session pushed tonight) — on desktop git fetch + reconcile, re-splice the ledger entry at first ^### if needed, run the three ledger guards, then commit. Sandbox shell down since 2026-09-08 (Sept-8 Windows update; status.claude.com incident).",
+  "committed_note": "COMMITTED LATE from Trevor's box 2026-09-13 ~09:3x PT, ~8h after generation, because the pass had no push path. Origin was 236 commits ahead by then. READ AS A 01:1x PT SNAPSHOT, NOT AS CURRENT: re-derived at commit time (09:26 PT), pinnacle-metadata-backfill / snapshot-pack-asks / golazos-listings-indexer had all RECOVERED, the vercel.json ignoreCommand deploy ERROR was fixed upstream by be925481d (tip READY at 2b0caadf9), and #82 closed in the register. The one item still live is rpc-ccm-step2 (pg_cron jobid 4, 25 23 * * *) timed out 09-12 23:25Z -> cross_collection_ts_set_overlap_mat 41.0h stale, no retry until tonight 23:25Z."
 }
