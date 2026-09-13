@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 📋 REGISTER — pg_cron waste is 39.6%, not the filed 22.6%, and the worst job's failure mode has FLIPPED to the opposite lever (#42) · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only** — `docs/reference/known-issues.md` (#42 re-measured). No code, no migration, no data.
+
+🚨 **DO NOT QUOTE #42's 22.6%.** 24 h of `cron.job_run_details`, with two prior days as the control:
+
+| window | runs | busy h | wasted h | wasted % |
+|---|---:|---:|---:|---:|
+| day −3 | 8,803 | 29.8 | 8.6 | 29.0% |
+| prior 24 h | 9,150 | **56.0** | **21.0** | 37.6% |
+| **last 24 h** | **9,287** | **47.0** | **18.6** | **39.6%** |
+
+⭐ **The run count is FLAT across all three days**, so the denominator is not moving — waste rose **29.0% → 39.6%** against constant firings, and two consecutive elevated days rule out a spell.
+
+🚨 **THE FRAME WORTH KEEPING: 47–56 BUSY HOURS PER 24-HOUR DAY ON A 2-CORE INSTANCE.** Jobs run concurrently so busy > wall is expected — **that is the point: cron alone is asking for ~2 cores continuously.** The saturation class (#73, #84, M11) as one number.
+
+⭐⭐ **CONCENTRATED: three jobs are 10.8 of the 18.6 wasted hours (58%).** `rpc-ts-listings-atlas-sync` alone is **6.7 h — 36% of ALL fleet cron waste**. Its **successful** runs take **25 s**; its **200 failures average 121 s** — the whole budget, producing nothing — on a job scheduled **every 2 minutes**.
+
+⛔ **AND ITS FAILURE MODE IS NOT WHAT THE REGISTER RECORDS.** #42/#80 document it as the worst `job startup timeout` victim (a WORKER-SLOT problem). **Today 189 of its 201 failures (94%) are `statement timeout`; only 11 are startup.** ⭐ **Opposite levers**: startup says fix concurrency/scheduling; statement says the job RAN and was cancelled at its budget, so the lever is the WORK. **A reader primed by the old framing would de-cluster schedules and change nothing.**
+
+⚠ **NOT ESTABLISHED, and the second one is this item's own hard-won lesson:** the 24 h window is not strictly comparable to the original 7-day figure; and ⛔ **it does NOT follow that fixing this job returns 6.7 h** — when that lever was last pulled, `rpc-refresh-perfect-mint-premiums` went from 27.8% of waste to 0.9% **and the total ratio did not move.** Cut ITEMS per tick, compare BUFFERS, and treat any predicted saving as unproven until a no-change control holds.
+
 ### 2026-09-13 · ✅ VERIFIED — the backstop freshness window is being read: 49 wallets skipped on a forced wave where every forced wave used to report 0 · Claude Code cloud, overnight autonomous
 
 **Shipped: docs only.** No code, no migration, no data. This closes the LAST unverified prediction from tonight's four ships.
