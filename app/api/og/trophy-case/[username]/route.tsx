@@ -185,6 +185,15 @@ export async function GET(
     // Characters that fit one line at 10px in a `w`-wide tile. Derived from the
     // width rather than fixed, because this card draws six 170px tiles or one
     // 280px tile from the same code and a budget that suits one clips the other.
+    // ⚠ AN ESTIMATE, AND IT IS THE REASON THE LINES ABOVE ARE ALSO CLAMPED IN
+    // CSS. At 10px mono with 0.3 letter-spacing a glyph advances ~6.3px, so
+    // `w / 5.6` hands out roughly 12% more characters than fit, and the overrun
+    // WRAPPED rather than clipped. The divisor is deliberately NOT retuned here:
+    // the advance above is arithmetic, not a measurement of the font satori
+    // actually loaded, and tightening it on arithmetic would ellipsise text that
+    // fits today. `whiteSpace: nowrap` makes the wrap impossible either way;
+    // what a corrected budget would buy is the "…" landing in the right place,
+    // which needs a rendered card to measure. Nothing in CI measures layout.
     const lineBudget = Math.max(12, Math.floor(w / 5.6))
 
     const jerseyFor = (t: Record<string, unknown>) =>
@@ -450,6 +459,18 @@ export async function GET(
                       fontSize: 10,
                       fontFamily: fam.mono,
                       letterSpacing: 0.3,
+                      // ⛔ ONE LINE, STRUCTURALLY — not by trusting the budget.
+                      // `lineBudget` below is a CHARACTER estimate, and when it
+                      // over-counts the line wraps inside a 13px box: two ~12px
+                      // lines centred in 13px means BOTH get sliced through the
+                      // middle, which reads as a smear rather than as text.
+                      // Disney Pinnacle is where it shows, because its set names
+                      // are the long ones (" Walt Disney Animation Studios • The
+                      // Lion King Vol.2") — Simba's tile, 2026-09-12.
+                      // `nowrap` cannot over-clip: a string that fits is
+                      // untouched, and one that does not now ends at the tile
+                      // edge instead of wrapping under it.
+                      whiteSpace: "nowrap",
                       overflow: "hidden",
                     }}
                   >
@@ -465,6 +486,8 @@ export async function GET(
                       fontSize: 10,
                       fontFamily: fam.mono,
                       letterSpacing: 0.3,
+                      // Same clamp, same reason — see the set line above.
+                      whiteSpace: "nowrap",
                       overflow: "hidden",
                     }}
                   >

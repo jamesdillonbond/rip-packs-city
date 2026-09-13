@@ -91,6 +91,50 @@ describe("trophy art is allowlisted, not accepted", () => {
     expect(sanitizeTrophyThumbnail("not a url at all")).toBeNull()
   })
 
+  // ── THE TRUNCATED STATIC RENDER (2026-09-12) ──────────────────────────────
+  // One live row — 1 of 22 — carried a HYBRID of Top Shot's two url shapes: a
+  // static filename cut off at `capture_` with the render endpoint's `/image`
+  // glued on. The host allowlist passed it, it 404s, and the collector it
+  // belongs to has exactly one pinned Moment, so their entire trophy case
+  // published as a blank slab.
+
+  it("REJECTS a static render filename that is not the end of the path", () => {
+    expect(
+      sanitizeTrophyThumbnail(
+        "https://assets.nbatopshot.com/editions/8_metallic_gold_le_rare/4b0d4e78/play_4b0d4e78_8_metallic_gold_le_rare_capture_/image",
+      ),
+    ).toBeNull()
+  })
+
+  it("REJECTS a static render filename carrying no image extension", () => {
+    expect(
+      sanitizeTrophyThumbnail("https://assets.nbatopshot.com/editions/x/y/play_y_x_capture_Hero_2880_2880"),
+    ).toBeNull()
+  })
+
+  it("⚠ KEEPS the two real shapes the rule could have swallowed", () => {
+    // The whole-population controls. Getting this wrong does not throw — it
+    // silently blanks the art of every row it over-matches, which is the
+    // failure mode the host list's own header warns about.
+    //
+    // 1. The intact Top Shot / Golazos static render.
+    expect(
+      sanitizeTrophyThumbnail(
+        "https://assets.nbatopshot.com/editions/8_wnba_base_set_common/b4284ee2/play_b4284ee2_8_wnba_base_set_common_capture_Hero_2880_2880_Transparent.png",
+      ),
+    ).not.toBeNull()
+    // 2. ⛔ ALL 6,190 NFL All Day editions — an EXTENSIONLESS `/editions/` path
+    // that is entirely valid. This is why the rule keys on the `play_` segment
+    // and not on "an /editions/ path must end in .png".
+    expect(
+      sanitizeTrophyThumbnail("https://media.nflallday.com/editions/2835/media/image?width=512&format=webp"),
+    ).not.toBeNull()
+    // 3. …and Top Shot's own extensionless render endpoint, 3,226 rows.
+    expect(
+      sanitizeTrophyThumbnail("https://assets.nbatopshot.com/media/51976956/image?width=400"),
+    ).not.toBeNull()
+  })
+
   it("the route calls the sanitizer instead of storing the body value", async () => {
     // A perfect sanitizer is inert if the handler still writes `thumbnailUrl`.
     const { readFileSync } = await import("node:fs")

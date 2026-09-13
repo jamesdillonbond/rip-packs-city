@@ -507,7 +507,15 @@ const PINS = [
     // Repointed 2026-09-11: the circulation expression is no longer a plain
     // COALESCE — it refuses a serial above the resolved edition's circulation
     // (the rendered `#1017/50`). D25's render half.
-    migration: "supabase/migrations/20260911093000_audit_20260911_trophy_slab_refuses_an_impossible_serial_over_circulation.sql",
+    // ⚠ REPOINTED 2026-09-12, hours after the impossible-serial guard above:
+    // `thumbnail_url` became COALESCE(tm.thumbnail_url, e.thumbnail_url) — the one
+    // display field in this function that had no live side, which is why a trophy
+    // with a junk stored URL published as a blank slab with nothing to fall back
+    // to. Two sessions replaced this function the same evening; the second read
+    // the LIVE definition before writing, which is the only reason the first
+    // one's guard is still here.
+    migration:
+      "supabase/migrations/20260913040000_audit_20260913_trophy_art_falls_back_to_the_live_edition_render.sql",
   },
   {
     fn: "get_moment_detail",

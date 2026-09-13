@@ -588,6 +588,25 @@ export async function GET(
     // resolving and the strip reads as smudge rather than as a badge. Three
     // marks at 19 plus their gaps occupy 65 of the 130px six-slab slot.
     const markSize = Math.max(15, Math.min(20, Math.round(grid.w / 7)));
+    // ⭐ THE CAPTION SCALES WITH THE SLAB, AND UNTIL 2026-09-12 IT WAS THE ONE
+    // THING THAT DID NOT. Everything else on a tile is derived from `grid.w` —
+    // the slab, the art, the badge glyphs — but the serial/tier strip was a
+    // hardcoded 10px in a 15px band. On the six-slab case that is correct and
+    // deliberate; on `trophyGrid(1)` the slab is 240×317, nearly four times the
+    // area, and the line that says "#1 / 1 ULTIMATE" stayed a sliver.
+    //
+    // ⚠ AND THE HERO IS THE COMMON CASE, not the edge one. Measured live
+    // 2026-09-12: of the 7 collectors who have pinned anything, **4 have
+    // exactly one trophy** and 3 have six. There is no one in between, so the
+    // 2- and 3-column widths below are untested by the live population and are
+    // deliberately left to fall out of the same formula rather than tuned.
+    //
+    // Floored at 10 — today's value — so the six-slab and four-slab cases are
+    // BYTE-IDENTICAL to what shipped before (130/17 and 138/17 both round to 8,
+    // which the floor lifts back to 10). Capped at 14: past that the mono strip
+    // starts competing with the art it is captioning.
+    const capSize = Math.max(10, Math.min(14, Math.round(grid.w / 17)));
+    const capHeight = Math.round(capSize * 1.5);
 
     const displayName = (bio?.display_name || username).toUpperCase();
     const tagline = bio?.tagline || "";
@@ -983,14 +1002,14 @@ export async function GET(
                           left: 0,
                           right: 0,
                           bottom: t.marks.length > 0 ? markSize + 8 : 0,
-                          height: 15,
+                          height: capHeight,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           gap: 4,
                           background: "rgba(0,0,0,0.72)",
                           fontFamily: mono,
-                          fontSize: 10,
+                          fontSize: capSize,
                           letterSpacing: 0.4,
                         }}
                       >

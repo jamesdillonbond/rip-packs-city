@@ -16,10 +16,15 @@
 --   * badges come from get_edition_badges_unified when the edition resolves, else
 --     the frozen tm.badges;
 --   * acquired_price / acquisition_method take the LATEST moment_acquisitions row;
---   * slots ordered ASC; a user with no slabs -> '[]' (never NULL).
+--   * slots ordered ASC; a user with no slabs -> '[]' (never NULL);
+--   * ⭐ ART IS THE ONE FIELD WHERE THE SNAPSHOT WINS — asserted in BOTH
+--     directions: a stored thumbnail is kept even when the edition has its own,
+--     and a NULL stored thumbnail falls back to the edition's render. The
+--     fallback half is new on 2026-09-12; until then there was no live side at
+--     all and a junk stored URL rendered as a blank slab with no recourse.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260911093000_audit_20260911_trophy_slab_refuses_an_impossible_serial_over_circulation.sql);
+-- (supabase/migrations/20260913040000_audit_20260913_trophy_art_falls_back_to_the_live_edition_render.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -88,7 +93,23 @@ BEGIN
         ELSE COALESCE(e.circulation_count, tm.circulation_count)
       END AS circulation_count,
       COALESCE(e.tier::text, tm.tier) AS tier,
-      tm.thumbnail_url,
+      -- ⭐ THE ONE DISPLAY FIELD WITH NO LIVE SIDE, until 2026-09-12. Every
+      -- neighbour here is COALESCE(e.<live>, tm.<snapshot>); art alone was the
+      -- frozen pin-time value, so a trophy whose stored URL was junk had
+      -- nothing to fall back to and published as a blank slab. One live row
+      -- (1 of 22) carries a truncated static render that 404s, and it belongs
+      -- to one of the 4 of 7 collectors who have pinned exactly one Moment.
+      --
+      -- ⚠ THE SNAPSHOT WINS HERE AND LOSES EVERYWHERE ELSE, deliberately, and
+      -- the asymmetry is measured rather than stylistic: 7 of the 8 rows where
+      -- the two disagree store assets.nbatopshot.com/media/<nft>/image?width=
+      -- 180|512 — a per-serial derivative of ~31KB — against an `editions`
+      -- master that is a 2880x2880 PNG of 4-7MB. Live-first would swap eight
+      -- working thumbnails for eight masters, several of them over the OG
+      -- card's own byte cap. So this is a FALLBACK, not a preference: it fires
+      -- only where the stored art is absent, which is exactly what
+      -- sanitizeTrophyThumbnail() produces when it rejects a URL.
+      COALESCE(tm.thumbnail_url, e.thumbnail_url) AS thumbnail_url,
       COALESCE(e.video_url, tm.video_url) AS video_url,
       COALESCE(f.fmv_usd, tm.fmv) AS fmv,
       f.confidence AS fmv_confidence,
@@ -183,7 +204,15 @@ INSERT INTO public.collections (id, slug, name) VALUES (:TS::uuid, 'nba_top_shot
 -- slab in slot 1: mB has NO editions row -> the frozen denorm values are used.
 INSERT INTO public.trophy_moments (id, slot, moment_id, edition_id, player_name, set_name, serial_number, circulation_count, tier, thumbnail_url, video_url, fmv, badges, note, collection_id, user_id, pinned_at) VALUES
   ('aaaaaaaa-0000-0000-0000-00000000000a'::uuid, 2, 'mA', 'k1', 'OldName',  'OldSet', 5, 999, 'COMMON', 'thumbA', 'oldvid', 10, ARRAY['frozenX'], 'noteA', :TS::uuid, :U1::uuid, now()),
-  ('bbbbbbbb-0000-0000-0000-00000000000b'::uuid, 1, 'mB', 'k2', 'Denorm2', 'DenSet', 3,  50, 'RARE',   'thumbB', 'denvid', 22, ARRAY['frozenY'], 'noteB', :TS::uuid, :U1::uuid, now());
+  ('bbbbbbbb-0000-0000-0000-00000000000b'::uuid, 1, 'mB', 'k2', 'Denorm2', 'DenSet', 3,  50, 'RARE',   'thumbB', 'denvid', 22, ARRAY['frozenY'], 'noteB', :TS::uuid, :U1::uuid, now()),
+  -- Slot 3: mE resolves to e1 (via tm.edition_id — no wmc row, deliberately) and
+  -- stores NO art: the shape sanitizeTrophyThumbnail() produces when it rejects a
+  -- URL, and the shape that used to render ART UNAVAILABLE forever.
+  -- ⚠ NAMED mE, NOT mC. `mC` is already taken by the impossible-pair fixtures
+  -- below — same moment_id, same uuid, and a wmc row pointing it at k3 — so the
+  -- obvious next letter silently re-pointed this slab at a different edition and
+  -- the assertion failed against `edthumb3`. Two fixture blocks, one namespace.
+  ('eeeeeeee-0000-0000-0000-00000000000e'::uuid, 3, 'mE', 'k1', 'Denorm3', 'DenSet3', 7, 70, 'COMMON', NULL,     'evid',   33, ARRAY['frozenZ'], 'noteE', :TS::uuid, :U1::uuid, now());
 
 INSERT INTO public.editions (id, collection_id, external_id, player_name, set_name, tier, circulation_count, video_url, jersey_number, play_category, team_name, series, thumbnail_url) VALUES
   ('e1111111-1111-1111-1111-111111111111'::uuid, :TS::uuid, 'k1', 'RealName', 'RealSet', 'RARE', 100, 'realvid', 5, 'Dunk', 'Blazers', 4, 'edthumb1');
@@ -229,7 +258,7 @@ BEGIN
 END $$;
 
 -- ── 2. two slabs, slot-ordered (slot 1 = mB first) ───────────────────────────
-SELECT _assert_eq(jsonb_array_length(public.get_trophy_slab_data(:U1::uuid))::text, '2', 'two slabs returned');
+SELECT _assert_eq(jsonb_array_length(public.get_trophy_slab_data(:U1::uuid))::text, '3', 'three slabs returned');
 SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 0 ->> 'moment_id'), 'mB', 'slot ASC -> slot 1 (mB) first');
 
 -- ── 3. mA: LIVE edition values win over the frozen denorm ─────────────────────
@@ -251,7 +280,18 @@ SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 0 ->> 'fmv'), '22',
 SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 1 ->> 'acquired_price'), '30', 'mA acquired_price = latest (30)');
 SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 1 ->> 'acquisition_method'), 'marketplace', 'mA method = latest');
 
--- ── 7. empty user -> '[]' ────────────────────────────────────────────────────
+-- ── 7. ART: the snapshot wins, and a MISSING snapshot falls back to the edition ─
+-- ⭐ BOTH DIRECTIONS, because each one alone is satisfied by a wrong function.
+-- `tm.thumbnail_url` alone (the pre-2026-09-12 definition) passes the first and
+-- fails the second; `COALESCE(e.thumbnail_url, tm.thumbnail_url)` — the obvious
+-- "make it consistent with every neighbour" edit — passes the second and fails
+-- the first, which in production would swap 8 small per-serial derivatives for
+-- 2880x2880 masters, several over the OG card's own byte cap.
+SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 1 ->> 'thumbnail_url'), 'thumbA', 'mA keeps its STORED art even though the edition has its own');
+SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 2 ->> 'thumbnail_url'), 'edthumb1', 'mE (no stored art) falls back to the edition render');
+SELECT _assert_eq((public.get_trophy_slab_data(:U1::uuid) -> 0 ->> 'thumbnail_url'), 'thumbB', 'mB (no edition at all) keeps its stored art');
+
+-- ── 8. empty user -> '[]' ────────────────────────────────────────────────────
 SELECT _assert_eq(public.get_trophy_slab_data(:U2::uuid)::text, '[]', 'no slabs -> empty array, not NULL');
 
 \set U3 '''30000000-0000-0000-0000-000000000003'''
