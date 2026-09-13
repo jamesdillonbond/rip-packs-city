@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 📋 REGISTER — the fleet's master alarm runs 27% of the time it is scheduled to, and the worst blind window in retention was 14 hours (#100) · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only** — `docs/reference/known-issues.md` (#100 NEW, index 97 → 98). No code, no migration, no data. Purely additive: **0 non-blank lines lost, 14 added, all belonging to the new item.**
+
+⭐ **THIS IS THE OTHER HALF OF #76, AND THE HALF NOBODY MEASURED.** #76 established the sentinel's message is *uninformative* (fixed earlier tonight — the header now names the changed SET). #100 establishes something independent and worse: **most of the time the sweep does not happen at all.**
+
+**73 h:** `pipeline-sentinel.yml` is `34 * * * *`, so **73 firings expected**; `pipeline_runs` holds **21 (28.8%)**.
+
+⭐⭐ **THE CAUSE IS SETTLED, NOT GUESSED — and it had two explanations pointing at opposite fixes.** A sweep killed at `maxDuration` writes NO row (`log_pipeline_run` is at the end of the route), so a low count could equally mean the route is dying. **GitHub's own run history discriminates: GHA STARTED only 20 scheduled runs** (+4 dispatch). So GitHub shed **53 of 73 (73%)**, and the route is fine — **21 sweeps logged against 24 starts (~88%)**. ⛔ *"Raise the timeout"* or *"make the sweep cheaper"* would fix nothing; the loss is upstream of the code.
+
+⭐ **STABLE, NOT A SPELL:** over the last 100 workflow runs (08-29 18:42Z → 09-13 05:13Z, **346.5 h**) the rate is **28.9%** — within a tenth of a point of the 73 h figure. Two windows, one rate.
+
+🚨 **THE TAIL, NOT THE MEAN, IS THE DECISION-RELEVANT NUMBER:** gaps (n=20) median **174 min**, max **843 min = 14.05 h**, and **6 of 20 exceed 4 h**. The 14-hour blind window was **09-10 02:57 → 17:01 PT — a complete working day**. And **09-11, the saturation-incident day, carries three ~5 h gaps**; #76's 18:47Z reading falls in the one stretch that was running.
+
+⛔ **AND THE ARM THAT SOUNDS LIKE IT COVERS THIS DOES NOT — checked in the source, not inferred from the name.** `Detector Health (GitHub Actions)` watches three OTHER workflows for consecutive FAILURE streaks. **A workflow that never fires is invisible to a failure-streak arm by construction: shed ticks produce no runs, and no runs produce no failures.**
+
+🟡 **NOT FIXED — the fix is an infrastructure choice and it is Trevor's:** move the trigger off GHA (pg_cron + pg_net or cron-job.org, both already reliable here), or keep GHA and **stop calling it hourly in the workflow**, because the schedule string is currently a claim the system does not honour.
+
+⚠ **A SELF-INFLICTED TRAP WORTH RECORDING, because this file already warns about it for the LEDGER and I hit it in a different file:** my first insert used `s.index('### Resolved')`, which matched a **substring in prose 1,265 lines above the real heading**, corrupting the index block (the generator then reported *"1 items inspected"*). **Anchor on `^### ` at LINE START, in every append-at-a-heading file — not just the ledger.** The guard caught it (4 red) and `git checkout` restored it, because that file was committed.
+
 ### 2026-09-13 · ✅ CODE+DOCS — two register items (one OPEN) were invisible to the index, and the guard built to prevent exactly that passed VACUOUSLY · Claude Code cloud, overnight autonomous
 
 **Shipped:** `docs/reference/known-issues.md` (#98 and #99 MOVED into `### Open`, index regenerated 95 → 97 entries), `__tests__/known-issues-index-lists-every-item.test.ts` (+2 cases). No migration, no data, no schedule. **REVERT:** `git revert <sha of "fix(register): two items sat outside the Open section">` — the move is content-preserving (verified as a multiset diff: **0 non-blank lines added, 0 lost**).
