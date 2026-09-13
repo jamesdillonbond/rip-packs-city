@@ -93,6 +93,54 @@ describe("known-issues STATUS INDEX", () => {
     expect(deriveTitle("plain text with no bold at all, quite long".repeat(4)).length).toBeLessThanOrEqual(96)
   })
 
+  // 🚨 THE GAP THIS GUARD WAS STRUCTURALLY SILENT ABOUT, AND IT HAD ALREADY BITTEN
+  // TWICE. `parseItems` slices `### Open` to the NEXT `### ` heading, so a numbered
+  // item written BELOW that window is invisible to it — and every assertion above
+  // then passes VACUOUSLY, because they each check that the items the parser FOUND
+  // are indexed. Measured 2026-09-13: #98 (OPEN) and #99 sat under `### Resolved`
+  // and were absent from the index, which ended at #97. The Resolved heading's own
+  // note records the same thing happening to item #8. A guard that cannot see the
+  // items placed outside its window is not a guard over the file.
+  //
+  // ⭐ Expressed as a BAN AT ZERO over the whole file rather than a count, so it is
+  // invariant under ordinary additions and deletions and reds only when an item is
+  // placed outside the Open section.
+  //
+  // ⭐ And it reuses the generator's OWN matcher instead of restating its item regex
+  // here: it re-parses a copy in which every heading after `### Open` is demoted, so
+  // the parser's window runs to EOF. A copied regex would be a claim about the
+  // generator that can go stale silently — the same failure one level up.
+  const widenTheOpenWindowToEOF = (body: string) => {
+    const i = body.indexOf("### Open") + "### Open".length
+    return body.slice(0, i) + body.slice(i).replace(/^### /gm, "#### ")
+  }
+
+  it("has NO numbered item outside the Open section — the parser's window is the whole population", () => {
+    const body = md()
+    const inOpen = parseItems(body).map((i: { id: string }) => i.id)
+    const anywhere = parseItems(widenTheOpenWindowToEOF(body)).map((i: { id: string }) => i.id)
+    expect(anywhere.length).toBeGreaterThan(20) // not vacuous
+    expect(anywhere.filter((id) => !inOpen.includes(id))).toEqual([])
+  })
+
+  it("that ban can actually FAIL — an item moved below the Open section is caught", () => {
+    // Positive control. Relocate the LAST item's heading line to the end of the
+    // file, which is exactly the shape #98/#99 and #8 arrived in.
+    const body = md()
+    const items = parseItems(body)
+    const last = items[items.length - 1]
+    const lines = body.split("\n")
+    const moved = lines[last.line - 1]
+    expect(moved).toMatch(/^[0-9]+[a-z]?\. /)
+    lines.splice(last.line - 1, 1)
+    const tampered = lines.join("\n") + "\n\n" + moved + "\n"
+    const inOpen = parseItems(tampered).map((i: { id: string }) => i.id)
+    const anywhere = parseItems(widenTheOpenWindowToEOF(tampered)).map((i: { id: string }) => i.id)
+    expect(inOpen).not.toContain(last.id)
+    expect(anywhere).toContain(last.id)
+    expect(anywhere.filter((id) => !inOpen.includes(id))).toEqual([last.id])
+  })
+
   it("the generator refuses to write an empty index", () => {
     expect(() => parseItems("# a file with no Open section\n")).toThrow(/no '### Open' heading/)
   })
