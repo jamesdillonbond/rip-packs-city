@@ -4,6 +4,20 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-12 ~23:2x PT (cloud session; one ship, and the two halves of it NOT to re-open)
+
+**Written for the 1am pass, ~1.5 h out.**
+
+1. ✅ **THE ALLDAY `opened_count` HALF OF #94 IS SHIPPED — do not re-derive it, and do not build the age window the item's exit asks for.** pg_cron **jobid 489** `rpc-allday-dist-opened-expiry` (`41 1-23/2 * * *`) now expires drifted AllDay dists so the deployed one-shot hydrator re-counts them. **The predicate is EVIDENCE, not age** — a candidate needs a `pack_rips` row sealed after that dist's own stamp, which we hold locally — and the register entry explains why the age window is the worse shape. Backlog at ship: **83 dists / 306 uncounted opens**, re-accrued in 11 days.
+
+2. ⛔ **DO NOT TOUCH ANYTHING FROM THIS SHIP — all of it is inside the 24–48 h no-edit window:** migrations `20260913055000` + `20260913060000`, `supabase/tests/expire_allday_dist_opened_drifted.sql`, the new PINS entry in `__tests__/db-invariants-drift-guard.test.ts`.
+
+3. 🔵 **WORTH A LOOK, NOT A REBUILD — read the first scheduled tick.** The job was registered at ~23:0x PT, so **the first scheduled fire is 07:41 UTC = 00:41 PT** — about 20 minutes before the pass starts, i.e. exactly one tick will exist. (The two canary ticks at 22:52 / 22:55 PT are already in the table and are `p_limit := 1` by hand, not scheduled runs — do not read them as cadence.) `SELECT extra, ok, error, started_at FROM pipeline_runs WHERE pipeline='allday-dist-opened-expiry' ORDER BY id DESC LIMIT 5;` ✅ **EXIT:** first tick `expired > 0`, next tick `refilled` equal to it with `restored = 0` and `drifted` falling toward 0. ⛔ **FALSIFIER:** `restored > 0` — the Dapper upstream died since the canary. The function has then ALREADY written the pre-images back and stopped itself; the action is `SELECT cron.unschedule('rpc-allday-dist-opened-expiry')`, not a fix.
+
+4. ⚠ **STILL OPEN on #94 and NOT fixed by this — do not read the item as closed.** (a) The **Top Shot** lane (2 dists, `HTTP 530`) is blocked on the #50/#81 source decision, unchanged. (b) The AllDay **supply** columns are a DIFFERENT lane: `backfill-allday-pack-supply` has **no scheduler at all** — no pg_cron job, no `pipeline_runs` row ever — and its 3,195 rows are **32 days old, one distinct day**. That is a real open item and this ship does not touch it. ⚠ Before acting on it, establish whether a cron-job.org entry calls it (invisible from a sandbox) rather than concluding "no caller" from a repo grep.
+
+5. ⭐ **ONE RULE EARNED TONIGHT, and it cost a vacuous guard before I caught it: A BOUNDED-BATCH FUNCTION TESTED ONLY AT ITS SMALLEST BATCH SIZE CANNOT SEE ITS OWN SELECTION PREDICATE.** The new pin asserted the evidence predicate at `p_limit := 1`, where the ORDERING masks it — the control row sorts last, so a candidate set widened to "everything" still takes the right row first and every assertion passes. **6 of 7 mutations caught, and the survivor was the property the file exists for.** Fixed by adding a sweep with headroom in the batch; final 9/9. Applies to every `LIMIT`ed lane in this estate, not just this one.
+
 ## STEER — added 2026-09-12 ~21:0x PT (cloud session; seven things NOT to re-chase, two new items to weigh, and two measurement rules earned tonight)
 
 **Written for the 1am pass, ~4 h out. Each ⛔ below is a lever a careful reader reaches for and each is already closed by MEASUREMENT tonight — re-opening one costs a night.**
