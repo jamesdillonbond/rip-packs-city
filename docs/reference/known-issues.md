@@ -1365,6 +1365,19 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     ⚠ **WATCH, and it is the documented hole rather than a new one: the scan cost climbed 18.0 s → 52.2 s across two consecutive ticks.** Both wrote the full 120-row batch, so this is the COST OF REAL WORK and not waste — but the exhausted stamp is written **after** the scan, so a scan killed at `statement_timeout` never arms the cooldown and the lane would re-strand silently. **If durations keep climbing past ~60 s, cut ITEMS per tick (the batch limit), never the clock.**
 
+    ⚠ **A READING TRAP ON THIS LANE, recorded because I nearly fell into it myself an hour after shipping the fix.** A 3-hour failure sweep at 04:05 PT reports **4 failed runs** for this pipeline with `claim failed: canceling statement due to statement timeout` — which reads exactly like the fix regressing. **It is the opposite.** All four are the LAST FOUR TICKS OF THE OLD REGIME: 00:40, 00:45, 00:50 and 00:55 PT, each **60.6–66.9 s** and writing nothing. The migration took effect at **00:59 PT**, and:
+
+    | tick (PT) | note | duration | result |
+    |---|---|---:|---|
+    | 00:40 / 00:45 / 00:50 / 00:55 | scan | 60.6–66.9 s | **timeout, 0 rows** |
+    | **01:01** (first tick after the fix) | drained | **10,146 ms** | ok — stamped `exhausted_at` |
+    | 01:05 → 03:01 | drained | **270–932 ms** | ok, 24 consecutive |
+    | 03:05 → 03:21 | scan | 16.2–52.2 s | **120 found / 120 written, every one** |
+
+    ⭐ **The change point is 01:01 PT and there has been no failure since.** ⭐ **And the same scan that timed out at 66 s completed in 10.1 s once the new claim was live** — a sharp before/after on one lane, which is the cleanest evidence this fix has. ⚠ **So any failure-rate window that SPANS 00:59 PT will misattribute the old regime to the new one** — this file's own *"a rate POOLED ACROSS A FIX measures the fix's ABSENCE"* rule, on the lane that just demonstrated it. **Split on 00:59 PT.**
+
+    ✅ **AND THE DURATION CLIMB FLAGGED ABOVE DID NOT CONTINUE — re-read at 03:21:** 18.0 → 52.2 → 21.5 → **16.2 s**. The 52.2 s was a spike, not a trend. The watch stands (a scan killed at `statement_timeout` still never arms the cooldown) but is not currently firing.
+
 100. 🔴 **OPEN, NEW 2026-09-13 (PT) — THE FLEET'S MASTER ALARM RUNS 27% OF THE TIME IT IS SCHEDULED TO, AND ITS WORST BLIND WINDOW IN THE RETAINED PERIOD WAS 14 HOURS.** ⭐ **This is the OTHER half of #76, and it is the half nobody measured.** That item established the sentinel's message is *uninformative* (every sweep WARN, fixed 2026-09-13 by naming the changed SET in the header). This item establishes something worse and independent: **most of the time the sweep does not happen at all.**
 
     **MEASURED, 73 h to 2026-09-13 ~02:4x PT.** `pipeline-sentinel.yml` is scheduled `34 * * * *` — **73 firings expected**. `pipeline_runs` holds **21 sentinel sweeps (28.8%)**.
