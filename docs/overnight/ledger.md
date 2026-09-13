@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · 🚨 FIXED — a code commit with a docs commit on top of it has never deployed, and tonight it ate the sentinel change (#97) · Cowork cloud
+
+**Shipped:** `vercel.json` (the deploy gate's comparison base), `__tests__/deploy-gate-compares-against-the-last-deployed-commit.test.ts`, `docs/reference/known-issues.md` (**new #97, closed**). Revert: `git revert` the commit whose message starts `fix(deploy): compare against the last DEPLOYED commit`.
+
+**🚨 FOUND BY CHECKING, NOT BY ALARM — AND IT HAD ALREADY SWALLOWED TONIGHT'S WORK.** After pushing the sentinel ack-mode + cadence-arm commit with a docs commit stacked on top, I read the Vercel deployment list rather than assuming: the production deployment for the tip was **`CANCELED`, with the route unshipped.** ⭐ **Vercel builds the PUSH, not each commit**, so `ignoreCommand`'s `git diff --quiet HEAD^ HEAD -- . ':(exclude)docs/**' …` ran exactly once against the TIP — **a docs-only tip skipped the build and took the code commit underneath it down with it.** Green CI, a real deployment row, nothing live.
+
+**⚠ THE THIRD OCCURRENCE, AND THE FIRST TWO WERE ANSWERED WITH A HABIT.** CLAUDE.md already records this biting twice, with the standing remedy *push code last*. ⛔ **A habit is not a fix** — it fails exactly when a session is long or interrupted, which is when it is needed, and it cannot cover the adjacent shapes (a build skipped for another reason, a reverted deploy, several pushes between builds).
+
+**✅ THE FIX IS THE BASE, NOT THE EXCLUSIONS.** The gate now diffs against **`VERCEL_GIT_PREVIOUS_SHA`** — Vercel's own SHA of the **last successful deployment**, exposed precisely when an Ignored Build Step is configured — so the question is *has anything non-docs changed since what is actually LIVE*, which is push-shape-independent. ⛔ **It degrades to `HEAD^` on an empty variable or a sha missing from the shallow clone, never to "skip"**: the cost of guessing wrong here is shipping nothing, silently. The `:(exclude)` pathspecs are untouched, so the sibling `deploy-and-ci-agree-on-what-docs-means` guard still holds.
+
+**⭐ PINNED BY BEHAVIOUR, WITH THE BUG ITSELF AS THE CONTROL.** The real `ignoreCommand` is executed by `bash` against throwaway git repos: the exact shape that shipped nothing must now BUILD, **and the same test asserts that the old `HEAD^` base skips it** — so the test would have failed before the fix, which is the only version of a regression test worth having. A genuinely docs-only push since the live deployment is still skipped; the saving is not given back.
+
+**⚠ WHAT IT DOES NOT FIX:** a long red streak widens the diff window rather than narrowing it, because the base stays at the last *successful* deploy. That is the safe direction, and it is stated so a large post-outage build is not read as a bug.
+
+**Gates:** 8 deploy-gate tests green (including the control) · index regenerated (93 items) · `check-memory-doc-links` 197 · ledger guards 3 / 0.
+
 ### 2026-09-12 · 🔵 MEASUREMENT+CORRECTION (docs only) — the `/_next/image` ceiling is ≈14,462 and it CONFIRMS tonight's earlier estimate; plus Cowork's player-name finding is real but scoped to the wrong card · Claude Code, from Cowork verification `2026-09-12(h)`
 
 **Shipped:** `docs/reference/known-issues.md` (new items **#95**, **#96**). **No code, no DB, no deploy wanted** — ⚠ a docs-only tip suppresses the Vercel build, which is correct here rather than the trap this file warns about. **Revert:** `git revert` the commit whose message starts `docs(register): the /_next/image ceiling is measured`.
