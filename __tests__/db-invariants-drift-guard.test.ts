@@ -1818,11 +1818,18 @@ const PINS = [
   {
     // pg_cron `14 * * * *`. Denormalizes each All Day rip's TOTAL pull value.
     //
+    // ⚠ RE-PINNED 2026-09-13 from 20260816080000 to the #92 migration. The value
+    // is now the CURRENT fmv of each pull's edition (latest fmv_snapshots row),
+    // NOT the at-open allday_pack_pull.fmv_usd. The old pin sat stale from
+    // 2026-09-12 until the live check caught it, green the whole time against a
+    // body that had stopped running — repo-vs-repo cannot see that, only
+    // scripts/check-db-pin-staleness.mjs can.
+    //
     // ⚠ ALL-OR-NOTHING: written only when EVERY pull is priced. A partial sum is
     // a SMALLER number that reads exactly like a real one — a 5-moment rip with
     // 2 priced pulls would publish those 2 as the pack's value, making a good
     // pull look like a bad pack, and it fails in the reassuring direction so
-    // nothing reports it.
+    // nothing reports it. "Unpriced" now means the edition has no snapshot.
     //
     // ⚠ Its watermark is captured BEFORE the read, so a pull changed mid-run is
     // re-processed next tick rather than skipped forever; and `updated_at >= w`
@@ -1832,7 +1839,7 @@ const PINS = [
     fn: "rollup_allday_rip_pull_value",
     test: "supabase/tests/rollup_allday_rip_pull_value.sql",
     migration:
-      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+      "supabase/migrations/20260913032000_audit_20260912_pull_value_usd_is_current_fmv_for_every_collection.sql",
   },
   {
     // pg_cron `40 9 * * *`. Sets players.team from the catalogue.

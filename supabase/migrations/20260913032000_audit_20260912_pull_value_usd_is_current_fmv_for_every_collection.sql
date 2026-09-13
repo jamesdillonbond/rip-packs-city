@@ -114,7 +114,11 @@ END
 $function$;
 
 -- ── 2. the backfill's All Day arm + its repair-leg predicate ─────────────
-CREATE OR REPLACE FUNCTION` does not reset a function ACL, so this
+-- ⚠ ANON-EXEC (backfill_pack_rip_metadata). This line LOST ITS `-- ` PREFIX when
+-- the file was written, which made this migration INVALID SQL (`syntax error at
+-- or near "`"`) from the day it landed until 2026-09-13. Restored as a comment
+-- verbatim rather than reworded, so the stray backtick is the original residue:
+-- `CREATE OR REPLACE FUNCTION` does not reset a function ACL, so this
 -- migration cannot have moved it, and a REVOKE here would be a change dressed as
 -- a no-op. Read live 2026-09-12 (PT) after this migration was applied:
 --   has_function_privilege(anon)          = false

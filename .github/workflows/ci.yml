@@ -581,6 +581,23 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres@localhost:5433/postgres
         run: bash scripts/run-db-tests.sh
+      # Every migration file must be PARSEABLE SQL. Added 2026-09-13 after
+      # 20260913032000 was found carrying a comment line that had lost its `-- `
+      # prefix, making the whole file invalid SQL from the day it landed. It was
+      # already applied via MCP, so the DB was correct and migration-parity — which
+      # checks the applied-but-not-committed direction — had nothing to say: the
+      # committed record of a production change could not be replayed, and read as
+      # authoritative anyway. Sits here because this job is the only one with a
+      # Postgres to parse against. ~50 s for ~1,030 files.
+      #
+      # It is a PARSE check, not a replay: missing-relation/duplicate-object errors
+      # are expected against an empty schema and ignored; only `syntax error` counts.
+      # The script self-tests that it can SEE a syntax error, and fails if it
+      # inspected zero files — a blinded or empty run exits 2 rather than passing.
+      - name: Every migration file parses as SQL
+        env:
+          DATABASE_URL: postgres://postgres@localhost:5433/postgres
+        run: bash scripts/check-migration-sql-parses.sh
 
   # Ledger no-clobber guard (added 2026-07-19 after a real incident).
   # docs/overnight/ledger.md is append-at-top and MULTIPLE sessions write it

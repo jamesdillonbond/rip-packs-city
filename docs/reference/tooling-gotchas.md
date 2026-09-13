@@ -278,6 +278,31 @@ DATABASE_URL=postgres://postgres@localhost:5433/postgres bash scripts/run-db-tes
 Worth the two minutes: it turns a CI log into a local reproduce-and-probe loop, and it is how the
 08-18 panini fixture breaks were diagnosed and both fixes proved load-bearing.
 
+🚨 **DO NOT "HELPFULLY" PRE-CREATE THE `unaccent` EXTENSION — THAT IS WHAT BREAKS IT** (measured
+2026-09-13). The test files provision it themselves, correctly:
+
+```sql
+CREATE SCHEMA IF NOT EXISTS extensions;                        -- supabase/tests/norm_player.sql
+CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
+```
+
+Run a bare `CREATE EXTENSION unaccent` first (it lands in `public`) and that `IF NOT EXISTS` becomes
+a **silent no-op** — the extension exists, just in the wrong schema — so `norm_player`,
+`get_player_detail` and `get_team_detail` fail with **`function extensions.unaccent(text) does not
+exist`**. A/B proved on two fresh databases in the same cluster: pristine **exit 0**, pre-created
+**exit 3**. CI provisions a bare `initdb` and touches no extensions, which is exactly why it is green.
+
+⚠ **THE ERROR NAMES A MISSING FUNCTION, NOT A MISSING EXTENSION**, so it reads like a fixture bug in
+three files you never touched — and the comfortable wrong answer ("some pre-existing environment
+quirk, not mine") survives a `git status` check, because those files really are unmodified. It cost
+a wrong first draft of this very section, which blamed the recipe and would have told the next
+session to run the command that causes the failure.
+
+⭐ **The rule that actually generalizes: when you suspect "the environment", A/B against a PRISTINE
+one before writing it down.** `CREATE DATABASE` twice in the same cluster settles it in seconds, and
+it is the difference between recording a cause and recording an alibi. Establish the green baseline
+BEFORE editing a pin, so a failure you meet mid-change is never ambiguous in the first place.
+
 ### ⚠ The anon-exec marker must sit on ONE line with the function name
 
 `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` accepts a marker only when a
