@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ DOCS — a 🔴 go-live item was carrying an ALREADY-ANSWERED question under a "nothing explains it" heading, and the last loose end is now closed · Claude Code cloud, overnight autonomous
+
+**Shipped (docs only):** `docs/reference/known-issues.md` (#70). Revert: `git revert` the commit whose message starts `docs(register): #70's "unexplained" cadence line`.
+
+**⭐ THE FINDING IS ABOUT THE ITEM, NOT THE ESTATE.** #70 (All Day FMV confidence, go-live M2) ends with a 🚨 block: *"COINCIDENT AND UNEXPLAINED … the indexer's daily RUN COUNT fell from ~100–110 to ~78 around 2026-08-26/27 … nothing read so far explains it, and the cheapest next step is to find what cut that cadence."* **The ✅ block directly above it, added 2026-09-11, answers exactly that — same 108→73 drop, measured to the minute.** The 🚨 was written first and never retired when the answer landed. ⭐ **So the item has been advertising a settled question as the cheapest next step** — the duplicate-work shape this register exists to prevent, occurring INSIDE a single item rather than between two.
+
+**✅ AND THE ONE THING THE ANSWER DID NOT COVER — WHAT re-timed them — is now settled as far as a sandbox can.** The four lanes are **not pg_cron**, established with a positive control rather than an empty result: `cron.job` holds **140 jobs, 20 of them `%allday%`-named**, and **0** have a command matching any of the four indexer routes, **0** run a 20-minute schedule. They are **cron-job.org console entries**, recorded in `docs/operations/cron-schedule.md` at All Day **:16,:36,:56** · Top Shot **:3,:23,:43** · Golazos **:11,:31,:51** · Pinnacle **:4,:24,:44**.
+
+**⭐ THE CONTROL LANE IS THE TELL, and it reframes the change from regression to housekeeping:** `pinnacle-sales-indexer` — the lane #70 uses as its FLAT control at 71/day — is **itself on a 20-minute spacing**. The edit did not slow a healthy group; it brought four lanes INTO LINE with the one that never moved.
+
+**⛔ The item's named suspect is refuted by DATE.** It says *"the 08-30 top-consumer/IO drain work is the obvious suspect — verify, do not assume"*. The step is **08-26/27**; `git log` over `docs/operations/` for 08-24..08-29 returns **nothing before 08-28**. Four days apart, so it cannot be the cause — which is what "verify, do not assume" was asking for.
+
+**⚠ WHAT IS STILL UNKNOWABLE FROM HERE:** who made the console edit and why. cron-job.org is one of the two caller sources invisible from a sandbox, so that needs Trevor or a console session. ✅ **But it is no longer a loose end on the M2 decline** — the ✅ block already proved it cost no rows (~1,500 `blocks_scanned`/run against the ~1,200 blocks Flow produces in 20 minutes, cursors at the head), and this entry only removes the invitation to re-derive it.
+
+**⚠ NOTHING ELSE ABOUT #70 CHANGED.** The 27.7 % → 20.2 % slide, the real-numerator-loss finding, the upstream-coverage question and the +1.1–+2.7 pt `offer_fill` costing all stand exactly as written. **This closes a false-open thread; it does not move the gate.**
+
+**Verification:** docs only · register index regenerated, integrity 130 rows · 201 doc links resolve · ledger guards 3 / 0.
+
 ### 2026-09-13 · ✅ CODE — I published a refutation from a query that could never have matched, and the instrument that allowed it now records what it decided · Claude Code cloud, overnight autonomous
 
 **Shipped:** `app/api/sentinel/route.ts` (new exported `buildSentinelFindings()`; `extra.findings` persisted), `__tests__/sentinel-findings-carry-the-detail.test.ts` (NEW, 6 cases), `__tests__/api-sentinel-deep.test.ts` (+1 case), inbox filing `2026-09-13T0900Z-…` (+ second correction) and INDEX. Revert: `git revert` the commit whose message starts `fix(sentinel): persist each non-ok check's detail`.
