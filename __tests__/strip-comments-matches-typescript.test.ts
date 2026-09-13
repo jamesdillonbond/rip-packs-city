@@ -98,6 +98,10 @@ function compare(files: string[], strip: (s: string) => string) {
   const keptByUs: Mismatch[] = [] // TS says comment, we keep   → leaks into guards
   const blankedByUs: Mismatch[] = [] // TS says source,  we blank  → guard goes blind
   let agreed = 0
+  // ⚠ Counted HERE, during the one pass that already parses every file, rather
+  // than by a second sweep in the non-vacuity control below. See the CI-cost
+  // note on that test: re-walking the tree cost more than the whole guard.
+  let filesWithComments = 0
 
   for (const f of files) {
     const text = readFileSync(f, "utf8")
@@ -108,6 +112,7 @@ function compare(files: string[], strip: (s: string) => string) {
       continue // a file TypeScript cannot parse is not evidence about the stripper
     }
     const ours = blankedMask(text, strip)
+    if (truth.some((b) => b === 1)) filesWithComments++
 
     let missed = 0
     let over = 0
@@ -130,7 +135,7 @@ function compare(files: string[], strip: (s: string) => string) {
     if (over) blankedByUs.push({ file: rel(f), line: lineAt(firstOver), chars: over, context: ctx(firstOver) })
     if (!missed && !over) agreed++
   }
-  return { keptByUs, blankedByUs, agreed }
+  return { keptByUs, blankedByUs, agreed, filesWithComments }
 }
 
 const show = (rows: Mismatch[]) =>
@@ -176,11 +181,24 @@ describe("stripComments agrees with the TypeScript compiler, character for chara
   // can produce a non-zero, and it must be able to do so in BOTH directions
   // independently — a harness that only ever detects one is half a guard that
   // reads as a whole one.
+  //
+  // 🚨 COST IS PART OF THE DESIGN HERE, and getting it wrong reddened `main`.
+  // Parsing the tree with the TypeScript compiler is the expensive thing this
+  // file does, so it happens EXACTLY ONCE, in the sweep above. The controls
+  // below either reuse what that pass already counted or run on a small sample.
+  // ⚠ The first version re-walked all 3,008 files inside the non-vacuity
+  // control. It took 7.4 s on a 16-core idle box and **timed out at 30 s on a
+  // 2-core CI runner under coverage instrumentation** — `main` went red on a
+  // commit whose full suite had just passed locally. *A probe whose HARNESS
+  // differs from production in the one dimension the answer depends on is not
+  // a measurement of production*, and "it passed on my box" is exactly that
+  // probe. Keep every `it` in this file O(sample), never O(tree).
+  const SAMPLE = files.slice(0, 150)
+
   it("POSITIVE CONTROL — a stripper that keeps comments is CAUGHT", () => {
     const identity = (s: string) => s
-    const sample = files.slice(0, 400)
-    const broken = compare(sample, identity)
-    expect(broken.keptByUs.length).toBeGreaterThan(100)
+    const broken = compare(SAMPLE, identity)
+    expect(broken.keptByUs.length).toBeGreaterThan(50)
     expect(broken.blankedByUs.length).toBe(0) // it blanks nothing, so nothing is destroyed
   })
 
@@ -192,8 +210,7 @@ describe("stripComments agrees with the TypeScript compiler, character for chara
       s
         .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
         .replace(/(^|[^:])\/\/.*$/gm, (m) => m.replace(/[^\n]/g, " "))
-    const sample = files.slice(0, 400)
-    const broken = compare(sample, defect1)
+    const broken = compare(SAMPLE, defect1)
     expect(broken.blankedByUs.length).toBeGreaterThan(0)
   })
 
@@ -201,10 +218,10 @@ describe("stripComments agrees with the TypeScript compiler, character for chara
     // Distinguishes "the stripper is correct" from "the masks are both empty".
     // Without it, a `typescriptCommentMask` that silently returned all-zeros
     // would make every assertion above pass while testing nothing.
-    const commented = files.filter((f) => {
-      const text = readFileSync(f, "utf8")
-      return typescriptCommentMask(f, text).some((b) => b === 1)
-    })
-    expect(commented.length).toBeGreaterThan(1000)
+    //
+    // ⚠ Read off the sweep's own counter. It used to re-derive this by parsing
+    // every file again — the same answer for four minutes of CI and a red
+    // `main`. A control must be cheap enough to keep, or it gets deleted.
+    expect(result.filesWithComments).toBeGreaterThan(1000)
   })
 })
