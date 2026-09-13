@@ -10,6 +10,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · ⚠ CORRECTION+CODE — I shipped an All Day pricing arm on the wrong basis, found a second writer I had missed, and reverted my own correction; plus: `pack_rips` is Top Shot + All Day ONLY · Cowork cloud, Trevor: "Don't leave anything unresolved"
+
+**Shipped:** `supabase/migrations/20260913020000_…uses_current_fmv_not_at_open.sql` (APPLIED **then REVERTED**, file is a no-op record), `…20260913021000_…realigns_with_the_rollup_at_open_basis.sql` (APPLIED, live), `app/dashboard/packs/PackHistoryClient.tsx`. Revert: `git revert` the commit whose message starts `fix(packs): realign the All Day pull-value basis`.
+
+**⛔ THE CORRECTION THAT MATTERS: THERE WAS ALREADY A SECOND WRITER AND I DID NOT FIND IT BEFORE SHIPPING.** `rollup_allday_rip_pull_value()` sums `allday_pack_pull.fmv_usd` per `pack_nft_id`, all-or-nothing, into `pack_rips.pull_value_usd` — **the same column my new arm writes, on the same basis.** It is healthy and current (last ran 01:14). I searched the repo for readers/writers of `pull_value_usd` and for `allday_pack_pull`, but never asked Postgres which FUNCTIONS write that column. One `pg_proc` query would have found it. ⚠ **A repo grep cannot see a DB-resident writer, and this repo already knows that lesson** — it is written down for pg_cron callers ("check `cron.job` before calling a function dead") and I did not generalise it to functions.
+
+**⭐ SO WHAT I BUILT IS A COLD-START SWEEP, NOT A SECOND PRICER — and that is a better description than the migration which introduced it gave.** That rollup is **incremental** on `allday_pack_pull.updated_at >= last_run_at`: it only revisits packs whose pulls changed since its last tick, so every pack already fully priced **before its watermark** was never swept. That is the entire gap — **77,800 priceable packs against 25,195 valued rips.** The arm is still correct and still needed; it was described wrongly.
+
+**⛔⛔ THE DEFECT I INTRODUCED AND CAUGHT WITHIN THE HOUR: `pull_value_usd` MEANS TWO DIFFERENT THINGS BY COLLECTION.** Top Shot sums the LATEST `fmv_snapshots` row per edition — **CURRENT** value. All Day sums `allday_pack_pull.fmv_usd` — value **AT OPEN**. Measured on 500 resolved 2026-06+ pulls: at-open mean **$8.97**, current mean **$3.14**, agreeing on **22 of 500**. And `/dashboard/packs` **sums both into one RIPPED VALUE tile and one NET P&L.** ⚠ The inconsistency PREDATES this session — but my arm made All Day's half much larger, which is what surfaced it.
+
+**I applied a fix, then reverted my own fix, and the revert was the right call.** Switching All Day to current FMV was consistent with Top Shot AND covered more (**3,967 vs 3,780** whole packs per 4,000; 76,376 pulls across 53,309 packs carry an edition with no stored fmv). ⛔ **But it would have FOUGHT the rollup**: the rollup would overwrite a current-FMV value with an at-open one every time a pull's `updated_at` moved, and the column would flip between bases with **nothing recording which one any given row held**. **Two writers disagreeing is strictly worse than one definition I disagree with.** Verified **zero runs between the two migrations**, so nothing was written on the current-FMV basis and the revert was clean.
+
+**⚠ THE UNDERLYING QUESTION IS LEFT OPEN ON PURPOSE — IT IS TREVOR'S, NOT MINE.** Both bases are correct for different consumers: **realized-EV calibration wants AT-OPEN** ("what did this pack yield when opened" — current FMV would make historical pack EV drift with today's market), while **a user's NET P&L wants CURRENT** ("what are my pulls worth now against what I paid"). One column cannot be both. Splitting it (`pull_value_usd_at_open` + `pull_value_usd_current`) is the likely answer and it is a product decision with a migration behind it — **not a 2am judgement call.** Recorded in both migration headers and at the `packCoverage` comment.
+
+**⚠ A SECOND CORRECTION TO MY OWN LEDGER: `pack_rips` IS TOP SHOT + ALL DAY AND NOTHING ELSE.** Earlier tonight I wrote that Pinnacle, Golazos and UFC "have NO equivalent table and are still structurally unpriceable", which reads as three collections with unpriced packs. Measured: **Pinnacle 0 rips, Golazos 0, UFC 0, Candy 0.** They were never a pricing gap — they have no pack-open activity at all. The true shape:
+
+| collection | rips | valued | % |
+|---|---:|---:|---:|
+| All Day | **2,816,589 (76.4%)** | 25,195 | **0.89%** |
+| Top Shot | 868,944 (23.6%) | 287,368 | **33.1%** |
+| others | **0** | 0 | — |
+
+So the product-wide 8.5% was **almost entirely All Day being the large half of the corpus at under 1%**, not a broad multi-collection famine — which makes the All Day work *more* load-bearing than I described, not less.
+
+**⚠ ALL DAY HAS ITS OWN CEILING and it is not 100%:** only **419,012 of 2,816,589 All Day rips (14.9%)** appear in `allday_pack_pull` at all — the table starts 2024-07-27 and everything before is simply absent.
+
+**⛔ AND THE 2024–2025 TAIL IS CLOSED AS UNRECOVERABLE, MEASURED AT THE RIGHT GRAIN.** A 2026-07-31 pass reached the same conclusion by counting resolvable MOMENTS; I re-derived it by counting resolvable **PACKS**, which is the grain that matters because pricing is all-or-nothing and a scattered 10% of moments buys almost no whole packs. Mining **`sales`** — which that pass never checked, and which carries both `nft_id` and `edition_id` — plus `wallet_moments_cache`, over 3,000 unresolved 2025-Q3 packs: resolvable pulls 1,658 → 1,730 of 9,010, and **11 of 3,000 packs (0.37%)** made whole. The remaining unlock really is a Flow re-fetch: resolution borrows each moment at its open block via `/v1/scripts`, which `spork-proxy` does not front (only `/v1/events` and `/v1/transactions`).
+
+**⛔ `pack_pull_log` IS NOT A SOURCE** — it is user-submitted and IP-hashed (`submitter_wallet`, `verified`, `ip_hash`), and it holds **0 rows**. Using crowd-sourced pulls to compute a user's realized P&L would be worse than withholding. Checked so nobody else has to.
+
+**Gates:** `tsc` clean · 72 tests · eslint ratchet 716 vs baseline 716 · function verified live after the revert (`processed 500 / value_resolved 250 / allday_resolved 221`) · migration parity: both applied names have files, and the reverted one is explicitly a no-op record · ledger guards 3 / 0.
+
 ### 2026-09-12 · ✅ CODE+DB — `pull_value_usd` gets a second pricing source: All Day is no longer structurally unpriceable, and a known value can no longer be clobbered to NULL · Cowork cloud, Trevor: "Do it all. Exhaust all of your capabilities"
 
 **Shipped:** `supabase/migrations/20260913014000_audit_20260912_pack_rip_pull_value_allday_arm.sql` (APPLIED), `app/api/cron/backfill-pack-rip-metadata/route.ts`, `app/dashboard/packs/PackHistoryClient.tsx`, `__tests__/api-cron-backfill-pack-rip-metadata-deferred.test.ts` (+3). Revert: `git revert` the commit whose message starts `feat(packs): price All Day rips from allday_pack_pull`; DB half — re-apply the body from migration `20260830153041`.
