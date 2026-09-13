@@ -463,7 +463,11 @@ const MISSING = QUALIFYING.filter((r) => !r.hasHeartbeat)
 //   a real measurement from an instrument independent of `pipeline_runs`, not an
 //   absence of evidence — so they stay on the queue rather than being converted
 //   speculatively.
-const BUDGET = 35
+//   2026-09-13: app/api/admin/apply-fmv-haircut converted (35 -> 34). Its 09-12
+//   15:35 PT tick was killed at the 300 s wall under saturation — Vercel logged
+//   `Task timed out after 300 seconds`, pipeline_runs recorded NOTHING, and the
+//   only instrument that saw it was the 30 h silence arm, a day later.
+const BUDGET = 34
 
 describe("after() routes that log a pipeline run must write an invocation heartbeat", () => {
   it(`is at or below the frozen budget of ${BUDGET}`, () => {

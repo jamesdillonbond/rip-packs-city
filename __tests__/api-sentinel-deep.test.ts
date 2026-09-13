@@ -344,6 +344,20 @@ describe("POST /api/sentinel — full battery", () => {
       expect(c.detail).toContain("PROJECTED TO EXHAUST")
     })
 
+    it("says EXHAUSTED, not 'projected to exhaust', once the cycle cap is already spent", async () => {
+      // 2026-09-13: the live sweep read "103.5% of datapoints at 66.5% of the
+      // cycle … PROJECTED TO EXHAUST BEFORE THE CYCLE ENDS" — a forecast of a
+      // state already reached. Past 100% the honest copy names the configured
+      // stop; a projection there is a false claim about the future.
+      install(spend({ cycle_datapoints_pct: 103.5, cycle_elapsed_pct: 66.5, on_pace: false }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const report = await (await POST(post())).json()
+      const c = check(report, "Dune Spend (cycle)")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("EXHAUSTED")
+      expect(c.detail).not.toContain("PROJECTED TO EXHAUST")
+    })
+
     it("warns when the CREDIT meter is nearly spent though datapoints are untouched", async () => {
       // Two meters, different lanes: the cursored backfills buy one execution
       // per window and can exhaust credits while the datapoint gauge reads calm.

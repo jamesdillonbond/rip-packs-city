@@ -1107,6 +1107,17 @@ async function runSentinel() {
     // legitimately carry an FMV, so it drifts every time the GQL writer leaks one).
     // sentinel_edition_coverage() scopes the denominator to live editions and
     // reports the inert bucket separately.
+    //
+    // ⚠ SINCE 2026-09-13 THE NUMERATOR IS A LOWER BOUND, and the detail says so.
+    // The RPC used to LEFT JOIN every edition to the `fmv_current` VIEW — a
+    // DISTINCT ON over ~1.2M fmv_snapshots rows with heap fetches, measured at
+    // ~71,800 buffers and 6.5 s MEAN per sweep (320 calls, max 29.8 s) — to
+    // learn nothing but existence, and it timed out precisely when the DB was
+    // saturated: the probe was the load. It now reads `edition_fmv_current`
+    // (one row per edition that has ever had a snapshot, refreshed hourly by
+    // series-detail-rollup), so an edition whose FIRST snapshot postdates the
+    // last refresh counts as uncovered until the next one. Staleness can only
+    // UNDER-report coverage, so it cannot satisfy the 90% threshold falsely.
     const { data: covRows, error: covErr } = await supabase.rpc(
       "sentinel_edition_coverage",
     );
@@ -1142,7 +1153,8 @@ async function runSentinel() {
         detail: covErr
           ? `Coverage RPC error: ${covErr.message}`
           : `${liveWithFmv} of ${liveEditions} live editions have an FMV snapshot (${coverage}%)` +
-            ` — excludes ${Number(inert?.editions || 0)} inert UUID-keyed TS rows`,
+            ` — excludes ${Number(inert?.editions || 0)} inert UUID-keyed TS rows` +
+            ` (lower bound: read from edition_fmv_current, refreshed hourly — a first snapshot younger than the last refresh counts as uncovered)`,
         value: `${coverage}%`,
       });
     }
@@ -1635,7 +1647,16 @@ async function runSentinel() {
           (creditPct != null ? `; ~${creditPct}% of credits (est)` : "") +
           `; ${d.days_left_in_cycle ?? "?"}d left` +
           (spent ? `; ${spent}` : "; no lane has spent yet") +
-          (offPace ? " — PROJECTED TO EXHAUST BEFORE THE CYCLE ENDS" : ""),
+          // ⚠ Past 100% there is nothing left to project. The 2026-09-13 sweep read
+          // "103.5% … PROJECTED TO EXHAUST BEFORE THE CYCLE ENDS" — a forecast of a
+          // state already reached, on a lane whose every tick logs
+          // `budget_stopped: true`. That is the configured stop the header comment
+          // names, and the copy must say so rather than predict it.
+          (Number.isFinite(dpPct) && dpPct >= 100
+            ? " — EXHAUSTED: the cycle cap is spent and every Dune lane paces at 0 until the reset (a configured stop, not a failure)"
+            : offPace
+              ? " — PROJECTED TO EXHAUST BEFORE THE CYCLE ENDS"
+              : ""),
         value: `${Number.isFinite(dpPct) ? dpPct : "?"}%`,
       });
     }

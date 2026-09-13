@@ -48,9 +48,35 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
+
+// ── LEG-START DEADLINE (2026-09-13) ─────────────────────────────────────────
+// The 2026-09-12 15:35 PT tick was KILLED AT THE 300 s WALL: Vercel logged
+// `Task timed out after 300 seconds`, no terminal pipeline_runs row was written
+// (try/catch cannot catch a maxDuration kill), and the only instrument that
+// noticed was the 30 h silence arm — a day later. The mechanism is the leg loop
+// below: under saturation EACH leg can hold ~120 s before the Supabase gateway
+// answers `upstream request timeout`, and two such legs plus the small ones
+// exceed the wall before the terminal write runs.
+//
+// So a leg is not STARTED once the elapsed time passes this deadline. It is
+// DERIVED from budgets this file already declares, not chosen: the wall, minus
+// the ~120 s a single leg can take through the gateway, minus a reserve for the
+// terminal log_pipeline_run. A leg that starts later than this is already
+// doomed to outlive the wall, so skipping it cannot turn a working run into a
+// failing one — it turns a SILENT kill into a LOGGED partial failure (ok=false,
+// the skipped legs named in `extra.legs`), which is the honest shape. Same
+// argument as lib/http/sweep-deadline.ts.
+const WALL_MS = maxDuration * 1000;
+const GATEWAY_LEG_MAX_MS = 120_000;
+const TERMINAL_WRITE_RESERVE_MS = 30_000;
+// Not exported: a Next.js route module may only export the route fields. The
+// deadline test re-derives it from `maxDuration` and asserts it on the terminal
+// row's error text, which is what a reader of pipeline_runs sees.
+const LEG_START_DEADLINE_MS = WALL_MS - GATEWAY_LEG_MAX_MS - TERMINAL_WRITE_RESERVE_MS;
 
 // CLAUDE.md infra block — long-form vocabulary keyed by the short-form
 // query-param tokens callers will pass.
@@ -124,6 +150,20 @@ export async function POST(req: NextRequest) {
   const startedAtIso = new Date().toISOString();
   after(async () => {
     const startedAt = Date.now();
+    // Invocation heartbeat, FIRST statement of after(): a `maxDuration` kill runs
+    // neither the success path nor the catch, so without this marker a killed
+    // tick is indistinguishable from a cron that never fired — and this pipeline
+    // is on `pipeline_cadence_watchlist`, so the two produce the same alert and
+    // need opposite responses. The separate `-heartbeat` name is required: a
+    // marker under the REAL name would refresh `last_run` every tick and silence
+    // the silence arm on the outage it exposes. Pinned to startedAtIso so the
+    // kill-correlation query (`npm run pipelines:kills`) matches it to the
+    // terminal row within its ±5 s window.
+    await writeInvocationHeartbeat({
+      pipeline: "apply-fmv-haircut",
+      startedAtMs: Date.parse(startedAtIso),
+      extra: { mode, collection: collectionParam ?? null },
+    });
 
     // ── PER-COLLECTION SPLIT (2026-08-16) ────────────────────────────────────
     // The un-scoped call (p_collection_id NULL = every collection in ONE
@@ -227,9 +267,25 @@ export async function POST(req: NextRequest) {
       rows_haircut: number
       dollars_removed: number
       error: string | null
+      skipped?: true
     }> = []
 
     for (const leg of legs) {
+      // See LEG_START_DEADLINE_MS. Checked BEFORE the leg, never mid-leg: the
+      // RPC is one statement and cannot be partially applied.
+      const elapsedMs = Date.now() - startedAt
+      if (elapsedMs > LEG_START_DEADLINE_MS) {
+        legResults.push({
+          slug: leg.slug,
+          ok: false,
+          rows_examined: 0,
+          rows_haircut: 0,
+          dollars_removed: 0,
+          error: `skipped: ${elapsedMs} ms elapsed exceeds the ${LEG_START_DEADLINE_MS} ms leg-start deadline (wall ${WALL_MS} ms); this leg did not run`,
+          skipped: true,
+        })
+        continue
+      }
       // 2026-06-11: the haircut RPC previously sat OUTSIDE a try/catch, so a
       // THROW (pool timeout under saturation, not a returned error) rejected
       // the after() before any log_pipeline_run — a silent run while
@@ -261,6 +317,7 @@ export async function POST(req: NextRequest) {
     }
 
     const failedLegs = legResults.filter((r) => !r.ok)
+    const skippedLegs = legResults.filter((r) => r.skipped === true)
     // Every leg failing is the old whole-run failure and reports as one; a
     // partial failure must NOT read as success, because the un-run collections
     // did not get their haircut.
@@ -309,6 +366,10 @@ export async function POST(req: NextRequest) {
             total_dollars_removed: legResults.reduce((s, r) => s + r.dollars_removed, 0),
             legs: legResults,
             legs_failed: failedLegs.length,
+            // Skipped legs are a SUBSET of legs_failed (a leg that did not run
+            // did not haircut anything). Counted separately so a reader can tell
+            // "the RPC failed" from "we ran out of wall before reaching it".
+            legs_skipped: skippedLegs.length,
             legs_total: legResults.length,
           },
         });
@@ -349,6 +410,7 @@ export async function POST(req: NextRequest) {
           total_dollars_removed: totalDollarsRemoved,
           legs: legResults,
           legs_failed: 0,
+          legs_skipped: 0,
           legs_total: legResults.length,
         },
       });
