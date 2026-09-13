@@ -50,6 +50,20 @@
 -- `pull_value_usd_current`) is the likely answer, and it is a product decision
 -- with a migration behind it. Filed for Trevor; do not resolve it by fiat.
 --
+-- anon-exec: backfill_pack_rip_metadata -- unchanged, and MEASURED rather than
+-- assumed. `CREATE OR REPLACE FUNCTION` does not reset a function ACL, so this
+-- migration cannot have moved it, and a REVOKE here would be a change dressed as
+-- a no-op. Read live 2026-09-12 (PT) after this migration was applied:
+--   has_function_privilege(anon)          = false
+--   has_function_privilege(authenticated) = false
+--   has_function_privilege(service_role)  = true
+-- The only caller is /api/cron/backfill-pack-rip-metadata on the service role.
+-- ⚠ This line is the ONLY thing that was missing: its sibling 20260913014000
+-- states the same decision at its line 82, this file dropped it, and the guard
+-- `migration-new-function-states-its-anon-exec-decision` is keyed PER FUNCTION
+-- NAME per FILE -- so a decision stated in one file cannot vouch for another,
+-- by design. That is why main went red on a body byte-identical to a green one.
+--
 -- Body below is the at-open arm from 20260913014000, unchanged.
 
 CREATE OR REPLACE FUNCTION public.backfill_pack_rip_metadata(p_limit integer DEFAULT 500)
