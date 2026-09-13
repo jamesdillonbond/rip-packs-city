@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 📋 REGISTER — #82's mis-key breach is 29, not 6, and 24 of them landed in ONE DAY at an 18.6% rate · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only** — `docs/reference/known-issues.md` (#82 re-measured). No code, no migration, **no data mutation** — the remap stays Trevor's call.
+
+🚨 **THE PRIORITY CHANGED.** #82 reads as a slow historical wart adjudicated from 6 offenders. Live today: `topshot_impossible_parallel_serials = **29**` against a breach threshold of **3**, and **24 of the 29 sold on a single day (09-12)**.
+
+⭐⭐ **#82's DIAGNOSIS IS NOW CORROBORATED AT n=29.** Against `moments` (canonical `nft_id → edition_id`): **28 of 29 present, 28 of 28 DISAGREE** with the sale's edition, and **29 of 29 serials fit inside the BASE edition's circulation.** "Mis-keyed sale, not stale circulation" now holds for every row in the breach, not just the two that were adjudicable.
+
+⛔ **IT IS NOT VOLUME — and the control is the decisive part.** 09-12: **129** parallel sales, **24** mis-keyed (**18.60%**). **09-10: 213 parallel sales — MORE — and ZERO.** Every other day in fourteen is 0–0.7%. All 24 are `source = 'onchain'`, across **18 editions**, spread **07:59–16:17 PT** — neither one transaction nor one edition.
+
+⚠ **CAUSE OPEN, AND ONE TEMPTING EXPLANATION IS REFUTED RATHER THAN LEFT HANGING.** The 09-12 migration unscheduling jobid 219 applied at **07:42 PT**; the first mis-key sold at **07:59 PT**. **A dated coincidence I cannot explain — and the obvious mechanism fails its own test:** had retiring the self-heal merely UNMASKED offenders by no longer inflating `circulation_count`, old sales on those editions would have turned impossible too, and **there is not one mis-keyed sale before 2026-08-11.** These 24 SOLD on 09-12 — new mis-keys at ingest, not old rows re-classified. **The open question is in the `onchain` sale-keying path.**
+
+⭐ **HOW IT SURFACED, which is the argument for tonight's sentinel work paying for itself:** `Trust Health` has reported this number on every sweep, inside a report where **eight arms warn every run**. It became legible only once `extra.findings` started persisting each arm's DETAIL (shipped tonight) so the number could be queried instead of read in a Telegram. **The signal was never missing; it was unreadable.**
+
+✅ **`remap_topshot_parallel_to_base_misattributed()` is still the right fixer, still has no caller, and its guard is satisfied by 29 of 29 rows.** 🚨 **Still TREVOR'S CALL** — it mutates `sales.edition_id`, an FMV input. The call is now about 29 rows and a live producer rather than 6 historical ones.
+
 ### 2026-09-13 · 📋 REGISTER — the fleet's master alarm runs 27% of the time it is scheduled to, and the worst blind window in retention was 14 hours (#100) · Claude Code cloud, overnight autonomous
 
 **Shipped: docs only** — `docs/reference/known-issues.md` (#100 NEW, index 97 → 98). No code, no migration, no data. Purely additive: **0 non-blank lines lost, 14 added, all belonging to the new item.**
