@@ -1011,6 +1011,23 @@ export async function GET(
                           fontFamily: mono,
                           fontSize: capSize,
                           letterSpacing: 0.4,
+                          // ⚠ BOUNDED TO THE SLAB. This strip had no width and
+                          // no overflow, so a long pair simply spilled outside
+                          // the tile it captions. It FITS TODAY and the guard is
+                          // for the pins that do not exist yet: measured over
+                          // every moment anyone actually holds, the longest
+                          // serial line is 18 characters and the longest tier
+                          // 10, which at 0.54em + 0.4 letter-spacing is
+                          // 28 x 5.8 + the 4px gap = 166px inside a 130px
+                          // six-slab tile. The widest live pair today is 20
+                          // characters (120px), so nothing visible changes.
+                          // ⛔ nowrap, not just overflow: WRAPPING is the worse
+                          // failure — a second line in a fixed-height strip is
+                          // sliced through the middle (the sibling card's Simba
+                          // case, same day).
+                          maxWidth: grid.w,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
                         }}
                       >
                         <span

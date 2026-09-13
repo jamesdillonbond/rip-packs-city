@@ -65,6 +65,41 @@ export function caseTileWidth(count: number): number {
   return [0, 280, 250, 230, 210, 190, 170][n]
 }
 
+/**
+ * How many characters of set name / context fit on ONE line of a `w`-wide tile.
+ *
+ * ⭐ THE DIVISOR IS MEASURED FROM THE FONT FILE, NOT ESTIMATED — and the first
+ * attempt at this fix estimated it and got the magnitude wrong in a way that
+ * happened not to matter. `public/fonts/ShareTechMono-Regular.ttf` is
+ * `unitsPerEm = 1000` with an advance of **540** on 191 of its 194 glyphs, so a
+ * character at 10px advances 5.40px, plus the 0.3px letter-spacing the tile
+ * draws with = **5.70px**. A generic "mono is 0.6em" guess gives 6.3px and an
+ * over-count of ~12%; the truth is 5.70 and an over-count of ~1.8%.
+ *
+ * ⚠ 1.8% WAS ENOUGH, which is the part worth keeping. At the two widths this
+ * card actually renders, the old `w / 5.6` budget overflowed by EXACTLY ONE
+ * CHARACTER:
+ *
+ *   w = 170 (a six-tile case)  ->  30 chars x 5.70 = 171.0px in 170px
+ *   w = 280 (a single tile)    ->  50 chars x 5.70 = 285.0px in 280px
+ *
+ * and an overflowing line WRAPS: two ~12px lines centred in a 13px box are both
+ * sliced through the middle. Live instance, 2026-09-12: `jamesdillonbond`'s
+ * slot 5 is Disney Pinnacle's " Walt Disney Animation Studios • The Lion King
+ * Vol.2" — 51 characters, the longest set name any pinned trophy carries.
+ *
+ * The CSS `whiteSpace: nowrap` on those lines is the belt and this is the
+ * braces: nowrap guarantees one line, the budget puts the "…" in the right
+ * place instead of hard-clipping mid-glyph at the tile edge.
+ *
+ * Pinned against the TTF itself in `__tests__/og-trophy-caption-fits-its-tile.
+ * test.ts`, so a font swap or a size change reds the suite rather than silently
+ * re-opening this.
+ */
+export function captionCharBudget(w: number): number {
+  return Math.max(12, Math.floor(w / 5.7))
+}
+
 function renderFallback(fonts?: OgFont[], display = "sans-serif") {
   return new ImageResponse(
     (
@@ -185,16 +220,9 @@ export async function GET(
     // Characters that fit one line at 10px in a `w`-wide tile. Derived from the
     // width rather than fixed, because this card draws six 170px tiles or one
     // 280px tile from the same code and a budget that suits one clips the other.
-    // ⚠ AN ESTIMATE, AND IT IS THE REASON THE LINES ABOVE ARE ALSO CLAMPED IN
-    // CSS. At 10px mono with 0.3 letter-spacing a glyph advances ~6.3px, so
-    // `w / 5.6` hands out roughly 12% more characters than fit, and the overrun
-    // WRAPPED rather than clipped. The divisor is deliberately NOT retuned here:
-    // the advance above is arithmetic, not a measurement of the font satori
-    // actually loaded, and tightening it on arithmetic would ellipsise text that
-    // fits today. `whiteSpace: nowrap` makes the wrap impossible either way;
-    // what a corrected budget would buy is the "…" landing in the right place,
-    // which needs a rendered card to measure. Nothing in CI measures layout.
-    const lineBudget = Math.max(12, Math.floor(w / 5.6))
+    // Derived from the tile width and the FONT FILE's own advance — see
+    // captionCharBudget. Not an estimate any more.
+    const lineBudget = captionCharBudget(w)
 
     const jerseyFor = (t: Record<string, unknown>) =>
       jerseyByKey.get(
