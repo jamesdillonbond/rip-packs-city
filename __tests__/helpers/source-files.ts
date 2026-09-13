@@ -119,3 +119,43 @@ export function filesMatching(
     ),
   ].sort()
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The WHOLE-TREE walk, for guards whose subject is every source file in the
+// repo rather than a named root. Lives here rather than in a test file because
+// two guards now share it — the DEFECT 4 census and the TypeScript oracle — and
+// the second one originally imported it FROM the first. ⚠ Importing a
+// `*.test.ts` from another `*.test.ts` RE-REGISTERS its suites in the importing
+// file: the census silently ran twice, its 12 tests attributed to the oracle's
+// filename. A duplicated suite is worse than a missing one, because it reads as
+// extra coverage while doubling the cost and hiding which file actually failed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Unambiguous build/VCS noise at ANY depth. */
+const SKIP_ANYWHERE = new Set(["node_modules", ".git"])
+
+/**
+ * Build output — skipped ONLY at the repo root.
+ *
+ * ⛔ THIS SPLIT IS A BUG FIX, NOT TIDINESS. The first version skipped all of
+ * these by bare name at any depth, which silently excluded
+ * `app/(collections)/[collection]/pack/dist/[distId]/page.tsx` — **`dist` is a
+ * real ROUTE SEGMENT here, not build output** — hiding the repo's third-largest
+ * source file and its sibling from a guard whose entire purpose is to make a
+ * blind spot countable. ⭐ The population was unchanged, so nothing was
+ * mis-reported — but that was luck, and a name-based exclusion is a CLAIM about
+ * every directory in the tree that happens to share the name.
+ */
+const SKIP_AT_ROOT = new Set([".next", "dist", "build", "coverage", ".vercel"])
+
+/** Every JS/TS source file in the repo, absolute paths. */
+export function walkRepoSourceTree(dir: string, depth = 0, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    if (SKIP_ANYWHERE.has(entry)) continue
+    if (depth === 0 && SKIP_AT_ROOT.has(entry)) continue
+    const full = join(dir, entry)
+    if (statSync(full).isDirectory()) walkRepoSourceTree(full, depth + 1, out)
+    else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry)) out.push(full)
+  }
+  return out
+}

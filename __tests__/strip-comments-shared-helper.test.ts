@@ -270,20 +270,70 @@ describe("stripComments — the boundary that REPLACED the verbatim-interpolatio
 // drifted (8 → 7) unobserved. The COUNT lives in
 // `__tests__/strip-comments-defect-4-population.test.ts`. Keep them separate:
 // this file is the contract, that one is the census.
-describe("stripComments — DEFECT 4: JSX text is not JS (known, unfixed, pinned)", () => {
-  // An apostrophe in JSX prose is not a string delimiter, but this is a JS
-  // parser. `<p>Couldn't load</p>` opens an `sq` state that runs to the next
-  // apostrophe. Pinned so the boundary is visible rather than silent.
-  it("fails in the SAFE direction — it keeps too much, it does not blank code", () => {
+//
+// ✅ **DEFECT 4 WAS FIXED 2026-09-12 AND THESE ASSERTIONS ARE INVERTED, NOT
+// DELETED.** The repo's rule is that a test pinning the defect it was named to
+// prevent gets inverted — a passing test asserting a promise is what holds that
+// promise in place, and deleting it would leave the fix unpinned. Each `it`
+// below keeps its original fixture and flips the claim, so the diff reads as
+// the behaviour change it is. ⚠ Pin the PROPERTY, not the spelling: what is
+// asserted is that the comment is gone and the source is not, never the exact
+// blanked output.
+describe("stripComments — DEFECT 4: JSX text is not JS (FIXED 2026-09-12, pinned inverted)", () => {
+  // An apostrophe in JSX prose is not a string delimiter, and the machine now
+  // knows it: `<p>Couldn't load</p>` is jsxText, so the quote is prose.
+  it("STILL never blanks real source — the safe-direction guarantee is unchanged", () => {
     const s = ["function C() {", "  return <p>Couldn't load</p>", "}", "const KEEP_ME = 1"].join("\n")
-    // The guarantee that matters: real source is never lost.
+    // The guarantee that mattered before the fix and still matters after it.
     expect(stripComments(s)).toContain("KEEP_ME")
+    // ⚠ And the prose itself is source too — JSX text must survive intact.
+    expect(stripComments(s)).toContain("Couldn't load")
   })
 
-  it("is a REAL open boundary, not a hypothetical — the desync is reproduced here", () => {
-    // Positive control for the claim above: without this, "fails safe" would be
-    // asserting nothing, because there would be no desync to fail safely.
+  it("INVERTED — the comment after JSX prose is now STRIPPED, not survived", () => {
+    // Was: `expect(...).toContain("THIS_SURVIVES_THE_DESYNC")`, the positive
+    // control proving the desync was real. Same fixture, opposite claim: this
+    // is now the control proving the desync is GONE. If the boundary ever
+    // reopens, this reds with the comment text back in the output.
     const s = ["const a = <p>Couldn't</p>", "// THIS_SURVIVES_THE_DESYNC", "const b = 2"].join("\n")
-    expect(stripComments(s)).toContain("THIS_SURVIVES_THE_DESYNC")
+    const out = stripComments(s)
+    expect(out).not.toContain("THIS_SURVIVES_THE_DESYNC")
+    expect(out).toContain("const b = 2")
+  })
+
+  it("a URL in JSX TEXT is source, not a comment — the unsafe half of DEFECT 4", () => {
+    // 🚨 This is the case that refuted "DEFECT 4 fails in the SAFE direction".
+    // JSX text was parsed as CODE, so `//` in a URL opened a line comment and
+    // the rest of the line was BLANKED. Measured on the shipped stripper at
+    // app/(analytics)/analytics/api/page.tsx:116 — every guard was handed
+    // `https:` and 22 spaces where the production base URL is printed.
+    //
+    // ⚠ Asserted as a PROPERTY (the URL survives), not as the exact blanked
+    // output, so a reflow of the fixture cannot quietly retire it.
+    const s = ["export const C = () => (", "  <code>", "    https://www.rippackscity.com", "  </code>", ")"].join("\n")
+    expect(stripComments(s)).toContain("https://www.rippackscity.com")
+  })
+
+  it("a quote in JSX prose does not swallow the rest of the file", () => {
+    // The mechanism, stated as a property rather than a count: everything after
+    // an apostrophe in JSX text used to be copied verbatim to the next
+    // apostrophe. Two comments either side of one now both go.
+    const s = [
+      "export function C() {",
+      "  return (",
+      "    <div>",
+      "      <p>Couldn't load — we'll retry</p>",
+      "      {/* JSX_COMMENT_GOES */}",
+      "    </div>",
+      "  )",
+      "}",
+      "// TRAILING_COMMENT_GOES",
+      "export const AFTER = 1",
+    ].join("\n")
+    const out = stripComments(s)
+    expect(out).not.toContain("JSX_COMMENT_GOES")
+    expect(out).not.toContain("TRAILING_COMMENT_GOES")
+    expect(out).toContain("export const AFTER = 1")
+    expect(out).toContain("Couldn't load — we'll retry")
   })
 })

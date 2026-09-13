@@ -30,52 +30,33 @@
 // code is invisible to every guard built on this helper.
 
 import { describe, it, expect } from "vitest"
-import { readdirSync, statSync, readFileSync, mkdirSync, writeFileSync, mkdtempSync } from "node:fs"
+import { readFileSync, mkdirSync, writeFileSync, mkdtempSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 import { tmpdir } from "node:os"
 import { stripCommentsWithState } from "../scripts/lib/strip-comments.mjs"
+// ⚠ The walk MOVED to the shared helper on 2026-09-12 and is re-exported below
+// so nothing that imported it from here breaks. It moved because the
+// TypeScript-oracle guard needs the same tree, and importing it from this
+// *.test.ts re-registered this whole census inside that file — it ran twice,
+// under the wrong filename. Its `dist`-route-segment pin stays here, with the
+// census that the exclusion bug would have corrupted.
+import { walkRepoSourceTree } from "./helpers/source-files"
 
 const ROOT = process.cwd()
 
-/** Unambiguous build/VCS noise at ANY depth. */
-const SKIP_ANYWHERE = new Set(["node_modules", ".git"])
-
-/**
- * Build output — skipped ONLY at the repo root.
- *
- * ⛔ THIS SPLIT IS A BUG FIX, NOT TIDINESS. The first version of this guard
- * skipped all of these by bare name at any depth, which silently excluded
- * `app/(collections)/[collection]/pack/dist/[distId]/page.tsx` — **`dist` is a
- * real ROUTE SEGMENT here, not build output** — hiding the repo's third-largest
- * source file (2,384 lines) and its sibling `error.tsx` from a guard whose
- * entire purpose is to make a blind spot countable. The census read 2,871 files
- * and should have read 2,881.
- * ⭐ The population was unchanged (both files end `code`), so nothing was
- * mis-reported — but it was luck, not design, and a name-based exclusion is a
- * CLAIM about every directory in the tree that happens to share the name.
- */
-const SKIP_AT_ROOT = new Set([".next", "dist", "build", "coverage", ".vercel"])
-
 /**
  * Files ending in `sq` or `dq`. These fail SAFE (comments survive; no source is
- * lost), so this is a ceiling, not a ban.
+ * lost), so this was a ceiling rather than a ban.
  *
- * ⚠ Down only. If you fix one, lower this in the same commit. It is deliberately
- * satisfiable at ZERO — a guard that fails when its own boundary is fixed
- * punishes its own success.
+ * ✅ **DEFECT 4 IS FIXED (2026-09-12) AND THIS IS NOW ZERO** — it was 7 when the
+ * stripper gained real JSX awareness. It stays as a BAN rather than being
+ * deleted: the ceiling was written "deliberately satisfiable at ZERO — a guard
+ * that fails when its own boundary is fixed punishes its own success", and this
+ * is that design paying out. Re-opening the boundary reds it.
  */
-const MAX_KEEPS_TOO_MUCH = 7
+const MAX_KEEPS_TOO_MUCH = 0
 
-export function walk(dir: string, depth = 0, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    if (SKIP_ANYWHERE.has(entry)) continue
-    if (depth === 0 && SKIP_AT_ROOT.has(entry)) continue
-    const full = join(dir, entry)
-    if (statSync(full).isDirectory()) walk(full, depth + 1, out)
-    else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry)) out.push(full)
-  }
-  return out
-}
+export const walk = walkRepoSourceTree
 
 const rel = (f: string) => relative(ROOT, f).split(sep).join("/")
 
@@ -128,12 +109,30 @@ describe("stripComments — DEFECT 4 population is COUNTED, not merely described
   it("POSITIVE CONTROL — the sweep can SEE a desync", () => {
     // Without this, "0 files blank source" would be indistinguishable from a
     // detector that reports `code` for everything.
-    const jsx = ["function C() {", "  return <p>Couldn't load</p>", "}"].join("\n")
-    expect(stripCommentsWithState(jsx).endState).toBe("sq")
+    //
+    // ⚠ The JSX case that used to live here — `return <p>Couldn't load</p>`
+    // ending in `sq` — is DEFECT 4 itself, and it is fixed, so it is now a
+    // NEGATIVE control (below) and cannot serve as the positive one. An
+    // unterminated string still desyncs and is the honest probe: it is a real
+    // desync in any dialect, and nothing about the JSX fix can green it.
+    const unterminated = "const a = 'x\nconst b = 1\n"
+    expect(stripCommentsWithState(unterminated).endState).toBe("sq")
 
     const unclosedInterpolation = "const a = `x ${ y "
     const bad = stripCommentsWithState(unclosedInterpolation)
     expect(bad.tplDepth).toBeGreaterThan(0)
+  })
+
+  it("NEGATIVE CONTROL — DEFECT 4's own worked example is no longer a desync", () => {
+    // The exact fixture this file was built around. It ended `sq` for a year;
+    // an apostrophe in JSX prose is now prose, and the comment after it is
+    // stripped rather than handed to a guard as source.
+    const jsx = ["function C() {", "  return <p>Couldn't load</p>", "}"].join("\n")
+    const { endState, tplDepth } = stripCommentsWithState(jsx)
+    expect({ endState, tplDepth }).toEqual({ endState: "code", tplDepth: 0 })
+
+    const withComment = "const s = <p>we'll go</p>\n// STRIPPED NOW\nconst t = 'x'\n"
+    expect(stripCommentsWithState(withComment).code).not.toContain("STRIPPED NOW")
   })
 
   it("NEGATIVE CONTROL — ordinary source ends in the `code` state", () => {
@@ -223,7 +222,7 @@ describe("stripComments — DEFECT 4 population is COUNTED, not merely described
  * ratcheted: the line count moves with ordinary editing inside an already-
  * desynced file, and a ceiling that churns gets raised rather than read.
  */
-const MAX_FILES_WITH_STRING_DESYNC = 10
+const MAX_FILES_WITH_STRING_DESYNC = 0
 
 describe("stripComments — DEFECT 4 is counted where it HAPPENS, not only at EOF", () => {
   const files = walk(ROOT)
@@ -241,10 +240,19 @@ describe("stripComments — DEFECT 4 is counted where it HAPPENS, not only at EO
     // would pass having counted nothing — the vacuous-guard trap this whole
     // file exists to close. Positive control, negative control, and the
     // template-literal control that the first cut of this census got wrong.
-    const bad = stripCommentsWithState("const s = <p>we'll go</p>\n// KEPT\nconst t = 'x'\n")
+    //
+    // ⚠ The positive control is an UNTERMINATED string, not JSX prose. Before
+    // the DEFECT 4 fix it was `<p>we'll go</p>`, which is exactly the shape the
+    // fix removes — leaving it here would have pinned the defect in place, and
+    // a test that reds when its own subject is repaired gets deleted rather
+    // than read. This repo's rule is to INVERT such a test, never delete it:
+    // the JSX line below is now the negative control.
+    const bad = stripCommentsWithState("const s = 'unterminated\n// KEPT\nconst t = 1\n")
     expect(bad.lineStates[1]).toBe("sq")
-    const good = stripCommentsWithState("const s = <p>we will go</p>\n// STRIPPED\n")
+    expect(bad.code).toContain("// KEPT")
+    const good = stripCommentsWithState("const s = <p>we'll go</p>\n// STRIPPED\n")
     expect(good.lineStates[1]).toBe("code")
+    expect(good.code).not.toContain("STRIPPED")
     // Cadence/SQL prose in a template literal is NOT a desync and its `//` is
     // source, not a comment.
     const tpl = stripCommentsWithState("const q = `\n// cadence comment\n`\n")
@@ -279,12 +287,20 @@ describe("stripComments — DEFECT 4 is counted where it HAPPENS, not only at EO
     ).toBeLessThanOrEqual(MAX_FILES_WITH_STRING_DESYNC)
   })
 
-  it("names the population, and the count is not zero by accident", () => {
-    // ⚠ A census that finds nothing reads identically to a broken one. While
-    // the boundary exists this must find it; the day the stripper gains real
-    // JSX awareness, this assertion is deleted in the same commit that takes
-    // the ceiling to 0.
-    expect(desync.length).toBeGreaterThan(0)
+  it("names the population, and zero is a MEASUREMENT rather than an absence", () => {
+    // ⚠ A census that finds nothing reads identically to a broken one. The
+    // previous version of this test asserted `desync.length > 0` and said "the
+    // day the stripper gains real JSX awareness, this assertion is deleted in
+    // the same commit that takes the ceiling to 0". That day is 2026-09-12 —
+    // but deleting it outright would leave the zero above unguarded, which is
+    // the trap it was written against. So the non-vacuity claim MOVES rather
+    // than disappearing: the detector must still be able to produce a non-zero
+    // over this very tree, proven by counting a state it DOES find.
     expect(desync.every((r) => r.file.length > 0 && r.lines > 0)).toBe(true)
+
+    const tplLines = files
+      .map((f) => stripCommentsWithState(readFileSync(f, "utf8")).lineStates.filter((s) => s === "tpl").length)
+      .reduce((a, b) => a + b, 0)
+    expect(tplLines).toBeGreaterThan(0)
   })
 })
