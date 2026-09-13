@@ -51,10 +51,36 @@ interface SummaryTotals {
  * history list holds 598 packs, the hero said "PACKS PURCHASED 133", TOTAL SPENT
  * $398 covered 47 of them (33 secondary + 14 primary with a recoverable retail
  * price; 86 primary drops have none), and RIPPED VALUE $241.40 was the sum over
- * 50 of 503 rips. `pack_rips.pull_value_usd` is populated on 312,982 of
- * 3,685,458 rows product-wide — 8.5% — so the rip side understates by roughly an
+ * 50 of 503 rips. `pack_rips.pull_value_usd` is populated on 312,202 of
+ * 3,685,525 rows product-wide — 8.5% — so the rip side understates by roughly an
  * order of magnitude for EVERY user, not just this one. NET P&L then subtracted
  * the first from the second and published the difference as a measured result.
+ *
+ * ⛔ ROOT-CAUSED 2026-09-12, AND IT IS NOT A COVERAGE RAMP — DO NOT TUNE THE
+ * BACKFILL. The 8.5% does not fill in over time for most collections, because
+ * `pull_value_usd` is computed by joining `moment_acquisitions` on
+ * `source_pack_rip_id`, and that column is populated on **94.8% of NBA Top Shot
+ * rows and 0.0% of every other collection** — All Day (77,117 acquisition rows),
+ * Pinnacle (18,568), Golazos (12,920), UFC (1,277): all zero, none linked to a
+ * rip. So outside Top Shot the join can never match and a rip can never be
+ * priced. Measured on this very wallet: of its 503 rips, 385 are All Day (2
+ * valued) and 118 are Top Shot (48 valued) — i.e. **77% of the history sits in a
+ * collection where a pull value is structurally unobtainable**, which is why the
+ * coverage floor is nowhere near met and NET P&L withholds.
+ *
+ * ⚠ AND THE BACKFILL MARKS THOSE FAILURES AS DONE. `backfill_pack_rip_metadata`
+ * stamps `metadata_updated_at` on every candidate it touches, including the ones
+ * whose pull value came back NULL — and its two legs re-select on
+ * `metadata_updated_at IS NULL` (the drain) and `pull_value_usd IS NOT NULL`
+ * (the stale re-price), so a NULL-valued row is invisible to BOTH forever.
+ * 363,336 rows are already in that state — MORE than the 312,202 it has
+ * successfully valued. ⛔ Do not "fix" that by retrying them: sampled 2,000 of
+ * them and **0** had acquisition rows, so a retry leg would spin on 363k
+ * permanently unpriceable rows and starve the real drain.
+ *
+ * The unlock is an ingest that writes `moment_acquisitions.source_pack_rip_id`
+ * for the non-Top-Shot collections. Until that exists, these captions are the
+ * honest output and should keep withholding — they are not a stopgap.
  *
  * `ripped_value_known_count` absent (an older cached payload) is treated as
  * coverage UNKNOWN, which withholds — never as full coverage.
