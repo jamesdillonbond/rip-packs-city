@@ -4,6 +4,13 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-13 ~02:0x PT (overnight autonomous; two things NOT to chase, each already checked to the bottom)
+
+1. ⛔ **DO NOT CHASE THE `offers-sweep` HIGH ALERT — the lane stopped 30 hours ago and the alert is residual.** `get_pipeline_alerts()` currently reports *"7/7 runs failed (100.0%), severity **high**"*, which reads as an active outage. **Its last run was 2026-09-12 02:31Z**; a concurrent session disabled the backstop step that was reviving it (`a79b553f0`, 09-11 22:00 PT, *"it revives a lane retired on purpose, against a decommissioned host"*) and nothing has called it since. The seven rows are simply still inside the arm's 2-day window; it self-clears ~09-14 02:31Z.
+    ⭐ **THE TRANSFERABLE BIT, because it cost me ten minutes and would cost the next reader the same: the `failure_rate` arm cannot tell "failing NOW" from "failed, then STOPPED".** Its window spans the change point, so a lane that has been correctly retired keeps reporting a HIGH failure rate until the last failing run ages out. **Check `max(started_at)` on the lane before treating a `failure_rate` alert as live** — "stopped" is `cron_silent`'s question, not this arm's.
+
+2. ⚠ **THE PDF ART CHANGE ADDS AT MOST +6 s, NOT +36 s — verified, in case the arithmetic looks alarming.** `trophy-case/pdf` now attempts a live Pinnacle render on a cache miss where it used to return instantly. All six slots fetch through **one `Promise.all`**, each under the existing 6 s `AbortController`, against `maxDuration = 60`. So the worst case is one 6 s wait in parallel, not six of them in series. ⭐ Stated because "strictly no-worse" was a claim about CORRECTNESS and latency is a different axis — it was checked separately rather than assumed to follow.
+
 ## STEER — added 2026-09-13 ~02:4x PT (overnight autonomous; a BASELINE with falsifiers, so tonight's four ships are measurable rather than asserted)
 
 **Four changes shipped tonight reduce instance load. None of them is CLAIMED to have fixed the saturation class (#73, #84, go-live M11) — this block exists so the claim can be TESTED instead.**
