@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ CODE+DOCS — two register items (one OPEN) were invisible to the index, and the guard built to prevent exactly that passed VACUOUSLY · Claude Code cloud, overnight autonomous
+
+**Shipped:** `docs/reference/known-issues.md` (#98 and #99 MOVED into `### Open`, index regenerated 95 → 97 entries), `__tests__/known-issues-index-lists-every-item.test.ts` (+2 cases). No migration, no data, no schedule. **REVERT:** `git revert <sha of "fix(register): two items sat outside the Open section">` — the move is content-preserving (verified as a multiset diff: **0 non-blank lines added, 0 lost**).
+
+🚨 **#98 IS MARKED `🟡 OPEN` AND WAS NOT IN THE STATUS INDEX.** Both it and #99 sat physically BELOW the `### Resolved` heading, so anyone enumerating open work from the index never saw #98 — and its open half is not cosmetic: *"the Top Shot ask side has no last-confirmed signal at all"*.
+
+⭐⭐ **THE GUARD THAT EXISTS TO CATCH THIS PASSED — and understanding why is the durable part.** `parseItems()` slices `### Open` to the NEXT `### ` heading. Every assertion in that suite then checks *"is every item THE PARSER FOUND present in the index?"* — so an item placed **outside the parser's window is absent from both sides of the comparison and the guard agrees with itself.** ⭐ **Ask what a passing guard is structurally SILENT about: this one could not see the population it was written to police.**
+
+⚠ **AND IT HAD ALREADY HAPPENED — the Resolved heading's own note records item #8 arriving the same way**, which is why that heading carries *"CLOSED TO NEW ENTRIES"*. A prose warning did not hold; nothing mechanical checked it.
+
+✅ **THE FIX IS A BAN AT ZERO OVER THE WHOLE FILE:** no numbered item may exist outside `### Open`. Invariant under ordinary additions and deletions, red only when an item is misplaced — **not a count**, which would red the day someone legitimately closes one.
+
+⭐ **It reuses the generator's OWN matcher rather than restating its item regex in the test** — it re-parses a copy with every heading after `### Open` demoted, so the parser's window runs to EOF. A copied regex would be a claim about the generator that goes stale silently: the same failure one level up.
+
+**3 mutations, 3 caught, and the decisive one is not synthetic** — restoring the ACTUAL pre-fix file (98/99 under Resolved) reds it (2 failures); neutering the widening helper reds the positive control; emptying the Open section reds 7.
+
+⚠ **A SELF-INFLICTED ONE WORTH RECORDING:** I undid a mutation with `git checkout <testfile>` and **destroyed the new tests**, because the file was never committed — `git checkout` restores HEAD, not the pre-mutation state. **Back up to a path outside the repo before mutating, and restore from that copy.**
+
 ### 2026-09-13 · ⛔ RETRACTED — I set out to ship the reconcile `ok` fix and stopped: the operator record forbids it BY NAME, and the blind spot that revived it is refuted · Claude Code cloud, overnight autonomous
 
 **Shipped: docs only** — the inbox filing's fourth pass + its INDEX entry. **No code, no migration, no data.** Nothing to revert.
