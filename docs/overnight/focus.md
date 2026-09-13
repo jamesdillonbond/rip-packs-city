@@ -12,12 +12,17 @@
 
 | what | evidence it works | revert |
 |---|---|---|
-| **counterparty cooldown + re-arm** (#99) | change point **00:59 PT**, exact: the same scan went **66 s TIMEOUT → 10.1 s ok**, then 24 cooldown ticks at **270–932 ms**, then 4 productive scans at **120/120 rows each**. No failure since. | in #99 |
+| **counterparty cooldown + re-arm** (#99) | change point **00:59 PT**, exact: the same scan went **66 s TIMEOUT → 10.1 s ok**, then 24 cooldown ticks at **270–932 ms**, then 4 productive scans at **120/120 rows each**. No failure since. ⚠ **“No failure since” WAS TRUE AT 05:1x AND IS NOT NOW** — four claim timeouts followed at 05:41–06:01 PT; the counterparty blocks below supersede this row. | in #99 |
 | **`sentinel.extra.findings`** | live: 8 findings with detail, **cap binding at exactly 400 chars** | in the ledger |
 | **sentinel header names the changed SET** | sweep ran 02:46 PT, Telegram **accepted**, duration 31.6 s vs 34.0 s before (the added read costs nothing) | `git revert` |
 | **`daily-portfolio-snapshot` rows_written** | CI 5308 green, Vercel **READY**; ⏳ first real number lands on the **00:05 PT** run tomorrow | `git revert` |
 | **backstop freshness window** | full forced wave, all 4 cohorts: **193 skipped as fresh, 3 backfills dispatched** where it would previously have dispatched ~196 (`backstop_fresh_skipped` was **0 on every forced wave** before). **~98% off this lane's backstop load.** | `git revert` |
 | **register index guard** | the guard now reds on the actual pre-fix file | `git revert` |
+| **`idx_sales_2026/2027_nullseller_soldat`** (prod DB) | real caller: `idx_scan` **0 → 3**, ~120 index tuples/tick; EXPLAIN `7776.54 → 47.10`, Sort gone; **4 claim timeouts → none**; the re-arm recovered **110 rows, confirmed to `sales` itself**. ⚠ **Quiet fleet — wave behaviour UNTESTED.** | `DROP INDEX CONCURRENTLY IF EXISTS public.idx_sales_2026_nullseller_soldat;` (+ `_2027_`) |
+| **`rollup_allday_rip_pull_value` re-pin** | the LIVE sweep itself: **`checked 202 pins — 202 clean, 0 needing attention`** (was 201 clean / 1 stale at 05:46 PT). Pin body md5-identical to live `prosrc` under both normalisations. | `git revert` |
+| **migration parse guard** (new CI step) | CI: **`parsed 1028 migration file(s) — 0 with syntax errors`**, 37 s. Three controls fire — real defect → exit 1, blinded needle → exit 2, empty dir → exit 2. | `git revert` |
+| **stale-pin repo guard** (new blocking test) | 202/202 pins parsed, **0 pointing at a superseded migration**; three controls fire, incl. the adjacency regex caught as `expected 179 to be 202`. | `git revert` |
+| **migration `20260913032000` made valid SQL** | it carried a line that had lost its `-- ` prefix — **`syntax error at or near`** a backtick, proven by feeding that one line to psql. Unreplayable from the day it landed. | `git revert` |
 
 ### 🚨 THREE NEW ITEMS, EACH NEEDING A DECISION THAT IS NOT MINE
 
