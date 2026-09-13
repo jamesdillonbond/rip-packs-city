@@ -242,7 +242,6 @@ async function sendTelegram(text: string): Promise<Delivery> {
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
       {
         method: "POST",
-        signal: AbortSignal.timeout(10_000),
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: TELEGRAM_CHAT_ID,
@@ -277,7 +276,6 @@ async function sendEmail(subject: string, html: string): Promise<Delivery> {
     // Same bound, same reason as the Telegram send above.
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      signal: AbortSignal.timeout(10_000),
       headers: {
         Authorization: `Bearer ${RESEND_API_KEY}`,
         "Content-Type": "application/json",
