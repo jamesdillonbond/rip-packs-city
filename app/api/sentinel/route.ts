@@ -670,6 +670,131 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Portfolio Cache Drain — an OUTCOME check on `saved_wallets.cached_*`, the
+  // columns the signed-in dashboard now reads for every portfolio number
+  // (app/api/profile/collection-stats/route.ts went cache-first on 2026-09-12,
+  // because the live aggregate cannot complete on a large wallet).
+  //
+  // ⚠ WHY NOTHING ELSE CAN SEE THIS, and it is not the Ownership gap again — it
+  // is its MIRROR. That arm catches a pipeline that fails and writes nothing.
+  // This one catches a pipeline that SUCCEEDS, WRITES ROWS, AND STILL LOSES:
+  // `reconcile-saved-wallet-stats` sweeps a bounded batch under a soft deadline
+  // and COMMITS the partial result, so it is working-as-designed on every run
+  // while the backlog behind it grows without limit. Measured 2026-09-12, the
+  // three instruments that exist all read healthy through a 16-hour drain:
+  //   * Pipeline Silence — the cron fired every hour, exactly on time.
+  //   * detect_stalled_pipelines() — keys on recency; the runs are recent.
+  //   * the success-coverage arm below — its predicate is zero-successes AND
+  //     zero-rows-written, and this pipeline is the NAMED reason that `AND`
+  //     exists (see its comment: a partial sweep reports ok=false with its work
+  //     committed, and was 2 of the 4 false positives that guard removed).
+  // So the one arm that could have fired is deliberately, correctly blind here.
+  // ⛔ Do NOT "fix" that by loosening the rows_written guard — it would restore
+  // 4 known false positives to catch this one thing, and this arm is the cheaper
+  // trade: it asks the outcome question instead ("is the data actually fresh"),
+  // which is the same move Ownership Index Freshness makes one pipeline wide.
+  //
+  // ⭐ THE METRIC IS THE PIPELINE'S OWN, and that is the point: every run writes
+  // `extra.oldest_cache_h` — the age of the oldest cached row it can see. That
+  // is not a proxy for the user-visible quantity, it IS the user-visible
+  // quantity: the dashboard stamps "as of Nh ago" off the very same columns, so
+  // this arm reads the caption the product is printing.
+  //
+  // THRESHOLDS ARE CONTRACT-DERIVED, THEN CHECKED AGAINST HISTORY — not fitted
+  // to it. The cron fires hourly and only considers rows older than
+  // `min_age_minutes` (360), so the design guarantee is ~6h plus one sweep; the
+  // post-drain p50 is 0.9h. 12h therefore means a full cycle was missed.
+  // Replayed over all 79 runs in retention (2026-09-09 → 09-12): the 74 runs
+  // DURING the known 16h drain hit p50 7.0h / max 17.0h and would have warned
+  // 14 times; the 5 runs after it hit p50 0.9h / max 6.2h and would have warned
+  // ZERO times. ⚠ The quiet side is only 5 runs — thin, and stated as thin.
+  // ⚠ 24h (crit) has NEVER fired, including through that drain, and is NOT
+  // calibrated: it is deliberately above the worst thing ever observed, so it
+  // means "the drain is losing to the inflow", not "the drain is deep".
+  //
+  // ⚠ THE READING AGES TOO. `oldest_cache_h` was true when its run took it and
+  // can only have gotten WORSE since, so the arm reports
+  // `oldest_cache_h + (now - started_at)` — a LOWER BOUND, labelled as one. This
+  // is also what keeps the arm honest if the cron stops: a 14h-old reading of 5h
+  // is a 19h-old cache, not a 5h one. Pipeline Silence still owns the cadence
+  // question; this never becomes a second cadence check.
+  try {
+    const drainWarn = thr("Portfolio Cache Drain", "warn_at", 12);
+    const drainCrit = thr("Portfolio Cache Drain", "crit_at", 24);
+    const { data: drainRows, error: drainErr } = await supabase
+      .from("pipeline_runs")
+      .select("started_at, extra")
+      .eq("pipeline", "reconcile-saved-wallet-stats")
+      .order("started_at", { ascending: false })
+      .limit(1);
+
+    if (drainErr) {
+      const sat = isSaturationError(drainErr.message);
+      checks.push({
+        name: "Portfolio Cache Drain",
+        status: sat ? "warn" : "critical",
+        detail: `${sat ? INCONCLUSIVE : ""}Query error: ${drainErr.message}`,
+      });
+    } else if (!drainRows || drainRows.length === 0) {
+      // Same reasoning as Ownership above: pipeline_runs prunes at ~73h, so an
+      // empty result means the reconciler has not run inside the retention
+      // window — strictly worse than the crit threshold, not an absence of news.
+      checks.push({
+        name: "Portfolio Cache Drain",
+        status: "critical",
+        detail:
+          "reconcile-saved-wallet-stats has no run within pipeline_runs retention (~73h) — " +
+          "every portfolio number on the dashboard is at least that stale.",
+      });
+    } else {
+      const raw = (drainRows[0] as { extra?: Record<string, unknown> | null }).extra
+        ?.oldest_cache_h;
+      const reported = raw === null || raw === undefined ? null : Number(raw);
+      const readingAgeH =
+        (now.getTime() - new Date(drainRows[0].started_at as string).getTime()) /
+        3_600_000;
+
+      if (reported === null || !Number.isFinite(reported)) {
+        // ⚠ UNREADABLE, NOT ZERO. The key is written by
+        // reconcile_all_saved_wallet_stats(); a version that stops emitting it
+        // would otherwise silently park this arm at "ok" forever, which is the
+        // exact shape — a failed read rendering as an answer — the rest of this
+        // route exists to refuse. `value` is omitted rather than zeroed.
+        checks.push({
+          name: "Portfolio Cache Drain",
+          status: "warn",
+          detail:
+            "Last reconcile run published no `extra.oldest_cache_h` — the cache depth is " +
+            `UNREADABLE, not zero (run ${readingAgeH.toFixed(1)}h ago).`,
+        });
+      } else {
+        const effective = reported + readingAgeH;
+        checks.push({
+          name: "Portfolio Cache Drain",
+          status:
+            effective < drainWarn
+              ? "ok"
+              : effective < drainCrit
+                ? "warn"
+                : "critical",
+          detail:
+            `Oldest portfolio cache >= ${effective.toFixed(1)}h ` +
+            `(${reported.toFixed(1)}h when measured, reading ${readingAgeH.toFixed(1)}h old). ` +
+            "Lower bound: the cache can only have aged since. " +
+            `Dashboard captions read from these same columns. warn>=${drainWarn}h crit>=${drainCrit}h`,
+          value: `>=${effective.toFixed(1)}h`,
+        });
+      }
+    }
+  } catch (e: any) {
+    const sat = isSaturationError(e?.message);
+    checks.push({
+      name: "Portfolio Cache Drain",
+      status: sat ? "warn" : "critical",
+      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
+    });
+  }
+
   try {
     // Scope to CANONICAL Top Shot (integer-pair external_id), latest-per-edition,
     // split by printing class. sentinel_fmv_confidence_rows(collection) can only

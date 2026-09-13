@@ -126,12 +126,37 @@ function greenFixtures(): Fixtures {
       },
       error: null,
     },
-    // Ownership Index Freshness reads the most recent productive run of either
-    // ownership writer. Fresh => ok.
-    pipeline_runs: {
-      data: [{ pipeline: "ownership-onchain-walk", started_at: new Date().toISOString() }],
-      error: null,
-    },
+    // ⚠ THREE ARMS READ `pipeline_runs`, IN THIS ORDER, so the fixture is a
+    // SEQUENCE — the harness hands successive calls successive elements and
+    // clamps at the last. A single object here would feed all three the same
+    // payload, and the Portfolio Cache Drain arm would then read a row with no
+    // `extra` and correctly report UNREADABLE, turning this green battery amber.
+    //   [0] Ownership Index Freshness — most recent PRODUCTIVE run of either
+    //       ownership writer. Fresh => ok.
+    //   [1] Portfolio Cache Drain — most recent reconcile run, read for
+    //       `extra.oldest_cache_h`. 0.9h taken just now => ok.
+    //   [2] the notification-delivery read, which wants `extra.notifications`
+    //       and finds none — exactly what it saw before this sequence existed.
+    pipeline_runs: [
+      {
+        data: [{ pipeline: "ownership-onchain-walk", started_at: new Date().toISOString() }],
+        error: null,
+      },
+      {
+        data: [
+          {
+            pipeline: "reconcile-saved-wallet-stats",
+            started_at: new Date().toISOString(),
+            extra: { oldest_cache_h: 0.9 },
+          },
+        ],
+        error: null,
+      },
+      {
+        data: [{ pipeline: "ownership-onchain-walk", started_at: new Date().toISOString() }],
+        error: null,
+      },
+    ],
     // Per-collection + per-source ingest health — all within their ceilings.
     "rpc:sentinel_sales_ingest_health": { data: ingestHealthy(), error: null },
     // Pipeline Success Coverage: two watchlisted pipelines, both with at least one
@@ -445,6 +470,127 @@ describe("POST /api/sentinel — full battery", () => {
       stubFetch([sniperOk, telegramOk, resendOk])
       const c = check(await (await POST(post())).json(), "Ownership Index Freshness")
       expect(c.status).toBe("warn")
+    })
+  })
+
+  // Portfolio Cache Drain — the MIRROR of the arm above. Ownership catches a
+  // pipeline that fails and writes nothing; this catches one that succeeds,
+  // writes rows, and still loses ground. `reconcile-saved-wallet-stats` sweeps a
+  // bounded batch under a soft deadline and commits the partial result, so it is
+  // working-as-designed on every run while its backlog grows — and it is the
+  // NAMED reason the success-coverage arm carries its `rows_written` guard, so
+  // the one instrument that could have fired is deliberately blind here.
+  // Measured 2026-09-12: a 16-hour drain ran with Pipeline Silence,
+  // detect_stalled_pipelines() and Pipeline Success Coverage all green.
+  describe("Portfolio Cache Drain", () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+    /** Element [1] of the pipeline_runs sequence is the drain arm's read. */
+    const withDrain = (row: Record<string, unknown> | null, err: unknown = null) => {
+      const g = greenFixtures()
+      const seq = g.pipeline_runs as unknown as Array<Record<string, unknown>>
+      return {
+        ...g,
+        pipeline_runs: [seq[0], { data: row === null ? [] : [row], error: err }, seq[2]],
+      } as typeof g
+    }
+
+    it("stays ok on a shallow cache measured moments ago", async () => {
+      install(withDrain({ started_at: hoursAgo(0.1), extra: { oldest_cache_h: 0.9 } }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("ok")
+      expect(c.value).toMatch(/^>=1\.0h$/)
+    })
+
+    // ⭐ THE REASON THIS ARM EXISTS, replayed from the real incident: the run
+    // reports ok=false with `soft_deadline_reached_partial_sweep_committed` and
+    // a nonzero write, which is precisely the shape every other instrument reads
+    // as healthy-or-excluded. The arm must key on the OUTCOME and nothing else.
+    it("warns on the real 2026-09-12 16h drain — a run that SUCCEEDED at writing rows", async () => {
+      install(
+        withDrain({
+          started_at: hoursAgo(0.2),
+          ok: false,
+          rows_written: 8,
+          error: "soft_deadline_reached_partial_sweep_committed",
+          extra: { oldest_cache_h: 16, wallets_done: 2, wallets_total: 16, truncated: true },
+        })
+      )
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("16.0h when measured")
+    })
+
+    // The converse of the same property, and the one that would catch this being
+    // rewritten as a success check: a partial sweep with a SHALLOW cache is
+    // healthy. ok=false is not the question being asked.
+    it("stays ok on a partial sweep whose cache is shallow — ok=false is not the question", async () => {
+      install(
+        withDrain({
+          started_at: hoursAgo(0.1),
+          ok: false,
+          rows_written: 0,
+          error: "soft_deadline_reached_partial_sweep_committed",
+          extra: { oldest_cache_h: 0.8 },
+        })
+      )
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Portfolio Cache Drain").status).toBe("ok")
+    })
+
+    // ⭐ THE READING AGES TOO. A 5h cache measured 14h ago is a 19h cache — the
+    // number can only have gotten worse since. Without the age term this reads
+    // 5h and stays green, so a status-only test on a FRESH reading would pass
+    // just as happily with the term deleted; this is the assertion that pins it.
+    it("adds the AGE OF THE READING — a shallow number taken long ago is not a shallow cache", async () => {
+      install(withDrain({ started_at: hoursAgo(14), extra: { oldest_cache_h: 5 } }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("5.0h when measured")
+      expect(c.detail).toContain("reading 14.0h old")
+      expect(c.value).toMatch(/^>=19\.0h$/)
+    })
+
+    it("goes critical once the effective depth passes the crit threshold", async () => {
+      install(withDrain({ started_at: hoursAgo(1), extra: { oldest_cache_h: 30 } }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      expect(check(await (await POST(post())).json(), "Portfolio Cache Drain").status).toBe(
+        "critical"
+      )
+    })
+
+    // ⚠ UNREADABLE IS NOT ZERO. The key is written by the reconcile function; a
+    // version that stopped emitting it would otherwise park this arm at "ok"
+    // forever — a failed read rendering as an answer, which is the exact shape
+    // the rest of this route exists to refuse. `value` must be ABSENT, not 0.
+    it("reports UNREADABLE, never ok, when the run published no oldest_cache_h", async () => {
+      install(withDrain({ started_at: hoursAgo(0.5), extra: { wallets_done: 4 } }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("UNREADABLE, not zero")
+      expect(c.value).toBeUndefined()
+    })
+
+    // Same retention logic as Ownership: pipeline_runs prunes at ~73h, so an
+    // empty window means the reconciler has not run inside it — strictly worse
+    // than crit, arriving exactly when it has gone on long enough to matter.
+    it("treats an empty pipeline_runs window as CRITICAL, not ok", async () => {
+      install(withDrain(null))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("retention")
+    })
+
+    it("warns rather than pages when the query itself fails under saturation", async () => {
+      install(withDrain(null, { message: "canceling statement due to statement timeout" }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("INCONCLUSIVE")
     })
   })
 
