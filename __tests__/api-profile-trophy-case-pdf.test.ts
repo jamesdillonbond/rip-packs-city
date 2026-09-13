@@ -299,7 +299,18 @@ function recordFetch(respond: (url: string) => Promise<Response> | Response) {
 }
 
 describe("/api/profile/trophy-case/pdf — moment art", () => {
-  it("NEVER fetches a Pinnacle render directly — cache or nothing", async () => {
+  it("🚨 a cache MISS now TRIES the live render — the 'guaranteed 403' was measured false", async () => {
+    // ⛔ INVERTED 2026-09-13, not deleted. This test used to assert "NEVER
+    // fetches a Pinnacle render directly — cache or nothing", on the reasoning
+    // that such a request "is guaranteed to 403 and cost 6s of the budget".
+    // ⭐ That is measured FALSE in production and register #90 names this file
+    // as carrying the claim: `/api/public/pinnacle-image/<id>` from Vercel 302s
+    // to a freshly-signed assets.disneypinnacle.com Location (`x-vercel-id:
+    // iad1`) and the render fetches — 61,788 B came back.
+    // 🚨 AND THE COST OF THE OLD ASSERTION WAS REAL: `pinnacle_render_cache`
+    // holds ONE ROW (live read 2026-09-13, `fetched_at` 2026-07-16), so "cache
+    // or nothing" meant EVERY OTHER Pinnacle pin rendered as a placeholder in a
+    // PDF built to be shared. A passing test was holding that in place.
     installArtSupabase({
       slabThumb: "https://www.rippackscity.com/api/public/pinnacle-image/abc123",
       renderCache: null, // cache MISS
@@ -308,9 +319,24 @@ describe("/api/profile/trophy-case/pdf — moment art", () => {
 
     const res = await call("?username=someone")
     expect(res.status).toBe(200)
-    // The whole point: a cache miss must fall through to the placeholder, not
-    // to a request that is guaranteed to 403 and cost 6s of the budget.
-    expect(calls.filter((c) => c.url.includes("pinnacle-image"))).toEqual([])
+    expect(calls.filter((c) => c.url.includes("pinnacle-image")).length).toBeGreaterThan(0)
+  }, 120000)
+
+  it("⭐ and a failing live render still yields a PDF — the change is strictly no-worse", async () => {
+    // The property that makes shipping this safe on a production measurement
+    // this sandbox cannot repeat (our own agent proxy denies both hosts at
+    // CONNECT, which reads exactly like a WAF 403 and is not one): if the live
+    // fetch 403s, the caller draws the same placeholder it drew before, and the
+    // document still renders.
+    installArtSupabase({
+      slabThumb: "https://www.rippackscity.com/api/public/pinnacle-image/abc123",
+      renderCache: null,
+    })
+    recordFetch(async () => new Response("", { status: 403 }))
+
+    const res = await call("?username=someone")
+    expect(res.status).toBe(200)
+    expect(Buffer.from(await res.arrayBuffer()).subarray(0, 5).toString("latin1")).toBe(PDF_MAGIC)
   }, 120000)
 
   it("uses the cached render when pinnacle_render_cache has real PNG bytes", async () => {

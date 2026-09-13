@@ -93,9 +93,33 @@ type FetchedArt = { bytes: Buffer; kind: "png" | "jpg" };
 const PINNACLE_IMG_RE = /\/api\/public\/pinnacle-image\/([A-Za-z0-9-]{3,64})/;
 
 async function fetchMomentArt(url: string): Promise<FetchedArt | null> {
-  // Pinnacle renders: the asset CDN 403s all datacenter egress, so the ONLY
-  // server-usable source is our browser-harvested cache (see
-  // pinnacle_render_cache + the ledger's PINNACLE-ART-DATACENTER-BLOCK item).
+  // Pinnacle renders: prefer our browser-harvested cache (pinnacle_render_cache)
+  // — it is already downscaled and costs one indexed read.
+  //
+  // 🚨 BUT A CACHE MISS NO LONGER MEANS A PLACEHOLDER, AND THE CLAIM THAT MADE IT
+  // ONE IS REFUTED. This block used to end `return null` on the reasoning that
+  // "the asset CDN 403s all datacenter egress, so the ONLY server-usable source
+  // is our cache". ⛔ `pinnacle_render_cache` holds **ONE ROW** (re-read live
+  // 2026-09-13, `fetched_at` 2026-07-16), so that `return null` was rendering
+  // EVERY OTHER Pinnacle pin as a placeholder in a PDF people share.
+  //
+  // ⭐ The blanket egress claim is measured false, in production, and register
+  // #90 names THIS FILE as carrying it: `GET /api/public/pinnacle-image/<id>`
+  // from Vercel returns a 302 to a freshly-signed `assets.disneypinnacle.com`
+  // Location (`x-vercel-id: iad1`) and the render then fetches — 61,788 B came
+  // back. A datacenter DOES read the SIGNED render; what was never measured is
+  // the unsigned/durable url, which nothing here asks for.
+  //
+  // ⚠ So this now falls through to the generic path below, which already does
+  // everything this needs: absolutize (its own comment names Pinnacle), bounded
+  // 6 s fetch, the browser UA that comment says Dapper asset CDNs require,
+  // size cap, format sniff, background strip and a 640 px downscale.
+  // ⭐ STRICTLY NO-WORSE, which is what makes it safe to ship on someone else's
+  // production measurement that this sandbox cannot repeat (our own agent proxy
+  // denies both hosts at CONNECT, which reads exactly like a WAF 403 and is not
+  // one): a cache hit behaves identically, and if the live fetch 403s or times
+  // out the generic path returns null and the caller draws the same placeholder
+  // it draws today.
   const pin = url.match(PINNACLE_IMG_RE);
   if (pin) {
     try {
@@ -120,8 +144,9 @@ async function fetchMomentArt(url: string): Promise<FetchedArt | null> {
           return { bytes, kind: isPng ? "png" : "jpg" };
         }
       }
-    } catch { /* fall through to placeholder */ }
-    return null; // direct fetch would 403 — don't waste the timeout budget
+    } catch { /* fall through to the live render below */ }
+    // No `return null` here — fall through to the generic fetch. See the block
+    // at the top of this function for why, and why it cannot make things worse.
   }
   const target = normalizeThumbUrl(url, BASE_URL);
   const ac = new AbortController();
