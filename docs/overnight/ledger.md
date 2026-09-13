@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 📋 REGISTER — a user-facing daily series has 8 permanent holes in 30 days, and the fix is one console edit (#103) · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only** — `docs/reference/known-issues.md` (#103 NEW, index 100 → 101). No code, no migration, **no data** — and deliberately no backfill, see below.
+
+🚨 **`portfolio_snapshots` is missing EVERY row for 8 of the last 30 days** — 08-18/19/20/21, 08-23, 08-26, 08-30, 09-12 — ~22 owners each. **27% of the window.** A portfolio value-over-time chart has eight gaps in a month.
+
+⭐ **NOT A DETECTION FAILURE, and that was my first hypothesis — measured and refuted.** Every missing day shows **`runs = 1, ok = 0`**: the lane ran, failed, and said so. **`ok = false` was recorded all eight times.** ⛔ So this is NOT the fabricated-zero class I fixed earlier tonight — **the signal existed and nothing acted on it.**
+
+🚨 **THE DEFECT IS THE ABSENCE OF A RETRY.** `snapshot_all_user_portfolios()` writes `CURRENT_DATE` only, and the lane fires once a day at 00:05 PT. **One transient failure costs that day permanently** — tomorrow's run writes tomorrow. Eight statement timeouts became eight holes.
+
+✅ **A SAME-DAY RETRY IS PROVABLY SAFE — all three properties CHECKED, not assumed.** Idempotent (`ON CONFLICT … DO NOTHING` against `UNIQUE (owner_key, snapshot_date)`, so a re-run after success is a no-op); **cannot fabricate history** (writes `CURRENT_DATE` only); and cheap (the successful 09-13 run: **9,511 ms**, 25 rows — ~0.006% of the instance's measured 47 h/day of cron busy time).
+
+⛔ **AND THE EIGHT EXISTING HOLES MUST NOT BE "FILLED"** — re-running now would stamp TODAY's values on a past date, which is a fabricated reading. **They are disclosed, not recoverable.**
+
+⭐ **CHEAPEST FIX IS ONE CONSOLE EDIT.** The caller is **cron-job.org** — absent from `vercel.json` (32 crons) and from `cron.job` — so a second daily trigger is a console change, and a no-op on every day the first run succeeded. ⛔ **Not done from here, and the DB-side alternative is the WORSE lever**: a pg_cron job calling the function directly would write no `pipeline_runs` row, creating exactly the invisible-lane class this register is full of.
+
+⚠ **Timing note:** all eight failures are statement timeouts, i.e. saturation-coincident — put the retry in a **quiet band**, not right after 00:05 PT, or it fails for the same reason.
+
 ### 2026-09-13 · 📋 REGISTER — pg_cron waste is 39.6%, not the filed 22.6%, and the worst job's failure mode has FLIPPED to the opposite lever (#42) · Claude Code cloud, overnight autonomous
 
 **Shipped: docs only** — `docs/reference/known-issues.md` (#42 re-measured). No code, no migration, no data.
