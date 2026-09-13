@@ -55,15 +55,36 @@ describe("UFC's sniper tab is retired", () => {
     expect(advertised.length).toBeGreaterThan(0)
   })
 
-  it("NO-CHANGE CONTROL — every other published collection keeps its sniper", () => {
+  it("NO-CHANGE CONTROL — the other snipers survived UFC's retirement", () => {
     // The failure this catches is a fix applied one level too high: dropping
     // "sniper" from a shared list rather than from UFC's own row would satisfy
     // every case above while silently retiring four working tools.
-    const others = publishedCollections().filter((c) => c.id !== "ufc" && c.pages.length > 1)
-    expect(others.length, "expected other multi-tab published collections").toBeGreaterThan(2)
-    for (const c of others) {
-      expect(collectionHasPage(c.id, "sniper" as never), `${c.id} lost its sniper`).toBe(true)
-    }
+    //
+    // 🚨 THE POPULATION USED TO BE `c.pages.length > 1` — "every OTHER multi-tab
+    // published collection" — AND IT REDDENED `main` ON 2026-09-12, on a change
+    // that had nothing to do with UFC: Candy MLB gained a real Market tab, so it
+    // became multi-tab. Candy is published, on Solana, thin, and deliberately has
+    // NO sniper, so the control demanded a property Candy was never meant to
+    // have and failed with "candy-mlb lost its sniper" — a sentence describing
+    // something that never happened.
+    //
+    // ⭐ **A control's population must be the set the property is actually true
+    // of, not a proxy that happens to coincide today.** "Multi-tab" was standing
+    // in for "is one of the Flow collections with a marketplace", and the two
+    // stopped being the same set the moment a sixth collection shipped a tab.
+    const withSniper = publishedCollections().filter((c) =>
+      collectionHasPage(c.id, "sniper" as never),
+    )
+    // The retirement itself: UFC must not be back in the set.
+    expect(withSniper.map((c) => c.id), "ufc is back in the sniper set").not.toContain("ufc")
+    // ⚠ NON-VACUOUS, and churn-proof in the direction that matters: a
+    // shared-list deletion takes this to 0, while publishing a NEW sniper-less
+    // collection cannot red it. An exact count would red on both.
+    expect(
+      withSniper.length,
+      "the sniper set collapsed — this is the shared-list deletion this control exists to catch:\n" +
+        "  " + publishedCollections().map((c) => `${c.id}:[${c.pages.join(",")}]`).join("\n  "),
+    ).toBeGreaterThanOrEqual(4)
   })
 })
 

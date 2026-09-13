@@ -82,6 +82,18 @@ const GRANDFATHERED = new Set([
   // 20260815190500_audit_20260815_restore_security_invoker_on_deals_views.sql
   // (an ALTER VIEW), rather than by editing this applied file.
   "20260815153324_audit_20260815_deals_board_prune_empty_fmv_partitions.sql",
+  // Same treatment, 2026-09-12: `candy_market_board` shipped without a stated
+  // mode and this guard caught it on `main`. Fixed FORWARD by
+  // 20260913012823_audit_20260912_candy_market_board_security_invoker.sql.
+  // ⚠ GRANDFATHERED ONLY BECAUSE THE FORWARD FIX IS APPLIED AND VERIFIED LIVE —
+  // reloptions read {security_invoker=on} after it, matching the sibling
+  // `candy_deals_board`. An entry added here WITHOUT a landed fix would be the
+  // "raise the ceiling" failure this list exists to avoid, and there is nothing
+  // in the list's shape to stop that, so it is stated: check the named migration
+  // before trusting this line.
+  // ⓘ The live exposure was already closed separately by
+  // 20260913001600 (revoke anon + authenticated); this closed the latent half.
+  "20260913001500_audit_20260912_candy_market_board.sql",
   // These five DO mention security_invoker somewhere in the file, but not for the
   // view flagged — which is exactly the per-view distinction this guard enforces,
   // and why a per-FILE grep (my first survey) undercounted them.
@@ -199,7 +211,14 @@ describe("migrations must state a security mode when creating a public view", ()
     for (const f of GRANDFATHERED) expect(present.has(f), `grandfathered file is gone: ${f}`).toBe(true)
     // A stale entry is worse than none: it silently re-permits the defect for a
     // filename someone could reintroduce. Pin the size so growth is a visible diff.
-    expect(GRANDFATHERED.size).toBe(16)
+    //
+    // 16 -> 17 on 2026-09-12: `candy_market_board`. ⭐ THIS PIN WORKED EXACTLY AS
+    // INTENDED and is worth recording as such — adding the entry reddened this
+    // case, so growing the list could not happen as a side effect of silencing
+    // the other one. The entry is legitimate ONLY because the forward fix
+    // (20260913012823) is applied and verified live; the pin is what forces a
+    // reader to check that rather than take the list's word for it.
+    expect(GRANDFATHERED.size).toBe(17)
   })
 
   it("the two deals views were repaired forward by an ALTER, not by editing history", () => {
