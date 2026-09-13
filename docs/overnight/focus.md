@@ -27,6 +27,13 @@
 
 ⭐ **#101 and #102 share one root cause and it is the more valuable finding: these predicates are prose in a `reason` column that nothing evaluates. A PREDICATE NOTHING RUNS IS A COMMENT.** I found both by simply executing the predicates the rows write down — **two of the three I ran had failed, and neither had ever been checked.**
 
+### ✅ SWEPT AND CLEAN — so nobody re-runs these
+
+- **EVERY silent lane is accounted for.** Swept all pipelines whose last active day is >3 days ago against ≥10 previously-active days (`pipeline_runs_daily`, indefinite): **12 lanes, all explained** — six are the dead-host group (`public-api.nbatopshot.com`, still 530 today), two are the documented 09-08 unschedulings, two are **#101/#102 filed tonight**, and **two (`ingest-canonical-guard`, `editions-hydrate-at-insert`) are sub-lanes of the RETIRED `/api/ingest` route** — they stopped 08-28 when the host died, while `ingest` itself kept logging failures until its step was retired 09-07. **No hidden stalls.**
+- ⛔ **`/api/allday-pack-ev` having zero runs in 30 days is NOT a stall** — AllDay pack EV is computed by the EDGE FUNCTION `compute-allday-pack-ev`, which is healthy (**1,361 runs / 34,443 rows / ran today**). The route is superseded. Likewise `compute-laliga-pack-ev` (dead 08-23, 0 rows) is a retired duplicate of the live `compute-golazos-pack-ev`.
+- ✅ **The `?? 0` fabricated-zero class has exactly one live instance and it is fixed** (see below).
+- ✅ **CLAUDE.md's collection table re-verified live:** 7 rows, `candy_mlb` active, `panini_blockchain` the only inactive one. Accurate.
+
 ### 📈 ALSO RE-MEASURED TONIGHT — numbers in the register that had moved
 
 - **#42 — pg_cron waste is 39.6%, NOT the filed 22.6%.** 24 h: 9,287 runs, **47.0 h busy, 18.6 h wasted**, against a FLAT run count across three days (29.0% → 37.6% → 39.6%), so it is a level, not a spell. ⭐ **The frame worth keeping: 47–56 busy hours per 24-hour day on a 2-core instance** — cron alone asks for ~2 cores continuously. ⭐ **`rpc-ts-listings-atlas-sync` alone is 6.7 h = 36% of ALL fleet waste** (ok runs 25 s, its 200 failures 121 s each). ⛔ **Its failure mode has FLIPPED**: the register documents it as the worst `job startup timeout` victim; today **189 of 201 failures are `statement timeout`**. **Opposite levers** — the old framing sends you to de-cluster schedules, which would change nothing. ⛔ **And overlap is refuted two ways (zero overlapping pairs in 720 runs) — pg_cron serialises a job against itself.**
