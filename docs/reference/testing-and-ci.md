@@ -58,6 +58,35 @@ proof it stripped; the shape-check is the belt to that braces, because a check t
 stripper to be right is better than one that does.
 
 
+## ⚠ A GUARD ANCHORED ON AN OPERATOR IS BLIND TO ITS CLASS HOISTED INTO A NAME (moved here 2026-09-12)
+
+**Moved OUT of CLAUDE.md on 2026-09-12** to make room for two rules from the same evening; it is a
+rule, not a case note, so it needs a home a guard author actually reads rather than only the
+displacement log. The original text, verbatim:
+
+> ⚠ **A guard anchored on an OPERATOR is blind to its class HOISTED into a name** (`t = x || 1`
+> then `p / t` — 3 live sites in the divisor ban's OWN roots).
+
+⭐ **It has now defeated two separate bans in this repo, which is the argument for it being a rule
+rather than an anecdote:**
+
+- **`no-fabricated-divisor-ratchet`** — anchored on the literal `|| 1` beside a division. Hoisting
+  the guard into `const t = x || 1` and then dividing by `t` walks straight past it. **Three live
+  sites were inside the ban's OWN roots**, i.e. the guard could not see its own subject matter.
+- **The PostgREST-cap ban** (register **#71**) — anchored on `.limit(<literal>)`. Its own header had
+  recorded, under *what this is structurally silent about*, that a non-literal bound cannot be judged
+  statically. ⛔ **Half wrong: a same-file `const NAME = <number>` IS statically judgeable**, and
+  hoisting the number into a name is exactly how the class survived. Resolving every `.limit(<name>)`
+  against its own file found **74 named sites, 31 resolvable, exactly ONE over the cap**.
+
+**How to apply it:** when a ban is keyed on a token, ask what the same defect looks like one
+indirection away — a local constant, an alias, a helper — and resolve that form in the same file
+before declaring the population. ⚠ **And drop any name defined more than once rather than guessing**:
+`let CAP = 2000; CAP = 10;` read as a single definition in #71's first resolver (a bare reassignment
+carries no `const|let|var`) and produced a false positive, which on a ban-at-zero guard reds CI for
+everyone.
+
+
 ## ⭐⭐ A COVERAGE PERCENTAGE IS A RATIO, AND EVERY GUARD HERE WATCHED THE NUMERATOR (2026-09-12)
 
 Three gates ratchet a coverage percentage. The thresholds red when coverage DROPS,

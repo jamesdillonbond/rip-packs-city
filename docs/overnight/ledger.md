@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · 📝 DOCS — session close-out: the coverage blind spot written where the next reader meets it, and two rules into CLAUDE.md by DISPLACEMENT · Claude Code cloud, Trevor: "update memory or any relevant documentation"
+
+**Shipped (docs + one comment-only config edit, no behaviour change):** `vitest.config.ts` (comment), `CLAUDE.md`, `docs/reference/testing-and-ci.md`, `docs/reference/claude-md-condensed-originals.md`. Revert: `git revert` the commit whose message starts `docs: close out the testing/CI session`.
+
+**⭐ THE COVERAGE BLIND SPOT NOW LIVES IN THE CONFIG, not only in an inbox filing.** An audit has rediscovered it twice (08-29 and 09-12) and both times it read as an oversight. `vitest.config.ts` now carries the measured breakdown — **341 of 1,460 files in no gate**, with `38 of 38` edge functions marked structurally unmeasurable (they use `Deno.*`/`serve()`) and `scripts/**` marked UNMEASURED-not-untested (93 test files import it) — plus a pointer to the filing and an explicit note that **whether to gate a named subset is an OPEN decision, not an oversight.** ⛔ **The decision itself was NOT made here** — my own filing called it a product call, and making it unilaterally would have contradicted that.
+
+**CLAUDE.md: a real DISPLACEMENT, 39,953 → 39,946 (net 7 SMALLER) for two added rules.** In: *a control's POPULATION must be the set the property is TRUE of, not a proxy that coincides today* and *a pin RE-DERIVED FROM THE OBSERVED STATE can never disagree with reality*. Out: the two case-history parentheticals from the "structurally SILENT" bullet, recorded verbatim in `claude-md-condensed-originals.md`.
+
+**⚠ ONE OF THE DISPLACED ITEMS WAS A RULE, NOT AN EXAMPLE, AND MY DISPLACEMENT NOTE THEN MADE A FALSE CLAIM ABOUT IT.** I wrote that *"a guard anchored on an OPERATOR is blind to its class HOISTED into a name"* was "recorded in full in testing-and-ci.md and in known-issues #71". ⛔ **It was in #71 and NOT in testing-and-ci.md — 0 hits.** Caught by grepping for it rather than trusting what I had just written. Rather than soften the sentence, the rule was **rehomed into testing-and-ci.md** with both cases it has now defeated (the divisor ban, with three live sites inside its OWN roots; and #71's PostgREST cap, where 74 named sites resolved to exactly one over the cap) — so the claim is true and the rule sits where a guard author reads. ⭐ **A displacement is only safe if the destination is CHECKED, not asserted.**
+
+**Gates:** `npm test` **1512 files / 16,898 tests, all pass**; `tsc` clean; memory-file limit **39,946 / 40,000**; retired-rule guard 6/35; `check-memory-doc-links` **196** links resolve; `memory-docs-have-no-duplicated-blocks` green.
+
 ### 2026-09-12 · ⚠ CORRECTION+CODE — I shipped an All Day pricing arm on the wrong basis, found a second writer I had missed, and reverted my own correction; plus: `pack_rips` is Top Shot + All Day ONLY · Cowork cloud, Trevor: "Don't leave anything unresolved"
 
 **Shipped:** `supabase/migrations/20260913020000_…uses_current_fmv_not_at_open.sql` (APPLIED **then REVERTED**, file is a no-op record), `…20260913021000_…realigns_with_the_rollup_at_open_basis.sql` (APPLIED, live), `app/dashboard/packs/PackHistoryClient.tsx`. Revert: `git revert` the commit whose message starts `fix(packs): realign the All Day pull-value basis`.

@@ -504,3 +504,19 @@ Displaced by the Cowork cloud session that established the third push path (ledg
 - `- ⚠ **"The sandbox cannot push" is CONDITIONAL — TEST IT, in one command: `git push --dry-run origin main`** (re-verified working 08-27). A session whose authorized repo set lacks this repo is refused at the **repo-authorization layer, before any credential is evaluated**, so a PAT returns the identical 403 — the discriminator and the second probe: tooling-gotchas.md.`
 - `- **When push IS genuinely denied:** repo-as-session-source · `/web-setup` in a REAL TERMINAL session (authorizes at CREATION, so it fixes the NEXT one) · desktop "Run this task" · or **`git format-patch`**, proven end-to-end.`
 - `- Bash-green ≠ push-green; never commit from the mount. Full history: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).`
+
+## Displaced 2026-09-12 — the two CASE-HISTORY parentheticals in CLAUDE.md's "structurally SILENT" guards bullet
+
+Displaced to make room for two rules that came out of the same evening's work (the coverage-gate
+denominator guard and the `main`-was-red pass; ledger 2026-09-12, detail in
+[testing-and-ci.md](testing-and-ci.md)). **Only the two worked EXAMPLES were removed — both rules
+they illustrate stay in CLAUDE.md verbatim**, and the section already ends with a pointer to
+`testing-and-ci.md`, so nothing became unreachable.
+
+- `(one walked `app/api/cron` while the tenth copy sat in the `lib/` module two routes delegate to)`
+- `⚠ **A guard anchored on an OPERATOR is blind to its class HOISTED into a name** (`t = x || 1` then `p / t` — 3 live sites in the divisor ban's OWN roots).`
+
+⚠ The **second** of these is a RULE, not only an example, and it is the one to restore first if the
+character budget ever allows: "a guard anchored on an OPERATOR is blind to its class HOISTED into a
+name" is the shape that defeated both the divisor ban and the PostgREST-cap ban (register #71), and
+it is recorded in full in testing-and-ci.md and in known-issues #71.

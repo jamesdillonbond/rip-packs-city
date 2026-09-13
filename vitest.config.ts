@@ -56,6 +56,25 @@ export default defineConfig({
         "proxy.ts",
       ],
       exclude: ["lib/**/*.test.ts", "lib/**/*.d.ts"],
+      // ⚠ WHAT NO GATE MEASURES, written here because an audit has now
+      // rediscovered it twice (2026-08-29 and 2026-09-12) and both times it
+      // read as an oversight. Measured 2026-09-12: **341 of 1,460** source
+      // files are matched by NO gate's include —
+      //   116  app/**/page.tsx        server pages: product surfaces
+      //   105  scripts/**             dev tooling; 93 test files DO import it
+      //    63  app/**/layout.tsx      product surfaces
+      //    38  supabase/functions/*   38 of 38 use Deno.*/serve() — vitest
+      //                               CANNOT import them; not achievable here
+      // ⛔ UNMEASURED, NOT UNTESTED — tests exist; no number says how much runs.
+      // ⛔ Deliberately NOT ratcheted: a ceiling over high-churn scripts/ or over
+      // 116 pages reds on routine work, which is the permanently-red-arm
+      // failure. Whether to gate a named subset instead is an OPEN decision, not
+      // an oversight: docs/overnight/inbox/2026-09-13T0108Z-341-source-files-
+      // sit-in-no-coverage-gate-and-nothing-watched-the-denominator.md
+      // ⚠ The SHRINKING direction IS guarded —
+      // __tests__/coverage-gates-still-measure-what-they-claim.test.ts bans any
+      // lib/ module, app/**/route.ts, worker or *Client.tsx falling out of a
+      // gate, because narrowing an include RAISES the percentage.
       // CI ratchet — set just below the current baseline so a coverage DROP
       // ⤵ 751 lines of history displaced VERBATIM (2026-09-02) to docs/reference/vitest-config-notes.md §5 — read them before changing the next key.
       thresholds: {
