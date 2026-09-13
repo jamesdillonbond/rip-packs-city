@@ -10,6 +10,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ SENTINEL: "Query error: " with nothing after it now states the condition — one helper across the 13 arms that interpolated a raw error message · Claude Code cloud
+
+**The tell:** two sweeps today (9:51 and 11:41 AM PT) printed `Sales Ingest (2h): INCONCLUSIVE (db saturated) — Query error: ` and stopped — supabase-js reports a request aborted or dropped under load as `{ message: "" }`. The classification was already right (the route's `isSaturationError` treats empty as inconclusive since the 07-16 false-CRITICAL pair); the sentence read like a truncated line. Grep for the EXPRESSION, not the arm: **13 sites** interpolated `${x.message}` raw.
+
+**Shipped:** `errorText()` in `app/api/sentinel/route.ts` — a non-empty message passes through untouched; an empty one becomes `(empty error message — supabase-js reports a request aborted or dropped under load as an empty error; the read did not complete)`. All 13 sites replaced by a scripted regex with the occurrence count asserted (13). The existing empty-message test now also asserts the detail does not end at `Query error:` and names the condition. Sentinel suites: 4 files / 130 tests green. **Revert:** `git revert` the code commit.
+
+
 ### 2026-09-13 · ✅ THE SPELL ENDED AT 12:05 PM PT — the toast's first autovacuum completed; the IO shed restored EARLY (12:2x PM, not 3:45 PM) and its one-off + suppressions removed · Claude Code cloud
 
 **Measured, not inferred:** `pg_stat_all_tables` for `pg_toast_51873` now reads `autovacuum_count 1 · last_autovacuum 12:04:58 PM PT · n_live 153,732 · n_dead 9,838`; `pg_stat_progress_vacuum` holds only a 2-minute `wallet_moments_cache` pass; client IO waiters **19 → 2–4**. The 12:21 PM sentinel sweep ran in **108 s with no wall-budget refusal** (11:41: 140.6 s, 3 refused) and the new `Maintenance Load` arm read `ok` — correctly, the long vacuum was gone. ⚠ **The TOAST is still 12.6 GB** (plain vacuum marks space reusable; it does not return it) — so the 7:05 PM `VACUUM FULL` question is now purely disk reclaim + read locality, decided at the 7:00 PM check-in with the corrected protocol (#75).
