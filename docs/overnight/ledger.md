@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⚠️ A REAL LIMIT OF TONIGHT'S COUNTERPARTY FIX, found by watching it rather than by being told · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only** — #99 updated. No code, no migration, no data. **Nothing was acted on, and the reason is a comparison, not caution.**
+
+🚨 **THE COOLDOWN DOES NOT COVER "CLAIMED 120, DECODED NONE".** The lane drained its productive range and the cursor descended out of recent sales into 2026 deep history. The transition is sharp:
+
+| tick (PT) | `cursor_sold_at` | recovered | duration |
+|---|---|---:|---:|
+| 04:05–04:16 | **2026-09-12** | **120 / 120** | 15–19 s |
+| 04:21 | 2026-04-11 | 49 | 38.6 s |
+| 04:25 → 04:41 | 2026-04-09 → **04-06** | **0** | 53.7 → **66.6 s** |
+
+⭐ **The cursor IS advancing and every run is `ok: true`** — not the old strand. But `rows_found` stays at **120** while `recovered`/`applied` are **0**: the lane claims a full batch, spends ~60 s on per-row Flow REST decoding, writes nothing, moves on. ⛔ **`exhausted_at` can never be set here — the exhaustion branch keys on `v_found = 0`, and this finds 120.** **"Found nothing" and "found rows and converted none" are different states; tonight's fix covers only the first.**
+
+⚠ **AND IT MAKES THE LANE QUIETER RATHER THAN CHEAPER — the honest cost of my own change.** Before, an unproductive range produced a 66 s statement timeout and `ok: false`, which was LOUD. Now the same wall-clock cost produces `ok: true, rows_written: 0`. ⛔ **And `Zero-Yield Lanes` will not catch it either, because that arm keys on `rows_found`, which is 120.**
+
+⛔ **NOT ACTED ON, because the comparison settles it: this is NO WORSE than pre-fix and strictly better on yield** — same ~60 s per tick, succeeding instead of timing out, after recovering **1,849 rows in 4 h** that were completely stranded before. ⭐ **Likely mechanism, stated as likely:** April-2026 transactions are below public Flow REST retention — the same spork-pruning pattern six cursors in this register are parked on. **The tell is yield falling 120 → 49 → 0 as the cursor crossed September → April, not any code change.**
+
+⭐ **THE FIX IF IT PERSISTS** is a one-line widening of the same predicate: treat `v_found > 0 AND recovered = 0` over N consecutive ticks as exhaustion. ⚠ **Do NOT just lower the batch limit** — the cost is per-ROW Flow REST calls, so half the batch is half the yield at half the cost and changes nothing per row. **Re-read the yield first: if it recovers as the cursor walks on, this is ordinary declining-yield backfill and needs nothing.**
+
 ### 2026-09-13 · ✅ VERIFIED — the `Cadence Collapse` arm is live and reads ok, and the ack it shipped with was never needed · Cowork cloud
 
 **Shipped (docs only):** `docs/reference/known-issues.md` (#80). No code, no DB.

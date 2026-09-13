@@ -1448,6 +1448,25 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     ✅ **AND THE DURATION CLIMB FLAGGED ABOVE DID NOT CONTINUE — re-read at 03:21:** 18.0 → 52.2 → 21.5 → **16.2 s**. The 52.2 s was a spike, not a trend. The watch stands (a scan killed at `statement_timeout` still never arms the cooldown) but is not currently firing.
 
+    🚨 **A REAL LIMIT OF THIS FIX, FOUND BY WATCHING IT (2026-09-13 04:4x PT) — THE COOLDOWN DOES NOT COVER “CLAIMED 120, DECODED NONE”.** The lane drained its productive range and the cursor descended out of recent sales into 2026 deep history. The transition is sharp:
+
+    | tick (PT) | `cursor_sold_at` | recovered | duration |
+    |---|---|---:|---:|
+    | 04:05–04:16 | **2026-09-12** | **120 / 120** | 15–19 s |
+    | 04:21 | 2026-04-11 | 49 | 38.6 s |
+    | 04:25 | 2026-04-09 | **0** | 53.7 s |
+    | 04:31 | 2026-04-08 | **0** | 53.6 s |
+    | 04:35 | 2026-04-07 | **0** | 58.5 s |
+    | 04:41 | 2026-04-06 | **0** | **66.6 s** |
+
+    ⭐ **The cursor IS advancing and every run is `ok: true`** — this is not the old strand. But `rows_found` stays at **120** while `recovered`/`applied` are **0**, so the lane claims a full batch, spends ~60 s on Flow REST decoding it, writes nothing, and moves on. ⛔ **`exhausted_at` will never be set here, because the exhaustion branch keys on `v_found = 0`** — and this finds 120. **“Found nothing” and “found rows and converted none” are different states, and tonight's fix only covers the first.**
+
+    ⚠ **AND IT MAKES THE LANE QUIETER RATHER THAN CHEAPER, which is the honest cost of the fix.** Before, an unproductive range produced a 66 s **statement timeout** and `ok: false` — loud. Now the same wall-clock cost produces `ok: true, rows_written: 0` — **and the `Zero-Yield Lanes` arm will not see it either, because that arm keys on `rows_found`, which is 120.**
+
+    ⛔ **NOT ACTED ON, and the comparison is the reason: this is NO WORSE than the pre-fix state and strictly better on yield** — the same ~60 s per tick, but succeeding instead of timing out, after recovering **1,849 rows in 4 h** that were completely stranded before. ⭐ **Likely mechanism, stated as likely: April-2026 transactions are below public Flow REST retention**, which is the same spork-pruning pattern six cursors in this register are parked on — the tell is that yield fell **120 → 49 → 0** as the cursor crossed from September into April, not a code change.
+
+    ⭐ **THE FIX IF IT PERSISTS is a one-line widening of the same exhaustion predicate: treat `v_found > 0 AND recovered = 0` over N consecutive ticks as exhaustion too.** ⚠ **Do not simply lower the batch limit** — the cost is per-ROW Flow REST calls, so half the batch is half the yield at half the cost and changes nothing per row. **Re-read the yield before acting: if it recovers as the cursor walks on, this is ordinary declining-yield backfill and needs nothing.**
+
 100. 🔴 **OPEN, NEW 2026-09-13 (PT) — THE FLEET'S MASTER ALARM RUNS 27% OF THE TIME IT IS SCHEDULED TO, AND ITS WORST BLIND WINDOW IN THE RETAINED PERIOD WAS 14 HOURS.** ⭐ **This is the OTHER half of #76, and it is the half nobody measured.** That item established the sentinel's message is *uninformative* (every sweep WARN, fixed 2026-09-13 by naming the changed SET in the header). This item establishes something worse and independent: **most of the time the sweep does not happen at all.**
 
     **MEASURED, 73 h to 2026-09-13 ~02:4x PT.** `pipeline-sentinel.yml` is scheduled `34 * * * *` — **73 firings expected**. `pipeline_runs` holds **21 sentinel sweeps (28.8%)**.
