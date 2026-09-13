@@ -1747,3 +1747,37 @@ comes from six independent upstreams at once. **A new card that fetches art shou
 ⚠ **It is not observable from outside.** Vercel consumes `s-maxage` and does not echo it, so a
 client-side probe reads a bare `public` either way — the policy is pinned by
 `__tests__/og-degraded-card-is-not-cached-for-a-day.test.tsx`, not by a header read.
+
+---
+
+## ⛔⛔ 2026-09-13 — THE ELEVENTH SHAPE, and it is in the DATABASE: a NOT-NULL-DEFAULTED column sitting beside a `*_checked_at` that is NULL. The DEFAULT is the fabricated reading. (Register #112)
+
+`wallet_moments_cache.is_locked` — `column_default false`, and **nullable**, so NULL was available as "unknown" and simply was not used. Whole-table, measured (not sampled):
+
+| collection | rows | ever checked | locked | what the product said |
+|---|---:|---:|---:|---|
+| nba_top_shot | 1,767,936 | **34.4 %** | 267,223 | a definite `false` on the other 65.6 % |
+| nfl_all_day | 455,244 | **99.6 %** | 140,084 | ⛔ suppressed entirely as "not tracked" |
+| disney_pinnacle | 56,581 | **100 %** | **370** | ⛔ hardcoded `false`, discarding all 370 |
+| candy / golazos / ufc | 39,357 | **0 %** | 0 | a definite `false` |
+
+⭐ **THE TELL IS A PERFECT CORRELATION, AND IT IS THE CHEAPEST CHECK IN THIS FILE.** If `never_checked AND value = true` is **exactly zero**, the value is the DEFAULT, not a reading. One query settles it:
+
+```sql
+SELECT (checked_at IS NULL) AS never_checked, value, count(*)
+FROM t GROUP BY 1,2 ORDER BY 1,2;
+```
+
+Run it on any boolean or numeric column that has a sibling `*_checked_at` / `*_verified_at` / `*_synced_at`. ⚠ **And a default is only defensible if the defaulted value is overwhelmingly the truth** — here 44.0 % of *checked* rows were locked, so `false` was not a benign approximation but a false claim about whether a user can sell their own asset.
+
+## ⛔ THE MECHANISM THAT MAKES EVERY DOWNSTREAM SURFACE INCAPABLE OF HONESTY: provenance stripped at the function boundary
+
+`get_wallet_moments_with_fmv` returned `is_locked` and **not** `lock_checked_at`, and `COALESCE`d it to `false` a second time on the way out (the `?? 0` shape in SQL). So 16 DB functions and 3 publishing routes received a bare boolean and **could not** distinguish checked-false from never-checked. The CSV export's `m.is_locked ? "true" : "false"` was not a careless reader — it was the only thing that reader could do.
+
+⭐ **This is the SERVER-SEEDED-PROP shape (`initial={rows}` with no `initialFailed`) at the DB boundary.** Generalise: **a function that projects a value whose meaning depends on whether it was ever measured must project the provenance with it.** A reader audit cannot fix a surface whose input has already lost the distinction — so check `pg_get_functiondef(...) ILIKE '%<col>_checked_at%'` BEFORE planning reader changes; if it is absent, the additive function change comes first and everything else is blocked on it.
+
+## ⚠ Three more rules this incident produced
+
+- **Staleness reasoning is NOT absence reasoning.** `lock-check-batch`'s comment argues carefully that a row may sit far past its 7-day target and *"that is expected, not a fault"* — entirely about how OLD a check is, and silent on a row with **no check at all**. A thoughtful staleness design is not evidence the absence case was considered.
+- **The worst sub-case is a false claim on data you HAVE.** Pinnacle's hardcoded `false` discarded 370 correct, present readings. That outranks #112's false claim on absent data.
+- ⛔ **Splitting an unknown bucket out and then not rendering it changes nothing.** The `/api/analytics` fix is only a fix because `CollectionAnalyticsClient` discloses the bucket beside the tiles. A bucket nobody can see is the same as not splitting it out.

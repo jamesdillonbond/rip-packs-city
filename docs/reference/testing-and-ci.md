@@ -2618,3 +2618,12 @@ it would have "passed the test" and taught nothing.
 ⭐ **And the tell for finding more of these: any guard that greps for a symbol whose own documentation
 would naturally name it.** `stripComments` + the open-paren is the cheap fix; running the mutation is
 what proves it.
+
+
+---
+
+## Displaced from CLAUDE.md 2026-09-13 (verbatim) — the exclusion-justified-by-another-instrument bullet
+
+Moved here to make room for the eleventh honesty shape (register #112). The rule stays in CLAUDE.md; the three measured cases live here.
+
+- ⚠ **An exclusion justified by ANOTHER instrument is a claim about it — check that one can SEE the property.** Two guards skipped `app/api` as "in the primary gate"; coverage sees whether lines RUN, not whether `error` is handled — 7 defects, 259 unlooked reads. ⚠ **NOTHING here measures LAYOUT** (jsdom boxes are ZERO; only the real browser in `e2e/mobile-layout.spec.ts` sees it) **nor the BUILT BUNDLE** (turbopack dropped a quasi from a `+`-joined template). Both shipped WRONG for weeks with every gate green.
