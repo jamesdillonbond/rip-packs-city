@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ SENTINEL ARM `Maintenance Load` — the digest now names a running vacuum / VACUUM FULL / index build next to the symptoms it causes · Claude Code cloud
+
+**The gap, measured today:** the multi-hour spell's cause — the first-ever autovacuum of `pg_toast_51873` (net._http_response's 12.4 GB TOAST, #75), hours in `IO/DataFileRead` — existed only in `pg_stat_progress_vacuum`, which no arm read. The digest carried 268 cron failures, three INCONCLUSIVE arms and a lane failing 24 of 27 ticks, and that lane was minutes from being blamed for the spell.
+
+**Shipped:** migration `20260913190000_audit_20260913_the_sentinel_names_the_maintenance_load_under_a_saturation_spell` — `check_maintenance_load()` (SECDEF, `postgres`+`service_role` only, verified `has_function_privilege` anon=false/authenticated=false/service_role=true, `check_secdef_anon_exec_drift()` clean) reads the three `pg_stat_progress_*` views joined to `pg_stat_activity`, autovacuum worker occupancy and the client IO-waiter count — catalog only, no relation touched, free to read while saturated. `lib/sentinel/maintenance-load.ts` + 9 tests (the real 11:56 AM PT payload replayed: `autovacuum pg_toast.pg_toast_51873 (net._http_response): vacuuming heap 64% (1,047,120/1,627,612 blks), 77 min, IO`). Arm placed right after `pg_cron Failures (6h)` — early, so the wall budget cannot refuse it — warn at 30 min running (config row `Maintenance Load`), ok-but-named below, never critical.
+
+**Revert:** `DROP FUNCTION public.check_maintenance_load(); DELETE FROM sentinel_threshold_config WHERE check_name = 'Maintenance Load';` + `git revert` the code commit.
+
+
 ### 2026-09-13 · ✅ TIME-BOXED IO SHED (state, not DDL): pg_cron jobids 466 + 464 paused until 3:45 PM PT with a self-restoring one-off, while the pg_net toast's first autovacuum saturates the instance · Claude Code cloud
 
 **Why now and not "capacity is Trevor's":** the spell has a known, finite cause (register #75 addendum: the 12.4 GB toast's first-ever autovacuum, 978,760 of 1,627,612 blocks vacuumed at 11:53 AM PT, ~90 min to go at its current rate), and under it two lanes were pure load: `rpc-ts-listings-atlas-sync` (466, `*/2`) **24 of 27 ticks failed at the 120 s budget, 3,371 busy-seconds in the last hour (56 of 60 min), verifying nothing**; `rpc-allday-unmapped-atlas-resolver` (464) 9 of 11 failed. Users were paying for them: **12 `/api/market` 5xx in the last hour**, 19 IO waiters at the moment of the shed. Trevor's standing instruction this session: decide for RPC and its users.
