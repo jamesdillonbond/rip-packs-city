@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 🚨 REGISTER — a nine-day-silent lane nobody heard, because the safety net two suppressions NAME is switched off (#102) · Claude Code cloud, overnight autonomous
+
+**Shipped: docs only** — `docs/reference/known-issues.md` (#102 NEW, index 99 → 100). No code, no migration, **no suppression or watchlist row touched.**
+
+🚨 **`allday-pack-opens-backfill` STOPPED 2026-09-04 AND NOTHING ALERTED — nine days.** `pipeline_runs_daily` shows **367 runs / 67,763 rows written** in the trailing 30 days, newest day **09-04**, then nothing. Its cursor is at **83,276,329** against its stated floor **65,264,619** — it did **not** reach the terminal state its suppression describes, it **stopped ~18 M blocks short** with that history still recoverable.
+
+⛔ **BOTH ARMS WERE OFF, AND ONE OF THEM SAYS IN WRITING THAT IT IS ON.** The permanent cursor suppression mutes `cursor_stalled` and justifies itself as *"NOT LOST: a genuine total stop is still caught independently by the `pipeline_cadence_watchlist` row … (**is_active=true**, 90 min, medium)."* **Measured: `is_active = false`.** ⚠ And there is **no pg_cron job for this backfill at all** — jobid 20 is the FORWARD lane, while the Top Shot twin jobid 56 IS scheduled — so its caller was the invisible seventh source and its death left no trace anywhere.
+
+🚨 **SECOND INSTANCE OF THE IDENTICAL FALSE CLAIM:** the `ufc_sales` suppression names `ufc-sales-indexer` (*"is_active=true, 240 min"*, kept *"expressly to preserve a loose >4h total-stop signal"*). **Also `is_active = false`.**
+
+⛔ **AND THREE "parked at the spork floor" CLAIMS ARE FALSE, re-read live:** `golazos_sales_v1_backfill` is at **142,841,736 and moved 50 minutes before this filing** (not 137,390,146); `ufc_sales_v1_backfill` and `allday_pack_opens_backfill` both stopped **above** their floors. Four other cursors check out exactly, which is the control that makes the three real.
+
+⭐⭐ **THE SHARPEST: a PERMANENT suppression on a lane that is RUNNING RIGHT NOW.** `golazos-sales-history-backfill` descends **40,000 blocks every 3 h**, `below_floor: false`, ok every tick — **~17 days from its floor**. So the claim is false today and stays false, and a genuine stall is invisible **forever**, because the row never expires.
+
+⭐ **THE FIX FOR THIS EXISTS AND DID NOT SPREAD.** The AllDay twin's own reason carries *"⚠ REASON REWRITTEN 2026-08-07 — the previous text was materially WRONG… it claimed the cursor was parked… That was true when written but stopped being true once spork-proxy was wired."* **One twin was corrected; the Golazos and UFC twins were not** — the same *"each pass suppressed the twins it happened to be looking at"* pattern these rows document about themselves.
+
+🟡 **NOTHING TOGGLED, deliberately.** Re-enabling the two watchlist rows is the cheapest move and is what the suppressions already promise, but it must be decided together with re-scoping the three false "parked" grants, or those rows will page for lanes that really are terminal. ⭐ **Root cause, shared with #101: these predicates are prose in a `reason` column that nothing evaluates. A predicate nothing runs is a comment.**
+
 ### 2026-09-13 · 📋 REGISTER — a user-facing correctness backlog is 3.2× its own tripwire, and the tripwire was prose nothing ever ran (#101) · Claude Code cloud, overnight autonomous
 
 **Shipped: docs only** — `docs/reference/known-issues.md` (#101 NEW, index 98 → 99). No code, no migration, no data.
