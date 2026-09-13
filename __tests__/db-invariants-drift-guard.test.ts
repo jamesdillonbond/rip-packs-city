@@ -1956,6 +1956,29 @@ const PINS = [
     migration:
       "supabase/migrations/20260913060000_audit_20260913_allday_dist_opened_expiry_is_scheduled_and_a_cooldown_is_not_ok.sql",
   },
+  {
+    // Added 2026-09-13 when the function gained an EXHAUSTED state. The lane had
+    // stranded itself below its own work twice — the cursor only descends, so once
+    // it passes the last decodable row every tick re-derives the same zero at
+    // 195,564 buffers, 288×/day, and times out 36–47 % of the time under load. The
+    // 09-12 cursor reset cured it for SIX HOURS and it re-stranded at the
+    // byte-identical value.
+    // ⚠ The property that matters is INVISIBLE IN THE RETURN VALUE: inside the
+    // cooldown the claim returns empty AND MUST NOT SCAN, and it returns empty when
+    // it scans and finds nothing too. So the pin asserts it by DROPPING the sales
+    // table and requiring the call to succeed — a function that scans cannot. That
+    // control is the reason this file exists; an assertion on the rows would pass
+    // against a function with no short-circuit at all.
+    // Also pinned: a productive scan must NOT arm the cooldown (one good tick would
+    // otherwise silence the lane), the re-arm must clear the cursor (the only way
+    // rows that arrived above it are ever seen), `rearm_after` must be READ from the
+    // column rather than hardcoded, and the pre-existing below-floor self-heal from
+    // 20260902042214 must survive the rewrite.
+    fn: "claim_sales_counterparty_batch",
+    test: "supabase/tests/claim_sales_counterparty_batch.sql",
+    migration:
+      "supabase/migrations/20260913074912_audit_20260913_sales_counterparty_claim_rearms_instead_of_rescanning_a_drained_range.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
