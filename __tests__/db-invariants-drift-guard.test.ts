@@ -1236,8 +1236,17 @@ const PINS = [
     // the only COMMITting caller in the database — recorded the milliseconds since its
     // last COMMIT as the run's duration (avg 27,370 ms logged as 10 ms, 2,688x understated).
     // The named-arg form passes the real v_started. Every logged value is unchanged.
+    // ⚠ Repointed 2026-09-13 to the size gate: a fourth parameter (p_max_moments,
+    // default 20,000) keeps a (user, wallet) pair whose cached_moment_count sums
+    // above it OUT of the hourly queue — one 44.6k-moment wallet at the head killed
+    // the CALL at the 120 s statement budget every hour from 07:44 PT and starved
+    // the other 91. Skipped pairs are counted (wallets_skipped_big, p_rows_skipped)
+    // and measured (oldest_big_cache_h), and oldest_cache_h excludes them so it
+    // cannot pin to a wallet the sweep will never attempt. The three-argument
+    // signature is dropped in the same migration (an added overload would make
+    // pg_cron's three-argument CALL ambiguous).
     migration:
-      "supabase/migrations/20260828055500_audit_20260828_oldest_cache_h_scoped_to_the_queue_population.sql",
+      "supabase/migrations/20260913211500_audit_20260913_the_saved_wallet_sweep_stops_dying_on_one_whale_and_says_whom_it_skipped.sql",
   },
   {
     // pg_cron `10 9 * * *` (jobid 201). Holds a deliberate opt-in past the

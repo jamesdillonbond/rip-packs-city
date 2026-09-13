@@ -97,20 +97,22 @@ LANGUAGE sql AS $$
 $$;
 
 -- >>> BEGIN verbatim reconcile_all_saved_wallet_stats (byte-identical to the migration/prod) >>>
-CREATE OR REPLACE PROCEDURE public.reconcile_all_saved_wallet_stats(IN p_max_seconds integer DEFAULT 50, IN p_max_wallets integer DEFAULT 500, IN p_min_age_minutes integer DEFAULT 360)
+CREATE OR REPLACE PROCEDURE public.reconcile_all_saved_wallet_stats(IN p_max_seconds integer DEFAULT 50, IN p_max_wallets integer DEFAULT 500, IN p_min_age_minutes integer DEFAULT 360, IN p_max_moments integer DEFAULT 20000)
  LANGUAGE plpgsql
 AS $procedure$
 DECLARE
-  v_started    timestamptz := clock_timestamp();
-  v_deadline   timestamptz := clock_timestamp() + make_interval(secs => GREATEST(p_max_seconds, 1));
-  v_pairs      jsonb;
-  v_total      integer := 0;
-  v_wallets    integer := 0;
-  v_refreshed  integer := 0;
-  v_zeroed     integer := 0;
-  v_truncated  boolean := false;
-  v_oldest_h   numeric;
-  i            integer;
+  v_started      timestamptz := clock_timestamp();
+  v_deadline     timestamptz := clock_timestamp() + make_interval(secs => GREATEST(p_max_seconds, 1));
+  v_pairs        jsonb;
+  v_total        integer := 0;
+  v_wallets      integer := 0;
+  v_refreshed    integer := 0;
+  v_zeroed       integer := 0;
+  v_skipped_big  integer := 0;
+  v_truncated    boolean := false;
+  v_oldest_h     numeric;
+  v_oldest_big_h numeric;
+  i              integer;
 BEGIN
   UPDATE public.saved_wallets sw
      SET cached_moment_count = 0,
@@ -130,6 +132,11 @@ BEGIN
   GET DIAGNOSTICS v_zeroed = ROW_COUNT;
   COMMIT;
 
+  -- ⚠ WALLETS ABOVE p_max_moments ARE NOT IN THIS QUEUE (2026-09-13). One wallet
+  -- with 44.6k moments cannot be aggregated inside the CALL's 120 s budget, and
+  -- stalest-first put it at the head every hour, so the CALL died there before
+  -- touching anyone else. They are counted below and logged, never silently
+  -- dropped. A never-refreshed wallet (count NULL -> 0) is still attempted once.
   SELECT COALESCE(
            jsonb_agg(jsonb_build_object('u', s.user_id, 'w', s.wallet_addr)
                      ORDER BY s.stalest ASC NULLS FIRST),
@@ -147,9 +154,31 @@ BEGIN
               AND w.collection_id  = sw.collection_id
          )
        GROUP BY sw.user_id, sw.wallet_addr
-      HAVING MIN(sw.cache_updated_at) IS NULL
-          OR MIN(sw.cache_updated_at) < now() - make_interval(mins => GREATEST(p_min_age_minutes, 0))
+      HAVING (MIN(sw.cache_updated_at) IS NULL
+              OR MIN(sw.cache_updated_at) < now() - make_interval(mins => GREATEST(p_min_age_minutes, 0)))
+         AND COALESCE(SUM(sw.cached_moment_count), 0) <= GREATEST(p_max_moments, 0)
     ) s;
+
+  -- The wallets the gate above kept OUT, so the run can say so. Same population
+  -- and staleness test as the queue, with the size test inverted.
+  SELECT count(*)
+    INTO v_skipped_big
+    FROM (
+      SELECT sw.user_id, sw.wallet_addr
+        FROM public.saved_wallets sw
+       WHERE sw.wallet_addr IS NOT NULL
+         AND sw.user_id IS NOT NULL
+         AND EXISTS (
+           SELECT 1
+             FROM public.wallet_moments_cache w
+            WHERE w.wallet_address = sw.wallet_addr
+              AND w.collection_id  = sw.collection_id
+         )
+       GROUP BY sw.user_id, sw.wallet_addr
+      HAVING (MIN(sw.cache_updated_at) IS NULL
+              OR MIN(sw.cache_updated_at) < now() - make_interval(mins => GREATEST(p_min_age_minutes, 0)))
+         AND COALESCE(SUM(sw.cached_moment_count), 0) > GREATEST(p_max_moments, 0)
+    ) b;
 
   v_total := jsonb_array_length(v_pairs);
 
@@ -194,10 +223,32 @@ BEGIN
   -- EXISTS at the row level mixes the frozen rows back in and inverts the answer
   -- -- that is a different population, and the difference is invisible in the
   -- output because both produce a tidy per-wallet age.
+  --
+  -- ⚠ AND SINCE 2026-09-13 IT EXCLUDES THE ROWS THE SIZE GATE SKIPS, for the same
+  -- reason: a wallet the sweep will never attempt would pin this figure forever
+  -- and hide a starving QUEUED wallet behind it. The skipped population gets its
+  -- own figure below (oldest_big_cache_h). Per-row count here against a per-pair
+  -- SUM in the queue: a pair can only exceed the gate if some row is large, and a
+  -- row above the gate is never attempted, so the two populations agree except
+  -- for a pair of mid-sized rows summing past it, which reads as eligible here
+  -- and skipped there -- a bounded, stated approximation.
   SELECT ROUND(EXTRACT(epoch FROM (now() - MIN(sw.cache_updated_at))) / 3600.0, 1)
     INTO v_oldest_h
     FROM public.saved_wallets sw
    WHERE sw.wallet_addr IS NOT NULL
+     AND COALESCE(sw.cached_moment_count, 0) <= GREATEST(p_max_moments, 0)
+     AND EXISTS (
+       SELECT 1
+         FROM public.wallet_moments_cache w
+        WHERE w.wallet_address = sw.wallet_addr
+          AND w.collection_id  = sw.collection_id
+     );
+
+  SELECT ROUND(EXTRACT(epoch FROM (now() - MIN(sw.cache_updated_at))) / 3600.0, 1)
+    INTO v_oldest_big_h
+    FROM public.saved_wallets sw
+   WHERE sw.wallet_addr IS NOT NULL
+     AND COALESCE(sw.cached_moment_count, 0) > GREATEST(p_max_moments, 0)
      AND EXISTS (
        SELECT 1
          FROM public.wallet_moments_cache w
@@ -213,11 +264,11 @@ BEGIN
   -- Measured 2026-08-26: avg elapsed 27,370 ms recorded as 10 ms, worst 114,748 ms
   -- recorded as 37 ms -- understated 2,688x. The named-arg form below passes the
   -- real v_started (clock_timestamp() at procedure entry).
-  -- ⚠ Every other value is IDENTICAL to what the 3-arg overload derived, so nothing
-  -- that reads pipeline_runs or extra changes: it mapped p_rows_found from
-  -- extra->>'fetched' (= v_total), p_rows_written from extra->>'upserted'
-  -- (= v_refreshed), p_rows_skipped from a key this caller never set (= 0), and
-  -- p_error from extra->>'error'. The extra jsonb below is byte-identical.
+  -- ⚠ p_rows_skipped is REAL since 2026-09-13 (the size-gated wallets); before
+  -- that it was a key this caller never set (= 0). Every other value is what the
+  -- 3-arg overload derived: p_rows_found from extra->>'fetched' (= v_total),
+  -- p_rows_written from extra->>'upserted' (= v_refreshed), p_error from
+  -- extra->>'error'. The extra jsonb gains three keys and changes no existing one.
   -- ⛔ Do NOT "fix" this in the 3-arg overload itself -- 14 other callers use it and
   -- they are all non-COMMITting FUNCTIONS, where now() IS their true start.
   PERFORM public.log_pipeline_run(
@@ -225,24 +276,27 @@ BEGIN
     p_started_at   := v_started,
     p_rows_found   := v_total,
     p_rows_written := v_refreshed,
-    p_rows_skipped := 0,
+    p_rows_skipped := v_skipped_big,
     p_ok           := NOT v_truncated,
     p_error        := CASE WHEN v_truncated
                            THEN 'soft_deadline_reached_partial_sweep_committed'
                            ELSE NULL END,
     p_extra        := jsonb_build_object(
-      'wallets_done',      v_wallets,
-      'wallets_total',     v_total,
-      'fetched',           v_total,
-      'truncated',         v_truncated,
-      'upserted',          v_refreshed,
-      'rows_zeroed',       v_zeroed,
-      'oldest_cache_h',    v_oldest_h,
-      'min_age_minutes',   p_min_age_minutes,
-      'elapsed_ms',        ROUND(EXTRACT(epoch FROM (clock_timestamp() - v_started)) * 1000),
-      'error',             CASE WHEN v_truncated
-                                THEN 'soft_deadline_reached_partial_sweep_committed'
-                                ELSE NULL END
+      'wallets_done',        v_wallets,
+      'wallets_total',       v_total,
+      'wallets_skipped_big', v_skipped_big,
+      'max_moments',         p_max_moments,
+      'fetched',             v_total,
+      'truncated',           v_truncated,
+      'upserted',            v_refreshed,
+      'rows_zeroed',         v_zeroed,
+      'oldest_cache_h',      v_oldest_h,
+      'oldest_big_cache_h',  v_oldest_big_h,
+      'min_age_minutes',     p_min_age_minutes,
+      'elapsed_ms',          ROUND(EXTRACT(epoch FROM (clock_timestamp() - v_started)) * 1000),
+      'error',               CASE WHEN v_truncated
+                                  THEN 'soft_deadline_reached_partial_sweep_committed'
+                                  ELSE NULL END
     )
   );
   COMMIT;
@@ -419,6 +473,50 @@ SELECT _assert(
   (SELECT (extra->>'oldest_cache_h')::numeric FROM public._runs ORDER BY started_at DESC LIMIT 1) < 240,
   'oldest_cache_h IGNORES a saved_wallets row with no wallet_moments_cache rows, however '
   'ancient — it measures the population the queue reads, not every saved_wallets row');
+
+-- ── ⚠ THE SIZE GATE (2026-09-13): one whale must not starve the other ninety-one ──
+-- Measured on 09-13: a wallet with 44.6k moments whose aggregate cannot finish inside
+-- the CALL's 120 s statement budget sat at the head of the stalest-first queue and
+-- killed the sweep every hour from 07:44 PT — a head-of-line block, the same shape as
+-- the counterparty lane's residue. A pair whose cached_moment_count sums above
+-- p_max_moments is not attempted; it is COUNTED and its staleness measured separately,
+-- and oldest_cache_h excludes it so the figure cannot pin to a wallet the sweep will
+-- never touch (the 08-28 trap above, in a new place).
+INSERT INTO public.saved_wallets VALUES
+  ('55555555-5555-5555-5555-555555555555','0xwhale','aaaaaaaa-0000-0000-0000-000000000001',
+   50000, 50000.00, 'LEGENDARY', now() - interval '30 hours');
+INSERT INTO public.wallet_moments_cache VALUES
+  ('0xwhale','aaaaaaaa-0000-0000-0000-000000000001');
+
+DELETE FROM public._refreshed;
+DELETE FROM public._runs;
+CALL public.reconcile_all_saved_wallet_stats(p_min_age_minutes => 0);
+
+SELECT _assert_eq((SELECT count(*)::text FROM public._refreshed WHERE wallet_addr='0xwhale'), '0',
+  'a wallet above p_max_moments (default 20,000) is NOT attempted by the hourly sweep');
+SELECT _assert((SELECT count(*) FROM public._refreshed WHERE wallet_addr IN ('0xnever','0xstale','0xfresh')) = 3,
+  'and every other due wallet still is — the whale no longer takes the sweep down with it');
+SELECT _assert_eq((SELECT extra->>'wallets_skipped_big' FROM public._runs ORDER BY started_at DESC LIMIT 1), '1',
+  'the skipped wallet is COUNTED in the run row — never silently dropped');
+SELECT _assert_eq((SELECT rows_skipped::text FROM public._runs ORDER BY started_at DESC LIMIT 1), '1',
+  'and surfaces as p_rows_skipped, which this caller used to leave at a fabricated 0');
+SELECT _assert(
+  (SELECT (extra->>'oldest_big_cache_h')::numeric FROM public._runs ORDER BY started_at DESC LIMIT 1) >= 29,
+  'the skipped population has its OWN staleness figure, and it is the whale''s ~30 h');
+SELECT _assert(
+  (SELECT (extra->>'oldest_cache_h')::numeric FROM public._runs ORDER BY started_at DESC LIMIT 1) < 1,
+  'oldest_cache_h EXCLUDES the skipped whale — every attempted wallet was just refreshed, so '
+  'a figure near 30 h here would be the pinned-metric trap this procedure already records');
+
+-- Control: a gate high enough admits the whale, so the gate — not something else —
+-- is what kept it out.
+DELETE FROM public._refreshed;
+DELETE FROM public._runs;
+CALL public.reconcile_all_saved_wallet_stats(p_min_age_minutes => 0, p_max_moments => 60000);
+SELECT _assert_eq((SELECT count(*)::text FROM public._refreshed WHERE wallet_addr='0xwhale'), '1',
+  'CONTROL: with p_max_moments above its count the whale is attempted like any other wallet');
+SELECT _assert_eq((SELECT extra->>'wallets_skipped_big' FROM public._runs ORDER BY started_at DESC LIMIT 1), '0',
+  'CONTROL: and nothing is reported skipped');
 
 SELECT '✓ reconcile_all_saved_wallet_stats invariants pass' AS result;
 
