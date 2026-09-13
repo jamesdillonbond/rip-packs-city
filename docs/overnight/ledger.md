@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ SHIPPED (data) + ⚠ CORRECTION TO MY OWN NUMBER — the 136 sales and 7 moments the unguarded rekey had downgraded are back on their parallel editions; "330 sales rows" was a fan-out, the real figure is 140 · Claude Code cloud
+
+**1 · ⚠ THE CORRECTION FIRST, because I published the wrong number an hour ago.** The entry and register #110 for `20260913181737` say the defect moved **"330 sales rows"**. That is a **JOIN FAN-OUT, not a count** — it came from joining the audit rows to `sales` on `nft_id`, which multiplies by every sale that nft ever had. Joined on the audit's own `sale_id`: **140 audit rows across 130 distinct nfts · 140 sales still exist · 137 still sitting on the base · 3 moved elsewhere since · 0 already back.** ⭐ The direction and the argument are unchanged; the magnitude was overstated **2.4×**. **A count taken through a fan-out join is not a count** — and the tell needed no re-query: 330 sales rows cannot come from 124 nfts in a table holding one row per SALE.
+
+**2 · SHIPPED: migration `20260913183030`, the data half.** It had to land AFTER the guard — before it, tomorrow's 04:33 PT run would simply re-apply the downgrade.
+
+| | restored | verified after |
+|---|---:|---|
+| sales | **136** | 136 on the parallel, **0** left on base |
+| moments | **7** | 7 on the parallel, **0** left on base |
+
+**Three exclusions, each deliberate and each a refusal to overreach:** a row whose moment now carries `subedition_id = 0` is NOT restored (that is exactly the positive evidence the guard asks for — the downgrade was right, just right by accident: 1 sale, 5 moments); a row that has since moved somewhere OTHER than the recorded base is NOT touched (3 sales — something else has an opinion and this migration has no standing to overrule it); and a moment whose target `(edition, serial)` slot is held by a DIFFERENT moment is NOT restored, the same free-slot discipline the function applies to its own moments half — **forcing it would corrupt moment identity in order to fix an attribution.**
+
+**⚠ The audit table is the DRIVER, not a by-product.** `audit_20260913_parallel_downgrade_restore` is populated ONCE with the eligible set and the UPDATEs then read *that table*, so they cannot select a different set from the one recorded. This is the failure mode the guard migration's own header warns about — the revert path is built from the audit, so an audit that over-reports makes the revert wrong.
+
+**⚠ One thing the DB-invariant pin cannot tell you:** `audit_topshot_sale_drain_remap_20260621.sale_id` and `..._moment_...moment_pk` are **uuid** in production; the pin's fixtures declare both `bigint`. That is legitimate inside a self-contained harness, but a first draft of this migration took the fixture at its word and failed on `42804`. **A fixture's column type is a convenience, not a schema claim** — read `information_schema` before writing against a table you have only seen in a test.
+
+**Revert:** the exact inverse SQL is in the migration header, keyed on the same audit table (`from_*` is the state found, `to_*` the state written). **Exit condition:** tomorrow's 04:33 PT run writes ZERO new parallel→own-base audit rows AND none of these 143 rows returns to its base. **Falsifier:** any of them back on base after that run means the guard is not binding on the real data, and both migrations should be reverted together.
+
 ### 2026-09-13 · ✅ THE SENTINEL GETS A WALL BUDGET — a sweep can no longer die at its own 180 s wall and report nothing; the dead offers-sweep lane is suppressed from Zero-Yield with a re-check condition; Top Shot error bodies bounded · Claude Code cloud
 
 **The state that motivated it:** the 9:45 AM PT tick today 504'd (`Task timed out after 180 seconds`) — no terminal row, no Telegram, nothing for the GHA runner but a red badge after three attempts. The 24 SURVIVING `sentinel` rows read p50 39.6 s / p90 153.6 s / max 162.4 s of 180 s, four over 150 s, and the route's own header had carried "Still open: per-check timeouts" since the 60 → 180 s raise. Under saturation three arms each waiting out a two-minute statement budget is 360 s inside a 180 s wall.
