@@ -35,7 +35,7 @@ import { GOLD_HEX } from "@/lib/badges/glyphs"
 import { getPublicProfile } from "@/lib/profile/public-profile"
 import { borderCosmetic } from "@/lib/cosmetics"
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style"
-import { brandFonts, brandFamilies, OG_CACHE_HEADERS, type OgFont } from "@/lib/og/brand-fonts"
+import { brandFonts, brandFamilies, OG_CACHE_HEADERS, ogCacheHeaders, type OgFont } from "@/lib/og/brand-fonts"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -608,7 +608,19 @@ export async function GET(
           </div>
         </div>
       ),
-      { width: 1200, height: 630, ...(fonts ? { fonts } : {}), headers: OG_CACHE_HEADERS },
+      {
+        width: 1200,
+        height: 630,
+        ...(fonts ? { fonts } : {}),
+        // ⚠ A CASE WITH A MISSING PICTURE IS NOT CACHED FOR A DAY. `artless`
+        // is already computed above for the log line, and it is exactly the
+        // right predicate: `rows` is filtered to trophies that HAVE a
+        // thumbnail_url, so a null `art` means the FETCH failed, not that the
+        // Moment never had art. One transient 429 on a gateway would otherwise
+        // publish a placeholder tile for 25 hours on the card built to be
+        // shared. See lib/og/brand-fonts.ts → ogCacheHeaders.
+        headers: ogCacheHeaders(artless.length > 0),
+      },
     )
   } catch {
     return renderFallback(fonts, fam.display)

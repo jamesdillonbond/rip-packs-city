@@ -140,3 +140,95 @@ describe("/api/og/player — the card's cache reflects whether it got its art", 
     expect(ccOf(capture.c!)).toBe(OG_CACHE_HEADERS["Cache-Control"])
   })
 })
+
+describe("the profile and trophy-case cards too — the fix is per PANEL, not per page", () => {
+  // ⚠ CLAUDE.md: "a page with one honest error branch is not an honest page".
+  // These two are the most-shared cards in the product and the ones whose art
+  // comes from six independent upstreams at once, so leaving them on the long
+  // cache would have left the fix where the defect mostly is not.
+  const ART = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+  function installRest(n: number) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown) => {
+        const url = String(input)
+        const rows = Array.from({ length: n }, (_, i) => ({
+          slot: i + 1,
+          player_name: `Player ${i}`,
+          tier: "RARE",
+          serial_number: i + 1,
+          circulation_count: 99,
+          thumbnail_url: `https://assets.nbatopshot.com/media/${i}/image?width=180`,
+        }))
+        if (url.includes("/rpc/get_trophy_slab_data_by_username"))
+          return { ok: true, status: 200, json: async () => rows } as never
+        if (url.includes("/profile_bio"))
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                user_id: "u-1",
+                display_name: "Trevor",
+                tagline: null,
+                accent_color: "#E03A2F",
+                avatar_url: null,
+                favorite_team: null,
+                equipped_border: null,
+                equipped_banner: null,
+              },
+            ],
+          } as never
+        if (url.includes("/saved_wallets"))
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [{ cached_fmv_usd: 1, cached_moment_count: 1, cached_badges: [] }],
+          } as never
+        return { ok: false, status: 404 } as never
+      }),
+    )
+  }
+
+  /** `fails` = indices whose art prefetch returns null, by call order. */
+  function mockArt(fails: number[]) {
+    let seen = 0
+    const one = async (u: string | null) => {
+      if (!u) return null
+      const i = seen++
+      return fails.includes(i) ? null : ART
+    }
+    vi.doMock("@/lib/og/img-data", () => ({
+      ogImageDataUri: one,
+      ogImageDataUris: async (us: string[]) => us.map(() => ART),
+      ogImageDataUriSlots: async (us: Array<string | null>) =>
+        us.map((u, i) => (u && !fails.includes(i) ? ART : null)),
+    }))
+  }
+
+  async function renderProfile(n: number, fails: number[]) {
+    installRest(n)
+    mockArt(fails)
+    vi.resetModules()
+    resetOgCapture()
+    capture.c = installOgCapture()
+    const mod = await import("@/app/api/og/profile/[username]/route")
+    await mod.GET({} as never, { params: Promise.resolve({ username: "trevor" }) } as never)
+    return capture.c!
+  }
+
+  beforeEach(() => {
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+  })
+
+  it("⭐ a profile card with a trophy whose art failed is cached for a MINUTE", async () => {
+    const c = await renderProfile(3, [1])
+    expect(ccOf(c)).toBe(OG_DEGRADED_CACHE_HEADERS["Cache-Control"])
+  }, 30_000)
+
+  it("NO-CHANGE CONTROL: the same card with every picture intact keeps the long cache", async () => {
+    const c = await renderProfile(3, [])
+    expect(ccOf(c)).toBe(OG_CACHE_HEADERS["Cache-Control"])
+  }, 30_000)
+})

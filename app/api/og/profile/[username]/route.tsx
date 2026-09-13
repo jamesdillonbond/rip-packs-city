@@ -63,6 +63,7 @@ import {
   DISPLAY_FONT,
   MONO_FONT,
   OG_CACHE_HEADERS,
+  ogCacheHeaders,
   type OgFont,
 } from "@/lib/og/brand-fonts";
 import { OgMark, type MarkName } from "@/lib/og/marks";
@@ -1232,7 +1233,15 @@ export async function GET(
         width: 1200,
         height: 630,
         ...(fonts ? { fonts } : {}),
-        headers: OG_CACHE_HEADERS,
+        // ⚠ A CASE WITH A MISSING PICTURE IS NOT CACHED FOR A DAY. `artless`
+        // is already computed above for the log line, and it is exactly the
+        // right predicate: `rawTrophies` is filtered to trophies that HAVE a
+        // `thumbnail_url`, so a null here means the FETCH failed rather than
+        // that the Moment never had art — which is the distinction the whole
+        // policy turns on. One transient gateway 429 would otherwise publish
+        // an ART UNAVAILABLE tile for 25 hours on the most-shared surface in
+        // the product. See lib/og/brand-fonts.ts → ogCacheHeaders.
+        headers: ogCacheHeaders(artless.length > 0),
       },
     );
   } catch {
