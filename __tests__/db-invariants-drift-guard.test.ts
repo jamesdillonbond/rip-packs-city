@@ -1910,6 +1910,25 @@ const PINS = [
     test: "supabase/tests/purge_old_wallet_holdings_snapshots.sql",
     migration: "supabase/migrations/20260821021000_audit_20260820_snapshot_retention_purges.sql",
   },
+  {
+    // Added 2026-09-12 with the lane itself. ⚠ The only SCHEDULED object that
+    // deliberately NULLs a column two public surfaces read — it puts a drifted AllDay
+    // dist back into the deployed one-shot hydrator's candidate set, which is the only
+    // way to make that hydrator re-count it. Three properties carry the whole safety
+    // case and each one's removal is SILENT (the function still expires rows and still
+    // looks like it works): the EVIDENCE predicate (a candidate needs a pack_rip sealed
+    // after that dist's OWN stamp, under THIS collection — widen it to an age window
+    // and the lane blanks rows that were never wrong), the BREAKER (nothing expires
+    // while a row is still in flight, so a dead upstream costs one bounded batch rather
+    // than a growing hole), and the RESTORE (an unanswered row gets its pre-image
+    // written back AND that tick reports ok = false — drop only the ok = false and the
+    // loop self-heals silently, which is exactly how the 32-day freeze it fixes went
+    // unseen). The SQL test asserts all three in the failing direction.
+    fn: "expire_allday_dist_opened_drifted",
+    test: "supabase/tests/expire_allday_dist_opened_drifted.sql",
+    migration:
+      "supabase/migrations/20260913060000_audit_20260913_allday_dist_opened_expiry_is_scheduled_and_a_cooldown_is_not_ok.sql",
+  },
 ]/**
  * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
  * NOT inside a `--` line comment. Migrations frequently carry the prior version
