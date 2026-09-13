@@ -1277,3 +1277,36 @@ nothing. Shipping `check_pipeline_cadence_collapse` this way caught the mutation
 **3**, `ASSERT FAILED`) before the push rather than after it. ⚠ The suite needs only the
 `unaccent` contrib extension, which the Ubuntu package already carries, and `PGTZ=UTC`
 matters: several pins render a `timestamptz` and fail on the OFFSET otherwise.
+
+## ⭐ 2026-09-13 — an OG card's GEOMETRY can be verified from a no-egress cloud session; only its ART cannot
+
+A blocker was recorded twice as *"this needs a session that can see the output"* and it was **wrong**,
+disproved by spending ten minutes trying instead of re-reading it. ⚠ **It conflated two things: the
+ART needs egress, the TEXT LAYOUT does not** — and every caption defect this repo has shipped
+(the Simba mid-glyph slice, the hero sliver, the strip that spilled its tile) is a *text layout*
+defect, where a missing image is a placeholder either way and changes nothing about the measurement.
+
+**`next/og` renders real PNGs offline in this sandbox.** Two gotchas, and each alone would have made
+the probe a confident lie:
+
+1. ⛔ **`import { ImageResponse } from "next/og"` FAILS under plain node** — `ERR_MODULE_NOT_FOUND`,
+   because that specifier resolves through Next's build tooling, not package `exports`. The file is
+   real: **`import { ImageResponse } from "./node_modules/next/og.js"`**, run with the repo as cwd.
+2. 🚨 **`brandFonts()` FETCHES the TTFs from `${BASE_URL}/fonts/…` — our own domain — and a blocked
+   fetch degrades SILENTLY to `undefined` fonts and `sans-serif`.** A probe that calls it measures a
+   face the product never ships, with no error anywhere. **Read the bytes off disk instead —
+   `readFileSync("public/fonts/ShareTechMono-Regular.ttf")`, which is the same static file production
+   serves — and pass them as `fonts: [{ name, data, weight: 400, style: "normal" }]`.**
+   ⭐ **This is the harness-divergence trap CLAUDE.md already records about `brandFonts()`, met from
+   the other direction:** there, supplying *no* fonts made `→` cost no fetch; here, supplying no fonts
+   would have silently changed the glyph advance the whole question turns on.
+
+⚠ **Match production's numbers, not plausible ones.** Feed the probe the real tile geometry
+(`trophyGrid()` widths 240 / 195 / 138 / 130, `capSize = clamp(10, 14, w/17)`, `letterSpacing 0.4`)
+and real strings from the DB — the longest **pinned** name for the fit case and the catalogue's
+longest for the clamp case. A probe at invented widths proves nothing about the card.
+
+⭐ **What this unblocks:** any caption / badge / serial-strip layout question can be answered from a
+cloud session with a rendered PNG, which is the instrument this repo trusts. **What it still cannot
+answer:** whether a given upstream's art loads, its byte size, or anything about the live route's
+data — those need egress and stay Cowork's or a desktop session's job.
