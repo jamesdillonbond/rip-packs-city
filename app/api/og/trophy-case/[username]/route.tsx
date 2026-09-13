@@ -29,6 +29,9 @@ import { ogImageDataUriSlots } from "@/lib/og/img-data"
 import { supabaseAdmin } from "@/lib/supabase"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { editionKey, trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks"
+import { withOfficialArt } from "@/lib/og/official-mark-art"
+import { trophyDetail } from "@/lib/og/trophy-detail"
+import { GOLD_HEX } from "@/lib/badges/glyphs"
 import { getPublicProfile } from "@/lib/profile/public-profile"
 import { borderCosmetic } from "@/lib/cosmetics"
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style"
@@ -178,23 +181,63 @@ export async function GET(
       }
     }
 
-    const tiles = rows.map((t, i) => ({
-      art: uris[i] ?? null,
-      tier: (t.tier as string | null) ?? null,
-      player: (t.player_name as string | null) ?? null,
-      // Gold special serials first, then edition badges — the Trophy Case PDF's
-      // order, so the two artefacts of the same six Moments read the same way.
-      marks: trophyMarks(
+    const w = caseTileWidth(rows.length)
+    // Characters that fit one line at 10px in a `w`-wide tile. Derived from the
+    // width rather than fixed, because this card draws six 170px tiles or one
+    // 280px tile from the same code and a budget that suits one clips the other.
+    const lineBudget = Math.max(12, Math.floor(w / 5.6))
+
+    const jerseyFor = (t: Record<string, unknown>) =>
+      jerseyByKey.get(
+        editionKey(t.collection_id as string | null, t.edition_id as string | null),
+      ) ?? null
+
+    // Gold special serials first, then edition badges — the Trophy Case PDF's
+    // order, so the two artefacts of the same six Moments read the same way.
+    //
+    // ⚠ `collection_slug` IS LOAD-BEARING HERE, not decorative: it picks the
+    // ART TIER. Top Shot resolves to official art inline with no fetch, All Day
+    // to official badgesV3 art, and everything else to RPC's own glyphs. Without
+    // it every mark silently falls back — and worse, All Day and Top Shot share
+    // badge TITLES with different art, so a title resolved without a collection
+    // would draw the wrong league's badge.
+    const rawMarks = rows.map((t) =>
+      trophyMarks(
         {
           badges: t.badges,
           serial_number: (t.serial_number as number | null) ?? null,
           circulation_count: (t.circulation_count as number | null) ?? null,
+          collection_slug: (t.collection_slug as string | null) ?? null,
+          collection_id: (t.collection_id as string | null) ?? null,
         },
-        jerseyByKey.get(
-          editionKey(t.collection_id as string | null, t.edition_id as string | null),
-        ) ?? null,
+        jerseyFor(t),
         4,
       ),
+    )
+    // ⭐ ONE deduped pass for the whole card — official platform art where it
+    // exists, the zero-network glyph where it does not. See
+    // lib/og/official-mark-art.ts for why this is a handful of same-origin
+    // fetches rather than the 24 the old comment feared.
+    const markRows = await withOfficialArt(rawMarks)
+
+    const tiles = rows.map((t, i) => ({
+      art: uris[i] ?? null,
+      tier: (t.tier as string | null) ?? null,
+      player: (t.player_name as string | null) ?? null,
+      // Everything the RPC already returned and this card used to throw away.
+      detail: trophyDetail(
+        {
+          serial_number: (t.serial_number as number | null) ?? null,
+          circulation_count: (t.circulation_count as number | null) ?? null,
+          tier: (t.tier as string | null) ?? null,
+          set_name: (t.set_name as string | null) ?? null,
+          series: (t.series as number | string | null) ?? null,
+          play_description: (t.play_description as string | null) ?? null,
+        },
+        jerseyFor(t),
+        lineBudget,
+      ),
+      marks: markRows[i],
     }))
     const artless = tiles.filter((t) => !t.art)
     if (artless.length > 0) {
@@ -207,7 +250,7 @@ export async function GET(
       )
     }
 
-    const w = caseTileWidth(tiles.length)
+    // `w` is derived above, where the line budget needs it.
     const h = Math.round(w * 1.32)
     // Scales with the tile so six Moments do not get bigger badges than one.
     // Floored at 16: below that the monoline geometry stops resolving into a
@@ -343,24 +386,97 @@ export async function GET(
                       </div>
                     )}
                   </div>
-                  {t.player && (
-                    <div
+                  {/* ── THE DETAIL STACK ──────────────────────────────────
+                      ⚠ EVERY LINE IS HEIGHT-RESERVED AND ALWAYS RENDERED,
+                      for the same reason the badge row below is. The tiles are
+                      centred in the shelf, so a Moment missing a line is a
+                      SHORTER column that satori centres LOWER — Simba sat 10px
+                      below his five neighbours before the badge row was pinned,
+                      and three new lines are three new ways to reproduce it.
+                      A row with nothing to say draws an empty box of the right
+                      height, never no box. */}
+                  <div
+                    style={{
+                      display: "flex",
+                      maxWidth: w,
+                      height: 16,
+                      alignItems: "center",
+                      color: "#fff",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      letterSpacing: 0.3,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {t.player ?? ""}
+                  </div>
+                  {/* Serial + tier. ⭐ A special serial is GOLD and it is loud
+                      on purpose — a 1-of-1 is the most impressive object in a
+                      case and a 16px mark in the row below is not where you put
+                      the headline. Tier keeps its own tier colour beside it. */}
+                  <div
+                    style={{
+                      display: "flex",
+                      maxWidth: w,
+                      height: 14,
+                      alignItems: "center",
+                      gap: 5,
+                      fontSize: 11,
+                      fontFamily: fam.mono,
+                      letterSpacing: 0.5,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <span
                       style={{
-                        display: "flex",
-                        maxWidth: w,
-                        color: "rgba(255,255,255,0.55)",
-                        fontSize: 12,
-                        fontFamily: fam.mono,
-                        letterSpacing: 1,
-                        overflow: "hidden",
+                        color: t.detail.special ? GOLD_HEX : "rgba(255,255,255,0.72)",
+                        fontWeight: t.detail.special ? 900 : 400,
                       }}
                     >
-                      {t.player}
-                    </div>
-                  )}
-                  {/* Badge row. Pure inline SVG data URIs — no network, which is
-                      the whole reason these are RPC's own glyphs rather than
-                      Dapper's art (lib/badges/glyphs.ts states the trade). */}
+                      {t.detail.serial}
+                    </span>
+                    {t.detail.tier !== "" && t.detail.serial !== "" && (
+                      <span style={{ color: "rgba(255,255,255,0.25)" }}>·</span>
+                    )}
+                    <span style={{ color: tierAccent(t.tier) }}>{t.detail.tier}</span>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      maxWidth: w,
+                      height: 13,
+                      alignItems: "center",
+                      color: "rgba(255,255,255,0.5)",
+                      fontSize: 10,
+                      fontFamily: fam.mono,
+                      letterSpacing: 0.3,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {t.detail.set}
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      maxWidth: w,
+                      height: 13,
+                      alignItems: "center",
+                      color: "rgba(255,255,255,0.35)",
+                      fontSize: 10,
+                      fontFamily: fam.mono,
+                      letterSpacing: 0.3,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {t.detail.context}
+                  </div>
+                  {/* Badge row — OFFICIAL platform art wherever it exists.
+                      Top Shot's marks are inline in the repo (no fetch at all),
+                      All Day's are prefetched once per card, and Golazos / UFC /
+                      Pinnacle keep RPC's own glyphs because those platforms
+                      publish no badge art. Every entry is a data: URI by the
+                      time it gets here, so satori fetches nothing.
+                      See lib/badges/official-art.ts for the tiering. */}
                   <div
                     style={{
                       // ⚠ ALWAYS RENDERED, even with no badges. The tiles are

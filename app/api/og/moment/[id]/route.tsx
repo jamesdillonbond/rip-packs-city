@@ -20,6 +20,7 @@ import { urlSlugForCollection } from "@/lib/moment-detail-format"
 import { brandFonts, brandFamilies, OG_CACHE_HEADERS } from "@/lib/og/brand-fonts"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks"
+import { withOfficialArt } from "@/lib/og/official-mark-art"
 import { OG_FETCH_TIMEOUT_MS } from "@/lib/og/og-fetch"
 
 export const runtime = "nodejs"
@@ -185,15 +186,26 @@ export async function GET(
   }
   // Gold special serials first, then edition badges — the order the Trophy Case
   // PDF and both trophy cards already draw them in.
-  const marks: TrophyMark[] = trophyMarks(
-    {
-      badges: badgeTitles,
-      serial_number: serial,
-      circulation_count: e.circulation_count ?? null,
-    },
-    jerseyNumber,
-    5,
-  )
+  //
+  // ⚠ `collection_slug` PICKS THE ART TIER and is not decorative: Top Shot
+  // resolves to official art that is inline in the repo (no fetch), All Day to
+  // official badgesV3 art, everything else to RPC's glyphs. It also keeps the
+  // two leagues' same-titled badges ("Rookie Year") from borrowing each other's
+  // art. See lib/badges/official-art.ts.
+  const marks: TrophyMark[] = (
+    await withOfficialArt([
+      trophyMarks(
+        {
+          badges: badgeTitles,
+          serial_number: serial,
+          circulation_count: e.circulation_count ?? null,
+          collection_slug: e.collection_slug ?? null,
+        },
+        jerseyNumber,
+        5,
+      ),
+    ])
+  )[0]
   const serialText = serial
     ? `#${serial}${e.circulation_count ? `/${e.circulation_count}` : ""}`
     : (e.circulation_count ? `${e.circulation_count} circulation` : "")

@@ -35,11 +35,14 @@
 import { badgeColor } from "@/lib/trophy/slab-style"
 import {
   badgeGlyphDataUri,
+  glyphDataUri,
+  GOLD_HEX,
   specialCats,
   specialGlyphDataUri,
   SPECIAL_CAT_LABEL,
   type SpecialCat,
 } from "@/lib/badges/glyphs"
+import { officialBadgeArtUrl, officialSpecialSerialArt } from "@/lib/badges/official-art"
 
 /** The subset of a trophy row these marks are derived from. */
 export interface TrophyMarkSource {
@@ -48,11 +51,32 @@ export interface TrophyMarkSource {
   circulation_count?: number | null
   edition_id?: string | null
   collection_id?: string | null
+  /**
+   * Either vocabulary — `badgePlatform` accepts a slug or a collection UUID.
+   * ⚠ REQUIRED FOR CORRECT ART, not merely nice to have: All Day and Top Shot
+   * share badge TITLES ("Rookie Year", "Championship Year") and have different
+   * official art for them, so a title resolved without its collection draws
+   * the wrong league's badge. Absent, every mark falls back to the RPC glyph,
+   * which is wrong-looking but never wrong-claiming.
+   */
+  collection_slug?: string | null
 }
 
 export interface TrophyMark {
-  /** A `data:` URI — satori draws it with no network. */
+  /**
+   * A `data:` URI that satori draws with NO network — the RPC glyph, or Top
+   * Shot's official art, which is inline in the repo. Always present, so a
+   * card can render a complete badge row having fetched nothing.
+   */
   uri: string
+  /**
+   * A same-origin URL for this mark's OFFICIAL platform art, or null when the
+   * platform publishes none. When present, `lib/og/official-mark-art.ts`
+   * prefetches it and REPLACES `uri`; when the fetch fails, `uri` stands. That
+   * is the whole degradation story: official art when we have it, RPC's mark
+   * when we do not, and never an empty slot for a badge that was earned.
+   */
+  officialUrl: string | null
   /** Stable label; the React key, and what the tests assert on. */
   label: string
   special: boolean
@@ -84,12 +108,26 @@ export function trophyMarks(
 ): TrophyMark[] {
   const out: TrophyMark[] = []
 
+  // The collection drives the art tier for BOTH kinds of mark. Slug first (the
+  // trophy RPC returns one), falling back to the collection UUID.
+  const collection = row.collection_slug ?? row.collection_id ?? null
+
   for (const cat of specialCats(
     row.serial_number ?? null,
     row.circulation_count ?? null,
     jersey,
   )) {
-    out.push({ uri: specialGlyphDataUri(cat), label: SPECIAL_CAT_LABEL[cat as SpecialCat], special: true })
+    // ⭐ Top Shot resolves to OFFICIAL art with no fetch at all — the paths are
+    // in the repo (lib/badges/official-art.ts). All Day gets a URL to prefetch.
+    // Everything else keeps the RPC glyph, which on those platforms is the only
+    // honest mark there is.
+    const official = officialSpecialSerialArt(cat, collection, GOLD_HEX)
+    out.push({
+      uri: official?.kind === "inline" ? glyphDataUri(official.svg) : specialGlyphDataUri(cat),
+      officialUrl: official?.kind === "url" ? official.url : null,
+      label: SPECIAL_CAT_LABEL[cat as SpecialCat],
+      special: true,
+    })
   }
 
   // ⚠ The RPC types `badges` as jsonb, so it arrives as an array, `null`, or —
@@ -100,7 +138,14 @@ export function trophyMarks(
     ? row.badges.filter((b): b is string => typeof b === "string" && b.trim().length > 0)
     : []
   for (const title of titles) {
-    out.push({ uri: badgeGlyphDataUri(title, badgeColor(title)), label: title.trim(), special: false })
+    out.push({
+      uri: badgeGlyphDataUri(title, badgeColor(title)),
+      // Null for 44 of the 53 taxonomy badges and for every Golazos / UFC /
+      // Pinnacle badge — no art exists, so there is nothing to ask for.
+      officialUrl: officialBadgeArtUrl(title, collection),
+      label: title.trim(),
+      special: false,
+    })
   }
 
   return out.slice(0, Math.max(0, max))

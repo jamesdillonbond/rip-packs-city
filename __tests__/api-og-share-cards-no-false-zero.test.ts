@@ -178,7 +178,23 @@ function mockPostgrest(opts: {
     // ⚠ Art resolves to a data URI here rather than null, because a slab with
     // no art draws the ART UNAVAILABLE placeholder and NOT its badge strip —
     // a null-art mock would make every badge assertion below vacuously pass.
-    ogImageDataUri: async (u: string | null | undefined) => (u ? "data:image/png;base64,AAAA" : null),
+    //
+    // ⚠ AND IT MUST ANSWER DIFFERENTLY FOR BADGE ART THAN FOR SLAB ART. Since
+    // 2026-09-12 the cards resolve OFFICIAL platform badge art through this
+    // same helper (lib/og/official-mark-art.ts). A mock that hands back the
+    // slab's PNG for every URL turns each official badge into a PNG, which
+    // `drawnGlyphs()` filters out as slab art — so the badge silently stopped
+    // being COUNTED while still being drawn, and two cases below read as
+    // "the badge vanished". Returning an SVG keeps the marks countable and
+    // makes these assertions cover the official-art path rather than skipping it.
+    ogImageDataUri: async (u: string | null | undefined) =>
+      !u
+        ? null
+        : String(u).includes("/api/badge-image")
+          ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+              `<svg xmlns="http://www.w3.org/2000/svg" data-official="${String(u).match(/name=([^&]+)/)?.[1] ?? ""}"/>`,
+            )}`
+          : "data:image/png;base64,AAAA",
     ogImageDataUris: async () => [],
     ogImageDataUriSlots: async (urls: unknown[]) => urls.map(() => "data:image/png;base64,AAAA"),
   }))
@@ -389,6 +405,11 @@ describe("/api/og/profile — every pinned Moment shows what it has earned", () 
     // Two marks: the gold #1 medal (serial 1) and the Three-Star Rookie badge.
     expect(glyphs).toHaveLength(2)
     expect(glyphs.filter((g) => g.includes("#F59E0B"))).toHaveLength(1) // the gold one
+    // ⭐ And the edition badge is OFFICIAL Top Shot art, not RPC's drawing.
+    // This is the reconciliation the 09-12 badge work was for: the PDF and the
+    // share card of the SAME Moment now draw the same badge. The #1 medal is
+    // official too and costs no fetch — its paths are inline in the repo.
+    expect(glyphs.filter((g) => g.includes('data-official="threeStars"'))).toHaveLength(1)
   })
 
   it("⚠ draws NO jersey glyph when the edition lookup returns nothing", async () => {

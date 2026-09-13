@@ -54,6 +54,9 @@ import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { resolveAvatarUrl } from "@/lib/profile/default-avatar";
 import { tierAccent, hiResThumb } from "@/lib/trophy/slab-style";
 import { editionKey, trophyMarks, type TrophyMark } from "@/lib/og/trophy-marks";
+import { withOfficialArt } from "@/lib/og/official-mark-art";
+import { trophyDetail } from "@/lib/og/trophy-detail";
+import { GOLD_HEX } from "@/lib/badges/glyphs";
 import {
   brandFonts,
   brandFamilies,
@@ -114,6 +117,14 @@ interface TrophyRow {
   /** `editions.external_id`, e.g. "165:6563" — NOT the uuid. */
   edition_id: string | null;
   collection_id: string | null;
+  /**
+   * ⚠ PICKS THE BADGE ART TIER (lib/badges/official-art.ts) — Top Shot's marks
+   * are inline in the repo, All Day's are official badgesV3 art, and the rest
+   * keep RPC's glyphs. Also what stops the two leagues' same-titled badges
+   * ("Rookie Year", "Championship Year") borrowing each other's art. The RPC
+   * has always returned it; this card simply never read it.
+   */
+  collection_slug: string | null;
 }
 
 /** One `editions` row, read only for the jersey-match glyph. */
@@ -527,13 +538,35 @@ export async function GET(
     // The trophy IS pinned — only its picture is unavailable — so the tile
     // stays and says that. Silently drawing a shorter case is the empty-state-
     // that-concludes defect wearing a picture frame.
+    // Gold special serials first, then edition badges — the Trophy Case PDF's
+    // order, and now the trophy-case card's, so all three artefacts of the
+    // same six Moments read the same way.
+    //
+    // ⭐ ONE deduped pass swaps in OFFICIAL platform art where it exists. Six
+    // Top Shot Moments share one badge vocabulary, so resolving across the
+    // whole card rather than per tile is what keeps this to a handful of
+    // same-origin fetches — see lib/og/official-mark-art.ts.
+    const profileMarkRows = await withOfficialArt(
+      rawTrophies.map((t) =>
+        trophyMarks(t, jerseyByKey.get(editionKey(t.collection_id, t.edition_id)) ?? null, 3),
+      ),
+    );
     const thumbTrophies = rawTrophies.map((t, i) => ({
       ...t,
       thumbnail_url: trophyDataUris[i] ?? null,
-      // Gold special serials first, then edition badges — the Trophy Case PDF's
-      // order, and now the trophy-case card's, so all three artefacts of the
-      // same six Moments read the same way.
-      marks: trophyMarks(t, jerseyByKey.get(editionKey(t.collection_id, t.edition_id)) ?? null, 3),
+      marks: profileMarkRows[i],
+      // ⚠ THE NARROW COLUMN GETS THE SCARCITY FACT AND NOTHING ELSE. The
+      // trophy-case card has room for a four-line stack; a 130px profile slab
+      // does not, and this card is about the collector rather than about each
+      // player. "#1 / 1" is the line that earns its pixels here — five
+      // characters that say more to a collector than the thumbnail does at
+      // this size. (Deviation from the ordering spec, which asked for a name
+      // line too: there is no name on these slabs today and adding one at
+      // 130px would crowd the art Trevor just had re-cut.)
+      detail: trophyDetail(
+        t,
+        jerseyByKey.get(editionKey(t.collection_id, t.edition_id)) ?? null,
+      ),
     }));
     const artless = thumbTrophies.filter((t) => !t.thumbnail_url);
     if (artless.length > 0) {
@@ -932,6 +965,46 @@ export async function GET(
                         }}
                       >
                         ART UNAVAILABLE
+                      </div>
+                    )}
+                    {/* Serial + tier, sitting directly on top of the badge
+                        strip. ⭐ A special serial is GOLD — a 1-of-1 is the
+                        most impressive object in a case and this card was
+                        silent about it until 2026-09-12.
+                        ⚠ ABSOLUTELY POSITIONED, like the badge strip below it
+                        and for the same reason: the slab is a fixed-size tile
+                        and an in-flow line would change its height, which is
+                        how a Moment ends up sitting lower than its neighbours.
+                        Absolute costs the grid nothing. */}
+                    {t.detail.serial !== "" && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          bottom: t.marks.length > 0 ? markSize + 8 : 0,
+                          height: 15,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 4,
+                          background: "rgba(0,0,0,0.72)",
+                          fontFamily: mono,
+                          fontSize: 10,
+                          letterSpacing: 0.4,
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: t.detail.special ? GOLD_HEX : "rgba(255,255,255,0.75)",
+                            fontWeight: t.detail.special ? 900 : 400,
+                          }}
+                        >
+                          {t.detail.serial}
+                        </span>
+                        {t.detail.tier !== "" && (
+                          <span style={{ color: tierAccent(t.tier) }}>{t.detail.tier}</span>
+                        )}
                       </div>
                     )}
                     {/* Badge strip. ⚠ Over a SCRIM, not over bare art — these

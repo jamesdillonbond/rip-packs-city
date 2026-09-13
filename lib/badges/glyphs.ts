@@ -18,15 +18,39 @@
 // So the geometry lives here, with NO imports at all, and the PDF re-exports
 // what it used to own.
 //
-// ── WHY THE CARDS DRAW GLYPHS RATHER THAN FETCHING DAPPER'S ART ─────────────
-// The PDF prefers real upstream art (TS `momentTags` / AllDay `badgesV3` SVGs
-// through our `/api/badge-image` proxy) and falls back to these. A card cannot:
-// it renders while a social crawler holds the connection open, and six Moments
-// × up to four badges is up to 24 image fetches on that path. `lib/og/marks.tsx`
-// already records what that costs — an unbounded third-party fetch per glyph,
-// which is the defect it was written to remove. So the cards use these glyphs
-// ALWAYS, with no network at all, and accept that a badge with upstream art
-// looks like RPC's mark on a card and like Dapper's on the PDF.
+// ── ⚠ THIS MODULE IS THE FALLBACK TIER. IT WAS THE ONLY TIER FOR ONE DAY ────
+// As first written (earlier on 2026-09-12) this file claimed the cards would
+// use these glyphs "ALWAYS, with no network at all", on the reasoning that the
+// PDF could afford Dapper's real art but a card could not: a card renders while
+// a social crawler holds the connection open, and "six Moments × up to four
+// badges is up to 24 image fetches".
+//
+// ⭐ THAT COUNTED MARKS, AND WHAT A RENDER PAYS FOR IS DISTINCT URLs. Measured
+// the same day: only 9 of the 53 badges in `badge_taxonomy` have official art
+// at all (plus 8 on All Day), they are same-origin 1.7–6.1 KB SVGs behind a
+// proxy that caches them for a day, they repeat hard across a case, and Top
+// Shot's special-serial art needs NO fetch because its paths are already in
+// this repo. The real cost is a handful of deduped same-origin requests, not 24
+// third-party ones.
+//
+// So the trade this header accepted — "a badge looks like RPC's mark on a card
+// and like Dapper's on the PDF" — was paid for nothing, and it produced exactly
+// the disagreement the section above was written to prevent, from the other
+// direction: the PDF of a collector's trophy case showed Dapper's badges while
+// the share card of the SAME six Moments showed RPC's drawings.
+//
+// `lib/badges/official-art.ts` now owns the tiering (official art where it
+// exists, these glyphs where it does not) and `lib/og/official-mark-art.ts`
+// does the deduped prefetch. THESE GLYPHS REMAIN LOAD-BEARING and are not
+// deprecated — they are what 44 taxonomy badges, every Golazos / UFC / Pinnacle
+// badge, and every failed official-art fetch draw. What changed is that they are
+// no longer the FIRST answer, only the guaranteed one.
+//
+// ⚠ Which is why the "no network" promise stays true OF THIS MODULE and must:
+// every card composes a complete, zero-network badge row out of these before
+// any official art is fetched, so a Moment never loses a badge it earned to a
+// failed request. A module that also deferred to remote art could not promise
+// that, which is why the tiering sits ABOVE this file rather than inside it.
 //
 // ⚠ EVERY GLYPH IS PURE GEOMETRY IN A 24×24 BOX. No text, no `currentColor`, no
 // CSS variable — satori resolves none of them, and the moment a glyph needs a

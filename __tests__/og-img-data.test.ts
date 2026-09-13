@@ -75,9 +75,85 @@ describe("ogImageDataUri — input guards", () => {
     fetchMock.mockResolvedValue(res(PNG_BYTES, "image/png"))
     const out = await ogImageDataUri("/api/public/pinnacle-image/LEV2-LION-CARE-S6")
     expect(out).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString("base64")}`)
-    expect(fetchMock.mock.calls[0][0]).toBe(
+    // ⚠ Asserted by MEMBERSHIP, not by call INDEX. A Pinnacle path is now
+    // preceded by a `pinnacle_render_cache` lookup (see below), and pinning
+    // this to `calls[0]` pinned the ORDER of an unrelated read rather than the
+    // property this case is named for — which is that a site-relative path
+    // resolves against our own origin at all.
+    expect(fetchMock.mock.calls.map((c) => c[0])).toContain(
       "https://www.rippackscity.com/api/public/pinnacle-image/LEV2-LION-CARE-S6",
     )
+  })
+})
+
+describe("Pinnacle art comes from the render cache before the 2.9MB live render", () => {
+  // ⭐ `/api/public/pinnacle-image/<id>` 302s to a FULL-RESOLUTION Dapper
+  // render — LEV2-LION-CARE-S6 measured 2,896,041 B at 2880×2880 on
+  // 2026-09-12, against this module's own 4MB cap. `pinnacle_render_cache`
+  // holds the same render downscaled to 316,140 B. Preferring it buys back
+  // most of the Pinnacle share of the cold-render cost AND retires the risk
+  // that a larger render silently re-opens the art drop fixed on 09-12.
+  const CACHE_RE = /rest\/v1\/pinnacle_render_cache/
+
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://test.supabase.co")
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key")
+  })
+
+  it("serves the cached render and never touches the live route", async () => {
+    const b64 = Buffer.from(new Uint8Array(PNG_BYTES)).toString("base64")
+    fetchMock.mockImplementation(async (url: string) => {
+      if (CACHE_RE.test(String(url))) {
+        return { ok: true, status: 200, headers: { get: () => "application/json" }, json: async () => [{ mime: "image/png", b64 }] }
+      }
+      throw new Error("live Pinnacle route must not be fetched when the cache hits")
+    })
+    const out = await ogImageDataUri("/api/public/pinnacle-image/LEV2-LION-CARE-S6")
+    expect(out).toBe(`data:image/png;base64,${b64}`)
+    expect(fetchMock.mock.calls.every((c) => CACHE_RE.test(String(c[0])))).toBe(true)
+  })
+
+  it("falls back to the live render on a cache MISS — the cache holds one row", async () => {
+    // ⚠ Stated rather than designed around: this is a proven mechanism, not a
+    // populated cache. It works for Simba and for nothing else today, so the
+    // live route stays the fallback rather than being demoted to a last resort.
+    fetchMock.mockImplementation(async (url: string) => {
+      if (CACHE_RE.test(String(url))) {
+        return { ok: true, status: 200, headers: { get: () => "application/json" }, json: async () => [] }
+      }
+      return res(PNG_BYTES, "image/png")
+    })
+    const out = await ogImageDataUri("/api/public/pinnacle-image/OEV1-SOUL-JGAR-S2")
+    expect(out).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString("base64")}`)
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toContain(
+      "https://www.rippackscity.com/api/public/pinnacle-image/OEV1-SOUL-JGAR-S2",
+    )
+  })
+
+  it("⚠ VALIDATES THE BYTES rather than trusting the row's `mime`", async () => {
+    // The column is written by a home-machine script posting through an admin
+    // route. A truncated or HTML-bodied row labelled image/png would otherwise
+    // be handed to satori and take the whole card down — the exact failure this
+    // module exists to prevent. A bad row must degrade to the live render.
+    fetchMock.mockImplementation(async (url: string) => {
+      if (CACHE_RE.test(String(url))) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => "application/json" },
+          json: async () => [{ mime: "image/png", b64: Buffer.from("<!doctype html><html>").toString("base64") }],
+        }
+      }
+      return res(PNG_BYTES, "image/png")
+    })
+    const out = await ogImageDataUri("/api/public/pinnacle-image/LEV2-LION-CARE-S6")
+    expect(out).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString("base64")}`)
+  })
+
+  it("does not consult the cache for art that is not a Pinnacle render", async () => {
+    fetchMock.mockResolvedValue(res(PNG_BYTES, "image/png"))
+    await ogImageDataUri("https://assets.nbatopshot.com/media/49744949/image?width=180")
+    expect(fetchMock.mock.calls.some((c) => CACHE_RE.test(String(c[0])))).toBe(false)
   })
 })
 

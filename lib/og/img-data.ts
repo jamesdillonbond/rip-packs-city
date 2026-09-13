@@ -82,6 +82,80 @@ export function ogImageTarget(raw: string): string | null {
   return url.replace(RENDER_FORMAT_RE, "$1png")
 }
 
+// ── PINNACLE: THE CACHE IS THE CHEAP SOURCE, AND SOMETIMES THE ONLY ONE ─────
+// `/api/public/pinnacle-image/<render_id>` 302s to a freshly-signed Dapper CDN
+// URL and hands back a FULL-RESOLUTION render: LEV2-LION-CARE-S6 measured
+// 2,896,041 B at 2880×2880 on 2026-09-12 (and `?v=quarter`, which selects a
+// different ANGLE rather than a smaller render, 2,545,361 B — there is no width
+// parameter on that route, so there is no cheaper ask to make of it).
+//
+// ⭐ `pinnacle_render_cache` holds the SAME render, downscaled to ≤800px, at
+// 316,140 B — 9× smaller, already base64, one indexed read away. Preferring it
+// does two things at once: it buys back most of the Pinnacle share of the
+// cold-render regression, and it retires the risk that a larger render one day
+// crosses the 4 MB cap below and silently reintroduces the art drop that this
+// module's own 09-12 fix just closed.
+//
+// ⚠ TWO CAVEATS, BOTH STATED RATHER THAN DESIGNED AROUND.
+//  1. THE CACHE HOLDS ONE ROW. It is a proven mechanism, not a populated
+//     cache — it works for Simba and for nothing else today. The live route
+//     therefore REMAINS the fallback and is not downgraded to a last resort.
+//     `scripts/pinnacle-render-cache-fill.mjs` (home-machine, 15-minutely) is
+//     the writer that would populate it; whether that scheduler is still
+//     running is a separate question from whether this read is correct.
+//  2. THE TWO SOURCES DISAGREE ABOUT DATACENTER EGRESS.
+//     `app/api/profile/trophy-case/pdf/route.tsx` states a direct Pinnacle
+//     fetch "would 403" from our egress and does not attempt one; the 2.9 MB
+//     figure above is a SUCCESSFUL datacenter fetch of the same asset through
+//     the signed-URL redirect. Both cannot describe the same path. This change
+//     is correct either way — if the live route works, the cache is 9× cheaper;
+//     if it 403s, the cache is the only Pinnacle art there is — so it is not
+//     gated on resolving that, but nothing here should be read as having
+//     resolved it.
+const PINNACLE_RENDER_RE = /\/api\/public\/pinnacle-image\/([A-Za-z0-9-]{3,64})/
+
+/**
+ * Read one cached Pinnacle render as a data URI, or null.
+ *
+ * ⚠ PLAIN `fetch` AGAINST PostgREST rather than a supabase-js client, because
+ * this module is imported by `/api/og/profile/[username]`, which is `edge`.
+ * Pulling supabase-js in here would drag a Node-shaped client onto an edge
+ * route for a decoration read.
+ */
+async function pinnacleCachedDataUri(
+  renderId: string,
+  timeoutMs: number,
+): Promise<string | null> {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!base || !key) return null
+  try {
+    const res = await fetch(
+      `${base}/rest/v1/pinnacle_render_cache?render_id=eq.${encodeURIComponent(renderId)}&select=mime,b64&limit=1`,
+      {
+        headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: "application/json" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(timeoutMs),
+      },
+    )
+    if (!res.ok) return null
+    const rows = (await res.json()) as Array<{ mime?: string | null; b64?: string | null }>
+    const row = Array.isArray(rows) ? rows[0] : null
+    const b64 = row?.b64
+    if (typeof b64 !== "string" || b64.length === 0) return null
+    // ⚠ VALIDATE THE BYTES, do not trust `mime`. The column is written by a
+    // home-machine script posting through an admin route; a truncated or
+    // HTML-bodied row would otherwise be handed to satori as a PNG and take
+    // the whole card down, which is the exact failure this module exists to
+    // prevent. Sniffing is what every other path in here already does.
+    const type = sniff(Buffer.from(b64.slice(0, 64), "base64"))
+    if (!type) return null
+    return `data:${type};base64,${b64}`
+  } catch {
+    return null
+  }
+}
+
 export async function ogImageDataUri(
   url: string | null | undefined,
   opts: OgImgOpts = {},
@@ -92,6 +166,14 @@ export async function ogImageDataUri(
   const target = ogImageTarget(url)
   if (!target) return null
 
+  // Cache first, live render second. A cache miss costs one indexed lookup and
+  // falls through to exactly the behaviour this module had before.
+  const pin = target.match(PINNACLE_RENDER_RE)
+  if (pin) {
+    const cached = await pinnacleCachedDataUri(pin[1], opts.timeoutMs ?? 4500)
+    if (cached) return cached
+  }
+
   const timeoutMs = opts.timeoutMs ?? 4500
   // 4MB cap — measured live: satori/resvg renders a 2.85MB 2880px PNG fine
   // (Blazers montage) but dies on a 7.67MB one (Lakers/Wilt Chamberlain,
@@ -101,7 +183,10 @@ export async function ogImageDataUri(
   // close to it: LEV2-LION-CARE-S6 measured 2,896,041 B on 2026-09-12. It fits,
   // but a larger Pinnacle render will silently reintroduce the drop this
   // module's 09-12 fix just closed, with a different cause. That route takes no
-  // width param today, so there is no cheaper ask to make.
+  // width param, so there is no cheaper ask to make OF IT — but there is a
+  // cheaper SOURCE, and the cache-first branch above now takes it wherever the
+  // render has been harvested. This cap still guards every row the cache
+  // misses, which today is all of them but one.
   const maxBytes = opts.maxBytes ?? 4 * 1024 * 1024
 
   const ac = new AbortController()
