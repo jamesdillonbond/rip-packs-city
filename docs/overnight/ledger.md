@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ CODE — a 2026-08-30 guard on the platform's largest compute consumer was skipping ZERO, and the backstop had quietly become a bigger consumer than the waves it backs up · Claude Code cloud, overnight autonomous
+
+**Shipped:** `app/api/seed-wallet-refresh/route.ts` (new `WAVE_CADENCE_HOURS` constant; backstop window 3 h → the cadence), `__tests__/api-seed-wallet-refresh-deep.test.ts` (the leaking case pinned, plus its opposite), `docs/overnight/inbox/2026-09-13T0800Z-…` (+ INDEX). Revert: `git revert` the commit whose message starts `fix(wallet): the backstop freshness window is the wave cadence`.
+
+**⭐ FOUND BY ACCIDENT AND THAT IS WORTH SAYING:** I was watching a saturation spell only because it was stopping the counterparty fix (shipped an hour earlier) from arming. **31 active backends, `refresh_seeded_wallet_stats` ×17.** Nothing swept for this.
+
+**⛔ MY FIRST TWO READINGS WERE BOTH WRONG, and the corrections are the useful part.**
+1. **"24 backends on ONE rpc"** — an artifact. Every PostgREST RPC shares the same ~60-character `WITH pgrst_source AS (SELECT pgrst_call.pgrst_scalar …` wrapper, so a prefix-truncated `GROUP BY` merges DIFFERENT functions into one row. ⭐ **PROMOTE: never group `pg_stat_activity`/`pg_stat_statements` on a truncated prefix — extract the function name and group on that.**
+2. **"a top-tier consumer nobody has listed"** — also wrong, and it is the third time in a week this register has paid for filing over existing work. `seed-wallet-refresh`'s OWN header calls the fan-out *"the platform's single largest compute consumer … ~113 lambda-hours/day … the #1 Vercel Fluid-memory driver AND the #1 DB-IOPS driver"*, and already carries the 6h→12h cost lever AND a freshness guard built for exactly this. ⭐ **PROMOTE: the grep-before-you-file rule applies to ROUTE HEADERS, not just `docs/overnight/inbox/`.**
+
+**🚨 WHAT WAS REAL, AND IT IS A GUARD THAT SHIPPED, IS LIVE, AND SKIPS NOTHING.** `SEED_REFRESH_BACKSTOP_FRESH_HOURS` defaults to **3**. It was added 2026-08-30 for a backstop landing ~1 h after a primary. But the waves run at hours **0/1 and 12/13 on a 12 h cadence**, and that same comment measures GitHub's drift on the backstop schedule at **median +45 min, p90 +205 min** — so it lands anywhere in the ~10 hours after a primary, where the wallets are **4–11 h old and a 3 h window catches none of them**.
+
+**Measured over 24 h, and the control is what makes it decisive:** every forced wave reported **`backstop_fresh_skipped = 0`** with **`backfill_fired == processed` (39/39, 37/37, 33/33, 47/47)** — while the neighbouring low-priority gate on the same waves skipped **17–36 each**. ⭐ **So the mechanism works and only the NUMBER was wrong**, which is the difference between "the guard is broken" and "the guard is mis-calibrated", and it is why the fix is one constant.
+
+**🔴 THE SIZE OF IT: three drifted backstop sweeps (hours 07, 17, 22, all `forced: true`) fired 403 `wallet-backfill` runs in 24 h against 303 from the four sanctioned waves.** The backstop had become the LARGER consumer of the largest consumer, and the 2026-07-18 lever (*"removes ~56 lambda-hours/day"*) was substantially unrealised. ✅ The cadence gate itself is fine — hours 6, 18 and 19 correctly logged `reason: "12h_cadence_gate"` at 0.00 s.
+
+**⭐ THE FIX MAKES THE TWO NUMBERS ONE FACT.** `WAVE_CADENCE_HOURS = 12` is now a named constant feeding BOTH the cadence gate (`utcHour % WAVE_CADENCE_HOURS >= 2`) and the backstop window. **Six weeks as two unrelated literals is exactly how they drifted** — the cadence moved 6h→12h on 2026-07-18 and the window did not follow. The window now asks precisely the right question, *"did the most recent primary already refresh this wallet?"*: younger than one cadence → a primary SUCCEEDED → skip; older → a primary MISSED it → fire. ✅ **So the cron-job.org-dropout redundancy the `?force=1` bypass exists for is fully intact** — which matters, because that bypass is documented as load-bearing and the lazy fix (narrowing the bypass) would have removed it.
+
+**Pinned in both directions:** the **6-hour** case that was leaking must now be SKIPPED, and a **13-hour** case must still FIRE — without that second assertion a widened window would silently turn the backstop off. **4 mutations, 4 caught:** window back to 3 h, cadence to 6, gate disabled, window widened to 24.
+
+**⛔ REFUTED ALONG THE WAY:** my own re-entrancy hypothesis. `seed-wallet-refresh` has **0 overlapping starts in 12 h** (37.5-minute gaps) — it was never the orchestrator. The 17-deep reading is `dispatchPaced` awaiting a **202 rather than the work**: each callee runs its own `after()`, so `wallet-backfill` ran at a **mean of 11.9 and a peak of 26 concurrent** over 6 h.
+
+**⚠ NOT FIXED, and it is the deeper shape:** that means the orchestrator has **no real back-pressure** — `DISPATCH_BATCH_SIZE = 6` bounds dispatches in flight, not work in flight. This change removes ~3 spurious sweeps a day; it does not make the remaining waves self-limiting. Filed, not guessed at.
+
+**Verification:** `tsc` clean · the pre-existing backstop test CAUGHT this change (its "stale" fixture was 5 h old, which is now fresh) and was updated rather than deleted · 4 mutations caught · register index + inbox index guards green · ledger guards 3 / 0.
+
 ### 2026-09-13 · ✅ CODE+DB — the top failing lane was stranded below its own work for the SECOND time in a day; it now records exhaustion instead of re-deriving the same zero 288 times · Claude Code cloud, overnight autonomous
 
 **Shipped:** `supabase/migrations/20260913074912_audit_20260913_sales_counterparty_claim_rearms_instead_of_rescanning_a_drained_range.sql` (APPLIED 07:49:12Z), `supabase/tests/claim_sales_counterparty_batch.sql` (NEW pin), `__tests__/db-invariants-drift-guard.test.ts` (pin registered), `docs/reference/known-issues.md` (#99 NEW). Revert in the migration header.

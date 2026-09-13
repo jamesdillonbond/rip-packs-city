@@ -62,3 +62,48 @@ The spell this was observed in produced **four consecutive `statement_timeout` f
 3. **Only then** consider the 9.5 s mean itself. 9.5 s for a per-wallet stats refresh is high enough to be worth a plan read on its own merits, independent of the concurrency question.
 
 ⚠ **Do not quote the 41,384 / 9,520 ms figures without re-deriving them** — they are a 32-day cumulative sample and `pg_stat_statements` has not been reset since 2026-08-12.
+
+---
+
+# ⛔⛔ CORRECTION AND RESOLUTION, SAME SESSION (2026-09-13 ~01:2x PT) — the framing above is WRONG in the way that matters, and the actual cause is now found, measured and FIXED
+
+**Read this before acting on anything above.**
+
+## 1. ⛔ "a top-tier consumer nobody has listed" is RETRACTED — it is listed, in the code, in detail
+
+`app/api/seed-wallet-refresh/route.ts` opens its cadence-gate block with *"The wallet-backfill fan-out is **the platform's single largest compute consumer**: measured over 7d, the 7 wallet-backfill\* pipelines burn ~113 lambda-hours/day … simultaneously the #1 Vercel Fluid-memory driver AND the #1 DB-IOPS driver behind the recurring statement-timeout/contention class."*
+
+It also already carries the cost lever (a 6h → 12h wave cadence, 2026-07-18, *"removes ~56 lambda-hours/day"*) and a freshness gate added 2026-08-30 for precisely the drift problem below. **I filed an observation of a system whose authors had documented it better than I had, which is the third time this register has paid for that in a week.** ⭐ The rule earned earlier tonight applies to ROUTE HEADERS too, not just the inbox: *grep the code that owns the thing before filing about it.*
+
+## 2. ⭐ What was genuinely new — and it is the whole finding
+
+**`SEED_REFRESH_BACKSTOP_FRESH_HOURS` defaulted to 3 and was skipping ZERO.**
+
+The backstop (`?force=1`, `wallet-backfill-backstop.yml`) bypasses the 12h cadence gate on purpose — that bypass is load-bearing redundancy for cron-job.org trigger dropout. The 2026-08-30 guard was meant to stop it duplicating a primary that had just run, and was sized for the incident that motivated it: a backstop landing ~1 hour after a primary.
+
+⚠ **But the waves run at hours 0/1 and 12/13 on a 12h cadence, and GitHub drifts this schedule by a measured median +45 min / p90 +205 min.** So a backstop lands anywhere in the ~10 hours after a primary, where wallets are **4–11 h old** — and a 3-hour window catches none of them.
+
+**Measured live, 24 h of `pipeline_runs`:**
+
+| | |
+|---|---|
+| forced waves (hours 07, 17, 22 — all `forced: true`) | `backstop_fresh_skipped` **0** on every one |
+| their dispatch | `backfill_fired == processed` — **39/39, 37/37, 33/33, 47/47** |
+| neighbouring low-priority gate, same waves | skipped **17–36** each — so the mechanism works and only the NUMBER was wrong |
+| `wallet-backfill` runs from 3 drifted backstop sweeps | **403 / 24 h** |
+| `wallet-backfill` runs from the 4 sanctioned waves | **303 / 24 h** |
+
+⭐ **So the backstop had become the LARGER consumer of the platform's largest consumer, and the 2026-07-18 cost lever was substantially unrealised.** The gate itself is fine — hours 6, 18 and 19 correctly logged `reason: "12h_cadence_gate"` at 0.00 s.
+
+⭐ **And the concurrency in the title is explained rather than mysterious:** `wallet-backfill` ran at a **mean of 11.9 and a peak of 26 concurrent** over 6 h (start/finish interval arithmetic), because the orchestrator's `dispatchPaced` awaits a **202**, not the work — each callee runs its own `after()`. The 17 `refresh_seeded_wallet_stats` were one per in-flight backfill. ⛔ **My re-entrancy hypothesis about `seed-wallet-refresh` is REFUTED: 0 overlapping starts in 12 h, 37.5-minute gaps.** It was never the orchestrator.
+
+## 3. ✅ Fixed, not filed
+
+`WAVE_CADENCE_HOURS = 12` is now a named constant used by **both** the cadence gate and the backstop window, because they are the same fact and six weeks as two literals is what let them drift. The window asks exactly the right question — *"did the most recent primary already refresh this wallet?"* — so:
+
+- younger than one cadence → a primary **succeeded** → skip (no duplication);
+- older → a primary **missed** it → fire (the redundancy the bypass exists for, fully intact).
+
+Pinned with the 6-hour case that was leaking and a 13-hour case that must still fire; **4 mutations, 4 caught, in both directions** (window back to 3 h, cadence to 6, gate disabled, window widened to 24).
+
+⚠ **Still NOT addressed, and it is the deeper shape:** `dispatchPaced` pacing on a 202 means the orchestrator has **no real back-pressure** — its `DISPATCH_BATCH_SIZE = 6` bounds dispatches in flight, not work in flight. This fix removes ~3 spurious sweeps a day; it does not make the remaining waves self-limiting. That is a design question about fire-and-forget fan-out, and it wants its own measurement of what concurrency the instance can actually absorb.
