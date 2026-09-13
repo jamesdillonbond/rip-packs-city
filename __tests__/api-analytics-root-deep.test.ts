@@ -53,8 +53,13 @@ const WALLET = "0xbd94cade097e50ac"
 
 const req = (qs: string) => new NextRequest(`https://t/api/analytics${qs}`)
 
+// ⚠ `lock_known: true` is part of the DEFAULT because it is what the live
+// `get_wallet_moments_with_fmv` returns for a row whose lock was actually
+// read (migration 20260913231500). A fixture without it describes a function
+// that no longer exists, and would quietly assert the pre-#112 behaviour.
+// The unknown case gets its own test below rather than being the default.
 function moment(over: Record<string, unknown> = {}) {
-  return { tier: "MOMENT_TIER_COMMON", fmv_usd: 10, is_locked: false, confidence: "HIGH", series_number: 4, ...over }
+  return { tier: "MOMENT_TIER_COMMON", fmv_usd: 10, is_locked: false, lock_known: true, confidence: "HIGH", series_number: 4, ...over }
 }
 
 beforeEach(() => {
@@ -143,9 +148,49 @@ describe("GET /api/analytics — aggregation", () => {
 
     expect(body.total_moments).toBe(3)
     expect(body.locked).toMatchObject({ locked_count: 1, unlocked_count: 2, locked_fmv: 10.56, unlocked_fmv: 5 })
+    // Nothing unchecked in this fixture, so the third bucket is genuinely 0.
+    expect(body.locked.lock_unknown_count).toBe(0)
+    expect(body.locked.lock_unknown_fmv).toBe(0)
     // A null tier becomes UNKNOWN rather than being dropped from the rollup.
     expect(body.tiers.map((t: { tier: string }) => t.tier).sort()).toEqual(["RARE", "UNKNOWN"])
     expect(body.total_fmv).toBe(15.56)
+  })
+
+  it("⛔ a moment whose lock was never CHECKED is not counted as sellable (register #112)", async () => {
+    // The defect: `if (locked) … else { unlockedCount++; unlockedFmv += fmv }`.
+    // `wallet_moments_cache.is_locked` defaults to false, and 1,160,468 of
+    // 1,767,936 Top Shot rows were never checked — so under the old tally most
+    // of a wallet counted toward a figure the UI captions "Locked moments
+    // cannot be listed or traded". That is a liquidity claim, and it was wrong
+    // in the flattering direction.
+    state.pages = [[
+      moment({ fmv_usd: 100, is_locked: true, lock_known: true }),
+      moment({ fmv_usd: 10, is_locked: false, lock_known: true }),
+      // Never checked: `is_locked` is the column default, not a reading.
+      moment({ fmv_usd: 1000, is_locked: false, lock_known: false }),
+    ]]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+
+    expect(body.locked.locked_count).toBe(1)
+    expect(body.locked.locked_fmv).toBe(100)
+    // ⭐ The $1000 stays OUT of unlocked. Under the old tally `unlocked_fmv`
+    // read 1010 and told the user they could sell all of it.
+    expect(body.locked.unlocked_count).toBe(1)
+    expect(body.locked.unlocked_fmv).toBe(10)
+    expect(body.locked.lock_unknown_count).toBe(1)
+    expect(body.locked.lock_unknown_fmv).toBe(1000)
+  })
+
+  it("treats an ABSENT lock_known as unknown, never as a measured unlock", async () => {
+    // An older deployment of get_wallet_moments_with_fmv omits the key. The
+    // safe direction is to report everything unverified rather than silently
+    // resume the overstatement, so this is pinned rather than left to chance.
+    state.pages = [[{ tier: "MOMENT_TIER_COMMON", fmv_usd: 50, is_locked: false, confidence: "HIGH", series_number: 4 }]]
+    const body = await (await GET(req(`?wallet=${WALLET}&collection_id=nba-top-shot`))).json()
+    expect(body.locked.unlocked_count).toBe(0)
+    expect(body.locked.unlocked_fmv).toBe(0)
+    expect(body.locked.lock_unknown_count).toBe(1)
+    expect(body.locked.lock_unknown_fmv).toBe(50)
   })
 
   it("labels series from the map, falls back for an unmapped number, and buckets a null as Unknown", async () => {

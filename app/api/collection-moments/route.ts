@@ -303,7 +303,12 @@ export async function GET(req: NextRequest) {
         acquisition_confidence: row.acquisition_confidence ?? null,
         loan_principal: row.loan_principal != null ? Number(row.loan_principal) : null,
         source_address: row.source_address ?? null,
-        is_locked: row.is_locked === true,
+        // ⛔ NOT `row.is_locked === true`, which collapses "never checked"
+        // into "not locked". `lock_known` comes from the source's own
+        // check timestamp (register #112); without it the lock is UNKNOWN
+        // and must reach the client as null so it renders as such.
+        is_locked: row.lock_known === true ? row.is_locked === true : null,
+        lock_known: row.lock_known === true,
         // Phase 2 serial-adjusted FMV (additive #1/perfect-mint premium estimate).
         serial_fmv: row.serial_fmv ?? null,
         // Cleaned 30d price band {low,high,n} — only present for high-volume

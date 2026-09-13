@@ -142,12 +142,27 @@ export async function GET(req: NextRequest) {
     let unlockedCount = 0
     let lockedFmv = 0
     let unlockedFmv = 0
+    // ⛔ THE THIRD STATE. This tally used to be `if (locked) … else …` — a
+    // binary else, so a moment whose lock was NEVER CHECKED was counted as
+    // UNLOCKED and its FMV added to the figure the UI captions "Locked
+    // moments cannot be listed or traded". That is a LIQUIDITY claim about
+    // the user's own portfolio, and `wallet_moments_cache.is_locked` defaults
+    // to false on 1,160,468 of 1,767,936 Top Shot rows (register #112) — so
+    // for most wallets the headline overstated what they can actually sell.
+    let lockUnknownCount = 0
+    let lockUnknownFmv = 0
     let totalFmv = 0
 
     for (const r of rows) {
       const tier = (r.tier ? String(r.tier).replace(/^MOMENT_TIER_/i, "").toUpperCase() : "UNKNOWN")
       const fmv = r.fmv_usd != null ? Number(r.fmv_usd) : 0
       const locked = r.is_locked === true
+      // `lock_known` is supplied by get_wallet_moments_with_fmv and is true
+      // only where the source RECORDS having checked (its `lock_checked_at`).
+      // ⚠ Absent key ⇒ false ⇒ unknown, which is the safe direction: an older
+      // deployment of the function simply reports everything unverified
+      // rather than silently resuming the old overstatement.
+      const lockKnown = r.lock_known === true
       const conf = (r.confidence ? String(r.confidence).toUpperCase() : "NO_DATA")
       const seriesNum = r.series_number != null ? Number(r.series_number) : -1
       const seriesLabel = seriesNum >= 0 ? (SERIES_MAP[seriesNum] ?? `Series ${seriesNum}`) : "Unknown"
@@ -163,7 +178,9 @@ export async function GET(req: NextRequest) {
       if (confidenceDist[conf] !== undefined) confidenceDist[conf]++
       else confidenceDist.NO_DATA++
 
-      if (locked) { lockedCount++; lockedFmv += fmv } else { unlockedCount++; unlockedFmv += fmv }
+      if (!lockKnown) { lockUnknownCount++; lockUnknownFmv += fmv }
+      else if (locked) { lockedCount++; lockedFmv += fmv }
+      else { unlockedCount++; unlockedFmv += fmv }
       totalFmv += fmv
     }
 
@@ -196,6 +213,10 @@ export async function GET(req: NextRequest) {
         unlocked_count: unlockedCount,
         locked_fmv: Math.round(lockedFmv * 100) / 100,
         unlocked_fmv: Math.round(unlockedFmv * 100) / 100,
+        // Reported, never folded into either side — a bucket nobody can see
+        // is the same as not splitting it out at all.
+        lock_unknown_count: lockUnknownCount,
+        lock_unknown_fmv: Math.round(lockUnknownFmv * 100) / 100,
       },
       tiers: Object.entries(tierBreakdown).map(([tier, v]) => ({ tier, count: v.count, fmv: Math.round(v.fmv * 100) / 100 })).sort((a, b) => b.fmv - a.fmv),
       series: Object.entries(seriesBreakdown).map(([label, v]) => ({ label, seriesNumber: v.seriesNumber, count: v.count, fmv: Math.round(v.fmv * 100) / 100 })).sort((a, b) => a.seriesNumber - b.seriesNumber),

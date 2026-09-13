@@ -23,7 +23,7 @@
 --
 -- serial_fmv_estimate is stubbed (separately pinned). The function DDL below is a
 -- VERBATIM copy of the committed migration
--- (supabase/migrations/20260830023744_audit_20260830_get_wallet_moments_with_fmv_plpgsql_custom_plan_sql_functions_are_param_blind.sql
+-- (supabase/migrations/20260913232000_audit_20260913_snapshot_get_wallet_moments_with_fmv_with_lock_provenance.sql
 -- — LANGUAGE plpgsql + plan_cache_mode=force_custom_plan since 2026-08-30; the SQL body is
 -- byte-identical to the 20260806033000 version, wrapped in RETURN ( ... ));
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
@@ -36,7 +36,10 @@ CREATE TABLE public.wallet_moments_cache (
   wallet_address text, collection_id uuid, moment_id text, edition_key text, render_id text,
   serial_number integer, player_name text, set_name text, tier text, series_number integer,
   mint_count integer, character_name text, image_url text, team_name text,
-  acquired_at timestamptz, last_seen_at timestamptz, is_locked boolean
+  acquired_at timestamptz, last_seen_at timestamptz, is_locked boolean,
+  -- The provenance half of the lock: NULL means nobody ever checked, which is
+  -- NOT the same as "not locked" (register #112).
+  lock_checked_at timestamptz
 );
 CREATE TABLE public.editions (
   id uuid PRIMARY KEY, external_id text, collection_id uuid, player_name text, set_name text,
@@ -100,6 +103,13 @@ UPDATE public.editions SET series = 1 WHERE id = 'e1111111-1111-1111-1111-111111
 -- over the editions fallback (2 is Series 2 on Top Shot, unaffected by the CASE).
 UPDATE public.wallet_moments_cache SET series_number = 2 WHERE moment_id = 'mB';
 
+-- ── Lock provenance fixtures (register #112) ───────────────────────────────
+-- mA's lock was actually READ; mB's never was. Both carry is_locked = false,
+-- which is exactly the trap: in production that value is the COLUMN DEFAULT on
+-- 1,160,468 of 1,767,936 Top Shot rows, and `is_locked = true` on ZERO of them.
+-- Only the timestamp separates a measured 'not locked' from 'never looked'.
+UPDATE public.wallet_moments_cache SET lock_checked_at = now() - interval '2 hours' WHERE moment_id = 'mA';
+
 -- An ALL DAY holding where display series 1 is LEGITIMATE (All Day really does
 -- have an on-chain Series 1). This is the mutation guard against "fix" attempts
 -- that drop the collection scope: an unscoped 1 -> 0 remap reds this.
@@ -153,7 +163,8 @@ BEGIN
       lf.algo_version AS fmv_method,
       wmc.acquired_at AS acquired_at_raw,
       wmc.last_seen_at,
-      COALESCE(wmc.is_locked, false) AS is_locked,
+      wmc.is_locked AS is_locked,
+      (wmc.lock_checked_at IS NOT NULL) AS lock_known,
       e.id AS edition_id,
       lf.sales_count_30d
     FROM wallet_moments_cache wmc
@@ -193,7 +204,8 @@ BEGIN
       pc.fmv_algo_version AS fmv_method,
       wmc.acquired_at AS acquired_at_raw,
       wmc.last_seen_at,
-      false AS is_locked,
+      wmc.is_locked AS is_locked,
+      (wmc.lock_checked_at IS NOT NULL) AS lock_known,
       NULL::uuid AS edition_id,
       NULL::integer AS sales_count_30d
     FROM wallet_moments_cache wmc
@@ -263,6 +275,7 @@ BEGIN
       ma.source_address,
       ma.loan_principal,
       p.is_locked,
+      p.lock_known,
       p.edition_id,
       p.sales_count_30d,
       public.serial_fmv_estimate(p_collection_id, p.serial_number, p.circulation_count, p.tier, p.fmv_usd, p.confidence, p.edition_id) AS serial_fmv,
@@ -355,6 +368,24 @@ SELECT _assert_eq(
 SELECT public.get_wallet_moments_with_fmv('0xnobody') AS re \gset
 SELECT _assert_eq((:'re'::jsonb->'moments')::text, '[]', 'empty wallet → [] moments');
 SELECT _assert_eq((:'re'::jsonb->>'total_count'), '0', 'empty wallet → total_count 0');
+
+-- (9) LOCK PROVENANCE (register #112). Both rows read is_locked = false; only
+-- mA was ever CHECKED. The function must carry that difference, because every
+-- consumer downstream is otherwise incapable of telling them apart — and the
+-- analytics surface captions the result "Locked moments cannot be listed or
+-- traded", i.e. it is a liquidity claim about the user's own portfolio.
+SELECT _assert_eq(
+  (SELECT (m->>'lock_known') FROM jsonb_array_elements(:'r'::jsonb->'moments') m WHERE m->>'moment_id'='mA'),
+  'true', 'a lock that was actually checked reports lock_known true');
+SELECT _assert_eq(
+  (SELECT (m->>'lock_known') FROM jsonb_array_elements(:'r'::jsonb->'moments') m WHERE m->>'moment_id'='mB'),
+  'false', 'a lock nobody ever checked reports lock_known FALSE, not a silent unlock');
+-- ⛔ And is_locked is NOT coerced: the unchecked row must not masquerade as a
+-- measured false by arriving through a COALESCE. It reports the raw column,
+-- and lock_known is what makes it interpretable.
+SELECT _assert_eq(
+  (SELECT (m->>'is_locked') FROM jsonb_array_elements(:'r'::jsonb->'moments') m WHERE m->>'moment_id'='mB'),
+  'false', 'the raw lock value still passes through; provenance is the discriminator');
 
 -- (9) SERIES CONVENTION — Top Shot: a DISPLAY series of 1 from the editions
 -- fallback arm is emitted as the ON-CHAIN 0, so it both renders via the series

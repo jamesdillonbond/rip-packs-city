@@ -59,6 +59,11 @@ type AnalyticsResponse = {
     unlocked_count: number
     locked_fmv: number
     unlocked_fmv: number
+    // Optional: an older deployment of /api/analytics does not send these.
+    // Treated as 0 below, which renders no disclosure — the pre-#112
+    // behaviour — rather than a confident zero dressed as a measurement.
+    lock_unknown_count?: number
+    lock_unknown_fmv?: number
   }
   tiers: Array<{ tier: string; count: number; fmv: number }>
   series: Array<{ label: string; seriesNumber: number; count: number; fmv: number }>
@@ -1730,6 +1735,23 @@ function AnalyticsInner() {
                   </div>
                 </div>
                 <div className="mt-2 text-[11px] text-[color:var(--rpc-text-muted)]">Locked moments cannot be listed or traded.</div>
+                {/* ⛔ The unknown bucket is DISCLOSED, never folded into either tile.
+                    "Unlocked FMV" sits under a caption about what can be traded, so it
+                    is a liquidity claim; counting a moment nobody checked as unlocked
+                    overstated it. Most Top Shot wallets land here — 1,160,468 of
+                    1,767,936 rows have never had their lock read (register #112) — so
+                    this line is the normal case, not an edge case. */}
+                {(data.locked.lock_unknown_count ?? 0) > 0 && (
+                  <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">
+                    Not included above:{" "}
+                    <span className="font-semibold text-[color:var(--rpc-text-primary)]">
+                      {fmt(data.locked.lock_unknown_fmv ?? 0)}
+                    </span>{" "}
+                    across {(data.locked.lock_unknown_count ?? 0).toLocaleString("en-US")} moment
+                    {(data.locked.lock_unknown_count ?? 0) === 1 ? "" : "s"} whose lock state we
+                    have not checked yet. We don&apos;t know whether these can be traded.
+                  </div>
+                )}
               </section>
 
               {/* Cost Basis & P&L (TopShot only; hides on non-TS or empty cost-basis) */}

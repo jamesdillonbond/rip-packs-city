@@ -59,7 +59,14 @@ export async function GET(req: NextRequest) {
         csvCell(m.low_ask != null ? Number(m.low_ask).toFixed(2) : ""),
         csvCell(m.acquisition_method),
         csvCell(m.buy_price != null ? Number(m.buy_price).toFixed(2) : ""),
-        csvCell(m.is_locked ? "true" : "false"),
+        // ⛔ Three states, not two. This cell used to be
+        // `m.is_locked ? "true" : "false"`, so a moment nobody ever checked
+        // was exported as a definite "false" into a file the user keeps and
+        // may act on. 1,160,468 of 1,767,936 Top Shot rows are in exactly
+        // that state (register #112). `unknown` is a third value in a column
+        // that already carries strings, so a parser that split on true/false
+        // sees a new token rather than a silently wrong one.
+        csvCell(m.lock_known === true ? (m.is_locked ? "true" : "false") : "unknown"),
         csvCell(m.acquired_at ?? ""),
       ].join(","))
     }
