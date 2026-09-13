@@ -4,6 +4,33 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-13 ~02:4x PT: FIRST READING against tonight's baseline — the counterparty fix is VERIFIED and ATTRIBUTED; the fleet-wide claim is NOT yet earned
+
+⭐ **VERIFIED, with a proper control — `sales-counterparty-backfill`.** Equal run counts on both sides of the change point (19 pre / 18 post, so this is not a work-volume artifact):
+
+| | 95 min pre-fix | 95 min post-fix |
+|---|---:|---:|
+| avg duration | **22,020 ms** | **997 ms** |
+| failed runs | 4 | **0** |
+
+⭐⭐ **AND IT IS ATTRIBUTED, not merely correlated.** Same hour-of-day control (08:00–09:30Z, today vs yesterday) — the right comparison, because fleet run-density varies by hour and a raw before/after halves the denominator for reasons that have nothing to do with any fix:
+
+| | yesterday 08:00–09:30Z | today 08:00–09:30Z |
+|---|---:|---:|
+| runs | 865 | **1,062** (MORE work, not less) |
+| statement timeouts | **14** | **0** |
+| per 1,000 runs | 16.18 | **0.00** |
+| failed runs | 19 | **3** |
+
+🚨 **The decomposition is the point: 11 of yesterday's 14 timeouts in that window WERE `sales-counterparty-backfill` itself** (analytics-smoke 2, lock-check-batch 1). So the lane this fix targeted was the single largest producer of statement timeouts in the window, and removing it removed them.
+
+⚠ **WHAT THIS DOES NOT ESTABLISH, stated so nobody quotes it as more:**
+
+1. **One 90-minute window each side.** Statement timeouts are BURSTY — they arrive in saturation spells — so a quiet window is not proof the class is gone. Yesterday's 14 could be one spell. **Re-read across a full 24 h against the filed baseline (166 timeouts / 24 h) before claiming the class moved.**
+2. **The other 3 timeouts vanishing is NOT attributable** to anything shipped tonight; those lanes may simply not have fired.
+3. **Four changes shipped tonight and a concurrent session was active** — only the counterparty lane has a within-lane control, so only it is individually verified.
+4. ⛔ **`wallet_backfill_runs` was 0 yesterday in this window vs 8 today, which is the OPPOSITE of the predicted direction — and it is not evidence either way**, because the lane was simply idle in that hour yesterday. **The backstop-freshness prediction is still UNTESTED**; its direct evidence is `extra.backstop_fresh_skipped` going positive on a `forced: true` wave, and the lane's next window is hour 12 UTC (hours 8–11 UTC are structurally empty — 0 runs across 3 days).
+
 ## STEER — added 2026-09-13 ~03:0x PT (overnight autonomous; an AUDIT RESULT, so nobody re-derives the hour it cost)
 
 ⛔ **DO NOT RE-INVESTIGATE THE TWELVE LAPSED `pipeline_alert_suppression` ROWS. They are all in a CORRECT state — audited to the bottom 2026-09-13.** A reader who lists that table sees ten rows that expired **2026-09-12** and one each on 09-07/09-08, all carrying the alarming reason *"dead host 2026-08-30: public-api.nbatopshot.com 530/1033"*. That reads as twelve alerts about to storm. It is not.
