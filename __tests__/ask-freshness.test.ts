@@ -50,9 +50,18 @@ describe("ask freshness — three states, never two", () => {
   })
 
   it("the threshold sits FAR above the healthy cadence, not beside it", () => {
-    // A healthy offers-sweep wraps the whole catalogue 8-18 times a day, so a fresh
-    // ask is minutes-to-an-hour old. If this constant ever drifts down near that,
-    // the marker starts firing on ordinary jitter and stops meaning anything.
+    // ORIGINAL RATIONALE: a healthy offers-sweep wrapped the whole catalogue 8-18
+    // times a day, so a fresh ask was minutes-to-an-hour old, and a constant drifting
+    // down near that would fire on ordinary jitter and stop meaning anything.
+    //
+    // ⚠ THAT LANE IS DEAD (since 2026-08-28) AND THESE BOUNDS ARE DELIBERATELY KEPT.
+    // Re-measured 2026-09-13: 78% of Top Shot asks are past 24 h under the
+    // change-stamp that replaced the sweep, so for that arm the marker is near
+    // always-on whatever number sits here — which is an argument for fixing the
+    // STAMP (known-issues #98), not for tuning the THRESHOLD. The bounds stay so
+    // that a future session cannot quietly "fix" the noise by moving the constant
+    // and call the freshness problem solved. Do not widen them to make a symptom go
+    // away; the module doc-comment above carries the full argument.
     expect(ASK_STALE_HOURS).toBeGreaterThanOrEqual(6)
     expect(ASK_STALE_HOURS).toBeLessThanOrEqual(24)
   })

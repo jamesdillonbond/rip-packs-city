@@ -29,11 +29,25 @@
 /**
  * Hours past which an ask is called out as unconfirmed.
  *
- * ⚠ 12 h is deliberately FAR above the healthy cadence, not near it. A healthy
- * `offers-sweep` wraps the whole Top Shot catalogue 8-18 times a day, so a
- * genuinely fresh ask is minutes-to-an-hour old and 12 h cannot fire on one. The
- * gap is the point: this marker is for an ask nobody has looked at since the last
- * working sweep, not for ordinary jitter between wraps.
+ * ⚠ 12 h was chosen to sit FAR above the healthy cadence, not near it: a healthy
+ * `offers-sweep` wrapped the whole Top Shot catalogue 8-18 times a day, so a
+ * genuinely fresh ask was minutes-to-an-hour old and 12 h could not fire on one.
+ *
+ * 🚨 THAT JUSTIFICATION IS DEAD FOR TOP SHOT AND THE CONSTANT IS KEPT ANYWAY —
+ * re-measured 2026-09-13, sixteen days after `offers-sweep` stopped writing. Under
+ * the change-stamp that replaced it, **10,142 of 12,955 Top Shot asks (78%) are
+ * past 24 h**, so on that arm this marker is near-always-on and its firing carries
+ * almost no information. It is still not FALSE — the `"changed"` copy below says
+ * exactly what the stamp means — so lowering or raising the number fixes nothing:
+ * the marker is reporting truthfully about a column that no longer records
+ * re-observation. The real repair is a Top Shot *checked* stamp
+ * (`topshot_atlas_edition_verified.verified_at` plumbed into `edition_offers`,
+ * specified in known-issues #98), after which this arm becomes `"checked"` and
+ * 12 h means what it says again. Until then: do not read a Top Shot marker as
+ * evidence the lane is broken, and do not tune this constant in place of fixing
+ * the stamp.
+ *
+ * ⓘ The other two arms are unaffected — their stamps were never sweep times.
  */
 export const ASK_STALE_HOURS = 12
 

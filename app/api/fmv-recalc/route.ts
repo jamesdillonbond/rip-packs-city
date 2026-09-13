@@ -777,8 +777,24 @@ export async function POST(req: NextRequest) {
     // the 1,545 do NOT agree and stay LOW.
     //
     // 🚨 AGE: THE ALL DAY ASK HAS NO POLL TIMESTAMP, AND listed_at IS NOT ONE.
-    // Top Shot's age comes from edition_offers.updated_at, a SWEEP time ("when we
-    // last re-confirmed this ask exists"). All Day's ask comes from
+    // Top Shot's age comes from edition_offers.updated_at, and THAT COLUMN IS A
+    // LAST-CHANGED STAMP, not the "when we last re-confirmed this ask exists" sweep
+    // time this comment claimed until 2026-09-13. `sync_edition_offers_from_atlas()`
+    // bumps it only under `ON CONFLICT … WHERE low_ask IS DISTINCT FROM
+    // EXCLUDED.low_ask`, so an unchanged floor keeps an old stamp however recently
+    // the Atlas verifier re-observed it (register #98; `lib/market/ask-freshness.ts`
+    // carries the full contract, kind `"changed"`).
+    //
+    // ⭐ MEASURED 2026-09-13 BEFORE CORRECTING THIS, because a wrong contract is not
+    // automatically a wrong threshold: only 57 of 12,955 Top Shot asks (0.4%) carry a
+    // stamp past MAX_ASK_AGE_HOURS_CORROBORATION, and the gate fails CLOSED — it
+    // withholds a lift, it never publishes a price. So the 7-day threshold is LEFT AS
+    // IS deliberately; what was defective was the contract stated here, which is the
+    // thing a future reader would have reasoned from. (At 24 h the same column would
+    // be a different story: 10,142 of 12,955, 78%, are past that.) A genuine Top Shot
+    // "checked" stamp needs `topshot_atlas_edition_verified.verified_at` plumbed into
+    // `edition_offers` — specified in known-issues #98, not shipped here.
+    // All Day's ask comes from
     // cached_listings_v2, which is EVENT-SOURCED: a row is written on a Listed
     // event and stamped completed_at on a Completed/Withdrawn event, so an open
     // row means "the lane has not seen this listing end". Its listed_at is how
