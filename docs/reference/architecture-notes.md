@@ -42,5 +42,6 @@ Watch wallets at `priority=3` in `seeded_wallets`:
 
 ### Code patterns dropped from CLAUDE.md
 
+- ⚠ **Module-level per-request state on a route is a defect the moment a SECOND caller exists (2026-09-13).** Vercel's Node runtime serves concurrent requests on one warm instance, so a `let` at module scope that a handler sets at its start and clears at its end is SHARED between overlapping invocations: the later start overwrites the earlier, the earlier end clears it under the later. The sentinel's wall-budget clock shipped that way on the premise "invocations never overlap" and the redundant cron-job.org caller overlapped the delayed GitHub tick by 50.8 s the same afternoon. Scope such state to the invocation with `AsyncLocalStorage` (`lib/sentinel/clock-store.ts` is the pattern: `withX(value, fn)` + `currentX()`, nothing to clear) and test it by running two invocations INTO each other, not one after the other.
 - Branch fragmentation is a recurring issue — consolidate with cherry-pick onto one canonical branch before merging.
 - `project_knowledge_search` is NOT authoritative against live repo — Claude Code's direct file inspection wins every disagreement; prompts should allow Claude Code to correct false premises.
