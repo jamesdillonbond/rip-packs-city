@@ -10,6 +10,49 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · 🔴 FINDING — both pack-supply tables are weeks stale, one lane has failed 14 days straight, and the monitor called it "a one-off" on day nine · Claude Code cloud, Trevor: "keep going"
+
+**Shipped (docs only):** `docs/reference/known-issues.md` — **new item #94** (filed as #92; **renumbered on rebase — a concurrent session had already taken #92 and #93 for unrelated items**). Revert: `git revert` the commit whose message starts `docs(register): file #94`.
+
+Found while re-deriving **#79**'s load-bearing claim before building a detector on it. The claim held; the situation is worse than #79 recorded.
+
+| table | freshness | lane | state |
+|---|---|---|---|
+| `topshot_pack_supply` | `last_success_at` newest **2026-08-26** (17 d); **2,083 of 2,085 rows >7 d stale** | `topshot-pack-supply-backfill` | **14 consecutive days 0-ok**, `HTTP 530` |
+| `allday_pack_supply` | `updated_at` newest **2026-08-11** (32 d), 1 distinct day | **none** | no `pipeline_runs` row, ever |
+
+**⭐ THE STAMP TRAP FIRED ON ME AND THE REPO'S OWN RULE CAUGHT IT.** My first read used `topshot_pack_supply.updated_at` → **2026-09-12**, fresh and wrong. That column's comment says it answers *"when did we last TRY"*; `last_success_at` answers *"when did we last KNOW"* and reads **08-26**. The lane tries daily and fails daily, so the try-stamp moves and the know-stamp does not. *`col_description()` before trusting a `*_at` as freshness.*
+
+**🚨 THE MISREAD IS THE PART WORTH KEEPING, AND ITS CAUSE IS RETENTION.** The 09-07 daytime monitor filed *"one-off `topshot-pack-supply-backfill` fail … transient background rate, no stall."* It was **day nine of an unbroken streak**. ⭐⭐ **It could not have known from the table it read:** `pipeline_runs` retains ~73 h, so a **daily** lane shows **at most three rows**, and one failure in three genuinely looks like a one-off. `pipeline_runs_daily` settles it in one query — 08-30 → 09-12, **14 days, `ok_count 0 / fail_count 1 / HTTP 530` every day.** ⛔ **PROMOTE: for a lane at or slower than ~1/day, `pipeline_runs` CANNOT distinguish transient from permanent — the retention window makes that judgement structurally unavailable.**
+
+**⭐ AND THE DECAY PRECEDED THE ERRORS.** Daily `rows_written` runs **2 · 2 · 1 · 0 · 0 · 0** across 08-24→08-29 with `ok_count = 1` throughout, and only then do the 530s start: three days of a green lane writing nothing. The `rows_written = 0` null instrument, exactly as documented.
+
+**⚠ The All Day side is worse and invisible by construction:** 32 days stale, **no lane logs a `pipeline_runs` row for it under any name** (searched three patterns over `pipeline_runs_daily` since 08-01), and it has **no `last_success_at`** to fall back on. That is #79's "a lane that logs NOTHING" blind spot with a second live instance — and it corroborates #79's proposed fix (read the outcome table, not the self-report).
+
+**✅ THE USER-FACING HONESTY IS NOT THE DEFECT, which is worth saying because it usually is.** `lib/pack-dist/as-of.ts` (#74, shipped today) dates each tile from the stamp belonging to its number, and `supply_as_of` reads the **know**-stamp. The surfaces state the age; the data behind them is stale.
+
+**⛔ Cause is known and not new: `HTTP 530` is the decommissioned `public-api.nbatopshot.com`** — the same dead upstream as **#50** and **#81**. **Two more casualties of one outage, neither with a register row** — which is why the monitor's "one-off" stood for five days. ⚠ **Do NOT fix by retrying harder: the host is gone, and a lane retrying it is the permanently-red arm this register keeps paying for.** Exit: take the pack-supply source decision together with #50's, since both are blocked on the same thing.
+
+**Gates:** docs only; issues index regenerated (#92 present); `known-issues-index-lists-every-item` 9 pass; `check-memory-doc-links` 196; ledger guards 3 / 0.
+
+### 2026-09-12 · ✅ CODE — #91's own instrument could never size #91: a bounded caller cannot measure the latency of the thing it bounds · Claude Code cloud, Trevor: "keep going"
+
+**Shipped:** `app/api/badge-image/route.ts`, `__tests__/api-badge-image.test.ts` (+3), `docs/reference/known-issues.md` (#91). Revert: `git revert` the commit whose message starts `fix(badge-image): measure the upstream round trip`. **Logging only — no behaviour change, no DB, no schema.**
+
+**⭐ THE FINDING, AND IT IS ABOUT AN INSTRUMENT RATHER THAN A LATENCY.** #91 ends by saying its new caller-side log *"carries elapsed-vs-budget, so option (a) can be sized from real data instead of feel — that is what it is for."* ⛔ **It cannot be.** `lib/og/official-mark-art.ts` truncates itself at `OFFICIAL_ART_BUDGET_MS = 4_000`, so its `elapsed` is **≈ the budget by construction** — and both observed instances prove it: **4007ms** and **4013ms**. The line records **THAT we gave up**, never **WHAT WE WOULD HAVE WAITED**, which is the only number option (a) ("raise to ~6–7s") can be sized from. ⭐ **A bounded caller cannot measure the latency of the thing it bounds** — and the callee logged nothing at all on the success path, which is exactly the cold-but-eventually-fine case that matters.
+
+**What shipped:** `/api/badge-image` now times its own round trip across **fetch AND body read** (the caller's budget covers both; stopping at the headers would under-report precisely the slow case) and logs `elapsed_ms` above a **1,000 ms** threshold. ⚠ **Censored below that ON PURPOSE and it is not a distribution** — warm hits dominate and would bury the tail; the tail is the question.
+
+**⚠ A SHADOWING BUG FOUND WHILE EDITING, worth more than it looks.** Both failure branches did `const name = err instanceof Error ? err.name : 'unknown'`, which **shadowed the badge slug read at the top of the handler**. So `name=` printed `TimeoutError` on a failure line and `rookieMint` on a success line — **one key, two meanings, depending on which branch emitted it**, and the failure line never said which badge failed. Now `name=` is the slug and `err=` the class, which is what lets a callee line be joined to the URLs the caller lists when it gives up.
+
+**🔵 AND A FIRST SIZING DATUM FELL OUT OF THE LOGS — it points at ~6 s.** At the 01:59:18 occurrence the caller gave up after 4013 ms naming **6 distinct url(s)**, and **six `/api/badge-image` requests logged `cache=MISS` at 01:59:20** — same count, two seconds later. Vercel emits its request line on completion, so those trips began ≈01:59:14 and finished ≈01:59:20: **≈6 s cold**, i.e. a 4 s budget misses and 6–7 s would have caught them. ⚠ **ONE datum, 1-second granularity, resting on the completion-time assumption — suggestive, not a level.**
+
+**⛔ THE BUDGET IS DELIBERATELY NOT RAISED.** #91's own instruction is *"DO NOT JUST RAISE THE NUMBER AGAIN — that is how this was wrong the first time (2.5s, sized by analogy)"*, and one inferred datum is not a sizing. **Exit recorded on the item:** read `elapsed_ms` off the new lines in a few days — p95 under ~6 s → raise to p95 + headroom; **nothing logged at all → the cold path is rarer than three observations suggest and option (c) is the answer.** Both outcomes are now decidable; neither was before.
+
+**⚠ POPULATION CAVEAT I ALMOST OMITTED: all three occurrences in 24 h are `jamesdillonbond` cards** — Trevor's own profile, i.e. **testing traffic, not organic crawler traffic**. "3 in 24 h" must not be read as a user-impact rate, and this item's commercial argument rests on crawlers, which do not appear in the sample at all.
+
+**Gates:** `npm test` **1512 files / 16,904 tests, all pass** · `tsc` clean · `lint:ratchet` at baseline · ⭐ **4 of 4 mutations KILLED** — threshold removed (caught by the fast-path CONTROL, which is the load-bearing case: a route logging *every* fetch would satisfy the slow assertion and make the log useless), success log deleted, `"slow"` logged without the number, and the shadowing bug restored · `check-memory-doc-links` 196 · ledger guards 3 / 0.
+
 ### 2026-09-12 · 🔍 MEASURED — the sentinel is landing ~31% of its hourly ticks and nothing could say so; plus the wall I got wrong twice · Cowork cloud, Trevor: "Keep going"
 
 **Shipped (docs only):** `docs/reference/known-issues.md` — a measured update to **#80** and two new items, **#92** and **#93**. Revert: `git revert` the commits whose messages start `docs(register): file #92 and #93` and `docs(register): the sentinel is landing ~31%`.
