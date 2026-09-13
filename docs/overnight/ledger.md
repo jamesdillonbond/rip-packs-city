@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ DECISION PASS — Trevor delegated the five open items; here is each call, what shipped, and what I deliberately did NOT ship · Claude Code cloud, autonomous
+
+**Shipped: two prod migrations** — `20260913160549` (#102, suppression texts) and **`20260913161228` (#103, portfolio retry)**. Both files committed in the same push.
+
+---
+
+**#103 — SHIPPED. `portfolio_snapshots` had 8 holes in 30 days; it now has a retry.**
+```sql
+-- pg_cron jobid 490, ACTIVE
+SELECT cron.schedule('rpc-portfolio-snapshot-retry','17 11 * * *',
+  $$SELECT public.snapshot_all_user_portfolios();$$);
+-- REVERT: SELECT cron.unschedule('rpc-portfolio-snapshot-retry');
+```
+⭐ **Safety verified, not assumed:** the function ends **`ON CONFLICT DO NOTHING`** (strictly idempotent — a retry on a day already written inserts nothing and cannot overwrite), takes no args, and `postgres` holds EXECUTE. ⭐ **pg_cron calls it DIRECTLY — no HTTP, no pg_net**, which matters because pg_net answers a batch when its slowest member finishes; that is precisely what made jobid 55 head-of-line block the platform on 09-03. ⭐ **And the slot is reasoned, not arbitrary:** `CURRENT_DATE` is UTC, so any run in the same UTC day fills the same row; the primary fires 07:05 UTC — **inside a wallet-backfill wave hour**, which #104 shows degrades unrelated lanes, and the 09-12 failure was the 120 s global cap. The retry sits in a **quiet** hour (11:17 UTC = 04:17 PT), slot verified free, minute avoiding the 0/1/20/21/40/41 stagger ban. **Falsifier:** a day still ending with no row while this job reports success — then it is not covering the same date. **Cost accepted:** a full extra execution daily (~10 s) even when the primary succeeded, because DO NOTHING still evaluates the query.
+
+**#101 — DECIDED: re-point to `moments`, but NOT shipped tonight, and NOT by deleting the suppression.** ⭐ **Sized first: of the 1,315 open, `moments` (canonical for Top Shot) can resolve 612 — 46.5%**; subeditions cover 566. So an on-platform re-point **halves** the backlog and does not clear it. ⛔ **The suppression's own rule says "delete it, do not renew" — I am NOT deleting it, because the drain is deliberately unscheduled (it fetches `public-api.nbatopshot.com`, measured dead) and deleting would create a permanently-red arm for a lane with no caller — the exact mistake #102 nearly caused.** ⛔ **And I will not ship a rushed writer to a correctness-critical map at the end of a nine-hour session**; the map decides which owner a Moment displays under. **Owed (batch with the next migration, not worth its own PGRST002 burst): amend the suppression text to record that its predicate has FAILED at 1,315 vs ≤500.**
+
+**#100 — DECIDED: the obvious on-platform fix is REJECTED, and the reason is the useful part.** The tempting move is a pg_cron + pg_net trigger to bypass GHA's shedding. ⛔ **That would be actively harmful: the sentinel runs 119–162 s and pg_net's wall is 90 s**, so it would fail *and* head-of-line block every other pg_net request — jobid 55's failure mode, re-created on the master alarm. **The correct fix is the cron-job.org console** (which already drives long routes reliably — it ticks the counterparty lane every ~5 min without drift), and that needs an operator. ⚠ **So #100 stays with Trevor, but it is now a one-line instruction rather than an open question.**
+
+**#104 — DECIDED: ACCEPT for now, do not ship back-pressure.** The measured FLEET cost is **~1.8×** median, not the per-lane ratios; the 12 h cadence and the 09-13 backstop fix already removed ~3 spurious sweeps a day; and **a back-pressure bug stalls the platform's largest lane silently**, which is worse than the problem it solves. **Revisit with a verification window**, using the per-lane table as a ready-made before/after where every lane is its own control.
+
+**Counterparty `floor_sold_at` — DECIDED: ACCEPT (option c).** The harm that justified the 06:04 PT hand-pause was **DB contention and claim timeouts, and both are gone** since the index. What remains is outbound HTTP on ~4,000 unresolvable rows per ~5 h cycle. ⚠ **Revisit if that residue starts mattering** — the better lever is per-row attempt tracking, not a date floor, because **a failed resolution costs ~2.3× a successful one.**
+
+---
+
+⭐ **THE THREAD THROUGH ALL FIVE: three of them tempted me toward a change that would have created a permanently-red or actively harmful arm** (re-enable #102's rows · delete #101's suppression · pg_net the sentinel). **Each was caught by asking why the current state exists before changing it.** ⛔ **Two shipped, three deliberately did not, and the three non-ships are decisions with stated reasons — not deferrals.**
+
 ### 2026-09-13 · ⛔ #102's RECOMMENDATION IS REFUTED — I was asked to decide, and the decision is NOT to re-enable those watchlist rows · Claude Code cloud, autonomous (Trevor: "make decisions on these yourself")
 
 **Shipped: one prod DB migration `20260913160549`** (`audit_20260913_two_suppressions_claim_a_safety_net_that_was_deliberately_retired`), file committed in the same push.
