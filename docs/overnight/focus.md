@@ -4,6 +4,35 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-12 ~21:0x PT (cloud session; seven things NOT to re-chase, two new items to weigh, and two measurement rules earned tonight)
+
+**Written for the 1am pass, ~4 h out. Each ⛔ below is a lever a careful reader reaches for and each is already closed by MEASUREMENT tonight — re-opening one costs a night.**
+
+1. ⛔ **DO NOT re-open #89 or build a width param on `/api/public/pinnacle-image`.** It is **CLOSED**. `0f9196dac` (written for Top Shot Ultimates, mentions neither Pinnacle nor #89) routes our own urls through `/_next/image` by design. Measured in production on the very render #89 names: **61,788 B, `image/png`, `x-vercel-cache: MISS`** against the **2,896,041 B** in the item — 47× smaller, ~68× under the 4 MB cap. **All three options the item lists are moot.**
+
+2. ⛔ **DO NOT POPULATE `pinnacle_render_cache` (#90), and do not spend the night on the residential-IP question.** The cache's entire justification was #89, which is gone — and the cache is now the **WORSE** branch: the cached row is **316,140 B** against the optimizer's **61,788 B**, i.e. **5.1× larger than the fallback it short-circuits**. The remaining action is to drop or re-order that read in `lib/og/img-data.ts`. ⚠ **That file took three commits from a concurrent session tonight — check `git log` before touching it.**
+
+3. ⛔ **DO NOT re-investigate the Golazos listings lane (#78).** **CLOSED** on a positive control: **0 of 511** open listings has a subsequent sale of the same NFT, while the same join matches **291 of 300** `purchased` rows. 509 of the 511 predate 09-10, oldest 2026-05-22 — age, not missed closures. What remains is #76's cadence, not this lane.
+
+4. ⛔ **DO NOT "ADD THE 39 UNWATCHED LANES" TO `pipeline_cadence_watchlist` (#79).** Measured: 187 lanes ran in 14 days, **39 are on no watchlist at all**, so 51 of 187 (27 %) are invisible to all three arms. **But adding them creates permanently-red arms** against an upstream that is gone, and **~10 of the 19 unwatched zero-yield lanes are not defects at all** (`thp-leg-*` ×8, `sentinel`, `seed-wallet-refresh` at 433 runs all-ok, `fmv-clamp-disconnected-ask`) — they legitimately write zero rows. The working shape is the inversion (watchlisted **or** explicitly suppressed with a reason, size-pinned); it needs a reason per lane and an owner.
+
+5. ⛔ **DO NOT READ A 403 FROM A CLOUD SANDBOX AS DAPPER'S WAF.** Our **own agent proxy** denies both `www.rippackscity.com` and `assets.disneypinnacle.com`, returning `curl: (56) CONNECT tunnel failed, response 403`. It reads exactly like #90's "403s all datacenter egress" being confirmed. **Discriminator: the proxy denies at CONNECT with no HTTP body; a real WAF 403 is an HTTP response.**
+
+6. ⛔ **DO NOT RUN A VACUUM ON `net._http_response` (#75) OFF-SCHEDULE.** The TOAST is **12 GB and growing (~+2 GB in 18 h)**, autovacuum has never run on it, and the fix is real — but a previous manual VACUUM was cancelled for measured IO harm and the estate is in an M11 spell run. It wants a chosen window, throttled (`SET vacuum_cost_delay = 2`).
+
+7. ⛔ **DO NOT re-derive #71 item (2).** Re-verified tonight: `compute-topshot-pack-ev` is still dormant (**0 cron rows, 0 runs in 72 h**, last ever 08-30) while `topshot-atlas-pack-ev` runs 22×/24 h — and the `get_pack_ask_state_map()` exit is **already written at the `.limit(3000)` itself**. Nothing to add.
+
+🔴 **TWO THINGS THAT ARE NEWLY OPEN AND WORTH THE NIGHT, if anything is:**
+- **#94 — both pack-supply tables are weeks stale.** `topshot_pack_supply`'s `last_success_at` frozen **2026-08-26** (2,083 of 2,085 rows >7 d stale), lane failing **14 consecutive days on `HTTP 530`**; `allday_pack_supply` **32 days** stale with **no logging lane at all**. ⚠ Surfaces are honest about it (`as-of.ts`), so this is stale data, not a lying page.
+- **#81 — the blast radius is NINE lanes**, all on the same dead `public-api.nbatopshot.com`, newest failure 09-12. ⭐ **#50, #94, #81 and the badge/catalog lanes are ONE source decision, not four**, and #65 already re-pointed the sales feed to Atlas successfully.
+
+🚨 **TWO MEASUREMENT RULES EARNED TONIGHT — both cost me something before I wrote them down:**
+- **`pipeline_runs` RETAINS ~73 h, so for a lane at or slower than ~1/day it CANNOT distinguish transient from permanent.** A daily lane shows at most three rows, and one failure in three genuinely looks like a one-off — which is exactly what the 09-07 daytime monitor filed on **day nine** of a 14-day streak. **Use `pipeline_runs_daily` (indefinite), or the outcome table's own success stamp.**
+- **READ A REGISTER ITEM IN FULL BEFORE ADDING TO IT.** I read #75 with `cut -c1-1500`; a concurrent session's re-derivation of the same finding sat past the cut, and I wrote a full duplicate before catching it. **These items run to many thousands of characters on one line — a truncated read looks identical to an absence of prior work.**
+
+✅ **Shipped tonight, inside the 24–48 h no-edit window — do not touch:** `app/api/badge-image/route.ts` + its test (upstream timing, #91), `__tests__/deploy-and-ci-agree-on-what-docs-means.test.ts` (new), `.github/workflows/dead-lane-backstop.yml` (header only), and the comment in migration `20260913021000`. All CI-green.
+
+
 ## STEER — added 2026-09-12 ~08:4x PT (cloud session; five things NOT to re-chase tonight, all closed by MEASUREMENT)
 
 **Written for the 1am pass. Each of these is a lever a careful reader would reach for tonight, and each one is already refuted — re-opening any costs a night.**
