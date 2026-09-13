@@ -788,7 +788,8 @@ const PINS = [
     // the return value lie).
     fn: "remap_topshot_from_onchain_map",
     test: "supabase/tests/remap_topshot_from_onchain_map.sql",
-    migration: "supabase/migrations/20260815163000_audit_20260815_snapshot_remap_topshot_from_onchain_map.sql",
+    migration:
+      "supabase/migrations/20260913181737_audit_20260913_onchain_rekey_stops_downgrading_a_parallel_to_its_base_on_absence_of_evidence.sql",
   },
   {
     // Splits base-keyed rows onto their resolved ::N parallel across sales, wmc

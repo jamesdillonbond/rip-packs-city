@@ -6,7 +6,17 @@
 -- The two halves are deliberately ASYMMETRIC, and pinning that asymmetry is the
 -- point of this file:
 --
---   1. SALES are re-keyed unconditionally — there is no uniqueness to protect.
+--   1. SALES are re-keyed with exactly ONE exception — there is no uniqueness to protect, but
+--      since 20260913 the function REFUSES to move a sale off a PARALLEL edition onto that
+--      parallel's own base unless something positively says the moment is a base
+--      (`topshot_moment_subeditions.subedition_id = 0`). ⭐ WHY: the target collapses to the
+--      base whenever the subeditions row is merely MISSING, so the old unconditional re-key read
+--      absence of evidence as evidence of absence and downgraded correctly-attributed parallels
+--      — 140 sales rows, 124 of them in one run on 2026-09-09, none since restored. The
+--      evidence-bearing repair `remap_topshot_parallel_to_base_misattributed()` already owns
+--      this decision and runs daily via /api/cron/refresh-conflated-editions, so nothing is lost
+--      by refusing it here. Its own pin states the rule: "A legitimate parallel sale, a serial
+--      that fits the parallel, or a base that can't cover the serial are all LEFT ALONE."
 --   2. MOMENTS are re-keyed FREE-SLOT ONLY. _mv_free drops any row whose target
 --      (edition_id, serial_number) is already held by a DIFFERENT moment. Those
 --      rows are neither forced nor silently discarded: they are reported as
@@ -29,7 +39,7 @@
 --   5. Unresolvable targets are COUNTED (`unresolved_targets`), never guessed.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260815163000_audit_20260815_snapshot_remap_topshot_from_onchain_map.sql);
+-- (supabase/migrations/20260913181737_audit_20260913_onchain_rekey_stops_downgrading_a_parallel_to_its_base_on_absence_of_evidence.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -110,7 +120,10 @@ BEGIN
   CREATE TEMP TABLE _tgt ON COMMIT DROP AS
   SELECT m.nft_id,
          m.serial_number AS new_serial,
-         COALESCE(epar.id, ebase.id) AS new_edition_id
+         COALESCE(epar.id, ebase.id) AS new_edition_id,
+         COALESCE(epar.external_id, ebase.external_id) AS new_ext,
+         EXISTS (SELECT 1 FROM topshot_moment_subeditions sb
+                  WHERE sb.nft_id = m.nft_id AND sb.subedition_id = 0) AS known_base
   FROM topshot_misattrib_onchain_map m
   LEFT JOIN topshot_moment_subeditions sub
          ON sub.nft_id = m.nft_id AND COALESCE(sub.subedition_id,0) > 0
@@ -128,14 +141,24 @@ BEGIN
   SELECT s.id, s.nft_id, s.edition_id, s.serial_number, t.new_edition_id, t.new_serial
   FROM sales s JOIN _tgt t ON t.nft_id = s.nft_id
   WHERE s.collection_id = v_ts AND t.new_edition_id IS NOT NULL
-    AND (s.edition_id <> t.new_edition_id OR s.serial_number IS DISTINCT FROM t.new_serial);
+    AND (s.edition_id <> t.new_edition_id OR s.serial_number IS DISTINCT FROM t.new_serial)
+    AND NOT (t.known_base IS NOT TRUE
+             AND EXISTS (SELECT 1 FROM editions ecur
+                          WHERE ecur.id = s.edition_id
+                            AND ecur.external_id LIKE '%::%'
+                            AND split_part(ecur.external_id, '::', 1) = t.new_ext));
 
   UPDATE sales s
   SET edition_id = t.new_edition_id,
       serial_number = COALESCE(t.new_serial, s.serial_number)
   FROM _tgt t
   WHERE s.nft_id = t.nft_id AND s.collection_id = v_ts AND t.new_edition_id IS NOT NULL
-    AND (s.edition_id <> t.new_edition_id OR s.serial_number IS DISTINCT FROM t.new_serial);
+    AND (s.edition_id <> t.new_edition_id OR s.serial_number IS DISTINCT FROM t.new_serial)
+    AND NOT (t.known_base IS NOT TRUE
+             AND EXISTS (SELECT 1 FROM editions ecur
+                          WHERE ecur.id = s.edition_id
+                            AND ecur.external_id LIKE '%::%'
+                            AND split_part(ecur.external_id, '::', 1) = t.new_ext));
   GET DIAGNOSTICS v_sales = ROW_COUNT;
 
   -- ── MOMENTS re-key (safe, free-slot only) ──
@@ -145,7 +168,12 @@ BEGIN
          t.new_edition_id AS new_ed, COALESCE(t.new_serial, m.serial_number) AS new_ser
   FROM moments m JOIN _tgt t ON t.nft_id = m.nft_id
   WHERE m.collection_id = v_ts AND t.new_edition_id IS NOT NULL
-    AND (m.edition_id <> t.new_edition_id OR m.serial_number IS DISTINCT FROM COALESCE(t.new_serial, m.serial_number));
+    AND (m.edition_id <> t.new_edition_id OR m.serial_number IS DISTINCT FROM COALESCE(t.new_serial, m.serial_number))
+    AND NOT (t.known_base IS NOT TRUE
+             AND EXISTS (SELECT 1 FROM editions ecur
+                          WHERE ecur.id = m.edition_id
+                            AND ecur.external_id LIKE '%::%'
+                            AND split_part(ecur.external_id, '::', 1) = t.new_ext));
   SELECT count(*) INTO v_mv_total FROM _mv;
 
   DROP TABLE IF EXISTS _mv_free;
@@ -178,15 +206,25 @@ END $function$;
 INSERT INTO editions (id, collection_id, external_id) VALUES
   ('00000000-0000-0000-0000-0000000000e0', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '48:1000'),  -- wrong home
   ('00000000-0000-0000-0000-0000000000b1', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '48:1652'),  -- base target
-  ('00000000-0000-0000-0000-0000000000a5', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '48:1652::5');-- parallel target
+  ('00000000-0000-0000-0000-0000000000a5', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '48:1652::5'), -- parallel target
+  ('00000000-0000-0000-0000-0000000000c9', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '49:2000::3');-- parallel of ANOTHER base
 
 INSERT INTO topshot_misattrib_onchain_map (nft_id, set_id_onchain, play_id_onchain, serial_number) VALUES
   ('n-par',    48, 1652, 501),   -- subedition 5 → PARALLEL
   ('n-base',   48, 1652, 502),   -- no subedition → base
   ('n-clash',  48, 1652, 600),   -- moment target slot already taken → deferred
-  ('n-unres',  48, 7777, 503);   -- no such edition → unresolved
+  ('n-unres',  48, 7777, 503),   -- no such edition → unresolved
+  -- 20260913 guard cases. All three map to the BASE 48:1652 and all three start on a parallel.
+  ('n-guard',  48, 1652, 504),   -- on 48:1652::5, NO subeditions row  → must be LEFT ALONE
+  ('n-known',  48, 1652, 505),   -- on 48:1652::5, subedition_id = 0    → downgrade IS evidenced
+  ('n-otherpar', 48, 1652, 506); -- on 49:2000::3, a DIFFERENT base     → re-key must still happen
 
-INSERT INTO topshot_moment_subeditions (nft_id, subedition_id) VALUES ('n-par', 5);
+INSERT INTO topshot_moment_subeditions (nft_id, subedition_id) VALUES
+  ('n-par', 5),
+  -- ⭐ 0 is the POSITIVE claim "this moment is a base", and it is NOT the same as no row at all.
+  -- The `sub` join filters it out (COALESCE(...,0) > 0) so it never yields a parallel target;
+  -- `known_base` is what reads it. n-guard deliberately has NO row — that is the whole case.
+  ('n-known', 0);
 
 INSERT INTO sales (id, collection_id, nft_id, edition_id, serial_number) VALUES
   (1, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n-par',   '00000000-0000-0000-0000-0000000000e0', 1),
@@ -195,14 +233,21 @@ INSERT INTO sales (id, collection_id, nft_id, edition_id, serial_number) VALUES
   -- Already correct on both edition and serial → excluded by the change predicate.
   (4, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n-clash', '00000000-0000-0000-0000-0000000000b1', 600),
   -- Other collection → untouched.
-  (5, '06248cc4-b85f-47cd-af67-1855d14acd75', 'n-par',   '00000000-0000-0000-0000-0000000000e0', 9);
+  (5, '06248cc4-b85f-47cd-af67-1855d14acd75', 'n-par',   '00000000-0000-0000-0000-0000000000e0', 9),
+  -- 20260913 guard cases, all three currently sitting on a PARALLEL edition.
+  (6, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n-guard',    '00000000-0000-0000-0000-0000000000a5', 504),
+  (7, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n-known',    '00000000-0000-0000-0000-0000000000a5', 505),
+  (8, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n-otherpar', '00000000-0000-0000-0000-0000000000c9', 506);
 
 INSERT INTO moments (id, collection_id, nft_id, edition_id, serial_number, updated_at) VALUES
   (10, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n-par',  '00000000-0000-0000-0000-0000000000e0', 1, NULL),
   (11, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n-base', '00000000-0000-0000-0000-0000000000e0', 2, NULL),
   -- n-clash wants (b1, 600) but moment 13 already occupies that slot → DEFERRED.
   (12, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n-clash','00000000-0000-0000-0000-0000000000e0', 5, NULL),
-  (13, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n-other','00000000-0000-0000-0000-0000000000b1', 600, NULL);
+  (13, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n-other','00000000-0000-0000-0000-0000000000b1', 600, NULL),
+  -- The moments half must refuse the same downgrade the sales half refuses, or the two tables
+  -- disagree about one Moment's identity — which is worse than either being wrong alone.
+  (14, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'n-guard','00000000-0000-0000-0000-0000000000a5', 504, NULL);
 
 -- ── Run ────────────────────────────────────────────────────────────────────
 CREATE TEMP TABLE _res AS SELECT remap_topshot_from_onchain_map() AS j;
@@ -211,7 +256,7 @@ CREATE TEMP TABLE _res AS SELECT remap_topshot_from_onchain_map() AS j;
 -- edition AND serial, so the `edition_id <> new OR serial IS DISTINCT FROM new`
 -- predicate excludes it — a re-key that rewrote it would be a pointless write and
 -- a spurious audit row. Sale 3 is unresolvable; sale 5 is another collection.
-SELECT _assert_eq((SELECT (j->>'sales_rekeyed') FROM _res), '2', 'sales: only rows whose edition OR serial actually changes are re-keyed');
+SELECT _assert_eq((SELECT (j->>'sales_rekeyed') FROM _res), '4', 'sales: only rows whose edition OR serial actually changes are re-keyed (n-par, n-base, n-known, n-otherpar — NOT n-guard)');
 SELECT _assert_eq((SELECT (j->>'moments_rekeyed') FROM _res), '2', 'moments: only the two FREE-slot rows moved');
 SELECT _assert_eq((SELECT (j->>'moments_deferred_conflict') FROM _res), '1', 'the occupied-slot moment is DEFERRED and reported, not forced and not silently dropped');
 SELECT _assert_eq((SELECT (j->>'unresolved_targets') FROM _res), '1', 'unresolvable target counted, never guessed');
@@ -236,9 +281,22 @@ SELECT _assert((SELECT updated_at IS NOT NULL FROM moments WHERE id=10), 'moved 
 SELECT _assert((SELECT updated_at IS NULL FROM moments WHERE id=12), 'deferred moment is NOT stamped (no write happened)');
 
 -- Audit tables mirror the writes — they are the revert paths.
-SELECT _assert_eq((SELECT count(*)::text FROM audit_topshot_sale_drain_remap_20260621), '2', 'one sale-audit row per re-keyed sale, and none for the already-correct row');
+SELECT _assert_eq((SELECT count(*)::text FROM audit_topshot_sale_drain_remap_20260621), '4', 'one sale-audit row per re-keyed sale, and none for the already-correct row or the guarded one');
+-- ⭐ THE AUDIT AND THE UPDATE MUST SELECT THE SAME ROWS. The guard is spelled identically in both
+-- for that reason; this asserts it, because an audit that records a write which did not happen
+-- makes the revert path itself wrong.
+SELECT _assert_eq((SELECT count(*)::text FROM audit_topshot_sale_drain_remap_20260621 WHERE sale_id = 6), '0', 'the guarded sale produces NO audit row — the audit and the UPDATE agree');
 SELECT _assert_eq((SELECT count(*)::text FROM audit_topshot_moment_drain_remap_20260621), '2', 'moment-audit records only the rows actually moved, not the deferred one');
 SELECT _assert_eq((SELECT old_edition_id::text FROM audit_topshot_sale_drain_remap_20260621 WHERE sale_id=1), '00000000-0000-0000-0000-0000000000e0', 'sale audit stores the PRE-remap edition (the revert value)');
+
+-- ── The 20260913 parallel-downgrade guard, all four branches ───────────────
+-- ⛔ Assert the ABSENCE of the false move, not the presence of a message.
+SELECT _assert_eq((SELECT edition_id::text FROM sales WHERE id=6), '00000000-0000-0000-0000-0000000000a5', 'a sale on a parallel is NOT downgraded to that parallel base when NOTHING says the moment is a base');
+SELECT _assert_eq((SELECT serial_number::text FROM sales WHERE id=6), '504', 'and its serial is left alone too — the guard skips the whole row, not just the edition');
+SELECT _assert_eq((SELECT edition_id::text FROM sales WHERE id=7), '00000000-0000-0000-0000-0000000000b1', 'subedition_id = 0 IS positive evidence, so THAT downgrade still happens — the guard does not over-block');
+SELECT _assert_eq((SELECT edition_id::text FROM sales WHERE id=8), '00000000-0000-0000-0000-0000000000b1', 'a parallel of a DIFFERENT base is still re-keyed — the guard is about one base, not about parallels in general');
+SELECT _assert_eq((SELECT edition_id::text FROM moments WHERE id=14), '00000000-0000-0000-0000-0000000000a5', 'the moments half refuses the same downgrade, so sales and moments cannot disagree about one Moment');
+SELECT _assert((SELECT updated_at IS NULL FROM moments WHERE id=14), 'the guarded moment is not stamped — no write happened');
 
 SELECT '✓ remap_topshot_from_onchain_map invariants pass' AS result;
 ROLLBACK;
