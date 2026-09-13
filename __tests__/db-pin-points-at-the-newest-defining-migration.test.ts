@@ -101,7 +101,18 @@ describe("every DB-invariant pin names the newest migration that defines its fun
       const named = p.migration.split("/").pop()
       if (newest === named) continue
       if (p.fn in NOT_NEWEST_ALLOWED) continue
-      stale.push(`${p.fn}: pin names ${named}, but ${newest} also defines it`)
+      // The message carries the REMEDY, not just the diagnosis: this guard fires
+      // on the push that redefines a pinned function, which is very often a
+      // different session's push, and re-pinning is a THREE-file change that is
+      // not guessable from "stale pin".
+      stale.push(
+        `${p.fn}: pin names ${named}, but ${newest} also defines it. ` +
+          `Re-pin, in ONE push: (1) copy the new DDL verbatim into ${p.test} between its ` +
+          `">>> BEGIN verbatim"/"<<< END verbatim" markers, (2) repoint this entry's ` +
+          `migration: field to ${newest}, (3) RE-CHECK THAT FILE'S ASSERTIONS — a stale pin ` +
+          `usually means they describe the old behaviour, and its fixtures may not even run ` +
+          `against the new body.`,
+      )
     }
     expect(stale).toEqual([])
   })
