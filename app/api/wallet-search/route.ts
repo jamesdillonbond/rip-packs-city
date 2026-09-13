@@ -1311,11 +1311,33 @@ export async function POST(req: NextRequest) {
       // `stage` tracks which sub-step failed so Vercel logs can identify
       // whether GQL, Flow metadata, or row assembly blew up.
       let stage: "enrich-gql" | "flow-metadata" | "assemble" = "enrich-gql"
-      try {
-      const [gql, meta] = await Promise.all([
-        fetchMomentGraphQL(String(id)).catch((e) => { stage = "enrich-gql"; throw e }),
-        getMomentMetadata(wallet, id).catch((e) => { stage = "flow-metadata"; throw e }),
+      // ⚠ allSettled, NOT all. `Promise.all` rejects on the first failure and
+      // DISCARDS whatever the sibling call returned, so the catch below had to
+      // re-fetch BOTH legs to rebuild the degraded row — two enrichment
+      // round-trips per moment whenever either one failed.
+      //
+      // Measured 2026-09-13, while Top Shot GraphQL was answering 530/429 for
+      // 100% of moments: `/api/wallet-search` averaged 33,559 ms (max 35,505)
+      // and failed 51 of 60 daily smoke runs against cron-job.org's 30 s client
+      // cap, which is why `RPC Smoke Concierge Daily` had no successful run in
+      // retained history. The job NAME misleads — no concierge probe is
+      // implicated; this route alone exceeds the cap.
+      //
+      // ⛔ Dropping the re-fetch is not dropping a retry. `withRetry` owns retry
+      // policy (one 2 s-delayed replay, 429 only) and `topshotGraphql` owns
+      // backoff; the second call was an artifact of the discarded sibling, not a
+      // deliberate second attempt — so on a 429 the old shape slept 2 s TWICE
+      // per moment for nothing. Settling once keeps every value the attempt did
+      // obtain and halves the load this route puts on an upstream that is down.
+      const [gqlSettled, metaSettled] = await Promise.allSettled([
+        fetchMomentGraphQL(String(id)),
+        getMomentMetadata(wallet, id),
       ])
+      try {
+      if (gqlSettled.status === "rejected") { stage = "enrich-gql"; throw gqlSettled.reason }
+      if (metaSettled.status === "rejected") { stage = "flow-metadata"; throw metaSettled.reason }
+      const gql = gqlSettled.value
+      const meta = metaSettled.value
       stage = "assemble"
 
       const serial = toNum(meta.serial)
@@ -1363,12 +1385,17 @@ export async function POST(req: NextRequest) {
             `stage=${stage} ` +
             `reason=${reason}`
         );
-        const [meta, gqlFallback] = await Promise.all([
-          getMomentMetadata(wallet, id).catch(function() { return {} as Record<string,string>; }),
-          fetchMomentGraphQL(String(id)).catch(function() {
-            return { flowId: null, setID: null, playID: null } as any;
-          }),
-        ]);
+        // ⭐ No re-fetch: whatever the single attempt above obtained is reused,
+        // and a leg that failed contributes nothing — exactly what its old
+        // `.catch()` fallback value did, at half the upstream cost.
+        const meta =
+          metaSettled.status === "fulfilled"
+            ? metaSettled.value
+            : ({} as Record<string, string>);
+        const gqlFallback: any =
+          gqlSettled.status === "fulfilled"
+            ? gqlSettled.value
+            : { flowId: null, setID: null, playID: null };
         const setIdFb = toNum(meta.setID) ?? toNum(gqlFallback.setID);
         const playIdFb = toNum(meta.playID) ?? toNum(gqlFallback.playID);
         const editionKeyFb = setIdFb !== null && playIdFb !== null ? `${setIdFb}:${playIdFb}` : null;

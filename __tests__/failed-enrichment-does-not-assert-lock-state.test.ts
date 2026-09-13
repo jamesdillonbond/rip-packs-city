@@ -39,13 +39,26 @@ import { getLocked, isLockKnown } from "../lib/collection/helpers"
 
 const ROUTE = join(process.cwd(), "app/api/wallet-search/route.ts")
 
-/** The catch block that builds the replacement row, comments stripped. */
+/**
+ * The catch block that builds the replacement row, comments stripped.
+ *
+ * ⚠ Bounded by the block's OWN TERMINATOR, not by a character count. This was
+ * `src.slice(start, start + 2000)`, and on 2026-09-13 an unrelated edit to the
+ * same block (dropping its duplicate re-fetch) pushed `enrichFailed: true` past
+ * 2000 characters and reddened the pin — the repo's documented trap of a guard
+ * that keys on distance rather than on the property, one level up from the
+ * comment-WRAPPING case it is already recorded for. A slice that ends where the
+ * returned row ends cannot be moved by anything written above it.
+ */
 function fallbackBlock(): string {
   const src = stripComments(readFileSync(ROUTE, "utf8"))
   const start = src.indexOf("catch (momentErr")
   expect(start, "the per-moment catch block must still exist").toBeGreaterThan(-1)
-  // Bounded slice: the replacement object literal is returned inside this block.
-  return src.slice(start, start + 2000)
+  const end = src.indexOf("as WalletRow;", start)
+  expect(end, "the fallback row's `as WalletRow;` terminator must still exist").toBeGreaterThan(
+    start,
+  )
+  return src.slice(start, end + "as WalletRow;".length)
 }
 
 describe("a failed moment enrichment does not assert lock state or badges", () => {
