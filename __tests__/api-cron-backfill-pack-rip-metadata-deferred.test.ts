@@ -136,3 +136,58 @@ describe("/api/cron/backfill-pack-rip-metadata — deferred body", () => {
     await expect(capturedAfter!()).resolves.toBeUndefined()
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `allday_resolved` — the All Day pricing arm's exit criterion (2026-09-12)
+//
+// `pull_value_usd` was structurally a TOP-SHOT-ONLY feature: it is computed from
+// `moment_acquisitions.source_pack_rip_id`, which is populated on 94.8% of Top
+// Shot rows and 0.0% of every other collection (no collection outside Top Shot
+// has ever written an `acquisition_method = 'pack_pull'` row), and `moments`
+// holds zero All Day rows so the join's second hop is empty too.
+// audit_20260912_pack_rip_pull_value_allday_arm added a second source,
+// `allday_pack_pull`, joined on `pack_nft_id`.
+//
+// ⚠ The key has to reach `pipeline_runs.extra` or the migration has no exit
+// criterion: a steady `allday_resolved: 0` means the candidates never reach the
+// new CTE, which is a DIFFERENT failure from "there is no All Day data" and is
+// indistinguishable inside `value_resolved`, where both read as a smaller number.
+describe("/api/cron/backfill-pack-rip-metadata — allday_resolved reaches the run log", () => {
+  it("carries allday_resolved into pipeline_runs.extra alongside the existing counts", async () => {
+    backfillImpl.fn = async () => ({
+      data: {
+        processed: 500,
+        dist_newly_resolved: 10,
+        dist_already_set: 479,
+        dist_still_null: 11,
+        value_resolved: 249,
+        allday_resolved: 135,
+      },
+      error: null,
+    })
+    await drive()
+    const p = logParams()
+    expect(p.p_extra.allday_resolved).toBe(135)
+    // the pre-existing keys must survive the addition
+    expect(p.p_extra.value_resolved).toBe(249)
+    expect(p.p_extra.dist_still_null).toBe(11)
+    expect(p.p_rows_found).toBe(500)
+  })
+
+  // ⚠ NOT `?? 0`. A run whose RPC did not report the key at all (an older
+  // function body, a partial failure) must log NULL — "we did not measure this"
+  // — never a fabricated zero, which would read as "the All Day arm ran and
+  // found nothing" and would make the exit criterion above silently unfalsifiable.
+  it("logs NULL, not 0, when the RPC reports no allday_resolved at all", async () => {
+    backfillImpl.fn = async () => ({ data: { processed: 3, value_resolved: 1 }, error: null })
+    await drive()
+    expect(logParams().p_extra.allday_resolved).toBeNull()
+  })
+
+  // A real 0 is a measurement and must survive as 0.
+  it("preserves a genuine zero", async () => {
+    backfillImpl.fn = async () => ({ data: { processed: 3, value_resolved: 1, allday_resolved: 0 }, error: null })
+    await drive()
+    expect(logParams().p_extra.allday_resolved).toBe(0)
+  })
+})

@@ -57,16 +57,31 @@ interface SummaryTotals {
  * the first from the second and published the difference as a measured result.
  *
  * ⛔ ROOT-CAUSED 2026-09-12, AND IT IS NOT A COVERAGE RAMP — DO NOT TUNE THE
- * BACKFILL. The 8.5% does not fill in over time for most collections, because
- * `pull_value_usd` is computed by joining `moment_acquisitions` on
- * `source_pack_rip_id`, and that column is populated on **94.8% of NBA Top Shot
- * rows and 0.0% of every other collection** — All Day (77,117 acquisition rows),
- * Pinnacle (18,568), Golazos (12,920), UFC (1,277): all zero, none linked to a
- * rip. So outside Top Shot the join can never match and a rip can never be
- * priced. Measured on this very wallet: of its 503 rips, 385 are All Day (2
- * valued) and 118 are Top Shot (48 valued) — i.e. **77% of the history sits in a
- * collection where a pull value is structurally unobtainable**, which is why the
- * coverage floor is nowhere near met and NET P&L withholds.
+ * BACKFILL. The 8.5% does not fill in over time, because `pull_value_usd` was
+ * computed ONLY by joining `moment_acquisitions` on `source_pack_rip_id`, and
+ * that column is populated on **94.8% of NBA Top Shot rows and 0.0% of every
+ * other collection** — All Day (77,117 acquisition rows), Pinnacle (18,568),
+ * Golazos (12,920), UFC (1,277): all zero, none linked to a rip, because none of
+ * them has ever written an `acquisition_method = 'pack_pull'` row. `moments`
+ * also holds ZERO All Day rows, so the join's second hop is empty too.
+ *
+ * ⭐ PARTLY FIXED THE SAME DAY, for All Day only:
+ * `audit_20260912_pack_rip_pull_value_allday_arm` gave the backfill a second
+ * pricing source, `allday_pack_pull` — per-pull moment ids written at open,
+ * 1,485,444 rows over 419,012 packs, joined to `pack_rips` on `pack_nft_id`
+ * (an exact key, not the Top Shot linkage's ±5/30min time window). 77,800 All
+ * Day packs are fully priced and drain at ~1,200/day; every FUTURE All Day open
+ * is priced on arrival, which is the durable half. ⚠ Pinnacle, Golazos and UFC
+ * have NO equivalent table and are still structurally unpriceable.
+ *
+ * ⚠ THE 2024–2025 ALL DAY TAIL STAYS DARK. `allday_pack_pull.edition_id` is
+ * resolved on 100% of 2026-Q1-onward pulls but ~0–24% before that, and neither
+ * `moments` (no All Day rows) nor `wallet_moments_cache` (7.1% hit rate — it
+ * holds only currently-HELD moments) can close it. That needs a Flow re-fetch.
+ * Measured on this very wallet: of its 503 rips, 385 are All Day — only 123 of
+ * those even appear in `allday_pack_pull` (the rest predate it) and 19 are fully
+ * priced. So this wallet goes 50 → ~69 of 503, still far under the floor, and
+ * NET P&L rightly keeps withholding.
  *
  * ⚠ AND THE BACKFILL MARKS THOSE FAILURES AS DONE. `backfill_pack_rip_metadata`
  * stamps `metadata_updated_at` on every candidate it touches, including the ones
@@ -78,9 +93,11 @@ interface SummaryTotals {
  * them and **0** had acquisition rows, so a retry leg would spin on 363k
  * permanently unpriceable rows and starve the real drain.
  *
- * The unlock is an ingest that writes `moment_acquisitions.source_pack_rip_id`
- * for the non-Top-Shot collections. Until that exists, these captions are the
- * honest output and should keep withholding — they are not a stopgap.
+ * The remaining unlock is per-collection: a Flow re-fetch to resolve the
+ * 2024–2025 All Day editions, and a pull-capture table like `allday_pack_pull`
+ * for Pinnacle / Golazos / UFC (or `source_pack_rip_id` written by their
+ * acquisition ingest). Until those exist, these captions are the honest output
+ * and should keep withholding — they are not a stopgap.
  *
  * `ripped_value_known_count` absent (an older cached payload) is treated as
  * coverage UNKNOWN, which withholds — never as full coverage.

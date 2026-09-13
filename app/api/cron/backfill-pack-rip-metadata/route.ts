@@ -71,6 +71,17 @@ async function run(request: NextRequest) {
           dist_already_set: data?.dist_already_set ?? null,
           dist_still_null: data?.dist_still_null ?? null,
           value_resolved: data?.value_resolved ?? null,
+          // 2026-09-12: how many of this run's rows were priced by the ALL DAY
+          // arm (allday_pack_pull, exact join on pack_nft_id) rather than the
+          // Top Shot moment_acquisitions path. It is the exit criterion for
+          // audit_20260912_pack_rip_pull_value_allday_arm: a steady 0 means the
+          // candidates are not reaching that CTE, which is a different failure
+          // from "no All Day data" and is otherwise indistinguishable in
+          // `value_resolved`.
+          // ⚠ It counts PRICED-BY-THAT-ARM, not NEWLY-VALUED. The stale leg
+          // re-prices All Day rows through the same source, so this reads
+          // 135-217 while the net-new count is the repair leg's cap of 50.
+          allday_resolved: data?.allday_resolved ?? null,
           duration_ms: Date.now() - startedMs,
         },
       });
