@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · DB INDEX — sales_2026/2027 get the nullseller partial index; a deliberate 2026-07-24 exclusion re-litigated with numbers · Claude Code cloud, overnight autonomous
+
+**Shipped: two `CREATE INDEX CONCURRENTLY` via `execute_sql`, plus the repo-parity migration file.**
+```sql
+-- APPLIED 2026-09-13 ~06:50-07:05 PT, one at a time, each verified indisvalid=true
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sales_2027_nullseller_soldat ON public.sales_2027 (sold_at DESC) WHERE seller_address IS NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sales_2026_nullseller_soldat ON public.sales_2026 (sold_at DESC) WHERE seller_address IS NULL;
+-- REVERT:
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_sales_2026_nullseller_soldat;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_sales_2027_nullseller_soldat;
+```
+File: `supabase/migrations/20260913134605_audit_20260913_sales_2026_2027_nullseller_soldat_indexes_the_deliberate_exclusion_expired.sql` (repo-parity only, like `20260724150000` — index-only migrations are not in `schema_migrations`, and parity checks the *fileless* direction).
+
+🚨 **THIS OVERTURNS AN EXPLICIT "deliberately NOT indexed".** `20260724150000` indexed 2020–2025 and wrote that `sales_2026` was excluded because it is *"the active-ingest partition (adding an index there costs write-amplification on the hottest write path)"* and only holds a *"small above-cursor residual"*. ⚠ **Its cost was stated with no number in it — the exact tell CLAUDE.md names for the decision nobody re-checks.** Both premises have since dissolved:
+
+- **"small residual" is FALSE:** `sales_2026` is now the **largest** partition in the table — 308 MB / 1,092,476 rows, ahead of `sales_2023` (305 MB).
+- **"as the cursor descends through the past" is FALSE as of the SAME DAY:** migration `20260913074912` gave the claim a re-arm branch that sets `cursor_sold_at = NULL` and sweeps **from the newest row**. Every re-arm now *starts* in 2026. The access pattern the exclusion reasoned about no longer exists.
+
+**The cost, measured instead of asserted — and it is ~1/170th of one already accepted.** The index is PARTIAL, so it takes an entry on **6,457 of 1,092,476 rows (0.59%)**. The partition already carries `sales_2026_seller_address_idx`, a **full** btree on the same column covering **100%** of rows at **15 MB**, which the hot write path already pays on every insert. Built size: **160 kB** — the smallest of the seven non-empty twins (2023's is 25 MB).
+
+**The benefit, from the real caller's own record rather than a probe.** Before, the 2026 branch was Bitmap Index Scan → Bitmap Heap Scan over 308 MB → Filter → **Sort**, i.e. it materialised and sorted every null-seller 2026 row to take 120 — the ~195,564-buffer (~1.5 GB) scan named in the function's own comment. `pipeline_runs` ticks under that plan: **53.5 / 57.1 / 58.0 / 59.8 / 61.0 / 61.1 / 74.8 / 93.3 / 100.5 / 115.3 s**, plus four outright `claim failed: canceling statement due to statement timeout` between 05:41 and 06:01 PT. EXPLAIN, re-arm case (cursor NULL — exactly what 08:04 PT will run):
+
+| | startup cost | total for `LIMIT 120` | Sort node |
+|---|---|---|---|
+| before | 7732.93 | 7776.54 | Sort + Bitmap Heap Scan over 308 MB |
+| after | **1.67** | **47.10** | **gone** — ordered index scans |
+
+**165× cheaper on the limited plan**; the descending case at the live cursor flips the same way (7776.54 → 46.38). All 8 partitions now covered.
+
+⚠ **EXIT CONDITION — answered by the real caller, not by me.** The lane re-arms **08:04 PT** and sweeps from the newest row. **PASS: that sweep completes in seconds rather than 53–115 s.** ⛔ **FALSIFIED if the re-arm still takes >10 s or still times out** — in which case the plan flip did not survive contact with production and the revert above is one statement.
+
+⚠ **THIS IS A REPAIR, AND IT REPLACES THE RATE REDUCTION — but it does NOT retire the yield question.** The 06:04 PT pause was a ~24× cut in *attempts*; this makes each attempt cheap. **Neither makes the deep-history rows resolvable** — those ticks returned `rows_found=120, rows_written=0`, so the lane may still walk a long tail that yields nothing, only now at negligible cost. Whether to raise `floor_sold_at` is still open and still Trevor's.
+
+⚠ **OPERATIONAL LESSON, learned the hard way on the EMPTY partition.** `CREATE INDEX CONCURRENTLY` here blocks on `Lock / virtualxid` behind the `wallet-backfill*` family, whose individual runs reach **610 s** — so the 2027 build blew the 60 s PostgREST window on a **0-byte** table. **The MCP timeout does NOT cancel the build:** the backend kept going (`pg_stat_activity` showed it waiting) and left `indisready=true, indisvalid=false` mid-protocol. **Poll `pg_index.indisvalid` rather than re-issuing, and never read a CIC timeout as "nothing happened"** — re-issuing would have raced a live build, and giving up would have left an invalid index being maintained on every write.
+
 ### 2026-09-13 · 🚨 DB DATA — the counterparty falsifier FIRED: timeouts resumed, the cooldown could not engage, and I paused the lane by hand · Claude Code cloud, overnight autonomous
 
 **Shipped: a ONE-ROW DB UPDATE, no code, no migration.**
