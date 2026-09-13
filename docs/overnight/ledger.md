@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-12 · 🔍 ROOT CAUSE — `pull_value_usd` is not a coverage ramp, it is a Top-Shot-only feature; the backfill cannot fix it and I nearly shipped a change that would not have helped · Cowork cloud, Trevor: "pull_value_usd coverage"
+
+**Shipped (one comment, no behaviour):** `app/dashboard/packs/PackHistoryClient.tsx` — the `packCoverage` doc comment now carries the root cause and two ⛔ warnings. Revert: `git revert` the commit whose message starts `docs(packs): root-cause pull_value_usd coverage`.
+
+**The item was "raise `pull_value_usd` coverage — 8.5%, the lever that turns the Pack History captions back into numbers." It is not a lever. Measured, it is a wall.**
+
+**⛔ `source_pack_rip_id` IS POPULATED ON 94.8% OF TOP SHOT AND 0.0% OF EVERYTHING ELSE.** `pull_value_usd` is computed by joining `moment_acquisitions` on `source_pack_rip_id`. Measured 2026-09-12: NBA Top Shot **882,661** acquisition rows, **837,024 linked to a rip (94.8%)**. NFL All Day **77,117 rows → 0 linked**. Pinnacle **18,568 → 0**. Golazos **12,920 → 0**. UFC **1,277 → 0**. Outside Top Shot the join can never match, so **a rip can never be priced**. The 8.5% does not fill in over time; for four of five collections it cannot move at all.
+
+**On Trevor's own wallet, which is where the bug report came from:** of 503 rips, **385 are All Day (2 valued)** and **118 are Top Shot (48 valued)**. **77% of his pack history sits in a collection where a pull value is structurally unobtainable.** That is why the coverage floor is nowhere near met and NET P&L withholds — the captions are correct and the data behind them is missing by construction.
+
+**⚠ THE BACKFILL MARKS ITS OWN FAILURES AS DONE, AND BOTH LEGS THEN SKIP THEM FOREVER.** `backfill_pack_rip_metadata` stamps `metadata_updated_at = now()` on every candidate it touches — including rows whose `pull_values` CTE produced nothing, which the `LEFT JOIN` writes as NULL. Its two legs re-select on `metadata_updated_at IS NULL` (the drain) and `pull_value_usd IS NOT NULL` (the stale re-price). **A NULL-valued row matches neither and is orphaned permanently.** Population: **363,336 rows — MORE than the 312,202 it has successfully valued.** 54% of everything the drain has ever processed came out unpriced and unreachable. Sampled 400 of them: **393 (98%) have zero `moment_acquisitions` rows** while `moments_pulled` averages **7.67**.
+
+**⛔ AND DO NOT "FIX" THAT BY RETRYING THEM — I checked before proposing it.** Sampled **2,000** orphans across the whole population: **0 had acquisition rows.** They are not waiting on a lagging ingest; their moments were never linked and will not be by this function. A retry leg would spin on 363k permanently unpriceable rows and starve the real drain. The orphan sample is **80% All Day**, while the successfully-valued sample is **97% Top Shot** — the same split as the linkage table, measured independently.
+
+**⭐ THE CORRECTION THAT MATTERS: I HAD A FIX BUILT IN MY HEAD AND THE DATA KILLED IT.** The drain orders `null_drain` by `sealed_at DESC`, so it is blind to who is looking: 26 saved-wallet addresses hold 30,960 rips of which **22,378 are unvalued — 0.66% of the backlog**, against ~4.6 years to drain all of it newest-first. A saved-wallet priority leg looked like a clean, high-leverage fix, and the arithmetic was genuinely attractive. ⚠ **Then I checked it against the wallet it was meant to fix, and it would have moved Trevor from 50/503 to at best 114/503 — 23%, still under the 80% floor, so NET P&L would still withhold.** The symptom he reported would have been unchanged. **A change that is correct, cheap, measurable and does not fix the reported bug is still the wrong change**; shipping it would have been motion that looks like progress and would have consumed the next session's attention defending it.
+
+**Also measured, and NOT the problem** (recorded so nobody re-derives it): the drain is healthy. 62 runs over ~2.6 days, `value_resolved` mean **101.7**/run, median 107.5, 2 failed. It has fully processed 2026 — **only 4 rips sealed since 2026-01-01 remain untouched** — and `never_touched` globally is **3,009,987 of 3,685,525**. Durations run 3–30 s against a ~30 s wall with 2 timeouts in 62 runs, so **raising `p_limit` buys failures, not throughput.** The bottleneck was never the budget.
+
+**What actually unlocks this: an ingest that writes `moment_acquisitions.source_pack_rip_id` for the non-Top-Shot collections.** That is a pipeline build against chain data, not a tuning change, and it is the whole of the remaining work. Until it exists the Pack History captions are the honest output and should keep withholding — ⚠ **they are not a stopgap to be removed when someone "fixes coverage".**
+
+**Filed where the next person will stand:** the `packCoverage` doc comment in `PackHistoryClient.tsx`, because that is what a session picking up "improve pack coverage" reads first — and it is what sent me toward the backfill.
+
+**Gates:** `tsc` clean · 61 tests across the pack/stripper suites · eslint ratchet 716 vs baseline 716 · ledger guards 3 / 0.
+
 ### 2026-09-12 · ✅ CODE — the official-art budget was measured wrong and the memo cached the miss; production found both within the hour · Cowork cloud, follow-up to the 09-12(d) badge-art ship
 
 **Shipped:** `lib/og/official-mark-art.ts` (budget 2.5s → 4s, failures no longer memoized, the warning now carries elapsed ms + the failing URLs) and one new case in `__tests__/og-cards-use-official-badge-art.test.ts`. Revert: `git revert` the commit whose message starts `fix(og): official badge art gave up before the proxy answered`.
