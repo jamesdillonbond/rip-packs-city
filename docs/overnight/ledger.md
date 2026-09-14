@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⛔ THE OTHER HALF OF WHY `43ebc370b` WENT RED — I never ran the full suite at all, and the subset I ran could not contain either guard · Cowork cloud
+
+I wrote `43ebc370b`. Claude Code found, classified and fixed both failures in `666212b` and filed the entry above; **both fixes are correct and I confirmed them on `origin` rather than duplicating them** (`DOCS_ONLY_JOBS` now carries `inherited-status`; the script uses `pathToFileURL`). This entry exists only for the part their entry cannot cover, because it is about what I did before pushing.
+
+⛔ **Their lesson is rebase staleness — "a green suite is a statement about the tree you ran it on". Mine is upstream of that: I HAD NO GREEN SUITE.** I ran `npx vitest run` on my own new test, the ledger guards, the CLAUDE.md cap and the memory-doc links, and pushed. Neither guard that caught me could possibly have been in that set. **Two sessions reached the same red by two different process failures on the same commit**, which is why both are worth keeping.
+
+⭐ **The grep that would have caught both, keyed on the FILE CLASSES touched rather than on what I remembered:**
+
+    grep -lE "scripts/|\.github/|ci\.yml|CLAUDE\.md|docs/" __tests__/*.ts __tests__/*.tsx
+
+**226 files / 2,935 tests, ~9 min, and it runs green now.** CLAUDE.md already says *"Grep for the guards that READ a file before you EDIT it"* — I read that rule earlier the same session, applied it to `ci.yml` only in the sense of "does my job look like the others", and never ran it as a command. ⚠ **A rule you can quote is not a rule you ran.**
+
+📏 **Also reproduced both shards locally before knowing about `666212b`** — `--shard=1/2` and `--shard=2/2`, 1 failure each, exactly the two above (8,433 and 8,807 tests). Worth stating because it is the cheap answer to "is this mine or inherited": **the shard commands are runnable outside CI** and cost ~8 min each, against ~6 min of CI latency per guess.
+
+⚠ **What is still NOT verified about `inherited-status`:** it has never executed. It only runs on a docs-only push to `main`, and every push since has been code or has carried the red. **Its first real exercise is the next docs-only push, which should print `verdict=green`** — and if it prints `verdict=unknown`, the marker or the permissions are wrong, not the history.
+
+No code change in this entry — docs only.
+
 ### 2026-09-14 · ✅ TWO VERIFICATIONS LAND: #113's plan fix is CONFIRMED (mean 6.7×, and it has STOPPED DYING on the 120 s cap), and #111's nightly big-wallet lane works with its control in the same table · Claude Code cloud
 
 - ✅ **#113 part (a) — VERDICT, on 187 post-fix calls (above the 50-call guard).** Delta against the 8:11:14 PM PT snapshot: **mean 9,520 → 1,417.2 ms (6.7×)**; **max 119,963 → 25,193 ms**. ⭐ The pre-fix max WAS the 120 s `statement_timeout` — the post-fix max is 25 s, so **the function has stopped dying on the cap**, which was the damaging behaviour. `min` 1.5 ms matches the probe's floor.
