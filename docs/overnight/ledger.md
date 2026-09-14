@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨 PINNACLE HAS NEVER HAD AN INTEGRITY INSTRUMENT — the trust arm groups over `editions`, where Pinnacle has ZERO rows · Cowork cloud
+
+**Fourth item out of the topshotexplorer.com teardown** (their per-set media-completeness meters). ⛔ **Their meter itself turned out to be worth NOT copying** — RPC's media columns read 0 missing thumbnails on 4 of 5 collections, so a column-level coverage meter would have read 100% green while the real defects (the optimizer cap stripping Ultimates, the LeBron card) happened in the RENDER path. They measure files at a gateway; we would have measured that a string exists. **Looking for the gap found a different, real one.**
+
+🚨 **`v_edition_integrity_flags` GROUPS OVER `editions`. Pinnacle keeps its catalog in `pinnacle_editions`: 0 rows in `editions`, 570 in its own table.** So the view emits five collections and is silent about a sixth, live one — and the `edition_integrity_flags` arm of `v_rpc_trust_health` has **never been able to see a single Pinnacle defect**. ⚠ The 2026-07-28 migration that fixed that arm documents its *other* exclusion (the structurally-null candy/ufc on-chain-id columns) and says nothing about a whole uncovered collection. **An exclusion nobody stated is the kind that expires silently.**
+
+📊 **WHAT IT COULD NOT SEE, over 570 rows:** **155 unhydrated stubs** (no `edition_key` AND no `mint_count` AND no `series_year` AND no ask, one `set_name`, created 2026-04-16 → 08-23) · **64 real editions with no thumbnail** · **2** real bad mint counts · 0 missing character/variant/set name.
+
+⭐ **THE DECOMPOSITION IS THE FINDING.** The raw column reads *219 of 570 missing a thumbnail (38%)* and *157 with a bad mint count* — I nearly reported that. **155 of each are the SAME perfectly-correlated stub cluster**, which is the tell for un-run hydration, not for 155 broken products. Split out, the real defect count is **64 + 2**, and the stub backlog is a separate, older problem.
+
+✅ **SHIPPED: `v_pinnacle_integrity_flags`** (`security_invoker=on`, anon/authenticated SELECT, matching its sibling). It counts stubs and real defects in SEPARATE columns so one can never hide inside the other. Verified as **anon**: 570 / 155 / 2 / 64 / 0 / 0.
+
+⛔ **NOT wired into `v_rpc_trust_health`, deliberately.** Adding Pinnacle to the summed arm moves it ~104 → ~320 against `breach_at` 250 — **an immediate page on a five-month-old backlog, not on a deterioration.** An alarm that fires the moment you widen its vision teaches people to silence it. 🚨 **NEEDS TREVOR:** that threshold is explicitly his (ledger 07-28, *"Trevor's call to include thumbnails"*). Either drain the 155 stubs then wire it at 0, or wire it with a Pinnacle-specific `breach_at` above the then-current backlog.
+
+⛔ **AND I DID NOT BACKFILL THE 64, THOUGH IT LOOKED FREE.** `wallet_moments_cache` has images for all 64 — but they are **PER-MOMENT render paths** (`/api/public/pinnacle-image/<renderId>`), **60 of the 64 resolve to more than one distinct image**, and they are relative paths, not URLs. Picking one would pin a single collector's pin as the edition's canonical art — the fabricated-pairing class. **An edition-grain source is needed, not a moment-grain one.**
+
+**Revert:** `DROP VIEW public.v_pinnacle_integrity_flags;` — additive, no existing object touched, no consumer wired.
+
 ### 2026-09-14 · CORRECTION (docs-only) · #121 exit (1) done — my honesty hypothesis is REFUTED, the latency is STRUCTURAL not spell-collateral, and the "snapshot timed out = we're in a spell" positive control is now FALSE · Claude Code cloud
 
 ✅ **EXIT (1) OF #121, WHICH I WROTE AND THEN DID: "establish what the two readers DO with a failed `rpc_ops_snapshot()` before optimising anything."** I had claimed the night pass's *"Security: 4/4 clean"* line could not be produced honestly from a timed-out call, and that **"a pass that writes it anyway is the defect."** **Read every handoff and filing where the call actually failed — the passes handled it honestly 4/4 and said so.** The 08-20 pass is the exact feared shape (*"timed out twice this run"* + *"Security 4/4 clean"* in one paragraph) and is **not** the defect: its body reads **"directly re-measured"** and names the three individual calls. 08-22/08-25 *"ran the checks individually instead"*; 09-11 *"drilled the legs individually"*; 08-29 wrote the number it could not re-derive as **"UNMEASURED … no delta was fabricated."** ⚠ **The honesty layer held — but it is a PRACTICE, not a MECHANISM** (the passes are prompts, not files; nothing enforces it). No guard candidate; the latency is now the whole item.
