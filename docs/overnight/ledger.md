@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨 A FAILED READ WAS BEING PERSISTED AS A WHALE'S HOLDINGS, AND ONLY A STATEMENT TIMEOUT STOPPED ~51,120 FABRICATED BUYBACKS — the SECOND variant of this defect in the same file · Cowork cloud
+
+Found by asking which lanes are failing right now. `snapshot-institutional-wallets` is **4 of 4 failed in 24 h and carries no suppression** — the only unsuppressed 100 % lane on the board.
+
+📏 **THE SERIES IS THE WHOLE ARGUMENT.** `0x4d2c9216f1dca098` (NBATopShotCommunity), Top Shot snapshots:
+
+| 09-10 | 09-12 | **09-13** | 09-14 |
+|---|---|---|---|
+| 52,120 | 52,120 | **1,000** | 52,120 |
+
+**1,000 is 4 pages × `PAGE_SIZE` 250.** It was written by the 09-13 12:46Z run that died on `wmc_load_page_4` — and because the upsert is keyed on `(wallet, collection, day)`, ⛔ **it OVERWROTE the COMPLETE snapshot the 10:07Z run had written two hours earlier the same day.** A failed read did not merely get recorded; it destroyed a good record.
+
+🚨 **THE MECHANISM, in `supabase/functions/snapshot-institutional-wallets/index.ts`:** `loadAllMomentsForWallet` pages `wallet_moments_cache` and, when a page exhausts its retries, **returns the rows it already has together with an error**. The caller pushed that error into `errors[]` — *and then upserted the partial rows as the day's snapshot anyway.*
+
+⛔ **WHAT IT COST, and what it nearly cost.** The next day's `compute_institutional_wallet_diff` read `52,120 − 1,000` = **~51,120 "arrivals"** and began inserting them into `topshot_insider_buybacks` as `direct_transfer` acquisitions. **ZERO landed** — the statement timeout killed the transaction at 156–178 s and rolled it back, twice (09-14 10:07Z and 14:16Z). ⭐ **Nothing about that is a guard. The timeout is the only reason the table is clean**, and it is incidental: a faster instance fabricates 51,120 rows on a user-facing insider-activity surface.
+
+⭐⭐ **THIS IS VARIANT TWO OF A DEFECT THE SAME FILE ALREADY DOCUMENTS.** Its `ORDER BY` comment records variant one: an unordered offset walk read *the right NUMBER of rows and the wrong SET*, producing **161,366 fabricated buyback acquisitions over three months**. That fix made the walk correct **when it COMPLETES**. Nobody asked what happens when it does not. **The same consumer, the same table, the same fabrication — through the other door.**
+
+✅ **FIXED:** `shouldPersistSnapshot()` in the pinned pure core (`_shared/institutional-snapshot.ts`); `captureSnapshot` gates the upsert on it. ⚠ **An errored walk that read zero rows is `incomplete_load`, NOT `no_rows`** — "the wallet holds nothing" is a claim a failed run cannot make, and collapsing the two would reintroduce the defect in miniature. **Refusing to write is strictly safer than writing a partial:** a MISSING snapshot makes the next day's diff return `baseline_day` and insert nothing, while a SHRUNKEN one makes every dropped moment look like a fresh acquisition.
+
+📏 **Non-vacuous both halves, by mutation:** relax the gate → the three decision tests red; delete the call in `index.ts` → the reachability pin reds (`the gate must run BEFORE the snapshot upsert`). The pin exists because **a correct guard that is never called is how the partial got written in the first place.** 15 tests in the file, `tsc` clean.
+
+⚠ **NOT YET DEPLOYED as of this entry** — the repo is the source of truth and this lands first; the edge-function deploy and its `pipeline_runs` positive control are the next step and are stated here so a reader does not assume prod already has it.
+
+⚠ **Self-healing but recurring:** 09-15's diff compares 52,120 vs 09-14's 52,120 = 0 arrivals, so the lane goes green on its own. **The defect is not the outage, it is that the next partial load re-arms it.**
+
+Revert: `git revert <sha>` — one exported function, one gate call, one test block.
+
 ### 2026-09-14 · SHIPPED · ⛔ My own guard 35 minutes earlier was HALF a guard — it covered the UPDATE and left the INSERT open · Claude Code cloud
 
 **DB migration `20260914183000_audit_20260914_my_own_guard_had_the_insert_half_missing`. Completes the entry two above.**

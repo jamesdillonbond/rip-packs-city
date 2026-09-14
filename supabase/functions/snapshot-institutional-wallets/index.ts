@@ -32,6 +32,7 @@ import { createClient } from "@supabase/supabase-js"
 import {
   aggregateHoldingsByCollection,
   isTransientErr,
+  shouldPersistSnapshot,
 } from "../_shared/institutional-snapshot.ts"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
@@ -283,7 +284,16 @@ async function captureSnapshot(
   const rows = load.rows
   const errors: string[] = []
   if (load.err) errors.push(`load: ${load.err}`)
-  if (rows.length === 0) {
+
+  // 🚨 DO NOT WRITE A SNAPSHOT BUILT FROM AN INCOMPLETE WALK. The decision lives
+  // in the pinned pure core; see shouldPersistSnapshot for the 2026-09-13 case
+  // where a partial run OVERWROTE that morning's complete snapshot (52,120 ->
+  // 1,000) and the next day's diff tried to insert ~51,120 fabricated buybacks.
+  const gate = shouldPersistSnapshot(load)
+  if (!gate.persist) {
+    if (gate.reason === "incomplete_load") {
+      errors.push(`snapshot_skipped: incomplete_load (${rows.length} row(s) read before the walk failed)`)
+    }
     return { collections_captured: 0, total_moments: 0, pages_walked: 0, errors }
   }
 
