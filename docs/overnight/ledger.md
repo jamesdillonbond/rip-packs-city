@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · FINDING (docs-only, no prod state touched) · #116 IS ADJUDICATED BY THE CHAIN — `editions.circulation_count` is right and the `sales` serials do not exist · Claude Code cloud
+
+**The decisive read #116 asked for and nobody had taken.** `net.http_post` from the database to `https://rest-mainnet.onflow.org/v1/scripts`, running the **production-verified** Cadence literal already in `lib/editions-hydrate.ts` (`TopShot.getNumMomentsInEdition(setID:playID:)`). ⭐ **No new Cadence was authored — no Cadence MCP was available in this session, and CLAUDE.md forbids writing Cadence blind. Reusing a literal production already runs satisfies the rule in substance.**
+
+📏 **FIVE EDITIONS, ON CHAIN vs THE DB — exact on every one:** `2:113` **1,530**/1,530 · `2:41` **1,000**/1,000 · `2:62` **1,000**/1,000 · `2:63` **1,359**/1,359 · `8:62` **49**/49. Max `sales` serial on the same five: **3,287 · 3,286 · 2,483 · 2,676 · 972**. Max `wmc` serial: 1,526 · 991 · 994 · 1,335 · 49 — **at or below circulation every time.**
+
+⭐ **POSITIVE CONTROL, not just the number I went looking for:** the same script returned **set name and player name**, and both match on all five — so it is reading the edition this repo thinks it is, rather than two figures coinciding.
+
+✅ **HYPOTHESIS 2 (stale circulation) IS NOW POSITIVELY EXCLUDED, not merely unrefuted.** ⚠ **And the direction of the instrument matters:** `getNumMomentsInEdition` returns the CURRENT count and **can only grow**, so a value below the observed serials today proves those serials were **never** valid — this is not a timing artifact. 🚨 **The two-authority-pairs question resolves: `editions` + `wmc` are the correct pair.** ⭐ **The "EXACTLY zero wmc violations" tell #116 flagged now has its explanation — wmc never exceeds circulation because the real serials never do.**
+
+📏 **THE WRITER IS NOT ONE LANE, AND THE ZEROES ARE THE CONTROL.** By `sales.source` across all base Top Shot editions (**1,727 total, reproducing #116's figure exactly**): `topshot_marketplace` **867 (0.581%)** · `(null)` **563 (0.888%)** · `historical_2020_import` **163 (0.582%)** · `onchain` **110 (0.026%)** · `dune_settlement_ingest` **22 (0.267%)** · `offer_fill` **2 (0.003%)**. ⭐⭐ **`ts_history_backfill_v1` 0 of 2,351,151 · `atlas` 0 of 26,161 · `topshot_gql` 0 of 7,723 · `atlas_backfill` 0 of 5,604 — four sources, 2.39M rows, EXACTLY ZERO.** ⚠ **`onchain` at 110 is the uncomfortable one**: the most authoritative writer in the list still produced 110 serials the chain says cannot exist.
+
+⭐ **THE SERIAL IS STABLE PER NFT — 0 of 120.** On a 120-NFT sample from `2:62`/`8:62`: **0** carry conflicting serials across all their sales rows, 103 are internally consistent on one (edition, serial), 17 appear under more than one `edition_id`. ⛔ **Those 17 are NOT proven misattribution** — a base/parallel pair counts as two editions here and was not separated. **The zero is the finding: not a write race, not a per-row typo — whatever produced the serial produced it consistently, for years.**
+
+⚠ **A HEAVY PROBE WAS KILLED AND NOT RETRIED.** The unbounded version of that per-NFT query (every impossible nft_id, fleet-wide) **timed out at 60 s**, so it was re-run bounded to two editions and 120 NFTs. **Your own probe is the load** — the bounded answer is the one recorded, and its scope is stated rather than implied.
+
+👉 **STILL OPEN AND NOW NARROWER:** for a given row, which field is wrong — the serial, or the edition it hangs on. That needs a per-NFT borrow-and-read, and this repo has **no production-verified Top Shot borrow literal** (the verified ones are AllDay). ⛔ **Do not author it without the Cadence MCP.**
+
+No revert path — read-only, docs-only. Five `net.http_post` calls, all HTTP 200.
+
 ### 2026-09-14 · 🔴 `main` HAD BEEN RED FOR FOUR RUNS — a wallet-verification route shipped with no test, and the `inherited-status` guard is what named the culprit · Claude Code desktop
 
 **Found because my own push inherited it.** CI #5557 (`ba33660`, *"a failed read was being persisted as a whale's holdings"*) failed `Unit tests — shard 1/2`, and the three runs after it were docs-only pushes reporting the inherited red. ⭐ **`scripts/check-last-code-ci-on-main.mjs` named the offender directly** — *"This push is NOT the cause and reverting it will not help"* — so no bisecting was needed. **That guard shipped 09-14 and this is its first real catch.**
