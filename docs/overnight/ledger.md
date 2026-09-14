@@ -10,6 +10,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 📋 THREAD CLOSE-OUT (Cowork) — the partial-read rule is in CLAUDE.md, and the file is now at EXACTLY 40,000 · Cowork cloud
+
+Closing this thread before it is archived. Everything below is already shipped and verified except where it says otherwise.
+
+⭐ **CLAUDE.md gains the one rule from today that was not already in it:** *"**Never persist a PARTIAL read as the fact** — a walk returning ROWS *and* an ERROR is the same shape (#119)"*, folded into the fabricated-value line where a future session meets it next to `?? 0` and the returning-unwrapper. **Funded, not spent** — four trims in that same line paid for it (the #112 sibling aside, a redundant consequence clause, the DB-tell rephrased, `/ 30D`).
+
+🚨 **AND THE FILE IS NOW AT EXACTLY 40,000 OF 40,000.** The guard passes; the headroom is **zero, not ~zero**. **The next rule added there MUST displace one** — put the displaced text verbatim in the matching `docs/reference/*.md` with a one-line pointer, exactly as the header prescribes. I took five attempts to land this one because every draft overshot by 12–412 characters, and ⚠ **the trap is still the one line 5 documents: python `len()` and `wc -c` both disagree with the guard** (surrogate pairs), so measure with `node -e` `.length` and nothing else.
+
+**What this thread shipped, in one place:**
+
+| what | where | state |
+|---|---|---|
+| `inherited-status` — a docs-only push's green is not a statement about `main` | `ci.yml` + `check-last-code-ci-on-main.mjs` | ✅ live, **verified in production twice** (examined 1 → 7 → 10, naming a real code run) |
+| Its verdict made readable (`$GITHUB_STEP_SUMMARY`) | same | ✅ live — and it is what caught the next defect |
+| `ranFullSuite` — a job NAME in the list is not evidence it RAN | same | ✅ live |
+| `ops-monitor`'s `ci-status` had the same blind spot | `ops-monitor.yml` | ✅ delegates to the shared detector |
+| Cowork artifacts rendered a failed read as an empty result set | `docs/cowork-skills/*.html` | ✅ repo copies fixed; ⚠ **the 5 LIVE dashboards still carry the old helper (#114)** |
+| Bound-reads ratchet 42 → 43 (population correction) | that guard | ✅ live |
+| `shouldPersistSnapshot` — a partial walk is not the day's holdings | `_shared/institutional-snapshot.ts` | ✅ merged · ⚠ **NOT deployed** |
+
+⚠ **The three things a future session should NOT assume are done:**
+
+1. **The `snapshot-institutional-wallets` deploy.** Merged, not in production. `edge-fn-drift.yml` should flag it and that flag is correct. The ready-to-run MCP call, the `verify_jwt: false` trap, the three-file set and the verify order are in inbox `2026-09-14T1735Z` — which also narrows the #23/R63 drift hazard from "unknown" to "not in the paging loop, the constants or the `_shared` import, remainder un-diffed".
+2. **#114's five live dashboards.** Outside every connected folder; `update_artifact` is Cowork-desktop-only.
+3. **`INGEST_SECRET_TOKEN`.** Still open since 09-12 — and note the signature route and this snapshot function both authenticate with it.
+
+⭐ **The lesson this thread produced most often, stated once:** three separate times a guard was correct, reachable and still silent — the docs-only skip, the marker that matched a SKIPPED job, and `ops-monitor` reading the newest run of any kind. **Ask what RUNS a check and what its result is READ BY, not only whether it passes.**
+
+Docs-only — no code change in this entry.
+
 ### 2026-09-14 · ⛔ CORRECTION — my "18.5-day-old ask" in #118 is FALSE. The asks are CURRENT, and the real reason not to unblock that queue is a RETAIL price 1,517–3,125 % below the live one · Claude Code cloud
 
 **Docs-only. Corrects a false claim I wrote into #118 and the ledger earlier today. The conclusion (do not ship the `ORDER BY`) is unchanged; the reason was wrong and the true one is worse.**
