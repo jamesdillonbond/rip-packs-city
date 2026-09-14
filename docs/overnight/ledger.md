@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⭐ #116 RESOLVED WITHOUT THE CHAIN READ — Atlas is the third authority, the `sales` SERIAL is the wrong value, and I had "refuted" that an hour earlier by treating a corroborating source as an independent one · Claude Code cloud
+
+**Docs-only. Corrects the #116 entry I pushed an hour ago, whose "hypothesis 3 refuted" was wrong.**
+
+⭐⭐ **`topshot_atlas_edition_map.num_minted` SETTLES IT: on ALL 73 offending editions it EQUALS `circulation_count` — 73 of 73, every one carrying an Atlas row, ZERO explaining the observed serials, ZERO differing from both.** So `2:62` is minted **1000** with sales at **2483**; `8:62` is minted **49** with sales at **972**; `90:3069` is minted **8000** with a sale at **43,334**.
+
+**THREE INDEPENDENT AUTHORITIES NOW AGREE CIRCULATION IS CORRECT:** `editions.circulation_count` · `wallet_moments_cache` (never exceeds it across 1,171 rows on the eight worst, and hits it EXACTLY on four) · Atlas `num_minted` (**73/73**). ⛔ **So the `sales` serial is the wrong value — and `moments` carries the same wrong value.**
+
+🚨 **THE METHOD ERROR IS THE POINT, AND IT IS A SHAPE THIS REGISTER DID NOT HAVE: I TREATED A CORROBORATING SOURCE AS AN INDEPENDENT ONE.** I tested "right edition, wrong serial" by asking whether `moments` agreed with `sales` on the serial. It agreed **227 of 243 times**, and I recorded the hypothesis REFUTED. ⛔ **That agreement was never evidence.** `moments` and `sales` are not independent here — they carry the same value from the same lineage, so 93 % agreement measures their shared provenance, not the truth.
+
+⭐ **The tell was available BEFORE Atlas, and I walked past it:** the two sources that agreed were exactly the two that disagreed with the two that CONSTRAIN. **Counting sources is not weighing evidence — ask of each whether it could have been wrong independently.** CLAUDE.md carries the neighbours (*a control must use the PRODUCTION CALLER*; *never pair a count from one table with a property from another*); **the missing sibling is: a second source corroborates only if it COULD have disagreed.** Promoted to the register as the durable form.
+
+⛔ **MECHANISM STILL OPEN, one guess already killed.** `serial_number = nft_id` is **EXACTLY 0** of 1,727 — not an id leaking into the column. Overruns: **21** rows 1–10 above circulation · **124** 11–100 · **1,567** 101–5,000 · **15** over 5,000. **The bulk is a moderate overrun, so "slightly stale" is not the shape either.** 👉 Next is tracing the WRITER of `sales.serial_number` (and `moments.serial_number`) for these 73 editions; a chain read is no longer needed to know WHICH side is wrong, only HOW it got that way.
+
+⛔ **Unchanged and still binding:** do NOT widen the trust metric to base editions (0 → 1,764 permanently breached is no alarm), and NEVER `raise_impossible_parallel_circ()` — **Atlas now independently confirms the circulation it would overwrite.**
+
+No revert needed — docs only; no production state was touched by this investigation.
+
 ### 2026-09-14 · ⚠ THE FAST LINK GUARD SAID "all resolve" IN THE SAME MINUTE THE SLOW ONE CAUGHT MY BROKEN LINK — its header claimed nothing else covered the gap, and that stopped being true · Claude Code cloud
 
 **Small, and it is the exact trap that cost me a red `main` an hour earlier.**
