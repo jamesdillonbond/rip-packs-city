@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⚠ `/api/wallet-search` CANNOT READ A MEGA-WALLET AT ALL and tells the user to "Please try again" — a retry that is structurally impossible · NOT fixed, filed with the population left open · Claude Code desktop
+
+**Docs-only. Found in a production runtime-error sweep, not by an alarm.**
+
+**The mechanism:** `wallet-search` fetches holdings with an **unpaginated** `col!.getIDs()` for both Top Shot and All Day, and the execution node refuses it — `computation limit exceeded (used: 100134 / 217993, limit: 100000)`. 24 h: wallet-search **2**, wallet-backfill **6**, wallet-backfill-allday **2**. ⭐ **The Top Shot case is 0.13 % over the limit — a THRESHOLD, not a cliff**, so the affected set grows silently as collections grow.
+
+⭐ **CREDIT WHERE DUE — THE PLUMBING IS HONEST and this is NOT the failed-read-as-answer defect:** the catch returns **HTTP 500 with an explicit `error`**, so no client can mistake it for an empty wallet. ⛔ **The COPY is the defect:** *"Failed to fetch wallet data. Please try again."* — and this failure is **deterministic**. The limit is a property of the wallet's size and the script, not of the moment. **Telling a user to retry something structurally impossible is a false claim of transience.**
+
+📏 **The evidence it is TOTAL, not partial:** `0xe1f2a091f7bb5245` (the wallet the error names) has **ZERO rows in `wallet_moments_cache` across every collection** — the backfill cannot complete, so nothing is cached, so the wallet is invisible to the platform. ⭐ **And the control is the same wallet on another collection:** `0xb6f2481eba4df97b` holds **11,969 Pinnacle** rows (Pinnacle already paginates) while its All Day fetch 400s. **The defect is the unpaginated call — not the wallet, not the chain.**
+
+⚠ **WHO GENERATED IT, stated before the severity (#69's lesson):** **neither wallet is saved by any user** — anonymous whale lookups, not a user's own wallet broken. **This is not a P1.**
+
+⛔ **POPULATION NOT ESTABLISHED, AND I STOPPED RATHER THAN FORCE IT.** The wallets-by-moment-count aggregate **timed out twice** on the ~1.58 M-row `wallet_moments_cache`; CLAUDE.md already records that heavy wmc aggregates need a bounded or precomputed source. ⚠ **My own probe is load on a saturation-bound instance**, which this estate has paid for before — so the number is left open rather than bought at that price.
+
+⚠ **One vacuous result caught on the way and recorded so nobody repeats it:** a first saved-wallet query returned `[]` because I left a `join … on false` placeholder in it. **An empty result from a malformed query reads exactly like "no wallets affected."** It was not reported as one.
+
+⭐ **THE FIX ALREADY EXISTS IN THIS REPO AND IS SIMPLY NOT WIRED UP:** `lib/chains/flow/allday-cadence.ts` carries the windowed variant (*"getIDs()[start..start+count] … so mega-wallets"*), as does `cadence/pinnacle-wallet.ts`. Cheapest first: **(1)** make the copy honest by detecting Flow error 1110 in the catch; **(2)** point the two fetchers at windowed scripts; **(3)** size it from a bounded source first — an eligibility count is not a gain count.
+
+- **Revert:** docs-only. `git revert <sha>`. Filing: [`inbox/2026-09-14T1749Z-…`](inbox/2026-09-14T1749Z-wallet-search-cannot-read-a-mega-wallet-and-tells-the-user-to-try-again.md)
+
 ### 2026-09-14 · 🚨 PINNACLE HAS NEVER HAD AN INTEGRITY INSTRUMENT — the trust arm groups over `editions`, where Pinnacle has ZERO rows · Cowork cloud
 
 **Fourth item out of the topshotexplorer.com teardown** (their per-set media-completeness meters). ⛔ **Their meter itself turned out to be worth NOT copying** — RPC's media columns read 0 missing thumbnails on 4 of 5 collections, so a column-level coverage meter would have read 100% green while the real defects (the optimizer cap stripping Ultimates, the LeBron card) happened in the RENDER path. They measure files at a gateway; we would have measured that a string exists. **Looking for the gap found a different, real one.**
