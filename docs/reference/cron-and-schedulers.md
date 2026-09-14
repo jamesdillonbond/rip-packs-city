@@ -2,6 +2,22 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ✅ THE SHED-AND-SELF-RESTORE PATTERN WORKS, PROVEN WITH A POSITIVE CONTROL RATHER THAN ASSUMED (2026-09-13, PT)
+
+**The pattern.** To shed a lane for a fixed window without needing a human or a live session to put it back:
+
+    SELECT cron.alter_job(<victim>, active := false);              -- shed now
+    SELECT cron.schedule('rpc-shed-restore-<date>', '<MI HH> * * *',
+      'select cron.alter_job(<victim>, active := true); select cron.unschedule(''rpc-shed-restore-<date>'');');
+
+Two statements in one command string, and **the second unschedules the job that is running it**.
+
+⚠ **That self-unschedule is the part worth doubting, and doubting it is cheap.** pg_cron runs the command through the simple query protocol in one implicit transaction, so a job deleting its own `cron.job` row mid-run is not obviously safe — it could roll back, orphan the run, or leave the job scheduled forever. **The estate had no prior run of this shape to learn from** (`cron.job_run_details` carries no record of an earlier restore job), so it was TESTED instead of reasoned about, 28 minutes before a real restore depended on it.
+
+⭐ **The control, run 6:40 PM PT:** a throwaway `zz-probe-target` (scheduled `55 5 1 1 *` so it can never fire) set `active := false`, and a `zz-probe-restorer` two minutes out carrying the exact two-statement shape above. **Result: the restorer ran `succeeded` ("1 row"), `zz-probe-target` read `active: true`, and `zz-probe-restorer` was gone from `cron.job`.** Both halves committed. Both probes removed afterwards; the active-job count returned to its 141 baseline.
+
+**So a shed with a self-restore is safe to use, and it is the right shape** — it survives the session that wrote it, needs no operator, and leaves no job behind. ⚠ **Still check two things when you write one:** the schedule is in **UTC** (`10 2 * * *` is 7:10 PM PDT, and the sandbox clock is PDT — see [tooling-gotchas.md](tooling-gotchas.md)), and the quoted job NAME inside the command matches the name you scheduled, because a typo there restores the victim and then leaves the restorer firing daily forever.
+
 ## ⛔ A NEW pg_cron JOB NEEDS ITS `statement_timeout` IN THE COMMAND — the global is 120 s and the function's own declaration is INERT (2026-09-13, caught 40 min after shipping it wrong)
 
 **I shipped `rpc-ccm-step2-retry` with no `statement_timeout` in its command and it would have been killed at the cluster global 120 s**, doing nothing while `cron.job_run_details` recorded a run. ⛔ **A retry that cannot finish is worse than no retry: it converts a visible gap into an instrument reporting the gap was covered.**
