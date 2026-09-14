@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · SHIPPED · #101's backlog finally has a series — and the first look says NEITHER rate in circulation describes it · Claude Code cloud
+
+**DB migration `20260914170000_audit_20260914_the_misattrib_backlog_gets_a_series_that_diffs_the_set_not_the_count` + pg_cron `rpc-record-misattrib-backlog` (`15 0 * * *`, ACTIVE, direct call, no pg_net). Implements #101's option (c) — *"make the predicate executable"* — and the Cowork filing's item 3. ⛔ It is a RECORDER, not an alarm.**
+
+📏 **THE THREE POINTS, re-derived rather than copied:**
+
+| date | candidates | open | mapped |
+|---|---|---|---|
+| 2026-09-05 | 20,128 | 410 | 19,718 |
+| 2026-09-12 | 18,959 | 1,315 | 17,644 |
+| **2026-09-13 (live MV)** | **18,254** | **1,364** | **16,890** |
+
+🚨 **NEITHER RATE IN CIRCULATION SURVIVES THIS.** #101 records **~117/day**; today's filing measured **+49 in one day**. But on that same day the candidate set **SHRANK 705** and the mapped count fell **754**. **A pile that moves +49 while its own denominator turns over by 705 is not described by an inflow rate at all** — it is CLAUDE.md's *"Diff the SET, not the count: a total can hold while membership turns over twice"*, and **nothing here could see membership**. So the instrument stores a **SET DIFF** (entered/left against the previous day's open `nft_id` set), not just a count. ⛔ **Do not quote 117/day or 49/day** — the first real diff lands 00:15Z tonight.
+
+⚠ **AND ONE FIGURE IN CIRCULATION TODAY IS STALE.** Both of today's readings quote **18,959** candidates. The live MV holds **18,254** (refreshed 2026-09-13 23:35Z, jobid 70, verified in `cron.job_run_details`). The **open count 1,364 was re-measured and agrees**; the **denominator was carried forward** from the 09-13 text. ⭐ **Re-measure BOTH halves of a ratio, not the half that moved.**
+
+⭐ **THE POINT IS LABELLED BY THE MV's REFRESH DATE, NOT THE RUN DATE.** The MV refreshes 23:35Z and the recorder runs 00:15Z, so `now()::date` would file every point **one day after the data it describes**. `measured_on` comes from `max(start_time)` of jobid 70's succeeded runs; if that is ever missing the row says so in `note` rather than silently filing under the run date.
+
+⛔ **NULL, NEVER 0, FOR A DIFF THAT DOES NOT EXIST.** The first point has no previous set, so `entered_open`/`left_open` are **NULL** — a 0 there would assert *"nothing moved"*, which is the fabricated-value shape this repo keeps finding. All three seeded points are NULL/NULL for the same reason.
+
+✅ **POSITIVE CONTROL RUN IN BOTH DIRECTIONS, not assumed.** Run 1 → NULL/NULL, `had_prior_snapshot:false`. Run 2 → **0/0**, `had_prior_snapshot:true` (so the diff path really executes and NULL ≠ 0). Then 3 ids were removed from the prior snapshot and 1 absent id added: the next run read **`entered_open: 3`, `left_open: 1`** — both directions counted correctly and independently. Snapshot rebuilt, probe row deleted, **0 leftovers**, and the 09-13 row set back to NULL/NULL with the control recorded in its own `note`.
+
+⛔ **EXPLICITLY NOT AN ALARM, AND NOT A REOPENING OF #101.** That item is **DECIDED** — *"ACCEPT THE BACKLOG; DO NOT WRITE MOMENTS-DERIVED ROWS"* (the write's real effect is **−12** sales rows, every one a parallel→base downgrade, #110; the ~0.2% source error is irreducible because `moments` and `topshot_moment_subeditions` share their errors). **The `topshot-misattrib-drain` suppression is untouched.** An arm on this count would be permanently red for a lane with no caller — the mistake #102 nearly caused.
+
+✅ Verified after apply: `check_secdef_anon_exec_drift()` **0**, secdef violations **0**, `anon` EXECUTE **false** / `postgres` **true** on the writer, RLS-off public tables **0**.
+
+**Revert (four parts):** `SELECT cron.unschedule('rpc-record-misattrib-backlog');` · `DROP FUNCTION public.record_topshot_misattrib_backlog();` · `DROP TABLE public.topshot_misattrib_open_snapshot;` · `DROP TABLE public.topshot_misattrib_backlog_history;`
+**Target metric:** a 2026-09-14 row appears after 00:15Z tonight carrying a **non-NULL** `entered_open`/`left_open`. ⚠ **Falsifier: if it lands NULL, the recorder ran before the snapshot existed and the diff is not wired.**
+
 ### 2026-09-14 · SHIPPED · Both guards I shipped this morning had NO CALLER — a concurrent session said so within the hour and it was right · Claude Code cloud
 
 **DB migration `20260914163000_audit_20260914_give_the_two_new_guards_a_caller_in_the_ops_snapshot`. Wiring only — no new logic.**
