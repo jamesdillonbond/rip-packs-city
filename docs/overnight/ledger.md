@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · FILED (docs-only) · the "noticed in passing" line from two entries ago is now MEASURED — a lane has ticked 4,023 times since it last found a row · Claude Code cloud
+
+✅ **CLOSES MY OWN CAVEAT.** The entry below flagged frozen backfill cursors and said in terms *"do not act on this line as if it were measured."* It is measured now, and filed as `inbox/2026-09-14T1820Z-…`.
+
+📏 **`topshot-pack-opens-history-backfill` (pg_cron jobid 56, 4×/hour): last `rows_found > 0` on 2026-08-01 · 4,023 runs since · ~100 % `ok` · cursor parked at 61,808,846 since 2026-08-06 22:11Z.** ⭐ **Not broken-and-never-worked** — it found **38,849** rows 07-29→08-01. ⭐ **Two states separated by date:** the cursor ADVANCED through empty ranges 08-01→08-06, then stopped advancing entirely while the job kept succeeding.
+
+⛔ **THE TERMINAL STATE IS DELIBERATELY NOT CLAIMED.** "Reached its floor" (waste) and "exits early and still reports ok" (correctness) produce **identical `pipeline_runs` rows** — which is this estate's own `rows_found = 0` null-instrument trap, met head-on. The floor constant lives in the edge function and was not read (⚠ `get_edge_function` hands back live gate keys). **Cost is the same either way: ~96 runs/day, ~35,000/year for nothing on an IO-budgeted instance, plus the doctrine cost — a permanently-zero lane trains the next reader to skip it** (the jobid-55 / badge-sync reasoning with the sign flipped).
+
+✅ **CONTROL, so this is a discrimination and not just an observation:** `topshot_offer_fill_backfill` (13:05Z) and `golazos_sales_v1_backfill` (15:34Z) both moved today; `topshot_flowty_backfill` (#3, Flowty shut down) and `allday_pack_opens_backfill` (#102(a), unscheduled) are frozen **correctly**. **What singles this one out is that it is frozen while its scheduler still fires 96×/day.** ⛔ **Not unscheduled — if it is paused rather than finished, unscheduling turns a recoverable gap permanent** (the trap #102(a) records for the AllDay twin).
+
+⭐ **PROVENANCE WORTH KEEPING: this surfaced from `changes_observed`, shipped hours earlier** — a cursor reading 0 changes across live observations is exactly the "parked while watched" signal, and **the old schema could not express it.** The instrument found something on its first real tick.
+
+**Nothing shipped to prod state — docs only** (filing + `INDEX.md`, whose per-date count the guard re-derives: 12 → 13, header 505). **Revert:** `git revert <this sha>`.
+
 ### 2026-09-14 · CORRECTION (docs-only) · the falsifier I wrote 40 minutes ago went GREEN WITHOUT TESTING ANYTHING — a table-scoped control for a cursor-scoped question · Claude Code cloud
 
 ⛔ **THE ENTRY BELOW STATED THE FALSIFIER AS: "`changes_observed` must exceed 0 shortly after the 18:34Z subject tick is picked up at 20:12Z." IT WAS SATISFIED AT 18:12Z, AND THE READING MEANS NOTHING.** The 18:12Z observation took the table to **33 cursors · 198 runs · `cursors_that_have_moved` 16 · `total_changes` 16**. **All 16 are ordinary FORWARD indexers** (`allday_listings`, `allday_offers`, `allday_sales`, `golazos_listings`, `allday_pack_opens_forward` …), every one `ever_decreased = false`.
