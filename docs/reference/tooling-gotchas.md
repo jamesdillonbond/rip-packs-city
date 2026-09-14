@@ -670,6 +670,21 @@ fired session may have no `mcp__github__*` / Supabase tools at all. **Open every
 capability check that reports and STOPS rather than improvising.** The existing RPC routines already do this;
 copy that pattern rather than assuming the tools will be there.
 
+⛔ **AND THE `connectors` PARAMETER DOES NOT RESCUE THIS — it is ORG-GATED, measured 2026-09-14.**
+`create_trigger` now advertises a `connectors` argument that looks exactly like the fix. It is not available
+here: passing `connectors: ["Supabase"]` returns **`create_trigger: the connectors parameter is not available
+for this organization. Omit the connectors parameter.`** — and this is *not* a name-resolution failure, because
+`ListConnectors` reports Supabase as `installState: connected`, `connected: true`, `enabledInChat: true`.
+⚠ **Write this down or it gets re-litigated the expensive way:** a session reading only "stores no connectors"
+could reasonably assume the new parameter had since closed the gap, pass it, and — if it ever silently
+no-opped instead of erroring — arm a **blind** check. A scheduled check that fires without the tools it needs
+is worse than none, because it reads as covered.
+
+✅ **What actually works when a re-check needs DB tools later:** file it into `docs/overnight/inbox/` with a
+date gate ("on or after YYYY-MM-DD"). `rpc-nightly-autonomous-pass` runs in Cowork, HAS Supabase MCP, and
+DRAINS that directory. Put the exact SQL, the probe bans and the verdict thresholds in the filing, so the
+pickup needs no context from the session that wrote it. Instance: register #75's 09-20 re-measure.
+
 ## Reaching a blocked host from the Claude Code sandbox: `net.http_get` from Postgres (2026-08-22)
 
 ⚠ **The web/cloud sandbox's network policy DENIES hosts the platform itself can reach.** `rest-mainnet.onflow.org` returns `CONNECT tunnel failed, response 403` from `curl` — a **policy denial at the agent proxy**, visible in `curl -sS "$HTTPS_PROXY/__agentproxy/status"` under `recentRelayFailures`. `www.rippackscity.com` is blocked the same way, so **a route cannot be smoke-tested from the sandbox by fetching it.**
@@ -704,6 +719,22 @@ That one line settled an item that had been parked as unanswerable: three fresh 
 1. ⛔ **`content` is a TEXT column, so a BINARY body is lossy.** A 1200×630 PNG stores as ~8 characters — `length(content)` is **not** the response size and cannot tell an art-bearing card from a blank one. Read `status_code` and `headers`; for bytes use something else.
 2. ⚠ **`headers->>'cache-control'` from OUR domain reads a bare `public`** — Vercel consumes the CDN directives (`s-maxage`, `stale-while-revalidate`) and does not echo them. **So a card's cache POLICY is not observable from outside**, and a probe designed around reading it back measures nothing.
 3. ⚠ **The request leaves SUPABASE's IP, not Vercel's.** A 403/429 from a public gateway is reputation- and account-dependent, so a failure here is evidence about that IP, not proof about production's fetch. (And ⛔ **your own probes are the load**: six requests to `gateway.pinata.cloud` in a few minutes preceded the 429 that turned up in the sample.)
+
+### 🚨 WORSE THAN "BLOCKED": when the blocked host IS the health check's SUBJECT, the sandbox's own failure reads as a MEASUREMENT OF THE HOST (2026-09-14)
+
+⚠ **The section above treats the proxy denial as an obstacle. It is also a source of FALSE READINGS, and that is the dangerous half.** `curl`'s exit code is discarded by the standard health-probe idiom — `curl -s -o /dev/null -w "%{http_code}"` — which prints **`000`** on a connection failure. ⛔ **`000` is not "the host is down"; it is "I never reached the host".** But it sits in the same column as `530`, `503` and `200`, so it reads as a measurement that was taken.
+
+**The live case.** Migration `20260830034312` paused eight Top Shot lanes because `public-api.nbatopshot.com` was 530/1033, and wrote its exit condition as exactly that `curl` one-liner. Nine suppressions were bounded to 2026-09-13 so somebody would re-run it. Run from this sandbox on 09-14 it returns **`000` three times** — which "confirms" the host is still dead. The real error is `curl: (56) CONNECT tunnel failed, response 403`.
+
+🚨 **AND IT IS WRONG IN BOTH DIRECTIONS, which is what makes it worse than a plain block:**
+- while the host really is down, `000` **agrees with the truth for the wrong reason** — so the method is never questioned;
+- once the host **RECOVERS**, `000` does not change, so the exit condition can never be met and the lanes stay paused **forever**, on a reading that never touched them.
+
+✅ **Two rules, and the second is the one that gets skipped:**
+1. **Take the probe from the plane production calls on** — `net.http_post` / `net.http_get` from Postgres, per the recipe above. Measured 09-14: two POSTs both returned **530, body `error code: 1033`**, matching the 08-28 signature — the host really had been dead 17 days, which the sandbox could not have established.
+2. ⭐ **RUN A POSITIVE CONTROL IN THE SAME BREATH.** `curl -s -o /dev/null -w "%{http_code}" https://api.github.com` → **200** is what separates "the proxy refuses this host" from "the network is down" from "the host is down". Three states, and the `%{http_code}` idiom collapses two of them into one number. **Use `curl -sS` (or read the exit code) so the `(56)` line is visible at all** — `-s` alone hides the one string that tells you which failure you have.
+
+⛔ **So never write a host-health EXIT CONDITION as a bare `curl` one-liner in a migration or a runbook**: it will be re-run by a session that cannot reach the host, and it will answer confidently. Write the pg_net form, and say in the same sentence why curl is not it. `20260914144523` now carries that instruction inside the suppression `reason` itself, so the next reader inherits the method and not just the verdict.
 
 ### Did a rendered card actually get its ART? A/B the payload with `web_fetch_vercel_url` (2026-09-13)
 
