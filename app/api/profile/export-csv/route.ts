@@ -90,7 +90,11 @@ export async function GET(req: NextRequest) {
             csvEscape(r.fmv),
             csvEscape(r.buy_price),
             csvEscape(r.acquisition_method),
-            csvEscape(r.is_locked ? "true" : "false"),
+            // ⛔ Three states. export_wallet_csv now returns NULL where nobody
+            // ever checked the lock (register #112) rather than COALESCEing it
+            // to false, so this cell must not flatten it back. This is a file
+            // the user downloads and keeps; a guess exported as a fact travels.
+            csvEscape(r.is_locked == null ? "unknown" : r.is_locked ? "true" : "false"),
           ].join(",")
         )
       }

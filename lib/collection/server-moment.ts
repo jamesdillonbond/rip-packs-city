@@ -36,7 +36,10 @@ export type ServerMoment = {
   acquisition_confidence: string | null
   loan_principal: number | null
   source_address: string | null
-  is_locked: boolean
+  /** null = never checked. ⛔ NOT the same as false — see register #112. */
+  is_locked: boolean | null
+  /** True only where the source recorded having checked (lock_checked_at). */
+  lock_known?: boolean
   serial_fmv?: SerialFmvData
   price_band_30d?: PriceBand30d
 }
@@ -111,7 +114,12 @@ export function serverMomentToRow(m: ServerMoment, sport?: string | null): Momen
     bestMarket: bestMarketVal,
     officialBadges: [],
     specialSerialTraits: [],
-    isLocked: m.is_locked === true,
+    // ⛔ `m.is_locked === true` collapsed null into false, which undid the
+    // tri-state /api/collection-moments now sends. A moment nobody checked
+    // must stay UNKNOWN all the way to the renderer, or the mapper quietly
+    // re-publishes the false claim the route stopped making.
+    isLocked: m.is_locked == null ? undefined : m.is_locked === true,
+    lockKnown: m.lock_known === true,
     bestAsk: lowAskVal,
     bestOffer: null,
     lastPurchasePrice: null,

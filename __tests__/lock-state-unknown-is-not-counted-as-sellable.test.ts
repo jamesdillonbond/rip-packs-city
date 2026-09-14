@@ -129,11 +129,46 @@ describe("the client DISCLOSES the unknown bucket", () => {
   })
 })
 
+// ⭐ ADDED after the first pass shipped. The filing named three surfaces; a
+// sweep for the SHAPE rather than the file then found two more, which is the
+// point: this defect is shape-based, so the population is every reader of the
+// field, not the list someone wrote down.
+const PROFILE_CSV = "app/api/profile/export-csv/route.ts"
+const MAPPER = "lib/collection/server-moment.ts"
+
+describe("the SECOND downloadable CSV does not export a guess either", () => {
+  const src = read(PROFILE_CSV)
+
+  it("⛔ no two-way ternary on a bare boolean", () => {
+    expect(src).not.toMatch(/csvEscape\(\s*r\.is_locked\s*\?\s*"true"\s*:\s*"false"\s*\)/)
+  })
+
+  it("emits unknown for a null lock", () => {
+    expect(src).toMatch(/r\.is_locked\s*==\s*null/)
+    expect(src).toMatch(/"unknown"/)
+  })
+})
+
+describe("⛔ the mapper does not collapse the tri-state back to false", () => {
+  const src = read(MAPPER)
+
+  it("serverMomentToRow keeps unknown as undefined, not false", () => {
+    // `m.is_locked === true` here silently undid the route fix one layer down:
+    // the route sends null, the mapper turned it into false, the table rendered
+    // "No". A per-route fix is not a fix if a shared mapper flattens it.
+    expect(src).not.toMatch(/isLocked:\s*m\.is_locked\s*===\s*true\s*,/)
+    expect(src).toMatch(/m\.is_locked\s*==\s*null\s*\?\s*undefined/)
+  })
+
+  it("and carries the provenance flag through to the row", () => {
+    expect(src).toMatch(/lockKnown:\s*m\.lock_known\s*===\s*true/)
+  })
+})
 describe("the guards above actually inspected their files", () => {
   // ⚠ Every assertion in this file is a source match. If a path moves, they all
   // pass vacuously against an empty string. This is the control for that.
   it("each source is non-trivial after comment stripping", () => {
-    for (const p of [ANALYTICS, EXPORT, MOMENTS, CLIENT]) {
+    for (const p of [ANALYTICS, EXPORT, MOMENTS, CLIENT, PROFILE_CSV, MAPPER]) {
       expect(read(p).length, `${p} read as empty`).toBeGreaterThan(2000)
     }
   })
