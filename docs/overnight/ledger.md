@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · CLOSE-OUT (docs-only) · the cursor falsifier RESOLVED (armed), #121 step 3 REFUTES my own cold estimate, and the durable lessons are promoted out of this thread · Claude Code cloud
+
+✅ **THE CURSOR FALSIFIER RESOLVED, AFFIRMATIVELY, AT 20:12Z.** `golazos_sales_v1_backfill` ticked at 18:34:58Z and moved **142,441,736 → 142,401,736 (−40,000)**; the observation registered `changes_observed` **1** and `ever_decreased` **TRUE**. **So this estate DOES still have a backward-walking cursor, `check_backward_cursor_rewind()` is JUSTIFIED rather than retired, and its 0 is now a MEANINGFUL zero** — it has an armed cursor in its population and no rewind has occurred. Table-wide: 18 cursors moved, 1 armed.
+
+⛔ **#121 STEP 3 IS DONE AND IT REFUTES MY OWN ESTIMATE.** A daytime-monitor tick independently found the snapshot still cancelling at io_wait 14–17; I re-ran it in a genuinely quiet window (**io_wait 2 / active 4**) and it was **still cancelled at 55 s**. **The 9.13 s I published was a FULLY-WARM reading taken right after hand-running every leg, and "cold is ~15–20 s" was a guess dressed as a bound.** The precompute did not bring the function inside its budget.
+
+📏 **THE LEG TABLE, warm-vs-warm controlled, is the durable result:** `fmv_by_collection` **32.58 s cold / 32.50 s warm** (compute-bound — now a table read) · `v_rpc_trust_health` **21.65 s / 0.00 s** · `pipeline_fails_24h` **12.13 s / 0.00 s** · security block incl. all three guards added today **0.00 s** · `get_pipeline_alerts()` **0.00 s**. ⭐ **The FMV leg was the ONLY compute-bound one; everything left is IO-bound, and a function called every few hours is ALWAYS cold — so its cold number IS its real number and every warm re-measure (mine included) is a fiction.** ⛔ **And the lever a reader would reach for is wrong: `pipeline_fails_24h` matches 84 rows of 58,789 on a 51 MB table with six existing indexes — an index buys NOTHING.**
+
+✅ **PROMOTED OUT OF THIS THREAD, because a fact left only in a session log stops being read:**
+- **CLAUDE.md** — gained the **warm-vs-warm DIAGNOSTIC** (*expensive WARM = compute-bound, precompute it; cheap warm + expensive COLD = IO-bound, no index helps*), **funded by displacing** the Vercel log-tool bullet verbatim into `tooling-gotchas.md` (its content already lived there in full). Final length **39,996 / 40,000**, guard green. ⚠ **I first "verified" it with Python `len()` and got 39,996 when node said 40,004** — code points undercount UTF-16 by one per astral-plane emoji (8 here). **The file's own header names that trap and I walked into it; node `.length` is the binding instrument.**
+- **`database.md`** — two new sections: the **warm/cold leg table + why the index is the wrong lever**, and ⛔ **two same-day migrations that both full-body-rewrite one function are ordered by FILENAME on replay** (this session's near-miss: `183500` sorted before `190000` and a replay would have silently reverted the precompute; renamed to `215000`; check is `grep -l ... | sort | tail -1` must be yours).
+- **`known-issues.md`** — #121 rewritten with step 3, the refuted estimate, and a revised exit of **(a) extend the precompute** (reuse `rpc_trust_health_precompute`, which already refreshes in 128 s) **or (b) accept a cold-cache instrument and raise its callers' budget** — explicitly **not an index**.
+- **`docs/sessions/2026-09.md`** — the session entry, leading with the five self-corrections rather than the ships.
+
+**Nothing shipped to prod state in this entry — docs only.** **Revert:** `git revert <this sha>`.
+
 ### 2026-09-14 · 📘 CLAUDE.md ABSORBS THIS THREAD'S TWO GENERAL RULES — funded by DISPLACEMENT, not by spending room the file does not have · Claude Code desktop
 
 **Docs-only. The file was at EXACTLY 40,000 of 40,000 when this started, so every character added had to come out somewhere.**
