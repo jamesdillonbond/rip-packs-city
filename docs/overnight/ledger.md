@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⭐ THE BOARD HAS BEEN SHOWING A BID PRICE WITH NO AGE — the median standing bid is 12.8 DAYS old, the p90 is 58, and we already had the timestamp · Cowork cloud
+
+**Third item out of the topshotexplorer.com teardown.** Their offer book carries an `Age` column; ours did not. ⭐ **The data was already in our DB and had never been surfaced:** `/api/topshot-offers-indexer` writes `offers.created_at = o.blockTs` — the `OfferAvailable` **block** timestamp, not the insert time. Confirmed in source AND by distribution (25,243 open rows across 15,206 distinct minutes — insert-time cannot produce that shape).
+
+📊 **WHAT THE BOARD WAS NOT SAYING.** Of 7,775 TS editions with a bid: **median standing bid 12.8 days old, p90 58.0 days, oldest 2026-06-03.** A two-month-old bid and one from this morning rendered identically.
+
+⛔ **THE VIEW WAS THE WRONG PLACE, AND I ONLY KNOW THAT BECAUSE I MEASURED THE BASELINE FIRST.**
+| | time | buffers |
+|---|---|---|
+| view today | **80 ms** | 4,357 |
+| + LATERAL per row | 11,423 ms | 48,146 |
+| + pre-aggregated hash join | 2,442 ms | 26,640 |
+
+**A 30x slowdown and 6x the IO on a PUBLIC board, against an IO-bound instance.** So the work moved OFF the read path into a precomputed column. ✅ **Re-measured after the change, AS ANON (the production caller): 59 ms / 4,358 buffers — baseline intact.**
+
+✅ **SHIPPED:**
+- `edition_offers.best_offer_at` + `sync_edition_offers_best_offer_at()` (SECDEF, `search_path` pinned, revoked from PUBLIC/anon/authenticated). First write **3,914 rows**; **second call wrote 0** — the `IS DISTINCT FROM` guard is real, not assumed.
+- The view appends `best_offer_at` LAST (42P16 forbids reordering) and **re-applies `security_invoker=on`, which `CREATE OR REPLACE VIEW` silently resets** — verified after: reloptions `{security_invoker=on}`, anon SELECT true, 14 columns.
+- `lib/market/bid-age.ts` + a **Bid age** column and a *Longest-standing bid* sort on `/insights/offer-spread`.
+- The sync runs at the end of the offers indexer — the only writer of the timestamps it reads, so it fires exactly when the answer can have changed.
+
+⭐ **THE HONESTY GATE IS THE FEATURE, NOT A CAVEAT.** An age is attached ONLY when the chain's best open offer **amount equals the displayed `highest_offer`**; otherwise the age would belong to a *different offer than the price shown*. That costs coverage — **3,914 of 7,775 (50.3%)** — and the other half renders the word **"unknown"** with hover copy saying why, never a blank cell (blank reads as "none") and never a zero (which would render as "today"). `nullsFirst: false` on the new sort is load-bearing for the same reason: **an undated bid is not an old one.**
+
+⚠ **Two null-instrument shapes headed off:** a future-dated stamp returns `null` (unageable) rather than a negative age; and the indexer logs `bid_age_rows_written` **paired with `bid_age_error`**, so a 0 can never be read as "nothing to do" when it was "the call failed".
+
+**Verified:** `npx tsc --noEmit` exit 0 · 32/32 across 4 suites (incl. both existing OfferSpread component suites, whose fixtures now exercise BOTH the aged and unageable branches) · `lint:ratchet` 715/baseline 715.
+
+**Revert:** `git revert` this commit; then re-run the view migration without the `eo.best_offer_at` line + `ALTER VIEW … SET (security_invoker = on)`; then `DROP FUNCTION public.sync_edition_offers_best_offer_at(); ALTER TABLE public.edition_offers DROP COLUMN best_offer_at;` (in that order).
+
 ### 2026-09-14 · SHIPPED · #115's own stated EXIT was the wrong place, and the measurement that says so is a paging gate · Claude Code cloud
 
 **DB migration `20260914190000_audit_20260914_the_search_path_class_gets_a_guard_but_not_in_the_paging_one`. Ships the instrument #115 asks for — somewhere it belongs.**
