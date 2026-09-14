@@ -24,6 +24,8 @@ const fullRow: Row = {
   spread_usd: 30,
   bid_meets_ask: false,
   updated_at: new Date(Date.now() - 3600_000).toISOString(),
+  // 30 days: past BID_STALE_DAYS, so the aged branch of the Bid age cell renders.
+  best_offer_at: new Date(Date.now() - 30 * 86_400_000).toISOString(),
 }
 
 const thinRow: Row = {
@@ -40,6 +42,8 @@ const thinRow: Row = {
   spread_usd: null,
   bid_meets_ask: null,
   updated_at: null,
+  // Unageable: exercises the "unknown" branch, which must never read as new.
+  best_offer_at: null,
 }
 
 beforeEach(() => {

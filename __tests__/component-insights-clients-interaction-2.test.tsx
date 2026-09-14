@@ -155,7 +155,8 @@ function offerRow(o: Partial<OfferRow>): OfferRow {
   return {
     external_id: "10:20", name: "Moment", player_name: "Player", set_name: "Set", tier: "COMMON",
     circulation_count: 1000, highest_offer: 40, low_ask: 60, offer_pct_of_ask: 66.7,
-    par_distance: 5, spread_usd: 20, bid_meets_ask: false, updated_at: FETCHED, ...o,
+    par_distance: 5, spread_usd: 20, bid_meets_ask: false, updated_at: FETCHED,
+    best_offer_at: null, ...o,
   }
 }
 const offerRows: OfferRow[] = [

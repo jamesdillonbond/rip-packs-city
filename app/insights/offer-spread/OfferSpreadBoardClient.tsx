@@ -16,6 +16,10 @@ import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
 import { ASK_STALE_HOURS, askAgeHours, askAgeTitle, askStampKind, fmtAskAge } from "@/lib/market/ask-freshness"
+import {
+  bidAgeDays, fmtBidAge, isBidStale, bidAgeTitle,
+  BID_AGE_UNKNOWN_LABEL, BID_AGE_UNKNOWN_TITLE,
+} from "@/lib/market/bid-age"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -33,6 +37,8 @@ export type Row = {
   spread_usd: number | null
   bid_meets_ask: boolean | null
   updated_at: string | null
+  /** Block ts of the OfferAvailable for the bid shown. NULL = unageable, never new. */
+  best_offer_at: string | null
 }
 
 type ApiResponse = {
@@ -41,7 +47,7 @@ type ApiResponse = {
 }
 
 type TierFilter = "ALL" | "COMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
-type SortKey = "par" | "spread" | "offer" | "ask" | "pct"
+type SortKey = "par" | "spread" | "offer" | "ask" | "pct" | "bidage"
 
 function normalizeTier(t: string | null): string | null {
   if (!t) return null
@@ -339,6 +345,7 @@ export default function OfferSpreadBoardClient({
             <option value="offer">Top bid (desc)</option>
             <option value="ask">Floor ask (desc)</option>
             <option value="pct">Bid % of floor (desc)</option>
+            <option value="bidage">Longest-standing bid</option>
           </select>
         </label>
       </section>
@@ -379,6 +386,7 @@ export default function OfferSpreadBoardClient({
                   <th className="rpc-os-th-player">Edition</th>
                   <th className="rpc-os-th-num">Tier</th>
                   <th className="rpc-os-th-num rpc-os-th-emph">Top bid</th>
+                  <th className="rpc-os-th-num">Bid age</th>
                   <th className="rpc-os-th-num">Floor ask</th>
                   <th className="rpc-os-th-num rpc-os-th-emph">Bid % of floor</th>
                   <th className="rpc-os-th-num">Spread</th>
@@ -407,6 +415,29 @@ export default function OfferSpreadBoardClient({
                       </span>
                     </td>
                     <td className="rpc-os-td-num rpc-os-td-emph">{fmtUsd(r.highest_offer)}</td>
+                    <td className="rpc-os-td-num">
+                      {(function () {
+                        const days = bidAgeDays(r.best_offer_at, nowMs)
+                        // THREE STATES, not two. A bid we cannot date must not
+                        // borrow the look of a fresh one, and an empty cell reads
+                        // as "none" — so say "unknown" and explain it on hover.
+                        if (days === null) {
+                          return (
+                            <span className="rpc-os-thin-caveat" title={BID_AGE_UNKNOWN_TITLE}>
+                              {BID_AGE_UNKNOWN_LABEL}
+                            </span>
+                          )
+                        }
+                        return (
+                          <span
+                            title={bidAgeTitle(days)}
+                            style={isBidStale(r.best_offer_at, nowMs) ? { opacity: 1 } : undefined}
+                          >
+                            {fmtBidAge(days)}
+                          </span>
+                        )
+                      })()}
+                    </td>
                     <td className="rpc-os-td-num">
                       {fmtUsd(r.low_ask)}
                       {(function () {

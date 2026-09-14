@@ -439,7 +439,31 @@ export async function POST(req: NextRequest) {
     console.log(`[${PIPELINE_NAME}] error:`, fetchError)
   }
 
+  // Refresh the age of the bid each edition DISPLAYS. This lives here rather than
+  // on its own cron because this route is the only writer of the timestamps it
+  // reads (offers.created_at = the OfferAvailable block ts), so it is exactly when
+  // the answer can have changed. It is a no-op write when nothing moved (the
+  // function guards with IS DISTINCT FROM: a second call right after the first
+  // wrote 0 rows), and it is deliberately OUTSIDE the try above — a failure here
+  // must not mark the offer walk itself failed, and must be VISIBLE rather than
+  // swallowed into a silent zero. See audit_20260914 + lib/market/bid-age.ts.
+  let bidAgeRowsWritten: number | null = null
+  let bidAgeError: string | null = null
+  try {
+    const { data, error } = await (supabaseAdmin as any).rpc("sync_edition_offers_best_offer_at")
+    if (error) throw new Error(error.message)
+    bidAgeRowsWritten = typeof data === "number" ? data : null
+  } catch (e) {
+    bidAgeError = e instanceof Error ? e.message : String(e)
+    console.log(`[${PIPELINE_NAME}] best_offer_at sync failed (non-fatal):`, bidAgeError)
+  }
+
   await logRun(startTime, offersWritten, offersWritten, fetchError === null, fetchError, cursorBefore, cursorAfter, {
+    // Paired count + error, so a 0 here cannot be read as "nothing to do" when it
+    // was actually "the call failed" — the null-instrument shape this repo keeps
+    // finding in `rows_written`.
+    bid_age_rows_written: bidAgeRowsWritten,
+    bid_age_error: bidAgeError,
     pages,
     offers_written: offersWritten,
     by_type: byType,

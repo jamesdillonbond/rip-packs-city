@@ -18,7 +18,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 
 /** Columns both consumers select. Duplicating this list was the drift risk. */
 export const OFFER_SPREAD_COLS =
-  "external_id, name, player_name, set_name, tier, circulation_count, highest_offer, low_ask, offer_pct_of_ask, par_distance, spread_usd, bid_meets_ask, updated_at"
+  "external_id, name, player_name, set_name, tier, circulation_count, highest_offer, low_ask, offer_pct_of_ask, par_distance, spread_usd, bid_meets_ask, updated_at, best_offer_at"
 
 export interface OfferSpreadBoardOptions {
   tier?: string | null
@@ -62,6 +62,10 @@ export async function fetchOfferSpreadBoard(
   else if (sort === "offer") q = q.order("highest_offer", { ascending: false })
   else if (sort === "ask") q = q.order("low_ask", { ascending: false })
   else if (sort === "pct") q = q.order("offer_pct_of_ask", { ascending: false })
+  // Oldest standing bid first. `nullsFirst: false` is load-bearing: a row we
+  // cannot age must not lead a board sorted by age — an undated bid is not an
+  // old one (see lib/market/bid-age.ts).
+  else if (sort === "bidage") q = q.order("best_offer_at", { ascending: true, nullsFirst: false })
 
   return q.limit(limit)
 }

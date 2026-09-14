@@ -23,7 +23,9 @@
 //   bid_meets_ask=true                            only rows where bid >= floor
 //   set=<text>                                    ilike match on set_name
 //   player=<text>                                 ilike match on player_name
-//   sort=par|spread|offer|ask|pct                 default par (tightest first)
+//   sort=par|spread|offer|ask|pct|bidage          default par (tightest first);
+//                                                 bidage = longest-standing bid first,
+//                                                 undated rows last (never first)
 //   limit=<1..200>                                default 50
 //
 // CACHE: 5-minute s-maxage, which protects the DB from a viral OG-share spike.
@@ -50,7 +52,7 @@ import { fetchOfferSpreadBoard } from "@/lib/insights/offer-spread-board";
 
 import { boardRowMeta } from "@/lib/insights/board-meta"
 const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
-const VALID_SORTS = new Set(["par", "spread", "offer", "ask", "pct"]);
+const VALID_SORTS = new Set(["par", "spread", "offer", "ask", "pct", "bidage"]);
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
