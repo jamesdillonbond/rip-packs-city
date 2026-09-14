@@ -315,21 +315,29 @@ describe("DashboardClient — the trophy case", () => {
 
 describe("DashboardClient — per-wallet collection stats", () => {
   it("requests stats for each unique wallet address", async () => {
+    // THREE rows, ONE address — the row count is what makes the assertion below
+    // non-vacuous, so do not reduce it (see the comment there).
     routes["/api/profile/saved-wallets"] = () =>
-      json(200, { wallets: [WALLET(), WALLET({ id: "w-2", collection_id: "dee28451-5d62-409e-a1ad-a83f763ac070" })] })
+      json(200, {
+        wallets: [
+          WALLET(),
+          WALLET({ id: "w-2", collection_id: "dee28451-5d62-409e-a1ad-a83f763ac070" }),
+          WALLET({ id: "w-3", collection_id: "06248cc4-b85f-47cd-af67-1855d14acd75" }),
+        ],
+      })
     render(<DashboardClient />)
     await waitFor(() => {
-      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
-      const calls = urls.filter((u) => u.includes("collection-stats"))
-      const refreshes = urls.filter((u) => u.includes("/api/profile/me")).length
-      // ⚠ ONE call for the address, not one per (address, collection) row —
-      // `saved_wallets` is keyed per collection, so a naive per-row fetch is N
-      // duplicate queries for the same wallet. Bounded by the refresh count for
-      // the same reason as the grouping test below (a second refresh is not a
-      // second row).
+      const calls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("collection-stats"))
       expect(calls.length).toBeGreaterThan(0)
-      expect(calls.length).toBeLessThanOrEqual(refreshes)
     })
+    const calls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("collection-stats"))
+    // ⚠ ONE call for the address, not one per (address, collection) row —
+    // `saved_wallets` is keyed per collection, so a naive per-row fetch is N
+    // duplicate queries for the same wallet. Bound by the ROW COUNT, which is
+    // what the defect scales with; see the grouping test below for why the
+    // count cannot be pinned to 1.
+    expect(new Set(calls).size).toBe(1)
+    expect(calls.length).toBeLessThan(3)
   })
 
   it("does not publish a confident $0 when a stats read fails", async () => {
@@ -567,19 +575,33 @@ describe("DashboardClient — wallets", () => {
       const addrCalls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("collection-stats"))
       expect(addrCalls.length).toBeGreaterThan(0)
     })
-    // ⚠ Assert the PROPERTY, not a snapshot of the call count (CI red 2026-09-13
-    // run 5446: "expected 2 to be less than or equal to 1" on a tree whose diff
-    // was three SQL files). The dashboard's mount effect re-runs refresh() when
-    // its callback identity changes, so a slow runner can see the stats fetch
-    // of a SECOND refresh before this line runs. The defect this test guards is
-    // one fetch PER ROW — three rows, one address, three calls — and that is a
-    // ratio: stats calls for the address may never exceed the number of
-    // refreshes (one /api/profile/me read each), however many refreshes ran.
-    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
-    const addrCalls = urls.filter((u) => u.includes("collection-stats"))
-    const refreshes = urls.filter((u) => u.includes("/api/profile/me")).length
+    // ⚠ BOUND BY THE ROW COUNT, because that is what the defect scales with.
+    // History, and it is a lesson about proxies: the original assertion was a
+    // snapshot (`<= 1`) and went red in CI on a tree whose diff was three SQL
+    // files, because the client can legitimately issue a SECOND stats fetch for
+    // the same address before this line runs. The first repair bounded the
+    // calls by the number of `/api/profile/me` reads, assuming one per refresh
+    // pass — that ALSO went red (CI run 5465, "expected 2 to be less than or
+    // equal to 1"): stats fetches do not come only from the path that reads
+    // `/api/profile/me`, so the denominator never bounded the numerator. ⛔ A
+    // control's population must be the set the property is true of, not a proxy
+    // that coincides in one run.
+    //
+    // The defect is ONE FETCH PER ROW: three rows sharing one address means a
+    // per-row client issues 3 per pass (6 across two), a correct one issues 1
+    // per pass. `< 3` separates them and tolerates a second pass.
+    //
+    // 📏 CALIBRATED 2026-09-13, so a future reader can re-derive rather than
+    // guess: tightening the bound to `< 2` passes 3/3 locally, so locally the
+    // count is always 1; CI observed 2 (run 5465). Bound 3 therefore sits one
+    // above the highest CORRECT count ever seen and at/below the lowest
+    // DEFECTIVE one. If CI ever shows 3 from a correct client, re-measure —
+    // do not simply raise the number, or the guard stops catching the defect. ⚠ All three rows carry the SAME address, so the URLs are identical
+    // and a distinct-URL count cannot catch the defect — only the call count
+    // can, which is why the row count must stay at three.
+    const addrCalls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("collection-stats"))
     expect(new Set(addrCalls).size).toBe(1) // one address, one URL
-    expect(addrCalls.length).toBeLessThanOrEqual(refreshes)
+    expect(addrCalls.length).toBeLessThan(3)
   })
 
   it("renders the sign-in banner when the collector has saved no wallets", async () => {
