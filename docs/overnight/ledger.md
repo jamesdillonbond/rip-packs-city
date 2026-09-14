@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · SHIPPED · 🚨 A FAILED RE-READ OVERWROTE A COMPLETE WHALE SNAPSHOT WITH A PARTIAL ONE — the biggest tracked wallet reads as dumping 98% of its collection on 09-13 and buying it all back on 09-14 · Claude Code cloud
+
+**DB migration `20260914180000_audit_20260914_a_failed_reread_overwrote_a_complete_whale_snapshot_with_a_partial_one`. Found by pulling the one HIGH alert nobody had attributed (`snapshot-institutional-wallets` 3/6 runs failed) instead of filing it under the chronic timeout class.**
+
+🚨 **THE ROW.** `wallet_holdings_snapshot` · `0x4d2c9216f1dca098` (NBATopShotCommunity) · `nba_top_shot` · **2026-09-13 → moment_count 1,000 / $410**, sitting between **52,120 / $16,804.81** (09-12) and **52,120 / $16,349.42** (09-14). Live `wallet_moments_cache` holds **52,120** rows for that pair. **1,000 is exactly 4 × PAGE_SIZE.**
+
+⭐ **THE CAUSE IS IN `pipeline_runs` AND IT IS EXACT, not inferred — two runs, same day:**
+- `2026-09-13 10:07:10Z` **ok=true**, `moments_snapshotted 64,093`, `pages_walked 257` → **the COMPLETE snapshot was written.**
+- `2026-09-13 12:46:32Z` **ok=false**, `wmc_load_page_4 exhausted retries: canceling statement due to statement timeout`, `wallet_hint 0x4d2c9216f1dca098` → a **second** run got pages 0–3 (1,000 rows), failed on page 4, **and wrote its partial read anyway**. The table is `UNIQUE (wallet_address, collection_id, snapshot_at)` and the function UPSERTs on that key, so **the partial overwrote the complete one.**
+
+⛔ **CLAUDE.md's WORST SUB-CLASS, VERBATIM:** *"a page that LOADS state and WRITES IT BACK — a failed read there is a DELETE."* ⚠ **And the subtle part: the failure WAS recorded.** `captureSnapshot` pushes `load: …` into its errors and the run logged `ok=false`. **Recording an error is not the same as refusing to publish one** — every instrument said "this run failed" while the row it wrote said "the whale sold 51,120 moments".
+
+✅ **BLAST RADIUS MEASURED, NOT ASSUMED — smaller than the 2026-08-16 incident this same function's header documents.** `compute_institutional_wallet_diff` inserts into `topshot_insider_buybacks` **only with a matching `sale_id`** (checked: 100% of the last 10 days' rows carry one), so the ~51,120 phantom departures and the matching phantom arrivals **could not mass-fabricate buybacks** — 09-14 inserted **0**. What was wrong is the **holdings series itself**.
+
+✅ **DELETED, NOT REPAIRED, and the reason is the rule.** The complete 10:07Z row is unrecoverable — its `moment_ids` array was overwritten. Rebuilding 09-13 from 09-14's cache would **fabricate a day's holdings from another day's data**, which is the defect, not the fix. **An absent day is how this table already represents a failed run** — 2026-09-11 has no row at all. Backed up verbatim first (`audit_20260914_whs_partial_write_backup`, 1 row).
+
+🛡 **AND THE SHAPE IS NOW REFUSED AT WRITE TIME — `trg_whs_refuse_same_day_collapse`.** Within one `snapshot_at`, an UPDATE may not cut `moment_count` by more than half when the existing row holds **≥ 100** moments. ⭐ **Enforcement on the DB side DELIBERATELY:** `snapshot-institutional-wallets` is in the **CONTENT-DRIFTED** set (#23 / R63) — its deployed build is not this repo's source — so redeploying it to fix the writer would ship an unknown diff. A trigger fixes the invariant without touching a function nobody can currently diff. **It fails LOUD** (the upsert raises, `withRetry` burns 3 attempts, a `whs_upsert_*` exhaustion row lands), which beats a write that succeeds while the series lies.
+
+✅ **POSITIVE CONTROL, all four arms, on a scratch row:** a same-day collapse on a 5,000-moment row is **REFUSED**; a same-day **increase** passes; a **different day** passes even as a collapse; and below the 100-moment floor a collapse passes **by design**. Probe deleted, **0 leftovers**. Ban at zero re-checked over the whole table: **0** V-shaped one-day collapse-and-recoveries remain above the floor.
+
+⚠ **THE FLOOR IS A REAL EXCLUSION AND IT IS NAMED, not hidden.** Four rows sit below it — the same wallet's `nfl_all_day` side-holding going **7→1→5** (08-16), **7→2→5** (08-20), **7→3→4** (08-24), **5→1→5** (07-08) on a 4–7 moment position. Those are **not** this defect (a partial page read returns a multiple of 250, or everything); they look like `wallet_moments_cache` freshness churn. **Left alone and UNEXPLAINED rather than swept into this fix.**
+
+📏 **Two more things measured on the way, neither shipped.** (1) **`TopShot_Buyback_2` (`0xe1f2a091f7bb5245`) is in the signal_source set and has ZERO rows in both `wallet_moments_cache` and `wallet_holdings_snapshot` — ever.** A whale-arrival signal for it is structurally impossible; nothing says so. (2) **The page read is heap-bound and there is a 4× win in one column.** Warm-vs-warm on page 4 of the 52k wallet: `select collection_id, moment_id, fmv_usd` → Index Scan, **931 reads / 458 ms**; drop `fmv_usd` → **Index Only Scan, 233 reads / 133 ms**. `fmv_usd` is the only column not in `wallet_moments_cache_wallet_collection_moment_key`. That multiplies on top of the already-filed OFFSET→keyset item (ledger: *"snapshot-institutional-wallets OFFSET→keyset — edge-fn/R21"*), since OFFSET paging re-walks the prefix: **~5.5M index-entry visits for a 52k-row wallet.** ⛔ Not shipped — both fixes are edge-function code on a **drifted** function.
+
+**Revert (three parts):** `INSERT INTO public.wallet_holdings_snapshot SELECT * FROM public.audit_20260914_whs_partial_write_backup;` · `DROP TRIGGER trg_whs_refuse_same_day_collapse ON public.wallet_holdings_snapshot;` · `DROP FUNCTION public.whs_refuse_same_day_collapse();`
+**Target metric:** the next same-day re-run that fails mid-walk leaves the day's row INTACT and logs a `whs_upsert_*` exhaustion row instead of overwriting it.
+
 ### 2026-09-14 · 🚨 THE SIGNATURE PATH I SHIPPED 40 MINUTES AGO WROTE A `verification_method` ITS OWN CHECK REJECTED — caught by a positive control, not by a test · Cowork cloud
 
 **Follow-up to `2e1e0ee` (wallet verification by on-chain signature), same session.**
