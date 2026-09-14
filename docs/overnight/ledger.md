@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨 `pg_stat_statements` IS NOT KEYED ON `queryid`, AND A TWO-SNAPSHOT DELTA JOINED ON IT ALONE FABRICATES A RATE — caught one step before filing · plus the client-error beacon re-read clean · Claude Code cloud
+
+**Docs-only.** Both halves are method results; neither is a defect in the platform.
+
+🚨 **THE TRAP I WALKED INTO, WHILE BUILDING THE INSTRUMENT THAT WAS MEANT TO FIX THE CUMULATIVE-VS-RATE PROBLEM.** pgss returns one row per **`(userid, dbid, queryid, toplevel)`** — the same `queryid` legitimately appears several times under different roles. **Measured: 25 duplicate `queryid`s in one 4,832-row snapshot.** Two snapshots joined on `queryid` alone is a **cross product**, and mine invented traffic that never happened: `refresh_mv_pack_ev_latest()` has two entries (`calls` 1,497 and 3), the fan-out paired B(1,497) with A(3), and the ranking reported **+1,494 calls / +17.4 M reads = 52.9 % of all reads in a 10-minute window** for a function scheduled **`3,33 * * * *`** — twice an hour — whose true delta was **0**.
+- ⭐ **The tell needed no re-query: 1,494 MV refreshes in ten minutes is not a plausible number. A cron schedule is a cheap upper bound on a call rate — check a ranking against it before believing it.**
+- ⚠ **This is the JOIN FAN-OUT class the register recorded on 09-13** (*"330 sales rows was a fan-out, not a count"*) **reproduced within a day of being written down**, by someone who had read it.
+
+🚨 **AND A SECOND TRAP IN THE SAME QUERY:** `LEFT JOIN … COALESCE(a.calls, 0)` reads *absent from snapshot A* as *zero at A*, so an entry **evicted and readmitted** between snapshots contributes its whole lifetime as window traffic. This instance evicts — `dealloc` **58**, **20 entries in B not in A**, **43 entries whose `calls` went BACKWARDS**. ⭐ **A backwards counter is the readmission tell**, and it is exactly what makes today's earlier pack-sales reading safe: a merely-quiet entry holds its value *exactly*.
+
+✅ **Recorded with the correct shape (full-key INNER join, drop backwards rows) in [database.md](../reference/database.md)**, together with two things a ranking must carry: **the window length is part of the result** (a 10-minute window cannot rank a 6-hourly job) and **your own probes land in the ranking** — one `cron.job_run_details` query of mine was the **#3 reader in its own window at 9.0 %**.
+
+✅ **SEPARATELY, THE CLIENT-ERROR BEACON (#34/#69) RE-READ CLEAN, and the re-read refuted MY hypothesis, not the estate's.** 7 days: **106 events — 104 bot, 2 user-facing, and both of those are the beacon's own deliberate self-probes** (`rpc-beacon-probe-…-throw` / `-reject`, 09-08). **So genuine user-facing client errors in 7 days: ZERO, with a positive control proving the beacon can still see a failure.**
+- ⚠ **I nearly filed the opposite.** 19 events in 24 h across 19 distinct `sid`s, all non-bot by *my* ad-hoc regex, one message (`failed to parse`) on one path (`/nba-top-shot/collection`) — which reads as a live user-facing defect. **All 19 are one crawler:** UA `Lightpanda/1.0`, one UA prefix across all 19 tabs, firing every ~68.6 minutes, zero wallets. **The #69 retraction repeating, on a UA that postdates it.**
+- ⭐ **THE ESTATE'S FILTER CAUGHT IT AND MINE DID NOT, AND THE REASON IS THE SHAPE:** the 09-09 arm classifies by **`ua NOT LIKE 'Mozilla/%'` — an allowlist of the good** — so `Lightpanda/1.0` is excluded and surfaced as `bot_hits` without anyone having heard of Lightpanda. My regex was a **denylist of known bot names** and missed it. **This repo's "prefer a ban at zero / allowlist over denylist" rule, paying out on an input its author never saw.** (`app/api/track-funnel/route.ts`'s `BOT_UA` denylist happens to list `lightpanda` — that is maintenance, not immunity.)
+
+**Revert path:** docs-only — one section in `docs/reference/database.md` plus this entry. `git revert` by message.
+
 ### 2026-09-14 · 🔴 M2 READS 30.7 ON THE PRECOMPUTE ROW AND IS **NOT MET** — one leg of nine, and taking the row at face value today books a FALSE PASS on a go-live gate · Claude Code cloud
 
 **Docs-only. The finding is that the gate's own headline row is currently sitting at the top of its oscillation.**

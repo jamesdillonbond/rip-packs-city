@@ -355,6 +355,37 @@ SELECT (SELECT count(*) FROM public.check_public_security_invariants()) AS sec_v
        jsonb_array_length(public.check_secdef_anon_execute_violations()) AS secdef;        -- 0 = clean
 ```
 
+## 🚨 `pg_stat_statements` IS NOT KEYED ON `queryid` — and two snapshots joined on it alone FABRICATE a rate (2026-09-14, caught by a sanity re-read one step before filing)
+
+Ranking pgss by `shared_blks_read` is how every saturation filing here starts, and the column is **CUMULATIVE since `stats_reset`**. The right instrument is two snapshots and a delta. **Both steps of building that delta have a trap, and I hit both in one pass.**
+
+**TRAP 1 — the key.** `pg_stat_statements` returns one row per **`(userid, dbid, queryid, toplevel)`**, so the SAME `queryid` legitimately appears several times in one snapshot under different roles. Measured live: **25 duplicate `queryid`s in a single 4,832-row snapshot.** A snapshot keyed on `queryid` alone, joined to another the same way, is a **cross product**, and it invents traffic that never happened:
+
+- `SELECT public.refresh_mv_pack_ev_latest()` appeared twice — `calls` 1,497 and 3. The fan-out paired B(1,497) with A(3) and reported **+1,494 calls and +17.4 M reads in a 10-minute window — 52.9 % of all window reads**, for a function that is scheduled **`3,33 * * * *`**, i.e. twice an hour, and whose true delta was **0**.
+- ⭐ **The tell was available without re-querying: 1,494 calls of a materialized-view refresh in 10 minutes is not a plausible number.** A cron schedule is a cheap upper bound on a call rate — check the ranking against it before believing it.
+
+**TRAP 2 — the join type.** `LEFT JOIN … COALESCE(a.calls, 0)` treats *absent from snapshot A* as *zero at snapshot A*, so an entry **evicted and readmitted** between the two snapshots contributes its whole lifetime as window traffic. This instance evicts: `pg_stat_statements_info.dealloc` was **58**, **20 entries appeared in B that were not in A**, and **43 entries had `calls` go BACKWARDS** between snapshots. ⭐ **A backwards counter is the readmission tell** — an entry that was merely quiet holds its value exactly, which is what makes the [pack-sales finding](../overnight/inbox/2026-09-14T1330Z-the-platforms-largest-io-waste-is-already-over-and-the-priority-it-set-dissolves.md) safe.
+
+**The shape that is correct:**
+
+```sql
+-- snapshot (twice, N minutes apart), keyed as pgss keys itself
+create table audit_pgss_snap (
+  snap_label text, snap_at timestamptz default now(),
+  userid oid, dbid oid, queryid bigint, toplevel boolean,
+  calls bigint, total_exec_ms double precision, shared_blks_read bigint, query_head text,
+  primary key (snap_label, userid, dbid, queryid, toplevel));
+
+-- delta: INNER join on the full key, and drop any row whose counters went backwards
+select b.shared_blks_read - a.shared_blks_read as d_reads, b.calls - a.calls as d_calls, b.query_head
+from audit_pgss_snap b
+join audit_pgss_snap a using (userid, dbid, queryid, toplevel)
+where b.snap_label = 'B' and a.snap_label = 'A' and b.calls >= a.calls
+order by d_reads desc limit 20;
+```
+
+⚠ **AND THE WINDOW LENGTH IS PART OF THE RESULT.** A 10-minute window cannot rank a 6-hourly job — it will show zero for the fleet's heaviest work and rank whatever happened to fire. ⛔ **Your own probes land in the ranking too:** one `cron.job_run_details` query of mine was the **#3 reader in its own window at 9.0 %**. **Freeze the tree, then measure** applies to the instrument as well as the subject.
+
 ## ⛔ A SIZE COMPARISON ACROSS TWO DIFFERENT SIZE FUNCTIONS IS NOT A MEASUREMENT OF GROWTH (2026-09-13, a false correction caught one step before filing)
 
 Diagnosing why `refresh_cross_collection_cohort_step2()` timed out, I read `pg_total_relation_size('wallet_moments_cache')` = **2,507 MB** against the function's own code comment, which had justified its plan fix against a **"927 MB table"**. That reads as **2.7x growth in three weeks** — and I was one step from filing *"the table grew, the median has left 25 s, bound the aggregate now"*, **a correction that would have overturned a correct conclusion and sent the next session rewriting a working query.**
