@@ -66,3 +66,46 @@ SELECT count(*) FILTER (WHERE NOT complete AND total_count > 200)  AS too_big,
 ## Method note worth keeping
 
 The first probe returned a clean **zero** — because it filtered `product = 'topshot'` when the live vocabulary in this table is **`nba`** / `nfl`. Published as-is, that zero would have "proven" the feed never re-observes, which is the **opposite** of the truth. Discriminated before use. Every count here is `product = 'nba'`.
+
+---
+
+## ⛔ CORRECTION — 2026-09-13 ~9:1x PM PT, by the filing's own author, from the instrument this filing shipped
+
+**Two numbers and one FIX SHAPE above are wrong. The finding stands; the remedy as written does not. Read this before acting on anything above.**
+
+### 1. ⛔ "Paginate past 200 … costs `ceil(N/200)` calls" IS NOT IMPLEMENTABLE — `totalCount` is a sentinel, not a count
+
+Once `total_count` populated, **every single instrumented row above 200 read EXACTLY 201** (59 of them), while conclusive values scatter normally (161, 152, 151, 145, 131, 124, 121, 120, 112, 80, 69, 68, 66, 60, 59 …). Read straight from the stored response body:
+
+```json
+{"limit":"200","offset":"0","hasMore":true,"totalCount":"201"}
+```
+
+with exactly 200 transactions returned. **`totalCount` is `limit + 1`** — a "there is at least one more" flag. ⭐ A value that is exactly constant across 59 rows is a **sentinel, not a measurement** (the same perfect-correlation tell as #112). So **N is unknown and `ceil(N/200)` cannot be computed.** Any plan above that prices pagination by page count is unpriceable as written.
+
+### 2. ⭐ The API already returns the right signal, and the settle never reads it: `hasMore`
+
+`offset` is echoed back in the response, so it IS honoured. **The correct shape is: page while `hasMore` is true, then close** — not "compute the page count".
+
+**Equivalence proven over the whole observed population before proposing the swap:** `totalCount = 201` ⟺ `hasMore = true` ⟺ exactly 200 rows returned (**173 requests**), and every `totalCount < 201` ⟺ `hasMore = false` with `tx_returned` equal to the count, **every row, no exceptions**.
+
+🚨 **This also exposes a LATENT FABRICATION PATH that is worth fixing on its own merits, independently of pagination.** `v_complete := v_total IS NOT NULL AND v_total <= 200` hardcodes a `200` that actually lives in a **different function** (`atlas_edition_verify_dispatch`'s request body). Drop that request's `limit` to 100 and the sentinel becomes 101 — `101 <= 200` reads **TRUE on a partial fetch**, and the settle would mark **live listings `completed`**. `NOT hasMore` is immune and is identical today. ⛔ Whoever implements pagination must switch the completeness test to `hasMore` **first**, because paging is exactly the change that invites touching `limit`.
+
+### 3. ⛔ "9,329 re-probed every day, forever" was a STOCK quoted as a FLOW — it overstates by ~8×
+
+9,329 is the **backlog** of editions currently sitting `complete=false`. The dispatcher is throughput-limited (4 per tick), so the measured reality is:
+
+- **1,344 edition probes in 24 h** (1,339 distinct editions, 1,332 returning 200) — from `topshot_atlas_market_requests`
+- **1,327 verifications in 24 h** — from `topshot_atlas_edition_verified`, a second independent instrument agreeing
+- **85.7 % inconclusive → ~1,150 wasted external calls/day, NOT 9,329**
+- full cycle over the 11,541 stale-bearing editions ≈ **8.6 days, not 24 hours**
+
+⚠ `verified_at < now() - interval '24 hours'` makes an edition **ELIGIBLE** daily; it does not make it **PROBED** daily. **Eligibility is not throughput, and a delta between two stocks is neither a rate nor a sign.**
+
+### What this does to the cost case
+
+It gets **better**, not worse: the waste being fixed is ~1,150 calls/day rather than 9,329, and the fix no longer needs an unknown page count — it needs a `while hasMore` loop plus the `hasMore` completeness test. ⏳ Still NOT shipped, and the external-load decision is still Trevor's.
+
+### Method note
+
+The instrument shipped by this very filing is what refuted it, within an hour, on its own stated exit condition. **The 74.1 % headline survived** — the independent reading came back **73.3 %** instrumented and **85.7 %** over the last 24 h.
