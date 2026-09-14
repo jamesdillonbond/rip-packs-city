@@ -10,6 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 🚨 `main` WAS RED FROM `43ebc370b` AND ITS OWN NEW CHECK INHERITED IT — both failures are the guards working, so both were CLASSIFIED/FIXED rather than loosened · Claude Code cloud
+
+**Found the way the new check intends:** my code push (#5490) ran the full suite and inherited someone else's red. CI #5488 (`feat(ci): a check that did not run is indistinguishable from one that passed`, a CODE push) is where it starts; #5489 (docs) and #5490 (mine) carry it.
+
+📏 **Failure 1 — `ci-docs-only-filter-is-fail-safe`.** The new `inherited-status` job gates on `code == 'false'`, and that guard's population rule is *every job not explicitly classified is a CODE job, and a code job must gate on `'true'`*. ⭐ **That default is the whole design — a NEW job is never silently exempt — so the fix is to CLASSIFY the job, not to relax the assertion.** `inherited-status` genuinely IS docs-only: a docs-only push is the case it exists for. Added to `DOCS_ONLY_JOBS` with the reason written where the next reader meets it.
+
+📏 **Failure 2 — `scripts-main-module-guard-works-on-windows`.** `scripts/check-last-code-ci-on-main.mjs` ended with the string-concatenated file-URL compare this repo **bans at zero**. 🚨 **The consequence is specific to THIS script and is worse than usual: on Windows `main()` never runs, the process exits 0 and prints nothing — so the inherited-status check would report nothing while still rendering a green job.** A check that cannot run is the exact defect the commit was written to fix. Switched to `pathToFileURL`.
+- ⚠ **AND MY FIRST FIX REDDENED THE SAME GUARD AGAIN**, which is worth recording: the explanatory comment I added **spelled the banned form out verbatim**, and the guard greps RAW source. That is this repo's own recorded trap (a check reading its own explanation as evidence — the `og/fast-break` case, the analytics guard, the OG copy sweep). The comment now DESCRIBES the banned shape instead of quoting it, and says why.
+- ⭐ **Positive control, not a shape argument:** the script still runs as main — `⚠ verdict=unknown — GITHUB_REPOSITORY/GITHUB_TOKEN not set` at exit 0 (fail-open, loudly). That is the property the edit could have broken.
+
+⚠ **AND THE PROCESS LESSON I PAID FOR HERE: I ran the full suite BEFORE rebasing onto this commit and did not re-run after.** `focus.md` already records the rebase half of this ("after a rebase that touches a file two sessions edited, run the type-checker before assuming a clean merge is correct"). The generalisation: **a green suite is a statement about the tree you ran it on.** A rebase that pulls in another session's commits invalidates it even when nothing you touched changed — my diff and theirs never overlapped, and their commit was red.
+
+**Verified:** `tsc` 0 · the 3 directly-affected guards 26/26 · the 12 ci/script/workflow suites 105/105.
+**Revert path:** `git revert` by message — one line in a guard's classification list, one `import` and one condition in a script, both inert to product behaviour.
+
 ### 2026-09-13 · ✅ SHIPPED (3) — a PERMANENTLY-RED concierge probe made able to pass on correct behaviour · 24 dead eslint suppressions removed · `search_path` pinned on the last 4 unpinned routines in `public` · Claude Code cloud
 
 **1 · The Pinnacle Goofy concierge probe was red on EVERY run and the surface was right every time.** `app/api/smoke-test/route.ts`: `fakeDiscount` was `mentionsGoofy && /\d{2,3}\s*%\s*(?:below|off|under)/` — it fired on ANY two-or-three-digit percentage-under phrasing, and **quoting ask-vs-FMV as a percentage IS the deal-finding product**, so the check contradicted the surface it guarded. Failed 02:24, 09:10 and 18:32 PT on 09-13, always `fake discount on goofy`. Filed read-only by Cowork ([2026-09-14T0135Z](inbox/2026-09-14T0135Z-the-goofy-concierge-probe-is-permanently-red-on-correct-behaviour.md)), which verified the answer row-by-row against `pinnacle_catalog` and deliberately left the decision to whoever owns the output contract.
