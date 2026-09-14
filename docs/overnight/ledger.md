@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⏳ #113 PRODUCTION CHECK — the fix is LIVE and the fleet is clean, but the fleet's change point is 3 PM, FOUR HOURS BEFORE the fix, so it proves no regression and NOT the gain; two honest post-fix instruments armed instead of pooling · Claude Code cloud
+
+- **8:10 PM PT read.** Live `backfill_wmc_metadata_from_editions` re-verified as migration `20260914015500`'s body (holds both `EXECUTE $q$` and `USING p_wallet_address, p_collection_id`; md5 `b26268c3…`). `pg_stat_activity`: one active backend DB-wide, one IO waiter, zero calls to this function — no burst in flight.
+- ⚠ **The tempting evidence is the wrong evidence.** Cron fleet avg tick 3.6 s (6 PM) → 2.5 s (7 PM) → 2.1 s (8 PM) looks like a win, but it fell from 53.1 s/56 failures at 11 AM to 3.1 s/0 failures at **3 PM** — #111's index work. The fix landed at 6:5x PM into an already-healthy fleet. Recorded as a no-regression control.
+- **PRODUCTION STATE MUTATED (small, deliberate):** `pg_stat_statements_reset(0, 0, <queryid>, minmax_only => true)` on the one PostgREST entry for this function, at **8:11:14 PM PT**. This zeroes `max_exec_time`/`min_exec_time` and restamps `minmax_stats_since` while **leaving `calls` and `total_exec_time` intact** — so the max becomes a purely post-fix reading and the lifetime figure still survives for the record.
+- **Snapshot to delta against (same instant):** `calls` 42,012 · `total_exec_time` 399,960,131 ms · `shared_blks_read` 55,469,268 · `shared_blks_hit` 78,113,602.
+- **Retired lifetime figure, written down so nobody re-quotes it as evidence:** 42,012 calls, 9,520 ms mean, **max 119,963 ms — which is the 120 s `statement_timeout`, so this function has been dying on the cap** — over a window opening 2026-08-11 9:26 PM PT that spans 33 days and the change point both.
+- **Exit condition:** after ≥ 50 post-8:11 PM calls, post-fix mean = Δ`total_exec_time`/Δ`calls`, worst case = `max_exec_time`. Still whole seconds ⇒ the fix did not take, and #113 must say so.
+- **Revert path:** docs-only (`known-issues.md` #113 addendum) — `git revert` by message. The stats reset is not revertible and does not need to be: it destroyed only this one entry's min/max, which is re-derived continuously by Postgres.
+
 ### 2026-09-13 · 🚨 THE ATLAS LANE'S ROOT CAUSE, FULLY QUANTIFIED — a verify queue **27× underwater**: it clears 2 listings per tick against a backlog of **303,463** growing **~38,000/day**. NOT shipped: the obvious lever is an external-API and pg_net cost, and it needs a decision · Claude Code cloud
 
 **Refines tonight's earlier entry, which blamed the 2.2 M-row event table.** That was half right. The tick's own wanted-set query is **already scoped** (`AND ev.last_seen_at > now() - interval '24 hours'`), so the 2.2 M table is not what it scans. **What it scans is the OPEN population**, and that is the half the prune never touches (`prune_topshot_atlas_market_events` deletes only `completed` rows).
