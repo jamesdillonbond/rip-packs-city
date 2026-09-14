@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⛔ #118 CLOSED, AND IT INVERTS ITS OWN REMEDY — the empty +EV board is PROTECTING users, and the one-line fix I had scoped would have published a buy signal priced 18 days ago · Claude Code cloud
+
+**Docs-only. Traces the flagship +EV board's 17-day emptiness to root cause, and withdraws the fix I was about to ship.**
+
+⭐ **ROOT CAUSE:** `supabase/functions/compute-topshot-pack-ev/index.ts` writes **BOTH `pack_ev_history` AND `pack_ask_state`**. It is the GQL-path writer and one of the **nine pipelines paused 2026-08-30** because `public-api.nbatopshot.com` died on 08-28 (`20260830034312`; suppression re-bound to 10-05 this morning by `20260914144523`). **So for `pool_source='gql'` packs the ask and the EV snapshot froze together** — which is why `pack_distributions` (a different lane) keeps refreshing them daily while their price does not.
+
+📏 **`pack_ask_state.last_checked_at` for all three is 2026-08-27 02:58Z — 18.5 days stale — while `is_listed` still reads TRUE and `lowest_ask` still reads $388 / $774 / $19.88.** Fleet-wide only **70 of 2,042** Top Shot ask rows were checked in 48 h (**3.4 %**). ⛔ **That is the real defect and it is this repo's flagship class: a stale flag rendering as a current fact** — `is_listed = true` beside an 18.5-day-old `last_checked_at` is the `*_checked_at` shape #112 already names.
+
+🚨 **AND IT IS EXACTLY WHY THE BOARD MUST STAY EMPTY.** The 48 h freshness gate is the only thing standing between users and a **+EV buy signal computed against an 18.5-day-old ask**. Both packs compute cleanly right now (`461` ok / 40 editions / 100 % coverage / EV $383.11 · `474` ok / 39 / 100 % / EV $1,278.86), **so anything that lets them through publishes precisely that.**
+
+⛔⛔ **THE FIX I HAD SCOPED IS WITHDRAWN.** I had found `backfill_topshot_historical_pack_ev` running an **unordered `LIMIT 200` over 480 candidates** — a real instance of CLAUDE.md's *"an unordered LIMIT is physical order, not a sample"*, with **473 of 480 clearing the `sec_ask` INSERT gate**, so the limit genuinely binds. I was about to ship a one-line `ORDER BY` to make the queue fair. ⭐ **Reading the function's INSERT gate and then `pack_ask_state` is what turned that "improvement" into a user-facing false-price risk.** **The starvation is MASKING a worse defect, not causing this one.**
+
+⭐ **THE DURABLE LESSON, and it is new here: a queue that starves is not automatically a queue that should be unblocked — ask what the starved rows would PUBLISH.** Fairness is a property of the queue; correctness is a property of what comes out of it. Three times today the same discipline paid, and this was the one with a user-facing cost attached.
+
+👉 **ONLY CORRECT EXIT IS UPSTREAM:** restore ask coverage for `pool_source='gql'` packs — port the ask/EV refresh off the dead host (the 09-07 migrations already move pack-pull hydration onto pg_net Flow REST, so the pattern exists) — or accept the gap and say so. ⛔ Do **not** widen the 48 h gate; do **not** order the backfill lane; do **not** add an availability predicate (availability is measured and present). ⭐ Separately, `7812` is **permanently** excluded from the backfill lane by `count(DISTINCT drop_weight) > 1` (it has exactly 1), so even a restored ask lane would not return it.
+
+No revert needed — docs only; nothing was shipped, which is the point.
+
 ### 2026-09-14 · ⛔ THE DOCUMENTED REPAIR FOR A RED BUNDLE-PARITY GUARD CANNOT RUN ON THE ONLY PUSH-CAPABLE BOX — `unzip` is present so the guard REDS, `zip` is absent so the fix REFUSES · Claude Code desktop
 
 **Docs-only. Found by walking into it: I edited `rpc-artifact-ops/SKILL.md` to carry #114's remediation, and could not repack.**
