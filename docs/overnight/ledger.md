@@ -14,6 +14,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Docs-only. Found while re-deriving #100's "27 % of hourly" before citing it — the claim is confirmed, and it is not a sentinel problem.**
 
+⛔ **AN UPDATE, NOT A DISCOVERY, AND SAYING SO FIRST IS THE POINT.** `scheduler-liveness.yml`'s header **already recorded this ceiling on 2026-08-29** — *"observed … is approximately `min(expected, 5)`"*, *"⛔ SO ANY CRON ABOVE ~5/DAY HERE IS FICTION, and raising a cadence buys nothing"*. **I re-measured it, which that header explicitly asks for** (*"a point estimate — re-derive from this check's own output before quoting it"*). What is new: a far better estimate, its open discriminator ANSWERED, an instance that postdates it, and a second defect it does not name.
+
 📏 **FIVE WORKFLOWS, A 24× RANGE OF REQUESTED CADENCE, ACTUAL `schedule`-EVENT STARTS:**
 
 | workflow | cron | asked/h | **delivered/h** | % | median gap |
@@ -26,7 +28,7 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⭐⭐ **THE DELIVERED COLUMN IS FLAT AT 0.257–0.312/h ACROSS THE WHOLE RANGE — about ONE TICK EVERY 3.3 HOURS — while the only workflow asking for LESS than that ceiling is delivered at 95.7 %.** ⛔ **So the percentage column is not five problems: it is ONE ceiling divided by what each workflow asked for.** Control in both directions, which is what makes it a ceiling rather than a coincidence.
 
-⭐ **PER-WORKFLOW, NOT A SHARED REPO BUDGET — established from the same data rather than assumed:** the four ≥1/h workflows deliver **~1.17/h between them**, which a single ~0.3/h repo-wide cap could not produce.
+✅ **THE 08-29 HEADER'S OWN OPEN DISCRIMINATOR, ANSWERED — AND WITHOUT THE EXPERIMENT IT PROPOSED.** It asks to *"disable a few high-frequency workflows and see whether the others' counts RISE (budget) or hold (per-workflow cap)"*. **Nothing needs disabling:** the four ≥1/h workflows deliver **~1.17/h between them**, which a single ~0.3/h repo-wide budget cannot supply — **PER WORKFLOW.** ⭐ **And the header's own 08-29 cross-section had already settled it** (*"Eight workflows … all received 4-6 (mean 5.0)"* ≈ 40/day in total). **The answer was inside the evidence that raised the question, and it sat unnoticed for sixteen days.** ⭐ **The cap is refined too: ~5/day was one 24 h window at n=17; this is 0.257–0.312/h ≈ 6.2–7.5/day over 73–388 h.**
 
 🚨 **THE WORST INSTANCE IS NOT THE SENTINEL.** `site-availability-alarm.yml` — the alarm that exists to notice the site is DOWN, **created 2026-09-10 21:38 PT, hours after the Vercel spend-cap pause took the site down for ~10 h (#76)** — fires **23 times in 73.8 h**, with blind windows of **5.58 · 5.12 · 4.99 · 4.61 · 4.46 h**. **An outage shorter than ~3 hours will usually end before this alarm looks at all.**
 

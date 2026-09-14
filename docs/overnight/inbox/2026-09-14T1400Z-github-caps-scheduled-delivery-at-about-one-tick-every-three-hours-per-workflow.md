@@ -1,7 +1,18 @@
 # GitHub delivers this repo's scheduled workflows at a CEILING of ~0.3 ticks/hour each — so a tighter cron buys NOTHING, and the site-down alarm runs at 7.8 % of its schedule
 
 **Filed 2026-09-14 ~7:0x AM PT (14:0xZ), Claude Code cloud. READ-ONLY — nothing shipped.**
-Found while re-deriving **#100**'s "27 % of hourly" claim before citing it. The claim is confirmed — and it is not a sentinel problem. It is a **ceiling that applies to every scheduled workflow in this repo**, and two of the alarms sitting under it were created in direct response to a 10-hour outage.
+Found while re-deriving **#100**'s "27 % of hourly" claim before citing it. The claim is confirmed — and it is not a sentinel problem.
+
+## 0 · ⛔ THIS IS AN UPDATE, NOT A DISCOVERY — and checking first is the only reason it is
+
+**`.github/workflows/scheduler-liveness.yml`'s own header already records the ceiling, from 2026-08-29**: *"observed is not a constant FRACTION of expected, it is approximately `min(expected, 5)`"*, and *"⛔ SO ANY CRON ABOVE ~5/DAY HERE IS FICTION, and raising a cadence buys nothing"*. **I did not find that; I re-measured it.** Everything below is either a refinement of that estimate, an instance that postdates it, or a question it explicitly left open. **Read that header first — it also explains why the liveness check is daily (an hourly one would be shed by the thing it watches) and why it deliberately does NOT fail on the shedding.**
+
+**What is actually new here, stated so the overlap is not passed off as news:**
+1. **A far better estimate of the cap.** The header's `~5/day` is a point estimate from **one 24 h window, n = 17**, and says *"re-derive from this check's own output before quoting it"*. This is that re-derivation, over **73–388 h per workflow**: **0.257–0.312 ticks/hour, i.e. ~6.2–7.5/day**, not ~5.
+2. ✅ **THE HEADER'S OWN OPEN DISCRIMINATOR, ANSWERED — and without the experiment it proposed.** It asks: *"Discriminator between a per-WORKFLOW cap and a per-REPO budget, which this window cannot separate: disable a few high-frequency workflows and see whether the others' counts RISE (budget) or hold (per-workflow cap)."* **No workflow needs disabling: the four ≥1/h workflows below each receive ~0.3/h and therefore ~1.17/h between them, which a single shared ~0.3/h budget cannot produce. It is PER WORKFLOW.** ⭐ **And the header's own 08-29 cross-section already settled it** — *"Eight workflows … all received 4-6 (mean 5.0)"* is 8 × 5 ≈ 40/day in total, which no single ~5/day repo budget could supply. **The answer was in the evidence that raised the question.**
+3. **An instance that postdates the header:** `site-availability-alarm.yml` did not exist on 08-29 — it was created 2026-09-10, in response to the ~10 h outage — and it is the worst-affected workflow in the estate.
+4. **A second defect the header does not name:** both 4/h alarms report 100 % `success`, so their badges are green while ~92 % of their ticks never happen.
+
 
 ## 1 · The measurement, with a control in both directions
 
