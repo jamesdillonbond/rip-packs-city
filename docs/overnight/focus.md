@@ -4,6 +4,34 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-14 ~09:1x AM PT (Claude Code cloud; six ships, and the ONE thing on this list that is now wrong)
+
+⚠ **THE 09-13 STEER BELOW LISTS #101 AND #102 AS "NEEDING A DECISION THAT IS NOT MINE". BOTH HAVE MOVED — do not re-derive them.**
+
+### ✅ SHIPPED TODAY (all DB-side; every one has a revert path in the ledger)
+
+| what | state | where |
+|---|---|---|
+| **#102(b) — three false "parked at the spork floor" suppressions** | **DONE.** Reasons rewritten to the measured state; `golazos_sales_v1_backfill` **bounded 2026-10-15** instead of permanent. Five clean controls. | `20260914153000` |
+| **`check_suppression_parked_claim_drift()`** | ban at zero, tree walk, **reads 0**. Anchored to each row's **first 200 chars** — an unanchored regex read one row's floor out of a *quotation* and flagged another row's *prose about a different lane*. | same |
+| **`check_backward_cursor_rewind()` + `event_cursor_watermarks`** | self-registering (a cursor observed to DESCEND is backward; for those an INCREASE is a rewind). pg_cron `rpc-observe-cursor-watermarks` **`12 */2 * * *`**. Positive control passed. | `20260914160000` |
+| **both guards wired into `rpc_ops_snapshot()`** | 11 → **13 keys**; a guard nothing calls is a comment that compiles. | `20260914163000` |
+| **#101(c) — the backlog is a SERIES** | pg_cron `rpc-record-misattrib-backlog` **`15 0 * * *`**, stores a **SET DIFF**, not a count. **Records only — #101's "accept the backlog" decision is untouched.** | `20260914170000` |
+| **🚨 a partial snapshot overwrote a complete one** (#119) | corrupt row deleted (backed up), `trg_whs_refuse_same_day_collapse` installed **BEFORE INSERT OR UPDATE**. | `20260914180000` + `20260914183000` |
+
+### 👉 WHAT TO PICK UP, IN THE ORDER THAT COSTS LEAST
+
+1. **VERIFY MY TWO NEW INSTRUMENTS BEFORE TRUSTING THEM — both have a stated falsifier.** (a) `select count(*) filter (where ever_decreased) from event_cursor_watermarks` **must rise above 0** once a backward lane ticks (Golazos descends 40,000 blocks every 3 h, so within ~4 h of 2026-09-14 16:00Z). **If it stays 0, the observer runs and the estate has no backward walker left — retire the instrument rather than leave it permanently green.** (b) the **2026-09-14** row in `topshot_misattrib_backlog_history` must carry a **non-NULL** `entered_open`/`left_open` after 00:15Z. **NULL there means the diff is not wired.**
+2. **#119's three owed items** — all need a session that can **diff the deployed edge function** (`snapshot-institutional-wallets` is CONTENT-DRIFTED, #23/R63, so a redeploy ships an unknown diff). The biggest is a **4× IO win in one column**: dropping `fmv_usd` from the paged `wallet_moments_cache` select flips Index Scan → **Index Only Scan** (931 reads/458 ms → **233/133**, warm-vs-warm), and it MULTIPLIES with the already-filed OFFSET→keyset item.
+3. **#102(a) is UNBLOCKED but still open** — this item said not to flip `is_active` before (b) was decided; (b) is decided. Restoring a caller for `allday-pack-opens-backfill` is now a clean product call on a **sunset** collection. ⚠ Establish **why it stopped on 09-04** and re-check the pg_net head-of-line blocking that killed jobid 55 first.
+4. **Q-SCB still wants a genuinely calm 02:00–06:00Z window** — unchanged, untouched today.
+
+### ⛔ DO NOT RE-FILE THESE
+
+- **`snapshot-institutional-wallets` failing 3/6** is the chronic timeout class (M11/#42/#73/#84) with a **denominator of 6**, not a new lane defect. What was new is what the timeouts did to the DATA.
+- **`TopShot_Buyback_2` having no holdings snapshots** does NOT mean its buyback signal is lost — `topshot_insider_buybacks` holds **2,542 rows** for it through 09-11 from a sales-keyed path. I filed the overstated version and withdrew it 20 minutes later; the narrow survivors are in #119.
+- **The 18,959 misattrib candidate denominator** — stale. Live is **18,254** (MV refreshed 09-13 23:35Z). The open count 1,364 is correct.
+
 ## STEER — added 2026-09-13 ~05:1x PT (overnight autonomous pass; what shipped, what is VERIFIED, and the three things that need Trevor)
 
 ⚠ **Supersedes my three earlier 09-13 steers in this file.** They are kept below only because a concurrent session may cite them; this block is the current state.
