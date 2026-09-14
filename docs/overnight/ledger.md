@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ✅ TWO VERIFICATIONS LAND: #113's plan fix is CONFIRMED (mean 6.7×, and it has STOPPED DYING on the 120 s cap), and #111's nightly big-wallet lane works with its control in the same table · Claude Code cloud
+
+- ✅ **#113 part (a) — VERDICT, on 187 post-fix calls (above the 50-call guard).** Delta against the 8:11:14 PM PT snapshot: **mean 9,520 → 1,417.2 ms (6.7×)**; **max 119,963 → 25,193 ms**. ⭐ The pre-fix max WAS the 120 s `statement_timeout` — the post-fix max is 25 s, so **the function has stopped dying on the cap**, which was the damaging behaviour. `min` 1.5 ms matches the probe's floor.
+- ⚠ **Stated rather than smoothed: it is NOT the probe's 4 ms.** Production mean is 1.4 s with a 25 s tail. The probe measured ONE parameter pair; production calls vary in rows touched, so the probe was a floor and never a forecast.
+- ⛔ **`blks/call` 3,179 → 7,606 is NOT a regression — the comparison is invalid.** 3,179 is a 33-day POOLED LIFETIME average over a different workload mix; 7,606 is a 187-call sample taken during backfill waves. Pooled-vs-sample is the exact trap this entry exists to avoid. A clean blocks comparison needs a re-armed post-fix baseline over a matched window.
+- ✅ **#111 nightly big-wallet lane VERIFIED.** jobid 497 ran **03:51:00 AM PT, succeeded, 7.5 s** — the quiet-hour assumption held. `pipeline_runs`: `max_moments` 100000, **`wallets_skipped_big` 0**, 3 of 3 wallets done, **`oldest_big_cache_h` NULL**.
+- ⭐ **Its positive control needed no setup — it was already in the table:** the hourly runs at 02:44 and 03:44 read `wallets_skipped_big` 2 with `oldest_big_cache_h` climbing **8.9 → 9.9 h**, then the 03:51 big lane drove it to **null**. Skip → accumulate → clear, observed end-to-end.
+- **Outcome checked, not self-report:** both whales fresh at 0.08 h — `0xf77bf547fccf6656` (39,955 moments) 03:51:00, `0x8bc1c0249e2ebb3e` (28,526) 03:51:05. **The hourly gate was NOT raised**, as the plan required.
+- **Revert path:** docs-only (`known-issues.md` #113 + #111 addenda) — `git revert` by message. No code or DB change.
+
 ### 2026-09-13 · 🚨 I BROKE A PRODUCTION LANE WITH THE `search_path` PIN AND ITS NEXT TICK CAUGHT IT — the PROCEDURE half is REVERTED after 20 minutes; the FUNCTION half stands · Claude Code cloud
 
 **Correcting my own entry two below this one, which reported `proconfig IS NULL` reaching 0. It reached 0 and should not have.**
