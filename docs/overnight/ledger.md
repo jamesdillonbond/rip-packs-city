@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 🚨 `main` HAS BEEN RED SINCE `3840baf` AND THREE CONSECUTIVE PUSHES REPORTED GREEN — the docs-only CI fast path skips `unit-tests-shard` entirely · Cowork cloud
+
+**Found because my own push was the first CODE push after it**, so CI #5480 ran the full suite and inherited someone else's red.
+
+🚨 **THE MASKING MECHANISM.** `.github/workflows/ci.yml` gates `unit-tests-shard` on `needs.changes.outputs.code == 'true'`. That is a sound optimisation — but it means a red introduced by a code push is INVISIBLE to every docs-only push that follows, and each of those renders a green check.
+
+| run | commit | what it ran | verdict |
+|---|---|---|---|
+| **#5476** | `3840baf` (code) | full suite, 6m 01s | 🔴 **FAILED — and this is where the red starts** |
+| #5477 | `8940f14` (docs) | 1m 21s, no shards | ✅ green |
+| #5478 | `e6a5047` (docs) | 1m 26s, no shards | ✅ green |
+| #5479 | `c3678d3` (docs) | 1m 41s, no shards | ✅ green |
+| **#5480** | `eada52c` (mine, code) | full suite, 5m 54s | 🔴 same failure, inherited |
+
+⛔ **Three greens in a row after a red, and none of them is wrong** — each ran what it was asked to run. **A green check on a docs-only push is not a statement about `main`.** Treat the last CODE push as the only run that says anything, and that is what the next session needs to know.
+
+📏 **THE FAILURE, unchanged across both runs:** `migration-new-function-states-its-anon-exec-decision` — `20260914032500_…record_total_count….sql → public.atlas_edition_verify_settle`. 1 failed / 8,762 passed, shard 2/2.
+
+✅ **FIXED, and the fix is a COMMENT, deliberately.** Measured on the live DB before touching anything: `has_function_privilege` for `atlas_edition_verify_settle` reads **anon=false, authenticated=false, PUBLIC=false**. The function pre-existed and this migration is a `CREATE OR REPLACE`, which does **not** reset a function ACL — so **a `REVOKE` here would be a no-op that READS AS HARDENING**, which is the wrong statement to leave in the record. Used the house `-- anon-exec: unchanged — … ALREADY revoked in prod` form (precedent: `20260822205500`, `20260822211000`), with the three measured privilege reads written into the file. **Proven non-vacuous:** stashing the marker reds the guard with the exact CI offender string; restoring it greens.
+
+⚠ **Comment-only edit to an ALREADY-APPLIED migration**, stated plainly rather than done quietly: no SQL changed, `check-migration-parity.mjs` matches on migration NAME not content, and per this guard's own header an applied migration is history — editing it cannot change production.
+
+Revert: `git revert <sha>` (one comment block in one migration + this entry).
+
 ### 2026-09-13 · ✅ SHIPPED (artifacts + skill + guard) — EVERY Cowork dashboard rendered a FAILED read as an EMPTY result set: `extractRows` never threw, so the honest `catch` branch every artifact already had had NEVER FIRED · Cowork cloud
 
 **Found while closing the other session's two open artifact items.** Not hypothetical, and not a shape argument — measured against the live server.

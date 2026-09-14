@@ -32,6 +32,20 @@ ALTER TABLE public.topshot_atlas_edition_verified
 COMMENT ON COLUMN public.topshot_atlas_edition_verified.total_count IS
   'pagination.totalCount from the edition verify probe. > 200 means the snapshot was incomplete, so the settle could not close anything for this edition. NULL means no usable response. Written by atlas_edition_verify_settle; recorded 2026-09-13 to make the lane''s wasted-call rate measurable.';
 
+-- anon-exec: unchanged — atlas_edition_verify_settle is ALREADY revoked in prod, and this is
+-- a CREATE OR REPLACE of a pre-existing function, which does NOT reset a function ACL.
+-- Verified on the live DB 2026-09-13 (PT), immediately before adding this line:
+--   has_function_privilege('anon', …)          = false
+--   has_function_privilege('authenticated', …) = false
+--   has_function_privilege('public', …)        = false
+-- So a REVOKE here would be a no-op that READS AS HARDENING — the wrong statement to
+-- leave in the record. Same shape as 20260822205500 / 20260822211000.
+--
+-- ⚠ COMMENT-ONLY, ADDED RETROACTIVELY 2026-09-13 after this file's own commit (3840baf)
+-- took `main` red on `migration-new-function-states-its-anon-exec-decision` (CI #5476),
+-- and THREE consecutive docs-only pushes then reported green without re-running it —
+-- `unit-tests-shard` is gated on `needs.changes.outputs.code == 'true'`. No SQL changed;
+-- parity matches on migration NAME, and an applied migration's file cannot alter prod.
 -- Live body re-read immediately before this replace (md5 8b8ccb3846a65a71289a4775a0445c73,
 -- length 2188) per the CREATE OR REPLACE full-body-write rule.
 CREATE OR REPLACE FUNCTION public.atlas_edition_verify_settle()
