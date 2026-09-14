@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⛔ CORRECTION TO MY OWN ENTRY ONE HOUR OLD — #117's headline is WITHDRAWN. I filed a defect against a design that already handles it, and was one command from shipping a fix for a non-problem · Claude Code cloud
+
+**Docs-only. This corrects the "dead-host suppressions" entry below, which said *"🚨 THE ARM TREVOR ACTUALLY SAW IS STILL NOT FIXED"*. It is not broken.**
+
+⭐ **THE REFUTATION IS THE ARM'S OWN VERDICT, WHICH I HAD NEVER RUN.** `summariseCadenceCollapse` against the live payload returns **`status: ok`, `value: 0`**:
+
+> *"no lane is running below its own cadence — 98 lanes inspected, 45 heartbeats excluded, **4 stopped (not scored — see Pipeline Silence)** · 12h vs 14d baseline at ratio 0.4"*
+
+🚨 **`stopped` IS NEVER SCORED, BY EXPLICIT DESIGN — and `lib/sentinel/cadence-collapse.ts` says so in a header I read only AFTER filing:** *"⛔ `stopped` IS REPORTED AS CONTEXT AND NEVER SCORED … Scoring them would make this arm permanently red on day one, which is exactly the #25 trap this estate keeps paying for — and a stopped lane is Pipeline Silence's job, not this one's."* **It even names the same four lanes.**
+
+⚠ **HOW I GOT IT WRONG, because the mechanism is the reusable part:** I read the SQL body of `check_pipeline_cadence_collapse`, correctly observed that it contains **no reference to `pipeline_alert_suppression`**, and **inferred a verdict from the absence of an input.** The missing step is the one CLAUDE.md names outright — *a filed FINDING is a hypothesis; re-derive what it measured before acting* — and *a plausible mechanism is not a measurement.* ⭐ **I had used exactly the right discipline on the Wall Kills arm an hour earlier** (ran the real TS against the real payload before believing the verdict) **and then did not apply it to the next arm.** Running it cost one command.
+
+⛔ **THE COST OF NOT CHECKING WOULD HAVE BEEN WORSE THAN NOISE:** the "fix" was to teach the arm about suppressions. Shipped, it would have added machinery to a code path that is already correct, and left a **false defect in the register for the next session to act on** — the documented failure mode where a fix makes an accurate surface inaccurate.
+
+🟡 **WHAT SURVIVES IS NARROW, HYPOTHETICAL, AND STATED AS SUCH:** the arm *does* score `degraded`, so a lane holding a LIVE suppression row that goes degraded rather than stopped **would** be scored. ⭐ **Its one real instance has already cleared** — Trevor's dump carried `Cadence Collapse — ts-listings-atlas-sync at 30 %`, a *degraded* entry, and that lane does hold a suppression row (expired 09-14 02:30). **Today `degraded` is empty.** No exit condition; #117 now stands mainly as the record of a refuted filing.
+
+✅ **UNAFFECTED BY THIS WITHDRAWAL, and still the substance of the previous entry:** the nine `dead host 2026-08-30` suppressions really had expired 2026-09-13 with the host really still returning 530/1033 — re-measured from pg_net, two requests — and are re-bound to 2026-10-05 (`20260914144523`). **That measurement and that renewal stand.** So does the sandbox-probe lesson: `curl` there returns **000**, which is the proxy refusing the host and not a reading of it, wrong in both directions.
+
+No revert needed — docs only; `20260914144523` is untouched and correct.
+
 ### 2026-09-14 · ✅ THE NINE DEAD-HOST SUPPRESSIONS EXPIRED WHILE THE HOST IS STILL DEAD — re-measured from the right plane and re-bound to 10-05 · Claude Code cloud
 
 **Shipped: migration `20260914144523` (9 rows, post-state asserted in the migration) + register #117.**
