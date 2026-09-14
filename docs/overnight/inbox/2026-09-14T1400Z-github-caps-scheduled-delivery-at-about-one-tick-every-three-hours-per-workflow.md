@@ -73,6 +73,19 @@ Every figure below is from GitHub's own `schedule`-event run list, counting **ac
 
 ⛔ **CORRECTION, ~10 MINUTES AFTER I WROTE IT: `offer-fill-backfill.yml` IS NOT #70's M2 LEVER, AND ITS CAP COSTS NOTHING TODAY.** I connected a capped lane to the go-live gate **on a name match** — "offer-fill" appears in #70 — **without reading the lane.** Read: `app/api/admin/backfill-offer-fill-sales/route.ts` is **Top Shot only** (`p_collection_slug: "nba_top_shot"`, `nftType = TopShot`, cursor `topshot_offer_fill_backfill`) and is a **historical** drain. **#70's lever is WIDENING offer-fill to ALL DAY, which this lane does not do.** ⭐ **And it has caught up:** its cursor sits at block **164,510,306** (updated 13:05Z) against a live head of **164,513,793** — **~3,487 blocks behind**, i.e. at the present. **A cap on a backfill that has finished costs nothing**, the same shape as this morning's pack-sales reading. ⚠ **The general point survives and is unchanged — the ceiling applies to DATA lanes, not only watchers** (`rpc-pipeline` 8/72 is still a live instance, and its header still assumes a next tick 20 minutes away) — **but the go-live connection is withdrawn.** ⭐ Third time this session a plausible name produced a plausible answer from the wrong source; the rule is *name the caller before you touch the function*, and a workflow filename is not a caller. Its own header says partial failure *"self-heals on the next tick"* — **a load-bearing assumption that the ceiling breaks: the next tick is a median 3.39 h away, not 20 minutes.**
 
+
+
+### ⭐ SCOPING: THE WORST PERCENTAGES BELONG TO THE LANES IT MATTERS LEAST FOR
+
+**Measured before leaving the reader to chase the 7 % rows.** Every `*-sales-history-backfill` lane and the offer-fill drain ran **7–9 times in 24 h and wrote effectively nothing**: `topshot` 8 runs / **0 rows** · `allday` 8 / 0 · `allday-studio` 8 / 0 · `golazos` 8 / 0 · `golazos-studio` 8 / 0 · `pinnacle` 8 / 0 · `pinnacle-studio` 7 / 0 · `backfill-offer-fill-sales` 9 / **7**. **They are drained.** A ceiling on a backfill that has caught up costs approximately nothing — the same shape as this morning's pack-sales reading.
+
+🚨 **SO THE CEILING'S LIVE COST CONCENTRATES ON THE WATCHERS**, which are exactly the rows a percentage ranking buries:
+- `site-availability-alarm` **7/96** — the site-down alarm, blind 4.5–5.6 h at a time.
+- `dead-lane-backstop` **8/96** · `pipeline-sentinel` **7/24** — the backstop and the master alarm.
+- `rpc-pipeline` **8/72** · `ops-monitor` **8/49** · `sales-indexers-backstop` **8/48** · `pinnacle-owner-discovery` **8/72** — live monitor and data lanes, not drained backfills.
+
+⭐ **THE LESSON FOR RANKING: `topshot-sales-history-backfill` (7 %) and `site-availability-alarm` (7 %) are indistinguishable in the percentage column and could hardly matter more differently.** **Rank by what the lane still DOES, not by how far short of its schedule it falls** — the same error as ranking `pg_stat_statements` by a cumulative column, one layer up.
+
 ## 4 · What this kills, and what it does not
 
 ⛔ **IT KILLS "RUN IT MORE OFTEN" AS A FIX, ESTATE-WIDE.** Tightening a GHA cron on this repo cannot raise delivery above ~0.3/h. Any past or future remedy of the form *"move it to every 15 minutes"* is void, and a workflow already at ≥1/h cannot be improved by re-timing it.
