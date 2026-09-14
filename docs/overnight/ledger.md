@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨 #114's LIVE HALF IS **15** DASHBOARDS, NOT FIVE — and eleven of them "handle errors" against a shape the server never sends · Claude Code desktop
+
+**Docs + one instrument. Nothing published, and Claude Desktop's artifact store was NOT modified.**
+
+🚨 **THE COUNT IN #114 IS WRONG IN THE DIRECTION THAT LETS THE FIX COMPLETE WHILE THE ESTATE STAYS BROKEN.** The item says *"the FIVE LIVE dashboards still carry the old helper"*. Walking the store: **15 carry an `extractRows` helper, and 15 of 15 fail to throw on `{error:{name,message}}`** — the shape #114's own measurement records the live Supabase MCP server returning for a missing relation. A Cowork session doing exactly what the item asks would patch five, mark it resolved, and leave **ten** rendering a failed read as "no data".
+
+⭐ **THE SHARPER HALF, AND IT INVERTS WHICH ONES ARE WORST: eleven of the fifteen DO check `isError` at the call site** (`if (r && r.isError) throw …`). That line reads as error handling and is why this survived review — **and it is pointed at a shape the server does not send.** The four with no call-site guard at all (`rpc-growth-funnel`, `rpc-qa-scorecard`, `rpc-rewards-console`, `rtr-pack-finder`) are obviously unguarded; the eleven are *invisibly* unguarded. **This is CLAUDE.md's "vacuous assertion that reads as coverage" one layer down — in a GUARD rather than a test.**
+
+⚠ **The trap for whoever picks this up: do NOT grep for artifacts lacking an `isError` check.** That returns **4** and looks like a small job. The property is *"does the helper throw on `{error:{…}}`"*, and it returns **15**.
+
+✅ **SHIPPED — `scripts/audit-cowork-artifact-failure-handling.mjs`**, so the number is re-derivable rather than quoted (CLAUDE.md: every figure is a dated sample). Lifts each helper by **brace matching**, not a character slice — the trap a sibling guard in this repo already fell into. Exit **0** clean · **1** vulnerable · **2** store missing or empty, so a machine without the store fails LOUDLY instead of reporting a clean estate it never read. ⛔ Not runnable in CI by design — the store is a per-machine Claude Desktop directory, same class as `db:pins:check` needing a service-role key.
+
+⚠ **Controls both directions, because a checker that only ever prints NO is indistinguishable from a broken one.** Positive: pointed at the repo's two FIXED helpers it reports `yes/yes`, 0 vulnerable, **exit 0**. Negative: an empty directory **exits 2** with `not a clean estate`.
+
+⚠ **REACHABILITY RE-TESTED, not re-read — #114's "cannot be reached from any session on this box" is half wrong.** The store IS readable from Claude Code on the desktop (that is how this was measured). It is NOT publishable from here: `update_artifact` is a **Cowork** tool, and this box's `Artifact` tool addresses a **different** system — listed it, 7 artifacts came back, none of them these. ⛔ **Hand-editing the store was deliberately not done**: it bypasses the app's versioning and thumbnailing, desyncs its index, and cannot be verified from here. The files are evidence, not a deploy channel.
+
+- **Also verified this pass, on the two guards a sandbox is structurally blind to:** `db:pins:check` **203/203 clean** (needs the service-role key) and `tsc --noEmit` **0**.
+- **Revert:** docs + one new script; no DB, no prod state, nothing published. `git revert <sha>`.
+
 ### 2026-09-14 · SHIPPED · The rewind that discarded two backfill walks is now DETECTABLE — `pipeline_runs` forgets in 73h, the cursor does not · Claude Code cloud
 
 **DB migration `20260914160000_audit_20260914_detect_a_backward_cursor_rewind_the_logs_cannot_outlive` + pg_cron `rpc-observe-cursor-watermarks` (`12 */2 * * *`, ACTIVE, calls the function DIRECTLY — no pg_net). Follows the suppression fix two entries up; that one corrected the claims, this one instruments the cause.**
