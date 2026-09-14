@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨 THE WALL-KILLS ARM HAD BEEN AMBER FOR 17 HOURS ON A 4-HOUR INCIDENT THAT WAS OVER — and the module's own header says it would be · Claude Code cloud
+
+**Shipped: migration `20260914143746` (applied 07:37 AM PT, ACL verified unchanged) + `lib/sentinel/wall-kills.ts` + 9 new pinned cases.**
+
+⭐ **THE FINDING IS THE MODULE'S OWN LESSON, UNAPPLIED TO ITSELF.** `lib/sentinel/wall-kills.ts` states, in its header, that *"a POOLED rate over a window cannot distinguish 'broken now' from 'was broken, then fixed, and the window still carries the corpse'"* — and then hands that discrimination to **"a reader"**. ⛔ **THERE IS NO READER.** The sentinel renders a WARN list; nobody re-derives five `last_kill_at` values against five different cadences. **Naming a defect in a comment is not guarding against it** — CLAUDE.md already says a comment is only read by someone already in that file.
+
+📏 **MEASURED 07:3x AM PT, and the numbers are unambiguous:** the arm flagged **fmv-recalc 28/149 · drain-fmv-cold-tail 5/48 · wmc-fmv-populate 3/293 · sentinel 2/30 · panini-ingest 1/796** — and **EVERY `last_kill_at` falls inside a 4h16m band on 09-13 (17:12Z–21:28Z = 10:12 AM – 2:28 PM PT)**, the documented IO-saturation spell. **Zero kills in the ~17 hours since.**
+
+⭐⭐ **THE FIX ADDS THE CONTROL THE ARM WAS MISSING, AND ITS UNIT IS THE WHOLE POINT: `clean_since_last_kill`, in RUNS, never hours.** "Hours since" is a **PROXY that coincides today** — a lane at 7 ticks/day and one at 796 are not comparable on a clock, and a time rule would clear the slow one **on no evidence at all**. The property is *"has this lane had chances to fail again and taken none"*, so the unit is ticks. CLAUDE.md: a control's population must be the set the property is true of, not a proxy. ⭐ **The SQL gets it for FREE — every marker after the last kill is MATCHED BY CONSTRUCTION** (`last_kill_at` is the MAX unmatched), so the count IS the clean run; no second correlation pass exists and none was added. Computed from the already-`MATERIALIZED` `scored` CTE, so **there is no additional access to `pipeline_runs`** and the arm's ~33,000-buffer probe cost is unchanged.
+
+✅ **LIVE VERIFICATION CONFIRMED THE DIAGNOSIS INDEPENDENTLY:** the new field reads **fmv-recalc 105 · drain-fmv-cold-tail 39 · wmc-fmv-populate 231 · sentinel 28 · panini-ingest 790** clean runs since each last kill. Every one is far past the threshold, so the arm goes **ok** — not because the count was suppressed, but because each lane demonstrably recovered. `has_function_privilege` after apply: anon **false**, authenticated **false**, service_role **true** — unchanged.
+
+⚠ **IT FAILS CLOSED, WHICH IS THE PART THAT MATTERS.** An offender whose `clean_since_last_kill` is **absent or unparseable** is treated as **LIVE**. So an older SQL body that does not return the field keeps warning rather than silently going green — a missing read must never render as a clean answer. ⭐ **That is not a claim, it is measured: 6 of the 7 pre-existing tests passed UNCHANGED against the new code**, because the old fixtures carry no such field and correctly stayed amber.
+
+⚠ **AND A CLEARED VERDICT STILL NAMES THE LANES, THEIR COUNTS AND THEIR CLEAN RUNS.** An arm that goes quiet by *dropping* the finding would be the same defect pointed the other way. The `ok` detail reads *"no LIVE wall kills — N pipeline(s) reached 3+ kills but each has run clean 10+ times since: …"*.
+
+⭐ **MUTATION-TESTED IN BOTH DIRECTIONS, because an arm that can only go quiet is as useless as one that can only warn:** forcing `isLive → true` (the pre-fix behaviour) reds **4** tests; forcing `isLive → false` (always clear) reds **10**; restored, 16/16 pass.
+
+⭐ **ONE PRE-EXISTING ASSERTION WAS INVERTED, NOT DELETED** (CLAUDE.md's rule). A test asserted the warn detail *narrated* the kill-rate lesson (`/pooled count cannot tell/`). The arm now **applies** it, so the assertion was repointed to the claim a pooled count could not make: `/NOT yet recovered \d+ clean runs/`. A second assertion pinned the detail's exact **spelling** (`last 09:08 PT)` with the closing paren) and was repointed to the **property** — the corpse rule appends a clause there.
+
+⭐ **THE MIGRATION GUARD CAUGHT ME BEFORE PRODUCTION THIS TIME.** `migration-new-function-states-its-anon-exec-decision` failed twice on the marker: once for the wrong keyword, once because the function name must sit on the **SAME LINE** as `anon-exec:`. This is the exact guard I broke `main` with on 09-14 by skipping it — running `npx vitest run __tests__/migration-*.test.ts` **before** applying cost 2 seconds and caught both.
+
+🔍 **`CREATE OR REPLACE` SAFETY, PROVEN NOT ASSUMED:** live md5 `b4912d37575fe225d1c4bae386a6bab8` / len 2948, re-read immediately before apply and **unchanged**; mechanically stripping the two intended additions from the new body reproduces **len 2948 and that exact md5**, so nothing of another session's was overwritten.
+
+⏳ **DELIBERATELY NOT DONE, with the reason:** `clearAfter` is **not** wired to `sentinel_threshold_config` — `thr()` is typed to `"warn_at" | "crit_at"` and the table has no third column, so making it tunable is a schema change, not a one-liner. Left at the documented default of **10** rather than abusing `crit_at` for it.
+
+Revert: `git revert <sha>` (TS + tests) and re-apply the pre-`per0` body (drop the `per0`/`per` split and the one jsonb key) — the previous body is reproducible from the proof above.
+
 ### 2026-09-14 · ⭐⭐ THE FIRST RATE-BASED IO RANKING — THE ATLAS LANES ARE 37 % OF AN HOUR'S DISK READS AND `fmv-recalc` IS 4.8 %, IN FOURTH PLACE · Claude Code cloud
 
 **Docs-only. Replaces the instrument every prior saturation filing used, rather than adding another reading to it.**
