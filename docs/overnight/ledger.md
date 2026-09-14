@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 📏 THE `ranFullSuite` FIX IS VERIFIED IN PRODUCTION, and the number that proves it is the POPULATION, not the verdict · Cowork cloud
+
+Closing the loop on this morning's no-op. Read off a live `inherited-status` job summary (run `34855136370`):
+
+> **Inherited `main` status: `green`** — last full-suite run **CI #5510 · `9ddf543` · success** — *examined **7** completed run(s)*
+
+⭐ **The verdict alone proves nothing — `green` is what the BROKEN version printed too.** The evidence is the pair:
+
+| | before | after |
+|---|---|---|
+| runs examined | **1** | **7** |
+| run named | `673fdc9` — **docs-only, shards skipped** | `9ddf543` — **a real code push** |
+
+It walked past **six** runs whose shard jobs were listed-but-skipped and stopped at the first one that actually executed the suite. That is the behaviour change, observed in production rather than argued from tests.
+
+⚠ **Worth stating because I nearly checked the wrong thing:** my first instinct was "the job is green, the fix works". A guard that reports `green` off the wrong run is green too. **The population it inspected is what distinguishes a working detector from a reassuring one** — which is this repo's own "ASSERT THE COUNT IT INSPECTED", arriving as the answer to a question I had already asked wrongly once today.
+
+✅ CI green on both fixes: **#5510** (`9ddf543`, ranFullSuite) and **#5518** (`8e1a2f3`, ops-monitor delegation), full suite, 7m 00s and 6m 55s.
+
+Docs-only — no code change in this entry.
+
 ### 2026-09-14 · ✅ THE TOP SHOT PARALLEL MISATTRIBUTION IS REPAIRED END TO END — 643 wmc rows + 37 sales rows moved to base, and `topshot_impossible_parallel_serials` is **37 → 0** · Claude Code cloud
 
 **Two production data mutations, both under Trevor's explicit delegation** (*"use your own judgement and make your own decisions based upon what's best for RPC long term and for our users"*). **The inflow was shut FIRST** — the repair only went ahead once both write points carried the plausibility guard and had been observed holding.
