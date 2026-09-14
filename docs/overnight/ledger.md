@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · SHIPPED · #120 gets the SAMPLED instrument its own exit demands — and pointedly NOT a bulk rewrite of a denominator the whole estate reads · Claude Code cloud
+
+**DB migration `20260914200000_audit_20260914_sample_topshot_circulation_against_the_chain_before_anyone_rewrites_it` + two pg_cron jobs, `rpc-circulation-chain-dispatch` (`25 3 * * *`) and `rpc-circulation-chain-collect` (`40 3 * * *`).**
+
+⛔ **WHAT IT DELIBERATELY IS NOT.** #120's exit says the first move must not be a bulk `circulation_count` update from the chain: it is the denominator under FMV, scarcity, tier logic and the `/N` a collector reads, and a **9,539-edition** rewrite driven by an unaudited script is this repo's most expensive class. **So this measures the rate and writes nothing to `editions`.**
+
+⭐ **TWO JOBS, FIFTEEN MINUTES APART, BECAUSE pg_net IS ASYNC** — a function cannot read its own response in the same transaction. Dispatch POSTs and records the in-flight request; collect decodes, records, and clears. The Cadence is the **production-verified literal from `lib/editions-hydrate.ts`, copied verbatim** — ⚠ **no new Cadence authored**, no Cadence MCP available, and that same literal has now returned **HTTP 200 on 30 of 30** calls today.
+
+⛔ **THE TABLE IS BUILT AROUND ONE RULE: A READ THAT DID NOT HAPPEN MUST NEVER READ AS AGREEMENT.** `chain_circulation` is nullable, **`agrees` is NULL whenever it is** (never false — a failed read is not a disagreement), and `status` is recorded on every row: `ok` · `http_<code>` · `undecodable` · `no_response`. The collect function returns the **lifetime split** (`read_ok / agree / db_low / db_high / not_read`) so a reader cannot mistake *not measured* for *matched*. **A circulation audit that counted its own failures as matches would be a textbook instance of the class this platform keeps paying for.**
+
+✅ **POSITIVE CONTROL, BOTH ARMS, and the second one is the point.** Dispatched 4 real editions → all four came back `ok` and **agreed** (`168:5819` 2,024 · `176:7004` 1 · `188:6747` 299 · `28:610` 99). Then a synthetic pending row with a request id that can never resolve was aged past the 2-hour cutoff: it recorded **`no_response`, `chain_circulation` NULL, `agrees` NULL** — **not** agreement. Probe deleted, **0 leftovers**, 0 pending, `check_secdef_anon_exec_drift()` **0**, anon EXECUTE **false** / `postgres` **true** on both functions.
+
+📏 **50 A DAY, AND THE SIZE IS A DECISION.** 9,539 base editions → a ~191-day walk, but **coverage is not the deliverable, the RATE is**, and 50/day pins it inside a week. ⚠ It is also small **on purpose**: pg_net answers a batch when its SLOWEST member finishes, and an over-eager pg_net lane is exactly what head-of-line blocked this platform on 2026-09-04 (jobid 55). 15 s timeout, quiet window, never-audited editions first so coverage still grows.
+
+⚠ **WHAT IT CANNOT DO, said plainly:** it cannot attribute the staleness to a writer, and it cannot tell you whether the two set-level constants (set 218 exactly **99** low, set 259 exactly **190** low) generalise. **It tells you how often, and in which direction — which is what nobody could answer this morning.**
+
+**Revert (five parts):** `SELECT cron.unschedule('rpc-circulation-chain-dispatch');` · `SELECT cron.unschedule('rpc-circulation-chain-collect');` · `DROP FUNCTION public.collect_topshot_circulation_sample();` · `DROP FUNCTION public.dispatch_topshot_circulation_sample(int);` · `DROP TABLE public.topshot_circulation_chain_pending; DROP TABLE public.topshot_circulation_chain_audit;`
+**Target metric:** after a week, `topshot_circulation_chain_audit` holds ~350 rows and the `db_low` share is a measured number instead of "2 of 17". ⚠ **Falsifier: if `not_read` is a large share, the instrument is measuring pg_net rather than the chain — read `status` before quoting any rate.**
+
 ### 2026-09-14 · ⛔ CORRECTION (25 minutes) + NEW #120 · I published "circulation_count is not stale" off a BIASED SAMPLE, then ran the test that falsifies it · Claude Code cloud
 
 **Docs-only; no prod state touched. Corrects the entry two above, and files #120.**
