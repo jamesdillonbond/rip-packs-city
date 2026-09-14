@@ -2,6 +2,40 @@
 
 *Filed 2026-09-14 ~08:14 AM PT by Cowork (cloud). **READ-ONLY — nothing changed in the DB or the repo's alerting.** The decisions this points at are already registered as #101 and #102 and are Trevor's; this exists because their evidence was 9 days old and one number in it has moved.*
 
+## ⛔ CORRECTION 2026-09-14 ~08:5x AM PT — SECTION 2's HEADLINE IS WITHDRAWN BY ME, ABOUT 35 MINUTES AFTER I PUBLISHED IT
+
+**The title of this filing is wrong and I am not rewriting it away.** Section 1 (the predicates) stands unchanged. Section 2's *"no scheduler, no alarm and no suppression"* does not, on two counts.
+
+### 1 · I conflated two rows whose names differ only by hyphen vs underscore
+
+- `allday-pack-opens-backfill` (**HYPHENATED**) — the failure-rate suppression. **Expired 09-07, correctly, as designed.** That is the row in my expiry table.
+- `allday_pack_opens_backfill` (**UNDERSCORED**) — the cursor-keyed suppression. **`expires_at IS NULL`. It is PERMANENT and live.**
+
+I read the first row's expiry as the second row's and wrote "no suppression". ⛔ **There is a suppression, and it never expired.** The row itself warns about exactly this: *"the failure_rate arm … keys on the HYPHENATED pipeline name and is therefore unaffected by this (underscored, cursor-keyed) suppression."* **The repo's two-vocabularies footgun, in a table I was auditing for false claims.**
+
+### 2 · The false floor claim was TRUE when I measured it and was corrected while I was writing
+
+The reason now opens: *"Terminal because the lane has NO CALLER since 2026-09-04, not because it reached its floor. **CORRECTED 2026-09-14 ~08:20 AM PT** — the sentence that stood here claimed a terminal state at the RAISED spork floor, and the cursor is 18,011,710 blocks ABOVE that floor (83,276,329 vs 65,264,619)…"*
+
+⭐ **Those are my numbers, to the block.** A concurrent Claude Code session found the same defect in the same hour and **fixed the record**; I measured it at ~08:0x, published at ~08:15 that the record was wrong, and it had been right for five minutes by then.
+
+### 3 · 🚨 THE PICKUP I RECOMMENDED IS THE ONE THE ROW EXPLICITLY WARNS AGAINST
+
+I wrote *"restore a pg_cron job in the shape of jobid 56."* The corrected row says:
+
+> **"SO THERE IS NO CADENCE NET FOR THIS LANE, AND THAT IS INTENTIONAL** — the lane has no caller at all, so an alarm on it would be permanently red. **Do NOT 'restore' the watchlist row without first giving the lane a caller AND re-checking the pg_net blocking that killed it."**
+
+⛔ **The absence is a decision, not a gap.** jobid 55 was unscheduled and the watchlist row retired **deliberately** on 09-04: **25 of 25 ticks in four hours died at the pg_net 90 s wall and head-of-line blocked every other pg_net request on the platform.** AllDay is sunset. Restoring it in jobid 56's shape without re-checking that blocking would re-create a platform-wide stall to walk ~19 M blocks of a sunset collection.
+
+### 4 · What survives, and one thing that is better than what I filed
+
+- ✅ **Section 1 is untouched** — 2 predicates hold, `topshot-misattrib-drain` fails at 1,364, and the rate disagreement stands.
+- ✅ **The four expiries are real**, and the reading *"expiry is not a defect; expiry while the lane is still unwatched is"* survives — it was the second clause I got wrong, not the first.
+- ⭐ **`check_suppression_parked_claim_drift()` ALREADY EXISTS** and parses the claimed floor out of the reason with a regex. **It returns `[]` — and that is now CORRECT**, because the claim it would have caught was removed at 08:20. I opened this expecting a false negative from a guard that should have seen what I saw by hand; instead the guard agrees with a record that had already been fixed. **The instrument for this class is built; what it needs is a caller, not a rewrite.**
+- ⭐ **The transferable lesson, which is the reason this correction is long:** the repo already says *re-read the ledger from disk immediately before writing it* because sessions write concurrently. **The same rule applies to any claim about a DB text column** — `reason`, `notes`, a watchlist note. I based a published claim on a value I had read 10 minutes earlier, and `left(reason, 400)` had already hidden one correction from me earlier in the same pass. **Re-read the row immediately before asserting what it says.**
+
+---
+
 ## 0 · Why this pass happened at all
 
 Register **#102(c)** names the structural defect and nobody has acted on it:
