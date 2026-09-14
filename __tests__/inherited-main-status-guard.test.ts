@@ -267,3 +267,49 @@ describe("the walk itself", () => {
     )
   })
 })
+
+// ── The verdict must be READABLE, not only correct ──────────────────────────
+// Measured 2026-09-14 on this guard's first live run: a job's step LOG needs
+// admin rights (the API answers 403, the web log endpoints 404), so the only
+// observable facts were "the job ran" and "it exited 0" — and `green` and
+// `unknown` BOTH exit 0. The one distinction this guard exists to make was
+// invisible in its own output. The job summary renders for anyone who can see
+// the run, so that is where the verdict goes.
+
+import { renderSummary } from "@/scripts/check-last-code-ci-on-main.mjs"
+
+describe("the job summary distinguishes what the exit code cannot", () => {
+  const RUN_OK = { runNumber: 5496, headSha: "abcdef1234", htmlUrl: "https://x/5496", conclusion: "success" }
+
+  it("green and unknown are distinguishable even though both exit 0", () => {
+    const green = renderSummary({ verdict: "green", run: RUN_OK, considered: 2 })
+    const unknown = renderSummary({ verdict: "unknown", run: null, considered: 0 })
+    expect(inheritedExitCode("green")).toBe(inheritedExitCode("unknown")) // the premise
+    expect(green).not.toBe(unknown)
+    expect(green).toContain("`green`")
+    expect(unknown).toContain("`unknown`")
+  })
+
+  it("names the run and commit that decided it, as a link", () => {
+    const s = renderSummary({ verdict: "red", run: { ...RUN_OK, conclusion: "failure" }, considered: 3 })
+    expect(s).toContain("CI #5496")
+    expect(s).toContain("https://x/5496")
+    expect(s).toContain("abcdef1")
+    expect(s).toContain("`failure`")
+    // …and must not let a reader blame the docs push in front of them.
+    expect(s).toMatch(/not the cause/i)
+  })
+
+  it("unknown points at the marker and the permission, not at the history", () => {
+    const s = renderSummary({ verdict: "unknown", run: null, considered: 0 })
+    expect(s).toContain("SHARD_JOB_MARKER")
+    expect(s).toContain("actions: read")
+    expect(s).not.toContain("✅")
+  })
+
+  it("always reports the population it examined", () => {
+    for (const n of [0, 1, 7]) {
+      expect(renderSummary({ verdict: "unknown", run: null, considered: n })).toContain(`examined ${n} completed run(s)`)
+    }
+  })
+})

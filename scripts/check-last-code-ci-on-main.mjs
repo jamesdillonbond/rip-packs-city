@@ -45,6 +45,7 @@
  * turning this into a no-op.
  */
 
+import { appendFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 
 /**
@@ -112,6 +113,48 @@ export function renderVerdict({ verdict, run }) {
 
 export const DEFAULT_API_BASE = "https://api.github.com"
 
+/**
+ * PURE. The GitHub **job summary** for this verdict.
+ *
+ * 🚨 WHY THIS EXISTS AND IS NOT DECORATION. A job's step LOG is only readable by
+ * someone with admin rights on the repo — measured 2026-09-14, the API answers
+ * `403 Must have admin rights to Repository` and the web log endpoints 404. So on
+ * the first live run of this guard, the only observable facts were "the job ran"
+ * and "it exited 0" — and `green` and `unknown` BOTH exit 0. **The one distinction
+ * this guard exists to make was invisible in its own output.** That is the thread's
+ * own lesson (a check that did not run looks like one that passed) reappearing one
+ * layer out: a check whose RESULT cannot be read is a check nobody can act on.
+ * A job summary renders on the run page for anyone who can see the run.
+ */
+export function renderSummary({ verdict, run, considered }) {
+  const head = { green: "\u2705 `main` is green", unknown: "\u26a0\ufe0f verdict unknown", red: "\uD83D\uDEA8 `main` is RED" }[verdict]
+  const lines = [`### Inherited \`main\` status: \`${verdict}\``, "", head, ""]
+  if (run) {
+    lines.push(
+      `| last full-suite run | commit | conclusion |`,
+      `|---|---|---|`,
+      `| [CI #${run.runNumber}](${run.htmlUrl}) | \`${String(run.headSha).slice(0, 7)}\` | \`${run.conclusion}\` |`,
+      "",
+    )
+  }
+  if (verdict === "unknown") {
+    lines.push(
+      "No COMPLETED full-suite run was found, so this push is **not** failed over missing history.",
+      "\u26a0\ufe0f If this repeats, suspect `SHARD_JOB_MARKER` drift or the `actions: read` permission \u2014 not the history.",
+      "",
+    )
+  }
+  if (verdict === "red") {
+    lines.push(
+      "**This docs-only push is not the cause and reverting it will not help** \u2014 it skips",
+      "`unit-tests-shard` by design, so its green check means \"the docs guards passed\".",
+      "",
+    )
+  }
+  lines.push(`_examined ${considered ?? 0} completed run(s)_`)
+  return lines.join("\n")
+}
+
 async function api(path, token, apiBase = DEFAULT_API_BASE) {
   const res = await fetch(`${apiBase}${path}`, {
     headers: {
@@ -161,12 +204,26 @@ export async function fetchCandidates({ repo, token, currentRunId, maxRuns = 15,
   return out
 }
 
+/** Best-effort: a summary that cannot be written must never change the verdict. */
+function writeSummary(md) {
+  const f = process.env.GITHUB_STEP_SUMMARY
+  if (!f) return
+  try {
+    appendFileSync(f, md + "\n")
+  } catch (e) {
+    console.log(`\u26a0 could not write the job summary (verdict is unaffected): ${e.message}`)
+  }
+}
+
 async function main() {
   const repo = process.env.GITHUB_REPOSITORY
   const token = process.env.GITHUB_TOKEN
   const currentRunId = process.env.CURRENT_RUN_ID || null
   if (!repo || !token) {
+    // ⚠ Every exit writes a summary, including this one. A run that produced NO
+    // summary is the invisible case this whole guard is about.
     console.log("⚠ verdict=unknown — GITHUB_REPOSITORY/GITHUB_TOKEN not set; nothing to check.")
+    writeSummary(renderSummary({ verdict: "unknown", run: null, considered: 0 }))
     process.exit(0)
   }
   let candidates
@@ -175,11 +232,13 @@ async function main() {
   } catch (e) {
     // ⚠ An API failure is NOT evidence that main is red. Say so and pass.
     console.log(`⚠ verdict=unknown — could not read run history: ${e.message}`)
+    writeSummary(renderSummary({ verdict: "unknown", run: null, considered: 0 }))
     process.exit(0)
   }
   const result = decideInheritedStatus(candidates, { currentRunId })
   console.log(`verdict=${result.verdict} (examined ${candidates.length} run(s))`)
   console.log(renderVerdict(result))
+  writeSummary(renderSummary({ ...result, considered: candidates.length }))
   process.exit(inheritedExitCode(result.verdict))
 }
 

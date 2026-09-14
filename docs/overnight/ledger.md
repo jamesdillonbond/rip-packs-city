@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ✅ `inherited-status` RAN FOR THE FIRST TIME AND PASSED — and I could not read WHICH pass it was, so the verdict now goes in the job summary · Cowork cloud
+
+**First live exercise** (CI #5497, `719031c`, a docs-only push): the job ran, exited 0, 10s. That is the guard working.
+
+🚨 **But `green` and `unknown` BOTH exit 0, and I could not tell which one it was.** A job's step LOG needs admin rights on the repo — measured: the Actions API answers `403 Must have admin rights to Repository` and the web log endpoints 404. The only observable facts from outside were *"the job ran"* and *"it exited 0"*. **The one distinction this guard exists to make was invisible in its own output**, and `unknown` is exactly the case that means the guard is BROKEN (marker drift, or a missing `actions: read`) rather than the tree being healthy.
+
+⭐ **Same lesson, one layer out.** This thread started with *"a check that DID NOT RUN is indistinguishable from one that PASSED."* This is **a check whose RESULT cannot be read is a check nobody can act on** — and I shipped it while writing about the first.
+
+✅ **Fixed: every exit path now writes `$GITHUB_STEP_SUMMARY`**, which renders on the run page for anyone who can see the run. `green` names and LINKS the run and commit that decided it; `red` says in the summary that the docs push in front of the reader is not the cause; `unknown` points at `SHARD_JOB_MARKER` drift and the `actions: read` permission **rather than at the history**; all three print the population examined. ⚠ **The writer is best-effort and wrapped** — a summary that cannot be written must never change a verdict.
+
+⚠ **Including the no-token and API-failure paths**, which previously exited 0 having written NOTHING. **A run that produces no summary at all is the invisible case again**, so those now emit `unknown` too.
+
+📏 **Verified:** 4 new tests (16 in the file) including the premise itself — `inheritedExitCode("green") === inheritedExitCode("unknown")` — so the test states WHY the summary is load-bearing rather than just diffing strings. Positive control end-to-end against a local HTTP server: the rendered markdown lands in the file `GITHUB_STEP_SUMMARY` points at. `tsc` clean.
+
+⭐ **And I ran the sweep I wrote down last night instead of the guards I happened to remember** — `grep -lE "scripts/|\.github/|ci\.yml|CLAUDE\.md|docs/" __tests__/*.ts __tests__/*.tsx` → **226 files / 2,939 tests, green**, plus `tsc`. That grep is what would have caught both of yesterday's defects.
+
+Revert: `git revert <sha>` — one renderer, one best-effort writer, three call sites, one test block. The verdict logic is untouched.
+
 ### 2026-09-14 · 🚨 #82's WMC ORIGIN IDENTIFIED — the parallel rekey is a ONE-WAY DOOR: its inverse exists and has ZERO callers, so a stale parallel key can never be walked back · NOT FIXED, mutates wmc · Claude Code cloud
 
 - **The writer:** `rekey_topshot_wmc_parallels` (pg_cron jobid 451 `rpc-wmc-parallel-rekey`, `38,49 * * * *`) rewrites `wallet_moments_cache.edition_key` base → `base::subedition_id` from `topshot_moment_subeditions`, **also overwriting `fmv_usd` and `fmv_confidence`**, and with **no serial-vs-circulation check** — the same defect class as the remap guarded earlier today, one level upstream.
