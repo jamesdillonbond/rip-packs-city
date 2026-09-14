@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · FINDING (docs-only) · #102(a)'s "why did it stop" is ANSWERED, and the re-derivation produced the sharpest `dispatch ≠ outcome` number this estate has · Claude Code cloud
+
+⭐ **RE-DERIVED INDEPENDENTLY AND IT MATCHES THE LEDGER — `allday-pack-opens-backfill` was UNSCHEDULED, not broken-and-abandoned.** Live today: **jobid 55 is absent from `cron.job`** (148 jobs), last run **2026-09-04 06:36:00Z = 2026-09-03 23:36 PT**, matching the 09-03 entry's PT stamp exactly. Recorded cause stands (25/25 ticks at pg_net's 90 s wall, head-of-line blocking every other pg_net request; AllDay sunset). Revert: `audit_20260904_jobid55_watchlist_retire_backup`. **#102(a) is now purely a PRODUCT decision, not an investigation** — recorded in the register so it is not re-derived a third time.
+
+📏 **THE NEW NUMBER: across the lane's ENTIRE collapse the cron layer reported 472 of 472 September runs `succeeded`** (`return_message` "1 row" every time) **while `pipeline_runs_daily` shows it dying underneath:** ok-rate **9/10 (09-02) → 48/98 (09-03) → 1/15 (09-04)**, `rows_found` **1,164 → 188 → 33**. ⛔ **`net.http_get` returns a request id immediately, so a pg_net job's pg_cron status can NEVER report its lane's outcome.** **"Is the cron job green?" is not a health question for ANY pg_net lane** — cite this number when someone asks for one. The estate knew the class qualitatively; it now has the measurement.
+
+⚠ **AND I WALKED INTO A TWICE-DOCUMENTED TRAP WHILE DOING IT, recorded rather than quietly fixed: reading `cron.job.command` with a plain `left(command, 120)` echoed a PARTIAL gate key** (truncated mid-value, ~9 chars, not a usable credential) **into the transcript — the exact hazard CLAUDE.md names, and the SECOND recorded instance** (the first is in this ledger, which concluded *"query the columns you need; do not select `command`"*). ⭐ **That rule did not hold, because the command is often exactly what you need.** The form that actually works, and which every subsequent query used: **redact IN SQL** — `regexp_replace(command, '(key|token|secret)=[^&''"[:space:]]+', '\1=[REDACTED]', 'gi')`. A rule phrased as "don't look" loses to a real need; a rule that hands over a working redaction does not.
+
+**Nothing shipped to prod state — docs only.** **Revert:** `git revert <this sha>`.
+
 ### 2026-09-14 · ✅ SHIPPED (code) — `/api/wallet-search` no longer tells a user to retry something structurally impossible · Claude Code desktop
 
 **The cheapest half of this morning's mega-wallet filing, executed rather than left queued.** The plumbing is untouched; only the CLAIM changed.
