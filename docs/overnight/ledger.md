@@ -10,6 +10,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨🚨 GITHUB DELIVERS THIS REPO'S SCHEDULED WORKFLOWS AT A CEILING OF ~0.3 TICKS/HOUR **EACH** — so a tighter cron buys NOTHING, and the alarm built for the 10-hour outage runs at 7.8 % of its schedule · Claude Code cloud
+
+**Docs-only. Found while re-deriving #100's "27 % of hourly" before citing it — the claim is confirmed, and it is not a sentinel problem.**
+
+📏 **FIVE WORKFLOWS, A 24× RANGE OF REQUESTED CADENCE, ACTUAL `schedule`-EVENT STARTS:**
+
+| workflow | cron | asked/h | **delivered/h** | % | median gap |
+|---|---|---:|---:|---:|---:|
+| E2E DOM Smoke | `51 */6 * * *` | 0.167 | **0.159** | **95.7 %** | 6.38 h |
+| Pipeline Sentinel | `34 * * * *` | 1.0 | **0.257** | **25.7 %** | — |
+| RPC Data Pipeline | `5,25,45 * * * *` | 3.0 | **0.290** | **9.7 %** | 3.39 h |
+| Dead Lane Backstop | `12,27,42,57 * * * *` | 4.0 | **0.308** | **7.7 %** | 2.70 h |
+| Site Availability Alarm | `4,19,33,49 * * * *` | 4.0 | **0.312** | **7.8 %** | ~3 h |
+
+⭐⭐ **THE DELIVERED COLUMN IS FLAT AT 0.257–0.312/h ACROSS THE WHOLE RANGE — about ONE TICK EVERY 3.3 HOURS — while the only workflow asking for LESS than that ceiling is delivered at 95.7 %.** ⛔ **So the percentage column is not five problems: it is ONE ceiling divided by what each workflow asked for.** Control in both directions, which is what makes it a ceiling rather than a coincidence.
+
+⭐ **PER-WORKFLOW, NOT A SHARED REPO BUDGET — established from the same data rather than assumed:** the four ≥1/h workflows deliver **~1.17/h between them**, which a single ~0.3/h repo-wide cap could not produce.
+
+🚨 **THE WORST INSTANCE IS NOT THE SENTINEL.** `site-availability-alarm.yml` — the alarm that exists to notice the site is DOWN, **created 2026-09-10 21:38 PT, hours after the Vercel spend-cap pause took the site down for ~10 h (#76)** — fires **23 times in 73.8 h**, with blind windows of **5.58 · 5.12 · 4.99 · 4.61 · 4.46 h**. **An outage shorter than ~3 hours will usually end before this alarm looks at all.**
+
+🚨 **AND BOTH 4/h ALARMS HAVE NEVER FAILED — 23 of 23 and 24 of 24 `success`.** Their badges are green while **~92 % of their ticks never happen.** ⭐ **That is `inherited-status`' own lesson from 09-13 — *a check that did not run is indistinguishable from one that passed* — applied to ALARMS, where nothing is watching for it.** It is a **separate defect from the ceiling and survives any move off GHA**: an alarm that reports success on every tick it manages to run says nothing about the ticks it did not.
+
+⚠ **NOT ONLY WATCHERS.** `rpc-pipeline.yml` is a **DATA** lane at 3/h → 0.290/h, and its own header carries the load-bearing assumption that partial failure *"self-heals on the next tick"*. **The next tick is a median 3.39 h away, not 20 minutes.**
+
+⛔ **WHAT THIS KILLS: "run it more often", estate-wide.** No GHA re-timing can raise delivery above ~0.3/h, so a workflow already at ≥1/h cannot be improved by changing its cron. ✅ **What it CONFIRMS: #100's decision.** That item rejected pg_cron + pg_net for the sentinel (119–162 s against pg_net's 90 s wall) and named the **cron-job.org console** — already proven at a 5-minute cadence on the counterparty lane. **That now applies to the whole alarm estate.** ⭐ **And do not re-time anything on GHA first to "see if it helps" — this measurement IS that experiment, already run across five workflows and 24× of cadence.**
+
+⛔ **WHY IS NOT ESTABLISHED AND IS NOT INFERRED.** GitHub documents scheduled workflows as best-effort and load-dependent; whether this is account-, repo- or queue-level is not decidable from a run list. **The number is the actionable part.** ⚠ One repo, one window (spans 73–388 h ending 2026-09-14) — re-derive before quoting; a platform-side change would move all five rows together.
+
+📏 **Also re-derived on #100 itself, and one of my own readings was wrong in the way this file keeps recording:** conclusions across 100 sentinel runs are 60 success / 40 failure, which reads as *"and 40 % of starts fail"*. ⛔ **That is a rate POOLED ACROSS A FIX** — before 09-07: **32 of 54 = 59.3 %**; since 09-07: **8 of 46 = 17.4 %**, with 09-06→09-09 at zero. **Quote 17.4 %, never 40 %.** Effective current coverage is the product: **29.2 % of hours started × 82.6 % succeeding ≈ 24 % of hourly sweeps completed**, median gap between SUCCESSFUL sweeps **4.63 h**. 🚨 **Worst blind window since 09-07 is 15.71 h (09-11 14:33Z → 09-12 06:16Z) — longer than the 14.05 h this item records as its worst, and it happened AFTER the item was filed.** ⭐ The same computation reproduces that 14.05 h window as 14.43 h, so the two instruments agree and the new maximum is real rather than a definitional artifact.
+
+**Revert path:** docs-only — one inbox filing + its INDEX entry + two addenda on #100. `git revert` by message.
+
 ### 2026-09-14 · ✅ SHIPPED (migration) — #82's SOURCE half shut too: the wmc parallel rekey now refuses a serial the parallel cannot contain. Population SIZED at 864 rows / 74 wallets / +$4,108 overstated FMV · Claude Code cloud
 
 - ⭐ **The sizing the decision was waiting on:** of **121,768** TS wmc parallel-keyed rows, **120,904 (99.29 %) supported**, **864 (0.71 %) not** (569 no subedition row · 255 Standard · 40 disagreeing). **A bounded blast radius, not an unmeasured mass.**
