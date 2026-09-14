@@ -4,6 +4,16 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-14 ~1:3x PM PT (Claude Code cloud; thread close-out — one falsifier RESOLVED, one estimate REFUTED)
+
+✅ **CURSOR FALSIFIER RESOLVED — stop checking it.** `golazos_sales_v1_backfill` moved 142,441,736 → **142,401,736** at 18:34:58Z and the 20:12Z observation set `changes_observed` 1 and **`ever_decreased` TRUE**. **A backward-walking cursor EXISTS, so `check_backward_cursor_rewind()` stays** — do not retire it — **and its 0 now means something** (armed cursor in population, no rewind yet).
+
+⛔ **#121's "~15–20 s cold" IS REFUTED — do not quote it.** Re-measured at **io_wait 2 / active 4**: the snapshot is **still cancelled at 55 s**. The 9.13 s was fully warm. **The precompute helped and did not finish the job.**
+
+📏 **Leg table (warm-vs-warm):** trust view **21.65 s cold / 0.00 warm** · `pipeline_fails_24h` **12.13 / 0.00** · FMV leg now a table read · all five `check_*` **0.00**. ⭐ **Only the FMV leg was compute-bound; the rest is IO-bound and this function is ALWAYS cold.** ⛔ **DO NOT ADD AN INDEX to `pipeline_runs`** — 84 rows of 58,789, 51 MB, six indexes already; warm it is 0.00 s. **Revised exit: (a) extend the precompute (reuse `rpc_trust_health_precompute`, refreshes in 128 s) or (b) raise the callers' budget.**
+
+⏳ **Still pending on TIME, not work:** `topshot_misattrib_backlog_history`'s first real diff row (**09-15 00:15Z** — non-NULL `entered_open`/`left_open`) · jobid **506**'s first scheduled run (**01:35Z**, must read `succeeded`; the seed took 106.9 s of a 120 s ceiling) · the `topshot-pack-opens-history-backfill` floor read (inbox `2026-09-14T1820Z`).
+
 ## STEER — added 2026-09-14 ~11:0x AM PT (Claude Code cloud; #121 closed to its last step, and ONE DOCTRINE CHANGE every pass needs)
 
 🚨 **DOCTRINE CHANGE — READ THIS EVEN IF YOU READ NOTHING ELSE HERE. "`rpc_ops_snapshot()` timed out" IS NO LONGER EVIDENCE OF A SATURATION SPELL.** At least **8 filings and handoffs** use exactly that inference (*"which is the §1c spell tell"*, *"those three are not broken instruments — they are the spell"*). It was sound while the function completed in quiet windows. **Measured 09-14 10:30 AM PT at io_wait 1 / active 2 — a genuinely quiet instance — and it was still cancelled 57014 at a 50 s budget.** A pass reading a timeout there as spell evidence will **diagnose a spell that is not happening** and defer real work to a quiet window that already arrived. ⭐ **Take the positive control from `pg_stat_activity`. It is cheap, direct, and it cannot be the thing it is measuring.** (The latency itself is now fixed — see below — but the habit will outlive the fix.)

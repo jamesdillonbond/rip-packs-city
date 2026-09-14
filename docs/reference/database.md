@@ -1004,6 +1004,44 @@ Guarded repo-side by `__tests__/migration-view-security-invoker-guard.test.ts`: 
 
 ---
 
+## ⭐⭐ WARM-vs-WARM IS NOT ONLY AN ANTI-FOOLING RULE — IT **DIAGNOSES**, AND IT SELECTS THE REMEDY (2026-09-14, `rpc_ops_snapshot`)
+
+A leg that is **expensive WARM** is **COMPUTE-bound**: caching cannot help it, an index cannot help it, and a **precompute or rewrite is the only lever**.
+A leg that is **cheap warm and expensive COLD** is **IO-bound**: the query is fine, the data simply is not resident — **an index will NOT help, and neither will rewriting the query.**
+
+Measured on `rpc_ops_snapshot()` in a genuinely quiet window (positive control `pg_stat_activity` io_wait 2 / active 4):
+
+| leg | cold | warm | bound by | lever |
+|---|---|---|---|---|
+| `fmv_by_collection` (5× `sentinel_fmv_confidence_rows`) | 32.58 s | **32.50 s** | **COMPUTE** | precompute — **shipped `20260914215000`** |
+| `v_rpc_trust_health` (38 arms) | **21.65 s** | 0.00 s | IO | precompute / RAM — **not an index** |
+| `pipeline_fails_24h` | **12.13 s** | **0.00 s** | IO | ⛔ **not an index** (see below) |
+| security block (5 `check_*`) | — | 0.00 s | — | none needed |
+| `get_pipeline_alerts()` | — | 0.00 s | — | none needed |
+
+⛔ **THE NEGATIVE RESULT IS THE VALUABLE ONE, because it is the action a reader would otherwise take.** `pipeline_fails_24h` took **12.13 s cold** and matches **84 rows out of 58,789 on a 51 MB table that already carries six indexes, including `pipeline_runs_started_at_idx` and `pipeline_runs_ok_finished_idx`.** That reads exactly like a missing index. **It is not.** Warm, the identical query returns in **0.00 s**. The 12 s was the cold read of a table that is simply not resident on a 2 GB-RAM instance. **Adding an index would have cost a migration, an `apply_migration` PGRST002 burst and a write-path penalty, and bought nothing.**
+
+🚨 **AND THE UNIFYING CONSEQUENCE FOR ANY LOW-FREQUENCY INSTRUMENT HERE: a function called every few hours is ALWAYS cold.** Nothing it touches survives in 2 GB of shared buffers between calls, so its cold number *is* its real number and every warm reading of it is a fiction. **Do not tune such a function by re-measuring it twice in a row** — the second reading is warm and will tell you the problem is solved.
+
+⚠ **This is also why a per-leg timing harness must force evaluation order.** `SELECT (SELECT ... FROM (SELECT clock_timestamp() s, f() ) q)` reports **0.00 s for everything** because the timestamp and the call are evaluated together. The form that works is `WITH t AS (SELECT clock_timestamp() s), x AS (<leg>) SELECT EXTRACT(EPOCH FROM (clock_timestamp()-t.s)) FROM t, x`. A harness that reports zero for every leg is broken, not evidence the legs are free.
+
+---
+
+## ⛔ TWO SAME-DAY MIGRATIONS THAT BOTH FULL-BODY-REWRITE ONE FUNCTION ARE ORDERED BY **FILENAME**, AND APPLY-ORDER IS NOT FILENAME-ORDER (2026-09-14, caught one step before it shipped)
+
+**The sibling trap to the one below, and it survives a correct `CREATE OR REPLACE`.** On 2026-09-14 two migrations both did a full-body `CREATE OR REPLACE FUNCTION public.rpc_ops_snapshot()`:
+
+- `20260914190000_..._the_search_path_class_gets_a_guard_...` — 14 keys, the LIVE FMV leg
+- `20260914183500_..._the_fmv_confidence_split_moves_to_a_precompute_...` — 15 keys, reads the precompute
+
+**Production was applied in the right order and was correct.** But `183500` sorts BEFORE `190000`, so **any replay of the migration directory runs the precompute FIRST and the 14-key body LAST — silently reverting a shipped fix and its provenance key.** Nothing reds: both files are valid, both applied, `migration-parity` keys on the migration NAME and is satisfied, and the live DB disagrees with a from-scratch rebuild only after someone rebuilds.
+
+⭐ **THE RULE: version a migration for its place in the REPLAY, not for the clock.** When you write the second same-day rewrite of one object, its filename must sort AFTER every other migration that touches that object. Renaming is free and safe — **parity matches on NAME, not version, so the applied row is not orphaned.**
+
+⚠ **Why the ordinary discipline does not catch it.** Re-reading the live object before a `CREATE OR REPLACE` (below) protects you against clobbering *the current state*. It says nothing about what a **later-sorting file** will do to you afterwards. The check is: `grep -l "CREATE OR REPLACE FUNCTION public.<name>" supabase/migrations/*.sql | sort | tail -1` — **that file must be yours.**
+
+---
+
 ## 🚨 `CREATE OR REPLACE` IS A FULL-BODY WRITE — RE-READ THE LIVE OBJECT IMMEDIATELY BEFORE ONE (2026-09-12, near-miss)
 
 **Nothing was broken. It was one verification away from being broken, and the failure would have been invisible.**

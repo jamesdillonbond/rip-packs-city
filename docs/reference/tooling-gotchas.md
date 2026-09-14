@@ -764,6 +764,12 @@ drifted figures were refreshed. The rules stand; the detail is here.
 > - ⚠ **`get_deployment.state` LAGS** (`BUILDING` for ~45 min on a READY deploy). Corroborate: `ready` vs `buildingAt`, production aliases attached, `lambdaRuntimeStats` present. ⚠ **A deploy that ERRORs is easy to miss** because the next push supersedes it and goes READY — **check deploy state PER COMMIT**.
 > - **A disk-IO saturation spell can FAIL THE WHOLE PRODUCTION BUILD** — prerendered `/insights` pages get 60 s each, and a *slow* board errors nowhere, so the stale-fallback never fires. Now a **ban at zero** (`insights-server-pages-bound-their-reads`); ⚠ twice the failing page was one the pushing commit never touched.
 
+### Displaced from CLAUDE.md 2026-09-14 — the Vercel log-tool bullet, verbatim
+
+Moved to pay for the warm-vs-warm DIAGNOSTIC clause in *Measurement discipline* (CLAUDE.md was at 40,000/40,000, zero headroom). **Nothing is lost: both halves of this bullet are documented far more fully in the `## Vercel tool behavior` section at the top of this file** — the `warn` correction and the smeared-attribution measurement. CLAUDE.md keeps a one-line pointer.
+
+> - ⚠ Both log tools mislead: `level:["warning"]` reads ZERO (the value is `warn`; warn IS indexed), and `get_runtime_errors` attribution is SMEARED. Re-group on `requestPath`.
+
 ---
 
 ## Two sandbox mechanics that cost a turn each (2026-08-25)
