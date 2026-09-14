@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · NOT SHIPPED — I WROTE THE WRONG FIX FOR A RED `main` AND WITHDREW IT UNPUSHED; the concurrent session's fix is right and mine would have bounded a WRITE · Claude Code cloud
+
+**No production change. Recorded because the reasoning is the point, and because the near-miss is a defect class this file already warns about.**
+
+⛔ **THE RED, correctly attributed.** CI failed on my own docs-only pushes with *"Inherited main status"* and *"Docs-guard tests"* — which reads like my commits broke it. **The inherited-status job says otherwise in its own log:** *"This push is NOT the cause and reverting it will not help."* It named run `34866000748`, and `git log --name-only` put the cause on `2e1e0eedd` (another session's new signature route). ⭐ **CLAUDE.md's rule earned its keep: a red run is not automatically yours — read the failing JOB first.**
+
+⛔ **THEN I WROTE THE WRONG FIX.** `__tests__/api-routes-that-degrade-honestly-also-bound-their-reads` went 42 → 43 and its message says *"Bound one … and LOWER the budget in the same commit"*, so I bounded **both** reads in the new route with `withBoardBudget` (tsc clean, ratchet back to 42, the route's own 61 tests green, eslint ratchet clean). 🚨 **And it was wrong, because I acted on the assertion message without reading the HEADER the file exists to argue.** That header says a **write** route must NOT be bounded: *bounding a write abandons the WAIT, not the STATEMENT*, so an overrunning write is **reported failed while Postgres commits it**. One of the two reads I wrapped is `resolve_wallet_signature_match` — which stamps `verified_at`, awards `link_wallet` and pays a **referral**. **A timer firing there tells the user verification failed while the award is committed, and invites a double-award on retry.**
+
+✅ **THE CONCURRENT SESSION'S FIX (`bcb028f00`) IS THE CORRECT ONE and is what stands:** the predicate is unchanged and the POPULATION grew by one — a POST route is exactly the exclusion the header argues for, so **raising 42 → 43 is right and lowering would mean wrapping a write in a timer**. They also proved the ratchet still armed after the raise (a synthetic 44th reds it). **I reverted my change unpushed; `main` is green on theirs.**
+
+⭐ **THE TRANSFERABLE LESSON, and it is not "read more":** a ratchet's ASSERTION MESSAGE tells you how to make the number go down, and the file's HEADER tells you whether it should. **I optimised the instrument instead of the property.** This repo already names the shape — *a test stating the contract in a comment and asserting something weaker* — and this is the mirror of it: an assertion prescribing a remedy the comment forbids.
+
+⚠ **ONE OBSERVATION WORTH KEEPING FROM THE DEAD BRANCH: `withBoardBudget` cannot take a supabase-js builder directly.** `PostgrestBuilder` is a **THENABLE but not a `Promise`**, and tsc rejects it (`missing … catch, finally, [Symbol.toStringTag]`). Every existing call site happens to pass a real Promise (`Promise.all([...])`, or a lib fetcher's return), so nothing had met it. `Promise.resolve(builder)` adopts the thenable and types cleanly. **A bare `await supabase…` works; handing the same expression to a helper does not.**
+
+🤝 **AND THE SAME SESSION INDEPENDENTLY FOUND THE PARTIAL-SNAPSHOT DEFECT (`ba3366040`), from the other side — which is the good outcome, not a collision.** They fixed the **WRITER** (`shouldPersistSnapshot()` in the pinned pure core, gating the upsert; an errored walk that read zero rows is `incomplete_load`, **not** `no_rows`) — that is register #119's owed item 1, closed. I fixed the **DATA and the DB** (corrupt row deleted with a backup, plus `trg_whs_refuse_same_day_collapse` on INSERT **and** UPDATE). **Neither supersedes the other: their gate stops the write being attempted, mine refuses it if anything ever attempts it again, including a caller that is not that function.**
+
+🚨 **ONE WARNING THEY NEED AND DO NOT HAVE.** Their commit says *"NOT yet deployed — the repo lands first; the deploy and its positive control follow."* ⛔ **`snapshot-institutional-wallets` is in the CONTENT-DRIFTED set (#23 / R63): its deployed build is NOT this repo's source**, so a redeploy ships **every** unshipped change in that file, not just the gate. That is precisely why I put the enforcement in the database instead. **Diff the deployed eszip before deploying, or accept an unknown diff knowingly.**
+
+No revert path — nothing was pushed.
+
 ### 2026-09-14 · 🚨 A FAILED READ WAS BEING PERSISTED AS A WHALE'S HOLDINGS, AND ONLY A STATEMENT TIMEOUT STOPPED ~51,120 FABRICATED BUYBACKS — the SECOND variant of this defect in the same file · Cowork cloud
 
 Found by asking which lanes are failing right now. `snapshot-institutional-wallets` is **4 of 4 failed in 24 h and carries no suppression** — the only unsuppressed 100 % lane on the board.
