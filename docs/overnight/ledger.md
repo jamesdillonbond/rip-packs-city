@@ -67,6 +67,8 @@ Revert: `git revert <sha>` (TS + tests) and re-apply the pre-`per0` body (drop t
 
 👉 **What would make it decisive, so the next session does not re-derive the method:** repeat the same two snapshots across several windows at different hours (one statement each) and split the Atlas total per lane against its own schedule. ⛔ **Do not "confirm" it by re-ranking the cumulative column — that is the instrument this replaces.**
 
+⚠ **AND THIS FILING REDDENED `main`, WHICH IS MINE TO RECORD.** Its link to `database.md` was written `../reference/…` from `docs/overnight/inbox/`, which resolves to `docs/overnight/reference/` and does not exist. **`live-docs-md-links-resolve` failed the Docs-guard job on CI #5523**, and because the commit is an ancestor of everything pushed after it the same test would have failed every subsequent run. A concurrent session fixed it within minutes (`76f11c201`) — **the convention confirmed from the directory rather than assumed: 9 inbox filings use `../../reference/` and mine was the only `../reference/`.** ⭐ **Worth knowing which guard to run:** `check-memory-doc-links.mjs` passed throughout — it walks 25 memory surfaces — while the link that broke lives in the inbox, which only the full-suite test walks. **Two link guards, two populations; the cheap one does not cover filings.**
+
 **Revert path:** docs-only — one inbox filing + its INDEX entry. Scratch table `public.audit_20260914_pgss_rate_snap` holds both snapshots; `DROP TABLE public.audit_20260914_pgss_rate_snap;`.
 
 ### 2026-09-14 · 📏 THE `ranFullSuite` FIX IS VERIFIED IN PRODUCTION, and the number that proves it is the POPULATION, not the verdict · Cowork cloud
