@@ -10,6 +10,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 🚨 THE ATLAS LANE'S ROOT CAUSE, FULLY QUANTIFIED — a verify queue **27× underwater**: it clears 2 listings per tick against a backlog of **303,463** growing **~38,000/day**. NOT shipped: the obvious lever is an external-API and pg_net cost, and it needs a decision · Claude Code cloud
+
+**Refines tonight's earlier entry, which blamed the 2.2 M-row event table.** That was half right. The tick's own wanted-set query is **already scoped** (`AND ev.last_seen_at > now() - interval '24 hours'`), so the 2.2 M table is not what it scans. **What it scans is the OPEN population**, and that is the half the prune never touches (`prune_topshot_atlas_market_events` deletes only `completed` rows).
+
+📏 **MEASURED 7:3x PM PT:**
+
+| | rows |
+|---|---|
+| open nba listings | **371,310** |
+| …seen in the last 24 h (the LIVE set) | **67,847** |
+| …**stale >24 h, still marked open** | **303,463 (82 %)** |
+| …stale >3 days | 191,816 |
+| …stale >6 days | 29,411 |
+| `ts_listings` (what users actually see) | **67,455** |
+
+✅ **USERS ARE FINE — and that is why nothing alerted.** `ts_listings` (67,455) matches the live 24 h set (67,847) almost exactly, so the sniper board and every listing surface are correct and correctly bounded. **The bloat is entirely internal.**
+
+🚨 **THE QUEUE ARITHMETIC, FROM THE TICK'S OWN TELEMETRY.** The tick records `unverified_24h` every two minutes: **303,353 → 303,447 → 303,463 across 4 minutes** — growing **~27/min ≈ 38,000/day**. And it records `verify: {dispatched: 2}` — pg_cron calls `atlas_listing_verify_tick(2)`, which passes that straight to `atlas_listing_verify_dispatch(p_max)`, one `net.http_post` to Atlas per listing. **2 per tick × 720 ticks/day = 1,440/day against ~38,000/day of new arrivals: the queue is ~27× underwater and has never had any chance of draining.**
+
+⭐ **AND THE LIKELY REASON THE BATCH IS 2 IS THAT IT USED TO HAVE TO BE.** `atlas_listing_verify_dispatch` is exactly the function #85 fixed on 09-12 (it grouped and sorted 261,531 nft_ids to return two; now 54 buffers / 2.2 ms, and its failure count went **169 → 86 → 0**). A batch throttled to 2 while the dispatcher was pathological makes sense; **the dispatcher was fixed and nobody raised the batch back.** That is a hypothesis about intent, not a measurement — the number's history is not recorded anywhere I can read.
+
+⛔ **THE OBVIOUS LEVER IS NOT FREE, WHICH IS WHY NOTHING WAS SHIPPED.** Keeping pace needs p_max ≈ **53**; draining the backlog inside a month needs ≈ **67**. All three costs scale linearly with it:
+1. **External API load** — one HTTP POST per listing to **Dapper's public Atlas API**. p_max 67 = ~2,000 requests/hour, ~48,000/day, to someone else's service. Rate limits and acceptable-use are unknown to me and are not mine to assume.
+2. **pg_net** — every probe is a queued request whose response lands in `net._http_response`, i.e. **directly couples to #75's 13 GB store**, whose reclaim was rejected tonight partly because growth had stopped. A 30× probe increase reopens that.
+3. **Scan cost** — the dispatch's slice is `LIMIT GREATEST(p_max,0) * 250`, so p_max 67 scans ~16,750 rows per tick instead of 500.
+
+⭐ **A SECOND LEVER EXISTS AND MAY BE STRICTLY BETTER: age the stale opens out in BULK, with no HTTP at all.** A listing not re-observed for N days is almost certainly gone, and `atlas_market_drain` (jobid 463, every 2 min) is continuously ingesting current market events. ⚠ **The decisive question, which I could not settle tonight: does the drain RE-OBSERVE every still-open listing periodically, or does it only report CHANGES?** If it re-observes, "not seen in 6 days ⇒ closed" is safe and 29,411 rows clear immediately with zero API cost. **If it only reports changes, that rule would wrongly close live listings — a user-visible error on the sniper board.** That is an EQUIVALENCE claim and this repo's rule is to prove it over the population first.
+
+**Nothing shipped. Revert:** nothing changed. **Next step, in order:** (1) settle the re-observation question from `atlas_market_drain`'s body and a sample of `last_seen_at` movement on known-live listings; (2) if bulk ageing is safe, prefer it — it costs no external calls and no pg_net; (3) only if it is not, raise `p_max` and **do it incrementally with the Atlas error rate and `net._http_response` growth watched**, not in one jump.
+
 ### 2026-09-13 · ✅ SHIPPED (docs) — a new standing rule: a failure flag for ONE source must not gate a field fed by ANOTHER; plus the Goofy-probe filing · Cowork cloud
 
 **CLAUDE.md, net −7 chars** (39,975 → 39,968). The rule is added onto the MIRROR clause it refines, paid for by **displacing a pointer that line 145 already carries verbatim** — no content lost. The full case is in `key-files-and-honesty.md`.
