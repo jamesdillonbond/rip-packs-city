@@ -187,7 +187,7 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 | **#117** | 🟡 open | HEADLINE WITHDRAWN THE SAME HOUR IT WAS FILED (2026-09-14)  |
 | **#118** | 🟡 open | OPEN, NEW 2026-09-14 (PT)  |
 | **#119** | 🟠 partial | PARTLY FIXED 2026-09-14 (PT)  |
-| **#120** | 🟡 open | OPEN, NEW 2026-09-14 (PT)  |
+| **#120** | 🟡 open | DIAGNOSIS WITHDRAWN ~40 MINUTES AFTER FILING (2026-09-14)  |
 
 <!-- END:ITEM-INDEX -->
 
@@ -1862,7 +1862,7 @@ date stamp, and this file's standing rule that every recorded status has a shelf
     | `259:8950` | **237** | **47** | 76 | ✅ **not a violation at all** — the db circ was 190 low |
     | `259:8951` | **285** | **95** | 99 | ✅ **not a violation at all** — the db circ was 190 low |
 
-    ⭐ **So half of `wmc`'s "violations" are artifacts of a stale DENOMINATOR, not bad serials** — which is a false-positive source any impossible-serial detector inherits, and another reason not to widen the trust metric to base editions. ⭐ **And the two that survive share a shape: max serial ≈ 2× circulation** (7,944 vs 4,000; 7,999 vs 4,099), which is not the shape of a random corruption.
+    ⛔ **CORRECTED — "stale" IS THE WRONG WORD AND #120 IS WITHDRAWN: the denominator was BASE-ONLY while the chain counts base + parallels.** `259:8950` is 47 base + 190 parallels = **237**, exactly what the chain returns. ⭐ **So half of `wmc`'s "violations" are artifacts of a DEFINITIONAL MISMATCH in the denominator, not bad serials** — which is a false-positive source any impossible-serial detector inherits, and another reason not to widen the trust metric to base editions. ⭐ **And the two that survive share a shape: max serial ≈ 2× circulation** (7,944 vs 4,000; 7,999 vs 4,099), which is not the shape of a random corruption.
 
     ⭐ **THE `onchain`-SOURCE ROWS SPLIT THE SAME WAY, and `wmc` adjudicates them.** Of 99 distinct impossible `onchain` `nft_id`s, **28 are in `wmc`**: **25 agree on EDITION** and only 3 differ, while **15 of 28 DISAGREE on SERIAL**. In every one of those the wmc serial is comfortably inside circulation and the `sales` serial is far outside — e.g. nft `325092` on `2:54` (circ 3,341): **sales says 15,758, wmc says 1,545.** **So for this source it is the SERIAL that is wrong, not the edition** — which is the opposite of what the 14 %-conflicting-editions figure above might suggest, and the two populations are not the same rows.
 
@@ -1900,7 +1900,17 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     ⚠ **AND THE LANE'S 50% FAILURE RATE IS NOT A NEW DEFECT.** `snapshot-institutional-wallets` is a **fifth** member of the chronic timeout-under-load class (M11 / #42 / #73 / #84) alongside `fmv-backfill`, `lock-check-batch`, `price-snapshots` and `run-insider-detectors`; 3/6 reads high only because the denominator is 6. **What was new is what the timeouts DID to the data.**
 
-120. 🔴 **OPEN, NEW 2026-09-14 (PT) — `editions.circulation_count` IS STALE-LOW ON A MEANINGFUL FRACTION OF TOP SHOT EDITIONS, THE ERROR IS ONE-SIDED, AND NOTHING IN THIS ESTATE COMPARES IT TO THE CHAIN.** ⭐ **Found by running the falsification test on my own #116 conclusion instead of publishing it and moving on.**
+120. ⛔ **DIAGNOSIS WITHDRAWN ~40 MINUTES AFTER FILING (2026-09-14) — `circulation_count` IS NOT STALE. THE "ONE-SIDED CONSTANT OFFSET" WAS THE PARALLEL SUB-EDITIONS.** ⭐ **`TopShot.getNumMomentsInEdition(setID, playID)` counts EVERY moment minted for that (set, play) — the base edition AND its parallels. `editions.circulation_count` on a base row counts the BASE ONLY. I compared a total against a part and called the difference staleness.**
+
+    📏 **MEASURED, 11 EDITIONS, AND IT IS NOT A NEAR-MISS — `base + parallel_sum = chain` on 9 of 11**, including **every disagreement that prompted this item**: `218:8788` 4,000+99 = **4,099** ✓ · `259:8950` 47+190 = **237** ✓ · `259:8951` 95+190 = **285** ✓ · `264:8850` 129+35 = **164** ✓. ⭐ **And the five where the base alone matched (`2:62`, `2:41`, `2:113`, `2:63`, `8:62`) all have ZERO parallels — they matched because there was nothing to add.** Perfectly consistent.
+
+    ⚠ **THE TELL I WALKED PAST: "one-sided, and constant per set" is exactly what a PARALLEL STRUCTURE looks like.** Set 218 was "99 low" because its parallel is 99; set 259 was "190 low" because its parallels sum to 190. **I read a definitional difference as a data defect because the shape was suggestive, and I never asked what the chain function actually counts.** ⛔ **This is the second correction on this thread in one hour** — see the #116 note about choosing a sample to make a finding SHARP and then reporting it as though it had been chosen to make it SAFE.
+
+    ✅ **THE INSTRUMENT SURVIVES, CORRECTED (`20260914210000`).** As first shipped the sampler compared BASE-only circulation against the chain TOTAL, so it would have reported `db_low` on **every edition that has a parallel** — a false-positive generator dressed as an accuracy metric, on a 50-a-day schedule. It now carries `db_circulation_with_parallels` and `agrees` keys on that; `db_circulation` is kept beside it **because collapsing the two definitions is what caused this**. ✅ **Re-verified live: 7 audit rows, 7 read ok, `db_low` now 0** — `218:8788` and `259:8950` flip from false findings to **agree**.
+
+    🟡 **WHAT IS GENUINELY OPEN, AND IT IS SHARPER THAN THE THING I FILED: SOME `::N` ROWS ARE CHAIN MINTS UNDER THE SAME (set, play) AND SOME ARE NOT, AND NOTHING KNEW WHICH.** Two editions do not sum: `51:1885` (base 4,000 + parallel 472, chain **4,000** — the parallel is NOT counted) and `218:8061` (base 4,000 + parallels 384, chain **4,099** — the 99-moment `::16` IS counted, the 285-moment `::1` is NOT). **The corrected sampler now classifies that as `db_high` and measures how common it is**, which is a better question than the one this item opened with. ⚠ **And it is the standing explanation to beat for #116's two surviving impossible editions — which are these same two.**
+
+    ~~**ORIGINAL FILING, KEPT SO THE ERROR IS LEGIBLE — `editions.circulation_count` IS STALE-LOW ON A MEANINGFUL FRACTION OF TOP SHOT EDITIONS, THE ERROR IS ONE-SIDED, AND NOTHING IN THIS ESTATE COMPARES IT TO THE CHAIN.**~~ ⭐ Found by running the falsification test on my own #116 conclusion instead of publishing it and moving on — **which was the right instinct applied one step too late: the same instinct, applied once more, is what withdrew it.**
 
     📏 **THE SAMPLE: 17 random base Top Shot editions** (chosen by `abs(hashtext(external_id)) % 700 = 3`, never physical order), each read from the chain with the production-verified `TopShot.getNumMomentsInEdition(setID:playID:)` literal in `lib/editions-hydrate.ts`. **17 of 17 returned HTTP 200. 15 matched exactly. 2 did not — and BOTH were the DB reading LOW, never high:** `218:8788` db **4,000** / chain **4,099**; `264:8850` db **129** / chain **164**.
 
@@ -1908,7 +1918,9 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 
     ⭐ **AND IT CLUSTERS BY SET, which points at the writer rather than at individual editions.** `218:8788` and `218:8061` are both exactly **99 low**; `259:8950` and `259:8951` are both exactly **190 low**. **Two sets, two constants.** A per-edition drift would not produce that.
 
-    🚨 **WHY IT MATTERS BEYOND #116 — this is a USER-FACING accuracy defect, not only an internal one.** Circulation is the denominator collectors read: the `/N` on a moment, scarcity ranking, tier and FMV reasoning. **A circulation that is low makes a moment look scarcer than it is**, in the direction that flatters the asset — which is the worst direction for a platform whose stated gate is accuracy.
+    ⛔ **THE PARAGRAPH BELOW IS PART OF THE WITHDRAWN FILING AND ITS PREMISE IS FALSE — `circulation_count` is not low, so nothing here "makes a moment look scarcer than it is". Kept because the reasoning about WHY that direction would matter is still correct, and worth having if a real one is ever found.**
+
+    🚨 ~~**WHY IT MATTERS BEYOND #116 — this is a USER-FACING accuracy defect, not only an internal one.**~~ Circulation is the denominator collectors read: the `/N` on a moment, scarcity ranking, tier and FMV reasoning. **A circulation that is low makes a moment look scarcer than it is**, in the direction that flatters the asset — which is the worst direction for a platform whose stated gate is accuracy.
 
     ⛔ **AND IT MANUFACTURES FALSE "IMPOSSIBLE SERIAL" READINGS.** Two of the four editions where `wallet_moments_cache` appears to carry an out-of-range serial (`259:8950`, `259:8951`) are **not violations at all** once the true circulation is used. Any impossible-serial detector inherits this as a false-positive source — a further reason not to widen the trust metric to base editions (#116).
 

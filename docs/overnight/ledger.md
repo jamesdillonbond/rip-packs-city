@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⛔ SECOND CORRECTION IN AN HOUR — #120's diagnosis is WITHDRAWN: the "constant per-set offset" was the PARALLELS, and the instrument I shipped inherited the error · Claude Code cloud
+
+**DB migration `20260914210000_audit_20260914_the_circulation_sampler_was_comparing_base_only_against_a_chain_total`, plus the register withdrawal.**
+
+⛔ **WHAT I GOT WRONG, AND IT IS A DEFINITION, NOT A MEASUREMENT.** `TopShot.getNumMomentsInEdition(setID, playID)` counts **every** moment minted for that (set, play) — the base edition **and** its parallel sub-editions. `editions.circulation_count` on a base row counts the **base only**. **I compared a total against a part and filed the difference as staleness.**
+
+📏 **MEASURED, 11 editions, and it is not a near-miss — `base + parallel_sum = chain` on 9 of 11**, including **every disagreement that prompted #120**: `218:8788` 4,000+99 = **4,099** ✓ · `259:8950` 47+190 = **237** ✓ · `259:8951` 95+190 = **285** ✓ · `264:8850` 129+35 = **164** ✓. ⭐ **And the five where the base alone matched all have ZERO parallels — they matched because there was nothing to add.**
+
+⚠ **THE TELL I WALKED PAST: "one-sided, and constant per set" is exactly what a PARALLEL STRUCTURE looks like.** Set 218 read "99 low" because its parallel is 99; set 259 read "190 low" because its parallels sum to 190. **I treated a suggestive shape as a mechanism and never asked what the chain function counts.**
+
+🚨 **AND THE INSTRUMENT I SHIPPED 40 MINUTES AGO INHERITED IT — this is the part that would have cost something.** As built, the sampler compared BASE-only circulation against the chain TOTAL, so it would have reported **`db_low` on every edition that has a parallel**, at 50 a day, into a table whose whole point is to be believed. ⭐ **A false-positive generator dressed as an accuracy metric is worse than no metric**, and it would have "confirmed" #120 indefinitely.
+
+✅ **FIXED AND RE-VERIFIED LIVE.** `db_circulation_with_parallels` added; `agrees` keys on it; `db_circulation` kept beside it **because collapsing the two definitions is what caused this**. The four rows already written are zero-parallel editions and the migration **asserts** their verdicts are unchanged rather than assuming it. New reading: **7 rows, 7 read ok, 3 with parallels, `db_low` now 0** — `218:8788` (4,000+99 vs 4,099) and `259:8950` (47+190 vs 237) flip from false findings to **agree**.
+
+🟡 **WHAT SURVIVES IS SHARPER THAN WHAT I FILED: some `::N` rows are chain mints under the same (set, play) and some are not, and nothing knew which.** Two editions do not sum — `51:1885` (base 4,000 + parallel 472, chain **4,000**: the parallel is **not** counted) and `218:8061` (base 4,000 + parallels 384, chain **4,099**: the 99-moment `::16` **is** counted, the 285-moment `::1` is **not**). The corrected sampler classifies that as **`db_high`** and will measure how common it is. ⭐ **And these are the same two editions that carry #116's surviving impossible serials — so this is now the standing explanation to beat there, rather than two unrelated mysteries.**
+
+⚠ **TWO CORRECTIONS ON ONE THREAD IN ONE HOUR, and the pattern is the same both times: a shape that looked like a mechanism, published before the cheapest disconfirming question was asked.** The first was a biased sample; this one was an unexamined definition. ⭐ **What worked both times was the same move — carrying on to the NEXT question instead of stopping at a satisfying result. The finding that falsifies yours is usually one query further on.**
+
+**Revert:** re-apply `20260914200000`'s collect function and `ALTER TABLE public.topshot_circulation_chain_audit DROP COLUMN db_circulation_with_parallels;`
+**Target metric:** `db_low` stays 0 as the sample grows. ⚠ **If it does not, the parallel-accounting explanation is incomplete and #120 should be re-opened on evidence rather than on shape.**
+
 ### 2026-09-14 · SHIPPED · #120 gets the SAMPLED instrument its own exit demands — and pointedly NOT a bulk rewrite of a denominator the whole estate reads · Claude Code cloud
 
 **DB migration `20260914200000_audit_20260914_sample_topshot_circulation_against_the_chain_before_anyone_rewrites_it` + two pg_cron jobs, `rpc-circulation-chain-dispatch` (`25 3 * * *`) and `rpc-circulation-chain-collect` (`40 3 * * *`).**
