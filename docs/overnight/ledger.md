@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🔴 M2 READS 30.7 ON THE PRECOMPUTE ROW AND IS **NOT MET** — one leg of nine, and taking the row at face value today books a FALSE PASS on a go-live gate · Claude Code cloud
+
+**Docs-only. The finding is that the gate's own headline row is currently sitting at the top of its oscillation.**
+
+🚨 **WHAT A READER SEES TODAY.** `rpc_trust_health_precompute.allday_fmv_high_med_share_pct` = **30.7**, against a **≥ 30 %** bar — **at the bar for the first time in the recorded series.** ⛔ **It is ONE LEG OF NINE.**
+
+📏 **THE SERIES, from `rpc_trust_health_history`'s full span (09-12 00:48 → 09-14 00:48 PT, 6-hourly legs):**
+- **M2 (All Day): min 24.3 · max 30.7 · mean 28.27 · median 29.2 · ONE of nine legs at or above 30.** **M2 IS NOT MET.** The 30.7 is the top of an oscillation, not a level change, and the central tendency sits ~1–2 points short — consistent with every lever sizing already in #70 (+0.6 · +0.9 · +1.1–2.7).
+- **M1 (Top Shot): min 51.3 · max 59.2 · mean 55.28 · median 55.4 — NINE of nine above the 50 % bar.**
+
+⭐ **THIS IS THE SAME ERROR #70 ALREADY RETRACTED ONCE, REACHED BY A DIFFERENT ROUTE.** The withdrawn **28.3** came from a hand-derivation; this one would come from the **published row** — the very instrument shipped (migration `20260910230812`) so a reader could tell a leg from a level. **The instrument works; it is the single-row read that does not.**
+
+⚠ **AND THE RECORDED M1 BAND IS STALE IN THE PESSIMISTIC DIRECTION.** CLAUDE.md and the go-live M1 row both carry *"48–55 % depending on sweep position"*. Live: the floor is **51.3** and the MEAN is **55.28** — **the recorded ceiling is now the central tendency.** Re-derive before quoting either.
+
+⭐ **SWEEP COMPLETION EXONERATED AGAIN, on nine legs rather than four:** M1 sweep **77.5–82.0** (mean 79.40), M2 sweep **51.9–55.8** (mean 53.76) — **a 4-point sweep band while the share moves 6.4 points.** The 09-12 correction holds and is strengthened: the swings are composition, not coverage.
+
+⚠ **THE 09-12 DIURNAL FALSIFIER IS HALF-ANSWERED AND DOES NOT DECIDE AS POSED.** It reads *"if the 12:48 PT leg is NOT the day's low on 09-13 and 09-14, this is noise and should be struck."* On **09-13: M2's low IS the 12:48 PT leg (25.3 against 29.3 / 29.2 / 26.7) — SURVIVES. M1's low is the 06:48 PT leg (53.5), not 12:48 (54.4) — FAILS.** ⛔ **The falsifier names ONE slot for TWO metrics that do not dip together — while its own stated mechanism (a single shared `fmv-recalc` offset cursor) predicts they should.** 👉 **Restate it per metric; 09-14 still owes three legs (06:48, 12:48, 18:48 PT). Do not act either way yet.**
+
+⭐ **Two by-products, both re-derivations that correctly returned NOT-A-FINDING:**
+- **`ufc_strike` FMV is 5 d 13 h stale with 0.0 % HIGH/MED and `ufc_fmv_sweep_pct_24h` = 0.0** — **by design, not a defect.** UFC Strike's market has been closed since May 2026; migration `20260808160000` deliberately re-pointed `ufc_fmv_stale_hours` (permanently red, unbounded) to `ufc_flow_revival_sales_30d`, which **re-tested today reads 0 against breach_at 1, status ok.** The `-1` on `ufc_fmv_high_med_fresh24h_pct` is that migration's documented sentinel for "nothing recomputed", not a fabricated value.
+- **`fmv-recalc` itself is healthy** — 121 runs / 120 ok / 59,888 rows in 24 h; `fmv_sweep_stall_pct_24h` 5.0 (breach 50) and `fmv_sweep_wedge_hours` 0.14 (breach 3), both ok.
+
+**Revert path:** docs-only — one block in [go-live-2026-09.md](../strategy/go-live-2026-09.md), one addendum on #70. `git revert` by message.
+
 ### 2026-09-14 · ✅ `inherited-status` RAN FOR THE FIRST TIME AND PASSED — and I could not read WHICH pass it was, so the verdict now goes in the job summary · Cowork cloud
 
 **First live exercise** (CI #5497, `719031c`, a docs-only push): the job ran, exited 0, 10s. That is the guard working.
