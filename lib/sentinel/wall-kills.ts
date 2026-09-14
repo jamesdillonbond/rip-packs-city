@@ -43,6 +43,32 @@
  * apply it itself. Candidates, like the zero-yield arm — and, like it, the first
  * live reading names five pipelines, so `critical` here would spend the loudest
  * signal this estate has on lanes that may be clipping a tail by design.
+ *
+ * ── THE CORPSE RULE (2026-09-14) — THIS ARM'S OWN LESSON, APPLIED TO ITSELF ──
+ * ⛔ The paragraph above says this arm hands the broken-now-vs-corpse
+ * discrimination to "a reader". THERE IS NO READER, and that is now measured.
+ * At 07:3x AM PT the arm was amber on five pipelines — fmv-recalc 28/149,
+ * drain-fmv-cold-tail 5/48, wmc-fmv-populate 3/293, sentinel 2/30, panini-ingest
+ * 1/796 — and EVERY last_kill_at fell inside a 4h16m band on 09-13 (10:12 AM –
+ * 2:28 PM PT), the documented IO-saturation spell. Zero kills in the ~17 h since,
+ * across hundreds of ticks per lane. So it had been amber for 17 hours on a
+ * 4-hour incident that was over, and nobody was going to re-derive five
+ * timestamps against five cadences to notice. A permanently-amber instrument is
+ * indistinguishable from a broken one, so the discrimination is applied here.
+ *
+ * ⭐ THE UNIT IS RUNS, NOT HOURS, and that is the whole design. "Hours since the
+ * last kill" is a PROXY that coincides today: a lane at 7 ticks/day and one at
+ * 796 are not comparable on a clock, and a time rule would clear the slow one on
+ * no evidence at all. The property is "has this lane had chances to fail again
+ * and taken none", so the measure is CLEAN RUNS SINCE — clean_since_last_kill,
+ * which the SQL derives for free because every marker after the last kill is
+ * matched by construction (last_kill_at is the MAX unmatched one).
+ *
+ * ⚠ IT FAILS CLOSED. An offender whose clean_since_last_kill is missing or
+ * unreadable counts as LIVE, so an older SQL body that does not return the field
+ * keeps warning instead of going green. A failed read must never render as a
+ * clean answer — and a "resolved" verdict still NAMES the lanes and their counts,
+ * so a finished incident is reported, never silently dropped.
  */
 
 export type WallKillOffender = {
@@ -51,6 +77,8 @@ export type WallKillOffender = {
   kills?: number | string | null
   kill_pct?: number | string | null
   last_kill_at?: string | null
+  /** Consecutive clean ticks since this lane's last kill. Absent => treated as LIVE. */
+  clean_since_last_kill?: number | string | null
 }
 
 export type WallKillsPayload = {
@@ -79,8 +107,16 @@ function hhmmPT(iso: string | null | undefined): string {
 /**
  * @param warnAt a pipeline with at least this many kills in the window is an offender (default 3:
  *   one kill is a clipped tail, two can be a coincidence, three in a day is a pattern).
+ * @param clearAfter consecutive clean ticks since the last kill before that lane's kills are
+ *   treated as a CORPSE rather than a live incident (default 10). Measured in RUNS, never hours —
+ *   see the header. A lane too slow to accumulate this many inside the window never clears, which
+ *   is the correct conservative answer: there is genuinely no evidence it recovered.
  */
-export function summariseWallKills(payload: WallKillsPayload | null | undefined, warnAt = 3): WallKillsVerdict {
+export function summariseWallKills(
+  payload: WallKillsPayload | null | undefined,
+  warnAt = 3,
+  clearAfter = 10,
+): WallKillsVerdict {
   if (!payload || typeof payload !== "object") {
     // An unreadable payload is not a clean result. The caller owns the
     // query-error branch; this is "it returned something unreadable".
@@ -114,17 +150,49 @@ export function summariseWallKills(payload: WallKillsPayload | null | undefined,
     return { status: "ok", detail: `no pipeline killed at its wall ${warnAt}+ times — ${scope}${under}`, value: totalKills }
   }
 
-  const named = flagged
-    .slice(0, 6)
-    .map((o) => `${o.pipeline ?? "unnamed"} ${o.kills}/${o.heartbeats} (${o.kill_pct ?? "?"}%, last ${hhmmPT(o.last_kill_at)})`)
-    .join("; ")
-  const more = flagged.length > 6 ? ` +${flagged.length - 6} more` : ""
+  // ⚠ FAILS CLOSED: an absent or unreadable clean-run count is NOT evidence of
+  // recovery, so such a lane stays LIVE. This is what keeps an older SQL body
+  // (which returns no such field) warning instead of silently going green.
+  const cleanSince = (o: WallKillOffender): number | null => num(o.clean_since_last_kill)
+  const isLive = (o: WallKillOffender): boolean => {
+    const c = cleanSince(o)
+    return c === null || c < clearAfter
+  }
+
+  const live = flagged.filter(isLive)
+  const resolved = flagged.filter((o) => !isLive(o))
+
+  const describe = (o: WallKillOffender) => {
+    const c = cleanSince(o)
+    const tail = c === null ? ", clean-run count UNREADABLE" : `, ${c} clean since`
+    return `${o.pipeline ?? "unnamed"} ${o.kills}/${o.heartbeats} (${o.kill_pct ?? "?"}%, last ${hhmmPT(o.last_kill_at)}${tail})`
+  }
+  const list = (arr: WallKillOffender[]) =>
+    arr.slice(0, 6).map(describe).join("; ") + (arr.length > 6 ? ` +${arr.length - 6} more` : "")
+
+  // Every flagged lane has since run clean for long enough that the kills in the
+  // window are a CORPSE. Still report them by name — a finished incident is
+  // reported, not dropped — but do not spend an amber on a condition that is over.
+  if (live.length === 0) {
+    return {
+      status: "ok",
+      detail:
+        `no LIVE wall kills — ${resolved.length} pipeline(s) reached ${warnAt}+ kills in the window but each has run clean ${clearAfter}+ times since: ` +
+        `${list(resolved)} — ${scope}. The window still carries the corpse of a finished incident; measured in RUNS, not hours.`,
+      value: totalKills,
+    }
+  }
+
+  const corpseNote =
+    resolved.length > 0
+      ? ` (${resolved.length} further pipeline(s) already recovered ${clearAfter}+ clean runs: ${list(resolved)})`
+      : ""
 
   return {
     status: "warn",
     detail:
-      `${flagged.length} pipeline(s) KILLED AT THE WALL ${warnAt}+ times — no terminal row, invisible to every other arm: ` +
-      `${named}${more} — ${scope}. Read the LAST kill time before calling it live: a pooled count cannot tell "broken now" from "fixed, corpse still in the window".`,
+      `${live.length} pipeline(s) KILLED AT THE WALL ${warnAt}+ times and NOT yet recovered ${clearAfter} clean runs — ` +
+      `no terminal row, invisible to every other arm: ${list(live)}${corpseNote} — ${scope}.`,
     value: totalKills,
   }
 }
