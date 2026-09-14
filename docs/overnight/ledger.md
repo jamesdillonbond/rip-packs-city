@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · SHIPPED · The rewind that discarded two backfill walks is now DETECTABLE — `pipeline_runs` forgets in 73h, the cursor does not · Claude Code cloud
+
+**DB migration `20260914160000_audit_20260914_detect_a_backward_cursor_rewind_the_logs_cannot_outlive` + pg_cron `rpc-observe-cursor-watermarks` (`12 */2 * * *`, ACTIVE, calls the function DIRECTLY — no pg_net). Follows the suppression fix two entries up; that one corrected the claims, this one instruments the cause.**
+
+⭐ **THE GAP, stated precisely.** `ee90eb54c` fixed the mechanism (a failed cursor read fell through with `ceiling` still at `CEILING_INIT` and upserted the top of the walk back over the real cursor, silently, at `ok:true`) and asked *"Did it fire? No evidence within retention, and retention is the caveat."* **The one query that answers it — `cursor_after > cursor_before` — reads `pipeline_runs`, which keeps ~73h.** So the estate could never answer that question about anything older than three days, and **both August instances were already invisible when the fix shipped.** ⭐ **The cursor is a SLOWLY-MOVING STATE THAT OUTLIVES THE LOG** — which is why the evidence survived in `event_cursor` and why a watermark table is the right instrument.
+
+🛡 **WHAT IS NOW LIVE.** `event_cursor_watermarks` (one row per cursor: low/high water, `ever_decreased`, last rewind from/to, observation count) · `observe_event_cursor_watermarks()` (writer, every 2h) · `check_backward_cursor_rewind()` (**ban at zero**; jsonb ARRAY, so clean is `jsonb_array_length() = 0`, **not** `count(*) = 1`).
+
+⭐ **SELF-REGISTERING, NOT A CURATED LIST — direction is inferred from the data.** A cursor observed to **decrease** walks backward; for those an **increase** is a rewind. A forward indexer only ever increases, so it cannot enter the population at all: **no allowlist to rot and no name pattern to drift.** Seeded 33 of 33 cursors at install.
+
+✅ **POSITIVE CONTROL RUN, not assumed — a guard nobody has seen fail is not a guard.** A synthetic cursor was walked 1,000,000 → 900,000 (arms) → 990,000 (rewind) across three observations: the detector flagged **exactly 1**, with `from 900000 / to 990000 / low_water 900000`, and **zero false positives across the 33 real cursors**. Probe then deleted from both tables; re-read **0 violations, 33 watermark rows = 33 cursors, 0 probe leftovers**. `check_secdef_anon_exec_drift()` 0; `has_function_privilege` anon **false** on both functions, `postgres` **true** on the writer (⚠ the REVOKE orphans the pg_cron caller otherwise, and that failure mode is SILENCE).
+
+⚠ **THREE BLIND SPOTS, named now rather than discovered later.** (1) A lane **arms on its first observed descent** — Golazos ticks every 3h and arms within one cycle; a **dormant** backfill never arms, which is self-limiting (it cannot rewind without a caller, and the first descending tick after one returns arms it). (2) It **cannot see a rewind before install** — the two August ones live in the suppression reasons and in this ledger, nowhere else. (3) A **deliberate** re-seed of a backfill cursor **will** be flagged, and that is correct: it is indistinguishable from the defect by state alone. **Dismiss it by recording why, never by widening the check.**
+
+📏 **Cost:** 33-row table, one upsert pass per 2h, called directly by pg_cron. No HTTP, no pg_net, no user-facing surface touched.
+
+**Revert (all four parts):** `SELECT cron.unschedule('rpc-observe-cursor-watermarks');` · `DROP FUNCTION public.check_backward_cursor_rewind();` · `DROP FUNCTION public.observe_event_cursor_watermarks();` · `DROP TABLE public.event_cursor_watermarks;`
+**Target metric:** `jsonb_array_length(check_backward_cursor_rewind())` stays 0, and `count(*) FILTER (WHERE ever_decreased)` rises above 0 within ~3h (the falsifier: if nothing ever arms, the observer is running but the estate has no backward walker left, and this instrument should be retired rather than left permanently green).
+
 ### 2026-09-14 · SHIPPED · Three suppressions said "parked at the spork floor" and were wrong by 5.1M / 10.3M / 18.0M blocks — one of them a PERMANENT grant on a cursor that had moved 2h40m earlier · Claude Code cloud
 
 **DB migration `20260914153000_audit_20260914_correct_three_false_parked_at_floor_suppressions_and_guard_the_class`. Register #102 part (b), which the item left open in writing: *"a terminal-state grant should not be PERMANENT on a cursor that is still walking."* Re-derived live, nothing copied from the item.**
