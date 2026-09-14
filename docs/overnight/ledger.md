@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⭐⭐ THE FIRST RATE-BASED IO RANKING — THE ATLAS LANES ARE 37 % OF AN HOUR'S DISK READS AND `fmv-recalc` IS 4.8 %, IN FOURTH PLACE · Claude Code cloud
+
+**Docs-only. Replaces the instrument every prior saturation filing used, rather than adding another reading to it.**
+
+📏 **THE WINDOW, AND WHY IT CAN BE TRUSTED.** Two `pg_stat_statements` snapshots keyed **as pgss keys itself** — `(userid, dbid, queryid, toplevel)` — **13:34:11Z → 14:34:26Z, 1 h 00 m 14 s**, inner-joined on the full key with any backwards-counter entry dropped. **ZERO entries were readmitted**, so every delta is an honest difference and not a re-admitted lifetime. Both keying traps that void such a delta were avoided deliberately (they cost me a false headline earlier today; recipe now in [database.md](../reference/database.md)).
+
+**480 statements read anything. Total 7,058,722 blocks ≈ 53.9 GB ≈ 919 MB/min.**
+
+| # | blocks | calls | exec s | share | statement |
+|---:|---:|---:|---:|---:|---|
+| 1 | 1,078,200 | 13 | 190 | **15.3 %** | `allday_resolve_unmapped_via_atlas()` |
+| 2 | 1,004,092 | 31 | 596 | **14.2 %** | `atlas_listing_verify_tick()` |
+| 3 | 493,841 | 30 | 335 | **7.0 %** | `atlas_market_drain()` |
+| 4 | 339,691 | 6 | 297 | **4.8 %** | `refresh_wmc_fmv_changed()` |
+| 5 | 254,746 | 191 | 80 | 3.6 % | a PostgREST RPC |
+| 6 | 185,947 | 2 | 85 | 2.6 % | `reconcile_wmc_metadata_from_editions()` — `source: POST /mcp` |
+
+⭐⭐ **THE ATLAS LANES ARE WHAT THIS INSTANCE READS: 37.2 % of the hour across all Atlas statements**, the top three alone **36.5 %**.
+
+🚨 **AND THE STANDING FRAMING IS A CUMULATIVE CLAIM.** `refresh_wmc_fmv_changed` is the cumulative #1 by a wide margin — **251.9 M blocks, ~22 % of all instance reads since 08-12** — and CLAUDE.md and roadmap-status both carry *"`fmv-recalc` … it owns the DB's #1 reader"*. **As a RATE it is 4.8 %, in fourth place, having fired 6 times in the window** (so it did not merely miss its slot).
+
+⛔ **THIS DOES NOT SAY fmv-recalc IS CHEAP OR THAT THE CUMULATIVE READING WAS WRONG.** A 33-day total and an hourly rate are different quantities and both are real. **What it says is that "the DB's #1 reader" is a statement about a cumulative column and must not be quoted as a statement about NOW** — the same error, on the same instrument, that this morning's pack-sales entry retired for a different statement.
+
+⚠ **ONE 60-MINUTE WINDOW, 6:34–7:34 AM PT on a weekday** — a 6-hourly job that did not fire is under-represented by construction. **Do not size a fix off this table alone.**
+🚨 **THE OBSERVER IS IN THE RANKING: statements tagged `source: POST /mcp` are 4.8 % of the window** — agent sessions, mine and a concurrent one doing wmc repair. **This repo's "your OWN PROBE is the load here" as a number rather than a caution.**
+⚠ **AND `shared_blks_read` IS NOT PHYSICAL DISK IO** — it counts blocks missing from `shared_buffers`, which the OS page cache may still have served. **So 919 MB/min ≈ 15.3 MB/s is an UPPER BOUND**, and the resemblance to the compute tier's 22 MB/s burst floor is suggestive, **not established**. The ranking and the shares are the claim; the absolute byte rate is a ceiling.
+
+👉 **What would make it decisive, so the next session does not re-derive the method:** repeat the same two snapshots across several windows at different hours (one statement each) and split the Atlas total per lane against its own schedule. ⛔ **Do not "confirm" it by re-ranking the cumulative column — that is the instrument this replaces.**
+
+**Revert path:** docs-only — one inbox filing + its INDEX entry. Scratch table `public.audit_20260914_pgss_rate_snap` holds both snapshots; `DROP TABLE public.audit_20260914_pgss_rate_snap;`.
+
 ### 2026-09-14 · 📏 THE `ranFullSuite` FIX IS VERIFIED IN PRODUCTION, and the number that proves it is the POPULATION, not the verdict · Cowork cloud
 
 Closing the loop on this morning's no-op. Read off a live `inherited-status` job summary (run `34855136370`):
