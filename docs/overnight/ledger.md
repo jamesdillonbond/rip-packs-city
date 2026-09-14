@@ -10,6 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ✅ SHIPPED (code) — `/api/wallet-search` no longer tells a user to retry something structurally impossible · Claude Code desktop
+
+**The cheapest half of this morning's mega-wallet filing, executed rather than left queued.** The plumbing is untouched; only the CLAIM changed.
+
+⛔ **WHAT WAS FALSE.** On a wallet whose collection is large enough, the unpaginated `col!.getIDs()` blows Flow's per-script computation limit (production 2026-09-14: Top Shot **100,134** and All Day **217,993** against a limit of **100,000**). That ceiling is a property of the wallet's SIZE and the script — **not of the moment** — so the old copy, *"Failed to fetch wallet data. Please try again."*, invited a retry **that can never succeed**. The wallet the error named has **zero rows in `wallet_moments_cache` across every collection**: permanently invisible, retried and failing for at least 24 h.
+
+⭐ **CREDIT WHERE DUE, and it decided the shape of the fix: the plumbing was ALREADY honest** — 500 plus an explicit `error`, never a silent empty wallet. **This was not the failed-read-as-answer defect.** So the change is to the wording alone: detect Flow error **1110** / `computation limit exceeded` in the existing catch and say *"This wallet holds too many moments for us to read in one pass … retrying will not help."* **Response SHAPE is unchanged** (`WalletSearchResponse.error` is already a free string), so no client can break on it.
+
+⭐ **PROVEN NON-VACUOUS BY REVERT, and it carries its own control.** Stashing the route change reds **exactly** the new assertion (1 failed / 13 passed). The control — *"still says 'try again' for an ordinary transient failure"* — keeps passing, which is what stops the fix from swapping one false claim for another by printing the new message on **every** failure. The assertions are on the **ABSENCE** of the false claim (`not.toMatch(/please try again/i)`), not the presence of copy.
+
+⚠ **WHAT THIS DOES NOT FIX, deliberately:** the wallet is still unreadable. The windowed `getIDs()` already exists in `lib/chains/flow/allday-cadence.ts` and `cadence/pinnacle-wallet.ts` and is simply not wired into `wallet-search`. ⛔ **That work stays queued behind a POPULATION COUNT I could not buy cheaply** — the wallets-by-moment-count aggregate timed out twice on the ~1.58 M-row table, and my own probe is load on a saturation-bound instance. **An eligibility count is not a gain count**, and neither observed wallet is saved by any user, so this may be a handful of whale addresses nobody has saved. Filing: [`inbox/2026-09-14T1749Z-…`](inbox/2026-09-14T1749Z-wallet-search-cannot-read-a-mega-wallet-and-tells-the-user-to-try-again.md)
+
+- **Verified:** full suite **1,551 files / 17,322 passed**, `tsc` 0, ratchet **715 vs baseline 715**.
+- **Revert:** `git revert <sha>` — restores the old message and drops the two tests. No DB, no schema, no prod state.
+
 ### 2026-09-14 · SHIPPED (DB + docs) · #121 exit (2) — the FMV confidence split moves to a precompute WITH its provenance; `rpc_ops_snapshot()` goes from CANCELLED-at-50 s to 9.13 s · Claude Code cloud
 
 ✅ **SHIPPED: migration `20260914215000`.** New table `public.fmv_confidence_precompute` (one row per collection: `counts` jsonb · `computed_at` · `duration_ms`, RLS on, 0 policies), `refresh_fmv_confidence_precompute()` (SECURITY DEFINER, revoked from PUBLIC/anon/authenticated), pg_cron **jobid 506**, and a full-body `CREATE OR REPLACE` of `rpc_ops_snapshot()` whose `fmv_by_collection` now reads the precompute. **14 → 15 keys.**
