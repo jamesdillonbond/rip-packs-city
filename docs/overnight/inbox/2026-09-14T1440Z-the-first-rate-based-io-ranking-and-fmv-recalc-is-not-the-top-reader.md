@@ -1,7 +1,7 @@
 # The first RATE-based IO ranking this platform has had — and `fmv-recalc` is 4.8 % of it, not the top reader
 
 **Filed 2026-09-14 ~7:4x AM PT (14:4xZ), Claude Code cloud. READ-ONLY — nothing shipped.**
-Every saturation filing here has ranked `pg_stat_statements` by its **cumulative** `shared_blks_read` column. This is the same ranking taken as a **delta across a clean 60-minute window**, with the two keying traps that void such a delta both avoided (see [database.md](../reference/database.md)).
+Every saturation filing here has ranked `pg_stat_statements` by its **cumulative** `shared_blks_read` column. This is the same ranking taken as a **delta across a clean 60-minute window**, with the two keying traps that void such a delta both avoided (see [database.md](../../reference/database.md)).
 
 ## 1 · The window, and why it can be trusted
 
