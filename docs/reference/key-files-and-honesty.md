@@ -1781,3 +1781,54 @@ Run it on any boolean or numeric column that has a sibling `*_checked_at` / `*_v
 - **Staleness reasoning is NOT absence reasoning.** `lock-check-batch`'s comment argues carefully that a row may sit far past its 7-day target and *"that is expected, not a fault"* — entirely about how OLD a check is, and silent on a row with **no check at all**. A thoughtful staleness design is not evidence the absence case was considered.
 - **The worst sub-case is a false claim on data you HAVE.** Pinnacle's hardcoded `false` discarded 370 correct, present readings. That outranks #112's false claim on absent data.
 - ⛔ **Splitting an unknown bucket out and then not rendering it changes nothing.** The `/api/analytics` fix is only a fix because `CollectionAnalyticsClient` discloses the bucket beside the tiles. A bucket nobody can see is the same as not splitting it out.
+
+## ⛔ THE MIRROR, SHIPPED BY THE FIX ITSELF (2026-09-13) — a failure flag for ONE source gating a field fed by ANOTHER
+
+CLAUDE.md carries the rule in one line; this is the case that produced it, and it
+is worth keeping because **the mirror was introduced by the patch that removed the
+original defect, by someone who had just written the word "honesty" in the commit
+message.**
+
+**The original defect (real, and it reached users).** `/api/wallet-search`'s
+per-moment `catch` built a replacement row that was honest about exactly one
+field — `playerName: "Unknown (error loading)"` — and asserted the rest:
+`isLocked: false`, `officialBadges: []`, `specialSerialTraits: []`. `getLocked`
+is `Boolean(row.isLocked ?? row.locked)` and `CollectionMomentTable` rendered
+`LOCKED` as `isLocked ? "Yes" : "No"` with its honest `"—"` branch hardcoded to
+All Day, so a Top Shot moment whose enrichment failed published a definite
+**"No"** about whether the user could sell their own asset.
+
+**The fix, and the mirror it carried.** The catch stopped asserting, gained
+`enrichFailed: true`, and a new `isLockKnown(row)` returned `false` whenever
+`enrichFailed` was set. ⛔ **That is wrong, and permanently so.** Live enrichment
+and the lock reading are **SEPARATE SOURCES**: the Top Shot GraphQL host is
+decommissioned, so `enrichFailed` is true on **every** Top Shot row forever,
+while `wallet_moments_cache` still holds a lock value that was genuinely checked
+for ~56% of rows. The gate would have rendered `—` over **1.16M real readings** —
+trading a false *"No"* for a permanent *"unknown" about something we measured*,
+which is the mirror defect named on the same CLAUDE.md line as the original.
+
+**The remedy** is that an explicit provenance flag must WIN over a neighbouring
+failure flag: `isLockKnown` now checks the lock's own provenance first and only
+falls back to `enrichFailed`. See also the provenance-at-the-function-boundary
+section above — same incident, one level down.
+
+⭐ **The transferable shape, and why it is easy to ship:** a catch block naturally
+produces ONE flag, and the row it returns naturally carries MANY fields. The flag
+describes the call that failed; the fields may come from three different places.
+**Before gating a field on a failure flag, ask which source fed that field** — if
+the answer is "a different one", the flag is not evidence about it.
+
+⚠ **Two guard lessons from the same change, both mine:**
+
+- The pin that held the fix keyed on **DISTANCE**: `src.slice(start, start + 2000)`.
+  An unrelated edit to the same block (dropping a duplicate re-fetch) pushed
+  `enrichFailed: true` past 2000 characters and reddened the pin. Now bounded by
+  the block's own `as WalletRow;` terminator. **A slice that ends where the
+  property ends cannot be moved by anything written above it** — the third
+  instance of *pin the property, not the spelling*, after the literal `count ?? 0`
+  and the comment's line WRAPPING.
+- The population of a shape-based defect is **every reader of the FIELD**, never
+  the list in the filing. This one's count moved three → four → six → seven
+  surfaces across three passes, each using a different method; the dangerous one
+  was a shared **mapper** collapsing a `null` the route had just started sending.
