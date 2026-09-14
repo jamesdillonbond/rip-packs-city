@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 🚨 #113 PART (c) — the wallet-backfill load-shed is SILENTLY DEFEATED: the cohort split starved the pacing of gaps, so the documented 9-minute dispatch spread is ~1.5 minutes and has been unreachable in every observed wave · Claude Code cloud
+
+- **The shed exists and is incident-driven** (2026-06-10: ~252 orchestrators × 5 children = ~1,260 child lambdas at once; allday/pinnacle threw 210/203 failures in 5 min, `elapsed_ms` uncorrelated with wallet size). Fix was `DISPATCH_BATCH_SIZE = 6` + pauses spreading starts over `TARGET_SPREAD_MS = 9 min`, claimed at **~18×** lower instantaneous arrival.
+- **Measured:** the 5:45 / 5:59 / 6:13 / 6:27 PM waves dispatched **28 / 23 / 29 / 31** orchestrators over **1.4 / 1.0 / 1.4 / 1.7 min**. ⚠ **The 6:27 PM one IS the burst #113 was filed from.**
+- **Cause is arithmetic:** `pauseMs = Math.min(MAX_PAUSE_MS, TARGET_SPREAD_MS / gaps)`. Those waves are **cohorts 0–3 `of: 4`**, so each run paces ~28 tasks → 6 batches → **5 gaps** → computed **108 s** → clamped by **`MAX_PAUSE_MS = 20_000`** → 5 × 20 s = **100 s**, matching the observation. **The cohort split, which reduces per-run load, destroyed the pacing that WAS the load-shed.**
+- ⭐ **Self-correction worth keeping:** I first found a 3:40 PM “wave” spreading 31 dispatches over 10.4 min and read it as the design working. It was **four separate cohort runs 5 min apart** (3/12/11/8 wallets) that my “>5 min gap” grouping threshold merged into one span. **A gap-based grouping manufactured a wave out of a cadence near its own threshold, and that fabricated wave read as a control that PASSED.** Removing it makes the finding stronger: a 9-min spread under a 20 s cap needs ≥163 tasks in one invocation; cohorts run 3–31, so **it has been unreachable since the split, always.**
+- ⚠ **`MAX_PAUSE_MS` is redundant with the guard that actually protects the lambda:** `MAX_RUN_MS = 720_000` already fires the tail, and 5 × 108 s = 540 s < 720 s < `maxDuration = 800`.
+- ⛔ **Nothing shipped.** No test references `DISPATCH_BATCH_SIZE`, `TARGET_SPREAD_MS`, `MAX_PAUSE_MS` or `dispatchPaced` — the 9-minute promise has been unasserted since it was written. **Any fix must pin the SPREAD at a realistic cohort size (~28 tasks), not the constants**, or the next cohort-size change re-breaks it silently.
+- **Revert path:** docs-only (`known-issues.md` #113 addendum) — `git revert` by message.
+
 ### 2026-09-13 · ✅ SHIPPED (migration) — `topshot_atlas_edition_verified.total_count`, so the edition-verify lane's 74 % wasted-call rate becomes an INSTRUMENT instead of my inference · Claude Code cloud
 
 - **What.** `supabase/migrations/20260914032500_audit_20260913_record_total_count_so_the_edition_verify_lanes_waste_is_an_instrument.sql`. Adds a nullable `total_count integer` (+ a `col_description`) and `CREATE OR REPLACE`s `atlas_edition_verify_settle` to persist the `v_total` it ALREADY computes. **No predicate, no closure rule and no dispatch selection is touched; nothing reads the column yet.**
