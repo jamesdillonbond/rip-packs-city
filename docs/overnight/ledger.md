@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ✅ THE NINE DEAD-HOST SUPPRESSIONS EXPIRED WHILE THE HOST IS STILL DEAD — re-measured from the right plane and re-bound to 10-05 · Claude Code cloud
+
+**Shipped: migration `20260914144523` (9 rows, post-state asserted in the migration) + register #117.**
+
+⭐ **THE BOUND DID EXACTLY WHAT IT WAS FOR.** `20260830034312` bounded these to **2026-09-13** so that somebody would have to look again rather than let a suppression become permanent by inattention. It expired, the Cadence Collapse arm resurfaced three of the paused lanes this morning, and the exit condition it wrote down turned out to be **testable** — so it was tested rather than assumed.
+
+🚨 **AND THE TEST AS WRITTEN CANNOT BE RUN FROM HERE — THIS IS THE PART WORTH KEEPING.** The exit condition is a `curl` one-liner. From an agent sandbox it returns **HTTP 000**, which reads *exactly* like a dead host. It is not: the real error is **`curl: (56) CONNECT tunnel failed, response 403`** — the agent proxy refusing the host — with **`api.github.com → 200`** as the positive control proving egress works. ⛔ **`000` is indistinguishable from "dead" in BOTH directions**: it would falsely confirm the outage today, and it would hide the recovery whenever it arrives, keeping these lanes paused forever on a reading that never reached the host. ✅ **The instrument that works is `net.http_post` FROM THE DATABASE** — the plane production actually calls on, which is CLAUDE.md's own rule that a control must use the production caller.
+
+📏 **MEASURED 07:43 AM PT, two requests, both from pg_net:** `POST public-api.nbatopshot.com/graphql {"query":"{__typename}"}` → **530, body `error code: 1033`** (353053) and **530, `error code: 1033`** (353054). **Byte-identical to the signature recorded on 08-28. The host has been dead 17 days.** Exit condition **NOT met** → the pauses are still correct, and so are the suppressions.
+
+✅ **RENEWED, NOT EXTENDED BLINDLY:** all 9 (`compute-topshot-pack-ev`, `ingest`, `topshot-badge-catalog`, `topshot-badge-set-backfill`, `topshot-deal-floor-serials`, `topshot-fmv-populate`, `topshot-moments-hydrator`, `topshot-pack-pool-backfill`, `wallet-username-resolver`) re-bound to **2026-10-05** — a new bound, so the same forcing function applies again. The `reason` now carries the 09-14 re-measurement **and the pg_net-not-curl instruction**, so the next reader inherits the method and not just the verdict. The migration asserts its own post-state (**9 renewed / 0 stale**) and that the renewal note **did not leak onto a non-dead-host row**.
+
+⛔ **NOT DECLARED TERMINAL, deliberately.** 17 days is long enough to be tempting, but the porting work is live — `20260907051909` and `20260907153117` move pack-pull hydration onto pg_net Flow REST *"so it needs no dead host"*. Retiring these would discard that.
+
+🚨 **THE ARM TREVOR ACTUALLY SAW IS STILL NOT FIXED, AND SAYING SO IS THE POINT — filed as #117.** `check_pipeline_cadence_collapse` **never reads `pipeline_alert_suppression`** (verified against the live body: no reference to it anywhere). ⚠ **THE THREE SUPPRESSION MECHANISMS DO NOT COVER THE SAME ARMS:** `20260830034312` set `pipeline_cadence_watchlist.is_active = false` (the **30-min silence** arm) *and* wrote `pipeline_alert_suppression` rows (the **failure-rate** arm) — but Cadence Collapse is a **third, newer** instrument (`20260912054710`, *"a silence detector cannot see a cadence collapse"*) **wired to neither**. **A pause that correctly quiets two arms is invisible to the third.** So this renewal quiets the failure-rate arms and Cadence Collapse keeps reporting three deliberately-paused lanes as `stopped`.
+
+⛔ **AND THE OBVIOUS FIX IS THE WRONG ONE:** simply hiding suppressed pipelines lets a **stale** suppression conceal a **real** collapse — strictly worse than the present noise. #117 records the shape that works (count only unsuppressed toward the verdict, report suppressed-and-stopped separately as *known paused*, honour the estate's existing "an expired suppression does not suppress") **and the control it needs in the other direction** — a genuinely stopped lane with no suppression row must still be reported. Left for its own change with its own tests rather than bolted on here.
+
+Revert: `UPDATE public.pipeline_alert_suppression SET expires_at = '2026-09-13 00:00:00+00', reason = left(reason, position(' | RENEWED 2026-09-14' in reason) - 1) WHERE reason LIKE 'dead host 2026-08-30%';`
+
 ### 2026-09-14 · 🚨 THE WALL-KILLS ARM HAD BEEN AMBER FOR 17 HOURS ON A 4-HOUR INCIDENT THAT WAS OVER — and the module's own header says it would be · Claude Code cloud
 
 **Shipped: migration `20260914143746` (applied 07:37 AM PT, ACL verified unchanged) + `lib/sentinel/wall-kills.ts` + 9 new pinned cases.**
