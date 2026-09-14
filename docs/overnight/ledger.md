@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 🚨 SENTINEL SWEEP — 6 of 7 WARNs are registered/decided or measured artifacts; the SEVENTH is an ACTIVE ingestion defect: `topshot_impossible_parallel_serials` is 35 and GROWING at ~0.5–0.7 % of TS onchain sales, not the static 4 the register records · Claude Code cloud
+
+- 🚨 **#82 RE-OPENED BY MEASUREMENT.** `rpc_trust_health_history`: **5 (09-11) → 27–29 (09-12) → 35 (09-13)**. ⭐ Definition **unchanged** (Leg 1 of `rpc_trust_health_precompute_refresh` is marked so), therefore growth and not an instrument becoming honest.
+- ⭐ **Dated by `ingested_at`, NOT `sold_at`** — the defect's clock is ingest, and using `sold_at` would have produced a wrong change-point. Onset **09-12 08:43 AM PT on `onchain`** (24 of 35); 09-13 adds 13 onchain + 8 `offer_fill` in one 05:12 batch. **Rate 0.48 % (11/2,271) on 09-12 → 0.71 % (13/1,833) on 09-13 to 3 PM.** Shape: serials 24–3,936 on parallels with circulation ≤ 99 — base sales mis-keyed ONTO the parallel, the mirror of the 09-13 parallel→base fix.
+- ⚠ **Hypothesis raised and REFUTED:** the rekey commits (`99f3d974a`, `7483f6437`) landed 09-13 11:27–11:34 AM PT, a day AFTER the onset — not the cause.
+- ⛔ **The apparent all-clear is UNDERPOWERED:** 0 bad in the 110 onchain TS sales since 3:03 PM, but expected is **0.78** at the prior rate. **Exit: re-check after ~420 more sales (expected ~3).** Repairing 35 rows does not help while ~11–21/day arrive — the INFLOW is the item now.
+- ✅ **Wall Kills (24h) is a CORPSE-IN-WINDOW artifact, measured:** all **86** kills predate 3 PM and there are **ZERO since**, across **442 post-3 PM heartbeats** (fmv-recalc 36/0, panini-ingest 23/0, wallet-backfill 13/0, wmc-fmv-populate 7/0, drain-fmv-cold-tail 7/0). Clears as the 24 h window rolls past ~2:28 PM on 09-14.
+- **Registered/decided, no action:** Dune Spend (configured stop; sunset job 475 fires 09-23, cycle refills 09-24) · Detector Health (acked to 2026-10-03, #25, Trevor) · Alert Delivery email (#77 operator item: `RESEND_API_KEY`/`ALERT_EMAIL` absent) · pg_net 12.6 GB (#75, VACUUM FULL is Trevor's call; declined tonight with numbers, 09-20 exit) · Cadence Collapse (tonight's shed artifact, clears ~7 AM 09-14).
+- **Revert path:** docs-only (`known-issues.md` #82 addendum) — `git revert` by message. No code or DB change.
+
 ### 2026-09-13 · ✅ SHIPPED — the docs-only CI masking now has a guard, and its fail-open is pinned where it can actually drift · Cowork cloud
 
 Follow-up to this morning's finding (a red `main` survived three docs-only pushes and ~9h). Documenting it was not enough: the next code push would still be the detector.
