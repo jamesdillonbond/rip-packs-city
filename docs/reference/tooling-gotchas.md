@@ -342,6 +342,8 @@ every call (despite a cron named `rpc-refresh-mv-pack-ev-latest`). **Read `pg_vi
 `pg_proc.prosrc` instead of executing the object** when the question is about shape rather than data;
 it is instant and it answered what three timed-out queries could not.
 
+⭐ **CONFIRMED AND MADE ACTIONABLE 2026-09-13 (PT) — “abandons the RESULT, not the query” is not a footnote, it means YOUR PROBE KEEPS RUNNING AS PRODUCTION LOAD AFTER YOU STOP SEEING IT.** A probe batch built by joining `wallet_moments_cache` → `topshot_moment_subeditions` on `moment_id` (no usable index on that side, 2.2 M rows) returned `MCP server “Supabase” tool “execute_sql” timed out after 60s`. **`pg_stat_activity` then showed it still executing at 74.9 s in `IO` wait** — on the SMALL, IO-bound instance, in a window being used to measure something else. ⛔ **So after any MCP timeout on a heavy statement, do not just move on: check `pg_stat_activity` and cancel it** — `SELECT pid, pg_cancel_backend(pid) FROM pg_stat_activity WHERE state='active' AND pid <> pg_backend_pid() AND query ILIKE '%<your marker>%';` (name a scratch table or a distinctive literal in the probe so it is greppable; ⚠ your own cancelling query matches itself unless you exclude `pg_backend_pid()`). ⭐ **The measurement consequence is worse than the load:** an abandoned probe still saturating IO corrupts whatever quiet-window reading comes next, and a lane that stalls because of it reads as a FINDING. **Cancel, re-confirm quiet, then re-measure.**
+
 ### 🚨 A `filter-repo` purge only rewrites the refs you PUSH — the tell for an unpurged one is a merge-base at the ROOT COMMIT (measured 2026-08-22)
 
 The 2026-08-03 `git filter-repo` + force-push purged a leaked credential file from **`main`**. It did
