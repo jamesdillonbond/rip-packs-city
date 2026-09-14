@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨 THE SIGNATURE PATH I SHIPPED 40 MINUTES AGO WROTE A `verification_method` ITS OWN CHECK REJECTED — caught by a positive control, not by a test · Cowork cloud
+
+**Follow-up to `2e1e0ee` (wallet verification by on-chain signature), same session.**
+
+🚨 **`resolve_wallet_signature_match` writes `verification_method = 'wallet_signature'`. `saved_wallets_verification_method_check` allowed only `NULL | fcl_dapper | fcl_blocto | fcl_other | listing_challenge | owner_attested`.** The **first real verification** would have raised `23514` and the route would have surfaced it as a 500 — on the success path, after the wallet had already signed.
+
+⚠ **NOTHING IN THE SUITE COULD HAVE SEEN IT, AND THE OBVIOUS CONTROL READ CLEAN.** The unit tests never touch the DB. The control I ran — calling the function with an unknown wallet — returns `wallet_not_saved` from the guard **before** the `UPDATE`, so it exercised the function without exercising the write. ⭐ **The defect lived in the gap BETWEEN two SQL files**, which is the one place a source scan can look, and the only reason it surfaced was reading the constraint rather than assuming it.
+
+⭐ **AND THE CONSTRAINT IS ITS OWN EVIDENCE FOR THE 08-08 REFUTATION.** `fcl_dapper`, `fcl_blocto`, `fcl_other` were already in that list — **RPC had FCL wallet sign-in before it was removed**. The column has been ready the whole time; only a term for *"proved by signature, wallet-agnostic"* was missing.
+
+✅ **SHIPPED:**
+- Migration `20260914162000_…the_verification_method_check_refuses_the_value_the_signature_path_writes.sql` — widens the CHECK by one value, guarded by a `DO` block that **RAISEs rather than sweeping** if any row sits outside the intended vocabulary. Applied; live definition re-read and now carries `wallet_signature`. 9 rows hold a method, all `listing_challenge`, none invalidated.
+- `__tests__/every-verification-method-written-is-allowed-by-its-check.test.ts` — a **ban at zero over the migrations tree**: it reads the CHECK from whichever migration defines it LAST (apply order) and requires every literal any migration assigns to that column to be inside it. Two positive controls (the scan found a CHECK; the scan found ≥1 writer) so it cannot pass vacuously.
+
+⭐ **THE GUARD IS PROVEN TO SEE A FAILURE, not assumed to.** Mutating the shipped migration's literal to `not_in_the_check` reds it with the offender named (`…writes 'not_in_the_check' (allowed: …)`); restoring greens it. 4/4 green restored.
+
+⛔ **NOT reused `fcl_dapper`.** The signature path is wallet-agnostic — `FCLCrypto.verifyUserSignatures` answers for any FCL wallet — so recording every signature as Dapper's would misattribute the proof. The three `fcl_*` values say WHICH WALLET CONNECTED; `wallet_signature` says HOW CONTROL WAS PROVED, which is what the column is asked.
+
+**Revert:** `git revert` this commit + drop/re-add the constraint without `'wallet_signature'` (safe only while no row holds it — check first). Widening only, so no existing row can be invalidated.
+
 ### 2026-09-14 · ⛔ #118 CLOSED, AND IT INVERTS ITS OWN REMEDY — the empty +EV board is PROTECTING users, and the one-line fix I had scoped would have published a buy signal priced 18 days ago · Claude Code cloud
 
 **Docs-only. Traces the flagship +EV board's 17-day emptiness to root cause, and withdraws the fix I was about to ship.**
