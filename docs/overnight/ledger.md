@@ -10,6 +10,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⛔ NOT SHIPPED, AND THE REASON IS THE POINT — the wallet-backfill pacing fix is verified and CORRECT, but it would add ~3.4 lambda-hours/day against a Vercel spend cap that took the site down 3 days ago. Shipped the INSTRUMENT instead · Claude Code cloud
+
+- **What shipped.** `app/api/seed-wallet-refresh/route.ts`: the pacing arithmetic extracted into an exported pure `dispatchPlan(taskCount)` (behaviour-identical), plus `__tests__/seed-wallet-refresh-dispatch-spread.test.ts` (5 tests) **pinning the spread the code ACTUALLY produces** — and `MAX_PAUSE_MS` left at **20_000**.
+- **What did NOT ship, deliberately.** `MAX_PAUSE_MS` → `120_000`. It is written, was verified green (31 tasks → 5 gaps × 108 s = 9 min; 23 → 6 min; 7 → 2 min; 163+ unchanged), and is reverted.
+- 🚨 **Why: I checked the cost before shipping and it is not free.** The change raises this route's wall time from **~1.7 min to ~9 min per invocation**, and `pipeline_runs` shows **28 invocations/24h** → **~3.4 extra lambda-hours/day**, on the largest `maxDuration` on the platform. On **2026-09-10 a Vercel SPEND-CAP pause took the site and ~20 HTTP lanes down for ~10 h** and the cap was raised only slightly after ([autonomous-tasks.md](../reference/autonomous-tasks.md), #76). ⛔ **Re-opening metered spend is explicitly a Trevor decision, not an autonomous one.**
+- ⚠ **And the severity of the defect is LOWER than my own earlier entry implied — stated rather than quietly dropped.** The cohort split provides its own shedding: 28 orchestrators over 100 s is **~0.28/s against the 2026-06-10 incident's ~8.4/s**, so exposure is already **~30× better than the incident** with the constant still wrong. The fix buys a further **~5.4×** — real, but not urgent, which is exactly why it can wait for a spend decision.
+- ⭐ **The test pins the BROKEN value on purpose** (`dispatchPlan(31).spreadMs === 100_000` — the exact production number), with the repair and its two bounds marked `BLOCKED` in-file, so the defect stays measured instead of becoming folklore. It also pins the load-bearing property any repair must keep: the spread can never exceed `MAX_RUN_MS`, at any cohort size.
+- **Verified:** `tsc --noEmit` 0 · route suites 21/21 · `unbounded-fetch-in-after-routes-ratchet` 9/9 · `lint:ratchet` 715 vs baseline 715 · full `npm test` gated before push.
+- **Revert path:** `git revert` by message — removes an exported helper and a test, no behaviour change either way. **To UNBLOCK instead:** set `MAX_PAUSE_MS = 120_000` and flip the two `BLOCKED` bounds in the test.
+
 ### 2026-09-13 · 🚨 `main` HAS BEEN RED SINCE `3840baf` AND THREE CONSECUTIVE PUSHES REPORTED GREEN — the docs-only CI fast path skips `unit-tests-shard` entirely · Cowork cloud
 
 **Found because my own push was the first CODE push after it**, so CI #5480 ran the full suite and inherited someone else's red.
