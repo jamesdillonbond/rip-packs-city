@@ -1832,3 +1832,63 @@ the answer is "a different one", the flag is not evidence about it.
   the list in the filing. This one's count moved three → four → six → seven
   surfaces across three passes, each using a different method; the dangerous one
   was a shared **mapper** collapsing a `null` the route had just started sending.
+
+---
+
+## ⛔ THE UNWRAPPER IS WHERE THE HONESTY IS LOST (2026-09-13)
+
+Every Cowork dashboard under `docs/cowork-skills/` **already had** the right error
+branch: `catch(e){ … "Some checks could not run — open inside Cowork and Reload." }`,
+with a separate, correct "N surfaces are empty" verdict beside it. Three artifacts,
+three honest catches, written months apart.
+
+**None of them had ever fired on a real failure.** The shared `extractRows(raw)`
+helper that unwraps `window.cowork.callMcpTool` returned instead of throwing:
+
+| failure shape | returned | measured |
+|---|---|---|
+| `{error:{name,message}}` | `[raw]` — one junk row | **verbatim what the live Supabase MCP server answers for a missing relation, 2026-09-14** |
+| `{isError:true, content:[{text:"permission denied for view …"}]}` | `[]` | MCP tool-error convention |
+| `{isError:true, content:[{text:"canceling statement due to statement timeout"}]}` | `[]` | |
+| genuine empty result set | `[]` | **indistinguishable from all of the above** |
+
+`isError` was never read at all. Replayed through `rpc-insights-health`'s own
+verdict code, a query that never ran published:
+
+> **"7 surface(s) have an EMPTY backing view — investigate."** — red dot, seven
+> `–` cells each pilled `empty`, `errored` flag false.
+
+A renamed view, a revoked grant or a statement timeout was rendered as **total
+data loss on the public insights estate**.
+
+⭐ **The transferable shape:** this is the same sentence CLAUDE.md already carried
+about supabase-js — *it RETURNS errors rather than throwing, so `?? 0` publishes a
+measured zero* — one layer up, and the layer is the reason it survived. **Auditing
+the call sites finds nothing wrong: the catches are all correct.** The defect is
+that nothing can reach them. So the rule is now stated about the CATEGORY, not the
+library: **any unwrapper that RETURNS on failure leaves every downstream `catch`
+dead**, and an error branch you have not seen fire is not error handling.
+
+✅ **The discriminator**, first line of the object branch:
+
+```js
+if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(…);
+```
+
+plus `throw` (not `return []`) when a non-empty string parses to nothing.
+**Only `null`, `""`, or a payload that parses to `[]` may return `[]`.**
+
+⚠ **The guard is BEHAVIOURAL, and had to be.** A grep for `isError` passes on a
+comment. `__tests__/artifact-helpers-do-not-render-failure-as-empty.test.ts` lifts
+each artifact's own helper out of its `<script>` by **brace-matching** — not a
+character slice, which is the trap the sibling guard fell into twelve hours
+earlier — and runs a ten-payload table through it: five failure arms must throw,
+and five (genuine empty, genuine rows, the untrusted-data wrapper, `null`, blank
+text) must not. Those five are the non-vacuity control: a helper that threw
+unconditionally would satisfy the failure arms and look like working detection.
+
+⚠ **Scope, stated so this is not read as broader coverage:** the copies that
+actually RUN live in OneDrive, outside every connected folder, and
+`list_artifacts` / `update_artifact` are Cowork-desktop-only. **The repo copies
+are a mirror, not the running code** — the same direction-of-drift caveat the
+cowork-skill-bundle guard carries. Registered as **#114**.

@@ -50,6 +50,12 @@ function extractRows(raw){
   if(raw==null) return [];
   if(Array.isArray(raw)) return raw;
   if(typeof raw==="object"){
+    // ⛔ A FAILED READ MUST NOT RENDER AS AN EMPTY RESULT SET. Measured 2026-09-14:
+    // the live Supabase MCP server answers a missing relation with {error:{name,message}},
+    // which fell through to `return [raw]` — no throw — so every panel showed "–"/"empty"
+    // and the banner asserted "7 surface(s) have an EMPTY backing view — investigate."
+    // Failure and emptiness must not share a rendering.
+    if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(String((raw.error&&(raw.error.message||raw.error.name))||(Array.isArray(raw.content)?raw.content.map(c=>(c&&c.text)||"").join(" "):"")||"tool returned an error"));
     if(Array.isArray(raw.content)){ return extractRows(raw.content.map(c=>typeof c==="string"?c:(c&&c.text)||"").join("\n")); }
     if(typeof raw.result==="string") return extractRows(raw.result);
     if(typeof raw.text==="string") return extractRows(raw.text);
@@ -57,11 +63,12 @@ function extractRows(raw){
     return [raw];
   }
   if(typeof raw==="string"){
-    let s=raw.trim();
+    const s=raw.trim();
+    if(!s) return [];
     try{ return extractRows(JSON.parse(s)); }catch(e){}
     const m=s.match(/\[[\s\S]*\]/);             // first JSON array (the row set)
     if(m){ try{ return JSON.parse(m[0]); }catch(e){} }
-    return [];
+    throw new Error("unreadable tool response: "+s.slice(0,160));
   }
   return [];
 }
