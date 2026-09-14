@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ SHIPPED (migration) — `topshot_atlas_edition_verified.total_count`, so the edition-verify lane's 74 % wasted-call rate becomes an INSTRUMENT instead of my inference · Claude Code cloud
+
+- **What.** `supabase/migrations/20260914032500_audit_20260913_record_total_count_so_the_edition_verify_lanes_waste_is_an_instrument.sql`. Adds a nullable `total_count integer` (+ a `col_description`) and `CREATE OR REPLACE`s `atlas_edition_verify_settle` to persist the `v_total` it ALREADY computes. **No predicate, no closure rule and no dispatch selection is touched; nothing reads the column yet.**
+- **Why it is worth a migration.** `complete=false` conflates two different things — “too big to conclude” (`totalCount > 200`) and “no usable response” (NULL). Splitting them turns the 9,329/day figure from an inference into a reading: `count(*) FILTER (WHERE NOT complete AND total_count > 200)` vs `... IS NULL`.
+- ⭐ **The full-body-write rule was satisfied by PROOF, not by care.** Live body re-read immediately before (md5 `8b8ccb3846a65a71289a4775a0445c73`, length 2188). The migration's body was then mechanically reverted of its three intended edits and re-hashed: **same md5, same 2188 bytes** — so the replace provably carried the live body plus exactly the `total_count` additions and nothing else. Worth repeating; it is cheap and it is the only check that catches a silent revert of another session's guard.
+- **Verified after apply:** column present · function writes it · `service_role` EXECUTE true, `anon`/`authenticated` false (grants survived the replace) · `check_secdef_anon_exec_drift()` returns a jsonb ARRAY of **length 0** (read the length, not a row count).
+- **Applied into an idle window** (0 other active backends) to keep the `PGRST002` schema-cache burst off users.
+- **Revert path:** `ALTER TABLE public.topshot_atlas_edition_verified DROP COLUMN total_count;` then `CREATE OR REPLACE` the function from the body in the migration minus the three `total_count` additions. Find the commit by message (`git log --grep=`).
+
 ### 2026-09-13 · ✅ THE ATLAS QUESTION IS SETTLED — the feed does NOT re-observe, so bulk ageing would mark LIVE listings closed; and the honest closer already exists but 74 % of its external calls structurally cannot conclude. This CORRECTS my own filing from an hour ago · Claude Code cloud
 
 - **Answer to the open question in #85.** `atlas_market_drain` reports NEW-AND-CHANGED only. Of 69,953 open `nba` listings re-stamped in 24 h, **66,785 (95.5 %) were first seen in that same window**; only **3,168** were genuine re-observations — a **117-day** cycle against 371,310 open rows. `atlas_market_upsert_events` does set `last_seen_at = now()` on conflict, so the column is a real re-observation stamp; the feed just never re-reports a quiet listing.
