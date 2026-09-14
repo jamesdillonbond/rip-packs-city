@@ -33,6 +33,8 @@ const step = doc.jobs.availability.steps.find((s: any) => typeof s.run === "stri
  * test. A fixture that overrides the shipped configuration tests the harness.
  */
 const SHIPPED_FAIL_STREAK = String(step.env.FAIL_STREAK)
+const SHIPPED_FAIL_IN_WINDOW = String(step.env.FAIL_IN_WINDOW)
+const SHIPPED_WINDOW = String(step.env.WINDOW)
 
 /** Run the shipped script with curl shadowed: the RPC call gets `fixture`, Telegram gets a code. */
 function run(fixture: string, env: Record<string, string> = {}, httpCode = "200") {
@@ -53,6 +55,8 @@ function run(fixture: string, env: Record<string, string> = {}, httpCode = "200"
         SUPABASE_URL: "https://example.supabase.co",
         SUPABASE_KEY: "harness-key",
         FAIL_STREAK: SHIPPED_FAIL_STREAK,
+        FAIL_IN_WINDOW: SHIPPED_FAIL_IN_WINDOW,
+        WINDOW: SHIPPED_WINDOW,
         TELEGRAM_BOT_TOKEN: "",
         TELEGRAM_CHAT_ID: "",
         FIXTURE: fixture,
@@ -98,6 +102,67 @@ describe("site-availability-alarm.yml", () => {
     const below = Number(SHIPPED_FAIL_STREAK) - 1
     const r = run(payload({ consecutive_fails: below, failed: below, latest_status: 503 }))
     expect(r.code).toBe(0)
+  })
+
+  // ── A RECOVERED OUTAGE (added 2026-09-14) ─────────────────────────────────
+  //
+  // ⚠ WHY THE STREAK ALONE CANNOT SEE ONE. `consecutive_fails` counts backwards
+  // from NOW, so a site that went down and came back has a streak of 0 by the
+  // time anything looks. That is fine when the looker runs every 15 minutes.
+  // It does not, and that is the point: this workflow asks for 96 runs/day and
+  // GitHub delivers ~8 (measured 2026-09-14 — 23 starts in 73.8h, median gap
+  // ~3.2h, worst 5.58h; `scheduler-liveness` prints the same cap for nine
+  // workflows). So the alarm looks about every 3 hours at a window that was
+  // 2 hours wide — and any outage that began and ended in between was examined
+  // by nothing at all, even though `site_probe` recorded every failure.
+  //
+  // ⭐ The fix is sized against DELIVERY rather than against the cron, and the
+  // threshold against the real series rather than by feel: 949 probes in the
+  // retained 3d10h carry TWO failures in total and the worst 8h window holds
+  // ONE, so `FAIL_IN_WINDOW = 3` has never fired historically while still
+  // catching roughly a quarter-hour of downtime at one probe per ~5 minutes.
+  it("FAILS on an outage that already RECOVERED — the streak is 0 and the window is not", () => {
+    const n = Number(SHIPPED_FAIL_IN_WINDOW)
+    const r = run(payload({ consecutive_fails: 0, failed: n, latest_status: 200 }))
+    expect(r.code).toBe(1)
+    expect(r.out).toMatch(/WAS DOWN/)
+  })
+
+  it("does NOT fire on window failures below the threshold — negative control", () => {
+    const below = Number(SHIPPED_FAIL_IN_WINDOW) - 1
+    const r = run(payload({ consecutive_fails: 0, failed: below, latest_status: 200 }))
+    expect(r.code).toBe(0)
+    expect(r.out).toMatch(/Site is serving/)
+  })
+
+  it("FAILS CLOSED when the payload carries no `failed` field — UNKNOWN, not healthy", () => {
+    // The new read must behave like the two beside it. A missing field that
+    // defaulted to 0 would publish "no failures" out of a payload that never
+    // said so — this file's own opening paragraph, one field along.
+    const noFailed = JSON.stringify({ probes: 24, ok: 24, consecutive_fails: 0, latest_status: 200 })
+    const r = run(noFailed)
+    expect(r.code).toBe(1)
+    expect(r.out).toMatch(/UNKNOWN|unreadable/i)
+  })
+
+  it("FAILS CLOSED when a threshold is unset, rather than becoming a silent no-op", () => {
+    // `[ "$n" -ge "" ]` is simply FALSE in bash, so an unset threshold does not
+    // error — it makes the branch unreachable while the workflow still reads as
+    // configured. This harness caught exactly that by forwarding only
+    // FAIL_STREAK, which is why the check exists and why it is pinned here.
+    const r = run(payload({ consecutive_fails: 9, failed: 9, latest_status: 503 }), { FAIL_IN_WINDOW: "" })
+    expect(r.code).toBe(1)
+    expect(r.out).toMatch(/would never fire|UNKNOWN, not healthy/)
+  })
+
+  it("asks the RPC for a window WIDER than the worst delivery gap, and does not rely on its default", () => {
+    // The RPC's own default is 2h (`p_window interval DEFAULT '02:00:00'`),
+    // which is shorter than the median gap between two runs of this workflow.
+    // Relying on the default is the defect; passing a wider one is the fix, so
+    // both halves are pinned rather than left to a comment.
+    expect(step.run).toContain("p_window")
+    const hours = Number(String(SHIPPED_WINDOW).split(":")[0])
+    expect(hours, "window must clear the 5.58h worst observed delivery gap").toBeGreaterThanOrEqual(6)
   })
 
   it("FAILS when the prober itself recorded zero probes — blind, not healthy", () => {

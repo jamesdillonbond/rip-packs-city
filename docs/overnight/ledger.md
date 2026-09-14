@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ✅ SHIPPED — THE SITE-DOWN ALARM COULD NOT SEE A RECOVERED OUTAGE, AND ITS 2-HOUR WINDOW WAS SHORTER THAN THE GAP BETWEEN ITS OWN RUNS · Claude Code cloud
+
+**The first thing today's GHA-ceiling finding turned into a code fix, and it needs no operator.**
+
+🚨 **TWO DEFECTS, ONE CAUSE.** `site-availability-alarm.yml` (created 09-10, hours after the ~10 h Vercel spend-cap outage, #76) is well built on every dimension its author aimed at — it reads from **Postgres**, the one plane a Vercel pause cannot silence, and fails CLOSED on missing credentials, zero probes and an unreadable payload. **What was sized wrong is TIME, and the ceiling is why:**
+1. **Its only failure condition was `consecutive_fails >= 3`.** `consecutive_fails` counts backwards from *now*, so **an outage that has ENDED has a streak of 0 by the time anything looks.** The payload already carried `failed` for the window and **the alarm discarded it.**
+2. **The RPC's default window is 2 h and the alarm actually runs about every 3.2 h** (23 starts in 73.8 h; worst gap **5.58 h**). **So a stretch of probe history was examined by NOTHING — permanently, because the window slides.** ⭐ **The window was sized against the CRON (96/day → 2 h is generous) and the cron is fiction: delivery is ~8/day.**
+
+⭐ **Combined, the failure mode is exact: the site goes down and recovers between two alarm runs, `site_probe` records every failed probe, and the alarm reports "Site is serving".**
+
+✅ **FIXED, workflow-only — no DB change, because the window is already a parameter** (`check_site_availability(p_window interval DEFAULT '02:00:00')`, verified callable: `'8 hours'` returns `probes: 95, failed: 0`).
+- **`WINDOW: "08:00:00"`** passed explicitly — clears the 5.58 h worst observed gap with margin, and stops relying on a default that is shorter than the run interval.
+- **`FAIL_IN_WINDOW: "3"`**, a second branch that fires on a RECOVERED outage. ⭐ **Sized on the real series, not by feel: 949 probes in the retained 3 d 10 h carry TWO failures in total and the worst 8 h window holds ONE — so 3 has never fired historically**, while at one probe per ~5 min it still means roughly a quarter-hour of cumulative downtime.
+- **The "down now" branch and its message are untouched**, so the existing pin on that path still means what it did.
+- ⚠ **And a defect I introduced and the harness caught:** an UNSET threshold makes its branch a **silent no-op** — `[ "$n" -ge "" ]` is simply false in bash, so the check would pass forever while reading as configured. **That is this alarm's own defect class one field along, so it now fails CLOSED on an unset threshold.** It surfaced because the test harness deliberately forwards only the SHIPPED env values.
+
+**Verified:** `tsc` 0 · the alarm's own suite **17/17** (was 12) · 11 workflow/CI/alarm suites **111/111** · `lint:ratchet` 715 = 715. ⭐ **Four mutations, each caught by exactly one test:** neuter the recovered-outage branch · put `WINDOW` back to the 2 h default · drop the `failed`-unreadable fail-closed guard · remove the unset-threshold guard.
+
+⛔ **WHAT THIS DOES NOT FIX:** the ceiling itself. The alarm still runs ~8×/day instead of 96, so **detection LATENCY is unchanged (~3.2 h median, 5.58 h worst)** — what changes is that an outage inside that gap is no longer INVISIBLE, only late. **The latency fix is still the operator move in #100 (cron-job.org).** ⚠ And this is a workflow whose real behaviour cannot be exercised from a sandbox; the tests drive the shipped `run:` body with `curl` shadowed, which is the harness the file already had.
+
+**Revert path:** `git revert` by message — one workflow file and one test file, no product behaviour.
+
 ### 2026-09-14 · 🚨 `inherited-status` WAS A NO-OP FOR ITS FIRST FOUR RUNS, AND ITS OWN PUBLISHED SUMMARY IS WHAT CAUGHT IT · Cowork cloud
 
 The first summary it rendered, on a docs-only push (CI #5503):
