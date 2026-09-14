@@ -10,6 +10,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · SHIPPED · ⛔ My own guard 35 minutes earlier was HALF a guard — it covered the UPDATE and left the INSERT open · Claude Code cloud
+
+**DB migration `20260914183000_audit_20260914_my_own_guard_had_the_insert_half_missing`. Completes the entry two above.**
+
+⛔ **THE HOLE.** `trg_whs_refuse_same_day_collapse` shipped as **BEFORE UPDATE**, which covers the observed 09-13 incident exactly (a complete 10:07Z snapshot, then a failed 12:46Z re-run UPSERTing over it — an UPDATE). 🚨 **But if the day's FIRST run fails mid-walk there is no row to update: the upsert INSERTs and the trigger never fires.** ⚠ **Not hypothetical — 2026-09-11 has no row for that wallet at all**, i.e. the day's runs died before writing. **One page later and it would have inserted a partial unopposed.**
+
+⭐ **THE TWO ARMS NEED DIFFERENT PREDICATES, and that is the interesting part.** On UPDATE the test can be loose (any same-day cut over half on a ≥100 row) because **a same-day downward revision is never legitimate**. On INSERT there is no same-day row — only the previous day — and **a whale really could halve its holdings overnight**. So the insert arm adds the partial read's own fingerprint: **an exact multiple of the walk's page size.** A genuine count is not round (the three live ones are **52,120 · 11,969 · 4**); a clipped one is 250 · 500 · 750 · 1,000 **by construction**. Both conditions together make a false positive a ~1-in-250 coincidence on top of an already-unusual event.
+
+✅ **POSITIVE CONTROL, five arms, all passing:** a next-day arrival at an exact page multiple under half is **REFUSED** · a **real** halving that is *not* a page multiple is **ALLOWED** (this is the arm that would have made the guard harmful if it were missing) · a (wallet, collection) seen for the **first time** at a page multiple is **ALLOWED** (nothing to compare) · a prior below the 100-moment floor is **ALLOWED** · and **the UPDATE arm still fires**. Probe rows deleted, **0 leftovers**, 267 real rows intact.
+
+⚠ **TWO THINGS STATED BECAUSE THEY WILL NOT ANNOUNCE THEMSELVES.** (1) **COUPLING:** the 250 mirrors `PAGE_SIZE` in the edge function. **If that constant changes this arm goes blind — it will not fire and nothing will say so.** The UPDATE arm has no such coupling, which is exactly why the two are not unified. (2) **STILL INVISIBLE:** a partial whose count is *not* a page multiple (the walk returns everything it has when the last page is short), and a (wallet, collection) first observed today. **Neither is fixable from the database** — both are the writer's job, register #119 owed item 1.
+
+⭐ **The lesson is the shape, not the SQL: I wrote a guard against the instance I had measured rather than against the mechanism.** The 09-13 incident happened to be an UPDATE, so the guard was an UPDATE guard. The mechanism — *a failed page walk writes what it got* — does not care which DML the upsert resolves to.
+
+**Revert:** re-apply `20260914180000`'s function body and `CREATE TRIGGER trg_whs_refuse_same_day_collapse BEFORE UPDATE ON public.wallet_holdings_snapshot FOR EACH ROW EXECUTE FUNCTION public.whs_refuse_same_day_collapse();`
+**Target metric:** a mid-walk failure on a day with no prior row leaves NO row rather than a page-multiple one.
+
 ### 2026-09-14 · SHIPPED · 🚨 A FAILED RE-READ OVERWROTE A COMPLETE WHALE SNAPSHOT WITH A PARTIAL ONE — the biggest tracked wallet reads as dumping 98% of its collection on 09-13 and buying it all back on 09-14 · Claude Code cloud
 
 **DB migration `20260914180000_audit_20260914_a_failed_reread_overwrote_a_complete_whale_snapshot_with_a_partial_one`. Found by pulling the one HIGH alert nobody had attributed (`snapshot-institutional-wallets` 3/6 runs failed) instead of filing it under the chronic timeout class.**
