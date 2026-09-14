@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨🚨 `npm run lint:ratchet` WAS A NO-OP ON WINDOWS — it exited 0 having NEVER RUN the comparison, and the test that should have caught it asserted the SPELLING · Claude Code desktop
+
+**The gate CLAUDE.md names as the one that reds while `npm test` and `tsc` pass was, on the only push-capable box, a command that always exits 0 having measured nothing.**
+
+🚨 **MECHANISM, measured not inferred.** The script was `npx eslint … -o /tmp/eslint-report.json || true; node scripts/check-eslint-ratchet.mjs --report …`. npm runs scripts through **`cmd.exe`** on Windows (`script-shell` unset), and ⛔ **cmd.exe does not treat `;` as a command separator.** eslint exits **1** whenever violations exist — the permanent state here, since the ratchet's job is holding a non-zero count steady — so the `|| true…` arm ran, `true` resolved to **Git-for-Windows' `true.exe`**, and it swallowed `; node scripts/check-eslint-ratchet.mjs --report …` **as ARGUMENTS**. Proven decisively: `npm run` CREATED the report (so eslint ran) and printed **nothing** from the checker; run directly the checker prints its count.
+
+⭐ **A/B ON ONE TREE with three violations injected — the old runner exited `0` with ZERO output; the new one exits `1` naming `@typescript-eslint/no-unused-vars grew 353 -> 356`.**
+
+⭐⭐ **THE TELL WAS THE SILENCE, and it generalises: a guard that normally states the count it inspected and then says nothing has not passed — it has not spoken.** That is CLAUDE.md's *assert the count it inspected*, applied one level up to the guard's RUNNER.
+
+⚠ **AND THE TEST PASSED THROUGHOUT, because it asserted the script's TEXT** — that it contained `eslint … -o` before `check-eslint-ratchet.mjs`. Both substrings were present, in the right order, in a string that never ran the comparison. **Pin the property, not the spelling** — this repo's own rule, and the guard was the thing breaking it.
+
+⚠ **Second cause found alongside: `/tmp` is TWO DIRECTORIES here.** A literal `/tmp/…` is `C:\tmp` to a Windows process and `C:\Users\…\AppData\Local\Temp` once MSYS rewrites it. **Both report files existed on the box, 15 hours apart** — so which report got compared depended on which shell typed the path. Same family as the 2026-09-02 stale-report incident, second cause.
+
+✅ **SHIPPED `scripts/run-lint-ratchet.mjs`** — one Node process, **no shell doing the sequencing**: spawns eslint (ignoring its exit code, deliberately), **refuses to compare unless the report exists and is non-empty** (*"the command ran" is not "the artifact exists"* — the no-op produced a report and still measured nothing), then propagates the comparison's exit code. Path is `os.tmpdir()`, overridable via `ESLINT_REPORT`. ⓘ **CI unchanged and deliberately NOT required to use the driver** — its job is bash on ubuntu where the two-line form is correct.
+
+✅ **Three guards replace the spelling assertion, each PROVEN TO FIRE by restoring the old script** (all three red, 3 failed / 15 passed): a **ban at population zero** on any npm script sequencing with `;` (asserts >20 scripts so it cannot pass vacuously — **exactly 1 offender existed, now 0**), that `lint:ratchet` invokes a driver generating before comparing, and that the driver refuses a report eslint did not write.
+
+- **Verified after the fix:** ratchet speaks — `3074 files, 715 violations (baseline 715)`, exit 0 and it MEANS it; `tsc` 0; ratchet suite 18/18.
+- **Revert:** `git revert <sha>` — restores the shell chain and the old test. Detail: [testing-and-ci.md](../reference/testing-and-ci.md).
+
 ### 2026-09-14 · NOT SHIPPED — I WROTE THE WRONG FIX FOR A RED `main` AND WITHDREW IT UNPUSHED; the concurrent session's fix is right and mine would have bounded a WRITE · Claude Code cloud
 
 **No production change. Recorded because the reasoning is the point, and because the near-miss is a defect class this file already warns about.**
