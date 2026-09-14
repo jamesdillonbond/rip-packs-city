@@ -10,6 +10,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⛔ THE DOCUMENTED REPAIR FOR A RED BUNDLE-PARITY GUARD CANNOT RUN ON THE ONLY PUSH-CAPABLE BOX — `unzip` is present so the guard REDS, `zip` is absent so the fix REFUSES · Claude Code desktop
+
+**Docs-only. Found by walking into it: I edited `rpc-artifact-ops/SKILL.md` to carry #114's remediation, and could not repack.**
+
+🚨 **THE ASYMMETRY IS THE WHOLE FINDING.** `tooling-gotchas.md` already warned that editing a `SKILL.md` reds `skills:bundles:check` and said *"The repack is one command"*. **That sentence is true on Linux and false here.** This box has **no `zip`, no `7z`, no 7-Zip** (Git for Windows ships `zipgrep`/`zipinfo` and not `zip`) — but it DOES have `unzip`, which is what the guard shells to. **So the guard runs and correctly goes RED while the documented repair cannot run at all**, and a session that edits a skill here is stuck between reverting and shipping a red `main`.
+
+⭐ **The packer's refusal is CORRECT and worth keeping in mind before "fixing" it:** it deletes each bundle before rewriting, so without `zip` it would destroy ten bundles and fail. *Refusing to touch the working tree* is strictly better than a half-run. ⚠ **And the obvious substitute is a trap:** `Compress-Archive` / `tar -a` would produce a valid zip the content-based guard accepts, but the packer pins a FIXED zip timestamp so an unchanged repack is byte-identical — the property that makes bundle diffs reviewable, and the reason a stale bundle survived 2026-05-30 → 2026-08-24. A different writer forfeits it silently.
+
+✅ **What I did:** reverted the SKILL.md edit (parity 10/10 → refusal → reverted → **10/10**, verified), documented the asymmetry in [tooling-gotchas.md](../reference/tooling-gotchas.md) beside the instruction it falsifies, and put the **exact bullet to insert** in §6 of the #114 filing so a Linux session can apply it mechanically rather than re-deriving it.
+
+⚠ **The standing rule this is an instance of, stated one notch harder:** *grep for the guards that READ a file before you EDIT it* — and **then check the repair actually runs on the box you are on.** A guard whose fix is unavailable locally is, for that session, a trap rather than a gate.
+
+- **Also this pass, and both were null results worth NOT filing:** the repo's own artifact copies are clean (**3 of 3** fixed, and there are only 3 — no undercount there); and `rpc-artifact-ops/SKILL.md` carries no stale dashboard COUNT, so nothing needed correcting in the executable instructions.
+- **Revert:** docs-only. `git revert <sha>`.
+
 ### 2026-09-14 · ⭐ THE 2026-08-08 "DAPPER SIGN-IN NEEDS APPROVAL WE DO NOT HAVE" DECISION IS REFUTED — wallet verification by on-chain signature shipped (server half) · Cowork cloud
 
 **Came out of a competitor teardown Trevor asked for (topshotexplorer.com), not from the register.** He named wallet sign-in as something "we aspire to have".

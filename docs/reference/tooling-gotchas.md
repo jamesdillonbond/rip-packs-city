@@ -787,6 +787,14 @@ alone turns the guard red — **2 of 9 arms**, in the observed case, after addin
 node scripts/pack-cowork-skill.mjs rpc-nightly-autonomous-pass   # -> 9/9
 ```
 
+🚨 **AND THAT ONE COMMAND DOES NOT WORK ON TREVOR'S WINDOWS BOX — which is the PUSH-CAPABLE one.** Measured 2026-09-14: `npm run skills:pack` refuses with *"`zip` is not on PATH, so packing would DELETE each .skill bundle and fail before rewriting it. Refusing to touch the working tree."* There is **no `zip`, no `7z` and no 7-Zip install** on the box (Git for Windows ships `zipgrep`/`zipinfo` but **not** `zip`).
+
+⛔ **THE ASYMMETRY IS THE TRAP, and it is why this bites rather than merely blocking:** `unzip` **IS** present — it is what the guard shells to — so `npm run skills:bundles:check` RUNS and correctly goes **RED**, while the documented fix above cannot run at all. A session that edits a `SKILL.md` here reddens the guard and then finds the repair refused, leaving two honest ways out: **revert the edit**, or **make it from a Linux session** (CI `ubuntu-latest` ships both halves).
+
+⭐ **The packer's refusal is correct behaviour, not a bug** — it deletes each bundle before rewriting, so without `zip` it would destroy ten bundles and fail. Refusing to start is strictly better. ⚠ **And do not reach for `Compress-Archive` or `tar -a` instead:** the packer pins a FIXED zip timestamp so an unchanged repack is byte-identical, which is the property that makes bundle diffs reviewable; a different writer silently forfeits it.
+
+👉 **So: do not open a `SKILL.md` on the Windows box unless you can repack.** Put the intended text in the filing or the register and let a Linux session apply it. (Observed 2026-09-14 adding one bullet to `rpc-artifact-ops/SKILL.md`: parity 10/10 → refusal → reverted → 10/10.)
+
 ⭐ **The meta-lesson is the standing rule that would have prevented it:** *grep for the guards that READ a
 file before you EDIT it.* The bundle is not a build artifact you can regenerate later — it is the thing the
 account installs, so a stale one ships stale instructions (see known-issues #32, which is exactly that

@@ -100,3 +100,26 @@ that is wrong is worth writing down so nobody re-tests it:**
 Negative: an empty directory exits 2 with `not a clean estate`, not a green run.
 
 ⚠ Every figure here is a dated sample. **Re-run the script; do not quote this table.**
+
+---
+
+## 6 · ⚠ The one edit that belongs in the SKILL and could NOT be made from here
+
+**`rpc-artifact-ops/SKILL.md` is where this remediation actually belongs** — it is what a Cowork session
+loads when it touches an artifact, and today it states the `extractRows` rule for **new** work only, so
+nothing tells a session the *existing* estate is still broken.
+
+⛔ **That edit was attempted and reverted, deliberately.** `npm run skills:pack` cannot run on this box:
+there is no `zip` (Git for Windows ships `zipgrep`/`zipinfo` only), so the packer refuses rather than
+deleting ten bundles it cannot rewrite. `unzip` *is* present, so `skills:bundles:check` runs and goes RED
+— the guard works, the documented repair does not. Leaving SKILL.md edited without repacking would have
+shipped the bundle-drift defect the guard exists to catch (and which survived 2026-05-30 → 2026-08-24).
+Full write-up in [tooling-gotchas.md](../../reference/tooling-gotchas.md).
+
+👉 **From a Linux session** (CI `ubuntu-latest` has both halves), insert this bullet immediately after the
+existing `extractRows` bullet's *"a hand-written one will reproduce the defect."*, then
+`node scripts/pack-cowork-skill.mjs rpc-artifact-ops` and confirm `skills:bundles:check` reads 10/10:
+
+```markdown
+- 🚨 **THE LIVE ESTATE IS NOT FIXED YET, AND IT IS 15 ARTIFACTS, NOT THE "five" #114 first said.** Only the three `docs/cowork-skills/*.html` repo copies carry the corrected helper. Re-derived 2026-09-14 by walking Claude Desktop's artifact store: **15 carry an `extractRows` helper and 15 of 15 still fail to throw on `{error:{…}}`.** ⚠ **Eleven of them DO check `isError` at the call site** — which reads as error handling, survives review for exactly that reason, and is pointed at a shape the server does not send. **So do NOT scope this job by grepping for a missing `isError` check: that returns 4 and looks small.** The property is *does the helper throw on `{error:{…}}`*. Start with the four blind at both layers: `rpc-growth-funnel`, `rpc-qa-scorecard`, `rpc-rewards-console`, `rtr-pack-finder`. **Measure, do not count commits:** `node scripts/audit-cowork-artifact-failure-handling.mjs` → **0** clean · **1** vulnerable · **2** store missing/empty.
+```
