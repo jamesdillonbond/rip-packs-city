@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ✅ SHIPPED (migration) — #82's SOURCE half shut too: the wmc parallel rekey now refuses a serial the parallel cannot contain. Population SIZED at 864 rows / 74 wallets / +$4,108 overstated FMV · Claude Code cloud
+
+- ⭐ **The sizing the decision was waiting on:** of **121,768** TS wmc parallel-keyed rows, **120,904 (99.29 %) supported**, **864 (0.71 %) not** (569 no subedition row · 255 Standard · 40 disagreeing). **A bounded blast radius, not an unmeasured mass.**
+- ⭐ **User impact is real:** all 864 carry an FMV across **74 wallets**. Of **394** adjudicable against the canonical map, **11 agree after all** and **383 are wrong** — **net +$4,107.67 OVERSTATED** (abs $5,066.99, worst row $1,170.00). ⚠ The other 470 have no `moments` row and are **not adjudicable** — said plainly rather than folded in.
+- ⭐ **Live, not frozen:** `audit_20260904_wmc_parallel_rekey` — 67,530 rekeys on 09-03, then hundreds daily, **2,151 on 09-13**. That is why a write-time guard earned its place.
+- **Shipped:** `20260914140000` adds the plausibility guard to `rekey_topshot_wmc_parallels` (jobid 451). **643 of 864 (74.4 %) violate exactly this predicate and the escapes fired for NONE of them**, so it is measured non-vacuous and not over-broad. Strictly subtractive. md5 proof on the replace (`3e62ad3b…`, 3342), grants unchanged, drift 0, guards 243/243.
+- ⛔ **Still Trevor's:** the 864 wmc rows and 37 `sales` rows. Both guards are WRITE-TIME only. ⭐ **The remaining 221 of 864 do not violate the guard** — their serial fits — so only the inverse can reach them.
+- **Revert path:** re-apply the body minus the PLAUSIBILITY GUARD block. Find by MESSAGE (`git log --grep=`).
+
 ### 2026-09-14 · 🚨 `pg_stat_statements` IS NOT KEYED ON `queryid`, AND A TWO-SNAPSHOT DELTA JOINED ON IT ALONE FABRICATES A RATE — caught one step before filing · plus the client-error beacon re-read clean · Claude Code cloud
 
 **Docs-only.** Both halves are method results; neither is a defect in the platform.
