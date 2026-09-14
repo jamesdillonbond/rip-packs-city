@@ -4,6 +4,31 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-14 ~11:0x AM PT (Claude Code cloud; #121 closed to its last step, and ONE DOCTRINE CHANGE every pass needs)
+
+🚨 **DOCTRINE CHANGE — READ THIS EVEN IF YOU READ NOTHING ELSE HERE. "`rpc_ops_snapshot()` timed out" IS NO LONGER EVIDENCE OF A SATURATION SPELL.** At least **8 filings and handoffs** use exactly that inference (*"which is the §1c spell tell"*, *"those three are not broken instruments — they are the spell"*). It was sound while the function completed in quiet windows. **Measured 09-14 10:30 AM PT at io_wait 1 / active 2 — a genuinely quiet instance — and it was still cancelled 57014 at a 50 s budget.** A pass reading a timeout there as spell evidence will **diagnose a spell that is not happening** and defer real work to a quiet window that already arrived. ⭐ **Take the positive control from `pg_stat_activity`. It is cheap, direct, and it cannot be the thing it is measuring.** (The latency itself is now fixed — see below — but the habit will outlive the fix.)
+
+### ✅ SHIPPED SINCE THE 09-14 09:1x STEER BELOW
+
+| what | state | where |
+|---|---|---|
+| **#121 exit (1)** — *"what do the readers DO with a failed snapshot?"* | **DONE, and it REFUTED my own hypothesis.** I claimed a pass could not honestly write *"Security: 4/4 clean"* off a timed-out call. **The record says it never did: 4 of 4 times the call actually failed, the pass named the failure and re-derived the legs individually** (08-20 is the exact feared shape and its body reads *"directly re-measured"*; 08-29 wrote **"UNMEASURED … no delta was fabricated"**). ⚠ **It is a PRACTICE, not a MECHANISM — nothing enforces it.** | docs |
+| **#121 exit (2)** — the FMV split becomes a precompute | **DONE.** `fmv_confidence_precompute` + `refresh_fmv_confidence_precompute()` on pg_cron **jobid 506**, `rpc_ops_snapshot()` 14 → **15 keys**. **CANCELLED-at-50 s → 9.13 s**, quiet-to-quiet. | `20260914215000` |
+| **provenance shipped WITH it** | new sibling key **`fmv_by_collection_computed_at`**; `fmv_by_collection`'s SHAPE unchanged. **`null` = never computed, `{}` = computed and genuinely empty** — kept apart by a LEFT JOIN, and a failed refresh keeps its OLD row so `computed_at` ages visibly. | same |
+| **#114's TAIL corrected** | it still said *"the five live dashboards"* and *"copy the helper into all five"* against the **fifteen** in its own header. A session reading only the EXIT line would patch five and close the item. | docs |
+
+### 👉 PICK UP, CHEAPEST FIRST
+
+1. **⚠ THE 09-14 09:1x STEER BELOW HAS A WRONG DEADLINE — do not act on it as written.** Its item 1(b) says the `2026-09-14` row in `topshot_misattrib_backlog_history` must be non-NULL *"after 00:15Z"*. **It cannot be: the job was created ~17:00Z on 09-14, so its FIRST run is 2026-09-15 00:15Z.** The falsifier is real, the date was wrong. **Check it on 09-15, not before**, and a NULL there still means the diff is not wired.
+2. **NEW FALSIFIER — jobid 506 must read `succeeded` on its own runs.** The seed took **106.9 s against pg_cron's 120 s ceiling**, and it is Top Shot almost entirely (**93,063 ms** of it; TS swings **~25 s at io_wait 1 to 93 s at io_wait 9**). Schedule was put in the quiet band for exactly this reason (`35 1,5,9,13` UTC = 18:35/22:35/02:35/06:35 PT). **A `failed` there means the ceiling was hit and the FMV split is aging — `fmv_by_collection_computed_at` will say so.**
+3. **#121's step (3): re-measure the snapshot COLD and UNDER LOAD.** The 9.13 s reading had a warm trust-health leg on a quiet box, so it is the **floor, not the budget** — expect ~15–20 s cold. The durable work left is that the `DISTINCT ON` over a 965 MB partition was **MOVED off the read path, not REDUCED**.
+4. Everything in the 09-14 09:1x steer below still stands except item 1(b).
+
+### ⛔ DO NOT RE-DERIVE THESE — both were measured and killed today
+
+- **De-duplicating `rpc_ops_snapshot()`'s DOUBLE read of `v_rpc_trust_health` is worth ZERO.** It reads the view twice (`trust_health`, then `trust_health_breaches`), which looks like ~13.6 s of waste and a 23 % win from one `WITH … AS MATERIALIZED`. **Warm-vs-warm, both forms return in 0.00 s** — the view is IO-bound and the second scan is served from shared buffers. I was one step from a value-equivalent, **zero-gain** `CREATE OR REPLACE` on a live SECURITY DEFINER function.
+- **Those two keys CANNOT disagree** — one statement → one READ COMMITTED snapshot, and every function the view calls is **STABLE** (checked in `pg_proc.provolatile`). It is not a consistency bug; don't file one.
+
 ## STEER — added 2026-09-14 ~09:1x AM PT (Claude Code cloud; six ships, and the ONE thing on this list that is now wrong)
 
 ⚠ **THE 09-13 STEER BELOW LISTS #101 AND #102 AS "NEEDING A DECISION THAT IS NOT MINE". BOTH HAVE MOVED — do not re-derive them.**
