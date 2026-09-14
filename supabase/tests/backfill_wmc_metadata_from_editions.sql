@@ -8,11 +8,11 @@
 -- its team as the display name rather than blank. Returns the count updated.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260830143540_audit_20260830_wmc_metadata_post_pass_rewrites_rows_it_cannot_fill.sql),
+-- (supabase/migrations/20260914015500_audit_20260913_backfill_wmc_metadata_plans_with_its_parameter_values.sql),
 -- with its body verified byte-identical to live prod via pg_get_functiondef on
 -- 2026-08-30. Since 2026-08-30 a row is touched only when at least one of its
 -- NULLs can actually be filled — a row whose edition is NULL in the same column
--- is neither rewritten nor counted (it used to be, on every child run). __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
+-- is neither rewritten nor counted (it used to be, on every child run). ⚠ Since 2026-09-13 the UPDATE runs through EXECUTE … INTO … USING so it is planned with the PARAMETER VALUES: as a plain statement plpgsql went GENERIC after five calls in a pooled session and the generic plan INVERTED the join (73,414 buffers against 1,175 — register #113). The SQL is otherwise character-identical, the two parameters becoming $1/$2, so every invariant below is unchanged. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -39,10 +39,7 @@ CREATE TABLE public.wallet_moments_cache (
 );
 
 -- >>> BEGIN verbatim backfill_wmc_metadata_from_editions (byte-identical to the migration/prod) >>>
-CREATE OR REPLACE FUNCTION public.backfill_wmc_metadata_from_editions(
-  p_wallet_address text DEFAULT NULL::text,
-  p_collection_id  uuid DEFAULT NULL::uuid
-)
+CREATE OR REPLACE FUNCTION public.backfill_wmc_metadata_from_editions(p_wallet_address text DEFAULT NULL::text, p_collection_id uuid DEFAULT NULL::uuid)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -52,6 +49,11 @@ AS $function$
 DECLARE
   v_updated integer;
 BEGIN
+  -- ⚠ EXECUTE … USING, not a plain statement: a plain one is planned GENERIC
+  -- from the sixth call of a pooled session onward, and the generic plan for
+  -- this WHERE clause seq-scans `editions` and probes wmc per edition — 62x the
+  -- buffers (measured 2026-09-13; see this migration's header and #113).
+  EXECUTE $q$
   WITH updated AS (
     UPDATE public.wallet_moments_cache wmc
        SET tier        = COALESCE(wmc.tier,        e.tier::text),
@@ -73,11 +75,14 @@ BEGIN
          (wmc.mint_count  IS NULL AND e.circulation_count IS NOT NULL) OR
          (wmc.team_name   IS NULL AND e.team_name IS NOT NULL)
        )
-       AND (p_wallet_address IS NULL OR wmc.wallet_address = p_wallet_address)
-       AND (p_collection_id  IS NULL OR wmc.collection_id  = p_collection_id)
+       AND ($1 IS NULL OR wmc.wallet_address = $1)
+       AND ($2 IS NULL OR wmc.collection_id  = $2)
     RETURNING 1
   )
-  SELECT COUNT(*)::int INTO v_updated FROM updated;
+  SELECT COUNT(*)::int FROM updated
+  $q$
+  INTO v_updated
+  USING p_wallet_address, p_collection_id;
 
   RETURN COALESCE(v_updated, 0);
 END;

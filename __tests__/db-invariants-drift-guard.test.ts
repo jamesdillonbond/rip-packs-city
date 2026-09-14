@@ -194,7 +194,13 @@ const PINS = [
     test: "supabase/tests/backfill_wmc_metadata_from_editions.sql",
     // Re-pointed 2026-08-30: rows whose NULLs the edition cannot fill are no
     // longer rewritten (and no longer counted) on every child run.
-    migration: "supabase/migrations/20260830143540_audit_20260830_wmc_metadata_post_pass_rewrites_rows_it_cannot_fill.sql",
+    // ⚠ Re-pointed again 2026-09-13: the UPDATE moved inside EXECUTE … USING so
+    // it is planned with the parameter VALUES. As a plain statement plpgsql
+    // switched to a GENERIC plan after five calls of a pooled session, and that
+    // plan inverted the join — seq-scanning editions and probing wmc per
+    // edition, 73,414 buffers against 1,175 (register #113). The SQL is
+    // character-identical apart from the parameters becoming $1/$2.
+    migration: "supabase/migrations/20260914015500_audit_20260913_backfill_wmc_metadata_plans_with_its_parameter_values.sql",
   },
   {
     fn: "update_badge_low_ask_from_cached_listings",
