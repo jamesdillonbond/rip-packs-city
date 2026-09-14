@@ -446,7 +446,6 @@ async function run(req: NextRequest) {
       }
 
       // Walk the Dune result set page by page, upserting as we go.
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         if (walkSkip) break;
         // Out of allowance mid-walk: stop cleanly with the offset recorded

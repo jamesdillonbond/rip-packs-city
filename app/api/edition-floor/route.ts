@@ -197,7 +197,6 @@ async function resolveEditionFloor(editionKey: string): Promise<EditionFloorResu
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function persistFloorToSnapshot(
   supabase: SupabaseClient,
   results: EditionFloorResult[]

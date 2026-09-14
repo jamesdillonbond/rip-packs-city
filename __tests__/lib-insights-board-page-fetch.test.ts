@@ -74,7 +74,6 @@ describe("fetchBoardForPage", () => {
 
   it("survives a thrown non-Error without producing 'undefined' in the log", async () => {
     const res = await fetchBoardForPage("X", [], async () => {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw "string failure"
     })
     expect(res.ok).toBe(false)

@@ -366,7 +366,6 @@ async function pollBackfillCompletion(
   if (ids.length === 0 || budgetMs <= 0) return result
 
   const deadline = Date.now() + budgetMs
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const current = await readBackfillState(walletAddr, ids)
     let allDone = true

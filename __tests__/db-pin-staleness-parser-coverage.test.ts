@@ -29,7 +29,6 @@ function truePinCount(src: string): number {
 function scriptPinRegex(scriptSrc: string): RegExp {
   const m = scriptSrc.match(/const re = (\/.*\/g)\s*\n/)
   if (!m) throw new Error("could not locate the pin-parsing regex in check-db-pin-staleness.mjs")
-  // eslint-disable-next-line no-eval
   return eval(m[1]) as RegExp
 }
 

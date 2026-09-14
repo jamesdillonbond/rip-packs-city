@@ -16,7 +16,6 @@ import {
 // counted the spend; a guard that answers "plenty" when it cannot read the
 // policy would reproduce that exactly, while looking like it was working.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function db(opts: {
   rpc?: (name: string, args?: unknown) => Promise<unknown>
   insert?: (row: unknown) => Promise<{ error: unknown }>

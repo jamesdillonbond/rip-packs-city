@@ -424,7 +424,6 @@ function PullCard({ pull, collection }: { pull: PackPull; collection: string }) 
         }}
       >
         {hasVideo && hovering ? (
-          // eslint-disable-next-line jsx-a11y/media-has-caption
           <video
             src={pull.video_url ?? undefined}
             autoPlay

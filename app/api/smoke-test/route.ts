@@ -409,6 +409,119 @@ function shapeCouldNotRun(
 // retry/inconclusive handling so a mid-stream timeout is transient (retry once →
 // SOFT inconclusive), while a body that fully reads but lacks the needle still
 // hard-fails as a real module regression.
+// ─────────────────────────────────────────────────────────────────────────────
+// UNCORROBORATED-DISCOUNT DETECTOR — used by the Pinnacle Goofy concierge probe.
+//
+// ⚠ WHY THIS EXISTS RATHER THAN THE ONE-LINE REGEX IT REPLACES.
+// The probe's old test was `mentionsGoofy && /\d{2,3}\s*%\s*(?:below|off|under)/`
+// — it fired on ANY two-or-three-digit percentage-under phrasing. Quoting
+// ask-vs-FMV as a percentage IS the deal-finding product, so as written the check
+// contradicted the surface it guards: it failed EVERY concierge run on record
+// (02:24, 09:10 and 18:32 PT on 2026-09-13), always with `fake discount on goofy`,
+// while the answer was correct in every particular — verified row-by-row against
+// `pinnacle_catalog` in
+// docs/overnight/inbox/2026-09-14T0135Z-the-goofy-concierge-probe-is-permanently-red-on-correct-behaviour.md
+//
+// ⛔ A permanently-red instrument is indistinguishable from a broken one, and
+// `soft: true` is what let this one stay red for months without anyone paying for
+// it. Either make it able to pass, or retire it.
+//
+// ⭐ WHAT THE CHECK WAS ACTUALLY FOR, from the commit that added it (657ab80c6,
+// "concierge: Pinnacle FMV must join by (character, set, variant)"): a response of
+// the shape *"Goofy at $1, FMV ~$29 → 97% off"*, where a leaked Minnie FMV
+// produced an absurd discount. It was never meant to ban percentages — the same
+// commit's own summary says it should fail "on the FMV-leak and fake-discount
+// patterns instead of passing because 'Goofy' appeared somewhere in the text."
+//
+// ⭐ SO THE HONEST DISCRIMINATOR IS CORROBORATION, NOT MAGNITUDE: a discount claim
+// is fabricated when the response's own printed figures do not produce it. The
+// live answer is a markdown table that shows its work — `| … | $1 | $1.24 | 19%
+// under |` — so the claim is checkable arithmetic, and 1/1.24 really is 19% under.
+//
+// ⚠ NOT a replacement for the FMV-leak check, which stays exactly as it was. A
+// leaked FMV is arithmetically SELF-CONSISTENT ((29−1)/29 = 97%), so this function
+// passes it by design; `fmvLeak` is the instrument for that shape and it still
+// fires on the original defect. Two different claims, two different checks.
+//
+// ⚠ Deliberately lenient in one direction and strict in the other, because a
+// false positive here is what made the old check worthless:
+//   · a line that PRINTS two or more money figures must support its own
+//     percentage from a pair on THAT line (strict — the evidence is right there);
+//   · a bare prose mention ("the best is 22% under FMV") is accepted when ANY
+//     line in the response corroborates that number, so a summary sentence
+//     restating the table cannot red the probe.
+// A percentage nothing in the response supports is the only thing that fires.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Every `$1,234.56` in a line, as numbers. */
+function moneyFigures(line: string): number[] {
+  const out: number[] = [];
+  for (const m of line.matchAll(/\$\s?([\d,]+(?:\.\d{1,2})?)/g)) {
+    const n = Number(m[1].replace(/,/g, ""));
+    if (Number.isFinite(n) && n > 0) out.push(n);
+  }
+  return out;
+}
+
+/** Every `19% under` / `97% off` / `5% below` in a line, as numbers. */
+function discountClaims(line: string): number[] {
+  const out: number[] = [];
+  for (const m of line.matchAll(/(\d{1,3}(?:\.\d+)?)\s*%\s*(?:below|off|under)/gi)) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n)) out.push(n);
+  }
+  return out;
+}
+
+/**
+ * The percentages a line's own money figures can justify: for every pair, the
+ * discount of the cheaper against the dearer. Order-independent on purpose —
+ * "Ask | FMV" and "FMV | Ask" column orders both read correctly, and a discount
+ * is always measured against the higher number.
+ */
+function supportedPercents(figures: number[]): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < figures.length; i++) {
+    for (let j = i + 1; j < figures.length; j++) {
+      const hi = Math.max(figures[i], figures[j]);
+      const lo = Math.min(figures[i], figures[j]);
+      if (hi > 0) out.push(((hi - lo) / hi) * 100);
+    }
+  }
+  return out;
+}
+
+/** ±1 point, which is what rounding a displayed percentage costs. */
+const PCT_TOLERANCE = 1.0;
+
+/**
+ * Discount percentages the response states but its own figures never produce.
+ * Empty ⇒ every discount claim is shown to be worked out from printed numbers.
+ *
+ * Exported for unit tests. Next.js App Router only treats HTTP-method exports as
+ * route handlers; this named export is ignored by the router.
+ */
+export function uncorroboratedDiscountClaims(text: string): number[] {
+  const lines = text.split("\n");
+  const everywhere: number[] = [];
+  for (const line of lines) everywhere.push(...supportedPercents(moneyFigures(line)));
+
+  const bad: number[] = [];
+  for (const line of lines) {
+    const claims = discountClaims(line);
+    if (claims.length === 0) continue;
+    const own = supportedPercents(moneyFigures(line));
+    // With two or more figures on the line the claim must follow from THEM;
+    // otherwise fall back to the whole response, so prose restating the table
+    // cannot fail the probe.
+    const basis = own.length > 0 ? own : everywhere;
+    for (const c of claims) {
+      if (!basis.some((s) => Math.abs(s - c) <= PCT_TOLERANCE)) bad.push(c);
+    }
+  }
+  return bad;
+}
+
 // Exported for unit tests (regression coverage on the streamed-body-timeout
 // classification below). Next.js App Router only treats HTTP-method exports as
 // route handlers; this named export is ignored by the router.
@@ -2070,13 +2183,17 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       ];
       const confabulated = confabulatedNames.some((n) => text.includes(n)) && !mentionsGoofy;
       const fmvLeak = mentionsGoofy && /\$2\d|\$3[0-5]/.test(text) && /fmv|discount|\boff\b|below/.test(text);
-      const fakeDiscount = mentionsGoofy && /\d{2,3}\s*%\s*(?:below|off|under)/.test(text);
+      // ⚠ NOT "does it quote a percentage" — that fired on every correct answer
+      // for months (see uncorroboratedDiscountClaims above). It is "does the
+      // response's own printed ask/FMV figures produce the percentage it states".
+      const unsupportedPcts = mentionsGoofy ? uncorroboratedDiscountClaims(raw) : [];
+      const fakeDiscount = unsupportedPcts.length > 0;
       const passed = (mentionsGoofy || explicitNoMatch) && !confabulated && !fmvLeak && !fakeDiscount;
       const detail = passed
         ? mentionsGoofy ? "mentions goofy, no fmv leak" : "explicit no-match"
         : confabulated ? `confabulated other character: ${raw.slice(0, 160)}`
         : fmvLeak ? `fmv leak ($25-35 on goofy): ${raw.slice(0, 160)}`
-        : fakeDiscount ? `fake discount on goofy: ${raw.slice(0, 160)}`
+        : fakeDiscount ? `uncorroborated discount on goofy (${unsupportedPcts.join("%, ")}% unsupported by any ask/FMV pair printed): ${raw.slice(0, 160)}`
         : "neither mention nor explicit no-match";
       return {
         ...meta,

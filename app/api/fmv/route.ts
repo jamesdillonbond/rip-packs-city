@@ -189,7 +189,6 @@ export async function GET(req: Request) {
             (results[0] as any).priceHistoryUnavailable = true;
           }
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (!historyErr && historyRows && historyRows.length > 0) {
           const priceHistory = historyRows.reverse().map((row: any) => ({
             date: typeof row.computed_at === "string" ? row.computed_at.slice(0, 10) : null,

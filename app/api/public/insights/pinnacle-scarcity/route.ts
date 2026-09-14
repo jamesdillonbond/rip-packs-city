@@ -46,7 +46,6 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // The QUERY lives in lib/insights/pinnacle-scarcity-board.ts, shared with the server page
   // so the crawlable board and this route cannot drift. This route keeps its
   // own failure policy (boardUnavailable).

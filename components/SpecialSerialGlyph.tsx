@@ -65,7 +65,6 @@ export default function SpecialSerialGlyph({
   if (platform === "allday") {
     // Official NFL All Day badge art (full-color; served same-origin via the
     // badge-image proxy — assets.nflallday.com needs a browser UA).
-    // eslint-disable-next-line @next/next/no-img-element
     return (
       <img
         src={`/api/badge-image?src=allday&name=${ALLDAY_SLUG[cat]}`}

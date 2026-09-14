@@ -1,0 +1,60 @@
+-- audit_20260913_pin_search_path_on_the_last_four_unpinned_public_functions
+--
+-- Four routines in `public` carry NO `proconfig` at all, so their `search_path` is
+-- whatever the CALLER happens to have set. Every other routine in the schema pins it.
+--
+-- ── THE MEASUREMENT (live, 2026-09-13 PT) ───────────────────────────────────────────
+--   pg_proc in `public` .................................. 751
+--   with a pinned proconfig .............................. 747   (99.5 %)
+--   with proconfig IS NULL ................................. 4
+--
+--     public.atlas_market_headers(text)                        sql,     IMMUTABLE, INVOKER
+--     public.series_chain_numbers(uuid,integer)                sql,     IMMUTABLE, INVOKER
+--     public.rpc_trust_health_precompute_refresh_p()           plpgsql, PROCEDURE, INVOKER
+--     public.reconcile_all_saved_wallet_stats(int,int,int,int) plpgsql, PROCEDURE, INVOKER
+--
+--   The dominant house value is `search_path = public, pg_temp` (408 routines); a further
+--   290 pin bare `public`. This migration uses the former: `pg_temp` LAST is the point of
+--   the idiom — a temp table cannot shadow a real one if it is searched after it.
+--
+-- ⚠ SEVERITY STATED HONESTLY RATHER THAN INFLATED. All four are SECURITY **INVOKER**, so
+-- this is not the classic SECDEF privilege-escalation shape — an unpinned invoker function
+-- runs with the caller's own rights either way. What it IS: two of the four are PROCEDURES
+-- called from pg_cron, where the calling session's `search_path` is not something this repo
+-- sets or reads, so which object an unqualified name resolves to is not decided here. The
+-- supabase security advisor flags all four as `function_search_path_mutable` (WARN).
+--
+-- ⭐ WHY `ALTER` AND NOT `CREATE OR REPLACE`: this changes ONLY proconfig. CLAUDE.md's
+-- standing trap — "CREATE OR REPLACE IS A FULL-BODY WRITE, re-read the live object first" —
+-- is avoided entirely rather than navigated. No body is read, transcribed or rewritten here,
+-- which also keeps `reconcile_all_saved_wallet_stats` (9,875 chars) and
+-- `atlas_market_headers` out of a transcript.
+--
+-- ⚠ CHECKED BEFORE WRITING, because pinning a search_path CAN break name resolution: none of
+-- the four bodies references an object outside `public`/`pg_catalog` —
+--   prosrc ~* '\m(net\.|extensions\.|vault\.|http_|pgp_|gen_random|digest|hmac|encrypt|uuid_generate)'
+--   and prosrc ~* '\mcron\.'  ... FALSE on all four.
+-- `pg_catalog` stays implicitly first when it is not named explicitly, so builtins are
+-- unaffected. A body that only touches `public` objects resolves identically under
+-- `search_path = public, pg_temp`.
+--
+-- ⚠ WHAT THIS DOES NOT DO, stated rather than implied: nothing in this estate WATCHES this
+-- property. `check_public_security_invariants()` does not look at proconfig (its body never
+-- mentions it, and it returns [] today with all four unpinned). So the count returns to zero
+-- here, and the only instrument that can see it regress is the supabase advisor. A ban at
+-- zero belongs in the invariants function; that is a CREATE OR REPLACE on a load-bearing
+-- security check and is deliberately NOT bundled into this one.
+--
+-- REVERT (exact inverse, and it is a one-liner per routine):
+--   ALTER FUNCTION  public.atlas_market_headers(text)                          RESET search_path;
+--   ALTER FUNCTION  public.series_chain_numbers(uuid,integer)                  RESET search_path;
+--   ALTER PROCEDURE public.rpc_trust_health_precompute_refresh_p()             RESET search_path;
+--   ALTER PROCEDURE public.reconcile_all_saved_wallet_stats(int,int,int,int)   RESET search_path;
+--
+-- VERIFY: `select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--          where n.nspname = 'public' and p.proconfig is null;`  must read 0.
+
+ALTER FUNCTION  public.atlas_market_headers(text)                                    SET search_path = public, pg_temp;
+ALTER FUNCTION  public.series_chain_numbers(uuid, integer)                            SET search_path = public, pg_temp;
+ALTER PROCEDURE public.rpc_trust_health_precompute_refresh_p()                        SET search_path = public, pg_temp;
+ALTER PROCEDURE public.reconcile_all_saved_wallet_stats(integer, integer, integer, integer) SET search_path = public, pg_temp;

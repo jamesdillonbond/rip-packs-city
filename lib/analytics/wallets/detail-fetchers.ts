@@ -104,7 +104,6 @@ async function bounded<T>(
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadWallet(
   addr: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

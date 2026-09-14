@@ -54,7 +54,6 @@ export async function topshotGraphql<T>(
   const maxBackoffMs = opts?.maxBackoffMs ?? 20_000;
 
   let attempt = 0;
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const response = await fetch(TOPSHOT_GRAPHQL_URL, {
       method: "POST",

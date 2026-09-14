@@ -252,7 +252,6 @@ describe("/api/profile/trophy-case/pdf — renders a real PDF", () => {
 
 /** A real, decodable PNG of the given size (pngjs, same encoder the route uses). */
 function realPng(w = 8, h = 8, alpha = 255): Buffer {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { PNG } = require("pngjs") as typeof import("pngjs")
   const png = new PNG({ width: w, height: h })
   for (let i = 0; i < png.data.length; i += 4) {

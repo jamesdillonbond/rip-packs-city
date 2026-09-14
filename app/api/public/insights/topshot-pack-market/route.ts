@@ -50,7 +50,6 @@ const num = (v: unknown): number | null =>
 export async function GET(_req: NextRequest) {
   const startedAt = Date.now();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // PostgREST caps reads at 1,000 rows and silently CLAMPS a larger .limit(),
   // so the old .limit() served a truncated board with no error. Page it.
   const { rows: data, error } = await withPagedBoardBudget(fetchAllPaged<any>(

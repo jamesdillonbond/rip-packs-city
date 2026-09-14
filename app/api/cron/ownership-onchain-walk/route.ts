@@ -105,7 +105,6 @@ async function mapWithConcurrency<T, R>(
   const results: R[] = new Array(items.length);
   let nextIndex = 0;
   async function runWorker() {
-    // eslint-disable-next-line no-constant-condition
     while (true) {
       const currentIndex = nextIndex++;
       if (currentIndex >= items.length) return;

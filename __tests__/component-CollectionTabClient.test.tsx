@@ -136,7 +136,6 @@ vi.mock("@/lib/warmup/WarmupContext", async () => {
           .then((d) => { if (!cancelled) setData(d) })
           .catch(() => {})
         return () => { cancelled = true }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [fetcher, opts?.enabled])
       return { data }
     },

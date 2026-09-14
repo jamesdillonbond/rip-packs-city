@@ -53,7 +53,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "series must be an integer" }, { status: 400 });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // The QUERY lives in lib/insights/set-squeeze-board.ts, shared with the server page
   // so the crawlable board and this route cannot drift. This route keeps its
   // own failure policy (boardUnavailable).

@@ -22,7 +22,6 @@ export const revalidate = 900
 async function fetchInitialRows(): Promise<{ rows: Row[]; loadError: string | null }> {
   // Trailing 120-day cutoff (inclusive), same as the route default.
   const cutoff = new Date(Date.now() - 120 * 86_400_000).toISOString().slice(0, 10)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // 686 rows today (121 days x <=7 tiers, ~847 ceiling) so .limit(2000) — silently
   // clamped to 1,000 — is not truncating yet. It is still wrong to leave: the sort
   // is d ASCENDING, so the first overflow would drop the NEWEST days off a market
