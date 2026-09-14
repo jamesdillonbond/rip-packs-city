@@ -32,9 +32,13 @@
 BEGIN;
 
 CREATE TABLE editions (
-  id            uuid PRIMARY KEY,
-  collection_id uuid,
-  external_id   text
+  id                uuid PRIMARY KEY,
+  collection_id     uuid,
+  external_id       text,
+  -- Added 2026-09-14 for the plausibility guard. Every PRE-EXISTING fixture row
+  -- leaves this NULL, which the guard's `is null` escape passes through — so all
+  -- the assertions below this point behave exactly as they did before the guard.
+  circulation_count integer
 );
 
 CREATE TABLE sales (
@@ -123,6 +127,19 @@ begin
     join nft_map nm on nm.moment_id = ws.nft_id
     join editions ew on ew.external_id = nm.ek and ew.collection_id='95f28a17-224a-4025-96ad-adf8a4c63bfd'
     where ew.id <> ws.edition_id
+      -- PLAUSIBILITY GUARD (2026-09-14): never re-key a sale onto an edition whose
+      -- circulation cannot contain the serial. wmc is the SOURCE of (ek, ser) here
+      -- and this function copied it verbatim, so a wrong wmc subedition key became a
+      -- wrong `sales` row with no check in between -- measured as 37 impossible rows,
+      -- every one a byte-exact copy of wmc, all contradicted by the canonical
+      -- moments -> editions map. Strictly SUBTRACTIVE: it can only REFUSE a re-key,
+      -- never create one, so it cannot introduce a mis-key of its own. The null/<=0
+      -- escapes keep editions with unknown circulation behaving exactly as before.
+      -- Same guard shape as the trophy path (`refuse a serial that is above its own
+      -- edition's circulation`).
+      and (ew.circulation_count is null
+           or ew.circulation_count <= 0
+           or coalesce(nm.ser, 0) <= ew.circulation_count)
   ),
   cand_pairs as (select distinct ek, ser from cand),
   -- serial-collision guard scoped to candidate pairs (indexed, not a full scan):
@@ -144,6 +161,7 @@ begin
   get diagnostics n = row_count;
   return n;
 end$function$;
+
 -- <<< END verbatim remap_misattributed_topshot_sales <<<
 
 -- ── Fixture ────────────────────────────────────────────────────────────────
@@ -163,6 +181,11 @@ INSERT INTO editions (id, collection_id, external_id) VALUES
   -- guard has to be tested against a key that WOULD otherwise resolve.
   ('00000000-0000-0000-0000-0000000000e3', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'uuid-a:uuid-b');
 
+-- e4 is the only edition with a KNOWN circulation, so it is the only one the
+-- plausibility guard can act on. Both directions are exercised against it below.
+INSERT INTO editions (id, collection_id, external_id, circulation_count) VALUES
+  ('00000000-0000-0000-0000-0000000000e4', '95f28a17-224a-4025-96ad-adf8a4c63bfd', '48:2000', 5);
+
 INSERT INTO sales (id, collection_id, nft_id, edition_id, serial_number, sold_at) VALUES
   (1,  '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-fresh',  '00000000-0000-0000-0000-0000000000e0', 10, now() - interval '1 day'),
   (2,  '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-slice',  '00000000-0000-0000-0000-0000000000e0', 11, now() - interval '7 days'),
@@ -173,7 +196,11 @@ INSERT INTO sales (id, collection_id, nft_id, edition_id, serial_number, sold_at
   (7,  '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-same',   '00000000-0000-0000-0000-0000000000e1', 16, now() - interval '1 day'),
   (8,  '95f28a17-224a-4025-96ad-adf8a4c63bfd', NULL,       '00000000-0000-0000-0000-0000000000e0', 17, now() - interval '1 day'),
   (9,  '06248cc4-b85f-47cd-af67-1855d14acd75', 'm-fresh',  '00000000-0000-0000-0000-0000000000e0', 18, now() - interval '1 day'),
-  (10, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-badkey', '00000000-0000-0000-0000-0000000000e0', 19, now() - interval '1 day');
+  (10, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-badkey', '00000000-0000-0000-0000-0000000000e0', 19, now() - interval '1 day'),
+  -- Plausibility guard, both directions. Same edition, same shape, only the
+  -- serial differs — so a guard that refused everything would fail id 12.
+  (11, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-overrun', '00000000-0000-0000-0000-0000000000e0', 20, now() - interval '1 day'),
+  (12, '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-inrange', '00000000-0000-0000-0000-0000000000e0', 21, now() - interval '1 day');
 
 INSERT INTO wallet_moments_cache (collection_id, moment_id, edition_key, serial_number) VALUES
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-fresh',  '48:1652', 77),
@@ -188,11 +215,17 @@ INSERT INTO wallet_moments_cache (collection_id, moment_id, edition_key, serial_
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-dup2',   '48:1652', 90),
   ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-same',   '48:1652', 91),
   -- Not int-keyed → excluded by the edition_key regex.
-  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-badkey', 'uuid-a:uuid-b', 92);
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-badkey', 'uuid-a:uuid-b', 92),
+  -- serial 99 cannot exist in a 5-count edition → the guard must refuse the re-key.
+  -- This is the production defect in miniature: wmc asserted a parallel key whose
+  -- circulation cannot contain the serial, and the sweep used to copy it verbatim.
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-overrun', '48:2000', 99),
+  -- serial 3 fits → the guard must NOT interfere.
+  ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'm-inrange', '48:2000', 3);
 
 -- ── Run ────────────────────────────────────────────────────────────────────
 -- Only the fresh-window and in-slice sales qualify.
-SELECT _assert_eq(remap_misattributed_topshot_sales()::text, '2', 'exactly 2 sales re-keyed (fresh window + the one rotating slice)');
+SELECT _assert_eq(remap_misattributed_topshot_sales()::text, '3', 'exactly 3 sales re-keyed (fresh window + the one rotating slice + the in-range guard case)');
 
 SELECT _assert_eq((SELECT edition_id::text FROM sales WHERE id=1), '00000000-0000-0000-0000-0000000000e1', 'fresh-window sale re-keyed to the wmc edition');
 SELECT _assert_eq((SELECT serial_number::text FROM sales WHERE id=1), '77', 'serial_number rewritten from wmc, not left at the old value');
@@ -214,6 +247,15 @@ SELECT _assert_eq((SELECT serial_number::text FROM sales WHERE id=7), '16', 'sal
 SELECT _assert_eq((SELECT edition_id::text FROM sales WHERE id=8), '00000000-0000-0000-0000-0000000000e0', 'NULL nft_id excluded');
 SELECT _assert_eq((SELECT edition_id::text FROM sales WHERE id=9), '00000000-0000-0000-0000-0000000000e0', 'other-collection sale untouched');
 SELECT _assert_eq((SELECT edition_id::text FROM sales WHERE id=10), '00000000-0000-0000-0000-0000000000e0', 'non-int edition_key excluded by the regex');
+
+-- ── Plausibility guard (2026-09-14) ────────────────────────────────────────
+-- Pins the PROPERTY (a serial the target edition cannot contain is never written),
+-- not the spelling of the predicate. Both directions, because a guard asserted in
+-- one direction only is indistinguishable from a guard that refuses everything.
+SELECT _assert_eq((SELECT edition_id::text FROM sales WHERE id=11), '00000000-0000-0000-0000-0000000000e0', 'serial 99 > circulation 5 → NOT re-keyed (this is the production defect: wmc said so, and the sweep used to believe it)');
+SELECT _assert_eq((SELECT serial_number::text FROM sales WHERE id=11), '20', 'refused re-key leaves the serial alone too — the sweep rewrites BOTH columns or neither');
+SELECT _assert_eq((SELECT edition_id::text FROM sales WHERE id=12), '00000000-0000-0000-0000-0000000000e4', 'serial 3 <= circulation 5 → still re-keyed; the guard is not a blanket refusal');
+SELECT _assert_eq((SELECT serial_number::text FROM sales WHERE id=12), '3', 'in-range re-key rewrites the serial from wmc as before');
 
 -- ── Cursor bookkeeping ─────────────────────────────────────────────────────
 SELECT _assert_eq((SELECT slice_no::text FROM remap_sweep_state), '1', 'cursor advanced 0 → 1');

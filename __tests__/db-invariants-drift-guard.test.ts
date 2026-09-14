@@ -772,7 +772,10 @@ const PINS = [
     // and the dup_pairs serial-collision guard.
     fn: "remap_misattributed_topshot_sales",
     test: "supabase/tests/remap_misattributed_topshot_sales.sql",
-    migration: "supabase/migrations/20260815161000_audit_20260815_snapshot_remap_misattributed_topshot_sales.sql",
+    // Repointed 2026-09-14: the plausibility guard (never re-key a sale onto an
+    // edition whose circulation cannot contain the serial) is the newest defining
+    // migration for this function.
+    migration: "supabase/migrations/20260914132300_audit_20260914_the_remap_refuses_a_serial_its_target_edition_cannot_contain.sql",
   },
   {
     // Re-keys FOSSIL wmc rows (edition_key not in canonical setID:playID[::subID]
