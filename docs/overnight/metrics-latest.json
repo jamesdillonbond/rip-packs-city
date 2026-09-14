@@ -1,26 +1,33 @@
 {
-  "generated_at_pt": "2026-09-13 01:1x PT",
-  "generated_at_utc": "2026-09-13T08:1xZ",
-  "pass": "rpc-nightly-autonomous-pass (desktop, NO-PUSH — sandbox shell dead 5th night, Sept-8 Windows Plan9 breakage; DB/Vercel/Sentry reads + file-tool mount writes only). Handoff/ledger/metrics UNCOMMITTED on mount; commit from desktop.",
+  "generated_at_pt": "2026-09-14 01:1x PT",
+  "generated_at_utc": "2026-09-14T08:0xZ",
+  "pass": "rpc-nightly-autonomous-pass run np-20260914-b1f7 (desktop, NO-PUSH — sandbox VM shell dead 6th night, Sept-8 Windows Plan9 breakage; DB/Vercel reads + file-tool mount writes only). Handoff/ledger/metrics UNCOMMITTED on mount; commit from desktop or a push-capable pass.",
   "shipped": 0,
   "reverted": 0,
-  "verdict": "QUIET / QUEUE-ONLY — NO-PUSH removes code/deploys AND a concurrent session was actively pushing to main (prod BUILDING + CANCELED burst) => collision gate => queue-only. Only DB candidate (Q-SCB partial index) is a deferred heavy CONCURRENTLY build; instance spell-prone. Nothing clearly-safe to ship.",
-  "health_at_close": "security 4/4 clean; 1 trust BREACH topshot_impossible_parallel_serials=29 (was 5 on 09-12; #82 mis-keyed-sales detector working as designed, repair Trevor-gated destructive); 37 other trust arms ok+fresh; rpc_ops_snapshot() clean.",
+  "verdict": "QUIET / QUEUE-ONLY — NO-PUSH removes code/deploys; the one DB candidate (Q-SCB partial indexes) is not clearly-safe now (active wallet-backfill wave blocks CIC + past 02-06Z quiet window + 60s cap invalid-index risk); concurrent Claude docs session pushing to main => collision gate. Nothing clearly-safe to ship.",
+  "health_at_close": "security 4/4 clean; 1 trust BREACH topshot_impossible_parallel_serials=36 (5->29->35->36, CONFIRMED live producer; #82, repair Trevor/Claude-Code-gated destructive re-key + route-logic writer fix); 37 other trust arms ok+fresh; stalled_pipelines []; rpc_ops_snapshot() clean.",
+  "superseded_note": "SUPERSEDED THE SAME DAY on the one headline it leads with. This snapshot was captured 2026-09-14 01:1x PT and reports topshot_impossible_parallel_serials=36 as an open, Trevor-gated breach with a live producer. It was REPAIRED later the same morning (#82 RESOLVED): 37 sales rows + 643 wmc rows re-keyed to base, and the metric read 0 at 07:14 AM PT (precompute re-verified 0 at commit time). The rest of the snapshot stands as measured. See docs/reference/known-issues.md #82, and #116 for the metric being parallel-scoped and blind to 1,727 base-edition rows.",
   "security_public_invariants_rows": 0,
   "security_anon_write_surface_rows": 0,
   "security_secdef_anon_exec_drift": "[]",
   "trust_breaches": [
-    "topshot_impossible_parallel_serials=29 (breach_at 3, #82; was 5 on 09-12 — detector working, repair is destructive re-key, Trevor)"
+    "topshot_impossible_parallel_serials=36 (breach_at 3, #82; 5->29->35->36 monotonic = LIVE producer confirmed; destructive re-key + single-if writer fix, both push/Trevor-gated)"
   ],
   "trust_precompute_max_age_hours": 5.26,
   "board_mv_refresh_stale_hours": 1.94,
   "rpc_ops_snapshot_status": "OK (completed clean)",
-  "pipeline_alerts_notable": "offers-sweep 100% dead (#81 Top Shot 530/1033 since 08-28, Trevor retire/re-key); apply-fmv-haircut cron_silent ~33h (last 09-11 22:35Z, cron-job.org caller, Trevor); chronic timeout-under-load: sales-counterparty-backfill 38.3%, fmv-backfill 43.8%, lock-check-batch 36.4%, price-snapshots 37.5%, run-insider-detectors 40.7%, allday-buyer-backfill 33.3%; pack_distributions 10d 'stale' = BENIGN; unmapped-nfl_all_day 30326 actionable draining ~18d; Atlas 403/moment-moved 400 arms all info+attributed",
-  "sentry_24h": "8 unresolved, all 'Consecutive HTTP' perf spans on /api/wallet-backfill-allday & /api/wallet-backfill-pinnacle, 0 users, 1-6 events each — known sequential-fetch shape on backfill crons; browser SDK off by decision (#34)",
-  "db_size_mb": 29215,
-  "db_size_mb_prev_0912": 28343,
-  "db_growth_note": "+872 MB in ~24h — Atlas events + cron.job_run_details (no retention).",
-  "fmv_high_med_share_pct_by_collection_note": "from rpc_ops_snapshot fmv_by_collection: TS HIGH 1536 + MED 6368; NFL HIGH 131 + MED 1676; candy/pinnacle in own tables. Read as RANGE, swings on sweep position.",
+  "pipeline_alerts_notable": "timeout-under-load class NOT in a live spell (pg_stat_activity 2 IO backends): fmv-backfill 28.6%, lock-check-batch 31.8%, price-snapshots 43.8%, run-insider-detectors 31.5% (M11/#42/#73/#84 collateral); pack_distributions 11d stale BENIGN; unmapped-nfl_all_day 28413 actionable draining ~15.4d (info); Atlas 403 arms all info+attributed.",
+  "instance_load_control": "pg_stat_activity 08:0xZ: 19 idle, 2 active IO:DataFileRead, 1 active ClientRead. wallet-backfill runs last 30m = 30 (ACTIVE WAVE, hour-0/1 PT) -> blocks CREATE INDEX CONCURRENTLY -> Q-SCB queued.",
+  "post_ship_watch": {
+    "daily_portfolio_snapshot_rows_written": "VERIFIED FIX WORKS — 00:05 PT run (07:05:30Z) rows_written=25, inserted 25, snapshot_date 2026-09-14, 22.4s (was 0 on old code). The one owed number from 09-13 has landed.",
+    "allday_dist_opened_expiry_jobid490": "healthy, restored=0 every tick (Dapper alive, self-halt falsifier did not fire); caught up (07:41Z drifted:0).",
+    "idx_sales_2026_2027_nullseller_soldat": "still used: 2026 idx_scan 75 / 147097 tuples read; 2027 idx_scan 24 / 0 (empty partition). No regression."
+  },
+  "sentry_24h": "skipped — browser SDK off / events dropped per #34 (no-spend decision).",
+  "db_size_mb": 30574,
+  "db_size_mb_prev_0913": 29215,
+  "db_growth_note": "+1359 MB in ~24h — Atlas events + cron.job_run_details (no retention). Reclaim destructive/metered, Trevor-gated.",
+  "fmv_high_med_share_pct_by_collection_note": "from rpc_ops_snapshot fmv_by_collection: TS HIGH 1301 + MED 6568 = 7869; NFL HIGH 115 + MED 1790 = 1905; Golazos MED 4; UFC 0; Pinnacle in own table. Read as RANGE, swings on sweep position.",
   "editions_by_collection": {
     "nba_top_shot": 14015,
     "nfl_all_day": 6190,
@@ -29,27 +36,27 @@
     "candy_mlb": 125
   },
   "sentinel_ts_uuid_editions_48h": 0,
-  "vercel": "prod READY; current tip BUILDING from concurrent 'Claude' docs(inbox) push; no active ERROR prod (2 ERRORs in 20-window are oldest, superseded by later READYs).",
-  "artifacts": "11 enumerated, none flagged broken, none repaired (flagship rpc-live-health validated clean by 09-12 monitor; no logic drift; data fresh-on-open).",
-  "post_ship_watch": {
-    "sales_counterparty_cursor_reset_0912": "WORKED — ~3,659 claimable 2026 rows drained (cheap 10s branch rows_found=0), lane descended back into exhausted zone as predicted; durable fix stays Q-SCB; NOT a regression",
-    "cloud_migrations_0912": "20260912143408 + 20260912152337 inside 24-48h no-edit window, untouched, no correlated regression"
-  },
+  "vercel": "prod served by recent READY deploys; newest ~3 CANCELED/ERROR-superseded churn from concurrent 'Claude' docs push (#113 delta reads). No standing prod ERROR.",
+  "artifacts": "11 enumerated, none flagged broken, none repaired (rpc-live-health validated clean by 09-14 06:12Z monitor; fresh-on-open, no logic drift).",
   "queued": [
-    "Q-MISKEY topshot mis-keyed-sales pile climbing 4->5->29; remap_topshot_parallel_to_base_misattributed() has no cron, destructive UPDATE (Trevor)",
-    "Q-SCB sales-counterparty source-predicate partial index (1.47GB CONCURRENTLY, quiet-window; DB-only so NO-PUSH-eligible when instance calm)",
-    "Q-81 offers-sweep/deal-floor-serials dead (Top Shot host down; find successor or retire)",
-    "Q-HAIRCUT apply-fmv-haircut silent ~33h (cron-job.org re-enable, Trevor)"
+    "Q-SCB sales-claimable partial indexes (idx_sales_2024/2025_claimable_soldat); build in a calm 02-06Z window with no wallet-backfill wave, poll indisvalid on 60s timeout, then drop floor_sold_at to 2023-11-08. SQL in inbox/2026-09-13T1800Z. Containment floor holds lane cheap => no urgency.",
+    "Q-MISKEY #82 topshot mis-keyed-sales, LIVE producer (36); destructive re-key + single-if writer fix (route-logic + push, Trevor/CC)",
+    "Q-CONCIERGE goofy soft-probe permanently red on correct behaviour; owner decides probe-vs-behaviour then push",
+    "#100 master alarm GHA trigger ~27-29% of scheduled (move off GHA or stop hourly)",
+    "#101 topshot-misattrib-drain backlog growing since 09-08 unscheduling (re-point to Atlas or accept)",
+    "#102 suppressions naming is_active=false rows as active (re-enable + re-scope grants together)",
+    "Q-RETENTION cron.job_run_details + Atlas events (destructive; +1.36GB/24h)",
+    "#55 Routines enabled:false; #22 credential-purge GC + rotate; cron-job.org re-enables",
+    "inbox archival (needs push-capable pass; backlog large)"
   ],
   "needs_trevor": [
-    "Q-MISKEY destructive sales re-key",
-    "cron.job_run_details retention (destructive)",
-    "Atlas-events retention (destructive; DB growth)",
+    "Q-MISKEY destructive sales re-key + route-logic writer fix",
+    "cron.job_run_details + Atlas-events retention (destructive; DB growth)",
     "#55 Routines enabled:false",
     "#22 credential-purge GC + rotate",
     "cron-job.org re-enables (offers-sweep, apply-fmv-haircut, #80 dead lanes)",
+    "concierge output-contract decision (Goofy probe)",
     "inbox archival (needs push-capable pass)"
   ],
-  "ops_note": "NO-PUSH: handoff + ledger entry + this file UNCOMMITTED on mount. Origin is AHEAD (concurrent session pushed tonight) — on desktop git fetch + reconcile, re-splice the ledger entry at first ^### if needed, run the three ledger guards, then commit. Sandbox shell down since 2026-09-08 (Sept-8 Windows update; status.claude.com incident).",
-  "committed_note": "COMMITTED LATE from Trevor's box 2026-09-13 ~09:3x PT, ~8h after generation, because the pass had no push path. Origin was 236 commits ahead by then. READ AS A 01:1x PT SNAPSHOT, NOT AS CURRENT: re-derived at commit time (09:26 PT), pinnacle-metadata-backfill / snapshot-pack-asks / golazos-listings-indexer had all RECOVERED, the vercel.json ignoreCommand deploy ERROR was fixed upstream by be925481d (tip READY at 2b0caadf9), and #82 closed in the register. The one item still live is rpc-ccm-step2 (pg_cron jobid 4, 25 23 * * *) timed out 09-12 23:25Z -> cross_collection_ts_set_overlap_mat 41.0h stale, no retry until tonight 23:25Z."
+  "ops_note": "NO-PUSH: handoff + ledger entry + this file UNCOMMITTED on mount. A push-capable pass must git fetch + reconcile (origin ahead from concurrent docs session), re-splice the ledger entry at the first ^### , run the three ledger guards, then commit. Sandbox shell down since 2026-09-08 (Sept-8 Windows update; status.claude.com incident). Inbox NOT archived (needs push)."
 }

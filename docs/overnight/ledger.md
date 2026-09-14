@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · QUIET / QUEUE-ONLY — nightly pass `np-20260914-b1f7` shipped 0, reverted 0 (NO-PUSH, 6th night) · desktop autonomous
+
+⛔ **COMMITTED 2026-09-14 ~08:05 AM PT, ~7 h after the pass ran, and THREE of its five queued items had already shipped in those 7 h.** The pass wrote to the mount under NO-PUSH; this desktop session fetched (local `main` was **62 commits behind**), fast-forwarded, and re-spliced. ⚠ **Read the body below as a 01:1x PT snapshot, not as current state** — corrections, each re-derived at commit time, not copied from a later entry:
+- 🚨 **#82 is RESOLVED, not queued.** The body leads on `topshot_impossible_parallel_serials = 36` as a confirmed live producer needing a Trevor-gated re-key. It was repaired later the same morning — 37 sales + 643 wmc rows re-keyed to base — and **the precompute reads 0** (`computed_at` 2026-09-14 07:14 AM PT, re-read live at commit time, age 0.79 h). ⚠ **And the metric is narrower than its name (#116): it is parallel-scoped**, so 0 here does not mean zero impossible serials estate-wide — 1,727 base-edition `sales` rows stand. ⭐ **Their DIAGNOSIS landed while this was being committed** (entry below): Atlas `num_minted` equals `circulation_count` on 73 of 73, so the `sales` SERIAL is the wrong value, not the circulation — **mechanism still open.**
+- ✅ **The concierge Goofy probe is FIXED, not queued** — `b86c18361`, the probe now requires uncorroborated discount phrasing, so it stops firing on the product working.
+- ✅ **#100's re-frame landed** — the sentinel's GHA trigger is not a tuning problem: GitHub delivers this repo's scheduled workflows at a ceiling of ~0.3 ticks/hour **each**, so a tighter cron buys nothing (09-14 entry + `inbox/2026-09-14T1400Z…`).
+- ⏳ **STILL OPEN as filed:** **Q-SCB** (sales-claimable partial indexes — no `claimable_soldat` migration exists, verified by grep over `supabase/migrations/`) and **#101** (`topshot-misattrib-drain`).
+- **Revert:** nothing to revert — this commit adds documents only; the pass mutated no prod state.
+
+**Mount-only / UNCOMMITTED** (sandbox VM shell down since 09-08). NO-PUSH removes code/deploys; the one DB candidate (Q-SCB partial indexes) is not clearly-safe now — a wallet-backfill wave is active (30 runs/30min, hour-0/1 PT) which blocks `CREATE INDEX CONCURRENTLY`, it is past the 02–06Z DB quiet window the filing requires, and the 60 s `execute_sql` cap risks an `indisvalid=false` index on the hottest write path. Containment floor holds the lane cheap → no urgency → queued. A concurrent Claude docs session is pushing to `main` (#113), independently → queue-only.
+
+- ✅ **Post-ship watch, all green.** `daily-portfolio-snapshot` rows_written fix **VERIFIED** — 00:05 PT run wrote **25 rows** (was 0 under old code; the one owed 09-13 number has landed). `allday-dist-opened-expiry` jobid 490 healthy (`restored:0`). `idx_sales_2026/2027_nullseller_soldat` still used (2026: idx_scan 75 / 147k tuples). **Nothing to revert.**
+- Security 4/4 clean; `stalled_pipelines` []. **1 trust BREACH `topshot_impossible_parallel_serials=36`** — CONFIRMED live producer (5→29→35→36 monotonic); #82 destructive re-key + single-`if` route-logic writer fix, both push/Trevor-gated → queued (the "is it live" question is now answered — do not re-file it).
+- DB 30,574 MB (+1.36 GB/24h; retention Trevor-gated). Timeout-under-load class present but NOT in a live spell (2 IO backends). Artifacts 11, none broken/repaired.
+- **Queued forward:** Q-SCB partial indexes (calm-window build); #82 writer + re-key; concierge Goofy probe (owner decision); #100/#101/#102; DB retention; #55/#22; cron-job.org re-enables; inbox archival (needs push).
+- **Revert:** nothing changed.
+
+
 ### 2026-09-14 · ⭐ #116 RESOLVED WITHOUT THE CHAIN READ — Atlas is the third authority, the `sales` SERIAL is the wrong value, and I had "refuted" that an hour earlier by treating a corroborating source as an independent one · Claude Code cloud
 
 **Docs-only. Corrects the #116 entry I pushed an hour ago, whose "hypothesis 3 refuted" was wrong.**
