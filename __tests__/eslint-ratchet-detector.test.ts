@@ -183,24 +183,70 @@ describe("staleness — a complete, parseable report of the WRONG TREE", () => {
 })
 
 describe("the npm script regenerates the report it compares", () => {
-  it("lint:ratchet runs eslint before the comparison", () => {
-    // ⚠ The script alone measures nothing — it reads whatever JSON sits at the
-    // path. This is the wiring, not a style preference: without the generate
-    // step the local instrument and the CI job disagree, and the local one is
-    // the optimistic liar.
-    const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"))
+  // 🚨 2026-09-14: THIS BLOCK USED TO ASSERT THE SCRIPT'S TEXT, AND THE TEXT WAS
+  // RIGHT WHILE THE COMMAND DID NOTHING. The script was a shell chain —
+  //   npx eslint . --format json -o /tmp/… || true; node scripts/check-eslint-ratchet.mjs --report /tmp/…
+  // — and npm runs scripts through cmd.exe on Windows, which does NOT treat `;`
+  // as a command separator. eslint exits 1 whenever violations exist (715 do),
+  // so the `|| true…` arm ran, `true` resolved to Git-for-Windows' true.exe, and
+  // it swallowed `; node scripts/check-eslint-ratchet.mjs --report …` as ARGUMENTS.
+  // Measured A/B on one tree with three violations injected: the old runner exited
+  // **0 with no output**; the new one exits **1** naming the grown rule.
+  // ⭐ The old assertions passed the whole time. Both required substrings were
+  // present, in the required order, in a string that never ran the comparison.
+  // **Pin the property, not the spelling.**
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"))
+
+  it("sequences with no shell operator that a Windows shell silently drops", () => {
+    // A ban at population zero: `;` is the operator that produced the no-op, and
+    // there is no legitimate use of it in an npm script that must run on both
+    // cmd.exe and sh. The population assertion keeps this from passing vacuously
+    // if `scripts` is ever renamed or emptied.
+    const scripts: Record<string, string> = pkg.scripts
+    expect(Object.keys(scripts).length).toBeGreaterThan(20)
+    const chained = Object.entries(scripts).filter(([, cmd]) => cmd.includes(";"))
+    expect(
+      chained.map(([name]) => name),
+      `npm script(s) sequence with ';', which cmd.exe does not treat as a command separator — ` +
+        `everything after it is silently dropped on Windows and the script exits 0 having done half its job. ` +
+        `Use a node driver (see scripts/run-lint-ratchet.mjs) or '&&'.`,
+    ).toEqual([])
+  })
+
+  it("lint:ratchet runs a driver that generates the report before comparing", () => {
+    // The property is "generate, then compare, in one process no shell can split".
+    // Asserted against whatever the npm script actually invokes, not against a
+    // sentence that happens to mention eslint.
     const cmd: string = pkg.scripts["lint:ratchet"]
-    expect(cmd).toMatch(/eslint\b[^|]*--format json\s+-o/)
-    expect(cmd).toContain("check-eslint-ratchet.mjs")
-    // The generate step must come FIRST, or it is comparing the old report and
-    // writing the new one for next time.
-    expect(cmd.indexOf("eslint ")).toBeLessThan(cmd.indexOf("check-eslint-ratchet.mjs"))
+    const driverMatch = cmd.match(/node\s+(scripts\/[\w.-]+\.mjs)/)
+    expect(driverMatch, `lint:ratchet must invoke a node driver, got: ${cmd}`).not.toBeNull()
+
+    const driver = readFileSync(join(ROOT, driverMatch![1]), "utf8")
+    // It must run eslint itself...
+    expect(driver).toMatch(/eslint[\w/\.]*\.js|["']eslint["']/)
+    expect(driver).toMatch(/--format["'\s,]+json/)
+    // ...and then hand the report to the comparison...
+    expect(driver).toContain("check-eslint-ratchet.mjs")
+    // ...in that order, or it compares the previous run's report.
+    expect(driver.indexOf("eslint")).toBeLessThan(driver.indexOf("check-eslint-ratchet.mjs"))
+    // ...and it must propagate the comparison's exit code rather than its own.
+    expect(driver).toMatch(/process\.exit\(/)
+  })
+
+  it("the driver refuses to compare a report eslint did not write", () => {
+    // "The command ran" is not "the artifact exists" — the no-op above produced a
+    // report and still measured nothing, so the inverse must fail loudly too.
+    const cmd: string = pkg.scripts["lint:ratchet"]
+    const driver = readFileSync(join(ROOT, cmd.match(/node\s+(scripts\/[\w.-]+\.mjs)/)![1]), "utf8")
+    expect(driver).toMatch(/existsSync\(\s*REPORT\s*\)/)
   })
 
   it("CI generates the report in the same step as the comparison", () => {
     // A guard's blast radius is fixed by what RUNS it. If CI ever drops the
     // generate line, its ratchet job starts reading a stale runner-local file
     // too — and this test is where that shows up.
+    // ⓘ CI's job is bash on ubuntu, where `;` and the two-line form are correct;
+    // it is deliberately NOT required to use the driver.
     const ci = readFileSync(join(ROOT, ".github", "workflows", "ci.yml"), "utf8")
     const idx = ci.indexOf("check-eslint-ratchet.mjs")
     expect(idx).toBeGreaterThan(-1)

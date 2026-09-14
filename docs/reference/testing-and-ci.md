@@ -2502,6 +2502,58 @@ It read *"This repo does not run eslint in CI and ci.yml says so."* Raw eslint i
 authoritative. Corrected in place. **A comment that mis-describes what runs a guard is a defect in
 the guard.**
 
+## 🚨🚨 `npm run lint:ratchet` WAS A NO-OP ON WINDOWS — it exited 0 having never run the comparison (2026-09-14)
+
+**Same gate, second instrument failure, and this one was worse than the 09-02 stale report above: there
+was no comparison at all.** The script was a shell chain:
+
+```
+npx eslint . --format json -o /tmp/eslint-report.json || true; node scripts/check-eslint-ratchet.mjs --report /tmp/eslint-report.json
+```
+
+⛔ **npm runs scripts through `cmd.exe` on Windows (`script-shell` unset), and cmd.exe does not treat
+`;` as a command separator.** eslint exits **1** whenever any violation exists — which is the permanent
+state here, since the ratchet's whole job is holding a non-zero count steady — so the `|| true…` arm
+ran, `true` resolved to Git-for-Windows' `true.exe`, and it swallowed
+`; node scripts/check-eslint-ratchet.mjs --report …` **as arguments**. Exit 0, no output.
+
+### The A/B, on one tree with three violations injected
+
+| runner | verdict |
+|---|---|
+| the shell chain, exactly as npm ran it | **exit 0, ZERO output** |
+| the driver that replaced it | **exit 1** — `@typescript-eslint/no-unused-vars grew 353 -> 356` |
+
+⭐ **THE TELL WAS THE SILENCE, and it is a rule worth generalising: a guard that normally states the
+count it inspected and then says nothing has not passed — it has not spoken.** This one normally prints
+`eslint ratchet — 3073 files, 715 violations…`. CLAUDE.md's *assert the count it inspected* applied one
+level up, **to the guard's runner**.
+
+### ⚠ The test that should have caught it asserted the SPELLING
+
+`eslint-ratchet-detector` pinned the script's **text** — that it contained `eslint … -o` before
+`check-eslint-ratchet.mjs`. Both substrings were present, in the right order, in a string that never
+ran the comparison. **It passed throughout.** Pin the property, not the spelling.
+
+### And `/tmp` is TWO directories on this box
+
+A literal `/tmp/…` resolves to `C:\tmp` for a Windows process and to `C:\Users\<user>\AppData\Local\Temp`
+when MSYS/Git Bash rewrites the path. **Both report files existed, 15 hours apart** — so which report got
+compared depended on which shell typed the path. That is the 09-02 stale-report class with a second cause.
+
+### The fix
+
+`scripts/run-lint-ratchet.mjs` — one Node process, **no shell doing the sequencing**: it spawns eslint
+(ignoring its exit code, deliberately), **refuses to compare unless the report exists and is non-empty**
+(*"the command ran" is not "the artifact exists"*), then propagates the comparison's exit code. Report
+path is `os.tmpdir()`, overridable with `ESLINT_REPORT`. ⓘ **CI is unchanged and is NOT required to use
+the driver** — its job is bash on ubuntu, where the two-line form is correct.
+
+Three guards replace the spelling assertion, each **proven to fire** by restoring the old script:
+a **ban at population zero** on any npm script sequencing with `;` (21+ scripts asserted, so it cannot
+pass vacuously), a check that `lint:ratchet` invokes a driver that generates before comparing, and a
+check that the driver refuses a report eslint did not write.
+
 ## The CI estate audit of 2026-09-02 — three gaps every gate was structurally blind to
 
 Measured over the last 40 CI runs on main (32 green, 8 red, every red a real catch, zero flakes), a
