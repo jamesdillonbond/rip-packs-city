@@ -185,8 +185,26 @@ const UNBOUNDED = POPULATION.filter((r) => !r.bounded)
  * wrapping the writes, which is the one change this file exists to argue
  * against. If a write route ever does need a bound, it needs a DIFFERENT
  * mechanism and this budget should be re-derived, not decremented.
+ *
+ * ⭐ POPULATION CORRECTION 42 -> 43, 2026-09-14. **The predicate is UNCHANGED**;
+ * the population grew by one route. `app/api/profile/verify-challenge/signature/
+ * route.ts` landed in `2e1e0ee` ("feat(auth): wallet verification by on-chain
+ * signature") and it reads Supabase, calls `apiErrorResponse()` and bounds
+ * nothing — so it enters this population the day it ships, and it is a **POST**,
+ * which is precisely the exclusion the paragraph above argues for. Raising is
+ * the correct move here and lowering would mean wrapping a write in a timer.
+ *
+ * ⚠ ONE NUANCE, recorded so the next reader does not have to re-derive it: that
+ * file exports **both** `GET` and `POST`. This detector is per-FILE, so the GET's
+ * read is excluded by the POST's presence. If anyone ever splits the two, the
+ * GET half SHOULD be bounded and this budget should fall back to 42 — the
+ * exclusion is inherited from the file, not earned by the read.
+ *
+ * ⛔ It was also RED ON `main` for some hours before this correction (43 vs 42),
+ * which is the ratchet behaving exactly as designed: a new route cannot join the
+ * exclusion set silently.
  */
-const BUDGET = 42
+const BUDGET = 43
 
 describe("an API route that degrades honestly also bounds the read it degrades on", () => {
   it("is not vacuous — and the check is SATISFIABLE AT A POPULATION OF ZERO", () => {
