@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · SHIPPED · #115's own stated EXIT was the wrong place, and the measurement that says so is a paging gate · Claude Code cloud
+
+**DB migration `20260914190000_audit_20260914_the_search_path_class_gets_a_guard_but_not_in_the_paging_one`. Ships the instrument #115 asks for — somewhere it belongs.**
+
+⛔ **THE EXIT AS WRITTEN WOULD HAVE MADE A WARN PAGE.** #115 says *"add a `function_search_path_mutable` kind to `check_public_security_invariants()`, or record here why the advisor alone is enough."* Checked before doing it: **the smoke test hard-fails on ANY row that function returns** (`app/api/smoke-test/route.ts` → `passed = violations.length === 0`, and a failed probe pages). `function_search_path_mutable` is a supabase advisor **WARN** on SECURITY INVOKER routines. ⭐ **Adding it there turns a WARN into a paging hard failure — the cry-wolf shape this estate has twice had to rescue a board from.** And it would **falsify that probe's own name**: it is called *"public base tables: RLS on + no anon write"*, and a function's search_path is neither.
+
+✅ **SO: A SEPARATE `check_function_search_path_drift()`**, ban at zero, read through **`rpc_ops_snapshot()`** (a READER — now **14 keys**) rather than through the paging gate. Batched with the snapshot rewire so both cost **one** PGRST002 burst.
+
+⭐ **THE POPULATION IS FUNCTIONS, NOT ROUTINES, AND THE EXCLUSION IS MEASURED RATHER THAN ARGUED.** ⛔ **Procedures are excluded because the property is NOT TRUE OF THEM:** a `SET` clause makes a procedure unable to do transaction control. `20260914053000` pinned all four unpinned routines this morning and **pg_cron jobid 259 failed on its first tick** with `invalid transaction termination`; `20260914055000` reverted the two procedures 20 minutes later. **A guard demanding that pin would be permanently red for a reason production has already refused.** ⚠ **Named blind spot, not a free pass: public holds 3 procedures and ONE IS PINNED**, so a future procedure that does no transaction control still should be — by hand, because nothing here will ask. Extension-owned functions (`deptype='e'`, **5**) are excluded too: a guard that reds on something we cannot `ALTER` teaches the operator to skim.
+
+📏 **POPULATION AT INSTALL: 754 functions in `public` · 5 extension-owned · 749 ours · 0 unpinned.** The migration asserts the **inspected count** (`< 700` raises), not merely that it passed — a collapse to zero reads identically to a clean run.
+
+✅ **POSITIVE CONTROL, BOTH DIRECTIONS, on a scratch function created and dropped inside one DO block:** an **unpinned** `zz_probe_unpinned_20260914()` **is seen**; after `ALTER … SET search_path`, the same function **is not**. Dropped; **0 leftovers**, guard **0**, `check_secdef_anon_exec_drift()` **0**.
+
+⚠ **FULL-BODY WRITE handled as the standing rule requires** — `rpc_ops_snapshot()` re-read live immediately before (length **4551**, md5 `a1399dcc…`, carrying this morning's two keys), and the migration asserts **all thirteen** pre-existing keys survived, not just that the fourteenth arrived.
+
+**Revert:** `DROP FUNCTION public.check_function_search_path_drift();` and re-apply `20260914163000`'s `rpc_ops_snapshot` body (this one minus the key).
+**Target metric:** `jsonb_array_length(check_function_search_path_drift())` stays 0, and the next unpinned function shows up in the ops snapshot rather than only in the advisor.
+
 ### 2026-09-14 · NOT SHIPPED — I WROTE THE WRONG FIX FOR A RED `main` AND WITHDREW IT UNPUSHED; the concurrent session's fix is right and mine would have bounded a WRITE · Claude Code cloud
 
 **No production change. Recorded because the reasoning is the point, and because the near-miss is a defect class this file already warns about.**
