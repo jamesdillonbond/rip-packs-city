@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⭐ THE 2026-08-08 "DAPPER SIGN-IN NEEDS APPROVAL WE DO NOT HAVE" DECISION IS REFUTED — wallet verification by on-chain signature shipped (server half) · Cowork cloud
+
+**Came out of a competitor teardown Trevor asked for (topshotexplorer.com), not from the register.** He named wallet sign-in as something "we aspire to have".
+
+🚨 **THE FILED DECISION WAS A COST STATED WITH NO NUMBER, AND IT IS WRONG.** `lib/chains/flow/flow.ts` has carried this since 08-08: *"Dapper Wallet sign-in requires Dapper developer approval we do not have"*, and every connect path was removed on that basis (`__tests__/no-client-wallet-connect.test.ts` pins it). ⭐ **Re-measured 09-14 against topshotexplorer.com — a third-party open-source app (Apache-2.0, `github.com/veerman/topshot-explorer`) with no Dapper relationship: its Early Adopters wall carries NINE signatures, EVERY ONE from a Dapper wallet, block-stamped, dated 09-13 and 09-14.** Their `deploy/cloudflare/auth.js` verifies each one with `FCLCrypto.verifyUserSignatures` at `0xb4b82a1c9d21d284`, and their client opts Dapper into FCL discovery by id (`discovery.authn.include: ["0xead892083b3e2c6c"]`). ⚠ **The precise shape of the error: approval is real for TRANSACTIONS (Dapper merchant / DapperUtilityCoin) and false for SIGNATURES.** RPC is read-only and needs only the signature half. The weak reason crowded out the distinction.
+
+📊 **WHAT THE OLD PATH COSTS, MEASURED TODAY:** `saved_wallets` **135**, verified **9 (6.7%)**; `wallet_verification_challenges` **9 ever, 9 resolved, newest 2026-06-15** — three months in which nobody completed one. The listing challenge asks a user to leave RPC, list a real Moment on nbatopshot.com at an odd unbuyable price, and come back; the signature asks for one wallet popup.
+
+✅ **SHIPPED — the server half, additive, nothing removed:**
+- `lib/auth/flow-signature.ts` — stateless challenge (the nonce is an HMAC over `address:issuedAt`, so **no challenge row is written before it is answered**), a four-line human-readable message, and on-chain verification via `POST {access}/v1/scripts?block_height=sealed`. 10-min TTL, 60 s future skew, 10 s bounded fetch, constant-time nonce compare, fails CLOSED with no secret (a guessable nonce would let anyone pre-mint a challenge for someone else's address).
+- `app/api/profile/verify-challenge/signature/route.ts` — `GET` issues, `POST` verifies. Requires the wallet to be SAVED to the account first (the signature proves control of the ADDRESS; the saved row is what says this user asked us to associate it). Per-user rate limit 10/min.
+- Migration `20260914160000_audit_20260914_wallet_verification_by_on_chain_signature.sql` — `resolve_wallet_signature_match(uuid, text, uuid)`, SECDEF, `search_path` pinned, `REVOKE … FROM PUBLIC, anon, authenticated` in ONE statement. ⛔ **Deliberately does NOT touch `resolve_wallet_challenge_match`** — that object is pinned, has three callers, and hardcodes `verification_method='listing_challenge'`; the award and referral rules are copied VERBATIM so the two paths cannot pay differently.
+- `__tests__/wallet-verification-by-signature.test.ts` — 17 tests.
+
+⭐ **THE HONESTY PROPERTY IS THE ONE UNDER TEST.** A failed read must never render as a rejection: telling a user their own wallet did not verify when an access node 500'd is the account-level false claim. `verifyUserSignatures` throws `FlowVerifyUnavailable` for 500 / 429 / network error / undecodable body, the route answers **503 "nothing was changed"**, and four test cases assert the **ABSENCE of `code: "unverified"`**, not the presence of any message.
+
+🚨 **NEEDS TREVOR — the client half is NOT shipped and I did not ship it.** Obtaining a signature needs `fcl.authenticate()` + `discovery.authn`, which `__tests__/no-client-wallet-connect.test.ts` forbids as *"THE invariant Trevor asked for on 2026-08-08"*. **A test that pins a Trevor instruction is his to lift, not mine — the measurement above is the case for lifting it.** Until then the route is reachable only by a caller that can already produce an FCL user signature, and the listing challenge stays the only in-product path. Pin test re-run after this change: **6/6 green, untouched.**
+
+**Verified before push:** `npx tsc --noEmit` exit 0 · new suite 17/17 · `no-client-wallet-connect` 6/6 · `lint:ratchet` 715/baseline 715 (no new violations).
+
+**Revert:** `git revert` this commit (find by message `wallet verification by on-chain signature`) + `DROP FUNCTION public.resolve_wallet_signature_match(uuid, text, uuid);`. No existing object was modified, so a revert cannot disturb the listing challenge.
+
 ### 2026-09-14 · SHIPPED · #101's backlog finally has a series — and the first look says NEITHER rate in circulation describes it · Claude Code cloud
 
 **DB migration `20260914170000_audit_20260914_the_misattrib_backlog_gets_a_series_that_diffs_the_set_not_the_count` + pg_cron `rpc-record-misattrib-backlog` (`15 0 * * *`, ACTIVE, direct call, no pg_net). Implements #101's option (c) — *"make the predicate executable"* — and the Cowork filing's item 3. ⛔ It is a RECORDER, not an alarm.**
