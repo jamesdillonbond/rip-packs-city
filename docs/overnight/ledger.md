@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ SHIPPED — the docs-only CI masking now has a guard, and its fail-open is pinned where it can actually drift · Cowork cloud
+
+Follow-up to this morning's finding (a red `main` survived three docs-only pushes and ~9h). Documenting it was not enough: the next code push would still be the detector.
+
+⚙ **`inherited-status` + `scripts/check-last-code-ci-on-main.mjs`.** On a **docs-only push to main**, find the most recent COMPLETED CI run that actually ran the shards and red if it was not a success, naming the run and commit that IS red — the docs push is not the cause and reverting it would not help.
+
+⛔ **Docs-only pushes ONLY, deliberately.** On a code push the run itself is the statement; failing on an inherited red there would block the commit that fixes it. ⛔ **The shard gating is NOT the bug and is untouched** — the rendering is.
+
+⚠ **It fails OPEN, loudly** (`verdict=unknown`, exit 0) when history or the API is unavailable, because reddening every docs push over missing history is worse than useless. 🚨 **That puts all the weight on ONE drift:** if `SHARD_JOB_MARKER` stops matching the job name `ci.yml` produces, the guard becomes a permanent no-op **that still prints a reassuring line**. The test parses `ci.yml`, expands `${{ matrix.shard }}` and asserts the marker prefixes the REAL names — it does not compare the marker to a copy of itself.
+
+📏 **The walk breaks at the first full-suite run**, because the jobs endpoint is one request PER RUN — without it a quiet week of docs pushes costs 15 requests every push. **Losing the break fails no fixture test, only the bill**, so it is pinned against a counting local HTTP server, alongside "never spends a request on its own run" and "a non-2xx becomes an `ApiError`, never an empty list that reads as `unknown`".
+
+✅ **Non-vacuous by three mutations**, each redding a different test: drift the marker (`"Unit tests (vitest) - shard"` with an ASCII hyphen → the ci.yml pin reds), flip the exit code so `unknown` reds, delete the early break (`['3','2','1']` vs `['3','2']`). All restored; 12/12 green, `tsc` clean.
+
+⭐ **The generalisation, now in CLAUDE.md:** the repo already knew *"a permanently-red or -zero instrument is indistinguishable from a broken one."* This is that one level up — **a check that DID NOT RUN is indistinguishable from a check that PASSED.** Folded in NET-NEGATIVE (39,998 → 39,998 measured with `node .length`), funded by trimming the same line; the full instance is in `testing-and-ci.md`.
+
+⚠ **I walked into the file's own documented trap while doing it:** python `len()` said 39,993 and the guard said 40,001. CLAUDE.md line 5 warns about exactly this — the limit is UTF-16 code units, and every 🚨/⛔ is a surrogate pair python counts as one. **The assertion in my own edit script caught it; my measurement did not.**
+
+⚠ **Not yet observed live.** This push is a CODE push, so `inherited-status` does not run on it — the first real exercise is the next docs-only push to main, which should print `verdict=green`.
+
+⚠ **Still uncovered:** a red introduced on a branch, and any OTHER conditional job whose skip renders as a pass. The shape is general even though this guard is not.
+
+Revert: `git revert <sha>` — one new script, one new test, one ci.yml job, one CLAUDE.md line, one reference section.
+
 ### 2026-09-13 · ⚠ EXPECTED-WARN NOTICE for the next pass — `Cadence Collapse` will show `ts-listings-atlas-sync` DEGRADED until ~7 AM PT 09-14, and it is TODAY'S SHED, not a regression · Claude Code cloud
 
 - **What the sentinel says:** `check_pipeline_cadence_collapse()` reports `ts-listings-atlas-sync` **ratio 0.274, observed 178/day vs baseline 650/day**. ⛔ **Do not chase it.**

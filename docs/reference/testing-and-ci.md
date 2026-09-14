@@ -3,6 +3,58 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## 🚨 A GREEN CHECK ON A DOCS-ONLY PUSH IS NOT A STATEMENT ABOUT `main` (2026-09-13)
+
+`unit-tests-shard` is gated on `needs.changes.outputs.code == 'true'`. **That gating is correct and
+nothing here proposes removing it** — a docs-only push has no reason to spend 6 minutes of runner
+time on the unit suite. The cost is that its green check means *"the docs guards passed"* and is
+rendered identically to *"main is green"*.
+
+Measured, not hypothetical:
+
+| run | commit | ran | verdict |
+|---|---|---|---|
+| **#5476** | `3840baf` (code) | full suite, 6m 01s | 🔴 **the red starts here** |
+| #5477 | `8940f14` (docs) | 1m 21s, no shards | ✅ green |
+| #5478 | `e6a5047` (docs) | 1m 26s, no shards | ✅ green |
+| #5479 | `c3678d3` (docs) | 1m 41s, no shards | ✅ green |
+| **#5480** | `eada52c` (code) | full suite, 5m 54s | 🔴 same failure, inherited |
+
+Three consecutive greens over a red `main`, for ~9 hours, and **not one of them is wrong** — each
+ran exactly what it was asked to run. The red surfaced only because someone happened to push code.
+
+⭐ **The generalisation worth keeping:** this repo already knows *"a permanently-red or -zero
+instrument is indistinguishable from a broken one."* This is that one level up — **a check that DID
+NOT RUN is indistinguishable from a check that PASSED**, and the rendering is what makes them
+indistinguishable. Any conditional job creates this shape; the condition is not the bug, the
+*rendering* is.
+
+### The guard: `inherited-status` / `scripts/check-last-code-ci-on-main.mjs`
+
+On a **docs-only push to main**, it finds the most recent COMPLETED CI run that actually ran the
+shards and reds if that run was not a success. The message names the run and commit that **is** red,
+because the docs push is not the cause and reverting it would not help.
+
+- ⛔ **Docs-only pushes ONLY.** On a code push the run itself is the statement, and failing on an
+  inherited red there would block the very commit that fixes it.
+- ⚠ **It fails OPEN, loudly** (`verdict=unknown`, exit 0) when the run history or the API is
+  unavailable. Reddening every docs push over missing history would be worse than useless. That
+  fail-open puts all the weight on one drift: if `SHARD_JOB_MARKER` stops matching the job name
+  `ci.yml` produces, the guard becomes a permanent no-op **that still prints a reassuring line**.
+  `__tests__/inherited-main-status-guard.test.ts` pins exactly that, by parsing `ci.yml`, expanding
+  the `${{ matrix.shard }}` template and asserting the marker prefixes the real names — not by
+  comparing the marker to a copy of itself.
+- ⚠ **The walk breaks at the first full-suite run.** The jobs endpoint is one request PER RUN, so
+  without the break a quiet week of docs pushes costs 15 requests on every push. **Losing it fails
+  no fixture test, only the bill** — so it is pinned against a counting local HTTP server, together
+  with "never spends a request on its own run" and "a non-2xx becomes an `ApiError`, never an empty
+  list that reads as `unknown`".
+- Proven non-vacuous by three mutations: drifting the marker, flipping the exit code so `unknown`
+  reds, and deleting the early break. Each reds a different test; all three restored, 12/12 green.
+
+⚠ **What it still does not cover:** a red introduced on a branch, and any OTHER conditional job whose
+skip is rendered as a pass. The shape is general even though this guard is not.
+
 ## ⭐ AN OVER-BROAD MOCK CAN DELETE A TEST'S SUBJECT WHILE LEAVING IT GREEN-ADJACENT (2026-09-12)
 
 `api-og-share-cards-no-false-zero` asserts what badges a share card draws, via a helper that reads every

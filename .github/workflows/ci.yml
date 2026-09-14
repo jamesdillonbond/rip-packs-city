@@ -144,6 +144,41 @@ jobs:
           # shellcheck disable=SC2086
           npx vitest run $files
 
+  # ⛔ A GREEN CHECK ON A DOCS-ONLY PUSH IS NOT A STATEMENT ABOUT `main`.
+  # `unit-tests-shard` is gated on `code == 'true'` (correctly — nothing here
+  # proposes changing that), so a docs-only push renders a green check meaning
+  # "the docs guards passed". On 2026-09-13 that hid a red `main` across #5477,
+  # #5478 and #5479 for ~9h; it surfaced only when the next CODE push (#5480)
+  # inherited the same failure. This job reports the last COMPLETED full-suite
+  # run on main and reds if it was not a success, naming the run and commit that
+  # IS red rather than blaming the docs push.
+  # ⚠ Docs-only pushes ONLY: on a code push the run itself is the statement, and
+  # failing on an inherited red there would block the commit that fixes it.
+  # ⚠ Fails OPEN (verdict=unknown, exit 0) when the history or the API is
+  # unavailable — reddening every docs push over that would be worse than
+  # useless. `__tests__/inherited-main-status-guard.test.ts` pins the one drift
+  # that would make the fail-open silent, against this file's own job name.
+  inherited-status:
+    name: Inherited main status (docs-only pushes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: changes
+    if: needs.changes.outputs.code == 'false' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      # Pure node + the Actions API. No npm ci — nothing here needs deps.
+      - run: node scripts/check-last-code-ci-on-main.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+
   typecheck:
     name: TypeScript
     runs-on: ubuntu-latest
