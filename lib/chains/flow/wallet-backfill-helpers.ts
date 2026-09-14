@@ -35,6 +35,11 @@ import {
   unionHoldingTriples,
   type StudioHoldingsResult,
 } from "@/lib/chains/flow/allday-studio-holdings"
+import {
+  loadCachedMomentIds,
+  deleteUnseenWmcRows,
+  unseenDeleteExtra,
+} from "@/lib/chains/flow/wmc-unseen-delete"
 import { claimPipelineLockDetailed, releasePipelineLock, skippedReasonFor, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 import {
   UPSERT_CHUNK,
@@ -387,42 +392,6 @@ async function upsertWmcChunks(
 }
 
 
-// Keyset paging (2026-08-30). These reads used to page with LIMIT/OFFSET on
-// ORDER BY moment_id, so page k re-walked the first k*1000 index entries: a
-// 154k-row whale cost ~12M index-entry visits to load once (O(n²)), and the
-// pgss diff on the 13:57–14:13Z storm showed this one statement shape at 520
-// calls / 2,498 s / 2.7M buffer hits in 16 min. Paging on `moment_id > last`
-// over the unique (wallet_address, collection_id, moment_id) index makes every
-// page an O(page) index-only range scan (1,122 buffers per 1,000 rows measured
-// on the whale). moment_id is text and both ORDER BY and the cursor compare use
-// the column's own collation, so the cursor is exact. The deterministic-order
-// argument from 2026-08-16 (snapshot-institutional-wallets) still holds and is
-// now also what makes the cursor correct.
-async function loadCachedMomentIds(wallet: string, collectionUuid: string): Promise<Set<string>> {
-  const ids = new Set<string>()
-  const PAGE = 1000
-  let after: string | null = null
-  while (true) {
-    // deno-lint-ignore no-explicit-any
-    let q = (supabaseAdmin as any)
-      .from("wallet_moments_cache")
-      .select("moment_id")
-      .eq("wallet_address", wallet)
-      .eq("collection_id", collectionUuid)
-    if (after != null) q = q.gt("moment_id", after)
-    const { data, error } = await q.order("moment_id", { ascending: true }).limit(PAGE)
-    if (error) {
-      console.warn(`[wallet-backfill] cached-id read failed: ${error.message}`)
-      return ids
-    }
-    const rows = (data ?? []) as Array<{ moment_id: string }>
-    for (const r of rows) ids.add(String(r.moment_id))
-    if (rows.length < PAGE) break
-    after = String(rows[rows.length - 1].moment_id)
-  }
-  return ids
-}
-
 // Count of wmc rows this wallet already has for a collection. Used by the
 // empty-scan honesty guard (flagEmptyWithCachedHoldings): a scan that returns
 // ZERO on-chain moments for a wallet that STILL has cached rows is suspect —
@@ -467,7 +436,8 @@ async function loadCachedMomentIdsAndKeys(
   const PAGE = 1000
   let after: string | null = null
   while (true) {
-    // Keyset paging — see loadCachedMomentIds above for why not LIMIT/OFFSET.
+    // Keyset paging — see loadCachedMomentIds in wmc-unseen-delete.ts for why
+    // not LIMIT/OFFSET.
     // deno-lint-ignore no-explicit-any
     let q = (supabaseAdmin as any)
       .from("wallet_moments_cache")
@@ -644,9 +614,24 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
 
     totalUpserted += await upsertWmcChunks(rows, config.pipelineName, chunkTally)
 
-    // runIdOnlyBackfill has no metadata post-pass, so upserts are the only
-    // way this run can have changed the wallet's holdings.
-    await stampLastRefreshed(wallet, config.slug, totalUpserted)
+    // Delete-not-seen. onChainIds is this wallet's COMPLETE id set for the
+    // collection (fetchOnChainIds returns getIDs() in full), and we are on the
+    // non-empty success path, so every cached id missing from it has left the
+    // wallet. Without this the row lingers for up to 14 days (prune_stale_wmc)
+    // + up to 7 more until the weekly prune runs, and the dashboard, /share card
+    // and saved_wallets.cached_moment_count all overcount for that whole window.
+    const unseen = await deleteUnseenWmcRows({
+      wallet,
+      collectionUuid: config.collectionUuid,
+      observedIds: new Set(onChainIds.map(String)),
+      pipelineName: config.pipelineName,
+      // Reuse the skip-filter's snapshot rather than paging the cache twice.
+      cachedIds: skipCached ? cachedIds : undefined,
+    })
+
+    // runIdOnlyBackfill has no metadata post-pass, so upserts and the
+    // delete-not-seen step are the only ways this run changed the holdings.
+    await stampLastRefreshed(wallet, config.slug, totalUpserted + unseen.deleted)
 
     await logRun({
       pipelineName: config.pipelineName,
@@ -663,6 +648,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
         rows_to_write: idsToWrite.length,
         skipped_cached: skippedCount,
         ...chunkFailureExtra(chunkTally),
+        ...unseenDeleteExtra(unseen),
         terminated_reason: "no_more_moments",
         skip_cached: skipCached,
         force: !!force,
@@ -984,11 +970,16 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       : new Map<string, boolean>()
     const now = new Date().toISOString()
     const rows: Array<Record<string, unknown>> = []
+    // Every moment this pass actually OBSERVED (chain ∪ studio custody), built
+    // before the skip-cached filter — a skipped row was still seen, and treating
+    // it as unseen would delete exactly the rows the skip was protecting.
+    const observedIds = new Set<string>()
     let skippedCount = 0
     for (const tri of triples) {
       if (!Array.isArray(tri) || tri.length < 2) continue
       const nftId = String(tri[0])
       const editionId = String(tri[1])
+      observedIds.add(nftId)
       const serialRaw = tri[2] != null ? Number(tri[2]) : null
       const serial = Number.isFinite(serialRaw as number) && (serialRaw as number) > 0
         ? (serialRaw as number)
@@ -1015,6 +1006,23 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
 
     totalUpserted += await upsertWmcChunks(rows, config.pipelineName, chunkTally)
 
+    // Delete-not-seen. `triples` is the chain result UNIONed with the studio
+    // custody walk, so observedIds already covers LOCKED All Day moments, which
+    // getIDs() structurally cannot expose. A DEGRADED custody walk is therefore
+    // disqualifying: its missing locked moments look exactly like departed ones,
+    // and deleting on it would remove real holdings. Collections with no custody
+    // source (Golazos) are unaffected — their locked moments stay on-chain.
+    const studioHealthyForDelete = !config.studioCustodyHoldings || !!(studio && studio.ok)
+    const unseen = studioHealthyForDelete
+      ? await deleteUnseenWmcRows({
+          wallet,
+          collectionUuid: config.collectionUuid,
+          observedIds,
+          pipelineName: config.pipelineName,
+          cachedIds: skipCached ? cachedIds.keys() : undefined,
+        })
+      : { deleted: 0, skippedReason: "studio_custody_walk_degraded" as const }
+
     // Post-pass JOIN UPDATE: backfill tier / player_name / set_name on rows
     // that just landed (and any older rows for this wallet/collection that
     // are still missing). The editions table is populated by separate
@@ -1037,7 +1045,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       )
     }
 
-    await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated)
+    await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated + unseen.deleted)
     await logRun({
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
@@ -1055,6 +1063,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         skipped_cached: skippedCount,
         ...studioExtra,
         ...chunkFailureExtra(chunkTally),
+        ...unseenDeleteExtra(unseen),
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: "no_more_moments",
         skip_cached: skipCached,
@@ -1067,6 +1076,12 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const elapsedMs = Date.now() - startedMs
+    // Resolved once: the paginated recovery below needs both the custody triples
+    // AND whether that walk was healthy, because only a HEALTHY walk may license
+    // a delete-not-seen (a truncated one is missing locked moments that would
+    // then read as departed). fetchAllDayStudioHoldings never rejects.
+    const studioResult = await studioPromise
+    const studioOkForRecovery = config.studioCustodyHoldings ? !!studioResult?.ok : undefined
     if (isStorageLimitError(err)) {
       await logRun({
         pipelineName: config.pipelineName,
@@ -1144,7 +1159,8 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         parentErrorExcerpt: msg.slice(0, 200),
         // Hand the already-in-flight custody walk down so mega-wallets keep
         // their locked moments too. Written once, on the first chunk.
-        studioTriples: (await studioPromise)?.triples ?? [],
+        studioTriples: studioResult?.triples ?? [],
+        studioOk: studioOkForRecovery,
       })
     }
     if (isAccessApiInternalServerError(err)) {
@@ -1171,7 +1187,8 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         mode: "allday",
         parentTerminatedReason: "access_api_error_likely_computation_limit",
         parentErrorExcerpt: msg.slice(0, 200),
-        studioTriples: (await studioPromise)?.triples ?? [],
+        studioTriples: studioResult?.triples ?? [],
+        studioOk: studioOkForRecovery,
       })
     }
     if (isNoCollectionCapabilityError(err, elapsedMs)) {
@@ -1296,9 +1313,14 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
       : new Map<string, boolean>()
     const now = new Date().toISOString()
     const rows: Array<Record<string, unknown>> = []
+    // See runAllDayDetailsBackfill — built before the skip-cached filter, since
+    // a skipped row was still observed. Pinnacle has no custody/locked path, so
+    // the details call is the whole picture.
+    const observedIds = new Set<string>()
     let skippedCount = 0
     for (const d of details) {
       const nftId = String(d.id)
+      observedIds.add(nftId)
       const editionKey = d.editionKey != null ? String(d.editionKey) : null
       const serialRaw = d.serial != null ? Number(d.serial) : null
       const serial = Number.isFinite(serialRaw as number) && (serialRaw as number) > 0
@@ -1330,6 +1352,16 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
 
     totalUpserted += await upsertWmcChunks(rows, config.pipelineName, chunkTally)
 
+    // Delete-not-seen. details.length > 0 is already established above, so this
+    // is a complete, non-empty pass and the contract in deleteUnseenWmcRows holds.
+    const unseen = await deleteUnseenWmcRows({
+      wallet,
+      collectionUuid: config.collectionUuid,
+      observedIds,
+      pipelineName: config.pipelineName,
+      cachedIds: skipCached ? cachedIds.keys() : undefined,
+    })
+
     // Post-pass JOIN UPDATE against pinnacle_editions.
     try {
       // deno-lint-ignore no-explicit-any
@@ -1348,7 +1380,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
       )
     }
 
-    await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated)
+    await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated + unseen.deleted)
     await logRun({
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
@@ -1364,6 +1396,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
         rows_to_write: rows.length,
         skipped_cached: skippedCount,
         ...chunkFailureExtra(chunkTally),
+        ...unseenDeleteExtra(unseen),
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: "no_more_moments",
         skip_cached: skipCached,
@@ -1493,6 +1526,13 @@ interface PaginatedBackfillArgs extends BackfillArgs {
    * resumed checkpoint doesn't re-write them every tick. Never used to delete.
    */
   studioTriples?: readonly (readonly string[])[]
+  /**
+   * Whether that custody walk SUCCEEDED. Undefined when the collection has no
+   * custody source at all (Pinnacle). Only `true` licenses delete-not-seen on an
+   * All Day pass: a truncated or failed walk omits locked moments, and a locked
+   * moment missing from the observed set is indistinguishable from a sold one.
+   */
+  studioOk?: boolean
 }
 
 export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): Promise<BackfillRunResult> {
@@ -1571,6 +1611,29 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
     const cachedMap = skipCached
       ? await loadCachedMomentIdsAndKeys(wallet, config.collectionUuid)
       : new Map<string, boolean>()
+
+    // Delete-not-seen inputs for this runner's two COMPLETE exits (the preflight
+    // short-circuit and the full-walk return). onChainIds is the whole getIDs()
+    // list — it does not depend on how far the CHUNK loop got, or on resumeFrom —
+    // so it is a complete observation of the wallet the moment step 1 succeeded.
+    // The locked custody ids are unioned in because getIDs() structurally cannot
+    // return them; a degraded custody walk disqualifies the delete entirely.
+    const studioHealthyForDelete = !config.studioCustodyHoldings || args.studioOk === true
+    const observedIdsForDelete = () => {
+      const s = new Set(onChainIds.map(String))
+      for (const tri of args.studioTriples ?? []) if (tri?.[0] != null) s.add(String(tri[0]))
+      return s
+    }
+    const runUnseenDelete = async () =>
+      studioHealthyForDelete
+        ? await deleteUnseenWmcRows({
+            wallet,
+            collectionUuid: config.collectionUuid,
+            observedIds: observedIdsForDelete(),
+            pipelineName: config.pipelineName,
+            cachedIds: skipCached ? cachedMap.keys() : undefined,
+          })
+        : { deleted: 0, skippedReason: "studio_custody_walk_degraded" as const }
 
     // Step 1.4: AllDay custody (locked) moments. These are NOT in onChainIds —
     // they are not in the wallet's account at all — so they must be written
@@ -1658,7 +1721,12 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
             `[${config.pipelineName}] preflight post-pass update threw: ${err instanceof Error ? err.message : String(err)}`,
           )
         }
-        await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated)
+        // This exit is a COMPLETE pass that writes nothing — precisely the
+        // found-N/wrote-0 shape that makes last_seen_at useless as a prune key.
+        // Skipping the delete here would leave fully-enriched whales (the only
+        // wallets that reach this branch) permanently unprunable.
+        const unseenPreflight = await runUnseenDelete()
+        await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated + unseenPreflight.deleted)
         await logRun({
           pipelineName: config.pipelineName,
           collectionSlug: config.slug,
@@ -1668,6 +1736,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
           extra: {
             on_chain_count: onChainIds.length,
             cached_count_with_key: onChainIds.length,
+            ...unseenDeleteExtra(unseenPreflight),
             terminated_reason: "all_ids_already_enriched",
             recovered_from: parentTerminatedReason,
             parent_error_excerpt: parentErrorExcerpt,
@@ -1856,8 +1925,6 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
       )
     }
 
-    await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated)
-
     // PAGINATION-fetch errors stay tolerant: partial progress is captured and the
     // next cron pass re-enriches any wallet still flagged, so only
     // pagination_failed (zero chunks succeeded) marks ok=false on that axis.
@@ -1866,6 +1933,19 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
     // (2026-07-25; they used to be console.error'd and swallowed).
     const allChunksFailed = chunksProcessed === 0 && chunkErrors > 0
     const isComplete = !allChunksFailed && nextStartIndex === null
+
+    // Delete-not-seen — ONLY on the full-walk exit. A soft-deadline break leaves
+    // nextStartIndex set and `complete:false`: the caller will resume, and the
+    // ids past the checkpoint have not been walked this tick. They ARE in
+    // onChainIds, so a delete would in fact be safe, but keeping the trigger tied
+    // to the runner's own completeness contract means a future change to how the
+    // walk terminates cannot silently license a delete on a partial pass.
+    const unseen = isComplete
+      ? await runUnseenDelete()
+      : { deleted: 0, skippedReason: "incomplete_pass" as const }
+
+    await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated + unseen.deleted)
+
     await logRun({
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
@@ -1882,6 +1962,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         on_chain_count: onChainIds.length,
         skipped_cached: totalSkippedCached,
         ...chunkFailureExtra(chunkTally),
+        ...unseenDeleteExtra(unseen),
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: allChunksFailed
           ? "pagination_failed"

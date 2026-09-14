@@ -556,3 +556,149 @@ describe("wallet-backfill — the invocation marker", () => {
     expect(seen.events).toEqual([])
   })
 })
+
+// ── delete-not-seen (phantom holdings) ───────────────────────────────────────
+//
+// Top Shot is the collection with the confirmed case: wallet 0x0d79d58c5fe83cdc,
+// 2026-09-14 — a forced COMPLETE pass saw 1,109 moments while wmc held 1,159, so
+// the dashboard and /share card overcounted by 50 and would not self-correct for
+// ~14-21 days (prune_stale_wmc is 14 days of last_seen_at, run weekly).
+//
+// These drive the REAL helper: the route imports it from wmc-unseen-delete, not
+// through wallet-backfill-helpers, which this suite stubs wholesale — routing it
+// through the stub would leave the Top Shot path untested while every assertion
+// still passed.
+describe("wallet-backfill — delete-not-seen", () => {
+  function deletedIds(spy: ReturnType<typeof install>) {
+    return (spy.deletes["wallet_moments_cache"] ?? []).flatMap((d) => {
+      const inFilter = d.filters.find((f) => f.method === "in")
+      return (inFilter?.args[1] as string[]) ?? []
+    })
+  }
+
+  it("removes the cached ids a complete pass did not see, and reports the count", async () => {
+    state.ownedIds = [1, 2]
+    state.metadataById = { "1": meta(), "2": meta() }
+    const spy = install({
+      // 3 cached, only 1 and 2 still on chain — 3 was sold or transferred.
+      wallet_moments_cache: {
+        data: [{ moment_id: "1" }, { moment_id: "2" }, { moment_id: "3" }],
+        error: null,
+      },
+      "rpc:upsert_wmc_batch": { data: { written: 2 }, error: null },
+    })
+
+    await POST(post({ wallet: WALLET, skip_cached: false }))
+    await runDeferred()
+
+    expect(deletedIds(spy)).toEqual(["3"])
+    const log = walkLog(spy.rpcCalls)
+    expect(log?.p_extra).toMatchObject({
+      terminated_reason: "no_more_moments",
+      unseen_deleted: 1,
+    })
+  })
+
+  it("scopes the delete to this wallet AND Top Shot AND an explicit id list", async () => {
+    // The filters are the whole safety property of a DELETE: drop one and it
+    // removes the complement. There are no rows to inspect after the fact.
+    state.ownedIds = [1]
+    state.metadataById = { "1": meta() }
+    const spy = install({
+      wallet_moments_cache: { data: [{ moment_id: "1" }, { moment_id: "99" }], error: null },
+      "rpc:upsert_wmc_batch": { data: { written: 1 }, error: null },
+    })
+
+    await POST(post({ wallet: WALLET, skip_cached: false }))
+    await runDeferred()
+
+    const deletes = spy.deletes["wallet_moments_cache"] ?? []
+    expect(deletes).toHaveLength(1)
+    expect(deletes[0].options).toEqual({ count: "exact" })
+    expect(deletes[0].filters.map((f) => [f.method, f.args[0], f.args[1]])).toEqual([
+      ["eq", "wallet_address", WALLET],
+      ["eq", "collection_id", TS_UUID],
+      ["in", "moment_id", ["99"]],
+    ])
+    // No other table is ever deleted from on this path.
+    expect(Object.keys(spy.deletes)).toEqual(["wallet_moments_cache"])
+  })
+
+  it("deletes nothing when every cached id is still held, and still reports unseen_deleted: 0", async () => {
+    // Absent-vs-zero: the healthy case must report 0, never omit the field.
+    state.ownedIds = [1, 2]
+    state.metadataById = { "1": meta(), "2": meta() }
+    const spy = install({
+      wallet_moments_cache: { data: [{ moment_id: "1" }, { moment_id: "2" }], error: null },
+      "rpc:upsert_wmc_batch": { data: { written: 2 }, error: null },
+    })
+
+    await POST(post({ wallet: WALLET, skip_cached: false }))
+    await runDeferred()
+
+    expect(spy.deletes["wallet_moments_cache"]).toBeUndefined()
+    expect(walkLog(spy.rpcCalls)?.p_extra).toMatchObject({ unseen_deleted: 0 })
+  })
+
+  it("a SKIP-CACHED pass never deletes the rows it skipped — they were confirmed, not missed", async () => {
+    // skip_cached suppresses the metadata re-walk, not the ownership check: the
+    // cached ids are all present in onChainIds. Keying the delete on what the
+    // pass WROTE rather than what it OBSERVED wipes them.
+    state.ownedIds = [1, 2, 3]
+    state.metadataById = { "3": meta() }
+    const spy = install({
+      wallet_moments_cache: { data: [{ moment_id: "1" }, { moment_id: "2" }], error: null },
+      "rpc:upsert_wmc_batch": { data: { written: 1 }, error: null },
+    })
+
+    await POST(post({ wallet: WALLET }))
+    await runDeferred()
+
+    expect(walkLog(spy.rpcCalls)?.p_extra).toMatchObject({ skipped_cached: 2, unseen_deleted: 0 })
+    expect(spy.deletes["wallet_moments_cache"]).toBeUndefined()
+  })
+
+  it("an empty scan deletes nothing — a degraded read looks exactly like an emptied wallet", async () => {
+    state.ownedIds = []
+    const spy = install({
+      wallet_moments_cache: { data: [{ moment_id: "1" }, { moment_id: "2" }], error: null },
+    })
+
+    await POST(post({ wallet: WALLET, skip_cached: false }))
+    await runDeferred()
+
+    expect(spy.deletes["wallet_moments_cache"]).toBeUndefined()
+  })
+
+  it("a run that did NOT finish its walk (timeout) deletes nothing and says why", async () => {
+    // The id set is in fact complete here, but the run does not CLAIM to have
+    // finished. Tying the trigger to the run's own completeness keeps a future
+    // change to either loop from silently licensing a delete on a partial pass.
+    const realNow = Date.now
+    let tick = 0
+    // A clock that jumps past SOFT_DEADLINE_MS (260s) between any two reads, so
+    // the batch loop breaks on its first deadline check.
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => realNow() + tick++ * 300_000)
+    try {
+      state.ownedIds = [1, 2]
+      state.metadataById = { "1": meta(), "2": meta() }
+      const spy = install({
+        wallet_moments_cache: {
+          data: [{ moment_id: "1" }, { moment_id: "2" }, { moment_id: "3" }],
+          error: null,
+        },
+      })
+
+      await POST(post({ wallet: WALLET, skip_cached: false }))
+      await runDeferred()
+
+      const extra = walkLog(spy.rpcCalls)?.p_extra as Record<string, unknown>
+      expect(extra.terminated_reason).toBe("timeout")
+      expect(spy.deletes["wallet_moments_cache"]).toBeUndefined()
+      expect(extra.unseen_deleted).toBe(0)
+      expect(extra.unseen_delete_skipped).toBe("incomplete_pass_timeout")
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+})

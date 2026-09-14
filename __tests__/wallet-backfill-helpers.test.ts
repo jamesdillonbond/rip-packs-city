@@ -34,9 +34,23 @@ const H = vi.hoisted(() => {
     // every builder method call on a wallet_moments_cache read, in order —
     // pins the keyset-paging shape (2026-08-30: no .range, .gt cursor).
     wmcReadCalls: [] as Array<{ method: string; args: any[] }>,
+    // Every wallet_moments_cache DELETE, captured by its filters (the whole
+    // safety property of a delete) plus the id list it was handed.
+    wmcDeletes: [] as Array<{
+      options: any
+      filters: Array<{ method: string; args: any[] }>
+      ids: string[]
+    }>,
+    // Forces the delete chain to return an error, to drive the partial path.
+    deleteError: null as any,
   }
 
   function resolveRead(ctx: any) {
+    if (ctx.op === "delete") {
+      const rec = ctx.deleteRec
+      if (state.deleteError) return { data: null, error: state.deleteError, count: null }
+      return { data: null, error: null, count: rec ? rec.ids.length : 0 }
+    }
     if (ctx.table === "wallet_moments_cache") {
       if (state.cachedError) return { data: null, error: state.cachedError, count: null }
       // countCachedRows() reads `count` (head:true). Default: derive from
@@ -72,7 +86,16 @@ const H = vi.hoisted(() => {
         ]) {
           b[m] = (...a: any[]) => {
             if (m === "update") ctx.op = "update"
-            if (table === "wallet_moments_cache") {
+            if (m === "delete") {
+              ctx.op = "delete"
+              ctx.deleteRec = { options: a[0], filters: [], ids: [] as string[] }
+              if (table === "wallet_moments_cache") state.wmcDeletes.push(ctx.deleteRec)
+            }
+            if (ctx.op === "delete" && m !== "delete") {
+              ctx.deleteRec.filters.push({ method: m, args: a })
+              if (m === "in" && a[0] === "moment_id") ctx.deleteRec.ids = a[1].map(String)
+            }
+            if (table === "wallet_moments_cache" && ctx.op !== "delete") {
               state.wmcReadCalls.push({ method: m, args: a })
               if (m === "gt" && a[0] === "moment_id") ctx.gtMomentId = String(a[1])
               if (m === "limit") ctx.limit = a[0]
@@ -154,6 +177,7 @@ import {
   GOLAZOS_COLLECTION_UUID,
   UFC_COLLECTION_UUID,
 } from "@/lib/chains/flow/wallet-backfill-helpers"
+import { deleteUnseenWmcRows, unseenDeleteExtra } from "@/lib/chains/flow/wmc-unseen-delete"
 
 // ── helpers ────────────────────────────────────────────────────────────────
 function flowIdsResponse(ids: Array<string | number>) {
@@ -198,6 +222,8 @@ beforeEach(() => {
   H.state.fclQuery = async () => []
   H.state.usernameOutcome = { found: false, reason: "not_found" }
   H.state.rpcCalls = []
+  H.state.wmcDeletes = []
+  H.state.deleteError = null
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://proj.supabase.co"
   process.env.INGEST_SECRET_TOKEN = "test-ingest-token"
   vi.stubGlobal("fetch", vi.fn())
@@ -1217,6 +1243,261 @@ describe("runPinnacleDetailsBackfill — error taxonomy + post-pass", () => {
   })
 })
 
+// ── delete-not-seen: phantom holdings after a moment LEAVES a wallet ─────────
+//
+// The defect (2026-09-14, wallet 0x0d79d58c5fe83cdc): wallet_moments_cache is
+// only ever written, never pruned on sale/transfer. The sole cleanup is the
+// weekly prune_stale_wmc() at last_seen_at > 14 days, so a sold moment inflated
+// the dashboard, the /share card and cached_moment_count for ~14-21 days. His
+// complete Top Shot pass saw 1,109 moments against 1,159 cached rows.
+//
+// The load-bearing design claim these pin: the trigger is the OBSERVED ID-SET,
+// never last_seen_at. upsert_wmc_batch is change-detecting (it skips a row whose
+// edition_key/serial are unchanged and whose last_seen_at is under 24h), so a
+// complete pass can confirm every moment and write NOTHING — measured the same
+// day on 0xba1a13299beb4b19: found 100, wrote 0. A timestamp-keyed prune would
+// have deleted all 100 real, currently-held moments.
+describe("deleteUnseenWmcRows (direct)", () => {
+  // Driven directly, because the RUNNER-level tests cannot reach two of this
+  // helper's own guards: a runner with an empty scan returns before it ever
+  // calls the helper, so the helper's empty-observed refusal is unreachable
+  // from there and a test that looked like it covered the guard covered the
+  // runner's early return instead (caught by mutation, 2026-09-14).
+  const call = (over: Partial<Parameters<typeof deleteUnseenWmcRows>[0]> = {}) =>
+    deleteUnseenWmcRows({
+      wallet: WALLET,
+      collectionUuid: ALLDAY_COLLECTION_UUID,
+      observedIds: new Set(["1"]),
+      pipelineName: "test",
+      ...over,
+    })
+
+  it("refuses to delete on an EMPTY observed set even with rows cached", async () => {
+    H.state.cachedRows = [{ moment_id: "1" }, { moment_id: "2" }]
+    const out = await call({ observedIds: new Set<string>() })
+    expect(out).toEqual({ deleted: 0, skippedReason: "empty_observed" })
+    expect(H.state.wmcDeletes).toHaveLength(0)
+  })
+
+  it("refuses when the diff exceeds 90% of a >100-row wallet", async () => {
+    H.state.cachedRows = Array.from({ length: 200 }, (_, i) => ({ moment_id: "m" + i }))
+    const out = await call({ observedIds: new Set(["m0", "m1"]) })
+    expect(out).toEqual({ deleted: 0, skippedReason: "suspiciously_large" })
+    expect(H.state.wmcDeletes).toHaveLength(0)
+  })
+
+  it("applies the cap only ABOVE 100 cached rows, so an ordinary sell-off still prunes", async () => {
+    H.state.cachedRows = Array.from({ length: 100 }, (_, i) => ({ moment_id: "m" + i }))
+    const out = await call({ observedIds: new Set(["m0"]) })
+    expect(out.deleted).toBe(99)
+    expect(out.skippedReason).toBeUndefined()
+  })
+
+  it("uses the caller's cached snapshot instead of re-reading the cache", async () => {
+    // A second keyset walk on a 154k-row whale is a full index scan for no new
+    // information; the reuse is the reason the delete costs nothing extra.
+    H.state.cachedRows = [{ moment_id: "ignored" }]
+    H.state.wmcReadCalls = []
+    const out = await call({ observedIds: new Set(["a"]), cachedIds: new Set(["a", "b"]) })
+    expect(out.deleted).toBe(1)
+    expect(H.state.wmcDeletes[0].ids).toEqual(["b"])
+    expect(H.state.wmcReadCalls).toHaveLength(0)
+  })
+
+  it("reads the cache itself when the caller has no snapshot (skip_cached=false)", async () => {
+    H.state.cachedRows = [{ moment_id: "1" }, { moment_id: "2" }]
+    H.state.wmcReadCalls = []
+    const out = await call({ observedIds: new Set(["1"]) })
+    expect(out.deleted).toBe(1)
+    expect(H.state.wmcReadCalls.length).toBeGreaterThan(0)
+  })
+
+  it("chunks the id list so a large prune never builds one oversized request", async () => {
+    const cached = new Set(Array.from({ length: 450 }, (_, i) => "k" + i))
+    // 100 still held (under the >90% cap), 350 to delete at 200/chunk -> 200 + 150.
+    const observed = new Set(Array.from({ length: 100 }, (_, i) => "k" + i))
+    const out = await call({ observedIds: observed, cachedIds: cached })
+    expect(H.state.wmcDeletes.map((d: any) => d.ids.length)).toEqual([200, 150])
+    expect(out.deleted).toBe(350)
+  })
+
+  it("stops and reports on a failed chunk rather than counting it as deleted", async () => {
+    H.state.deleteError = { message: "boom" }
+    const out = await call({ observedIds: new Set(["a"]), cachedIds: new Set(["a", "b"]) })
+    expect(out.deleted).toBe(0)
+    expect(out.error).toContain("boom")
+  })
+
+  it("unseenDeleteExtra always carries unseen_deleted, and a skip says WHY", () => {
+    // A skip that reported nothing would read as "nothing had left the wallet".
+    expect(unseenDeleteExtra({ deleted: 0 })).toEqual({ unseen_deleted: 0 })
+    expect(unseenDeleteExtra({ deleted: 0, skippedReason: "empty_observed" })).toEqual({
+      unseen_deleted: 0,
+      unseen_delete_skipped: "empty_observed",
+    })
+  })
+})
+
+describe("delete-not-seen (wmc phantom holdings)", () => {
+  const deletedIds = () => H.state.wmcDeletes.flatMap((d: any) => d.ids)
+
+  it("deletes exactly the cached ids the complete pass did not observe", async () => {
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([10, 11]))
+    H.state.cachedRows = [{ moment_id: "10" }, { moment_id: "11" }, { moment_id: "12" }]
+    await runIdOnlyBackfill(baseArgs({ skipCached: false }))
+    expect(deletedIds()).toEqual(["12"])
+    expect(lastLog().p_extra.unseen_deleted).toBe(1)
+  })
+
+  it("scopes every delete by wallet AND collection AND an explicit id list", async () => {
+    // The whole safety property of a DELETE lives in its filters: a missing or
+    // negated predicate removes the complement. Assert the shape, not the count.
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([10]))
+    H.state.cachedRows = [{ moment_id: "10" }, { moment_id: "99" }]
+    await runIdOnlyBackfill(baseArgs({ skipCached: false }))
+    expect(H.state.wmcDeletes).toHaveLength(1)
+    const d = H.state.wmcDeletes[0]
+    expect(d.options).toEqual({ count: "exact" })
+    expect(d.filters.map((f: any) => [f.method, f.args[0]])).toEqual([
+      ["eq", "wallet_address"],
+      ["eq", "collection_id"],
+      ["in", "moment_id"],
+    ])
+    expect(d.filters[0].args[1]).toBe(WALLET)
+    expect(d.filters[1].args[1]).toBe(ALLDAY_COLLECTION_UUID)
+    expect(d.filters[2].args[1]).toEqual(["99"])
+    // Never a negated filter — .not()/.neq() here deletes the complement.
+    expect(d.filters.some((f: any) => f.method === "not" || f.method === "neq")).toBe(false)
+  })
+
+  it("a complete pass that WROTE NOTHING deletes nothing when it observed every cached id (the 0xba1a trap)", async () => {
+    // found=N, written=0 via the change-detect skip. A prune keyed on
+    // "last_seen older than this pass" deletes all N here; this one must not.
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([1, 2, 3]))
+    H.state.cachedRows = [{ moment_id: "1" }, { moment_id: "2" }, { moment_id: "3" }]
+    H.state.upsertResult = { data: { written: 0 }, error: null }
+    await runIdOnlyBackfill(baseArgs({ skipCached: true }))
+    expect(lastLog().p_rows_written).toBe(0)
+    expect(H.state.wmcDeletes).toHaveLength(0)
+    expect(lastLog().p_extra.unseen_deleted).toBe(0)
+  })
+
+  it("an EMPTY scan never deletes — a degraded read and an emptied wallet are the same result", async () => {
+    // A nil capability borrow returns [] exactly like an empty collection, so
+    // zero observed ids can never license a delete. The 14-day prune is the
+    // backstop for a genuinely emptied wallet.
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([]))
+    H.state.cachedRows = [{ moment_id: "1" }, { moment_id: "2" }]
+    await runIdOnlyBackfill(baseArgs({ skipCached: false }))
+    expect(H.state.wmcDeletes).toHaveLength(0)
+  })
+
+  it("skips the delete when it would remove >90% of a >100-row wallet", async () => {
+    H.state.cachedRows = Array.from({ length: 500 }, (_, i) => ({ moment_id: "m" + i }))
+    ;(fetch as any).mockResolvedValue(flowIdsResponse(["m0"]))
+    await runIdOnlyBackfill(baseArgs({ skipCached: false }))
+    expect(H.state.wmcDeletes).toHaveLength(0)
+    const extra = lastLog().p_extra
+    expect(extra.unseen_deleted).toBe(0)
+    expect(extra.unseen_delete_skipped).toBe("suspiciously_large")
+  })
+
+  it("does NOT apply the >90% cap to a small wallet — selling 2 of 3 is ordinary", async () => {
+    // The cap guards a whale against a latent scan bug; it must not block the
+    // normal case, or the guard punishes its own success.
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([1]))
+    H.state.cachedRows = [{ moment_id: "1" }, { moment_id: "2" }, { moment_id: "3" }]
+    await runIdOnlyBackfill(baseArgs({ skipCached: false }))
+    expect(deletedIds().sort()).toEqual(["2", "3"])
+  })
+
+  it("reports unseen_deleted on EVERY complete pass, including when nothing left", async () => {
+    // Absent-vs-zero: an observer keying on unseen_deleted must get 0 from a
+    // healthy pass, never NULL.
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([1]))
+    H.state.cachedRows = [{ moment_id: "1" }]
+    await runIdOnlyBackfill(baseArgs({ skipCached: false }))
+    expect(Object.keys(lastLog().p_extra)).toContain("unseen_deleted")
+    expect(lastLog().p_extra.unseen_deleted).toBe(0)
+    expect(lastLog().p_extra.unseen_delete_skipped).toBeUndefined()
+  })
+
+  it("surfaces a failed delete chunk instead of reporting the rows as removed", async () => {
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([1]))
+    H.state.cachedRows = [{ moment_id: "1" }, { moment_id: "2" }]
+    H.state.deleteError = { message: "delete boom" }
+    await runIdOnlyBackfill(baseArgs({ skipCached: false }))
+    const extra = lastLog().p_extra
+    expect(extra.unseen_deleted).toBe(0)
+    expect(String(extra.unseen_delete_error)).toContain("delete boom")
+  })
+
+  it("Pinnacle deletes what its complete details pass did not observe", async () => {
+    H.state.fclQuery = async () => [{ id: "1", editionKey: "royal:foil:1", serial: "5" }]
+    H.state.cachedRows = [{ moment_id: "1" }, { moment_id: "2" }]
+    await runPinnacleDetailsBackfill(
+      baseArgs({
+        config: {
+          slug: "disney_pinnacle",
+          collectionUuid: PINNACLE_COLLECTION_UUID,
+          cadenceScript: CADENCE_PINNACLE,
+          pipelineName: "wallet-backfill-pinnacle",
+        },
+        skipCached: false,
+      }),
+    )
+    expect(deletedIds()).toEqual(["2"])
+  })
+
+  it("a SKIPPED-cached row was still OBSERVED and is never deleted", async () => {
+    // observedIds is built before the skip filter. Keying it on what the pass
+    // WROTE instead would delete exactly the rows the skip was protecting.
+    H.state.fclQuery = async () => [["1", "e1", "1"], ["2", "e2", "2"]]
+    H.state.cachedRows = [
+      { moment_id: "1", edition_key: "e1" },
+      { moment_id: "2", edition_key: "e2" },
+    ]
+    await runAllDayDetailsBackfill(baseArgs({ skipCached: true }))
+    expect(lastLog().p_extra.skipped_cached).toBe(2)
+    expect(H.state.wmcDeletes).toHaveLength(0)
+  })
+
+  it("an incomplete paginated pass (soft deadline) never deletes", async () => {
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([1, 2, 3]))
+    H.state.fclQuery = async () => [["1", "1", "1"]]
+    H.state.cachedRows = [{ moment_id: "1" }, { moment_id: "9" }]
+    const out = await runPaginatedDetailsBackfill({
+      ...baseArgs({ skipCached: false, softDeadlineAt: Date.now() - 1, startIndex: 0 }),
+      mode: "allday" as const,
+      parentTerminatedReason: "computation_limit_exceeded",
+      parentErrorExcerpt: "boom",
+    })
+    expect(out.complete).toBe(false)
+    expect(H.state.wmcDeletes).toHaveLength(0)
+    expect(lastLog().p_extra.unseen_delete_skipped).toBe("incomplete_pass")
+  })
+
+  it("the paginated all-ids-already-enriched exit DOES delete — it is complete and writes nothing", async () => {
+    // The found-N/wrote-0 shape again, and the only branch fully-enriched whales
+    // ever reach. Skipping it would leave them permanently unprunable.
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([1, 2]))
+    H.state.cachedRows = [
+      { moment_id: "1", edition_key: "a" },
+      { moment_id: "2", edition_key: "b" },
+      { moment_id: "3", edition_key: "c" },
+    ]
+    const out = await runPaginatedDetailsBackfill({
+      ...baseArgs({ skipCached: true, force: false }),
+      mode: "allday" as const,
+      parentTerminatedReason: "computation_limit_exceeded",
+      parentErrorExcerpt: "boom",
+    })
+    expect(out.complete).toBe(true)
+    expect(lastLog().p_extra.terminated_reason).toBe("all_ids_already_enriched")
+    expect(deletedIds()).toEqual(["3"])
+  })
+})
+
 // ── AllDay LOCKED-moment recovery (studio-platform custody union) ─────────────
 //
 // The bug (2026-08-08): NFL All Day has no on-chain locking contract, so a
@@ -1346,5 +1627,48 @@ describe("runAllDayDetailsBackfill — studio custody union", () => {
     expect(out.complete).toBe(true)
     expect(lastLog().p_extra.terminated_reason).toBe("no_more_moments")
     expect(lastLog().p_ok).toBe(true)
+  })
+
+  // ── delete-not-seen interaction ────────────────────────────────────────────
+  // A LOCKED All Day moment is structurally absent from getIDs(), so to a
+  // chain-only observer it is indistinguishable from a sold one. These pin the
+  // two halves of that: studio is what makes it visible, and a studio walk that
+  // DEGRADED must veto the delete entirely rather than let its silence read as
+  // "these moments left the wallet".
+  it("keeps a LOCKED moment that only studio can see — it was observed, not departed", async () => {
+    H.state.fclQuery = async () => [["100", "42", "7"]]
+    ;(fetch as any).mockResolvedValue(studioResponse([["200", "43", "8"]]))
+    // 100 on chain, 200 locked via studio, 300 genuinely gone.
+    H.state.cachedRows = [{ moment_id: "100" }, { moment_id: "200" }, { moment_id: "300" }]
+
+    await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG, skipCached: false }))
+
+    expect(H.state.wmcDeletes.flatMap((d: any) => d.ids)).toEqual(["300"])
+  })
+
+  it("does NOT delete when the custody walk degraded — its missing ids are not evidence of a sale", async () => {
+    H.state.fclQuery = async () => [["100", "42", "7"]]
+    ;(fetch as any).mockResolvedValue({ ok: false, status: 503, text: async () => "down" })
+    H.state.cachedRows = [{ moment_id: "100" }, { moment_id: "200" }]
+
+    await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG, skipCached: false }))
+
+    const extra = lastLog().p_extra
+    expect(extra.studio_ok).toBe(false)
+    expect(H.state.wmcDeletes).toHaveLength(0)
+    expect(extra.unseen_deleted).toBe(0)
+    expect(extra.unseen_delete_skipped).toBe("studio_custody_walk_degraded")
+  })
+
+  it("a collection with NO custody source is not blocked by the studio gate", async () => {
+    // The gate must narrow to collections that actually have locked moments, or
+    // it silently disables the prune for Golazos/Pinnacle forever.
+    H.state.fclQuery = async () => [["100", "42", "7"]]
+    H.state.cachedRows = [{ moment_id: "100" }, { moment_id: "300" }]
+
+    await runAllDayDetailsBackfill(baseArgs({ skipCached: false })) // CFG: no studio
+
+    expect(H.state.wmcDeletes.flatMap((d: any) => d.ids)).toEqual(["300"])
+    expect(lastLog().p_extra.unseen_delete_skipped).toBeUndefined()
   })
 })

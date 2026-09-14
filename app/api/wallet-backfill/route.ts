@@ -7,6 +7,10 @@ import {
   resolveTopShotUsernameCacheAware,
 } from "@/lib/chains/flow/topshot-username-resolve"
 import { isStorageLimitError, isNoCollectionCapabilityError } from "@/lib/chains/flow/wallet-backfill-helpers"
+// Imported from its own module for the same reason as the chunk writer below:
+// this route's suite stubs wallet-backfill-helpers wholesale, and a delete
+// routed through that stub would never run on the Top Shot path.
+import { deleteUnseenWmcRows, unseenDeleteExtra } from "@/lib/chains/flow/wmc-unseen-delete"
 // Imported from the writer module directly, not re-exported through
 // wallet-backfill-helpers: this route's test suite stubs that module wholesale,
 // and going through it would put the stub — not the real chunk writer — on the
@@ -456,10 +460,29 @@ async function runBackfill(
       )
     }
 
+    // Delete-not-seen. onChainIds is the wallet's COMPLETE on-chain id set (see
+    // the cache-skip comment above), so any cached id absent from it has left the
+    // wallet. Gated on terminated_reason === "no_more_moments": a "timeout" or
+    // "safety_ceiling" run broke out of the METADATA walk, and while its id set is
+    // in fact complete, tying the trigger to the run's own completeness claim
+    // keeps a future change to either loop from silently licensing a delete on a
+    // partial pass. Those wallets prune on their next clean run.
+    const unseen =
+      terminatedReason === "no_more_moments"
+        ? await deleteUnseenWmcRows({
+            wallet,
+            collectionUuid: NBA_TOP_SHOT_UUID,
+            observedIds: new Set(onChainIds.map(String)),
+            pipelineName: "wallet-backfill",
+            // Reuse the skip-filter's snapshot rather than paging the cache twice.
+            cachedIds: skipCached ? cachedIds : undefined,
+          })
+        : { deleted: 0, skippedReason: `incomplete_pass_${terminatedReason}` }
+
     // Refresh the seeded_wallets stats so cached_moment_count reflects the
     // new cache total + stamp last_refreshed_per_collection so the
     // multi-collection cron can find stale wallets per collection.
-    await stampLastRefreshed(wallet, totalUpserted + postPassUpdated)
+    await stampLastRefreshed(wallet, totalUpserted + postPassUpdated + unseen.deleted)
 
     await logRun({
       startedAt: startedAtIso,
@@ -477,6 +500,7 @@ async function runBackfill(
         skipped_cached: totalSkippedCached,
         rows_to_write: totalRowsAttempted,
         ...chunkFailureExtra(chunkTally),
+        ...unseenDeleteExtra(unseen),
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: terminatedReason,
         skip_cached: skipCached,

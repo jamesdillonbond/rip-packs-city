@@ -190,6 +190,19 @@ export interface RecordedRpcCall {
   args: Record<string, unknown> | undefined
 }
 
+export interface RecordedDelete {
+  /** The `.delete(options)` argument — e.g. `{ count: "exact" }`. */
+  options?: Record<string, unknown>
+  /**
+   * Every filter applied to the delete builder, in order. A DELETE is the one
+   * call where the FILTERS are the whole safety property: `.delete()` with a
+   * missing or mis-built predicate removes the complement of what was intended,
+   * and the row payload (which is what RecordedWrite captures) does not exist to
+   * inspect. Nothing else in the suite could see this.
+   */
+  filters: Array<{ method: string; args: unknown[] }>
+}
+
 export interface RecordedWrite {
   method: "insert" | "upsert" | "update"
   rows: Record<string, unknown>[]
@@ -217,6 +230,7 @@ export function makeInstrumentedSupabaseFixture(
   fixture: unknown
   rpcCalls: RecordedRpcCall[]
   writes: Record<string, RecordedWrite[]>
+  deletes: Record<string, RecordedDelete[]>
 } {
   const fixture = makeSupabaseFixture(fixtures) as {
     from: (t: string) => Record<string, unknown>
@@ -224,6 +238,7 @@ export function makeInstrumentedSupabaseFixture(
   }
   const rpcCalls: RecordedRpcCall[] = []
   const writes: Record<string, RecordedWrite[]> = {}
+  const deletes: Record<string, RecordedDelete[]> = {}
   const baseRpc = fixture.rpc.bind(fixture)
   fixture.rpc = async (name, args) => {
     rpcCalls.push({ name, args })
@@ -247,7 +262,28 @@ export function makeInstrumentedSupabaseFixture(
         return base(rows, options)
       }
     }
+    // DELETE is recorded by its FILTERS, not by rows — see RecordedDelete. Each
+    // from(table) builds a fresh builder, so wrapping the filter methods on the
+    // object `delete()` returns scopes the capture to this one delete chain.
+    const baseDelete = b.delete as (options?: unknown) => Record<string, unknown>
+    b.delete = (options?: unknown) => {
+      const rec: RecordedDelete = {
+        options: (options ?? undefined) as Record<string, unknown> | undefined,
+        filters: [],
+      }
+      ;(deletes[table] ??= []).push(rec)
+      const chain = baseDelete(options)
+      for (const m of ["eq", "neq", "in", "is", "not", "gt", "gte", "lt", "lte", "match", "filter"] as const) {
+        const prev = chain[m] as (...a: unknown[]) => unknown
+        if (typeof prev !== "function") continue
+        chain[m] = (...a: unknown[]) => {
+          rec.filters.push({ method: m, args: a })
+          return prev(...a)
+        }
+      }
+      return chain
+    }
     return b
   }
-  return { fixture, rpcCalls, writes }
+  return { fixture, rpcCalls, writes, deletes }
 }
