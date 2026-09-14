@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⛔ DECIDED: **NO `VACUUM FULL` of `net._http_response`** — the leak is FIXED, what remains is a high-water mark, and the reclaim would spend ~10 min of the exact resource that is actually scarce · Claude Code cloud
+
+**Trevor delegated this one** ("make decisions based upon what's best for RPC long term and our users", ~11:00 AM PT). Both reminders that would have executed it are cancelled.
+
+**Read at 7:01 PM PT, quiet instance (0 active backends, 0 IO waiters, queue depth 0, newest response row 7:01:00 PM — pg_net dispatching normally):**
+
+| | value |
+|---|---|
+| `pg_toast_51873` size | **13 GB** |
+| toast live chunks / dead | **153,732 / 9,838 (6.0 %)** |
+| toast `autovacuum_count` | **1** — last **09-13 12:04 PM PT** |
+| `net._http_response` heap | **4,544 kB**, 3,499 rows, 0 dead |
+| parent `autovacuum_count` | 40 (last 6:41 PM PT) |
+| live toast data (153,732 × ~2 KB) | **~300 MB inside a 13 GB file** |
+
+⭐ **THE ITEM'S ACTUAL BUG IS FIXED, AND THAT CHANGES THE QUESTION.** #75 was filed because autovacuum had **never** run on this toast — the stat that gates it read zero dead tuples against a true 161,390. It has now run (count 1, completing 12:04 PM PT today), and dead tuples sit at **6 %**, not runaway. So the file is a **HIGH-WATER MARK, not a leak**: plain vacuum made ~12.7 GB reusable without returning it to the OS, and pg_net's constant insert/delete churn will reuse it through the FSM that autovacuum now maintains. **Nothing is still growing.** What was left to decide was never the bug — only whether to reclaim disk.
+
+⛔ **AND THE RECLAIM SPENDS THE ONE RESOURCE THAT IS ACTUALLY SCARCE.** This instance is **IO-bound at a 22 MB/s burst floor** — that is the constraint behind #73, #84 and today's #113, and it is what users feel. **Dead toast pages nobody reads cost approximately zero IO** (readers seek live chunks through the toast index; they do not scan the dead space). But `VACUUM FULL` must read the whole 13 GB heap sequentially to find those ~300 MB of live chunks: **13 GB ÷ 22 MB/s ≈ 10 minutes of the entire instance's IO budget**, while holding `ACCESS EXCLUSIVE` on the estate's async-HTTP backbone so every pg_net lane blocks. **It would make today's real, user-facing problem worse for ten minutes in exchange for disk nobody has costed.**
+
+⚠ **The benefit was never given a number, which is this repo's own tell for a decision worth re-deriving.** No disk-pressure figure, no bill line, no threshold was ever attached to the 12.7 GB — against a ~30 GB database on elastic Pro storage. ⚠ **The two written estimates of the OUTAGE also disagree 30-fold** and neither was measured: the 7:05 PM protocol said "~1 min ... copies only the 15 MB heap plus ~1.5 GB of live chunks", #75's amended protocol said 10–30 min. The ~300 MB live figure above says the *copy* is seconds; the **sequential read of the 13 GB file** is what sets the floor near 10 min. **Running it blind on a 30× estimate spread would itself have been the error.**
+
+✅ **DECISION: do not run it.** The sentinel's `pg_net Dispatch` arm stays warning at ≥ 8 GiB, which is correct and honest — it is reporting a real 13 GB store; it is simply not an emergency.
+
+📏 **FALSIFIABLE EXIT CONDITION, so this is not a decision nobody re-checks:** re-measure `pg_total_relation_size('net._http_response')` on **2026-09-20**. **≈ 13 GB ⇒ the space is being reused, this decision was right, close #75.** **Materially larger ⇒ autovacuum is not keeping up and the reclaim (or a retention change, which is cheaper) becomes justified** — and at that point size the outage from a measured sequential-read rate, not from either stored guess. **Revert:** nothing was changed; the protocol is preserved verbatim in #75 if a future reading justifies it.
+
 ### 2026-09-13 · ✅ #113's suspect CONFIRMED AND FIXED IN THE SAME QUIET WINDOW — `backfill_wmc_metadata_from_editions` was running a generic plan that INVERTS its join and reads 62× the buffers; it now plans with its parameter values · Claude Code cloud
 
 **Measured ~6:4x PM PT, quiet instance** (0 active backends, 0 in IO wait, no maintenance op), warm, same wallet (`0x366d02c3…` / Top Shot, 1,184 rows), on the **read-only equivalent** of the UPDATE's FROM/WHERE projecting the same columns — ⛔ **never `EXPLAIN ANALYZE` the UPDATE itself, it executes:**
