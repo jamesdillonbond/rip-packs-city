@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 🚨 I BROKE A PRODUCTION LANE WITH THE `search_path` PIN AND ITS NEXT TICK CAUGHT IT — the PROCEDURE half is REVERTED after 20 minutes; the FUNCTION half stands · Claude Code cloud
+
+**Correcting my own entry two below this one, which reported `proconfig IS NULL` reaching 0. It reached 0 and should not have.**
+
+🚨 **WHAT HAPPENED.** 05:24Z `20260914053000` pinned `search_path` on 4 routines (2 functions, 2 procedures). **05:44Z pg_cron jobid 259 `rpc-reconcile-saved-wallet-stats` — its FIRST tick after the change — failed in 0.5 s with `ERROR: invalid transaction termination`**, against three successful `CALL` ticks before it (0.46–5.5 s). Reverted at 05:46Z, migration `20260914055000`.
+
+⭐ **THE MECHANISM IS A POSTGRES RULE, NOT A QUIRK OF THESE BODIES: a PROCEDURE with a `SET` clause runs inside an implicit transaction block and may not execute `COMMIT`/`ROLLBACK`.** `prosrc ~* '\m(commit|rollback)\M'` is TRUE for both procedures, so pinning **any** configuration parameter on them breaks them at their first COMMIT. ✅ **The two FUNCTIONS keep their pin** — `prokind='f'` cannot do transaction control at all, and both were positively controlled after the change (`series_chain_numbers` returns a row, `atlas_market_headers` still returns).
+
+⭐ **THE PRE-FLIGHT MISS IS THE LESSON, AND IT IS NOT "I DIDN'T CHECK".** The migration DID check the hazard a `search_path` pin is famous for — whether any body resolves a name outside `public`/`pg_catalog`; none did — and that check was **correct and irrelevant**. The hazard was never name resolution; it was that **`SET` changes a procedure's TRANSACTION SEMANTICS**, a question no search_path-shaped pre-flight asks. ⛔ **STANDING RULE EARNED: before adding a SET clause to a routine, read `prokind` FIRST — for a PROCEDURE, grep the body for transaction control and stop if it has any.**
+
+⚠ **AND THE SIBLING LOOKED FINE WHILE BROKEN, which is the part I would have got wrong twice.** jobid 488 CALLs `rpc_trust_health_precompute_refresh_p()` every 10 minutes and **succeeded at 05:30 and 05:40, after the pin** (`INSERT 0 0`). That is a lane whose COMMIT path was not reached on those ticks — **a passing tick is a statement about the path it took, not about the ones it did not.** Both procedures were reverted on the MECHANISM rather than only the one that had already failed.
+
+⭐ **WHAT ACTUALLY WORKED HERE: choosing a change whose production callers tick in MINUTES.** The falsifier was stated before the fact (jobid 488 every 10 min, jobid 259 hourly at :44) and it fired on the first available one. A property re-read — `proconfig IS NULL = 0` — was TRUE the whole time the lane was broken. **A re-read of the thing you changed is not a control.**
+
+📉 **STATE NOW:** `proconfig IS NULL` in `public` is **2, not 0** — the two procedures. The advisor's `function_search_path_mutable` WARN on them is now **known-accepted, not drift**, and #115 carries both that and the still-unwatched property.
+👉 **EXIT, falsifiable:** jobid 259's **06:44Z** tick succeeds with `CALL`. If it fails again the cause is not this change and the lane has an older problem.
+**Revert path:** the revert IS the migration (`20260914055000`); the original `20260914053000` carries a comment-only header note pointing at it (applied migrations are history — the SQL was not edited).
+
 ### 2026-09-13 · 🚨 `main` WAS RED FROM `43ebc370b` AND ITS OWN NEW CHECK INHERITED IT — both failures are the guards working, so both were CLASSIFIED/FIXED rather than loosened · Claude Code cloud
 
 **Found the way the new check intends:** my code push (#5490) ran the full suite and inherited someone else's red. CI #5488 (`feat(ci): a check that did not run is indistinguishable from one that passed`, a CODE push) is where it starts; #5489 (docs) and #5490 (mine) carry it.

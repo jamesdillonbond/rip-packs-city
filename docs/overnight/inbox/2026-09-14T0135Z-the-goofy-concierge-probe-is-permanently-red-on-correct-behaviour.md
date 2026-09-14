@@ -76,3 +76,44 @@ source is `pinnacle_catalog`.
 table name, a plausible-looking answer, and the wrong source entirely. Third
 avoided error of the same shape in one session: **a value that looks like the
 answer is not the answer until you have checked what produced it.**
+
+---
+
+## ✅ ACTED ON 2026-09-13 ~10:2x PM PT (Claude Code cloud) — §2 and §3 are FIXED; §1 is unchanged
+
+**Appended, not rewritten** (append-only convention, so this cannot silently clobber the filing).
+
+This filing deliberately left the decision to *"whoever owns the concierge's output
+contract"*. **It did not need a product decision after all — the intent is recorded in
+the commit that added the check.** `657ab80c6` ("Pinnacle FMV must join by (character,
+set, variant) — `edition_key` alone leaked Minnie's FMV onto Goofy") says the probe was
+tightened so that *"a 'Goofy at $1, FMV ~$29 → 97% off' response now fails on the
+FMV-leak and fake-discount patterns instead of passing because 'Goofy' appeared
+somewhere in the text."* The shape it was built for is a **leaked FMV**; banning
+percentages outright was never the contract. ⭐ **The filing's own candidate fix —
+"require the percentage to be uncorroborated" — was the right instinct, and the commit
+message is what made it safe to act on without asking.**
+
+**Shipped** (`b86c18361`): `uncorroboratedDiscountClaims(text)`, exported from
+`app/api/smoke-test/route.ts`, returns the discount percentages a response states that
+**its own printed figures cannot produce**. Strict where the evidence is present (a line
+printing ≥2 money figures must support its own percentage from a pair on THAT line),
+lenient where it is not (prose restating the table is corroborated by any line in the
+response) — because a false positive is exactly what made the old check worthless.
+
+⚠ **`fmvLeak` is UNCHANGED, deliberately.** A leaked FMV is arithmetically
+self-consistent ((29−1)/29 = 97%), so a corroboration test passes it by design and must
+not pretend otherwise. Two different claims, two different instruments; the original
+defect is still caught, and `__tests__/smoke-goofy-probe-discount-corroboration.test.ts`
+pins that split explicitly. Mutation-proven both ways.
+
+⭐ **This filing's §2 table is what made the fix verifiable** — but the test's first case
+is the **raw `body_excerpt` `smoke_test_results` stored for the 01:32Z run**, read back
+from the live DB, rather than the summary table. A shape argument is what made the old
+check wrong.
+
+⚠ **Still `soft: true`**, and that is correct: a live LLM call should not page on model
+flakiness. What changed is that it can now **pass**.
+
+⛔ **§1 (the 30 s cron-job.org margin) is untouched** — it needs no console change and no
+retry, exactly as this filing concluded, and the durable lever is still query cost (#107).

@@ -1,0 +1,50 @@
+-- audit_20260913_revert_search_path_on_the_two_procedures_that_do_transaction_control
+--
+-- 🚨 REVERT of the PROCEDURE half of `20260914053000`, twenty minutes after it applied,
+-- because it BROKE A PRODUCTION LANE and the very next scheduled tick said so.
+--
+-- ── WHAT HAPPENED ───────────────────────────────────────────────────────────────────
+--   05:24Z  `20260914053000` pinned `search_path` on 4 routines (2 functions, 2 procedures)
+--   05:44Z  pg_cron jobid 259 `rpc-reconcile-saved-wallet-stats` (hourly at :44) —
+--           its FIRST tick after the change — **failed in 0.5 s**:
+--               ERROR:  invalid transaction termination
+--           Its previous three ticks all succeeded (`CALL`, 0.46–5.5 s).
+--   05:46Z  Reverted (this migration). `proconfig` back to NULL on both procedures.
+--
+-- ── THE MECHANISM, WHICH IS A POSTGRES RULE AND NOT A QUIRK OF THESE BODIES ──────────
+-- **A PROCEDURE WITH A `SET` CLAUSE RUNS INSIDE AN IMPLICIT TRANSACTION BLOCK, SO IT MAY
+-- NOT EXECUTE `COMMIT` OR `ROLLBACK`.** Both of these procedures do transaction control
+-- (`prosrc ~* '\m(commit|rollback)\M'` is TRUE for both), so pinning ANY configuration
+-- parameter on them — `search_path` included — makes them raise on their first COMMIT.
+-- ⚠ **This applies to `prokind = 'p'` only.** The two FUNCTIONS (`atlas_market_headers`,
+-- `series_chain_numbers`) keep their pin: they cannot do transaction control in the first
+-- place, and both were positively controlled after the change.
+--
+-- ⚠ **WHY THE OTHER PROCEDURE LOOKED FINE AND WAS NOT.** jobid 488 CALLs
+-- `rpc_trust_health_precompute_refresh_p()` every 10 minutes and SUCCEEDED at 05:30 and
+-- 05:40 — after the pin. That is a lane whose COMMIT path was simply not reached on those
+-- ticks (`INSERT 0 0`), not evidence of safety. ⭐ **A passing tick is a statement about
+-- the path it took, not about the ones it did not** — so this revert covers BOTH procedures
+-- on the mechanism, rather than only the one that had already failed.
+--
+-- ⭐ **THE PRE-FLIGHT MISS, RECORDED SO THE NEXT PIN DOES NOT REPEAT IT.** `20260914053000`
+-- DID check the thing that can break a pinned `search_path` — whether any body references
+-- an object outside `public`/`pg_catalog` (none did) — and that check was correct and
+-- irrelevant. The hazard was never name resolution; it was that **`SET` changes a
+-- procedure's transaction semantics**, which no search_path-shaped question would have
+-- asked. **Before adding a SET clause to a routine, check `prokind` FIRST: for a PROCEDURE,
+-- grep its body for transaction control and stop if it has any.**
+--
+-- ⚠ NOT REVERTED, deliberately: the two functions. `proconfig IS NULL` in `public` is
+-- therefore **2, not 0** — the register (#115) carries the residual and the reason.
+--
+-- REVERT OF THIS REVERT (do not, without solving the COMMIT problem first):
+--   ALTER PROCEDURE public.rpc_trust_health_precompute_refresh_p()                        SET search_path = public, pg_temp;
+--   ALTER PROCEDURE public.reconcile_all_saved_wallet_stats(integer,integer,integer,integer) SET search_path = public, pg_temp;
+--
+-- EXIT CONDITION (falsifiable, and it is a PRODUCTION-CALLER control, not a re-read):
+--   jobid 259's next tick — 06:44Z — succeeds with `CALL`. If it fails again, the cause
+--   is NOT this migration and the lane has a second, older problem.
+
+ALTER PROCEDURE public.rpc_trust_health_precompute_refresh_p()                        RESET search_path;
+ALTER PROCEDURE public.reconcile_all_saved_wallet_stats(integer, integer, integer, integer) RESET search_path;

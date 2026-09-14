@@ -1,5 +1,14 @@
 -- audit_20260913_pin_search_path_on_the_last_four_unpinned_public_functions
 --
+-- 🚨🚨 THE PROCEDURE HALF OF THIS MIGRATION WAS REVERTED 20 MINUTES AFTER IT APPLIED —
+-- see `20260914055000_audit_20260913_revert_search_path_on_the_two_procedures_that_do_transaction_control.sql`.
+-- A PROCEDURE with a `SET` clause runs inside an implicit transaction block and may not
+-- execute COMMIT/ROLLBACK; both procedures below do transaction control, and pg_cron jobid
+-- 259 (`rpc-reconcile-saved-wallet-stats`) failed its very next tick with
+-- `ERROR: invalid transaction termination`. **The two FUNCTIONS are unaffected and stay
+-- pinned.** Comment added to an already-applied migration rather than editing its SQL: an
+-- applied migration is history, and the revert is its own migration.
+--
 -- Four routines in `public` carry NO `proconfig` at all, so their `search_path` is
 -- whatever the CALLER happens to have set. Every other routine in the schema pins it.
 --
