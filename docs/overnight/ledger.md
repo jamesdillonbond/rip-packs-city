@@ -10,6 +10,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ⚠ EXPECTED-WARN NOTICE for the next pass — `Cadence Collapse` will show `ts-listings-atlas-sync` DEGRADED until ~7 AM PT 09-14, and it is TODAY'S SHED, not a regression · Claude Code cloud
+
+- **What the sentinel says:** `check_pipeline_cadence_collapse()` reports `ts-listings-atlas-sync` **ratio 0.274, observed 178/day vs baseline 650/day**. ⛔ **Do not chase it.**
+- **Why it is an artifact:** the arm's window is **12 h**, and today that window straddles the lane's shed. Runs per hour PT: 8 AM **2** · 9 AM 11 · 10 AM 7 · 12 PM 2 · **1–6 PM ZERO (job 466 unscheduled)** · 7 PM **24** · 8 PM **30** · 9 PM **26**. So the ratio is **a rate POOLED ACROSS A FIX**, the shape this file already names — it measures the shed's absence and reads as the lane's failure.
+- ⭐ **The post-restore lane is HEALTHY and separately measured tonight:** 67 ticks, **0 failed**, p50 7.8 s, p90 14.4 s (against a pre-restore 21.4 % failure rate and a p90 pinned at the 120 s `statement_timeout`).
+- 👉 **Falsifiable clear-time: the warn disappears once the 12 h window starts after the 7:10 PM restore, i.e. from ~7 AM PT on 09-14.** If it is STILL degraded after that, it is real and worth chasing.
+- ⚠ **Also, so nobody re-derives it as I just did:** the arm's four `stopped` lanes (`compute-topshot-pack-ev`, `offers-sweep`, `topshot-moments-hydrator`, `topshot-pack-pool-backfill`) are **context and are NEVER SCORED** — each has a registered disposition (#50, #21, #38, and `offers-sweep`'s retirement), stated in `lib/sentinel/cadence-collapse.ts`'s own header. **Read that header before investigating a `stopped` entry.**
+- **Revert path:** docs-only, no code or DB change.
+
 ### 2026-09-13 · ⛔ CORRECTED MY OWN INBOX FILING BEFORE THE NIGHTLY PASS DRAINS IT — the fix shape it prescribes is NOT implementable, and its headline rate was a stock quoted as a flow · Claude Code cloud
 
 - **Why urgent rather than tidy:** `2026-09-14T0327Z-the-edition-verify-lane-…` told the pass to *“paginate past 200 … costs `ceil(N/200)` calls”*. That is a **bad instruction sitting in a queue something else will act on**, so it was corrected tonight rather than left for a later pass to discover.
