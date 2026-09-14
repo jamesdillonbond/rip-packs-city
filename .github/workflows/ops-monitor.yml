@@ -97,18 +97,28 @@ jobs:
             exit 1
           fi
 
-  # ── CI status watch (added 2026-07-19) ──────────────────────────────────────
+  # ── CI status watch (added 2026-07-19; corrected 2026-09-14) ────────────────
   # Closes a real detection gap: main's `unit-tests` job sat RED for ~24h
   # completely undetected (monitor inbox 2026-07-19T0306Z). Nothing in the repo
   # or in the scheduled monitors ever read a GitHub Actions conclusion — the
   # sweeps check the DB, Vercel and Sentry, but CI was invisible.
   #
-  # A red ci.yml is only visible in the Actions tab, which nobody polls. This
-  # job reads the latest completed ci.yml run on main and fails ops-monitor if
-  # that run failed, so the existing workflow-failure notification carries it.
+  # 🚨 CORRECTED 2026-09-14 — IT HAD THE SAME BLIND SPOT IT WAS BUILT TO CLOSE.
+  # It took the FIRST element of the runs list — the newest COMPLETED run of
+  # ANY KIND — and called main green when it said `success`. But the shard job is
+  # gated on `code == 'true'`, so a DOCS-ONLY push produces a green run in which
+  # the suite never executed. A red introduced by a code push, followed by any
+  # docs push, therefore read as GREEN here — which is exactly the "red for 24h,
+  # undetected" scenario this job exists for, reintroduced by the docs-only fast
+  # path. Measured the same day in `inherited-status`'s own published summary,
+  # which reported a docs-only commit as "last full-suite run".
   #
-  # Uses the automatic GITHUB_TOKEN (actions: read) — no new secret, and it
-  # cannot touch anything: the permissions block below is read-only.
+  # Now delegates to the shared script, which finds the last run that ACTUALLY
+  # ran the shards (a job NAME in the jobs list is not evidence it ran — skipped
+  # jobs are listed too, with `conclusion: "skipped"`), skips cancelled runs as
+  # inconclusive rather than alarming on supersession, and fails open loudly when
+  # it cannot read the history. One implementation, one test suite
+  # (`__tests__/inherited-main-status-guard.test.ts`), two callers.
   ci-status:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -116,36 +126,13 @@ jobs:
       actions: read
       contents: read
     steps:
-      - name: Latest ci.yml conclusion on main
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      # Pure node + the Actions API. No npm ci — nothing here needs deps.
+      - name: Last run on main that actually ran the suite
+        run: node scripts/check-last-code-ci-on-main.mjs
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          RUN=$(gh api -X GET \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
-            -f branch=main -f status=completed -F per_page=1 \
-            --jq '.workflow_runs[0] | {conclusion, html_url, head_sha, created_at}' 2>/dev/null || echo '')
-
-          if [ -z "$RUN" ] || [ "$RUN" = "null" ]; then
-            echo "::warning::could not read ci.yml runs (workflow renamed or never run?) — not failing the monitor on an unreadable signal"
-            exit 0
-          fi
-
-          echo "$RUN" | jq .
-          CONCLUSION=$(echo "$RUN" | jq -r '.conclusion')
-          SHA=$(echo "$RUN" | jq -r '.head_sha' | cut -c1-8)
-          URL=$(echo "$RUN" | jq -r '.html_url')
-
-          case "$CONCLUSION" in
-            success)
-              echo "CI green on main ($SHA)"
-              ;;
-            cancelled|skipped)
-              # Concurrent-push supersession is normal on this repo — not a signal.
-              echo "::warning::latest ci.yml run was $CONCLUSION ($SHA) — treating as inconclusive"
-              ;;
-            *)
-              echo "::error::CI is $CONCLUSION on main ($SHA) — $URL"
-              exit 1
-              ;;
-          esac
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}

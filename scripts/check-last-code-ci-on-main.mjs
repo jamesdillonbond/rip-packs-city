@@ -90,6 +90,9 @@ export function ranFullSuite(jobs) {
   )
 }
 
+/** Conclusions that are evidence of NOTHING — walked past, never reported. */
+export const INCONCLUSIVE_CONCLUSIONS = new Set(["cancelled", "skipped"])
+
 /**
  * PURE. Given candidate runs newest-first, each already normalised to
  * `{ id, status, conclusion, ranFullSuite, … }`, decide what to report.
@@ -104,10 +107,19 @@ export function decideInheritedStatus(runs, { currentRunId = null } = {}) {
   const considered = runs.filter(
     (r) => String(r.id) !== String(currentRunId) && r.status === "completed" && r.ranFullSuite,
   )
-  const last = considered[0] ?? null
-  if (!last) return { verdict: "unknown", run: null, considered: considered.length }
-  if (last.conclusion === "success") return { verdict: "green", run: last, considered: considered.length }
-  return { verdict: "red", run: last, considered: considered.length }
+  // ⚠ A CANCELLED run says nothing about the tree, and on this repo concurrent
+  // pushes supersede each other routinely — `ops-monitor.yml` reached the same
+  // conclusion independently in 2026-07 ("concurrent-push supersession is normal
+  // on this repo — not a signal"). So a cancelled run is SKIPPED OVER, not
+  // reported: keep walking to the last run that actually reached a verdict.
+  // Redding on it would be a false alarm; calling it green would be worse.
+  const decisive = considered.filter((r) => !INCONCLUSIVE_CONCLUSIONS.has(String(r.conclusion)))
+  const last = decisive[0] ?? null
+  if (!last) {
+    return { verdict: "unknown", run: null, considered: considered.length, decisive: 0 }
+  }
+  const base = { run: last, considered: considered.length, decisive: decisive.length }
+  return last.conclusion === "success" ? { verdict: "green", ...base } : { verdict: "red", ...base }
 }
 
 /** PURE. Exit code for a verdict — only `red` is a failure. */
@@ -122,7 +134,8 @@ export function renderVerdict({ verdict, run }) {
   }
   if (verdict === "unknown") {
     return (
-      "⚠ verdict=unknown — no COMPLETED full-suite CI run found on main in the window. " +
+      "⚠ verdict=unknown — no decisive full-suite CI run on main in the window " +
+      "(most often: no code push recently, which is benign). " +
       "Not failing the push over missing history, but nothing here says main is green."
     )
   }
@@ -168,8 +181,11 @@ export function renderSummary({ verdict, run, considered }) {
   }
   if (verdict === "unknown") {
     lines.push(
-      "No COMPLETED full-suite run was found, so this push is **not** failed over missing history.",
-      "\u26a0\ufe0f If this repeats, suspect `SHARD_JOB_MARKER` drift or the `actions: read` permission \u2014 not the history.",
+      "No **decisive** full-suite run was in the window, so nothing is failed over it.",
+      "",
+      "Most often this is benign: **no code push recently** \u2014 every run in the window was",
+      "docs-only (shards skipped) or cancelled. It is only a defect if it persists across code",
+      "pushes, in which case suspect `SHARD_JOB_MARKER` drift or the `actions: read` permission.",
       "",
     )
   }

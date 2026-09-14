@@ -180,10 +180,39 @@ describe("the edges that decide whether this is safe to gate a push on", () => {
     expect(r.run?.runNumber).toBe(5481)
   })
 
-  it("reds on a cancelled or timed-out full-suite run, not only on `failure`", () => {
-    for (const c of ["cancelled", "timed_out", "startup_failure", "action_required"]) {
+  it("reds on a timed-out or startup-failed full-suite run, not only on `failure`", () => {
+    for (const c of ["failure", "timed_out", "startup_failure", "action_required"]) {
       expect(decideInheritedStatus([RUN(5492, "bbbbbbb", c, true)]).verdict).toBe("red")
     }
+  })
+
+  // ⚠ A CANCELLED run is not evidence either way, and on this repo concurrent
+  // pushes supersede each other routinely — ops-monitor.yml reached the same
+  // conclusion independently in 2026-07 ("not a signal"). Redding a later docs
+  // push over a superseded run is a false alarm; calling it green is worse. So
+  // it is SKIPPED OVER and the walk continues to the last decisive run.
+  it("walks PAST a cancelled run to the last decisive one", () => {
+    const r = decideInheritedStatus([
+      RUN(5494, "ccccccc", "cancelled", true),
+      RUN(5493, "ddddddd", "cancelled", true),
+      RUN(5492, "eeeeeee", "failure", true),
+      RUN(5491, "fffffff", "success", true),
+    ])
+    expect(r.verdict).toBe("red")
+    expect(r.run?.runNumber).toBe(5492)
+    // The population it examined is still reported honestly.
+    expect(r.considered).toBe(4)
+    expect(r.decisive).toBe(2)
+  })
+
+  it("cancelled runs ALONE are `unknown`, never `green`", () => {
+    const r = decideInheritedStatus([
+      RUN(5494, "ccccccc", "cancelled", true),
+      RUN(5493, "ddddddd", "skipped", true),
+    ])
+    expect(r.verdict).toBe("unknown")
+    expect(inheritedExitCode(r.verdict)).toBe(0)
+    expect(renderVerdict(r)).not.toContain("✅")
   })
 
   it("fails OPEN, loudly, when no full-suite run is in the window", () => {
@@ -340,9 +369,13 @@ describe("the job summary distinguishes what the exit code cannot", () => {
     expect(s).toMatch(/not the cause/i)
   })
 
-  it("unknown points at the marker and the permission, not at the history", () => {
+  it("unknown names the BENIGN cause first, then the defect to suspect", () => {
     const s = renderSummary({ verdict: "unknown", run: null, considered: 0 })
-    expect(s).toContain("SHARD_JOB_MARKER")
+    // ⚠ The first diagnosis a reader meets must be the likely one. "No code push
+    // recently" is normal; marker drift is the rare defect. Leading with the
+    // defect trains people to ignore the message.
+    expect(s.indexOf("no code push recently")).toBeGreaterThan(-1)
+    expect(s.indexOf("no code push recently")).toBeLessThan(s.indexOf("SHARD_JOB_MARKER"))
     expect(s).toContain("actions: read")
     expect(s).not.toContain("✅")
   })
@@ -351,5 +384,35 @@ describe("the job summary distinguishes what the exit code cannot", () => {
     for (const n of [0, 1, 7]) {
       expect(renderSummary({ verdict: "unknown", run: null, considered: n })).toContain(`examined ${n} completed run(s)`)
     }
+  })
+})
+
+// ── The OTHER caller, pinned ────────────────────────────────────────────────
+// `ops-monitor.yml`'s `ci-status` job exists because main's unit-tests sat RED
+// for ~24h undetected (2026-07-19). It read `workflow_runs[0]` — the newest
+// completed run of ANY KIND — so once the docs-only fast path landed it called
+// main green off runs whose shards never executed: the very scenario it was
+// built for, reintroduced. It now delegates to the same script, and this pins
+// that so nobody silently restores the shortcut.
+
+describe("ops-monitor's CI watch uses the shared detector, not `workflow_runs[0]`", () => {
+  const OPS = readFileSync(join(ROOT, ".github/workflows/ops-monitor.yml"), "utf8")
+
+  it("NOT VACUOUS: the ci-status job still exists in that workflow", () => {
+    expect(OPS).toContain("ci-status:")
+  })
+
+  it("runs the script", () => {
+    expect(OPS).toContain("node scripts/check-last-code-ci-on-main.mjs")
+  })
+
+  it("no longer takes the newest run of any kind as the answer", () => {
+    // The exact shortcut that produced the blind spot.
+    expect(OPS).not.toMatch(/workflow_runs\[0\]/)
+  })
+
+  it("still reads the API read-only and passes the token the script expects", () => {
+    expect(OPS).toContain("actions: read")
+    expect(OPS).toContain("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}")
   })
 })

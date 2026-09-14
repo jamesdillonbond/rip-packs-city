@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨 `ops-monitor`'s CI WATCH — THE JOB BUILT TO CATCH A RED `main` — HAD THE SAME BLIND SPOT, AND HAS HAD IT SINCE THE DOCS-ONLY FAST PATH LANDED · Cowork cloud
+
+Found by sweeping for siblings of this morning's defect rather than assuming it was a one-off.
+
+⛔ **`ops-monitor.yml`'s `ci-status` exists because *"main's `unit-tests` job sat RED for ~24h completely undetected"* (2026-07-19).** It took the newest completed `ci.yml` run on main — **of ANY KIND** — and called main green when that run concluded `success`. Once `unit-tests-shard` became gated on `code == 'true'`, **a red introduced by a code push followed by any docs push reads as GREEN in the monitor**: the exact 24h-undetected scenario the job exists for, reintroduced by an optimisation added later.
+
+⭐ **Neither change is wrong on its own.** The gate is a sound optimisation; the monitor was correct when written. **The PAIR is wrong, and nothing in the repo connected them.** The transferable question: *when you add a fast path that SKIPS work, ask what ELSEWHERE reads the result of that work.*
+
+✅ **`ci-status` now delegates to `scripts/check-last-code-ci-on-main.mjs`** — one implementation, one test suite, two callers. Pinned three ways: the job still exists, it runs the script, and the newest-run-of-any-kind shortcut has not come back. **Proven non-vacuous** by restoring the shortcut (2 tests red) and by deleting the delegation (2 tests red).
+
+⚠ **Cancelled runs are now WALKED PAST rather than reported.** `ops-monitor` had already reasoned this out once — *"concurrent-push supersession is normal on this repo — not a signal"* — and that judgement would have been LOST in the consolidation had I not read the code I was replacing. Redding a later push over a superseded run is a false alarm; calling it green is worse; walking to the last decisive run is neither. `INCONCLUSIVE_CONCLUSIONS = {cancelled, skipped}`; cancelled-only history is `unknown`, never `green`.
+
+📏 **Also corrected the `unknown` diagnosis, which I had written misleadingly.** It led with *"suspect `SHARD_JOB_MARKER` drift or the `actions: read` permission"*. After this morning's fix the common cause is simply **no code push in the window** — benign. The summary now names the benign cause FIRST, and a test asserts that ORDER, because **leading with the rare defect trains people to ignore the message.**
+
+⛔ **Two self-inflicted traps caught in the same pass, both previously recorded in this repo:**
+- **My ops-monitor comment QUOTED the shortcut it was banning**, so the guard matched its own explanation — the same trap Claude Code hit 12h earlier with the Windows main-module comment. The comment now DESCRIBES the shape.
+- **I inserted a `const` between a JSDoc block and the function it documented**, silently re-pointing the types at the const; `tsc` caught it as two unrelated-looking errors in the test file.
+
+📏 **Verified:** 226 files / 2,946 tests, `tsc` clean, both workflows parse.
+
+Revert: `git revert <sha>` — one predicate set, one walk filter, the `ci-status` step body, one test block, one reference section.
+
 ### 2026-09-14 · ✅ SHIPPED — THE SITE-DOWN ALARM COULD NOT SEE A RECOVERED OUTAGE, AND ITS 2-HOUR WINDOW WAS SHORTER THAN THE GAP BETWEEN ITS OWN RUNS · Claude Code cloud
 
 **The first thing today's GHA-ceiling finding turned into a code fix, and it needs no operator.**

@@ -80,6 +80,29 @@ two independent tests.
 in the admin-only step log, the guard would have kept printing `green` off docs runs indefinitely.
 **Making a result readable is what made it falsifiable.**
 
+### 🚨 AND THE SAME BLIND SPOT WAS ALREADY IN `ops-monitor.yml`, THE JOB BUILT TO CATCH A RED `main`
+
+`ops-monitor.yml`'s `ci-status` job exists because *"main's `unit-tests` job sat RED for ~24h
+completely undetected"* (2026-07-19). It took the newest completed `ci.yml` run on main — **of any
+kind** — and called main green when that run concluded `success`.
+
+⛔ **Once the docs-only fast path landed, that became the same false green.** A red introduced by a
+code push, followed by any docs push, reads as GREEN in the monitor: **the exact 24h-undetected
+scenario the job exists for, reintroduced by an optimisation added later.** Nobody connected the two
+changes, because each is correct on its own.
+
+✅ **`ci-status` now delegates to `scripts/check-last-code-ci-on-main.mjs`** — one implementation, one
+test suite, two callers. Pinned by tests that assert the job still exists, that it runs the script,
+and that the newest-run-of-any-kind shortcut has not come back.
+
+⚠ **Cancelled runs are now WALKED PAST rather than reported.** `ops-monitor` had already reasoned
+this out once — *"concurrent-push supersession is normal on this repo — not a signal"* — and that
+judgement was about to be lost in the consolidation. Redding a docs push over a superseded run is a
+false alarm; calling it green is worse; walking to the last decisive run is neither.
+
+⭐ **The transferable question:** when you add a fast path that SKIPS work, ask what ELSEWHERE reads
+the result of that work. The gate was correct, the monitor was correct, and the pair was wrong.
+
 
 ⚠ **What it still does not cover:** a red introduced on a branch, and any OTHER conditional job whose
 skip is rendered as a pass. The shape is general even though this guard is not.
