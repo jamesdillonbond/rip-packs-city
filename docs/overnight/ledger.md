@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ #112's LAST TWO READERS, found by sweeping the SHAPE instead of trusting my own list — and the column comment now states the trap · Claude Code on Trevor's box
+
+**I closed #112 an hour ago naming five surfaces. A sweep for the shape found two more.** That is the finding, not a footnote: **a shape-based defect's population is every reader of the field, never the list someone wrote down.** Both were live and user-facing.
+
+**1 · `export_wallet_csv` → `/api/profile/export-csv` — a SECOND downloadable CSV.** `coalesce(w.is_locked, false) as is_locked`, rendered `r.is_locked ? "true" : "false"` under an `is_locked` header. Measured on a real wallet after the fix: **19 rows → 10 unknown, 5 locked, 4 verified unlocked.** Those 10 used to export as a definite `false` into a file the user keeps.
+
+⭐ **Fixed with NULL rather than a `lock_known` companion, and the reason is structural:** this function is `RETURNS TABLE(...)`, and Postgres cannot add a column to that with `CREATE OR REPLACE` (42P13) — it needs `DROP` + `CREATE`, which drops the grants and opens a window where the function does not exist. Emitting NULL for "never checked" is equally honest, needs no signature change, and touches no ACL. The route renders it as the third token `unknown`.
+
+**2 · 🚨 `lib/collection/server-moment.ts` was SILENTLY UNDOING my own earlier fix.** `/api/collection-moments` now sends `is_locked: null` + `lock_known`, and `serverMomentToRow` did `isLocked: m.is_locked === true` — **collapsing the null straight back to `false`**, so the collection tab's table would have kept rendering "No" for an unchecked moment. ⛔ **A per-route fix is not a fix if a shared mapper flattens it one layer down.** Now `m.is_locked == null ? undefined : …` with `lockKnown` carried through.
+
+## ✅ The column comment now states the trap, which is the cheapest durable protection shipped today
+
+`wallet_moments_cache.is_locked` read *"Whether moment is locked on Top Shot (from GQL isLocked field)"* — **wrong twice**: that source has been decommissioned for two weeks, and it said nothing about the default. ⭐ **The never-checked fact WAS already documented — on `lock_checked_at`, the SIBLING column, where nobody reading `is_locked` would ever see it.** That is #112's provenance-stripping reproduced in the documentation layer. Both comments now carry the measurement, the per-collection coverage, and the instruction to gate on `lock_known`; a comment travels into every `\d+`, every schema dump and `schema-truth.md`.
+
+## ⚠ A heredoc ate the backslashes out of four regexes, and they failed LOUDLY
+
+Writing the extended guard through a shell heredoc turned `\\s` into `s`, so `/csvEscape\(\s*r\.is_locked…/` became `/csvEscape(s*r.is_lockeds*…/`. **CLAUDE.md's documented trap — and this time it made the assertions FAIL rather than land vacuous, which is the good direction and worth recording as such.** Rewritten with the editor rather than a heredoc.
+
+**Non-vacuity:** all four new assertions fail against the pre-fix files (checked by reverting them and re-running), and the restore used **full-path backup keys** — `md5sum` shows 2 distinct files, the lesson from this afternoon's clobber applied.
+
+**Verified:** `tsc` clean · **1543 files / 17,214 tests green** · `lint:ratchet` baseline **715 / 3063** (run directly, not via `npm run`) · `db:pins:check` **203 of 203 clean**.
+
+**Revert:** `git revert <sha>`; the two DB inverses are in `20260914005453` and `20260914010500`. No data written by either.
+
+⚠ **Remaining, and now genuinely small:** `sniper-feed`'s `r.is_locked ?? false` and `golazos-sniper-feed`'s `Boolean(r.is_locked)` read **`cached_listings` / `ts_listings`, not `wallet_moments_cache`** — a listing's own lock flag with different provenance, so they are NOT this defect and were deliberately left alone. `DashboardClient`'s border colour keys on a wmc-derived lock but is decorative, not a stated claim. **Named so the next sweep does not re-derive them.**
+
 ### 2026-09-13 · ✅ #112's SECOND instance — the collection tab's "Unlocked FMV" told collectors they could sell what nobody checked; and All Day's lock suppression is REMOVED because its premise is measurably false · Claude Code on Trevor's box
 
 **Found by auditing what I had named as the blocker for the All Day item, which turned out to be a defect of its own.** `get_wallet_summary` — a DIFFERENT function from this afternoon's `get_wallet_moments_with_fmv`, feeding a DIFFERENT surface — computed `SUM(CASE WHEN NOT is_locked THEN fmv_usd ELSE 0 END)`. **`NOT is_locked` is TRUE for the column default**, so every unchecked moment was counted as sellable in the collection tab's headline tile. ⛔ **Fixing the first function did not fix this one, and #112's filing named three surfaces and missed this fourth.**
