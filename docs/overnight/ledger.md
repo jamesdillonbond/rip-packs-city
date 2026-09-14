@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⛔ CORRECTION — my "18.5-day-old ask" in #118 is FALSE. The asks are CURRENT, and the real reason not to unblock that queue is a RETAIL price 1,517–3,125 % below the live one · Claude Code cloud
+
+**Docs-only. Corrects a false claim I wrote into #118 and the ledger earlier today. The conclusion (do not ship the `ORDER BY`) is unchanged; the reason was wrong and the true one is worse.**
+
+⭐ **`snapshot-pack-asks` RUNS EVERY ~5 MINUTES off the Dapper STUDIO aggregation — not the dead host** — and succeeded at **11:53 AM PT** (1,993 listed / 49 unlisted). `upsert_pack_ask_state` ends with a drop-UPDATE setting `is_listed = false` for any dist ABSENT from the feed, so **a row still `is_listed = true` after a tick three minutes ago is in the LIVE feed at that price.** All three are.
+
+🚨 **`last_checked_at` IS NOT A CHECKED-AT — IT IS A CHANGED-AT.** The `ON CONFLICT DO UPDATE` carries `WHERE s.is_listed = false OR s.lowest_ask IS DISTINCT FROM EXCLUDED.lowest_ask OR …`, added deliberately because touching it on every listed row every tick cost **386 MB of WAL a day**. So an old `last_checked_at` beside `is_listed = true` means *"still listed, price unchanged since then"* — **fresh information, not stale.** ⚠ **The 70-of-2,042-in-48 h figure I quoted is a CHANGE rate, not a coverage rate**, and must never again be cited as coverage.
+
+⚠ **This is CLAUDE.md's `*_at` trap, and I walked straight into it** — *a `*_at` name is not its contract; the contract is its WRITER's*. I read a WAL optimisation as 18 days of staleness, called it "the repo's flagship class", and built a conclusion on it. **The column name was the only evidence I had, and I never read the writer.**
+
+⭐⭐ **THE REAL REASON THE `ORDER BY` MUST NOT SHIP, measured:** `backfill_topshot_historical_pack_ev` prices each pack at **`metadata->>'retail_price_usd'`** — the PRIMARY DROP price — not the live ask. For these three that is **$24 / $24 / $10 against live asks of $388 / $774 / $19.88 — 1,517 % / 3,125 % / 99 % above retail.** Ordering that lane would publish *"Premium Pack — $24, EV $383"* for a pack purchasable only at **$388**. **A far worse false claim than the one I wrongly cited.** The lane's name says what it is — **historical** — and it must not be made into a live-price lane.
+
+✅ **CORRECTED DIAGNOSIS — a LANE-COVERAGE gap, not staleness and not starvation:** the only lane pricing at the **live ask** is `refresh_atlas_pack_ev` (reads `pack_ask_state.lowest_ask`), and it iterates `pack_drop_pool WHERE pool_source = 'atlas'`, structurally excluding these three (`pool_source = 'gql'`). The only lane that covers them prices at retail. **Neither can currently produce an honest live-price +EV row for a gql-pool pack.**
+
+👉 **REAL EXIT:** give the live-ask lane coverage of gql-pool dists — admit them to the atlas pool, or widen `refresh_atlas_pack_ev`'s population to any dist with a live `pack_ask_state` row and a varied drop pool. ⚠ **A change to a scheduled writer; it needs an equivalence argument over the population first and must not ship on this note alone.**
+
+⭐ **Unchanged and still binding:** do NOT widen the 48 h freshness gate; `7812` remains separately excluded by `count(DISTINCT drop_weight) > 1`; and the dead host is NOT implicated in the ask lane at all — that part of the earlier entry was wrong too.
+
+No revert needed — docs only; nothing was shipped today on this item, which remains the right outcome.
+
 ### 2026-09-14 · FILED (docs-only) · the "noticed in passing" line from two entries ago is now MEASURED — a lane has ticked 4,023 times since it last found a row · Claude Code cloud
 
 ✅ **CLOSES MY OWN CAVEAT.** The entry below flagged frozen backfill cursors and said in terms *"do not act on this line as if it were measured."* It is measured now, and filed as `inbox/2026-09-14T1820Z-…`.
