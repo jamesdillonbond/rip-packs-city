@@ -25,7 +25,21 @@
 // guard would be permanently red — and this repo already records that a
 // permanently-red instrument is indistinguishable from a broken one at a glance.
 // The exclusion here rests on a stated project POLICY (frozen history), not on
-// a claim that some other instrument covers those files. Nothing does.
+// a claim that some other instrument covers those files.
+//
+// ⚠ CORRECTED 2026-09-14: this paragraph used to end "Nothing does", and that
+// is no longer true. `__tests__/live-docs-md-links-resolve.test.ts` walks every
+// NON-FROZEN doc — docs/overnight/inbox/ included — and is what actually caught
+// a broken `../reference/` link in a filing on 2026-09-14 while THIS guard
+// reported all-clear in the same minute. Both were right about their own
+// population; the stale sentence is what made a passing run here read as
+// "the docs links are fine".
+//
+// 👉 SO: which one to run depends on what you touched.
+//      edited CLAUDE.md or docs/reference/**   -> this script (fast, no deps)
+//      edited a FILING, a strategy doc, ledger -> `npx vitest run
+//                                                  __tests__/live-docs-md-links-resolve.test.ts`
+// ⛔ A green run of this script says NOTHING about a link in docs/overnight/.
 //
 // This is a BAN AT POPULATION ZERO: the gated set was brought to 0 broken links
 // in the commit that added this file, so any breakage is new and fails hard.
@@ -165,7 +179,11 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
+// ⚠ The line NAMES its population. It used to read as a verdict on "the docs",
+// and a reader who had just edited a filing took it that way — see the header.
 console.log(
   `Memory-doc link guard: ${linksChecked} relative link(s) across ` +
-    `${files.length} file(s) all resolve.`
+    `${files.length} file(s) all resolve (CLAUDE.md + docs/reference/** ONLY — ` +
+    `docs/overnight/, docs/strategy/ and the rest are covered by ` +
+    `__tests__/live-docs-md-links-resolve.test.ts, not by this).`
 );

@@ -10,6 +10,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⚠ THE FAST LINK GUARD SAID "all resolve" IN THE SAME MINUTE THE SLOW ONE CAUGHT MY BROKEN LINK — its header claimed nothing else covered the gap, and that stopped being true · Claude Code cloud
+
+**Small, and it is the exact trap that cost me a red `main` an hour earlier.**
+
+🚨 **WHAT HAPPENED.** My rate-ranking filing linked `database.md` as `../reference/…` from `docs/overnight/inbox/` (correct depth is `../../`). I ran **`check-memory-doc-links.mjs`** before pushing; it printed *"210 relative link(s) across 25 file(s) all resolve"* and I read that as "the docs links are fine". **It was true and it was not an answer about my file:** that guard's population is **CLAUDE.md + `docs/reference/**` only**. `__tests__/live-docs-md-links-resolve.test.ts` — which walks every NON-FROZEN doc, inbox included — caught it on the full suite and **reddened CI #5523**.
+
+⛔ **AND THE HEADER TOLD ME THE WRONG THING, IN WRITING.** Its scope paragraph ended: *"The exclusion here rests on a stated project POLICY (frozen history), not on a claim that some other instrument covers those files. **Nothing does.**"* **That sentence was true when written (2026-08-22) and the live-docs test has covered those files since.** ⭐ **This repo's own rule is that an exclusion justified by another instrument is a CLAIM about it that must be checked — the mirror case is a guard claiming NO other instrument exists, which rots the same way and is the reason a reader stops looking.**
+
+✅ **FIXED, two parts, both in `scripts/check-memory-doc-links.mjs`:**
+- **The stale claim is corrected and dated**, naming the live-docs test and stating which guard to run for which population: `CLAUDE.md`/`docs/reference/**` → this script (fast, no deps); a **filing**, strategy doc or ledger → `npx vitest run __tests__/live-docs-md-links-resolve.test.ts`. **⛔ A green run of this script says NOTHING about a link in `docs/overnight/`.**
+- **The success line now NAMES its population** rather than reading as a verdict on "the docs" — which is exactly how I read it: `… all resolve (CLAUDE.md + docs/reference/** ONLY — docs/overnight/, docs/strategy/ and the rest are covered by __tests__/live-docs-md-links-resolve.test.ts, not by this)`.
+
+⚠ **THE SCOPE ITSELF IS UNCHANGED AND MUST STAY THAT WAY.** The header's argument for not walking the tree is sound and measured — 558 of 919 relative links across `docs/` were broken in 2026-08-22, concentrated in `docs/sessions` (324), `docs/overnight` (125) and `docs/archive` (59), all frozen history CLAUDE.md forbids rewriting. **Widening this guard would make it permanently red.** Only its self-description was wrong.
+
+**Verified:** `tsc` 0 · 17 docs/memory/link/guard suites **112/112** · the guard itself still reports 210 links across 25 files, all resolving.
+**Revert path:** `git revert` by message — comments and one `console.log` string in one script; no behaviour change.
+
 ### 2026-09-14 · ⛔ CORRECTION TO MY OWN ENTRY ONE HOUR OLD — #117's headline is WITHDRAWN. I filed a defect against a design that already handles it, and was one command from shipping a fix for a non-problem · Claude Code cloud
 
 **Docs-only. This corrects the "dead-host suppressions" entry below, which said *"🚨 THE ARM TREVOR ACTUALLY SAW IS STILL NOT FIXED"*. It is not broken.**
