@@ -33,7 +33,13 @@ const CI = readFileSync(path.join(REPO, ".github/workflows/ci.yml"), "utf8")
 const wf = parse(CI) as { jobs: Record<string, any> }
 
 const GUARD_JOBS = ["memory-docs", "ledger-guard", "register-guard", "inbox-guard", "tree-corruption"]
-const DOCS_ONLY_JOBS = ["docs-tests"]
+// ⚠ A job that RUNS ON DOCS-ONLY PUSHES belongs here, not in the default CODE_JOBS
+// bucket below. `inherited-status` (added 2026-09-13) gates on `code == 'false'`
+// precisely because a docs-only push is the case it exists for — reporting the red
+// that the skipped shards cannot. It was landed without this line and reddened main
+// on its own first run, which is the guard working: an unclassified job defaults to
+// "code job", so a NEW job is never silently exempt.
+const DOCS_ONLY_JOBS = ["docs-tests", "inherited-status"]
 const CODE_JOBS = Object.keys(wf.jobs).filter(
   (j) => j !== "changes" && !GUARD_JOBS.includes(j) && !DOCS_ONLY_JOBS.includes(j),
 )

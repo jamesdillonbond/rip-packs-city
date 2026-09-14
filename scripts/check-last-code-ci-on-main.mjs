@@ -45,6 +45,8 @@
  * turning this into a no-op.
  */
 
+import { pathToFileURL } from "node:url"
+
 /**
  * A run "ran the full suite" iff it contains a shard job. ⚠ Pinned against
  * ci.yml by the sibling test — do not edit one without the other.
@@ -181,4 +183,9 @@ async function main() {
   process.exit(inheritedExitCode(result.verdict))
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) await main()
+// ⚠ `pathToFileURL`, NOT a string-concatenated file URL around argv[1].
+// `import.meta.url` is a URL and argv[1] is an OS path: they line up on POSIX and
+// NEVER on Windows, where main() then silently does not run and the process exits 0.
+// Banned at zero by __tests__/scripts-main-module-guard-works-on-windows.test.ts —
+// and that guard greps RAW source, so this note must not spell the banned form out.
+if (process.argv[1] != null && import.meta.url === pathToFileURL(process.argv[1]).href) await main()
