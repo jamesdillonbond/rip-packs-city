@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · 📏 THE ATLAS TICK MEASURED AT THE LANE LEVEL INSTEAD OF THE COMPONENT LEVEL — the shed self-restored correctly, and the distribution REFRAMES what is wrong: a chronic ~20 % tail hitting the 120 s wall, NOT an expensive median · Claude Code cloud
+
+✅ **First, the shed restored itself exactly as designed.** pg_cron **jobid 495** fired at 7:10 PM PT, set jobid 466 `active = true` and unscheduled itself — **the job row is gone and 466 is running `*/2` again** — which is the pattern proven by positive control at 6:40 PM (see the cron-and-schedulers entry of the same evening). The first three restored ticks: **7:12:00 succeeded 8 s · 7:14:00 succeeded 12 s · 7:16 succeeded**, on a quiet instance (1 active backend, `io_waiters` 1, zero `job startup timeout` in 30 min).
+
+⚠ **I was scheduled to EXPLAIN five components of `atlas_listing_verify_tick(2)` and de-cadence or share-scan whatever was heaviest. I measured the LANE first, and the lane's own history answers a different — better — question.** `cron.job_run_details` for jobid 466, whole retained history, split on today's change points:
+
+| period | runs | failed | p50 | p90 | max |
+|---|---|---|---|---|---|
+| before today | 4,464 | **884 (19.8 %)** | 13 s | **120 s** | 447 s |
+| today, pre-10:00 AM | 300 | **97 (32.3 %)** | 24 s | 121 s | 401 s |
+| the spell, 10:00 AM–12:47 PM | 63 | **54 (85.7 %)** | 120 s | 125 s | 382 s |
+| after the 7:10 PM restore | 3 | 0 | 8 s | 12 s | 12 s |
+
+🚨 **THE FINDING: this lane has been failing roughly ONE TICK IN FIVE for its whole retained history, and that PREDATES every spell.** p50 is 13 s — the median tick is cheap — but **p90 sits exactly on the 120 s statement timeout**, so ~10–20 % of ticks have always been dying at the wall, not merely running slow. The spell took that from 20 % to 86 %; it did not create it.
+
+⛔ **AND THAT INVALIDATES THE OPTIMISATION I WAS ABOUT TO DRAFT.** The scheduled plan was to share the two `DISTINCT ON` scans across the tick and de-cadence the two counts — **all three lower the MEDIAN.** The median is already 13 s and is not what fails. **A fix aimed at p50 can leave a 20 % failure rate exactly where it is.** The sharpened question, which the component EXPLAINs as specified would NOT have answered: **what makes the SLOW ticks slow?** A heavy tail against a cheap median usually means contention — lock waits, a competing writer, or an input whose size varies by two orders of magnitude — not a uniformly expensive scan. ⚠ **Before any rewrite: capture a SLOW tick** (`pg_stat_activity` sampled during one, or `cron.job_run_details` correlated with the writers of `ts_listings` / `cached_listings_v2`), and compare its wait events against a fast one.
+
+⚠ **The 3 post-restore ticks are NOT evidence the lane is now healthy** — p90 in the historical set is 120 s, so roughly one tick in ten is expected to fail even on a good day, and three clean runs cannot see that. **A post-restore verdict needs ~50+ ticks (≈2 h).** Nothing was shipped from this reading. **Revert:** nothing changed; this entry is a measurement and a re-framing.
+
 ### 2026-09-13 · ⛔ DECIDED: **NO `VACUUM FULL` of `net._http_response`** — the leak is FIXED, what remains is a high-water mark, and the reclaim would spend ~10 min of the exact resource that is actually scarce · Claude Code cloud
 
 **Trevor delegated this one** ("make decisions based upon what's best for RPC long term and our users", ~11:00 AM PT). Both reminders that would have executed it are cancelled.
