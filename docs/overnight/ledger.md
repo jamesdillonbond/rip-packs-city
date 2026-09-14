@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · FINDING (docs-only) · 🚨 `rpc_ops_snapshot()` — the function the monitor and the night pass READ — no longer completes inside 45 s · Claude Code cloud
+
+**Filed as #121. Found by accident, verifying my own day's work through it, which is the only reason anyone was watching.**
+
+📏 **MEASURED WITH THE ERROR STRING, NOT THE DURATION.** Two MCP calls died at the 60 s client cap — which proves nothing on its own. A deliberate `SET LOCAL statement_timeout = '45s'` returned **`57014: canceling statement due to statement timeout / CONTEXT: SQL function "rpc_ops_snapshot" statement 1`**. **That is Postgres cancelling.** The function genuinely exceeds 45 s.
+
+⭐ **THE COST IS ONE KEY, bisected in two queries.** `fmv_by_collection` calls `sentinel_fmv_confidence_rows()` **five times, once per collection**, and the **Top Shot call alone** blows a 20 s budget inside `RETURN QUERY` on `SELECT DISTINCT ON (fs.edition_id) … FROM fmv_snapshots WHERE collection_id = $1 ORDER BY fs.edition_id, fs.computed_at DESC`.
+
+⛔ **NOT A MISSING INDEX — checked before proposing one.** The partitions already carry the right shape, including a covering `(collection_id, edition_id, computed_at DESC) INCLUDE (fmv_usd, confidence)`, all `indisvalid`. ⚠ **My first pass "found" it missing on all three partitions, and that was my own filter matching a NAME (`%collection_edition%`) instead of the index DEFINITION** — partition indexes are auto-named. **Assert the property, not the spelling.** I nearly filed a missing index that has been there all along.
+
+⭐ **SO IT IS VOLUME ON AN IO-BOUND INSTANCE, PAID FIVE TIMES.** The 2026 partition is **965 MB**; a `DISTINCT ON` across the whole Top Shot slice touches much of it even index-only. **The fix shape is a PRECOMPUTE, not an index** — the move `rpc_trust_health_precompute` already represents for the trust board. There is no FMV-confidence precompute today (`v_tracked_wallet_fmv_confidence` is wallet-scoped and is not it).
+
+⚠ **AT THE EDGE RATHER THAN BROKEN, which is why nobody noticed.** The same function completed **three times earlier this morning** (16:00Z, 16:12Z, and inside migration `20260914190000`'s own verification block). It crosses the line under load — the chronic saturation class meeting a heavy reader.
+
+🚨 **THE PART THAT MATTERS MORE THAN THE LATENCY: a monitor read that FAILS must not render as "nothing wrong".** That is this estate's most productive defect class pointed at its own instrument. **Before optimising anything, establish what the daytime monitor and the night pass do with a failed `rpc_ops_snapshot()`.** If either prints a clean board, that is the defect.
+
+⛔ **NOT CAUSED BY TODAY'S THREE ADDED KEYS, checked rather than assumed:** `check_function_search_path_drift` timed at **0 ms**, and the other two read tables of 35 and 33 rows. 11 → 14 keys, none measurable against a 45 s budget.
+
+No revert path — read-only, docs-only.
+
 ### 2026-09-14 · ⛔ SECOND CORRECTION IN AN HOUR — #120's diagnosis is WITHDRAWN: the "constant per-set offset" was the PARALLELS, and the instrument I shipped inherited the error · Claude Code cloud
 
 **DB migration `20260914210000_audit_20260914_the_circulation_sampler_was_comparing_base_only_against_a_chain_total`, plus the register withdrawal.**
