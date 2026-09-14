@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🔴 `main` HAD BEEN RED FOR FOUR RUNS — a wallet-verification route shipped with no test, and the `inherited-status` guard is what named the culprit · Claude Code desktop
+
+**Found because my own push inherited it.** CI #5557 (`ba33660`, *"a failed read was being persisted as a whale's holdings"*) failed `Unit tests — shard 1/2`, and the three runs after it were docs-only pushes reporting the inherited red. ⭐ **`scripts/check-last-code-ci-on-main.mjs` named the offender directly** — *"This push is NOT the cause and reverting it will not help"* — so no bisecting was needed. **That guard shipped 09-14 and this is its first real catch.**
+
+**The failure, exactly one test:** `api-route-tsx-test-completeness` — `app/api/profile/verify-challenge/signature/route.ts` is referenced by **no test**. 1 failed / 8,495 passed.
+
+⛔ **ALLOWLISTING IT WOULD HAVE BEEN THE WRONG CALL, and the guard offers that escape.** The route stamps `verified_at` and pays `link_wallet` + referral awards through `resolve_wallet_signature_match`. **"Has no test" and "is not worth testing" are different claims**, and only one of them was true here.
+
+✅ **SHIPPED `__tests__/api-profile-verify-challenge-signature.test.ts` — 13 tests, state-driven mocks so the deep branches are REACHABLE rather than merely present.**
+
+⭐⭐ **THE ASSERTION IT IS REALLY FOR is the three-state one the route's own header names: an unreachable Flow access node must answer "we could not ask" (503, `unavailable:true`), NEVER "your signature failed" (400).** Telling a user their own wallet did not verify because a node was down is this estate's worst honesty sub-class — an account-level false claim. **The test asserts the ABSENCE of the false claim, not the presence of an error string:** no `code` field, and the message must NOT match `/invalid|did not match|failed to verify/`. It also asserts **nothing was recorded** (`lastRpc` null).
+
+⭐ **PROVEN NON-VACUOUS by mutation, not by inspection:** making the `FlowVerifyUnavailable` arm unreachable (`if (false && …)`) reds **exactly that test**, 1 failed / 12 passed, and the route was restored to a byte-identical diff. ⭐ **And it carries its own control** — a genuine rejection still returns 400 with a `code`, so the 503 arm is only meaningful because a real failure is distinguishable from it.
+
+Also covered: fail-closed 401 on both verbs, the 0x+16-hex gate, the **saved-wallet** precondition (a signature proves control of an address, not that the user asked us to associate it), already-verified short-circuits on GET and POST, unparseable body, the lost-race 409, `p_referrer` passed as NULL rather than coerced when it is not a string, and the 10/minute rate limit (each POST costs a Cadence script against a public access node).
+
+- **Verified:** full suite **1,550 files / 17,310 passed**, `tsc` 0, and the rot-guard green.
+- **Revert:** `git revert <sha>` — test-only; no route, DB or prod change.
+
 ### 2026-09-14 · ⭐ THE BOARD HAS BEEN SHOWING A BID PRICE WITH NO AGE — the median standing bid is 12.8 DAYS old, the p90 is 58, and we already had the timestamp · Cowork cloud
 
 **Third item out of the topshotexplorer.com teardown.** Their offer book carries an `Age` column; ours did not. ⭐ **The data was already in our DB and had never been surfaced:** `/api/topshot-offers-indexer` writes `offers.created_at = o.blockTs` — the `OfferAvailable` **block** timestamp, not the insert time. Confirmed in source AND by distribution (25,243 open rows across 15,206 distinct minutes — insert-time cannot produce that shape).
