@@ -118,6 +118,23 @@ describe("POST /api/wallet-search — Golazos wmc path", () => {
     expect(JSON.stringify(body)).not.toContain("coming soon")
   })
 
+  // ⭐ WHY 200 AND NOT 500 — recorded 2026-09-14 because a session re-litigated
+  // this pin, wrote the 500, and only this test caught it. The pin is CORRECT,
+  // and the argument is about CALLERS, not about the status code in the abstract:
+  //   · app/share/[wallet]/ShareEmptyState.tsx guards on `!res.ok` and would
+  //     indeed be defeated by a 200 — but it posts NO `collection` field, so it
+  //     takes the Top Shot path and CANNOT REACH this Golazos branch.
+  //   · app/api/profile/resolve-and-associate sends `nba-top-shot`; smoke-test
+  //     sends no collection. Neither reaches it either.
+  //   · app/api/support-chat is the ONLY caller that can (`effectiveCollectionId`)
+  //     and it reads `data?.error` BEFORE looking at status, so it is already
+  //     correct and a 5xx would gain it nothing.
+  // So no caller both reaches this branch and discriminates on status. Golazos is
+  // one collection inside a multi-collection endpoint; failing the whole request
+  // with a 5xx would be a louder claim than the failure supports.
+  // ⚠ If a NEW caller ever reaches this branch AND gates on `res.ok`/status, this
+  // trade flips — re-derive the caller list before changing the code, and update
+  // this comment rather than deleting the test.
   it("returns a soft 200 error (never a 5xx) when the wmc read fails", async () => {
     state.rpc = { data: null, error: { message: "boom" } }
     const res = await POST(req({ input: ADDR, collection: "laliga-golazos" }))
