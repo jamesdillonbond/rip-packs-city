@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨 THE FLAGSHIP +EV BOARD HAS BEEN EMPTY FOR 17 DAYS WHILE THREE BUYABLE +EV PACKS EXIST — the board is telling the truth, the price lane is not covering them · Claude Code cloud
+
+**Docs-only (#118). Came out of the ONE item the 06:12Z daytime sweep left unactioned — "confirm `/insights/pack-reality` renders an honest empty state" — which it marked low-priority.**
+
+✅ **THE SURFACE IS EXEMPLARY AND PASSES.** It renders four distinct states (read failed · loading · **our prices are stale** · genuinely empty), and I verified the wiring end to end rather than by reading the page: view `v_topshot_pack_reality_ranker_staleness` → route mapping `stale_count: Number(staleRow.qualifying_ignoring_freshness ?? 0)` → the render branch. **The third state is live**, so the board currently says *"Our Top Shot pack prices are stale … 3 packs would otherwise qualify, last priced 17 days ago. This is our data being behind, not a reading of the market."*
+
+⭐ **I THEN NEARLY FILED THE OPPOSITE DEFECT, AND THE DISCRIMINATING TABLE WAS ONE QUERY AWAY.** The three qualifying packs sat at **82–89 % depletion, unrefreshed for 17 days, while 149 of 1,210 Top Shot rows refreshed within 48 h** — which reads exactly like *sold out*, in which case the staleness sentence would be false and the old "No +EV packs right now." would be right. I filed that as the parsimonious reading **and explicitly refused to act on it** (*"absence from a feed is not proof of delisting"*). ⛔ **It was wrong.** `pack_distributions` is FRESH (1,993/2,099 within 48 h, newest **05:13 AM PT today**) and all three were refreshed today with sealed stock remaining: **`461` 270 sealed · `474` 211 · `7812` 83.** **They did not sell out. The board's sentence is TRUE.**
+
+🚨 **SO THE REAL FINDING IS A LANE GAP, AND IT IS USER-FACING ON THE FLAGSHIP BOARD.** `pack_distributions` refreshes these three **daily**; `pack_ev_latest` has not re-snapshotted their **price** since **2026-08-27/28**. One lane sees them, the other stopped. **The top section of `/insights/pack-reality` has shown nothing for 17 days while three genuinely buyable +EV packs exist** — `7812` $19.88 / EV $7.73 · `474` $774.00 / EV $535.17 · `461` $388.00 / EV $21.49, all at ≥40 % FMV coverage. ⭐ **The 48 h freshness gate is working as designed** — refusing to quote a stale price on a buy/no-buy board. **What has not happened in 17 days is fixing the thing it is protecting against.**
+
+⚠ **LINK TO THE DEAD HOST IS CIRCUMSTANTIAL AND LABELLED AS SUCH:** the last snapshot for all three is 08-27/08-28 and `public-api.nbatopshot.com` has been 530/1033 since 08-28 ~17Z (re-measured from pg_net today, still dead). ⛔ **But 149 Top Shot pack-EV rows ARE fresh and the lane wrote at 07:25 AM PT today**, so pack pricing is not uniformly dead. Plausible shape — primary-drop packs need the dead host, the fresh 149 are priced from a live secondary source — **NOT established, do not quote as mechanism.**
+
+👉 **EXIT (revised, and no longer a copy change):** find the writer of `pack_ev_latest.pack_price` and establish why it covers 149 Top Shot packs but not these three. ⛔ **Do NOT widen the 48 h gate** — that quotes a 17-day-old price on a buy/no-buy board, the exact defect the gate prevents. ⛔ **Do NOT add the availability predicate I proposed an hour ago** — availability is now MEASURED and these packs have it, so that change would suppress a TRUE warning.
+
+⚠ **Corrects the 06:12Z sweep**, which called this *"a legitimate empty state … not a stale/broken board"*. Both halves were imprecise: the board is not rendering the market-empty copy at all, and the filter is not genuinely unmet.
+
+No revert needed — docs only; no production state touched.
+
 ### 2026-09-14 · QUIET / QUEUE-ONLY — nightly pass `np-20260914-b1f7` shipped 0, reverted 0 (NO-PUSH, 6th night) · desktop autonomous
 
 ⛔ **COMMITTED 2026-09-14 ~08:05 AM PT, ~7 h after the pass ran, and THREE of its five queued items had already shipped in those 7 h.** The pass wrote to the mount under NO-PUSH; this desktop session fetched (local `main` was **62 commits behind**), fast-forwarded, and re-spliced. ⚠ **Read the body below as a 01:1x PT snapshot, not as current state** — corrections, each re-derived at commit time, not copied from a later entry:
