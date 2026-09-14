@@ -30,6 +30,16 @@ export type WalletStatRowProps = {
   momentCount: number | null
   unlockedCount: number | null
   lockedCount: number | null
+  /**
+   * FMV whose lock state was NEVER CHECKED, and its count. Disclosed under the
+   * Unlocked tile, never added into it: `wallet_moments_cache.is_locked`
+   * defaults to `false`, so counting an unchecked moment as unlocked told the
+   * collector they could sell something nobody had verified (register #112).
+   * Null means the authoritative summary has not loaded — not that the figure
+   * is zero.
+   */
+  lockUnknownFmv?: number | null
+  lockUnknownCount?: number | null
   spreadGap: number | null
   /** Stale-priced share excluded from walletFmv; disclosed under the headline when > 0. */
   staleFmv?: number
@@ -80,6 +90,8 @@ export default function WalletStatRow(props: WalletStatRowProps) {
     momentCount,
     unlockedCount,
     lockedCount,
+    lockUnknownFmv,
+    lockUnknownCount,
     spreadGap,
     staleFmv,
     staleCount,
@@ -184,6 +196,14 @@ export default function WalletStatRow(props: WalletStatRowProps) {
         </div>
         <div className="rpc-stat-value">{formatCurrency(unlockedFmv)}</div>
         <div className="rpc-stat-caption">{unlockedCaption(unlockedCount)}</div>
+        {/* ⛔ Disclosed, never added in. This figure is what the collector is
+            told they could sell, so an unverified moment must not inflate it. */}
+        {lockUnknownCount != null && lockUnknownCount > 0 && (
+          <div className="rpc-stat-caption">
+            {formatCount(lockUnknownCount)} not checked
+            {lockUnknownFmv != null ? ` (${formatCurrency(lockUnknownFmv)})` : ""}
+          </div>
+        )}
       </div>
 
       <div className="rpc-stat-tile">

@@ -58,12 +58,18 @@ describe("PortfolioSummary", () => {
     expect(txt).toContain("8 locked")
   })
 
-  it("SUPPRESSES All Day locks — renders em-dash, never a stale locked count", () => {
+  // ⛔ INVERTED 2026-09-13, NOT DELETED. This assertion is what held the All Day
+  // suppression in place, on the premise that its is_locked flags were "frozen at
+  // a past manual run". Re-derived against the live table: All Day is 99.6%
+  // checked within 7 days, nothing older than 3 days, allday-lock-refresh writing
+  // 326,787 rows a day — the freshest lock data of any collection. The suppression
+  // hid 140,084 genuinely locked moments behind "n/a for this collection", which
+  // is the mirror of a fabricated value: an `unknown` that is actually KNOWN.
+  it("⛔ RENDERS All Day locks — the suppression premise was re-derived and is false", () => {
     const { container } = render(<PortfolioSummary {...base} collectionSlug="nfl-all-day" />)
     const txt = container.textContent!
-    // lockUntracked → lockedCount null → "n/a for this collection", never "8 locked"
-    expect(txt).not.toContain("8 locked")
-    expect(txt).toContain("n/a for this collection")
+    expect(txt).toContain("8 locked")
+    expect(txt).not.toContain("n/a for this collection")
   })
 
   it("shows acquisition-source tiles when there are acquisitions", () => {

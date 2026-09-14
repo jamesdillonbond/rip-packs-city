@@ -14,6 +14,9 @@ export type WalletSummary = {
   unlocked_count: number
   locked_fmv: number
   locked_count: number
+  // Optional: an older deployment of get_wallet_summary does not send these.
+  lock_unknown_fmv?: number
+  lock_unknown_count?: number
   cost_basis: number
   current_fmv: number
   pnl: number
@@ -45,6 +48,9 @@ export type WalletStatRowValues = {
   unlockedCount: number | null
   lockedFmv: number | null
   lockedCount: number | null
+  /** FMV whose lock state was never checked — disclosed, never folded into either side. */
+  lockUnknownFmv: number | null
+  lockUnknownCount: number | null
   bestOfferTotal: number | null
   spreadGap: number | null
   momentCount: number | null
@@ -64,10 +70,24 @@ export type WalletStatRowValues = {
 // loaded; fall back to client-computed totals; emit null (not 0) when the data
 // hasn't arrived yet so the row renders an em-dash placeholder.
 //
-// All Day lock state is suppressed (null → "not tracked") because its is_locked
-// flags are frozen at a past manual run and TS-style locks expire — rendering a
-// stale count as current would be an undetectable lie. Other collections pass 0
-// (means "none locked") vs null (means "concept doesn't apply").
+// ⛔ THE ALL DAY SUPPRESSION IS GONE, AND IT WAS THE MIRROR DEFECT.
+// This used to read: All Day lock state is suppressed (null → "not tracked")
+// because its is_locked flags are "frozen at a past manual run". Re-derived
+// 2026-09-13 and measurably false: All Day is 99.6% checked within 7 days,
+// nothing older than 3 days, with allday-lock-refresh writing 326,787 rows a
+// day — the FRESHEST lock data of any collection. The suppression was hiding
+// 140,084 genuinely locked All Day moments behind "doesn't apply", which is
+// this repo's documented mirror of a fabricated value: an `unknown` that is
+// actually KNOWN is the same defect as a `false` that was never read.
+//
+// ⭐ And the replacement is not a different hardcoded list. Lock state is now
+// decided PER ROW by provenance the database supplies (lock_known, from
+// wallet_moments_cache.lock_checked_at — migration 20260913235902), so no
+// surface has to guess from a collection slug. A per-collection allowlist is
+// the guard-that-names-its-instances shape: it was right when written, wrong
+// within weeks, and nothing made a noise when it went wrong.
+//
+// Other collections pass 0 (means "none locked") vs null (means "not loaded yet").
 export function computeWalletStatRow(input: {
   walletSummary: WalletSummary
   walletTotalFmv: number | null
@@ -75,7 +95,14 @@ export function computeWalletStatRow(input: {
   paginatedTotal: number
   collectionSlug: string
 }): WalletStatRowValues {
-  const { walletSummary, walletTotalFmv, totals, paginatedTotal, collectionSlug } = input
+  // ⭐ `collectionSlug` is INTENTIONALLY NOT DESTRUCTURED. It stays on the input
+  // type because every caller passes it and other adapters use it — but nothing
+  // in this function may read it any more. Lock state is decided per row by the
+  // provenance the database supplies (`lock_known`), never by which collection
+  // the wallet happens to be on. If a future edit needs the slug here, that is
+  // the moment to ask whether a per-collection rule is really being reintroduced;
+  // the last one silently hid 140,084 genuinely locked All Day moments.
+  const { walletSummary, walletTotalFmv, totals, paginatedTotal } = input
 
   // Headline = total − stale, stale disclosed — the same basis as the dashboard,
   // the public profile and the share card (2026-09-03/04/06). Before this the
@@ -105,21 +132,26 @@ export function computeWalletStatRow(input: {
       ? totals.unlockedCount
       : null
 
-  const lockUntracked = collectionSlug === "nfl-all-day"
-  const lockedFmv: number | null = lockUntracked
-    ? null
-    : walletSummary
-      ? walletSummary.locked_fmv
-      : totals.totalCount > 0
-        ? totals.lockedFmv
-        : null
-  const lockedCount: number | null = lockUntracked
-    ? null
-    : walletSummary
-      ? walletSummary.locked_count
-      : totals.totalCount > 0
-        ? totals.lockedCount
-        : null
+  const lockedFmv: number | null = walletSummary
+    ? walletSummary.locked_fmv
+    : totals.totalCount > 0
+      ? totals.lockedFmv
+      : null
+  const lockedCount: number | null = walletSummary
+    ? walletSummary.locked_count
+    : totals.totalCount > 0
+      ? totals.lockedCount
+      : null
+
+  // ⚠ Only the authoritative summary can supply this. The client-computed
+  // `totals` fallback sums the rows LOADED SO FAR and has no provenance, so it
+  // reports null (not 0) rather than claiming nothing is unverified.
+  const lockUnknownFmv: number | null = walletSummary
+    ? (walletSummary.lock_unknown_fmv ?? null)
+    : null
+  const lockUnknownCount: number | null = walletSummary
+    ? (walletSummary.lock_unknown_count ?? null)
+    : null
 
   const bestOfferTotal: number | null = totals.totalBestOffer > 0 ? totals.totalBestOffer : null
   const spreadGap: number | null =
@@ -136,6 +168,8 @@ export function computeWalletStatRow(input: {
     unlockedCount,
     lockedFmv,
     lockedCount,
+    lockUnknownFmv,
+    lockUnknownCount,
     bestOfferTotal,
     spreadGap,
     momentCount,

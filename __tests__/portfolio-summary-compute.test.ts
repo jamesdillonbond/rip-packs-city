@@ -112,7 +112,18 @@ describe("computeWalletStatRow", () => {
     expect(noCount.lockedCount).toBeNull()
   })
 
-  it("suppresses All Day lock figures to null even when walletSummary has them", () => {
+  // ⛔ INVERTED 2026-09-13, NOT DELETED — this test held the suppression in
+  // place, so it has to keep existing and say the opposite. It used to read
+  // "suppresses All Day lock figures to null even when walletSummary has
+  // them", on the premise that All Day's is_locked flags were "frozen at a
+  // past manual run". Re-derived against the live table: All Day is 99.6%
+  // checked within 7 days, nothing older than 3 days, with allday-lock-refresh
+  // writing 326,787 rows a day — the freshest lock data of any collection. The
+  // suppression was hiding 140,084 genuinely locked moments behind "doesn't
+  // apply": an `unknown` that is actually KNOWN, which is the same defect as a
+  // `false` that was never read. Provenance now decides per row (lock_known),
+  // so no surface guesses from a collection slug.
+  it("⛔ does NOT suppress All Day lock figures — that premise was re-derived and is false", () => {
     const r = computeWalletStatRow({
       walletSummary: fullSummary,
       walletTotalFmv: null,
@@ -120,11 +131,28 @@ describe("computeWalletStatRow", () => {
       paginatedTotal: 3,
       collectionSlug: "nfl-all-day",
     })
-    expect(r.lockedFmv).toBeNull()
-    expect(r.lockedCount).toBeNull()
-    // non-lock fields unaffected
+    expect(r.lockedFmv).toBe(400)
+    expect(r.lockedCount).toBe(8)
+    // non-lock fields unaffected, exactly as before
     expect(r.walletFmv).toBe(1000)
     expect(r.unlockedFmv).toBe(600)
+  })
+
+  it("⭐ and a collection slug no longer changes the answer at all", () => {
+    // The durable property. A per-collection allowlist is the
+    // guard-that-names-its-instances shape: right when written, wrong within
+    // weeks, silent when it went wrong. If anyone reintroduces one under any
+    // name, these two diverge.
+    const base = {
+      walletSummary: fullSummary,
+      walletTotalFmv: null,
+      totals: zeroTotals,
+      paginatedTotal: 3,
+    }
+    const allday = computeWalletStatRow({ ...base, collectionSlug: "nfl-all-day" })
+    const topshot = computeWalletStatRow({ ...base, collectionSlug: "nba-top-shot" })
+    expect(allday.lockedFmv).toBe(topshot.lockedFmv)
+    expect(allday.lockedCount).toBe(topshot.lockedCount)
   })
 
   it("nulls bestOfferTotal and spreadGap when there is no offer total", () => {
