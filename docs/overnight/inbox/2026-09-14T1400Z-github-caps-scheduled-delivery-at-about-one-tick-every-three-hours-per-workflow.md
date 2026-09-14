@@ -14,7 +14,38 @@ Found while re-deriving **#100**'s "27 % of hourly" claim before citing it. The 
 4. **A second defect the header does not name:** both 4/h alarms report 100 % `success`, so their badges are green while ~92 % of their ticks never happen.
 
 
-## 1 · The measurement, with a control in both directions
+## 1 · ⭐⭐ THE BEST INSTRUMENT IS THE CHECK'S OWN OUTPUT, AND IT TIES NINE WORKFLOWS AT 7–8
+
+The header says *"re-derive from this check's own output before quoting it"*. **That output is in every daily run's log and nobody had read it.** From the 2026-09-13 run (24 h window, 20 scheduled workflows):
+
+| workflow | observed / expected per 24 h |
+|---|---:|
+| `topshot-sales-history-backfill.yml` | **7** / 96 (7 %) |
+| `site-availability-alarm.yml` | **7** / 96 (7 %) |
+| `offer-fill-backfill.yml` | **8** / 96 (8 %) |
+| `dead-lane-backstop.yml` | **8** / 96 (8 %) |
+| `pinnacle-owner-discovery.yml` | **8** / 72 (11 %) |
+| `rpc-pipeline.yml` | **8** / 72 (11 %) |
+| `ops-monitor.yml` | **8** / 49 (16 %) |
+| `sales-indexers-backstop.yml` | **8** / 48 (17 %) |
+| `pipeline-sentinel.yml` | **7** / 24 (29 %) |
+| `topshot-active-listings-ingest.yml` | 5 / 8 (63 %) |
+| `wallet-backfill-backstop.yml` | 3 / 4 (75 %) |
+| `badge-sync.yml` | 7 / 8 (88 %) |
+| `e2e-smoke.yml` · `migration-parity` · `migration-autorecover` | 4/4 · 3/3 · 3/3 (**100 %**) |
+| the six daily workflows | 1/1 (**100 %**) |
+
+🚨 **NINE WORKFLOWS ASKING FOR 24, 48, 49, 72, 72, 96, 96, 96 AND 96 RUNS A DAY ALL RECEIVED 7 OR 8.** A **4× range of requested cadence collapsing onto a two-value outcome** is not shedding proportional to load — it is a **hard per-workflow ceiling of ~8 runs/day**. Everything asking **≤ 8/day is delivered at 63–100 %**.
+
+⭐ **This SUPERSEDES the 08-29 header's own `min(expected, 5)`** — the rule shape is confirmed and the constant is **~8, not ~5**. That earlier figure was a point estimate from one 24 h window (n = 17) and the header flagged it as such.
+
+⚠ **State the ceiling in RUNS/DAY, not runs/hour** — that is the unit in which it ties.
+
+## 2 · Corroboration from a longer window, and a control in both directions
+
+My own independent measurement from the run list, over **73–388 h per workflow** rather than one day, agrees and adds the long-run view:
+
+
 
 Every figure below is from GitHub's own `schedule`-event run list, counting **actual starts** over the span each workflow has runs for.
 
@@ -32,15 +63,15 @@ Every figure below is from GitHub's own `schedule`-event run list, counting **ac
 
 ⭐ **The ceiling is PER WORKFLOW, not a shared repo budget** — established from the same data rather than assumed: these four ≥1/h workflows deliver **0.257 + 0.290 + 0.308 + 0.312 ≈ 1.17/h between them**, which a single ~0.3/h repo-wide cap could not produce.
 
-## 2 · 🚨 What is sitting under the ceiling
+## 3 · 🚨 What is sitting under the ceiling
 
 **`site-availability-alarm.yml` — the alarm that exists to notice the site is DOWN — fires 23 times in 73.8 hours.** It was created **2026-09-10 21:38 PT**, hours after the Vercel spend-cap pause that took the site and ~20 HTTP lanes down for **~10 hours** (#76). Its blind windows since: **5.58 h · 5.12 h · 4.99 h · 4.61 h · 4.46 h**. ⛔ **An outage shorter than ~3 hours is more likely than not to end before this alarm looks.**
 
 🚨 **AND IT HAS NEVER FAILED — 23 of 23 `success`.** Dead Lane Backstop: **24 of 24 `success`.** **Both badges are green while ~92 % of their ticks never happen.** That is this estate's own lesson — *a check that did not run is indistinguishable from one that passed*, the exact defect `inherited-status` was built for on 09-13 — **applied to alarms rather than to CI, where nothing is watching for it.**
 
-⚠ **AND IT IS NOT ONLY WATCHERS.** `rpc-pipeline.yml` is a **DATA** lane at 3/h → 0.290/h. Its own header says partial failure *"self-heals on the next tick"* — **a load-bearing assumption that the ceiling breaks: the next tick is a median 3.39 h away, not 20 minutes.**
+⚠ **AND IT IS NOT ONLY WATCHERS.** `rpc-pipeline.yml` is a **DATA** lane at 3/h → 0.290/h, receiving **8 of 72**. 🚨 **AND `offer-fill-backfill.yml` ASKS FOR 96/DAY AND RECEIVES 8 — a 12× shortfall on the lane #70 identifies as the largest measured code-side M2 lever.** The go-live gate's biggest available lever is running at a twelfth of its intended rate, and the register discusses its SIZING without anywhere noting that its DELIVERY is capped. `topshot-sales-history-backfill.yml` is in the same position (7 of 96). Its own header says partial failure *"self-heals on the next tick"* — **a load-bearing assumption that the ceiling breaks: the next tick is a median 3.39 h away, not 20 minutes.**
 
-## 3 · What this kills, and what it does not
+## 4 · What this kills, and what it does not
 
 ⛔ **IT KILLS "RUN IT MORE OFTEN" AS A FIX, ESTATE-WIDE.** Tightening a GHA cron on this repo cannot raise delivery above ~0.3/h. Any past or future remedy of the form *"move it to every 15 minutes"* is void, and a workflow already at ≥1/h cannot be improved by re-timing it.
 
@@ -50,7 +81,7 @@ Every figure below is from GitHub's own `schedule`-event run list, counting **ac
 
 ⚠ **ONE OBSERVATION WINDOW, ONE REPO.** Spans are 73–388 h ending 2026-09-14. Re-derive before quoting; a platform-side change would move all five rows together.
 
-## 4 · The cheapest next step, stated so it is not re-derived
+## 5 · The cheapest next step, stated so it is not re-derived
 
 **Pick the alarms that must not be blind for hours — `site-availability-alarm` first — and move them to cron-job.org**, which needs the console and therefore Trevor. ⭐ **Do not re-time them on GHA first to "see if it helps": this measurement is that experiment, already run across five workflows and 24× of cadence.**
 

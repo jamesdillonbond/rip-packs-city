@@ -36,7 +36,11 @@ Revert: `git revert <sha>` — one predicate in `ranFullSuite`, its call site, o
 
 ⛔ **AN UPDATE, NOT A DISCOVERY, AND SAYING SO FIRST IS THE POINT.** `scheduler-liveness.yml`'s header **already recorded this ceiling on 2026-08-29** — *"observed … is approximately `min(expected, 5)`"*, *"⛔ SO ANY CRON ABOVE ~5/DAY HERE IS FICTION, and raising a cadence buys nothing"*. **I re-measured it, which that header explicitly asks for** (*"a point estimate — re-derive from this check's own output before quoting it"*). What is new: a far better estimate, its open discriminator ANSWERED, an instance that postdates it, and a second defect it does not name.
 
-📏 **FIVE WORKFLOWS, A 24× RANGE OF REQUESTED CADENCE, ACTUAL `schedule`-EVENT STARTS:**
+⭐⭐ **THE BEST INSTRUMENT WAS THE CHECK'S OWN DAILY OUTPUT, AND NOBODY HAD READ IT.** The 09-13 `scheduler-liveness` log prints, over 24 h: `topshot-sales-history-backfill` **7**/96 · `site-availability-alarm` **7**/96 · `offer-fill-backfill` **8**/96 · `dead-lane-backstop` **8**/96 · `pinnacle-owner-discovery` **8**/72 · `rpc-pipeline` **8**/72 · `ops-monitor` **8**/49 · `sales-indexers-backstop` **8**/48 · `pipeline-sentinel` **7**/24. 🚨 **NINE WORKFLOWS ACROSS A 4× RANGE OF REQUESTED CADENCE, ALL LANDING ON 7 OR 8 — a hard per-workflow ceiling of ~8 RUNS/DAY** — while everything asking ≤8/day is delivered at 63–100 %. ⭐ **That supersedes the 08-29 header's `min(expected, 5)`: the rule shape is confirmed, the constant is ~8.** ⚠ **State it in runs/DAY; that is the unit in which it ties.** ⭐ **And doing what the header asked — reading its own output — beat my own API arithmetic, which is the weaker instrument here.**
+
+🚨 **ONE OF THE CAPPED LANES IS A GO-LIVE LEVER.** `offer-fill-backfill.yml` asks for **96/day and receives 8** — a **12× shortfall on the lane #70 calls the largest measured code-side M2 lever**. The register sizes that lever repeatedly (+1.1 to +2.7 pt) and **nowhere notes that its delivery is capped**. `topshot-sales-history-backfill` is in the same position (7 of 96).
+
+📏 **CORROBORATED INDEPENDENTLY OVER 73–388 h PER WORKFLOW (rather than one day), FROM THE RUN LIST:**
 
 | workflow | cron | asked/h | **delivered/h** | % | median gap |
 |---|---|---:|---:|---:|---:|
