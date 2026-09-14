@@ -33,6 +33,32 @@ export const maxDuration = 800
 const DISPATCH_BATCH_SIZE = 6
 const TARGET_SPREAD_MS = 9 * 60 * 1000 // spread dispatch starts over ~9 min
 const MAX_RUN_MS = 720_000 // stop pausing past this; fire the remainder fast
+// 🚨 THIS VALUE IS MEASURED-WRONG AND DELIBERATELY NOT FIXED — IT IS BLOCKED ON
+// VERCEL SPEND, NOT ON ANALYSIS. Measured 2026-09-13 (PT): at 20_000 the 9-minute
+// TARGET_SPREAD_MS above is UNREACHABLE at any real cohort size. Reaching it with
+// 20s pauses needs gaps >= 540/20 = 27, i.e. >= 163 tasks in ONE invocation; the
+// cohort split (`of: 4`) puts 23-31 there, so 5 gaps x 20s = 100s. Four waves that
+// day spread 28/23/29/31 dispatches over 1.4/1.0/1.4/1.7 min, not ~9.
+//
+// ⭐ So the cohort split — which REDUCED per-run load — destroyed the pacing that
+// WAS the load-shed, without touching one line of pacing code.
+//
+// ⛔ WHY IT STAYS 20_000 FOR NOW: the fix is a one-constant change to 120_000
+// (verified green, spread then 6-9 min across the observed range), but it raises
+// this route's wall time from ~1.7 min to ~9 min per invocation at 28 invocations/
+// day = ~3.4 EXTRA LAMBDA-HOURS/DAY, on the largest maxDuration on the platform.
+// On 2026-09-10 a Vercel SPEND-CAP pause took the site and ~20 HTTP lanes down for
+// ~10 h, and the cap was raised only slightly afterwards (docs/reference/
+// autonomous-tasks.md, #76). That is a Trevor decision, not an autonomous one.
+//
+// ⚠ The mitigation already in place is the cohort split itself: 28 orchestrators
+// over 100s is ~0.28/s against the 2026-06-10 incident's 8.4/s, so the practical
+// exposure is ~30x better than the incident even while this constant is wrong.
+// Raising it buys a further ~5.4x, which is real but not urgent.
+//
+// 👉 TO UNBLOCK: set this to 120_000 and flip the two bounds in
+// __tests__/seed-wallet-refresh-dispatch-spread.test.ts (they pin TODAY'S broken
+// spread on purpose, so this stays measured rather than forgotten).
 const MAX_PAUSE_MS = 20_000 // cap any single inter-batch pause
 
 async function sleepMs(ms: number): Promise<void> {
@@ -52,11 +78,40 @@ function chunk<T>(items: T[], size: number): T[][] {
 // ~TARGET_SPREAD_MS, capped at MAX_PAUSE_MS, and skipped entirely once we
 // cross MAX_RUN_MS so the tail still gets dispatched within the lambda's
 // budget.
+/**
+ * The pacing arithmetic, extracted so the SPREAD it produces can be asserted at a
+ * realistic cohort size (see `__tests__/seed-wallet-refresh-dispatch-spread.test.ts`).
+ *
+ * ⚠ WHY THIS IS A SEPARATE FUNCTION (2026-09-13). The header comment above has
+ * promised a ~9-minute spread since 2026-06-10, and for most of that time the code
+ * did not deliver one — nothing asserted it, because the pacing lived inline inside
+ * an async function that dispatches real HTTP. Measured on 2026-09-13, four cohort
+ * waves spread 28/23/29/31 orchestrators over 1.4/1.0/1.4/1.7 min instead of ~9.
+ *
+ * The cause was arithmetic, not a failure: the cohort split (`of: 4`) cut each
+ * invocation to ~28 tasks → 6 batches → 5 gaps → a computed pause of 108s, which the
+ * then-20s MAX_PAUSE_MS clamped. Five 20s pauses is the ~100s that was observed. So
+ * the change that REDUCED per-run load destroyed the pacing that WAS the load-shed.
+ *
+ * ⛔ Assert the SPREAD, never the constants — the spread is the property the incident
+ * fix is about, and a cohort-count change moves the constants' meaning silently.
+ */
+export function dispatchPlan(taskCount: number): {
+  batches: number
+  gaps: number
+  pauseMs: number
+  spreadMs: number
+} {
+  const batches = Math.max(1, Math.ceil(taskCount / DISPATCH_BATCH_SIZE))
+  const gaps = Math.max(1, batches - 1)
+  const pauseMs = Math.min(MAX_PAUSE_MS, Math.floor(TARGET_SPREAD_MS / gaps))
+  return { batches, gaps, pauseMs, spreadMs: pauseMs * (batches - 1) }
+}
+
 async function dispatchPaced(tasks: Array<() => Promise<void>>): Promise<void> {
   const startMs = Date.now()
   const batches = chunk(tasks, DISPATCH_BATCH_SIZE)
-  const gaps = Math.max(1, batches.length - 1)
-  const pauseMs = Math.min(MAX_PAUSE_MS, Math.floor(TARGET_SPREAD_MS / gaps))
+  const { pauseMs } = dispatchPlan(tasks.length)
   for (let b = 0; b < batches.length; b++) {
     await Promise.allSettled(batches[b].map((task) => task()))
     const isLast = b === batches.length - 1
