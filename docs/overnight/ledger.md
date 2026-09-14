@@ -10,6 +10,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · SHIPPED · Both guards I shipped this morning had NO CALLER — a concurrent session said so within the hour and it was right · Claude Code cloud
+
+**DB migration `20260914163000_audit_20260914_give_the_two_new_guards_a_caller_in_the_ops_snapshot`. Wiring only — no new logic.**
+
+⭐ **THE OBJECTION WAS NOT MINE.** The Cowork filing `inbox/2026-09-14T1514Z-…` opened `check_suppression_parked_claim_drift()` expecting a false negative, found it correct, and then landed the real criticism: *"The instrument for this class is built; what it needs is a CALLER, not a rewrite."* CLAUDE.md says the same thing from the other side — ***"Ask what RUNS a guard, not only whether it passes."*** I had shipped two ban-at-zero guards and scheduled neither of them to be read by anything. **A guard nothing calls is a comment that happens to compile.**
+
+✅ **`rpc_ops_snapshot()` now carries two more keys** — `suppression_parked_claim_drift` and `backward_cursor_rewinds` — so the daytime monitor and the night pass see them in the readout they already take. **Verified live: 13 keys (was 11), both new keys read `jsonb_array_length` = 0, `security.invariants` still `[]`.**
+
+⛔ **DELIBERATELY NOT wired into `get_pipeline_alerts()`.** Neither finding is worth paging for, and a new arm on a 16.7 kB alert function is a far larger blast radius than the thing it reports. The snapshot is a READER, which is the right tier for a claim-hygiene check.
+
+⚠ **FULL-BODY WRITE, handled as CLAUDE.md requires:** the body was re-read from `pg_get_functiondef` and **re-checked immediately before apply (length 4257, unchanged)** so a concurrent session's edit could not be silently reverted. The migration asserts in-transaction that **all eleven pre-existing keys survived**, not merely that the two new ones arrived.
+
+⛔ **TWO SELF-INFLICTED GUARD REDS CAUGHT BEFORE THE PUSH, both the same shape as the one that reddened main on 09-13 — a COMMENT tripping a guard that reads raw source.** (1) My header quoted the `pipeline_fails_24h` upstream-signature pattern; `ops-snapshot-upstream-signature-matches-breaker-guard` extracts it with a comment-blind regex and **requires exactly one occurrence**, so quoting it in prose would have made the file unreadable to its own guard. Reworded, and the header now says why the pattern is not quoted. (2) My `anon-exec:` marker spanned three lines; that detector is **per line** and needs the token and the function name together. ⭐ **Both were found by running the guards locally before pushing, which is the only reason this entry is not a revert.**
+
+**Revert:** re-apply `20260902035928_audit_20260902_ops_snapshot_fails_24h_separates_upstream_outages_from_our_own_failures.sql` (the same body minus the two keys).
+**Target metric:** the two keys stay at 0, and — the falsifier that matters — they appear in the next daytime-monitor readout rather than existing only in `pg_proc`.
+
 ### 2026-09-14 · 🚨 #114's LIVE HALF IS **15** DASHBOARDS, NOT FIVE — and eleven of them "handle errors" against a shape the server never sends · Claude Code desktop
 
 **Docs + one instrument. Nothing published, and Claude Desktop's artifact store was NOT modified.**
