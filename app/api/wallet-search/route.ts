@@ -1353,21 +1353,28 @@ export async function POST(req: NextRequest) {
       const detail = err instanceof Error ? err.message : String(err)
       console.error("[wallet-search] Failed to resolve wallet or fetch owned IDs:", detail)
       // ⛔ "Please try again" IS A FALSE CLAIM FOR A COMPUTATION-LIMIT FAILURE.
-      // The unpaginated getIDs() below blows Flow's per-script computation limit
-      // on a large enough collection (measured 2026-09-14 in production: Top Shot
-      // used 100,134 and All Day 217,993 against a limit of 100,000). That ceiling
-      // is a property of the wallet's SIZE and this script — not of the moment —
-      // so the retry the old copy invited could never succeed, and the wallet ends
-      // up with zero cached rows and invisible to the platform.
-      // The honest answer is that WE cannot read it in one pass, not that the user
-      // was unlucky. Fixing the plumbing (page getIDs() the way
-      // lib/chains/flow/allday-cadence.ts and cadence/pinnacle-wallet.ts already do)
-      // is filed separately; this only stops the message from lying meanwhile.
+      // The unpaginated getIDs() below can blow Flow's per-script computation limit
+      // (production 2026-09-14: 100,134 and 217,993 against a limit of 100,000).
+      // That ceiling is a property of the WALLET and this script, not of the moment,
+      // so the retry the old copy invited could never succeed — the wallet ends up
+      // with zero cached rows, invisible to the platform, retried forever.
+      //
+      // ⚠ DO NOT RE-ADD A CAUSE TO THIS MESSAGE. The first version of this fix said
+      // "holds too many moments", which was inferred from the words "computation
+      // limit" and is FALSE: measured against mainnet the same day, a 39,955-moment
+      // wallet SUCCEEDS (HTTP 200, 1.9 MB of ids) while 0xe1f2a091f7bb5245 FAILS at
+      // 100,134. The discriminator was in the error string all along — the failing
+      // trace goes through TopShotShardedCollection, whose getIDs() walks shards —
+      // so size is not the trigger. The copy now says only what is established:
+      // WE cannot read it, it is our side, and retrying will not help.
+      //
+      // Fixing the plumbing (page getIDs() the way lib/chains/flow/allday-cadence.ts
+      // and cadence/pinnacle-wallet.ts already do) is filed separately.
       const tooLarge = /computation limit exceeded|Error Code: 1110/i.test(detail)
       return NextResponse.json(
         {
           error: tooLarge
-            ? "This wallet holds too many moments for us to read in one pass. That is a limit on our side, not a problem with the wallet — retrying will not help."
+            ? "We could not read this wallet in one pass. That is a limit on our side, not a problem with the wallet — retrying will not help."
             : "Failed to fetch wallet data. Please try again.",
           rows: [],
           summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },

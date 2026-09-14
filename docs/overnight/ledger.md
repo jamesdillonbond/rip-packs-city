@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨 I SHIPPED A CAUSE I HAD INFERRED, AND MAINNET REFUTED IT 90 MINUTES LATER — the wallet-search failure is NOT about size, and the discriminator was in the error string I had already read · Claude Code desktop
+
+**Corrects my own entry from earlier today. The fix stands; its EXPLANATION was wrong, and it had reached user-facing copy.**
+
+🚨 **THE REFUTATION, measured against mainnet via `pg_net` (the plane production calls on), not reasoned:**
+
+| wallet | moments | result |
+|---|---:|---|
+| `0xf77bf547fccf6656` — the **largest saved** Top Shot wallet | **39,955** | ✅ **HTTP 200**, 1.9 MB of ids |
+| `0xe1f2a091f7bb5245` — the one production keeps failing on | unknown (0 cached) | ⛔ **HTTP 400**, `computation limit exceeded (used: 100134)` |
+
+⭐⭐ **SO SIZE IS NOT THE TRIGGER, AND THE DISCRIMINATOR WAS IN THE ERROR STRING ALL ALONG: the failing trace runs through `ef4d8b44dd7f7ef6.TopShotShardedCollection:137:36`.** A **sharded** collection's `getIDs()` walks its shards; the succeeding wallet is nearly **40k moments on a plain `MomentCollection`** and finishes comfortably.
+
+⛔ **THE METHOD ERROR, and it is a new spelling of a rule this file already carries.** CLAUDE.md says *read the ERROR STRING, never the duration.* **I read PART of the error string — "computation limit exceeded" — and inferred the rest.** The half I skipped named the cause. ⚠ **Reading an error string is not the same as reading all of it; the clause you skip is the one that discriminates.**
+
+🚨 **WHY THIS MATTERED RATHER THAN BEING TIDY: the inference had been SHIPPED AS USER-FACING COPY.** The fix's first message read *"This wallet holds too many moments for us to read in one pass"* — a claim about the user's wallet that is measurably false, since a 39,955-moment wallet is fine. **I replaced a false claim of transience with a false claim of cause.** ✅ **Corrected to state only what is established** — *"We could not read this wallet in one pass. That is a limit on our side … retrying will not help."* — and a test now **forbids re-asserting the refuted cause** (`not.toMatch(/too many moments|too large|too big/i)`), so it cannot creep back.
+
+⛔ **AND IT INVALIDATES MY OWN POPULATION WORK: `cached_moment_count` IS THE WRONG YARDSTICK.** The "8 saved wallets ≥ 5,000 moments (7 of them Top Shot, largest 39,955, two verified)" figure is real but sizes **a set that is not the affected set**. ⚠ **The real population is "wallets whose Top Shot collection is SHARDED", which is not a column in this database and remains UNMEASURED.** The filing's §4 is corrected in place rather than deleted.
+
+✅ **What survives unchanged:** the failure is deterministic, the original *"Please try again"* was a false promise, and the honest-copy fix stands.
+
+- **Also committed this pass:** the `rpc-daytime-monitor` 18:16Z filing, which the task wrote to the mount and could not push (snapshot cancels under mild IO → #121 step 3; `ts_listings` ~19 min stale → #42 collateral). Indexed; counts repaired by `inbox:index:fix`.
+- **Revert:** `git revert <sha>`. No DB, no schema, no prod state.
+
 ### 2026-09-14 · 📋 THREAD CLOSE-OUT (Cowork) — the partial-read rule is in CLAUDE.md, and the file is now at EXACTLY 40,000 · Cowork cloud
 
 Closing this thread before it is archived. Everything below is already shipped and verified except where it says otherwise.

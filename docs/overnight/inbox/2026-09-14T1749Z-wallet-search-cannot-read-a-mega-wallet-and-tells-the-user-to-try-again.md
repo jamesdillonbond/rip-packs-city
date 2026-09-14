@@ -1,5 +1,13 @@
 # ⚠ `/api/wallet-search` cannot read a mega-wallet at all, and tells the user to **"Please try again"** — a retry that can never succeed
 
+> 🚨 **CORRECTION, SAME DAY (~13:05 PT) — THE HEADLINE CAUSE BELOW IS REFUTED, BY MEASUREMENT, AND THE WORD "mega-wallet" IN THE FILENAME IS PART OF THE ERROR.** I inferred from the words *"computation limit exceeded"* that the trigger was wallet SIZE. It is not. Run against mainnet via `pg_net` (the plane production calls on), the **largest saved Top Shot wallet — `0xf77bf547fccf6656`, 39,955 moments — SUCCEEDS**: HTTP 200, a 1.9 MB body of ids. The failing wallet `0xe1f2a091f7bb5245` returns HTTP 400 at **100,134** units.
+>
+> ⭐ **THE DISCRIMINATOR WAS IN THE ERROR STRING THE WHOLE TIME AND I READ PAST IT: the failing trace goes through `ef4d8b44dd7f7ef6.TopShotShardedCollection:137:36`.** A **sharded** collection's `getIDs()` walks its shards, and that is what exceeds the budget — the succeeding wallet is nearly 40k moments on a plain `MomentCollection`. **CLAUDE.md's rule is "read the ERROR STRING, not the duration"; the failure mode here is reading *part* of the error string and inferring the rest.**
+>
+> ⛔ **WHAT THIS INVALIDATES BELOW:** §1's framing ("on a large enough collection"), the §2 phrase "a property of the wallet's size", §3's "mega-wallet" framing, and the §4 population work — **`cached_moment_count` is the WRONG YARDSTICK**, so the "8 saved wallets ≥5,000" number sizes a set that is not the affected set. ⚠ **The real population is "wallets whose Top Shot collection is SHARDED", which is not a column in this database and was not measured.**
+>
+> ✅ **WHAT SURVIVES, and it is the part that mattered:** the failure is deterministic, the old copy's "Please try again" was a false promise, and the shipped fix stands — **with its own cause removed.** The message first read *"holds too many moments"*, which is this same inference shipped as user-facing copy; it now says only *"We could not read this wallet in one pass … retrying will not help."* A test forbids re-asserting the refuted cause.
+
 *Filed 2026-09-14 ~10:49 AM PT by Claude Code (desktop). **READ-ONLY — nothing changed.** Found in a production runtime-error sweep, not by an alarm.*
 
 ---

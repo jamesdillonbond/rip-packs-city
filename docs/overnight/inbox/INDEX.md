@@ -1,4 +1,4 @@
-# Inbox index — 505 live filings
+# Inbox index — 506 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -30,7 +30,9 @@ failure it documents.
 
 ---
 
-## 2026-09-14 — 13 filings
+## 2026-09-14 — 14 filings
+
+- [🟡 **Daytime monitor — 2026-09-14T18:16Z: `rpc_ops_snapshot()` still cancels under only MILD elevated IO, and the Top Shot sniper feed ran ~19 min stale** — both filed as quiet-window RE-MEASURES, not conclusions (bears on #121 / #42)](2026-09-14T1816Z-snapshot-still-cancels-under-mild-load-and-sniper-feed-staleness.md)
 
 - [⏱ **A lane has ticked 4,023 times since it last found a row, reports `ok` every time, and its cursor has not moved in 39 days**](2026-09-14T1820Z-a-lane-has-ticked-4023-times-since-it-last-found-a-row.md) — *(Claude Code, cloud. **READ-ONLY — nothing unscheduled.**)* `topshot-pack-opens-history-backfill` (pg_cron **jobid 56**, 4×/hour) last found rows on **2026-08-01**; **4,023 runs since**, ~100 % `ok`, `rows_found` 0 every day, and cursor `topshot_pack_opens_history_backfill` parked at **61,808,846** since **2026-08-06 22:11Z**. ⭐ **It is not broken-and-never-worked** — it found **38,849** rows 07-29→08-01. ⭐ **Two states, separated by date:** the cursor ADVANCED through empty ranges 08-01→08-06, then stopped advancing entirely while the job kept succeeding. ⛔ **The terminal state is NOT established:** "reached its floor" and "exits early and still reports ok" produce identical `pipeline_runs` rows, and the floor constant lives in the edge function (⚠ `get_edge_function` hands back live gate keys — redact). **Cost is the same either way:** ~96 runs/day, ~35,000/year for nothing on an IO-budgeted instance, plus the doctrine cost — **a permanently-zero lane trains the next reader to skip it** (the jobid-55 / badge-sync reasoning, sign flipped). ✅ **Control: parked-ness is not universal** — `topshot_offer_fill_backfill` and `golazos_sales_v1_backfill` both moved today; `topshot_flowty_backfill` (#3) and `allday_pack_opens_backfill` (#102(a)) are frozen CORRECTLY. **What singles this one out is that it is frozen while its scheduler still fires 96×/day.** ⛔ **Do NOT unschedule on this filing alone** — if paused rather than finished, that turns a recoverable gap permanent. ⭐ Surfaced by `event_cursor_watermarks.changes_observed` (migration `20260914220000`), which the old schema could not express.
 

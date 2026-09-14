@@ -171,7 +171,11 @@ describe("wallet-search — a wallet we CANNOT read must not be told to retry", 
 
     // ⭐ Assert the ABSENCE of the false claim, not merely the presence of copy.
     expect(String(body.error)).not.toMatch(/please try again/i)
-    expect(String(body.error)).toMatch(/too many moments|one pass/i)
+    expect(String(body.error)).toMatch(/could not read this wallet|one pass/i)
+    // ⛔ And it must NOT assert a CAUSE. "too many moments" was the first version
+    // of this copy and is measurably false: a 39,955-moment wallet succeeds while
+    // the failing one goes through TopShotShardedCollection. Size is not the trigger.
+    expect(String(body.error)).not.toMatch(/too many moments|too large|too big/i)
     expect(String(body.error)).toMatch(/retrying will not help/i)
   })
 
