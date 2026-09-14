@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ #113's suspect CONFIRMED AND FIXED IN THE SAME QUIET WINDOW — `backfill_wmc_metadata_from_editions` was running a generic plan that INVERTS its join and reads 62× the buffers; it now plans with its parameter values · Claude Code cloud
+
+**Measured ~6:4x PM PT, quiet instance** (0 active backends, 0 in IO wait, no maintenance op), warm, same wallet (`0x366d02c3…` / Top Shot, 1,184 rows), on the **read-only equivalent** of the UPDATE's FROM/WHERE projecting the same columns — ⛔ **never `EXPLAIN ANALYZE` the UPDATE itself, it executes:**
+
+| plan | buffers | time |
+|---|---|---|
+| custom (values as literals) | **1,175** | 23.7 ms |
+| generic (`PREPARE` + `force_generic_plan`) | **73,414** | 1,030.2 ms |
+
+**62× the buffers, 43× the time, same 0 rows out.** ⭐ **And the generic plan does not merely lose an index — it INVERTS THE JOIN:** it Parallel Seq Scans all 21,423 rows of `editions`, probes `wallet_moments_cache` once per edition (21,423 loops), and applies the wallet/collection predicate as a **Filter** afterwards. The custom plan bitmap-scans `idx_wmc_lock_wallet_coll` and touches 1,184 rows. That is #52's shape, and it explains #113's production symptom exactly: **1,320 disk reads per call** and three concurrent calls stuck in `IO:DataFileRead` at 21 s during the 6:27 PM burst.
+
+**Why the hot path gets the bad one:** plpgsql caches a plan per SESSION and switches to generic after **five** executions; PostgREST pools and reuses connections, so calls 6+ on a warm connection — nearly all 42,017 of them — ran the inverted plan.
+
+**Shipped:** migration `20260914015500_audit_20260913_backfill_wmc_metadata_plans_with_its_parameter_values` (applied 6:5x PM PT after re-reading the live body — md5 `73f93a59…` unchanged, one overload, SECDEF, `search_path` + `statement_timeout=120s`, grants anon/authenticated **false**). Same signature, same SECDEF and config, same grants, and **the UPDATE is character-for-character identical apart from the two parameters becoming `$1`/`$2`**; it now runs through `EXECUTE … INTO … USING`, which plans with the VALUES every call. `check_secdef_anon_exec_drift()` clean.
+
+⛔ **The `IS NULL` branches were NOT removed and must not be** — five of six callers pass both values, but `app/api/ingest/candy-editions/route.ts:331` passes a NULL wallet for a deliberate collection-wide sweep. The fix makes the plan see the values; it does not drop the guard.
+
+✅ **Positive control, the point being that the OLD body degrades at call six:** eight consecutive calls in one session — **13 ms, then 4 ms flat through call 8** (avg 6 ms for calls 1–5, 4 ms for 6–8). No step at the sixth call, which is where the generic plan used to take over. A live call returns 0 for that wallet, matching the read-only probe.
+
+**Revert:** `git revert` the code commit, then re-apply the CREATE from the body recorded in this migration's header (the pre-change md5 is `73f93a593825f46b6dd3b51a3a3755d9`). **Not yet measured:** whether this moves the lane's real-world cost — re-read `pg_stat_statements` for this function after a day of traffic; its 1,320 reads/call is a 33-day average that now spans a change point, so it must be SPLIT, not pooled.
+
 ### 2026-09-13 · ⛔ I PUSHED A CORRUPTED `known-issues.md` TO `main` AND CI CAUGHT IT — a `$`-token in a replacement STRING injected 950 KB of the file into itself; repaired 4 min later, and the trap now has a sixth instance and a NEW trigger · Claude Code cloud
 
 **What happened.** Extending register #113 with a two-`rep()` script whose replacement was passed as a **string**, not a function. The replacement prose contained a markdown code span quoting a regex — `` `^[0-9]+:[0-9]+$` `` — and **the trailing `$` immediately followed by the closing backtick is the `` $` `` replacement token, "everything before the match"**, so the preceding ~950 KB of the file was spliced in mid-document. `docs/reference/known-issues.md` went **1,782 → 3,526 lines**, duplicating every numbered item, both section headings and the status index. Committed and pushed as **`b5af77544`**; **CI run 5460 went red** on the index guard; repaired in **`a3837ec19`** by restoring the parent's file, re-applying the edit with `s.replace(old, () => neu)`, regenerating the index and gating the push on the suite's exit code. Final: 1,785 lines, one index block, one Open heading, #113 present once, 31 guard tests green. **No other file was touched and nothing reached production** — `known-issues.md` is documentation, the register's content is unchanged apart from #113's intended additions, and the doubled state lived on `main` for ~4 minutes.
