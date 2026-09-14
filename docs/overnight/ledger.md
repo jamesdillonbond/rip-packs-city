@@ -10,6 +10,63 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ SHIPPED (artifacts + skill + guard) — EVERY Cowork dashboard rendered a FAILED read as an EMPTY result set: `extractRows` never threw, so the honest `catch` branch every artifact already had had NEVER FIRED · Cowork cloud
+
+**Found while closing the other session's two open artifact items.** Not hypothetical, and not a shape argument — measured against the live server.
+
+🚨 **THE DEFECT.** Every artifact under `docs/cowork-skills/` unwraps `window.cowork.callMcpTool` through its own copy of `extractRows(raw)`, and every one of them wraps the call in a `catch` that renders an honest *"Some checks could not run"*. That catch was unreachable, because the helper returned instead of throwing:
+
+| failure shape | what `extractRows` returned |
+|---|---|
+| `{error:{name,message}}` — **verbatim what the live Supabase MCP server answers for a missing relation, measured 2026-09-14 03:2x Z** | `[raw]` — one junk row |
+| `{isError:true, content:[{text:"permission denied for view …"}]}` | `[]` |
+| `{isError:true, content:[{text:"canceling statement due to statement timeout"}]}` | `[]` |
+| genuine empty result set | `[]` — **indistinguishable** |
+
+`extractRows` never read `isError` at all. Replayed through `rpc-insights-health`'s own verdict logic, a query that NEVER RAN published:
+
+> **"7 surface(s) have an EMPTY backing view — investigate."** — red dot, seven `–` cells each pilled `empty`, `errored` flag false.
+
+A renamed view, a revoked grant or a statement timeout was rendered as **total data loss on the public insights estate**. This is the repo's fabricated-value shape (`?? 0`, `|| 1`) at the transport layer, and it is the MIRROR in its worst direction: a KNOWN-healthy estate reported as broken. Direct sibling of this morning's `wallet-search` fix (a failed per-moment enrich asserting `isLocked: false`) — **same class, shipped the same day, found by looking for it.**
+
+✅ **FIX.** First line of the object branch in all three repo artifacts:
+
+```js
+if(raw.isError===true||(raw.error&&typeof raw.error==="object")) throw new Error(...);
+```
+
+plus `throw` (not `return []`) when a non-empty string parses to nothing, and an explicit `if(!s) return []` so a blank body stays empty. **Only `null`, `""`, or a payload that parses to `[]` may return `[]`.**
+
+✅ **GUARD — behaviour, not shape.** `__tests__/artifact-helpers-do-not-render-failure-as-empty.test.ts` lifts each file's OWN helper out of its `<script>` by BRACE-MATCHING (not a character slice — that is the trap `failed-enrichment-does-not-assert-lock-state` fell into 12 hours ago) and runs a 10-payload table through it. 5 failure arms must throw; 5 arms — genuine empty, genuine rows, the untrusted-data wrapper, `null`, blank text — must NOT, which is the non-vacuity control against a helper that throws unconditionally. It asserts the population is ≥ 3 rather than passing on an empty directory. **Proven non-vacuous:** reverting `rpc-security-drift.html` alone reds it with `expected 'empty' to be 'throw'`; restoring it greens.
+
+📌 **`rpc-artifact-ops` skill updated** with the rule and the copy-the-estate-helper instruction, and the bundle repacked (guard: 10/10 match).
+
+⚠ **NOT CLOSED: the five LIVE dashboards still carry the old helper.** They live in OneDrive, outside both connected folders, so no session on this box can reach them — `list_artifacts` / `update_artifact` are Cowork-desktop-only. **The repo copies are a mirror, not the running code.** Next desktop Cowork session: re-copy the helper from `docs/cowork-skills/rpc-insights-health.html` into all five and `update_artifact` each.
+
+Revert: `git revert <sha>` (docs + one new test file only; no app code touched).
+
+### 2026-09-13 · 📏 MV STALENESS RESOLVED — it was the INSTRUMENT, not the views. `last_autoanalyze` cannot measure a materialized view, and it reported a 51-minute-old MV as 16 days stale · Cowork cloud
+
+Closes the item the other session left **inconclusive**.
+
+⛔ **THE BAD INSTRUMENT.** Postgres stores **no refresh timestamp for a materialized view** — there is no such column. The available proxy, `pg_stat_all_tables.last_autoanalyze` / `last_analyze`, only fires when autovacuum's row-churn threshold is crossed, so a small MV that is fully rewritten on every refresh can go months without one. Measured 2026-09-14:
+
+| MV | analyze proxy said | `cron.job_run_details` said |
+|---|---|---|
+| `mv_topshot_pack_reality_top_ev` | **16 days stale** | succeeded **51 minutes ago** (84 runs/7d, 2 fails) |
+| `topshot_set_completers_mv` | **1970 epoch — never** | succeeded **22 h ago**, daily job, 7/7 runs |
+| `mv_topshot_pack_reality_dist` / `_stats` | 10 h / 1 d | 02:42Z / 02:30Z — on cadence |
+
+All **11** scheduled MV refresh jobs are `active` and succeeding. **The proxy was the defect; the estate is healthy.** A dashboard that prints "MV age" from analyze timestamps publishes a fabricated staleness reading — an unknown rendered as a definite number.
+
+✅ **AUTHORITATIVE INSTRUMENT** (now in `rpc-artifact-ops`): `cron.job_run_details` joined to `cron.job`, `max(start_time) filter (where status='succeeded')`. Same discipline as CRON-30S — *never conclude health from the thing's own stats; cross-read the runner's history.*
+
+📌 **The one real finding underneath it:** `mv_flowty_first_activations` / `mv_flowty_loans_daily` / `mv_flowty_sales_daily` have **no refresh job at all** and are frozen at **2026-05-14** (754 / 193 / 269 rows). They are served by `/api/admin/flowty-analytics` — which **already handles this honestly**: a 2026-09-09 pass documented the freeze inline and the route derives `refreshedAt` from `max(day)` of the data itself. Admin-only, dated from its own rows. **No action; recorded so the next pass does not re-open it.**
+
+✅ **Also verified, closing the other session's second item:** the connector UUID hardcoded in all three repo artifacts, `24ab6d77-…-669cc9535ef8`, is the live Supabase `installedServerId` and is currently `connected`. ⚠ It is an INSTALLATION id, not a product id — reinstalling the Supabase connector changes it and silently breaks every artifact that hardcodes it. With the `extractRows` fix above, that now surfaces as an error banner instead of "all surfaces empty".
+
+⭐ **`fmv_snapshots` partitions, for the `rpc-qa-scorecard` fix:** `_2025`, `_2026` and `_2027` all exist. A hardcoded `fmv_snapshots_2026` returns **zero rows from 2027-01-01** and renders as "no data", not as an error. The correct pattern is the PARENT `fmv_snapshots` with an explicit `computed_at >=` bound so the planner prunes — which is what `20260814223339` and `20260902054902` already establish for the app.
+
 ### 2026-09-13 · ✅ #113 PART (b) EXONERATES THE PARALLEL-KEY RESOLUTION (~1,000× off the suspected cost — do NOT rewrite it), and #85's bulk-ageing lever is REJECTED by a direct 50-listing test with a positive control · Claude Code cloud
 
 - **(b) measured, quiet window** (`io_waiters` 0, 0 other active backends). `UPSERT_CHUNK = 200` confirmed in source. READ-ONLY reconstruction of the SELECT half only — the INSERT was never EXPLAIN ANALYZEd. **A batch where all 200 rows RESOLVE to parallels: 7.573 ms, 1,424 shared hit + 10 read**, both lookups index scans. A first batch read 70 ms but had `rows=0` on all 200 loops with the `editions` EXISTS `never executed`, so it did not exercise the path — reported only to say so.
