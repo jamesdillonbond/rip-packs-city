@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ #112's SECOND instance — the collection tab's "Unlocked FMV" told collectors they could sell what nobody checked; and All Day's lock suppression is REMOVED because its premise is measurably false · Claude Code on Trevor's box
+
+**Found by auditing what I had named as the blocker for the All Day item, which turned out to be a defect of its own.** `get_wallet_summary` — a DIFFERENT function from this afternoon's `get_wallet_moments_with_fmv`, feeding a DIFFERENT surface — computed `SUM(CASE WHEN NOT is_locked THEN fmv_usd ELSE 0 END)`. **`NOT is_locked` is TRUE for the column default**, so every unchecked moment was counted as sellable in the collection tab's headline tile. ⛔ **Fixing the first function did not fix this one, and #112's filing named three surfaces and missed this fourth.**
+
+**Measured on a real 17-moment wallet:** `unlocked_fmv` read **$4.55** where only **$1.16** was verified unlocked — a **~3× overstatement** of what the collector could actually sell.
+
+⭐ **The positive control is a second COLLECTION, not a second wallet.** All Day is 99.6% lock-checked, so it must land ~0 in the unknown bucket while Top Shot lands most of a wallet there. After apply: **Top Shot 3 locked / 4 unlocked / 10 unknown · All Day 1 / 70 / 0.** A change that merely swept everything into "unknown" would look identical on Top Shot and would have broken All Day.
+
+## ⛔ And the MIRROR defect, removed in the same change
+
+`lib/portfolio-summary-compute.ts` suppressed All Day lock state entirely (`lockUntracked = collectionSlug === "nfl-all-day"` → null → *"n/a for this collection"*), on a comment that its flags were *"frozen at a past manual run"*. **Re-derived: 99.6% checked within 7 days, nothing older than 3 days, `allday-lock-refresh` writing 326,787 rows/day — the FRESHEST lock data of any collection.** It was hiding **140,084 genuinely locked moments**. ⭐ **The replacement is not another hardcoded list** — provenance decides per row, so no surface guesses from a slug. `collectionSlug` is now unused in that function, and the lint ratchet is what said so; it is left on the input type with a comment explaining that nothing here may read it again.
+
+⚠ **Two tests were INVERTED, not deleted** (`portfolio-summary-compute`, `component-PortfolioSummary`) — they are what held the suppression in place, so they keep existing and now assert the opposite, with the re-derivation in the comment. A third was added pinning that the slug cannot change the answer at all.
+
+## ⛔ A monitor filing arrived mid-session, and its headline is REFUTED
+
+`2026-09-14T0010Z-daytime-monitor.md` reports `rpc-ts-listings-atlas-sync` `active=false` with `ts_listings` 4h24m stale — **true** — and concludes *"nothing in the ledger records a decision to disable it"*, recommending a re-enable. **The ledger records it at 12:47 PM PT**: a deliberate IO load-shed, taken while the job burned 3,371 busy-seconds an hour verifying nothing and users took 12 `/api/market` 5xx. **And the revert was scheduled BEFORE the pause** — pg_cron one-off `rpc-shed-restore-20260913b` (jobid 495) is ACTIVE, `10 2 * * *` = **7:10 PM PT tonight**, verified live in `cron.job`, timed to land five minutes before a planned quiet-window measurement. ⛔ **Re-enabling now would pre-empt a deliberate decision and spoil the measurement it was timed for. Nothing to do; it restores itself.**
+
+🚨 **I repeated the false claim in the INDEX entry before checking it, and then corrected it.** *"Nothing in the ledger records X"* is an **ABSENCE claim**, and an absence claim is only as good as the search behind it — one `grep` over `ledger.md` finds the entry. ⚠ The monitor's other observations stand, including its own good self-correction of the 21:10Z tick: **a `pipeline_runs`-silence explanation does not substitute for reading `cron.job.active`.**
+
+## ⚠ `npm run lint:ratchet` REPORTED GREEN WHILE THE RATCHET WAS RED
+
+`npm run lint:ratchet` exited 0 and printed nothing; running the same two commands directly printed `::error:: @typescript-eslint/no-unused-vars grew 353 -> 354` and exited 1. **The npm wrapper masked a real failure.** Caught only because the silence looked wrong for a guard that normally prints its inspected count — CLAUDE.md's rule that a guard must assert the count it inspected, applied to the guard's own runner. **Run the two commands directly when it matters.**
+
+**Verified:** `tsc` clean · **1543 files / 17,210 tests green** · `lint:ratchet` at baseline **715 / 3063** (verified directly, not via `npm run`) · `db:pins:check` **203 of 203 clean** — the `reconcile_all_saved_wallet_stats` pin the earlier entry flagged has since been fixed by its owner.
+
+**Revert:** `git revert <sha>` for the code; the DB inverse is spelled out in `20260913235902`'s header. No data written.
+
 ### 2026-09-13 · ✅ The superseded `idx_wmc_wallet_coll_ek_fmv` (281 MB) is DROPPED — observed taking zero scans for 40 min while its tier-covering successor took 58k, then removed CONCURRENTLY by a one-off pg_cron job in 0 s · Claude Code cloud
 
 **Measured (pg_stat_user_indexes):** 4:33 PM PT old `idx_scan` 26,287,272 / new 61,251 → 5:11 PM old **26,287,272 (+0)** / new **119,555 (+58,304)** — the hourly sweep, the 10-min FMV refresh and the wallet loads all moved to `idx_wmc_wallet_coll_ek_fmv_tier` the moment it was valid, as the same keys + superset INCLUDE guarantee. **Shipped:** one-off jobid 498 `oneoff-drop-idx-wmc-wallet-coll-ek-fmv` at 5:13 PM PT — `DROP INDEX CONCURRENTLY IF EXISTS` **succeeded in 0 s** (io_waiters 0), job altered then unscheduled; record migration `20260914001500…` applied (`IF EXISTS`, no-op). `wallet_moments_cache` is back to the index count it had this morning, 281 MB freed, one fewer index to maintain on every FMV-refresh UPDATE. **Revert:** rebuild via the one-off route (28 s measured for the sibling): `CREATE INDEX CONCURRENTLY idx_wmc_wallet_coll_ek_fmv ON public.wallet_moments_cache (wallet_address, collection_id, edition_key) INCLUDE (fmv_usd)`.
