@@ -10,6 +10,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨 #82's WMC ORIGIN IDENTIFIED — the parallel rekey is a ONE-WAY DOOR: its inverse exists and has ZERO callers, so a stale parallel key can never be walked back · NOT FIXED, mutates wmc · Claude Code cloud
+
+- **The writer:** `rekey_topshot_wmc_parallels` (pg_cron jobid 451 `rpc-wmc-parallel-rekey`, `38,49 * * * *`) rewrites `wallet_moments_cache.edition_key` base → `base::subedition_id` from `topshot_moment_subeditions`, **also overwriting `fmv_usd` and `fmv_confidence`**, and with **no serial-vs-circulation check** — the same defect class as the remap guarded earlier today, one level upstream.
+- 🚨 **No return path.** `remap_topshot_wmc_parallel_to_base_misattributed()` is the exact inverse and has **ZERO callers** — no cron, no function. Established with a positive control in the same query (the forward function's caller WAS found), so the zero is not a broken probe.
+- ⭐ **The keys are STALE, and today's data proves it:** of 5 sampled bad moments, `52678108` has `subedition_id = 0` and the other four have **no subeditions row at all**. The rekey filters `subedition_id > 0`, so it would skip all five TODAY — their parallel keys were written when the evidence said otherwise and nothing can undo them.
+- ⛔ **Deliberately NOT fixed.** Scheduling the inverse mutates wmc plus its fmv columns across an unmeasured population, and #82/#110 both record this family breaking under that kind of change. **Size first**, then choose: (a) schedule the inverse, (b) add the same plausibility guard to the rekey so it stops creating new ones, or (c) both. **(b) is the strictly-subtractive half and mirrors what shipped today.**
+- **Revert path:** docs-only (`known-issues.md` #82 addendum). No code or DB change in this entry.
+
 ### 2026-09-14 · ⛔ THE "PLATFORM'S LARGEST ADDRESSABLE IO WASTE" IS ZERO AS A RATE — two filings and a raised R21 priority rested on a CUMULATIVE counter described in the present tense · Claude Code cloud
 
 **No code or DB change. A priority is retired, a control is recorded as failed, and an observation is deliberately NOT filed as a finding.**
