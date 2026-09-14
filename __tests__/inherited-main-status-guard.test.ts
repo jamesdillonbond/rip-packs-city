@@ -51,23 +51,61 @@ describe("the shard-job marker still matches the job ci.yml produces", () => {
           `without updating the marker makes the inherited-status guard a silent no-op.`,
       ).toBe(true)
     }
-    // And the detector agrees on the real names.
-    expect(ranFullSuite(expanded)).toBe(true)
+    // And the detector agrees on the real names — when those jobs actually ran.
+    expect(ranFullSuite(expanded.map((name) => ({ name, conclusion: "success" })))).toBe(true)
   })
 
   it("does not mistake a docs-only run's job list for a full suite", () => {
     // The jobs a docs-only push actually runs (CI #5477–#5479).
     expect(
-      ranFullSuite([
-        "What changed",
-        "Memory-doc links",
-        "Ledger no-clobber guard",
-        "Register integrity guard",
-        "Inbox no-clobber guard",
-        "Tree corruption (NUL / truncation)",
-        "Docs-guard tests (docs-only pushes)",
-      ]),
+      ranFullSuite(
+        [
+          "What changed",
+          "Memory-doc links",
+          "Ledger no-clobber guard",
+          "Register integrity guard",
+          "Inbox no-clobber guard",
+          "Tree corruption (NUL / truncation)",
+          "Docs-guard tests (docs-only pushes)",
+        ].map((name) => ({ name, conclusion: "success" })),
+      ),
     ).toBe(false)
+  })
+
+  // 🚨 THE ONE THAT WAS WRONG IN PRODUCTION.
+  //
+  // The Actions jobs endpoint returns SKIPPED jobs with their real names, so a
+  // docs-only run — which skips `unit-tests-shard` by design — still lists a job
+  // called "Unit tests (vitest) — shard 1/2". Matching the NAME therefore proved
+  // nothing, and this guard's own published summary said so: CI #5503 (docs-only)
+  // reported "last full-suite run: CI #5502 · 673fdc9 · success", and 673fdc9 is
+  // docs-only. The guard was reporting the last run OF ANY KIND behind a green
+  // banner — a no-op that reads as coverage, which is the defect it exists to
+  // prevent, one level deeper. The documented risk was MARKER DRIFT; the marker
+  // matched perfectly. Whether the job EXECUTED was always the question.
+  it("🚨 a SKIPPED shard job is not a shard job that ran (the 2026-09-14 defect)", () => {
+    const docsOnlyRun = [
+      { name: "What changed", conclusion: "success" },
+      { name: "Docs-guard tests (docs-only pushes)", conclusion: "success" },
+      { name: "Inherited main status (docs-only pushes)", conclusion: "success" },
+      { name: "TypeScript", conclusion: "skipped" },
+      { name: "Unit tests (vitest) — shard 1/2", conclusion: "skipped" },
+      { name: "Unit tests (vitest) — shard 2/2", conclusion: "skipped" },
+    ]
+    expect(ranFullSuite(docsOnlyRun)).toBe(false)
+
+    // The control: the same list with the shards actually run.
+    const codeRun = docsOnlyRun.map((j) =>
+      j.name.startsWith("Unit tests (vitest) — shard") ? { ...j, conclusion: "success" } : j,
+    )
+    expect(ranFullSuite(codeRun)).toBe(true)
+
+    // A shard that FAILED still ran — that is precisely the run we must report.
+    expect(ranFullSuite([{ name: "Unit tests (vitest) — shard 2/2", conclusion: "failure" }])).toBe(true)
+
+    // A null conclusion is not evidence of execution either.
+    expect(ranFullSuite([{ name: "Unit tests (vitest) — shard 1/2", conclusion: null }])).toBe(false)
+    expect(ranFullSuite([{ name: "Unit tests (vitest) — shard 1/2" }])).toBe(false)
   })
 })
 
@@ -173,8 +211,9 @@ import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { fetchCandidates, ApiError } from "@/scripts/check-last-code-ci-on-main.mjs"
 
-const SHARD = { name: "Unit tests (vitest) — shard 1/2" }
-const DOCS = { name: "Docs-guard tests (docs-only pushes)" }
+const SHARD = { name: "Unit tests (vitest) — shard 1/2", conclusion: "success" }
+const SHARD_SKIPPED = { name: "Unit tests (vitest) — shard 1/2", conclusion: "skipped" }
+const DOCS = { name: "Docs-guard tests (docs-only pushes)", conclusion: "success" }
 
 async function withServer(
   handler: (url: string, res: import("node:http").ServerResponse) => void,
@@ -212,7 +251,8 @@ describe("the walk itself", () => {
         const m = url.match(/\/runs\/(\d+)\/jobs/)
         if (m) {
           jobCalls.push(m[1])
-          return json(res, { jobs: m[1] === "3" ? [DOCS] : [SHARD, DOCS] })
+          // ⚠ run 3 is a DOCS run: it lists the shard job, SKIPPED.
+          return json(res, { jobs: m[1] === "3" ? [SHARD_SKIPPED, DOCS] : [SHARD, DOCS] })
         }
         return json(res, {}, 404)
       },

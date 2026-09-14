@@ -56,9 +56,38 @@ export const SHARD_JOB_MARKER = "Unit tests (vitest) — shard"
 
 export class ApiError extends Error {}
 
-/** Does this run's job list prove the full suite ran? */
-export function ranFullSuite(jobNames) {
-  return jobNames.some((n) => typeof n === "string" && n.startsWith(SHARD_JOB_MARKER))
+/**
+ * Does this run's job list prove the full suite ACTUALLY RAN?
+ *
+ * 🚨 A JOB NAME IN THE LIST IS NOT EVIDENCE THAT THE JOB RAN. The Actions jobs
+ * endpoint returns SKIPPED jobs too, with their real names and
+ * `conclusion: "skipped"` — so a docs-only run, which skips `unit-tests-shard`
+ * by design, still lists a job called "Unit tests (vitest) — shard 1/2".
+ *
+ * Measured 2026-09-14, in this guard's own published output: CI #5503 (a
+ * docs-only push) reported **"last full-suite run: CI #5502 · 673fdc9 ·
+ * success"**, and `673fdc9` is docs-only — every path under `docs/` or `*.md`,
+ * shards skipped. So the guard was reporting the last run OF ANY KIND while
+ * printing a reassuring green summary: **a no-op that reads as coverage**, which
+ * is the exact defect it was written to prevent, one level deeper.
+ *
+ * ⚠ The fail-open this guard documents was "the marker drifts away from the job
+ * name". That is not what happened — the marker matched perfectly. **Matching a
+ * NAME was never the question; whether the job EXECUTED is.**
+ *
+ * @param {Array<{name?: string, conclusion?: string|null}>} jobs
+ */
+export function ranFullSuite(jobs) {
+  return jobs.some(
+    (j) =>
+      typeof j?.name === "string" &&
+      j.name.startsWith(SHARD_JOB_MARKER) &&
+      // `skipped` is the docs-only case; a null conclusion means it never
+      // concluded, which is not evidence either. Only a job that reached a
+      // verdict counts as having run.
+      j.conclusion != null &&
+      j.conclusion !== "skipped",
+  )
 }
 
 /**
@@ -188,7 +217,7 @@ export async function fetchCandidates({ repo, token, currentRunId, maxRuns = 15,
   for (const r of runs) {
     if (String(r.id) === String(currentRunId)) continue
     const { jobs = [] } = await api(`/repos/${repo}/actions/runs/${r.id}/jobs?per_page=100`, token, apiBase)
-    const full = ranFullSuite(jobs.map((j) => j.name))
+    const full = ranFullSuite(jobs)
     out.push({
       id: r.id,
       runNumber: r.run_number,

@@ -49,8 +49,37 @@ because the docs push is not the cause and reverting it would not help.
   no fixture test, only the bill** — so it is pinned against a counting local HTTP server, together
   with "never spends a request on its own run" and "a non-2xx becomes an `ApiError`, never an empty
   list that reads as `unknown`".
-- Proven non-vacuous by three mutations: drifting the marker, flipping the exit code so `unknown`
-  reds, and deleting the early break. Each reds a different test; all three restored, 12/12 green.
+- Proven non-vacuous by mutation: drifting the marker, flipping the exit code so `unknown` reds,
+  deleting the early break, and reverting the executed-vs-listed check below. Each reds a different
+  test.
+
+### 🚨 AND IT SHIPPED A NO-OP, WHICH ITS OWN PUBLISHED SUMMARY IS WHAT CAUGHT (2026-09-14)
+
+The first summary this guard rendered said, on a docs-only push:
+
+> **Inherited `main` status: `green`** — last full-suite run **CI #5502 · `673fdc9` · success**
+
+`673fdc9` is **docs-only** — every path under `docs/` or `*.md`, shards skipped. So the guard was
+reporting **the last run of any kind** behind a green banner.
+
+⭐ **The cause: a job NAME in the jobs list is not evidence the job RAN.** The Actions jobs endpoint
+returns SKIPPED jobs too, with their real names and `conclusion: "skipped"`, so a docs-only run still
+lists `Unit tests (vitest) — shard 1/2`. `ranFullSuite` matched the name and concluded the suite ran.
+
+⛔ **The documented fail-open was the WRONG RISK.** This file and the script both said the weight
+rested on `SHARD_JOB_MARKER` drifting away from ci.yml's job name — and the marker matched perfectly.
+**Matching a name was never the question; whether the job executed is.** A guard's stated risk is
+itself a claim, and this one was tested (the ci.yml pin) while the real one was not.
+
+✅ **Fixed:** `ranFullSuite` now requires a shard job whose `conclusion` is present and not
+`"skipped"`. A shard that FAILED still counts as having run — that is precisely the run to report.
+The pinned case is the real docs-run payload, with a code-run control, and reverting the check reds
+two independent tests.
+
+⭐ **The reason this was found at all is the summary from the previous fix.** Had the verdict stayed
+in the admin-only step log, the guard would have kept printing `green` off docs runs indefinitely.
+**Making a result readable is what made it falsifiable.**
+
 
 ⚠ **What it still does not cover:** a red introduced on a branch, and any OTHER conditional job whose
 skip is rendered as a pass. The shape is general even though this guard is not.

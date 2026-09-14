@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 🚨 `inherited-status` WAS A NO-OP FOR ITS FIRST FOUR RUNS, AND ITS OWN PUBLISHED SUMMARY IS WHAT CAUGHT IT · Cowork cloud
+
+The first summary it rendered, on a docs-only push (CI #5503):
+
+> **Inherited `main` status: `green`** — last full-suite run **CI #5502 · `673fdc9` · success**
+
+⛔ **`673fdc9` is DOCS-ONLY** — `docs/overnight/ledger.md`, `docs/reference/known-issues.md`, `docs/strategy/go-live-2026-09.md`, nothing else. Its shards were SKIPPED. **The guard was reporting the last run of ANY KIND behind a green banner** — a no-op that reads as coverage, which is the exact defect it was written to prevent, one level deeper.
+
+🚨 **THE CAUSE: A JOB NAME IN THE JOBS LIST IS NOT EVIDENCE THE JOB RAN.** The Actions jobs endpoint returns SKIPPED jobs too, with their real names and `conclusion: "skipped"`, so a docs-only run still lists `Unit tests (vitest) — shard 1/2`. `ranFullSuite` matched the name and concluded the suite had run. Confirmed on the run page: `TypeScript` shows `skipped:` in the same list.
+
+⭐ **AND THE DOCUMENTED FAIL-OPEN WAS THE WRONG RISK.** Both the script and `testing-and-ci.md` said all the weight rested on `SHARD_JOB_MARKER` drifting away from ci.yml's job name — and I pinned that carefully, against ci.yml, expanding the matrix template. **The marker matched perfectly.** Matching a NAME was never the question. **A guard's stated risk is itself a claim; I tested the one I wrote down and not the one that was real.**
+
+✅ **FIXED:** `ranFullSuite` requires a shard job whose `conclusion` is present and not `"skipped"`. ⚠ **A shard that FAILED still counts as having run** — that is precisely the run that must be reported. A `null` conclusion does not count either. The pinned case is the real docs-run payload with a code-run control; reverting the check reds **two independent tests** (the unit case and the HTTP-walk case).
+
+⭐ **WHY IT WAS FOUND AT ALL:** yesterday's other fix moved the verdict out of the admin-only step log and into `$GITHUB_STEP_SUMMARY`. Had it stayed in the log — where the API answers 403 and the web endpoints 404 — this guard would have gone on printing `green` off docs runs indefinitely. **Making a result readable is what made it falsifiable**, within one run of it becoming visible.
+
+📏 Sweep keyed on the file classes touched: **226 files / 2,940 tests**, `tsc` clean.
+
+Revert: `git revert <sha>` — one predicate in `ranFullSuite`, its call site, one test block, one reference section.
+
 ### 2026-09-14 · 🚨🚨 GITHUB DELIVERS THIS REPO'S SCHEDULED WORKFLOWS AT A CEILING OF ~0.3 TICKS/HOUR **EACH** — so a tighter cron buys NOTHING, and the alarm built for the 10-hour outage runs at 7.8 % of its schedule · Claude Code cloud
 
 **Docs-only. Found while re-deriving #100's "27 % of hourly" before citing it — the claim is confirmed, and it is not a sentinel problem.**
