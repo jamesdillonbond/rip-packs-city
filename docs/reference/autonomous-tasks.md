@@ -4,6 +4,12 @@ Same rules apply: every number here is a dated sample - re-measure before quotin
 
 # Autonomous Cowork tasks (full)
 
+## What Cowork can reach (displaced from CLAUDE.md 2026-09-14, VERBATIM)
+
+> Cowork has a push-capable clone, Supabase MCP (read+write), Vercel/Sentry, Chrome and scheduled-task/artifact tools.
+
+⭐ **This is the premise behind CLAUDE.md's WORKING STYLE rule** (*"If you identify a task you have the tools to do, DO IT in the same turn"*): the sentence enumerating the tools moved here so the RULE could stay in the memory file, which sits at its character cap. ⚠ **It is a dated sample like every other number in these docs** — the set has changed before (the sandbox shell has been down since 2026-09-08, which removed `bash`/`git` from that list without removing the MCP or file-tool halves). **Re-derive what you actually have before concluding you cannot do something.**
+
 ## Autonomous Cowork tasks (READ before/while building)
 
 Two scheduled Cowork tasks run autonomously against this repo. Any Claude Code or human session should know they exist and coordinate via the shared ledger so daytime work doesn't duplicate or collide with them.

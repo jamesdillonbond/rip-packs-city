@@ -1892,3 +1892,51 @@ actually RUN live in OneDrive, outside every connected folder, and
 `list_artifacts` / `update_artifact` are Cowork-desktop-only. **The repo copies
 are a mirror, not the running code** — the same direction-of-drift caveat the
 cowork-skill-bundle guard carries. Registered as **#114**.
+
+---
+
+## 🚨 A FALSE CLAIM OF CAUSE IS THE SAME DEFECT AS A FALSE CLAIM OF FACT — and I shipped one into user-facing copy off half an error string (2026-09-14)
+
+**This one is recorded because the fix for an honesty defect WAS ITSELF an honesty defect, ninety minutes later.**
+
+`/api/wallet-search` failed on some wallets with Flow's `computation limit exceeded`. The original copy
+said **"Failed to fetch wallet data. Please try again."** — false, because the failure is *deterministic*:
+the ceiling is a property of the wallet and the script, not of the moment, so the retry it invited could
+never succeed. (Measured: the wallet in the logs has **zero rows in `wallet_moments_cache` across every
+collection** — the backfill cannot complete, so nothing is cached, so it is permanently invisible.)
+
+⛔ **The fix replaced a false claim of TRANSIENCE with a false claim of CAUSE.** The new copy read *"This
+wallet holds too many moments for us to read in one pass."* I had inferred "too many moments" from the
+words *computation limit*. **Mainnet refuted it the same afternoon**, via `pg_net` against
+`rest-mainnet.onflow.org/v1/scripts`:
+
+| wallet | moments | result |
+|---|---:|---|
+| `0xf77bf547fccf6656` (largest SAVED Top Shot wallet) | **39,955** | ✅ HTTP 200, 1.9 MB of ids |
+| `0xe1f2a091f7bb5245` (the one production fails on) | unknown — 0 cached | ⛔ HTTP 400, `used: 100134` |
+
+⭐⭐ **SIZE IS NOT THE TRIGGER, AND THE DISCRIMINATOR WAS IN THE ERROR STRING I HAD ALREADY READ: the
+failing trace runs through `ef4d8b44dd7f7ef6.TopShotShardedCollection:137:36`.** A **sharded** collection's
+`getIDs()` walks its shards. The succeeding wallet is nearly 40k moments on a plain `MomentCollection`.
+
+### The rule this adds, and why it is not just "read the error string"
+
+CLAUDE.md already says *read the ERROR STRING, never the duration*. **I did read it — I read PART of it,
+and inferred the rest.** ⭐ **Reading an error string is not the same as reading all of it: the clause you
+skip is the one that discriminates.** The words I used (`computation limit exceeded`) described the
+SYMPTOM; the words I skipped (`TopShotShardedCollection`) named the CAUSE.
+
+⛔ **And the blast radius is what makes it an honesty defect rather than a diagnostic slip: an inferred
+cause reached USERS.** A message that says *"your wallet is too big"* is a claim about the reader's
+property, and it was wrong. **The honest form states only what is established** — *we* could not read it,
+it is our side, retrying will not help — **and says nothing about why.** A test now forbids the refuted
+cause from creeping back (`not.toMatch(/too many moments|too large|too big/i)`).
+
+### ⚠ It also invalidated the sizing, which is the quiet cost
+
+The population work keyed on `saved_wallets.cached_moment_count` — **the wrong yardstick**. "8 saved
+wallets ≥ 5,000 moments (7 of them Top Shot, largest 39,955, two verified)" is a real number that sizes
+**a set which is not the affected set**. The real population is *wallets whose Top Shot collection is
+SHARDED*, which is **not a column in this database** and remains unmeasured. ⭐ **A wrong yardstick still
+returns a number, and the number looks like progress** — the same shape as a guard with a wrong
+population, one level up in the analysis.

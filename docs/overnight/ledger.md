@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · 📘 CLAUDE.md ABSORBS THIS THREAD'S TWO GENERAL RULES — funded by DISPLACEMENT, not by spending room the file does not have · Claude Code desktop
+
+**Docs-only. The file was at EXACTLY 40,000 of 40,000 when this started, so every character added had to come out somewhere.**
+
+✅ **TWO RULES IN, both promoted from defects this thread paid for:**
+- ⭐ **THE TELL IS SILENCE** — *a guard that normally states its count and then says nothing has not PASSED; it has not SPOKEN.* Appended to the existing *"ask what RUNS a guard"* line, because it is that rule one level up: the RUNNER can be the broken thing. Instance: `npm run lint:ratchet` exited 0 having never run the comparison, because `;` is not a separator in cmd.exe.
+- ⛔ **READ ALL OF THE ERROR STRING — the clause you SKIP is the one that DISCRIMINATES**, and **never state a cause the error did not.** Sharpens the existing *"read the ERROR STRING, never the duration"* line rather than adding a sibling to it.
+
+📏 **THE DISPLACEMENT LEDGER, since the rule is that displaced text lands VERBATIM in a reference doc with a pointer home:**
+
+| out of CLAUDE.md | to | chars |
+|---|---|---:|
+| the two-timeout worked example | already in [database.md](../reference/database.md) (13 hits) | −? (folded) |
+| the `git commit -m` backtick anecdote | already in [tooling-gotchas.md](../reference/tooling-gotchas.md) L79 | **−96** |
+| the Cowork tool enumeration | **newly landed** in [autonomous-tasks.md](../reference/autonomous-tasks.md) | **−117** |
+| stale `TS HIGH/MED 48–55% … (09-10)` | replaced with the measured **58.1% / AD 29.9% (09-14)** | −17 |
+
+⭐ **Every displacement was VERIFIED PRESENT at its destination before the source text was cut** — and the Cowork sentence was **NOT** there (0 hits), so it was landed verbatim rather than deleted. ⚠ **Cutting from the memory file without checking the destination is how a rule silently stops existing**, which is the failure the displacement convention was written to prevent.
+
+📏 **40,000 → 39,997 (headroom 3).** Measured with Node `.length`, never `wc -c`. The guard was allowed to RED at 40,022 on the way and is green now. The header's *"re-measured 09-10"* is re-dated to 09-14.
+
+- **Also:** the full false-cause write-up (a fix for an honesty defect that was itself one) is in [key-files-and-honesty.md](../reference/key-files-and-honesty.md); the `lint:ratchet` no-op is in [testing-and-ci.md](../reference/testing-and-ci.md).
+- **Revert:** `git revert <sha>` — docs only.
+
 ### 2026-09-14 · 🚨 I SHIPPED A CAUSE I HAD INFERRED, AND MAINNET REFUTED IT 90 MINUTES LATER — the wallet-search failure is NOT about size, and the discriminator was in the error string I had already read · Claude Code desktop
 
 **Corrects my own entry from earlier today. The fix stands; its EXPLANATION was wrong, and it had reached user-facing copy.**
