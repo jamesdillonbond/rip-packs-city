@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-14 · ⛔ CORRECTION (25 minutes) + NEW #120 · I published "circulation_count is not stale" off a BIASED SAMPLE, then ran the test that falsifies it · Claude Code cloud
+
+**Docs-only; no prod state touched. Corrects the entry two above, and files #120.**
+
+⛔ **WHAT I GOT WRONG.** The #116 write-up said *"`circulation_count` is not stale, not lagging, not wrong"*. That is true of **the five editions I measured** — and I measured the five with the **MOST impossible rows**, which is precisely the population most likely to have a correct denominator. ⭐ **A biased sample dressed as a fleet claim.** The chain read was sound; the generalisation was not.
+
+✅ **THE FALSIFICATION TEST, run because the next thread demanded it.** Only **4** base editions account for all 183 `wmc` violations, and on chain they split two ways:
+
+| edition | chain | db | max wmc serial | verdict |
+|---|---|---|---|---|
+| `51:1885` | **4,000** | 4,000 | **7,944** | ⛔ genuinely impossible in **both** `sales` and `wmc` |
+| `218:8061` | **4,099** | 4,000 | **7,999** | ⛔ impossible **and** the db circ is 99 low |
+| `259:8950` | **237** | **47** | 76 | ✅ **not a violation** — db was 190 low |
+| `259:8951` | **285** | **95** | 99 | ✅ **not a violation** — db was 190 low |
+
+⭐ **Half of `wmc`'s "violations" are artifacts of a stale DENOMINATOR, not bad serials.**
+
+📏 **THEN A CLEAN RANDOM SAMPLE — 17 base editions by `abs(hashtext(external_id)) % 700`, never physical order. 17/17 HTTP 200. 15 exact. 2 mismatched, and BOTH the DB reading LOW:** `218:8788` 4,000 vs **4,099** · `264:8850` 129 vs **164**. ⭐⭐ **The ONE-SIDEDNESS is the finding, not the 2/17.** Every disagreement seen today — five now — has the DB **below** the chain. That is a snapshot that missed later mints, not noise. ⭐ **And it clusters by SET with a constant offset: set 218 is 99 low on both its editions, set 259 is 190 low on both.** A per-edition drift cannot do that.
+
+🚨 **FILED AS #120, and it is user-facing.** Circulation is the `/N` collectors read, and the denominator under scarcity, tier and FMV reasoning. **A low circulation makes a moment look scarcer than it is — the direction that flatters the asset**, on a platform whose stated gate is accuracy. ⛔ **Do NOT bulk-update the column from the chain as a first move** (14,015 editions, a denominator the whole estate reads); the correct first step is a **sampled** instrument that measures the rate before anything is written.
+
+⭐ **WHAT SURVIVES FROM THE ORIGINAL FINDING, unchanged:** on the five worst editions the chain matches the DB exactly, so their `sales` serials are genuinely invalid; `ts_history_backfill_v1` (2.35M rows), `atlas`, `topshot_gql` and `atlas_backfill` are at **exactly zero**; and the serial is **stable per NFT** (0 of 120 conflicting).
+
+⭐ **ONE MORE THING THE `wmc` COMPARISON SETTLED, in the opposite direction to what I'd have guessed.** Of 99 impossible `onchain`-source `nft_id`s, 28 are in `wmc`: **25 agree on EDITION** (3 differ) while **15 of 28 DISAGREE on SERIAL** — e.g. nft `325092` on `2:54` (circ 3,341): **sales 15,758, wmc 1,545.** **For that source the SERIAL is the wrong field, not the edition.**
+
+⚠ **THE TRANSFERABLE LESSON, and it is not "sample randomly" — I know that rule.** It is that **I chose the sample to make the finding SHARP (the worst offenders) and then reported it as though I had chosen it to make the finding SAFE.** The register's own words, which I had just read: *a filed FINDING is a hypothesis.* Mine lasted 25 minutes.
+
+No revert path — read-only, docs-only. Nine more `net.http_post` calls, all HTTP 200.
+
 ### 2026-09-14 · FINDING (docs-only, no prod state touched) · #116 IS ADJUDICATED BY THE CHAIN — `editions.circulation_count` is right and the `sales` serials do not exist · Claude Code cloud
 
 **The decisive read #116 asked for and nobody had taken.** `net.http_post` from the database to `https://rest-mainnet.onflow.org/v1/scripts`, running the **production-verified** Cadence literal already in `lib/editions-hydrate.ts` (`TopShot.getNumMomentsInEdition(setID:playID:)`). ⭐ **No new Cadence was authored — no Cadence MCP was available in this session, and CLAUDE.md forbids writing Cadence blind. Reusing a literal production already runs satisfies the rule in substance.**
