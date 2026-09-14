@@ -2072,6 +2072,16 @@ all green against a harness that renders nothing at all.**
 
 Full filing: [`docs/overnight/inbox/2026-08-29T1741Z-ci-testing-audit-…`](../overnight/inbox/2026-08-29T1741Z-ci-testing-audit-the-gates-are-strong-the-detectors-are-not-firing.md). What follows is only the part that generalises.
 
+### 🚨 A TEST CAN COVER THE CALLER'S EARLY RETURN WHILE CLAIMING TO COVER THE CALLEE'S GUARD (2026-09-14)
+
+Found by mutation during the wmc delete-not-seen work. `deleteUnseenWmcRows()` opens with an explicit refusal — `if (observedIds.size === 0) return {skippedReason:"empty_observed"}` — and a test titled ***"an EMPTY scan never deletes"*** drove the RUNNER with an empty scan and asserted no delete happened. It passed. ⚠ **It also passed with that guard deleted outright.**
+
+The runner has its own `if (onChainIds.length === 0) { …log…; return }` ABOVE the call site, so an empty scan never reaches the helper. The test was a TRUE statement about the runner and said **nothing whatsoever** about the guard named in its title. Nine other mutations over the same change were all caught; this was the one that was not.
+
+⭐ **THE TELL IS STRUCTURAL AND CHEAP TO CHECK BY EYE: if the input that should trigger a guard ALSO triggers an earlier return in the caller, a caller-level test CANNOT reach that guard.** From that test's point of view the guard is dead code — and dead code is always "correct". This is not the weak-assertion trap above: the assertion is strong and the title is not wrong; **the input simply never arrives.**
+
+**The fix is a test at each layer, not a better test at one.** Drive the helper DIRECTLY for its own refusals and KEEP the runner-level test — they assert different, both-real properties (*"the runner returns before it gets there"* and *"the helper refuses if it does get there"*). ⚠ **Generalises past early returns to any cheaper upstream short-circuit**: a cache hit, a feature flag, a lock claim, a `length === 0` fast path, a preflight that returns before the work. ⭐ **Budget a mutation sweep for any guard whose whole job is to REFUSE — a refusal that never runs is indistinguishable from one that works**, and the cheap form is enough: delete the guard, run the file, see whether anything reds.
+
 ### 🚨 A MUTATION CONTROL INHERITS EVERY HIDDEN DEPENDENCE OF THE TEST IT VALIDATES
 
 The most useful thing this repo learned that day, and it cost a red `main` on someone else's commit.
