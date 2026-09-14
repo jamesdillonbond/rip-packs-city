@@ -1350,10 +1350,25 @@ export async function POST(req: NextRequest) {
       topLevelStage = "fetch_owned_ids"
       ids = isAllDay ? await getAllDayOwnedIds(wallet) : await getOwnedMomentIds(wallet)
     } catch (err) {
-      console.error("[wallet-search] Failed to resolve wallet or fetch owned IDs:", err instanceof Error ? err.message : String(err))
+      const detail = err instanceof Error ? err.message : String(err)
+      console.error("[wallet-search] Failed to resolve wallet or fetch owned IDs:", detail)
+      // ⛔ "Please try again" IS A FALSE CLAIM FOR A COMPUTATION-LIMIT FAILURE.
+      // The unpaginated getIDs() below blows Flow's per-script computation limit
+      // on a large enough collection (measured 2026-09-14 in production: Top Shot
+      // used 100,134 and All Day 217,993 against a limit of 100,000). That ceiling
+      // is a property of the wallet's SIZE and this script — not of the moment —
+      // so the retry the old copy invited could never succeed, and the wallet ends
+      // up with zero cached rows and invisible to the platform.
+      // The honest answer is that WE cannot read it in one pass, not that the user
+      // was unlucky. Fixing the plumbing (page getIDs() the way
+      // lib/chains/flow/allday-cadence.ts and cadence/pinnacle-wallet.ts already do)
+      // is filed separately; this only stops the message from lying meanwhile.
+      const tooLarge = /computation limit exceeded|Error Code: 1110/i.test(detail)
       return NextResponse.json(
         {
-          error: "Failed to fetch wallet data. Please try again.",
+          error: tooLarge
+            ? "This wallet holds too many moments for us to read in one pass. That is a limit on our side, not a problem with the wallet — retrying will not help."
+            : "Failed to fetch wallet data. Please try again.",
           rows: [],
           summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
         } satisfies WalletSearchResponse,

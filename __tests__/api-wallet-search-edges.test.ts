@@ -27,6 +27,7 @@ const state = vi.hoisted(() => ({
   ownedIds: [] as number[],
   metadataById: {} as Record<string, Record<string, string>>,
   gqlById: {} as Record<string, unknown>,
+  ownedIdsError: null as Error | null,
 }))
 
 vi.mock("@/lib/cache", () => ({
@@ -35,7 +36,10 @@ vi.mock("@/lib/cache", () => ({
 vi.mock("@/lib/chains/flow/flow", () => ({
   default: {
     query: async (opts: { cadence: string; args?: (arg: unknown, t: unknown) => unknown[] }) => {
-      if (opts.cadence.includes("getIDs")) return state.ownedIds
+      if (opts.cadence.includes("getIDs")) {
+        if (state.ownedIdsError) throw state.ownedIdsError
+        return state.ownedIds
+      }
       const collected: string[] = []
       opts.args?.(((v: unknown) => {
         collected.push(String(v))
@@ -132,6 +136,56 @@ beforeEach(() => {
   state.ownedIds = [101, 102]
   state.metadataById = { "101": momentMeta("5"), "102": momentMeta("777") }
   state.gqlById = { "101": momentGql("flow-101", "5"), "102": momentGql("flow-102", "777") }
+  state.ownedIdsError = null
+})
+
+describe("wallet-search — a wallet we CANNOT read must not be told to retry", () => {
+  // ⛔ Measured in production 2026-09-14: the unpaginated getIDs() blows Flow's
+  // per-script computation limit on a large enough collection (Top Shot used
+  // 100,134 and All Day 217,993 against a limit of 100,000). That ceiling is a
+  // property of the wallet's SIZE and the script, so it is DETERMINISTIC — and
+  // the old copy said "Please try again", inviting a retry that can never
+  // succeed. The wallet the error named has zero rows in wallet_moments_cache
+  // across every collection: it is invisible to the platform, permanently.
+  //
+  // ⭐ The plumbing was already honest (500 + an explicit error, never a silent
+  // empty wallet). The CLAIM was the defect, which is why this asserts the
+  // WORDING and not the status code.
+  const computationLimit = () =>
+    new Error(
+      "Invalid Flow argument: ... [Error Code: 1110] computation error: " +
+        "[Error Code: 1110] computation limit exceeded (used: 100134, limit: 100000)",
+    )
+
+  it("says WE cannot read it in one pass, and does not promise a retry will help", async () => {
+    install(baseFixtures())
+    state.ownedIdsError = computationLimit()
+
+    const res = await POST(post({ input: WALLET }))
+    const body = await res.json()
+
+    // Still a loud failure — never an empty wallet.
+    expect(res.status).toBe(500)
+    expect(body.rows).toEqual([])
+    expect(body.summary.totalMoments).toBe(0)
+
+    // ⭐ Assert the ABSENCE of the false claim, not merely the presence of copy.
+    expect(String(body.error)).not.toMatch(/please try again/i)
+    expect(String(body.error)).toMatch(/too many moments|one pass/i)
+    expect(String(body.error)).toMatch(/retrying will not help/i)
+  })
+
+  it("still says 'try again' for an ordinary transient failure — the control", async () => {
+    // Without this, the test above would pass just as well if the route had been
+    // changed to print the new message for EVERY failure, which would swap one
+    // false claim for another.
+    install(baseFixtures())
+    state.ownedIdsError = new Error("socket hang up")
+
+    const body = await (await POST(post({ input: WALLET }))).json()
+    expect(String(body.error)).toMatch(/please try again/i)
+    expect(String(body.error)).not.toMatch(/retrying will not help/i)
+  })
 })
 
 describe("wallet-search — request dispatch", () => {
