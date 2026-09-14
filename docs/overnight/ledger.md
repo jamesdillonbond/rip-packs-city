@@ -10,6 +10,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-13 · ✅ THE ATLAS 120-SECOND TAIL IS GONE AFTER THE 7:10 PM RESTORE — it was the INSTANCE, not the query, so the queued share-scan/de-cadence work is DROPPED as aimed at the wrong statistic · Claude Code cloud
+
+- **Both sides, same instrument** (`cron.job_run_details`, jobid 466), split on the restore. **PRE (4,827 ticks, 09-06 → 09-13 7:10 PM): 1,035 failed = 21.4 %, p50 13.4 s, p90 120.0 s.** ⭐ p90 sitting EXACTLY on the `statement_timeout` is the tell the tail was being KILLED, not merely slow. **POST (67 ticks, 7:12 → 9:24 PM): 0 failed = 0.0 %, p50 7.8 s, p90 14.4 s, max 28.3 s.**
+- **p90 120.0 → 14.4 s (8.3×) and 21.4 % → 0 % failures, with no query change.** The lane's problem was never its median (13.4 → 7.8 s is modest) — it was a heavy tail dying on the cap under contention.
+- ⚠ **Confound stated rather than buried: the post window contains NO wallet-backfill wave** (last 6:27 PM, next due ~11 PM–midnight on a ~5 h cadence), so this is a QUIET-INSTANCE reading by construction and 67 ticks is a short sample. It establishes the tail is **load-dependent** — not that the lane is safe under load.
+- 👉 **Falsifiable exit:** re-read the same split across the next wave. p90 under ~30 s through a wave settles it; p90 returning toward 120 s means the tail is real under load, and the next step is to CAPTURE a slow tick (`pg_stat_activity` until one passes ~30 s, record `wait_event_type`/`wait_event`), never to EXPLAIN components on a quiet instance. ⛔ No share-scan rewrite before that — contention and scan cost need opposite fixes.
+- **Revert path:** docs-only (`known-issues.md` #85 addendum) — `git revert` by message.
+
 ### 2026-09-13 · ⛔ NOT SHIPPED, AND THE REASON IS THE POINT — the wallet-backfill pacing fix is verified and CORRECT, but it would add ~3.4 lambda-hours/day against a Vercel spend cap that took the site down 3 days ago. Shipped the INSTRUMENT instead · Claude Code cloud
 
 - **What shipped.** `app/api/seed-wallet-refresh/route.ts`: the pacing arithmetic extracted into an exported pure `dispatchPlan(taskCount)` (behaviour-identical), plus `__tests__/seed-wallet-refresh-dispatch-spread.test.ts` (5 tests) **pinning the spread the code ACTUALLY produces** — and `MAX_PAUSE_MS` left at **20_000**.
