@@ -1,6 +1,8 @@
 # RPC monthly deep audit — 2026-09-18 (run 5)
 
-**Window:** 2026-09-18, 08:20 AM – 12:00 PM PT. **Shipped: NOTHING.** **Not by choice — by capability.** See §0.
+**Window:** 2026-09-18, 08:20 AM – 2:30 PM PT, in two halves. **Shipped: NOTHING** — by *capability* in Part One (§0), by *judgement* in Part Two (§14).
+
+🚨 **The database was in a total outage for the first half (~05:48 AM – ~12:01 PM PT, ≈6h15m) and recovered mid-audit.** Part One (§0–§7) is what could be learned without it — including a P0 that *only* a live outage can surface. **Part Two (§8–§14) is everything that was blocked**: sweeps B and C in full, the DB half of sweep A, and a positive control that settles the outage's cause. **Read §8 and §13 first.**
 
 Prior runs: [run 4](deep-audit-2026-08-27.md) · [run 3](deep-audit-2026-08-22.md) · [run 1](deep-audit-2026-08-09.md). Register: [deep-audit-register.md](deep-audit-register.md).
 
@@ -18,6 +20,8 @@ Three capabilities were absent. None of them is a finding about the platform; al
 | **git push** | No credential (`fatal: could not read Username for 'https://github.com'`, exit 128 — **no credential at all, not a 403**) | **Nothing can be committed.** Per CLAUDE.md the push question is conditional and must be tested; it was. |
 
 ⛔ **So "ship the safe fixes" was not available this run.** Everything below is a report plus a handoff. The findings are deliberately written so the fixer does not have to re-derive them.
+
+✅ **POSTSCRIPT, same day.** A push-capable session picked this report and handoff off the mount, committed them (`2120128c0`), and **shipped the §2 P0 at 13:04 PM PT — `e79a38d42 fix(insights): KPI strips render the unavailable dash per-VALUE instead of fabricating zeros`.** Its commit message confirms the diagnosis and sharpens it: `top` is null when nothing is priced so `fmtPrice` already rendered the dash, while `count`, `total` and `named` reduce to `0` and print as measurements — **the honest form was on the same LINE as the fabricated ones.** ⭐ **The handoff being specific enough to act on without re-derivation is what made that possible in under two hours.**
 
 **What was still possible, and was done in full:** sweep **D** (rendered-DOM QA of the live site), sweep **E** (codebase/backlog reconciliation), the **code and credential half of sweep A**, the SEO half of **F**, and the register's non-DB probes.
 
@@ -101,6 +105,9 @@ Credit where the canon held, all VERIFIED:
 ## §3 — SECURITY (code/credential half only; DB half unverifiable)
 
 ### R96 · P1 — `/api/allday-pack-ev` POST is completely ungated and performs SERVICE-ROLE writes
+
+> 🚨 **CORRECTED SAME DAY BY ANOTHER SESSION, AND THE CORRECTION IS RIGHT — recorded here rather than quietly amended.** A push-capable Claude Code session read R96 at ~12:58 PM PT and **declined to ship it, for a reason that overturns my central framing.** R24's gate is `callerInfluencedPrice && !persistAuthorized(req)` — it gates persistence of a **caller-influenced price** and deliberately leaves data-derived writes anonymous (its own no-change control warns that over-flagging is *"an availability regression that would look like nothing at all"*). **The child's two writes are upstream-GraphQL-derived, not caller-influenced, so mirroring R24 literally would gate nothing.** ⭐ **"R24 recurring on the copy-pasted sibling" is the wrong label.** What this row actually describes is **anonymous WRITE AMPLIFICATION** — a different rule, and a product call, since hydrate-at-insert exists precisely so an anonymous pack view fills the catalogue. My "narrower than R24" caveat was pointing at this and did not go far enough. ✅ **What survived:** the ungated-write mechanism, and the forward-header trap — that session verified the `/api/pack-ev` forward is the only in-repo caller (0 hits in `vercel.json`, GHA or `cron.job`) and named passing the `authorization` header through it as the cheapest safe first step, exactly as handed off. ⚠ Two of the eight caller sources (cron-job.org, the box's Task Scheduler) remain invisible from a sandbox.
+
 
 **VERIFIED.** `app/api/allday-pack-ev/route.ts` builds its own service-role client inline (lines 10–13, `createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)`) rather than importing `@/lib/supabase`, so it sits outside any centralised client guard. `POST` (line 360) takes `packListingId` from the body and performs **zero** auth checks — grep for `requireUser|requireOwnedKey|INGEST_SECRET|CRON_SECRET|RPC_ADMIN_TOKEN|verifyBearer` over the file returns **0**. It then service-role `upsert`s `editions` (line 627) and `insert`s `pipeline_runs` (line 640).
 
@@ -259,4 +266,251 @@ The route sets `maxDuration = 10` and its own header comment records that *"the 
 
 ---
 
-*Run 5. Sweeps A (code half), D, E complete; B, C, F-traction not attempted — no DB. Nothing shipped: no push credential, no DB. All timestamps Pacific.*
+---
+
+# PART TWO — 12:55 PM PT onward: the DB recovered mid-audit
+
+**The outage ended.** First successful read **12:55:37 PM PT** (200 in 0.2 s). Sweep B pinned recovery tighter from `pipeline_runs`: last pre-recovery minute **11:58**, then 12:01 (3 pipelines) → 12:03 (12) → 12:11 (30 distinct). **Reads resumed ~12:00–12:03 PM PT; total outage ≈ 6h15m** (05:48 → ~12:01).
+
+The Supabase MCP also became available (Trevor present to approve). **Sweeps B and C were then run in full, and the DB half of sweep A was completed.** Push remained unavailable throughout — re-tested, same `fatal: could not read Username`, exit 128. **So this pass still shipped nothing, and that remains a capability limit, not a judgement.**
+
+## §8 — THE OUTAGE: the positive control nobody had, and it is decisive
+
+⭐ **Postgres served its own scheduler continuously through the entire outage.** VERIFIED from `cron.job_run_details`, split on the outage boundary:
+
+| window | ok | statement timeout | startup timeout | fail rate |
+|---|---:|---:|---:|---:|
+| pre (09-17 12:00 → 09-18 05:48 PT) | 5,973 | 627 | 102 | **10.9%** |
+| **in-outage (05:48 → 12:01)** | **2,313** | **0** | **0** | **0.0%** |
+| post (12:01 → 12:57) | 380 | 2 | — | 0.5% |
+
+`pipeline_runs` agrees: **49 distinct pipelines logged runs during the outage**, 163–168 runs/hr against a 103–151/hr baseline.
+
+🚨 **This is the control both #122 and Part One said could not be taken, and it settles the question.** pg_cron's success rate did not merely hold — it **improved to 100%** while external reads were refused. An instance starved badly enough to refuse TCP does not run its own scheduler flawlessly for six hours. **"Our query load pinned the database" is now positively excluded, not merely unsupported.** Combined with the Storage `544` (§1), the failure was **edge/reachability only**.
+
+⚠ **This also corrects Part One's own §1 inference.** I wrote that the Storage 544 *"moves the instance-level alternative from unexcluded to positively supported."* **That was too strong.** The pg_cron control excludes instance-level starvation outright. The accurate statement: **Cloudflare reached the origin, Postgres was healthy and serving internal work, and the layer between them — Kong/PostgREST/GoTrue reachability — is where the failure sat.** I am recording my own over-reach rather than quietly dropping it.
+
+**Egress was broken too** (new, and it is the only in-outage failure signal): exactly two pg_net lanes account for every in-outage failure — `atlas-market-feed` 169/172 (98%, vs 0.6% pre) and `atlas-editions-refresh` 170/170 (100%, vs 0.2% pre). **Both fully recovered.** NOT-A-FINDING — but a 2-day pooled rate for either reads ~33% and is meaningless today.
+
+**Nothing identifies a pinning reader**, and the in-outage profile is *cleaner* than baseline — the opposite of a saturation signature. ⛔ No cause asserted beyond the layer.
+
+## §9 — ✅ THE RECOVERY-SIDE RISK I FLAGGED DID NOT MATERIALISE
+
+Part One warned the degraded renders were cached `HIT` and would keep serving *"temporary database-load failure"* past recovery. **VERIFIED false — all 10 boards serve real data, no degraded copy:**
+
+`squeeze` HIT age 206 · `offer-spread` PRERENDER · `candy-mlb` HIT 154 · `panini-squeeze` HIT 234 · `deals` HIT 133 · `top-sales` PRERENDER · `rookie-board` HIT 376 · `serial-premiums` PRERENDER · `cross-collection` PRERENDER · `pack-reality` HIT 1608 — **all 200, none containing degraded copy.** Public APIs 200 with fresh `fetched_at` (19:56Z). **A flagged risk that did not happen, recorded as such.**
+
+⚠ **This does NOT clear §2.** The fabricated-zero code is unchanged; it simply has no failure to expose now. §2 stands exactly as written and its refutation test is still owed on the next failure.
+
+## §10 — SECURITY: the DB half, now complete
+
+**Every invariant clean** (VERIFIED 12:55 PM PT): `rls_off_tables` **0** · `check_public_security_invariants()` **0 rows** · `check_anon_write_surface()` **0 rows** · `jsonb_array_length(check_secdef_anon_exec_drift())` **0** · anon-readable views lacking `security_invoker` **0** · anon/auth-readable matviews **0** · foreign tables in `public` **0** · extensions in `public` **0** · trivially-true write policies reachable by anon/authenticated/PUBLIC **0** · anon-readable staged Panini/Candy **0**.
+
+**Two counts moved — diffed as SETS, not counts:**
+- **anon EXECUTE: 82 of 761** (register: 81 of 659). Total functions grew **+102**; anon-exec grew **+1**. Resolved by enumerating the set: **every anon-executable function carries a pinned `search_path`, and exactly one writes — `trim_recent_searches`, `search_path=public`, SECURITY INVOKER.** That matches the register's recorded disposition ("the 1 writer is a trigger fn, INVOKER") exactly. **No drift.**
+- **anon write-grant objects: 5** (register: 20 objects, 4 genuinely insertable). A large SHRINK. ⚠ Not re-derived to the object level this pass — **flagged for the next pass to diff the membership**, since a shrink is as much a set change as a growth and the register's row is now wrong either way.
+
+## §11 — PIPELINES (sweep B) — findings
+
+### R100 · P1 — `price-snapshots` writes 1–6 of 24 hourly buckets a day, and its alarm was calibrated FROM the broken lane
+
+**VERIFIED by the OUTCOME table, 9 days** (`count(distinct bucket)` per PT day, out of 24):
+`09-10 → 3 · 09-11 → 4 · 09-12 → 5 · 09-13 → 3 · 09-14 → 4 · 09-15 → 6 · 09-16 → 6 · 09-17 → 1 · 09-18 → 1`
+
+⚠ **Correction to sweep B's headline, which said "1 bucket/day for ≥5 days":** the true shape is **never more than 6 of 24, usually 3–6, and 1 on each of the last two days.** Chronic, not new — and worse lately.
+
+**Two causes, both verified, neither outage-related:**
+1. **Driver starvation.** Its only caller is `.github/workflows/rpc-pipeline.yml` (`cron: "5,25,45 * * * *"` = 72 ticks/day). Nothing in `vercel.json` or `cron.job` calls it. GitHub delivered **5 ticks in the 17.8 h pre-outage window** — the ~5/day ceiling, re-measured and still binding.
+2. **4 of those 5 failed:** `ok=false, duration_ms=30191, error="populate_price_snapshots_hourly: canceling statement due to statement timeout", extra={"stage":"rpc"}`. The one success wrote 14 rows for one bucket.
+
+⭐ **THE SHARP PART, and it is why sweep B's recommended fix is wrong.** Sweep B proposed tightening the watchlist arm from 1800 min to ~120. **Reading the arm's own `notes` field first — the cheap check — refutes that:**
+
+> *"Hourly OHLC bucket writer … a 504 under pooler saturation (the documented failure for this endpoint, **which had already cost 7 of 24 hourly buckets**) was indistinguishable from a healthy hour … **| [NO-SUCCESS ARM seeded 2026-09-04 from the pipeline's own ok-gap over ~73 h: max ok-gap 317 min -> GREATEST(3x, 2x max_silent)]**"*
+
+Two things follow. **(a) The bucket loss was already known and quantified on 2026-08-30 at 7 of 24 — it has since roughly tripled to 18–23 of 24, and nothing noticed.** **(b) The arm is not loose by oversight; it was DERIVED FROM THE SICK LANE'S OWN OBSERVED GAP.** That is CLAUDE.md's named anti-pattern verbatim: ⛔ *"A pin RE-DERIVED FROM THE OBSERVED STATE can never disagree with reality: assert the DELTA it stood in for."*
+
+**So the correct fix is not a tighter silence arm** — the lane can run, write one bucket, and look perfectly healthy. **Watch the OUTCOME: buckets-written-per-day against 24.** A silence arm structurally cannot see this defect at any threshold.
+
+⛔ **I did NOT change the arm.** Tightening it would have produced constant alarm noise against a known-starved driver while still not detecting bucket loss — the weak-fix-crowding-out-the-strong-one trap. **Handed off instead.**
+
+`fmv-backfill` shares the driver, the starvation and the identical 1800/3600 arm seeded the same minute, but its one success read `{"stage":"caught_up"}` with 0/0 rows — **wasteful, not losing data. P2.**
+
+### R101 · P1 — `rpc-ts-listings-atlas-sync` loses 58.6% of ticks invisibly, and the register's diagnosis is now WRONG
+
+**VERIFIED, 09-17 12:00 → 09-18 05:48 PT (outage excluded):** 519 ticks, 304 failed (58.6%). ⚠ **Only ONE was a `job startup timeout`** — the other 303 are `canceling statement due to statement timeout` inside `atlas_listing_verify_tick` at four sites. **Known-issues records this lane under the startup-timeout framing (#774); do not carry that forward.**
+
+The invisibility is exact: **519 − 304 = 215, and `pipeline_runs` holds exactly 215 rows with 0 failures.** The lane reports 100% health while losing 3 of every 5 ticks; its arm (`max_silent_minutes = 20`) cannot see it because surviving ticks average 5 min apart.
+
+12-day trend: **load-correlated, not constant** (0.3%–47% by day; 0% on 09-06/07 at creation). Same shape on `rpc-allday-unmapped-atlas-resolver` (122/207 = 59%). ⚠ Distinct sub-case: `rpc-atlas-market-drain` (119/517) times out **inside `SELECT public.log_pipeline_run(...)`** — the work may have completed and only the *logging* died, a silent-loss shape `rows_written`/`ok` cannot represent.
+
+### R102 · P2 — the cadence-collapse detector reports `last_run_at: null` for lanes whose last run it knows
+
+`check_pipeline_cadence_collapse()` lists 8 lanes as `"stopped"` with `"last_run_at": null`. **`wallet-backfill` last ran 09-18 00:51 PT — inside `pipeline_runs`' 73 h retention and plainly readable.** The null comes from the detector's 12 h scan window; the field name claims otherwise. **That is CLAUDE.md's mirror defect (#80, "an `unknown` that is actually KNOWN") inside a safety instrument.**
+
+⭐ **And the 7 `wallet-backfill*` lanes are not stopped at all** — raw read: `12:27:14 PT seed-wallet-refresh ok extra={"reason":"12h_cadence_gate", …}`. They ran post-recovery and **deliberately declined to dispatch, inside a designed 12 h gate.** This is exactly the trap the brief warned about: "did not resume after recovery" would have been a false P0 here. **NOT-A-FINDING as a lane; P2 as a detector defect.**
+
+### ✅ The DB-gated question this pass owed — ANSWERED, and it refutes a prior claim
+
+**Do the lanes covered by the four 100%-`continue-on-error` backstops have watchlist arms that fire on silence? YES — every one, `is_active = true`, with both a silence arm and a no-success arm.** The documented exclusion ("whether the lanes actually ran is read from `pipeline_runs`, not this workflow's badge") **is justified.** `ufc-sales-indexer` is the sole inactive arm and its workflow step was deliberately removed to match.
+
+**Two controls on the instrument itself:**
+- `active_arm_but_unseen_72h` = **0**. ⚠ **This REFUTES handoff 2026-09-14 item #102's claim that suppressions name `is_active=false` rows as active** — no such row exists today.
+- `seen_but_arm_inactive` = 4, all deliberate.
+
+**The residual gap is coverage, not correctness.** Re-measuring the inbox 08-17 figure: **212 pipelines seen in 72 h, 135 active arms, 73 with no arm — of which 45 are `*-heartbeat` paired with an armed parent, leaving 28 PRIMARY lanes unarmed. 34.4% unwatched, improved from 41.6%, but the absolute count grew.** Most are from the 08-31 / 09-07 Atlas and observability waves — **arms were not added with the lanes.** Notably `atlas-editions-refresh` (503 runs/17.8 h) and `seed-wallet-refresh` (driver for 7 high-severity armed lanes) are unwatched, and **`sentinel` — the thing that reads the arms — has no arm on itself.**
+
+### Standing pipeline claims, re-measured
+
+| standing claim | re-measured (09-17 12:00 → 09-18 05:48 PT) | verdict |
+|---|---|---|
+| `job startup timeout` = 67–80% of pg_cron failures | **102 / 729 = 14%**; statement timeouts now 86% | 🚨 **SHIFTED — stop quoting 67–80%.** The *writes-nothing* half holds exactly |
+| GitHub honours ~5 scheduled runs/workflow/day | `dead-lane-backstop-heartbeat` 09-11→09-17: 8,9,7,5,6,7,6 vs 96 scheduled = **7.2% delivery** | **HOLDS.** Every GHA cron above ~5/day is a false document |
+| `pipeline-sentinel.yml` delivers ~1 tick per 3 h | 09-14→09-17: **29, 29, 30, 29**/day vs 24 scheduled | **REFUTED as of ~09-14** — now ≥hourly. ⚠ INFERRED: counts include `workflow_dispatch` |
+
+⚠ **One instrument defect found in the watchdog:** `gha-schedule-watchdog` published *"github actions has delivered no schedule-tagged tick in 418 min … 61 cadence lane(s) breaching"* during the outage. **Its verdict is unfalsifiable while reads are down** — it measures "did a GHA tick WRITE to our DB", so it reported a Cloudflare outage as a GitHub failure and counted 60+ outage-blocked lanes as breaching, with `instrument_broken: false` throughout. Self-cleared 12:38 PM PT.
+
+⚠ **`v_pipeline_failure_rates` could not see the outage** — it is fed by the six-hourly `pipeline_runs_daily`, whose `refreshed_at` read 11:11 AM PT, mid-outage. Correct by construction, stale by design; **not the instrument for an in-flight incident.** Worth a caveat wherever it is quoted.
+
+⚠ **Five days' notice:** `rpc-dune-free-tier-sunset` is a one-shot self-pause scheduled `0 12 23 9 *` that `UPDATE`s `dune_budget_state`. **It fires 2026-09-23.**
+
+## §12 — DATA INTEGRITY (sweep C) — the headline metric did NOT fall
+
+✅ **Reproduced against the production definition** (`get_collection_stats`, migrations `20260902054902` + `20260906174049`), hand query matching the live RPC exactly:
+
+| collection | editions | priced | FMV % | **HIGH/MED %** |
+|---|---:|---:|---:|---:|
+| nba_top_shot | 14,016 | 13,689 | 97.7 | **52.0** |
+| nfl_all_day | 6,190 | 5,383 | 87.0 | **27.5** |
+| candy_mlb | 125 | 125 | 100.0 | **59.2** |
+| disney_pinnacle *(render grain)* | 2,600 | 2,445 | 94.0 | **28.0** |
+| laliga_golazos | 575 | 503 | 87.5 | 0.7 *(settled)* |
+| ufc_strike | 518 | 381 | 73.6 | 0.0 *(settled)* |
+
+🚨 **The 09-14 figures of "TS 58.1 / AD 29.9" were the TOP of the range, not a level that has since been lost.** `rpc_trust_health_history`, 10 days, n=27: **TS 44.8–59.2 (mean 53.1)**, **AD 24.3–31.7 (mean 28.7)**. The sweep identity reproduces exactly — TS 79.1% swept × 65.3% fresh-cohort = 51.7; AD 56.7% × 46.9% = 26.6 — and the fresh-cohort ceiling is essentially unchanged vs 09-10 (TS 65.3 vs 68.1, AD 46.9 vs 46.7). ⭐ **Sweep position moved; pricing quality did not.** This is exactly the trap CLAUDE.md records about this metric, caught before anyone read a 6-point "drop" as a regression.
+
+**Invariants still at zero** (VERIFIED): `v_fmv_sanity_flags` 0 · `edition_fmv_current fmv_usd <= 0` 0 · `pinnacle_catalog fmv_usd <= 0` 0 · `editions.circulation_count = 0` 0 and NULL 0 · `topshot_impossible_parallel_serials` 0 · `sales_serial_supply_worst_pct` 0.0033%.
+
+**Pack EV honesty: CLEAN, re-derived.** TS `edition_count=0` → 291 rows, 291 NULL `gross_ev`, 291 NULL `pack_ev`, 0 `is_positive_ev`. **No stale EV published as live** — every `is_positive_ev AND available` row is in the 0–30 d bucket; `stale30 AND primary_available` = **0** in all four collections. **No fabricated zero when price is missing** — 2,626 AllDay + 176 Golazos rows with NULL `pack_price` carry `gross_ev` and **NULL** `pack_ev`/`value_ratio`/`is_positive_ev`. That is the correct shape.
+
+**Parallels/subeditions clean:** 4,477 TS parallel keys (was 3,805), **0** missing `subedition_id`, **0** missing `subedition_name`, **0** subedition ids on a base key, **0** orphan parallel-keyed offers, **0** zero/negative offers or asks.
+
+### R103 · P2 — Top Shot ask freshness has degraded 26× against the gate that consumes it
+
+**VERIFIED:** `edition_offers` — **4,500 of 13,101 TS asks (34.4%) are older than `MAX_ASK_AGE_HOURS_CORROBORATION` (7 d)**, median ask age 103.8 h. The in-code measurement that SET that threshold (`lib/fmv-confidence.ts`, 08-29) recorded **155 (1.3%)**.
+
+A cadence effect, not a stall: ~2,900 rows/24 h on 13,310 → a **~4.6-day refresh cycle**, with only 56 rows >14 d and 7 >30 d. **Consequence:** ask-corroboration (LOW→MEDIUM at 3 sales) is structurally unavailable for about a third of the catalogue at any instant — **a second sweep-position term in the headline metric, alongside the FMV sweep.**
+
+⚠ **ELIGIBILITY IS NOT GAIN, and the sign is not one-way:** 1,565 LOW TS editions hold an ask past the bound; at the recorded 31% realisation rate that is ≈300–500 editions, ≈**+2 to +3.5 pts** — but **1,454 MEDIUM editions also sit past the bound and can DEMOTE** on their next recalc. *Refuted if* the 08-29 1.3% sample was itself taken at a sweep peak.
+
+### R104 · P3→P1 — `editions.badges` is a universally empty column
+
+**VERIFIED: `editions.badges` is an empty `text[]` on all 14,016 TS and all 6,190 AllDay rows.** Canonical display is `get_edition_badges_unified` ← `badge_editions`, which is healthy (13,915 TS keys = 99.3% coverage, median age 43 min, 0 orphans). **Any future reader of `editions.badges` renders zero badges silently** — a dead denormalised column that is a landmine, not a current defect.
+
+### Two false findings sweep C killed on grain — recorded so nobody re-derives them
+
+1. **"400 TS `pack_ev` rows with no distribution row"** — artifact. Those rows carry a **NULL `dist_id`** (the known TS no-dist-at-event-time property); **0 of 810 real TS `dist_id`s are unmatched.**
+2. **"3,465 TS editions hold a `player_name` with a NULL `player_id`"** — reads like "we hold it and render nothing", but the player RPC matches `(player_id = p.id OR player_name = p.name)` and `app/api/cron/data-integrity` already tracks the NULL-FK population. **Would become a defect only if a surface joined on `player_id` alone.**
+
+**Drift noted on already-settled items, not re-filed:** Golazos badge median age **54.98 d** (register 27.85 d) · AllDay `edition_offers` bid median **7.8 d** (was 6.06 d; still 0 of 2,267 carrying `low_ask`, so D21's cross-contamination condition remains unmet) · TS editions with NULL `player_name` down to **153** from 548, and **0 of the 43 `::` parallels have a named base edition** — nothing recoverable from what we hold, so an honest gap, not a defect.
+
+## §13 — 🚨 R105 · P1 — THE HOMEPAGE DESCRIBES A PRICING MODEL THE PRODUCT DOES NOT IMPLEMENT
+
+`components/HomePageMarketing.tsx:144`, a `DEPTH_BULLETS` entry on the highest-traffic public page:
+
+> *"Serial premium multipliers — **1-of-1 = 12×, low serials = 4.5×, last mint = 3×**."*
+
+I checked it **both ways** — against the market, and against our own code — because the copy is ambiguous about which it describes. **VERIFIED, `lib/market-compute.ts`:**
+
+| claim | our model | live market (90 d, n=108,058 TS sales) | verdict |
+|---|---|---|---|
+| **1-of-1 = 12×** | ✅ `SPECIAL_SERIAL_MULTIPLIERS["#1 Serial"] = 12` | serial #1 median **7.50×**, mean 20.36× | **ACCURATE as a model description** |
+| **low serials = 4.5×** | ❌ **no such constant.** Low serials go through the continuous power law `max(1.0, (serial/medianSerial)^exponent)`; a #10 of 100 Common yields ≈**2.3×** | median **1.00×**, p90 2.58× (n=13,215, production `lowSerialThreshold`) | **UNSUPPORTED both ways** |
+| **last mint = 3×** | ❌ **the model returns exactly `1.0`** — `market-compute.ts:212`, `if (serialNumber >= medianSerial) return 1.0`. Last mint is the maximum serial, so it can never receive a premium | median **2.60×** | **FLATLY CONTRADICTED BY OUR OWN CODE** |
+
+⭐ **One of three claims is accurate; one is unsupported; one describes a feature the code explicitly refuses to provide.** A no-change control (typical serials, n=93,837) came in at **0.97×**, so the market denominator is unbiased.
+
+**This is the "never claim what the product lacks" rule** — which CLAUDE.md states binds *every* surface, not just the concierge — failing on the homepage. ⚠ Note the market data says the model **under**-prices last mint (2.60× observed vs 1.0× applied); that is a separate, genuine FMV question and must **not** be fixed by autonomous retuning.
+
+⚠ Both the copy's 12×/4.5×/3× and the handoff's 9.89/1.50/5.00 are **dated samples**; neither reproduces today's data. **Re-derive before editing, do not quote either.**
+
+---
+
+## §14 — WHAT I DELIBERATELY DID NOT SHIP, AND WHY
+
+I had DB write access for the second half and used **none** of it. Stated plainly so it does not read as an omission:
+
+1. **The `price-snapshots` arm** — tightening it was sweep B's recommendation and it is the wrong fix (§11/R100). It would have generated constant noise against a known-starved driver while still being blind to bucket loss.
+2. **Arming the 28 unwatched lanes** — correct work, but 28 new alarm arms landing unannounced on Trevor is not a change to make unsupervised, and their thresholds need each lane's real cadence.
+3. **Any migration.** CLAUDE.md is explicit: a no-push session that runs `apply_migration` **reds `migration-parity` until the file is committed**, and I cannot commit. Every DB fix here needs a migration. **Applying one would have broken CI to ship a monitoring improvement.**
+
+**Everything is in the handoff with its evidence, its trap, and its revert path.**
+
+## §16 — QA OF THE SHIPPED P0 FIX: it covers 2 of the 9 boards
+
+`e79a38d42` landed at 13:04 PT off this handoff. **The fix itself is well built** — SSR-asserted via `renderToString` (the trap this report named), asserting the ABSENCE of the false value, and — the part worth copying — **carrying a no-change control**: *"a genuinely empty board still prints real zeros … without this arm the fix could be 'render — always', which would destroy a true reading to hide a false one."* It is also honest that it could not be verified end-to-end (the DB recovered, so no failure was left to expose) and defers to a COLD pass under a forced failure, per #33. Gate: `tsc` 0, lint ratchet at baseline 715, 17,400 tests passed.
+
+⚠ **But it touched `top-sales` and `squeeze` only.** The finding was **9 boards**, and the handoff said *"grep for the EXPRESSION, not the file."*
+
+⚠ **AND MY FIRST QA INSTRUMENT WAS WRONG — recorded because it is the more useful half.** I grepped for `initialFailed`/`seedFailed` and read `squeeze` as **unfixed**, because the two boards were fixed by **two different mechanisms**: `top-sales` threads `initialFailed`, while `squeeze` gates on a server-provided `degraded?.failed?.length`. ⭐ **A proxy population that coincides with the property today expires the moment someone fixes the same defect a second way.** The honest instrument is "does the KPI computation consult ANY failure provenance", not "does it contain this identifier".
+
+**Re-run with the corrected instrument:**
+
+| board | provenance present in client | verdict |
+|---|---|---|
+| `top-sales`, `squeeze` | ✅ `initialFailed` / `degraded.failed` | **FIXED** |
+| `candy-mlb` | `degraded.failed` ×2 | likely covered — needs a read |
+| `rookie-board`, `serial-premiums`, `cross-collection` | `initialFailed` present | ⚠ flag exists; **whether it GATES the KPI strip needs a read** — my grep cannot tell, and I am not filing a verdict it cannot support |
+| **`offer-spread`, `panini-squeeze`, `deals`** | ❌ **no failure flag anywhere in the client** | ⚠ **strongest candidates to still fabricate** |
+
+### `deals` — confirmed still fabricating, and the flag is already in its props
+
+**VERIFIED by reading it.** The server page **already computes and passes the provenance**: `app/insights/deals/page.tsx:52` → `initialDegraded={degradedFromSource(source, "Below FMV board")}`. But `DealsBoardClient`'s `kpis` useMemo (line 319) branches on **`if (rows.length === 0)`** and returns zeros, then `count: rows.length` — **it never reads `initialDegraded`.** Its only `error` state (line 220, rendered line 520 as *"Failed to load: …"*) covers its **own refetch** (line 283 `if (!r.ok) throw`), not the seed.
+
+⭐ **That is the server-seeded-prop trap verbatim** — a component that distinguishes failure for its own fetch and still concludes on the seed — and it is the sharpest instance in the catalogue, because `deals` is the board whose empty state reads **"No editions listed below a trustworthy FMV match"**: a claim about market quality manufactured from a 503, with the flag that would prevent it sitting unused in its props. **The fix is a few lines.**
+
+Filed as **R106**.
+
+---
+
+## §15 — TRACTION (sweep F), reported because it is bad
+
+VERIFIED 2026-09-18 ~2:20 PM PT. Stated plainly, with no feature proposed as the answer.
+
+| measure | value |
+|---|---|
+| `auth.users` all-time | **28** |
+| new in 30 d | **7** |
+| **signed in within 7 d — the WAU number** | **3** |
+| `wallet_paste`, human (`bot_ua = false`), all-time | **99** |
+| `wallet_paste`, human, last 30 d | **68** |
+| `email_subscribers` | **0** |
+| `support_conversations` (⚠ `WHERE NOT is_smoke_test`) | **65** |
+
+**WAU is 3.** The monetization gate is 50+ weekly actives, so it is not close, and nothing here suggests it is about to be.
+
+⭐ **The one number that is actually moving: ~2/day human `wallet_paste`, and I ran my own refutation test on it — it SURVIVED.** I said the finding should be discarded if the events came from a handful of sessions. Decomposed: **66 events across 47 distinct sessions and 51 distinct inputs, max 3 in any one session, mean 1.70.** Not a handful of sessions. (66 vs the 68 above is the rolling `now()` window, not a discrepancy.)
+
+🚨 **AND THE FUNNEL IS THE REAL FINDING — the anonymous path WORKS and the account wall is where everything dies.** Of the 47 sessions that pasted a wallet, in the same 30 days:
+
+| step | sessions |
+|---|---:|
+| `wallet_paste` | **47** |
+| `share_view` (the Top Collector Report) | **36 — 77% of pasters** |
+| `insights_view` | 24 |
+| `collection_view` | 23 |
+| `home_view` | 13 |
+| **`signin_click`** | **1** |
+
+**77% of people who paste a wallet get to the report. 2% click sign in.** The product delivers its value anonymously and converts essentially nobody to an account — which is also why `auth.users` reads 28 while the tool is used daily. ⚠ **INFERRED** that `share_view` is the report render; *refuted if* it counts inbound visits to a shared `/share/[wallet]` link instead, which would make it an acquisition channel rather than a conversion step. **That one definition is worth pinning before any decision rests on this table.**
+
+⚠ **A probe of mine that could NOT discriminate, stated rather than dressed up:** only **8 of the 51 distinct inputs are Flow-shaped (`0x…`), and 43 are usernames** — and `wallet_moments_cache` is keyed by address, so "only 8 resolve" is **not** evidence that 43 failed. The username→address path is separate and my query cannot see it. The funnel table above is the answer that probe was reaching for.
+
+⚠ **Do NOT read `human_sessions_30d = 18,007` as 18,007 people.** Register item R59 records that `bot_ua` under-catches and that session-level funnel counts remain roughly 99% machine. The two counts in this table I would defend are `auth.users` and `wallet_paste`; the session counts are not instruments yet.
+
+⚠ `email_subscribers = 0` is unchanged from the run-4 sweep and was source-verified then (component + proxy, 08-28) — **not re-derived today.**
+
+---
+
+---
+
+*Run 5, both halves. Part One 08:20–12:00 PM PT (no DB, no MCP, no push). Part Two 12:55–14:30 PM PT (DB recovered, MCP approved, still no push). Sweeps A, B, C, D, E complete; F-traction not run. Shipped: nothing — by capability in Part One, by judgement in Part Two. All timestamps Pacific.*
