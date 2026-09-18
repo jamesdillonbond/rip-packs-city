@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🧹 `@sentry/nextjs` IS OUT OF THE TREE — #34's residue: 143 packages, the build-plugin wrapper, four init files and the quota guard gone; the five server captures now write to the runtime log through one shim, and the root error boundary reports through the client beacon · Claude Code cloud
+
+**Code + tests + dependency removal. No migration, no DB object, no data mutation.** Executes the residue #34 filed on 2026-09-07 (Trevor: *"no Sentry upgrade unless absolutely needed"*; the beacon IS the client-error detector) and re-derived this morning — deferred all day, correctly, while #122 was open.
+
+📏 **MEASURED, like-for-like, on local `next build` output before and after (the Vercel build-log tool is unavailable from here; the local build compiles every client chunk before failing page-data collection on the missing DB env, so `.next/static/chunks` is complete):** client chunks 140 → 139 · **2,130 → 2,034 KB gz (−96 KB gz, −299 KB raw) across every client chunk** · the vendor chunk that carried the SDK (434 KB raw / **130 KB gz**) is **gone outright** (0 chunks mention sentry, from 2 at 149 KB gz) · exit bar was "vendor chunk −35 KB gz or better". ⚠ gzip-9 on local chunk output, not Vercel's brotli and not per-page first-load (the local build cannot collect page data without DB env) — like-for-like within the method, re-derive before quoting
+
+🧭 **What changed, and why each piece is honest:**
+- **`next.config.ts`** — `withSentryConfig(...)` unwrapped to a plain export (the wrapper injected the SDK into every client bundle and a source-map upload step).
+- **Deleted:** `instrumentation-client.ts`, `sentry.client.config.ts`, `sentry.edge.config.ts`, `sentry.server.config.ts`, `lib/observability/sentry-quota-guard.ts` + its test (the guard bounded a quota that no longer exists to bound).
+- **`instrumentation.ts`** keeps Next's `onRequestError` hook — the one Sentry entry point that still had a reader — pointed at the shim.
+- **`lib/observability/report.ts`** — the same API subset the five routes called (`withScope`/`setTag`/`setExtra`, `captureException`, `captureMessage` in both its string-level and context-object forms, `addBreadcrumb`), writing `[report]`-prefixed lines to the runtime log (what `get_runtime_errors` groups on). Breadcrumbs stay buffered (bounded at 50) and attach to the NEXT capture, as Sentry's did — a listings tick adds hundreds and must not become hundreds of log lines. ⭐ **Because the API is the same, each route's diff is its import line, and every deep-test assertion that pinned the SEMANTICS (scope tags reach the exception; the rate-gated "page" in the listings indexers is emitted or not; breadcrumbs attach) still pins them — the eight test mocks changed only their module path.** ⛔ Not a paging channel and does not claim to be: Sentry never paged either after 08-18; the sentinel and the pipeline-alerts arms are the alarm.
+- **`app/global-error.tsx`** — the root boundary posted to a dead collector; it now posts the beacon's own `client_error` payload to `/api/telemetry` (the record proven on prod 09-06/09-08), carrying Next's `digest` in `source` so a user's crash still ties to the server log line. Its test keeps every honesty pin (no "notified" promise, "We logged it" present, reset wired) and now asserts the POST leaves the page.
+- **`.env.example`** loses the four `SENTRY_*` placeholders. ⚠ The Vercel env vars themselves are untouched (env writes are operator-only); they are inert.
+
+⚠ **Comment collateral from the namespace swap, caught and fixed:** `Sentry.` → `Report.` also rewrote a sentence-final *"stay out of Sentry."* in the smoke-test route's prose — the mechanical rename hit a comment, which is why the rename was reviewed line by line. Historical comments elsewhere still say "Sentry" as history; they are not claims.
+
+🧪 **Gate:** the 10 suites that touched the SDK **129/129** (shim 6 new, global-error 6) · `tsc` **0** with the package gone · `lint:ratchet` **715 vs baseline 715** (3,069 → 3,065 files) · driver-leak / lane-egress / third-state / brand guards exit 0 · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="sentry/nextjs is out of the tree"`) — then `npm ci` to restore `node_modules`. Restores the wrapper, the four init files, the quota guard and the dependency. **No DB half.**
+
 ### 2026-09-18 · 📏 THE BRAND GUARD NOW STATES ITS PHASE-2 NUMBER — "tracked separately" becomes a count, and the audit's homepage-multiplier P2 is marked as the refuted item it already was · Claude Code cloud
 
 **One guard script + one test + two docs notes. No migration, no DB object, no data mutation, no gate tightened.**
