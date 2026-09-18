@@ -141,7 +141,12 @@ const HOW_STEPS: Array<{ n: string; title: string; copy: string }> = [
 
 const DEPTH_BULLETS: Array<{ icon: string; copy: string }> = [
   { icon: "◈", copy: "Outlier-filtered FMV with distributional shape (p10 / p50 / p90)." },
-  { icon: "▲", copy: "Serial premium multipliers — 1-of-1 = 12×, low serials = 4.5×, last mint = 3×." },
+  // ⚠ EVERY "N×" ON THIS LINE IS PINNED to lib/market-compute.ts by
+  // __tests__/homepage-serial-premium-copy-matches-the-model.test.ts. Do not add a number here
+  // that the model does not implement. Deep-audit R105 (2026-09-18): this bullet used to read
+  // "1-of-1 = 12×, low serials = 4.5×, last mint = 3×" — 4.5× existed nowhere, and "last mint = 3×"
+  // was contradicted by our own code, which returns exactly 1.0 for any serial at or above the median.
+  { icon: "▲", copy: "Serial premium multipliers — #1 = 12×, jersey = 8×, perfect-mint = 6×, plus a tier-calibrated curve for serials below an edition's median." },
   { icon: "≋", copy: "Liquidity ratings on every edition based on 30-day depth." },
   { icon: "⚡", copy: "Real-time deal sniping on Top Shot." },
   { icon: "✦", copy: "Badge-aware pricing — Top Shot Debut, Rookie Year, Championship, Fresh." },

@@ -158,7 +158,11 @@ export function isSpecialSerial(traits?: string[] | null): boolean {
 // since we're applying it to lowAsk (floor) rather than an isolated comp.
 // These will be replaced by isolated comp lookups once 90d crawler is live.
 
-const SPECIAL_SERIAL_MULTIPLIERS: Record<SpecialSerialBadge, number> = {
+// ⚠ EXPORTED so the marketing copy can be PINNED to it. `__tests__/homepage-serial-premium-copy-matches-the-model.test.ts`
+// asserts every "N×" the homepage prints is a real entry here. Deep-audit R105 (2026-09-18) found the homepage
+// publishing "low serials = 4.5x, last mint = 3x" - neither exists in this file, and the second is flatly
+// contradicted by computeSerialMultiplier() returning exactly 1.0 at or above the median serial.
+export const SPECIAL_SERIAL_MULTIPLIERS: Record<SpecialSerialBadge, number> = {
   "#1 Serial": 12,                    // Conservative: ~20% below 15× lower bound
   "Jersey": 8,                         // Conservative: lower end of 10×–35× range
   "Original Perfect Mint Serial": 6,  // Conservative: lower end of 8×–25× range
@@ -193,7 +197,7 @@ function getSpecialSerialMultiplier(traits: string[]): number {
 // This only applies to non-special serials. Special serials use their
 // own isolated multiplier above.
 
-const TIER_EXPONENTS: Record<string, number> = {
+export const TIER_EXPONENTS: Record<string, number> = {
   Common: -0.52,
   Fandom: -0.55,
   Rare: -0.60,
