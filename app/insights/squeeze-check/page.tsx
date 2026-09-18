@@ -202,8 +202,8 @@ export default function SqueezeCheckPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {summary.top_squeezed.map((r) => (
-                    <tr key={r.edition_key ?? Math.random()}>
+                  {summary.top_squeezed.map((r, i) => (
+                    <tr key={r.edition_key ?? `unkeyed-${i}`}>
                       <td className="rpc-sc-td-ed">
                         <div className="rpc-sc-ed-name">{r.player_name ?? "—"}</div>
                         <div className="rpc-sc-ed-set">{r.set_name ?? "—"}</div>

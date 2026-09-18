@@ -182,3 +182,39 @@ describe("filterSortMoments", () => {
     expect(filterSortMoments(moments, "fmv_desc", "RARE", "nuggets")).toHaveLength(0)
   })
 })
+
+// ── UFC Strike's ladder (deep-audit D23 residual, 2026-09-18) ──────────────
+// normalizeTier returned null for CONTENDER/CHALLENGER/CHAMPION, so tierRank gave
+// every UFC trophy the unknown rank and the tier_rank sort shuffled a CHAMPION
+// among CONTENDERs by FMV. The canonical ladder says UFC tiers are internally
+// ordered and not comparable to the Flow tiers — so they rank after them.
+describe("UFC Strike tiers sort by their own ladder", () => {
+  it("normalizes the three UFC tiers and ranks them CHAMPION < CHALLENGER < CONTENDER, after the Flow ladder", () => {
+    expect(normalizeTier("Champion")).toBe("CHAMPION")
+    expect(normalizeTier("CHALLENGER")).toBe("CHALLENGER")
+    expect(normalizeTier("contender")).toBe("CONTENDER")
+    const champion = tierRank("CHAMPION")
+    const challenger = tierRank("CHALLENGER")
+    const contender = tierRank("CONTENDER")
+    expect(champion).toBeLessThan(challenger)
+    expect(challenger).toBeLessThan(contender)
+    expect(champion).toBeGreaterThan(tierRank("COMMON"))
+    expect(contender).toBeLessThan(99)
+  })
+
+  it("tier_rank sorts a UFC trophy set by ladder, not by FMV", () => {
+    const moments = [
+      { moment_id: "c1", tier: "CONTENDER", fmv_usd: 900 },
+      { moment_id: "ch", tier: "CHAMPION", fmv_usd: 10 },
+      { moment_id: "cl", tier: "CHALLENGER", fmv_usd: 500 },
+    ]
+    expect(filterSortMoments(moments, "tier_rank", "ALL", "").map((m) => m.moment_id)).toEqual(["ch", "cl", "c1"])
+  })
+
+  it("NO-CHANGE CONTROL: UFC tiers are not filter chips, and the Flow ladder ranks unchanged", () => {
+    expect(presentTiers([{ moment_id: "x", tier: "CHAMPION" }, { moment_id: "y", tier: "RARE" }])).toEqual(["RARE"])
+    expect(tierRank("ULTIMATE")).toBe(0)
+    expect(tierRank("COMMON")).toBe(TIER_ORDER.length - 1)
+    expect(tierRank(null)).toBe(99)
+  })
+})

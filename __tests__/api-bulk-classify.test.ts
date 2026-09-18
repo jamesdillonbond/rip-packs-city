@@ -2,9 +2,9 @@ import { describe, it, expect, vi } from "vitest"
 import { NextRequest } from "next/server"
 
 // Route integration test for GET /api/bulk-classify (SSE classifier).
-// Auth is a ?token= query param compared to a module-level INGEST_TOKEN
-// (`!INGEST_TOKEN || token !== INGEST_TOKEN` → 401), checked before the stream
-// opens. With the env unset at import the token is empty, so every request 401s.
+// Auth is `Authorization: Bearer <INGEST_TOKEN>` (or, deprecated, `?token=`)
+// compared to a module-level INGEST_TOKEN (`!INGEST_TOKEN || token !==
+// INGEST_TOKEN` → 401), checked before the stream opens. With the env unset at import the token is empty, so every request 401s.
 // We pin the fail-closed guard (the run path streams live TopShot GQL work).
 
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))

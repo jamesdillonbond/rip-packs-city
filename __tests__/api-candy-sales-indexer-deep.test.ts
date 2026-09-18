@@ -124,7 +124,7 @@ describe("candy-sales-indexer — discovery gate + auth", () => {
     expect(state.afterCbs).toHaveLength(0)
   })
 
-  it("202s discovery_pending (no after() sweep) while the ME symbol is a TODO", async () => {
+  it("202s discovery_pending (no after() sweep) while the Magic Eden symbol is NOT READY (state.ready = false) — the symbol itself was armed 2026-07-19", async () => {
     state.ready = false
     const spy = install({})
     const res = await POST(req())

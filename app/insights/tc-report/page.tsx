@@ -267,8 +267,8 @@ export default function TcReportPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sq.top_squeezed.slice(0, 10).map((r) => (
-                    <tr key={r.edition_key ?? Math.random()}>
+                  {sq.top_squeezed.slice(0, 10).map((r, i) => (
+                    <tr key={r.edition_key ?? `unkeyed-${i}`}>
                       <td className="rpc-tc-td-ed">
                         <div className="rpc-tc-ed-name">{r.player_name ?? "—"}</div>
                         <div className="rpc-tc-ed-set">{r.set_name ?? "—"}</div>

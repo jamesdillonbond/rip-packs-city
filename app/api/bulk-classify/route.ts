@@ -86,7 +86,21 @@ async function getAllUnclassifiedIds(
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl
-  const token = url.searchParams.get("token")
+  // ⚠ Prefer the Authorization header. The query-string form writes the token
+  // into our own Vercel access logs on every call (deep-audit 2026-09-18 R97 —
+  // scripts/run-bulk-classify.sh did exactly that, in a loop). The `?token=`
+  // fallback stays until every caller is confirmed header-only (two of the
+  // eight dispatch sources are invisible from a sandbox), but it is logged so
+  // its remaining callers can be counted from the logs before it is removed.
+  const auth = req.headers.get("authorization") ?? ""
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : null
+  const queryToken = url.searchParams.get("token")
+  const token = bearer ?? queryToken
+  // Which form the caller used is reported on the stream's `started` line
+  // (`auth: "header" | "query"`) rather than logged: a countable field beats a
+  // console line, and Vitest's console interception spends a Date.now() call
+  // that the wall-budget test counts.
+  const authVia = bearer != null ? "header" : "query"
   if (!INGEST_TOKEN || token !== INGEST_TOKEN) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -127,7 +141,7 @@ export async function GET(req: NextRequest) {
       const allIds = await getAllUnclassifiedIds(wallet)
       const total = allIds.length
 
-      await send({ status: "started", total, offset: requestedOffset })
+      await send({ status: "started", total, offset: requestedOffset, auth: authVia })
 
       if (requestedOffset >= total) {
         await send({

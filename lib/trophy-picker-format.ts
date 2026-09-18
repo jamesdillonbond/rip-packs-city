@@ -17,6 +17,16 @@ export type TrophyTierFilter =
 // The non-"ALL" tiers, in rarity order (rarest first).
 export type NormalizedTier = Exclude<TrophyTierFilter, 'ALL'>
 
+// UFC Strike's own ladder (CHAMPION rarest). Not a filter chip — the picker's
+// chip vocabulary is the Flow ladder above — but a UFC trophy still has to
+// SORT. Before 2026-09-18 normalizeTier returned null for these, so tierRank
+// gave every UFC moment the "unknown" rank 99 and the tier_rank sort shuffled
+// a CHAMPION among CONTENDERs by FMV (deep-audit D23 residual). The canonical
+// ladder in lib/tier-order says these are internally ordered and NOT comparable
+// to RARE/LEGENDARY/ULTIMATE, so they rank after the Flow tiers, in order.
+export type UfcTier = 'CHAMPION' | 'CHALLENGER' | 'CONTENDER'
+const UFC_RANK: Record<UfcTier, number> = { CHAMPION: 0, CHALLENGER: 1, CONTENDER: 2 }
+
 export type TrophySortKey = 'fmv_desc' | 'serial_asc' | 'tier_rank'
 
 export const TIER_ORDER: NormalizedTier[] = [
@@ -45,7 +55,7 @@ export interface TrophyMomentLike {
 
 // Maps a raw tier string (any casing, possibly a longer label) to one of the
 // canonical tiers, or null when it matches none.
-export function normalizeTier(tier?: string | null): NormalizedTier | null {
+export function normalizeTier(tier?: string | null): NormalizedTier | UfcTier | null {
   if (!tier) return null
   const t = tier.toLowerCase()
   if (t.includes('ultimate')) return 'ULTIMATE'
@@ -54,6 +64,9 @@ export function normalizeTier(tier?: string | null): NormalizedTier | null {
   if (t.includes('fandom')) return 'FANDOM'
   if (t.includes('uncommon')) return 'UNCOMMON'
   if (t.includes('common')) return 'COMMON'
+  if (t.includes('champion')) return 'CHAMPION'
+  if (t.includes('challenger')) return 'CHALLENGER'
+  if (t.includes('contender')) return 'CONTENDER'
   return null
 }
 
@@ -61,7 +74,7 @@ export function normalizeTier(tier?: string | null): NormalizedTier | null {
 // tokens 2026-08-01. ⚠ TrophyPickerModal builds translucent variants by
 // concatenating a hex alpha (`${tc}55`); that is invalid against a CSS
 // variable, so those call sites now use tierColorAlpha() from lib/tier-color.
-export function tierColor(tier: NormalizedTier | null): string {
+export function tierColor(tier: NormalizedTier | UfcTier | null): string {
   switch (tier) {
     case 'ULTIMATE':
       return 'var(--tier-ultimate)'
@@ -75,6 +88,12 @@ export function tierColor(tier: NormalizedTier | null): string {
       return 'var(--tier-uncommon)'
     case 'COMMON':
       return 'var(--tier-common)'
+    case 'CHAMPION':
+      return 'var(--tier-champion)'
+    case 'CHALLENGER':
+      return 'var(--tier-challenger)'
+    case 'CONTENDER':
+      return 'var(--tier-contender)'
     default:
       return NEUTRAL_TIER_COLOR
   }
@@ -100,21 +119,24 @@ export function displayName(m: TrophyMomentLike): string {
 
 // Rank a normalized tier for the "tier_rank" sort — rarest first (index 0),
 // unknown/null sinks to the bottom.
-export function tierRank(tier: NormalizedTier | null): number {
+export function tierRank(tier: NormalizedTier | UfcTier | null): number {
   if (!tier) return 99
-  const idx = TIER_ORDER.indexOf(tier)
-  return idx === -1 ? 99 : idx
+  const idx = TIER_ORDER.indexOf(tier as NormalizedTier)
+  if (idx !== -1) return idx
+  if (tier in UFC_RANK) return TIER_ORDER.length + UFC_RANK[tier as UfcTier]
+  return 99
 }
 
 // The set of tiers actually present in a moment list, returned in rarity order —
 // drives which filter chips render.
 export function presentTiers(moments: TrophyMomentLike[] | null | undefined): NormalizedTier[] {
   if (!moments) return []
-  const set = new Set<NormalizedTier>()
+  const set = new Set<string>()
   for (const m of moments) {
     const t = normalizeTier(m.tier)
     if (t) set.add(t)
   }
+  // UFC tiers are not chips (see UfcTier), so filtering by TIER_ORDER drops them.
   return TIER_ORDER.filter((t) => set.has(t))
 }
 

@@ -220,3 +220,47 @@ describe("bulk-classify — early-return terminal paths (double-close fix)", () 
     }
   })
 })
+
+// ── R97 (deep-audit 2026-09-18): the token belongs in a HEADER ─────────────
+// The route read the ingest token ONLY from `?token=`, so its one caller,
+// scripts/run-bulk-classify.sh, wrote the secret into our own Vercel access logs
+// on every loop iteration — and could not be fixed caller-side because there was
+// no header branch. The `started` line now reports which form the caller used
+// (`auth: "header" | "query"`) so the remaining query-string callers can be
+// counted from the run records before that fallback is removed.
+describe("bulk-classify accepts the token in the Authorization header", () => {
+  function hreq(headers: Record<string, string>, query: Record<string, string> = {}): NextRequest {
+    const p = new URLSearchParams({ wallet: WALLET, ...query })
+    return new NextRequest("https://t/api/bulk-classify?" + p.toString(), { headers })
+  }
+
+  it("a Bearer header authorises the run, and the started line says so", async () => {
+    installSb({ moment_acquisitions: { data: [], error: null } })
+    fetchMock = installFetchMock([momentStub({})])
+    const res = await GET(hreq({ authorization: "Bearer ingest-secret" }))
+    expect(res.status).toBe(200)
+    const lines = await collect(res)
+    expect(lines.find((l) => l.status === "started")).toMatchObject({ auth: "header" })
+  })
+
+  it("a wrong Bearer is refused even when no query token is present", async () => {
+    installSb({ moment_acquisitions: { data: [], error: null } })
+    fetchMock = installFetchMock([momentStub({})])
+    expect((await GET(hreq({ authorization: "Bearer wrong" }))).status).toBe(401)
+  })
+
+  it("the header WINS over a query token — a wrong header is not rescued by a right query string", async () => {
+    installSb({ moment_acquisitions: { data: [], error: null } })
+    fetchMock = installFetchMock([momentStub({})])
+    expect((await GET(hreq({ authorization: "Bearer wrong" }, { token: "ingest-secret" }))).status).toBe(401)
+  })
+
+  it("NO-CHANGE CONTROL: the query-string form still works, and is labelled as the deprecated form", async () => {
+    installSb({ moment_acquisitions: { data: [], error: null } })
+    fetchMock = installFetchMock([momentStub({})])
+    const res = await GET(req({ token: "ingest-secret", wallet: WALLET }))
+    expect(res.status).toBe(200)
+    const lines = await collect(res)
+    expect(lines.find((l) => l.status === "started")).toMatchObject({ auth: "query" })
+  })
+})
