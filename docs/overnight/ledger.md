@@ -10,6 +10,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · ✅ #122's CAUSE BRANCH RESOLVED WITH NO DB CONNECTION — the `<!DOCTYPE html>` IS Cloudflare's `522: Connection timed out`, and an AUTH endpoint that never reads our tables 522s too ⇒ NOT our query load · Claude Code desktop
+
+**Docs-only. Nothing shipped, nothing reverted** — the event is platform-side and there is nothing in this repo to change for it.
+
+📏 **MEASURED 08:04–08:25 AM PT from the Windows box**, own-network control `api.github.com` → **200**, and reproduced with **both** the legacy `anon` JWT **and** the new `sb_publishable_…` key, so none of it is a key-format artifact:
+
+| probe | reading |
+|---|---|
+| `/rest/v1/collections?select=slug&limit=1` | **522** after **19.4–19.6 s** |
+| `/auth/v1/health`, `/auth/v1/settings` | **522** after **~19.6 s** |
+| `/rest/v1/` (edge) | **401 in 195–335 ms**, `server: cloudflare`, `cf-ray …-SEA` |
+| MCP `select 1` | still *"Connection terminated due to connection timeout"* at 08:04 PT |
+| `/api/public/insights/` squeeze · rookies · offer-spread | **500 · 503 · 500** at 08:05 PT |
+| `get_project` | **`ACTIVE_HEALTHY`** throughout |
+| status.supabase.com | **"API Gateway — Degraded Performance"** = the ONE active service issue; us-west-2 otherwise Operational |
+
+🚨 **THE OPEN QUESTION THREE ENTRIES FLAGGED AS "CHASE THIS FIRST" IS ANSWERED, AND IT NEEDED NO DB CONNECTION.** The 522 body is Cloudflare's own error page — `<title>supabase.co | 522: Connection timed out</title>`. **That is the `<!DOCTYPE html>` that `fmv-recalc`, `panini-squeeze` and the six `candy-mlb` boards logged.** Reading "HTML where JSON belongs" as a GATEWAY failure was right; this names the gateway and the exact failure.
+
+⭐ **THE CONTROL BOTH FILINGS SAID THEY COULD NOT TAKE, TAKEN A DIFFERENT WAY.** Each stops at *"cannot discriminate (a) saturation from (b) connection-layer/platform, because `pg_stat_activity` needs the connection that is refused."* ⇒ **`/auth/v1/*` is the substitute control: GoTrue does not read our tables, holds its own pool, and cannot be starved by `fmv-recalc` or a wallet-backfill wave — and it 522s identically.** Add that **a CF 522 means Cloudflare could not OPEN a connection to the origin** — query-load exhaustion returns a JSON error from a *reachable* PostgREST, never a 522 — and the branch is **(b), platform-side**.
+
+⛔ **SO THE NIGHTLY PASS'S "FIRST SUSPECT" IS NOT SUPPORTED, AND THAT IS THE ACTIONABLE HALF.** Its entry names *"connection-pool/IO saturation from concurrent pipeline load on SMALL tier (wallet-backfill fan-out back-pressure gap, inbox 09-13) is first suspect."* **Do NOT throttle pipelines, re-tune `fmv-recalc`, or chase that back-pressure gap FOR THIS EVENT.** That is the weak-reason trap in CLAUDE.md aimed at a fault we do not own.
+
+⚠ **WHAT THIS DOES *NOT* ESTABLISH.** Supabase's internal root cause — **not asserted**. Nor that our load is healthy in general: the #42/#73/#84/M11 saturation class stands on its own evidence. It establishes only that **our load cannot explain a Cloudflare-level origin timeout on an endpoint that never touches our data.**
+
+👉 **ACTION IS TREVOR'S AND IT IS OFF-ESTATE:** status.supabase.com / Supabase support, reporting the 522 + `cf-ray` + the auth-endpoint control above. **Nothing in this repo to fix.** Everything owed on the next DB connection (positive control, self-clear window, the pinning reader) stays owed — this narrows which of those is still worth taking.
+
+⚠ **TOOLING, worth keeping — the INVERSE of the documented curl rule.** CLAUDE.md records *"`curl` fails silently here for Vercel REST calls — always PowerShell `Invoke-WebRequest`."* **Here it was the other way round:** `Invoke-WebRequest`'s exception path reported the 522 with **`BODY_LEN=0`** and would have left the HTML question open, while **`curl` returned the full Cloudflare page.** ⭐ **Read an error BODY with `curl`; read Vercel REST with PowerShell. Neither is the trustworthy tool in general.**
+
+⚠ **One of my own probes was void, recorded so nobody chases it:** `/api/public/insights/movers` → **404**. **There is no `movers` route** — the tree carries **29** `app/api/public/insights/*/route.ts` and `movers` is not one. **A 404 from a route you invented is not a finding.**
+
+- **Revert:** n/a — documents only; no code, no migration, no data mutation.
+
+### 2026-09-18 · 🚨 MONITOR-ONLY (OFF-HOURS + NO-PUSH) · live DB read-availability event, engine healthy, cause NOT asserted, 0 shipped · rpc-nightly-autonomous-pass (sandbox)
+
+**Nothing shipped. Nothing reverted. Nothing to revert** (no ship in the prior 24–48h). Fired late (~07:5x PT) so monitor-mode; sandbox git had no push credential so NO-PUSH regardless.
+
+🚨 **Event:** external DB reads failing while the engine is healthy. MCP `SELECT 1` refused ~13× over ~35 min (14:20–14:55Z, connection **establishment** timeout); public `/insights/squeeze` + `/insights/rookies` render the honest PARTIAL-DATA degraded state (honesty layer holding — no fabricated zeros); Vercel runtime errors show a NEW `<!DOCTYPE html>` fetch-failure cluster from **~12:48Z** (fmv-recalc, refresh-insights-cache candy/panini/player/scarcity boards, popular-on-collection golazos/candy/pinnacle). `get_project` = ACTIVE_HEALTHY, prod deploy READY.
+
+🔎 **Discriminator (postgres logs, no DB conn needed):** pg_cron lanes (Atlas drains 462/463/448/449/466, hydrate 469, sync_sales 471, wmc-backfill 302) **start and complete normally** 12:00–14:30Z; only **2** internal statement cancels. Internal work proceeds on reserved conns; **external clients (MCP, Vercel PostgREST) are starved** — reads abort on client-side 8s budgets before the DB logs a cancel.
+
+⛔ **Cause NOT asserted (§1c):** could not take the `pg_stat_activity` positive control — the connection it needs is what's refused. Best-supported (not shipped off): connection-pool/IO saturation from concurrent pipeline load on SMALL tier (wallet-backfill fan-out back-pressure gap, inbox 09-13, is first suspect); connection-layer/pooler incident not excluded. **Do NOT ship a fix from this reading.**
+
+👉 **Owed on next DB access:** the positive control (io_wait/active/total), confirm self-clear + record the window, then identify the pinning reader from `pipeline_runs`/pg_cron around 12:48–15:00Z 09-18. Full write-up: [handoff-2026-09-18-overnight-pass.md](../handoff-2026-09-18-overnight-pass.md).
+
+- **Revert:** n/a (no change made). Handoff + this entry + metrics-latest.json UNCOMMITTED on mount (NO-PUSH); a push-capable pass must re-splice at the first `^### ` and run the three ledger guards.
+
 ### 2026-09-18 · #122 ADDENDUM — 20 of 50 error groups did NOT exist before 12:48Z today, which is not the 7-day baseline that entry asks for but does narrow it · Cowork cloud
 
 **Docs-only. Adds one measurement to #122 (filed hours earlier, same day) and deliberately does NOT overturn its caution.**

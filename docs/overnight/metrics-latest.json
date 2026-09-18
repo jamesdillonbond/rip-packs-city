@@ -1,62 +1,45 @@
 {
-  "generated_at_pt": "2026-09-14 01:1x PT",
-  "generated_at_utc": "2026-09-14T08:0xZ",
-  "pass": "rpc-nightly-autonomous-pass run np-20260914-b1f7 (desktop, NO-PUSH — sandbox VM shell dead 6th night, Sept-8 Windows Plan9 breakage; DB/Vercel reads + file-tool mount writes only). Handoff/ledger/metrics UNCOMMITTED on mount; commit from desktop or a push-capable pass.",
+  "generated_at_pt": "2026-09-18 ~07:5x PT",
+  "generated_at_utc": "2026-09-18T14:5xZ",
+  "pass": "rpc-nightly-autonomous-pass (sandbox) — OFF-HOURS monitor (~07:5x PT) + NO-PUSH (sandbox git has no credential; desktop pushurl harvest dead). Handoff/ledger/this file UNCOMMITTED on mount.",
   "shipped": 0,
   "reverted": 0,
-  "verdict": "QUIET / QUEUE-ONLY — NO-PUSH removes code/deploys; the one DB candidate (Q-SCB partial indexes) is not clearly-safe now (active wallet-backfill wave blocks CIC + past 02-06Z quiet window + 60s cap invalid-index risk); concurrent Claude docs session pushing to main => collision gate. Nothing clearly-safe to ship.",
-  "health_at_close": "security 4/4 clean; 1 trust BREACH topshot_impossible_parallel_serials=36 (5->29->35->36, CONFIRMED live producer; #82, repair Trevor/Claude-Code-gated destructive re-key + route-logic writer fix); 37 other trust arms ok+fresh; stalled_pipelines []; rpc_ops_snapshot() clean.",
-  "superseded_note": "SUPERSEDED THE SAME DAY on the one headline it leads with. This snapshot was captured 2026-09-14 01:1x PT and reports topshot_impossible_parallel_serials=36 as an open, Trevor-gated breach with a live producer. It was REPAIRED later the same morning (#82 RESOLVED): 37 sales rows + 643 wmc rows re-keyed to base, and the metric read 0 at 07:14 AM PT (precompute re-verified 0 at commit time). The rest of the snapshot stands as measured. See docs/reference/known-issues.md #82, and #116 for the metric being parallel-scoped and blind to 1,727 base-edition rows.",
-  "security_public_invariants_rows": 0,
-  "security_anon_write_surface_rows": 0,
-  "security_secdef_anon_exec_drift": "[]",
-  "trust_breaches": [
-    "topshot_impossible_parallel_serials=36 (breach_at 3, #82; 5->29->35->36 monotonic = LIVE producer confirmed; destructive re-key + single-if writer fix, both push/Trevor-gated)"
-  ],
-  "trust_precompute_max_age_hours": 5.26,
-  "board_mv_refresh_stale_hours": 1.94,
-  "rpc_ops_snapshot_status": "OK (completed clean)",
-  "pipeline_alerts_notable": "timeout-under-load class NOT in a live spell (pg_stat_activity 2 IO backends): fmv-backfill 28.6%, lock-check-batch 31.8%, price-snapshots 43.8%, run-insider-detectors 31.5% (M11/#42/#73/#84 collateral); pack_distributions 11d stale BENIGN; unmapped-nfl_all_day 28413 actionable draining ~15.4d (info); Atlas 403 arms all info+attributed.",
-  "instance_load_control": "pg_stat_activity 08:0xZ: 19 idle, 2 active IO:DataFileRead, 1 active ClientRead. wallet-backfill runs last 30m = 30 (ACTIVE WAVE, hour-0/1 PT) -> blocks CREATE INDEX CONCURRENTLY -> Q-SCB queued.",
-  "post_ship_watch": {
-    "daily_portfolio_snapshot_rows_written": "VERIFIED FIX WORKS — 00:05 PT run (07:05:30Z) rows_written=25, inserted 25, snapshot_date 2026-09-14, 22.4s (was 0 on old code). The one owed number from 09-13 has landed.",
-    "allday_dist_opened_expiry_jobid490": "healthy, restored=0 every tick (Dapper alive, self-halt falsifier did not fire); caught up (07:41Z drifted:0).",
-    "idx_sales_2026_2027_nullseller_soldat": "still used: 2026 idx_scan 75 / 147097 tuples read; 2027 idx_scan 24 / 0 (empty partition). No regression."
+  "verdict": "MONITOR-ONLY. Live DB read-availability event in progress (external clients starved, engine ACTIVE_HEALTHY). Cause NOT asserted (§1c — could not take the pg_stat_activity positive control). Nothing shippable/safe; loud handoff + queue. No ship in prior 24-48h => nothing to auto-revert.",
+  "EVENT_2026_09_18": {
+    "summary": "External DB reads failing while engine healthy and internal pg_cron work completing normally.",
+    "onset_utc": "~12:48Z (NEW <!DOCTYPE html> runtime-error cluster: fmv-recalc, refresh-insights-cache candy/panini/player/scarcity boards, popular-on-collection golazos/candy/pinnacle)",
+    "acute_conn_refusal_utc": "~14:20-14:55Z (MCP SELECT 1 refused ~13x, 'Connection terminated due to connection timeout')",
+    "instruments": [
+      "MCP execute_sql: connection establishment refused",
+      "prod /insights/squeeze + /insights/rookies: honest PARTIAL-DATA degraded state (no fabricated zeros)",
+      "Vercel runtime errors: new <!DOCTYPE html> fetch cluster + chronic slow-read RPC timeouts, last=14:45Z",
+      "get_project=ACTIVE_HEALTHY, prod deploy READY (00662ce)"
+    ],
+    "discriminator": "postgres_logs 12:00-14:30Z show Atlas drains(462/463/448/449/466)+hydrate(469)+sync_sales(471)+wmc-backfill(302) starting AND completing normally; only 2 internal statement cancels. Internal work on reserved conns proceeds; external MCP+PostgREST starved (prod reads abort on 8s client budget before DB logs a cancel). 14:30-14:55Z log gap = ingestion lag, not a second signal.",
+    "cause": "NOT ASSERTED. Best-supported: connection-pool/IO saturation from concurrent pipeline load on SMALL tier (wallet-backfill fan-out back-pressure gap, inbox 2026-09-13T1445Z, first suspect). Connection-layer/pooler incident not excluded. Separable only by the positive control.",
+    "attribution": "NONE — no ship in prior 24-48h; operational, not a code regression.",
+    "owed_next_db_access": "positive control: SELECT count(*) FILTER (WHERE wait_event_type='IO') io_wait, count(*) FILTER (WHERE state='active') active, count(*) total FROM pg_stat_activity WHERE pid<>pg_backend_pid(); then confirm self-clear + record window; then find pinning reader from pipeline_runs/pg_cron around 12:48-15:00Z."
   },
-  "sentry_24h": "skipped — browser SDK off / events dropped per #34 (no-spend decision).",
-  "db_size_mb": 30574,
-  "db_size_mb_prev_0913": 29215,
-  "db_growth_note": "+1359 MB in ~24h — Atlas events + cron.job_run_details (no retention). Reclaim destructive/metered, Trevor-gated.",
-  "fmv_high_med_share_pct_by_collection_note": "from rpc_ops_snapshot fmv_by_collection: TS HIGH 1301 + MED 6568 = 7869; NFL HIGH 115 + MED 1790 = 1905; Golazos MED 4; UFC 0; Pinnacle in own table. Read as RANGE, swings on sweep position.",
-  "editions_by_collection": {
-    "nba_top_shot": 14015,
-    "nfl_all_day": 6190,
-    "ufc_strike": 518,
-    "laliga_golazos": 575,
-    "candy_mlb": 125
+  "health_at_close": "UNMEASURED — DB unreachable all run (~13 connection refusals over 35 min). Security block, trust health, stalled_pipelines, rpc_ops_snapshot, FMV split, db_size, sentinel all UNMEASURED (not reported clean; no delta fabricated).",
+  "carried_forward_from_2026_09_14": {
+    "note": "Values below are the 2026-09-14 close, NOT re-measured this run.",
+    "db_size_mb": 30574,
+    "editions_by_collection": {"nba_top_shot": 14015, "nfl_all_day": 6190, "ufc_strike": 518, "laliga_golazos": 575, "candy_mlb": 125},
+    "sentinel_ts_uuid_editions_48h": 0,
+    "trust_note": "#82 topshot_impossible_parallel_serials RESOLVED 09-14 (metric read 0)."
   },
-  "sentinel_ts_uuid_editions_48h": 0,
-  "vercel": "prod served by recent READY deploys; newest ~3 CANCELED/ERROR-superseded churn from concurrent 'Claude' docs push (#113 delta reads). No standing prod ERROR.",
-  "artifacts": "11 enumerated, none flagged broken, none repaired (rpc-live-health validated clean by 09-14 06:12Z monitor; fresh-on-open, no logic drift).",
+  "sentry_24h": "skipped — browser SDK off / events dropped per #34 (no-spend). Server picture taken from Vercel runtime errors instead.",
+  "artifacts": "11 enumerated, none flagged broken, none repaired. Payload validation DEFERRED — every payload query hits the same unreachable DB; do not fire heavy payloads into a possible spell. Re-validate in a quiet window.",
+  "vercel": "latest prod deploy READY (00662ce, migration-autorecover bot). No new deploy this run. Runtime errors dominated by the event's read timeouts + chronic slow-read RPCs.",
   "queued": [
-    "Q-SCB sales-claimable partial indexes (idx_sales_2024/2025_claimable_soldat); build in a calm 02-06Z window with no wallet-backfill wave, poll indisvalid on 60s timeout, then drop floor_sold_at to 2023-11-08. SQL in inbox/2026-09-13T1800Z. Containment floor holds lane cheap => no urgency.",
-    "Q-MISKEY #82 topshot mis-keyed-sales, LIVE producer (36); destructive re-key + single-if writer fix (route-logic + push, Trevor/CC)",
-    "Q-CONCIERGE goofy soft-probe permanently red on correct behaviour; owner decides probe-vs-behaviour then push",
-    "#100 master alarm GHA trigger ~27-29% of scheduled (move off GHA or stop hourly)",
-    "#101 topshot-misattrib-drain backlog growing since 09-08 unscheduling (re-point to Atlas or accept)",
-    "#102 suppressions naming is_active=false rows as active (re-enable + re-scope grants together)",
-    "Q-RETENTION cron.job_run_details + Atlas events (destructive; +1.36GB/24h)",
+    "[THIS EVENT] diagnose via positive control on next DB access; relieve source (wallet-backfill back-pressure first suspect) — needs diagnosis + push/decision",
+    "Q-SCB sales-claimable partial indexes (inbox 2026-09-13T1800Z)",
+    "Q-MISKEY #82 re-key + writer fix (destructive + route-logic; Trevor/CC)",
+    "Q-CONCIERGE goofy soft-probe contract decision",
+    "#100 master-alarm GHA trigger rate; #101 topshot-misattrib-drain backlog; #102 suppression is_active scoping",
+    "Q-RETENTION cron.job_run_details + Atlas events (destructive; ~+1.36GB/24h)",
     "#55 Routines enabled:false; #22 credential-purge GC + rotate; cron-job.org re-enables",
-    "inbox archival (needs push-capable pass; backlog large)"
-  ],
-  "needs_trevor": [
-    "Q-MISKEY destructive sales re-key + route-logic writer fix",
-    "cron.job_run_details + Atlas-events retention (destructive; DB growth)",
-    "#55 Routines enabled:false",
-    "#22 credential-purge GC + rotate",
-    "cron-job.org re-enables (offers-sweep, apply-fmv-haircut, #80 dead lanes)",
-    "concierge output-contract decision (Goofy probe)",
     "inbox archival (needs push-capable pass)"
   ],
-  "ops_note": "NO-PUSH: handoff + ledger entry + this file UNCOMMITTED on mount. A push-capable pass must git fetch + reconcile (origin ahead from concurrent docs session), re-splice the ledger entry at the first ^### , run the three ledger guards, then commit. Sandbox shell down since 2026-09-08 (Sept-8 Windows update; status.claude.com incident). Inbox NOT archived (needs push)."
+  "ops_note": "NO-PUSH: handoff + ledger entry + this file UNCOMMITTED on mount. A push-capable pass must git fetch + reconcile, re-splice the ledger entry at the first ^### , run the three ledger guards, then commit. CLAUDE.md Recent-sessions line owed to a push-capable pass. Inbox NOT archived (needs push)."
 }
