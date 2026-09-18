@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
           pollBudgetMs: budgetMs,
         })
         console.log(
-          `[prewarm-drain] row=${outcome.id} finish=${outcome.finish_status} welcome=${outcome.welcome_sent ? "sent" : "no"}${outcome.ts_error ? ` ts_error=${outcome.ts_error}` : ""}${outcome.welcome_error ? ` welcome_error=${outcome.welcome_error}` : ""}`
+          `[prewarm-drain] row=${outcome.id} finish=${outcome.finish_status} welcome=${outcome.welcome_sent ? "sent" : "no"}${outcome.ts_error ? ` ts_error=${outcome.ts_error}` : ""}${outcome.welcome_error ? ` welcome_error=${outcome.welcome_error}` : ""}${outcome.telegram_page ? ` telegram=${outcome.telegram_page}` : ""}`
         )
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)

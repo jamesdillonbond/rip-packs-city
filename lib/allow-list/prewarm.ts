@@ -34,6 +34,9 @@ import {
 import { resolveTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
 
 const TS_SEEDER_TIMEOUT_MS = 90_000
+// Bound on the Telegram page itself. A page that hangs holds the row's lane
+// open for the lambda's whole budget; Telegram answers in well under a second.
+const TELEGRAM_TIMEOUT_MS = 10_000
 
 // How long processSinglePrewarmRow will wait for the dispatched multicollection
 // backfill to finish walking each flagged collection before giving up and
@@ -81,6 +84,15 @@ export interface ProcessOutcome {
   welcome_sent: boolean
   welcome_error: string | null
   attempts: number
+  /**
+   * Outcome of the operator page for this row: `"sent"` when Telegram
+   * ACCEPTED it, `FAILED:<reason>` when it did not (non-2xx, throw, timeout,
+   * env missing), `null` when no page was attempted. Recorded because until
+   * 2026-09-18 the sender discarded the response, so a rejected page — the
+   * #77 over-long-message class, a bad token, a 429 — was indistinguishable
+   * from a delivered one anywhere this outcome is read.
+   */
+  telegram_page: string | null
 }
 
 interface SeedResult {
@@ -404,18 +416,25 @@ function flaggedSet(row: AllowListRow): Set<CollectionKey> {
   return out
 }
 
-async function sendTelegramAlert(text: string): Promise<void> {
+// ⚠ Returns the DELIVERY outcome and never throws. Before 2026-09-18 this
+// `await fetch(...)`ed and discarded the response (known-issues #77's recorded
+// residual): a 400 "message is too long", a revoked token or a 429 all read
+// as a delivered page, and only a thrown error was even logged. Now it is the
+// same shape as sendViaResend below — the caller records what it returns.
+async function sendTelegramAlert(text: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const token = process.env.TELEGRAM_BOT_TOKEN
   const chatId = process.env.TELEGRAM_CHAT_ID
   if (!token || !chatId) {
     console.log("[prewarm] telegram env missing — skip alert")
-    return
+    return { ok: false, error: "telegram not_configured" }
   }
   // See lib/telegram-message.ts: Telegram REJECTS an over-long message rather
   // than truncating it, so an unbounded alert is a silent one.
   text = fitTelegramText(text)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TELEGRAM_TIMEOUT_MS)
   try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -423,10 +442,21 @@ async function sendTelegramAlert(text: string): Promise<void> {
         text,
         disable_web_page_preview: true,
       }),
+      signal: controller.signal,
     })
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      const error = `telegram http_${res.status}: ${body.slice(0, 200)}`
+      console.log(`[prewarm] telegram page FAILED: ${error}`)
+      return { ok: false, error }
+    }
+    return { ok: true }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.log(`[prewarm] telegram alert throw: ${msg}`)
+    console.log(`[prewarm] telegram page FAILED: threw: ${msg}`)
+    return { ok: false, error: `telegram threw: ${msg}` }
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -653,6 +683,7 @@ export async function processSinglePrewarmRow(
   // ── Welcome email branch ─────────────────────────────────────────────
   let welcomeSent = false
   let welcomeError: string | null = null
+  let telegramPage: string | null = null
 
   // Dedupe across prewarm retries — see welcomeAlreadySent. Failed sends still
   // retry; the Telegram operational alerts below stay unconditional.
@@ -679,7 +710,7 @@ export async function processSinglePrewarmRow(
         p_id: row.id,
         p_error: send.error,
       })
-      await sendTelegramAlert(
+      const page = await sendTelegramAlert(
         [
           "⚠️ RPC welcome email FAILED",
           `Row: ${row.id}`,
@@ -687,6 +718,7 @@ export async function processSinglePrewarmRow(
           `Error: ${send.error}`,
         ].join("\n")
       )
+      telegramPage = page.ok ? "sent" : `FAILED:${page.error}`
     }
   } else if (attempts >= 3) {
     // Failed three times in a row — switch to a "you're in, data still loading"
@@ -715,7 +747,7 @@ export async function processSinglePrewarmRow(
         })
       }
     }
-    await sendTelegramAlert(
+    const page = await sendTelegramAlert(
       [
         "🚨 RPC prewarm failing repeatedly",
         `Row: ${row.id}`,
@@ -726,6 +758,7 @@ export async function processSinglePrewarmRow(
         `Sent fallback email: ${fallbackEmailSent ? "yes" : alreadyWelcomed ? "skipped (already sent)" : "no"}`,
       ].join("\n")
     )
+    telegramPage = page.ok ? "sent" : `FAILED:${page.error}`
   }
 
   return {
@@ -737,5 +770,6 @@ export async function processSinglePrewarmRow(
     welcome_sent: welcomeSent,
     welcome_error: welcomeError,
     attempts,
+    telegram_page: telegramPage,
   }
 }

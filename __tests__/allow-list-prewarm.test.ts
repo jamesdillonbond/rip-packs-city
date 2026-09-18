@@ -93,7 +93,8 @@ const fetchMock = vi.fn(async (url: string) => {
   }
   if (u.includes("api.telegram.org")) {
     state.telegramCalls++
-    return makeResp({})
+    if (state.telegram.throw) throw state.telegram.throw
+    return makeResp(state.telegram)
   }
   if (u.includes("api.resend.com")) {
     state.resendCalls++
@@ -133,6 +134,7 @@ beforeEach(() => {
   state.backfill = { ok: true, status: 202 }
   state.resend = { ok: true, status: 200 }
   state.telegramCalls = 0
+  state.telegram = { ok: true, status: 200 }
   state.resendCalls = 0
   // Backfill-completion poll: by default every flagged collection reports a
   // fresh scan on the first tick (baseline empty → any row counts as fresh).
@@ -398,5 +400,66 @@ describe("processSinglePrewarmRow — backfill dispatch branches", () => {
     const out = await processSinglePrewarmRow(baseRow(), ORIGIN)
     // select returns existing → early return before insert; still completes
     expect(out.finish_status).toBe("complete")
+  })
+})
+
+// ── The operator page is a DELIVERY, and its outcome is RECORDED ──
+//
+// known-issues #77's recorded residual: this module's Telegram sender used to
+// `await fetch(...)` and discard the response, so a page Telegram REJECTED (a
+// 400 "message is too long", a revoked token, a 429) was indistinguishable from
+// a delivered one, and only a thrown error was even logged. The property: the
+// row outcome states whether the page was ACCEPTED, a rejection carries the
+// reason, and a clean row (nothing to page about) claims nothing.
+describe("processSinglePrewarmRow — the Telegram page's outcome is recorded", () => {
+  it("a page Telegram accepts is recorded as sent", async () => {
+    state.resend = { ok: false, status: 422, text: "bad address" }
+    const out = await processSinglePrewarmRow(baseRow(), ORIGIN)
+    expect(state.telegramCalls).toBe(1)
+    expect(out.telegram_page).toBe("sent")
+  })
+
+  it("a page Telegram REJECTS is recorded as FAILED with the status and body — not as sent", async () => {
+    state.resend = { ok: false, status: 422, text: "bad address" }
+    state.telegram = { ok: false, status: 400, text: '{"ok":false,"description":"Bad Request: message is too long"}' }
+    const out = await processSinglePrewarmRow(baseRow(), ORIGIN)
+    expect(state.telegramCalls).toBe(1)
+    expect(out.telegram_page).toMatch(/^FAILED:/)
+    expect(out.telegram_page).toContain("http_400")
+    expect(out.telegram_page).toContain("message is too long")
+    expect(out.telegram_page).not.toBe("sent")
+  })
+
+  it("a page whose fetch THROWS is recorded as FAILED with the thrown message", async () => {
+    state.walletSearch = { ok: false, status: 500 }
+    state.telegram = { throw: new Error("socket hang up") }
+    const out = await processSinglePrewarmRow(baseRow({ prewarm_attempts: 2 }), ORIGIN)
+    expect(out.telegram_page).toMatch(/^FAILED:/)
+    expect(out.telegram_page).toContain("socket hang up")
+  })
+
+  it("missing Telegram env is recorded as FAILED:not_configured, never as sent", async () => {
+    delete process.env.TELEGRAM_BOT_TOKEN
+    state.resend = { ok: false, status: 422, text: "bad address" }
+    const out = await processSinglePrewarmRow(baseRow(), ORIGIN)
+    expect(state.telegramCalls).toBe(0)
+    expect(out.telegram_page).toMatch(/^FAILED:/)
+    expect(out.telegram_page).toContain("not_configured")
+  })
+
+  it("NO-CHANGE CONTROL: a clean row pages nobody and records null, not a fabricated outcome", async () => {
+    const out = await processSinglePrewarmRow(baseRow(), ORIGIN)
+    expect(state.telegramCalls).toBe(0)
+    expect(out.telegram_page).toBeNull()
+  })
+
+  it("the page fetch is BOUNDED — it carries an abort signal like every other fetch in this module", async () => {
+    state.resend = { ok: false, status: 422, text: "bad address" }
+    await processSinglePrewarmRow(baseRow(), ORIGIN)
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit?]>
+    const tg = calls.find(([u]) => String(u).includes("api.telegram.org"))
+    expect(tg).toBeDefined()
+    const init = tg![1] as { signal?: unknown } | undefined
+    expect(init?.signal).toBeInstanceOf(AbortSignal)
   })
 })
