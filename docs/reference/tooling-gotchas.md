@@ -96,6 +96,27 @@ Three tree-walking guards landed green on CI and red on Trevor's Windows box the
 
 ## Vercel tool behavior
 
+### 🚨 A 200 from `web_fetch_vercel_url` IS NOT PROOF THE ROUTE YOU ASKED FOR RAN — read `x-matched-path` and `x-vercel-cache` (2026-09-18)
+
+⚠ **CLAUDE.md already says "verify pages by rendered DOM, not HTTP 200". This is sharper and it fooled a live incident probe:** a 200 can be a **DIFFERENT ROUTE**, served from **cache**, that never touched the database.
+
+**The case.** Production was 503ing on public boards and the Supabase MCP could not connect, so `/api/market-pulse` was fetched as a second DB-backed probe. It returned **200 with a full HTML body** and read as healthy. It was not a reading at all:
+
+| header | value | what it meant |
+|---|---|---|
+| `x-matched-path` | **`/login`** | the request was redirected to auth — `market-pulse` never ran |
+| `x-vercel-cache` | **`HIT`** | nothing executed; a prerendered page was served |
+| `age` | **`305294`** (3.53 days) | the copy predates the incident entirely |
+
+⛔ **So it could not have detected the outage it was sent to detect** — and had it been read as a pass, the honest conclusion ("the DB is unreachable") would have been softened to "one board is failing, the rest are fine."
+
+✅ **THE THREE HEADERS TO READ, EVERY TIME:**
+1. **`x-matched-path`** — did the route you asked for actually match? An auth-gated route answers as `/login`; an unmatched one as `/404` or a catch-all.
+2. **`x-vercel-cache`** — `HIT` means **nothing executed**; only `MISS` (or `STALE` being revalidated) proves a live lambda ran. ⚠ The honest 503 in the same incident carried `MISS`, which is exactly why it was trustworthy.
+3. **`age`** — how old the served copy is. `305294` is not a fresh answer to anything.
+
+⭐ **Pick a probe that CANNOT be auth-gated or prerendered.** `/api/public/**` routes are anon-reachable and `cache-control: no-store`; that is what produced the real signal. **An authenticated route is useless as a health probe from outside.**
+
 - MCP tools are READ-ONLY for env vars.
 - All env var writes: `POST https://api.vercel.com/v10/projects/{projectId}/env?teamId={teamId}` via PowerShell.
 - `get_runtime_logs` truncates at ~50 chars — use short time windows (1-2h), low limits (20-50), unfiltered.
