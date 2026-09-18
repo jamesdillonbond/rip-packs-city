@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔧 THE SENTINEL COULD NOT RECOGNISE A GATEWAY RESPONSE AS BLINDNESS — and it carried a BYTE-IDENTICAL SECOND COPY of the classifier that decides warn-vs-page · Claude Code desktop
+
+**Code + tests, two files. No migration, no DB object, no data mutation.** Found by following today's `lib/api-error.ts` fix into a second file, per CLAUDE.md's *"when you find one, grep for the EXPRESSION, not the file."*
+
+🐛 **Defect 1 — a read that came back as a WEB PAGE was classified as a threshold breach.** `isSaturationError()` decides `sat ? "warn" : "critical"` and whether the detail carries the countable `INCONCLUSIVE` prefix. It already knew `connection terminated`, `fetch failed`, `statement timeout`… ⚠ **but "connection timed out" is NOT "connection terminated"**, so the Cloudflare **522** shape this estate spent today inside — an HTML document where JSON belongs — matched **nothing**. ⛔ **A failed read would have PAGED CRITICAL and been invisible to `count(*) WHERE detail ILIKE '%INCONCLUSIVE%'`** — the exact uncountability the 09-13 filing raised, arriving in a shape that filing did not have. Now matches `<!doctype html` and `522:`/`523:`/`524:`.
+
+🚨 **Defect 2, and the structural one: `app/api/sentinel/route.ts` carried its OWN byte-identical copy of the classifier,** while the tested one lives in `lib/pipeline/saturation.ts` (also used by `upstream-breaker` and `analytics-smoke`). **Two implementations of the predicate that decides whether the fleet pages — widening one would have left the other narrow, and only one had a test.** The route now imports the shared one; the copy is gone.
+
+⛔⛔ **MY FIRST CUT WAS WRONG AND A TEST CAUGHT IT — this is the part worth keeping.** I mirrored the token list from this morning's `lib/api-error.ts` fix and added `ECONNREFUSED` / `ECONNRESET` / `ETIMEDOUT` / `socket hang up` / a bare `connection timed out`. `__tests__/api-sentinel-branches.test.ts` went red: its *"pages critical on a hard (non-saturation) sniper-feed error"* arm uses **ECONNREFUSED on purpose**, because a refused connection to **one of our own services** is a real outage that SHOULD page. **I had downgraded a genuine page to a warn** — precisely the fail-open direction my own comment in that function warns about.
+
+⭐⭐ **THE REUSABLE LESSON, and it is why these two must NEVER be unified: the same token list appears in `lib/api-error.ts`, and the correct answer there is the OPPOSITE.** That classifier asks *"should the CLIENT RETRY?"* — a transport failure means **yes, retry**. This one asks *"should we PAGE?"* — a transport failure means **yes, page**. **Identical strings, opposite verdicts, because the question differs.** Copying a predicate between two callers that ask different questions is how a fail-open ships looking like consistency.
+
+🔒 **The transport errors are now pinned as CONTROLS rather than merely omitted** — `lib-pipeline-saturation` asserts `ECONNREFUSED`/`ECONNRESET`/`socket hang up`/`ETIMEDOUT` still return **false** (still page), alongside near-miss controls (`"this edition sold 522 times"` — no colon — and `"no connection between these two editions"`). **A future widening reds there instead of silently swallowing an outage.**
+
+🧪 **Gate:** the 83 test files touching the classifier **1,407/1,407** · `lib-pipeline-saturation` 3 → **5 arms** · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="gateway response"`). Restores the narrow classifier and the route's private copy. **No DB half.** ⚠ Reverting re-opens the uncountable-blindness gap, not just the tokens.
+
 ### 2026-09-18 · 📏 THE IPFS-TILE FILING'S BLOCKING NUMBER IS HALF-ANSWERED — human traffic is negligible, but the CEILING arithmetic is tight and that is the constraint nobody had computed · Claude Code desktop
 
 **Docs-only. Nothing shipped, and it still should not be** — this advances [`2026-09-13T1708Z`](../overnight/inbox/2026-09-13T1708Z-the-ipfs-served-art-is-2-to-8-mb-of-png-going-into-tiles-as-small-as-28px.md), which filed itself deliberately unshipped because *"the number that would decide it is NOT measured"*. It asked for Vercel egress the filing session had no access to. I had it.
