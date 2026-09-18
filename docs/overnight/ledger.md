@@ -10,6 +10,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔧 FOUR SMALL AUDIT ITEMS IN ONE PASS — the bulk-classify token leaves the URL (R97, half), UFC trophies sort by their own ladder (D23 residual), two random React keys, two lying test titles · Claude Code cloud
+
+**Code + tests, nine files. No migration, no DB object, no data mutation.** Each is a named item from the 2026-09-18 deep audit's §3/§4; batched because each is a few lines and all share one full-suite gate.
+
+🔐 **R97, the HALF that is ours to fix here:** `app/api/bulk-classify` read the ingest token **only** from `?token=`, so `scripts/run-bulk-classify.sh` wrote the secret into our own Vercel access logs on every loop iteration — and could not be fixed caller-side. The route now takes `Authorization: Bearer …` first (a wrong header is **not** rescued by a right query string), the script sends the header, and the `?token=` fallback stays — ⚠ two of the eight dispatch sources are invisible from a sandbox — but the stream's `started` line now reports **`auth: "header" | "query"`**, so the remaining query callers can be counted from run records before the fallback is removed. ⛔ **NOT fixed: the guard's corpus gap** (`no-env-secret-in-fetch-url` reads only `.ts/.tsx`; 116 non-TS files in `scripts/` are invisible to it) and `scripts/atlas-pool-harvest.ps1`, whose target is a `?key=`-gated edge function and cannot move to a header without a redeploy. ⚠ Lesson from the first cut: I logged the deprecated form with `console.warn`, and the wall-budget test went red — **Vitest's console interception spends a `Date.now()` call that test counts.** A countable field on the stream beats a console line anyway.
+
+🥋 **UFC Strike trophies (D23 residual).** `lib/trophy-picker-format.ts`'s `normalizeTier` returned `null` for CONTENDER/CHALLENGER/CHAMPION, so `tierRank` gave every UFC trophy the *unknown* rank and the `tier_rank` sort shuffled a CHAMPION among CONTENDERs by FMV. They now normalise, take their own `--tier-*` colours, and rank **after** the Flow ladder in ladder order (the canonical ladder says they are internally ordered and not comparable to RARE/LEGENDARY) — **without becoming filter chips**, so `tier-order`'s projection guard is untouched and passes.
+
+🧹 **Two `key={r.edition_key ?? Math.random()}`** (`squeeze-check`, `tc-report`) → an index fallback. **Two test titles** still claiming *"while the ME symbol is a TODO"* (armed 2026-07-19; the tests drive readiness, not a TODO) now say what they assert — CLAUDE.md: *the tell is the TITLE*.
+
+🔒 **Tests:** bulk-classify +4 (header accepted with `auth:"header"` · wrong bearer 401 · header wins over query · **control:** query form still 200 with `auth:"query"`) · trophy +3 (UFC normalise/rank order · a UFC set sorts by ladder not FMV · **control:** UFC tiers are not chips and the Flow ranks are unchanged).
+
+🧪 **Gate:** bulk-classify **13/13** · trophy + tier-order + usd-format **68/68** · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="four small audit items"`). ⚠ Reverting puts the token back in the script's URL. **No DB half.**
+
+### 2026-09-18 · ✅ THE NINE "STALLED" LANES RESUMED ON THEIR FIRST SLOT AFTER THE OUTAGE — the falsifier answered, and the "first miss pre-dates onset" reading came from the wrong tick · Claude Code cloud
+
+**Docs-only. Nothing shipped.** Answers the post-recovery sweep's falsifier (entry below: *"the next 3-hourly tick lands 21:34Z (14:34 PT)… if they stay silent with the DB healthy, something stopped them that is NOT the outage"*).
+
+📏 **Measured, three instruments:**
+
+| lane | dispatcher (read from source, not inferred) | slot | resumed |
+|---|---|---|---|
+| `allday-listing-serial-backfill` | 3-hourly | 21:34Z | ✅ 21:34:14Z ok |
+| `candy-listings-indexer` | 3-hourly | 21:35Z | ✅ 21:35:12Z ok |
+| `allday-studio-sales-history-backfill` | **Vercel Cron `52 */3`** (`vercel.json`) | 21:52Z | ✅ 21:52:08Z ok |
+| `golazos-studio-sales-history-backfill` | **Vercel Cron `56 */3`** | 21:56Z | ✅ 21:56:27Z ok |
+| `pinnacle-studio-sales-history-backfill` | **Vercel Cron `58 */3`** | 21:58Z | ✅ 21:58:37Z ok |
+
+⭐ **The three studio lanes were never on a :34 tick.** Their Vercel Cron slots are :52/:56/:58 every three hours, and the runtime log shows all three **fired at 18:52–18:58Z and returned 200** — inside the last minutes of the outage, with no database to write a run row to. So the "missed tick" count was one slot (12:5xZ, inside the window) plus one that ran and could not record itself, and **the 21:5xZ slot resumed every one of them with `ok`.** ⚠ The sweep's *"first miss ~12:34Z precedes the DB-visible onset"* inference rested on the sampled lanes' true cadence being :34; two of the three sampled were :52-family lanes, so the early-miss arithmetic does not hold for them. **Both easy stories now resolve the same way: outage fallout, self-healed on cadence.**
+
+✅ **Outbound dispatch is healthy:** the 25 newest `net._http_response` rows at 21:40–21:43Z are all `200`, no `error_msg`, no timeouts — the DNS-at-the-instance mechanism is not lingering. ✅ `compute-golazos-pack-ev` (pg_cron **jobid 44**, `37 */6`) reported `succeeded` at 18:37Z with no run row for the same reason (dispatched into the outage); its next slot is **00:37Z**, and `candy-offers-indexer` (`50 */6`) lands **00:50Z** — ⚠ **the sentinel's current `Pipeline Silence` CRITICAL names exactly these two plus the chronic `candy-editions-ingest`; expect the first two to clear by ~01:00Z (6:00 PM PT) without any action.** The watchlist's other overdue rows (`wallet-backfill*`, 800 min) are demand-driven by prewarm, not scheduled.
+
+- **Revert:** n/a — documents only.
+
 ### 2026-09-18 · 🔧 THE STAMP THAT CERTIFIED A FAILED READ (R95) AND THE FOUR EMPTY STATES STILL CONCLUDING OFF A 503 (§2b) · Claude Code cloud
 
 **Code + tests, sixteen files (10 pages, 5 clients, 1 guard, +19 arms). No migration, no DB object, no data mutation.** Closes the audit's §2a (P0) and the rest of §2b (P1) — the two findings that sat beside the fabricated zeros.
