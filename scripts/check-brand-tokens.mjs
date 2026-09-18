@@ -410,6 +410,50 @@ console.log(
     `(${PROTECTED.length} tracked for renames) + ` +
     `${NEUTRAL_PROTECTED.length} light-mode surface(s) clean.`
 );
+// ── Phase-2 debt: COUNTED, not gated (deep-audit 2026-09-18 §4) ─────────────
+// This line used to say "tracked separately" with no number in it, which is the
+// register's "decision not to act whose cost is stated with no number" shape:
+// the guard printed its two SCANNED counts and went silent on the one that
+// matters. The population is every .ts/.tsx under app/ (incl. app/api — email
+// HTML and OG/satori cards live there), components/ and lib/ that the gated
+// walk above does NOT cover, with the same comment stripping and the same two
+// escape hatches. Still not gated — OG/satori and email HTML are documented
+// exceptions — but a number that drifts is visible; a sentence is not.
+function phase2Files(dir, out = []) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    const full = `${dir}/${e.name}`;
+    if (e.isDirectory()) phase2Files(full, out);
+    else if (/\.tsx?$/.test(e.name)) out.push(full);
+  }
+  return out;
+}
+const gated = new Set(LITERAL_SURFACES);
+let phase2Lines = 0;
+const phase2FileSet = new Set();
+for (const file of [...phase2Files("app"), ...phase2Files("components"), ...phase2Files("lib")]) {
+  if (gated.has(file)) continue;
+  let text;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    continue;
+  }
+  const scan = stripLineComments(text).split(/\r?\n/);
+  const raw = text.split(/\r?\n/);
+  for (let i = 0; i < scan.length; i++) {
+    if (!LITERAL.test(scan[i]) || FALLBACK.test(scan[i])) continue;
+    if (/brand-exception/.test(raw.slice(Math.max(0, i - 6), i + 1).join("\n"))) continue;
+    phase2Lines++;
+    phase2FileSet.add(file);
+  }
+}
 console.log(
-  "(Phase-2 debt across the rest of the repo is tracked separately — not gated here.)"
+  `Phase-2 debt (NOT gated): ${phase2Lines} un-excepted brand-literal line(s) across ` +
+    `${phase2FileSet.size} file(s) outside the gated web surfaces (OG/satori + email HTML are documented exceptions).`
 );

@@ -232,3 +232,21 @@ describe("check-brand-tokens: the EMAIL-ACCENT-in-web-UI detector", () => {
     expect(WEB_SURFACE.test("app/api/alerts/channels/route.ts")).toBe(false)
   })
 })
+
+// ── The guard STATES its Phase-2 number (deep-audit 2026-09-18 §4) ──────────
+// It used to print "tracked separately — not gated here" with no number: the
+// two scanned counts spoken, the one that matters silent. A count that drifts
+// is visible; a sentence is not. Not gated — only asserted to be a number.
+describe("check-brand-tokens: the ungated Phase-2 debt is a NUMBER, not a sentence", () => {
+  it("prints a count of un-excepted literal lines and files outside the gated surfaces", async () => {
+    const { execFileSync } = await import("node:child_process")
+    const out = execFileSync("node", ["scripts/check-brand-tokens.mjs"], { encoding: "utf8", cwd: process.cwd() })
+    const m = out.match(/Phase-2 debt \(NOT gated\): (\d+) un-excepted brand-literal line\(s\) across (\d+) file\(s\)/)
+    expect(m, "the guard must state the Phase-2 number").not.toBeNull()
+    // Positive control against a broken walk printing 0/0 and reading as clean:
+    // OG/satori and email HTML carry documented literals, so this is never zero.
+    expect(Number(m![1])).toBeGreaterThan(0)
+    expect(Number(m![2])).toBeGreaterThan(0)
+    expect(out).not.toMatch(/tracked separately/)
+  })
+})
