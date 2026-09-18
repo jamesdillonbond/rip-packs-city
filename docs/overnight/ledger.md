@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · ⛔ THE WALLET-SEARCH "WINDOWING" FIX IS REFUTED — no on-chain accessor can read a sharded Top Shot collection, and the "0.13 % over" figure was never a measurement · Claude Code desktop
+
+**Docs-only — an inbox filing. Nothing shipped, and the point is that something should NOT be.** Measured against **deployed mainnet** via the Cadence MCP, per CLAUDE.md's rule that training data is unreliable for Cadence 1.0.
+
+🚨 **WITHDRAWS pickup item 2 of the 09-14 wallet-search filing** (*"point `getOwnedMomentIds`/`getAllDayOwnedIds` at the windowed scripts — the All Day one exists"*), whose §5 is headed *"The fix already exists in this codebase."* ⛔ **It does not.** `wallet-search`'s helpers do exactly one thing — `return col!.getIDs()` — so there is no per-NFT loop to bound; and `GET_UNLOCKED_MOMENT_DETAILS_RANGE`, the "windowed variant" it points at, **still calls `ref!.getIDs()` IN FULL** and only then slices. ⭐ **Its windowing bounds the `borrowNFT` loop, which is right for the detail fetch it was written for and useless where `getIDs()` IS the whole cost. A fix copied from it would have shipped, changed nothing, and looked like it should have worked** — the "re-derive what a filing measured before acting" rule, paying for itself.
+
+📏 **All three accessors the deployed `TopShotShardedCollection` exposes, measured on `0xe1f2a091f7bb5245`, all 1110:** `getIDs()` (the wrapper rebuilds the array once per shard — `ids = ids.concat(collectionIDs)`), `getLength()` (its body is literally `return self.getIDs().length`), and a **full `forEachID` walk**. ⛔ **`collections` is `access(contract)`, so a script cannot reach an individual shard** — there is no windowing to write. ⛔ **And `forEachID` is not a pagination primitive: its early-exit stops only the CURRENT shard before the wrapper re-enters the next, so a request for the first 5 ids returned 754.**
+
+🚨 **THE NUMBER THE FILING REASONED FROM IS NOT A MEASUREMENT.** It argued *"100,134 against a limit of 100,000 — 0.13 % over … a threshold, not a cliff."* ⛔ **`used:` in a 1110 error is the ABORT POINT, not the requirement** — run today, the same instrument reports **`used: 100,001` for `getIDs()` and `100,002` for the `forEachID` walk**, two different accessors landing on the same ceiling. **They say where execution stopped, never what the wallet needs.** ⭐ **So "just barely over, a small optimisation clears it" is unsupported, and nobody should size the work from it** — the same class as reading a duration instead of an error string, one level down.
+
+✅ **Positive control, and it relocates the cause:** the identical script against the largest **non-sharded** wallet `0xf77bf547fccf6656` returns **38,642** ids fine. **The failure is SHARDING, not size.** ⚠ 09-14 recorded **39,955** for that same wallet — both are dated samples, re-derive before quoting.
+
+✅ **Nothing to fix in the copy.** The shipped message — *"We could not read this wallet in one pass … retrying will not help"* — is already the honest terminal state for this wallet class, and the transport layer was correct from the start (HTTP 500 + explicit `error`, never a fabricated empty wallet). **Any real repair must source ids off-chain.** ⚠ **Population still unestablished, and the yardstick is a trap:** a sharded wallet holds **zero** `wallet_moments_cache` rows *because* the backfill cannot complete — so it is invisible to the very table you would count it with.
+
+- **Revert:** n/a — one inbox filing + its INDEX entry (511 on disk, counts re-derived by `scripts/fix-inbox-index-counts.mjs`; inbox guards 19/19). No code, no migration, no data mutation.
+
 ### 2026-09-18 · 🔧 THE SKILL PACKER NO LONGER NEEDS `zip`, SO A DOCUMENTED REPAIR STOPS BEING LINUX-ONLY — and the #114 bullet it was blocking is now in · Claude Code desktop
 
 **Code + tests + one re-packed bundle. No migration, no DB object, no data mutation.** Clears the item the 09-14 filing marked *"the one edit that belongs in the SKILL and could NOT be made from here."*
