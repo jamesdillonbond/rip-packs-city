@@ -10,6 +10,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🚨 #122 RESOLVED AND THE MECHANISM IS NAMED: THE INSTANCE LOST **DNS**. 20,021 ms of a 20,000 ms timeout spent in DNS, 0.000 ms handshake, 0.000 ms HTTP — outbound, 100 %, for six hours, against a 23-hour baseline of ZERO · Claude Code desktop
+
+**Docs-only. Nothing shipped for it — there was nothing in this repo to fix, and that is now established rather than assumed.** The database returned at ~11:57–12:03 PT and every owed item was taken immediately.
+
+📏 **THE WINDOW IS CLOSED: 05:48 AM PT → ~12:01–12:03 PT, ≈6 h 13 m** (12:48Z → 19:0xZ). ⭐ **Pinned from the DB's own side, not from a probe:** `atlas-editions-refresh` failed every run from 06:05 to 12:01 and then **succeeded at 12:03 with `rows_written = 403`** — the first productive write in six hours.
+
+🚨 **THE MECHANISM, and it is decisive because the instrument breaks the time down for us.** Every failing outbound request carried:
+
+```
+atlas no-response (Timeout of 20000 ms reached. Total time: 20021.669 ms
+  (DNS time: 20021.669 ms, TCP/SSL handshake time: 0.000000 ms,
+   HTTP Request/Response time: 0.000000 ms))
+```
+
+⇒ **ALL of the 20 s was NAME RESOLUTION. Zero handshake. Zero HTTP. The request never opened a socket.** ⛔ **This was not a slow database and not a busy one — the instance could not resolve names.**
+
+✅ **THE CONTROL IS CLEAN AND IT IS NOT CHRONIC ATLAS NOISE** — which was the obvious false attribution, since Atlas WAF failures are a documented recurring class here. Hourly over **30 h**, both lanes: **2026-09-17 06:00 → 09-18 05:00 = 0 failures per hour** (two isolated 1s in 23 hours). **09-18 06:00 → 12:00 = 28/28, 30/30, 30/30, 30/30, 30/30, 29/29 — 100 % of runs, every hour.** ⭐ **A 0 %→100 % step at the onset minute is not an elevated rate; it is a hard cut.**
+
+⭐ **AND POSTGRES ITSELF WAS ALIVE THROUGHOUT — which is what makes DNS the explanation rather than a symptom.** `pipeline_runs` shows **162–168 runs/hour** for every hour of the outage: pg_cron fired, the functions ran, and they wrote their own failure rows. **A starved or wedged Postgres does not schedule 165 jobs an hour and log them.** ⚠ Volume was ~600/h at 03:00–04:00 and ~165/h from 05:00 — **that drop begins an hour BEFORE the onset and is a nightly wave ending, NOT the outage.** Do not read it as impact.
+
+⛔⛔ **THIS SUPERSEDES MY OWN MECHANISM — for the second time today, and both corrections came from a sharper probe rather than better reasoning.** I first concluded *"a CF 522 means Cloudflare could not OPEN a connection to the origin"*; the deep audit refuted that with a **Storage `544 DatabaseTimeout` in 5.1 s** proving CF **can** reach the origin. **This supersedes both:** ⭐ **DNS failure explains every observation at once** — outbound pg_net dies in resolution; PostgREST and GoTrue cannot resolve their upstream and hang until Cloudflare cuts them at ~19.5 s as a **522**; Storage has a shorter internal DB timeout so its own JSON error escapes first; and Postgres, which needs no DNS to run locally, keeps working.
+
+⚠ **STATED AS INFERENCE, NOT MEASUREMENT:** the DNS timing is pg_net's own instrumentation and therefore proves **OUTBOUND** resolution failed. That the **inbound** 522s share the same root cause is a strong inference from one coherent story, **not a second measurement** — nothing here sampled DNS from inside PostgREST.
+
+⚠ **THE POSITIVE CONTROL IS FINALLY TAKEN AND IT NO LONGER DISCRIMINATES — recorded as a loss, not as a pass.** `io_wait 0 · active 1 · idle 10 · total 19` against `max_connections 90`. **It was specified to be taken DURING the event to separate saturation from a platform fault; taken after recovery it describes the recovered instance and can say nothing about the outage.** ⭐ **Its discriminating power was contingent on timing, and the timing was never available — six hours of refused connections is exactly why.** ✅ The conclusion it was meant to reach is reached anyway, by the DNS evidence, from an instrument that kept writing throughout.
+
+👉 **FOR TREVOR'S SUPABASE REPORT, this is the artifact to lead with** — sharper than the 522 and sharper than the Storage 544: **"outbound DNS resolution from the project instance failed 100 % for 6 h 13 m, 20,021 ms of a 20,000 ms budget spent in DNS with 0.000 ms TCP/SSL, against a 23-hour baseline of zero failures."** A timing breakdown that names the failing layer beats any status code.
+
+- **Revert:** n/a — documents only; no code, no migration, no data mutation.
+
 ### 2026-09-18 · 🔧 THE PREWARM LANE'S OPERATOR PAGE NOW RECORDS WHETHER TELEGRAM ACCEPTED IT — #77's recorded residual, the one sender in its file that discarded the response · Claude Code cloud
 
 **Code + tests, three files. No migration, no DB object, no data mutation.** Clears the line #77 filed as *"NOT FIXED, RECORDED (different class, same area): `lib/allow-list/prewarm.ts` `await fetch(...)` and never reads `res.ok`, so any delivery failure there … is still completely silent — no `-FAILED` entry anywhere."*
