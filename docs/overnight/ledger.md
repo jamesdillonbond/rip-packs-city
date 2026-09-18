@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔧 THE SKILL PACKER NO LONGER NEEDS `zip`, SO A DOCUMENTED REPAIR STOPS BEING LINUX-ONLY — and the #114 bullet it was blocking is now in · Claude Code desktop
+
+**Code + tests + one re-packed bundle. No migration, no DB object, no data mutation.** Clears the item the 09-14 filing marked *"the one edit that belongs in the SKILL and could NOT be made from here."*
+
+🐛 **The defect was in the REPAIR PATH, not the guard.** `scripts/pack-cowork-skill.mjs` shelled out to `zip`, and Git for Windows ships `zipgrep`/`zipinfo` but **no `zip`** — so on Trevor's own box `npm run skills:pack` exited 2 and the fix for a red bundle guard could not be run. ⭐ **The 09-14 session recorded the shape exactly — *"the guard works, the documented repair does not"* — and correctly refused to edit `SKILL.md` without repacking**, because a source edit with a stale bundle ships the very drift the guard exists to catch.
+
+🧭 **The fix: a pure-Node single-entry ZIP writer, `scripts/lib/zip-one-file.mjs`, shared by the packer and the guard's fixture builder.** One implementation, two callers, deliberately: a fixture that differs in shape from a real bundle tests the wrong thing. `zip` stays the primary path when present, so **CI's bytes are unchanged**.
+
+⭐ **IT ALSO REMOVES THE CORRUPTION HAZARD THE PREFLIGHT EXISTED TO PAPER OVER.** The `zip` path is delete-then-recreate — `unlinkSync(out)` drops a TRACKED file and only the next line restores it, which is how a plain `npm test` once **DELETED** `rpc-handoff.skill`. The native path **builds the buffer first and writes once**, so a failure cannot leave a bundle missing.
+
+⭐ **FIVE SKIPPED GUARD ARMS NOW RUN — a gap the file itself had flagged and nobody could close.** It warned, correctly, that skipping was *"an environment gap on this machine, not a passing guard"*: **4 of 9 arms ran here while CI ran 9.** With fixtures built through the shared writer, **9/9 pass on this box.** ⚠ A silent skip reads as coverage; this one at least announced itself, and now it is gone rather than merely loud.
+
+🔒 **Controls, both directions, on the thing I changed:** ✅ **the guard was shown RED** — edited `SKILL.md`, ran it, got `rpc-artifact-ops — bundle content differs from SKILL.md` (exit **1**) — **then GREEN 10/10 after repacking**, so it demonstrably reads a natively-written bundle and can still fail. ✅ **Determinism proven, not asserted:** two consecutive packs produced **identical md5** (`ba8b534b…`). ✅ `unzip -t` clean; `unzip -p … | diff` against the source is **byte-identical**; the listing matches the old `zip`-made bundle exactly (6,758 bytes, `2026-08-24 00:00`).
+
+⚠ **HONEST LIMIT, stated rather than buried:** determinism holds **within** a writer, not **across** them — a bundle packed here differs byte-wise from what `zip -jqX` produces for the same text, so a later Linux re-pack churns the bytes back. **That is a DIFF cost, never a correctness one**, because `check-cowork-skill-bundles.mjs` compares **NORMALIZED TEXT and never bytes** — its own comment says a byte comparison *"would fail on a re-pack that changed nothing."* **Re-pack only what you changed** (one bundle changed here, not ten).
+
+📋 **The unblocked edit itself:** `rpc-artifact-ops/SKILL.md` now tells a Cowork session that **the LIVE estate is still broken and it is 15 artifacts, not the "five" #114 first said** — ⛔ **re-derived TODAY with `scripts/audit-cowork-artifact-failure-handling.mjs`: 15 carry the helper, 15 of 15 still fail to throw on `{error:{…}}`, 4 fully blind. Unchanged since 09-14, exit code 1.** It also records the scoping trap (grepping for a missing `isError` returns **4** and looks small; the property is *does the helper throw*) and that **republishing is a Cowork DESKTOP `update_artifact` action** this repo's tooling cannot perform.
+
+🧪 **Gate:** `cowork-skill-bundles-match-their-source` **9/9** (was 4 + 5 skipped) · `skills:bundles:check` **10/10** · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="no longer needs"`). Restores the `zip`-only packer, the skipped arms, the SKILL.md bullet and the bundle. **No DB half.** ⚠ After reverting, `npm run skills:pack` is Linux-only again.
+
 ### 2026-09-18 · 🔧 A SUPABASE-EDGE 522 WAS PUBLISHED AS A PERMANENT 500 — every anon board route now answers an unreachable DB with a retryable 503 · Claude Code desktop
 
 **Code + tests, one file. No migration, no DB object, no data mutation.** Found by the weekly `rpc-surface-qa` pass (`docs/handoffs/2026-09-18-board-routes-misclassify-supabase-522-as-500.md`) *during* the #122 outage — the outage is the platform's, **this is the durable code gap it exposed.**
