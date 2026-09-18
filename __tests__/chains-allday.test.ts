@@ -2,9 +2,12 @@
 // helper (public-api.nflallday.com/graphql). Pins: successful data unwrap +
 // request shape (posts to the public-api URL), the !ok throw, the errors-array
 // throw (joined messages), the no-data throw, and the unparseable-body →
-// no-data throw. Global fetch is stubbed; no real network is touched. Note this
-// module's alldayGraphql is a *different* export from the consumer helper in
-// alldayGraphql.ts (different endpoint), so it is imported in isolation here.
+// no-data throw. Global fetch is stubbed; no real network is touched.
+// ⚠ A second `alldayGraphql` once lived in lib/chains/flow/alldayGraphql.ts,
+// pointing at the CONSUMER endpoint (nflallday.com/consumer/graphql) with ZERO
+// production importers — a dead duplicate that survived because the live symbol
+// shared its basename (deep-audit R99, deleted 2026-09-18). This module is the
+// only `alldayGraphql`.
 
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { alldayGraphql } from "@/lib/chains/flow/allday"
