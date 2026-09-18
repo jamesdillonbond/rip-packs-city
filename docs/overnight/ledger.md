@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔧 THE STAMP THAT CERTIFIED A FAILED READ (R95) AND THE FOUR EMPTY STATES STILL CONCLUDING OFF A 503 (§2b) · Claude Code cloud
+
+**Code + tests, sixteen files (10 pages, 5 clients, 1 guard, +19 arms). No migration, no DB object, no data mutation.** Closes the audit's §2a (P0) and the rest of §2b (P1) — the two findings that sat beside the fabricated zeros.
+
+🚨 **R95 — the render-time stamp vouched for the zeros.** `fetchBoardForPage` returns `fetchedAt` even on a FAILED read — deliberately, as *the moment we ASKED*, with a header that says *"do not use `fetchedAt` as a freshness signal without checking `ok`"*. **Nine pages forwarded it to their board unchecked** (`initialFetchedAt={fetchedAt}` beside `initialFailed={!ok}`), and `market-pulse` forwarded it with no failure flag at all — so `/insights/top-sales` printed `UPDATED SEP 18, 2026, 11:32 AM PDT` between its honest banner and its zeros, 11:32 being the second the auditor loaded it. ⭐ **The honest form was already in the codebase** (`/insights/squeeze` renders `UPDATED —`), and `FreshnessStamp` already renders `—` for `null`. **Fix: every forwarding page now passes `initialFetchedAt={ok ? fetchedAt : null}`**; two clients (`parallel-premiums`, `set-completers`) typed the prop as bare `string` and are widened; `parallel-premiums` and `market-pulse` built their own `new Date(fetchedAt)` line and now say *"Updated — (the read did not complete…)"* instead. ⚠ `cross-collection` is exempt and the guard says why: its client stamps from the data's own `computed_at`, never the read time.
+
+🐛 **§2b — four more empty states blamed the filters or concluded off a 503:** `set-squeeze` (*"No sets match those filters."*), `allday-scarcity` and `pinnacle-scarcity` (*"No editions match those filters."*), `rookies` (*"No rookies found."*). All four already carried `initialDegraded`; none of the empty branches consulted it. Now `sectionEmptyCopy(!(degraded?.failed?.length), …)`. ⚠ `rookies` rendered the raw prop and never cleared it — now held in state and cleared on a successful sort refetch, so a good read that returns nothing says its own sentence again.
+
+🔒 **Guard, +19 arms → 69/69:** the four boards SSR-rendered failed (no concluding sentence, *couldn't be loaded* present) and clean (sentence back, no degraded copy); **R95 as a tree walk, ban at zero** — every `app/insights/*/page.tsx` passing `initialFailed={!ok}` AND an `initialFetchedAt` prop must use the gated form and must not carry the bare forward (9 pages found; positive control ≥ 9 so a rename cannot empty it), plus `market-pulse` by name because it has no `initialFailed` to key on.
+
+🧪 **Gate:** guard **69/69** · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="certified a failed read"`). Restores the ask-time stamp and the four concluding sentences. **No DB half.**
+
 ### 2026-09-18 · 🔧 THE P0 FABRICATED ZEROS — the REMAINING SEVEN boards, six fixed per-VALUE and the seventh pinned as the class control · Claude Code cloud
 
 **Code + tests, seven files (6 boards, 1 guard, +14 SSR arms). No migration, no DB object, no data mutation.** Completes the monthly deep audit's §2 P0 that the desktop session opened this afternoon with `top-sales` and `squeeze` (entry below): the nine boards are now nine.
