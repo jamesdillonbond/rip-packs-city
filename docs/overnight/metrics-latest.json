@@ -1,45 +1,80 @@
 {
-  "generated_at_pt": "2026-09-18 ~07:5x PT",
-  "generated_at_utc": "2026-09-18T14:5xZ",
-  "pass": "rpc-nightly-autonomous-pass (sandbox) — OFF-HOURS monitor (~07:5x PT) + NO-PUSH (sandbox git has no credential; desktop pushurl harvest dead). Handoff/ledger/this file UNCOMMITTED on mount.",
-  "shipped": 0,
+  "generated_at_pt": "2026-09-18 ~16:2x PT",
+  "generated_at_utc": "2026-09-18T23:2xZ",
+  "pass": "Cowork cloud, operator-directed ('work on any known issues across the project'). PUSH-CAPABLE — the laptop VM shell is alive again and the .rpc-git-cred device-flow token authenticates, so this pass shipped rather than queued.",
+  "shipped": 9,
   "reverted": 0,
-  "verdict": "MONITOR-ONLY. Live DB read-availability event in progress (external clients starved, engine ACTIVE_HEALTHY). Cause NOT asserted (§1c — could not take the pg_stat_activity positive control). Nothing shippable/safe; loud handoff + queue. No ship in prior 24-48h => nothing to auto-revert.",
-  "EVENT_2026_09_18": {
-    "summary": "External DB reads failing while engine healthy and internal pg_cron work completing normally.",
-    "onset_utc": "~12:48Z (NEW <!DOCTYPE html> runtime-error cluster: fmv-recalc, refresh-insights-cache candy/panini/player/scarcity boards, popular-on-collection golazos/candy/pinnacle)",
-    "acute_conn_refusal_utc": "~14:20-14:55Z (MCP SELECT 1 refused ~13x, 'Connection terminated due to connection timeout')",
-    "instruments": [
-      "MCP execute_sql: connection establishment refused",
-      "prod /insights/squeeze + /insights/rookies: honest PARTIAL-DATA degraded state (no fabricated zeros)",
-      "Vercel runtime errors: new <!DOCTYPE html> fetch cluster + chronic slow-read RPC timeouts, last=14:45Z",
-      "get_project=ACTIVE_HEALTHY, prod deploy READY (00662ce)"
-    ],
-    "discriminator": "postgres_logs 12:00-14:30Z show Atlas drains(462/463/448/449/466)+hydrate(469)+sync_sales(471)+wmc-backfill(302) starting AND completing normally; only 2 internal statement cancels. Internal work on reserved conns proceeds; external MCP+PostgREST starved (prod reads abort on 8s client budget before DB logs a cancel). 14:30-14:55Z log gap = ingestion lag, not a second signal.",
-    "cause": "NOT ASSERTED. Best-supported: connection-pool/IO saturation from concurrent pipeline load on SMALL tier (wallet-backfill fan-out back-pressure gap, inbox 2026-09-13T1445Z, first suspect). Connection-layer/pooler incident not excluded. Separable only by the positive control.",
-    "attribution": "NONE — no ship in prior 24-48h; operational, not a code regression.",
-    "owed_next_db_access": "positive control: SELECT count(*) FILTER (WHERE wait_event_type='IO') io_wait, count(*) FILTER (WHERE state='active') active, count(*) total FROM pg_stat_activity WHERE pid<>pg_backend_pid(); then confirm self-clear + record window; then find pinning reader from pipeline_runs/pg_cron around 12:48-15:00Z."
+  "verdict": "HEALTHY. The 09-18 platform outage is fully behind us: detect_stalled_pipelines() 10 -> 1, and 39 of 50 Vercel error groups have a last-seen BEFORE the 19:01Z recovery. Nine commits landed across two pushes, including a CRITICAL next.js CVE bump that had been sitting un-pushable on the mount. Two migrations applied with their repo halves committed in the same session, so migration-parity stays green.",
+
+  "capability": {
+    "device_bash": "ALIVE (recovered since the 2026-09-08 Windows-update failure)",
+    "push_path": "PATH 1 — fresh $HOME clone on the laptop VM + credential.helper store --file=.rpc-git-cred. Dry-run exit 0, two real pushes landed.",
+    "cloud_push": "STILL BLOCKED — 'not in this session's authorized repository set' (403). Unchanged; the repo must be attached at task CREATION.",
+    "cloud_clone": "WORKS — git clone over https succeeds in the cloud even though push does not. This is what made a real gate possible.",
+    "unit_tests_on_mount": "IMPOSSIBLE — node_modules is a Windows install; vitest dies on a missing @rolldown/binding-linux-x64-gnu. Worked around by copying the Linux binding in, but the durable fix is to gate in a clean cloud clone.",
+    "db_tests": "NEWLY POSSIBLE — psql 16 is present in the cloud container and a container-local Postgres runs on :55432 as the unprivileged user with -k in a writable dir. 192 DB-invariant files pass; 1,089 migrations parse. Previous passes had no way to run these at all.",
+    "github_api": "BLOCKED in the cloud (403 'GitHub access to this repository is not enabled') and `gh` is absent on the laptop VM, so CI RUN STATUS WAS NOT READ THIS PASS. Vercel deployment state was used instead."
   },
-  "health_at_close": "UNMEASURED — DB unreachable all run (~13 connection refusals over 35 min). Security block, trust health, stalled_pipelines, rpc_ops_snapshot, FMV split, db_size, sentinel all UNMEASURED (not reported clean; no delta fabricated).",
-  "carried_forward_from_2026_09_14": {
-    "note": "Values below are the 2026-09-14 close, NOT re-measured this run.",
-    "db_size_mb": 30574,
-    "editions_by_collection": {"nba_top_shot": 14015, "nfl_all_day": 6190, "ufc_strike": 518, "laliga_golazos": 575, "candy_mlb": 125},
-    "sentinel_ts_uuid_editions_48h": 0,
-    "trust_note": "#82 topshot_impossible_parallel_serials RESOLVED 09-14 (metric read 0)."
+
+  "health": {
+    "pipeline_runs_60m": 2738,
+    "pipeline_fails_60m": 8,
+    "distinct_lanes_60m": 132,
+    "detect_stalled_pipelines": 1,
+    "check_pgcron_recent_failures_rows": 5,
+    "v_fmv_sanity_flags": 0,
+    "security_invariant_rows": 0,
+    "anon_write_surface_rows": 0,
+    "secdef_anon_exec_drift": 0,
+    "db_size": "28 GB",
+    "functions_without_pinned_search_path": 1,
+    "note_functions_without_pinned_search_path": "was 2; rpc_trust_health_precompute_refresh_p pinned this pass. The remaining one is reconcile_all_saved_wallet_stats, deliberately left (INVOKER, 9.9 kB body with unproven qualification)."
   },
-  "sentry_24h": "skipped — browser SDK off / events dropped per #34 (no-spend). Server picture taken from Vercel runtime errors instead.",
-  "artifacts": "11 enumerated, none flagged broken, none repaired. Payload validation DEFERRED — every payload query hits the same unreachable DB; do not fire heavy payloads into a possible spell. Re-validate in a quiet window.",
-  "vercel": "latest prod deploy READY (00662ce, migration-autorecover bot). No new deploy this run. Runtime errors dominated by the event's read timeouts + chronic slow-read RPCs.",
-  "queued": [
-    "[THIS EVENT] diagnose via positive control on next DB access; relieve source (wallet-backfill back-pressure first suspect) — needs diagnosis + push/decision",
-    "Q-SCB sales-claimable partial indexes (inbox 2026-09-13T1800Z)",
-    "Q-MISKEY #82 re-key + writer fix (destructive + route-logic; Trevor/CC)",
-    "Q-CONCIERGE goofy soft-probe contract decision",
-    "#100 master-alarm GHA trigger rate; #101 topshot-misattrib-drain backlog; #102 suppression is_active scoping",
-    "Q-RETENTION cron.job_run_details + Atlas events (destructive; ~+1.36GB/24h)",
-    "#55 Routines enabled:false; #22 credential-purge GC + rotate; cron-job.org re-enables",
-    "inbox archival (needs push-capable pass)"
+
+  "traction": {
+    "registered_users": 28,
+    "new_users_7d": 2,
+    "note": "Up from 21 on 2026-08-18. Accuracy is still the gate — this is recorded, not acted on."
+  },
+
+  "outage_aftermath_2026_09_18": {
+    "falsifier": "DISCHARGED, POSITIVE. The ledger's open question was whether the ten stalled lanes would resume on their own schedules after the ~19:01Z recovery.",
+    "measured": "candy-sales-indexer 21:20:13Z · topshot-onchain-art-backfill 21:22:06Z · allday-listing-serial-backfill 21:34:14Z · golazos-sales-history-backfill 21:34:19Z · candy-listings-indexer 21:35:12Z · allday-unmapped-resolver-tail 21:40:48Z · allday-studio-sales-history-backfill 21:52:08Z · golazos-studio-sales-history-backfill 21:56:27Z · pinnacle-studio-sales-history-backfill 21:58:37Z",
+    "conclusion": "Every lane resumed on its own scheduled minute. The silences were the outage's shadow, not a new fault. The three studio lanes fire at :52/:56/:58 and were read TWICE — the first read was before they were due and proved nothing.",
+    "vercel_error_split": "50 groups / 2,630 occurrences / 658 users over 6 h. 39 groups have a last-seen BEFORE 19:01Z (outage shadow, already stopped). 11 groups are still live, 950 occurrences."
+  },
+
+  "live_error_classes_after_recovery": {
+    "pack_detail_page": "~478 occurrences across 5 groups on /[collection]/pack/dist/[distId] — pack_table_rows, ev_contributors, pack_lifecycle, pack_realized_ev, pack_market, each exceeding its own 5,000 ms bound, last seen 23:1xZ. CHRONIC and already analysed (inbox 2026-09-04, 2026-08-14); recorded, NOT re-diagnosed.",
+    "public_profile_resolve": "200 occurrences / 101 USERS — the largest user-count of any group — [profile/public-profile-resolve] read exceeded 6000 ms on /api/og/trophy-case/[username] and /api/public/profile/[username], last 21:45Z.",
+    "sixty_second_lambda_timeouts": "169 occurrences / 17 users, 'Vercel Runtime Timeout Error: Task timed out after 60 seconds' on /api/wallet-backfill, /api/ready, /api/wmc-fmv-populate. ⚠ /api/ready is a READINESS endpoint timing out.",
+    "dep0169": "76 occurrences — known, root-caused 2026-09-05 (node-fetch via cross-fetch, fires on use not import). Not re-filed."
+  },
+
+  "shipped_detail": [
+    "next 16.2.9 -> 16.3.5 — eleven CVEs including unauthenticated RCE via AVIF in the Image Optimization API. VERIFIED: the deployment carrying it (dpl_HxyQAiaVaitZpcjTXnGsYzgedcF5, commit 5a8ca4e3) reached READY, and a live OG card renders a real 58 KB PNG.",
+    "R97 + R98(half) — INGEST_SECRET_TOKEN and RPC_ADMIN_TOKEN out of URLs; the no-env-secret-in-fetch-url walker now reads .mjs/.js/.sh/.ps1/.bat/.py with per-language env recognisers and an inspected-population assertion. Positive-controlled against the pre-fix script.",
+    "R95 — a freshness stamp is never minted from a failed read. Fixed at the TYPE (BoardPageFetch.fetchedAt is string|null, null on failure); the compiler then found market-pulse, parallel-premiums and set-completers, and a new structural arm found pack-sniper. Seven boards, not three.",
+    "R105 — the homepage stops quoting two serial multipliers the model does not implement, pinned copy->code by a new guard. VERIFIED LIVE in production HTML.",
+    "R102 — check_pipeline_cadence_collapse() publishes the TRUE last run instead of null (migration 20260918225454). The 12h_cadence_gate exemption it also asked for was DECLINED as a suppression.",
+    "R104 — PREMISE PARTLY REFUTED then documented (migration 20260918225909): editions.badges is NOT universally empty — 25 live Candy MLB rows hold parallel labels, so 'drop the column' would have destroyed data.",
+    "rpc_trust_health_precompute_refresh_p search_path pinned, positive-controlled (all eight legs resolve under the pinned path)."
   ],
-  "ops_note": "NO-PUSH: handoff + ledger entry + this file UNCOMMITTED on mount. A push-capable pass must git fetch + reconcile, re-splice the ledger entry at the first ^### , run the three ledger guards, then commit. CLAUDE.md Recent-sessions line owed to a push-capable pass. Inbox NOT archived (needs push)."
+
+  "gate": {
+    "tsc": 0,
+    "lint_ratchet": "715 vs baseline 715",
+    "vitest": "1,552 files / 17,454 tests green across 4 shards",
+    "db_invariants": "192 files pass",
+    "migration_sql_parses": "1,089 files, 0 syntax errors",
+    "standalone_guards": "check-brand-tokens, check-driver-message-leaks, check-unhandled-third-state, check-responsive-flex-basis, check-unbounded-server-reads, check-lane-egress, check-register-integrity, check-memory-doc-links, check-cowork-skill-bundles, check-retired-rules — all exit 0",
+    "npm_run_build": "NOT RUN — no env. The deploy is the end-to-end proof and it reached READY."
+  },
+
+  "owed": [
+    "CI run status for the nine commits was NOT read (no gh on the VM, GitHub API 403 in the cloud). Check it.",
+    "candy_offers_unverified_pct = 100 (breach_at 25) — re-read after candy-offers-indexer's ~00:50Z tick. Under 25 = self-healed; still 100 after a clean run = a real verification-arm defect.",
+    "npm audit --omit=dev still reports 28 vulnerabilities, 0 critical, all transitive under @onflow/@walletconnect/viem (the ws family). Measure whether @walletconnect/* and viem are reachable at all before upgrading — RPC does no wallet connect.",
+    "rpc-dune-free-tier-sunset is a one-shot self-pause (0 12 23 9 *) firing 2026-09-23."
+  ]
 }
