@@ -58,19 +58,26 @@ export default defineConfig({
       exclude: ["lib/**/*.test.ts", "lib/**/*.d.ts"],
       // ⚠ WHAT NO GATE MEASURES, written here because an audit has now
       // rediscovered it twice (2026-08-29 and 2026-09-12) and both times it
-      // read as an oversight. Measured 2026-09-12: **341 of 1,460** source
-      // files are matched by NO gate's include —
-      //   116  app/**/page.tsx        server pages: product surfaces
-      //   105  scripts/**             dev tooling; 93 test files DO import it
-      //    63  app/**/layout.tsx      product surfaces
-      //    38  supabase/functions/*   38 of 38 use Deno.*/serve() — vitest
-      //                               CANNOT import them; not achievable here
+      // read as an oversight. RE-DERIVED 2026-09-18 — the census below is a
+      // DATED SAMPLE and it has already MOVED, which is itself the finding:
+      //   app/**/page.tsx        116 -> **120**  (+4 in six days)
+      //   scripts/** (.ts+.mjs)  105 -> **107**  (+2; one is this session's
+      //                                scripts/lib/zip-one-file.mjs)
+      //   app/**/layout.tsx       63 ->    63    (unchanged)
+      //   supabase/functions/*    38 ->    38    (unchanged; 38 of 38 use
+      //                                Deno.*/serve() — vitest CANNOT import
+      //                                them, so this one is not achievable here)
+      // So the 09-12 total of **341 of 1,460** is now ~**347**, and the
+      // unmeasured surface GROWS with ordinary work. ⛔ Do not quote 341.
       // ⛔ UNMEASURED, NOT UNTESTED — tests exist; no number says how much runs.
       // ⛔ Deliberately NOT ratcheted: a ceiling over high-churn scripts/ or over
-      // 116 pages reds on routine work, which is the permanently-red-arm
+      // 120 pages reds on routine work, which is the permanently-red-arm
       // failure. Whether to gate a named subset instead is an OPEN decision, not
       // an oversight: docs/overnight/inbox/2026-09-13T0108Z-341-source-files-
       // sit-in-no-coverage-gate-and-nothing-watched-the-denominator.md
+      // ⭐ That filing's option (2) — "say so once, in the config, where the next
+      // reader meets it" — IS this comment block, and it is DONE. What remains
+      // open is only option (1), gating a named subset, which is a product call.
       // ⚠ The SHRINKING direction IS guarded —
       // __tests__/coverage-gates-still-measure-what-they-claim.test.ts bans any
       // lib/ module, app/**/route.ts, worker or *Client.tsx falling out of a
