@@ -1,4 +1,4 @@
-# Inbox index — 506 live filings
+# Inbox index — 507 live filings
 
 **Generated 2026-08-22 (PT) by Claude Code, deep-audit R27. Reconciled twice on 2026-08-22 evening: first from rot (193 listed / 196 on disk), then from a CONCURRENT CLOBBER — `a2bc6e9a` wrote back a copy read before the first reconciliation and took the file 198 → 192, burying nine filings including a HIGH-PRIORITY one. Both were caught by `__tests__/inbox-index-lists-every-filing.test.ts`, not by a reader. Counts here are asserted against the directory on every CI run, so do not hand-edit one without adding the entry it counts. ⚠ **ARCHIVING a filing means DELETING its entry here in the same commit** — this file maps the LIVE queue, and an entry for an archived filing tells the next session an item is open when it is closed (that happened 2026-08-23 and the guard caught it).**
 
@@ -27,6 +27,12 @@ still open should have a register row, and if it does not, that gap is the findi
 
 ⚠ **Regenerate this file when you add filings**, or it becomes another rotted map — the exact
 failure it documents.
+
+---
+
+## 2026-09-18 — 1 filing
+
+- [🔴 **Production is 503ing on public boards, the DB is unreachable from tooling — and the FIRST job is a baseline, not a fix**](2026-09-18T1445Z-production-is-503ing-and-the-db-is-unreachable-take-the-7-day-baseline-first.md) — *(Claude Code, cloud. **READ-ONLY — nothing shipped, because the database could not be reached.** Register **#122**.)* `/api/public/insights/pack-reality` returns **HTTP 503** on a live lambda (`x-vercel-cache: MISS`, `retry-after: 30`) — *"the database is under heavy load"*. ⭐ **The route is HONEST** (real status, `code: "timeout"`, `retryable: true`, no fabricated empty board) — **do not "fix" the copy**; the canon is working and the condition under it is the problem. 📏 **9,748 runtime errors in 24 h across 50 groups, ALL 50 last seen 09-18**: `get_player_detail timed out after 45000ms` **780 / 75 users** · `pack_lifecycle` **1,445 / 43** · `pack_market rpc` **1,019 / 34** · `popular-on-collection` **637 / 37**; one group **222 users**. ⛔ **Supabase MCP: 3× `Connection terminated due to connection timeout`, including on `select 1`** — CONNECTIVITY, not cost, and a different class from the `statement timeout` this estate sees constantly. 🚨 **THE FIRST JOB IS A BASELINE, NOT A REMEDY: this is CHRONIC** — top clusters first seen **08-15 / 08-23**, and the filing deliberately makes **no claim** that the last three days are worse, because the 24 h counts have no comparison window. **Take a 7-day `get_runtime_errors` first** (needs no DB); if 7d ≈ 7 × 24h it is the steady state and a capacity question, not an incident. ⚠ **Two traps it actually hit:** the sandbox `curl` is proxy-403'd for BOTH Supabase hosts and rippackscity, so **every 000 from there describes the sandbox** (github 200 = control, all readings taken from Vercel's plane); and **a 200 is not proof of a DB read** — `/api/market-pulse` looked healthy until `x-matched-path` read `/login` with `x-vercel-cache: HIT`, `age: 305294` (3.53 d), a cached auth redirect that never touched Postgres. ⚠ **Correlation recorded, cause NOT asserted:** repo silent since **09-14 6:50 PM PT** with **no `docs/FREEZE.md`** — whether the autonomous passes could not run is unestablished. ✅ **Ruled out: a deploy today** (serving `dpl_EVxLveo…`, cached age matches 09-15 as the last deploy). ⛔ **Blocked meanwhile:** pipeline_runs, sentinel, cron details, trust health, all migrations — **and #75's 09-20 re-measure, due in two days and needing Supabase MCP; if it cannot run, RECORD that rather than letting the item read as re-checked.**
 
 ---
 

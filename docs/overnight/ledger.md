@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔴 PRODUCTION IS SERVING 503s ON PUBLIC BOARDS AND THE DB IS UNREACHABLE FROM TOOLING — filed as #122 before this thread was archived · Claude Code cloud
+
+**Docs-only; nothing could be shipped, because the database could not be reached. Filed so the next session starts from a measurement rather than rediscovering it.**
+
+📏 **MEASURED ~7:45 AM PT, ALL OF IT FROM VERCEL'S PLANE:** `/api/public/insights/pack-reality` → **HTTP 503**, `x-vercel-cache: MISS`, `retry-after: 30`, body *"the database is under heavy load."* **9,748 runtime errors in 24 h across 50 groups, and ALL 50 last occurred on 09-18.** Worst, with real users: `get_player_detail timed out after 45000ms` **780 / 75 users** · `pack_lifecycle read exceeded 5000ms` **1,445 / 43** · `pack_market rpc` **1,019 / 34** · `popular-on-collection read failed` **637 / 37**; one group touches **222 users**. ⛔ **Supabase MCP: three consecutive `Connection terminated due to connection timeout`, including on `select 1`** — connectivity, not query cost, and a different class from the usual `statement timeout`.
+
+⭐ **THE ROUTE IS HONEST AND THAT IS WORTH SAYING FIRST** — a real 503 with `code: "timeout"`, `retryable: true`, no fabricated empty board. The canon is working; what is wrong is underneath it.
+
+⚠ **CHRONIC, NOT A NEW BREAK — and deliberately filed that way.** The top clusters were first seen **08-15 and 08-23**. **Nothing here shows the last three days are worse**, and no such claim is made: the 24 h counts have no 7-day baseline beside them. **Taking that baseline is the first job.**
+
+⭐ **METHOD, because 09-14 taught it the hard way:** sandbox `curl` to both Supabase hosts AND `www.rippackscity.com` returns `CONNECT tunnel failed, response 403` — **so every 000 from here describes the sandbox, not the host**; `api.github.com` → 200 is the control. ⚠ **One of my own probes was void and I caught it only by reading the headers:** `/api/market-pulse` returned 200, but `x-matched-path` was **`/login`**, `x-vercel-cache: HIT`, `age: 305294` (3.53 days) — a cached auth redirect that never touched Postgres. **Check `x-matched-path` and `x-vercel-cache` before reading a 200 as a live DB read.**
+
+⚠ **CORRELATION, NOT CAUSE:** the repo has been silent since **09-14 6:50 PM PT** (198 commits 09-13, 130 on 09-14, 1 on 09-15, none since) and there is **no `docs/FREEZE.md`**, so it is not the documented halt. Whether the autonomous passes could not run, or nobody was working, is **not established**. ✅ **Ruled out — a deploy today:** the serving deployment is `dpl_EVxLveodfDHMn39N2BT8ZEhsDisw` and the cached `age` matches the 09-15 commit as the last deploy.
+
+⛔ **BLOCKED WHILE THIS HOLDS:** `pipeline_runs`, the sentinel, `cron.job_run_details`, trust health, every migration — and **#75's 09-20 re-measure**, armed in the inbox and dependent on Supabase MCP it may not get. 👉 **NEXT, NEEDS NO DB:** a **7-day** `get_runtime_errors` window against the 24 h one to establish whether this is elevated, then correlate the timeout clusters by route and time to find the reader driving the load.
+
+No revert path — docs only, nothing shipped.
+
 ### 2026-09-14 · 🧹 WMC NEVER DELETED A MOMENT THAT LEFT A WALLET — every complete backfill now prunes what it did not observe, closing a ~14–21 day overcount · Claude Code desktop
 
 **Code + tests. No migration, no DB object, no data mutation run.**
