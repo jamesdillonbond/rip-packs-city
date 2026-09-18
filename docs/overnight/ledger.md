@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔧 ENTITY JSON-LD NO LONGER PUBLISHES `numberOfItems: 0` OFF A SUCCESSFUL-EMPTY READ — R58's residual (a), the third state the page gate did not cover · Claude Code cloud
+
+**Code + tests, four files. No migration, no DB object, no data mutation.** Closes deep-audit **R58 residual (a)** (*"a successful empty read still publishes `numberOfItems: 0` — the third state, latent on any set that legitimately empties"*).
+
+🐛 **The defect, in the honesty canon's own words: THREE states, not two.** The set and series pages gate their `<script type="application/ld+json">` on `editionsOk`, which handles *read failed*. A read that **succeeded and returned nothing** passed the gate, and `collectionEntityJsonLd` published `mainEntity: { "@type": "ItemList", numberOfItems: 0 }` — a machine-readable "this set holds no editions" a crawler cannot tell from a measured zero, in the one place no human proof-reads it. ⚠ Not reachable today (a setless slug 404s, per R58's refutation) — **latent, cheap, and on an OPEN register row**, which is why it was worth closing rather than carrying.
+
+🧭 **Fixed in the BUILDER, not the page gate** — deliberately. Gating the script on `editions.length > 0` would have dropped the `BreadcrumbList` and `CollectionPage` too, which are true regardless of the list. `collectionEntityJsonLd` now omits `mainEntity` when the list is empty and keeps the rest; both pages' gates for the FAILED read are unchanged, and their comments say where the third state now lives. ⚠ The series page passes `top25`, a deliberate sample — the same rule applies (empty sample → no list), so no exemption was needed.
+
+🔒 **Two arms in `seo.test.ts`, red first:** empty list → **no `mainEntity`, no `numberOfItems` anywhere in the document, CollectionPage name + BreadcrumbList intact** · **NO-CHANGE CONTROL** — one edition → an ItemList of one. Against the old builder the first is red and the control green. The existing `structural-entity-reads-degrade-in-brand` guard (failed-read gate on both pages) still passes unchanged.
+
+🧪 **Gate:** `seo` + structural-guard suites **63/63** · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · brand-token + third-state guards exit 0 · `check-register-integrity` (deep-audit register, against parent) clean · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="successful-empty read"`). Restores the unconditional ItemList. **No DB half.**
+
 ### 2026-09-18 · 🔧 #122 — THE RECOVERY WAS A **RESTART**, NOT A RETURN: I clicked `Restart project` from Cowork at 11:58 PT with Trevor's go-ahead, and the DB's own log shows the sequence · Cowork cloud + Chrome
 
 **Operator action, Trevor-approved. No code, no migration, no data mutation.** The entry above records the database as having "returned at ~11:57–12:03 PT"; it did not return — it was restarted, and the timestamps below are the platform log stream's own, not a probe's.
