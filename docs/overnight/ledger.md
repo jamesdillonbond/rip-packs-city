@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 📏 #122's OWED BASELINE IS TAKEN — today is ~9× the prior daily error volume, in CHRONIC shapes, and both halves of that sentence matter · Claude Code desktop
+
+**Docs-only. Needed NO DB connection**, which is exactly why #122 named it as the first job while the database was unreachable.
+
+📏 **THE MEASUREMENT (`get_runtime_errors`, both windows RELATIVE so they are like-for-like — memory records that relative and ISO windows disagree on this instrument):**
+
+| window | groups | events |
+|---|---|---|
+| **7d** | 50 | **21,485** |
+| **24h** | 50 | **13,038** |
+
+⇒ implied prior-6-day total **8,447 ≈ 1,407/day**, against **13,038 today** — **~9.3×**, and today alone is **61 % of the whole 7-day volume.**
+
+⭐ **THIS ANSWERS THE QUESTION #122 DELIBERATELY REFUSED TO ANSWER, AND IT SPLITS IN TWO.** That entry said *"the top clusters were first seen 08-15 and 08-23 … nothing here shows the last three days are worse, and no such claim is made: the 24 h counts have no 7-day baseline beside them."* **It was right to refuse, and both halves now resolve differently:**
+
+- ✅ **The SHAPES are chronic — #122 is confirmed.** Of the 7-day top-50, only **153 events** belong to groups first seen **today**; **21,332** belong to groups first seen weeks ago (**8,970** from 08-23, **3,503** from 06-16, **3,355** from 08-15, **1,627** from 09-09). **Nothing new broke.**
+- 🚨 **The VOLUME is elevated by roughly an order of magnitude — the part #122 could not yet say.** The same long-standing read-failure paths are firing ~9× harder. **That is precisely what a platform outage does: it amplifies every existing failure path rather than inventing new ones**, and it agrees with the 09-18 addendum's finding that the fault is at Supabase's gateway.
+
+⚠ **THE INSTRUMENT'S LIMIT, STATED BECAUSE IT BOUNDS THE NUMBER.** **Both windows returned EXACTLY 50 groups — that is the cap, not a count**, so these are top-50 totals rather than totals, and the 7-day top-50 and the 24-hour top-50 need not be the same set. The subtraction also assumes the 7-day top-50 contains the 24-hour groups. ⭐ **The DIRECTION is robust regardless** — the 7-day window *contains* the 24-hour one, so a single day holding 61 % of it cannot be an artifact of the cap — **but do not quote "9.3×" as a precise multiple.**
+
+⚠ **And this does NOT re-open the cause.** Elevated volume in chronic shapes is a CONSEQUENCE of the outage, not evidence about its origin; the auth-endpoint control still puts the fault at the platform gateway. ⛔ **Do not read "9× errors" as "our load is 9× worse" — the reads are failing, not multiplying.**
+
+👉 **What is still owed on #122 is now only the DB-dependent half:** the `pg_stat_activity` positive control (re-attempted four times today, refused every time), the true end of the window, and the pinning-reader question — which this baseline suggests is the wrong question, since the volume is failure amplification rather than a reader.
+
+- **Revert:** n/a — documents only; no code, no migration, no data mutation.
+
 ### 2026-09-18 · ⛔ THE WALLET-SEARCH "WINDOWING" FIX IS REFUTED — no on-chain accessor can read a sharded Top Shot collection, and the "0.13 % over" figure was never a measurement · Claude Code desktop
 
 **Docs-only — an inbox filing. Nothing shipped, and the point is that something should NOT be.** Measured against **deployed mainnet** via the Cadence MCP, per CLAUDE.md's rule that training data is unreliable for Cadence 1.0.
