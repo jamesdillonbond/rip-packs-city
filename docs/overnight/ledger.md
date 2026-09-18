@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔧 A SUPABASE-EDGE 522 WAS PUBLISHED AS A PERMANENT 500 — every anon board route now answers an unreachable DB with a retryable 503 · Claude Code desktop
+
+**Code + tests, one file. No migration, no DB object, no data mutation.** Found by the weekly `rpc-surface-qa` pass (`docs/handoffs/2026-09-18-board-routes-misclassify-supabase-522-as-500.md`) *during* the #122 outage — the outage is the platform's, **this is the durable code gap it exposed.**
+
+🐛 **The defect, from a live production cluster.** `lib/api-error.ts` `safeApiError()` maps to the transient `timeout` branch only on `statement timeout` · `canceling statement` · `timeout acquiring` · `connection pool`, or a SQLSTATE in `TIMEOUT_SQLSTATES`. A Cloudflare 522 carries **none of those and no SQLSTATE at all** — a transport failure has none — so `/api/public/insights/pack-sniper` logged `code=internal detail=pack_table_rows read failed: <!DOCTYPE html> … supabase.co | 522: Connection timed out` and answered **500, `retryable: false`** for a transient, not-our-fault platform blip.
+
+⭐ **THIS IS THE SAME DEFECT THE FILE ALREADY DOCUMENTS, ARRIVING THROUGH A DIFFERENT DOOR.** The `RPC_READ_TIMEOUT` block right above records 86 routes answering a bound timeout as a non-retryable 500 — *"telling the caller a transient failure was permanent."* **A fix written for one entry point did not generalise to the other**, which is the per-PANEL-not-per-page rule pointed at a classifier: the branch was correct and its INPUT SET was not.
+
+🎯 **The tell is the DOCTYPE, not the word "timeout".** A database read that comes back as a **web page** is a gateway failure with no second reading — the same signal that diagnosed the outage itself. Primary match is `<!doctype html`, plus `522:`/`523:`/`524:`, the undici/node transport strings, and a `TRANSPORT_ERROR_CODES` set read off `err.code` (`ECONNRESET`, `UND_ERR_CONNECT_TIMEOUT`, …) for the case where **no body arrives at all**.
+
+🔒 **New code `upstream_unavailable` → 503 + `Retry-After`, `retryable: true`**, added to the union with its own `statusForSafeError` case rather than folded into `timeout`: a query that timed out and a host that was unreachable have **opposite operational responses**, and `default: 500` would have swallowed a new code silently. ⚠ Checked **after** the timeout branch on purpose, so no existing classification is re-routed — this adds a case, it does not move one.
+
+⚠ **THE FOOTGUN, and the controls that hold it.** The thrown message is wrapped in our own text (`"pack_table_rows read failed: …"`) and can carry arbitrary upstream copy, so a bare `includes("timeout")` or `includes("connection")` would classify unrelated internal errors as retryable — **failing OPEN, worse than the defect.** Three controls pin the narrowness: *"the request hit a timeout building the board"*, *"no connection between these two editions"* and *"this edition sold 522 times"* must each still be a **non-retryable 500** (the last one passes only because the match requires `522:` **with the colon**). Plus a no-change control that `57014`→`timeout` and `42P01`→`unavailable` are untouched, and a leak control that neither the HTML, the table name, nor `supabase` reaches the response body. ⭐ **Every assertion is on the STATUS NUMBER and the RETRYABLE FLAG, never "an error came back"** — the vacuous-assertion trap.
+
+⚠ **IT CHANGED ONE EXISTING BEHAVIOUR, AND THE FULL SUITE IS WHAT CAUGHT IT — not my reasoning.** `__tests__/api-collection-stats.test.ts` asserted that a thrown `connect ECONNREFUSED …:5432` returns **500**, with the comment *"an unrecognized failure is not assumed retryable."* **That was correct when written and is now wrong**: a refused connection to the DB port is exactly the transport class this change recognises. ⭐ **So the test was INVERTED, never deleted or loosened** — its two load-bearing properties are still asserted (**NOT 200**, the deep-audit D11 property whose absence once rendered *"0 editions"* for a collection with 6,190; and **no driver text in the body**), the status moves 500 → 503, and a **new CONTROL** pins that a genuinely unrecognized throw is *still* a non-retryable 500 — so widening the match to a bare substring reddens there. ⚠ **I found this only because I ran the whole suite: the 19 files that import the classifier all passed.** A targeted run would have shipped it.
+
+🧪 **Gate:** `npx vitest run __tests__/api-error.test.ts` **25/25** · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** (no new violations) · full `npm test` green.
+
+⚠ **NOT verifiable end-to-end right now, and stated rather than implied:** the DB is unreachable (#122), so this is proven by unit test against the verbatim production message, **not** by observing a live 503. **The next transient blip is the real confirmation** — expect `code=upstream_unavailable` at 503 where the log previously read `code=internal`.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="upstream_unavailable"`). Single file + its test. **No DB half.**
+
 ### 2026-09-18 · ✅ #122's CAUSE BRANCH RESOLVED WITH NO DB CONNECTION — the `<!DOCTYPE html>` IS Cloudflare's `522: Connection timed out`, and an AUTH endpoint that never reads our tables 522s too ⇒ NOT our query load · Claude Code desktop
 
 **Docs-only. Nothing shipped, nothing reverted** — the event is platform-side and there is nothing in this repo to change for it.
