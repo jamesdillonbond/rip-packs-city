@@ -10,6 +10,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔧 THE P0 FABRICATED ZEROS — the REMAINING SEVEN boards, six fixed per-VALUE and the seventh pinned as the class control · Claude Code cloud
+
+**Code + tests, seven files (6 boards, 1 guard, +14 SSR arms). No migration, no DB object, no data mutation.** Completes the monthly deep audit's §2 P0 that the desktop session opened this afternoon with `top-sales` and `squeeze` (entry below): the nine boards are now nine.
+
+🚨 **What each strip printed under its own "treat as unknown, not zero" banner, and what it prints now on a failed read:**
+
+| board | provenance | fabricated → now | also fixed |
+|---|---|---|---|
+| `offer-spread` | `initialDegraded` (state, cleared on refetch) | 4 of 4 — incl. `$0.00` → `—` | empty state no longer blames the filters (§2b) |
+| `deals` | `initialDegraded` — **was rendered raw, never cleared**; now state like offer-spread | 4 of 4 — incl. `0%` → `—` | *"No editions listed below a trustworthy FMV match"* no longer asserted off a 503 (§2b, the audit's sharpest empty state) |
+| `candy-mlb` | `degraded` prop; **two labels** can carry it (the API's `Market`, the page's whole-board fallback `Candy MLB board`) | 4 of 4 → `—` | ⭐ the audit's worst string, ***"All 0 editions have now traded"***, and *"Showing all 0 matching editions"* now say the section could not be loaded; the Market tab's *"No editions match."* was the one section the board's own helper never covered |
+| `panini-squeeze` | `degraded` prop | 3 of 4 → `—` (the fourth, *Value sealed*, was already `—` — by accident of `usd()` treating 0 as unset) | *"Showing all 0"* + *"No editions match."* |
+| `rookie-board` | `initialFailed` (never refetches) | 2 of 3 → `—` (*Top chase FMV* already honest) | — (both empty states were gated 09-02) |
+| `serial-premiums` | `seedFailed` state | 1 of 3 → `—` (*Top premium*, *Biggest sale* already honest) | — |
+| `cross-collection` | `seedFailed` | **0 — already correct**, every tile `stats?.x` through a null-honest formatter | pinned, not fixed |
+
+⭐ **The per-VALUE tell held on four of the six** — one honest tile beside fabricated ones on the same strip — and it is why a per-panel or per-page fix would have been wrong here too. ⚠ **And the desktop entry's warning paid for itself: a sweep for `initialFailed` would have found three of these and missed four.** The provenance is a `DegradedSummary` on four boards and a boolean on three; the property is *"does the KPI branch consult ANY provenance"*.
+
+⚠ **Keyed on PROVENANCE, never `rows.length`, on every board** — a read that SUCCEEDED and matched nothing genuinely IS 0. The guard proves it both ways: **14 SSR arms** (`renderToString`, so a mount effect cannot repair the state first), every failed-read arm anchored on the TILE LABEL (`|Editions||—||`) because on three strips a bare "no 0" assertion would pass *"render — always"*, and every one paired with a **NO-CHANGE CONTROL** asserting the same tile still prints its real `0` / `$0.00` / `0%` and its original empty sentence on a successful-empty read. ⭐ **Against the unpatched boards: the 7 failed-read arms red, the 7 controls green** — a control that cannot move.
+
+🧪 **Gate:** the guard **49/49** (35 → 49) · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · brand-token / third-state / driver-leak guards exit 0 · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="remaining seven boards"`). Restores the fabricating strips and prose. **No DB half.** ⚠ Reverting re-opens the P0 on six public boards; only the desktop session's two stay fixed.
+
 ### 2026-09-18 · 🧹 THE DEAD `alldayGraphql` DUPLICATE IS GONE — R99's P1, a module with zero production importers that survived because the live symbol shared its basename · Claude Code cloud
 
 **Deletion, two files + one comment. No migration, no DB object, no data mutation, no behaviour change** (nothing imported it).
