@@ -23,7 +23,33 @@ import { fitTelegramText } from "@/lib/telegram-message";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
 const RESEND_API_KEY = process.env.RESEND_API_KEY ?? "";
-const ALERT_EMAIL = process.env.ALERT_EMAIL ?? "";
+/**
+ * The OPS alert recipient.
+ *
+ * 🚨 WHY THERE IS A FALLBACK AT ALL (measured 2026-09-18). `ALERT_EMAIL` is NOT
+ * set in the Vercel project — verified against the live env list, 58 keys, and it
+ * is not one of them, while `RESEND_API_KEY` IS set and `rippackscity.com` is a
+ * VERIFIED Resend sending domain. So the only thing standing between a working
+ * second alert channel and a mute one was an unset variable, and the sentinel's
+ * `sendEmail()` returned `not_configured` on **18 of 18** recorded runs.
+ *
+ * ⛔ That is not a cosmetic gap: `lib/sentinel/alert-delivery.ts` records that on
+ * the one CRITICAL sweep that mattered, the single remaining channel returned
+ * `telegram-FAILED:http_400 … "message is too long"` — **the alarm reached
+ * nobody**, and the estate had no second channel because of this constant.
+ *
+ * ⭐ THE ACTUAL DEFECT WAS AN INCONSISTENCY, NOT A MISSING VALUE. Three call sites
+ * read `ALERT_EMAIL`; exactly ONE (`app/api/check-alerts/route.ts`) carried this
+ * fallback and therefore worked, while the sentinel and this shared helper — the
+ * whole OPS plane — did not. One address, one place, imported by all three.
+ *
+ * ⚠ Setting `ALERT_EMAIL` in Vercel still overrides this and is the right way to
+ * change the recipient. The literal is only a floor so the channel is never mute
+ * by default; the address is already committed elsewhere in this public repo.
+ */
+export const OPS_ALERT_EMAIL = process.env.ALERT_EMAIL || "tdillonbond@gmail.com";
+
+const ALERT_EMAIL = OPS_ALERT_EMAIL;
 // Verified apex sender (same domain alerts-send delivers from). Never the
 // onboarding@resend.dev sandbox address.
 const OPS_FROM = process.env.RPC_OPS_FROM || "RPC Ops <noreply@rippackscity.com>";

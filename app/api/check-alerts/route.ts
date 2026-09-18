@@ -5,6 +5,7 @@
 // 2. FMV alerts: calls check_triggered_fmv_alerts RPC, sends email notifications
 //    via Resend honoring a 6-hour cooldown per alert, stamps last_triggered_at.
 
+import { OPS_ALERT_EMAIL } from "@/lib/ops-alert";
 import { NextRequest, NextResponse, after } from "next/server";
 import { fitTelegramText } from "@/lib/telegram-message";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -16,7 +17,9 @@ export const maxDuration = 60;
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? "";
 const RESEND_KEY = process.env.RESEND_API_KEY ?? "";
 const FROM = process.env.RPC_ALERTS_FROM || "RPC Alerts <noreply@rippackscity.com>";
-const OPS_EMAIL = process.env.ALERT_EMAIL || "tdillonbond@gmail.com";
+// The literal that used to live here is now OPS_ALERT_EMAIL in lib/ops-alert.ts,
+// so the OPS plane has ONE recipient rather than three readings of one env var.
+const OPS_EMAIL = OPS_ALERT_EMAIL;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
 const COOLDOWN_MS = 6 * 60 * 60 * 1000;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { redactSecrets } from "@/lib/redact-secrets";
+import { OPS_ALERT_EMAIL } from "@/lib/ops-alert";
 import { isSaturationError } from "@/lib/pipeline/saturation";
 import { fitTelegramMessage, fitTelegramText } from "@/lib/telegram-message";
 import { summariseAlertDelivery } from "@/lib/sentinel/alert-delivery";
@@ -91,7 +92,11 @@ const supabase: any = createClient(
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-const ALERT_EMAIL = process.env.ALERT_EMAIL || "";
+// ⚠ Imported, not re-read from the env. This line used to be
+// `process.env.ALERT_EMAIL || ""`, which made sendEmail() return
+// `not_configured` on 18 of 18 runs while a sibling route with a fallback
+// delivered fine. See OPS_ALERT_EMAIL in lib/ops-alert.ts.
+const ALERT_EMAIL = OPS_ALERT_EMAIL;
 
 interface HealthCheck {
   name: string;
