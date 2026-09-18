@@ -1,0 +1,57 @@
+-- audit_20260918_editions_badges_is_documented_and_the_trust_refresher_pins_its_search_path
+--
+-- Two small hardening items from the 2026-09-18 pass. Comment + one proconfig set.
+-- NO data is written, no function body changes, no grant changes.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- (1) R104 — `editions.badges`, AND ITS FILED PREMISE IS PARTLY REFUTED.
+--
+-- R104 reads: "a universally empty text[] on all 14,016 Top Shot and all 6,190
+-- AllDay rows", recommending "drop the column, or comment it". RE-MEASURED over
+-- the WHOLE table (2026-09-18, 21,424 rows): 100 NULL, 21,299 empty, and
+-- 25 POPULATED. The 25 are all Candy MLB, written 2026-09-18 01:18-01:23Z, and
+-- they hold PARALLEL labels -- "Rainbow (Blue)", "Rainbow (Green)",
+-- "Rainbow (Orange)", "Rainbow (Pink)", "Rainbow (Yellow)".
+--
+-- So the column is NOT dead: `lib/chains/solana/normalize.ts` (`editionBadges()`,
+-- commented there as "best-effort from name (Rainbow) + trait probes") writes it on
+-- the Candy lane. DROPPING IT WOULD HAVE DESTROYED LIVE DATA -- R104's own
+-- population claim was taken over two collections and generalised to the table.
+-- Recorded rather than quietly fixed: the finding was right about the hazard and
+-- wrong about the extent, and the recommendation followed from the wrong half.
+--
+-- THE HAZARD R104 IS RIGHT ABOUT, and why a comment is the fix: the column is
+-- typed, is almost never NULL, and is empty for 100% of Top Shot and AllDay. A
+-- future surface that joins it renders "no badges" on every moment in those two
+-- catalogues and NO instrument fires -- the fabricated-value shape one level down
+-- from `?? 0`. Canonical badge display is `get_edition_badges_unified()` over
+-- `badge_editions`, which is healthy (13,915 TS keys, 99.3% coverage, 0 orphans).
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- (2) `rpc_trust_health_precompute_refresh_p()` gets its search_path pinned.
+--
+-- It is one of only two functions in `public` with no `search_path` in proconfig
+-- (Supabase advisor: function_search_path_mutable). VERIFIED SAFE BY READING ITS
+-- BODY, not assumed: every statement is `PERFORM public.rpc_thp_leg_*()` plus a
+-- COMMIT -- eight fully-qualified calls and nothing else -- so pinning cannot
+-- change what any name resolves to. It is a PROCEDURE with per-leg COMMITs; a
+-- proconfig SET does not affect that.
+--
+-- POSITIVE CONTROL TAKEN after applying: under `search_path = public, pg_temp`,
+-- all eight `rpc_thp_leg_*` identities resolve via to_regprocedure(). That is the
+-- property the pin could have broken, checked directly rather than inferred.
+--
+-- The other one, `reconcile_all_saved_wallet_stats`, is DELIBERATELY NOT PINNED
+-- here. Its body is 9.9 kB with ~9 references this pass could not prove are
+-- schema-qualified, it is INVOKER (so the advisor's escalation concern does not
+-- apply), and it is the wallet reconciler. Pinning it unattended would be shipping
+-- a lever whose bound was never established. Filed, not shipped.
+--
+-- REVERT:
+--   comment on column public.editions.badges is null;
+--   alter procedure public.rpc_trust_health_precompute_refresh_p() reset search_path;
+
+comment on column public.editions.badges is
+  'NOT the canonical badge source. Canonical display is get_edition_badges_unified() over badge_editions. Measured 2026-09-18 over all 21,424 rows: 100 NULL, 21,299 empty, 25 populated — and the 25 are all Candy MLB, holding PARALLEL labels ("Rainbow (Blue)" …), written best-effort by editionBadges() in lib/chains/solana/normalize.ts. It is therefore EMPTY for 100% of Top Shot and AllDay while never being NULL, so a reader that joins it gets a silent "no badges" for those two catalogues with no error and no alarm — the fabricated-value shape. Deep-audit R104; that row filed it as universally empty and recommended dropping it, which the whole-table re-measure refutes (dropping would destroy the 25 live Candy rows). If you need badges, call get_edition_badges_unified().';
+
+alter procedure public.rpc_trust_health_precompute_refresh_p() set search_path = public, pg_temp;

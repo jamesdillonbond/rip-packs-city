@@ -30,8 +30,12 @@ const PINS = [
     // exclusion FLIPS the verdict rather than merely changing a number.
     fn: "check_pipeline_cadence_collapse",
     test: "supabase/tests/check_pipeline_cadence_collapse.sql",
+    // ⚠ REPOINTED 2026-09-18 to the R102 migration. The pin must name the migration
+    // that carries the LIVE body, not the one that created the function — the
+    // 20260912 file is now historical, and leaving the pin on it would have made
+    // this guard assert the test copy against superseded DDL while reporting green.
     migration:
-      "supabase/migrations/20260912054710_audit_20260911_a_silence_detector_cannot_see_a_cadence_collapse.sql",
+      "supabase/migrations/20260918225454_audit_20260918_cadence_collapse_publishes_the_true_last_run.sql",
   },
   {
     // Added 2026-09-02 with the fields it pins. This function had ONE input —
