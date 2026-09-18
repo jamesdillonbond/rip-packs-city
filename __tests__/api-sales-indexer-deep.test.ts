@@ -446,6 +446,107 @@ describe("sales-indexer — resolution ladder", () => {
     expect((run?.extra as Record<string, unknown>).parallel_splits).toBe(1)
   })
 
+  // ── The "when unmapped, base" guard's SILENT exits, made countable (#116) ──
+  //
+  // The guard redirects an UNCONFIRMED parallel back to its base edition. It can
+  // decline to redirect for two reasons that are NOT "the row is fine": the
+  // assigned edition never came back from the Step 4e reverse-resolve (so the
+  // guard cannot tell whether it is a parallel), or it IS a ::subID parallel
+  // whose base edition is not in the catalog (the redirect has nowhere to land).
+  // Until 2026-09-18 both paths wrote the row and counted nothing, so a burst of
+  // mis-keyed parallels was only reconstructible from `sales` after the fact.
+  // ⚠ Instrumentation only: the guard's behaviour is unchanged in all three cases.
+  it("F9b redirect CONTROL: an unconfirmed parallel is redirected to base, counted, and the miss counters read 0", async () => {
+    const tx5 = "5".repeat(64)
+    state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9005", "60", tx5, DAPPER_MERCHANT)]
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      topshot_moment_subeditions: { data: [], error: null },
+      wallet_moments_cache: {
+        data: [{ moment_id: "9005", edition_key: "257:8664::18", serial_number: 5 }],
+        error: null,
+      },
+      editions: [
+        // 4c: the wmc key resolves to the PARALLEL edition.
+        { data: [{ id: "uuid-par", external_id: "257:8664::18" }], error: null },
+        // 4e reverse-resolve: the parallel's external_id is known.
+        { data: [{ id: "uuid-par", external_id: "257:8664::18" }], error: null },
+        // 4e base lookup: the base edition exists.
+        { data: [{ id: "uuid-base", external_id: "257:8664" }], error: null },
+      ],
+      sales: { data: null, error: null },
+    })
+    await POST(req())
+    await runDeferred()
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    expect(saleRows[0]).toMatchObject({ edition_id: "uuid-base" })
+    const extra = pipelineRun(spy)?.extra as Record<string, unknown>
+    expect(extra.parallel_redirects).toBe(1)
+    expect(extra.parallel_redirect_unmapped).toBe(0)
+    expect(extra.parallel_redirect_base_missing).toBe(0)
+  })
+
+  it("F9c redirect UNMAPPED: the assigned edition never came back from the reverse-resolve — the row stays put and the miss is counted with its id", async () => {
+    const tx6 = "6".repeat(64)
+    state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9006", "60", tx6, DAPPER_MERCHANT)]
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      topshot_moment_subeditions: { data: [], error: null },
+      wallet_moments_cache: {
+        data: [{ moment_id: "9006", edition_key: "257:8664::18", serial_number: 5 }],
+        error: null,
+      },
+      editions: [
+        { data: [{ id: "uuid-par", external_id: "257:8664::18" }], error: null },
+        // 4e reverse-resolve returns NOTHING for uuid-par.
+        { data: [], error: null },
+      ],
+      sales: { data: null, error: null },
+    })
+    await POST(req())
+    await runDeferred()
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    // Behaviour unchanged: the row is written where it was, on the parallel.
+    expect(saleRows[0]).toMatchObject({ edition_id: "uuid-par" })
+    const extra = pipelineRun(spy)?.extra as Record<string, unknown>
+    expect(extra.parallel_redirects).toBe(0)
+    expect(extra.parallel_redirect_unmapped).toBe(1)
+    expect(extra.parallel_redirect_unmapped_sample).toEqual(["uuid-par"])
+    expect(extra.parallel_redirect_base_missing).toBe(0)
+  })
+
+  it("F9d redirect BASE MISSING: a known ::subID parallel whose base is not cataloged — the row stays put and the miss is counted with the parallel key", async () => {
+    const tx7 = "7".repeat(64)
+    state.eventsByType[STOREFRONT_EVENT] = [storefrontSale("9007", "60", tx7, DAPPER_MERCHANT)]
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      topshot_moment_subeditions: { data: [], error: null },
+      wallet_moments_cache: {
+        data: [{ moment_id: "9007", edition_key: "257:8664::18", serial_number: 5 }],
+        error: null,
+      },
+      editions: [
+        { data: [{ id: "uuid-par", external_id: "257:8664::18" }], error: null },
+        { data: [{ id: "uuid-par", external_id: "257:8664::18" }], error: null },
+        // 4e base lookup: no base edition for 257:8664.
+        { data: [], error: null },
+      ],
+      sales: { data: null, error: null },
+    })
+    await POST(req())
+    await runDeferred()
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    expect(saleRows[0]).toMatchObject({ edition_id: "uuid-par" })
+    const extra = pipelineRun(spy)?.extra as Record<string, unknown>
+    expect(extra.parallel_redirects).toBe(0)
+    expect(extra.parallel_redirect_unmapped).toBe(0)
+    expect(extra.parallel_redirect_base_missing).toBe(1)
+    expect(extra.parallel_redirect_base_missing_sample).toEqual(["257:8664::18"])
+  })
+
   it("no events: advances the cursor, logs no_events, and still chains fmv-recalc", async () => {
     const spy = install({
       event_cursor: { data: { last_processed_block: 1000 }, error: null },

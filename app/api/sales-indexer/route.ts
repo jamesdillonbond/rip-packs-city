@@ -748,6 +748,23 @@ export async function POST(req: NextRequest) {
     }
     let parallelRedirects = 0
     let parallelSplits = 0
+    // The two ways the "when unmapped, base" guard can decline to redirect
+    // WITHOUT deciding the row is fine. Until 2026-09-18 both were silent — the
+    // row was written on whatever edition it had, and nothing counted it — so a
+    // burst of mis-keyed parallels (#82's 24 rows, #116's open writer) could
+    // only be inferred after the fact from `sales`. Counted, not acted on: the
+    // guard's behaviour is unchanged, this makes the miss OBSERVABLE per tick.
+    //   unmapped:      the assigned edition id came back from the Step 4e
+    //                  reverse-resolve with NO external_id, so the guard cannot
+    //                  tell whether it is a parallel at all.
+    //   base_missing:  the edition IS a ::subID parallel, it is unconfirmed, and
+    //                  its base setID:playID edition is not in the catalog — the
+    //                  redirect had nowhere to land. This is the mis-key shape
+    //                  exactly: a Standard nft left on a parallel edition.
+    let parallelRedirectUnmapped = 0
+    let parallelRedirectBaseMissing = 0
+    const parallelRedirectUnmappedSample: string[] = []
+    const parallelRedirectBaseMissingSample: string[] = []
 
     // Step 5 & 6: Build and insert sales
     const salesBatch: any[] = []
@@ -809,12 +826,19 @@ export async function POST(req: NextRequest) {
         }
       } else {
         const ext = edIdToExt.get(editionId)
+        if (ext === undefined) {
+          parallelRedirectUnmapped++
+          if (parallelRedirectUnmappedSample.length < 20) parallelRedirectUnmappedSample.push(editionId)
+        }
         const base = ext ? baseExtIdOf(ext) : null
         if (base) {
           const baseId = baseKeyToId.get(base)
           if (baseId && baseId !== editionId) {
             editionId = baseId
             parallelRedirects++
+          } else if (!baseId) {
+            parallelRedirectBaseMissing++
+            if (parallelRedirectBaseMissingSample.length < 20) parallelRedirectBaseMissingSample.push(ext as string)
           }
         }
       }
@@ -847,7 +871,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    console.log(`[sales-indexer] resolved ${salesBatch.length} sales (${gqlResolvedMap.size} via GQL), ${unresolvedIds.length} unresolved, ${parallelRedirects} parallel→base redirects, ${parallelSplits} base→::sub splits`)
+    console.log(`[sales-indexer] resolved ${salesBatch.length} sales (${gqlResolvedMap.size} via GQL), ${unresolvedIds.length} unresolved, ${parallelRedirects} parallel→base redirects, ${parallelSplits} base→::sub splits, ${parallelRedirectUnmapped} redirect-unmapped, ${parallelRedirectBaseMissing} redirect-base-missing`)
 
     // Step 5b: Resolve buyer + execution accounts from the on-chain tx.
     // The MomentPurchased event carries seller but not buyer (the buyer is the
@@ -1125,6 +1149,12 @@ export async function POST(req: NextRequest) {
         unresolved_sample: unresolvedIds.slice(0, 20),
         parallel_redirects: parallelRedirects,
         parallel_splits: parallelSplits,
+        // The guard's two silent exits, made countable (2026-09-18, #116). The
+        // samples exist so a miss is falsifiable from the run row alone.
+        parallel_redirect_unmapped: parallelRedirectUnmapped,
+        parallel_redirect_unmapped_sample: parallelRedirectUnmappedSample,
+        parallel_redirect_base_missing: parallelRedirectBaseMissing,
+        parallel_redirect_base_missing_sample: parallelRedirectBaseMissingSample,
         blocks_scanned: cursorTarget - lastBlock,
       },
     })
