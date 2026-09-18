@@ -1,7 +1,7 @@
 // app/api/smoke-test/route.ts
 // build-id: 20260717-go-live-ungate (trigger fresh Vercel prod build)
 import { NextResponse } from "next/server";
-import * as Sentry from "@sentry/nextjs";
+import * as Report from "@/lib/observability/report";
 import { createClient } from "@supabase/supabase-js";
 import { searchPinnacleDeals } from "@/lib/concierge/pinnacle-router";
 import { sendOpsAlert } from "@/lib/ops-alert";
@@ -371,7 +371,7 @@ function softIfTransientRpc(
 // So an unexpected shape is handled exactly as an `error` already is:
 // couldNotRun + hard fail, never soft — a shape change is not transient and a
 // retry cannot fix it. ⚠ Only the TYPE is reported, never the payload: these
-// guards read privilege catalogs and their rows must not reach Sentry.
+// guards read privilege catalogs and their rows must not reach the report log.
 function shapeCouldNotRun(
   meta: { name: string; endpoint: string; expected: string },
   data: unknown,
@@ -2370,11 +2370,13 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
     }
   }
 
-  // Push hard failures to Sentry so Trevor gets notified instead of needing
-  // to poll this endpoint. Soft failures (external API deps) stay out of Sentry.
+  // Record hard failures on the runtime log (Sentry retired 2026-09-18, #34 —
+  // it had stored nothing since 08-18). The scheduled `RPC Smoke` workflow and
+  // the sentinel are what page; this is the forensic record beside them. Soft
+  // failures (external API deps) stay out of it.
   for (const r of results) {
     if (!r.passed && !r.soft) {
-      Sentry.withScope((scope) => {
+      Report.withScope((scope) => {
         scope.setTag("smoke_test", r.name);
         scope.setTag("endpoint", r.endpoint);
         scope.setTag("route", "smoke-test");
@@ -2387,7 +2389,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         // Distinct prefix ⇒ distinct Sentry issue group, so infra noise during a
         // saturation window cannot bury a real violation in the same thread.
         scope.setTag("failure_kind", r.couldNotRun ? "check_errored" : "assertion_violated");
-        Sentry.captureMessage(
+        Report.captureMessage(
           (r.couldNotRun ? "smoke check could not run: " : "smoke test failed: ") + r.name,
           "error",
         );
@@ -2478,10 +2480,10 @@ export async function POST(req: Request) {
   try {
     return await runSmokeTests({ liveConcierge: wantsLiveConcierge(req) });
   } catch (err: any) {
-    Sentry.withScope((scope) => {
+    Report.withScope((scope) => {
       scope.setTag("route", "smoke-test");
       scope.setTag("smoke_test", "top-level-crash");
-      Sentry.captureException(err);
+      Report.captureException(err);
     });
     console.error("[smoke-test] Top-level crash:", err);
     return NextResponse.json({
@@ -2497,10 +2499,10 @@ export async function GET(req: Request) {
   try {
     return await runSmokeTests({ liveConcierge: wantsLiveConcierge(req) });
   } catch (err: any) {
-    Sentry.withScope((scope) => {
+    Report.withScope((scope) => {
       scope.setTag("route", "smoke-test");
       scope.setTag("smoke_test", "top-level-crash");
-      Sentry.captureException(err);
+      Report.captureException(err);
     });
     console.error("[smoke-test] Top-level crash:", err);
     return NextResponse.json({

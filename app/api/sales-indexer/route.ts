@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
-import * as Sentry from "@sentry/nextjs"
+import * as Report from "@/lib/observability/report"
 import fcl from "@/lib/chains/flow/flow"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
@@ -1162,10 +1162,10 @@ export async function POST(req: NextRequest) {
     // Step 8: Fire next pipeline step
     await fireNextPipelineStep("/api/fmv-recalc", chain)
   } catch (err) {
-    Sentry.withScope((scope) => {
+    Report.withScope((scope) => {
       scope.setTag("route", "sales-indexer")
       scope.setTag("collection", "nba-top-shot")
-      Sentry.captureException(err)
+      Report.captureException(err)
     })
     const msg = err instanceof Error ? err.message : String(err)
     console.log("[sales-indexer] fatal error:", msg)

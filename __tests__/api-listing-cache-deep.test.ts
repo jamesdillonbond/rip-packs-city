@@ -36,7 +36,7 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () =>
     new Proxy({}, { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] }),
 }))
-vi.mock("@sentry/nextjs", () => ({
+vi.mock("@/lib/observability/report", () => ({
   withScope: (cb: (scope: { setTag: (k: string, v: string) => void }) => void) => {
     const tags: Record<string, string> = {}
     cb({ setTag: (k: string, v: string) => void (tags[k] = v) })

@@ -103,7 +103,9 @@ export default function PrivacyPage() {
           <Section title="Where it's stored">
             User accounts and saved data live in Supabase (a managed Postgres
             database hosted in US-East). The platform is served by Vercel. Error
-            telemetry is captured by Sentry. AI concierge messages route through
+            telemetry is first-party: browser errors are posted to our own
+            endpoint and stored in Supabase with the rest of your data, and no
+            third-party error collector runs. AI concierge messages route through
             Anthropic. Cloudflare Workers proxy a small number of public
             marketplace API calls. None of these vendors receive more than the
             data necessary to perform their function.

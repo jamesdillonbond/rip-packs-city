@@ -45,7 +45,7 @@ vi.mock("@/lib/supabase", () => ({
     { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
   ),
 }))
-vi.mock("@sentry/nextjs", () => ({
+vi.mock("@/lib/observability/report", () => ({
   addBreadcrumb: (crumb: Record<string, unknown>) => void state.breadcrumbs.push(crumb),
   captureMessage: (msg: string, ctx: Record<string, unknown>) =>
     void state.messages.push({ msg, ctx }),

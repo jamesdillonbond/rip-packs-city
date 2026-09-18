@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
-import * as Sentry from "@sentry/nextjs"
+import * as Report from "@/lib/observability/report"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
@@ -747,7 +747,7 @@ export async function POST(req: NextRequest) {
             for (const row of newRows) {
               const reason = String(row.failure_reason)
               failureReasonCounts[reason] = (failureReasonCounts[reason] ?? 0) + 1
-              Sentry.addBreadcrumb({
+              Report.addBreadcrumb({
                 category: "listing-retry",
                 level: "warning",
                 message: "listing_resolution_failure_inserted",
@@ -834,7 +834,7 @@ export async function POST(req: NextRequest) {
         (r) => !EXPECTED_FAILURE_REASONS.has(r)
       )
       if (queuedFailures > SENTRY_SPIKE_THRESHOLD || hasUnexpectedReason) {
-        Sentry.captureMessage("listing_resolution_failures_inserted", {
+        Report.captureMessage("listing_resolution_failures_inserted", {
           level: "warning",
           tags: {
             collection: "disney_pinnacle",

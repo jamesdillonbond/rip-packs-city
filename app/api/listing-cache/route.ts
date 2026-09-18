@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import * as Sentry from "@sentry/nextjs";
+import * as Report from "@/lib/observability/report";
 import { createClient } from "@supabase/supabase-js";
 import { fireNextPipelineStep } from "@/lib/pipeline-chain";
 import { isFlowtyIngestEnabled } from "@/lib/flowty-flags";
@@ -538,10 +538,10 @@ export async function POST(req: NextRequest) {
       elapsed: Date.now() - startTime,
     });
   } catch (e: any) {
-    Sentry.withScope((scope) => {
+    Report.withScope((scope) => {
       scope.setTag("route", "listing-cache");
       scope.setTag("collection", config.slug);
-      Sentry.captureException(e);
+      Report.captureException(e);
     });
     console.error("[listing-cache] FATAL: " + (e.message || "unknown"), e.stack || "");
     await writePipelineRun({

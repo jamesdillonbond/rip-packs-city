@@ -17,7 +17,7 @@ vi.mock("@/lib/supabase", () => ({
 vi.mock("@/lib/chains/flow/flow", () => ({ default: { send: async () => ({}), decode: async () => ({}), getBlock: () => ({}), getEventsAtBlockHeightRange: () => ({}) } }))
 vi.mock("@/lib/pipeline-chain", () => ({ fireNextPipelineStep: async () => {} }))
 vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({ decodeTopShotSaleTx: async () => ({}) }))
-vi.mock("@sentry/nextjs", () => ({ withScope: () => {}, captureException: () => {} }))
+vi.mock("@/lib/observability/report", () => ({ withScope: () => {}, captureException: () => {} }))
 
 const TOKEN = "test-ingest-token"
 process.env.INGEST_SECRET_TOKEN = TOKEN

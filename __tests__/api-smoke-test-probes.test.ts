@@ -38,7 +38,7 @@ vi.mock("@supabase/supabase-js", () => ({
       : { from: () => ({ insert: async () => ({ error: { code: "42501", message: "row-level security" } }) }) }
   },
 }))
-vi.mock("@sentry/nextjs", () => ({
+vi.mock("@/lib/observability/report", () => ({
   withScope: (cb: (s: { setTag: () => void; setExtra: () => void }) => void) => cb({ setTag: () => {}, setExtra: () => {} }),
   captureMessage: () => {},
   captureException: () => {

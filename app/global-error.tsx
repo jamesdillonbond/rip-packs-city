@@ -1,8 +1,38 @@
-// app/global-error.tsx — Sentry error boundary for the root layout
+// app/global-error.tsx — last-resort error boundary for the root layout
 "use client"
 
-import * as Sentry from "@sentry/nextjs"
 import { useEffect } from "react"
+import { clientErrorPayload, pageSessionId } from "@/components/telemetry/ClientErrorBeacon"
+
+// Where a root-layout crash gets RECORDED. Until 2026-09-18 this called
+// Sentry.captureException — a collector that had stored nothing since
+// 2026-08-18 (known-issues #34). The client-side record that actually exists
+// is the beacon's `usage_events.client_error` row (proven on prod 09-06 and
+// 09-08), so this boundary posts the same payload the beacon would. Next's
+// `digest` is the only way to tie a user's crash to the server log line, so it
+// rides in `source`. Best-effort and silent on failure, like the beacon.
+export function reportGlobalError(error: Error & { digest?: string }): void {
+  try {
+    const body = JSON.stringify(
+      clientErrorPayload({
+        kind: "error",
+        message: error.message,
+        source: error.digest ? `global-error:${error.digest}` : "global-error",
+        stack: error.stack,
+        path: typeof location !== "undefined" ? location.pathname : "",
+        width: typeof window !== "undefined" ? window.innerWidth : 0,
+        ua: typeof navigator !== "undefined" ? navigator.userAgent : "",
+        sid: pageSessionId(),
+      }),
+    )
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      if (navigator.sendBeacon("/api/telemetry", new Blob([body], { type: "application/json" }))) return
+    }
+    void fetch("/api/telemetry", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {})
+  } catch {
+    // Reporting must never throw inside the boundary that reports.
+  }
+}
 
 export default function GlobalError({
   error,
@@ -12,7 +42,7 @@ export default function GlobalError({
   reset: () => void
 }) {
   useEffect(() => {
-    Sentry.captureException(error)
+    reportGlobalError(error)
   }, [error])
 
   return (

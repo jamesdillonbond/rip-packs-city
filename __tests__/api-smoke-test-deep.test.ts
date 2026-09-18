@@ -47,7 +47,7 @@ vi.mock("@supabase/supabase-js", () => ({
       : { from: () => ({ insert: async () => state.anonInsertResult }) },
 }))
 
-vi.mock("@sentry/nextjs", () => ({
+vi.mock("@/lib/observability/report", () => ({
   withScope: (cb: (scope: { setTag: (k: string, v: string) => void; setExtra: (k: string, v: unknown) => void }) => void) =>
     cb({ setTag: () => {}, setExtra: () => {} }),
   captureMessage: (msg: string) => {

@@ -47,7 +47,7 @@ vi.mock("@/lib/pipeline-chain", () => ({
   fireNextPipelineStep: async (path: string, chain: boolean) =>
     void state.chained.push({ path, chain }),
 }))
-vi.mock("@sentry/nextjs", () => ({
+vi.mock("@/lib/observability/report", () => ({
   withScope: (cb: (scope: { setTag: () => void }) => void) => cb({ setTag: () => {} }),
   captureException: () => {},
 }))
