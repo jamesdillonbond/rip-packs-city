@@ -4,6 +4,27 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-18 ~09:3x AM PT (Claude Code desktop; the DB event is PLATFORM-SIDE — do not chase our own load)
+
+🚨 **IF THE DB IS STILL UNREACHABLE WHEN YOU RUN, THE CAUSE IS ALREADY SETTLED AND IT IS NOT OURS. Do not re-derive it, and do not act on the nightly pass's "first suspect".** That handoff names *"connection-pool/IO saturation from concurrent pipeline load on the SMALL tier (wallet-backfill fan-out back-pressure, inbox 09-13)"* as the leading candidate. **It is NOT SUPPORTED for this event.** ⛔ **Do NOT throttle a pipeline, pause an ingest lane, or re-tune `fmv-recalc` on account of it** — that is a fix aimed at a fault we do not own, and pausing an ingest lane creates real data gaps.
+
+⭐ **THE CONTROL THAT SETTLED IT NEEDS NO DB CONNECTION, so you can re-take it in one minute:** `/auth/v1/health` and `/auth/v1/settings` on `bxcqstmqfzmuolpuynti.supabase.co` return **Cloudflare 522 after ~19.6 s**. GoTrue does not read our tables and holds its own pool, so **it cannot be starved by our query load**. Controls both directions: the edge answers `/rest/v1/` **401 in ~200 ms**, and `api.github.com` → **200** rules out your own network. ⛔ **A CF 522 means Cloudflare could not OPEN a connection to the origin; query-load exhaustion returns a JSON error from a REACHABLE PostgREST, never a 522.** The `<!DOCTYPE html>` bodies in the runtime errors are Cloudflare's page — `<title>supabase.co | 522: Connection timed out</title>`.
+
+⚠ **What that does NOT establish:** Supabase's internal root cause (**not asserted**), and nothing about whether our load is healthy in general — the #42/#73/#84/M11 saturation class stands on its own evidence. Instance-wide starvation is not excluded by the probe alone; what argues against it is the nightly pass's postgres logs (pg_cron lanes completing normally through 14:30Z, only 2 statement cancels). **Two instruments, neither sufficient alone.**
+
+👉 **STILL OWED, and it is the FIRST thing to do the moment a connection succeeds** — I re-attempted it at 09:2x PT and was still refused:
+```sql
+SELECT count(*) FILTER (WHERE wait_event_type='IO') AS io_wait,
+       count(*) FILTER (WHERE state='active')       AS active,
+       count(*)                                     AS total
+FROM pg_stat_activity WHERE pid <> pg_backend_pid();
+```
+Then **record the true end of the window** (it ran at least **12:48Z → 16:2xZ**, ~3.5 h) and only then look for a pinning reader. ⚠ **Every duration read taken during the window is uninterpretable** — do not file a slow-query finding from it.
+
+✅ **ALREADY DONE, do not redo:** #122 carries the addendum · the ledger has the measurement · `lib/api-error.ts` now classifies a 522 as **`upstream_unavailable` → 503 + `Retry-After`** instead of a permanent 500 (deployed and **verified live**, `dpl_24f5VuHkxCWjKtrqDL8SZKD9aTcD`) · the tree is caught up and the inbox INDEX is reconciled to 510.
+
+⭐ **TWO THINGS THAT BEHAVED CORRECTLY UNDER A REAL OUTAGE, worth knowing before you "fix" them:** the honesty layer published *"PARTIAL DATA … not an empty result"* with **no fabricated zeros** anywhere, and the production build **succeeded while the DB was unreachable** (the `insights-server-pages-bound-their-reads` ban-at-zero doing its job). ⚠ **And ISR MASKS THIS FROM A BROWSER** — `/`, `/insights` and the overview pages serve 200 with real content off `x-vercel-cache: HIT` while every board API is 5xx underneath. **Probe the API routes; a 200 from a page is never evidence the DB is reachable.**
+
 ## STEER — added 2026-09-14 ~1:3x PM PT (Claude Code cloud; thread close-out — one falsifier RESOLVED, one estimate REFUTED)
 
 ✅ **CURSOR FALSIFIER RESOLVED — stop checking it.** `golazos_sales_v1_backfill` moved 142,441,736 → **142,401,736** at 18:34:58Z and the 20:12Z observation set `changes_observed` 1 and **`ever_decreased` TRUE**. **A backward-walking cursor EXISTS, so `check_backward_cursor_rewind()` stays** — do not retire it — **and its 0 now means something** (armed cursor in population, no rewind yet).
