@@ -860,3 +860,88 @@ describe("sentinel — Pipeline Success (no-success arm)", () => {
     expect(String(c.detail)).toContain("unexpected payload shape")
   })
 })
+
+// ── A THROWN read must be classified exactly like a RETURNED one ──
+//
+// Every arm has two failure paths: supabase-js RETURNS `{ error }` (the `if
+// (error)` branch, which classifies with isSaturationError and prefixes the
+// INCONCLUSIVE marker) and the read THROWS (the `catch`, which until 2026-09-18
+// emitted a bare `Exception: …` in sixteen of twenty-four arms). The blackout
+// arm counts blindness by that marker, falling back to its own narrower regex,
+// so a 522 gateway page that killed a read in a bare catch was blind to the arm
+// whose whole subject is blindness — the "marker not applied uniformly" filing
+// of 09-13, measured as 3 counted of 4 blind. These pin the property, not the
+// spelling: with EVERY read throwing the gateway shape, no arm may report an
+// exception without the marker, and the control shows the marker is not simply
+// stamped on everything.
+describe("sentinel — a THROWN read is classified like a RETURNED one", () => {
+  const GATEWAY =
+    '<!DOCTYPE html>\n<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->\n<title>bxcqstmqfzmuolpuynti.supabase.co | 522: Connection timed out</title>'
+  const CODE_DEFECT = "Cannot read properties of null (reading 'fails')"
+
+  function throwingClient(message: string) {
+    const reject = () => Promise.reject(new Error(message))
+    const b: Record<string, unknown> = {}
+    for (const m of [
+      "select", "insert", "update", "upsert", "delete", "eq", "neq", "in", "is", "not", "or", "and",
+      "gte", "lte", "gt", "lt", "order", "limit", "range", "match", "returns", "filter", "ilike",
+      "like", "contains", "containedBy", "overlaps", "textSearch", "csv", "abortSignal",
+    ]) b[m] = () => b
+    b.single = reject
+    b.maybeSingle = reject
+    b.then = (onF?: (v: unknown) => unknown, onR?: (e: unknown) => unknown) => reject().then(onF, onR)
+    b.catch = (onR?: (e: unknown) => unknown) => reject().catch(onR)
+    b.finally = (cb?: () => void) => reject().finally(cb)
+    return { from: () => b, rpc: reject }
+  }
+  async function runThrowing(message: string) {
+    state.sb = throwingClient(message)
+    fetchMock = installFetchMock([sniperOk, telegramOk, resendOk])
+    return (await (await POST(post())).json()) as { status: string; checks: Check[] }
+  }
+  const threw = (r: { checks: Check[] }) => r.checks.filter((c) => String(c.detail).includes("Exception:"))
+
+  it("every arm killed by a gateway-shaped throw carries INCONCLUSIVE, and the blackout arm counts each one", async () => {
+    const r = await runThrowing(GATEWAY)
+    // Positive control against a vacuous pass: the throw has to reach a real
+    // population of catch branches, not one or two.
+    expect(threw(r).length).toBeGreaterThanOrEqual(10)
+    const bare = threw(r).filter((c) => !String(c.detail).startsWith("INCONCLUSIVE"))
+    expect(bare.map((c) => c.name)).toEqual([])
+    // Composition: counted by the MARKER, not by a regex that happens to match.
+    const blackout = chk(r, "Measurement Blackout")
+    expect(blackout.status).toBe("warn")
+    for (const c of threw(r)) expect(blackout.detail).toContain(c.name)
+  })
+
+  it("NO-CHANGE CONTROL: a thrown code defect is NOT marked — a TypeError is a bug, not a blackout", async () => {
+    const r = await runThrowing(CODE_DEFECT)
+    expect(threw(r).length).toBeGreaterThanOrEqual(10)
+    expect(threw(r).filter((c) => String(c.detail).includes("INCONCLUSIVE")).map((c) => c.name)).toEqual([])
+    for (const c of threw(r)) expect(c.detail).toContain(CODE_DEFECT)
+  })
+
+  it("a throw with an EMPTY message is stated as a dropped read, never printed as a truncated line", async () => {
+    const r = await runThrowing("")
+    expect(threw(r).length).toBeGreaterThanOrEqual(10)
+    for (const c of threw(r)) {
+      expect(c.detail).toMatch(/^INCONCLUSIVE/)
+      expect(c.detail).toContain("empty error message")
+      expect(c.detail).not.toMatch(/Exception: $/)
+    }
+  })
+
+  it("BAN AT ZERO: no catch branch in the route renders its own `Exception:` line — one renderer, or the marker drifts again", async () => {
+    const { readFileSync } = await import("node:fs")
+    const { stripComments } = await import("../scripts/lib/strip-comments.mjs")
+    const src = stripComments(readFileSync(new URL("../app/api/sentinel/route.ts", import.meta.url), "utf8"))
+    // The single allowed occurrence is the renderer's own template.
+    const inline = src.match(/Exception: \$\{/g) ?? []
+    expect(inline).toHaveLength(1)
+    expect(src).toContain("function exceptionDetail(")
+    // And the renderer is what the catch branches call — a guard that only bans
+    // the old spelling would pass on a route with no catch branches at all.
+    const calls = src.match(/detail: exceptionDetail\(e\)/g) ?? []
+    expect(calls.length).toBeGreaterThanOrEqual(20)
+  })
+})

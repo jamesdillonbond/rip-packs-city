@@ -134,6 +134,29 @@ function errorText(msg: string | undefined | null): string {
 // widening one leaves the other narrow, and only the lib copy had a test.
 const INCONCLUSIVE = "INCONCLUSIVE (db saturated) — ";
 
+// ⭐ ONE renderer for a THROWN error, used by every catch branch below. Before
+// 2026-09-18, sixteen of the twenty-four catch branches emitted a bare
+// `Exception: ${e.message}` with no classification, while eight prefixed
+// INCONCLUSIVE via the same classifier the `if (error)` paths use — so an arm
+// killed by the very same statement timeout was countable in one branch and
+// invisible in the next (the 09-13 filing "the marker an observer would count
+// is not applied uniformly", measured as 3 counted of 4 blind). The gap was
+// papered over by `lib/sentinel/blind-checks.ts` sniffing the detail with its
+// OWN regex, which has the gateway-522 gap the shared classifier closed on
+// 2026-09-18 and which — by that file's own admission — cannot tell a failed
+// read from a successful read of someone else's failure. The fix is for the
+// arm to DECLARE its condition, not for the sniffer to guess it.
+//
+// ⚠ Classification only — never status. A branch that pages CRITICAL on a
+// non-saturation exception keeps computing `sat` for its status; this decides
+// what the DETAIL says, so blindness is countable by one marker everywhere.
+function exceptionDetail(e: unknown): string {
+  const raw = (e as { message?: unknown } | null | undefined)?.message;
+  const msg =
+    typeof raw === "string" ? raw : typeof e === "string" ? e : raw == null ? "" : String(raw);
+  return `${isSaturationError(msg) ? INCONCLUSIVE : ""}Exception: ${errorText(msg)}`;
+}
+
 // Returns true only when the channel actually accepted the message, so the
 // report's `notifications` list reflects real delivery — a dead token or a
 // non-2xx must NOT show up as "telegram"/"email" notified (silent-alert-failure
@@ -643,7 +666,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Sales Ingest (2h)",
       status: sat ? "warn" : "critical",
-      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -756,7 +779,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Sales Ingest by Collection",
       status: "warn",
-      detail: `Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -807,7 +830,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Sales Ingest by Source",
       status: "warn",
-      detail: `Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -848,7 +871,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "FMV Freshness",
       status: sat ? "warn" : "critical",
-      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -943,7 +966,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Ownership Index Freshness",
       status: sat ? "warn" : "critical",
-      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1068,7 +1091,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Portfolio Cache Drain",
       status: sat ? "warn" : "critical",
-      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1164,7 +1187,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "FMV Confidence (canonical TS)",
       status: "warn",
-      detail: `Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1230,7 +1253,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Edition Coverage",
       status: "warn",
-      detail: `Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1295,7 +1318,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "TS Edition Writer Leak (48h)",
       status: "warn",
-      detail: `Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1366,7 +1389,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Pipeline Silence",
       status: "warn",
-      detail: `Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1423,11 +1446,10 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       checks.push({ name: "Pipeline Success", status, detail, value: failing.length });
     }
   } catch (e: any) {
-    const sat = isSaturationError(e?.message);
     checks.push({
       name: "Pipeline Success",
       status: "warn",
-      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1671,7 +1693,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Pipeline Success Coverage",
       status: sat ? "warn" : "critical",
-      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1746,7 +1768,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Dune Spend (cycle)",
       status: "warn",
-      detail: `Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1885,11 +1907,10 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       }
     }
   } catch (e: any) {
-    const sat = isSaturationError(e?.message);
     checks.push({
       name: "pg_cron Failures (6h)",
       status: "warn",
-      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e?.message ?? String(e)}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1917,11 +1938,10 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       checks.push({ name: MAINTENANCE_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
     }
   } catch (e: any) {
-    const sat = isSaturationError(e?.message);
     checks.push({
       name: MAINTENANCE_CHECK_NAME,
       status: "warn",
-      detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e?.message ?? e}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1960,7 +1980,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Trust Health",
       status: "warn",
-      detail: `Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -1985,7 +2005,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Total Sales",
       status: "warn",
-      detail: `Exception: ${e.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -2167,7 +2187,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Detector Health (GitHub Actions)",
       status: "warn",
-      detail: `Exception: ${e?.message}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -2224,7 +2244,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Alert Delivery",
       status: "warn",
-      detail: `Exception: ${e?.message ?? e}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -2255,7 +2275,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: "Zero-Yield Lanes",
       status: "warn",
-      detail: `Exception: ${e?.message ?? e}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -2300,7 +2320,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: CADENCE_CHECK_NAME,
       status: "warn",
-      detail: `Exception: ${e?.message ?? e}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -2331,7 +2351,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: WALL_KILLS_CHECK_NAME,
       status: "warn",
-      detail: `Exception: ${e?.message ?? e}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -2361,7 +2381,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: PG_NET_CHECK_NAME,
       status: "warn",
-      detail: `Exception: ${e?.message ?? e}`,
+      detail: exceptionDetail(e),
     });
   }
 
@@ -2391,7 +2411,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     checks.push({
       name: PROBE_COST_CHECK_NAME,
       status: "warn",
-      detail: `Exception: ${e?.message ?? e}`,
+      detail: exceptionDetail(e),
     });
   }
 
