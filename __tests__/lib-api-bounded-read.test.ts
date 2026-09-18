@@ -201,6 +201,57 @@ describe("a timeout carries the code the error classifier reads", () => {
     expect(count).toBeNull()
   })
 
+  // 🚨 THE SAME COMPOSITION, FOR THE FAILURE THAT ACTUALLY HAPPENED ON 2026-09-18.
+  // During the Supabase outage the project origin answered at the Cloudflare edge
+  // with a 522 page, so a read got an HTML document where JSON belongs. That value
+  // carries no SQLSTATE — a transport failure has none — and until `upstream_unavailable`
+  // existed it fell through to `{ code: "internal", retryable: false }` at 500.
+  //
+  // ⚠ THIS ARM EXISTS BECAUSE OF WHERE THE DEFECT LIVES: boundedRead's contract is
+  // that it hands the thrown value back INTACT, and the first draft of that helper
+  // rebuilt it as `{ message }` and stripped the field the classifier reads. The
+  // per-module tests both pass while the PAIR is broken, so the property has to be
+  // asserted across the seam.
+  it("END TO END: a Cloudflare 522 transport failure becomes a RETRYABLE 503, not a hard 500", async () => {
+    const thrown = new Error(
+      "pack_table_rows read failed: <!DOCTYPE html> <title>supabase.co | 522: Connection timed out</title>",
+    )
+    const { data, error, count } = await boundedRead(Promise.reject(thrown), "api/x/edge-522")
+    // The envelope is honest: nothing fabricated on the way through.
+    expect(data).toBeNull()
+    expect(count).toBeNull()
+    expect(error).toBe(thrown)
+
+    const safe = safeApiError(error)
+    expect(safe.code).toBe("upstream_unavailable")
+    expect(safe.retryable).toBe(true)
+    expect(statusForSafeError(safe)).toBe(503)
+    // And the HTML never reaches the body.
+    expect(JSON.stringify(safe)).not.toContain("DOCTYPE")
+    expect(JSON.stringify(safe)).not.toContain("pack_table_rows")
+  })
+
+  it("END TO END: a node errno transport failure classifies off the CODE, not the message", async () => {
+    // The case where no body arrives at all, so there is no message to sniff.
+    const thrown = Object.assign(new Error(""), { code: "UND_ERR_CONNECT_TIMEOUT" })
+    const { error } = await boundedRead(Promise.reject(thrown), "api/x/no-body")
+    const safe = safeApiError(error)
+    expect(safe.code).toBe("upstream_unavailable")
+    expect(statusForSafeError(safe)).toBe(503)
+  })
+
+  // CONTROL, so the two arms above are not just "everything is 503 now".
+  it("CONTROL: an unrelated thrown error through the SAME seam is still a hard 500", async () => {
+    const { error } = await boundedRead(
+      Promise.reject(new Error("could not assemble the pack table")),
+      "api/x/genuine-internal",
+    )
+    const safe = safeApiError(error)
+    expect(safe.code).toBe("internal")
+    expect(safe.retryable).toBe(false)
+    expect(statusForSafeError(safe)).toBe(500)
+  })
+
   it("END TO END: a hanging read becomes a RETRYABLE 503, not a hard 500", async () => {
     // The assertion that would have caught this. It spans both modules, which is
     // exactly where the defect lived.
