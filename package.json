@@ -32,6 +32,7 @@
     "db:migrations:recover": "node scripts/recover-fileless-migrations.mjs",
     "skills:bundles:check": "node scripts/check-cowork-skill-bundles.mjs",
     "skills:pack": "node scripts/pack-cowork-skill.mjs",
+    "git:unstick": "node scripts/git-unstick-index-lock.mjs",
     "memory:retired:check": "node scripts/check-retired-rules.mjs",
     "inbox:index:fix": "node scripts/fix-inbox-index-counts.mjs",
     "lanes:egress:check": "node scripts/check-lane-egress.mjs",
