@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · ✅ POST-RECOVERY SWEEP — the estate is healthy and the security block is clean, but NINE stalled lanes have a FIRST MISSED TICK that PRE-DATES the outage, so "it was the outage" is NOT established · Claude Code desktop
+
+**Docs-only. Nothing shipped.** The first DB-backed health read since 05:48 AM PT; every leg below was UNMEASURED all day and is now taken.
+
+✅ **THE ESTATE RECOVERED CLEANLY.** 15 min after the DB returned: **159 runs · 0 failed · 69 productive · 87 distinct lanes.** ⭐ `atlas-editions-refresh`, which failed 100 % for six hours, wrote **403 rows** on its first success at 12:03 PT.
+
+✅ **SECURITY BLOCK CLEAN, read by the RIGHT SHAPE per leg** (the mixed-return trap): `check_anon_write_surface()` **0 rows** (SETOF) · `check_secdef_anon_exec_drift()` **array length 0** (jsonb — a `count(*)` here is always 1 and means nothing). `detect_stalled_pipelines()` **10** · `check_pgcron_recent_failures()` **5 rows**.
+
+⚠ **AND HERE IS THE PART NOT TO WAVE THROUGH.** The obvious reading of "10 stalled lanes" after a six-hour outage is *"fallout, it will self-heal"* — **and the timestamps do not support it as stated.** Nine of the ten last ran between **09:20Z and 11:53Z** and have missed every tick since. Sampling three 3-hourly lanes (`allday-listing-serial-backfill`, `golazos-sales-history-backfill`, `candy-sales-indexer`): each ran **ok at 06:xxZ and 09:xxZ**, then nothing at 12:xx, 15:xx or 18:xx. 🚨 **Their first missed tick is ~12:34Z, which PRECEDES the DB-visible onset — the first Atlas failure is 13:05Z and the new runtime-error cluster begins 12:48Z. A window that starts at 12:48Z cannot explain a tick missed at 12:34Z.**
+
+⛔ **So both easy stories are refused:** *"ten new faults"* (alarmist — they were healthy at 09:xxZ and the estate is otherwise clean) and *"just outage fallout"* (unsupported — the first miss is ~15–25 min early). ⭐ **The 10th, `candy-editions-ingest`, is definitively NOT outage-related: it is 2,558 min silent (~42.6 h, last run 09-17) and carries its own multi-paragraph chronic history in the watchlist.**
+
+👉 **FALSIFIER, and it costs one query.** The next 3-hourly tick lands **21:34Z (14:34 PT)**. **If those lanes resume, the cause was the event window and the early miss is a boundary artifact worth one more look; if they stay silent with the DB healthy, something stopped them that is NOT the outage and it has been running since ~12:30Z.** ⚠ **Do not close these as "recovered" without that read** — a lane that self-heals and a lane nobody re-checked look identical in `detect_stalled_pipelines()` tomorrow.
+
+⚠ **`pipeline_runs` retains ~73 h**, so the evidence above expires 2026-09-21; the run-level detail is quoted here rather than left to be re-derived from a table that will have pruned it.
+
+- **Revert:** n/a — documents only; no code, no migration, no data mutation.
+
 ### 2026-09-18 · 🔧 ENTITY JSON-LD NO LONGER PUBLISHES `numberOfItems: 0` OFF A SUCCESSFUL-EMPTY READ — R58's residual (a), the third state the page gate did not cover · Claude Code cloud
 
 **Code + tests, four files. No migration, no DB object, no data mutation.** Closes deep-audit **R58 residual (a)** (*"a successful empty read still publishes `numberOfItems: 0` — the third state, latent on any set that legitimately empties"*).
