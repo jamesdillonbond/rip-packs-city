@@ -9,9 +9,10 @@
 // Usage: node scripts/pack-cowork-skill.mjs <name> [<name>...]
 //        node scripts/pack-cowork-skill.mjs --all
 
-import { readdirSync, existsSync, statSync, unlinkSync } from "node:fs";
+import { readdirSync, existsSync, statSync, unlinkSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { zipOneFile } from "./lib/zip-one-file.mjs";
 
 const SKILLS_DIR = "docs/cowork-skills";
 const FIXED_MTIME = "202608240000.00"; // touch -t format; see determinism note
@@ -44,20 +45,41 @@ if (!names.length) {
 // costs one spawn and converts silent repo corruption into a clear message.
 // ⚠ Keys on ENOENT (the binary is genuinely absent), NOT on a non-zero exit —
 // a version flag this build does not accept must not be reported as "missing".
-for (const bin of ["zip", "touch"]) {
+function havePATH(bin) {
   try {
     execFileSync(bin, ["-v"], { stdio: "ignore" });
+    return true;
   } catch (err) {
-    if (err?.code !== "ENOENT") continue; // present, just unhappy with `-v`
-    console.error(
-      `pack-cowork-skill: \`${bin}\` is not on PATH, so packing would DELETE each ` +
-        `.skill bundle and fail before rewriting it. Refusing to touch the working ` +
-        `tree. Install ${bin} (CI ubuntu-latest ships it; on Windows use Git Bash ` +
-        `with the full MSYS toolchain) and re-run.`,
-    );
-    process.exit(2);
+    return err?.code !== "ENOENT"; // present, just unhappy with `-v`
   }
 }
+const USE_NATIVE = !(havePATH("zip") && havePATH("touch"));
+
+// ── The native writer, added 2026-09-18 ─────────────────────────────────────
+//
+// ⛔ WHY: the preflight this replaces EXITED 2 when `zip` was absent, which made
+// the documented repair for a live defect LINUX-ONLY. Git for Windows ships
+// `zipgrep`/`zipinfo` but no `zip`, so on Trevor's box the bundle guard could go
+// red and the fix for it could not be run — "the guard works, the documented
+// repair does not" (tooling-gotchas.md, 2026-09-14). A pure-Node writer takes
+// the binary off the critical path entirely.
+//
+// ⭐ IT ALSO REMOVES THE CORRUPTION HAZARD THE PREFLIGHT EXISTED TO WORK AROUND.
+// The `zip` path is delete-then-recreate: unlinkSync(out) drops a TRACKED file
+// and only the next line puts it back, so on a box without `zip` a plain
+// `npm test` once DELETED docs/cowork-skills/rpc-handoff.skill. The native path
+// BUILDS THE BUFFER FIRST and writes once — a failure cannot leave it missing.
+//
+// ⚠ The writer itself lives in scripts/lib/zip-one-file.mjs, shared with the
+// guard's fixture builder so the two cannot drift.
+//
+// ⚠ HONEST LIMIT ON "DETERMINISTIC": within one writer, re-packing unchanged
+// content is byte-identical — every field below is fixed, with no mtime, no
+// extra fields and no creator-version drift. ACROSS writers it is NOT: a bundle
+// packed here differs byte-wise from what `zip -jqX` produces for the same text,
+// so a later Linux re-pack will churn it back. That is a DIFF cost, never a
+// correctness one — check-cowork-skill-bundles.mjs compares NORMALIZED TEXT and
+// never bytes, for exactly this reason. Re-pack only what you changed.
 
 for (const name of names) {
   const src = join(SKILLS_DIR, name, "SKILL.md");
@@ -66,10 +88,16 @@ for (const name of names) {
     process.exit(1);
   }
   const out = join(SKILLS_DIR, `${name}.skill`);
-  if (existsSync(out)) unlinkSync(out);
-  execFileSync("touch", ["-t", FIXED_MTIME, src]);
-  // -j junks the path so the entry is a bare SKILL.md, matching the existing
-  // bundles (verified 2026-08-24: every .skill holds exactly one SKILL.md).
-  execFileSync("zip", ["-jqX", out, src]);
-  console.log(`packed ${out}`);
+  if (USE_NATIVE) {
+    // Build first, write once — the bundle can never go missing on failure.
+    writeFileSync(out, zipOneFile("SKILL.md", readFileSync(src)));
+    console.log(`packed ${out} (native)`);
+  } else {
+    if (existsSync(out)) unlinkSync(out);
+    execFileSync("touch", ["-t", FIXED_MTIME, src]);
+    // -j junks the path so the entry is a bare SKILL.md, matching the existing
+    // bundles (verified 2026-08-24: every .skill holds exactly one SKILL.md).
+    execFileSync("zip", ["-jqX", out, src]);
+    console.log(`packed ${out}`);
+  }
 }
