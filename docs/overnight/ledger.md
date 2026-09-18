@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🧹 THE DEAD `alldayGraphql` DUPLICATE IS GONE — R99's P1, a module with zero production importers that survived because the live symbol shared its basename · Claude Code cloud
+
+**Deletion, two files + one comment. No migration, no DB object, no data mutation, no behaviour change** (nothing imported it).
+
+🔍 **What it was:** `lib/chains/flow/alldayGraphql.ts` exported an `alldayGraphql()` pointing at the CONSUMER endpoint (`nflallday.com/consumer/graphql`), while the live `alldayGraphql()` in `lib/chains/flow/allday.ts` points at `public-api.nflallday.com/graphql` and is imported by three routes. The audit established (resolved-module-path detection, four positive controls) that the consumer copy had **0 production importers and 1 test importer — its own.** `docs/handoff-phase-d-lib-chains-flow-reorg.md` flagged it at 0 callers on **2026-05-30** with *"confirm it's truly unused"*; that confirmation is now done, negative, and acted on.
+
+✅ **Re-verified here before deleting, not relayed:** a grep for the module SPECIFIER (`flow/alldayGraphql`) over `app lib components scripts supabase workers __tests__` finds only its own test; the consumer URL string still appears in six OTHER modules as their own constant, so nothing depended on this file's copy of it. `chains-allday.test.ts`'s header, which referred to the duplicate by name, now records why it is gone.
+
+🧪 **Gate:** `chains-allday` 5/5 · `tsc` **0** (the compiler is the importer check) · `lint:ratchet` **715 vs baseline 715** (3,071 → 3,069 files) · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="dead alldayGraphql duplicate"`). Restores both files. **No DB half.**
+
 ### 2026-09-18 · 🔧 THE P0 FABRICATED ZEROS — two of nine boards fixed PER-VALUE, and the tell was that one value in the SAME STRIP was already honest · Claude Code desktop
 
 **Code + tests, four files (2 boards, 1 guard, +4 SSR arms). No migration, no DB object, no data mutation.** Acts on the monthly deep audit's P0, found during the #122 outage — the only condition that exposes it.
