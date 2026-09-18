@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 📏 THE SALES INDEXER'S "WHEN UNMAPPED, BASE" GUARD NOW COUNTS ITS TWO SILENT EXITS — instrumentation for #116's untraced writer, behaviour unchanged · Claude Code cloud
+
+**Code + tests, two files. No migration, no DB object, no data mutation, and NO behaviour change in the indexer** — every row lands exactly where it did yesterday. This is the strictly-cheaper precursor to the step #116 / focus item 1 names (*"needs the route replayed against a captured tick"*), which is DB work: the next replay gets a READING instead of an inference.
+
+🔍 **What was silent.** The Step 4e guard in `app/api/sales-indexer/route.ts` redirects an UNCONFIRMED parallel back to its base edition. Its two neighbours were counted and published (`parallel_redirects`, `parallel_splits`); the two ways it can DECLINE without deciding the row is fine were not: **(a) `edIdToExt.get(editionId)` undefined** — the assigned edition never came back from the reverse-resolve, so the guard cannot tell whether it is a parallel (focus.md: *"the only silent exit in that branch"*); **(b) a known `::subID` parallel whose BASE edition is not in the catalog** — the redirect had nowhere to land, which is the mis-key shape itself (a Standard nft left on a parallel). ⚠ (b) was not in the filing; reading the branch found it one line below (a).
+
+🧭 **Now in `pipeline_runs.extra`:** `parallel_redirect_unmapped` + `_sample` (edition ids, ≤20) and `parallel_redirect_base_missing` + `_sample` (parallel keys, ≤20), beside the existing two keys, and on the per-tick console line. **Samples, because a count alone is not falsifiable from the run row** — the same reason this route grew `unresolved_sample`.
+
+🔒 **Three arms in `api-sales-indexer-deep` (F9b/c/d), red first:** **CONTROL** — an unconfirmed parallel with a cataloged base is redirected to base, `parallel_redirects` 1, both miss counters **0** · **UNMAPPED** — reverse-resolve returns nothing: the row stays on the parallel (unchanged), `unmapped` 1 with `["uuid-par"]` · **BASE MISSING** — base lookup returns nothing: row stays, `base_missing` 1 with `["257:8664::18"]`. Against the unpatched route all three red (the keys did not exist). ⚠ Note the existing F9 was the only test of this branch and it covered the *split*, not the *redirect* — F9b is the first positive control the redirect itself has had.
+
+⛔ **What this does NOT do:** it does not close #116, whose writer is still untraced; it does not change where any row lands; and a non-zero reading is a LEAD to replay, not a verdict — the guard declining is the correct behaviour for (a) when the edition genuinely is a base with no `external_id`.
+
+🧪 **Gate:** `api-sales-indexer*` suites green · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · driver-leak / third-state / unbounded-read / lane-egress guards exit 0 · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="counts its two silent exits"`). Removes the four `extra` keys and the log-line fields. **No DB half.** ⚠ Reverting makes the misses uncountable again; nothing downstream reads the new keys yet.
+
 ### 2026-09-18 · 🚨 #122 RESOLVED AND THE MECHANISM IS NAMED: THE INSTANCE LOST **DNS**. 20,021 ms of a 20,000 ms timeout spent in DNS, 0.000 ms handshake, 0.000 ms HTTP — outbound, 100 %, for six hours, against a 23-hour baseline of ZERO · Claude Code desktop
 
 **Docs-only. Nothing shipped for it — there was nothing in this repo to fix, and that is now established rather than assumed.** The database returned at ~11:57–12:03 PT and every owed item was taken immediately.
