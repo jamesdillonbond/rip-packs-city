@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · ⭐ #122 SYNTHESIS — POSTGRES WAS NEVER DOWN: it wrote **938 rows across 50 lanes** during the six hours its log stream shipped NOTHING, so the "silence" was the OUTBOUND path · Claude Code desktop
+
+**Docs-only. Nothing shipped.** Combines the Cowork restart entry's log timeline with this session's `pipeline_runs` measurement; **neither half establishes this alone.**
+
+📏 **THE MEASUREMENT, taken against the other entry's own window.** It records `postgres_logs` shipping **zero lines from 05:19:30 to 11:42:00 PT**. In exactly that interval the database wrote **938 `pipeline_runs` rows across 50 distinct lanes**, first at **05:22:11**, last at **11:41:00** — i.e. continuously, right up to the moment the logs resumed.
+
+⇒ ⭐ **POSTGRES WAS READING AND WRITING NORMALLY FOR THE ENTIRE SIX HOURS IT APPEARED SILENT. The outage was never "the database stopped"; it was everything LEAVING the box.** Log shipping is an outbound network operation, and it failed in the same window as outbound `pg_net` (measured: 100 % of Atlas requests, 20,021 ms of a 20,000 ms budget spent in **DNS**, 0.000 ms handshake). **Two independent outbound paths down, local writes unaffected.**
+
+🚨 **AND THIS INVALIDATES A TEMPTING CAUSAL READ OF THE LOG TAIL.** The restart entry describes the last shipped line as *"the last line before six hours of silence — a 267 s checkpoint"*, which invites reading a pathological disk write as the trigger. ⛔ **It is the last line SHIPPED, not the last event that HAPPENED.** Treating it as "what occurred immediately before onset" assumes the shipping path was healthy up to that instant — **and the shipping path is precisely what failed.** ⚠ The 267 s checkpoint is still real evidence of I/O pressure and worth keeping; what it cannot carry is the timestamp's causal weight.
+
+⚠ **SO I NARROW MY OWN HEADLINE FOR THE SECOND TIME TODAY.** I wrote *"the instance lost DNS"*. **What is MEASURED is that outbound DNS resolution failed 100 % for six hours**; the better frame is a **host-level fault degrading outbound networking**, with the 267 s checkpoint hinting storage was unhappy too. ⭐ **Three of my mechanism claims today were narrowed by someone else's sharper probe rather than by my own reasoning** — the Storage 544, the restart timeline, and now this. **The pattern is worth more than any of the three: on an incident, the next probe beats the better argument.**
+
+⚠ **"It self-healed" is WRONG and my earlier entry said so** — corrected by the Cowork entry: Trevor approved **Restart project**, `terminating connection due to administrator command` at **11:58:48**. ⭐ **But log lines resumed at 11:42, sixteen minutes BEFORE the restart**, so the honest sequence is *partial unaided recovery at 11:42 → operator restart at 11:58 → full service after*, not a single clean cause.
+
+👉 **FOR THE SUPABASE REPORT this is the strongest framing available:** *"For 6 h your log pipeline shipped nothing while the database served 938 writes across 50 lanes, and outbound DNS from the instance failed 100 % with the full 20 s budget spent in resolution. Inbound 522s, outbound pg_net failures and log-shipping silence are one outbound-network fault, not a database one."*
+
+- **Revert:** n/a — documents only; no code, no migration, no data mutation.
+
 ### 2026-09-18 · ✅ POST-RECOVERY SWEEP — the estate is healthy and the security block is clean, but NINE stalled lanes have a FIRST MISSED TICK that PRE-DATES the outage, so "it was the outage" is NOT established · Claude Code desktop
 
 **Docs-only. Nothing shipped.** The first DB-backed health read since 05:48 AM PT; every leg below was UNMEASURED all day and is now taken.
