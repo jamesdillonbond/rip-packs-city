@@ -71,6 +71,74 @@ Format per item: date · status · what · revert path (if shipped) · target me
 🧪 **Gate:** guard **69/69** · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · full `npm test` green.
 
 - **Revert:** `git revert <sha>` — find by message (`git log --grep="certified a failed read"`). Restores the ask-time stamp and the four concluding sentences. **No DB half.**
+### 2026-09-18 · 🔒 CRITICAL DEPENDENCY — `next` 16.2.9 → 16.3.5 lands, clearing an **unauthenticated RCE** and ten siblings; the bump had been sitting un-pushable on the mount · Cowork cloud + laptop VM
+
+**Dependency only, two files (`package.json`, `package-lock.json`). No code, no migration, no data mutation.** Closes Item 1 of [handoff-2026-09-18-dep-cves.md](handoff-2026-09-18-dep-cves.md), which was written *because the session that found it had no push credential* — this session does, so the handoff is discharged rather than carried.
+
+🚨 **WHAT WAS EXPOSED, AND FOR HOW LONG.** `next@16.2.9` sits inside the affected range (`9.3.4-canary.0 – 16.3.2`) of an eleven-CVE bundle. The one that matters on a Vercel deployment is **GHSA-2xp9-vwfh-vxw4 — unauthenticated RCE through AVIF handling in the Image Optimization API**, an endpoint RPC serves publicly on every board, moment tile and OG card. Also in the bundle: SSRF in Server Actions and rewrites (GHSA-89xv-2m56-2m9x, GHSA-p9j2-gv94-2wf4), response-body cache confusion, a DoS, and unauthenticated disclosure of internal Server Function endpoints (GHSA-955p-x3mx-jcvp).
+
+⭐ **THE BUMP ALSO CLEARS THREE ADVISORIES NOBODY WAS TRACKING SEPARATELY** — it removes `postcss@8.4.31`, moves `nanoid` 3.3.11 → 3.3.19 and pulls `sharp@0.35.4` transitively. Non-semver-major; `npm audit` names 16.3.5 as the fix itself.
+
+⚠ **STATED RATHER THAN IMPLIED — THIS DOES NOT MAKE THE TREE CLEAN.** `npm audit --omit=dev` after the bump still reports **28 vulnerabilities (3 low, 18 moderate, 7 high)**, and **zero critical**. Everything left is transitive under `@onflow/*` / `@walletconnect/*` / `viem` — the `ws` memory-disclosure and DoS family. ⛔ **Not fixed here on purpose:** those bumps reach into the Flow SDK's transport, no unit test in this repo exercises a live socket, and an unattended pass must not trade a working chain read for an advisory number. 👉 **And a cheaper question should be answered first:** RPC asks for IDENTIFIERS and never does a wallet connect (`docs/overnight/` passim), so **whether `@walletconnect/*` and `viem` are reachable at all is worth measuring before anyone bumps them** — a dead dependency is deleted, not upgraded.
+
+🧪 **Gate, all run on a clean Linux install of the bumped tree** (see the ⚠ environment note below for why that mattered): `tsc --noEmit` **0** · `lint:ratchet` **715 vs baseline 715** · **`vitest run` 1,552 files / 17,430 tests green across 4 shards** · `check-brand-tokens`, `check-driver-message-leaks`, `check-unhandled-third-state`, `check-responsive-flex-basis`, `check-unbounded-server-reads`, `check-lane-egress`, `check-register-integrity`, `check-memory-doc-links`, `check-cowork-skill-bundles`, `check-retired-rules` **all exit 0**.
+
+⚠ **`npm run build` was NOT run.** The bump touches the Image Optimization path, which is a BUILD-and-runtime surface, so the deploy is the first place it is exercised end to end. 👉 **Watch the Vercel deployment for this commit specifically — not just "latest" — and load one OG card and one `/insights` board before calling it done.**
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="16.3.5"`). Restores `next@16.2.9` and the prior lockfile. **No DB half.**
+
+### 2026-09-18 · 🔒 TWO SHARED SECRETS STOP BEING WRITTEN INTO OUR OWN ACCESS LOGS — and the guard that was supposed to catch them could not read 116 files in a root it DECLARED · Cowork cloud
+
+**Code + tests, six files. No migration, no DB object, no data mutation.** Closes deep-audit **R97** and the second half of **R98**.
+
+🚨 **THE LEAKS.** `scripts/run-bulk-classify.sh:15` put `INGEST_SECRET_TOKEN` in a query string **inside a loop**, so every iteration wrote the token into our own Vercel access logs; `app/api/admin/announcements/route.ts`'s `verifyBearer()` accepted `RPC_ADMIN_TOKEN` from `?token=`, doing the same on every admin call. ⛔ **Neither was confirmed by reading a log — reading them IS the leak.** The caller's source is the proof.
+
+⭐ **AND THE ROOT IS MORE INTERESTING THAN EITHER INSTANCE: the guard read as coverage.** `__tests__/no-env-secret-in-fetch-url.test.ts` declared `ROOTS = ["app","lib","scripts"]` and then walked only `.ts`/`.tsx` — so **93 `.mjs`, 7 `.ps1`, 6 `.sh`, 5 `.py`, 2 `.js` and 2 `.bat` files inside a declared root were never opened**, and `envBackedNames()` matched only `const/let/var X = process.env.…`, which no shell or PowerShell variable can satisfy. A silent root does not report as a gap; it reports as zero offenders. The walker now reads all six families with per-language env recognisers, comment syntax and offender patterns, **plus an inspected-population assertion per family** so a future walker regression reds instead of going quiet.
+
+🧪 **POSITIVE CONTROL, because "the guard is green" proves nothing on its own:** the extended guard was run against the **pre-fix** `run-bulk-classify.sh` in an isolated root with an empty allowlist → **exit 1, line 15 flagged.** It is green on the fixed script because the script is fixed, not because it stopped looking. Files inspected after: `ts 826 · tsx 305 · mjs 94 · ps1 7 · sh 6 · py 5 · js 2 · bat 2`.
+
+🔑 **The `?token=` lane on `/api/bulk-classify` was KEPT, deliberately.** Its callers include cron-job.org entries and a Windows Task Scheduler job that are **invisible from the repo**, so the route now accepts a Bearer header *in addition to* the query param and only the script moved. The announcements route's lane was removed outright — its caller enumeration came back **zero in-repo callers**, and the only hypothetical (a webhook platform that cannot set headers) is unwired (`docs/archive/audits/CRON_SCHEDULE.md:151`). ⚠ **If such an integration does exist it will now 401**; the fix is a per-integration credential, not re-opening a shared one, and that is written into the route header.
+
+⚠ **ONE OFFENDER IS ALLOW-LISTED, NOT FIXED, AND IT IS A REAL RESIDUAL:** `scripts/atlas-pool-harvest.ps1:34` passes `ATLAS_POOL_INGEST_KEY` in a URL because the edge function it calls (`ingest-topshot-atlas-pool/index.ts:94`) has **no header branch at all** — a script-side fix would 401 every harvest. **Treat that key as exposed in Supabase edge logs.** The allowlist is two-way (a stale allowance fails the test), so the entry cannot be forgotten. Sequence when someone ships it: deploy a header branch → move the caller → delete `?key=`.
+
+🔒 **The `?token=` test was INVERTED, not deleted** (repo rule): it now asserts a *correct* token in the query string 401s and writes no row, with a header-lane positive control using the *same* credential, so the 401 can only come from the lane being gone.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="secret-in-URL"`). ⚠ Reverting re-opens the announcements `?token=` lane. **No DB half.**
+
+### 2026-09-18 · 🔧 R95 — A FRESHNESS STAMP CAN NO LONGER BE MINTED FROM A FAILED READ, AND THE TYPE IS NOW WHAT ENFORCES IT: the compiler found **four boards nobody had named** · Cowork cloud
+
+**Code + tests, twelve files. No migration, no DB object, no data mutation.** Closes deep-audit **R95**.
+
+🐛 **The defect, screenshot-verified in production during the 09-18 outage:** `/insights/top-sales` rendered `UPDATED SEP 18, 2026, 11:32 AM PDT` — **the moment of load** — sitting between its own banner saying *"treat the affected sections as unknown rather than zero"* and a strip of fabricated zeros. Same shape on `/insights/rookie-board` and `/insights/serial-premiums`. ⭐ **A render-time stamp beside a failed read is strictly worse than no stamp: it does not merely fail to inform, it CERTIFIES the failure as current.**
+
+⚠ **THE EXISTING GUARD WAS GREEN THROUGHOUT, AND THAT IS THE LESSON.** `__tests__/a-freshness-stamp-is-not-minted-from-a-failed-read.test.ts` bans the literal `initialFetchedAt={new Date(…)}` **written inline in a page**. All three boards passed it, because the clock was minted one call away — `top-sales/page.tsx` returned `{ rows: [], fetchedAt: new Date().toISOString(), ok: false }`, and `lib/insights/board-page-fetch.ts` stamped once and returned it on **both** branches. ⛔ **A guard that bans a SPELLING is silent about the same claim assembled from two places.**
+
+🧭 **So the fix moved the policy into the VALUE, not into a wider regex.** `BoardPageFetch.fetchedAt` is now `string | null` and is **null on the failure branch**. ⭐ **The compiler then found what no sweep had: `market-pulse`, `parallel-premiums` and `set-completers` were all taking the render clock through the same helper** — and a new structural arm (a clock and `ok: false` in one returned object literal) found a **fourth**, `/insights/pack-sniper`, one of the most-used surfaces on the site. **Seven boards, not three.**
+
+🔒 **Belt and braces, and the reason for the second lock is specific:** each client also refuses to stamp while its own failure flag is set, because a REFETCH that fails after mount leaves the previous stamp sitting in state beside a newly-failed board — the page-level fix cannot reach that. The flag used is the one that CLEARS on a successful refetch (`seedFailed`), never the raw prop, so a recovered board gets its stamp back.
+
+🧪 **Fourteen new arms, every failure case paired with a NO-CHANGE CONTROL asserting a SUCCESSFUL read still renders a real date** — without it, "render the dash always" passes and destroys the freshness stamp on every healthy board to hide the dishonest one. SSR via `renderToString` per the standing precedent. ⚠ The stale arm in `lib-insights-board-page-fetch.test.ts` that asserted the OLD behaviour was **inverted, not deleted**; its own comment had named the hazard (*"a caller that rendered 'updated just now' beside this without checking `ok`…"*) and R95 is seven callers doing exactly that. **A policy that is safe only because every caller remembers is not safe, it is unenforced.**
+
+🧪 **Gate:** `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · `vitest run` **1,552 files / 17,430 tests green** · all ten standalone guards exit 0.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="minted from a failed read"`). Restores the non-null `fetchedAt` on both branches. **No DB half.**
+
+### 2026-09-18 · 🔧 R105 — THE HOMEPAGE STOPS QUOTING TWO SERIAL MULTIPLIERS THE PRICING MODEL DOES NOT IMPLEMENT, one of them contradicted by our own code · Cowork cloud
+
+**Code + tests, three files. No migration, no DB object, no data mutation.** Closes deep-audit **R105**.
+
+🐛 **What the highest-traffic public page published** (`components/HomePageMarketing.tsx:144`): *"Serial premium multipliers — 1-of-1 = 12×, low serials = 4.5×, last mint = 3×."* Checked BOTH as a claim about our model and as a claim about the market:
+- **`1-of-1 = 12×` — ACCURATE.** `SPECIAL_SERIAL_MULTIPLIERS["#1 Serial"] === 12`.
+- **`low serials = 4.5×` — UNSUPPORTED EITHER WAY.** No such constant exists; low serials go through a continuous tier power law.
+- **`last mint = 3×` — FLATLY CONTRADICTED BY OUR OWN CODE.** `market-compute.ts` returns exactly `1.0` for any serial at or **above** the median, and the last mint is the **maximum** serial — the model can never premium it.
+
+🔒 **Fixed by pinning the copy to the code, not by editing a sentence.** The bullet now names only constants that exist (`#1 = 12×, jersey = 8×, perfect-mint = 6×`) plus the curve in words, and a new guard (`__tests__/homepage-serial-premium-copy-matches-the-model.test.ts`) extracts **every `N×` the bullet prints** and requires each to be a real `SPECIAL_SERIAL_MULTIPLIERS` value. ⛔ **The direction of the pin is copy → code**: a number with no home in `lib/market-compute.ts` means the copy is wrong, not the test. `SPECIAL_SERIAL_MULTIPLIERS` and `TIER_EXPONENTS` were exported for this and nothing else.
+
+🧪 Six arms, including a **locator control** (a reworded bullet that escapes the finder would make every other arm vacuous), a **NO-CHANGE CONTROL** asserting the pre-R105 copy still FAILS the guard, a behavioural arm proving the model really does return `1.0` at and above the median, and a ban on the strings `last mint` / `final mint` / `highest serial` in that bullet.
+
+⚠ **DELIBERATELY NOT FIXED, AND IT IS THE MORE INTERESTING HALF:** the market says the model **under-prices** the last mint (≈2.6× observed against 1.0× applied). That is a live FMV question with real money on it. **An autonomous pass does not retune a pricing model**; it is filed, not shipped, and the guard's header says so in place so nobody mistakes the ban for a verdict on the multiplier.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="R105"`). **No DB half.**
 
 ### 2026-09-18 · 🔧 THE P0 FABRICATED ZEROS — the REMAINING SEVEN boards, six fixed per-VALUE and the seventh pinned as the class control · Claude Code cloud
 
