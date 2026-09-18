@@ -23,7 +23,7 @@ import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 // Sales move faster than trophies; 15-min ISR matches the route's edge cache.
 export const revalidate = 900
 
-async function fetchInitialRows(): Promise<{ rows: Row[]; fetchedAt: string; ok: boolean }> {
+async function fetchInitialRows(): Promise<{ rows: Row[]; fetchedAt: string | null; ok: boolean }> {
   try {
     const { rows, fetchedAt } = await withBoardBudget(
       fetchTopSales({ collection: null, window: "7d", sort: "price", limit: 100 }),
@@ -32,7 +32,9 @@ async function fetchInitialRows(): Promise<{ rows: Row[]; fetchedAt: string; ok:
     return { rows: rows as Row[], fetchedAt, ok: true }
   } catch (e) {
     console.error("[insights/top-sales] initial fetch", e instanceof Error ? e.message : e)
-    return { rows: [], fetchedAt: new Date().toISOString(), ok: false }
+    // ⚠ R95: NULL, never the render clock. A stamp on this branch certifies a
+    // failed read as current — the same defect fetchBoardForPage now refuses.
+    return { rows: [], fetchedAt: null, ok: false }
   }
 }
 

@@ -411,7 +411,10 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
         </p>
         <div className="rpc-sp-meta-row">
           <span className="rpc-sp-meta">
-            Updated <FreshnessStamp iso={fetchedAt} />
+            {/* ⚠ R95: the stamp must never vouch for a failed read. The page now
+                passes null on failure, and this is the second lock — a refetch
+                that fails after mount leaves the old stamp in state otherwise. */}
+            Updated <FreshnessStamp iso={seedFailed ? null : fetchedAt} />
           </span>
           <span className="rpc-sp-meta-sep">·</span>
           <span className="rpc-sp-meta">NBA Top Shot</span>

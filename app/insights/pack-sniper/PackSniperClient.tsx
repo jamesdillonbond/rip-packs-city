@@ -414,7 +414,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
             value plays — heavily-depleted packs (tail-driven EV) are flagged.
           </p>
           <div className="rpc-ps-meta-row">
-            <span className="rpc-ps-meta">Updated <FreshnessStamp iso={fetchedAt} /></span>
+            <span className="rpc-ps-meta">Updated <FreshnessStamp iso={seedFailed ? null : fetchedAt} /></span>
             <span className="rpc-ps-meta-sep">·</span>
             <span className="rpc-ps-meta">Live asks · auto-refresh</span>
           </div>
@@ -430,7 +430,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
             depleted packs (tail-driven EV) are flagged.
           </p>
           <div className="rpc-ps-meta-row">
-            <span className="rpc-ps-meta">Updated <FreshnessStamp iso={fetchedAt} /></span>
+            <span className="rpc-ps-meta">Updated <FreshnessStamp iso={seedFailed ? null : fetchedAt} /></span>
             <span className="rpc-ps-meta-sep">·</span>
             <span className="rpc-ps-meta">Live asks · auto-refresh</span>
             <span className="rpc-ps-meta-sep">·</span>

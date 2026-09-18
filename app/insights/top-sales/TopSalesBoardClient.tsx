@@ -515,7 +515,10 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
         </p>
         <div className="rpc-ts-meta-row">
           <span className="rpc-ts-meta">
-            Updated <FreshnessStamp iso={fetchedAt} />
+            {/* ⚠ R95: the stamp must never vouch for a failed read. The page now
+                passes null on failure, and this is the second lock — a refetch
+                that fails after mount leaves the old stamp in state otherwise. */}
+            Updated <FreshnessStamp iso={seedFailed ? null : fetchedAt} />
           </span>
           <span className="rpc-ts-meta-sep">·</span>
           <span className="rpc-ts-meta">No signup</span>

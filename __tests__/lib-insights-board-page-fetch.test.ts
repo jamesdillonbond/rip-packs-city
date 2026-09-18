@@ -107,18 +107,39 @@ describe("fetchBoardForPage", () => {
     })
     // fetchedAt is when we ASKED. If it were stamped after, a slow board would
     // advertise a freshness it does not have.
-    expect(Date.parse(res.fetchedAt)).toBeLessThan(before + 30)
+    expect(Date.parse(res.fetchedAt as string)).toBeLessThan(before + 30)
   })
 
-  it("⚠ still returns fetchedAt on a FAILED read — it means 'when we asked', not 'data age'", async () => {
-    // Deliberate, and safe ONLY because it always travels with ok:false. A
-    // caller that rendered "updated just now" beside this without checking `ok`
-    // would be making exactly the claim this module exists to prevent.
+  it("⚠ INVERTED 2026-09-18 — returns NULL fetchedAt on a FAILED read", async () => {
+    // ── This arm used to assert the OPPOSITE, and its own comment named the
+    // hazard: "a caller that rendered 'updated just now' beside this without
+    // checking `ok` would be making exactly the claim this module exists to
+    // prevent." Deep-audit R95 found THREE callers doing precisely that, live:
+    // /insights/top-sales rendered "UPDATED SEP 18, 2026, 11:32 AM PDT" — the
+    // moment of load — between its own "treat as unknown, not zero" banner and
+    // a strip of fabricated zeros, and /insights/rookie-board and
+    // /insights/serial-premiums did the same.
+    //
+    // ⭐ The lesson is why this is an INVERSION and not a deletion: a policy
+    // that is safe "only because every caller remembers" is not safe, it is
+    // unenforced. The safety now lives in the value, so a caller cannot forget.
+    // Three further boards (market-pulse, parallel-premiums, set-completers)
+    // were surfaced by the compiler when `fetchedAt` became nullable — none of
+    // them was named in the audit, and all three took the render clock too.
     const res = await fetchBoardForPage("X", [], async () => {
       throw new Error("fail")
     })
     expect(res.ok).toBe(false)
-    expect(Number.isFinite(Date.parse(res.fetchedAt))).toBe(true)
+    expect(res.fetchedAt).toBeNull()
+  })
+
+  it("NO-CHANGE CONTROL — a SUCCESSFUL read still carries a real stamp", async () => {
+    // Without this, "return null always" passes the arm above and destroys the
+    // freshness stamp on every healthy board to hide the dishonest one.
+    const res = await fetchBoardForPage("X", [], async () => [])
+    expect(res.ok).toBe(true)
+    expect(typeof res.fetchedAt).toBe("string")
+    expect(Number.isFinite(Date.parse(res.fetchedAt as string))).toBe(true)
   })
 
   it("passes the fallback through by reference, not a copy", async () => {

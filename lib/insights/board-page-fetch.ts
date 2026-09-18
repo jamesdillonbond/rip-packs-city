@@ -45,8 +45,22 @@ import { BOARD_LIVE_TIMEOUT_MS } from "@/lib/insights/board-cache"
 export interface BoardPageFetch<T> {
   /** The fetched payload, or the caller's `fallback` when the read failed. */
   data: T
-  /** When we ASKED — not the age of `data`. Only meaningful alongside `ok`. */
-  fetchedAt: string
+  /**
+   * When we ASKED — not the age of `data`. **`null` when the read FAILED.**
+   *
+   * ⚠ Deep-audit R95 (2026-09-18): this used to be a non-null render clock on
+   * BOTH paths, so a board whose read had just died printed
+   * `UPDATED SEP 18, 2026, 11:32 AM PDT` — the moment of load — directly between
+   * its own "treat this as unknown, not zero" banner and the failed section.
+   * A render-time stamp on a failed read does not merely fail to inform; it
+   * CERTIFIES the failure as current, which is strictly worse than no stamp.
+   * `/insights/squeeze` already passed `null` on failure at its own call site;
+   * this makes that the shared policy instead of one page's good habit.
+   *
+   * `FreshnessStamp` renders `—` for null, and "—" means only "no timestamp was
+   * supplied" — which is exactly the true statement on a failed read.
+   */
+  fetchedAt: string | null
   /** Did the READ succeed. NOT "were there rows". */
   ok: boolean
 }
@@ -82,7 +96,10 @@ export async function fetchBoardForPage<T>(
     return { data, fetchedAt, ok: true }
   } catch (e) {
     console.error(`[insights/${label}] initial fetch`, e instanceof Error ? e.message : e)
-    return { data: fallback, fetchedAt, ok: false }
+    // ⚠ R95: NULL, not `fetchedAt`. The clock above is when we asked, and on this
+    // branch the answer never came — stamping it would vouch for a read that
+    // failed. See the `fetchedAt` doc comment on BoardPageFetch.
+    return { data: fallback, fetchedAt: null, ok: false }
   }
 }
 

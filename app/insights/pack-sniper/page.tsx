@@ -21,7 +21,7 @@ import PackSniperClient from "./PackSniperClient"
 // Live Dapper Studio fetch is memoized 2m; the API CDN-caches 5m. Match here.
 export const revalidate = 300
 
-async function fetchInitial(): Promise<{ deals: PackDeal[]; fetchedAt: string; ok: boolean }> {
+async function fetchInitial(): Promise<{ deals: PackDeal[]; fetchedAt: string | null; ok: boolean }> {
   try {
     // Default crawlable view: Top Shot, MATCHING THE CLIENT DEFAULT.
     //
@@ -54,7 +54,10 @@ async function fetchInitial(): Promise<{ deals: PackDeal[]; fetchedAt: string; o
     return { deals: res.deals, fetchedAt: new Date().toISOString(), ok: true }
   } catch (e) {
     console.error("[insights/pack-sniper] initial fetch", e instanceof Error ? e.message : e)
-    return { deals: [], fetchedAt: new Date().toISOString(), ok: false }
+    // ⚠ R95: NULL, never the render clock. Found by the structural arm in
+    // __tests__/a-freshness-stamp-is-not-minted-from-a-failed-read.test.ts, which
+    // the audit's own sweep had missed — the Sniper was the fourth instance.
+    return { deals: [], fetchedAt: null, ok: false }
   }
 }
 

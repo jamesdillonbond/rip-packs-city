@@ -360,7 +360,10 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
         </p>
         <div className="rpc-rb-meta-row">
           <span className="rpc-rb-meta">
-            Updated <FreshnessStamp iso={initialFetchedAt} />
+            {/* ⚠ R95: the stamp must never vouch for a failed read. The page now
+                passes null on failure, and this is the second lock — a refetch
+                that fails after mount leaves the old stamp in state otherwise. */}
+            Updated <FreshnessStamp iso={initialFailed ? null : initialFetchedAt} />
           </span>
           <span className="rpc-rb-meta-sep">·</span>
           <span className="rpc-rb-meta">NBA Top Shot · 2025 class</span>

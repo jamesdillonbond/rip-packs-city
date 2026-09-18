@@ -34,6 +34,11 @@ function pick(r: MarketPulseRow, w: Win) {
   return { volume: r.volume_30d, sales: r.sales_30d, buyers: r.buyers_30d, sellers: null as number | null, top: r.top_sale_30d }
 }
 
+/**
+ * @param fetchedAt When the server ASKED. ⚠ `null` when that read FAILED —
+ * deep-audit R95 (2026-09-18): a render-time stamp beside a failed read does not
+ * merely fail to inform, it CERTIFIES the failure as current. Render "—", never a clock.
+ */
 export default function MarketPulseClient({ initialRows, fetchedAt }: { initialRows: MarketPulseRow[]; fetchedAt: string | null }) {
   const [win, setWin] = useState<Win>("7d")
 

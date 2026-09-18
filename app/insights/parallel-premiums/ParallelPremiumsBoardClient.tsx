@@ -65,6 +65,10 @@ export default function ParallelPremiumsBoardClient({
    * effect returns early on the first render, so nothing corrects it.
    */
   initialFailed?: boolean
+  /**
+   * ⚠ `null` when the server read FAILED (deep-audit R95). The stamp below must
+   * render "—" on that branch — a clock there vouches for a read that never landed.
+   */
   initialFetchedAt: string | null
 }) {
   const [rows, setRows] = useState<ParallelRow[]>(initialRows)

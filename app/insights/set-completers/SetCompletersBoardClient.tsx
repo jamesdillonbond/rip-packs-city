@@ -33,6 +33,7 @@ export default function SetCompletersBoardClient({
   initialFailed = false,
 }: {
   initialBoard: SetCompletersBoard
+  /** ⚠ `null` when the server read FAILED (deep-audit R95); FreshnessStamp renders "—". */
   initialFetchedAt: string | null
   /**
    * Did the SERVER-SIDE read fail? The page's fallback is an empty board, which
