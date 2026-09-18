@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔔 THE OPS ALERT PLANE HAD A SECOND CHANNEL ALL ALONG AND IT WAS MUTE BECAUSE OF ONE CONSTANT — plus a triage of the 2:04 PM sentinel, where 19 of 21 alerts had already cleared by the time they were read · Cowork cloud
+
+**Code + tests, four files. No migration, no DB object, no data mutation.** Acts on the `Alert Delivery` warn, and records the re-measure of every other alert in that sentinel run.
+
+🚨 **THE FINDING, and it is a single point of failure on the thing that tells us everything else is broken.** `lib/sentinel/alert-delivery.ts` already recorded `email-FAILED:not_configured` on **18 of 18** runs, and what that cost: on the one CRITICAL sweep that mattered the sole surviving channel returned `telegram-FAILED:http_400 … "message is too long"` and **the alarm reached nobody**. This pass established *why* rather than re-recording *that*:
+
+- ⭐ **`ALERT_EMAIL` is not set in Vercel** — checked against the live env list, **58 keys, and it is not one of them**.
+- ⭐ **But `RESEND_API_KEY` IS set, on `production` as well as preview/development** — so the expensive half was already done.
+- ⭐ **And `rippackscity.com` is a VERIFIED Resend domain with sending ENABLED** — so `noreply@rippackscity.com` delivers today. **The fix is not a no-op, which is the thing worth checking before shipping a fix to a channel nobody has ever seen work.**
+
+⭐ **THE DEFECT IS AN INCONSISTENCY, NOT A MISSING VALUE — and that is why it earned a ratchet rather than an env var.** THREE call sites read `ALERT_EMAIL`. Exactly one, `app/api/check-alerts/route.ts`, carried `|| "tdillonbond@gmail.com"` and therefore worked. The sentinel and `lib/ops-alert.ts` — **the entire OPS plane** — read `process.env.ALERT_EMAIL || ""`. **The estate contained both the bug and its own cure, in sibling files, and nothing compared them.** One exported `OPS_ALERT_EMAIL` now, imported by all three.
+
+⛔ **DELIBERATELY NOT "just set the env var."** An env var is the right way to CHANGE the recipient and still overrides this; it is not a FLOOR, because the next reset has it unset again and the channel goes mute in silence — which is precisely the history above. The address was already committed in this public repo.
+
+⚠ **STATED PLAINLY BECAUSE IT IS A BEHAVIOUR CHANGE, NOT A NO-OP: this turns email alerting ON.** The sentinel notifies on warn/critical and on the six-hourly report, and it is CRITICAL right now, so mail starts arriving on the next tick. **To silence it: set `ALERT_EMAIL` to another address, or revert this commit.**
+
+🧪 **Seven arms, and the FIRST DRAFT OF THE GUARD WAS WRONG IN THE INSTRUCTIVE WAY.** Its matcher accepted *any* `||` fallback — so it passed `process.env.ALERT_EMAIL || ""`, **the exact shape that shipped**. The positive control caught it before the commit; the matcher now requires a NON-EMPTY fallback and the empty-string case is pinned as its own assertion. ⭐ **An empty fallback is as mute as no fallback, and a guard that cannot tell them apart is decoration.** Also: a population control (a bad path would pass vacuously), a behavioural arm that imports the module with `ALERT_EMAIL` deleted from the env, and a **NO-CHANGE CONTROL asserting the per-user outbox `lib/alerts.ts` is NOT given a fallback** — a fallback there would mail one person another user's alerts, which is the opposite of this fix. ⚠ The guard reads through `scripts/lib/strip-comments.mjs`, because the fix's own comment quotes the banned shape verbatim and a raw grep flagged the file that no longer has the defect.
+
+---
+
+#### 📏 THE OTHER 20 ALERTS, RE-MEASURED RATHER THAN ACTIONED — 19 had already cleared
+
+🚨 **The single most useful fact about that sentinel run is its TIMESTAMP.** It was taken at **21:04Z, three minutes before the first post-outage 3-hourly tick**, and read ~2.5 h later. **Almost everything in it had resolved itself before anyone opened it.**
+
+- ✅ **All 7 `wallet-backfill*` `cron_silent` alerts — CLEARED, and they were never faults.** Re-measured: every lane ran at **23:06Z**. This is the designed 12 h in-route gate (register R102), exactly as their own `notes` field says.
+- ✅ **All 12 `Pipeline Silence` lanes — CLEARED.** `detect_stalled_pipelines()` **12 → 1** since the snapshot. The one remaining, `offers-sweep`, genuinely has no run inside the 72 h retention.
+- ✅ **`Candy MLB 9/24h, last 15.5h ago` — CLEARED**: now **28 sales/24 h, last 3.0 h ago**; `candy-sales-indexer` resumed 21:20Z and caught up.
+- ✅ **`Cadence Collapse` 3 lanes → 2, and both now legible** because R102 shipped this afternoon: `panini-ingest` (ratio 0.301, **ran 1.5 h ago**) and `seed-wallet-refresh` (0.375, **ran 26 min ago**). `pinnacle-resolve-buyers` cleared entirely. ⛔ **Neither is a fault: a 12 h observation window against a 14 d baseline, straddling a 6 h outage, is mechanically depressed — the "a window straddling a change measures neither state" trap. Re-read tomorrow when the window is clear of it.**
+- ✅ **`Wall Kills` — ALL RECOVERED. Every lane's last kill PRE-DATES the 19:01Z recovery**: `pinnacle-metadata-backfill` 07:22Z, `classify-acquisitions-multicollection` 07:06Z, `fmv-recalc` 07:35Z, `drain-fmv-cold-tail` 07:17Z — **~16 h of clean runs since, against the snapshot's "6 clean since".** Outage collateral, not a standing defect.
+- ✅ **`migration-parity 2x` — NOT drift.** Every migration applied in the window has a committed file (verified against `git ls-tree HEAD`, which is what the checker reads), including today's two. ⭐ **The likely cause is that the job needs a DB connection and the DB was unreachable 12:19–19:01Z, covering two daily runs — "a check that did not RUN is indistinguishable from one that FAILED", this file's own rule, landing on this file's own detector.**
+- ⚪ **`Golazos 0/24h` — NOT a fault, and now backed by a distribution instead of a snapshot.** 90 d: **424 sales across 40 DISTINCT DAYS** — so **zero on 50 of 90 days is the norm**, and `golazos-sales-indexer` is ticking 57×/24 h with a live ask side (`golazos-listing-cache` wrote 5,246 rows/24 h). Sharpens the settled "genuinely market-limited" finding rather than reopening it.
+- ⚪ **`Dune EXHAUSTED` + the `sales-seller-recovery-dune` zero-yield lane are ONE fact, not two** — a configured cap, spent. 👉 `rpc-dune-free-tier-sunset` self-pauses **2026-09-23**.
+- 🕐 **`candy_offers_unverified_pct = 100` — TRUE, and smaller than it sounds. There are FOUR active offers**, all last seen at the 06:50Z sweep (16.6 h). The indexer (`50 */6`) missed 12:50Z and 18:50Z inside the outage; next is **00:50Z**. ⚠ **The arm is a percentage over n=4, so one missed sweep takes it 0 → 100 — it has no resolution at this population.** It is not a false positive (`candy_offer_spread_board` filters on `is_active`/`expiry` but **not** on `last_seen_at`, so those 4 bids are quoted unconfirmed), but the blast radius is four editions. **Falsifier: under 25 after the 00:50Z tick ⇒ close; still 100 after a clean run ⇒ the verification arm is the defect, not the cadence.**
+- ⚪ **`pg_net` store 10 GB / 3,929 rows — unchanged, register #75, `VACUUM FULL` is Trevor's call.** Its re-measure is dated **on or after 09-20**; not yet due, so not re-derived.
+- ⚪ **`edge-fn-drift 12x` — acknowledged until 2026-10-03** on Trevor's decision; 4 of 6 wait on operator `*_GATE_KEY` secrets. Untouched.
+
+⛔ **AND ONE NEAR-MISS WORTH MORE THAN ANY OF THE ABOVE.** My own ad-hoc kill query reported **`dead-lane-backstop` at 100% killed, 5 of 5** — a safety net apparently dead, which would have been the headline. **It is wrong.** That lane writes a heartbeat and **no terminal row by design**, so a heartbeat↔terminal correlation can only ever read 100%. ⭐ **The sentinel's own arm already handles this correctly — it reports "44 with a terminal writer, 2 unverified" and declines to call them kills.** I very nearly filed a P0 against a working lane because I trusted a query I wrote over an instrument the repo had already gotten right. **Distrust the instrument — including, especially, the one you just wrote.**
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="mute by default"`). Restores the empty fallbacks and silences the email channel again. **No DB half.**
+
 ### 2026-09-18 · 🔒 THE CSP NO LONGER ALLOWS CONNECTIONS TO SENTRY — the last live trace of the SDK, found by the post-deploy read · Claude Code cloud
 
 **One line in `proxy.ts` (the `connect-src` directive). No migration, no DB object, no data mutation.** Follow-through on the entry below: the live homepage, read after the removal deployed, still carried two `sentry` mentions — both in the Content-Security-Policy's `connect-src`, which allowed `https://*.ingest.us.sentry.io https://*.sentry.io`. Nothing in the bundle can connect there now, so the allowance was a dead hole in the policy. Removed; every other origin in the directive is untouched. No test pinned the string (checked before editing: zero hits for `connect-src`/`sentry` across the proxy suites), so the proxy suites are the regression gate.
