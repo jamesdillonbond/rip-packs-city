@@ -10,6 +10,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 📏 THE BRAND GUARD NOW STATES ITS PHASE-2 NUMBER — "tracked separately" becomes a count, and the audit's homepage-multiplier P2 is marked as the refuted item it already was · Claude Code cloud
+
+**One guard script + one test + two docs notes. No migration, no DB object, no data mutation, no gate tightened.**
+
+📏 **`scripts/check-brand-tokens.mjs`** ended with *"(Phase-2 debt across the rest of the repo is tracked separately — not gated here.)"* — the register's *decision-not-to-act whose cost has no number in it* shape, in a guard that printed its two SCANNED counts and went silent on the one that matters (deep-audit 2026-09-18 §4). It now walks the population the gated check does NOT cover (every `.ts/.tsx` under `app/` incl. `app/api`, `components/`, `lib/`, minus the gated web surfaces) with the same comment stripping and the same two escape hatches, and prints **`Phase-2 debt (NOT gated): 119 un-excepted brand-literal line(s) across 53 file(s)`** (a dated sample — re-derive, never quote; the audit's tree-wide 136/56 counted the gated surfaces too). Still not gated: OG/satori and email HTML are documented exceptions. **A number that drifts is visible; a sentence is not.** The detection test pins that the line is a NUMBER, with a positive control that it is never 0/0 (a broken walk would read as clean).
+
+⛔ **Recorded so nobody acts on it: the audit's P2 *"homepage publishes serial-premium multipliers 12×/4.5×/3× against a live model of 9.89×/1.50×/5.00×"* was REFUTED on 2026-08-15** (known-issues item 8's sub-bullet) — the homepage states `lib/fmv/serial-multiplier.ts` verbatim, the model `/api/fmv` actually calls; the other numbers are a different subsystem's ALL/ALL roll-ups. This run re-derived the same figures and reached the refuted recommendation again. A correction now sits under the audit's own bullet.
+
+🧪 **Gate:** guard exit 0 · `check-brand-tokens-detection` 21 → **22** · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="states its Phase-2 number"`). **No DB half.**
+
 ### 2026-09-18 · 🔧 FOUR SMALL AUDIT ITEMS IN ONE PASS — the bulk-classify token leaves the URL (R97, half), UFC trophies sort by their own ladder (D23 residual), two random React keys, two lying test titles · Claude Code cloud
 
 **Code + tests, nine files. No migration, no DB object, no data mutation.** Each is a named item from the 2026-09-18 deep audit's §3/§4; batched because each is a few lines and all share one full-suite gate.
