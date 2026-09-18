@@ -10,6 +10,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · #122 ADDENDUM — 20 of 50 error groups did NOT exist before 12:48Z today, which is not the 7-day baseline that entry asks for but does narrow it · Cowork cloud
+
+**Docs-only. Adds one measurement to #122 (filed hours earlier, same day) and deliberately does NOT overturn its caution.**
+
+⭐ **THE #122 ENTRY IS RIGHT TO REFUSE THE "NEW BREAK" CLAIM** — its top clusters were first seen 08-15 and 08-23, and 24 h counts with no baseline cannot show elevation. Its stated next job is that baseline. **This narrows it from a different angle, at no DB cost.**
+
+📏 **GROUPED BY `first=` RATHER THAN BY COUNT:** of the 50 runtime-error groups in the 6 h window, **20 have `first=2026-09-18`, clustered at 12:48:07Z–13:06:11Z (05:48–06:06 AM PT), and ZERO have `first=2026-09-17`.** ⚠ **What that does and does not establish:** it does NOT prove the incident began today — new error SHAPES routinely surface once a system is already degraded — but it does mean **twenty error shapes that had never been emitted before existed by 06:06 AM PT**, and that the day before produced none. The chronic clusters and a step change today are **not mutually exclusive**; #122's baseline is still the job.
+
+🚨 **THE SHARPEST CLUE IS THE BODY SHAPE, AND IT POINTS AWAY FROM POSTGRES.** Several of the new groups carry an error body that literally begins **`<!DOCTYPE html>`** — `[FMV-RECALC] Edition page fetch error: <!DOCTYPE html>`, `[panini-squeeze] totals error: <!DOCTYPE html>`, and six `[candy-mlb] *_board error: <!DOCTYPE html>`. **A Supabase endpoint answering HTML where JSON belongs is a GATEWAY failure, not a query failure** — which agrees with #122's connection-level `select 1` timeout and disagrees with "heavy load" as the whole story. ⛔ **Not established as the cause; recorded as the discriminator to chase first.**
+
+⚠ **`get_project` reported `ACTIVE_HEALTHY` throughout.** Same trap already recorded for Vercel: **verify platform state by a REQUEST, never a status field.**
+
+⚠ **AND ISR IS MASKING IT FROM A BROWSER.** `/`, `/insights`, `/insights/offer-spread`, `/nba-top-shot/overview` all returned **200 with real rendered `<main>` content and `x-vercel-cache: HIT`** while every public insights API returned 500/503 underneath. **Anyone checking the site by eye will conclude it is fine.** This is the same `x-vercel-cache` discipline #122 records for `/api/market-pulse`, generalised: **on this estate a 200 from a page is never evidence the DB is reachable.**
+
+👉 **Unchanged from #122:** take the 7-day `get_runtime_errors` window, then correlate timeout clusters by route and time. **Added:** check whether the HTML-bodied group is still emitting, because that one is answerable without a DB connection.
+
+No revert path — docs only, nothing shipped.
+
+### 2026-09-18 · 📋 LATE RECORD — the bid-age read-time gate shipped on 09-14/15 with NO ledger entry, and the standing entry still describes the gate it replaced · Cowork cloud
+
+**Docs-only. Filed 09-18 about a change that landed 09-14/15** — the migration was committed by another session as `20260915000248_audit_20260915_the_bid_age_gate_moves_from_write_time_to_read_time.sql` while my ledger edit sat uncommitted in a container that ended. ⚠ **So a live prod DB change has been on `main` unrecorded for three days**, and the 09-14 entry below it still presents the superseded WRITE-time gate as *"THE HONESTY GATE IS THE FEATURE"*. This corrects that.
+
+🚨 **THE DEFECT, in my own 09-14 change (`912095b`).** `edition_offers.best_offer_at` is only honest while paired with the price it was computed for, and the amount-equality gate ran at **WRITE** time, inside `sync_edition_offers_best_offer_at()`. But **two other functions write `edition_offers.highest_offer` and neither touches `best_offer_at`** — `raise_edition_offers_from_chain()` and `sync_edition_offers_from_atlas()`, both on their own schedules. Between syncs the price moves and the age does not, so `/insights/offer-spread` rendered an age belonging to a **different offer than the number beside it** — the exact fabricated pairing the feature exists to prevent.
+
+⚠ **MY FIRST READING WAS A FALSE NEGATIVE, AND THAT IS THE PART WORTH KEEPING.** A direct count of mispaired rows returned **0** — I had queried minutes after a sync. A null result with no positive control. ⭐ **Re-measured against the WINDOW instead: 9m42s after the last sync, 7 rows had been price-touched by another writer and 1 of them carried an age.** Continuous exposure, ~one wrong pairing per ten minutes of drift, not a rare race.
+
+✅ **THE FIX (live since 09-15, `20260915000248`).** New `edition_offers.best_offer_at_amount` records the price the age was computed against; the view emits `best_offer_at` **only while that still equals `highest_offer`**. A stale pairing can no longer be rendered: it degrades to NULL, which the surface already shows as **"unknown"** with hover copy. **The failure mode becomes "we do not know" instead of "here is a wrong number"** — the whole argument of the original change. The sync writes timestamp and amount as one unit so they cannot drift apart.
+
+⭐ **Verified with a positive control, not a bare count:** a synthetic three-case probe emitted for the paired case and suppressed both unpaired shapes. As **anon**: column 3,783 = view 3,783 freshly synced; `reloptions {security_invoker=on}` intact; **57.5 ms / 4,358 buffers vs the 59 ms baseline** — a same-row comparison costs nothing.
+
+⭐ **FOUND BY APPLYING THE CONCURRENT CLAUDE CODE SESSION'S `last_seen_at` FINDING** to my own work — same class: *a timestamp whose contract is set by one writer while another writer can invalidate what it describes.* The relay between the two sessions is what caught it.
+
+⚠ **I also discarded a duplicate.** I still held an unpushed `…000500` copy of the same migration; diffed against origin it is **SQL-identical** (comments aside), so it was deleted rather than shipped as a second file for one change. ⭐ **General rule: a migration you applied may be committed by another session under a different timestamp — diff before pushing your own.**
+
+**Revert:** re-run `20260915000248` with `eo.best_offer_at` in place of the CASE + `ALTER VIEW public.topshot_offer_ask_spread SET (security_invoker = on);` then `ALTER TABLE public.edition_offers DROP COLUMN best_offer_at_amount;` and restore the sync body from `20260914170000`. Nothing to revert for THIS commit — documents only.
+
 ### 2026-09-18 · 🔴 PRODUCTION IS SERVING 503s ON PUBLIC BOARDS AND THE DB IS UNREACHABLE FROM TOOLING — filed as #122 before this thread was archived · Claude Code cloud
 
 **Docs-only; nothing could be shipped, because the database could not be reached. Filed so the next session starts from a measurement rather than rediscovering it.**
