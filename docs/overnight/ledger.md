@@ -10,6 +10,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔒 THE CSP NO LONGER ALLOWS CONNECTIONS TO SENTRY — the last live trace of the SDK, found by the post-deploy read · Claude Code cloud
+
+**One line in `proxy.ts` (the `connect-src` directive). No migration, no DB object, no data mutation.** Follow-through on the entry below: the live homepage, read after the removal deployed, still carried two `sentry` mentions — both in the Content-Security-Policy's `connect-src`, which allowed `https://*.ingest.us.sentry.io https://*.sentry.io`. Nothing in the bundle can connect there now, so the allowance was a dead hole in the policy. Removed; every other origin in the directive is untouched. No test pinned the string (checked before editing: zero hits for `connect-src`/`sentry` across the proxy suites), so the proxy suites are the regression gate.
+
+🧪 **Gate:** proxy suites green · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="CSP no longer allows"`). **No DB half.**
+
 ### 2026-09-18 · 🧹 `@sentry/nextjs` IS OUT OF THE TREE — #34's residue: 143 packages, the build-plugin wrapper, four init files and the quota guard gone; the five server captures now write to the runtime log through one shim, and the root error boundary reports through the client beacon · Claude Code cloud
 
 **Code + tests + dependency removal. No migration, no DB object, no data mutation.** Executes the residue #34 filed on 2026-09-07 (Trevor: *"no Sentry upgrade unless absolutely needed"*; the beacon IS the client-error detector) and re-derived this morning — deferred all day, correctly, while #122 was open.
