@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔧 THE PREWARM LANE'S OPERATOR PAGE NOW RECORDS WHETHER TELEGRAM ACCEPTED IT — #77's recorded residual, the one sender in its file that discarded the response · Claude Code cloud
+
+**Code + tests, three files. No migration, no DB object, no data mutation.** Clears the line #77 filed as *"NOT FIXED, RECORDED (different class, same area): `lib/allow-list/prewarm.ts` `await fetch(...)` and never reads `res.ok`, so any delivery failure there … is still completely silent — no `-FAILED` entry anywhere."*
+
+🐛 **The defect: a page Telegram REJECTED read exactly like one it delivered.** `sendTelegramAlert` awaited the fetch, dropped the `Response`, and logged only a *thrown* error — so a `400 message is too long` (the #77 class), a revoked token or a `429` produced no log line, no outcome field, nothing. **And it was the one fetch in that file with no `signal`**: its two siblings (`runTopShotSeeder`, the backfill dispatch) and `sendViaResend` were all bounded and all read `res.ok`; this was the *one-bounded-read-vouching-for-its-bare-sibling* shape #77 itself named.
+
+🧭 **The fix mirrors `sendViaResend` in the same file:** the sender returns `{ ok: true } | { ok: false; error }`, is bounded at 10 s by an `AbortController`, and classifies non-2xx (`telegram http_<status>: <body…>`), throw (`telegram threw: …`) and missing env (`telegram not_configured`). **Both callers record it on the row outcome as a new `ProcessOutcome.telegram_page` field — `"sent"` · `FAILED:<reason>` · `null` when no page was attempted** — so `prewarm-now` returns it in its JSON and `prewarm-drain` logs `telegram=…` on its per-row line. ⚠ `null` is deliberate: a clean row that paged nobody must not claim a delivery either way.
+
+🔒 **Six arms in `allow-list-prewarm`, shown red first:** accepted → `sent` · a 400 with *"message is too long"* → `FAILED:` carrying `http_400` and the body, and **not** `sent` · a thrown fetch → `FAILED:` with the message · missing env → `FAILED:…not_configured` with **zero** Telegram calls · **NO-CHANGE CONTROL: a clean row records `null`** · the fetch carries an `AbortSignal`. ⭐ **Against the unpatched sender all six red** (the field did not exist), the existing `telegramCalls` counts unchanged.
+
+🧪 **Gate:** the 7 suites reading the module (`allow-list-prewarm`, the four admin prewarm/resend-welcome routes, the batch deep test, `telegram-senders-are-all-bounded`) **66/66** · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="prewarm lane's operator page"`). Restores the fire-and-forget sender and removes `telegram_page`. **No DB half.** ⚠ Reverting makes a rejected page silent again; #77's email half is untouched either way (still Trevor's key).
+
 ### 2026-09-18 · 🔧 THE STALE-`index.lock` RECIPE IS NOW A SCRIPT INSTEAD OF PROSE — third occurrence in four weeks, and the first one cost a DAY · Claude Code desktop
 
 **Code + tests, two new files + one npm script. No migration, no DB object, no data mutation.** Prompted by hitting it live mid-session at ~11:29 PT.
