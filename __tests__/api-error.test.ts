@@ -117,3 +117,91 @@ describe("a client-side read bound classifies as transient, not internal", () =>
     expect(statusForSafeError(safe)).toBe(503)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A Supabase-EDGE transport failure is transient, and was being reported as
+// permanent (2026-09-18, register #122).
+//
+// During the platform outage the project origin answered at Cloudflare with a
+// 522 page, so a board read got an HTML document where JSON belongs. That
+// message carries no SQLSTATE and none of the timeout substrings, so it fell
+// through to `{ code: "internal", retryable: false }` at 500 — the same defect
+// the RPC_READ_TIMEOUT block pins, through a different door.
+//
+// ⚠ These assert the STATUS NUMBER and the RETRYABLE FLAG, not merely "an error
+// came back" — the vacuous-assertion trap this repo keeps catching. The
+// controls below are the load-bearing half: they pin that the match is on
+// SPECIFIC tokens, so a future "simplification" to a bare `includes("timeout")`
+// or `includes("connection")` reddens here instead of failing open.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("safeApiError — Supabase edge / transport failures", () => {
+  it("classifies the real production 522 message as a retryable 503", () => {
+    // Verbatim shape from the Vercel runtime-error cluster.
+    const err = new Error(
+      "pack_table_rows read failed: <!DOCTYPE html>\n<html>\n<title>supabase.co | 522: Connection timed out</title>"
+    )
+    const safe = safeApiError(err)
+    expect(safe.code).toBe("upstream_unavailable")
+    expect(safe.retryable).toBe(true)
+    expect(statusForSafeError(safe)).toBe(503)
+  })
+
+  it("the DOCTYPE alone is decisive — a DB read that returns a web page is a gateway failure", () => {
+    const safe = safeApiError(new Error("totals error: <!DOCTYPE html><html><body>nope</body></html>"))
+    expect(safe.code).toBe("upstream_unavailable")
+    expect(statusForSafeError(safe)).toBe(503)
+  })
+
+  it.each([
+    ["fetch failed", "fetch failed"],
+    ["socket hang up", "socket hang up"],
+    ["ECONNRESET in the message", "read ECONNRESET"],
+    ["a 524 edge page", "<html>cloudflare 524: a timeout occurred</html>"],
+  ])("treats %s as transient", (_label, message) => {
+    const safe = safeApiError(new Error(message))
+    expect(safe.retryable).toBe(true)
+    expect(statusForSafeError(safe)).toBe(503)
+  })
+
+  it("reads a node errno off the error CODE, not just the message", () => {
+    const safe = safeApiError({ code: "UND_ERR_CONNECT_TIMEOUT", message: "" })
+    expect(safe.code).toBe("upstream_unavailable")
+    expect(statusForSafeError(safe)).toBe(503)
+  })
+
+  it("publishes no upstream detail — the HTML never reaches the body", () => {
+    const safe = safeApiError(
+      new Error("secret_table read failed: <!DOCTYPE html><title>supabase.co | 522: Connection timed out</title>")
+    )
+    expect(safe.error).not.toContain("secret_table")
+    expect(safe.error).not.toContain("DOCTYPE")
+    expect(safe.error).not.toContain("supabase")
+    expect(safe.error).not.toContain("522")
+  })
+
+  // ── CONTROLS: the match must stay narrow ──────────────────────────────────
+
+  it("CONTROL — an unrelated internal error is still a non-retryable 500", () => {
+    const safe = safeApiError(new Error("could not build the pack table"))
+    expect(safe.code).toBe("internal")
+    expect(safe.retryable).toBe(false)
+    expect(statusForSafeError(safe)).toBe(500)
+  })
+
+  it.each([
+    ["the bare word timeout", "the request hit a timeout building the board"],
+    ["the bare word connection", "no connection between these two editions"],
+    ["a 522 that is not an error code", "this edition sold 522 times"],
+  ])("CONTROL — %s must NOT be classified transient", (_label, message) => {
+    const safe = safeApiError(new Error(message))
+    expect(safe.code).toBe("internal")
+    expect(safe.retryable).toBe(false)
+    expect(statusForSafeError(safe)).toBe(500)
+  })
+
+  it("CONTROL — the pre-existing branches are unchanged", () => {
+    expect(safeApiError({ code: "57014", message: "canceling statement due to statement timeout" }).code).toBe("timeout")
+    expect(safeApiError({ code: "42P01", message: "relation x does not exist" }).code).toBe("unavailable")
+  })
+})

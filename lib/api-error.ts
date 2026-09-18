@@ -28,7 +28,7 @@ export interface SafeApiError {
   /** Human-facing copy. Rendered as-is by several clients, so keep it plain. */
   error: string;
   /** Stable machine code for the client/telemetry to branch on. */
-  code: "timeout" | "unavailable" | "not_found" | "bad_request" | "internal";
+  code: "timeout" | "unavailable" | "upstream_unavailable" | "not_found" | "bad_request" | "internal";
   /** True when simply trying again later is a reasonable action. */
   retryable: boolean;
 }
@@ -78,6 +78,64 @@ function readMessage(err: unknown): string {
 }
 
 /**
+ * Transport failures that never reached Postgres at all.
+ *
+ * 🚨 ADDED 2026-09-18, from a live production cluster. During the Supabase
+ * platform outage (#122) the project origin answered at the CLOUDFLARE edge
+ * with a 522 page, so `pack_table_rows` read an HTML document where JSON
+ * belongs and threw:
+ *
+ *     [public/insights/pack-sniper] code=internal
+ *     detail=pack_table_rows read failed: <!DOCTYPE html> … supabase.co | 522: Connection timed out
+ *
+ * None of the timeout substrings above appear in that message and it carries no
+ * SQLSTATE — a transport failure has none — so every migrated anon board route
+ * answered a TRANSIENT, retryable, not-our-fault platform blip as
+ * `{ code: "internal", retryable: false }` at status **500**. That is the same
+ * defect the RPC_READ_TIMEOUT note above records, arriving through a different
+ * door: **telling the caller a transient failure was permanent**, and inflating
+ * the hard-5xx budget the timeout branch exists to protect.
+ *
+ * ⭐ THE DECISIVE TELL IS THE DOCTYPE, not the word "timeout". A database read
+ * that comes back as a WEB PAGE is a gateway failure with no other reading —
+ * which is exactly how the outage was diagnosed (ledger 2026-09-18).
+ *
+ * ⚠ MATCH SPECIFIC TOKENS, NEVER A BARE "timeout" OR "connection". The thrown
+ * message is wrapped in our own text (`"pack_table_rows read failed: …"`) and
+ * may carry arbitrary upstream copy; a loose substring would classify unrelated
+ * internal errors as retryable and fail OPEN, which is worse than the defect.
+ */
+const TRANSPORT_ERROR_CODES = new Set<string>([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET",
+  "UND_ERR_HEADERS_TIMEOUT",
+])
+
+/** True when the failure is the DB host being unreachable, not a query failing. */
+function isUpstreamTransportFailure(code: string | null, message: string): boolean {
+  if (code && TRANSPORT_ERROR_CODES.has(code)) return true
+  return (
+    // asked for JSON, got a web page — a gateway/edge error document
+    message.includes("<!doctype html") ||
+    // Cloudflare origin-side failures from the supabase.co host
+    message.includes("522:") ||
+    message.includes("523:") ||
+    message.includes("524:") ||
+    // undici / node transport failures reaching the host at all
+    message.includes("fetch failed") ||
+    message.includes("socket hang up") ||
+    message.includes("econnreset") ||
+    message.includes("econnrefused") ||
+    message.includes("etimedout")
+  )
+}
+
+/**
  * Classify a thrown value into a publishable error.
  *
  * Matches on SQLSTATE first and only falls back to message sniffing, because a
@@ -104,6 +162,18 @@ export function safeApiError(err: unknown, fallback = "Something went wrong."): 
     };
   }
 
+  // Checked AFTER the timeout branch on purpose: a bounded-read timeout that
+  // happens to coincide with a transport failure is already classified
+  // correctly there, so this adds a case rather than re-routing an existing one.
+  if (isUpstreamTransportFailure(code, message)) {
+    return {
+      error:
+        "We couldn't reach the database just now — this is a temporary problem on our side, not an empty result. Try again in a minute.",
+      code: "upstream_unavailable",
+      retryable: true,
+    };
+  }
+
   // PostgREST surfaces a missing relation/function as 42P01/42883. That is a
   // deploy/schema problem, never the caller's fault, and its text names internal
   // objects — so it is reported as unavailable without detail.
@@ -122,6 +192,10 @@ export function statusForSafeError(e: SafeApiError): number {
       // route out of the hard-5xx budget that pages on genuine breakage.
       return 503;
     case "unavailable":
+      return 503;
+    case "upstream_unavailable":
+      // The DB host was unreachable. Transient and retryable, so it must not
+      // land in the hard-5xx budget — same reasoning as the timeout case.
       return 503;
     case "not_found":
       return 404;

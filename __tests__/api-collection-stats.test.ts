@@ -118,16 +118,47 @@ describe("GET /api/collection-stats", () => {
     expect(JSON.stringify(body)).not.toContain("canceling statement")
   })
 
-  // The thrown path classifies as `internal` (500), not `timeout` (503) — an
-  // unrecognized failure is not assumed retryable. The load-bearing property is
-  // only that it is NOT 200.
-  it("500s when the stats RPC throws, without leaking the thrown message", async () => {
+  // ⚠ INVERTED 2026-09-18, NOT LOOSENED — and the reason matters more than the
+  // number. This asserted 500 with the comment "an unrecognized failure is not
+  // assumed retryable", which was CORRECT at the time: `connect ECONNREFUSED
+  // …:5432` matched nothing in `safeApiError`. It is no longer unrecognized. A
+  // refused connection to the database port is a TRANSPORT failure — the same
+  // class as the Cloudflare 522 that put every public board route on a
+  // non-retryable 500 during the 2026-09-18 Supabase outage (#122), which is
+  // the defect `upstream_unavailable` was added to fix. Recognising it IS the
+  // fix, so the expected status moves 500 → 503.
+  //
+  // ⭐ THE TWO LOAD-BEARING PROPERTIES ARE UNCHANGED AND STILL ASSERTED: the
+  // status is NOT 200 (deep-audit D11 — a failed read must be a failed status,
+  // or the overview page renders "0 editions" for a collection with 6,190), and
+  // the driver message is NEVER published. The control below keeps the original
+  // "unrecognized is not assumed retryable" claim alive for the case it still
+  // describes, so widening the transport match to a bare substring reddens here.
+  it("503s (not 200) when the stats RPC throws a transport failure, without leaking the thrown message", async () => {
     state.throwOnStats = new Error("connect ECONNREFUSED 10.0.0.1:5432")
+    const res = await GET(req("https://t/api/collection-stats?collection=nba-top-shot"))
+    expect(res.status).not.toBe(200)
+    expect(res.status).toBe(503)
+    expect(res.headers.get("Retry-After")).toBe("30")
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    const body = await res.json()
+    expect(body.code).toBe("upstream_unavailable")
+    expect(body.retryable).toBe(true)
+    // Recognized or not, the driver text is logged and never published.
+    expect(JSON.stringify(body)).not.toContain("ECONNREFUSED")
+    expect(JSON.stringify(body)).not.toContain("10.0.0.1")
+    expect(body.error).toBeTruthy()
+  })
+
+  // THE CONTROL. A failure that really IS unrecognized must still be a
+  // non-retryable 500 — otherwise the inversion above would read as licence to
+  // call everything transient, which fails OPEN.
+  it("CONTROL — a genuinely unrecognized throw is still a non-retryable 500", async () => {
+    state.throwOnStats = new Error("could not assemble the stats payload")
     const res = await GET(req("https://t/api/collection-stats?collection=nba-top-shot"))
     expect(res.status).toBe(500)
     const body = await res.json()
-    // Unrecognized failures fall back to generic copy — say less, not more.
-    expect(JSON.stringify(body)).not.toContain("ECONNREFUSED")
-    expect(body.error).toBeTruthy()
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 })
