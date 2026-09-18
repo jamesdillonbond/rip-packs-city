@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { feeNetDeal } from "@/lib/marketplace-fees"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
@@ -219,6 +220,11 @@ export default function DealsBoardClient({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
+  // Seed provenance, held in STATE so a successful filter refetch clears it —
+  // rendering the raw prop kept the banner (and, below, the KPI dashes) up
+  // after the rows had been replaced by a good read. Mirrors offer-spread.
+  const [degraded, setDegraded] = useState<DegradedSummary | null>(initialDegraded)
+  const seedFailed = (degraded?.failed?.length ?? 0) > 0
   // Post-mount clock: null through SSR so ask-age output cannot differ between the
   // server render and hydration. See askVerifiedAgeHours.
   // Seeded from the SERVER's clock so the markers render in the raw HTML and the
@@ -285,6 +291,7 @@ export default function DealsBoardClient({
         setRows(j.rows ?? [])
         // data_as_of = age of the ROWS; meta.fetched_at is only when the API answered.
         setFetchedAt(j.meta?.data_as_of ?? null)
+        setDegraded(null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
@@ -317,6 +324,15 @@ export default function DealsBoardClient({
   }, [rows, nowMs])
 
   const kpis = useMemo(() => {
+    // ⛔ A FAILED READ HAS NO KPIs (deep-audit 2026-09-18 §2, P0; the same
+    // defect the top-sales/squeeze fix closed). Under this board's own banner —
+    // "treat the affected sections as unknown rather than zero" — the strip
+    // printed measured-looking zeros. ⚠ Keyed on PROVENANCE, never on
+    // rows.length: a read that SUCCEEDED and matched nothing genuinely IS 0 and
+    // must keep saying so. The bug is the missing THIRD state, not the zero.
+    if (seedFailed) {
+      return { count: null, big: null, medianDiscount: null }
+    }
     if (rows.length === 0) {
       return { count: 0, big: 0, medianDiscount: 0 }
     }
@@ -327,7 +343,7 @@ export default function DealsBoardClient({
       big,
       medianDiscount: median(discounts),
     }
-  }, [rows])
+  }, [rows, seedFailed])
 
   const tweetIntent = useMemo(() => {
     const text = `Marketplaces show you a listing. We rank listings against a fair value we can stand behind.\n\nThe Below FMV board — Top Shot, NFL All Day + Disney Pinnacle, what's underpriced right now:`
@@ -402,7 +418,7 @@ export default function DealsBoardClient({
         </div>
       </section>
 
-      <DegradedDataNotice summary={initialDegraded} />
+      <DegradedDataNotice summary={degraded} />
 
       {setFilter || playerFilter ? (
         <section className="rpc-dl-active-filter" aria-label="Active drill-down filter">
@@ -522,7 +538,9 @@ export default function DealsBoardClient({
         ) : loading ? (
           <div className="rpc-dl-state">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="rpc-dl-state">No editions listed below a trustworthy FMV match.</div>
+          <div className="rpc-dl-state">
+            {sectionEmptyCopy(!seedFailed, "Below-FMV editions", "No editions listed below a trustworthy FMV match.")}
+          </div>
         ) : (
           <div className="rpc-dl-scroll-x">
             <table className="rpc-dl-table">

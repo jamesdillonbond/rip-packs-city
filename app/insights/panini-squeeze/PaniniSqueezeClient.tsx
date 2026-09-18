@@ -192,6 +192,14 @@ export default function PaniniSqueezeClient({
   const matched = rows.length;                 // how many editions actually match the filters
   const visible = rows.slice(0, RENDER_CAP);   // what we put in the DOM
 
+  // ⛔ A FAILED READ HAS NO KPIs (deep-audit 2026-09-18 §2, P0). Under this
+  // board's own "treat as unknown" banner the strip printed EDITIONS 0 ·
+  // CHASES 0 · SEALED COPIES 0 — while the "Value sealed" tile happened to read
+  // "—" only because usd() treats 0 as unset. One honest tile beside three
+  // fabricated ones is the per-VALUE tell. Keyed on provenance, never on
+  // initialRows.length: a successful read of zero editions stays 0.
+  const readFailed = (degraded?.failed?.length ?? 0) > 0;
+
   // Slice-derived fallbacks — used only if the whole-board totals query fails (fail-soft).
   const sealedTotal = useMemo(() => initialRows.reduce((s, r) => s + (Number(r.sealed_fmv_exposure_usd) || 0), 0), [initialRows]);
   const chases = useMemo(() => initialRows.filter((r) => Number(r.mint_cap) <= 25).length, [initialRows]);
@@ -270,22 +278,22 @@ export default function PaniniSqueezeClient({
       <div className="psq-kpis">
         <div className="psq-card">
           <h3>Editions{hc ? " · lower-bias" : ""}</h3>
-          <div className="psq-big">{num(hc ? totals!.editions_hc : (totals?.editions ?? initialRows.length))}</div>
+          <div className="psq-big">{num(readFailed ? null : hc ? totals!.editions_hc : (totals?.editions ?? initialRows.length))}</div>
           {hc ? <div className="psq-alt">of <b>{num(totals!.editions)}</b> across all sets</div> : null}
         </div>
         <div className="psq-card">
           <h3>Value sealed in packs{hc ? " · lower-bias" : ""}</h3>
-          <div className="psq-big">{usd(hc ? totals!.sealed_fmv_exposure_usd_hc : (totals?.sealed_fmv_exposure_usd ?? sealedTotal))}</div>
+          <div className="psq-big">{usd(readFailed ? null : hc ? totals!.sealed_fmv_exposure_usd_hc : (totals?.sealed_fmv_exposure_usd ?? sealedTotal))}</div>
           {hc ? <div className="psq-alt"><b>{usd(totals!.sealed_fmv_exposure_usd)}</b> incl. high-bias sets</div> : null}
         </div>
         <div className="psq-card">
           <h3>Chases ≤ /25 · all sets</h3>
-          <div className="psq-big">{num(totals?.chases_lte_25 ?? chases)}</div>
+          <div className="psq-big">{num(readFailed ? null : (totals?.chases_lte_25 ?? chases))}</div>
           {hc ? <div className="psq-alt">not split by sample breadth</div> : null}
         </div>
         <div className="psq-card">
           <h3>Sealed copies{hc ? " · lower-bias" : ""}</h3>
-          <div className="psq-big">{num(hc ? totals!.sealed_copies_hc : (totals?.sealed_copies ?? sealedCopies))}</div>
+          <div className="psq-big">{num(readFailed ? null : hc ? totals!.sealed_copies_hc : (totals?.sealed_copies ?? sealedCopies))}</div>
           {hc ? <div className="psq-alt">of <b>{num(totals!.sealed_copies)}</b> across all sets</div> : null}
         </div>
       </div>
@@ -348,7 +356,7 @@ export default function PaniniSqueezeClient({
           </tr></thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr><td colSpan={10} className="psq-par">No editions match.</td></tr>
+              <tr><td colSpan={10} className="psq-par">{readFailed ? "Couldn't load this board — treat it as unknown, not zero. Reload shortly." : "No editions match."}</td></tr>
             ) : visible.map((r) => (
               <tr key={(r.player_name || "") + (r.set_name || "") + r.mint_cap}>
                 <td><span className="psq-nm">{r.player_name || "—"}</span>{r.is_rookie ? <span className="psq-rc">RC</span> : null}</td>
@@ -387,7 +395,9 @@ export default function PaniniSqueezeClient({
           a reader sees "Editions 1,833" over 300 rows and reasonably assumes the table is
           the whole set. */}
       <div className="psq-note">
-        {matched > visible.length ? (
+        {readFailed ? (
+          <>The board couldn&apos;t be loaded, so nothing is shown — that is not a count.</>
+        ) : matched > visible.length ? (
           <>
             Showing <b>{num(visible.length)}</b> of <b>{num(matched)}</b> matching editions
             {" "}(highest {sortK === "fmv_usd" && !asc ? "FMV" : "sort value"} first).

@@ -15,6 +15,7 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { ASK_STALE_HOURS, askAgeHours, askAgeTitle, askStampKind, fmtAskAge } from "@/lib/market/ask-freshness"
 import {
   bidAgeDays, fmtBidAge, isBidStale, bidAgeTitle,
@@ -212,7 +213,20 @@ export default function OfferSpreadBoardClient({
     return () => ctrl.abort()
   }, [sort, tier, bidMeetsOnly, setFilter, playerFilter])
 
+  // The seed's provenance: `degraded.failed` is the only signal that the rows
+  // are missing because the READ failed, not because nothing matched.
+  const seedFailed = (degraded?.failed?.length ?? 0) > 0
+
   const kpis = useMemo(() => {
+    // ⛔ A FAILED READ HAS NO KPIs (deep-audit 2026-09-18 §2, P0; the same
+    // defect the top-sales/squeeze fix closed). Under this board's own banner —
+    // "treat the affected sections as unknown rather than zero" — the strip
+    // printed measured-looking zeros. ⚠ Keyed on PROVENANCE, never on
+    // rows.length: a read that SUCCEEDED and matched nothing genuinely IS 0 and
+    // must keep saying so. The bug is the missing THIRD state, not the zero.
+    if (seedFailed) {
+      return { bidMeets: null, within10: null, medianSpread: null, count: null }
+    }
     if (rows.length === 0) {
       return { bidMeets: 0, within10: 0, medianSpread: 0, count: 0 }
     }
@@ -225,7 +239,7 @@ export default function OfferSpreadBoardClient({
       medianSpread: median(spreads),
       count: rows.length,
     }
-  }, [rows])
+  }, [rows, seedFailed])
 
   const tweetIntent = useMemo(() => {
     const text = `Top Shot doesn't show you the top bid next to the floor ask. We do.\n\nThe Bid vs Floor board — editions where the best offer meets the floor:`
@@ -377,7 +391,9 @@ export default function OfferSpreadBoardClient({
         ) : loading ? (
           <div className="rpc-os-state">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="rpc-os-state">No editions with both a live bid and a floor ask match.</div>
+          <div className="rpc-os-state">
+            {sectionEmptyCopy(!seedFailed, "Bid vs floor editions", "No editions with both a live bid and a floor ask match.")}
+          </div>
         ) : (
           <div className="rpc-os-scroll-x">
             <table className="rpc-os-table">

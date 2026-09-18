@@ -347,6 +347,16 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
   const hasConflated = useMemo(() => rows.some((r) => r.is_conflated), [rows])
 
   const kpis = useMemo(() => {
+    // ⛔ A FAILED READ HAS NO KPIs (deep-audit 2026-09-18 §2, P0; the same
+    // defect the top-sales/squeeze fix closed). Under this board's own banner —
+    // "treat the affected sections as unknown rather than zero" — the strip
+    // printed measured-looking zeros. ⚠ Keyed on PROVENANCE, never on
+    // rows.length: a read that SUCCEEDED and matched nothing genuinely IS 0 and
+    // must keep saying so. The bug is the missing THIRD state, not the zero.
+    // `top` and `topSale` were already honest (null when nothing is priced)
+    // beside a fabricated `count` — the per-VALUE tell. `seedFailed` clears on
+    // a successful refetch, so a recovered board returns to real numbers.
+    if (seedFailed) return { count: null, top: null, topSale: null }
     const withMult = rows.filter((r) => r.premium_multiple != null)
     const top = withMult.length ? Math.max(...withMult.map((r) => Number(r.premium_multiple))) : null
     const topSale = rows.reduce<number | null>((m, r) => {
@@ -355,7 +365,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
       return m == null || v > m ? v : m
     }, null)
     return { count: rows.length, top, topSale }
-  }, [rows])
+  }, [rows, seedFailed])
 
   const shareUrl = `${SITE_URL}/insights/serial-premiums`
   const tweetIntent = useMemo(() => {

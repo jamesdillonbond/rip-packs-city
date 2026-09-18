@@ -309,11 +309,21 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt, initi
   }, [filtered])
 
   const kpis = useMemo(() => {
+    // ⛔ A FAILED READ HAS NO KPIs (deep-audit 2026-09-18 §2, P0; the same
+    // defect the top-sales/squeeze fix closed). Under this board's own banner —
+    // "treat the affected sections as unknown rather than zero" — the strip
+    // printed measured-looking zeros. ⚠ Keyed on PROVENANCE, never on
+    // rows.length: a read that SUCCEEDED and matched nothing genuinely IS 0 and
+    // must keep saying so. The bug is the missing THIRD state, not the zero.
+    // `topChase` was already honest (null when nothing is priced) beside two
+    // fabricated counts — the per-VALUE tell. This board never refetches, so the
+    // seed's `initialFailed` is the provenance for the whole visit.
+    if (initialFailed) return { players: null, parallels: null, topChase: null }
     const players = new Set(filtered.map((r) => r.player_name)).size
     const parallels = new Set(filtered.map((r) => r.parallel_name)).size
     const topChase = chases.length ? Number(chases[0].fmv_usd) : null
     return { players, parallels, topChase }
-  }, [filtered, chases])
+  }, [filtered, chases, initialFailed])
 
   const shareUrl = `${SITE_URL}/insights/rookie-board`
   const tweetIntent = useMemo(() => {

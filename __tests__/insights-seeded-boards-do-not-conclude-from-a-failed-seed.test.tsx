@@ -649,3 +649,160 @@ describe("squeeze does not publish zeros from a failed read", () => {
     expect(strip).toMatch(/\|\s*0\s*\|/)
   })
 })
+
+// ── the REMAINING SEVEN of the P0's nine boards (deep-audit 2026-09-18 §2) ──
+//
+// Same defect, same discipline, and the commit that fixed the first two warned
+// the sweep must NOT grep for a prop name: four of these carry provenance as a
+// `DegradedSummary`, three as a boolean. The property is "does the KPI branch
+// consult ANY provenance". Every arm strips tags to `|`-separated text and
+// anchors on the TILE LABEL, because on three of these strips one tile was
+// already a dash in BOTH states (the per-value tell) — a bare "no 0 anywhere"
+// assertion would pass "render — always", which destroys a true reading to hide
+// a false one. Each failed-read arm is paired with a NO-CHANGE CONTROL asserting
+// the same tile still prints its real zero on a successful-empty read.
+//
+// cross-collection is the seventh and it was ALREADY correct (every tile is
+// `stats?.x` through a null-honest formatter); it is pinned here as the control
+// for the class, not fixed.
+describe("the remaining P0 boards do not publish zeros from a failed read", () => {
+  const strip = (html: string) => html.replace(/<[^>]+>/g, "|")
+  // Nested tags collapse to runs of "|", so a tile reads `|Label||—||`.
+  const esc = (t: string) => t.replace(/[.*+?^$()|[\]\\]/g, "\\$&")
+  const tile = (label: string, value: string) => new RegExp(`\\|+${esc(label)}\\|+${esc(value)}\\|+`)
+  // A count embedded in prose: `All <b>0</b>` strips to `All|0|`.
+  const prose = (lead: string, value: string) => new RegExp(`${esc(lead)}\\s*\\|+${esc(value)}\\|+`)
+  const FAILED = { failed: ["X"], truncated: [], total: 1, headline: "PARTIAL DATA" }
+
+  it("SSR offer-spread: every KPI is a dash on a failed seed, and the empty state does not blame the filters", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/offer-spread/OfferSpreadBoardClient")).default
+    const s = strip(renderToString(<C initialRows={[]} initialFetchedAt={null} initialDegraded={{ ...FAILED, failed: ["Bid vs Floor"] }} />))
+    for (const label of ["Bid ≥ floor", "Within 10% of floor", "Median spread", "Rows shown"]) {
+      expect(s, label).toMatch(tile(label, "—"))
+    }
+    expect(s).not.toMatch(tile("Median spread", "$0.00"))
+    expect(s).not.toMatch(/No editions with both a live bid and a floor ask match/)
+    expect(s).toMatch(/couldn.{1,8}t be loaded/i)
+  })
+  it("SSR offer-spread NO-CHANGE CONTROL: a successful-empty read still prints real zeros and its own sentence", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/offer-spread/OfferSpreadBoardClient")).default
+    const s = strip(renderToString(<C initialRows={[]} initialFetchedAt="2026-09-18T00:00:00Z" initialDegraded={null} />))
+    expect(s).toMatch(tile("Rows shown", "0"))
+    expect(s).toMatch(tile("Median spread", "$0.00"))
+    expect(s).toMatch(/No editions with both a live bid and a floor ask match/)
+    expect(s).not.toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it("SSR deals: every KPI is a dash on a failed seed, and the empty state does not conclude about the market", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/deals/DealsBoardClient")).default
+    const s = strip(renderToString(<C initialRows={[]} initialFetchedAt={null} initialDegraded={{ ...FAILED, failed: ["Below FMV board"] }} />))
+    for (const label of ["Deals", "≥ 25% off", "Median discount", "Rows shown"]) {
+      expect(s, label).toMatch(tile(label, "—"))
+    }
+    expect(s).not.toMatch(/No editions listed below a trustworthy FMV match/)
+    expect(s).toMatch(/couldn.{1,8}t be loaded/i)
+  })
+  it("SSR deals NO-CHANGE CONTROL: a successful-empty read still prints real zeros and its own sentence", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/deals/DealsBoardClient")).default
+    const s = strip(renderToString(<C initialRows={[]} initialFetchedAt="2026-09-18T00:00:00Z" initialDegraded={null} />))
+    expect(s).toMatch(tile("Deals", "0"))
+    expect(s).toMatch(tile("Median discount", "0%"))
+    expect(s).toMatch(/No editions listed below a trustworthy FMV match/)
+    expect(s).not.toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  // The audit's worst single string: a fabricated zero inside declarative PROSE.
+  it("SSR candy-mlb: no 'All 0 editions have now traded', no 'Showing all 0', every KPI a dash, market tab honest", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/candy-mlb/CandyBoardClient")).default
+    const s = strip(renderToString(<C initialRows={[]} fetchedAt={null} degraded={{ ...FAILED, failed: ["Market"] }} />))
+    expect(s).not.toMatch(prose("All", "0"))
+    expect(s).not.toMatch(prose("Showing all", "0"))
+    for (const label of ["Editions", "Priced (traded)", "With an ask", "With a best offer"]) {
+      expect(s, label).toMatch(tile(label, "—"))
+    }
+    expect(s).not.toMatch(/No editions match\./)
+    expect(s).toMatch(/Couldn.{1,8}t load this section/)
+  })
+  it("SSR candy-mlb: the page's WHOLE-BOARD fallback label is honoured too — a sweep keyed only on 'Market' would miss it", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/candy-mlb/CandyBoardClient")).default
+    const s = strip(renderToString(<C initialRows={[]} fetchedAt={null} degraded={{ ...FAILED, failed: ["Candy MLB board"] }} />))
+    expect(s).toMatch(tile("Editions", "—"))
+    expect(s).not.toMatch(prose("All", "0"))
+  })
+  it("SSR candy-mlb NO-CHANGE CONTROL: a successful-empty read still prints its real zeros and sentences", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/candy-mlb/CandyBoardClient")).default
+    const s = strip(renderToString(<C initialRows={[]} fetchedAt="2026-09-18T00:00:00Z" degraded={null} />))
+    expect(s).toMatch(tile("Editions", "0"))
+    expect(s).toMatch(prose("All", "0"))
+    expect(s).toMatch(prose("Showing all", "0"))
+    expect(s).toMatch(/No editions match\./)
+    expect(s).not.toMatch(/Couldn.{1,8}t load this section/)
+  })
+
+  it("SSR panini-squeeze: the three fabricating tiles are dashes on a failed read (the fourth already was), no 'Showing all 0'", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/panini-squeeze/PaniniSqueezeClient")).default
+    const s = strip(renderToString(<C initialRows={[]} fetchedAt={null} degraded={{ ...FAILED, failed: ["Panini squeeze board"] }} />))
+    expect(s).toMatch(tile("Editions", "—"))
+    expect(s).toMatch(tile("Chases ≤ /25 · all sets", "—"))
+    expect(s).toMatch(tile("Sealed copies", "—"))
+    expect(s).not.toMatch(prose("Showing all", "0"))
+    expect(s).not.toMatch(/No editions match\./)
+    expect(s).toMatch(/Couldn.{1,8}t load this board/)
+  })
+  it("SSR panini-squeeze NO-CHANGE CONTROL: a successful-empty read still prints its real zeros", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/panini-squeeze/PaniniSqueezeClient")).default
+    const s = strip(renderToString(<C initialRows={[]} fetchedAt="2026-09-18T00:00:00Z" degraded={null} />))
+    expect(s).toMatch(tile("Editions", "0"))
+    expect(s).toMatch(tile("Chases ≤ /25 · all sets", "0"))
+    expect(s).toMatch(tile("Sealed copies", "0"))
+    expect(s).toMatch(prose("Showing all", "0"))
+    expect(s).toMatch(/No editions match\./)
+  })
+
+  it("SSR rookie-board: both counts are dashes on a failed seed (Top chase FMV already was)", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/rookie-board/RookieBoardClient")).default
+    const s = strip(renderToString(<C initialRows={[]} initialFetchedAt={null} initialFailed />))
+    expect(s).toMatch(tile("Rookies tracked", "—"))
+    expect(s).toMatch(tile("Parallels", "—"))
+    expect(s).toMatch(tile("Top chase FMV", "—"))
+  })
+  it("SSR rookie-board NO-CHANGE CONTROL: a successful-empty read still prints real zeros", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/rookie-board/RookieBoardClient")).default
+    const s = strip(renderToString(<C initialRows={[]} initialFetchedAt="2026-09-18T00:00:00Z" initialFailed={false} />))
+    expect(s).toMatch(tile("Rookies tracked", "0"))
+    expect(s).toMatch(tile("Parallels", "0"))
+  })
+
+  it("SSR serial-premiums: the one fabricating tile is a dash on a failed seed (the other two already were)", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const s = strip(renderToString(<SerialPremiumsBoardClient initialRows={[]} initialFetchedAt={null} initialFailed />))
+    expect(s).toMatch(tile("Editions shown", "—"))
+    expect(s).toMatch(tile("Top premium", "—"))
+  })
+  it("SSR serial-premiums NO-CHANGE CONTROL: a successful-empty read still prints its real zero", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const s = strip(renderToString(<SerialPremiumsBoardClient initialRows={[]} initialFetchedAt="2026-09-18T00:00:00Z" initialFailed={false} />))
+    expect(s).toMatch(tile("Editions shown", "0"))
+  })
+
+  it("SSR cross-collection was ALREADY honest — pinned as the class control, not fixed", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await import("@/app/insights/cross-collection/CrossCollectionBoardClient")).default
+    const seed = { meta: { fetched_at: null }, stats: null, wallets: [], ts_set_overlap: [] } as never
+    const s = strip(renderToString(<C initial={seed} initialFailed />))
+    expect(s).toMatch(tile("Cohort size", "—"))
+    expect(s).toMatch(tile("Cohort FMV est.", "—"))
+    expect(s).not.toMatch(tile("Cohort size", "0"))
+  })
+})

@@ -318,13 +318,15 @@ const MARKET_TIERS = [
 // (lib/insights/candy-board.ts). If a label is renamed on one side only, this
 // silently falls back to the healthy copy — which is why the labels are pinned
 // by a test rather than trusted.
+const SECTION_UNAVAILABLE_COPY = "Couldn't load this section — treat it as unknown, not zero. Reload shortly."
+
 function sectionEmptyCopy(
   label: string,
   degraded: DegradedSummary | null | undefined,
   healthyCopy: string
 ): string {
   if (degraded?.failed?.includes(label)) {
-    return "Couldn't load this section — treat it as unknown, not zero. Reload shortly."
+    return SECTION_UNAVAILABLE_COPY
   }
   if (degraded?.truncated?.includes(label)) {
     return "This section is showing an incomplete slice — some rows could not be read."
@@ -406,6 +408,16 @@ export default function CandyBoardClient({
   const matched = marketRows.length;
   const visible = marketRows.slice(0, RENDER_CAP);
 
+  // ⛔ THE MARKET SECTION'S PROVENANCE, and it feeds the KPI strip, the coverage
+  // prose and the market tab. Deep-audit 2026-09-18 §2 (P0): during the #122
+  // outage this board printed "All 0 editions have now traded" and a strip of
+  // EDITIONS 0 · PRICED 0 · WITH AN ASK 0 · WITH A BEST OFFER 0 twelve lines
+  // under its own "treat as unknown" banner. Two labels can carry the failure:
+  // the API's per-section "Market", or the page's whole-board fallback label
+  // when the payload itself could not be read (degradedFromSource). ⚠ Keyed on
+  // provenance, never on initialRows.length — a successful read of zero
+  // editions is a measurement and keeps printing 0.
+  const marketFailed = (degraded?.failed ?? []).some((l) => l === "Market" || l === "Candy MLB board");
   const priced = useMemo(() => initialRows.filter((r) => r.fmv_usd != null).length, [initialRows]);
   const sales24h = useMemo(() => initialRows.reduce((s, r) => s + (Number(r.sales_24h) || 0), 0), [initialRows]);
   const withOffer = useMemo(() => initialRows.filter((r) => r.best_offer_usd != null).length, [initialRows]);
@@ -589,7 +601,9 @@ export default function CandyBoardClient({
       <div className="cdy-cov">
         <b>Early read, not a census.</b> Candy&apos;s secondary market opened <b>~Jul 23</b> (Magic Eden). FMV is
         auto-computed off live sales.{" "}
-        {priced >= initialRows.length ? (
+        {marketFailed ? (
+          <span>Coverage can&apos;t be read right now — the market section couldn&apos;t be loaded, so the counts are unknown, not zero.</span>
+        ) : priced >= initialRows.length ? (
           <>
             All <b>{num(initialRows.length)}</b>{" "}
             <span>editions have now traded, but most prices come off no more than a handful of sales.</span>
@@ -686,19 +700,19 @@ export default function CandyBoardClient({
           <div className="cdy-kpis">
             <div className="cdy-card">
               <h3>Editions</h3>
-              <div className="cdy-big">{num(initialRows.length)}</div>
+              <div className="cdy-big">{num(marketFailed ? null : initialRows.length)}</div>
             </div>
             <div className="cdy-card">
               <h3>Priced (traded)</h3>
-              <div className="cdy-big">{num(priced)}</div>
+              <div className="cdy-big">{num(marketFailed ? null : priced)}</div>
             </div>
             <div className="cdy-card">
               <h3>With an ask</h3>
-              <div className="cdy-big">{num(withAsk)}</div>
+              <div className="cdy-big">{num(marketFailed ? null : withAsk)}</div>
             </div>
             <div className="cdy-card">
               <h3>With a best offer</h3>
-              <div className="cdy-big">{num(withOffer)}</div>
+              <div className="cdy-big">{num(marketFailed ? null : withOffer)}</div>
             </div>
           </div>
 
@@ -733,7 +747,7 @@ export default function CandyBoardClient({
                 {visible.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="cdy-par">
-                      No editions match.
+                      {marketFailed ? SECTION_UNAVAILABLE_COPY : "No editions match."}
                     </td>
                   </tr>
                 ) : (
@@ -777,7 +791,9 @@ export default function CandyBoardClient({
           </div>
 
           <div className="cdy-note">
-            {matched > visible.length ? (
+            {marketFailed ? (
+              <>The market section couldn&apos;t be loaded, so nothing is shown — that is not a count.</>
+            ) : matched > visible.length ? (
               <>
                 Showing <b>{num(visible.length)}</b> of <b>{num(matched)}</b> matching editions.
               </>
