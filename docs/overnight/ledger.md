@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔧 #122 — THE RECOVERY WAS A **RESTART**, NOT A RETURN: I clicked `Restart project` from Cowork at 11:58 PT with Trevor's go-ahead, and the DB's own log shows the sequence · Cowork cloud + Chrome
+
+**Operator action, Trevor-approved. No code, no migration, no data mutation.** The entry above records the database as having "returned at ~11:57–12:03 PT"; it did not return — it was restarted, and the timestamps below are the platform log stream's own, not a probe's.
+
+📏 **THE SEQUENCE, from `postgres_logs` / `postgrest_logs` (converted to PT):**
+
+| PT | source | event |
+|---|---|---|
+| 05:19:30 | postgres | **last line before six hours of silence** — the tail was a 267 s checkpoint (`write=267.603 s` for 1,614 buffers), a 58.7 s `refresh_wmc_fmv_changed`, PostgREST `Warp server error: Thread killed by timeout manager` ×7, then seven cron jobs starting in the same second at 05:19:00 |
+| 05:19:30 → 11:42:00 | postgres, postgrest | **zero lines shipped.** `edge_logs` and `function_logs` continued throughout |
+| 11:36:55 | probe (cloud) | `/auth/v1/health` **522** in 20.1 s · `/rest/v1/collections` **522** in 20.2 s — with the real publishable key, so this is past the edge's 401 gate |
+| 11:42:00 | postgres | **lines resume on their own** — MV refreshes and drains running (`mv_topshot_pack_realized_ev`, `allday_resolve_unmapped_via_atlas` 10.4 s, `reconcile_wmc_metadata_from_editions` 15.0 s …) |
+| ~11:47–11:58 | dashboard | Settings → General → **Restart project** → confirm (Trevor chose "Restart now" over ticket-first) |
+| 11:58:48 | postgres | `terminating connection due to administrator command` — **the restart landing** |
+| 11:59:52 | probe (cloud) | still **522 / 522** — one minute after the terminate, no spontaneous recovery had happened |
+| 12:00:39 | postgres | `the database system is starting up` · `pg_cron scheduler started` (`pg_postmaster_start_time` agrees: 12:00:39.67) |
+| 12:00:55 | postgrest | `Starting PostgREST 14.5` → `Connection refused` retries → schema cache loaded |
+| 12:01:00 | probe (cloud) | `/rest/v1/collections` **200** with a real row. `/auth/v1/health` 521 at that second, then clean |
+
+✅ **POSITIVE CONTROL, taken 32 s after Postgres came up and again at +2 min and +7 min:** `conns 14 → 23 → 31 · active 1 → 5 → 2 · io_wait 0 → 2 → 1 · longest client query 0–1 s`. Cron over the first 7 min: **43 succeeded · 0 failed · avg 6 s · max 55 s**; `pipeline_runs` **63 runs / 60 ok**. Site: `/` 200 in 0.5 s (67.9 kB), `/insights` 200 in 0.3 s, no Cloudflare page in either body. **The fan-out that was firing at 05:19 came back at 12:00 and did not re-wedge it.**
+
+⚠ **WHAT THIS DOES AND DOES NOT SETTLE.** It settles that the outage ENDED because of the restart — a service that answered 522 at 11:59:52 answered 200 at 12:01:00 with `administrator command` and `starting up` in between. It does NOT contradict the DNS mechanism above; it adds a wrinkle to it: **Postgres's own log lines resumed at 11:42, sixteen minutes BEFORE the restart, while the API stayed 522 until it.** ⚠ *Stated as inference:* if DNS came back at ~11:42 (which would also explain why the log SHIPPER — a name-resolving client — went silent and then resumed), PostgREST/GoTrue/Kong did **not** recover on their own once it did, and needed the restart to drop their wedged state. Nothing here sampled DNS from inside the instance; the 11:42 resumption could also be the shipper's buffer draining. 📏 The dashboard's Infrastructure card read **CPU 100 % · memory 100 % · disk IO 88 %** during the event while the Reports page for the same hour said *"No data to show"* — ⛔ **so those three numbers are last-known or gauge artifacts, not a measurement of saturation. Do not cite them as the cause.**
+
+👉 **For the Supabase report, add to the DNS artifact:** *"the project did not self-heal — the API answered 522 for 6 h 13 m and only recovered on an operator-initiated restart at 11:58 PT; Postgres log shipping had resumed 16 min earlier."* That is the ask: why the platform's health check reported `ACTIVE_HEALTHY` through the whole window.
+
+- **Revert:** n/a — a restart is not revertible and nothing else was changed.
+
 ### 2026-09-18 · 📏 THE SALES INDEXER'S "WHEN UNMAPPED, BASE" GUARD NOW COUNTS ITS TWO SILENT EXITS — instrumentation for #116's untraced writer, behaviour unchanged · Claude Code cloud
 
 **Code + tests, two files. No migration, no DB object, no data mutation, and NO behaviour change in the indexer** — every row lands exactly where it did yesterday. This is the strictly-cheaper precursor to the step #116 / focus item 1 names (*"needs the route replayed against a captured tick"*), which is DB work: the next replay gets a READING instead of an inference.
