@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔧 THE P0 FABRICATED ZEROS — two of nine boards fixed PER-VALUE, and the tell was that one value in the SAME STRIP was already honest · Claude Code desktop
+
+**Code + tests, four files (2 boards, 1 guard, +4 SSR arms). No migration, no DB object, no data mutation.** Acts on the monthly deep audit's P0, found during the #122 outage — the only condition that exposes it.
+
+🚨 **The defect, screenshot-verified in production beneath each board's own banner saying *"treat the affected sections as unknown rather than zero"*:** `/insights/top-sales` printed `SALES SHOWN 0 · TOP SALE — · COMBINED $0.00 · NAMED PARTIES 0`; `/insights/squeeze` printed `EDITIONS 0 · MEDIAN SQUEEZE 0% · MEDIAN BUYABLE 0 · TOTAL LOCKED 0`.
+
+⭐ **THE SHARPEST DETAIL AND THE WHOLE DIAGNOSIS: one of the four was ALREADY HONEST.** `top` is `null` when nothing is priced, so `fmtPrice` renders `—`; `count`, `total` and `named` **reduce to 0** and print as measurements. **The honest form was on the same LINE as the fabricated ones** — a copy-paste defect, not a design gap, which is why the fix is **per-VALUE** and not per-panel. The canon's *"fix per PANEL, not per page"* is true and this is one granularity finer than it is usually stated at.
+
+🔒 **The fix is one early return per board:** when provenance says the read failed, the `kpis` memo returns **all nulls**, and every formatter already renders `—` for null. ⚠ **Keyed on the PROVENANCE, never on `rows.length === 0`** — a read that SUCCEEDED and matched nothing genuinely IS 0 and must keep saying so. **The bug is the missing THIRD state, not the zero.**
+
+⛔ **AND THE REUSABLE TRAP FOR THE REMAINING SEVEN: DO NOT GREP FOR A PROP NAME.** The two boards carry provenance in **different shapes** — `top-sales` takes a boolean `initialFailed`, `squeeze` takes `initialDegraded` (a `DegradedSummary` whose `failed[]` is the signal). **A sweep for `initialFailed` finds one and misses the other.** The property is *"does the KPI branch consult ANY provenance"*.
+
+🧪 **Asserted by SSR, per this file's own precedent** — the client clears the failed flag on a successful refetch, so a mount effect repairs the state before jsdom looks and **both the bug and its mirror image pass a client test**; on an ISR route the server HTML is also what gets cached and served. ⭐ **The NO-CHANGE CONTROL is the mutation proof:** the same regex must MATCH `0` on a successful-empty read and NOT match on a failed one — without it, *"render `—` always"* passes and destroys a true reading to hide a false one. `insights-seeded-boards…` **31 → 35 arms**.
+
+⏳ **SEVEN OF NINE REMAIN, named so the job is not re-scoped from scratch:** `offer-spread`, `candy-mlb`, `panini-squeeze`, `deals`, `rookie-board`, `serial-premiums`, `cross-collection`. ⚠ **The worst is not a KPI at all** — candy-mlb's prose reads *"All 0 editions have now traded"*, a fabricated zero inside a sentence, which a reader cannot discount the way they discount a number in a tile. ✅ `/insights/pack-reality` is the gold standard to copy.
+
+⚠ **NOT verifiable end-to-end now, and stated rather than implied:** the DB recovered at ~12:00 PT, so the boards render real data and there is no failure left to expose. **Per #33 the check is a COLD pass under a forced failure, never "is the page OK now."** The SSR arms are the standing proof.
+
+🧪 **Gate:** `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · seeded-boards guard **35/35** · full `npm test` green.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="per-VALUE"`). Two `useMemo` early returns and four test arms. **No DB half.**
+
 ### 2026-09-18 · ⭐ #122 SYNTHESIS — POSTGRES WAS NEVER DOWN: it wrote **938 rows across 50 lanes** during the six hours its log stream shipped NOTHING, so the "silence" was the OUTBOUND path · Claude Code desktop
 
 **Docs-only. Nothing shipped.** Combines the Cowork restart entry's log timeline with this session's `pipeline_runs` measurement; **neither half establishes this alone.**
@@ -41,6 +63,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 ⛔ **So both easy stories are refused:** *"ten new faults"* (alarmist — they were healthy at 09:xxZ and the estate is otherwise clean) and *"just outage fallout"* (unsupported — the first miss is ~15–25 min early). ⭐ **The 10th, `candy-editions-ingest`, is definitively NOT outage-related: it is 2,558 min silent (~42.6 h, last run 09-17) and carries its own multi-paragraph chronic history in the watchlist.**
 
 👉 **FALSIFIER, and it costs one query.** The next 3-hourly tick lands **21:34Z (14:34 PT)**. **If those lanes resume, the cause was the event window and the early miss is a boundary artifact worth one more look; if they stay silent with the DB healthy, something stopped them that is NOT the outage and it has been running since ~12:30Z.** ⚠ **Do not close these as "recovered" without that read** — a lane that self-heals and a lane nobody re-checked look identical in `detect_stalled_pipelines()` tomorrow.
+
+⭐ **CORRECTED 13:0x PT, SAME DAY — MY "FIRST MISSED TICK PRECEDES THE ONSET" USED THE WRONG ONSET MARKER, AND THE PUZZLE DISSOLVES.** I compared the lanes' first missed tick (~12:34Z) against **12:48Z**, the first new runtime-error group. **But the earliest onset marker is the postgres log stream going silent at 05:19:30 PT = 12:19:30Z** — fifteen minutes EARLIER. Against the right marker the first missed tick falls comfortably INSIDE the event, and nothing needs explaining. ⚠ **The lesson is the reusable part: an incident has SEVERAL onset markers and they are not interchangeable — the most VISIBLE one (user-facing errors) is not the EARLIEST one (log shipping). Anchoring a timing argument to the wrong marker manufactures a discrepancy.**
+
+📏 **AND THE ORDER OF FAILURE IS ITSELF A FINDING — it was PROGRESSIVE, not instantaneous:** log shipping stops **05:19:30**, first new inbound runtime-error group **05:48**, outbound `pg_net` to Atlas begins failing 100% **06:05**. **~45 minutes from first symptom to full outbound failure**, which is a degrading host rather than a switch being thrown.
+
+👉 **FALSIFIER STATUS AT 13:02 PT — one positive, the rest NOT YET DUE, and I nearly misread it.** Of the six lanes, only `backfill-pack-rip-metadata` is HOURLY, so it is the only one whose tick has come around since the ~12:00 recovery — **and it RAN at 12:53.** The others are 2–3 hourly with next ticks at **13:40 · 14:20 · 14:34 · 14:35**, all still in the future, so their `runs_since_recovery = 0` is **expected and proves nothing**. ⛔ **Do not read that zero as "they failed to resume"** — I queried before the ticks were due, which is the same premature-reading trap one level up. **Re-check after 14:35 PT.**
 
 ⚠ **`pipeline_runs` retains ~73 h**, so the evidence above expires 2026-09-21; the run-level detail is quoted here rather than left to be re-derived from a table that will have pruned it.
 
