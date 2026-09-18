@@ -7,9 +7,14 @@ import { adminReq } from "./helpers/admin-req"
 // one well-formed row. The parts that were untested are the ones that decide
 // what actually lands:
 //
-//   - the ?token= auth lane (the header lane was covered; a webhook platform
-//     that can't set headers uses the query one, so it must work AND must not
-//     accept a wrong token);
+//   - the auth lanes. ⚠ INVERTED 2026-09-18 (R98), NOT deleted. This used to
+//     assert that a `?token=` query lane WORKED (rationale at the time: "a
+//     webhook platform that can't set headers uses the query one"). That lane
+//     wrote ANNOUNCEMENTS_INGEST_TOKEN into Vercel access logs on every call,
+//     so it was removed from the route. The assertion now pins the ABSENCE of
+//     the lane — a correct token in the query string must 401 — because a
+//     passing test asserting the old promise is what would hold that leak in
+//     place. It asserts the AUTH OUTCOME, not any error copy;
 //   - the DEDUPE KEY. With no external_id the route derives a stable
 //     sha256(source|title|posted_at) — so a retrying webhook re-posts the same
 //     row rather than duplicating the feed. If posted_at defaulted to `now()`
@@ -53,12 +58,32 @@ afterEach(() => {
 })
 
 describe("announcements — auth lanes", () => {
-  it("accepts the ?token= lane and rejects a wrong value on both lanes", async () => {
-    const ok = await POST(adminReq(`${URL_}?token=tok`, { body: { source: "topshot", title: "x" } }))
+  it("accepts the Authorization header lane and rejects a wrong value on it", async () => {
+    const ok = await POST(
+      adminReq(URL_, { authorization: "Bearer tok", body: { source: "topshot", title: "x" } }),
+    )
     expect(ok.status).toBe(200)
 
-    expect((await POST(adminReq(`${URL_}?token=nope`, { body: { source: "topshot", title: "x" } }))).status).toBe(401)
-    expect((await POST(adminReq(URL_, { authorization: "Bearer nope", body: { source: "topshot", title: "x" } }))).status).toBe(401)
+    expect(
+      (await POST(adminReq(URL_, { authorization: "Bearer nope", body: { source: "topshot", title: "x" } })))
+        .status,
+    ).toBe(401)
+  })
+
+  // ⚠ The positive control above is what makes this one non-vacuous: `Bearer tok`
+  // is the SAME credential, so a 401 here can only come from the lane being gone,
+  // not from the token being wrong.
+  it("rejects a CORRECT token supplied in the query string (the removed leak lane)", async () => {
+    const res = await POST(
+      adminReq(`${URL_}?token=tok`, { body: { source: "topshot", title: "x" } }),
+    )
+    expect(
+      res.status,
+      "?token= is a URL-borne credential and Vercel access logs record full URLs. " +
+        "If this went back to 200 the leak lane has been re-opened — see the \u{1F6A8} block " +
+        "at the top of app/api/admin/announcements/route.ts.",
+    ).toBe(401)
+    expect(state.upserted).toEqual([])
   })
 })
 

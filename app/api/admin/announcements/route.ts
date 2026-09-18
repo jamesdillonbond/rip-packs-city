@@ -4,10 +4,25 @@
 // Webhook ingest for community announcements (Discord, Make.com, etc).
 // Replaces the now-retired Reddit/RSS edge-function path.
 //
-// Auth: bearer token via `Authorization: Bearer <token>` OR `?token=<token>`,
-// checked against ANNOUNCEMENTS_INGEST_TOKEN. Deliberately separate from
-// RPC_ADMIN_TOKEN so rotating the bridge credential does not invalidate
-// the dashboard admin session.
+// Auth: bearer token via `Authorization: Bearer <token>` ONLY, checked against
+// ANNOUNCEMENTS_INGEST_TOKEN. Deliberately separate from RPC_ADMIN_TOKEN so
+// rotating the bridge credential does not invalidate the dashboard admin session.
+//
+// 🚨 THE TOKEN IS READ FROM A HEADER, NEVER FROM THE URL, AND THAT IS THE POINT.
+// `verifyBearer()` used to fall back to `?token=<ANNOUNCEMENTS_INGEST_TOKEN>`.
+// **Vercel access logs record full request URLs**, so every call on that lane
+// wrote the ingest credential into the log store. A header is not logged.
+// ⛔ Do NOT "confirm" the old leak by reading those logs: reading them IS the
+// leak. The caller's source is the proof.
+// ⚠ The token should still be treated as EXPOSED and rotated — deleting the lane
+// stops new writes, it does not un-write the old ones.
+// ℹ R98 (deep audit 2026-09-18). This mirrors the same removal made for
+// `app/api/cron/sales-serial-backfill/route.ts` (`33634a5c`).
+// ⚠ The `?token=` lane was originally kept for "a webhook platform that cannot
+// set headers" (ledger, 07-25 coverage pass). No such upstream is wired up —
+// `external_announcements` has no producer and this repo has NO in-repo caller
+// of this route. If a future integration genuinely cannot send a header, add a
+// PER-INTEGRATION credential on its own lane; do not re-open a shared one.
 
 import { createHash, randomUUID } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
@@ -23,8 +38,9 @@ function verifyBearer(req: NextRequest): boolean {
   const expected = process.env.ANNOUNCEMENTS_INGEST_TOKEN
   if (!expected) return false
   const header = req.headers.get("authorization") ?? ""
-  if (header === `Bearer ${expected}`) return true
-  return req.nextUrl.searchParams.get("token") === expected
+  // Header lane only. See the 🚨 block at the top of this file before adding
+  // any URL-borne lane back.
+  return header === `Bearer ${expected}`
 }
 
 function isValidUrl(s: string): boolean {
