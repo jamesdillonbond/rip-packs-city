@@ -188,7 +188,11 @@ export default async function SetPage(props: { params: Promise<{ collection: str
       {/* ⚠ OMITTED, not emitted-with-zero, when the editions read failed:
           `collectionEntityJsonLd` publishes `numberOfItems: items.length`, so a
           failed read would hand a crawler a machine-readable "this set holds no
-          editions". No claim beats a false one. */}
+          editions". No claim beats a false one.
+          ⚠ The THIRD state — a read that SUCCEEDED and returned nothing — is
+          handled inside `collectionEntityJsonLd` (2026-09-18, R58 residual a):
+          it omits the ItemList rather than publish `numberOfItems: 0`, and
+          keeps the CollectionPage + breadcrumb, which are true regardless. */}
       {editionsOk && (
         <script
           type="application/ld+json"

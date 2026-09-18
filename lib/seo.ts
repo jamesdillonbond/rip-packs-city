@@ -1107,17 +1107,27 @@ export function collectionEntityJsonLd(opts: {
     if (img) li.image = img
     return li
   })
+  const page: LdValue = {
+    "@type": "CollectionPage",
+    "@id": opts.url,
+    url: opts.url,
+    name: opts.name,
+    isPartOf: { "@type": "WebSite", name: "Rip Packs City", url: BASE_URL },
+  }
+  // ⚠ THREE states, not two. The pages gate this whole script on the editions
+  // read SUCCEEDING, which handles the failed read. A read that succeeded and
+  // returned NOTHING is the third state, and until 2026-09-18 it published
+  // `numberOfItems: 0` — a machine-readable "this set holds no editions" that a
+  // crawler cannot tell from a measured zero (deep-audit R58, residual a). An
+  // empty list is no claim: omit the ItemList and keep the CollectionPage and
+  // its breadcrumb, which are true regardless.
+  if (items.length > 0) {
+    page.mainEntity = { "@type": "ItemList", numberOfItems: items.length, itemListElement: items }
+  }
   return {
     "@context": "https://schema.org",
     "@graph": [
-      {
-        "@type": "CollectionPage",
-        "@id": opts.url,
-        url: opts.url,
-        name: opts.name,
-        isPartOf: { "@type": "WebSite", name: "Rip Packs City", url: BASE_URL },
-        mainEntity: { "@type": "ItemList", numberOfItems: items.length, itemListElement: items },
-      },
+      page,
       breadcrumbJsonLd([
         { name: "Home", url: BASE_URL },
         { name: label, url: `${BASE_URL}/${opts.collectionUrlSlug}` },

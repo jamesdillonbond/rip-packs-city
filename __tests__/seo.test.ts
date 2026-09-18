@@ -521,6 +521,38 @@ describe("collectionEntityJsonLd", () => {
     expect(li.image).toBe("https://www.rippackscity.com/api/public/ipfs-media/QmX")
   })
 
+  // ── The third state (deep-audit R58, residual a) ──
+  // The pages withhold the whole script on a FAILED read. A read that SUCCEEDED
+  // and returned nothing used to publish `numberOfItems: 0` — a measured-looking
+  // zero a crawler cannot tell from a real one. An empty list is no claim.
+  it("a successful EMPTY read publishes NO ItemList — never numberOfItems: 0", () => {
+    const ld = collectionEntityJsonLd({
+      name: "Empty Set",
+      url: "https://u",
+      collectionUrlSlug: "nba-top-shot",
+      eds: [],
+      crumbName: "Empty Set",
+    }) as any
+    const [page, crumbs] = ld["@graph"]
+    expect(page["@type"]).toBe("CollectionPage")
+    expect(page).not.toHaveProperty("mainEntity")
+    expect(JSON.stringify(ld)).not.toContain("numberOfItems")
+    // The parts that are true regardless of the list survive.
+    expect(page.name).toBe("Empty Set")
+    expect(crumbs["@type"]).toBe("BreadcrumbList")
+  })
+
+  it("NO-CHANGE CONTROL: one edition still publishes an ItemList of one", () => {
+    const ld = collectionEntityJsonLd({
+      name: "One",
+      url: "https://u",
+      collectionUrlSlug: "nba-top-shot",
+      eds: [{ route_slug: "1:1", name: "A" }],
+      crumbName: "One",
+    }) as any
+    expect(ld["@graph"][0].mainEntity.numberOfItems).toBe(1)
+  })
+
   it("caps the ItemList at 25 editions", () => {
     const eds = Array.from({ length: 40 }, (_, i) => ({ route_slug: `${i}:0`, name: `E${i}` }))
     const ld = collectionEntityJsonLd({

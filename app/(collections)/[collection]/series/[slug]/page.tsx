@@ -262,7 +262,11 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
           `collectionEntityJsonLd` publishes `numberOfItems: items.length`, so a
           failed structural read would hand a crawler a machine-readable claim
           that a 4,895-edition series holds none — the fabricated-number shape,
-          in the one place no human proof-reads it. No claim beats a false one. */}
+          in the one place no human proof-reads it. No claim beats a false one.
+          ⚠ The THIRD state — a read that SUCCEEDED and returned nothing — is
+          handled inside `collectionEntityJsonLd` (2026-09-18, R58 residual a):
+          it omits the ItemList rather than publish `numberOfItems: 0`, and
+          keeps the CollectionPage + breadcrumb, which are true regardless. */}
       {editionsOk && (
         <script
           type="application/ld+json"
