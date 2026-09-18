@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 📏 THE IPFS-TILE FILING'S BLOCKING NUMBER IS HALF-ANSWERED — human traffic is negligible, but the CEILING arithmetic is tight and that is the constraint nobody had computed · Claude Code desktop
+
+**Docs-only. Nothing shipped, and it still should not be** — this advances [`2026-09-13T1708Z`](../overnight/inbox/2026-09-13T1708Z-the-ipfs-served-art-is-2-to-8-mb-of-png-going-into-tiles-as-small-as-28px.md), which filed itself deliberately unshipped because *"the number that would decide it is NOT measured"*. It asked for Vercel egress the filing session had no access to. I had it.
+
+📏 **HALF ONE — HUMAN TRAFFIC, and it is tiny.** Vercel Web Analytics, routes, **2026-09-11 → 09-18**: the main IPFS-tile surface `/[collection]/edition/[slug]` is **203 pageviews / 35 visitors in seven days**, and the whole site is **≈1,300 pageviews/week** across every route. The other named surfaces are smaller still (`/pinnacle/moment/[id]` 43 pv, `/share/[wallet]` 83 pv, `/dashboard` 44 pv). ⇒ **Human-driven optimizer cost from this change would be trivial.**
+
+🚨 **HALF TWO — AND IT IS THE HALF THAT DECIDES IT: THE CEILING IS TIGHT, WHICH NOBODY HAD PUT A NUMBER ON.** The filing says routing these through `/_next/image` *"ADDS keys to that ceiling"*. The arithmetic: **2,886 editions carry a gateway url**, an optimizer key is **(url, w, q)**, and the filing names **three slot widths** (28px search · 52px sold-moment rows · 130px trophy slab) plus edition detail — so ~4. **2,886 × 4 ≈ 11,544 keys against a ceiling of ≈14,469 — roughly 80 % of the budget from this one change**, on a meter whose entire closed cycle was **16 actual transformations / $0.00** (#95).
+
+⭐ **SO THE LEVER IS THE WIDTH COUNT, NOT THE DECISION.** Keys scale linearly with distinct widths: **two** widths ≈ 5,772 (~40 % of ceiling), **one** ≈ 2,886 (~20 %). **Ship it with the fewest distinct slot widths that still look right, and the trade stops being close.** ⛔ The filing's own warning still binds — `w` must be a member of `deviceSizes ∪ imageSizes` or the optimizer 400s, so the width set is not free to choose.
+
+⚠ **WHAT I STILL CANNOT SEE, AND IT IS EXACTLY THE POPULATION THAT REALISES THE WORST CASE: Web Analytics counts BROWSER pageviews and cannot see crawlers.** A crawler walking the sitemap's edition pages would mint keys without ever registering a pageview — so *"human traffic is negligible"* must **not** be read as *"few transformations"*. ⛔ **The 203 pageviews bound what PEOPLE cost, not what the CHANGE costs.** The remaining number is still bandwidth attributable to `/api/public/ipfs-media/`, which this instrument does not expose.
+
+- **Revert:** n/a — documents only; no code, no migration, no data mutation.
+
 ### 2026-09-18 · 📏 #122's OWED BASELINE IS TAKEN — today is ~9× the prior daily error volume, in CHRONIC shapes, and both halves of that sentence matter · Claude Code desktop
 
 **Docs-only. Needed NO DB connection**, which is exactly why #122 named it as the first job while the database was unreachable.
