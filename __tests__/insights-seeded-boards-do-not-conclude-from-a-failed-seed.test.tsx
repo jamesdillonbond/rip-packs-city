@@ -7,6 +7,8 @@ import SetCompletersBoardClient from "@/app/insights/set-completers/SetCompleter
 import UnderpricedSerialsBoardClient from "@/app/insights/underpriced-serials/UnderpricedSerialsBoardClient"
 import SerialPremiumsBoardClient from "@/app/insights/serial-premiums/SerialPremiumsBoardClient"
 import NewCollectorsBoardClient from "@/app/insights/new-collectors/NewCollectorsBoardClient"
+import TopSalesBoardClient from "@/app/insights/top-sales/TopSalesBoardClient"
+import SqueezeBoardClient from "@/app/insights/squeeze/SqueezeBoardClient"
 import { EMPTY_BOARD } from "@/lib/new-collectors-board"
 
 // The FIFTH honesty layer: a SERVER-SEEDED PROP.
@@ -560,5 +562,90 @@ describe("three more seeded boards do not blame the filters for a failed seed", 
       expect(src, `${board} must derive ok from its own read`).toMatch(/\bok\b/)
       expect(src, `${board} must not hardcode ok`).not.toMatch(/const ok = (true|false)/)
     }
+  })
+})
+
+// ── top-sales: the defect the 2026-09-18 outage EXPOSED (register #122, P0) ──
+//
+// 🚨 SCREENSHOT-VERIFIED IN PRODUCTION, 11:32 AM PT, directly beneath this
+// board's own banner — "treat the affected sections as unknown rather than zero":
+//
+//     SALES SHOWN 0 · TOP SALE — · COMBINED $0.00 · NAMED PARTIES 0
+//
+// ⭐ THE SHARPEST DETAIL, and why this is per-VALUE and not per-panel: ONE of the
+// four was already honest. `top` is null when nothing is priced so fmtPrice
+// renders "—", while `count`, `total` and `named` reduce to 0 and print as
+// measurements. The honest form was on the SAME LINE as the fabricated ones.
+//
+// ⚠ ASSERTED BY SSR, following this file's own precedent: the client clears
+// `seedFailed` on a successful refetch, so a mount effect can repair the state
+// before jsdom looks and BOTH the bug and its mirror image would pass a client
+// test. Server-rendered HTML is where the difference survives — and on an ISR
+// route that HTML is what gets cached and served.
+describe("top-sales does not publish zeros from a failed seed", () => {
+  it("SSR: every KPI renders the unavailable dash, not a fabricated zero", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const html = renderToString(
+      <TopSalesBoardClient initialRows={[]} initialFetchedAt={null} initialFailed />,
+    )
+    const strip = html.replace(/<[^>]+>/g, "|")
+    // ⛔ The three that fabricated. Assert the ABSENCE of the false value.
+    expect(strip).not.toMatch(/\|\s*\$0\.00\s*\|/)
+    expect(strip).not.toMatch(/\|\s*0\s*\|/)
+    // ⭐ And the honest form is present for all of them.
+    expect(html).toMatch(/—/)
+  })
+
+  it("SSR NO-CHANGE CONTROL: a genuinely empty board still prints real zeros", async () => {
+    // A read that SUCCEEDED and found nothing is a measurement, and must keep
+    // saying 0. Without this arm the fix above could be "render — always", which
+    // would destroy a true reading to hide a false one.
+    const { renderToString } = await import("react-dom/server")
+    const html = renderToString(
+      <TopSalesBoardClient initialRows={[]} initialFetchedAt="2026-09-18T00:00:00Z" initialFailed={false} />,
+    )
+    const strip = html.replace(/<[^>]+>/g, "|")
+    expect(strip).toMatch(/\|\s*0\s*\|/)
+    expect(strip).toMatch(/\|\s*\$0\.00\s*\|/)
+  })
+})
+
+// ── squeeze: the same P0, and the SECOND shape it comes in ──────────────────
+//
+// 🚨 SCREENSHOT-VERIFIED 11:41 AM PT during the outage: under the same banner,
+// EDITIONS 0 · MEDIAN SQUEEZE 0% · MEDIAN BUYABLE 0 · TOTAL LOCKED 0.
+//
+// ⚠ THE PLUMBING DIFFERS FROM top-sales AND THAT IS THE REUSABLE PART. This
+// board carries provenance as `initialDegraded` (a DegradedSummary with a
+// `failed[]`), not as a boolean `initialFailed`. So a sweep that greps for
+// `initialFailed` finds top-sales and MISSES this one. The property to look for
+// is "does the KPI branch consult ANY provenance", not a prop name.
+describe("squeeze does not publish zeros from a failed read", () => {
+  it("SSR: every KPI renders the unavailable dash, not a fabricated zero", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const html = renderToString(
+      <SqueezeBoardClient
+        initialRows={[]}
+        initialFetchedAt={null}
+        initialDegraded={{ failed: ["Squeeze board"], truncated: [], total: 1, headline: "PARTIAL DATA" }}
+      />,
+    )
+    const strip = html.replace(/<[^>]+>/g, "|")
+    expect(strip).not.toMatch(/\|\s*0%\s*\|/)
+    expect(strip).not.toMatch(/\|\s*0\s*\|/)
+    expect(html).toMatch(/—/)
+  })
+
+  it("SSR NO-CHANGE CONTROL: a genuinely empty board still prints real zeros", async () => {
+    const { renderToString } = await import("react-dom/server")
+    const html = renderToString(
+      <SqueezeBoardClient
+        initialRows={[]}
+        initialFetchedAt="2026-09-18T00:00:00Z"
+        initialDegraded={{ failed: [], truncated: [], total: 1, headline: "" }}
+      />,
+    )
+    const strip = html.replace(/<[^>]+>/g, "|")
+    expect(strip).toMatch(/\|\s*0\s*\|/)
   })
 })

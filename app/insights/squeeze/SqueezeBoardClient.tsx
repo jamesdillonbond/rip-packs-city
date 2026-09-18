@@ -238,6 +238,19 @@ export default function SqueezeBoardClient({
   }, [rows, tier, maxBuyable, maxCirculation])
 
   const kpis = useMemo(() => {
+    // ⛔ A FAILED READ HAS NO KPIs. Screenshot-verified in production during the
+    // 2026-09-18 outage (#122) at 11:41 AM PT: directly under this board's own
+    // banner — "treat the affected sections as unknown rather than zero" — the
+    // strip read EDITIONS 0 · MEDIAN SQUEEZE 0% · MEDIAN BUYABLE 0 · TOTAL LOCKED 0.
+    //
+    // ⚠ The zeros below are NOT a bug in the empty branch: a read that SUCCEEDED
+    // and matched nothing genuinely IS 0 editions, and must keep saying so. What
+    // was missing is the THIRD state — the branch could not tell "no rows matched"
+    // from "we never got rows" because it only ever looked at `filtered.length`.
+    // `degraded.failed` is the only thing that carries that provenance.
+    if ((degraded?.failed?.length ?? 0) > 0) {
+      return { count: null, medianSqueeze: null, medianBuyable: null, totalLocked: null }
+    }
     if (filtered.length === 0) {
       return { count: 0, medianSqueeze: 0, medianBuyable: 0, totalLocked: 0 }
     }
@@ -250,7 +263,7 @@ export default function SqueezeBoardClient({
       medianBuyable: median(buyables),
       totalLocked,
     }
-  }, [filtered])
+  }, [filtered, degraded])
 
   // ⚠ COUNTED FROM THE ROWS IN HAND, never baked. The Methodology block used to
   // read "this affects 10 of the 8,859 editions that carry a live ask" — two
@@ -425,7 +438,7 @@ export default function SqueezeBoardClient({
         </div>
         <div className="rpc-sq-kpi">
           <div className="rpc-sq-kpi-label">Median buyable</div>
-          <div className="rpc-sq-kpi-value">{loading ? "—" : fmtInt(Math.round(kpis.medianBuyable))}</div>
+          <div className="rpc-sq-kpi-value">{loading ? "—" : fmtInt(kpis.medianBuyable == null ? null : Math.round(kpis.medianBuyable))}</div>
         </div>
         <div className="rpc-sq-kpi">
           <div className="rpc-sq-kpi-label">Total locked</div>

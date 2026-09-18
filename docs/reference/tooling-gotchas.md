@@ -1452,3 +1452,23 @@ longest for the clamp case. A probe at invented widths proves nothing about the 
 cloud session with a rendered PNG, which is the instrument this repo trusts. **What it still cannot
 answer:** whether a given upstream's art loads, its byte size, or anything about the live route's
 data — those need egress and stay Cowork's or a desktop session's job.
+
+## ⛔ THE SAME TRANSPORT-ERROR TOKEN LIST LIVES IN THREE CLASSIFIERS, AND THE CORRECT ANSWER DIFFERS PER CALLER (2026-09-18)
+
+| where | the question it decides | a transport failure means |
+|---|---|---|
+| `lib/api-error.ts` → `safeApiError` | *should the CLIENT RETRY?* | **yes, retry** → 503 |
+| `lib/pipeline/saturation.ts` → `isSaturationError` | *should we PAGE?* | **yes, page** → `critical` |
+| `lib/sentinel/blind-checks.ts` → `SATURATION_SIGNATURE` | *was this arm BLIND?* | counts toward a warn-capped blackout |
+
+🚨 **I copied the list from the first into the second and it shipped a fail-open.** Adding `ECONNREFUSED`/`ECONNRESET`/`ETIMEDOUT`/`socket hang up` **downgraded a genuine page to a warn**. `__tests__/api-sentinel-branches.test.ts` caught it: its *"pages critical on a hard (non-saturation) sniper-feed error"* arm uses **ECONNREFUSED deliberately**, because a refused connection to **one of our own services** is a real outage that SHOULD page.
+
+⭐ **Identical strings, opposite verdicts, because the decisions differ. Do not unify them.**
+
+**How to add a token safely**
+- Ask **what this classifier DECIDES**, then whether the new token's answer is the same under that decision. It usually is not.
+- ✅ The one shape that IS safe in all three is a **gateway RESPONSE** — `<!doctype html`, `522:`/`523:`/`524:`. **A read that came back as a WEB PAGE is blind under every one of the three questions.** Generic transport errno is not.
+- ⛔ Never a bare `"timeout"` or `"connection"`: the thrown message is wrapped in our own text (`"pack_table_rows read failed: …"`) and carries arbitrary upstream copy.
+- ⭐ **Pin the near-misses as CONTROLS rather than by omission** — `"this edition sold 522 times"` (no colon) and `"no connection between these two editions"` must still classify as internal/page, so a future widening reds instead of silently swallowing an outage.
+
+⚠ **`app/api/sentinel/route.ts` carried a BYTE-IDENTICAL private copy of `isSaturationError`** while only the lib copy had a test — widening one would have left the other narrow. It now imports the shared one. ⛔ **The third (`SATURATION_SIGNATURE`) is deliberately still separate:** widening it risks counting *a successful read of someone else's failure* as blindness, which that file documents as a real production over-count. Its mitigation is `didEvaluate`, so the fix there is to make unmarked arms DECLARE themselves, not to widen the sniffer.

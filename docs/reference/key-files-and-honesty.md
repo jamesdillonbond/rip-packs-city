@@ -1940,3 +1940,28 @@ wallets ≥ 5,000 moments (7 of them Top Shot, largest 39,955, two verified)" is
 SHARDED*, which is **not a column in this database** and remains unmeasured. ⭐ **A wrong yardstick still
 returns a number, and the number looks like progress** — the same shape as a guard with a wrong
 population, one level up in the analysis.
+
+## ⭐ A KPI STRIP FABRICATES PER-VALUE, AND ONE VALUE IN THE SAME STRIP IS OFTEN ALREADY HONEST (2026-09-18, #122 P0)
+
+The canon says *"fix per PANEL, not per page."* **A real six-hour outage showed the granularity is finer than that: it fails WITHIN one KPI strip.**
+
+Screenshot-verified in production, directly beneath the board's own banner saying *"treat the affected sections as unknown rather than zero"*:
+
+```
+/insights/top-sales →  SALES SHOWN 0 · TOP SALE — · COMBINED $0.00 · NAMED PARTIES 0
+/insights/squeeze   →  EDITIONS 0 · MEDIAN SQUEEZE 0% · MEDIAN BUYABLE 0 · TOTAL LOCKED 0
+```
+
+⭐ **`TOP SALE` renders `—` while its three neighbours fabricate.** `top` is `null` when nothing is priced so the formatter prints the dash; `count`, `total` and `named` **reduce to 0** and print as measurements. **The honest form was on the same LINE as the false ones** — a copy-paste defect, not a design gap.
+
+**The shape of the fix (both boards, shipped 2026-09-18):** one early return in the `kpis` `useMemo` — when provenance says the read failed, return **all nulls**; every formatter here already renders `—` for null. Add the flag to the dep array so a successful refetch restores real numbers.
+
+- ⛔ **DO NOT GREP FOR A PROP NAME.** The two boards carry provenance in **different shapes**: `top-sales` takes a boolean `initialFailed`, `squeeze` takes `initialDegraded` (a `DegradedSummary` whose `failed[]` is the signal). A sweep for `initialFailed` finds one and misses the other. **The property is "does the KPI branch consult ANY provenance."**
+- ⚠ **Key on the provenance, NEVER on `rows.length === 0`.** A read that SUCCEEDED and matched nothing genuinely IS 0 and must keep saying so — the bug is the missing THIRD state, not the zero.
+- ⚠ `Math.round(kpis.x)` breaks on null; guard the call site, not the value.
+- ⭐ **Assert by SSR (`renderToString`)**, per the `FmvHistoryChart` precedent: the client clears the failed flag on a successful refetch, so a mount effect repairs the state before jsdom looks and **both the bug and its mirror image pass a client test**. On an ISR route the server HTML is also what gets cached.
+- ⭐ **The NO-CHANGE CONTROL is the mutation proof:** the same regex must MATCH `0` on a successful-empty read and NOT match on a failed one. Without it, *"render — always"* passes and destroys a true reading to hide a false one.
+
+⚠ **Only a live outage exposes this, and after recovery the code is still wrong with nothing to expose. Test a COLD pass (#33), never "is the page OK now."**
+
+⏳ **STILL UNFIXED — 7 of 9:** `offer-spread`, `candy-mlb`, `panini-squeeze`, `deals`, `rookie-board`, `serial-premiums`, `cross-collection`. ⚠ **The worst is not a KPI at all:** candy-mlb's prose reads *"All 0 editions have now traded"* — a fabricated zero inside a sentence, which a reader cannot discount the way they discount a number in a tile. ✅ **`/insights/pack-reality` is the gold standard to copy** (all six KPIs `—` plus *"THE FIGURES BELOW ARE UNAVAILABLE — THEY ARE NOT A READING OF THE MARKET"*).

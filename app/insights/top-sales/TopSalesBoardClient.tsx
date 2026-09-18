@@ -455,6 +455,21 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
   }, [rows, nowMs])
 
   const kpis = useMemo(() => {
+    // ⛔ A FAILED SEED HAS NO KPIs. Measured in production during the 2026-09-18
+    // outage (#122), screenshot-verified 11:32 AM PT: directly under this board's
+    // own banner — "treat the affected sections as unknown rather than zero" —
+    // the strip read SALES SHOWN 0 · TOP SALE — · COMBINED $0.00 · NAMED PARTIES 0.
+    //
+    // ⭐ THE TELL IS THAT ONE OF THE FOUR WAS ALREADY HONEST. `top` is null when
+    // nothing is priced, so fmtPrice renders "—"; `count`, `total` and `named`
+    // reduce to 0 and print as measurements. **The honest form was on the same
+    // line as the fabricated ones**, which makes this per-VALUE, not per-panel.
+    //
+    // ⚠ Keyed on `seedFailed`, NOT on `rows.length === 0`: a read that SUCCEEDED
+    // and found nothing must still print 0, because that IS a measurement. The
+    // flag clears on a successful refetch (setSeedFailed(false)), so a recovered
+    // board returns to real numbers.
+    if (seedFailed) return { count: null, top: null, total: null, named: null }
     const priced = rows.filter((r) => r.price_usd != null)
     const top = priced.length ? Math.max(...priced.map((r) => Number(r.price_usd))) : null
     const total = priced.reduce((s, r) => s + Number(r.price_usd), 0)
@@ -462,7 +477,7 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt, ini
       (r) => (r.buyer_name && !r.buyer_name.includes("…")) || (r.seller_name && !r.seller_name.includes("…"))
     ).length
     return { count: rows.length, top, total, named }
-  }, [rows])
+  }, [rows, seedFailed])
 
   const shareUrl = `${SITE_URL}/insights/top-sales`
   const tweetIntent = useMemo(() => {
