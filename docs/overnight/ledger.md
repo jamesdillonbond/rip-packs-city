@@ -28,7 +28,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 🧪 **Gate:** `npx vitest run __tests__/api-error.test.ts` **25/25** · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** (no new violations) · full `npm test` green.
 
-⚠ **NOT verifiable end-to-end right now, and stated rather than implied:** the DB is unreachable (#122), so this is proven by unit test against the verbatim production message, **not** by observing a live 503. **The next transient blip is the real confirmation** — expect `code=upstream_unavailable` at 503 where the log previously read `code=internal`.
+✅ **VERIFIED LIVE IN PRODUCTION AT 08:48 AM PT — the outage supplied the confirmation the unit tests could not.** Deploy `dpl_24f5VuHkxCWjKtrqDL8SZKD9aTcD` READY (245 s build, `ready` > `buildingAt`, `lambdaRuntimeStats {"nodejs":19}`, apex aliases attached, `aliasError: null`). Cache-busted, `x-vercel-cache: **MISS**` on both, so these are live lambdas and not a cached body:
+
+- `/api/public/insights/squeeze` → **503**, `Retry-After: 30`, `{"code":"upstream_unavailable","retryable":true}`. **That same failure was a 500 with `retryable:false` before this deploy.**
+- `/api/public/insights/pack-reality` → **503**, `{"code":"timeout","retryable":true}` — ⭐ **the live NO-CHANGE CONTROL**: a different route still classifies through the pre-existing branch, so the new code did **not** swallow everything into one bucket.
+
+⭐ **And the build itself is a second measurement:** it prerenders `/insights` pages that read the DB, and it **succeeded while the DB was unreachable** — evidence the `insights-server-pages-bound-their-reads` ban-at-zero is doing its job. ⚠ **One honest consequence of deploying mid-outage:** the prerendered pages baked the *degraded* state, which is honest ("PARTIAL DATA", no fabricated zeros) but stale, and self-heals on the next ISR revalidation once Supabase is back.
 
 - **Revert:** `git revert <sha>` — find by message (`git log --grep="upstream_unavailable"`). Single file + its test. **No DB half.**
 
