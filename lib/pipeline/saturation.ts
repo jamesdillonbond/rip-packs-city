@@ -29,6 +29,30 @@ export function isSaturationError(msg: string | undefined | null): boolean {
     m.includes("fetch failed") ||
     m.includes("the operation was aborted") ||
     m.includes("aborted") ||
-    m.includes("57014") // postgres query_canceled SQLSTATE
+    m.includes("57014") || // postgres query_canceled SQLSTATE
+    // ── GATEWAY responses only, added 2026-09-18 (register #122) ──────────
+    // A read that came back as a WEB PAGE never reached Postgres, so it cannot
+    // prove a threshold was breached and must warn rather than page. Added after
+    // the Supabase outage, where the project origin answered at the CLOUDFLARE
+    // edge with a 522 — callers got an HTML DOCUMENT where JSON belongs, and
+    // this classifier, which already knew "connection terminated", did not know
+    // that shape. ⚠ Note "connection timed out" is NOT "connection terminated";
+    // the list above matches only the latter, which is how a 522 slipped past.
+    //
+    // ⛔ DELIBERATELY NOT INCLUDED: ECONNREFUSED / ECONNRESET / ETIMEDOUT /
+    // "socket hang up" / a bare "connection timed out". I added them, and
+    // `api-sentinel-branches` caught it — its "hard (non-saturation)
+    // sniper-feed error" arm uses ECONNREFUSED precisely because a refused
+    // connection to one of OUR OWN services is a real outage that SHOULD page.
+    //
+    // ⭐ THE LESSON, because the same token list appears in lib/api-error.ts and
+    // the right answer there is the OPPOSITE: that classifier asks "should the
+    // CLIENT RETRY" (a transport failure → yes), this one asks "should we PAGE"
+    // (a transport failure → yes, page). **Same strings, opposite verdicts,
+    // because the decisions differ.** Do not unify them.
+    m.includes("<!doctype html") ||
+    m.includes("522:") ||
+    m.includes("523:") ||
+    m.includes("524:")
   );
 }

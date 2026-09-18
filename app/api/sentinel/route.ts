@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { redactSecrets } from "@/lib/redact-secrets";
+import { isSaturationError } from "@/lib/pipeline/saturation";
 import { fitTelegramMessage, fitTelegramText } from "@/lib/telegram-message";
 import { summariseAlertDelivery } from "@/lib/sentinel/alert-delivery";
 import { summariseZeroYield } from "@/lib/sentinel/zero-yield";
@@ -126,27 +127,11 @@ function errorText(msg: string | undefined | null): string {
     : "(empty error message — supabase-js reports a request aborted or dropped under load as an empty error; the read did not complete)";
 }
 
-function isSaturationError(msg: string | undefined | null): boolean {
-  // Empty/missing message: supabase-js surfaces aborted/undici failures under
-  // load as { message: "" }. An empty error can never PROVE data loss, so treat
-  // it as inconclusive-saturated (warn), not critical. (2026-07-16: both recent
-  // sentinel CRITICAL pages were `Sales Ingest (2h) — Query error: <empty>`
-  // false alarms while sales were flowing at 10-20k rows/2h.)
-  if (!msg) return true;
-  const m = String(msg).toLowerCase();
-  return (
-    m.includes("statement timeout") ||
-    m.includes("canceling statement") ||
-    m.includes("connection pool") ||
-    m.includes("timeout acquiring") ||
-    m.includes("connection terminated") ||
-    m.includes("upstream request timeout") ||
-    m.includes("fetch failed") ||
-    m.includes("the operation was aborted") ||
-    m.includes("aborted") ||
-    m.includes("57014")
-  );
-}
+// ⭐ ONE IMPLEMENTATION, shared with lib/pipeline/upstream-breaker.ts and
+// app/api/admin/analytics-smoke — this route used to carry a BYTE-IDENTICAL
+// private copy of the classifier (found 2026-09-18). Two copies of a predicate
+// that decides warn-vs-page is the copy-paste drift this repo keeps paying for:
+// widening one leaves the other narrow, and only the lib copy had a test.
 const INCONCLUSIVE = "INCONCLUSIVE (db saturated) — ";
 
 // Returns true only when the channel actually accepted the message, so the
