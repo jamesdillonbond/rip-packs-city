@@ -15,6 +15,7 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { slugifyName } from "@/lib/entity-labels"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -215,7 +216,7 @@ export default function SetSqueezeBoardClient({
         ) : loading ? (
           <div className="rpc-ss-state">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="rpc-ss-state">No sets match those filters.</div>
+          <div className="rpc-ss-state">{sectionEmptyCopy(!(degraded?.failed?.length), "Set squeeze", "No sets match those filters.")}</div>
         ) : (
           <table className="rpc-ss-table">
             <thead>

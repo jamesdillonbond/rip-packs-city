@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type React from "react"
-import { readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import PackDropsBoardClient from "@/app/insights/pack-drops/PackDropsBoardClient"
 import SetCompletersBoardClient from "@/app/insights/set-completers/SetCompletersBoardClient"
@@ -804,5 +804,83 @@ describe("the remaining P0 boards do not publish zeros from a failed read", () =
     expect(s).toMatch(tile("Cohort size", "—"))
     expect(s).toMatch(tile("Cohort FMV est.", "—"))
     expect(s).not.toMatch(tile("Cohort size", "0"))
+  })
+})
+
+// ── §2b: the four empty states still concluding off a failed seed ───────────
+//
+// Same class as the boards above, without a KPI strip in play: `set-squeeze`,
+// `allday-scarcity`, `pinnacle-scarcity` blamed the FILTERS and `rookies` stated
+// "No rookies found." off a 503. All four already carried `initialDegraded`;
+// none of their empty branches consulted it.
+describe("the four remaining §2b empty states do not conclude from a failed seed", () => {
+  const FAILED = { failed: ["X"], truncated: [], total: 1, headline: "PARTIAL DATA" }
+  const cases: Array<[string, () => Promise<React.ComponentType<never>>, (d: object | null) => Record<string, unknown>, RegExp]> = [
+    ["set-squeeze", async () => (await import("@/app/insights/set-squeeze/SetSqueezeBoardClient")).default as never,
+      (d) => ({ initialRows: [], initialFetchedAt: null, initialDegraded: d }), /No sets match those filters/],
+    ["allday-scarcity", async () => (await import("@/app/insights/allday-scarcity/AllDayScarcityBoardClient")).default as never,
+      (d) => ({ initialRows: [], initialFetchedAt: null, initialDegraded: d }), /No editions match those filters/],
+    ["pinnacle-scarcity", async () => (await import("@/app/insights/pinnacle-scarcity/PinnacleScarcityBoardClient")).default as never,
+      (d) => ({ initialRows: [], initialFetchedAt: null, initialDegraded: d }), /No editions match those filters/],
+    ["rookies", async () => (await import("@/app/insights/rookies/RookiesBoardClient")).default as never,
+      (d) => ({ initial: { meta: { fetched_at: "2026-09-18T00:00:00Z" }, cohort_stats: {}, rows: [] }, initialDegraded: d }), /No rookies found/],
+  ]
+
+  it.each(cases)("SSR %s: a failed seed says it couldn't load, not its concluding sentence", async (_name, load, props, sentence) => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await load()) as React.ComponentType<Record<string, unknown>>
+    const html = renderToString(<C {...props(FAILED)} />)
+    expect(html).not.toMatch(sentence)
+    expect(html).toMatch(/couldn.{1,8}t be loaded/i)
+  })
+
+  it.each(cases)("SSR %s NO-CHANGE CONTROL: a genuinely empty board still says its sentence", async (_name, load, props, sentence) => {
+    const { renderToString } = await import("react-dom/server")
+    const C = (await load()) as React.ComponentType<Record<string, unknown>>
+    const html = renderToString(<C {...props(null)} />)
+    expect(html).toMatch(sentence)
+    expect(html).not.toMatch(/couldn.{1,8}t be loaded/i)
+  })
+})
+
+// ── R95: the stamp that CERTIFIED a failed read ─────────────────────────────
+//
+// `fetchBoardForPage` returns `fetchedAt` even when the read failed — the moment
+// we ASKED, deliberately, with a header saying "do not use it as a freshness
+// signal without checking ok". Nine pages forwarded it to their board unchecked,
+// so `/insights/top-sales` printed `UPDATED SEP 18, 2026, 11:32 AM PDT` between
+// its honest banner and its (then) fabricated zeros — 11:32 being the moment the
+// auditor loaded the page. Screenshot-verified, deep-audit 2026-09-18 §2a.
+//
+// A tree walk, not a roster: every insights page that tells its board the seed
+// failed must ALSO withhold the stamp on that path. Ban at zero on the bare form.
+describe("R95: no insights page forwards the ask-time stamp beside initialFailed", () => {
+  const root = join(process.cwd(), "app", "insights")
+  const pages = readdirSync(root, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => ({ board: e.name, path: join(root, e.name, "page.tsx") }))
+    .filter((p) => existsSync(p.path))
+    .map((p) => ({ ...p, src: readFileSync(p.path, "utf8") }))
+    // Only pages that forward a stamp PROP are in scope. cross-collection passes
+    // initialFailed but no initialFetchedAt: its client stamps from the data's
+    // own `computed_at`, never from the read time, so there is nothing to gate.
+    .filter((p) => /initialFailed=\{!ok\}/.test(p.src) && /initialFetchedAt=/.test(p.src))
+
+  it("found the pages that pass initialFailed (not vacuous)", () => {
+    expect(pages.length).toBeGreaterThanOrEqual(9)
+  })
+
+  for (const p of pages) {
+    it(`${p.board} withholds the stamp when the seed failed`, () => {
+      // The bare forward is the defect; the gated form is the only allowed shape.
+      expect(p.src).not.toMatch(/initialFetchedAt=\{fetchedAt\}/)
+      expect(p.src).toMatch(/initialFetchedAt=\{ok \? fetchedAt : null\}/)
+    })
+  }
+
+  it("market-pulse, which has no initialFailed at all, still withholds the stamp on a failed read", () => {
+    const src = readFileSync(join(root, "market-pulse", "page.tsx"), "utf8")
+    expect(src).not.toMatch(/fetchedAt=\{fetchedAt\}/)
+    expect(src).toMatch(/fetchedAt=\{ok \? fetchedAt : null\}/)
   })
 })

@@ -49,7 +49,7 @@ export default async function TopSalesPage() {
         ⚠ This client's own header says "the default view never refetches on mount",
         so "No sales match those filters." stands until the reader changes a filter.
       */}
-      <TopSalesBoardClient initialRows={rows} initialFetchedAt={fetchedAt} initialFailed={!ok} />
+      <TopSalesBoardClient initialRows={rows} initialFetchedAt={ok ? fetchedAt : null} initialFailed={!ok} />
     </>
   )
 }

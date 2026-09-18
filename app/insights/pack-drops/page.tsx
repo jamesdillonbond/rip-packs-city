@@ -40,7 +40,7 @@ export default async function PackDropsPage() {
         purpose is putting the scored drops into the raw server HTML for crawlers,
         which is exactly the copy a crawler would take away.
       */}
-      <PackDropsBoardClient initialDrops={drops} initialFetchedAt={fetchedAt} initialFailed={!ok} />
+      <PackDropsBoardClient initialDrops={drops} initialFetchedAt={ok ? fetchedAt : null} initialFailed={!ok} />
     </>
   )
 }

@@ -65,10 +65,10 @@ export default function ParallelPremiumsBoardClient({
    * effect returns early on the first render, so nothing corrects it.
    */
   initialFailed?: boolean
-  initialFetchedAt: string
+  initialFetchedAt: string | null
 }) {
   const [rows, setRows] = useState<ParallelRow[]>(initialRows)
-  const [fetchedAt, setFetchedAt] = useState<string>(initialFetchedAt)
+  const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
   const [parallel, setParallel] = useState<string | null>(null)
   const [highOnly, setHighOnly] = useState<boolean>(true)
   const [sort, setSort] = useState<ParallelSortKey>("premium")
@@ -240,7 +240,9 @@ export default function ParallelPremiumsBoardClient({
 
       <p style={{ marginTop: 18, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5 }}>
         Premium = parallel FMV ÷ Standard-base FMV for the same play. {highOnly ? "Showing only rows where both the parallel and the base carry HIGH/MEDIUM FMV confidence." : "Showing all confidence tiers — thin parallels can overshoot; treat low-confidence rows directionally."}{" "}
-        Updated {new Date(fetchedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET.
+        {fetchedAt
+          ? `Updated ${new Date(fetchedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET.`
+          : "Updated — (the read did not complete, so there is no data time to show)."}
       </p>
     </main>
   )

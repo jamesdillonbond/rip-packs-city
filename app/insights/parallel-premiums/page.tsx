@@ -43,7 +43,7 @@ export default async function ParallelPremiumsPage() {
         did. Its effect also returns early on the first render, so there is no mount
         refetch to correct it.
       */}
-      <ParallelPremiumsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} initialFailed={!ok} />
+      <ParallelPremiumsBoardClient initialRows={rows} initialFetchedAt={ok ? fetchedAt : null} initialFailed={!ok} />
     </>
   )
 }

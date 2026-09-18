@@ -15,6 +15,7 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { fmvBasis } from "@/lib/fmv-basis"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -194,7 +195,7 @@ export default function AllDayScarcityBoardClient({
         ) : loading ? (
           <div className="rpc-ads-state">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="rpc-ads-state">No editions match those filters.</div>
+          <div className="rpc-ads-state">{sectionEmptyCopy(!(degraded?.failed?.length), "All Day scarcity", "No editions match those filters.")}</div>
         ) : (
           <table className="rpc-ads-table">
             <thead>

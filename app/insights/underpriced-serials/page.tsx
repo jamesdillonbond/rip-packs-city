@@ -44,7 +44,7 @@ export default async function UnderpricedSerialsPage() {
       {/* ⚠ The banner above is NOT a substitute: without this the board states
           "No underpriced headline serials right now" — a claim about the MARKET —
           out of a failed read. Fix per PANEL, not per page. */}
-      <UnderpricedSerialsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} initialFailed={!ok} />
+      <UnderpricedSerialsBoardClient initialRows={rows} initialFetchedAt={ok ? fetchedAt : null} initialFailed={!ok} />
     </>
   )
 }

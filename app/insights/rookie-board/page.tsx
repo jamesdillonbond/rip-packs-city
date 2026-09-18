@@ -45,7 +45,7 @@ export default async function RookieBoardPage() {
         ⚠ This client NEVER refetches — `const rows = initialRows`, no state and no
         effect — so "No rookie editions match those filters." stands for the whole visit.
       */}
-      <RookieBoardClient initialRows={rows} initialFetchedAt={fetchedAt} initialFailed={!ok} />
+      <RookieBoardClient initialRows={rows} initialFetchedAt={ok ? fetchedAt : null} initialFailed={!ok} />
     </>
   )
 }

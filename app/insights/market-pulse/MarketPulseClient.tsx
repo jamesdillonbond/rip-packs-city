@@ -34,7 +34,7 @@ function pick(r: MarketPulseRow, w: Win) {
   return { volume: r.volume_30d, sales: r.sales_30d, buyers: r.buyers_30d, sellers: null as number | null, top: r.top_sale_30d }
 }
 
-export default function MarketPulseClient({ initialRows, fetchedAt }: { initialRows: MarketPulseRow[]; fetchedAt: string }) {
+export default function MarketPulseClient({ initialRows, fetchedAt }: { initialRows: MarketPulseRow[]; fetchedAt: string | null }) {
   const [win, setWin] = useState<Win>("7d")
 
   const ranked = useMemo(() => {
@@ -98,7 +98,9 @@ export default function MarketPulseClient({ initialRows, fetchedAt }: { initialR
 
       <p style={{ marginTop: 18, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5 }}>
         Secondary-market sales across all indexed sources (not just one marketplace). Buyers/sellers are distinct wallets in the window.{" "}
-        Updated {new Date(fetchedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET.{" "}
+        {fetchedAt
+          ? `Updated ${new Date(fetchedAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET.`
+          : "Updated — (the read did not complete, so there is no data time to show)."}{" "}
         See the biggest individual sales on <Link href="/insights/top-sales" style={{ color: "var(--rpc-red)" }}>Top Sales</Link>.
       </p>
     </main>

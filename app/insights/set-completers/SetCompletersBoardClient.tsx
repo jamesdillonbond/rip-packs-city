@@ -33,7 +33,7 @@ export default function SetCompletersBoardClient({
   initialFailed = false,
 }: {
   initialBoard: SetCompletersBoard
-  initialFetchedAt: string
+  initialFetchedAt: string | null
   /**
    * Did the SERVER-SIDE read fail? The page's fallback is an empty board, which
    * is indistinguishable from a genuinely empty one. There is NO client refetch

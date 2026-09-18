@@ -15,6 +15,7 @@ import Link from "next/link"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { DegradedSummary } from "@/lib/insights/board-status"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import { slugifyPlayerName } from "@/lib/entity-labels"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -77,6 +78,9 @@ type Props = {
 
 export default function RookiesBoardClient({ initial, initialDegraded = null }: Props) {
   const [data, setData] = useState<ApiResponse | null>(initial)
+  // Seed provenance in STATE so a successful sort refetch clears it — otherwise
+  // the empty state below keeps saying "couldn't be loaded" over a good read.
+  const [degraded, setDegraded] = useState<DegradedSummary | null>(initialDegraded)
   // Server already gave us the default (GMV-desc) view — not "loading" on
   // first paint; loading only flips true on a sort refetch.
   const [loading, setLoading] = useState(false)
@@ -104,6 +108,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const j = (await r.json()) as ApiResponse
         setData(j)
+        setDegraded(null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
@@ -160,7 +165,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
         </div>
       </section>
 
-      <DegradedDataNotice summary={initialDegraded} />
+      <DegradedDataNotice summary={degraded} />
 
       <section className="rpc-rk-kpi-row" aria-label="Cohort summary">
         <div className="rpc-rk-kpi">
@@ -214,7 +219,7 @@ export default function RookiesBoardClient({ initial, initialDegraded = null }: 
         ) : loading ? (
           <div className="rpc-rk-state">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="rpc-rk-state">No rookies found.</div>
+          <div className="rpc-rk-state">{sectionEmptyCopy(!(degraded?.failed?.length), "Rookie index", "No rookies found.")}</div>
         ) : (
           <table className="rpc-rk-table">
             <thead>

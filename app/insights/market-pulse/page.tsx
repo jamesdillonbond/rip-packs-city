@@ -20,7 +20,10 @@ export default async function MarketPulsePage() {
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Market pulse", ok)])} />
-      <MarketPulseClient initialRows={rows} fetchedAt={fetchedAt} />
+      {/* ⚠ The stamp is WHEN WE ASKED, not the age of the data (board-page-fetch's
+          own header). Forwarding it on a failed read printed "Updated <now> ET"
+          beside a board that never loaded — deep-audit 2026-09-18 R95. */}
+      <MarketPulseClient initialRows={rows} fetchedAt={ok ? fetchedAt : null} />
     </>
   )
 }

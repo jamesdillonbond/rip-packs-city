@@ -15,6 +15,7 @@ import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 import type { DegradedSummary } from "@/lib/insights/board-status"
+import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -206,7 +207,7 @@ export default function PinnacleScarcityBoardClient({
         ) : loading ? (
           <div className="rpc-ps-state">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="rpc-ps-state">No editions match those filters.</div>
+          <div className="rpc-ps-state">{sectionEmptyCopy(!(degraded?.failed?.length), "Pinnacle scarcity", "No editions match those filters.")}</div>
         ) : (
           <table className="rpc-ps-table">
             <thead>

@@ -63,7 +63,7 @@ export default async function PackSniperPage() {
   return (
     <>
       <DegradedDataNotice summary={summarizeDegraded([boardStatus("Pack sniper", ok)])} />
-      <PackSniperClient initialDeals={deals} initialFetchedAt={fetchedAt} initialFailed={!ok} />
+      <PackSniperClient initialDeals={deals} initialFetchedAt={ok ? fetchedAt : null} initialFailed={!ok} />
     </>
   )
 }

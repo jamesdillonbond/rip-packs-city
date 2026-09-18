@@ -32,7 +32,7 @@ export default async function SetCompletersPage() {
       {/* ⚠ The banner above is NOT a substitute: without this the board states
           "No completion data available yet." as a fact, directly under a notice
           saying the data is degraded. Fix per PANEL, not per page. */}
-      <SetCompletersBoardClient initialBoard={board} initialFetchedAt={fetchedAt} initialFailed={!ok} />
+      <SetCompletersBoardClient initialBoard={board} initialFetchedAt={ok ? fetchedAt : null} initialFailed={!ok} />
     </>
   )
 }

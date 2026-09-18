@@ -41,7 +41,7 @@ export default async function NewCollectorsPage() {
         viewer, permanently, with no way back. EMPTY_BOARD is the fallback and it
         carries no provenance.
       */}
-      <NewCollectorsBoardClient initialBoard={board} initialFetchedAt={fetchedAt} initialFailed={!ok} />
+      <NewCollectorsBoardClient initialBoard={board} initialFetchedAt={ok ? fetchedAt : null} initialFailed={!ok} />
     </>
   )
 }
