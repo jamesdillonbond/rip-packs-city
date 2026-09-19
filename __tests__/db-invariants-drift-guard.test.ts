@@ -378,12 +378,14 @@ const PINS = [
   {
     fn: "sync_ts_listings_from_atlas",
     test: "supabase/tests/sync_ts_listings_from_atlas.sql",
-    migration: "supabase/migrations/20260907135757_audit_20260907_atlas_listing_syncs_go_differential_the_open_book_was_deleted_and_reinserted_every_2_min.sql",
+    // Re-pointed 2026-09-18: 20260919012821 rebuilt both syncs to read the open book once per tick.
+    migration: "supabase/migrations/20260919012821_audit_20260918_atlas_listing_syncs_scan_the_open_book_once_per_tick.sql",
   },
   {
     fn: "sync_edition_offers_from_atlas",
     test: "supabase/tests/sync_edition_offers_from_atlas.sql",
-    migration: "supabase/migrations/20260907024130_audit_20260907_edition_verify_lane_stale_asks_nulled_on_evidence_and_highest_offer_from_atlas.sql",
+    // Re-pointed 2026-09-18: 20260919012821 rebuilt both syncs to read the open book once per tick.
+    migration: "supabase/migrations/20260919012821_audit_20260918_atlas_listing_syncs_scan_the_open_book_once_per_tick.sql",
   },
   {
     fn: "mcp_get_fmv",
