@@ -171,6 +171,13 @@ export async function POST(req: NextRequest) {
         failed.push(`${slug}: ${error.message}`)
       } else if (data && typeof data === "object") {
         Object.assign(result, data)
+      } else {
+        // ⛔ THE THIRD STATE: the RPC returned without an error but with nothing
+        // mergeable. Before this branch that collection contributed nothing to
+        // `result` AND nothing to `failed`, so the run reported ok = true and the
+        // report simply had no entry for it — absence reading as "no problems
+        // here", which is the unfalsifiable-alert sub-class.
+        failed.push(`${slug}: detector returned no payload (typeof data = ${typeof data})`)
       }
     } catch (e) {
       failed.push(`${slug}: ${e instanceof Error ? e.message : String(e)}`)

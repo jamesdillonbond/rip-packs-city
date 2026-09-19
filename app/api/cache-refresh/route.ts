@@ -363,6 +363,16 @@ export async function GET(req: NextRequest) {
           console.log("[cache-refresh] last_seen_at update err: " + error.message)
         } else if (count != null) {
           lastSeenTouched += count
+        } else {
+          // ⛔ THE THIRD STATE: the update SUCCEEDED but PostgREST returned no
+          // count despite `{ count: "exact" }`. Adding nothing was silent, so
+          // `last_seen_touched` in the response below under-reported by a whole
+          // chunk while still reading as an exact measurement.
+          console.log(
+            "[cache-refresh] last_seen_at update returned no count for a chunk of " +
+              chunk.length +
+              " — last_seen_touched is a FLOOR for this run, not an exact count",
+          )
         }
       }
     }

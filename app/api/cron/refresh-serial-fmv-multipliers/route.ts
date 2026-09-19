@@ -38,6 +38,20 @@ async function run(request: NextRequest) {
         errMsg = res.error.message;
       } else if (typeof res.data === "number") {
         rows = res.data;
+      } else {
+        // ⛔ THE THIRD STATE. `compute_serial_fmv_multipliers` is declared
+        // RETURNS integer, but a plpgsql function can return NULL, and PostgREST
+        // will hand that back with NO error — `typeof null === "object"`, so the
+        // branch above does not take it.
+        //
+        // Without this else, `ok` stayed TRUE and `rows` stayed 0, and the
+        // log_pipeline_run call below published that pair as a MEASUREMENT: a
+        // successful run that wrote nothing. CLAUDE.md names exactly this —
+        // "rows_written = 0 is a null instrument with three incompatible
+        // meanings" — and it is the shape every fleet alarm reads.
+        ok = false;
+        errMsg = `compute_serial_fmv_multipliers returned no row count (typeof data = ${typeof res.data}); rows is UNKNOWN, not 0`;
+        console.log(`[${PIPELINE_NAME}] ${errMsg}`);
       }
     } catch (e) {
       ok = false;

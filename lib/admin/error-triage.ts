@@ -104,6 +104,15 @@ export async function loadErrorTriage<D, S>(
     if (!error) error = sumRes.error.message
   } else if (Array.isArray(sumRes.data)) {
     summary = sumRes.data as S[]
+  } else {
+    // ⛔ THE THIRD STATE: no error, but the payload is not an array. `summary`
+    // then stayed at its initial empty value and the page rendered "no errors
+    // to summarise" — a read that never landed, published as a clean bill of
+    // health on an ERROR dashboard, which is the worst place for it.
+    //
+    // Routed through the same `error` slot as the branch above, keeping that
+    // branch's first-error-wins rule so a real failure is never overwritten.
+    if (!error) error = "error summary RPC returned no usable payload — the summary below is UNKNOWN, not empty"
   }
 
   return { dashboard, summary, error }

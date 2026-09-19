@@ -204,6 +204,20 @@ export async function POST(req: NextRequest) {
           }
         } else if (error) {
           console.warn("[best-offers] get_serial_offers error:", error.message)
+        } else {
+          // ⛔ THE THIRD STATE: no error, and `data` is not an array (null is the
+          // realistic case). The two branches above cover "worked" and "failed";
+          // this one is "the read came back and we cannot use it".
+          //
+          // It matters because the serial-grain offers are what make a best
+          // offer correct: dropping them silently publishes a LOWER best offer
+          // as if it were the real one. Same class as the error branch, so it
+          // gets the same treatment rather than nothing.
+          console.warn(
+            "[best-offers] get_serial_offers returned no usable payload (typeof data = " +
+              typeof data +
+              ") — serial-grain offers omitted from this response",
+          )
         }
       } catch (e) {
         console.warn("[best-offers] get_serial_offers threw:", e instanceof Error ? e.message : String(e))

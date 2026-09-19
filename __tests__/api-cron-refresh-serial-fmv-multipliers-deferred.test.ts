@@ -8,7 +8,8 @@ import { makeReq } from "./cron-req-helper"
 //   - compute_serial_fmv_multipliers returns a number -> ok:true, rows = that number
 //   - returns { error }                                -> ok:false, errMsg = error.message
 //   - THROWS                                           -> ok:false, errMsg from the exception
-//   - returns non-numeric data                         -> ok:true, rows stays 0
+//   - returns non-numeric data                         -> ok:FALSE (rows UNKNOWN, not 0)
+//   - returns a real numeric 0                         -> ok:true (0 IS a measurement)
 //   - log_pipeline_run throws                          -> swallowed (callback never rejects)
 
 let capturedAfter: null | (() => Promise<void>) = null
@@ -88,8 +89,32 @@ describe("/api/cron/refresh-serial-fmv-multipliers — deferred body", () => {
     expect(p.p_error).toBe("pool exhausted")
   })
 
-  it("compute returns non-numeric data → ok:true, rows stays 0", async () => {
+  // ⚠ INVERTED 2026-09-19, NOT DELETED. This test was named for the behaviour
+  // it pinned — "→ ok:true, rows stays 0" — and that behaviour was the defect:
+  // compute_serial_fmv_multipliers is RETURNS integer, but a plpgsql function
+  // can return NULL, which PostgREST hands back with no error. typeof null is
+  // "object", so the numeric branch did not take it, ok stayed true and rows
+  // stayed 0 — and log_pipeline_run published that pair as a MEASUREMENT.
+  //
+  // CLAUDE.md: a test that pins the defect it was named to prevent gets
+  // inverted, never deleted, so the corrected promise stays held.
+  it("compute returns non-numeric data → ok:FALSE, because rows is UNKNOWN and not 0", async () => {
     computeImpl.fn = async () => ({ data: null, error: null })
+    await drive()
+    const p = logParams()
+    expect(p.p_ok).toBe(false)
+    // The count is still written as 0 (the column is NOT NULL), so the honest
+    // signal has to be carried by ok + the error text. Pin BOTH, or a later
+    // change could restore ok:true and this file would still pass.
+    expect(p.p_rows_found).toBe(0)
+    expect(String(p.p_error ?? "")).toMatch(/UNKNOWN, not 0/)
+  })
+
+  // The NO-CHANGE CONTROL: a real numeric 0 is a genuine measurement and must
+  // keep reporting ok:true. Without this, "always report ok:false" would pass
+  // the test above while destroying a true reading.
+  it("compute returns a real 0 → ok:true, because that IS a measurement", async () => {
+    computeImpl.fn = async () => ({ data: 0, error: null })
     await drive()
     const p = logParams()
     expect(p.p_ok).toBe(true)
