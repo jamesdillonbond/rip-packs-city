@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🧨 R109's MECHANISM IS REFUTED BY A FREE NATURAL EXPERIMENT — the visibility map recovered to 98.1% ON ITS OWN and the heap fetches did not move; the `*/6` back-off is REVERTED because its own control recovered harder · Cowork cloud
+
+**One DB change shipped — `rpc-ts-listings-atlas-sync` (jobid 466) `*/6` → `*/2`, REVERTING migration `20260919064000` from 22:40 PT last night. Nothing else touched.**
+
+✅ **FIRST, THE PRE-FIRED FALSIFIER FIRED, EXACTLY AS WRITTEN.** The cohort lane ran on its new schedule and **step1 FAILED at 03:02 PT (600.0 s) and step2 FAILED at 03:35 PT (301.7 s)**. `cross_collection_cohort_mat` is now **60.6 h stale**. ⭐ **The reschedule is confirmed NOT a fix and must not be credited with anything** — which is what the migration header, the register row and the ledger all said in advance. R109 stays open.
+
+🧨 **AND THEN R109'S OWN EXPLANATION DIED, ON EVIDENCE THAT COST NOTHING TO COLLECT.** The hypothesis was: long transactions hold `OldestXmin` back ⇒ the visibility map on `wallet_moments_cache` rots ⇒ an index-only scan degrades into random heap I/O. **Overnight the estate handed me the perfect natural experiment: the map recovered ON ITS OWN.** `relallvisible/relpages` went **75.4% (22:48 PT) → 78.1% (00:45 PT) → 98.1%** after an autovacuum completed at **04:16 PT**. 🚨 **If the table-wide map were driving the heap fetches, they had to collapse. They did not.** Re-ran the identical `LIMIT 5000` probe at 98.1%:
+
+| reading | table-wide all-visible | Heap Fetches / 5,000 | buffers | exec |
+|---|---|---|---|---|
+| 22:15 PT (vacuum running — contaminated) | 85.8% | 2,407 (48.1%) | read 1894 | 19,236 ms |
+| 22:45 PT (idle box, clean) | ~78% | 1,833 (36.7%) | read 1319 | 3,770 ms |
+| **04:47 PT (clean)** | **98.1%** | **2,127 (42.5%)** | read 1949 | 6,142 ms |
+
+⛔ **Four readings spanning 75.4% → 98.1% table-wide coverage, and the scan's heap-fetch rate sat at 36–43% in every single one.** It is if anything HIGHER at 98.1% than at 78%. ⚠ **Timings are not the comparison — load differed. `Heap Fetches` is a load-independent count, and that is the comparison.**
+
+⭐ **THE METHODOLOGICAL ERROR, NAMED, BECAUSE IT IS THE REUSABLE PART: I used a WHOLE-TABLE planner statistic as a proxy for a PER-SLICE property.** `relallvisible/relpages` is an aggregate over 120,286 pages. The probe reads the **first 5,000 index entries — 0.23% of the table**, and that head-of-index slice is **not a random sample** of it. The aggregate simply does not predict the slice, and I built the whole diagnosis on the assumption that it would. ⛔ **The "control pair" argument falls with it:** wmc 85.8% vs `topshot_atlas_market_events` 99.7% may well be a real difference between two tables, but it licenses **nothing** about what this particular scan pays.
+
+📏 **WHAT SURVIVES, AND IT IS STILL THE FINDING:** the scan genuinely does ~40% heap fetches, **stably, across every condition tested**, at ~1.2 ms/row; step1 genuinely cannot complete inside 600 s; and the lane is genuinely 60.6 h stale. ⛔ **WHAT DIES: the explanation, and with it the lever.** "Let the visibility map recover" is refuted as a fix — **it recovered completely, unaided, and nothing improved.** ⚠ **A second assumption I had not tested is now named: that the head of the index is representative.** It may be the worst part of it. 👉 **Next probe (supervised): `pg_visibility` on the specific page range those first 5,000 entries touch — the extension is available but NOT installed — and a probe that samples the index at several offsets instead of only its head.**
+
+↩️ **THE `*/6` BACK-OFF IS REVERTED, and the reason is that its own control beat it.** ⛔ **NO-CHANGE CONTROL `rpc-allday-unmapped-atlas-resolver` (jobid 464, `4-59/5`, untouched, same 689 MB table) recovered HARDER over the same hours** — 55% fail pre (12/22) → 32% post (8/25) → **0% fail, 9 of 9, from 00:00 PT** — while the changed lane was still mixed, and **both recovered at the same instant. The estate calmed down; `*/6` is not what did it.** ⛔ **The first 80 minutes at `*/6` were 100% failure (15 of 15).** ⛔ **And the failing work is per-tick FIXED, so cadence cannot reach it:** of 17 post-change timeouts, **12 are the two `CREATE TEMP TABLE … DISTINCT ON` builds** (`_cl_want` 6, `_tsl_want` 6). ⭐ **That also retires the follow-up I proposed** — `*/6` + `atlas_listing_verify_tick(6)` would have held verify throughput constant by **adding work to a tick that already cannot finish its temp build. I had aimed it at the wrong leg.** 📏 **And the change had a measured cost:** ingest 23.6 rows/min pre → 3.7/min for the first 80 min → 18.5/min once calm, **still ~22% under baseline** — which is what makes leaving it in place wrong rather than merely useless.
+
+⚠ **THE PREMISE I ACTED ON WAS ALSO OVERSTATED, and this one is mine.** The 09-18 filing said **"zero output"**. Measured after the fact, `ts_listings` took **2,837 rows in the 2 h before the change** — **degraded (16–32 rows/10 min after ~22:05 PT), not silent** — and **the output cliff preceded my change by ~35 minutes**. ⭐ **"Compare against the MEASURED state, not the DESIGNED one" was the right instinct; the measured state I compared against was itself wrong, because I read a stale `max(ingested_at)` as zero throughput instead of counting rows in a window. A freshness stamp is not a rate.**
+
+👉 **REAL FIX, recorded and NOT taken:** make `_cl_want` / `_tsl_want` cheaper — a watermark/incremental build, or a supporting index on the `DISTINCT ON` keys. ⛔ That is a query change on a lane another session owns (R108 neighbourhood) and it needs a cost measurement first.
+
+- **Revert:** `select cron.alter_job(466, schedule => '*/6 * * * *');` · ⚠ **jobid 466 now carries TWO change points 6 h apart — 22:40 PT 09-18 and 04:50 PT 09-19. Any rate spanning either is pooled across a change.** **Target metric:** `ts_listings` ingest back to ~23.6 rows/min. **No-change control:** jobid 464, still untouched.
+
 ### 2026-09-19 · 🌙 NIGHTLY: nothing shipped — HEALTHY-UNDER-LOAD, the pre-warned "sweep ok ≠ lanes ok" night, every live lever already owned · Cowork cloud (np-20260919-sbx)
 
 **0 shipped, 0 reverted.** Push-capable (`.rpc-git-cred` store helper, dry-run exit 0). Real time confirmed from DB (`now()` 08:02:54Z == shell — clock not skewed; 01:02 AM PT, genuine overnight). Full handoff: [docs/handoff-2026-09-19-overnight-pass.md](../handoff-2026-09-19-overnight-pass.md).
