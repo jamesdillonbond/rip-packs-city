@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · ✅✅ R108 IS FIXED — the NFL partial index is BUILT, and the 5-minute 689 MB seq scan is gone after five failed attempts across three sessions · Cowork cloud
+
+**Shipped: `idx_tame_nfl_nft_seen`, built 14:09Z (7:09 AM PT), migration `20260919141500` (RECORD-ONLY, per the `20260913231800` precedent).** `succeeded` · `CREATE INDEX` · **71.0 s** · 2,728 kB · `indisvalid = true`.
+
+📏 **THE PRE-REGISTERED FALSIFIER FIRED.** Leg 1 of `allday_resolve_unmapped_via_atlas` was `Parallel Seq Scan on topshot_atlas_market_events … Filter: (product = 'nfl')` at **cost 105,599**. Plain EXPLAIN at 14:12Z now reads **`Index Only Scan using idx_tame_nfl_nft_seen` (cost=0.41..1382.84 rows=46025)** — **~76× on that node.** The 689 MB walk that ran **288×/day (~200 GB/day on a 22 MB/s instance)** is gone. 📏 The cost left in that plan is a `Seq Scan on unmapped_sales` (10,533) — **a different object, not R108.**
+
+⭐⭐ **HOW THE PINCER BROKE, AND IT CORRECTS MY OWN ENTRY FROM THREE HOURS AGO.** That entry said the budget could not be raised safely. The reasoning was right about the mechanism and **too broad about the blast radius**, and the correction is the reusable part:
+
+- ⛔ A `SET statement_timeout` **prefix** is impossible — it creates the transaction block CIC refuses (measured, `20260919120000`). ⇒ **So the budget must come from a ROLE DEFAULT, which is applied at SESSION START and therefore needs no prefix at all.** A single-statement pg_cron job picks it up for free.
+- ⭐ **"Raising the postgres role default is unsafe" is true only of the UNSCOPED form.** Three measurements narrow it to almost nothing: **(1)** `cron_heavy` carries its **own** 600 s default, so roughly half the long-running estate cannot see the change at all; **(2)** the only postgres-owned lanes that ever approach 120 s are themselves **sheddable from this session** — 463, 464, 466, 451, 509, 469, 468 — and were shed; **(3)** `ALTER ROLE postgres IN DATABASE postgres SET …` writes a **SEPARATE db-scoped row** and does not disturb the ALL-DATABASES row, which on this cluster carries `search_path="$user", public, extensions`.
+- 🚨 **THEREFORE `ALTER ROLE postgres RESET ALL` MUST NEVER BE USED HERE — it would destroy that `search_path`.** The correct inverse is `RESET statement_timeout`, which removes only that GUC (and Postgres then drops the now-empty row). ⚠ **Read `pg_db_role_setting` BEFORE and AFTER; the ALL-DATABASES row is easy to clobber and nothing would announce it.**
+
+**Sequence, all reverted within 3 minutes, behind a self-restoring net (jobid 524) armed FIRST and carrying the role RESET *and* all seven lane restores so nothing could strand:** shed 7 → `SET statement_timeout='900s'` → CIC (71 s) → `RESET statement_timeout` → restore 7 → unschedule.
+
+⭐ **AND THE SHED IS WHY 71 s SUFFICED — the 900 s was insurance, not the mechanism.** With the table's own writers shed, `WaitForLockers` is instant, and cluster-wide `oldest_xact` read **0.0 s** at the moment the job was scheduled. ⚠ **The earlier attempts failed on the OTHER phase:** attempt 1 died at `indisready=false` in `WaitForLockers`; the 12:18Z attempt reached `indisready=TRUE, indisvalid=false` and died in the final `WaitForOlderSnapshots`, **which waits on every older transaction in the CLUSTER** — the part no shed of this table's readers can reach, and exactly what the role budget covers.
+
+✅ **POST-STATE VERIFIED, not assumed:** `pg_db_role_setting` for postgres back to the single ALL-DATABASES `search_path` row · 7 lanes active on their ORIGINAL schedules · 0 helper jobs · **150 active jobs (baseline)** · 0 invalid indexes anywhere in `public` · 0 security-invariant violations.
+
+- **Revert:** `DROP INDEX CONCURRENTLY IF EXISTS public.idx_tame_nfl_nft_seen;` as postgres, with 463/464/466 shed and `SET lock_timeout` bounded first (an ACCESS EXCLUSIVE **request** queues ahead of new readers on a hot table).
+- ⚠ **STILL OWED AND EXPLICITLY NOT CLAIMED: the IO win is an ESTIMATE, not a measurement.** A plan change is a cost estimate. **Do not close R108's IO claim on the EXPLAIN alone** — read the lane's own p50 against its **14.4 s calm baseline**, and the next 2-hourly `audit_20260830_pgss_snap` delta dropping this query out of the top 5. Both need elapsed time. ⚠ **Split any jobid 464 rate on the CHANGE POINT 2026-09-19 14:09Z.**
+
+
 ### 2026-09-19 · 🟢 MAIN WAS RED ON A MIGRATION THAT IS NOT MINE — unblocked with a comment, after checking the live ACL rather than assuming the guard was pedantic · Claude Code (Trevor's Windows box)
 
 **Comment-only: 8 added lines, zero SQL changed. No DB change.**
