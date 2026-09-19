@@ -357,6 +357,85 @@ SELECT (SELECT count(*) FROM public.check_public_security_invariants()) AS sec_v
        jsonb_array_length(public.check_secdef_anon_execute_violations()) AS secdef;        -- 0 = clean
 ```
 
+## 🚨 A DENORMALISED CACHE KEYED ON A COLUMN ITS WRITER DOES NOT BUMP ROTS INVISIBLY — and the tell is it disagreeing with the row it NAMES, not with `now()` (2026-09-18, register R107)
+
+**Displaced here from CLAUDE.md 2026-09-18 to pay for the one-line rule that replaced it.** The
+CLAUDE.md bullet now reads: *"A `*_at` name is not its contract — it is its WRITER's, so REPLACING a
+writer REDEFINES the column while the name holds (4 surfaces, 1 PRICING). ⛔ A CACHE keyed on one
+rots INVISIBLY — the tell is it disagreeing with the row it NAMES (R107)."* The instance detail it
+used to carry — `edition_offers.updated_at` going confirmed→changed on 2026-08-28, and the
+`sales` partitioned-index case (#68, 33,000 dupes) — is already recorded elsewhere in this file.
+
+### The shape
+
+`edition_fmv_current` is a latest-FMV-per-edition cache. `refresh_edition_fmv_current()` is its
+ONLY writer and its `DISTINCT ON (edition_id) ORDER BY computed_at DESC` is **correct**. The defect
+is the incremental window:
+
+```sql
+v_cutoff := v_watermark - interval '2 hours';   -- v_watermark = max(computed_at) in the cache
+...  WHERE s.computed_at > v_cutoff
+```
+
+**FMV writes in this repo are DELETE-THEN-INSERT.** A later pass can replace a snapshot while KEEPING
+its original `computed_at`. Once the watermark has moved more than 2 h past that stamp, the
+replacement never re-enters the window and the cache holds the superseded value **forever**. The
+`WHERE EXCLUDED.computed_at >= t.computed_at` guard cannot help — the row is never read at all.
+
+### ⭐ Why the ordinary staleness check misses it
+
+A cache is normally audited against the CLOCK: *how old is `refreshed_at`?* That question returns
+"fresh" here, because the refresher runs hourly and touches thousands of rows. **The rotted rows are
+not old — they are WRONG**, and the only question that finds them is *does this row still agree with
+the row it NAMES?*
+
+```sql
+-- the diagnostic, and the guard's predicate
+SELECT count(*) FROM edition_fmv_current f
+JOIN fmv_snapshots fs ON fs.edition_id = f.edition_id AND fs.computed_at = f.computed_at
+WHERE fs.fmv_usd IS DISTINCT FROM f.fmv_usd;
+```
+
+⚠ Join on **(key, the stamp the cache claims to be from)**. Joining on the key alone, or re-deriving
+"latest" with a LATERAL, answers a different question and hides the defect behind the refresh lag.
+
+### What it cost, measured 2026-09-18
+
+85 rows across three collections — `nfl_all_day` 53, `nba_top_shot` 26, `laliga_golazos` 6,
+Candy and Pinnacle 0 — **all skewed HIGH**, net +$36,658, max single delta $4,049.55. The cache was
+publishing the **pre-haircut ask** (`ask_proxy_fmv`, `algo_version ultimate-v1_haircut`) as FMV on
+11 public insight boards, at exactly 0.55× disagreement.
+
+🚨 **AND THE PRODUCT CONTRADICTED ITSELF, which is what made it actionable rather than a judgement
+call:** the same edition read through `fmv_current` (the DISTINCT ON view behind 18 app routes)
+returned 4,949.45 while the cache returned 8,999.00. **The cache was the only surface carrying the
+wrong number** — the source, the view, and most of the product already agreed.
+
+### The guard, and the one design decision worth copying
+
+`check_edition_fmv_current_source_drift(p_sample_mod)` — ban-at-zero, jsonb ARRAY, output capped at
+50 (**read its length as a FLOOR: it returned 50 against a true 85**). Full form costs **86,963
+buffers / 6,261 ms** warm, which is why it is NOT in `rpc_ops_snapshot()` — the threshold was set
+at "under ~2 s" BEFORE measuring, and it missed by 3×.
+
+⭐ **It deliberately covers only the CHEAP, UNAMBIGUOUS half.** Rows whose `(edition_id,
+computed_at)` pointer resolves to NOTHING (527 of them) are not offenders: most are merely behind,
+and separating the ~136 that would change value needs a per-row LATERAL costing far more. **Widening
+a guard until it covers everything is how it becomes too expensive to run.** Write a second one.
+
+### ⛔ The fix is the refresh, and it is still owed
+
+A one-off UPDATE was applied on 2026-09-18 (migration
+`audit_20260918_edition_fmv_current_stops_contradicting_the_rest_of_the_product_on_85_prices`,
+exact pre-values in `audit_20260918_efc_fmv_repair_backup`) **only because the guard already
+existed** — with it, patching sets a clean zero baseline and makes the RE-DIVERGENCE RATE
+measurable. Without the guard it would simply have erased the evidence. The window is untouched, so
+it will come back. The two real fixes: a periodic FULL reconcile (the function has the branch, but
+~1.23M rows and "minutes when cold" — measure it on this IO-bound instance first), or an
+`updated_at`/version column on `fmv_snapshots` for the incremental refresh to key on.
+
+---
+
 ## 🚨 `pg_stat_statements` IS NOT KEYED ON `queryid` — and two snapshots joined on it alone FABRICATE a rate (2026-09-14, caught by a sanity re-read one step before filing)
 
 Ranking pgss by `shared_blks_read` is how every saturation filing here starts, and the column is **CUMULATIVE since `stats_reset`**. The right instrument is two snapshots and a delta. **Both steps of building that delta have a trap, and I hit both in one pass.**
