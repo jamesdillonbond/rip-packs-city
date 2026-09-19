@@ -32,6 +32,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⛔ **NOT FIXED HERE, and deliberately.** This is a measurement. The remedy — an alarm whose dispatch path is independent of the estate it watches — is an **architecture decision with a cost**, not a patch, and it is Trevor's call. ⓘ **The cheap partial that does NOT need that decision:** the alarm could detect *its own* missed slots on recovery and say so, which would at least date the blind window instead of leaving it to be reconstructed from `pipeline_runs` gaps as I did here.
 
+**✅ RECOVERY VERIFIED, AND MY OWN CANDIDATE DEFECT REFUTED BY THIS REPO'S CHEAP-CHECK #2.** Of the **106** pipelines that went silent, **105 resumed** after recovery. The one that did not — `topshot-edition-tier-sync` — **is NOT dead.** ⛔ **I was one step from filing it as a lane killed by the outage.** The positive control says otherwise: pg_cron **jobid 453 has dispatched 6 times since recovery, 6/6 succeeded**, last 00:53Z returning `1 row`. Reading a raw `extra` payload explains the silence — **this lane logs ONLY when it corrects something** (`rows_written` 3 · 10 · 2 · 18 · 39 across its recent rows, never 0; 34 `pipeline_runs` rows against ~72 hourly dispatches in 72 h). **Zero corrections ⇒ zero rows ⇒ looks dead.** It is CAUGHT UP.
+
+⭐⭐ **THE METHODOLOGICAL FINDING, which is the durable half: "did every lane come back after the outage?" HAS A FALSE-POSITIVE MODE.** In `pipeline_runs` a **conditionally-logging** lane is indistinguishable from a **dead** one, so any recovery sweep built on that table alone will manufacture a casualty. **The discriminator is the SCHEDULER's own record (`cron.job_run_details`), not the pipeline's self-report** — exactly the register's cheap-check #2 (*read one raw `extra` payload before calling any pipeline dead*) and CLAUDE.md's *`rows_written = 0` is a null instrument with three incompatible meanings*. **Both existed; both were needed; I used them second, not first.**
+
 **Files:** `docs/audits/deep-audit-register.md` (R77 re-derived, P2 → P1).
 
 **Revert path:** `git revert <sha>` — docs-only, no DB half, nothing deployed.
