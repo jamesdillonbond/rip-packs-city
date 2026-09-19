@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · ✅ SHIPPED (code) — the sentinel gets a PACK SALES INGEST arm, with per-lane thresholds derived from the two markets' actual daily counts · Cowork cloud
+
+**Follows the unlatch entry below.** That fix stopped the bleeding and gave the two pack-sales lanes their first `pipeline_runs` coverage; it did **not** create an alarm. A readable number nobody reads is not an instrument, so this is the arm.
+
+**Shipped:** `app/api/sentinel/route.ts` — two checks, `Pack Sales Ingest (Top Shot)` and `Pack Sales Ingest (All Day)`, reading the `pack-sales-cursor-unlatch` row (the lanes' only `pipeline_runs` writer). Plus 7 tests in `__tests__/api-sentinel-deep.test.ts`.
+
+⭐ **THE THRESHOLDS ARE PER-LANE AND MEASURED, AND THE SPLIT IS THE WHOLE POINT.** Daily sale counts, re-derived rather than assumed:
+
+| lane | window | per-day | empty days | verdict |
+|---|---|---|---|---|
+| Top Shot | 08-01 → 09-13 (44 d) | **105–804, min 105** | **0** | sales EVERY day ⇒ 12 h is already abnormal |
+| All Day | 07-01 → 09-12 (74 d) | **1–25** | **7** | worst normal gap ≈ **3 days** |
+
+⇒ Top Shot **warn 12 h / crit 24 h**, All Day **warn 96 h / crit 168 h**. ⚠ **A single shared threshold would have to be the All Day one — ~14× too loose for Top Shot, which is exactly how its outage ran six days.** ⚠ Both are DATED SAMPLES; re-derive from the daily counts before tightening either.
+
+⭐ **PINNED BY THE SHARPEST TEST I COULD WRITE: one reading, one number, opposite verdicts.** `49h` is `ok` for All Day and `critical` for Top Shot in the same response. **Mutation-tested** — collapsing the two lanes onto one threshold fails that test; it is not vacuous coverage.
+
+⚠ **THE READING'S OWN AGE IS CHECKED BEFORE ITS CONTENTS, and that is load-bearing.** If jobid 526 dies, its last row keeps a healthy `sale_age_hours` **frozen**, and a frozen healthy number is indistinguishable from a current one — the failed-read-rendering-as-an-answer shape, committed inside an alarm. A row older than 40 min (the guard's 10-min cadence + three shed ticks) is reported as INCONCLUSIVE, never as its contents. **Mutation-tested too** — disabling that branch fails its test, which also asserts the frozen `1.6h` is ABSENT from the detail rather than merely that some error wording is present.
+
+Three further states handled rather than defaulted: **no guard row at all** → `critical` (pipeline_runs prunes at ~73 h, so its absence means the lanes have lost both their self-heal and their coverage — worse than any staleness number); **a row whose `extra` carries no numeric age** → `critical` + INCONCLUSIVE, never a defaulted number; **a saturation error** → `warn`, matching every other arm.
+
+⚠ **THE FIXTURE IN `api-sentinel-deep.test.ts` IS A POSITIONAL SEQUENCE and this arm inserts at index [1]**, shifting Portfolio Cache Drain to [2] and the notification read to [3]. The `withDrain` helper was repointed with it. **A future arm reading `pipeline_runs` must do the same or it will silently consume another arm's fixture** — the comment block there now numbers four readers, not three.
+
+**Verified:** `npx tsc --noEmit` exit 0 · `api-sentinel-deep` + `api-sentinel-pipeline-success-coverage` 85/85 · `npm run lint:ratchet` exit 0 · both mutations caught.
+
+ⓘ **Filed, not shipped:** three edge-function lanes (jobids 27/22/26) are still structurally invisible, and the generic fix — an arm pairing `cron.job_run_details` with an outcome-freshness registry — is the only option that scales. `docs/overnight/inbox/2026-09-19T1715Z-…`.
+
+**Revert:** `git revert` the code commit (find it by message, `git log --grep='Pack Sales Ingest'`) — the arm is additive and reverting it restores the pre-arm check list; the DB half (jobid 526, `unlatch_pack_sales_cursors`) is independent and should NOT be reverted with it.
+
 ### 2026-09-19 · 🚨 SHIPPED (prod: data + function + pg_cron + watchlist) — BOTH PACK-SALES LANES HAD BEEN DEAD 6 AND 7 DAYS behind a terminal `done` latch, invisible because neither lane writes `pipeline_runs` at all · Cowork cloud
 
 **This is what "pipeline failures the sentinel isn't alerting on" actually looked like.** `topshot_pack_sales_history` last ingested **2026-09-13 12:34 PM PT**; `allday_pack_sales_history` **2026-09-12 06:46 AM PT**. Zero rows in 24 h on both. Meanwhile pg_cron jobids 25/29 dispatched **478 and 477 times in 24 h and pg_cron marked every one `succeeded`.**
