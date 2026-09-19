@@ -10,6 +10,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🏷 "YOU HAVE NO TRACKED ACQUISITIONS" vs "WE DON'T TRACK THIS COLLECTION" — two different claims, one of them about the reader's wallet · Cowork cloud
+
+**Shipped: 1 route + its test.** Sixth endpoint off the Candy Collection-tab list.
+
+**`/api/cost-basis` answered a collection it tracks nothing for with a bare `{ acquisitions: [] }`.** Untyped, indistinguishable from a wallet that genuinely has no tracked buys — so the P&L panel would state a fact about the reader's holdings that is actually a fact about our coverage.
+
+📏 **MEASURED, not assumed:** `moment_acquisitions` holds **1,010,656 rows and every single one belongs to a Flow collection** — Top Shot 895,785 · All Day 80,917 · Pinnacle 18,757 · Golazos 13,920 · UFC 1,277. **Candy has zero, and no pipeline produces them.** So this is genuine non-coverage, not a broken read.
+
+⚠ **KEYED ON THE COLLECTION, NOT THE ADDRESS — and that choice is the interesting one.** The route also carried the base58-corrupting line I have fixed four times today (`wallet.startsWith("0x") ? wallet : "0x" + wallet`, which turns a Solana address into `0x12J1uhKQ…`, a string that exists nowhere) plus the `flowContractName` collection trap. It would have been easy to reach for both. ⛔ **But "do we have cost basis here" is a fact about the COLLECTION**, every collection we track is a Flow one, and once the branch is in place a base58 wallet never reaches that prepend — so "fixing" it would have shipped **untestable dead code**, the same unreachable-line trap the collection-series guard caught me in one commit earlier. One change, keyed where the fact lives, provable by a test.
+
+**Shape copied from the house pattern again, not invented:** `/api/wallet-cost-basis` already answers 200 with `reason: "cost_basis_unavailable"` for a collection it cannot price.
+
+**Verified after:** 11 → **14 tests** green. **Mutation-proven:** removing the branch reds the typed-reason arm (`expected undefined to be 'cost_basis_unavailable'`). Controls, both green in both directions: a Flow collection still reads `get_wallet_cost_basis`, and a wallet-wide call naming **no** collection still reads it too — the branch must not swallow the unscoped case.
+
+📋 **RUNNING TALLY off the Collection-tab blocker list — six done, and the two left are named rather than waved at:**
+| endpoint | state |
+|---|---|
+| `collection-moments` · `wallet-summary` · `wallet/edition-counts` | ✅ fixed, verified live |
+| `sets` · `collection-series` · `cost-basis` | ✅ fixed (typed reason / honest lookup) |
+| `badges` | ✅ off the list — probe artifact, retracted |
+| `fmv` · `best-offers` · `wallet-cache` · `seeded-wallets` | ✅ clean on inspection — no address or collection gate |
+| `cache-refresh` | ⏳ `if (!wallet.startsWith("0x"))` rejects base58 (route.ts:242) |
+| `wallet-packs` | ⏳ prepends `0x` to a base58 address (route.ts:72) — **nil impact today, Candy has 0 packs** |
+
+⚠ **Both remaining ones are LATENT, not live** — they sit behind a tab Candy does not have, and I am leaving them rather than fixing unreachable paths at the end of a long pass. Candy's `pages` is still unchanged.
+
+**Exit condition:** `/api/cost-basis?wallet=<any>&collection=candy-mlb` answers 200 with `reason: "cost_basis_unavailable"` after deploy.
+**Falsifier:** if a Flow collection — or a call naming no collection — ever comes back with that reason, the branch is keyed wrongly and is hiding real acquisitions. Revert at once.
+
+- **Revert:** `git revert <sha>` (`git log --grep="NO TRACKED ACQUISITIONS"`). **No DB half.**
+
 ### 2026-09-19 · 🪤 AN EMPTY THAT NEVER LOOKED — and an existing test caught me making its own failure arm unreachable · Cowork cloud
 
 **Shipped: 1 route + its test.** Next endpoint off the Candy Collection-tab list. Small, and the interesting half is what went wrong on the first attempt.

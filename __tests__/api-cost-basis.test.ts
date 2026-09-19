@@ -163,3 +163,42 @@ describe("GET /api/cost-basis", () => {
     expect(res.headers.get("Cache-Control")).toBe("private, max-age=60")
   })
 })
+
+// ⛔ 2026-09-19 — AN UNTYPED EMPTY IS A DIFFERENT CLAIM FROM A TYPED ONE. A
+// collection we track no acquisitions for used to get `{ acquisitions: [] }`,
+// which reads as "you have no tracked acquisitions" when the truth is "we do
+// not track acquisitions for this collection at all". Measured that day:
+// moment_acquisitions holds 1,010,656 rows and every one belongs to a Flow
+// collection (Top Shot 895,785 · All Day 80,917 · Pinnacle 18,757 · Golazos
+// 13,920 · UFC 1,277); Candy has zero and nothing produces them.
+describe("a collection with no acquisition data says so, rather than answering empty", () => {
+  it("returns a typed reason for Candy instead of a bare empty list", async () => {
+    const res = await GET(req("https://t/api/cost-basis?wallet=12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK&collection=candy-mlb"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.reason).toBe("cost_basis_unavailable")
+    expect(body.acquisitions).toEqual([])
+    // Returns before any read — no corrupted wallet key reaches the RPC.
+    expect(state.rpcCalls).toEqual([])
+  })
+
+  it("no-change control: a Flow collection still reads the RPC and gets no reason", async () => {
+    // The branch is keyed on the COLLECTION, so every collection we actually
+    // track must be untouched by it.
+    state.costBasis = { data: [], error: null }
+    const res = await GET(req("https://t/api/cost-basis?wallet=0xbd94cade097e50ac&collection=nba-top-shot"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.reason).toBeUndefined()
+    expect(state.rpcCalls.map((c) => c.fn)).toContain("get_wallet_cost_basis")
+  })
+
+  it("no-change control: no collection param at all still reads the RPC", async () => {
+    // A wallet-wide call names no collection and must keep working.
+    state.costBasis = { data: [], error: null }
+    const res = await GET(req("https://t/api/cost-basis?wallet=0xbd94cade097e50ac"))
+    expect((await res.json()).reason).toBeUndefined()
+    expect(state.rpcCalls.map((c) => c.fn)).toContain("get_wallet_cost_basis")
+  })
+})
+

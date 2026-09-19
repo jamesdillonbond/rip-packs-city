@@ -54,8 +54,38 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  const normalized = wallet.startsWith("0x") ? wallet : "0x" + wallet
   const collectionSlug = req.nextUrl.searchParams.get("collection")?.trim() || null
+
+  // ⛔ 2026-09-19 — A COLLECTION WE TRACK NO ACQUISITIONS FOR GOT AN UNTYPED
+  // EMPTY, which reads as "you have no tracked acquisitions" when the truth is
+  // "we do not track acquisitions for this collection at all". Two different
+  // statements; only one of them is about the reader's wallet.
+  //
+  // 📏 Measured 2026-09-19: `moment_acquisitions` holds 1,010,656 rows and
+  // EVERY one belongs to one of the five Flow collections (Top Shot 895,785 ·
+  // All Day 80,917 · Pinnacle 18,757 · Golazos 13,920 · UFC 1,277). Candy MLB
+  // has zero, and no pipeline produces them.
+  //
+  // ⚠ KEYED ON THE COLLECTION, NOT THE ADDRESS, deliberately: the question
+  // "do we have cost basis here" is a fact about the collection, and every
+  // collection we do track is a Flow one. That is also why this is NOT fixing
+  // the `0x` prepend below — with this branch in place a base58 wallet never
+  // reaches it, and "fixing" an unreachable line would be untestable dead code.
+  //
+  // Shape matches the house pattern rather than inventing one: /api/wallet-cost-
+  // basis already answers 200 with `reason: "cost_basis_unavailable"` for a
+  // collection it cannot price. Not-applicable is not an error.
+  if (collectionSlug) {
+    const obj = getCollection(collectionSlug)
+    if (obj && !obj.flowContractName) {
+      return NextResponse.json(
+        { acquisitions: [], reason: "cost_basis_unavailable", collection: collectionSlug },
+        { headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=600" } }
+      )
+    }
+  }
+
+  const normalized = wallet.startsWith("0x") ? wallet : "0x" + wallet
   const resolved = await resolveCollectionId(supabase as any, collectionSlug)
   if (!resolved.ok) {
     // Widening the scope is strictly worse than returning nothing here: the caller
