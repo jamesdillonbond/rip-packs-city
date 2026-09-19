@@ -109,6 +109,14 @@ jobs:
           STREAK=$(printf '%s' "$BODY" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).consecutive_fails??'')}catch{console.log('')}})") || STREAK=""
           STATUS=$(printf '%s' "$BODY" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).latest_status??'none')}catch{console.log('none')}})") || STATUS="none"
           FAILED=$(printf '%s' "$BODY" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).failed??'')}catch{console.log('')}})") || FAILED=""
+          # ⚠ 2026-09-18. WHEN, not only how many. Without these the recovered-outage
+          # message below is UNDATABLE: "34 failed probes in the last 8h" reads
+          # identically whether the last one was three hours ago or three minutes
+          # ago, so a repeat of a known event and a brand-new outage are the same
+          # string. Blank is tolerated here on purpose — they are additive, and a
+          # reader with an older function must not lose the alarm over them.
+          LASTFAIL=$(printf '%s' "$BODY" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).last_fail_at??'')}catch{console.log('')}})") || LASTFAIL=""
+          CLEARS=$(printf '%s' "$BODY" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{try{console.log(JSON.parse(s).window_clears_at??'')}catch{console.log('')}})") || CLEARS=""
 
           if [ -z "$PROBES" ] || [ -z "$STREAK" ] || [ -z "$FAILED" ]; then
             echo "::error::check_site_availability returned an unreadable payload — UNKNOWN, not healthy."
@@ -123,7 +131,7 @@ jobs:
             exit 1
           fi
 
-          echo "window=$WINDOW probes=$PROBES failed=$FAILED consecutive_fails=$STREAK latest_status=$STATUS"
+          echo "window=$WINDOW probes=$PROBES failed=$FAILED consecutive_fails=$STREAK latest_status=$STATUS last_fail_at=${LASTFAIL:-none} window_clears_at=${CLEARS:-none}"
 
           if [ "$STREAK" -ge "$FAIL_STREAK" ]; then
             MSG="RPC SITE DOWN — $STREAK consecutive failed probes from inside the database, latest HTTP $STATUS. A Vercel spend-cap pause answers 503 (register #76). Checked from Postgres, which a Vercel pause cannot silence."
@@ -141,7 +149,10 @@ jobs:
           fi
 
           if [ "$FAILED" -ge "$FAIL_IN_WINDOW" ]; then
-            MSG="RPC SITE WAS DOWN — $FAILED failed probes in the last $WINDOW (currently serving again, streak $STREAK). A recovered outage is invisible to the streak check, and this alarm only runs about every 3h, so this is how a short outage is seen at all."
+            WHENTXT=""
+            if [ -n "$LASTFAIL" ]; then WHENTXT=" Last failed probe: $LASTFAIL."; fi
+            if [ -n "$CLEARS" ]; then WHENTXT="$WHENTXT This alert repeats until $CLEARS, when those failures age out of the window."; fi
+            MSG="RPC SITE WAS DOWN — $FAILED failed probes in the last $WINDOW (currently serving again, streak $STREAK).${WHENTXT} A recovered outage is invisible to the streak check, and this alarm only runs about every 3h, so this is how a short outage is seen at all."
             if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
               TG=$(curl -s --max-time 20 -o /dev/null -w "%{http_code}" \
                 -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \

@@ -221,3 +221,74 @@ describe("site-availability-alarm.yml", () => {
     for (const m of mine) expect(others.has(m), `minute ${m} collides with another workflow`).toBe(false)
   })
 })
+
+// ── 2026-09-18 · THE RECOVERED-OUTAGE ALERT MUST BE DATABLE ─────────────────
+//
+// The alarm fired correctly on commit 5a8ca4e3 — 34 failed probes in its 8 h
+// window, every one of them inside the platform outage that ended ~19:01Z, none
+// since. ⭐ The problem was not the firing, it was that the message could not be
+// dated: "$FAILED failed probes in the last $WINDOW (currently serving again)"
+// reads IDENTICALLY whether the last failure was three hours ago or three minutes
+// ago. Since the recovered branch re-fires on every delivered tick until those
+// failures age out — roughly every 3 h for 8 h at the measured GHA rate — the
+// reader gets several undistinguishable repeats, and a GENUINELY NEW outage
+// arrives wearing the same string as the one they already dismissed.
+//
+// ⛔ Deliberately NOT fixed with a cooldown or a higher threshold. This workflow's
+// header records that decision ("NO COOLDOWN, DELIBERATELY … the 2026-09-10
+// failure was silence, not noise"), and quietening an alarm because it is
+// currently right is how the next outage goes unseen. Make the repeats LEGIBLE,
+// not fewer.
+describe("site-availability-alarm.yml — a recovered outage is DATED, not just counted", () => {
+  const n = Number(SHIPPED_FAIL_IN_WINDOW)
+  const LAST_FAIL = "2026-09-18T18:57:00.158244+00:00"
+  const CLEARS = "2026-09-19T02:57:00.158244+00:00"
+
+  it("names WHEN the last probe failed, so a repeat can be told from a new outage", () => {
+    const r = run(
+      payload({ consecutive_fails: 0, failed: n, latest_status: 200, last_fail_at: LAST_FAIL, window_clears_at: CLEARS }),
+    )
+    expect(r.code).toBe(1)
+    expect(r.out).toMatch(/WAS DOWN/)
+    expect(r.out).toContain(LAST_FAIL)
+  })
+
+  it("says when it will stop repeating, so the repeats are not read as new events", () => {
+    const r = run(
+      payload({ consecutive_fails: 0, failed: n, latest_status: 200, last_fail_at: LAST_FAIL, window_clears_at: CLEARS }),
+    )
+    expect(r.out).toContain(CLEARS)
+    expect(r.out).toMatch(/age out of the window/)
+  })
+
+  it("NO-CHANGE CONTROL: still fails loudly when the function is OLDER and omits the fields", () => {
+    // ⭐ The whole reason the new reads tolerate blank. These three keys are
+    // ADDITIVE, so a deploy ordering where the workflow lands before the migration
+    // must NOT lose the alarm — the worst possible outcome of a legibility fix.
+    const r = run(payload({ consecutive_fails: 0, failed: n, latest_status: 200 }))
+    expect(r.code).toBe(1)
+    expect(r.out).toMatch(/WAS DOWN/)
+    expect(r.out).not.toMatch(/Last failed probe: \./)
+    expect(r.out).not.toMatch(/undefined|null/)
+  })
+
+  it("NO-CHANGE CONTROL: the SITE-DOWN-NOW branch is untouched — it is about the present", () => {
+    // Without this, "append the clause everywhere" passes the arms above. The
+    // streak branch already describes a live outage; dating it would be noise.
+    const r = run(payload({ consecutive_fails: Number(SHIPPED_FAIL_STREAK), failed: 99, latest_status: 503 }))
+    expect(r.code).toBe(1)
+    expect(r.out).toMatch(/RPC SITE DOWN/)
+    expect(r.out).not.toMatch(/age out of the window/)
+  })
+
+  it("NO-CHANGE CONTROL: a healthy window still passes, and prints `none` rather than a blank", () => {
+    // A window with no failures has NULL for all three — the true answer, not a
+    // zero. The log line must render that as `none` so an empty value is never
+    // read as a missing field.
+    const r = run(payload({ consecutive_fails: 0, failed: 0, latest_status: 200 }))
+    expect(r.code).toBe(0)
+    expect(r.out).toMatch(/Site is serving/)
+    expect(r.out).toMatch(/last_fail_at=none/)
+    expect(r.out).toMatch(/window_clears_at=none/)
+  })
+})
