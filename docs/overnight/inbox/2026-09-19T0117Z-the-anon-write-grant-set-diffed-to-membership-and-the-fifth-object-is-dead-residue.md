@@ -91,7 +91,9 @@ would want its dead reference cleaned at the same time.
 next tick still writes a `portfolio_snapshots` row. **Falsifier:** jobid 490 logs a permission error, or
 `portfolio_snapshots` stops growing.
 
-## Two other probes re-run while here (both owed, both clean)
+## Three other probes re-run while here (all owed, all clean)
+
+- **PII over anon-readable surfaces** — the last owed run-5 DB probe. **None reachable.** 92 anon-SELECT objects carry a PII-shaped column; almost all are blockchain addresses (public on-chain facts here, not PII). Every genuine-PII holder — `mcp_api_keys`, `chat_sessions`, `stripe_payment_log`, `fmv_alerts` — has **service-role-only** SELECT/ALL policies, and `email_subscribers` has **no SELECT policy at all**, so anon holds the grant and reaches nothing. The six anon-readable `rls=false` objects are all **views with `security_invoker = on`**. ⚠ **One anon-reachable path to real PII exists that the register never named:** `support_conversations.anon_read_own_support` (SELECT, `{public}`) gates on `request.headers ->> 'x-session-id'` — **a client-supplied header as a bearer secret** — exposing `user_email` / `owner_key` / `user_wallet` for a matching `session_id`. The INSERT policy enforces `length(session_id) >= 20`, so it is defensible, **but it is a guessability argument rather than an authorisation one.** Recorded, not filed as a defect.
 
 - **`cron.job.command` credential scan** — the register's known-blind corpus. Read REDACTED, never raw.
   **13 of 149 jobs carry a gate key in the URL** (12 active; the 13th is jobid 16, the documented
