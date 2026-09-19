@@ -81,7 +81,15 @@ export async function GET(req: NextRequest) {
     .select(
       "total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families," +
         "best_family_checklist_pct,worst_family_checklist_pct,checklist_players_seen,checklist_players_new_24h," +
-        "oldest_family_refresh_h,newest_family_refresh_h"
+        "oldest_family_refresh_h,newest_family_refresh_h," +
+        // Added 2026-09-19 (migration 20260919172027). The two *_family_refresh_h fields above are
+        // MAX(last_seen_at) PER SET and cannot see the distribution inside a set — measured that
+        // day, `Base Prizms Aguila` reported a 0.0h family refresh while 62.1% of its 340 editions
+        // had not been walked in 45+ days, and the 1,528h "oldest family" headline came from a set
+        // holding ONE card. These seven are the per-EDITION distribution, which is the quantity a
+        // reader actually needs.
+        "edition_age_p50_h,edition_age_p90_h,edition_age_max_h,editions_stale_45d," +
+        "pct_editions_stale_45d,editions_walked_7d,pct_editions_walked_7d"
     )
     .limit(1), "api/public/insights/panini-squeeze/panini_coverage_summary");
   if (covErr) {
@@ -97,9 +105,10 @@ export async function GET(req: NextRequest) {
         "well-covered families), NOT a coverage percentage. checklist_players_seen is a LOWER bound on the " +
         "true checklist and is still growing, so every percent-of-checklist figure is best-case. " +
         "oldest_family_refresh_h / newest_family_refresh_h are the age in hours of the least and most " +
-        "recently refreshed parallel: the runner walks families in rotation rather than all at once, so " +
-        "the board is a MIX of refresh ages and the oldest parallel can be many days behind the newest. " +
-        "Treat as a floor, not a census.",
+        "recently refreshed parallel. ⚠ BOTH ARE A MAX PER PARALLEL AND UNDERSTATE THE ROW AGES: a " +
+        "parallel reads as freshly refreshed as soon as ANY ONE of its editions is walked. Read " +
+        "edition_age_p50_h / edition_age_p90_h / pct_editions_stale_45d instead — those are the " +
+        "per-edition distribution and are the honest freshness of this board. Treat as a floor, not a census.",
     };
   }
 

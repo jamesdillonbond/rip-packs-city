@@ -69,6 +69,19 @@ export type Coverage = {
   // the data does not have. Measured 2026-08-02: newest 3.3h, oldest 383.9h (16 days).
   oldest_family_refresh_h: number | null;
   newest_family_refresh_h: number | null;
+  // Added 2026-09-19 (migration 20260919172027). The two fields above are a MAX PER PARALLEL, and
+  // a max cannot see the distribution under it: measured that day, `Base Prizms Aguila` reported
+  // a 0.0h family refresh while 211 of its 340 editions (62.1%) had not been walked in 45+ days,
+  // and the "oldest parallel, 64 days" headline came from a parallel holding ONE card. Both ends
+  // of the old sentence were therefore wrong in opposite directions. These are the per-EDITION
+  // ages -- the quantity a reader of a price board actually needs.
+  edition_age_p50_h: number | null;
+  edition_age_p90_h: number | null;
+  edition_age_max_h: number | null;
+  editions_stale_45d: number | null;
+  pct_editions_stale_45d: number | null;
+  editions_walked_7d: number | null;
+  pct_editions_walked_7d: number | null;
 };
 
 const usd = (x: number | null | undefined) =>
@@ -263,7 +276,28 @@ export default function PaniniSqueezeClient({
               lower bound and these figures are best-case.
             </>
           ) : null}
-          {coverage.oldest_family_refresh_h != null && Number(coverage.oldest_family_refresh_h) >= 48 ? (
+          {coverage.edition_age_p50_h != null ? (
+            <>
+              {" "}Cards are re-priced in rotation, not all at once, so rows differ in age: the{" "}
+              <b>typical row was last checked {Math.round(Number(coverage.edition_age_p50_h) / 24)} days ago</b>
+              {coverage.edition_age_p90_h != null ? (
+                <>
+                  {" "}and the oldest tenth{" "}
+                  <b>{Math.round(Number(coverage.edition_age_p90_h) / 24)} days ago</b>
+                </>
+              ) : null}
+              .
+              {coverage.pct_editions_stale_45d != null && Number(coverage.pct_editions_stale_45d) >= 1 ? (
+                <>
+                  {" "}<b>{num(coverage.pct_editions_stale_45d, 0)}%</b> of the editions on this board
+                  ({num(coverage.editions_stale_45d)}) have not been re-checked in over 45 days.
+                </>
+              ) : null}
+            </>
+          ) : coverage.oldest_family_refresh_h != null && Number(coverage.oldest_family_refresh_h) >= 48 ? (
+            // Fallback for a response that predates the per-edition columns. ⚠ These two are a MAX
+            // PER PARALLEL and UNDERSTATE row age -- kept only so an old payload says something
+            // rather than nothing, never as the preferred wording.
             <>
               {" "}Parallels are refreshed in rotation, not all at once, so rows differ in age: the
               most recently refreshed parallel is{" "}

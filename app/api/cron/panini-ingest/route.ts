@@ -186,3 +186,72 @@ export async function POST(req: NextRequest) {
   });
   return NextResponse.json({ accepted: true, cards: cards.length, packs: packs.length, serials: serials.length, sales: sales.length }, { status: 202 });
 }
+
+// ---------------------------------------------------------------------------------------------
+// GET — the walk ORDER the residential runner should use. Added 2026-09-19 (Cowork cloud).
+//
+// WHY THIS EXISTS. scripts/ingest-panini-runner.mjs shuffled its enumerated psku list
+// (Fisher-Yates) on every run and stopped at a 50-minute wall-clock budget, so each walk was an
+// INDEPENDENT UNIFORM SAMPLE of the catalogue. That is a coupon-collector draw, and its tail is
+// not a bug that fires — it is a set of editions that keep losing the lottery. Measured live
+// 2026-09-19 with the pipeline at 2,103 runs / 0 failures over 72 h:
+//
+//   1,265 of 5,071 editions (24.9%) last walked 45+ days ago · p50 age 276 h · p90 1,384 h
+//   only 1,671 (32.9%) walked at all in the last 7 days
+//   ~1,300–2,000 edition-WRITES per day against ~686 DISTINCT editions — i.e. ~2–3x re-walk
+//
+// A green pipeline whose work silently never reaches a quarter of its population is this repo's
+// documented silent-failure shape (docs/reference/known-issues.md), and it is why Panini coverage
+// has fallen 37.9% -> 36.2% -> 35.3% trustworthy while nothing failed.
+//
+// THE FIX IS THE ORDER, NOT THE THROUGHPUT. Walking oldest-first spends the SAME budget on
+// DISTINCT editions instead of re-drawing fresh ones, which turns an unbounded random tail into a
+// bounded round-robin: at today's ~1,300–2,000 writes/day the whole catalogue is covered in ~3
+// days. The shuffle's stated purpose — "if a run stalls partway, successive runs cover DIFFERENT
+// subsets" — is something staleness order gives for free and strictly better: a stalled run
+// leaves the STALEST editions un-walked, so the next run resumes exactly there.
+//
+// ⚠ The runner FALLS BACK to its old shuffle if this endpoint is unreachable. That is deliberate:
+// degrading to today's behaviour is acceptable, degrading to a fixed enumeration order would be
+// worse than what we have.
+//
+// ⚠ `limit` is capped at 1000 because PostgREST CLAMPS any larger .limit() to 1000 silently
+// (known-issues #71) — a bigger number here would be an unstated claim, not a bound. 1000 is far
+// more than one walk consumes (~200–350 editions), so the cap never binds in practice.
+export async function GET(req: NextRequest) {
+  const auth = req.headers.get("authorization") || "";
+  const ingest = process.env.INGEST_SECRET_TOKEN;
+  const cron = process.env.CRON_SECRET;
+  const authed = (ingest && auth === `Bearer ${ingest}`) || (cron && auth === `Bearer ${cron}`);
+  if (!authed) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const sp = new URL(req.url).searchParams;
+  const limit = Math.max(1, Math.min(1000, Number(sp.get("limit")) || 1000));
+
+  // nullsFirst: an edition row with a NULL last_seen_at has never been recorded as walked, so it
+  // is maximally stale, not minimally.
+  const { data, error } = await (supabaseAdmin as any)
+    .from("panini_editions")
+    .select("external_id,last_seen_at")
+    .order("last_seen_at", { ascending: true, nullsFirst: true })
+    .limit(limit);
+
+  if (error) {
+    // Fail LOUD but non-fatal: the runner treats any non-200 as "use the shuffle".
+    console.error(`[${PIPELINE}] walk-order read failed: ${error.message}`);
+    return NextResponse.json({ error: "walk_order_unavailable" }, { status: 503 });
+  }
+
+  const rows = (data ?? []) as Array<{ external_id: string; last_seen_at: string | null }>;
+  return NextResponse.json({
+    as_of: new Date().toISOString(),
+    order: "last_seen_at_asc",
+    count: rows.length,
+    limit,
+    // The age of the two ends, so a reader of this response can tell a healthy rotation from a
+    // stalled one without a second query.
+    oldest_last_seen_at: rows[0]?.last_seen_at ?? null,
+    newest_returned_last_seen_at: rows[rows.length - 1]?.last_seen_at ?? null,
+    pskus: rows.map((r) => r.external_id),
+  });
+}

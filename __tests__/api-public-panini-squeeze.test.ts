@@ -123,6 +123,14 @@ describe("GET /api/public/insights/panini-squeeze — coverage disclosure contra
     // either caveat from the note, this fails.
     expect(body.meta.coverage.note).toMatch(/COMPOSITION share/i)
     expect(body.meta.coverage.note).toMatch(/LOWER bound/i)
+    // Added 2026-09-19. oldest_family_refresh_h / newest_family_refresh_h are a MAX PER
+    // PARALLEL, so a parallel reads as freshly refreshed the moment ANY ONE of its editions
+    // is walked. Measured that day, `Base Prizms Aguila` reported a 0.0h family refresh while
+    // 211 of its 340 editions (62.1%) had not been walked in 45+ days — the disclosure was
+    // structurally incapable of saying so. The note must keep pointing a reader at the
+    // per-edition distribution instead, or this fails.
+    expect(body.meta.coverage.note).toMatch(/MAX PER PARALLEL/i)
+    expect(body.meta.coverage.note).toMatch(/edition_age_p50_h/)
   })
 
   it("is FAIL-SOFT: a coverage error nulls the block but still serves the board", async () => {

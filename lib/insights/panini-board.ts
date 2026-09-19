@@ -76,7 +76,15 @@ async function fetchCoverage(db: Db): Promise<any> {
     .select(
       "total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families," +
         "best_family_checklist_pct,worst_family_checklist_pct,checklist_players_seen,checklist_players_new_24h," +
-        "oldest_family_refresh_h,newest_family_refresh_h"
+        "oldest_family_refresh_h,newest_family_refresh_h," +
+        // Added 2026-09-19 (migration 20260919172027) and MUST stay in step with the same list in
+        // app/api/public/insights/panini-squeeze/route.ts. This is the SERVER-RENDERED path, so
+        // omitting these here would make the first paint fall back to the *_family_refresh_h
+        // wording — a MAX PER PARALLEL that reports a parallel as fresh the moment any ONE of its
+        // editions is walked (measured that day: `Base Prizms Aguila`, 0.0h family refresh, 62.1%
+        // of its editions 45+ days stale). The banner prefers edition_age_p50_h when present.
+        "edition_age_p50_h,edition_age_p90_h,edition_age_max_h,editions_stale_45d," +
+        "pct_editions_stale_45d,editions_walked_7d,pct_editions_walked_7d"
     )
     .limit(1)
   if (error) {

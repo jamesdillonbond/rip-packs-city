@@ -159,6 +159,25 @@ async function post(payload) {
   console.log("[panini-runner] post FAILED after 3 attempts — batch preserved in the backup file; replay with scripts/panini-replay.mjs");
 }
 
+// Our own catalogue, stalest first. Added 2026-09-19 — see the long WHY on the GET arm of
+// app/api/cron/panini-ingest/route.ts. Returns [] on ANY failure so the caller degrades to the
+// old shuffle rather than to a fixed order (which would be worse than what we had).
+async function fetchWalkOrder() {
+  try {
+    const u = new URL(INGEST_URL);
+    u.searchParams.set("limit", "1000");
+    const r = await fetch(u, { headers: { Authorization: `Bearer ${INGEST_TOKEN}` } });
+    if (!r.ok) { console.log(`[panini-runner] walk-order GET -> ${r.status}; falling back to shuffle`); return []; }
+    const j = await r.json();
+    const list = Array.isArray(j?.pskus) ? j.pskus.filter((x) => typeof x === "string" && x.startsWith(WC_PREFIX)) : [];
+    console.log(`[panini-runner] walk order: ${list.length} known pskus, stalest first (oldest last_seen_at ${j?.oldest_last_seen_at ?? "?"})`);
+    return list;
+  } catch (e) {
+    console.log(`[panini-runner] walk-order GET failed: ${e.message}; falling back to shuffle`);
+    return [];
+  }
+}
+
 const WC_PREFIX = "packcard-2332_"; // WC2026 Prizm World Cup Soccer setId (verified live 2026-07-16)
 
 async function main() {
@@ -442,16 +461,47 @@ async function main() {
   console.log(`[panini-runner][diag] onepanini_responses=${opCount} data_keys_seen=[${[...dataKeys].join(",")}] grid_url=${curUrl} dom_packcard_imgs=${domCards} dom_pskus_harvested=${domAdded}`);
   if (opCount === 0) console.log("[panini-runner][diag] ZERO onepanini responses — likely not logged in OR the automated browser is being challenged (Cloudflare). Confirm the window showed real cards before you pressed ENTER.");
   const fileList = loadPskus();
-  const pskus = enumPskus.size > 0 ? [...enumPskus] : fileList;
-  // Shuffle the walk order (Fisher-Yates): if a run stalls partway (Chrome/laptop/rate-limit), successive
-  // scheduled runs then cover DIFFERENT subsets instead of always re-walking the same first chunk, so the
-  // whole set stays fresh over a few runs. Editions/serials post incrementally, so partial runs still land.
-  for (let i = pskus.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pskus[i], pskus[j]] = [pskus[j], pskus[i]]; }
+  // WALK ORDER — rewritten 2026-09-19. The old code shuffled the ENUMERATED set and walked that.
+  // Two separate defects, measured live, and the merge below fixes both:
+  //
+  //   (a) THE ENUMERATION CEILING. The grid scroll surfaces only a slice of the catalogue per run
+  //       — 163 to 1,109 WC pskus across the ten walks to 2026-09-19, against 5,071 editions we
+  //       already know about, stopping on `stable` (the scroll ran out of NEW cards) or `budget`.
+  //       Discovery is what the grid is FOR; it was also, wrongly, the only source of refresh
+  //       targets, so an edition the grid stopped surfacing could never be re-priced again.
+  //   (b) THE SHUFFLE TAIL. Shuffling that slice made each walk an independent uniform sample, so
+  //       the editions that kept losing the draw kept losing it: 1,265 of 5,071 (24.9%) had not
+  //       been walked in 45+ days while the pipeline logged 2,103 runs and 0 failures.
+  //
+  // A psku is a RECORDED identifier, not a constructed one (we store it as panini_editions.
+  // external_id), and the per-card walk below navigates straight to /marketplace-details/<psku>
+  // — it never needed the grid to have surfaced that card in this run. So: the grid keeps
+  // discovery, our own catalogue supplies refresh, oldest first.
+  const known = await fetchWalkOrder();
+  const discovered = enumPskus.size > 0 ? [...enumPskus] : fileList;
+  let pskus, orderMode;
+  if (known.length > 0) {
+    // Brand-new discoveries first (no row, therefore no price at all), then our stalest known
+    // editions, then anything the grid showed that the order list did not reach.
+    const knownSet = new Set(known);
+    const fresh = discovered.filter((p) => !knownSet.has(p));
+    const seen = new Set(fresh);
+    pskus = [...fresh];
+    for (const p of [...known, ...discovered]) if (!seen.has(p)) { seen.add(p); pskus.push(p); }
+    orderMode = `stalest-first (${fresh.length} new + ${known.length} known)`;
+  } else {
+    // FALLBACK ONLY — the order endpoint was unreachable. Shuffle (Fisher-Yates) so successive
+    // runs at least cover different subsets, which is the behaviour this file had before.
+    pskus = [...discovered];
+    for (let i = pskus.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pskus[i], pskus[j]] = [pskus[j], pskus[i]]; }
+    orderMode = "shuffled (walk-order endpoint unavailable)";
+  }
+  console.log(`[panini-runner] walk order = ${orderMode}; ${pskus.length} pskus queued`);
   console.log(`[panini-runner] enumerated ${enumPskus.size} WC-Prizm pskus (${domAdded} via DOM img fallback; file fallback had ${fileList.length}); walking ${pskus.length}`);
   // Post the enumeration record BEFORE the long per-card walk, so it lands even if the walk is
   // later killed (laptop sleep / unplug / rate-limit). Fire-and-forget semantics: post() already
   // swallows its own failures, and telemetry must never break the ingest it measures.
-  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length } });
+  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length } });
 
   // --- 2. PACKS --- (post IMMEDIATELY after this walk so pack data lands even if the long
   //     per-card walk below stalls; 2.5s wait gives getPackMarketStats time to fire on load)
@@ -473,7 +523,7 @@ async function main() {
   let walked = 0, captured = 0, missed = 0;
   for (const psku of pskus) {
     if (Date.now() - tWalk > WALK_BUDGET_MS) {
-      console.log(`[panini-runner] walk budget hit (${Math.round((Date.now()-tWalk)/60000)}m) — stopping cleanly at ${walked}/${pskus.length}; shuffle means the next run covers a different subset`);
+      console.log(`[panini-runner] walk budget hit (${Math.round((Date.now()-tWalk)/60000)}m) — stopping cleanly at ${walked}/${pskus.length}; the un-walked tail is the STALEST, so the next run resumes there`);
       break;
     }
     const before = cards.length + serials.length;
