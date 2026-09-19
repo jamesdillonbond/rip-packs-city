@@ -41,6 +41,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 👉 **THE ONLY VALID INSTRUMENT IS THE REGISTER'S OWN: `audit_20260830_pgss_snap`, diffing two 2-hourly snapshots taken the SAME WAY, one wholly before 14:09Z and one wholly after**, ranked on `shared_blks_read` per call for this queryid — same instrument both sides, equal windows. **Do not close R108's IO claim on anything else**, and ⛔ **do not quote the 4.5× physical-read drop as the saving.**
 
+✅✅ **CLOSED 08:22 AM PT — I RAN THAT INSTRUMENT AND THE IO WIN IS REAL, WITH A CONTROL THAT DID NOT MOVE.** The snapshot table IS `pg_stat_statements` captured at a time, so a snapshot→live diff is the same measurement without waiting for 16:05Z. **PRE = the wholly pre-index window `12:05Z→14:05Z`; POST = `14:05Z→15:20Z` (index landed 14:09Z). Same instrument both sides, per-call normalised, so unequal window lengths do not matter.**
+
+| lane | blocks **touched**/call | physical **reads**/call |
+|---|---|---|
+| **TARGET** `allday_resolve_unmapped_via_atlas` (nfl — the indexed one), n=5 → 9 | **3,559.1 → 3,015.6 MB (−543.5, −15.3 %)** | **723.0 → 95.5 MB (−86.8 %)** |
+| **CONTROL** `atlas_listing_verify_tick` (nba, SAME 689 MB table), n=12 → 20 | 6,802.6 → 7,052.4 MB (**+3.7 %**) | 109.5 → 137.2 MB (**+25 %**) |
+
+⭐ **THE CONTROL IS THE WHOLE ARGUMENT.** It reads the same table and the index is `WHERE product = 'nfl'`, so the fix **cannot** reach it — and it got slightly **WORSE** on both metrics over the same window. **So the estate did not calm in a way that explains the target's drop, and the reduction is attributable to the index.** 📏 At 288 calls/day, 627.5 MB/call less physically read ≈ **~176 GB/day**, against the register's ~200 GB/day estimate.
+
+🚨 **AND THIS RETIRES MY OWN "NOT REDUCED" READING FROM 26 MINUTES EARLIER, WHICH WAS A BASELINE ERROR, NOT A NULL RESULT.** I had compared the post window against the **LIFETIME cumulative average** (2,575 MB touched/call over 3,146 calls) and concluded touches had *risen*. Against the correct pre-window baseline (**3,559.1**) the same post number (3,015.6) is a **543 MB/call reduction** — close to Leg 1's ~689 MB seq scan, which is the mechanism. ⭐ **A cumulative lifetime average is not a baseline for a short post-change window; only an equal-instrument window on the other side of the change point is.**
+
+⭐ **AND THE TWO METRICS DISAGREE FOR A REASON WORTH KEEPING: cron RUN DURATION is load-sensitive and was confounded (both controls' p50 fell while their blocks/call did NOT), whereas blocks-per-call isolates the work.** ⛔ **Do not attribute a lane fix from `cron.job_run_details` durations on this estate — use pg_stat_statements blocks per call, with a control the fix cannot move.**
+
 
 
 ### 2026-09-19 · 🟢 MAIN WAS RED ON A MIGRATION THAT IS NOT MINE — unblocked with a comment, after checking the live ACL rather than assuming the guard was pedantic · Claude Code (Trevor's Windows box)

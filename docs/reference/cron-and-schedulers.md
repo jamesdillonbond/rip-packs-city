@@ -2,6 +2,25 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⛔ NEVER ATTRIBUTE A LANE FIX FROM `cron.job_run_details` DURATIONS — THEY ARE LOAD-SENSITIVE AND WILL CREDIT YOUR FIX FOR THE ESTATE CALMING (2026-09-19, R108)
+
+**Measured the same afternoon, on the same change, with two instruments that gave OPPOSITE answers.** The fix was R108's nfl partial index (built 14:09Z). Both readings split on that change point.
+
+⛔ **DURATIONS SAID "huge win" — and could not tell the fix from the weather.** The indexed lane went 51 % fail / p50 115.8 s → 0 of 3 / 59.1 s. **But both no-change controls moved as much or MORE**: `rpc-ts-listings-atlas-sync` 80 % → 1 of 7 with p50 **120.1 → 36.7 s**, and `rpc-atlas-market-drain` p50 **26.9 → 5.8 s**. ⭐ **A candidate its own no-change control outperforms is not shown to work** — on durations alone the honest verdict was "confounded, cannot attribute".
+
+✅ **BLOCKS PER CALL SAID "real, and here is how much" — because it isolates WORK from LOAD.** Instrument: `audit_20260830_pgss_snap` → live diff (that table IS `pg_stat_statements` captured at a time, so you need not wait for the next 2-hourly snapshot). **PRE = a wholly pre-change snapshot window; POST = last-snapshot → live. Per-call normalised, so unequal window lengths do not matter — only sample size does.**
+
+| lane | blocks **touched**/call | physical **reads**/call |
+|---|---|---|
+| **TARGET** `allday_resolve_unmapped_via_atlas` (n=5 → 9) | **3,559.1 → 3,015.6 MB (−15.3 %)** | **723.0 → 95.5 MB (−86.8 %)** |
+| **CONTROL** `atlas_listing_verify_tick`, same 689 MB table (n=12 → 20) | 6,802.6 → 7,052.4 (**+3.7 %**) | 109.5 → 137.2 (**+25 %**) |
+
+⭐ **THE CONTROL IS THE WHOLE ARGUMENT, AND ITS CHOICE IS THE TRANSFERABLE PART: it reads the SAME TABLE, but the index is `WHERE product='nfl'` and that lane is nba, so the fix CANNOT reach it.** It got slightly worse while the target dropped ⇒ the estate did not calm in a way that explains the target, and the reduction is the index. 📏 At 288 calls/day, 627.5 MB/call less read ≈ **~176 GB/day**.
+
+🚨 **AND ONE MORE TRAP, WHICH PRODUCED A FALSE NULL BEFORE THE CONTROL WAS RUN.** The first post-change reading was compared against the query's **LIFETIME cumulative average** (2,575 MB touched/call over 3,146 calls) and read as *"touches went UP, the index did nothing"*. Against the correct pre-**window** baseline (3,559.1) the identical post number is a **543 MB/call reduction**. ⭐ **A cumulative lifetime average is never a baseline for a short post-change window — only an equal-instrument window on the other side of the change point is.**
+
+⚠ **Two smaller ones from the same hour.** `pg_stat_statements.track` is **`top`**, so a statement nested inside a PL/pgSQL function is **not** recorded separately — the per-call figure you get is the **WHOLE function** (here Legs 2–3 and `upsert_nft_edition_map_batch` too), and one tick is dominated by that tick's backlog. And **physical `reads` falling while `touched` holds is a CACHE effect, not less work** — quoting only the read drop can manufacture a win out of a warm buffer pool. Read both.
+
 ## ✅ THE SHED-AND-SELF-RESTORE PATTERN WORKS, PROVEN WITH A POSITIVE CONTROL RATHER THAN ASSUMED (2026-09-13, PT)
 
 **The pattern.** To shed a lane for a fixed window without needing a human or a live session to put it back:
