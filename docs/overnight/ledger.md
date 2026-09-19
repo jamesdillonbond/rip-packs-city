@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🔁 PANINI, SECOND PASS — I shipped a completeness bug this morning and caught it by re-reading my own diff; and the squeeze board's headline turns out to be 52% asking prices nobody paid · Cowork cloud (Trevor: "keep going on what you can")
+
+**Shipped** `878ec188` + `73cec217`, migrations `20260919180946` / `181331`.
+
+⛔ **MY OWN MORNING SHIP HAD A DEFECT THAT WOULD HAVE BLUNTED IT, AND NO TEST WOULD HAVE FOUND IT.** The walk-order GET returned the **stalest 1,000**. The runner treats a psku ABSENT from that response as a brand-new discovery and walks brand-new discoveries FIRST (a card with no row has no price at all). Under a truncated list **every recently-walked edition is also absent** — and the grid surfaces the most actively listed cards, i.e. exactly the ones walked most recently. So it would have promoted hundreds of already-fresh editions to the front of the queue: the precise re-walking the change exists to stop. ⭐ **The shape: an "absent from the list" test is only as good as the list's COMPLETENESS, and a bound chosen for the reader's convenience silently redefines what absence means.** 1,000 was picked because it is PostgREST's real cap (#71) — a correct bound for the wrong quantity. ✅ Route now pages the full catalogue via `fetchAllPaged` and returns `complete`; the runner gates the new-first promotion on it and reports `known_complete` in enum telemetry. New test file pins that a `?limit=` response can never claim `complete` and that a catalogue past `maxPages` reports `truncated` rather than a silently short list.
+
+🚨 **THE PUBLIC BOARD'S HEADLINE IS NOT MAJORITY SALE-BACKED.** Found by reading the live JSON to confirm the morning ship — its top row is **Ousmane Dembele, mint 12, FMV $900,000**, which is 0.90 × a single **$1,000,000** ask with **ZERO recorded sales**, last walked 22 days ago. The most valuable edition in the set that has actually traded is **$59,276** (Messi Base Prizms Gold, 8 sales). Not one row:
+
+| confidence | editions | sealed exposure | share |
+|---|---|---|---|
+| **ASK_ONLY** | 871 (17.2%) | **$1,338,443** | **52.4%** |
+| HIGH | 3,217 (63.5%) | $892,765 | 35.0% |
+| LOW | 587 | $207,068 | 8.1% |
+| MEDIUM | 393 | $114,357 | 4.5% |
+
+Messi 1/1 $450,009 from a $500,010 ask (0 sales, walked 61 days ago); Mbappe 1/1 $144,000 from $160,000. **The ask shapes — $500,010, $84,999, $125,000 — are the documented troll-listing tell.**
+
+⭐ **The per-ROW basis was ALREADY disclosed** ("from asks", `lib/fmv-basis.ts`). **The defect is that the AGGREGATE carried no marker** — and an aggregate is what a reader quotes and what leaves the page. **A disclosure that lives only at row level does not survive summarisation.**
+
+⛔ **NO PRICE WAS CHANGED, DELIBERATELY.** Clamping or re-pricing ASK_ONLY is a real-money judgement and is Trevor's — the same boundary R105's FMV question sits behind. `panini_squeeze_totals` now publishes `pct_sealed_usd_from_asks_only` (52.4), `editions_ask_only` (871) and the counterweight `pct_sealed_usd_sale_backed` (39.5); the board renders *"…from a single seller's asking price with no recorded sale … treat the headline as an upper bound"*. Null composition renders **no claim at all**, never a measured zero — pinned both ways.
+
+⭐ **A "known constant" warning that cites CONSTANCY as its evidence expires the moment one counter-example appears.** `panini_card_serials.is_listed` carried a 2026-08-04 comment saying "true on all 59,425 rows, zero false". Today: **108,036 / 108,042 true and SIX false** — so the obvious re-check ("is it still constant?") now answers NO and would license a reader to trust the column again. It is still wrong about **73,776 of 108,042** rows. Comment rewritten to state the DEFECT (it disagrees with the ask on most rows), not the symptom. 👉 **State the defect, not the symptom that made it obvious.**
+
+✅ **Two things I expected to fix and did NOT, because they were already right** — recorded so nobody re-opens them: `panini_special_serials_board` does **not** pass the raw `is_listed` through (it computes `COALESCE(s.price_usd,0) > 0` under that name, the honest quantity), and none of the five DB-only Panini boards (`special_serials`, `deal`, `nation`, `player`, `pack_ev`) has ANY app-code reader, so none is publishing anything today.
+
+⚠ **I caused one CI red myself:** a `comment on column` migration applied while the smoke job was mid-flight produced a **PGRST002** schema-cache burst, failing `/insights/panini-squeeze` in that run. Self-healed; the board answered **200** with the new fields three minutes later. 👉 **DDL during a live smoke window is not free even when it is only a COMMENT.**
+
+⏳ **The 14:00 PT tick watch is unchanged and is still the thing that decides** whether the walk fix worked — scheduled falsifier reads `pct_editions_stale_45d` tomorrow 09:00 PT. Verified just now: the working tree on the box is byte-identical to `origin/main` for the runner, so tonight's tick runs the shipped code.
+
 ### 2026-09-19 · ✅ SHIPPED (prod: table + 2 functions + pg_cron) — a pack page was reading 71 MB and 33.6 SECONDS of heap per render; it now reads one row · Cowork cloud
 
 **Trevor approved this one explicitly.** ⭐ **And the design flipped twice on measurement — both reversals are the valuable part.**
