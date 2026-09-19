@@ -70,7 +70,14 @@ describe("parseSort", () => {
 })
 
 describe("TOP_SALES_VALID_COLLECTIONS", () => {
-  it("whitelists exactly the 5 published DB-slug collections", () => {
+  // ⚠ CANDY ADDED 2026-09-19, and the reason matters more than the entry. This
+  // set is a 400-gate on ?collection=, and it was NARROWER THAN THE VIEW IT
+  // GUARDS: `v_insights_top_sales` already carried Candy rows (7 in the 30d
+  // window, top sale $203.72, measured that day) and served them under
+  // collection=all, while ?collection=candy_mlb answered "collection must be one
+  // of …". A filter that rejects data the endpoint already returns is a bug in
+  // the filter. Verified against the deployed API after the fix: 200 with 7 rows.
+  it("whitelists exactly the 6 collections the board can serve, in DB-slug form", () => {
     expect([...TOP_SALES_VALID_COLLECTIONS].sort()).toEqual(
       [
         "nba_top_shot",
@@ -78,6 +85,7 @@ describe("TOP_SALES_VALID_COLLECTIONS", () => {
         "laliga_golazos",
         "disney_pinnacle",
         "ufc_strike",
+        "candy_mlb",
       ].sort()
     )
   })
@@ -87,6 +95,10 @@ describe("TOP_SALES_VALID_COLLECTIONS", () => {
     // URL-slug forms must NOT be members — they'd fail the CHECK-constrained query.
     expect(TOP_SALES_VALID_COLLECTIONS.has("ufc")).toBe(false)
     expect(TOP_SALES_VALID_COLLECTIONS.has("nba-top-shot")).toBe(false)
+    // Candy is the newest member and the easiest one to add in the wrong
+    // vocabulary, since its URL slug and DB slug differ only by the separator.
+    expect(TOP_SALES_VALID_COLLECTIONS.has("candy_mlb")).toBe(true)
+    expect(TOP_SALES_VALID_COLLECTIONS.has("candy-mlb")).toBe(false)
   })
 })
 

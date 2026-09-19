@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🔧 CI CAUGHT THE HALF OF THE TOP-SALES FIX I DID NOT GREP FOR — a second guard pinning the same set, in a file the first one did not name · Cowork cloud
+
+**One test file. No code change, no DB change.** Follow-up to the three Candy entries below.
+
+`__tests__/insights-top-sales.test.ts` asserts `TOP_SALES_VALID_COLLECTIONS` is *"exactly the 5 published DB-slug collections"*, so adding `candy_mlb` to that set reddened shard 2. ⭐ **I had already written a chip↔API subset guard in `share-card-view.test.ts` and taken that as coverage — and it passed, because it only checks the chips are a SUBSET.** The exhaustive pin lived in a different file that my grep for the constant's *use* did not surface as a risk. *Two guards on one constant, and satisfying the one you wrote is not evidence about the one you didn't.*
+
+Updated with the reason rather than the number: the set is a **400-gate on `?collection=` that was narrower than the view it guards** — `v_insights_top_sales` already carried 7 Candy rows (top sale $203.72) and served them under `collection=all`, while `?collection=candy_mlb` answered *"collection must be one of …"*. Verified against the deployed API after the fix: **200 with 7 rows**. The vocabulary arm gained a Candy pair too (`candy_mlb` true, `candy-mlb` false) — Candy is the member most likely to be added in the URL-slug form, since its two slugs differ only by the separator.
+
+**Verified after:** the 23 test files that reference any symbol this pass touched — the collection-slug facade, `isFlowAddress`/`isOnChainAddress`, `share-card-view`, `EDITION_COLLECTION_IDS`, `sitemap-data`, `resolve_moment_id`, `/api/search`, the three wallet read routes — **257 tests, all green**.
+
+⚠ **`main` IS STILL RED AND IT IS STILL NOT THIS WORK.** `db-invariants-drift-guard` and `db-pin-points-at-the-newest-defining-migration` name **`sync_ts_listings_from_atlas`** and **`sync_edition_offers_from_atlas`**, whose pins point at `20260919021449` while `20260919152824_…r101_v2_atlas_listing_tick…` also defines them. `resolve_moment_id` is not among the offenders — pin, migration and live `prosrc` all md5 `7952c150…`. `ci-status` on my commits reports the PREVIOUS commit's conclusion, so it inherits that red too. Left to the session that owns those lanes: the re-pin's own step 3 is *"re-check that file's assertions against the new body"*, which is their in-flight work and not a mechanical edit.
+
+- **Revert:** `git revert <sha>` (`git log --grep="HALF OF THE TOP-SALES FIX"`). **No DB half.** Reverting only restores an assertion that contradicts the shipped set.
+
 ### 2026-09-19 · 🚪 THE FRONT DOOR TOLD A CANDY COLLECTOR THEIR WALLET DID NOT EXIST — while the page it refused to navigate to was already rendering their collection correctly · Cowork cloud
 
 **Shipped: 4 code files + 2 test files. No DB change.** Third and last pass of the Candy parity work (see the two entries below). This is the one a user would actually hit first.
