@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { safeApiError, statusForSafeError } from "@/lib/api-error";
 import { resolveToFlowAddress } from "@/lib/chains/flow/flow-resolve";
+import { detectAddressChain, isSupportedAddress } from "@/lib/address";
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
@@ -256,6 +257,51 @@ export async function GET(req: NextRequest) {
 
   if (!wallet) {
     return NextResponse.json({ error: "wallet param required" }, { status: 400 });
+  }
+
+  // ⛔ 2026-09-19 — A NON-FLOW ADDRESS CAME BACK AS HTTP 500 "Failed to load
+  // sets.", which is the wrong claim twice over. This tracker is TOP SHOT ONLY
+  // by construction — it hardcodes TOPSHOT_COLLECTION_ID and calls
+  // get_topshot_set_progress — so a Solana (Candy) or EVM address is not a
+  // failure, it is a question this route cannot be asked. Measured live: a
+  // base58 wallet returned `{"error":"Failed to load sets.","code":"internal",
+  // "retryable":false}` at 500.
+  //
+  // MECHANISM: `resolveToFlowAddress` treats anything that is not a Flow
+  // address as a USERNAME, so a base58 wallet went to the DECOMMISSIONED Top
+  // Shot GraphQL host — twice, via the lower-cased retry — and then threw
+  // 'Could not resolve "<address>" to a Flow address. Check the username and
+  // try again.' The generic catch turned that into a 500. Two costs: the reader
+  // is told we broke when we did not, and every such call burned two round
+  // trips on a dead host and a `host-circuit` failure note with it.
+  //
+  // ⚠ SHAPE CHOSEN TO MATCH THE HOUSE PATTERN, not invented: `/api/wallet-cost-
+  // basis` and `/api/wallet-hold-time` already answer 200 with a typed `reason`
+  // (`cost_basis_unavailable`, `acquisition_data_unavailable`) when a feature
+  // does not apply to the collection asked for. Not-applicable is not an error.
+  //
+  // ⛔ AND NO FABRICATED ZEROS: this branch returns `sets: []` and the reason,
+  // and DELIBERATELY OMITS totalSets / completeSets / inProgressSets /
+  // notStartedSets rather than sending 0s. A zero here would be a claim about
+  // the wallet's set progress; absence is the truth. (Verified the only
+  // consumer is safe either way: `nearCompleteSets()` returns [] for both null
+  // and [], so the strip simply does not render.)
+  //
+  // ⚠ A USERNAME MUST NOT REACH THIS BRANCH — `isSupportedAddress` is false for
+  // one, so username resolution is completely untouched. Narrowing it to
+  // "recognised address on a chain that is not Cadence" is what keeps this from
+  // turning an unresolved username into a confident empty answer.
+  if (isSupportedAddress(wallet) && detectAddressChain(wallet) !== "cadence") {
+    return NextResponse.json(
+      {
+        wallet,
+        sets: [],
+        reason: "set_tracking_unavailable",
+        message:
+          "Set tracking is a Top Shot feature and this is not a Flow address.",
+      },
+      { headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=600" } }
+    );
   }
 
   try {
