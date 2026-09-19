@@ -434,6 +434,35 @@ SELECT (SELECT count(*) FROM public.check_public_security_invariants()) AS sec_v
        jsonb_array_length(public.check_secdef_anon_execute_violations()) AS secdef;        -- 0 = clean
 ```
 
+⛔ **CAUGHT A THIRD READER 2026-09-19, and the heading is why: "the four" is a CURATED LIST, and
+the reader who got it wrong had read this page's own warning earlier the same session.** The
+population is not four. Walked live that day over `pg_proc` for every `check_*` / `detect_*` /
+`get_pipeline_alerts*` function in `public`: **42 functions — 4 set-returning, 38 scalar.**
+
+**The four set-returning ones, in full** (these are the ones where `count(*)` is CORRECT and
+`jsonb_array_length` fails):
+
+`check_anon_write_surface` · `check_pgcron_recent_failures` · `check_public_security_invariants` ·
+`check_wmc_ownership_freshness`
+
+**Everything else in that family returns a scalar** `jsonb` / `json` / `boolean`, so `count(*)`
+over it is **always 1** and is a false finding — including `check_secdef_anon_execute_violations`,
+`check_wall_kills`, `check_zero_yield_lanes`, `check_pipeline_cadence_collapse`,
+`detect_stalled_pipelines`, `detect_pipelines_without_success` and the rest.
+
+⭐ **The rule beats the list, and the database already states it — nobody asks.** The shape is in
+the catalog, exactly, so there is no need to trust any roster including this one:
+
+```sql
+-- Ask before you count. proretset = true -> count(*); false -> jsonb_array_length(...).
+SELECT proname, proretset, pg_get_function_result(oid) AS returns
+  FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = '<the function>';
+```
+
+⚠ **Do NOT "fix" this by adding a COMMENT to each function restating its shape** — that was
+considered and rejected the same day: it would duplicate a fact `pg_proc` already holds
+authoritatively, and a duplicated fact is one that can go stale while the catalog cannot.
+
 ## 🚨 A DENORMALISED CACHE KEYED ON A COLUMN ITS WRITER DOES NOT BUMP ROTS INVISIBLY — and the tell is it disagreeing with the row it NAMES, not with `now()` (2026-09-18, register R107)
 
 **Displaced here from CLAUDE.md 2026-09-18 to pay for the one-line rule that replaced it.** The
