@@ -2,6 +2,7 @@
 // GET /api/portfolio?wallet=0x... — cross-collection portfolio breakdown.
 
 import { NextRequest, NextResponse } from "next/server"
+import { normalizeAddress } from "@/lib/address"
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
@@ -9,7 +10,15 @@ import { supabaseAdmin } from "@/lib/supabase"
 export const dynamic = "force-dynamic"
 
 export async function GET(req: NextRequest) {
-  const wallet = req.nextUrl.searchParams.get("wallet")?.trim().toLowerCase()
+  // ⛔ 2026-09-19 — was `.trim().toLowerCase()`. This is the CROSS-COLLECTION
+  // portfolio, so a Candy wallet is exactly what belongs here, and base58 is
+  // CASE-SENSITIVE: folding it produced a structurally complete answer of
+  // ZEROS. Measured live on a real Candy wallet: correct key →
+  // total_fmv 19,386.54; lowercased → total_fmv 0.00, collections [],
+  // total_moments 0 — and the RPC ECHOES the mangled wallet back, so the
+  // response looks like a true reading of that wallet. `normalizeAddress` folds
+  // hex exactly as before, so no Flow caller moves.
+  const wallet = normalizeAddress(req.nextUrl.searchParams.get("wallet")?.trim() ?? "")
   if (!wallet) {
     return NextResponse.json({ error: "wallet required" }, { status: 400 })
   }

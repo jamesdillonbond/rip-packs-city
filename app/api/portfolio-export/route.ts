@@ -3,16 +3,24 @@
 // GET /api/portfolio-export?wallet=0x...&collection=slug
 
 import { NextRequest, NextResponse } from "next/server"
+import { normalizeAddress } from "@/lib/address"
+import { getCollection } from "@/lib/collections"
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
 
-const COLLECTION_UUID_MAP: Record<string, string> = {
-  "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
-  "nfl-all-day": "dee28451-5d62-409e-a1ad-a83f763ac070",
-  "laliga-golazos": "06248cc4-b85f-47cd-af67-1855d14acd75",
-  "disney-pinnacle": "7dd9dd11-e8b6-45c4-ac99-71331f959714",
-}
+// ⛔ 2026-09-19 — THIS WAS A HARDCODED FOUR-COLLECTION MAP, and it is the
+// second defect in this route: the Export CSV control renders on every
+// Collection tab, but the map omitted UFC (published since before this route
+// existed) and Candy MLB (Collection tab shipped earlier today), so both
+// answered 400 "Unknown collection" from a button the reader can see. A
+// hardcoded allowlist beside a registry is a copy that goes stale silently —
+// the registry is the single source of truth for which collections exist.
+//
+// ⚠ Gated on `published` AND on the collection actually HAVING a Collection
+// tab, so the route's surface is exactly the set of buttons that can call it:
+// widening to the whole registry would expose unpublished collections (Panini,
+// RWA) through an endpoint no UI offers for them.
 
 function csvCell(v: unknown): string {
   if (v === null || v === undefined) return ""
@@ -24,11 +32,23 @@ function csvCell(v: unknown): string {
 }
 
 export async function GET(req: NextRequest) {
-  const wallet = req.nextUrl.searchParams.get("wallet")?.trim().toLowerCase()
+  // ⛔ 2026-09-19 — was `.trim().toLowerCase()`, and this route is reached by
+  // the "Export CSV" control on the Collection tab, which SHIPPED FOR CANDY
+  // EARLIER TODAY. `get_wallet_moments_with_fmv` does not fold its wallet (its
+  // only `lower()` calls are on player_name and tier), so the fold here was the
+  // whole defect. Measured live on a real Candy wallet: correct key → 1,726
+  // moments; lowercased → 0. The reader would have been handed an EMPTY CSV
+  // — and the filename carried the mangled address, so even the artifact on
+  // their disk was wrong. `normalizeAddress` folds hex exactly as before.
+  const wallet = normalizeAddress(req.nextUrl.searchParams.get("wallet")?.trim() ?? "")
   const collectionSlug = req.nextUrl.searchParams.get("collection") ?? "nba-top-shot"
   if (!wallet) return NextResponse.json({ error: "wallet required" }, { status: 400 })
 
-  const collectionId = COLLECTION_UUID_MAP[collectionSlug]
+  const collection = getCollection(collectionSlug)
+  const collectionId =
+    collection?.published && collection.pages.includes("collection")
+      ? collection.supabaseCollectionId ?? null
+      : null
   if (!collectionId) return NextResponse.json({ error: "Unknown collection" }, { status: 400 })
 
   try {

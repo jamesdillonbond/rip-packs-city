@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // list so no Resend fetch is made → {subscribers:0, sent:0, errors:0}. Error on
 // the subscriber query → 500.
 
-const state: { result: any; rpc: Record<string, any> } = { result: { data: [], error: null }, rpc: {} }
+const state: { result: any; rpc: Record<string, any>; rpcCalls: Array<{ name: string; args: any }> } = { result: { data: [], error: null }, rpc: {}, rpcCalls: [] }
 
 vi.mock("@/lib/supabase", () => {
   const b: any = {
@@ -18,7 +18,7 @@ vi.mock("@/lib/supabase", () => {
   }
   const admin: any = {
     from: () => b,
-    rpc: async (name: string) => state.rpc[name] ?? { data: null, error: null },
+    rpc: async (name: string, args?: any) => { state.rpcCalls.push({ name, args }); return state.rpc[name] ?? { data: null, error: null } },
   }
   return { supabaseAdmin: admin }
 })
@@ -127,5 +127,32 @@ describe("GET /api/send-digest", () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, text: async () => "ok" })) as any)
     const res = await GET(req(`Bearer ${TOKEN}`))
     expect(await res.json()).toEqual({ subscribers: 1, sent: 1, errors: 0 })
+  })
+})
+
+// ⛔ THE HIGHEST-REACH SURFACE THIS CLASS REACHES: an outbound email.
+// `get_cross_collection_portfolio` on a folded base58 wallet returns a
+// structurally COMPLETE object of zeros, and buildEmail gates the portfolio
+// block on `collections?.length` — so a Candy holder's weekly digest silently
+// dropped their entire portfolio. 📏 Measured live 2026-09-19: correct key →
+// total_fmv 19,386.54; lowercased → total_fmv 0.00, collections [], and the RPC
+// echoes the mangled wallet back so the answer looks true.
+describe("send-digest — a Candy subscriber's wallet is not folded", () => {
+  const MINT = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix"
+
+  it("passes base58 through CASE-INTACT", async () => {
+    state.rpcCalls = []
+    state.result = { data: [{ email: "c@d.com", wallet_address: MINT, verification_token: "vt" }], error: null }
+    await GET(req(`Bearer ${TOKEN}`))
+    const call = state.rpcCalls.find((c) => c.name === "get_cross_collection_portfolio")
+    expect(call?.args?.p_wallet).toBe(MINT)
+  })
+
+  it("no-change control: a Flow subscriber's wallet is still folded", async () => {
+    state.rpcCalls = []
+    state.result = { data: [{ email: "a@b.com", wallet_address: "0xAbCDEF1234567890", verification_token: "vt1" }], error: null }
+    await GET(req(`Bearer ${TOKEN}`))
+    const call = state.rpcCalls.find((c) => c.name === "get_cross_collection_portfolio")
+    expect(call?.args?.p_wallet).toBe("0xabcdef1234567890")
   })
 })

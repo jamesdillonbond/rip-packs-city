@@ -4,6 +4,7 @@
 // HTML email (portfolio summary + market pulse + top deals), and sends via Resend.
 
 import { NextRequest, NextResponse } from "next/server"
+import { normalizeAddress } from "@/lib/address"
 import { supabaseAdmin } from "@/lib/supabase"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
@@ -24,8 +25,13 @@ type Subscriber = {
 async function buildEmail(origin: string, sub: Subscriber): Promise<{ subject: string; html: string } | null> {
   let portfolio: any = null
   if (sub.wallet_address) {
+    // ⛔ 2026-09-19 — was `.toLowerCase()`. A folded base58 wallet returns a
+    // COMPLETE portfolio object full of zeros, and the template below gates on
+    // `collections?.length`, so a Candy holder's weekly email silently dropped
+    // their whole portfolio block. An outbound email is the highest-reach
+    // surface this class can reach. `normalizeAddress` leaves hex unchanged.
     const { data } = await (supabaseAdmin as any).rpc("get_cross_collection_portfolio", {
-      p_wallet: sub.wallet_address.toLowerCase(),
+      p_wallet: normalizeAddress(sub.wallet_address),
     })
     portfolio = data ?? null
   }

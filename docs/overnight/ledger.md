@@ -11,6 +11,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 📤 THE EXPORT BUTTON ON THE TAB I SHIPPED TODAY RETURNED 400, AND THE WEEKLY EMAIL DROPPED A $19,386 PORTFOLIO — three more folds, and one hardcoded map beside the registry · Cowork cloud
+
+**Shipped: 4 source files + 3 test files. No DB change.** `/api/portfolio` · `/api/portfolio-export` · `/api/send-digest` · `lib/address.ts` unchanged (reused).
+
+⛔ **`/api/portfolio-export` HAD TWO DEFECTS AND THE SECOND MADE THE FIRST MOOT.** It is the "Export CSV" control on the Collection tab — **the tab that shipped for Candy earlier today**, so I put the button there myself.
+1. It folded the wallet. `get_wallet_moments_with_fmv` does **not** fold its own (its only `lower()` calls are on `player_name` and `tier` — read line by line, because my first probe's `prosrc ILIKE '%lower(%'` boolean said "folds: true" and would have sent me to the wrong layer). 📏 Measured live: correct key → **1,726 moments**, lowercased → **0**. An empty CSV, with the mangled address in the filename.
+2. ⛔ **A hardcoded four-slug `COLLECTION_UUID_MAP` sat beside the registry** — no Candy, and **no UFC either**, published long before this route existed. So the button answered **400 "Unknown collection"** on two live tabs. **A hardcoded allowlist beside a registry is a copy that goes stale silently.** Now resolved through `getCollection`, gated on `published && pages.includes("collection")` so the route's surface is exactly the set of buttons that can call it. ⚠ **That gate is its own pinned arm** — swapping a map for a registry lookup without it quietly exposes Panini and RWA.
+
+🚨 **`/api/send-digest` IS THE HIGHEST-REACH SURFACE THIS CLASS REACHES: an outbound email.** `get_cross_collection_portfolio` on a folded base58 wallet returns a **structurally complete object of zeros** — `total_fmv 0.00`, `collections: []`, `total_moments: 0` — **and echoes the mangled wallet back**, so the answer reads as true rather than as a miss. `buildEmail` gates the portfolio block on `collections?.length`, so a Candy holder's weekly digest **silently omitted their entire portfolio**. 📏 The same wallet, correct key: **total_fmv 19,386.54**.
+
+**`/api/portfolio`** folds the same way; it is behind the auth wall (verified: 307 to `/login`), so the reach is a signed-in Candy holder, not the open web — **stated because I assumed "public API" and the probe corrected me.**
+
+⚠ **THE SINGLE-ROW TRAP CAUGHT ME THREE TIMES IN THIS ONE PASS.** `count(*)` over each variant returned **1, 1, 1** and would have closed every one of these as "no difference" — these functions return ONE row whose VALUE is the result. The shape is already in memory (`health-fn-return-shapes`). **On a function that returns one row, read the payload; a row count is not a measurement.**
+
+⭐ **SCOPE WAS MEASURED, NOT ASSUMED, AND MOST OF THE POPULATION IS CORRECTLY OUT OF IT.** The fold/prepend expression appears 20+ times: `collection-moments:175` is inside the Top Shot **username→flowAddress** resolver (unreachable for base58 — the same shape as this thread's `wallet-packs` retraction); `wallet-sales-history` gates on `isFlowAddress` first; `wallet-hold-time` / `wallet-cost-basis` are called only by `components/analytics/*` and **Candy has no analytics tab**; `/api/acquisition-stats` has **no caller at all**. ⛔ **Reading the context is what kept this from becoming a 20-file change against Flow-only code.**
+
+📏 **Four mutations, controls throughout:** export folds again → the case-intact arm reds · registry lookup without the published/tab gate → **`panini-blockchain: expected 200 to be 400`** · `/api/portfolio` folds again → reds · the digest folds again → reds. Every arm has a Flow no-change control asserting the fold still happens. **Control: 44 tests green across 4 suites**, plus `npx tsc --noEmit` exit 0 locally.
+
+- **Revert:** `git revert <sha>` (`git log --grep="EXPORT BUTTON ON THE TAB I SHIPPED"`). **No DB half.** ⚠ Reverting restores a 400 on two live Export buttons, not just the folds.
+
 ### 2026-09-19 · 🧮 THE /PROFILE AGGREGATIONS DROPPED 1,726 MOMENTS AND STILL COUNTED THE WALLET AS ATTEMPTED — the third face of fold-and-prefix, and the only one that was never an honest absence · Cowork cloud
 
 **Shipped: 4 source files + 2 test files. No DB change.** `lib/address.ts` (`walletQueryKey`) + `/api/profile/{top-movers,tier-breakdown,cost-basis-summary}`.
