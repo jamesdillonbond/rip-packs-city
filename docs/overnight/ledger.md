@@ -169,6 +169,9 @@ Messi 1/1 $450,009 from a $500,010 ask (0 sales, walked 61 days ago); Mbappe 1/1
 
 ⚠ **I caused one CI red myself:** a `comment on column` migration applied while the smoke job was mid-flight produced a **PGRST002** schema-cache burst, failing `/insights/panini-squeeze` in that run. Self-healed; the board answered **200** with the new fields three minutes later. 👉 **DDL during a live smoke window is not free even when it is only a COMMENT.**
 
+> ⛔ **RETRACTED 2026-09-19 ~12:0x PT, same session, ~50 minutes later — THE PGRST002 RED WAS NOT MINE.** Read from `supabase_migrations.schema_migrations`: a concurrent session applied **four** DDL migrations between **18:01:32Z and 18:07:51Z** (`pack_market_sales_cache`, its refresh, the bounded resumable refresh, `get_pack_market_row`), the smoke job printed its failing result at **18:08:51Z**, and my comment migration is `20260919180946` — **18:09:46Z, fifty-five seconds AFTER the read that failed.** It could not have caused it. ⭐ **I asserted a cause about my own change without checking the clock, because self-blame FELT like the careful move — it is not.** "Only assert what is verified" has no exception for claims against yourself, and an unverified self-attribution is worse than useless: it pointed a future reader at the wrong migration and credited a four-migration DDL burst to a `COMMENT`. The general warning above still stands, on THEIR migrations; it just was not demonstrated by mine.
+
+
 ⏳ **The 14:00 PT tick watch is unchanged and is still the thing that decides** whether the walk fix worked — scheduled falsifier reads `pct_editions_stale_45d` tomorrow 09:00 PT. Verified just now: the working tree on the box is byte-identical to `origin/main` for the runner, so tonight's tick runs the shipped code.
 
 ### 2026-09-19 · ✅ SHIPPED (prod: table + 2 functions + pg_cron) — a pack page was reading 71 MB and 33.6 SECONDS of heap per render; it now reads one row · Cowork cloud
