@@ -138,3 +138,38 @@ this is exactly the case it was written for.
   raising it while a quarter of the catalogue is stale trains him to skim past it.
 - **#58 (`OPENSEA_API_KEY`) stays moot** under #64 unless the bridge plane is revisited.
 - The `published` / `is_active` flips themselves.
+
+---
+
+## 7. Is this anywhere else? No — and the control is worth keeping
+
+Added 2026-09-19 ~11:2x PT. The natural next worry after §1 is that other collections are decaying
+the same way behind green pipelines. **They are not, and the reason is structural.**
+
+Measured over `edition_fmv_current` joined to `editions` (Top Shot filtered to the canonical
+`^[0-9]+:[0-9]+(::[0-9]+)?$` predicate):
+
+| collection | editions | with a price row | refreshed ≤7d | 30d+ stale | oldest |
+|---|---|---|---|---|---|
+| nba_top_shot | 14,016 | **100%** | **100%** | 0 | 7.0 d |
+| nfl_all_day | 6,190 | **100%** | **100%** | 0 | 7.1 d |
+| laliga_golazos | 575 | **100%** | 99.7% | 0 | 7.0 d |
+| ufc_strike | 518 | **100%** | **100%** | 0 | 4.8 d |
+| candy_mlb | 125 | **100%** | **100%** | 0 | 6.1 d |
+| **panini (side tables)** | **5,072** | 99.9% | **32.9%** | **1,264 at 45d+** | **65.1 d** |
+
+⭐ **The difference is not diligence, it is where the refresh TARGETS come from.** The five live
+collections are swept by `fmv-recalc` over our own `editions` table — an enumeration that is
+complete by construction. Panini was the only lane whose targets came from a **scraped grid**,
+which is a discovery mechanism that was silently doing double duty as the refresh list. So this
+morning's fix did not invent a pattern; it brought Panini in line with how every other collection
+already works.
+
+⚠ **Both halves of the control matter.** "Refreshed ≤7d" alone would be satisfied by a lane that
+refreshes a small subset forever, so the `with a price row` column is what closes it: there is no
+cohort sitting outside the priced population either. A freshness percentage over an unstated
+denominator is the same trap as §3's family MAX.
+
+**Consequence for the roadmap:** §4's ordering stands unchanged, and this is now a positive reason
+to believe step 2 is reachable — once Panini's targets come from its own catalogue, it has the same
+shape as five lanes that already hold 100%/100%.
