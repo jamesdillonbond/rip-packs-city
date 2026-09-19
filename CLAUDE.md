@@ -53,8 +53,7 @@ Any time you ship something that changes `main` or production DB/data state — 
 
 Two scheduled Cowork tasks; coordinate via the shared ledger.
 
-- **`rpc-daytime-monitor`** — READ-ONLY, ~3-hourly. Sweeps health, files candidates to `docs/overnight/inbox/`. Ships nothing.
-- **`rpc-nightly-autonomous-pass`** — 1am local. Drains the inbox, ships ≤4 low-risk changes to `main` (collision- and CI-gated, each verified by a fresh subagent), writes a handoff + digest. Off-limits (hot wallet, secrets, auth, destructive SQL, **metered SPEND**): [autonomous-tasks.md](docs/reference/autonomous-tasks.md).
+**What each task does + the off-limits list: [autonomous-tasks.md](docs/reference/autonomous-tasks.md)** (moved 2026-09-19).
 
 Shared state in `docs/overnight/`: `ledger.md` (**"Declined — do not re-suggest"** is Trevor's heading), `inbox/` (⚠ read autonomous-tasks.md BEFORE archiving a filing — `INDEX.md` carries CI assertions), `metrics-latest.json`, `focus.md`, `.lock`. **Skim `ledger.md` first**; the night pass will not edit files committed in the last 24–48h. To halt autonomous shipping, create `docs/FREEZE.md`. Detail: [autonomous-tasks.md](docs/reference/autonomous-tasks.md).
 
@@ -64,7 +63,7 @@ Shared state in `docs/overnight/`: `ledger.md` (**"Declined — do not re-sugges
 
 Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles intelligence platform: analytics, deal-finding, sniper tools, FMV pricing and badge tracking across the 5 published Flow collections (NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike). Trevor (founder) holds an official Portland Trail Blazers Team Captain designation on NBA Top Shot — ⛔ **IYKYK: never lead copy or outreach with it** (09-06).
 
-Stack: Next.js 16 App Router, React 19, TS 5, Tailwind 4, @onflow/fcl, Supabase (Pro, Small compute), Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public).
+Stack: Next.js 16 · React 19 · TS 5 · Tailwind 4 · Supabase (Pro, Small) · Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public).
 
 **Repo map** (re-derive; never quote a count): [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
 
@@ -126,6 +125,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - ⚠ **Ask what a passing guard is structurally SILENT about — its DERIVATION fixes its blast radius, and its ROOT *and stated CLASS* are CLAIMS** (see testing-and-ci.md). **Prefer a tree walk over a curated list and a ban at zero over an allowlist; make *suppression* the curated list; assert an exclusion at the PROPERTY's granularity — and assert that a SECOND root CONTRIBUTES.** ⚠ **A control's POPULATION must be the set the property is TRUE of, not a proxy that coincides today** — a proxy expires silently. ⛔ **An AGGREGATE is never a proxy for the SLICE you measured** (98.1% all-visible, yet 42% heap fetches on the index’s first 0.23% — R109). ⛔ **A pin RE-DERIVED FROM THE OBSERVED STATE can never disagree with reality**: assert the DELTA it stood in for.
 - ⚠ **A vacuous assertion reads as coverage everywhere, and mutation testing cannot find the worst kind** — **a test stating the contract in a comment and asserting something weaker.** The tell is the TITLE: a name carrying a negative claim or a transformation is a promise the assertion usually fails to keep. **Assert the ABSENCE of the false claim, not the PRESENCE of an error message.**
 - ⚠ **Grep for the guards that READ a file before you EDIT it** — a pinned exemption reddened main (08-22).
+- ⛔ **A HARDCODED ALLOWLIST BESIDE A REGISTRY GOES STALE SILENTLY** — a four-slug map 400'd UFC and Candy from a button the reader can see. Resolve through the registry, and **pin the narrowing gate too**, or the swap widens to unpublished collections.
 - ⛔ **A REGISTRY VALUE has no file of its own — grep the TEST TREE for it, not the files you edited.** One tab added to `lib/collections.ts` reddened two guards in files never opened, both keyed on `getCollection(…).pages`; main was red 11 minutes. `grep -rl <collection> __tests__` costs seconds, BEFORE the push.
 - ⚠ **A test red because its PREMISE changed is a RE-PIN, not an inversion** — the code was fine. ⛔ **But re-pinning the row is not enough: check the property is still EXERCISED.** Once every collection had the tab, a hardcoded path passed every row; the arm had to be kept alive by a subject that genuinely lacks it.
 - ⚠ **Tests that pin the defect they were named to prevent get INVERTED, never deleted** — a passing test asserting a promise is what holds that promise in place. **Pin the property, not the spelling**.
@@ -144,6 +144,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - ⛔ **A FIX TO A ROUTE IS NOT A FIX TO THE SURFACE until its CALLER can reach it.** `/api/wallet/edition-counts` was repaired and **verified live (0 → 5)** while the client that renders it still returned early on `!ownerKey.startsWith("0x")` — the column stayed empty all day and **no route-level test could have caught it**.
 - ⚠ **Name the caller before you touch the function** — an afternoon went into one with **zero** callers. **EIGHT sources, and the last two are INVISIBLE from a sandbox**; a TRIGGER function has no textual caller. ⚠ **A TABLE’s WRITERS the same — grep the DB: two pg_cron ones REFUTED a filed finding (#81).** Full list: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
 - ⚠ **Read `cron.job.command` to learn what a schedule calls; never infer the callee from the name** — two objects one suffix apart yielded *opposite* conclusions.
+- ⛔ **`count(*)` OVER A FUNCTION THAT RETURNS ONE ROW IS NOT A MEASUREMENT** — most RPCs here return ONE row whose VALUE is the result, so every variant answers `1` and a live defect reads as "no difference" (3× in one pass, 09-19). **Read the payload.** Same shape: `prosrc ILIKE '%lower(%'` said a function folded its wallet; the matching LINES showed `player_name` and `tier`. **Print the lines, not the predicate.**
 - ⚠ **A directional claim needs a DISTRIBUTION, not a snapshot; a delta between two STOCKS is neither a rate nor a sign; `max()` on a `text` cursor is lexicographic.**
 - ⚠ **A window sitting ENTIRELY AFTER a change point cannot tell a STEP from a LEVEL** — 72 h read as "lower demand" what 24 days showed as a dated step onto a flat plateau, shipping a suppression RETRACTED 40 min later. ⚠ **Read the live alarm's OWN `detail`/ack text before building a fix for what it already covers.**
 - ⚠ **When an instrument's first finding is SURPRISING, establish WHO generated it before believing WHAT it says** — 17 "user-facing" client errors were ONE headless crawler, `ua` in the payload all along (#69). **A `count(*)` over an OPEN endpoint counts REQUESTS, not READERS.**
@@ -163,7 +164,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 
 ### Windows / Git Bash
 
-- CRLF silently breaks Node string-replace patches — normalize CRLF→LF before matching, or target by line number. Heredocs truncate on long files; never use one containing `${{}}`. `curl` fails silently here for Vercel REST calls — always PowerShell `Invoke-WebRequest`.
+- CRLF / heredoc / `curl`-vs-PowerShell: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 - ⚠ **BACKTICKS IN `git commit -m "..."` ARE COMMAND SUBSTITUTION AND DELETE THE WORD SILENTLY** — the commit SUCCEEDS and the message still reads like prose. Write it to a file with a quoted heredoc (`<<'EOF'`) and use `git commit -F`.
 - ⚠ **Assert the occurrence count before a scripted replace** (`n = s.count(old); assert n == 1`) — a silent no-op replace has produced a mutation "result" off a broken baseline, and a first-occurrence replace has hit a file's own header comment. ⚠ **Key any backup on the FULL PATH, never the basename** — three `page.tsx` targets shared one `.bak` and two files of uncommitted work were destroyed.
 - ⚠ **Secret safety:** never broad-query the DOM (`querySelectorAll('input')`, full `read_page`) on pages that can hold secrets, and never echo Bearer/token values. ⚠ **`get_edge_function` AND `cron.job.command` BOTH hand back live gate keys** — each has burned one into a transcript (09-12). Redact or hash; never echo. Recipes: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
@@ -214,12 +215,12 @@ Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes
 
 ### Chain two — a Solana address is not a Flow address with different characters (CRITICAL footgun)
 
-Flow/EVM: hex, `0x`-prefixed, **case-INsensitive**. Solana: **base58, un-prefixed, CASE-SENSITIVE** (no `0`/`O`/`I`/`l`). So this repo's two reflexes — `.toLowerCase()` and *prepend `0x` if missing* — do not normalise a Candy key, they **destroy** it. ⚠ **And it fails SILENTLY IN THE WRONG DIRECTION: the read returns zero rows, which renders as "this wallet holds nothing."**
+Flow/EVM: hex, `0x`-prefixed, case-INsensitive. Solana: **base58, un-prefixed, CASE-SENSITIVE**. This repo's two reflexes — `.toLowerCase()` and *prepend `0x` if missing* — do not normalise a Candy key, they **destroy** it. ⚠ **It fails SILENTLY IN THE WRONG DIRECTION: zero rows, rendered as "this wallet holds nothing"** — or a complete object of ZEROS echoing the mangled wallet back.
 
-- **Use [lib/address.ts](lib/address.ts) — never a bare `.toLowerCase()`, and never a fresh helper** (a grep found TEN truncation helpers already). Which function for which job: [chain-strategy.md](docs/reference/chain-strategy.md).
-- ⛔ **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(k,"flow")` demands exactly 16 hex — **stricter** than the `startsWith("0x")` it looks like a drop-in for. **Pin the hex path as its own no-change arm**, or the Solana assertions are satisfied by a function that changed every Flow label in the product.
-- ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence** — the worst 4 were **HREFs** on live pages, sending readers to an analyzer that resolved nothing: an empty wallet. ⚠ **A sweep is only as wide as its PATH ARGUMENT**, and `tsc` is a REACHABILITY instrument: deleting the variable finds its other readers.
-- ⚠ **A per-device identity key must be chain-scoped, and the sweep that clears it on sign-out / account-switch must be by PREFIX** — an exact-name list left the other chain's key for the next collector on that browser.
+- **Use [lib/address.ts](lib/address.ts) — never a bare `.toLowerCase()`, never a fresh helper** (a grep found TEN already). Which function for which job: [chain-strategy.md](docs/reference/chain-strategy.md).
+- ⛔ **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(k,"flow")` is **stricter** than the `startsWith("0x")` it resembles. **Pin the hex path as its own no-change arm**, or the Solana assertions pass against a function that changed every Flow label.
+- ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence** — 4 were **HREFs** on live pages, sending readers to an analyzer that resolved nothing. ⚠ **A sweep is only as wide as its PATH ARGUMENT**, and `tsc` is a REACHABILITY instrument: delete the variable to find its other readers.
+- ⚠ **A per-device identity key must be chain-scoped, and its sign-out / account-switch sweep by PREFIX** — an exact-name list left the other chain's key for the next collector.
 
 ### Collection UUIDs
 

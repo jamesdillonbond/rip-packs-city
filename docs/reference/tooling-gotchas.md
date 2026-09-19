@@ -1575,3 +1575,7 @@ npm run test:cadence     # extract inline Cadence + `flow cadence lint`
 git add -A && git commit -m "feat: ..." && git push origin main   # Git Bash (MINGW64) on Windows
 # Vercel redeploy / env writes — PowerShell Invoke-WebRequest ONLY; see below
 ```
+
+## Windows / Git Bash — the CRLF / heredoc / curl bullet (moved verbatim from CLAUDE.md, 2026-09-19)
+
+- CRLF silently breaks Node string-replace patches — normalize CRLF→LF before matching, or target by line number. Heredocs truncate on long files; never use one containing `${{}}`. `curl` fails silently here for Vercel REST calls — always PowerShell `Invoke-WebRequest`.

@@ -102,3 +102,8 @@ filing another session had just corrected. `scripts/find-clobbered-inbox-correct
 and splice — never write back a copy read earlier in the session.** Full case, including the two
 detector designs that failed on the real data:
 [ledger-discipline.md](ledger-discipline.md).
+
+## The two tasks, in one line each (moved verbatim from CLAUDE.md, 2026-09-19)
+
+- **`rpc-daytime-monitor`** — READ-ONLY, ~3-hourly. Sweeps health, files candidates to `docs/overnight/inbox/`. Ships nothing.
+- **`rpc-nightly-autonomous-pass`** — 1am local. Drains the inbox, ships ≤4 low-risk changes to `main` (collision- and CI-gated, each verified by a fresh subagent), writes a handoff + digest. Off-limits (hot wallet, secrets, auth, destructive SQL, **metered SPEND**): this file.
