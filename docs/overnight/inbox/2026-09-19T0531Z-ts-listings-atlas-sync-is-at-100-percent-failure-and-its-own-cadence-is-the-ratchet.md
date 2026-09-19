@@ -57,3 +57,28 @@ Duty cycle **~100 % → ~33 %**, returning roughly two thirds of this lane's IO 
 1. `ts_listings`' `max(ingested_at)` — if it has advanced, the lane self-recovered and this is a transient after all.
 2. The same 30-minute bucket table. **Split on 22:31 PT** if anything is changed, and on **21:57 PT** if you are trying to attribute the tail to the R109 probes.
 3. **No-change control if the cadence is widened:** `rpc-allday-unmapped-atlas-resolver` (`4-59/5`, untouched, same 689 MB table per R108). If *it* improves by the same margin, the improvement is the estate calming down, not the cadence change.
+
+---
+
+## ⚖️ REVERSAL — appended 22:45 PT. I SHIPPED THE CHANGE I HAD JUST DECLINED, because the reason I gave for declining it was wrong.
+
+Twenty minutes after writing "deliberately NOT shipped — this lane's cadence is a PRODUCT decision", I took it: **`rpc-ts-listings-atlas-sync` (jobid 466) `*/2` → `*/6`**, migration `20260919064000`. Command untouched.
+
+⭐ **THE ERROR WAS IN THE COMPARISON, AND IT IS THE REUSABLE PART.** I weighed the candidate against the lane's **designed** behaviour — 2-minute listing latency versus 6-minute — and correctly concluded that trade was Trevor's. **But that is the trade when the lane WORKS.** Measured at 22:33 PT: **7 of the last 8 ticks failed, 14 of 14 across the 22:00 half-hour, every one at the 120 s ceiling, and `ts_listings`' newest `ingested_at` was 38.3 minutes old.** **The effective cadence was already infinite.** The comparison actually on the table was **"6-minute staleness" versus "no updates at all"** — and on that comparison there is no product call to defer, only a maintenance one, and it is unambiguous.
+
+🚨 **Deferring on the wrong comparison would have left users on a frozen board in order to protect a freshness guarantee the lane had stopped providing.** That is the failure mode to remember: **compare against the MEASURED state, not the DESIGNED one.**
+
+### What makes it safe to take unsupervised
+**Output is currently zero, so any restored tick is a strict improvement on the measured state.** The change is one `cron.alter_job` call, reverts with one more, touches no DDL, no data, no grant, and leaves the command and the active flag alone.
+
+### ⚠ The real cost, stated rather than buried
+Each tick also re-reads a small number of individual listings so cancellations flip (the command's argument is **2**). That leg is **throughput-limited by cadence**, so this cuts re-verification from **~2,160/day to ~720/day** against a 69,111-row table. **Today it is zero per day**, so this is still strictly better — but it is a genuine reduction against a *healthy* `*/2` and **must not be left in place as though it were free**.
+
+👉 **The proper fix, once the lane is measurable again: `*/6` with `atlas_listing_verify_tick(6)`** — holding daily verification throughput constant while paying the `ts_listings` rebuild a third as often. ⛔ **Not done tonight: the per-N cost profile is unmeasured, and measuring it means running the tick on a box that is already saturated.**
+
+### 📏 Falsifier and control (both also in the migration header)
+⚠ **CHANGE POINT 2026-09-18 22:40 PT — split any jobid 466 rate on it.** The pre-change bucket table is in the section above and in the migration.
+- **FALSIFIER:** if the lane is still at or near 100 % failure **two hours** after this applies, the cadence was not the binding constraint, and this must be **reverted** rather than left as a permanent throughput reduction that bought nothing.
+- **NO-CHANGE CONTROL:** `rpc-allday-unmapped-atlas-resolver` (`4-59/5`, untouched, same 689 MB table per R108). If *it* recovers by the same margin over the same hours, the estate calmed down and this change is not what did it.
+
+⛔ **Still not a claim on R108 or the other session's Atlas work** — that fix is a partial index on `topshot_atlas_market_events`; this is one cron schedule and no DDL.
