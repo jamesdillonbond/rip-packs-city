@@ -41,6 +41,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 - **Revert:** nothing to revert; no change made. · **Owed:** R101 v2 is still **not shown to work** (75.0 % fail on n=16 post vs 62.5 % pre, p50 pinned at 120 s both sides, controls flat) — **re-run that split at n ≥ 40.** 👉 **Whoever takes this should start with (a): it is the only one that fixes the cause, and it makes (b) and (c) unnecessary.**
 
+🚨 **RETRACTION, 09:4x AM PT — THE HEADLINE ABOVE IS WRONG AND I AM STRIKING IT. THE DIAGNOSTIC COUNTERS ARE NOT THE PER-TICK COST.**
+
+⛔ **The error is a change point I measured across without noticing.** I read the per-leg breakdown from the `pipeline_runs` row started **08:26:03 PT = 15:26Z — two minutes BEFORE R101 v2 landed at 15:28:24Z.** So "~29 s of every tick is two diagnostic counters" describes the **pre-v2 body**, not the live one. ⭐ **The very trap this file warns about — a reading taken on one side of a change point, reported as the current state.**
+
+✅ **What v2 actually did, and it is the right shape:** it added `sync_ts_listings_from_atlas(p_diag boolean)` and the tick now calls it as `(extract(minute from clock_timestamp())::int % 30) < 2` — so **the two ~400k-row counts run on minutes :00 and :30 only, 2 of 30 ticks, not 30 of 30.** ⭐ **And the unsampled tick publishes them as `NULL` with `diag_sampled = false`, never `0`** — a reading that was not taken is not reported as a measurement of zero. That is the honesty rule applied correctly, and it is pinned.
+
+📏 **THE REFUTATION, from post-v2 ticks whose `extra` says `diag_sampled: false` (counters SKIPPED):** `sync_ms` still reads **55,489 · 53,873 · 58,425 · 48,248 · 53,153**, with `tick_ms` **96,968 · 111,875 · 92,121 · 100,883**. **The counters are off and the cost is unchanged ⇒ they were never it.** (The 18,869 ms / 9,742 ms figures were real, but taken under load on statements that now run twice an hour.)
+
+⭐⭐ **AND THE MEASUREMENT THAT REPLACES IT — the same nine post-v2 ticks, all `diag_sampled: false`, all ~56.5k rows:** `sync_ms` spans **3,279 → 58,425 ms, an 18× range for IDENTICAL work.** 🚨 **This lane is not statement-bound, it is IO-CONTENTION-bound.** It matches the 0.78 ms/buffer seen in every EXPLAIN here (a calm box does those buffers in ~0.05 ms). **That is why every structural fix tried today — the `*/6` back-off, R101 v2, and the three I measured and discarded — has failed to move the failure rate: none of them changes how loaded the box is when the tick happens to run.**
+
+👉 **SO THE LEVER IS ESTATE IO, NOT THIS FUNCTION.** The largest single win available remains the R108 class: find the next big reader and remove it (R108 itself took ~176 GB/day out). ⛔ **Do NOT spend another session micro-optimising statements inside this tick** — three sessions have now done that and the failure rate is where it started.
+
+- ⚠ **Also struck: fix options (b) and (c) from the entry above.** (c) is **already shipped** (that is v2's sampling), and (b) — bounding `v_unmapped` — would now save ~9.7 s on **2 ticks an hour**, i.e. essentially nothing. **I was about to ship it; the measurement stopped me. Third time on this lane.**
+
+
 
 ### 2026-09-19 · ⚠️ R101 v2 HAS NOT FIXED THE ATLAS LISTING TICK — 26 minutes and 12 ticks in, the lane is at 83.3 % failure against 56.6 % before, with both controls flat · Cowork cloud
 
