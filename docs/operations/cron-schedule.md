@@ -24,7 +24,7 @@ The 2026-06-07 stagger pass eliminated the :00/:20/:40 anchor pile-up (was ~15 j
 ⚠ **Twenty-six entries read `Inactive` in that console; SEVENTEEN of them are deliberate and must be left alone.** The nine above are the only ones the spend-cap pause killed — identified by their last execution being a `Failed (HTTP error)` on 2026-09-10, not by being inactive.
 
 
-## Active cron-job.org — Vercel routes (https://www.rippackscity.com/api/*)  ·  64 active
+## Active cron-job.org — Vercel routes (https://www.rippackscity.com/api/*)  ·  console read 2026-09-19 12:2x PT: **88 entries, 71 active, 17 inactive** across all three tables below (re-derive from the console; the per-table counts in these headers are older samples)
 
 All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` URLs).
 
@@ -49,6 +49,8 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC All Day Pack Listings | /api/allday-pack-listings | 10,30,50 |
 | RPC All Day Sales Indexer | /api/allday-sales-indexer | 16,36,56 |
 | RPC Check Alerts | /api/check-alerts | 15,35,55 |
+| RPC Data Integrity | /api/cron/data-integrity | 13,28,43,58 — **NEW 2026-09-19 12:2x PT (job 8474268, cloned from Check Alerts; #124)**. GET, Bearer header, both failure notifications on. First tick 12:28 PT: `200`, 9.65 s, `X-Matched-Path: /api/cron/data-integrity`, `security_invariant_violations: 0`. (Stale FMV first tick 12:49 PT: `200`, 5.23 s, `X-Matched-Path: /api/cron/stale-fmv-monitor`, `fmv_staleness_minutes: 0`.) Route budget is 23 s worst case by design (bounded legs); warm ~1 s. Runs `check_public_security_invariants()` — the check that would have caught the 09-19 MV grant in ≤15 min instead of the ~6/day GitHub delivers `ops-monitor.yml`. |
+| RPC Stale FMV Monitor | /api/cron/stale-fmv-monitor | 19,49 — **NEW 2026-09-19 12:2x PT (job 8474274, cloned from Check Alerts; #124)**. GET, Bearer, notifications on. ⚠ `maxDuration` 60 and the route ran >28 s on 8 of 24 ticks during the 09-19 IO spell (p50 11 s, max 64 s), so under saturation this entry will read `Failed (timeout)` while the route still completes and alerts server-side — that is the 30 s client cap, not the monitor. The GHA lane at 13,43 (~6/day) keeps running beside it. If the console auto-disables it in a long spell the notification fires; re-enable, do not raise cadence. |
 | RPC Alerts Dispatch | /api/cron/alerts-dispatch | 14,29,44,59 ⟨exec-derived⟩ — NEW (alert pipeline split) |
 | RPC Alerts Send | /api/cron/alerts-send | 4,14,24,34,44,54 ⟨exec-derived⟩ — NEW |
 | RPC Pack Pull Source Rip ID Backfill | /api/cron/backfill-pack-pull-source-rip-id | 11,41 |
@@ -124,9 +126,11 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Pack Events Ingest Backfill TopShot | pack-events-ingest.tdillonbond.workers.dev/backfill | 1,16,31,46 |
 | RPC Topshot Moments Hydrator | topshot-moments-hydrator.tdillonbond.workers.dev/ | 2,12,22,32,42,52 | **INACTIVE 2026-08-30** — dead host public-api.nbatopshot.com (530/1033 since 08-28), 0 rows in 24 h; paused by Trevor's ask, not retired. Re-enable when the host answers non-5xx twice (migration 20260830034312 header). **09-07: a quarter of its queue is served without it** — pg_cron `rpc-topshot-moments-hydrate-wmc` (jobid 468, below) hydrates every pack-pulled nft that `wallet_moments_cache` has already walked on-chain; **09-07 15:31Z the REST is read on-chain too** — pg_cron `rpc-topshot-moments-hydrate-chain` (jobid 469) POSTs a `borrowMoment` script per pull to the public Flow REST API from pg_net. This worker's queue is being drained without it; retire when it reads zero.
 
-## Inactive cron-job.org entries  ·  7 (intentionally off)
+## Inactive cron-job.org entries  ·  17 (console read 2026-09-19 12:2x PT; all deliberate)
 
-Backfill Offer-Fill Sales · All Day FMV Populate · Cadence Payer Balance Check (payer wallet empty by design) · Pinnacle Listings Reconcile (⚠ newly inactive since 06-07 — confirm intended) · Refresh Special Serial Owners MV · UFC Listings Indexer · UFC Strike Pipeline.
+**Dead-host pause of 2026-08-30 (`public-api.nbatopshot.com` 530 since 08-28; migration `20260830034312`, suppression re-bound to 2026-10-05 by `20260914144523`)** — last executions 08/29–08/30: Compute Topshot Pack EV · Topshot Moments Hydrator · Populate Pinnacle WMC FMV · Refresh Pack Grail Metrics MV · Resolve Wallet Usernames · TopShot Deal Floor Serials · TopShot FMV Populate. **Same host, disabled 2026-09-07:** Offers Sweep (job 7712610). **Retired lanes:** EVM Transfers Ingest (08-02, with its `vercel.json` entry) · V1-Dapper Recovery (08-02; the route is on Vercel cron `*/20` instead). **Long-standing, intentional:** Backfill Offer-Fill Sales · All Day FMV Populate · Cadence Payer Balance Check (payer wallet empty by design) · Pinnacle Listings Reconcile · Refresh Special Serial Owners MV · UFC Listings Indexer · UFC Strike Pipeline.
+
+⚠ The 2026-09-12 note above says "twenty-six inactive, seventeen deliberate"; nine were then re-enabled, so the console now shows exactly the seventeen deliberate ones. **Identify a real outage by a `Failed (HTTP error)` cluster on a date, never by inactivity.** One ACTIVE entry was failing at this read: `RPC Smoke Concierge Daily` (`Failed (timeout)` 30 s at 02:08 PT 09-19, `200` 15.46 s the day before) — the 30 s cap inside the night IO spell, sample size 2; no change made.
 
 (`RPC Pipeline Runs Cleanup` was **deleted 2026-07-21** — its work was never dark; `run_weekly_db_maintenance()` is a wrapper around `run_weekly_log_purges()`, which runs on pg_cron jobid 198 `rpc-weekly-log-purges` daily **11:46 UTC** (moved off 09:54Z on 2026-08-30 — that hour carried 191 startup timeouts in 7 days; migration 20260830000048). A `pipeline_cadence_watchlist` row (`weekly-db-maintenance`) now monitors it — `audit_20260721_watchlist_weekly_db_maintenance`. This closes the long-open 🔴 "Pipeline Runs Cleanup failing every weekly run" item from the 2026-07-11 audit.)
 
@@ -179,7 +183,7 @@ Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `
 | topshot-sales-history-backfill.yml | 7,22,37,52 | |
 | offer-fill-backfill.yml | 9,24,39,54 | |
 | allow-list-reconcile.yml | ~~hourly :14~~ **dispatch-only** | ⚠ **MOVED TO VERCEL CRON 2026-08-01, same minute (:14).** GHA delivered only ~9 of 24 daily ticks (~60% loss) and this pipeline had **no `pipeline_cadence_watchlist` row at all**, so the loss was entirely invisible; a row was added in the same change (`audit_20260801_watchlist_allow_list_reconcile`, 240m / info). |
-| ops-monitor.yml | 13,43 + daily 06:41 UTC | |
+| ops-monitor.yml (⭐ 2026-09-19: both routes now ALSO on cron-job.org — `RPC Data Integrity` 13,28,43,58 · `RPC Stale FMV Monitor` 19,49 — because GitHub delivers this schedule ~6×/day, #124) | 13,43 + daily 06:41 UTC | |
 | pipeline-sentinel.yml | hourly :34 | |
 | sales-indexers-backstop.yml | 18,48 | Redundant backstop for all 4 watchlisted on-chain sales indexers (TS + AllDay + Golazos + UFC). cron-job.org stays primary; this dual-triggers so a silent auto-disable can't kill sales ingest. Routes are fire-and-forget + tx_hash-idempotent → safe to double-fire. |
 | wallet-backfill-backstop.yml | 38 of 02/08/14/20 | Passes `&force=1` to bypass the 12h seed-wallet gate — load-bearing, do not drop |
