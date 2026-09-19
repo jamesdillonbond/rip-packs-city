@@ -1,6 +1,6 @@
 # Handoff — 2026-09-19 morning pass (8:00–11:00 AM PT): health check, audit, IO saturation, housekeeping
 
-**Cowork, cloud container + laptop VM (push-capable). All times PT.** `main` at `b2ae593` + this pass's final docs commit. CI + Smoke Tests green on every commit of this pass.
+**Cowork, cloud container + laptop VM (push-capable). All times PT.** `main` at `7819f0c` + this closing commit. CI + Smoke Tests green on every commit of this pass.
 
 > ⚠ Scope line: the cloud container in this session was **not repo-attached** (push 403 at the repo-authorization layer). That is a fact about this cloud session only — Trevor's machine, Claude Code and the laptop VM push normally. **Commit these files as usual.** This pass pushed through the laptop VM (`device_bash` is back after the 09-08 Windows-update outage; the 08-29 `.rpc-git-cred` recipe works unchanged).
 
@@ -46,3 +46,7 @@ The arm was the one CRITICAL in the 9:04 AM sentinel. Re-derived: 6 of its 7 "de
 ## Coordination note
 
 Two sessions worked this lane in the same hour again (the concurrent Cowork cloud session read my un-pushed v2 body 8 minutes after the apply and correctly concluded "already deduplicated"). The register's claim line exists for this; I updated the R101 row rather than claiming a new one. If you touch these four functions, **re-read `prosrc` md5 first** — v2's guard block shows the pattern.
+
+## Closing reading (10:08 AM PT)
+
+v2 pooled over 20 completed ticks: blocks/call **927,297 → 235,065 (−75 %)**, physical reads/call **26,438 → 17,574 (−34 %)**. v2c over 6 ticks: **temp written/call 0** (from 3,998 / 7,740). Both contracts met. Completion rate still set by the estate (6/18 in the v2c window at io_wait 11–20; control 464 3/7, 463 19/19) — per the concurrent session's retraction entry and this one, **the next lever is the next big estate reader, not this function.** 10:04 AM Sentinel: WARN, no critical arm.
