@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔒 A GUARD FOR THE CLASS I JUST BROKE — a procedure that COMMITs may not carry a SET clause; the 09-14 guard bans the opposite direction. **Its own first draft was permanently red and the control caught it** · Cowork cloud
+
+**Two migrations (one superseding the other) + their files. New read-only check function, ban at zero. No data touched, no existing object rewritten.**
+
+🚨 **WHY A GUARD AND NOT ANOTHER NOTE: THIS CLASS HAS SHIPPED THREE TIMES IN THREE MONTHS.** 2026-08-22/23 (**R14, closed WONTFIX, *"do NOT re-attempt"***) · 2026-09-13/14 (`20260914053000` → reverted by `20260914055000` after jobid 259 failed its first tick in 0.5 s) · **2026-09-18, mine.** ⭐ **A WONTFIX with "do not re-attempt" written on it did not stop the third attempt.** The rule is PostgreSQL's: a routine with an attached `SET` clause runs inside an implicit transaction block and raises `2D000 invalid transaction termination` at its first `COMMIT`.
+
+⭐ **AND THE REASON IT WAS AVAILABLE A THIRD TIME IS THAT THE GUARD ADDED FOR IT COVERS THE OTHER DIRECTION.** `check_function_search_path_drift()` (09-14) is a ban-at-zero on FUNCTIONS *missing* a pin, and it excludes procedures by `prokind='f'` — correctly, since the property is not true of them. The recurring defect is the **inverse**: a PROCEDURE that does transaction control and **has** a pin. **Nothing asserted that direction.** `check_procedure_transaction_control_pin_drift()` now does.
+
+⛔ **MY FIRST DRAFT OF THE GUARD WAS ITSELF THE BUG, AND THIS IS THE PART WORTH READING.** It matched `prosrc ~* '\mcommit\M'` raw and immediately flagged `reconcile_all_seeded_wallet_stats` — a procedure that is **correctly pinned and does no transaction control**. Its only `commit` is inside a comment reading, in full: **`-- ⛔ Do NOT add COMMIT here -- see the header.`** ⭐ **The guard would have been permanently red on a correct object, flagging a comment whose whole purpose is to prevent the defect the guard is for.** ⚠ **Why the draft looked safe: that regex is lifted from `20260914055000`, which used it correctly — to confirm two procedures it had already named. A predicate sound for confirming a KNOWN SET is not sound as a ban-at-zero over a POPULATION.** Fixed by stripping comments before matching **and** requiring a semicolon (a bare word is a mention; a word plus `;` is a statement) — both, because the strip is naive about `--` inside a string literal.
+
+🧪 **CONTROLS BOTH DIRECTIONS, against live scratch objects, since dropped.** POSITIVE: a scratch procedure with `set search_path` and a real `commit;` **is** flagged. NEGATIVE: a scratch procedure whose only `commit` sits in a `--` comment is **not**. CLEAN: with both dropped the guard returns `[]` over a **non-empty population of 3**.
+
+📏 **POPULATION MEASURED, NOT ASSERTED — the first draft's comment claimed it without counting.** `reconcile_all_saved_wallet_stats` pinned=false txn=true ✓ · `reconcile_all_seeded_wallet_stats` pinned=**true** txn=**false** ✓ · `rpc_trust_health_precompute_refresh_p` pinned=false txn=true ✓. **3 procedures, 2 with transaction control, 0 of those pinned.** The claim was right by luck; asserting it unmeasured was the error — the third instrument I wrote tonight that answered without being checked first.
+
+⚠ **NOT WIRED INTO `rpc_ops_snapshot()`, and the reason is stated rather than omitted:** that is a FULL-BODY `CREATE OR REPLACE` of a large shared function, and a concurrent session was pushing to `main` throughout this window. The repo's rule is to re-read the live object immediately before such a write. 👉 **NEXT STEP, one line: add `'procedure_txn_control_pins', public.check_procedure_transaction_control_pin_drift()` beside the existing `check_function_search_path_drift()` key, after re-reading the live body.** Until then the function has no caller — which, after tonight, I am not going to pretend is fine.
+
+🙏 **Also recorded: the concurrent session fixed CI on MY migration** (`654a6e062`) — `20260919001159` lacked the `-- anon-exec:` marker `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` requires, and my 00:11Z inbox entry belonged under its own UTC date, not 09-18. Both files here carry the marker from the start.
+
+- **Revert:** `DROP FUNCTION public.check_procedure_transaction_control_pin_drift();` — read-only, no caller yet, so the drop is inert. **No data half.**
+
 ### 2026-09-18 · ⛔ SELF-REVERT — I PINNED `search_path` ON A PROCEDURE THAT DOES TRANSACTION CONTROL, WHICH A MIGRATION IN THIS REPO NAMES AS THE ONE THING NOT TO DO. Nothing broke, and the reason is its own finding · Cowork cloud
 
 **One migration, `RESET search_path` on one procedure. Nothing else touched.** Undoes half of this afternoon's `20260918225909`; the R104 `editions.badges` comment in that same migration is UNAFFECTED and stands.
