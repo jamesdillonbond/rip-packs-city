@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🔴 MAIN'S SMOKE GATE WENT RED ON A STRAY `zz_r108_probe` TABLE — cleaned up, and the experiment that left it behind turns out to have PROVED the thing R108 needed to know · Cowork cloud
+
+**Two DB changes shipped in one migration (`20260919120000`): `public.zz_r108_probe` DROPPED and pg_cron job 516 `zz-r108-probe-setcic` UNSCHEDULED. Guarded on the table being exactly the 1-column / 100-row scratch probe with zero function or view readers.**
+
+🔴 **Found by CI, not by a sweep.** My own docs commit `7b6d9dae0` came back **Smoke Tests: failure** — `HARD FAIL: public base tables: RLS on + no anon write — 1 violation(s): rls_off_base_table:zz_r108_probe`. An automated R108 experiment had left a table in `public` with **RLS OFF and SELECT granted to `anon` and `authenticated`**, plus an **ACTIVE daily cron job** that fails every day. `check_public_security_invariants()` agreed once asked: **1 row**. ⭐ **Both instruments were right; the difference is that the guard is only read when someone runs it, and the smoke gate is unmissable. That is the argument for the gate.** ⚠ The other 5 smoke failures that run were **soft/informational transient timeouts** from the loaded estate — not mine, not new.
+
+⭐⭐ **AND THE LITTER WAS WORTH MORE THAN THE TIDY-UP — it answers R108's blocking question with a measurement instead of an assumption.** Job 516's command was `SET statement_timeout = '900s'; CREATE INDEX CONCURRENTLY zz_r108_probe_idx_a ON public.zz_r108_probe (a);`. Its one run, **04:52 PT, failed in 0.4 s**:
+
+> `ERROR: CREATE INDEX CONCURRENTLY cannot run inside a transaction block`
+
+⇒ 🚨 **A MULTI-STATEMENT pg_cron COMMAND IS WRAPPED IN A TRANSACTION BLOCK.** The standing note that *"a one-off pg_cron job CAN run `CREATE INDEX CONCURRENTLY` — fresh libpq connection, no transaction block"* holds **only for a command that is ONE statement with NO prefix**. ⛔ **So R108 cannot buy build time with a `SET statement_timeout` prefix — the prefix is precisely what destroys the property CIC requires.** That closes the pincer R108 already had one jaw of: as **postgres** the build dies at the cluster-wide **120 s** timeout in *"waiting for writers before validation"*, and the obvious workaround is now **measured impossible, not merely untried**; as **cron_heavy** the 600 s role default applies with no prefix needed, but cron_heavy **does not own the table**. 👉 **R108 needs a route that is neither: a single-statement job under a role that BOTH owns `topshot_atlas_market_events` AND carries a role-level timeout above the build time. Do not re-try the SET-prefix form — it is refuted.**
+
+- **Revert:** the probe was scratch — `create table public.zz_r108_probe (a integer); insert … generate_series(1,100);` — but the form it tested is refuted, so there is no reason to. **Verified after:** `check_public_security_invariants()` **0**, zero `zz_*` objects, zero `zz-*` jobs, txn-pin / search-path / secdef-anon guards all **0**.
+
 ### 2026-09-19 · 🧨 R109's MECHANISM IS REFUTED BY A FREE NATURAL EXPERIMENT — the visibility map recovered to 98.1% ON ITS OWN and the heap fetches did not move; the `*/6` back-off is REVERTED because its own control recovered harder · Cowork cloud
 
 **One DB change shipped — `rpc-ts-listings-atlas-sync` (jobid 466) `*/6` → `*/2`, REVERTING migration `20260919064000` from 22:40 PT last night. Nothing else touched.**
