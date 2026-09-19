@@ -164,17 +164,20 @@ async function post(payload) {
 // old shuffle rather than to a fixed order (which would be worse than what we had).
 async function fetchWalkOrder() {
   try {
-    const u = new URL(INGEST_URL);
-    u.searchParams.set("limit", "1000");
-    const r = await fetch(u, { headers: { Authorization: `Bearer ${INGEST_TOKEN}` } });
-    if (!r.ok) { console.log(`[panini-runner] walk-order GET -> ${r.status}; falling back to shuffle`); return []; }
+    // No `limit` — the runner needs the WHOLE catalogue. A trimmed list would make every
+    // recently-walked edition look like a brand-new discovery to the classifier below, and
+    // brand-new discoveries are walked FIRST. `complete` is the route's own statement that
+    // nothing was paged off or trimmed; without it the classifier must not run.
+    const r = await fetch(INGEST_URL, { headers: { Authorization: `Bearer ${INGEST_TOKEN}` } });
+    if (!r.ok) { console.log(`[panini-runner] walk-order GET -> ${r.status}; falling back to shuffle`); return { list: [], complete: false }; }
     const j = await r.json();
     const list = Array.isArray(j?.pskus) ? j.pskus.filter((x) => typeof x === "string" && x.startsWith(WC_PREFIX)) : [];
-    console.log(`[panini-runner] walk order: ${list.length} known pskus, stalest first (oldest last_seen_at ${j?.oldest_last_seen_at ?? "?"})`);
-    return list;
+    const complete = j?.complete === true;
+    console.log(`[panini-runner] walk order: ${list.length} known pskus, stalest first, complete=${complete} (oldest last_seen_at ${j?.oldest_last_seen_at ?? "?"})`);
+    return { list, complete };
   } catch (e) {
     console.log(`[panini-runner] walk-order GET failed: ${e.message}; falling back to shuffle`);
-    return [];
+    return { list: [], complete: false };
   }
 }
 
@@ -477,18 +480,22 @@ async function main() {
   // external_id), and the per-card walk below navigates straight to /marketplace-details/<psku>
   // — it never needed the grid to have surfaced that card in this run. So: the grid keeps
   // discovery, our own catalogue supplies refresh, oldest first.
-  const known = await fetchWalkOrder();
+  const { list: known, complete: knownComplete } = await fetchWalkOrder();
   const discovered = enumPskus.size > 0 ? [...enumPskus] : fileList;
   let pskus, orderMode;
   if (known.length > 0) {
-    // Brand-new discoveries first (no row, therefore no price at all), then our stalest known
-    // editions, then anything the grid showed that the order list did not reach.
     const knownSet = new Set(known);
-    const fresh = discovered.filter((p) => !knownSet.has(p));
+    // ⚠ "Absent from `known`" means BRAND NEW only when `known` is the COMPLETE catalogue.
+    // On a partial list (a paging failure server-side) every recently-walked edition is also
+    // absent, and promoting those to the front is precisely the re-walking this change exists
+    // to stop — so the promotion is gated on the route saying the list is complete.
+    const fresh = knownComplete ? discovered.filter((p) => !knownSet.has(p)) : [];
     const seen = new Set(fresh);
     pskus = [...fresh];
     for (const p of [...known, ...discovered]) if (!seen.has(p)) { seen.add(p); pskus.push(p); }
-    orderMode = `stalest-first (${fresh.length} new + ${known.length} known)`;
+    orderMode = knownComplete
+      ? `stalest-first (${fresh.length} new + ${known.length} known)`
+      : `stalest-first, PARTIAL list (${known.length} known; new-first promotion disabled)`;
   } else {
     // FALLBACK ONLY — the order endpoint was unreachable. Shuffle (Fisher-Yates) so successive
     // runs at least cover different subsets, which is the behaviour this file had before.
@@ -501,7 +508,7 @@ async function main() {
   // Post the enumeration record BEFORE the long per-card walk, so it lands even if the walk is
   // later killed (laptop sleep / unplug / rate-limit). Fire-and-forget semantics: post() already
   // swallows its own failures, and telemetry must never break the ingest it measures.
-  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length } });
+  await post({ enum: { ...enumStats, walking: pskus.length, file_fallback: fileList.length, order_mode: orderMode, known_order: known.length, known_complete: knownComplete } });
 
   // --- 2. PACKS --- (post IMMEDIATELY after this walk so pack data lands even if the long
   //     per-card walk below stalls; 2.5s wait gives getPackMarketStats time to fire on load)

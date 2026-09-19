@@ -39,6 +39,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 import { toEditionRow, toFmvRow, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc } from "@/lib/chains/panini/ingest-normalize";
+import { fetchAllPaged } from "@/lib/supabase-paginate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -215,9 +216,20 @@ export async function POST(req: NextRequest) {
 // degrading to today's behaviour is acceptable, degrading to a fixed enumeration order would be
 // worse than what we have.
 //
-// ⚠ `limit` is capped at 1000 because PostgREST CLAMPS any larger .limit() to 1000 silently
-// (known-issues #71) — a bigger number here would be an unstated claim, not a bound. 1000 is far
-// more than one walk consumes (~200–350 editions), so the cap never binds in practice.
+// ⚠ THIS RETURNS THE WHOLE CATALOGUE, AND THE FIRST VERSION RETURNING ONLY THE STALEST 1,000
+// WAS WRONG IN A WAY THAT WOULD HAVE BLUNTED THE FIX IT SHIPPED FOR. The runner classifies an
+// enumerated psku as a BRAND-NEW discovery when it is absent from this response, and walks those
+// first (a card with no row has no price at all). With a truncated list, every edition that is in
+// our catalogue but NOT among the stalest 1,000 — i.e. every RECENTLY WALKED one — reads as
+// "brand new" and gets promoted to the FRONT of the queue. The grid surfaces the most actively
+// listed cards, which are exactly the ones walked most recently, so that misclassification would
+// have put hundreds of already-fresh editions ahead of the stale backlog. ⭐ The lesson: an
+// "absent from the list" test is only as good as the list's COMPLETENESS, and a bound chosen for
+// the reader's convenience silently redefines what absence means.
+//
+// PostgREST CLAMPS any .limit() above 1,000 with no error (known-issues #71), so completeness
+// here requires paging — `fetchAllPaged` is the one place that workaround lives. `truncated` is
+// forwarded rather than swallowed, and the runner degrades to a safe ordering when it is true.
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") || "";
   const ingest = process.env.INGEST_SECRET_TOKEN;
@@ -226,28 +238,39 @@ export async function GET(req: NextRequest) {
   if (!authed) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const sp = new URL(req.url).searchParams;
-  const limit = Math.max(1, Math.min(1000, Number(sp.get("limit")) || 1000));
+  // Optional trim for a probe (`?limit=5`). Omitted = the whole catalogue, which is what the
+  // runner must have; see the completeness note above before reintroducing a default bound.
+  const trim = Number(sp.get("limit")) > 0 ? Number(sp.get("limit")) : null;
 
   // nullsFirst: an edition row with a NULL last_seen_at has never been recorded as walked, so it
-  // is maximally stale, not minimally.
-  const { data, error } = await (supabaseAdmin as any)
-    .from("panini_editions")
-    .select("external_id,last_seen_at")
-    .order("last_seen_at", { ascending: true, nullsFirst: true })
-    .limit(limit);
+  // is maximally stale, not minimally. The .order() is also what makes paging safe — an unordered
+  // paged read can duplicate a row on one page and drop it from another.
+  const paged = await fetchAllPaged<{ external_id: string; last_seen_at: string | null }>(
+    (from, to) =>
+      (supabaseAdmin as any)
+        .from("panini_editions")
+        .select("external_id,last_seen_at")
+        .order("last_seen_at", { ascending: true, nullsFirst: true })
+        .order("external_id", { ascending: true })
+        .range(from, to),
+    { pageSize: 1000, maxPages: 20, label: `${PIPELINE}/walk-order` },
+  );
 
-  if (error) {
+  if (paged.error) {
     // Fail LOUD but non-fatal: the runner treats any non-200 as "use the shuffle".
-    console.error(`[${PIPELINE}] walk-order read failed: ${error.message}`);
+    console.error(`[${PIPELINE}] walk-order read failed: ${paged.error}`);
     return NextResponse.json({ error: "walk_order_unavailable" }, { status: 503 });
   }
 
-  const rows = (data ?? []) as Array<{ external_id: string; last_seen_at: string | null }>;
+  const rows = trim ? paged.rows.slice(0, trim) : paged.rows;
   return NextResponse.json({
     as_of: new Date().toISOString(),
     order: "last_seen_at_asc",
     count: rows.length,
-    limit,
+    // ⚠ Load-bearing for correctness, not diagnostics: the runner may only treat "absent from
+    // pskus" as "brand new" when this is false AND nothing was trimmed. See the note above.
+    complete: !paged.truncated && !trim,
+    truncated: paged.truncated,
     // The age of the two ends, so a reader of this response can tell a healthy rotation from a
     // stalled one without a second query.
     oldest_last_seen_at: rows[0]?.last_seen_at ?? null,
