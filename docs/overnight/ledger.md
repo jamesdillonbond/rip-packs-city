@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🚨 SHIPPED (prod: data + function + pg_cron + watchlist) — BOTH PACK-SALES LANES HAD BEEN DEAD 6 AND 7 DAYS behind a terminal `done` latch, invisible because neither lane writes `pipeline_runs` at all · Cowork cloud
+
+**This is what "pipeline failures the sentinel isn't alerting on" actually looked like.** `topshot_pack_sales_history` last ingested **2026-09-13 12:34 PM PT**; `allday_pack_sales_history` **2026-09-12 06:46 AM PT**. Zero rows in 24 h on both. Meanwhile pg_cron jobids 25/29 dispatched **478 and 477 times in 24 h and pg_cron marked every one `succeeded`.**
+
+🚨 **THE MECHANISM — `done` IS A TERMINAL LATCH WITH NO RESETTER.** `topshot_pack_sales_cursor.done` / `allday_pack_sales_cursor.done` went `true` (09-13 6:10 PM PT / 09-12 4:15 PM PT) and never came back. I dispatched jobid 29 by hand at **9:38 AM PT** and the edge function returned, in full, **`{"done":true}`** — it reads the flag, no-ops, and exits. ~960 dispatches/day into that short-circuit.
+
+⭐ **WHY pg_cron SAID `succeeded` 955 TIMES OVER A DEAD LANE:** the command is a `net.http_post`, and **a pg_net dispatch succeeds when the POST is ENQUEUED, never when the function did work.** `cron.job_run_details` is not an instrument for anything an edge function does.
+
+🚨 **AND WHY NOTHING ALARMED — THE BLIND SPOT IS STRUCTURAL, NOT AN OVERSIGHT.** Neither lane writes a `pipeline_runs` row **under any name** (checked against all 196 pipelines seen in 72 h). Every sentinel pipeline arm — Pipeline Silence, Pipeline Success, Pipeline Success Coverage — is scoped to `pipeline_cadence_watchlist` over `pipeline_runs`. **A lane that writes no row is out of scope BY CONSTRUCTION.** ⭐ **Measured the whole class while I was there: of the 12 active cron jobs that POST to an edge function, FIVE write nothing to `pipeline_runs`** — jobids **25, 29** (pack sales), **27** (`backfill-allday-dist-opened`), **22** (`resolve-allday-pull-editions`), **26** (`resolve-allday-rip-dist-api`) — ~**1,390 dispatches/day** the sentinel cannot see. ⚠ **Settled by DISPATCH-MINUTE ALIGNMENT, not by name-matching**: no pipeline's start-minutes match `2-58/4`, `17`, or an all-day `9,39`, and name-similarity had suggested three false matches.
+
+📏 **THE FIX, AND ITS FALSIFIER FIRED IN UNDER TWO MINUTES.** Reset `after_cursor = NULL, done = false` — head of the walk, the state the lane was in before 09-14.
+
+⭐ **TOP SHOT WAS RESET FIRST AND ALONE, ON PURPOSE — ALL DAY WAS HELD AS THE CONTROL.** Both were dead the same way, so releasing one and holding the other for four minutes gives a no-change control the fix cannot move, **both sides counted by the same query**:
+
+| lane | newest sale | rows touched 15 min | genuinely new sales |
+|---|---|---|---|
+| topshot (reset 9:40 AM PT) | 09-13 12:59 → **09-19 15:19** | 1,288 | **1,187** |
+| allday (control, held) | 09-12 02:15 — **unmoved** | **0** | **0** |
+
+All Day was then released and reached **09-17 15:49**. ⚠ **All Day could NOT have carried the positive leg**: its market is 1–17 rows/day, so a 2-day-old newest sale there is plausible rather than a second fault — the same reason the 2026-08-26 entry calls its arm "uninformative, not clean".
+
+**Shipped, four parts:**
+1. `20260919164919` + `20260919164951` — `public.unlatch_pack_sales_cursors(p_latched_minutes int DEFAULT 30)`: un-latches a cursor that has been `done` past the threshold, and **writes a `pipeline_runs` row on every tick — the first and only `pipeline_runs` coverage these two lanes have ever had.**
+2. pg_cron **jobid 526** `rpc-pack-sales-cursor-unlatch`, `3,13,23,33,43,53 * * * *` (off the round minutes — `max_worker_processes = 6` vs `cron.max_running_jobs = 32` makes :00/:15/:30/:45 a live starvation source). Verified firing 9:53:01 AM PT, 228 ms, and the `pipeline_runs` row is there — **the outcome table, not the cron self-report.**
+3. `pipeline_cadence_watchlist` row for `pack-sales-cursor-unlatch` (40 min, `high`) — so the **guard's own** death is visible. Without it the self-heal is the new silent single point of failure.
+4. `20260919165300` — record-only for the two `execute_sql` halves (the hand unlatch + the schedule), which write no `schema_migrations` row.
+
+⚠ **FRESHNESS IS READ FROM `block_time`, NOT `ingested_at`, AND THAT IS A COST DECISION.** There is no index on `ingested_at`; `max()` over it is a seq scan of 168 MB + 141 MB, which at a 10-minute cadence is **~45 GB/day — larger than the problem the function exists to fix.** `block_time` is indexed on both tables, so it is a one-row backward index scan. ⚠ **Read the number with its neighbours**: a flat `newest_sale_at` means EITHER the lane stopped OR the market did — pair it with `cursor_updated_at` and `was_latched` in the same row.
+
+⭐ **`apply_migration` SUCCEEDING PROVES THE FUNCTION WAS CREATED, NEVER THAT IT RUNS.** The first body named `duration_ms` in its INSERT — a **GENERATED** column on `pipeline_runs` — and every call raised `428C9`. The creating migration reported success because a plpgsql body is not planned until it executes. **Caught only because I ran it once before wiring a scheduler to it**; otherwise the first evidence would have been a pg_cron failure on a lane nobody watches, which is the precise failure mode this whole pair of migrations removes.
+
+⛔ **DO NOT "FIX" THIS BY RE-APPLYING THE 2026-08-25 CADENCE CUT.** Jobids 25/29 are back on `*/3` and **that is deliberate** — the 08-26 entry measured the 15-minute cut starving head freshness 5× (head rows arrive only at the lap boundary, so cadence is a multiplier on lap time) and says "do not, until the head-check lands". ⚠ **The guard that would have caught a wrong re-cut is `20260826063100`'s `DO $$ … RAISE EXCEPTION`, and it is a MIGRATION — it ran once on 08-26 and will never run again.** A check that cannot run is indistinguishable from one that passes.
+
+ⓘ **Filed, not shipped — the remaining half.** There is still **no ALARM on pack-sales staleness**, only a readable number; and the other three blind edge-function lanes (jobids 27/22/26) have not been checked for a latch of their own. Both queued rather than rushed.
+
+**Revert:** `SELECT cron.unschedule('rpc-pack-sales-cursor-unlatch'); DROP FUNCTION public.unlatch_pack_sales_cursors(integer); DELETE FROM public.pipeline_cadence_watchlist WHERE pipeline = 'pack-sales-cursor-unlatch';` — the cursor UPDATEs should NOT be reverted (the prior state was a dead latch); exact pre-fix values are in `20260919164919` if ever needed forensically.
+
 ### 2026-09-19 · 🛰 SENTINEL `Cadence Collapse` WAS THE ONE CRITICAL AT 9:04 AM — 6 of its 7 "degraded" lanes are the 09-13 backstop fix read as a collapse; re-acked to 10-01 with the mechanism and a falsifier, no threshold touched · Cowork (desktop VM)
 
 **One config row (`sentinel_threshold_config`, `check_name = 'Cadence Collapse'`): `ack_reason` + `ack_expires_at = 2026-10-01 19:00Z`. Nothing else changed.** The 9:04 AM run read `CRITICAL` with `critical: ["Cadence Collapse"]` and eleven warns, four of them `INCONCLUSIVE (db saturated)` — the spell, not findings.
