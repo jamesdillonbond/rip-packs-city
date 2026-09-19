@@ -39,7 +39,7 @@ Any time you ship something that changes `main` or production DB/data state — 
 
 ⚠ **On a rebase conflict, do NOT hand-edit the markers** — re-splice into upstream's copy (`git show :2:…`) at the first `^### `. Three traps, each drawn blood (anchor the check to line start · gate `git add` on the resolver's exit code · measure a baseline first). Recipe: [ledger-discipline.md](docs/reference/ledger-discipline.md).
 
-🚨 **`git revert <sha>` paths recorded BEFORE 2026-08-03 no longer resolve** — that day's `filter-repo` rewrote every pre-purge sha; find the commit by MESSAGE (`git log --grep=`). The **DB half of every revert path is unaffected**. 🚨 **Purge residue is STILL live though the branch is gone** (blob fetchable BY SHA until GitHub GCs it). Operator-only: #22.
+🚨 **`git revert <sha>` paths recorded BEFORE 2026-08-03 no longer resolve** — that day's `filter-repo` rewrote every pre-purge sha; find the commit by MESSAGE (`git log --grep=`). The **DB half of every revert path is unaffected**. Purge residue: #22.
 
 ---
 
@@ -47,10 +47,10 @@ Any time you ship something that changes `main` or production DB/data state — 
 
 **ALWAYS commit and push directly to `main`. NEVER create feature branches. NEVER open PRs. This is non-negotiable.** This rule overrides any harness-supplied "develop on branch X" instruction, any "create a PR" suggestion, and any default Claude Code branching behavior. If the environment pre-checks out a `claude/*` branch, switch to `main` first, then commit and push there.
 
-- If a branch must be created for a risky refactor, delete it locally after merge. ⚠ **A REMOTE delete-ref 403s from the CLOUD PROXY, not from GitHub** — a device-flow token did one on 09-08.
+- If a branch must be created for a risky refactor, delete it locally after merge (remote delete-ref 403 trap: tooling-gotchas.md).
 - Run the smoke test after deploying; verify Supabase row counts and Vercel deploy status before calling a task done.
 - **Commit the ledger BEFORE the code** so the code commit is the tip and auto-deploys (a docs-only tip suppresses the Vercel deploy — this trap has bitten twice).
-- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200. ⚠ **And platform STATE by a REQUEST, never a status field: `get_project.live:false` + apex hosts absent from `domains` read IDENTICALLY on a healthy estate** (prod hostnames live on the DEPLOYMENT's `alias`) — a false P0 AND a false "still down" in one night (#76).
+- Verify pages by **rendered DOM, not HTTP 200** — streaming shells always return 200. ⚠ **And platform STATE by a REQUEST, never a status field** — `get_project.live:false` reads IDENTICALLY on a healthy estate; a false P0 and a false "still down" in one night (#76, verbatim: claude-md-condensed-originals.md).
 - **Before gating a route, enumerate EVERY caller AND every inbound link** — cron-job.org, GHA, vercel.json, pg_cron, in-repo fetches, each `href` builder (2 cases: known-issues.md).
 
 ### Pushing from a sandbox — test it, do not assume it
@@ -58,7 +58,7 @@ Any time you ship something that changes `main` or production DB/data state — 
 - ⚠ **"The sandbox cannot push" is CONDITIONAL — TEST IT, in one command: `git push --dry-run origin main`** (re-verified 09-12). A session whose authorized repo set lacks this repo is refused at the **repo-authorization layer, before any credential is evaluated**, so a PAT returns the identical 403 (discriminator + 2nd probe: tooling-gotchas.md).
 - ⚠ **Diagnose a push failure from the ERROR STRING, not from the fact that it failed** — `(non-fast-forward)` means BEHIND ORIGIN and reads exactly like a permissions failure.
 - ⛔ **Never "fix" a 403 by re-embedding a PAT** — merely reading it (`git remote -v`) prints a live `github_pat_…` into the transcript; that burned a real PAT on 2026-08-16. ⚠ **The DESKTOP `remote.origin.pushurl` harvest is DEAD and fails QUIETLY.**
-- **When push IS genuinely denied**, four proven routes (recipes: tooling-gotchas.md): repo-as-session-source · `/web-setup` (authorizes at CREATION — fixes the NEXT one) · desktop "Run this task" · `git format-patch` → the laptop `cowork-push` queue.
+- **When push IS genuinely denied**, four proven routes (recipes: tooling-gotchas.md): repo-as-session-source · `/web-setup` (authorizes at CREATION — fixes the NEXT one) · desktop "Run this task" · `git format-patch` → VM `git am` + `.rpc-git-cred` (back 09-19; `am` rewrites the sha — the cloud clone then reads "unpushed") · the laptop `cowork-push` queue.
 - ⚠ **A no-push session's DB reach is narrower than `apply_migration` suggests** — a PINNED SQL function is PUSH-GATED and every `apply_migration` reds `migration-parity` until its file is committed. **Real no-push levers: pg_cron schedules, indexes, new objects**; `execute_sql` for SCRATCH DDL.
 - Bash-green ≠ push-green; never commit from the mount. History: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
@@ -113,7 +113,7 @@ git add -A && git commit -m "feat: ..." && git push origin main   # Git Bash (MI
 # Vercel redeploy / env writes — PowerShell Invoke-WebRequest ONLY; see tooling-gotchas.md
 ```
 
-⚠ **A pipe reports the LAST command's exit code.** `npx tsc --noEmit 2>&1 | tail -5 && echo "EXIT=$?"` reports **`tail`'s** status — it printed `EXIT=0` from a sandbox with no `node_modules`. Run bare and echo `$?`, or read `${PIPESTATUS[0]}`. ⚠ **`grep <suite-log> && git push` gates on grep FINDING a line, not on the run PASSING** — that pushed a red suite (09-04). Branch on the EXIT value.
+⚠ **A pipe reports the LAST command's exit code** (`… | tail -5 && echo $?` printed `EXIT=0` with no `node_modules`) — read `${PIPESTATUS[0]}`. ⚠ **`grep <log> && git push` gates on grep FINDING a line, not on the run PASSING** (pushed a red suite 09-04). Branch on the EXIT value.
 
 ---
 
@@ -136,10 +136,10 @@ These are the rules a session needs *before* it knows which subsystem it is in. 
 - **There are always THREE states, never two:** read failed · read ok + genuinely empty · read ok + unrenderable (e.g. rows that failed a name join). A name filter is not an emptiness test. ⚠ **The MIRROR: an `unknown` that is actually KNOWN is the same defect** (#80). ⛔ **A failure flag for ONE source must not gate a field fed by ANOTHER.**
 - ⚠ **A SERVER-SEEDED PROP is a fifth layer the table does not cover:** `initial={rows}` arrives as `[]` with **no provenance**, so a component that distinguishes failure for its OWN fetch still concludes on the seed (7 by 08-24). Pass `initialFailed`, and **assert it by SSR (`renderToString`)** — a mount effect corrects the state before jsdom looks, so two OPPOSITE mutations pass every client test.
 - ⚠ **ISR CACHES A FAILED READ for the whole `revalidate` window** and self-heals warm, so it is **easy to declare fixed by accident**: test *"does a COLD pass exceed the budget"*, never *"is the page OK now"* (#33).
-- **Fix per PANEL, not per page.** A page with one honest error branch is not an honest page (instance six: key-files-and-honesty.md).
+- **Fix per PANEL, not per page.** A page with one honest error branch is not an honest page (key-files-and-honesty.md).
 - **The worst sub-classes:** an account-level false claim; a page that **LOADS state and WRITES IT BACK** (a failed read there is a *delete*); an **alert**; a **guard** (`?? 0` fails it *open*); an empty state that **CONCLUDES**; a **SWEEP whose `ok` means it COMPLETED, not that its LANES worked**; a **DONE stamp in an ELSE that cannot tell IN FLIGHT from FINISHED** (#123). Cases: key-files-and-honesty.md
 - ⚠ **`?? 0` on a supabase count, `|| 1` as a divide-guard, and a DEFAULTED DB COLUMN beside a NULL `*_checked_at` are the fabricated-value shapes.** **ANY unwrapper that RETURNS on failure** (#114) publishes a measured zero AND leaves every downstream `catch` dead; ⭐ **The DB form's tell is a PERFECT CORRELATION: `never_checked AND value=true` EXACTLY 0 means the value is the DEFAULT** (#112). ⛔ **A function projecting such a value must project its PROVENANCE too.** `no-fabricated-divisor-ratchet` bans it at zero. **Never persist a PARTIAL read as the fact** — a walk returning ROWS *and* an ERROR is the same shape (#119)
-- 🚨 **A CLIENT-ONLY failure was captured by NOTHING until the 09-07 beacon** — Sentry dark since 08-18 and the SDK is OUT OF THE TREE (09-18, CSP too — #34, decided: no spend); Vercel sees only server execution. Detectors: the `window.onerror`/rejection beacon → `usage_events.client_error` (per-tab `sid`; its alert arm counts only non-bot UAs), plus the scheduled `E2E DOM Smoke` badge (#69).
+- 🚨 **A CLIENT-ONLY failure is captured by NOTHING but the 09-07 beacon** (Sentry SDK OUT OF THE TREE — #34, decided: no spend; Vercel sees only server execution): `usage_events.client_error` + the scheduled `E2E DOM Smoke` badge (#69). Verbatim: claude-md-condensed-originals.md.
 - ⚠ **When you find one, grep for the EXPRESSION, not the file** — it has spread by copy-paste five times now; **a comment is only read by someone already in that file**.
 
 Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/reference/key-files-and-honesty.md).
@@ -168,11 +168,11 @@ Full detail: [docs/reference/testing-and-ci.md](docs/reference/testing-and-ci.md
 - ⚠ **Read `cron.job.command` to learn what a schedule calls; never infer the callee from the name** — two objects one suffix apart yielded *opposite* conclusions.
 - ⚠ **A directional claim needs a DISTRIBUTION, not a snapshot; a delta between two STOCKS is neither a rate nor a sign; `max()` on a `text` cursor is lexicographic.**
 - ⚠ **When an instrument's first finding is SURPRISING, establish WHO generated it before believing WHAT it says** — 17 "user-facing" client errors were ONE headless crawler, `ua` in the payload all along (#69). **A `count(*)` over an OPEN endpoint counts REQUESTS, not READERS.**
-- ⚠ **A rate POOLED ACROSS A FIX measures the fix's ABSENCE and reads as its FAILURE** — a kill rate was 87.5% pre-deploy, 0% post, **56% pooled**. Split on the change point: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
+- ⚠ **A rate POOLED ACROSS A FIX measures the fix's ABSENCE and reads as its FAILURE** — a kill rate was 87.5% pre-deploy, 0% post, **56% pooled**. ⛔ **Under an IO spell a cron DURATION or completion rate measures the ESTATE, not your fix — judge per-call work on pgss blocks/call** (R101 v1: reverted on durations, exonerated 26 min later). Split on the change point: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
 - ⚠ **Diff the SET, not the count** — a total can hold while membership turns over twice, so the number reads "no change" across a fix landing *and* a new arm firing. Case: [trust-board-and-safety.md](docs/reference/trust-board-and-safety.md).
 - ⚠ **Controls, both directions:** a NULL result needs a positive control; a POSITIVE needs a no-change control **the fix cannot move**; a DIFFERENCE needs both sides counted by the same instrument. **Never pair a count from one table with a property from another.** ⚠ **A control must use the PRODUCTION CALLER**: a `postgres` MCP call cannot prove a `cron_heavy` job runs.
 - ⚠ **FOUR ways a measurement lies about a change: a byte-identical HTTP response is as much a CACHE HIT as a fix; a DB A/B must be WARM-vs-WARM; an unordered `LIMIT` is physical order, not a sample** (use `abs(hashtext(k)) % N`); **and a reading taken while its SUBJECT CHANGED is not a reading** — ⛔ **and your OWN PROBE is the load here**. **Freeze the tree, then measure.** ⭐ **Warm-vs-warm also DIAGNOSES: expensive WARM = COMPUTE-bound (precompute it); cheap warm + expensive COLD = IO-bound (no index helps).**
-- ⛔ **A METRIC'S DEFINITION LIVES IN CODE, NOT IN THE THRESHOLD YOU REMEMBER — a model that cannot reproduce TODAY'S value cannot predict tomorrow's.** `MIN_SALES_30D_MEDIUM = 5` was right, but `fmv-recalc` re-fetches THIN editions over **90 days** and ask-corroboration lifts LOW→MEDIUM at **3**: the model read 34% against an observed 53%, and that 19-point miss shipped as a **backwards call on a launch gate.**
+- ⛔ **A METRIC'S DEFINITION LIVES IN CODE, NOT IN THE THRESHOLD YOU REMEMBER — a model that cannot reproduce TODAY'S value cannot predict tomorrow's.** A model that missed two code paths read 34% against an observed 53%, and that 19-point miss shipped as a **backwards call on a launch gate** (the two paths: claude-md-condensed-originals.md).
 - ⚠ **An ELIGIBILITY count is not a GAIN count** — they differ by the share ALREADY in the target state: a lever sized at 173 rows moved **54** — 119 were already MEDIUM (+2.8 pts → +0.9). **Ask what would CHANGE, not what the rule would fire on.**
 - ⚠ **AN ENGINE THAT IS UP IS NOT A PLATFORM THAT IS REACHABLE, and log SILENCE is not engine silence** — 09-18 the instance lost **outbound DNS** while Postgres kept writing (#122). ⭐ **A `<!DOCTYPE html>` from Supabase IS Cloudflare's `522`; probe an endpoint reading NONE of our tables to split ENGINE from PATH.**
 - ⚠ **Read the ERROR STRING, never the duration — and ALL of it: the clause you SKIP discriminates.** Two ~2-min timeouts (gateway vs `statement_timeout`) give one number, two meanings: [database.md](docs/reference/database.md). ⛔ **Never state a cause the error did not** — half a string became false user-facing copy on 09-14.
@@ -196,6 +196,7 @@ Full detail: [docs/reference/tooling-gotchas.md](docs/reference/tooling-gotchas.
 - ⚠ **Any `.range()` pagination MUST carry a deterministic `.order()`** on a UNIQUE key, or it reads the right *number* of rows and the wrong *rows*. The duplicates and omissions **cancel**, so every count-based check passes — only a DISTINCT count or a set comparison sees it. Now a **ban at zero**.
 - **A batch `.insert()` is ALL-OR-NOTHING — never swallow `23505` on one.** One duplicate fails the whole statement and writes none of the batch; on a cursored indexer that is permanent loss.
 - ⚠ **A `LIMIT` bounds a query's OUTPUT, not its COST — "lower the limit" is often not a lever.** Cut ITEMS per tick, not rows per item, and compare **BUFFERS**, never timings — one `WHERE collection_id` took `drain_fmv_cold_tail` from 66,499 buffers to 741. ⚠ **Scoping an aggregate is an EQUIVALENCE claim: PROVE it over the population.**
+- ⚠ **A differential upsert (`ON CONFLICT DO UPDATE … WHERE row IS DISTINCT FROM EXCLUDED`) WRITES the delta but PROBES every offered row** — 55k probes to write ~60 were ~700k of a tick's 927k buffers. LEFT JOIN the target first (cast to ITS types) and offer only the delta: −79 %/call (R101 v2, database.md).
 - ⚠ **`SET statement_timeout` on a function is INERT on pg_cron; via PostgREST only a HIGHER one applies (gateway cap ~120 s).** ⛔ Most are load-bearing — do NOT strip.
 - ⚠ **A queue walk that starts at the top of what it resolves COMPOUNDS** (three in one day, 09-07): page a BOUNDED slice of the INDEX behind a cursor, filter the page, walk a temp-table page row-by-row (no stats → every filter on every row before its LIMIT). Wire a new pg_net lane into the 4xx arm in its creating migration. [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
 - ⚠ **Every `apply_migration` causes a ~10–20 s burst of user-facing `PGRST002` 500s** (schema-cache re-introspection). Prefer a low-traffic window and batch migrations. `rpcWithRetry` does not save you — it retries for ~250 ms of a twenty-second outage.
@@ -229,11 +230,11 @@ Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes
 - **Long-form** (`sales`, `editions`, `collections.slug`): `nba_top_shot` · `nfl_all_day` · `laliga_golazos` · `disney_pinnacle` · `ufc_strike`
 - **Short-form** (`flowty_transactions`, `flowty_loans`, `flowty_loan_events`): `topshot` · `allday` · `golazos` · `pinnacle` · `ufc` · `unknown` — the CHECK whitelists exactly these six, NOT `other`
 
-⚠ **That CHECK is on `flowty_transactions` ONLY** (verified live 08-22; the other two carry no `collection` CHECK), so `'ufc_strike'` fails LOUDLY there and persists SILENTLY in `flowty_loans`/`flowty_loan_events`, where it simply never matches. Bridge: the `analytics_sales` view (long → short via CASE).
+⚠ **That CHECK is on `flowty_transactions` ONLY** (verified live 08-22), so `'ufc_strike'` fails LOUDLY there and persists SILENTLY in `flowty_loans`/`flowty_loan_events`, where it simply never matches. Bridge: the `analytics_sales` view (long → short via CASE).
 
 ### Collection UUIDs
 
-All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — ⚠ **re-read 2026-09-08: Candy MLB (`solana`) is now `is_active=true` (#63); Panini (`ethereum`) is the ONLY inactive row.**
+All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — ⚠ **09-08: Candy MLB (`solana`) is `is_active=true` (#63); Panini (`ethereum`) is the ONLY inactive row.**
 
 ### Enums
 
@@ -243,7 +244,7 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 
 `0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".** ⚠ **These are the REPO's names; the live `collection_series.display_label` reads `Series 5/6/7` for 6/7/8 (re-verified 08-24) and drives the Collection tab filter via `/api/collection-series`** — check which convention your surface parses. `lib/collection/series-param.ts` now resolves BOTH (`fdf84ee4`); which label WINS is still open.
 
-⚠ **This 0↔1 collision is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections.** `wmc.series_number` is ON-CHAIN; `editions.series` is DISPLAY. All Day / Golazos / Pinnacle use `1` legitimately and **`ufc_strike` has BOTH 0 and 1**, so a blanket remap corrupts four collections — a real 2026-08-05 incident silently dropped 385,734 TS rows. Check `collection_series` before touching any series logic.
+⚠ **This 0↔1 collision is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections.** `wmc.series_number` is ON-CHAIN; `editions.series` is DISPLAY. All Day / Golazos / Pinnacle use `1` legitimately and **`ufc_strike` has BOTH 0 and 1**, so a blanket remap corrupts four collections — a 2026-08-05 incident dropped 385,734 TS rows. Check `collection_series` before touching any series logic.
 
 ### Cadence
 
@@ -255,7 +256,6 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 
 1. **RPC is READ-ONLY** — no cart, no gifting, no trading. **Never offer an action the product lacks.** This binds every surface, not just the concierge.
 2. **Pinnacle FMV**: NEVER join by `edition_key` alone — always the triple (`character_name`, `set_name`, `variant_type`) per `92aab30`.
-
 3. **The prompt RECITES the data layer — DERIVE it**: thresholds interpolate `lib/fmv-confidence.ts`, coverage read live, never hand-typed.
 
 The rest: [concierge.md](docs/reference/concierge.md).
@@ -275,7 +275,7 @@ The rest: [concierge.md](docs/reference/concierge.md).
 
 ## Hot wallet & secrets
 
-- Flow CLI hot wallet: `0x3aa11c84d776838f` (Key 0, **ECDSA_secp256k1, SHA2_256**). NOT account-linked. `flow.json` gitignored. NEVER use a HybridCustody / linked wallet as the hot wallet. Code signing as this wallet MUST use secp256k1 + SHA2-256 — `lib/breaks/server-authz.ts` silently used p256 + SHA3-256 for months; tests for signing code must verify signatures **cryptographically**, never assert output shape/length.
+- Flow CLI hot wallet: `0x3aa11c84d776838f` (Key 0, **ECDSA_secp256k1, SHA2_256**). NOT account-linked. `flow.json` gitignored. NEVER use a HybridCustody / linked wallet as the hot wallet. Code signing as this wallet MUST use secp256k1 + SHA2-256 (`server-authz.ts` used p256 + SHA3-256 for months); tests for signing code must verify signatures **cryptographically**, never assert output shape/length.
 - Key env vars (8, incl. 3 absent from `.env.example`): [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
 ---

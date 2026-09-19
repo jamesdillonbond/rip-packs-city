@@ -2,6 +2,20 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐⭐ A DIFFERENTIAL UPSERT WRITES THE DELTA BUT PROBES EVERY OFFERED ROW — pre-filter with a LEFT JOIN, and judge the fix on `pg_stat_statements` blocks/call, never on cron durations (2026-09-19, register R101 v2)
+
+**The shape.** `INSERT INTO target SELECT … FROM wanted ON CONFLICT (key) DO UPDATE SET … WHERE (target.a, target.b) IS DISTINCT FROM (EXCLUDED.a, EXCLUDED.b)` looks incremental — it *writes* only rows that changed. But `ON CONFLICT` has to find the conflicting row for **every** offered row (one unique-index probe + one heap fetch each) before the `WHERE` can decide to skip it. Offer 55k rows to write 60 and you pay 55k probes.
+
+**Measured on the Atlas listing tick** (`atlas_listing_verify_tick`, jobid 466, every 2 min). The tick read **927,297 shared buffers per call**. The 09-18 R101 v1 found ~160k of that in the three open-book builds; v2 found where the other ~700k went — the two upsert arms in `sync_ts_listings_from_atlas` / `sync_cached_listings_from_atlas`, each pushing the whole ~55,655-row wanted set through ON CONFLICT to write ~60.
+
+**The fix (`20260919152824`), behaviour-preserving by construction:** a `LEFT JOIN target t ON t.key = w.key` in the source query, keeping only `t.key IS NULL OR (t.a, t.b) IS DISTINCT FROM (w.a::<target type>, w.b::<target type>)` — the comparison **cast to the target column types**, or an integer-vs-numeric mismatch re-offers every row. The conflict arm's own `WHERE` guard is **kept verbatim**, so the pre-filter can only narrow, never change, what is written. Equivalence proven on prod read-only before the apply: wanted set 55,655 = 55,655 (EXCEPT 0); pre-filter offers **725 rows (538 new + 187 changed) instead of 55,655**; cast/uncast agree 187 = 187.
+
+**Result, same instrument both sides** — `(shared_blks_hit+shared_blks_read)/calls` for queryid `-3354316985779850203` (userid = postgres), pre-window vs wholly-post window (change point 15:28:24Z): blocks/call **927,297 → 196,978 (−79 %, n=35)**; physical reads/call **26,438 → 17,919 (−32 %)**. A bounded memory grant (`temp_buffers 48MB` on the tick, `work_mem` 16/32 MB on the syncs — `20260919160033`, `20260919162927`) then took temp blocks written/call **3,998 → 0** (n=21).
+
+⛔ **What NOT to judge it on, and this is the durable half.** The estate ran io_wait 7–20 of 8–23 active backends all morning. The tick's wall-clock completion rate in the post window was **21/48** with the no-change control `464` at **8/19** — i.e. the completion rate measured the **estate**, not the function. **R101 v1 was reverted on 09-18 on exactly that instrument (8 of 10 ticks timed out after the apply) and exonerated 26 minutes later** when the reading turned out to be a 23-minute autovacuum spanning the window. A cancelled statement is not recorded in `pg_stat_statements`, so its counters move only on completed ticks — which is the point: **blocks/call isolates the work; durations are load-sensitive.** Split the counters at the change point (pre cumulative vs live), never pool.
+
+**Where this leaves the lane:** per-tick work is a quarter of what it was and its temp-file traffic is gone; its *completion rate* is still set by the estate's IO, and the next lever is the next big reader (`refresh_wmc_fmv_changed`, jobid 303 — 411 MB physical per call, #1 since the 08-12 reset), not this function. Three sessions have now micro-optimised this tick; the ledger and register R101 carry the readings.
+
 ## 🚨 A pg_cron COMMAND WITH ANY PREFIX RUNS IN A TRANSACTION BLOCK — so `CREATE INDEX CONCURRENTLY` cannot (2026-09-19, register R108)
 
 A probe job ran `SET statement_timeout = '900s'; CREATE INDEX CONCURRENTLY …` and failed in **0.4 s**:

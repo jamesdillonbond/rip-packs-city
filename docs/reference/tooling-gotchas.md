@@ -200,7 +200,19 @@ test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1
 `npm ci` in that clone stalls for 30+ min on this VM (Node 22 vs the repo's `24.x` engine, native bindings); `npm i --no-save --ignore-scripts` finishes in ~2 min and is enough for vitest + `scripts/recover-fileless-migrations.mjs` (source `.env.local` from the mount with `set -a; . …; set +a` — never print it). The **cloud** Cowork session is still repo-set 403; this recipe is desktop-only.
 
 
+### ✅ 2026-09-19 — THE VM IS BACK; path 1 pushes again, and here is the cloud-container + VM recipe (used for 8 commits, 8:28–10:15 AM PT)
+
+The Windows patch landed; `device_bash` runs again and `.rpc-git-cred` was intact. A Cowork session that is a **cloud container linked to the laptop** now has the simplest route of all, needing no clicks and no Trevor:
+
+1. Commit in the cloud clone as usual (ledger first, three ledger guards, pins/drift green). The cloud clone itself is still repo-set 403 — do not push from it.
+2. `git format-patch origin/main -o /mnt/user-data/outputs/patches/` → `device_commit_files` the patch to any connected-folder path (e.g. `…\Rip Packs City\cowork-2026-09-19\patches\`).
+3. In `device_bash`: a fresh clone in the VM's own `$HOME` (`$HOME/rpcwork`, `git reset --hard origin/main` if it exists) → `git -c user.name=Claude -c user.email=noreply@anthropic.com am -3 "$HOME/mnt/Rip Packs City/…/NNNN.patch"` → `git -c credential.helper= -c credential.helper="store --file=$HOME/mnt/rip-packs-city/.rpc-git-cred" push origin HEAD:refs/heads/main 2>&1 | sed 's/x-access-token:[^@]*@/x-access-token:[REDACTED]@/'` → print `git ls-remote origin refs/heads/main` beside `git rev-parse HEAD` and compare. Whole step is one `device_bash` call, ~20 s.
+4. ⚠ **`git am` REWRITES THE SHA**, so the cloud clone now reports its commit as "unpushed" (and the stop-hook says so). It is on the remote under a different hash: check with `git diff --stat HEAD origin/main` (empty) and `git reset --hard origin/main`. Do not push again and do not treat the hook as a failure.
+5. If `origin/main` moved under you (a concurrent session), `git fetch && git rebase origin/main` in the cloud clone **before** the format-patch, re-running the ledger guards — `am -3` resolves a clean ledger splice but not a real conflict.
+
 ### ✅ 2026-09-12 — a THIRD push path, for when the desktop VM is dead: `Rip Packs City\cowork-push\apply-and-push.cmd`
+
+⚠ **Dated: the VM outage this section was written for ended by 2026-09-19 (section above). The queue still works and is still the route when `device_bash` is down again; the "every `device_bash` call fails" sentence below is history, not the current state.**
 
 **Why it exists.** The 2026-09-08 Windows update broke the Cowork desktop VM outright — every `device_bash` call fails before running anything (`sandbox-helper: no Plan9 drive shares mounted`; status.claude.com: "Degraded functionality for Claude Cowork on Windows", awaiting Microsoft's patch, no in-app workaround). The bridge's FILE tools still work (`device_list_dir` / `device_stage_files` / `device_commit_files`), and `.rpc-git-cred` is intact for when the VM returns. Meanwhile the CLOUD container now carries a proxy-managed GitHub credential (`GH_TOKEN` is a `proxy-…` placeholder; `api.github.com/user` answers as Trevor), but a push is still refused unless the repository was attached **as a source when the task was created** — and ⛔ **the proxy OVERWRITES any `Authorization` header a tool sends** (a garbage bearer still authenticated as Trevor), so staging the laptop's cred file into the cloud can never work. Do not try.
 

@@ -1,6 +1,6 @@
 # Handoff — 2026-09-19 morning pass (8:00–11:00 AM PT): health check, audit, IO saturation, housekeeping
 
-**Cowork, cloud container + laptop VM (push-capable). All times PT.** `main` at `7819f0c` + this closing commit. CI + Smoke Tests green on every commit of this pass.
+**Cowork, cloud container + laptop VM (push-capable). All times PT.** `main` at `4b81018` + the docs commit that closes the thread. CI + Smoke Tests green on every commit of this pass.
 
 > ⚠ Scope line: the cloud container in this session was **not repo-attached** (push 403 at the repo-authorization layer). That is a fact about this cloud session only — Trevor's machine, Claude Code and the laptop VM push normally. **Commit these files as usual.** This pass pushed through the laptop VM (`device_bash` is back after the 09-08 Windows-update outage; the 08-29 `.rpc-git-cred` recipe works unchanged).
 
@@ -36,8 +36,8 @@ The arm was the one CRITICAL in the 9:04 AM sentinel. Re-derived: 6 of its 7 "de
 
 ## Open — in the order I would take them
 
-1. **Re-read the two pgss contracts at n ≥ 30 completed ticks** (falsifiers: v2 blocks/call not down ≥ 40 % → revert to `20260919021449`; v2b temp_w/call not down ≥ 80 % → `RESET` the four SETs). Then the calm-hour `pipeline_runs.extra` durations against the 09-18 calm baseline (tick p50 13.4 s / sync 9.3 s).
-2. **The lane's remaining structural lever is read-side incrementality** (only rows whose `last_seen_at` moved since the previous tick) — a design item on a public-board feeder; the register R101/R108 rows carry the method notes. The 25 MB `_cl_want` sort still spills at 16 MB; dropping `buy_url` from the temp table (compute it in the INSERT) would roughly halve it.
+1. ~~Re-read the two pgss contracts at n ≥ 30~~ **DONE at n=35 / n=21 (11:08 AM): −79 % blocks/call, temp_w 0 — both falsifiers cleared; the n ≥ 30 contract is met.** Falsifiers stay on record: v2 blocks/call not down ≥ 40 % → revert to `20260919021449`; temp_w/call not down ≥ 80 % → `RESET` the four SETs. Then the calm-hour `pipeline_runs.extra` durations against the 09-18 calm baseline (tick p50 13.4 s / sync 9.3 s).
+2. **The lane's remaining structural lever is read-side incrementality** (only rows whose `last_seen_at` moved since the previous tick) — a design item on a public-board feeder; the register R101/R108 rows carry the method notes. ~~The 25 MB `_cl_want` sort still spills at 16 MB; dropping `buy_url` from the temp table would roughly halve it.~~ **MOOT after v2c (10:2x AM):** `work_mem 32MB` on that one sync took temp written/call to **0 over 9 ticks** — there is no spill left for the `buy_url` change to buy. Do not chase it.
 3. **`refresh_wmc_fmv_changed` (jobid 303)** is the #1 reader and the spell's main engine: 411 MB physical per call, per-holder UPDATE of `wallet_moments_cache` behind **17 indexes (2.2 GB) on a 939 MB heap** — every non-HOT update writes all of them. FMV path; needs Trevor's call. The memory note `two-callers-one-pipeline-name` has the two-caller (200000 vs 50000 limit) question still open.
 4. `match-topshot-players` weekly full run (Sat 08:00Z) died at the 120 s upstream timeout in the night spell; the gate will retry next Saturday. Not urgent.
 5. `backfill-pack-rip-metadata` hourly: 2/13 ok today, all failures `statement timeout` at the 30 s service-role budget under load; succeeds in ~7 s when warm. Victim; do not raise the timeout.
@@ -50,3 +50,7 @@ Two sessions worked this lane in the same hour again (the concurrent Cowork clou
 ## Closing reading (10:08 AM PT)
 
 v2 pooled over 20 completed ticks: blocks/call **927,297 → 235,065 (−75 %)**, physical reads/call **26,438 → 17,574 (−34 %)**. v2c over 6 ticks: **temp written/call 0** (from 3,998 / 7,740). Both contracts met. Completion rate still set by the estate (6/18 in the v2c window at io_wait 11–20; control 464 3/7, 463 19/19) — per the concurrent session's retraction entry and this one, **the next lever is the next big estate reader, not this function.** 10:04 AM Sentinel: WARN, no critical arm.
+
+## Thread close (11:1x AM PT)
+
+Final: v2 **−79 % blocks/call at n=35**, v2c **temp_w 0 at n=21** — both contracts met at n ≥ 30. 11:04 Sentinel WARN / no critical; the Cadence Collapse ack is in the config row but the arm has timed out (INCONCLUSIVE) on both runs since, so it has not rendered yet — nothing to do, it renders on the first conclusive run. Promoted to CLAUDE.md (Database traps: the differential-upsert probe; Measurement: durations under a spell measure the estate; Pushing: the VM `git am` route), database.md, tooling-gotchas.md, sessions/2026-09.md. **Nothing in this thread is left open that code can close.** What remains needs Trevor (item 6) or a design pass (item 2, incrementality — and not before jobid 303).
