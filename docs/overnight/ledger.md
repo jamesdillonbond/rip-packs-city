@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 📌 CORRECTION — I set an exit condition I cannot check anonymously, and the 307s I read as "redirects" were an auth gate · Cowork cloud
+
+**No code.** Correcting the entry below (*"you have no tracked acquisitions vs we don't track this collection"*) and two earlier readings.
+
+⛔ **THE EXIT CONDITION AS WRITTEN IS UNVERIFIABLE BY ME.** It said: *"`/api/cost-basis?wallet=…&collection=candy-mlb` answers 200 with `reason: "cost_basis_unavailable"` after deploy."* That route is **auth-gated** — probed just now it answers **`HTTP 307 → /login?next=%2Fapi%2Fcost-basis…`**, so an anonymous probe can never see the branch. A `curl -L` follows the redirect and returns the login page's HTML, which is what a careless run would have mis-read as "the route answers 200". **Positive control in the same breath, so this is a statement about that route and not about my probe:** `/api/collection-series?collection=candy-mlb` returned a clean **HTTP 200** on the identical method, seconds apart.
+
+✅ **What actually backs that change, then, is the unit test and its mutation proof** — removing the branch reds the typed-reason arm, with a Flow control and an unscoped-call control green in both directions — **not a live probe.** Stating which evidence is load-bearing matters more than the change being right.
+
+🔁 **AND IT RETROACTIVELY RE-READS TWO EARLIER OBSERVATIONS.** When I first swept the Collection-tab endpoints I recorded `cost-basis`, `cache-refresh`, `wallet-packs` and `wallet-hold-time` as **"307 Redirecting…"** and moved on. **They were not redirects in any interesting sense — they were the auth wall**, and I never said so. That is the *info-level-log-plus-auth-wall* shape in miniature: a status code read at face value, describing the gate rather than the route. ⚠ It does not change the code findings for `cache-refresh` (`if (!wallet.startsWith("0x"))` at route.ts:242) or `wallet-packs` (the `0x` prepend at route.ts:72) — those were read from the SOURCE, not inferred from the probe — but it does mean **neither was ever measured live, and the ledger should not have implied otherwise.**
+
+📏 **REVISED, HONEST VERIFICATION STATUS for the six endpoints this pass touched:**
+| endpoint | live-probed? | evidence |
+|---|---|---|
+| `collection-moments` · `wallet/edition-counts` · `sets` · `collection-series` | ✅ yes, anonymous | before/after status + payload, quoted in their entries |
+| `wallet-summary` | ⚠ not anonymously | unit test + mutation proof |
+| `cost-basis` | ⛔ no — auth-gated | unit test + mutation proof only |
+
+**Falsifier for this entry:** if an anonymous `/api/cost-basis` call ever returns JSON rather than a 307, the gate has moved and the live check becomes possible again.
+
+- **Revert:** nothing to revert — this entry corrects claims and adds none.
+
 ### 2026-09-19 · 🏷 "YOU HAVE NO TRACKED ACQUISITIONS" vs "WE DON'T TRACK THIS COLLECTION" — two different claims, one of them about the reader's wallet · Cowork cloud
 
 **Shipped: 1 route + its test.** Sixth endpoint off the Candy Collection-tab list.
