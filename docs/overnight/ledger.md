@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🚨🚨 R77 CONFIRMED AT 75× SCALE AND ITS MECHANISM OVERTURNED — 4,951 ticks lost, ZERO alerts, and the fleet alarm DID NOT RUN AT ALL for seven hourly slots · Claude Code cloud
+
+**Docs-only, READ-ONLY. R77 raised P2 → P1.** The row asked whether a correlated tick loss is invisible to the alert arms; it was filed on a 66-tick band from 09-01. **Today's outage answered it on a far larger event, and the answer is worse than the question assumed.**
+
+**THE TICK LOSS.** Measured over the outage window (12:48–19:01Z) against the **same clock window the previous day** — the control this kind of claim needs — restricted to the **134 pipelines with ≥3 runs in that window yesterday**:
+
+| | |
+|---|---|
+| pipelines that lost ticks | **116** |
+| pipelines that went COMPLETELY silent | **106** |
+| ticks lost | **4,951** (R77 was filed on 66) |
+
+**THE ALERTS.** `alert_notifications_sent` carries **ZERO rows for the entire outage.** Four notifications precede it (01:35 / 06:15 / 07:15 / 07:35Z, all about `fmv-recalc` and `pgcron-startup-timeout`) and five follow it — the first at **19:15:39Z, fourteen minutes AFTER recovery**, naming `cron_silent` and `cursor_stalled` on the very lanes that had been down.
+
+**⭐⭐ AND THE MECHANISM IS NOT THE ONE THIS ROW FOUND.** R77's original cause was *"every gap was shorter than that pipeline's own `max_silent_minutes`"* — a threshold problem. **That is not what happened today. The sentinel never executed.** `pipeline_runs` for `sentinel` shows a clean hourly cadence (60.0 · 60.0 min gaps), then **ONE 420.0-minute gap — exactly seven hourly slots — from 12:04:07Z (5:04 AM PT) to 19:04:07Z (12:04 PM PT)**: its last tick before onset, its first after recovery, **every slot inside the outage missed.**
+
+⛔ **So the fleet alarm shares its subject's FAILURE MODE, not merely its scheduler.** #122 killed the instance's **outbound path**; the alarm is dispatched over that same path; so it could not run, could not evaluate, and could not deliver. ⭐ **CLAUDE.md already carries *"an ALARM SHARING ITS SUBJECT'S SCHEDULER is no alarm"* — this is that rule one level deeper, and it bought a seven-hour blind spot exactly coincident with the worst event in the retained window.**
+
+⚠ **The consequence worth stating plainly: this plane is a POST-HOC REPORTER for this class, not a detector.** It self-heals and tells the truth fourteen minutes late — and those fourteen minutes are the only ones in which being told would have mattered. **An operator watching the alert channel saw a normal morning, then a burst of alerts about an outage that was already over.**
+
+⛔ **NOT FIXED HERE, and deliberately.** This is a measurement. The remedy — an alarm whose dispatch path is independent of the estate it watches — is an **architecture decision with a cost**, not a patch, and it is Trevor's call. ⓘ **The cheap partial that does NOT need that decision:** the alarm could detect *its own* missed slots on recovery and say so, which would at least date the blind window instead of leaving it to be reconstructed from `pipeline_runs` gaps as I did here.
+
+**Files:** `docs/audits/deep-audit-register.md` (R77 re-derived, P2 → P1).
+
+**Revert path:** `git revert <sha>` — docs-only, no DB half, nothing deployed.
+
 ### 2026-09-18 · 🚨 A CONTROL FOR TONIGHT'S ATLAS FIX — the #122 outage made the lane look HEALTHY for six hours by stopping it working, and the improvement started TWO HOURS BEFORE the migration · Claude Code cloud
 
 **Docs-only, READ-ONLY. A control for another session's fix, NOT a challenge to it** — ⛔ **R101 is their row and was worked under an hour ago, so it was not touched** (claim convention, added today).
