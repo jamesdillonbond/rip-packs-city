@@ -55,6 +55,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⛔ **AND ONE NEAR-MISS WORTH MORE THAN ANY OF THE ABOVE.** My own ad-hoc kill query reported **`dead-lane-backstop` at 100% killed, 5 of 5** — a safety net apparently dead, which would have been the headline. **It is wrong.** That lane writes a heartbeat and **no terminal row by design**, so a heartbeat↔terminal correlation can only ever read 100%. ⭐ **The sentinel's own arm already handles this correctly — it reports "44 with a terminal writer, 2 unverified" and declines to call them kills.** I very nearly filed a P0 against a working lane because I trusted a query I wrote over an instrument the repo had already gotten right. **Distrust the instrument — including, especially, the one you just wrote.**
 
+✅ **POST-SHIP VERIFICATION, 2026-09-18 17:0x PT — THE CHANNEL DELIVERED, AND THE CONTROL IS A CLEAN BEFORE/AFTER ON CONSECUTIVE RUNS OF THE SAME INSTRUMENT.** ⚠ First, the thing that would have made a premature claim: at 00:00Z **no sentinel run had yet happened since the deploy** (last run 23:04Z, deploy READY ~23:58Z), so every `email-FAILED:not_configured` still on the board was PRE-FIX — **unverified, not failed**. The next tick settles it:
+
+| run | `extra.notifications` |
+|---|---|
+| **23:04:08Z** (pre-deploy) | `["telegram", "email-FAILED:not_configured", "github-actions-native"]` |
+| **00:04:07Z** (post-deploy) | `["telegram", **"email"**, "github-actions-native"]` |
+
+⭐ **And the check does not stop at our own self-report, because "the route called the API" is not "the mail arrived".** Resend's own record: **`Status: delivered`**, 00:04:29Z, subject *"⚠️ RPC Sentinel: WARN — 0 critical, 11 warn of 26 checks"*. **First successful sentinel email in the 18-run recorded history of that arm.**
+
+⭐ **The same listing CORROBORATES the diagnosis from the other side, which is better than a second reading of the same instrument.** `check-alerts` — the one call site that already carried the fallback — **was emailing fine the whole time**: `[RPC] 7 pipeline alerts…` delivered 21:35Z, `[RPC] 6 pipeline alerts…` delivered 22:35Z. **Two paths, one env var, one of them working: exactly the inconsistency this commit removed, visible in the mail log without looking at the code at all.**
+
+📏 **Incidental but worth stamping: the sentinel is now `0 critical, 11 warn` (was `1 critical, 9 warn`).** The critical was `Pipeline Silence`, and it cleared on its own with the post-outage ticks. ⚠ The warn count went UP by two, which is not a regression — it is `Pipeline Silence` dropping out of critical and the re-measured lanes landing in warn.
+
 - **Revert:** `git revert <sha>` — find by message (`git log --grep="mute by default"`). Restores the empty fallbacks and silences the email channel again. **No DB half.**
 
 ### 2026-09-18 · 🔒 THE CSP NO LONGER ALLOWS CONNECTIONS TO SENTRY — the last live trace of the SDK, found by the post-deploy read · Claude Code cloud
