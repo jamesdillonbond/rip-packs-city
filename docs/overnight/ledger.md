@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 📌 THE CI SWEEP'S DURABLE HALF — the "a guard's stated SCOPE is a claim" rule promoted into CLAUDE.md, and the shedding remainder filed as #124 rather than left in a chat reply · Claude Code cloud
+
+**Docs only — CLAUDE.md + two reference files. No code, no migration, no DB object, no data mutation.** The follow-through on the same-day CI commit (`git log --grep="keys on the shape"`), so the lessons outlive the session rather than sitting in a transcript.
+
+⭐ **CLAUDE.md, and it had SIX CHARACTERS of headroom — so both new rules were PAID FOR, not spent.** Measured with `node -e` + `.length` as this file's own header demands: **39,993 → 39,994, net +1**. ⚠ The three instruments disagree and two of them would have lied here: `wc -c` read **40,621** (bytes — would have called a legal file OVER), Python `len()` **39,985** (code points). Two rules added:
+- **"its ROOT *and stated CLASS* are CLAIMS"** — a guard claiming to key *"on the shape, not on `jq`"* keyed on `curl`; enumerate the members.
+- **`|| X="0"` is WORSE than an unguarded assignment** — it never aborts, so the guard reports a clean read of what it never read.
+
+**Paid for by** displacing two narrow DATED details **verbatim** into [testing-and-ci.md](../reference/testing-and-ci.md) (the JSX-aware strip-comments note; the two "pin the property" instances) and removing **one duplicate pointer** — L159 linked `testing-and-ci.md` two lines above the section's own `Full detail:` link to the same target. **No rule lost; only instances moved, exactly as the restructure convention prescribes.**
+
+📋 **Register #124 (NEW, OPEN) — the operator remainder.** GitHub delivers ~6 scheduled runs/day per workflow whatever the cron asks; seven workflows here declare 24–96/day. Re-derived 2026-09-18 over 3 workflows × 7 full days **with a no-change control** (`e2e-smoke` asks 4, gets 4/4 daily), which is what rules out "Actions got slower" in favour of a cap. ⛔ **NEEDS TREVOR (cron-job.org console), not code** — and ⛔ raising a cadence buys nothing. ✅ Explicitly records what is ALREADY handled so it does not re-raise it: the alarm's detection was already sized against DELIVERY.
+
+⚠ **Two collisions with a concurrent session, both resolved by RE-SPLICING INTO UPSTREAM'S COPY rather than hand-editing markers** — the ledger earlier, and `known-issues.md` here, where upstream had **already taken id 123**, so this item became **#124** and was placed AFTER it so the generated index stays ascending. **The index is generated (`npm run docs:issues-index`) — the table is never hand-edited.**
+
+🧪 **Gate:** `register:check` · `docs:issues-index --check` · `check-memory-doc-links` · the CLAUDE.md character-limit test — all green; the full docs-guard population CI runs (**146 files / 1,928 tests**) green on the merged tree. The code half of this sweep was already verified green on **CI #5660**.
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="the CI sweep's durable half"`). **No DB half.**
+
 ### 2026-09-18 · 📦 EVERY WALLET READ "0 PACKS SOLD" AND THE CAUSE WAS STRUCTURAL — `pack_purchases.seller_address` is the tx PAYER, i.e. Dapper's ESCROW, on 103,396 of 103,398 Top Shot secondary rows; the seller was on the platform all along in the marketplace history tables, read by nothing · Claude Code (cloud) for Trevor
 
 **One migration (applied), two pinned SQL tests, worker + UI code, docs.** Trevor: "my wallet shows 0 sold packs when I've sold hundreds" + sealed Top Shot packs with no name, thumbnail or market data.

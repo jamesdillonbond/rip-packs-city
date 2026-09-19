@@ -3,6 +3,96 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## 🚨 A GUARD'S CLAIM ABOUT ITS OWN COVERAGE IS ITSELF A CLAIM, AND IT WAS WRONG FOR SIX WEEKS (2026-09-18)
+
+`__tests__/workflow-curl-assignments-are-guarded.test.ts` was added 2026-08-30 after the opaque
+`exit 28` incident. Its header says, in terms:
+
+> The lesson was applied at the SITE where it was observed instead of to the CLASS — which is why
+> this guard keys on the shape, not on `jq`.
+
+**It did not key on the shape.** Its regex was `^\s*([A-Za-z_][A-Za-z0-9_]*)=\$\(curl\b` — `curl`,
+another single command. The sentence describes the fix that *should* have shipped, and reads as
+though it did. Nobody re-read it against the regex for six weeks.
+
+⭐ **The CLASS is "a detector whose answer a guard then acts on"**, and CLAUDE.md names a second
+member in the same breath as the first (*"and `jq` counts (exit 5 on a non-JSON body)"*). Walking the
+real population — 31 assignment sites across `.github/workflows/*.yml` **and**
+`.github/actions/*/action.yml`, `curl` 21 · `node` 5 · `jq` 4 · `awk` 1 — found the class alive in
+`ci.yml` itself, **in the two jobs whose entire purpose is catching a guard that silently no-ops**.
+Three sibling pairs, each with one call failing CLOSED and its twin failing OPEN AS CLEAN:
+
+| site | shape | what a failure rendered as |
+|---|---|---|
+| `FD=$(node find-future-dated-ledger-headings.mjs …)` | unguarded, then read via `${FD:-0}` | "0 future-dated headings" = **clean** |
+| `SW_BEFORE=$(git show HEAD~1:… \| awk -f …)` | a PIPE, and the step sets no `pipefail` | awk reads empty stdin, prints `0` |
+| `LOST_R=$(node "$DETECT" …) \|\| LOST_R="0"` | guarded, and **substitutes the clean value** | "this removed filing carried 0 corrections" |
+
+⛔ **The third is the worst, and it is the one a `bash -e` rule alone does not catch.** The first two
+abort the step, which is loud. `|| LOST_R="0"` does **not** abort: it substitutes the answer meaning
+*nothing was lost* and carries on, incrementing `INSPECTED`, so the inbox guard reported a clean
+inspection of a filing it had never read — twelve lines above a sibling call to the **same detector**
+that already failed closed on the same condition.
+
+⚠ **The second produced a FALSE ALARM, not a false pass, and that is its own lesson.** GitHub's
+default shell is `bash -e {0}` — `-e` only, **no `pipefail`** — so a failing `git show` was invisible
+and awk printed `0` for the baseline. Against the **3** pre-existing swallowed headings the delta
+became `3 > 0`, firing an error that told the pusher *"your entry spliced on the substring '### '"*
+when it had not. **Reproduced 2026-09-18: old shape exit 1, new shape exit 0.** That is CLAUDE.md's
+"never state a cause the error did not", produced by a guard rather than by a route.
+
+### What the generalised guard asserts, and the two judgement calls in it
+
+Three ban-at-zero arms over both roots: an **unguarded** assignment · a fallback that **substitutes
+the literal `0`** · `${VAR:-0}` inside a **fail-OPEN** `-gt`/`-ge`.
+
+- ⚠ **Arm 3 is DIRECTION-SENSITIVE on purpose.** `${n:-0} -lt 60` (the `docs-tests` floor) is
+  fail-CLOSED: a dead detector reads 0, trips the floor and reds. `${FD:-0} -gt 0` is fail-OPEN: a
+  dead detector reads 0, `0 > 0` is false, the guard passes. **The check keys on the COMPARISON, not
+  on the default** — flagging both would have punished correct code.
+- ⚠ **Arm 2 was NARROWED ON EVIDENCE, not to go green.** Its first run flagged three more sites. All
+  three were read before a line was changed, and all three are *correct fail-CLOSED sentinels*:
+  `|| STATUS="000"` in `badge-sync` (`000` is the case arm that sets `alive=false`) and in
+  `topshot-active-listings-ingest` (only `"200"` increments `OK`), and
+  `|| GONE="(detector failed to list them)"` in `ci.yml` (`[ -n "$GONE" ]` reports it). **A sentinel
+  meaning BAD is the pattern we want**; flagging it would have taught people to delete their
+  fallbacks. They are now pinned as NEGATIVE CONTROLS, so a drift back to "any non-empty fallback"
+  reds. ⭐ **Narrowing a check to make it pass is a defect; narrowing it because you read the
+  population is a fix. The difference is whether you looked.**
+- **Non-vacuity:** population floor re-derived (≥20 of 31), **both roots must contribute**, and the
+  walk must span **more than one command** — that last arm is the one that would have caught the
+  original. Proven by mutation: reverting each of the three fixes reds a **different** arm.
+
+⭐ **TRANSFERABLE, and it generalises past CI:** the repo already knew *"a guard's stated RISK is
+itself a claim"* (the `inherited-status` fail-open, 2026-09-14, where the documented risk was tested
+and the real one was not). **This is the same shape one notch further: a guard's stated SCOPE — the
+class it says it walks — is a claim, and the cheapest test of it is to print the population and look
+at what commands are in it.** "Keys on the shape" is true only if the walk enumerates the shape's
+members.
+
+⚠ **Also corrected the same day, same class but a claim rather than code.**
+`site-availability-alarm.yml` said it fires *"at most ~4/hour"*. Re-derived from `event=schedule` run
+history: the cron asks **96/day**, GitHub delivers **6–8** (7 full days, median 6) — **wrong by ~15×,
+in the direction that flatters the alarm**. `pipeline-sentinel` asks 24 → 5–7; **`e2e-smoke` asks 4 →
+4/4 every day, the no-change control** that rules out "Actions got slower" in favour of a cap on
+high-frequency schedules. `scheduler-liveness.yml`'s `~5` point estimate re-derived to **~6**, dated,
+as its own header asks. Behaviour unchanged — the alarm's recovered-outage arm was already sized
+against DELIVERY — but a reader taking the cron at face value would size the next detector wrong.
+The operator remainder (moving those crons to cron-job.org) is register **#124**.
+
+### Displaced from CLAUDE.md 2026-09-18 (verbatim) — to pay for the rule above
+
+CLAUDE.md is at its character limit, so two narrow implementation details moved here to make room.
+Both are dated facts, not standing rules; the rules they hung off stay in CLAUDE.md.
+
+From the strip-comments bullet:
+
+> 🚨 **Now JSX-aware, pinned char-for-char vs the TS COMPILER on every file (#87).**
+
+From the "pin the property, not the spelling" bullet, its two instances:
+
+> (twice: a literal `count ?? 0`; a comment's line WRAPPING)
+
 ## 🚨 A GREEN CHECK ON A DOCS-ONLY PUSH IS NOT A STATEMENT ABOUT `main` (2026-09-13)
 
 `unit-tests-shard` is gated on `needs.changes.outputs.code == 'true'`. **That gating is correct and
