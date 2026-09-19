@@ -53,6 +53,17 @@ describe("the fee table is pinned to its sources", () => {
   it("returns null for a collection with no verified rate", () => {
     // Magic Eden's taker/royalty split is a different shape from a flat Dapper
     // seller fee — it needs its own model, not a copied 5%.
+    //
+    // ⚠ 2026-09-19 — HALF OF THAT MODEL IS NOW VERIFIED AND CANDY IS STILL
+    // NULL, which is the point. Magic Eden's help centre publishes a flat 2%
+    // marketplace fee and a 0% listing fee for Solana; what is NOT published is
+    // Candy's creator royalty, which on Magic Eden is set per collection — and
+    // `candy_listings` has no royalty column to derive it from. Every entry in
+    // FEES is ALL-IN (a Dapper 5% is the whole cost of selling), so shipping 2%
+    // would render "you keep 98%" on a public net-proceeds column against an
+    // unknown additional leg, and would make Candy read as far the cheapest
+    // venue in the comparison the column exists to support. The sources and the
+    // one fact that would close it are recorded in lib/marketplace-fees.ts.
     expect(sellerFeeFor("candy_mlb")).toBeNull()
     expect(sellerFeeFor("panini")).toBeNull()
     expect(sellerFeeFor("")).toBeNull()

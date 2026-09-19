@@ -118,6 +118,43 @@ const FEES: MarketplaceFee[] = [
   },
 ]
 
+// ── candy_mlb: HALF-VERIFIED, deliberately still absent ─────────────────────
+//
+// Researched 2026-09-19 while wiring the Candy leg onto /insights/deals, and
+// recorded here so the next attempt starts from half-done rather than from
+// zero. `sellerFeeFor("candy_mlb")` still returns null, on purpose.
+//
+// ✅ THE MARKETPLACE LEG IS VERIFIED. Magic Eden's own help centre states a
+//    flat **2% on all transactions** and a **0% listing fee** for its Solana
+//    marketplace:
+//    https://help.magiceden.io/en/articles/5858632-what-fees-will-i-pay-to-list-or-sell-nfts-on-magic-eden
+//    (read 2026-09-19). That is the same KIND of number the five entries above
+//    hold, and on its own it would slot straight in as `pct: 0.02`.
+//
+// ⛔ THE CREATOR-ROYALTY LEG IS NOT, AND THAT IS WHY NOTHING IS ADDED. On Magic
+//    Eden's Solana marketplace royalties are set per collection by the creator,
+//    and **Candy does not publish theirs** — their own secondary-market guide
+//    tells sellers to "review the amount you will receive … including
+//    applicable fees" without naming a figure
+//    (https://blog.candy.io/candys-secondary-market-is-now-open-a-fan-friendly-guide-to-buying-and-selling/,
+//    read 2026-09-19). `candy_listings` carries no royalty or fee column
+//    either, so it cannot be derived from our own data.
+//
+// 🚨 SO 2% ALONE WOULD BE A FALSE NUMBER IN THE DIRECTION THAT FLATTERS. This
+//    file's five entries are all-in: a Dapper 5% IS the whole cost of selling.
+//    Publishing Candy at 2% would render "you keep 98%" on a public
+//    net-proceeds column while the seller may keep materially less, AND would
+//    make Candy read as by far the cheapest venue in a side-by-side that is the
+//    column's whole purpose. An em-dash says "we don't know"; 2% says something
+//    we have not established.
+//
+// 👉 WHAT WOULD CLOSE IT: Candy's published royalty rate for the MLB ICONs
+//    collection (or an on-chain read of the Metaplex Core royalty plugin on a
+//    Candy asset, which is authoritative and does not depend on anyone
+//    publishing it). Then add ONE entry whose `pct` is marketplace + royalty,
+//    with a `note` naming both legs, since this interface models a single
+//    all-in seller cost.
+//
 const BY_SLUG = new Map(FEES.map((f) => [f.collectionSlug, f]))
 
 /** Alternate slugs seen on RPC surfaces, mapped to the canonical fee key. */
