@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Diagnose — and only then clear — a STALE .git/index.lock.
+// Diagnose — and only then clear — a STALE git lock file (.git/index.lock,
+// HEAD.lock, packed-refs.lock, refs/**/*.lock).
 //
 // ⛔ WHY THIS EXISTS. A 0-byte `.git/index.lock` has now blocked commits on this
 // box THREE times (2026-08-23, 2026-09-05, 2026-09-18), roughly fortnightly. The
@@ -26,13 +27,26 @@
 // ⛔ It REFUSES on any disagreement rather than guessing, and `--check` never
 // removes anything. Exit 0 = nothing to do or cleared; 1 = a lock it will not
 // touch; 2 = usage/environment error.
+//
+// ⚠ NOT ONLY index.lock (2026-09-18). A Cowork commit against the mount left a
+// stale `.git/HEAD.lock` that blocked HEAD from moving for ~40 minutes: the
+// commit SUCCEEDED, and only the lock's cleanup unlink failed, because the mount
+// refuses deletes until the user approves them. That lock is NOT zero bytes — a
+// ref lock holds the new ref value, and after the rename-as-copy its content is
+// byte-identical to the target it was meant to become. So for REF-STYLE locks
+// (HEAD.lock, packed-refs.lock, refs/**/*.lock) signal 1 is satisfied EITHER by
+// zero bytes OR by content equal to the target's current content — a finished
+// write whose cleanup died. Content that DIFFERS from the target is a write in
+// flight, and is refused exactly as before. The candidates are WALKED (every
+// `*.lock` under .git except objects/, whose pack locks are gc's own), not
+// listed, so the next lock file git invents is inside this check by construction.
 
-import { existsSync, statSync, unlinkSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 
-const LOCK = join(process.cwd(), ".git", "index.lock")
+const GIT_DIR = join(process.cwd(), ".git")
 const CHECK_ONLY = process.argv.includes("--check")
 const SAMPLE_MS = Number(process.env.UNSTICK_SAMPLE_MS ?? 45_000)
 
@@ -58,57 +72,123 @@ export function gitProcessCount() {
   }
 }
 
-/** Pure decision, so the rule is testable without a real .git. */
-export function verdict({ bytes, procs, mtimeA, mtimeB }) {
+/**
+ * Every `*.lock` under a git dir that this script may judge, as paths relative
+ * to it. objects/ is excluded (pack/ref-pack locks belong to gc and repack).
+ */
+export function findLocks(gitDir) {
+  const out = []
+  const walk = (dir, rel) => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      const r = rel ? `${rel}/${e.name}` : e.name
+      if (e.isDirectory()) {
+        if (r === "objects") continue
+        walk(join(dir, e.name), r)
+      } else if (e.name.endsWith(".lock")) {
+        out.push(r)
+      }
+    }
+  }
+  walk(gitDir, "")
+  return out.sort()
+}
+
+/**
+ * Pure decision, so the rule is testable without a real .git.
+ * `contentMatchesTarget` is the ref-lock escape from signal 1: a lock whose
+ * bytes equal its target's current bytes is a finished write, not a live one.
+ */
+export function verdict({ bytes, procs, mtimeA, mtimeB, contentMatchesTarget = false }) {
   const reasons = []
-  if (bytes !== 0) reasons.push(`lock is ${bytes} bytes, not 0 — a live git wrote to it`)
+  if (bytes !== 0 && !contentMatchesTarget)
+    reasons.push(`lock is ${bytes} bytes, not 0, and differs from its target — a live git wrote to it`)
   if (procs === null) reasons.push("could not enumerate git processes — refusing to guess")
   else if (procs > 0) reasons.push(`${procs} git process(es) running — there IS a holder`)
   if (mtimeA !== mtimeB) reasons.push(`mtime advanced ${mtimeA} -> ${mtimeB} — something is progressing`)
   return { stale: reasons.length === 0, reasons }
 }
 
+function targetOf(rel) {
+  // index.lock has no textual target; ref-style locks become the file minus ".lock".
+  return rel === "index.lock" ? null : join(GIT_DIR, rel.slice(0, -".lock".length))
+}
+
+function contentMatches(rel) {
+  const target = targetOf(rel)
+  if (target === null || !existsSync(target)) return false
+  try {
+    return readFileSync(join(GIT_DIR, rel)).equals(readFileSync(target))
+  } catch {
+    return false
+  }
+}
+
 function main() {
-  if (!existsSync(LOCK)) {
-    console.log("no .git/index.lock — nothing to do")
+  const locks = findLocks(GIT_DIR)
+  if (locks.length === 0) {
+    console.log("no *.lock under .git — nothing to do")
     return 0
   }
-  const st = statSync(LOCK)
-  const bytes = st.size
-  const ageS = Math.round((Date.now() - st.mtimeMs) / 1000)
   const procs = gitProcessCount()
-  const mtimeA = st.mtimeMs
-
-  console.log(`index.lock present: ${bytes} bytes, age ${ageS}s, git processes: ${procs ?? "UNKNOWN"}`)
-  if (bytes !== 0 || procs === null || procs > 0) {
-    const { reasons } = verdict({ bytes, procs, mtimeA, mtimeB: mtimeA })
-    console.error(`⛔ NOT stale — leaving it alone:\n  - ${reasons.join("\n  - ")}`)
-    return 1
+  const first = new Map()
+  let refused = 0
+  for (const rel of locks) {
+    const p = join(GIT_DIR, rel)
+    const st = statSync(p)
+    const bytes = st.size
+    const ageS = Math.round((Date.now() - st.mtimeMs) / 1000)
+    const contentMatchesTarget = contentMatches(rel)
+    console.log(
+      `${rel} present: ${bytes} bytes${contentMatchesTarget ? " (identical to its target)" : ""}, age ${ageS}s, git processes: ${procs ?? "UNKNOWN"}`,
+    )
+    const { reasons } = verdict({ bytes, procs, mtimeA: st.mtimeMs, mtimeB: st.mtimeMs, contentMatchesTarget })
+    if (reasons.length > 0) {
+      console.error(`⛔ ${rel} NOT stale — leaving it alone:\n  - ${reasons.join("\n  - ")}`)
+      refused++
+      continue
+    }
+    first.set(rel, { bytes, mtimeA: st.mtimeMs, contentMatchesTarget })
   }
+  if (first.size === 0) return 1
 
-  // Only now is the second mtime sample worth its wait.
+  // Only now is the second mtime sample worth its wait — once, for every candidate.
   console.log(`sampling mtime again in ${Math.round(SAMPLE_MS / 1000)}s to prove nothing is progressing…`)
   const until = Date.now() + SAMPLE_MS
   while (Date.now() < until) { /* deliberate busy-wait: no deps, and this runs at most once */ }
-  if (!existsSync(LOCK)) {
-    console.log("lock disappeared during the sample — a real writer finished. Nothing to do.")
-    return 0
+
+  let cleared = 0
+  for (const [rel, a] of first) {
+    const p = join(GIT_DIR, rel)
+    if (!existsSync(p)) {
+      console.log(`${rel} disappeared during the sample — a real writer finished. Nothing to do.`)
+      continue
+    }
+    const mtimeB = statSync(p).mtimeMs
+    const { stale, reasons } = verdict({ ...a, mtimeB })
+    if (!stale) {
+      console.error(`⛔ ${rel} NOT stale — leaving it alone:\n  - ${reasons.join("\n  - ")}`)
+      refused++
+      continue
+    }
+    if (CHECK_ONLY) {
+      console.log(`✅ ${rel} STALE by every check. --check given, so nothing was removed.`)
+      continue
+    }
+    unlinkSync(p)
+    cleared++
+    console.log(`✅ ${rel} STALE by every check — removed.`)
   }
-  const mtimeB = statSync(LOCK).mtimeMs
-  const { stale, reasons } = verdict({ bytes, procs, mtimeA, mtimeB })
-  if (!stale) {
-    console.error(`⛔ NOT stale — leaving it alone:\n  - ${reasons.join("\n  - ")}`)
-    return 1
+  if (cleared > 0) {
+    console.log("Re-run your git command. ⚠ Before trusting the result, confirm HEAD is pushed and the only")
+    console.log("  uncommitted work is your own: git log --oneline -1 && git status")
   }
-  if (CHECK_ONLY) {
-    console.log("✅ STALE by all three checks. --check given, so nothing was removed.")
-    return 0
-  }
-  unlinkSync(LOCK)
-  console.log("✅ STALE by all three checks — removed. Re-run your git command.")
-  console.log("⚠ Before trusting the result, confirm HEAD is pushed and the only")
-  console.log("  uncommitted work is your own: git log --oneline -1 && git status")
-  return 0
+  return refused > 0 ? 1 : 0
 }
 
 // ⛔ Compared as a FILE URL, never a raw string. `import.meta.url` is always a URL

@@ -55,3 +55,52 @@ describe("git-unstick verdict", () => {
     expect(v.reasons.length).toBe(3)
   })
 })
+
+// ── Not only index.lock (2026-09-18) ────────────────────────────────────────
+// A Cowork commit against the mount left a stale `.git/HEAD.lock` for ~40 min:
+// the commit had SUCCEEDED and only the cleanup unlink failed (the mount refuses
+// deletes until approved). That lock is not zero bytes — it holds the new ref
+// value, identical to the target it became. So signal 1 has a second, narrower
+// satisfier for ref-style locks: content EQUAL to the target's. Content that
+// differs is still a write in flight and is still refused.
+describe("git-unstick: ref-style locks and the walk", () => {
+  it("a ref lock whose content equals its target is STALE (a finished write whose cleanup died)", () => {
+    const v = verdict({ bytes: 41, procs: 0, mtimeA: FROZEN, mtimeB: FROZEN, contentMatchesTarget: true })
+    expect(v.stale).toBe(true)
+  })
+
+  it("REFUSES a ref lock whose content differs from its target — that is a write in flight", () => {
+    const v = verdict({ bytes: 41, procs: 0, mtimeA: FROZEN, mtimeB: FROZEN, contentMatchesTarget: false })
+    expect(v.stale).toBe(false)
+    expect(v.reasons.join(" ")).toContain("differs from its target")
+  })
+
+  it("content equality does NOT override the other two signals", () => {
+    expect(verdict({ bytes: 41, procs: 1, mtimeA: FROZEN, mtimeB: FROZEN, contentMatchesTarget: true }).stale).toBe(false)
+    expect(verdict({ bytes: 41, procs: 0, mtimeA: FROZEN, mtimeB: FROZEN + 1, contentMatchesTarget: true }).stale).toBe(false)
+  })
+
+  it("walks every *.lock under .git except objects/ — index, HEAD, packed-refs and ref locks alike", async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs")
+    const { tmpdir } = await import("node:os")
+    const { join } = await import("node:path")
+    const { findLocks } = await import("../scripts/git-unstick-index-lock.mjs")
+    const dir = mkdtempSync(join(tmpdir(), "unstick-"))
+    mkdirSync(join(dir, "refs", "heads"), { recursive: true })
+    mkdirSync(join(dir, "objects", "pack"), { recursive: true })
+    for (const f of ["index.lock", "HEAD.lock", "packed-refs.lock", "refs/heads/main.lock", "objects/pack/x.lock", "HEAD", "config"]) {
+      writeFileSync(join(dir, f), "")
+    }
+    expect(findLocks(dir)).toEqual(["HEAD.lock", "index.lock", "packed-refs.lock", "refs/heads/main.lock"])
+  })
+
+  it("NO-CHANGE CONTROL: a clean git dir yields no candidates", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs")
+    const { tmpdir } = await import("node:os")
+    const { join } = await import("node:path")
+    const { findLocks } = await import("../scripts/git-unstick-index-lock.mjs")
+    const dir = mkdtempSync(join(tmpdir(), "unstick-clean-"))
+    writeFileSync(join(dir, "HEAD"), "ref: refs/heads/main\n")
+    expect(findLocks(dir)).toEqual([])
+  })
+})
