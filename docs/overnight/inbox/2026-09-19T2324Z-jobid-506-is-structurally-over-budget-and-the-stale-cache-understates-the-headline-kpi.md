@@ -1,7 +1,9 @@
-# RPC — candidate filing: jobid 506 is structurally over budget, and its staleness understates the headline KPI by ~6 points
+# RPC — candidate filing (CORRECTED): jobid 506 is structurally over budget — and its staleness reaches ONE INTERNAL INSTRUMENT, not the headline KPI I first claimed
+
+> ⚠ **Self-correction (see §5).** The first push of this file claimed the stale cache under-reports the roadmap headline KPI by ~6 points. **It does not** — nothing user-facing reads the table. The cost measurements in §1–§4 are unaffected. ⚠ **The filename still carries the retracted claim**; it is kept because `docs/overnight/inbox/` is append-only and filings are permanent citation targets.
 
 **Run:** 2026-09-19 4:24 PM PT (23:24Z) · Claude Code, Windows box · **READ-ONLY, nothing shipped.** · quiet window (io_wait 0 / active 1 / 17 conns), which is what made the measurement possible
-**Follows:** `2026-09-19T2106Z.md`, which filed the breach. This one measures it and **kills the obvious fix**.
+**Follows:** `2026-09-19T2106Z.md` — specifically its **Candidate 2**. ⚠ That file has since been CORRECTED by its own author: the `trust_precompute_max_age_hours` breach it originally pinned on 506 is written by **jobid 324** (`rpc-thp-leg-impossible-parallel`), not by 506. **This filing is about jobid 506 only**, which that correction keeps as a real but separate, smaller issue. It measures it and **kills the obvious fix**.
 
 ## 1 — Where the 120 s goes: ONE of the five arms is 85% of the budget
 
@@ -62,16 +64,22 @@ A skip-scan (recursive walk of distinct `edition_id`, then one `ORDER BY compute
 
 👉 **STILL OWED BEFORE THIS SHIPS:** a **cold-start control** for the candidate. Its 0 reads were measured immediately after a full scan had warmed the cache; the claim that its working set *stays* resident has NOT been demonstrated from cold. ⚠ It also multiplies per-edition round trips, so it degrades differently under concurrency than the incumbent does.
 
-## 5 — 🚨 THE CONSEQUENCE NOBODY HAS PRICED: the stale cache understates the ROADMAP'S HEADLINE METRIC
+## 5 — 🔁 RETRACTED: the staleness reaches ONE INTERNAL INSTRUMENT, not the roadmap's headline KPI
 
-The roadmap's headline is **the share of prices at HIGH/MEDIUM confidence**. The precompute has not refreshed since **09-18 22:36 PT** (~18 h). Top Shot, cached vs live-now, same query:
+⛔ **An earlier version of this filing (pushed as `90f69a92e`) claimed the stale cache "under-reports the roadmap's headline metric by ~6.0 points". THAT WAS WRONG, and it was wrong in the way this repo names most often: I published a CONSEQUENCE without establishing the CALLER.**
+
+📏 **What the measurement actually shows still stands** — `fmv_confidence_precompute` has not refreshed since **09-18 22:36 PT**, and cached-vs-live Top Shot, same query, same instant:
 
 | | HIGH | MEDIUM | HIGH+MED of 14,016 |
 |---|---|---|---|
-| cached (what surfaces serve) | 1313 | 5208 | 6,521 = **46.5%** |
+| cached | 1313 | 5208 | 6,521 = **46.5%** |
 | live now | 1341 | 6024 | 7,365 = **52.5%** |
 
-⇒ **the trust surface is under-reporting the headline KPI by ~6.0 points**, and it does so *worse the longer 506 stays broken* — the drift is one-directional because FMV enrichment promotes LOW → MEDIUM. ⚠ **This is not a cosmetic freshness issue: it is the number the roadmap gates on, read low.**
+⛔ **What does NOT follow is who reads it.** A repo grep finds the table in **docs only — no code path reads it** — and the DB agrees: the complete set of referencing objects is **two functions**, `refresh_fmv_confidence_precompute()` (its only writer) and **`rpc_ops_snapshot()`**. ⇒ **No user-facing surface reads this table, and the roadmap KPI does not come from it** (`fmv_high_med_share_pct` in `metrics-latest.json` is computed live by the nightly pass). **The blast radius is one internal ops-health field.**
+
+⚠ **So the severity drops: this is an INSTRUMENT-freshness defect, not a user-facing price or KPI defect** — the same class the corrected `2026-09-19T2106Z.md` assigns to its own Candidate 1, and for the same reason. ⭐ **It is still worth fixing**, because `rpc_ops_snapshot()` is what a monitor reads to decide whether the estate is healthy, and an 18 h-old confidence distribution there is a watcher reporting yesterday — but it does **not** justify emergency handling, and nothing a user sees is affected.
+
+⭐ **The lesson, which is the durable part:** the cost measurements in §1–§4 were direct and survive intact; the *consequence* sentence was inherited from the framing of the filing I was following up, and I did not re-derive it. **`grep` the repo AND the DB for readers before stating what a stale cache costs** — here the two disagreed with my assumption in the same direction, and the whole claim rested on it.
 
 ## 6 — Suggested action (SUPERVISED; ⛔ not auto-shippable)
 
