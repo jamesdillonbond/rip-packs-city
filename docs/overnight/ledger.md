@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 📐 THE ESLINT RATCHET WAS COUNTING BUILD OUTPUT — its file population moved with whether coverage had been run, and its one unactionable note pointed at vendored istanbul assets · Claude Code (Trevor's Windows box)
+
+**Repo-only. No DB change; the estate was in a live IO spell throughout and nothing was applied to it.**
+
+**What was wrong.** `eslint.config.mjs` replaces `eslint-config-next`'s default ignores with an explicit list, and that list omits the coverage output directories. So `npm run test:coverage*` writes istanbul's vendored HTML assets (`prettify.js`, `block-navigation.js`, `sorter.js`) into `coverage/`, `coverage-components/` and `coverage-workers/`, and **eslint linted all 9 of them.**
+
+⭐ **THE TELL: the ratchet's own file count disagreed with its own documentation.** `scripts/run-lint-ratchet.mjs`'s header records the checker printing *"eslint ratchet — 3072 files, 715 violations…"*. This box printed **3081**. The nine extra files are build output — so **the instrument's POPULATION moved with whether coverage had last been generated**, which is the "a reading taken while its subject changed is not a reading" class applied to the ratchet itself.
+
+📏 **MEASURED BEFORE CHANGING ANYTHING, and it bounds the damage honestly:** those 9 files contribute **0** rule violations, so **the 715 baseline was never contaminated** and no ratchet verdict was ever wrong because of this. What they contributed was the note — each vendored file carries an `eslint-disable` that suppresses nothing, which is the entire source of *"3 eslint-disable directive(s) suppress nothing"*. ⚠ **On a fresh clone that note reads 0**, and a future reader would reasonably conclude someone had fixed three directives that were never ours.
+
+**Second defect, found while chasing the first: the note was a COUNT WITH NO LOCATION.** Finding out what the 3 were meant regenerating the eslint JSON report by hand and walking it. **A guard that states an incidence must state where**, or every reader pays that cost again.
+
+**What shipped.**
+- `eslint.config.mjs` — `coverage/**`, `coverage-components/**`, `coverage-workers/**` added to `globalIgnores`. The population is the source tree again.
+- `scripts/check-eslint-ratchet.mjs` — `countByRule` now also returns `suppressionSites` (file/line/column) and the note prints each one. **Additive**: `suppressionsWithNothingToSuppress` is unchanged, so the existing pin still holds.
+- `__tests__/eslint-ratchet-detector.test.ts` — two new cases. One pins the PROPERTY rather than the format (`suppressionSites.length` must equal the count, so the list and the number can never disagree); the other pins the **zero case**, because a guard that names its instances must stay satisfiable when there are none.
+
+✅ **AFTER: `eslint ratchet — 3072 files, 715 violations across 19 rules (baseline 715)`, exit 0, and the phantom note is gone.** 3072 is exactly the figure the script's own header documents — the count and its documentation agree again.
+
+✅ **POSITIVE CONTROL ON THE PRINT PATH, not just the pure function.** Appended `/* eslint-disable no-debugger */` to a real source file and re-ran: the ratchet printed `note: 1 eslint-disable directive(s) suppress nothing` followed by `lib\badges\official-art.ts:293:1`. Restored from a full-path backup and re-verified `git diff --quiet` clean. **The unit test alone would not have proved the console line was wired.**
+
+⚠ **SCOPE, stated rather than overclaimed:** CI runs `eslint-ratchet` in its own job on a fresh runner, so coverage output is not normally present there and **no CI verdict is known to have been affected**. This buys determinism locally and removes a misleading note; it is not a CI bug fix.
+
+**Verified after:** `npx tsc --noEmit` exit 0 · `npm run lint:ratchet` 715/715 exit 0 · `__tests__/eslint-ratchet-detector.test.ts` 20 passed (was 18).
+
+- **Revert:** `git revert <sha>` (find by message, `git log --grep="counting build output"`). **No DB half — nothing was applied.**
+
 ### 2026-09-19 · 🔦 A GUARD THAT HAD NEVER ONCE RUN — the badge-art drift check's live query was broken from the day it was written, and no workflow called it either · Claude Code (Trevor's Windows box)
 
 **Two stacked silences on one instrument, both fixed. No DB change; the estate was in a live IO spell throughout and nothing was applied to it.**
