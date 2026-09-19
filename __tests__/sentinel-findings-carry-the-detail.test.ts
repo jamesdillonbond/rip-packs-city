@@ -69,4 +69,59 @@ describe("buildSentinelFindings — the detail survives into the durable row", (
     const [f] = buildSentinelFindings([{ name: "n", status: "critical" }])
     expect(f.detail).toBe("")
   })
+
+
+  // 🚨 THE REGRESSION THIS BLOCK EXISTS FOR, measured 2026-09-19 over 48 h of
+  // sentinel runs rather than imagined:
+  //   * `Cadence Collapse` drove 15 of the 22 CRITICAL pages, and on ALL 15 its
+  //     detail was exactly 400 chars of expired-ack prose ending mid-word. The
+  //     arm's own measurement was not in the page. At CRITICAL, the reader was
+  //     told only why a DIFFERENT, already-recovered condition had been fine.
+  //   * `Detector Health (GitHub Actions)` 53/53 runs pinned at the cap.
+  //   * `Measurement Blackout` 22/22 pinned at the cap.
+  // The cause is that annotations are PREFIXES and an ack's `reason` is
+  // operator-supplied with no length bound, so `.slice(0, 400)` kept the
+  // annotation and discarded the finding.
+  describe("clampSentinelDetail — the annotation must not eat the finding", () => {
+    // An ack reason long enough to consume the whole budget on its own, which is
+    // exactly the production shape.
+    const ackPrefix = `[ACK EXPIRED 2026-09-13 — ${long(500)}] `
+    const finding = "11 lanes degraded: topshot-sales-indexer 0 runs in 12h"
+
+    it("⭐ keeps the FINDING when the annotation alone exceeds the cap", () => {
+      const [f] = buildSentinelFindings([
+        { name: "Cadence Collapse", status: "critical", detail: ackPrefix + finding },
+      ])
+      // The whole point: the measurement survives.
+      expect(f.detail).toContain(finding)
+      // And the reader can still tell WHICH annotation is in force.
+      expect(f.detail).toContain("ACK EXPIRED 2026-09-13")
+    })
+
+    it("still caps at exactly 400 — the bound is load-bearing, not relaxed", () => {
+      const [f] = buildSentinelFindings([
+        { name: "n", status: "critical", detail: ackPrefix + finding },
+      ])
+      expect(f.detail.length).toBe(400)
+    })
+
+    it("marks the elision, so a truncated detail cannot read as a complete one", () => {
+      const [f] = buildSentinelFindings([
+        { name: "n", status: "critical", detail: ackPrefix + finding },
+      ])
+      expect(f.detail).toContain("…[cut]…")
+    })
+
+    it("leaves a detail that fits completely untouched", () => {
+      const short = "0 new sales in last 2 hours"
+      const [f] = buildSentinelFindings([{ name: "n", status: "warn", detail: short }])
+      expect(f.detail).toBe(short)
+    })
+
+    it("is satisfiable at the boundary: exactly `max` chars is not truncated", () => {
+      const [f] = buildSentinelFindings([{ name: "n", status: "warn", detail: long(400) }])
+      expect(f.detail).toBe(long(400))
+      expect(f.detail).not.toContain("…[cut]…")
+    })
+  })
 })

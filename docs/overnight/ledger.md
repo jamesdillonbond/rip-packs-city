@@ -10,6 +10,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🚨 SHIPPED (code) — the sentinel's most severe pages were carrying the ACKNOWLEDGEMENT and dropping the FINDING; and the alarm has not said ALL CLEAR once in 48 h · Cowork cloud
+
+**Trevor asked about "the alerts sentinel is sending out". This is the measured answer, and one defect fixed.**
+
+📏 **THE ALARM'S CURRENT SIGNAL, 53 sweeps over 48 h:**
+
+| | |
+|---|---|
+| ALL CLEAR | **0** |
+| WARN | 31 |
+| CRITICAL | 22 |
+| notifications sent | **53 × (telegram + email + github-actions-native)** |
+| findings total | 652 (**12.3 per sweep**) |
+| of those, `INCONCLUSIVE (db saturated)` | **221 = 33.9 %** |
+| of those, ACKNOWLEDGED / ACK EXPIRED | 68 = 10.4 % |
+| avg sweep | **99.9 s** against a 140 s query budget inside a 180 s wall (max 176.4 s) |
+
+⭐ **It pages on EVERY sweep and has never once reported clear.** A third of what it says is "I could not measure", and the arms that do fire, fire chronically — `Dune Spend`, `Detector Health` and `Zero-Yield Lanes` are in **53 of 53**. ⚠ **There is no new-event signal in this alarm at all**, which is the standing rule about a permanently-red instrument, arriving on the instrument that watches everything else.
+
+🚨 **THE DEFECT I FIXED, and it is the honesty class inside an alarm.** `buildSentinelFindings` clamped detail with a HEAD-only `.slice(0, 400)`. But `[ACKNOWLEDGED until …]`, `[ACK EXPIRED …]` and `[check disabled via config]` are **PREFIXES**, and an ack's `reason` is operator-supplied with **no length bound**. So a long ack ate the entire budget:
+
+| arm | runs pinned at exactly 400 chars |
+|---|---|
+| `Detector Health (GitHub Actions)` | **53 / 53** |
+| `Wall Kills (24h)` | 28 |
+| `Measurement Blackout` | **22 / 22** |
+| `Cadence Collapse` | **15 / 15 of its CRITICAL pages** |
+
+⭐⭐ **`Cadence Collapse` drove 15 of the 22 CRITICAL pages, and on every one its detail was 400 characters of expired-ack prose ending mid-word — `…Owner: Claude/Trevor, known-issues `. The arm's own measurement was not in the page.** At CRITICAL, the reader was told only why a **different, already-recovered** condition had once been acceptable. **A page that names a severity and then withholds what is wrong is a failed read rendering as an answer, committed inside the alarm.**
+
+**Shipped:** `clampSentinelDetail()` — exported, pure, keeps BOTH ends (head 55 % / tail 45 %) with a ` …[cut]… ` marker so a truncation cannot read as a complete detail. ⚠ **Output length is still exactly 400** — the cap is load-bearing (the alert views join this row every tick) and is NOT relaxed; the pre-existing `toBe(400)` assertion still passes unchanged. 5 new tests, **mutation-verified**: restoring the head-only slice fails two of them.
+
+⛔ **WHAT I DID NOT DO, deliberately: I did not re-ack `Cadence Collapse`.** Its ack expired **2026-09-13** and its own text says the underlying cron-job.org entries were "confirmed running green" on 09-12 — but a 12 h observed window cannot still contain a 09-10 outage six days later, so **either the condition recurred or the arm is reading something else, and nobody can tell from the page.** Re-acking would suppress a possibly-real critical; clearing it would be a guess. **It needs Trevor or a fresh diagnosis, and it is now the single largest source of CRITICAL pages.** ⭐ The clamp is what makes that diagnosable at all — from the next sweep the page will actually carry the arm's numbers.
+
+ⓘ **Second finding, filed not fixed: the wall budget starves the END of the arm list, systematically.** Over the same 48 h, `Ops Probe Cost` was refused by the wall in **22 of its 22 findings**, `pg_net Dispatch` 22, `Wall Kills` 17, `Cadence Collapse` 5, and **every arm earlier in the list 0**. That is a monotonic gradient by position, not by cost — the last arms are blind precisely when the box is slow, which is when they matter. ⚠ **And my new Pack Sales arm inserts ahead of that tail, so it spends a little of the budget those arms are already losing** — one indexed read on `pipeline_runs_pipeline_started_idx`, but stated rather than glossed.
+
+**Verified:** `npx tsc --noEmit` exit 0 · 4 sentinel suites 107/107 · mutation caught · Vercel `dpl_2irtw48R…` READY with `www.rippackscity.com` attached (86 s build, `ready` > `buildingAt`). ⚠ **NOT yet verified in production** — the sentinel is GitHub-Actions/cron-job.org driven and the next natural sweep is 11:04 AM PT; firing it by hand would page Trevor an extra time for my convenience.
+
+**Revert:** `git revert` the code commit (`git log --grep='clampSentinelDetail'`) — it restores the head-only slice and the two mutation tests will then fail, which is the intended alarm.
+
 ### 2026-09-19 · ✅ SHIPPED (code) — the sentinel gets a PACK SALES INGEST arm, with per-lane thresholds derived from the two markets' actual daily counts · Cowork cloud
 
 **Follows the unlatch entry below.** That fix stopped the bleeding and gave the two pack-sales lanes their first `pipeline_runs` coverage; it did **not** create an alarm. A readable number nobody reads is not an instrument, so this is the arm.

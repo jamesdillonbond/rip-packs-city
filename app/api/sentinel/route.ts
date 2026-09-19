@@ -212,6 +212,37 @@ const SENTINEL_DETAIL_CHARS = 400;
  * is not a guard, and the caps are the part protecting a row the alert views join
  * on every tick.
  */
+/**
+ * Clamp a detail to `max` characters KEEPING BOTH ENDS.
+ *
+ * 🚨 A HEAD-ONLY `.slice(0, max)` LOSES THE FINDING AND KEEPS THE ANNOTATION,
+ * and that is not hypothetical — it is what the most severe pages were doing.
+ * `[ACKNOWLEDGED until …]`, `[ACK EXPIRED …]` and `[check disabled via config]`
+ * are all PREFIXES, and the ack's `reason` is operator-supplied free text with
+ * no length bound. Measured 2026-09-19 over 48 h: `Cadence Collapse` drove 15 of
+ * the 22 CRITICAL pages, and on every one of those 15 its detail was exactly 400
+ * chars of expired-ack prose that ends mid-word — **the arm's own measurement was
+ * not in the page at all.** The reader was told, at CRITICAL, only why a
+ * DIFFERENT and already-recovered condition had once been acceptable.
+ * `Detector Health (GitHub Actions)` (53/53 runs) and `Measurement Blackout`
+ * (22/22) were pinned at the cap the same way.
+ *
+ * ⚠ So the tail is the part that must survive: annotations are prepended, the
+ * measurement is appended. The head is kept too, because losing WHICH ack is in
+ * force would trade one silent omission for another.
+ *
+ * ⚠ Output length still equals `max` exactly — the cap is load-bearing (this row
+ * is joined by the alert views on every tick) and this does not relax it.
+ */
+export function clampSentinelDetail(s: string, max: number): string {
+  if (s.length <= max) return s
+  const marker = " …[cut]… "
+  if (max <= marker.length) return s.slice(0, max)
+  const keepTail = Math.floor((max - marker.length) * 0.45)
+  const keepHead = max - marker.length - keepTail
+  return s.slice(0, keepHead) + marker + s.slice(s.length - keepTail)
+}
+
 export function buildSentinelFindings(
   checks: Array<{ name: string; status: string; detail?: string }>,
   maxFindings: number = SENTINEL_MAX_FINDINGS,
@@ -223,7 +254,7 @@ export function buildSentinelFindings(
     .map((c) => ({
       name: c.name,
       status: c.status,
-      detail: redactSecrets(String(c.detail ?? "")).slice(0, detailChars),
+      detail: clampSentinelDetail(redactSecrets(String(c.detail ?? "")), detailChars),
     }));
 }
 
