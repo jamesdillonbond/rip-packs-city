@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · ⚠️ R101 v2 HAS NOT FIXED THE ATLAS LISTING TICK — 26 minutes and 12 ticks in, the lane is at 83.3 % failure against 56.6 % before, with both controls flat · Cowork cloud
+
+**READ-ONLY. Nothing shipped into this lane by me — this is a measurement on ANOTHER session's change, filed before anyone records it as fixed.** Change point **15:28:24Z** (migration `20260919152824`, commit `6ba6b3c58`).
+
+📏 **Split on the change point, `cron.job_run_details`, 3 h window:**
+
+| lane | before v2 | after v2 |
+|---|---|---|
+| **`rpc-ts-listings-atlas-sync` (jobid 466 — THE CHANGED LANE)** | 76 runs, **56.6 % fail**, p50 **120.0 s** | 12 runs, **83.3 % fail**, p50 **120.3 s** |
+| `rpc-allday-unmapped-atlas-resolver` (464, control) | 44.8 %, p50 87.9 s | 40.0 %, p50 85.3 s |
+| `rpc-atlas-market-drain` (463, control) | 6.8 %, p50 23.9 s | 7.1 %, p50 48.6 s |
+
+⭐ **The p50 is pinned at the 120 s ceiling on BOTH sides — the lane is still dying at its statement timeout, which is the thing v2 was meant to relieve.** The two controls are flat on failure rate, so the estate did not move enough to explain it.
+
+⚠ **STATED HONESTLY: n = 12 post over ~26 minutes is a SMALL sample, and 463's p50 doubled (23.9 → 48.6 s), so some estate movement is present. This is SUGGESTIVE, NOT CONCLUSIVE — it is filed as "not shown to work", not as "made it worse".** 👉 **Re-run the same split at n ≥ 40 before concluding either way**, and ⛔ **do not close R101 v2 on elapsed time alone.**
+
+🔬 **A CANDIDATE THE v2 BODY DOES NOT ADDRESS, offered rather than shipped.** v2 builds **three** temp tables — `_open24`, `_tsl_want`, `_cl_want` — and **none of the three functions issues a single `ANALYZE` or `CREATE INDEX` on any of them** (grepped across `sync_ts_listings_from_atlas`, `sync_cached_listings_from_atlas`, `sync_edition_offers_from_atlas`: zero hits each). `_tsl_want` carries ~55,677 rows and its `listing_id` is probed by **both** the `DELETE … WHERE NOT EXISTS` anti-join **and** the delta CTE's `LEFT JOIN`. ⭐ **`ANALYZE` and `CREATE INDEX` on a temp table cannot change results, only plans — so this is a semantically INERT change, which is what makes it safe on a function feeding a public board.**
+
+⛔ **NOT SHIPPED, and the reason is collision, not doubt about the value.** The function is **pinned** (`supabase/tests/sync_ts_listings_from_atlas.sql`, byte-identical, guarded by `__tests__/db-invariants-drift-guard.test.ts`) and another session **rewrote its full body 26 minutes ago**. 🚨 **A `CREATE OR REPLACE` is a FULL-BODY WRITE: drafting one against a body that is actively being iterated is exactly how one session silently reverts another's work.** ⚠ **And I could not measure the candidate first — the `_open24` build alone now exceeds the 60 s `execute_sql` cap under current load, so my own probe is the load.**
+
+- **Revert:** nothing to revert; no change was made. · **Owed:** re-run the split at n ≥ 40; then, if v2 is confirmed not to have worked, the temp-table `ANALYZE` + `listing_id` index is the next candidate — **coordinate with whoever owns R101 rather than racing a second full-body write onto the same pinned function.**
+
+
 ### 2026-09-19 · 🔁 R101 v2 SHIPPED — the Atlas listing tick scans the open book ONCE and feeds ON CONFLICT only the delta; applied into a live IO spell on purpose, judged on BUFFERS, not on wall-clock · Cowork (desktop VM, push-capable)
 
 **Shipped: migration `20260919152824` (applied 8:28 AM PT), the two DB-invariant pins re-pointed + extended, PINS repointed. Four function bodies: `sync_ts_listings_from_atlas(p_diag boolean DEFAULT true)` (0-arg DROPPED, one function resolves), `sync_cached_listings_from_atlas`, `sync_edition_offers_from_atlas`, `atlas_listing_verify_tick`.**
