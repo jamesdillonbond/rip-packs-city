@@ -11,6 +11,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · ✏️ CORRECTION TO MY OWN ENTRY, SAME DAY: the Export button's failure mode depends on who is looking · Cowork cloud
+
+**Ledger-only. No code change.**
+
+The entry *"THE EXPORT BUTTON ON THE TAB I SHIPPED TODAY RETURNED 400"* is **right about the defect and loose about its reach**, and the loose part is the kind this repo insists on tightening.
+
+📏 **Probed live after the fix deployed:** `/api/portfolio-export` answers **307 → `/login`** for an anonymous caller — on Candy, on UFC, and on the Panini gate-control alike. So the auth wall fires BEFORE the collection lookup, and the honest statement is:
+
+- **Signed-in Candy or UFC holder** (the only reader for whom the button does anything): **400 "Unknown collection"** from a control they can see. That is the defect, and the route tests are its evidence.
+- **Anonymous reader** on the anon-public Collection tab: a login redirect, which is correct behaviour and always was.
+
+⚠ **So the live probe could not confirm the 400 and did not need to** — it establishes the auth wall, and the unit arms establish the route logic. ⛔ **Recording it because "verified live" was doing work in that entry that the probe does not support**, and an over-stated reach is how a later reader mis-sizes the same class.
+
+- **Revert:** n/a (ledger text only).
+
 ### 2026-09-19 · 📤 THE EXPORT BUTTON ON THE TAB I SHIPPED TODAY RETURNED 400, AND THE WEEKLY EMAIL DROPPED A $19,386 PORTFOLIO — three more folds, and one hardcoded map beside the registry · Cowork cloud
 
 **Shipped: 4 source files + 3 test files. No DB change.** `/api/portfolio` · `/api/portfolio-export` · `/api/send-digest` · `lib/address.ts` unchanged (reused).
