@@ -48,6 +48,37 @@ describe("counting", () => {
     expect(counts).toEqual({ a: 1 })
     expect(suppressionsWithNothingToSuppress).toBe(1)
   })
+
+  it("NAMES each unused directive, because a count with no location is not actionable", () => {
+    // The note used to be a bare number. Finding the three it referred to meant
+    // regenerating the eslint report by hand and walking it — and they turned
+    // out to be vendored istanbul assets under coverage/, i.e. not ours at all.
+    // ⚠ Pinned as a PROPERTY, not a format: every counted directive must appear
+    // in `suppressionSites` with a file and a line, so the count and the list
+    // can never disagree.
+    const { suppressionsWithNothingToSuppress, suppressionSites } = countByRule(
+      [
+        { filePath: "/repo/a.js", messages: [{ ruleId: null, line: 1, column: 1 }] },
+        { filePath: "/repo/b.js", messages: [{ ruleId: "x" }, { ruleId: null, line: 9, column: 3 }] },
+      ],
+      [],
+    )
+    expect(suppressionsWithNothingToSuppress).toBe(2)
+    expect(suppressionSites).toHaveLength(suppressionsWithNothingToSuppress)
+    expect(suppressionSites).toEqual([
+      { filePath: "/repo/a.js", line: 1, column: 1 },
+      { filePath: "/repo/b.js", line: 9, column: 3 },
+    ])
+  })
+
+  it("reports NO sites when nothing is unused — the guard must be satisfiable at zero", () => {
+    const { suppressionsWithNothingToSuppress, suppressionSites } = countByRule(
+      report([[{ ruleId: "a" }]]),
+      [],
+    )
+    expect(suppressionsWithNothingToSuppress).toBe(0)
+    expect(suppressionSites).toEqual([])
+  })
 })
 
 describe("the ratchet decision", () => {

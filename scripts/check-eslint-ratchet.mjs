@@ -44,6 +44,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, statSync } from "node:fs"
+import { relative } from "node:path"
 import { pathToFileURL } from "node:url"
 
 export const BASELINE_PATH = "eslint-ratchet.json"
@@ -54,6 +55,14 @@ export function countByRule(report, excludedRules = []) {
   const counts = {}
   let filesLinted = 0
   let suppressionsWithNothingToSuppress = 0
+  // ⚠ NAMED, NOT JUST COUNTED. This used to report only a number, and a count
+  // with no location is not actionable: the note said "3 eslint-disable
+  // directive(s) suppress nothing" and gave the reader nothing to go and fix.
+  // It cost a session the work of regenerating the report by hand to find that
+  // all three were vendored istanbul assets under coverage/ (now ignored).
+  // A guard that states an incidence must state WHERE, or the next reader pays
+  // the same cost again.
+  const suppressionSites = []
   for (const file of report) {
     filesLinted += 1
     for (const m of file.messages ?? []) {
@@ -61,13 +70,14 @@ export function countByRule(report, excludedRules = []) {
       // parse failure — a distinction that cost me a wrong reading first time.
       if (!m.ruleId) {
         suppressionsWithNothingToSuppress += 1
+        suppressionSites.push({ filePath: file.filePath, line: m.line ?? 0, column: m.column ?? 0 })
         continue
       }
       if (excluded.has(m.ruleId)) continue
       counts[m.ruleId] = (counts[m.ruleId] ?? 0) + 1
     }
   }
-  return { counts, filesLinted, suppressionsWithNothingToSuppress }
+  return { counts, filesLinted, suppressionsWithNothingToSuppress, suppressionSites }
 }
 
 /**
@@ -172,7 +182,7 @@ async function main() {
   }
 
   const base = JSON.parse(readFileSync(BASELINE_PATH, "utf8"))
-  const { counts, filesLinted, suppressionsWithNothingToSuppress } = countByRule(report, base.excludedRules)
+  const { counts, filesLinted, suppressionsWithNothingToSuppress, suppressionSites } = countByRule(report, base.excludedRules)
 
   if (process.argv.includes("--write")) {
     const sorted = Object.fromEntries(Object.entries(counts).sort((a, b) => b[1] - a[1]))
@@ -191,6 +201,9 @@ async function main() {
   )
   if (suppressionsWithNothingToSuppress > 0) {
     console.log(`  note: ${suppressionsWithNothingToSuppress} eslint-disable directive(s) suppress nothing`)
+    for (const s of suppressionSites) {
+      console.log(`    ${relative(process.cwd(), s.filePath)}:${s.line}:${s.column}`)
+    }
   }
 
   for (const g of result.grew) {
