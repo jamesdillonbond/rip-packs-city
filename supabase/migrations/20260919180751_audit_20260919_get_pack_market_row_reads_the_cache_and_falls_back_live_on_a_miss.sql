@@ -50,6 +50,15 @@
 -- `20260726180543_audit_20260726_get_pack_market_row_mv_swap.sql` and re-check
 -- it against md5 6ca755ff959a4b04478c61e53d4512ba.
 
+-- anon-exec: NOT granted - get_pack_market_row is SECURITY DEFINER and anon/authenticated EXECUTE both read FALSE live on 2026-09-19 (service_role true), so the decision is already made and unchanged here.
+--
+-- ⚠ MARKER RATHER THAN A REVOKE, ON PURPOSE. This is a CREATE OR REPLACE of the
+-- SAME signature, and CREATE OR REPLACE does not reset a function ACL - so a
+-- REVOKE in this file would not be protecting anything, it would be a
+-- production ACL statement smuggled into a body swap. The guard
+-- `migration-new-function-states-its-anon-exec-decision` asks for exactly this
+-- marker in the snapshot case, and its point stands: silence is not a decision.
+
 CREATE OR REPLACE FUNCTION public.get_pack_market_row(p_collection_slug text, p_dist_id text)
  RETURNS TABLE(n_sales bigint, n_sales_30d bigint, n_sales_90d bigint, last_sale_price numeric, last_sale_at timestamp with time zone, avg_price_90d numeric, median_price_90d numeric, min_price_all numeric, max_price_all numeric, retail_price numeric, secondary_vs_retail_ratio numeric)
  LANGUAGE plpgsql
