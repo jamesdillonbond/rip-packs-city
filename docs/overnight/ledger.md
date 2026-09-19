@@ -11,6 +11,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · ✅ THE WALK FIX IS CONFIRMED BY THE REAL CALLER — first fixed tick, watched live, and every number is the predicted one · Cowork cloud
+
+**Stayed for the 2:00 PM PT tick rather than delegating it to the scheduled check.** The walk started **21:03:40Z** and the enum marker is the fix in one line:
+
+```
+order_mode      stalest-first (6 new + 5072 known)
+known_complete  true
+known_order     5072          <- the whole catalogue
+wc_pskus        415           <- what the grid surfaced this run
+walking         5078          <- the queue
+```
+
+⭐ **`wc_pskus 415` against `walking 5078` IS the defect and its fix in one pair.** The two previous ticks read `910 -> 910` and `317 -> 317`: **the queue WAS the enumeration.** Now the grid finds 415 and the queue is 5,078, because the catalogue supplies the refresh targets and the grid is back to being only discovery. `known_complete = true`, so the new-first promotion engaged against a complete list — the completeness defect caught by re-reading the diff this morning would have mattered here.
+
+📏 **Seven minutes in, measured — the mechanism claim is confirmed exactly:**
+
+| | value |
+|---|---|
+| batches | 11 |
+| edition writes | **37** |
+| DISTINCT editions walked | **37** |
+| **writes : distinct** | **1.00 : 1** (was ~2–3 : 1) |
+| of which from the stale backlog | **35 of 37** |
+| `editions_stale_45d` | **1,264 → 1,231** |
+| `pct_editions_stale_45d` | **24.9% → 24.3%** |
+
+**The whole claim was that the SAME budget would land on DISTINCT editions instead of re-drawing fresh ones. 37 writes, 37 distinct.** And 35 of the 37 are backlog rows, so the ordering is doing what it says: the stalest are at the head of the queue.
+
+⏳ **Not done — one walk is not a trend, and the exit condition is unchanged:** `pct_editions_stale_45d` to ~0 **and holding a week**. At ~33 editions per 7 min inside a 50-min budget that is ~235/walk, so five walks before tomorrow's 9:00 AM PT falsifier ≈ **~1,175 against a 1,231 backlog** — inside the predicted 1,100–1,650 band, and close enough to the line that a **PARTIAL** verdict tomorrow (single digits, not zero) is the honest expectation rather than a clean PASS. ⚠ Do not read a non-zero reading tomorrow as failure; read the RATE and the `order_mode`.
+
+⚠ **Still true and unchanged by this:** the zero-day escalation arm breaks as this backlog clears (it gates on dated editions, not ticks) and I could not reach that task to fix it.
+
 ### 2026-09-19 · 🚨 RETRACTION — the wallet-backfill cadence exemption I shipped 40 minutes ago was wrong, and another session had already diagnosed it correctly · Cowork cloud
 
 **Retracted: the `wallet-backfill%` row (migration `20260919210201`). The MECHANISM is kept.** Row deleted; arm is back to `degraded 7 / suppressed 0 / inspected 97`, i.e. exactly its pre-change reading.
