@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🔴 I BROKE MAIN AND FIXED IT — my pack-detail migration never stated its anon-exec decision, and it outlived the OTHER session's fix for the same red · Cowork cloud
+
+**Owning this plainly: CI run 5762 was my push (`30b3456e3`) and it went red.**
+
+📏 **Four failures in `Unit tests (vitest) — shard 2/2`, 3 files / 4 tests, and they were TWO unrelated causes:**
+
+| # | failure | whose |
+|---|---|---|
+| 1–3 | `db-invariants-drift-guard` ×2 + `db-pin-points-at-the-newest-defining-migration` — two R101 v2 PINS entries named a reverted migration | **NOT mine** — a concurrent session's stale-copy commit `14f38e53c`, fixed by their `68c5aa206` |
+| 4 | `migration-new-function-states-its-anon-exec-decision` → `20260919180751` → `public.get_pack_market_row` | **MINE** |
+
+⭐ **AND THE ORDERING IS THE POINT: their fix landed in 5764 and main STAYED RED, because my offender was still there.** Runs 5764 and 5765 both failed after the PINS repair. **A shared red can have two causes, and clearing one leaves the badge unchanged — which reads as "the fix did not work" rather than "there was a second defect."** ⚠ I nearly concluded the red was entirely inherited and pushed on top of it.
+
+**The guard's complaint:** a migration creating OR replacing a public function must either `REVOKE EXECUTE … FROM PUBLIC, anon, authenticated` or state why not. **Silence is not a decision.** My migration did neither.
+
+⭐ **FIXED WITH THE MARKER, NOT A REVOKE, AND THE DISTINCTION IS LOAD-BEARING.** This was a `CREATE OR REPLACE` of the **same signature**, and `CREATE OR REPLACE` **does not reset a function ACL**. Read live before deciding: `anon` EXECUTE **false**, `authenticated` **false**, `service_role` **true**, `prosecdef` true — **the decision was already made and my change did not touch it.** So a REVOKE in that file would not have protected anything; it would have been a **production ACL statement smuggled into a body swap.** The guard's own message says to use the marker in exactly this snapshot case, and it is right.
+
+⚠ **Why I missed it locally:** I ran `tsc`, the lint ratchet and four targeted sentinel suites — all green — and pushed on that, because the full suite was still running on a loaded box. **The guard that caught me is not in any of those.** ⭐ **The lesson is not "run more tests", it is that MY CHANGE ADDED A MIGRATION and I ran no migration-guard.** Targeted testing has to be targeted at what the diff touches, not at what the diff is *about*.
+
+🚨 **AND THE TRAP THAT ALMOST HID IT: the background-task notification said "exit code 0" while the run's own output said `VITEST=1`.** My command was `npx vitest run … | tail -6; echo "VITEST=${PIPESTATUS[0]}"` — **the wrapper's exit is `echo`'s, not vitest's.** CLAUDE.md's standing rule ("a pipe reports the LAST command's exit code") caught it because I echo `PIPESTATUS[0]` by habit. **Without that line I would have read a green notification over a red suite.**
+
+**Shipped:** `7106effc2` — an `-- anon-exec:` marker on `20260919180751` naming the function and stating the measured ACL. Verified: `migration-new-function-states-its-anon-exec-decision` + both drift/pin guards, **221 tests green**.
+
+**Revert:** `git revert 7106effc2` — it restores the guard failure, which is the intended alarm.
+
 ### 2026-09-19 · ✅ SHIPPED (prod: table + function + sentinel arm) — R110's exit condition: an edge-function lane nobody watches now SAYS SO · Cowork cloud
 
 **Closes the hole this morning's 6-day pack-sales outage went through.** Five of the twelve active cron jobs POSTing to `/functions/v1/` write **no `pipeline_runs` row**, and every sentinel pipeline arm is scoped to `pipeline_cadence_watchlist` over `pipeline_runs` — so those lanes are out of scope **BY CONSTRUCTION**. No watchlist edit could ever have reached them.
