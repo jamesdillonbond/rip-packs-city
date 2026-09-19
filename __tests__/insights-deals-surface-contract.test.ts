@@ -28,6 +28,20 @@ import { stripComments } from "../scripts/lib/strip-comments.mjs"
 //
 // If a leg is added to or removed from the view, update these expectations —
 // do not weaken them. Silence about a leg is the bug this file exists to catch.
+//
+// ── 2026-09-19: a FOURTH leg, Candy MLB ────────────────────────────────────
+// mv_cross_collection_deals gained a candy_mlb arm (41 editions at the time,
+// third largest of the four). Every expectation below was extended rather than
+// relaxed, because the 2026-07-28 defect was not "All Day specifically" — it
+// was a leg shipping into the view while every surface stayed silent about it,
+// and the allowlist answering HTTP 400 for rows the payload already contained.
+//
+// ⚠ ONE THING IS DELIBERATELY *NOT* CLAIMED FOR CANDY: the Net-of-fees column.
+// `sellerFeeFor("candy_mlb")` returns null — Magic Eden's seller rate has not
+// been read from the source and lib/marketplace-fees.ts requires a sourceUrl
+// and a verifiedOn date — so those rows render an em-dash. That is the file's
+// documented behaviour for an unverified rate, and inventing a rate on a
+// net-proceeds column is worse than showing nothing. The column header says so.
 
 const REPO = process.cwd()
 
@@ -50,11 +64,13 @@ describe("/insights/deals names every collection it serves", () => {
     expect(src).toContain('key: "nba_top_shot"')
     expect(src).toContain('key: "nfl_all_day"')
     expect(src).toContain('key: "disney_pinnacle"')
-    // The union type must admit it too, or the chip won't typecheck.
+    expect(src).toContain('key: "candy_mlb"')
+    // The union type must admit them too, or the chips won't typecheck.
     expect(src).toMatch(/type CollectionFilter =[^\n]*nfl_all_day/)
+    expect(src).toMatch(/type CollectionFilter =[^\n]*candy_mlb/)
   })
 
-  it("the public API allowlists nfl_all_day", () => {
+  it("the public API allowlists nfl_all_day and candy_mlb", () => {
     const src = read(API)
     const m = /const VALID_COLLECTIONS = new Set\(\[([^\]]*)\]\)/.exec(src)
     expect(m, "VALID_COLLECTIONS literal not found").toBeTruthy()
@@ -62,6 +78,9 @@ describe("/insights/deals names every collection it serves", () => {
     expect(listed).toContain("nba_top_shot")
     expect(listed).toContain("nfl_all_day")
     expect(listed).toContain("disney_pinnacle")
+    // A leg in the view but not in the allowlist answers HTTP 400 for rows the
+    // payload already carries — the 2026-07-28 defect, repeated.
+    expect(listed).toContain("candy_mlb")
   })
 
   it.each([
@@ -74,12 +93,25 @@ describe("/insights/deals names every collection it serves", () => {
     expect(code).toMatch(/All Day/)
   })
 
+  it.each([
+    ["client board", CLIENT],
+    ["SEO layout", LAYOUT],
+    ["OG card", OG],
+    ["insights hub card", HUB],
+  ])("%s names Candy MLB, the fourth leg", (_label, file) => {
+    const code = stripComments(read(file))
+    expect(code).toMatch(/Candy MLB/)
+  })
+
   it("no surface still claims the board is Top-Shot-plus-Pinnacle only", () => {
     const offenders: string[] = []
     for (const file of [CLIENT, LAYOUT, OG, HUB]) {
       const code = stripComments(read(file))
       // The exact shape of the old claim: Top Shot and Pinnacle adjacent with
       // no All Day between them.
+      // ⚠ The old TWO-collection claim. It is still the thing to catch: a
+      // surface that lists Top Shot and Pinnacle adjacent with nothing between
+      // them has dropped both later legs at once.
       const re = /Top Shot\s*(?:\+|and)\s*(?:Disney\s*)?Pinnacle/i
       const m = re.exec(code)
       if (m) offenders.push(`${path.relative(REPO, file)} — "${m[0]}"`)

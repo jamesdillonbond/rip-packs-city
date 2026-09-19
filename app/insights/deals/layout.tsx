@@ -18,13 +18,14 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 export const metadata: Metadata = {
   // The root metadata template in lib/seo.ts appends " | Rip Packs City",
   // so baking the brand in here rendered it twice. (deep-audit D24)
-  title: "Below FMV — Top Shot, All Day + Pinnacle Deals vs Fair Value",
+  title: "Below FMV — Top Shot, All Day, Pinnacle + Candy MLB Deals vs Fair Value",
   description:
-    "NBA Top Shot, NFL All Day and Disney Pinnacle editions listed below a fair value we can stand behind — the public cross-collection deals board. The top-of-funnel counterpart to the sniper. Free. No signup.",
+    "NBA Top Shot, NFL All Day, Disney Pinnacle and Candy MLB editions listed below a fair value we can stand behind — the public cross-collection deals board. The top-of-funnel counterpart to the sniper. Free. No signup.",
   keywords: [
     "NBA Top Shot deals",
     "NFL All Day deals",
     "Disney Pinnacle deals",
+    "Candy MLB deals",
     "Top Shot below FMV",
     "All Day below FMV",
     "Pinnacle below FMV",

@@ -39,7 +39,7 @@
 // image; NULL for TS).
 //
 // Query params:
-//   collection=nba_top_shot|nfl_all_day|disney_pinnacle
+//   collection=nba_top_shot|nfl_all_day|disney_pinnacle|candy_mlb
 //                                                 single collection filter
 //   tier=<text>                                   single tier filter (free-text;
 //                                                 TS enum values or Pinnacle
@@ -73,7 +73,12 @@ import { boardRowMeta } from "@/lib/insights/board-meta"
 // served it — and it is the board's LARGEST leg (47% of rows at the default
 // >=10% gap), so this allowlist was 400-ing the single biggest slice of its own
 // payload and telling the caller that collection was not valid.
-const VALID_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day", "disney_pinnacle"]);
+// ⚠ FOUR LEGS since 2026-09-19. This allowlist is a 400-gate, so a leg missing
+// here is a slice of the payload a consumer is told does not exist — the exact
+// defect filed for NFL All Day on 2026-07-28, when the biggest leg of the board
+// returned HTTP 400. `__tests__/insights-deals-surface-contract.test.ts` pins
+// every surface that has to name a leg; add to it, never weaken it.
+const VALID_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day", "disney_pinnacle", "candy_mlb"]);
 const VALID_CONF = new Set(["HIGH", "MEDIUM"]);
 const VALID_SORTS = new Set(["discount", "fmv", "ask", "circulation"]);
 
