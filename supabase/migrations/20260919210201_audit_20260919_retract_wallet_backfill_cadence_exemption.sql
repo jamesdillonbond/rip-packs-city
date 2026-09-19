@@ -1,0 +1,30 @@
+-- RETRACTION of 20260919202105, same session, ~40 minutes later.
+--
+-- 🚨 MY EVIDENCE STRING WAS WRONG, and the tell was in a window I did not look at.
+-- I read 72 hours of `pipeline_runs` -- which sits ENTIRELY AFTER the change point --
+-- and concluded the wallet-backfill ratio was lower DEMAND. The 24-day series in
+-- `pipeline_runs_daily` says otherwise:
+--
+--   08-26..09-12   320 446 471 616 375 571 536 500 568 569 569 516 517 624 487 582 621
+--   09-13          433   <- change point
+--   09-14..09-18   322 273 321 313 312   <- a tight plateau
+--
+-- Demand does not settle onto 313/312/321. That is a clean, dated STEP, and it is
+-- explained: the deliberate 2026-09-13 backstop-drift fix
+-- (SEED_REFRESH_BACKSTOP_FRESH_HOURS, app/api/seed-wallet-refresh/route.ts). Another
+-- session had already diagnosed it and acked the arm until 2026-10-01.
+--
+-- ⭐ AND THAT ACK IS EXACTLY CALIBRATED, which is what settles it. The baseline window
+-- is current_date-17 .. current_date-3, so it becomes fully post-change when
+-- current_date >= 2026-10-01. The reading corrects ITSELF on the very day the ack
+-- expires. Nothing needs suppressing.
+--
+-- ⛔ Keeping the row would have been worse than doing nothing: it suppresses until
+-- 2026-12-19 something that resolves on 10-01, it replaces a VISIBLE ack that explains
+-- the situation with a silent `ok`, and in the meantime it would hide a genuine
+-- collapse in the wallet-backfill family.
+--
+-- The MECHANISM (public.cadence_exempt_lanes + the function's suppressed/expired
+-- reporting) is kept: it is tested, mutation-proven, pinned, and satisfiable at a
+-- population of zero -- which is now its population.
+DELETE FROM public.cadence_exempt_lanes WHERE pipeline_pattern = 'wallet-backfill%';

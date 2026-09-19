@@ -11,6 +11,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🚨 RETRACTION — the wallet-backfill cadence exemption I shipped 40 minutes ago was wrong, and another session had already diagnosed it correctly · Cowork cloud
+
+**Retracted: the `wallet-backfill%` row (migration `20260919210201`). The MECHANISM is kept.** Row deleted; arm is back to `degraded 7 / suppressed 0 / inspected 97`, i.e. exactly its pre-change reading.
+
+🚨 **My evidence string was wrong, and the tell was in a window I did not look at.** I read **72 hours** of `pipeline_runs` — which sits ENTIRELY AFTER the change point — and concluded the ratio was lower DEMAND. The 24-day series in `pipeline_runs_daily` refutes it:
+
+```
+08-26..09-12   320 446 471 616 375 571 536 500 568 569 569 516 517 624 487 582 621
+09-13          433   ← change point
+09-14..09-18   322 273 321 313 312   ← a tight plateau
+```
+
+⭐ **Demand does not settle onto 313/312/321.** That is a clean, dated STEP, and it is explained: the deliberate **2026-09-13 backstop-drift fix** (`SEED_REFRESH_BACKSTOP_FRESH_HOURS`, `app/api/seed-wallet-refresh/route.ts`). This is CLAUDE.md's own rule — *a directional claim needs a DISTRIBUTION, not a snapshot* — failed on the exact axis it names.
+
+⭐⭐ **Another session had already diagnosed this correctly and acked the arm until 2026-10-01 — and that date is not arbitrary, it is exactly calibrated.** The baseline window is `current_date-17 .. current_date-3`, so it becomes fully post-change when `current_date >= 2026-10-01`. **The reading corrects ITSELF on the very day the ack expires.** I did not read the ack text in the live payload before building a fix for what it already covered; it was sitting in the arm's own `detail` on every sweep.
+
+⛔ **Keeping the row would have been WORSE THAN DOING NOTHING:** it suppresses until 2026-12-19 something that resolves on 10-01, it replaces a VISIBLE ack that explains the situation with a silent `ok`, and in between it would mask a genuine collapse in the wallet-backfill family.
+
+✅ **What survives, and is still worth having:** `public.cadence_exempt_lanes` + the function's `suppressed` / `expired_exemptions` reporting. Suppression is reported on every verdict including `ok`; an exemption past `review_by` stops suppressing and is named (fail-loud). It is mutation-proven in the DB-invariant pin (11 assertions, both directions, plus a no-change control and the load-bearing `inspected` control), and it is **satisfiable at a population of zero — which is now its population.** The next lane that genuinely needs it has a reviewed, expiring, self-documenting place to go.
+
+**Revert path:** `git revert <sha>` for the docs; to restore the exemption, re-run the INSERT in `supabase/migrations/20260919202105_audit_20260919_exempt_wallet_backfill_from_cadence.sql` — but read this entry first.
+
 ### 2026-09-19 · ⏳ CADENCE COLLAPSE WAS CRITICAL ON SEVEN DEMAND-DRIVEN LANES — run count is not cadence when a visitor's paste is the trigger · Cowork cloud
 
 **Shipped: 3 migrations + 1 lib + 1 test file.** The arm fired on 62.7% of the 83 sweeps in retention and drove 15 of 22 CRITICAL pages. Re-derived before acting, and the re-derivation MOVED: it is now **8 entries, not the 9 I filed** — `ts-listings-atlas-sync` and `fmv-recalc`, the two I had called the REAL ones, have dropped off entirely.
