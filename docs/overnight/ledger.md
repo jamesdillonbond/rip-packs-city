@@ -31,6 +31,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Revert:** `DROP INDEX CONCURRENTLY IF EXISTS public.idx_tame_nfl_nft_seen;` as postgres, with 463/464/466 shed and `SET lock_timeout` bounded first (an ACCESS EXCLUSIVE **request** queues ahead of new readers on a hot table).
 - ⚠ **STILL OWED AND EXPLICITLY NOT CLAIMED: the IO win is an ESTIMATE, not a measurement.** A plan change is a cost estimate. **Do not close R108's IO claim on the EXPLAIN alone** — read the lane's own p50 against its **14.4 s calm baseline**, and the next 2-hourly `audit_20260830_pgss_snap` delta dropping this query out of the top 5. Both need elapsed time. ⚠ **Split any jobid 464 rate on the CHANGE POINT 2026-09-19 14:09Z.**
 
+⚖️ **ADDENDUM 07:56 AM PT — I TRIED TWICE TO MEASURE THE IO WIN AND BOTH ATTEMPTS ARE INVALID. THE IO CLAIM STAYS OPEN.** The plan change is solid; the *saving* is still unmeasured, and the two traps are worth more than the number would have been.
+
+✅ **What IS established.** The index is used by the **true** production Leg 1 — ⚠ my first EXPLAIN omitted **two of its three** correlated subqueries (`NOT EXISTS nft_edition_map`, `EXISTS editions`); re-run with all three it still reads **`Parallel Index Only Scan using idx_tame_nfl_nft_seen` (cost 0.41..1193.33)**, whole-plan cost **9,583 vs the recorded 105,599**. ⭐ The conclusion survived the corrected probe — but **a probe missing two predicates is not the production query, and I should not have EXPLAINed a query I had not read to the end.**
+
+⛔ **TRAP 1 — the lane's runtime is CONFOUNDED; both no-change controls improved as much or MORE.** Split on 14:09Z: the target lane (464) went 51 % fail / p50 115.8 s → 0 of 3 / 59.1 s, **but 466 went 80 % → 1 of 7 with p50 120.1 → 36.7 s and 463 went p50 26.9 → 5.8 s.** 🚨 **A candidate its own no-change control outperforms is not shown to work** — the estate calmed at the same moment. **Runtime cannot attribute this fix.**
+
+⛔ **TRAP 2 — the `pg_stat_statements` per-call figure cannot attribute it either, for TWO independent reasons.** (a) **It aggregates the WHOLE function** — Legs 2 and 3 and `upsert_nft_edition_map_batch` — not Leg 1, because `track` is `top` and nested statements are not recorded separately; a single tick's number is dominated by that tick's backlog. (b) **I was comparing a LIFETIME cumulative average (3,146 calls, weeks) against a 3-call window** — the pooled-across-a-change trap in this file's own measurement rules. 📏 The readings, recorded so nobody re-derives them: blocks **touched**/call **2,575 MB cumulative-before vs 3,016.7 after** (n=3, stable across n=1 → *not* reduced), physical **reads**/call **463.4 → 104.1**. ⭐ **Note the shape: physical reads fell while blocks TOUCHED did not — that is a CACHE effect, not less work**, and quoting only the read number would have manufactured a 4.5× win out of a warm buffer pool.
+
+👉 **THE ONLY VALID INSTRUMENT IS THE REGISTER'S OWN: `audit_20260830_pgss_snap`, diffing two 2-hourly snapshots taken the SAME WAY, one wholly before 14:09Z and one wholly after**, ranked on `shared_blks_read` per call for this queryid — same instrument both sides, equal windows. **Do not close R108's IO claim on anything else**, and ⛔ **do not quote the 4.5× physical-read drop as the saving.**
+
+
 
 ### 2026-09-19 · 🟢 MAIN WAS RED ON A MIGRATION THAT IS NOT MINE — unblocked with a comment, after checking the live ACL rather than assuming the guard was pedantic · Claude Code (Trevor's Windows box)
 
