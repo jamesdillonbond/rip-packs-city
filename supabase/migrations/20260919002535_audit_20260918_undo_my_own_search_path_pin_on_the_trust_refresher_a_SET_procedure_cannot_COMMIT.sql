@@ -1,0 +1,59 @@
+-- audit_20260918_undo_my_own_search_path_pin_on_the_trust_refresher_a_SET_procedure_cannot_COMMIT
+--
+-- SELF-REVERT. Migration `20260918225909` (applied 22:59Z today, by me) did the ONE
+-- thing `20260914055000` names in its header as the thing not to do:
+--
+--     "REVERT OF THIS REVERT (do not, without solving the COMMIT problem first):
+--        ALTER PROCEDURE public.rpc_trust_health_precompute_refresh_p() SET search_path = public, pg_temp;"
+--
+-- ── SEVERITY, STATED BEFORE THE LESSON SO IT IS NOT OVERSOLD ────────────────────────
+-- NOTHING BROKE, and the reason is a finding in its own right: `cron.job` holds NO job
+-- whose command calls this procedure. Since 09-14 the legs are dispatched INDIVIDUALLY
+-- (jobids 324-331, `SELECT public.run_thp_leg_logged('public.rpc_thp_leg_*()'::regprocedure, ...)`
+-- on staggered 6-hourly slots), and jobid 488 `rpc-trust-health-history` is a plain INSERT,
+-- not a CALL. Measured over the 110 minutes the pin was live: 0 failures across all nine
+-- jobs, and ZERO runs of the procedure itself.
+-- ⭐ So the 09-14 header's "jobid 488 CALLs rpc_trust_health_precompute_refresh_p() every
+-- 10 minutes" is now STALE, and this procedure currently has NO caller. I pinned, then
+-- unpinned, a routine nothing runs -- "name the caller before you touch the function",
+-- twice in one evening.
+--
+-- ── WHY IT IS REVERTED ANYWAY ───────────────────────────────────────────────────────
+-- A PROCEDURE WITH A `SET` CLAUSE RUNS INSIDE AN IMPLICIT TRANSACTION BLOCK, SO IT MAY
+-- NOT EXECUTE `COMMIT` OR `ROLLBACK`. This one is `prokind = 'p'` and its body is eight
+-- `PERFORM public.rpc_thp_leg_*()` calls each followed by `COMMIT`. A pin therefore arms a
+-- landmine for whoever next gives it a caller: it would raise `invalid transaction
+-- termination` on the first COMMIT. On 2026-09-14 the sibling procedure did exactly that
+-- on its first tick after an identical pin, 20 minutes later.
+--
+-- ── THE TWO ERRORS, RECORDED BECAUSE THEY ARE THE REUSABLE PART ─────────────────────
+-- 1. MY "POSITIVE CONTROL" WAS THE SAME CATEGORY ERROR THE 09-14 MIGRATION NAMES, IN THE
+--    SAME WORDS. I verified that all eight `rpc_thp_leg_*` identities resolve under
+--    `search_path = public, pg_temp`. That check was correct and IRRELEVANT: the hazard was
+--    never name resolution, it was that `SET` changes a procedure's TRANSACTION SEMANTICS.
+--    The 09-14 header says "no search_path-shaped question would have asked" -- and I asked
+--    a search_path-shaped question anyway, four days later, with that file in the repo.
+-- 2. I READ THE TRUST PRECOMPUTE'S FRESHNESS AFTER APPLYING THE PIN, FOUND EVERY LEG
+--    FRESH, AND TOOK THAT AS SAFETY. Every `computed_at` in that read was stamped 21:55Z or
+--    earlier -- BEFORE the 22:59Z pin. A reading taken before the change is not a reading OF
+--    the change. The 09-14 migration makes this exact point about a lane that "SUCCEEDED at
+--    05:30 and 05:40 -- after the pin ... not evidence of safety".
+--
+-- ── WHAT THIS DOES ──────────────────────────────────────────────────────────────────
+-- Restores `proconfig = NULL` on the procedure. `public` then has exactly TWO routines with
+-- no pinned search_path -- both PROCEDURES that do transaction control -- which is the
+-- DELIBERATE state register #115 records, not a gap. Verified after applying: proconfig IS
+-- NULL, unpinned count back to 2.
+--
+-- The COLUMN COMMENT half of `20260918225909` (editions.badges, R104) is UNAFFECTED and is
+-- NOT reverted here. Only the ALTER PROCEDURE is undone.
+--
+-- THE RULE, restated where the next pin will read it: BEFORE ADDING A `SET` CLAUSE TO ANY
+-- ROUTINE, CHECK `prokind` FIRST. For `prokind = 'p'`, grep the body for
+-- `\m(commit|rollback)\M` and STOP if it has any. The search_path guard in `scripts/`
+-- checks name resolution; it does not check this.
+--
+-- REVERT: there is nothing to revert to. Re-pinning requires first removing the transaction
+-- control from the procedure, which is a redesign, not a pin.
+
+ALTER PROCEDURE public.rpc_trust_health_precompute_refresh_p() RESET search_path;
