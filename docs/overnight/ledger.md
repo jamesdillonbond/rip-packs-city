@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 📦 EVERY WALLET READ "0 PACKS SOLD" AND THE CAUSE WAS STRUCTURAL — `pack_purchases.seller_address` is the tx PAYER, i.e. Dapper's ESCROW, on 103,396 of 103,398 Top Shot secondary rows; the seller was on the platform all along in the marketplace history tables, read by nothing · Claude Code (cloud) for Trevor
+
+**One migration (applied), two pinned SQL tests, worker + UI code, docs.** Trevor: "my wallet shows 0 sold packs when I've sold hundreds" + sealed Top Shot packs with no name, thumbnail or market data.
+
+- ⭐ **`get_wallet_pack_history` v4 / `get_wallet_pack_summary` v3** UNION `topshot_pack_sales_history` + `allday_pack_sales_history` (`storefront_address` = seller; every row has `dist_id`; TS from 2023-09, AD from 2022-12) with `pack_purchases`, one row per (collection, pack). **0xbd94cade097e50ac: packs_sold 0 → 502** (396 TS $26,252 + 106 AD $2,038); packs_purchased 133 → 253; 5 rows that read HELD were sold and now read FLIPPED. Warm: history ~100 ms, summary ~230 ms.
+- ⭐ **Three fabricated zeros removed:** `COALESCE(buy|sell|pull_value, 0)` → NULL when unknown; primary drops priced at the distribution's retail with `buy_price_source='retail'`; `realized_pl_usd` only when both legs are known.
+- ⭐ **Sealed identity:** dist resolves rip → own rows → ANY marketplace row for that `pack_nft_id` (`dist_source`); 9 of this wallet's 94 sealed TS packs resolve, the other 85 are honestly labelled "not recorded until opened or resold". Page rows carry floor ask / EV / last sale (all NULL-honest).
+- 📐 **Settlement lag measured before trusting timestamps:** on-chain `sealed_at` trails marketplace `block_time` by median 4 h, **p90 9 days** (31,995 matched pairs) → buy rows within 30 days cluster as one purchase, `bought_at` = earliest. Pinned (`P10`).
+- 🗂 **Five indexes** on the two marketplace tables (seller/buyer/`pack_nft_id`), built CONCURRENTLY first, recorded `IF NOT EXISTS` in the migration. A seller lookup was a 1.3 s / 21k-buffer parallel seq scan.
+- 🔧 **Worker:** TS secondary seller = same-tx `PackNFT.Withdraw.from`, payer only as fallback — **committed, NOT deployed: needs an operator `wrangler deploy` of `workers/pack-events-ingest`**. Historical rows keep the escrow seller; the RPC union covers them.
+- 📌 Both RPCs pinned (`supabase/tests/get_wallet_pack_{history,summary}.sql` + PINS), run green on a scratch Postgres 16 in the sandbox. Live bodies verified byte-identical (normalized md5) to the committed file.
+
+- **Revert (code):** `git revert <sha>` — find by message (`git log --grep="0 packs sold"`). **Revert (DB):** re-apply the v3 history body from `docs/reference/packs.md`'s prior contract / the summary body from `20260912221500_…ripped_value_known_count.sql`; the indexes can stay. The UI reads every new key null-guarded, so an old body degrades to the previous rendering.
+
 ### 2026-09-18 · 🕳 THE `bash -e` ASSIGNMENT GUARD SAID IT "KEYS ON THE SHAPE, NOT ON `jq`" — IT KEYED ON `curl`, AND THE CLASS WAS ALIVE IN THE TWO ci.yml JOBS WHOSE WHOLE PURPOSE IS CATCHING A SILENT NO-OP · Claude Code cloud
 
 **Four files, no migration, no DB object, no data mutation.** A QA/CI sweep asked for by Trevor; most hypotheses came back NON-findings (actions all SHA-pinned, every job carries `timeout-minutes`, the ci.yml↔vercel.json docs-exclusion claim is already pinned by `deploy-and-ci-agree-on-what-docs-means`) — this is what survived.
