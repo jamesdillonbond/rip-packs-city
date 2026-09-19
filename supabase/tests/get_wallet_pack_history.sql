@@ -14,9 +14,12 @@
 --   3. A sealed pack's distribution resolves from ANY marketplace row for that
 --      pack_nft_id, not only from the wallet's own rip — and a pack with no
 --      source at all stays NULL rather than borrowing a neighbour's.
+--   4. (v5, 2026-09-18) A pack Dapper's index says another wallet now holds,
+--      with no sale or rip by this wallet, is TRANSFERRED, never HELD; and the
+--      index is a dist source of last resort (dist_source = 'dapper_index').
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260919004500_audit_20260918_wallet_packs_sold_from_marketplace_history_and_sealed_pack_identity.sql).
+-- (supabase/migrations/20260919031500_audit_20260918_wallet_packs_transferred_status_and_identity_lane_covers_rips.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -46,6 +49,10 @@ CREATE TABLE public.pack_ask_state (
   collection_slug text, dist_id text, lowest_ask numeric, is_listed boolean, last_checked_at timestamptz
 );
 CREATE TABLE public.mv_pack_ev_latest (collection_id uuid, dist_id text, pack_ev numeric, snapshotted_at timestamptz);
+CREATE TABLE public.pack_nft_identity (
+  collection_id uuid, pack_nft_id text, dist_id text, status text, owner_address text, checked_at timestamptz DEFAULT now(),
+  PRIMARY KEY (collection_id, pack_nft_id)
+);
 
 -- >>> BEGIN verbatim get_wallet_pack_history (body byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_pack_history(p_wallet text, p_collection_slug text DEFAULT NULL::text, p_status text DEFAULT NULL::text, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0)
@@ -115,8 +122,9 @@ BEGIN
     FROM buy_src WHERE dist_id IS NOT NULL GROUP BY 1, 2
   ),
   sell_src AS (
-    -- (1) on-chain rows whose seller IS this wallet. Structurally ~never true on
-    --     Dapper (the payer is the escrow), kept so a real seller row still counts.
+    -- (1) on-chain rows whose seller IS this wallet: rows the worker ingests
+    --     after its Withdraw.from fix, plus the 68,889 historical rows the
+    --     2026-09-18 backfill re-attributed from the marketplace tables.
     SELECT pack_nft_id, collection_id, sale_price AS price, sale_currency AS currency,
            sealed_at AS at, buyer_address AS counterparty, pack_dist_id AS dist_id,
            'onchain'::text AS src, 1 AS pri
@@ -168,12 +176,18 @@ BEGIN
       lb.bought_event_kind, lb.buy_src,
       ls.sell_price, ls.sell_currency, ls.sold_at, ls.sold_to, ls.sell_src,
       wr.id AS rip_id, wr.sealed_at AS ripped_at, wr.moments_pulled, wr.pull_value_usd,
-      -- distribution: rip > the wallet's own rows > any marketplace row for this pack
-      COALESCE(wr.dist_id, bd.dist_id, sd.dist_id, hx.dist_id) AS dist_id,
+      -- Dapper's own index of the pack (pack_nft_identity, filled by the
+      -- pack-nft-identity lane): current owner + Sealed/Opened, as of checked_at.
+      pi.owner_address AS current_owner,
+      pi.status        AS identity_status,
+      pi.checked_at    AS identity_checked_at,
+      -- distribution: rip > the wallet's own rows > any marketplace row > the index
+      COALESCE(wr.dist_id, bd.dist_id, sd.dist_id, hx.dist_id, NULLIF(pi.dist_id, '0')) AS dist_id,
       CASE
         WHEN wr.dist_id IS NOT NULL THEN 'rip'
         WHEN bd.dist_id IS NOT NULL OR sd.dist_id IS NOT NULL THEN 'own_row'
         WHEN hx.dist_id IS NOT NULL THEN 'peer_sale'
+        WHEN NULLIF(pi.dist_id, '0') IS NOT NULL THEN 'dapper_index'
         ELSE NULL
       END AS dist_source
     FROM dedup d
@@ -183,6 +197,7 @@ BEGIN
     LEFT JOIN wallet_rips  wr ON wr.collection_id = d.collection_id AND wr.pack_nft_id = d.pack_nft_id
     LEFT JOIN buy_dist     bd ON bd.collection_id = d.collection_id AND bd.pack_nft_id = d.pack_nft_id
     LEFT JOIN sell_dist    sd ON sd.collection_id = d.collection_id AND sd.pack_nft_id = d.pack_nft_id
+    LEFT JOIN public.pack_nft_identity pi ON pi.collection_id = d.collection_id AND pi.pack_nft_id = d.pack_nft_id
     LEFT JOIN LATERAL (
       SELECT h.dist_id FROM public.topshot_pack_sales_history h
       WHERE d.collection_id = v_ts
@@ -226,6 +241,11 @@ BEGIN
         WHEN has_rip                                            THEN 'ripped'
         WHEN has_sell AND has_buy AND sold_at >= bought_at      THEN 'flipped'
         WHEN has_sell AND NOT has_buy                           THEN 'sold'
+        -- bought, never sold or opened by this wallet, and Dapper's index says a
+        -- DIFFERENT wallet holds it now: it left by transfer, or by a sale the
+        -- marketplace walker has not reached. Never HELD.
+        WHEN has_buy AND current_owner IS NOT NULL AND current_owner <> v_wallet
+                                                                THEN 'transferred'
         WHEN has_buy                                            THEN 'held'
         ELSE 'other'
       END AS status
@@ -299,6 +319,8 @@ BEGIN
         'pack_name', pack_name, 'pack_image', pack_image, 'pack_tier', pack_tier,
         'dist_id', dist_id, 'dist_source', dist_source,
         'dist_total_sealed', dist_total_sealed, 'dist_total_opened', dist_total_opened,
+        'current_owner', current_owner, 'identity_status', identity_status,
+        'identity_checked_at', identity_checked_at,
         'rip_id', rip_id, 'ripped_at', ripped_at,
         'moments_pulled', moments_pulled,
         'pull_value_usd', CASE WHEN pull_value_usd IS NULL THEN NULL ELSE ROUND(pull_value_usd::numeric, 2) END,
@@ -334,7 +356,7 @@ BEGIN
     'coverage', jsonb_build_object(
       'onchain', 'pack_purchases: Top Shot + All Day, block-indexed from 2026-04; primary drops carry no price on chain',
       'marketplace', 'topshot_pack_sales_history / allday_pack_sales_history: Dapper marketplace secondary sales (seller = storefront_address), Top Shot from 2023-09, All Day from 2022-12; ingest is bursty and can lag days',
-      'sealed_identity', 'a sealed Top Shot primary-drop pack has no distribution recorded anywhere until it is opened or sold on the marketplace; dist_id/pack_name are NULL for those rows by design'
+      'identity', 'pack_nft_identity: Dapper searchPackNft index (dist_id, Sealed/Opened, current owner) filled by the pack-nft-identity lane; a pack it has not reached yet has dist_id/pack_name NULL and cannot be marked transferred'
     ),
     'computed_at', now()
   );
@@ -393,6 +415,20 @@ INSERT INTO public.topshot_pack_sales_history VALUES
   ('tx-p10b', 'P10', 28, true, '0xother',  '0xwallet', 'D1', '2026-06-05');
 INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind)
 VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P10', '0xwallet', '0x18eb4ee6b3c026d2', 20, 'DUC', '2026-06-10', false, 'secondary_sale');
+-- P11: bought on chain, never sold or ripped here, and Dapper's index says a
+-- DIFFERENT wallet holds it now (opened by them) -> TRANSFERRED, never HELD.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P11', '0xwallet', '0x0b2a3299cc857e29', NULL, '2026-05-28', true, 'primary_withdraw');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P11', 'D1', 'Opened', '0xc5ababe825dc3122', '2026-09-18');
+-- P12: sealed primary drop, still this wallet's per the index, dist known ONLY
+-- from the index -> held, named, dist_source dapper_index.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P12', '0xwallet', '0x0b2a3299cc857e29', NULL, '2026-07-03', true, 'primary_withdraw');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P12', 'D2', 'Sealed', '0xwallet', '2026-09-18');
+-- P13: like P12 but the index only knows dist "0" (uncatalogued) -> stays NULL.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sealed_at, is_primary_drop, event_kind)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P13', '0xwallet', '0x0b2a3299cc857e29', NULL, '2026-07-04', true, 'primary_withdraw');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P13', '0', 'Sealed', '0xwallet', '2026-09-18');
 -- A cancelled listing (purchased=false) must count as nothing.
 INSERT INTO public.topshot_pack_sales_history VALUES
   ('tx-p8', 'P8', 99, false, '0xother', '0xwallet', 'D1', '2026-08-20');
@@ -409,7 +445,7 @@ DECLARE
   sold jsonb;
 BEGIN
   r := public.get_wallet_pack_history('0xWALLET', NULL, NULL, 50, 0);
-  PERFORM _assert_eq(r->>'total_count', '8', 'P1..P7 + P10 = 8 packs; the cancelled listing P8 is nothing');
+  PERFORM _assert_eq(r->>'total_count', '11', 'P1..P7 + P10..P13 = 11 packs; the cancelled listing P8 is nothing');
 
   -- 1. sold packs come from the marketplace history
   sold := public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'sold_any', 50, 0);
@@ -469,8 +505,25 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P7';
   PERFORM _assert_eq(row_->>'status', 'held', 'P7 sold then bought back = held');
 
+  -- v5: transferred + the index as a dist source
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P11';
+  PERFORM _assert_eq(row_->>'status', 'transferred', 'P11: another wallet holds it per the index -> transferred, not held');
+  PERFORM _assert_eq(row_->>'current_owner', '0xc5ababe825dc3122', 'P11 current owner carried');
+  PERFORM _assert_eq(row_->>'identity_status', 'Opened', 'P11 index status carried');
+  PERFORM _assert_eq(row_->>'pack_name', 'Fresh Threads Pack', 'P11 named from the index dist');
+  PERFORM _assert(row_->>'realized_pl_usd' IS NULL, 'P11 no P&L: nothing was realised by this wallet');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P12';
+  PERFORM _assert_eq(row_->>'status', 'held', 'P12 still this wallet''s per the index -> held');
+  PERFORM _assert_eq(row_->>'dist_source', 'dapper_index', 'P12 dist from the index, last in the order');
+  PERFORM _assert_eq(row_->>'pack_name', 'Quest Reward Pack', 'P12 named');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P13';
+  PERFORM _assert_eq(row_->>'status', 'held', 'P13 held');
+  PERFORM _assert(row_->>'dist_id' IS NULL AND row_->>'dist_source' IS NULL, 'P13: the index''s dist "0" is not a distribution');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'transferred', 50, 0))->>'total_count', '1', 'transferred filter = P11');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'sold_any', 50, 0))->>'total_count', '3', 'a transferred pack is NOT a sale');
+
   -- filters + paging still hold
-  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 2, 0))->>'total_count', '4', 'held = P3, P4, P6, P7');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 2, 0))->>'total_count', '6', 'held = P3, P4, P6, P7, P12, P13');
   PERFORM _assert_eq(jsonb_array_length((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 2, 0))->'packs')::text, '2', 'limit honoured');
   PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nfl_all_day', NULL, 50, 0))->>'total_count', '0', 'collection filter');
   PERFORM _assert_eq((public.get_wallet_pack_history('0xnobody', NULL, NULL, 50, 0))->>'total_count', '0', 'unknown wallet -> empty, not error');

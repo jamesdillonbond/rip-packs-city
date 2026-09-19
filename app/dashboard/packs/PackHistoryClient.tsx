@@ -209,7 +209,7 @@ interface HistoryRow {
   collection_id: string
   collection_name: string
   collection_slug: string
-  status: "ripped" | "flipped" | "sold" | "held" | "other"
+  status: "ripped" | "flipped" | "sold" | "held" | "transferred" | "other"
   has_buy: boolean
   has_rip: boolean
   has_sell: boolean
@@ -237,6 +237,8 @@ interface HistoryRow {
   lowest_ask_usd?: number | null
   pack_ev_usd?: number | null
   last_sale_usd?: number | null
+  current_owner?: string | null
+  identity_status?: string | null
 }
 
 interface History {
@@ -256,6 +258,7 @@ const STATUS_OPTIONS: Array<{ key: "all" | HistoryRow["status"]; label: string; 
   { key: "flipped", label: "Flipped", color: "#A855F7" },
   { key: "sold", label: "Sold", color: "#34D399" },
   { key: "held", label: "Held", color: "#71717A" },
+  { key: "transferred", label: "Transferred", color: "#F59E0B" },
   { key: "other", label: "Other", color: "#71717A" },
 ]
 
@@ -803,6 +806,7 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
                   style={{ color: "#fff", textDecoration: "none", fontFamily: condensedFont, fontWeight: 700, fontSize: 13, letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                 >
                   {packNameContent}
+                  {identityNote && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}> · {identityNote}</span>}
                 </Link>
               ) : (
                 <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

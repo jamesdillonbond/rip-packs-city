@@ -9,7 +9,7 @@
 
 export type PackFilter = "unopened" | "opened" | "sold"
 
-export type PackHistoryStatus = "ripped" | "flipped" | "sold" | "held" | "other"
+export type PackHistoryStatus = "ripped" | "flipped" | "sold" | "held" | "transferred" | "other"
 
 /** Sub-filter -> the `status` value understood by /api/wallet/pack-history.
  *
@@ -38,6 +38,10 @@ export const STATUS_COLOR: Record<PackHistoryStatus, string> = {
   flipped: "#A855F7",
   sold: "#34D399",
   held: "var(--rpc-text-muted)",
+  // 2026-09-18: the pack left the wallet with no sale we can see (gift/transfer,
+  // or a sale the marketplace walker has not reached). Dapper's index names the
+  // current holder; the row says so instead of reading HELD.
+  transferred: "#F59E0B",
   other: "var(--rpc-text-muted)",
 }
 
@@ -107,8 +111,12 @@ export type BuyPriceSource = "onchain" | "marketplace" | "retail" | null
 
 /** Second line under the pack name. `null` when nothing needs saying. */
 export function packIdentityNote(
-  row: { dist_id: string | null; status: string; pack_name?: string | null },
+  row: { dist_id: string | null; status: string; pack_name?: string | null; current_owner?: string | null },
 ): string | null {
+  if (row.status === "transferred") {
+    const owner = row.current_owner ? ` · now held by ${row.current_owner.slice(0, 6)}…${row.current_owner.slice(-4)}` : ""
+    return "Left this wallet without a recorded sale" + owner
+  }
   if (row.dist_id) return null
   if (row.status === "held") return "Sealed · distribution not recorded until opened or resold"
   return "Distribution unknown"

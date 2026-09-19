@@ -7,7 +7,7 @@
 //
 // Wraps get_wallet_pack_history(p_wallet, p_collection_slug, p_status,
 // p_limit, p_offset). `status` accepts all | ripped | flipped | sold | held |
-// other; "all" or empty maps to NULL on the RPC. `collection` accepts the
+// transferred | other; "all" or empty maps to NULL on the RPC. `collection` accepts the
 // underscore-form DB slug (nba_top_shot, …) or the hyphen-form URL slug
 // (nba-top-shot, …); both are normalized via SLUG_TO_DB_SLUG.
 
@@ -27,7 +27,7 @@ const sb: any = supabaseAdmin
 // wallet. The Packs "Sold" sub-tab uses it so it can't silently hide flipped
 // rows if Dapper's seller attribution improves. 'sold' keeps its exact
 // meaning for existing callers (app/dashboard/packs).
-const VALID_STATUSES = new Set(["ripped", "flipped", "sold", "sold_any", "held", "other"])
+const VALID_STATUSES = new Set(["ripped", "flipped", "sold", "sold_any", "held", "transferred", "other"])
 
 export async function GET(req: NextRequest) {
   let user

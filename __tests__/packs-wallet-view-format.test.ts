@@ -171,6 +171,16 @@ describe("packIdentityNote (2026-09-18)", () => {
   it("says nothing when the distribution is known", () => {
     expect(packIdentityNote({ dist_id: "6224", status: "held" })).toBeNull()
   })
+  it("a transferred pack says it left without a recorded sale and names the holder", () => {
+    expect(packIdentityNote({ dist_id: "6224", status: "transferred", current_owner: "0xc5ababe825dc3122" })).toBe(
+      "Left this wallet without a recorded sale · now held by 0xc5ab…3122",
+    )
+    expect(packIdentityNote({ dist_id: null, status: "transferred" })).toBe("Left this wallet without a recorded sale")
+  })
+  it("transferred has its own status color", () => {
+    expect(STATUS_COLOR.transferred).toBe("#F59E0B")
+    expect(packStatusColor("transferred")).toBe("#F59E0B")
+  })
 })
 
 describe("packBuyLabel (2026-09-18)", () => {

@@ -58,7 +58,7 @@ interface HistoryRow {
   pack_name: string | null
   pack_image: string | null
   collection_slug: string
-  status: "ripped" | "flipped" | "sold" | "held" | "other"
+  status: "ripped" | "flipped" | "sold" | "held" | "transferred" | "other"
   has_buy: boolean
   has_rip: boolean
   has_sell: boolean
@@ -77,6 +77,8 @@ interface HistoryRow {
   lowest_ask_usd?: number | null
   pack_ev_usd?: number | null
   last_sale_usd?: number | null
+  current_owner?: string | null
+  identity_status?: string | null
 }
 
 interface History {

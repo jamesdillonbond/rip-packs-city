@@ -26,8 +26,10 @@ const PINS = [
     // pack's distribution resolves from ANY marketplace row, or stays NULL.
     fn: "get_wallet_pack_history",
     test: "supabase/tests/get_wallet_pack_history.sql",
+    // v5 (same day): status 'transferred' from Dapper's pack index + the index as
+    // a dist source of last resort.
     migration:
-      "supabase/migrations/20260919004500_audit_20260918_wallet_packs_sold_from_marketplace_history_and_sealed_pack_identity.sql",
+      "supabase/migrations/20260919031500_audit_20260918_wallet_packs_transferred_status_and_identity_lane_covers_rips.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
