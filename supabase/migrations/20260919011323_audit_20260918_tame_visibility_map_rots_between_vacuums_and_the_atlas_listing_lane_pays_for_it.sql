@@ -173,3 +173,29 @@ COMMENT ON TABLE public.topshot_atlas_market_events IS
 --    therefore justified on CADENCE grounds alone, NOT by this measurement, and
 --    anyone re-reading this file should not cite it as evidence for the analyze knob.
 -- ============================================================================
+
+-- ============================================================================
+-- ⛔ CORRECTION, appended 2026-09-18 ~7:0x PM PT — THE "~29%" IN THIS HEADER IS A
+-- POOLED RATE AND SHOULD NOT BE QUOTED.
+--
+-- The WHY block above reads "failing ~29% of its ticks", taken from 202 of 698
+-- non-succeeded cron runs across the 09-18 UTC day. That day spans three regimes,
+-- and deep-audit register row R101 had already split them on the same instrument:
+--
+--     58.6%   pre-outage saturation spell
+--      0.0%   inside the #122 outage window  (DNS-dead pg_net returning
+--             trivially — absence of work, not health)
+--      5.1%   after the restart
+--
+-- ⭐ ~5% is the rate the remaining work should be sized against. Quoting the
+-- pooled day is the error this repo files as "a rate POOLED ACROSS A FIX measures
+-- the fix's ABSENCE and reads as its FAILURE".
+--
+-- NOTHING ELSE IN THIS MIGRATION MOVES. The heap-fetch reading (117,758 -> 713) is
+-- a plan-level measurement of one scan and does not depend on the lane's failure
+-- rate at all; the invisibility finding holds at any rate; the executed DDL is
+-- untouched by this note. Two of R101's four timeout sites are now addressed (this
+-- migration, and `atlas_listing_syncs_scan_the_open_book_once_per_tick` 15 minutes
+-- later); the `_tsl_want` / `_cl_want` temp-table sites and
+-- `atlas_edition_verify_dispatch` are STILL OWED.
+-- ============================================================================
