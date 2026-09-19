@@ -3,6 +3,54 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## ⭐⭐ AN ALARM THAT SAMPLES ITS WHOLE POPULATION IN ONE PASS CANNOT NAME A SUBJECT — its per-subject falsifier must condition on BREADTH (2026-09-18, register R50)
+
+**The shape.** `capture_board_liveness_history` times all 44 watchlisted board views in a single
+sweep and writes one row each. R50 was closed on 2026-09-07 with a per-board falsifier:
+
+> *"a board with p50 over budget for 3 consecutive sweeps reopens this row for THAT board."*
+
+⛔ **Applied literally on 2026-09-18 it reopens EIGHT rows** — `panini_sale_feed_status` and
+`v_topshot_parallel_premiums` at 4 consecutive, plus `pack_table_rows`, `candy_player_board`,
+`topshot_serial_premiums_board`, `v_insights_trophies`, `topshot_2025_rookie_cohort_stats` and
+`candy_special_serials_board` at 3. ⭐ **And every one of those runs ENDS AT THE SAME SWEEP
+(06:28:01Z).** Eight subjects do not regress in the same minute. One shared resource does.
+
+**The tell is per-sweep BREADTH, and it is bimodal rather than a gradient** — 28 sweeps × 44 boards:
+
+| boards over budget in a sweep | sweeps | fleet p50 |
+|---|---:|---|
+| 0–2 | **20 of 28** | 25–86 ms |
+| 9–12 | **8 of 28** | 251–662 ms (fleet max 30–94 s) |
+
+There is no middle. Either the instance is fine and almost nothing is over, or it is saturated and a
+quarter of the fleet is over together.
+
+✅ **THE CORRECTED FORM.** A subject reopens only if it breaches in sweeps where the POPULATION is
+calm (here: ≤ 2 of 44 over in that same sweep). Over the 21 calm sweeps, three boards ever go over
+and only one is a real cost problem — `v_topshot_parallel_premiums`, 5 of 21, calm p50 **6,437 ms**
+against a 9,100 ms budget. The other two sit **under** budget at p50 (1,828 ms and 909 ms): they are
+near-budget noise that the naive falsifier promoted to findings. Every other board's calm p50 is in
+the tens of milliseconds.
+
+⚠ **WHY THIS IS NOT JUST "IGNORE SPELLS".** The naive falsifier does not merely produce extra
+noise — it **inverts the ranking**. The board with the worst per-board cost (42.9% of all samples
+over) and a board that is comfortably healthy (35.7%, p50 under budget) come out looking alike,
+because both are dominated by the same eight spell sweeps. **Pooling across a shared-resource event
+does not add error evenly; it compresses every subject toward the event.**
+
+⭐ **THE GENERAL RULE.** *An instrument that measures every subject in one pass can only report THAT
+something was slow, never WHICH thing is slow.* If its verdict is per-subject, the verdict has to
+condition on the breadth of that same sample. Otherwise every shared-resource incident reopens every
+subject at once, and the one row that matters is buried in the seven that do not.
+
+👉 **SIBLING, one layer down:** *"CONTENTION PRODUCES A PARTIAL RED THAT READS AS A REAL DEFECT — and
+the tell is the ELAPSED TIME, not the failures"* (2026-09-12, further down this file). Same mistake,
+different instrument: there the shared resource is CI runners, here it is instance IO. In both, the
+discriminator is a property of the RUN rather than of the subject.
+
+---
+
 ## 🚨 A GUARD'S CLAIM ABOUT ITS OWN COVERAGE IS ITSELF A CLAIM, AND IT WAS WRONG FOR SIX WEEKS (2026-09-18)
 
 `__tests__/workflow-curl-assignments-are-guarded.test.ts` was added 2026-08-30 after the opaque
