@@ -582,3 +582,8 @@ session with a VM device-flow token deleted `claude/todo-implementation-e4tib3` 
 known-issues #22 records the finding in one clause: **"the 403 was the cloud proxy, not GitHub."**
 The rule now says so. ⚠ **This is the class CLAUDE.md warns about in its own header — a recorded
 correction has a shelf life, and "the sandbox cannot do X" is the shape that expires most often.**
+
+
+## 2026-09-18 — ISR bullet parenthetical (Honesty section), displaced for the "DONE stamp" sub-class
+
+Original text of the parenthetical at the end of the ISR bullet, verbatim: (#33; the 15-min `x-vercel-cache: HIT` instance: key-files-and-honesty.md) — shortened to `(#33)`; the 15-minute `x-vercel-cache: HIT` instance lives in key-files-and-honesty.md as before.
