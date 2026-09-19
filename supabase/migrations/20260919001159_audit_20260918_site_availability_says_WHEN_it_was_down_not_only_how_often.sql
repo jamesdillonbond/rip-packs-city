@@ -43,6 +43,7 @@
 -- supabase/migrations/20260911041601_audit_20260910_site_availability_probe_from_the_one_plane_a_vercel_pause_cannot_reach.sql
 -- and drop the three keys from the workflow message. No data is touched.
 
+-- anon-exec: pre-existing ACL kept, not a snapshot revoke — anon and authenticated EXECUTE already false, service_role true (has_function_privilege read live 2026-09-18 5:3x PM PT); CREATE OR REPLACE does not touch an ACL (check_site_availability)
 CREATE OR REPLACE FUNCTION public.check_site_availability(p_window interval DEFAULT '02:00:00'::interval)
  RETURNS jsonb
  LANGUAGE sql
