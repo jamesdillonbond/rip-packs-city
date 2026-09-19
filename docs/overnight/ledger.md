@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · ✅ THE LAST OWED FALSIFIER IS DISCHARGED — `candy_offers_unverified_pct` 100 → 0 on the 00:50Z tick, exactly as the exit condition specified · Cowork cloud
+
+**Docs only. Nothing shipped.** Closes the one item this session left open with a dated, falsifiable exit condition rather than a guess.
+
+📏 **THE EXIT CONDITION, as written earlier tonight:** *"re-read the metric after the first clean post-recovery tick (~00:50Z). Under 25 ⇒ self-healed, close. Still 100 after a clean run ⇒ a real verification/deactivation-arm defect, and the ARM is what to investigate, not the indexer cadence."*
+
+✅ **MEASURED at 00:54Z: `candy-offers-indexer` ran at 00:50:42Z — its first tick since 06:50Z — and `candy_offers_unverified_pct` went 100.0 → 0.0.** The breach was outage shadow: the lane (Vercel cron `50 */6`) lost its 12:50Z and 18:50Z ticks inside the 12:19–19:01Z window, and with no verification sweep the share of `is_active` offers older than 12 h climbed to 100%. Every Candy lane is now ticking on schedule — offers 00:50, listings 00:35, sales 00:20, editions 01:10.
+
+⚠ **THE RESIDUAL IS UNCHANGED AND IS NOT A BUG: the arm is a percentage over a population of FOUR.** One missed sweep takes it 0 → 100, so it will do this again after any outage that costs the lane two ticks. It is a TRUE positive each time — `candy_offer_spread_board` filters on `is_active`/`expiry` but **not** on `last_seen_at`, so those bids really are quoted unconfirmed — but the blast radius is four editions, and a reader who does not know `n = 4` will over-weight a "100%". 👉 **If anyone touches this arm, publish the DENOMINATOR beside the percentage rather than retuning the threshold** — the same lesson as the site-availability alert two entries up: the fix for an unreadable alarm is provenance, not silence.
+
+📊 **Session final state:** `detect_stalled_pipelines()` **1** (the chronic `candy-editions-ingest`, documented at length) · security invariants **0** · `v_fmv_sanity_flags` **0** · mount and origin in sync.
+
+- **Revert:** n/a — documents only.
+
 ### 2026-09-18 · 📌 THE CI SWEEP'S DURABLE HALF — the "a guard's stated SCOPE is a claim" rule promoted into CLAUDE.md, and the shedding remainder filed as #124 rather than left in a chat reply · Claude Code cloud
 
 **Docs only — CLAUDE.md + two reference files. No code, no migration, no DB object, no data mutation.** The follow-through on the same-day CI commit (`git log --grep="keys on the shape"`), so the lessons outlive the session rather than sitting in a transcript.
