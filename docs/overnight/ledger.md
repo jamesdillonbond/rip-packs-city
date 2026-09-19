@@ -11,6 +11,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🔴→✅ main was red for ~4 minutes — the verbatim displacement carried a SELF-LINK · Cowork cloud
+
+**`b08cbe74e` reddened `Memory-doc links`.** The Cadence block moved into `apis-and-cadence.md` **verbatim**, and its last sentence ended `Addresses … + gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md)`. Correct in CLAUDE.md, at the repo root. Inside `docs/reference/apis-and-cadence.md` it resolves to `docs/reference/docs/reference/apis-and-cadence.md` — a link to itself, through a path that does not exist.
+
+⛔ **VERBATIM AND RESOLVABLE ARE IN TENSION, and the link is what gives.** A relative pointer is not text, it is a coordinate — it means something different in the file it moves to. The displacement note now records the single non-verbatim byte and why, so nobody reads the deviation as drift.
+
+⚠ **I SAW THIS AND DID NOT ACT ON IT.** I noted the self-link while reviewing the diff, decided *verbatim is the discipline*, and pushed. The discipline is about the RULE's prose; it was never about a path. Guard 1, me 0 — and the guard was cheaper than my reasoning.
+
+⭐ **The instrument split held exactly as its own header says it does.** `scripts/check-memory-doc-links.mjs` gates `CLAUDE.md` + `docs/reference/**` only; the ledger and strategy links are `__tests__/live-docs-md-links-resolve.test.ts`. I had run neither before the first push. Both run now: 221 links / 25 files green, and 6/6 green across the two suites.
+
+**Revert path:** `git revert <this sha>` restores the self-link and re-reddens the guard — do not.
+
 ### 2026-09-19 · ✅ CLAUDE.md: the discovery-vs-refresh rule is in, paid for by displacing the Cadence pre-flight · Cowork cloud
 
 **The addition arrived WITH its displacement, because the guard makes that the only way in.** `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts` caps the file at **40,000 characters** and it was sitting at 39,997 — three characters of room for a rule earned by a 24.9% silent coverage hole.

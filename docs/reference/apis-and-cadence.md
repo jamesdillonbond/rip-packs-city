@@ -316,7 +316,9 @@ When onboarding a new collection or building the planned Pinnacle direct integra
 > ranking sections by SIZE — the big ones are big because they carry incidents. This was chosen on
 > 'does the need ANNOUNCE ITSELF': you are already in a `.cdc` file when you need it, unlike the
 > rules a reader must have before knowing to look. CLAUDE.md keeps a one-line pointer.
+>
+> ONE byte is not verbatim: the block's closing pointer read `[apis-and-cadence.md](docs/reference/apis-and-cadence.md)` — a self-link from inside this file, which resolves to `docs/reference/docs/reference/…` and reddens the Memory-doc link guard. It now names the section above instead.
 
 ### Cadence
 
-**Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, fetch the deployed mainnet source via the Cadence MCP and verify the functions/fields/types exist** — training data is frequently wrong for Cadence 1.0. MCP is dev-time verification ONLY; production reads route through the proxy (egress blocked). Addresses (incl. the service payer wallet) + gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
+**Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, fetch the deployed mainnet source via the Cadence MCP and verify the functions/fields/types exist** — training data is frequently wrong for Cadence 1.0. MCP is dev-time verification ONLY; production reads route through the proxy (egress blocked). Addresses (incl. the service payer wallet) + gotchas: **the Per-collection Cadence gotchas section above in this file**.
