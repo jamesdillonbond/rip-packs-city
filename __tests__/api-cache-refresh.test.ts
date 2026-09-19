@@ -18,12 +18,21 @@ vi.mock("@/lib/chains/flow/flow", () => ({
 }))
 vi.mock("@onflow/types", () => ({ Address: "Address", UInt64: "UInt64" }))
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({ from: () => ({}) }),
+  // The R98 cooldown read (select/eq/eq/order/limit) runs BEFORE the FCL call, so the
+  // stub must be chainable; it answers "no cached rows", which never triggers a skip.
+  createClient: () => ({
+    from: () => {
+      const b: any = {}
+      for (const m of ["select", "eq", "in", "order", "limit", "update", "upsert", "insert"]) b[m] = () => b
+      b.then = (resolve: any) => resolve({ data: [], error: null })
+      return b
+    },
+  }),
 }))
 
 import { GET } from "@/app/api/cache-refresh/route"
 
-const req = (url: string) => ({ nextUrl: new URL(url) }) as any
+const req = (url: string) => ({ nextUrl: new URL(url), headers: new Headers() }) as any
 
 beforeEach(() => {
   state.ids = []

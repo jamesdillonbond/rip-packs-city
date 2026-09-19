@@ -6,6 +6,22 @@ import { NextRequest, NextResponse } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
 import { createClient } from "@supabase/supabase-js"
 import { alldayGraphql } from "@/lib/chains/flow/allday"
+import { makeInstanceRateLimiter, clientKeyFrom } from "@/lib/http/instance-rate-limit"
+
+// ── Uncached-path rate limit (R96, 2026-09-18) ───────────────────────────────
+// POST is public on purpose: the All Day pack page asks for an EV with no token,
+// and RPC is read-only, so a bearer gate would break the page for every reader
+// (the R24 sibling gated caller-INFLUENCED persistence; this route's writes are
+// upstream-derived edition seeds, idempotent on their conflict target). What an
+// anonymous caller could still drive at will is the CACHE-MISS path: two upstream
+// GraphQL fetches (one paged) per new packListingId per instance, a service-role
+// seed upsert and a pipeline_runs row. That path is now bounded per client key on
+// this instance — 20 misses a minute, sliding — and refused with 429 + Retry-After.
+// Cache hits are not counted: they cost nothing upstream. A request with no
+// platform client header (never on Vercel; every NextRequest in a test) is not
+// limited, by the helper's contract.
+const UNCACHED_PER_MINUTE = 20
+const uncachedLimiter = makeInstanceRateLimiter({ limit: UNCACHED_PER_MINUTE, windowMs: 60 * 1000 })
 
 const supabaseAdmin: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -397,6 +413,22 @@ export async function POST(req: NextRequest) {
         cached: true,
         methodology: "EV = Σ(remaining_i / total_unopened × avg_sale_price_i × 0.95) − pack_price",
       })
+    }
+
+    // ── Bound the uncached path per client (R96) ─────────────────────────
+    const clientKey = clientKeyFrom(req.headers)
+    if (clientKey !== null) {
+      const verdict = uncachedLimiter.check(clientKey)
+      if (!verdict.allowed) {
+        console.log(`[allday-pack-ev] uncached-path limit hit for ${clientKey} (retry in ${verdict.retryAfterSeconds}s)`)
+        return NextResponse.json(
+          {
+            error: `Too many uncached pack-EV requests from this client — retry in ${verdict.retryAfterSeconds}s.`,
+            retryAfterSeconds: verdict.retryAfterSeconds,
+          },
+          { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } },
+        )
+      }
     }
 
     // ── Fetch fresh data ──────────────────────────────────────────────────

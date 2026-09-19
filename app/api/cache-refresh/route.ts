@@ -9,6 +9,24 @@ const supabase: any = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// ── Refresh cooldown (R98, 2026-09-18) ───────────────────────────────────────
+// This route is public on purpose (own-wallet refresh needs no token) and the
+// Collection tab calls it for the VIEWED wallet on load — so any visitor viewing
+// a 44k-moment wallet drove a full pass every time: an FCL getIDs, a rewrite of
+// `last_seen_at` on EVERY cached row (that touch is by design — it feeds the
+// "Last updated" stamp), stub upserts and acquisition inserts, all as
+// service_role. Nothing bounded how often. The bound is a per-(wallet, collection)
+// COOLDOWN read off the data the route itself writes: if the newest
+// `last_seen_at` for that wallet is younger than the window, the call returns
+// `skipped: "recently_refreshed"` with the timestamp and does no chain read and
+// no write. The manual refresh button (`refreshLocked=1`) keeps a short window
+// (double-click protection); an INGEST bearer bypasses it entirely. ⚠ If the
+// cooldown READ fails the route refreshes as before — the bound fails toward the
+// product working, and it logs that it did; it never turns a failed read into a
+// fabricated "recently refreshed".
+const AUTO_REFRESH_COOLDOWN_MS = 10 * 60 * 1000
+const MANUAL_REFRESH_COOLDOWN_MS = 60 * 1000
+
 // ── Collection-specific Cadence scripts ──────────────────────────────────────
 
 const TOPSHOT_GET_IDS = `
@@ -236,6 +254,42 @@ export async function GET(req: NextRequest) {
     }
 
     const collectionId = scripts.collectionId
+
+    // ── Cooldown (R98): bound the per-(wallet, collection) refresh rate ──────
+    const auth = req.headers.get("authorization") ?? ""
+    const ingest = process.env.INGEST_SECRET_TOKEN
+    const trustedCaller = !!ingest && auth === `Bearer ${ingest}`
+    const manualRefresh = sp.get("refreshLocked") === "1"
+    const cooldownMs = manualRefresh ? MANUAL_REFRESH_COOLDOWN_MS : AUTO_REFRESH_COOLDOWN_MS
+    if (!trustedCaller) {
+      const { data: recent, error: recentErr } = await supabase
+        .from("wallet_moments_cache")
+        .select("last_seen_at")
+        .eq("wallet_address", wallet)
+        .eq("collection_id", collectionId)
+        .order("last_seen_at", { ascending: false })
+        .limit(1)
+      if (recentErr) {
+        // A failed read is not "recently refreshed" — refresh as before, and say why.
+        console.log("[cache-refresh] cooldown read failed, refreshing anyway: " + recentErr.message)
+      } else {
+        const lastRaw = Array.isArray(recent) ? recent[0]?.last_seen_at : undefined
+        const lastMs = typeof lastRaw === "string" ? Date.parse(lastRaw) : NaN
+        const ageMs = Date.now() - lastMs
+        if (Number.isFinite(lastMs) && ageMs >= 0 && ageMs < cooldownMs) {
+          return NextResponse.json({
+            ok: true,
+            skipped: "recently_refreshed",
+            last_refreshed_at: lastRaw,
+            retry_after_seconds: Math.max(1, Math.ceil((cooldownMs - ageMs) / 1000)),
+            // Not measured on a skipped call — null, never a fabricated 0.
+            total_on_chain: null, total_cached: null,
+            new_stubs_inserted: 0, enriched: 0, removed_count: 0, last_seen_touched: 0,
+            elapsed: Date.now() - startTime,
+          })
+        }
+      }
+    }
 
     // Step 1: Get on-chain moment IDs
     let onChainIds: string[]

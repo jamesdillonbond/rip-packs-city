@@ -119,6 +119,7 @@ describe("cache-refresh — diff + enrichment", () => {
     }
     const spy = install({
       wallet_moments_cache: [
+        { data: [], error: null }, // R98 cooldown read (first, before FCL): no recent last_seen_at
         { data: [{ moment_id: "101" }], error: null }, // cached-id lookup: 101 known, 102 new
         { count: 1, error: null } as never, // last_seen_at touch
         { data: null, error: null }, // stub upsert ack
@@ -184,6 +185,7 @@ describe("cache-refresh — diff + enrichment", () => {
     }
     const spy = install({
       wallet_moments_cache: [
+        { data: [], error: null }, // R98 cooldown read (first, before FCL): no recent last_seen_at
         { data: [], error: null },
         { count: 0, error: null } as never,
         { data: null, error: null },
@@ -201,6 +203,7 @@ describe("cache-refresh — diff + enrichment", () => {
     state.ownedIds = ["101"]
     const spy = install({
       wallet_moments_cache: [
+        { data: [], error: null }, // R98 cooldown read (first, before FCL): no recent last_seen_at
         { data: [{ moment_id: "101" }], error: null }, // diff lookup
         { count: 1, error: null } as never, // last_seen touch
         // step-7 stalest-first query: returns the stale rows AND the exact stale count
@@ -228,6 +231,7 @@ describe("cache-refresh — diff + enrichment", () => {
     state.ownedIds = ["101"]
     const spy = install({
       wallet_moments_cache: [
+        { data: [], error: null }, // R98 cooldown read (first, before FCL): no recent last_seen_at
         { data: [{ moment_id: "101" }], error: null }, // diff lookup
         { count: 1, error: null } as never, // last_seen touch
         // step-7: zero stale rows -> the fresh-wallet early-out (cheap, no GQL)
@@ -261,6 +265,7 @@ describe("GET /api/cache-refresh — refreshLocked=1 with a FAILED stale count",
     state.ownedIds = ["101"]
     install({
       wallet_moments_cache: [
+        { data: [], error: null }, // R98 cooldown read (first, before FCL): no recent last_seen_at
         { data: [{ moment_id: "101" }], error: null }, // diff lookup
         { count: 1, error: null } as never, // last_seen touch
         // step-7: the count itself failed
