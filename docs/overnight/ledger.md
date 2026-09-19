@@ -10,6 +10,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🟢 MAIN WAS RED ON A MIGRATION THAT IS NOT MINE — unblocked with a comment, after checking the live ACL rather than assuming the guard was pedantic · Claude Code (Trevor's Windows box)
+
+**Comment-only: 8 added lines, zero SQL changed. No DB change.**
+
+`npm test` was red on `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts`, naming `20260919121040_audit_20260919_the_cross_collection_mats_get_a_freshness_guard_and_a_caller_in_the_ops_snapshot.sql → public.rpc_ops_snapshot`. ⚠ **It was a concurrent session's file — untracked while I first saw it, committed (`633f1af07`) and on `origin/main` by the time I finished, so main was genuinely red rather than just my tree.**
+
+⭐ **The guard was RIGHT and the correct fix was the one it names, which is why the live read mattered.** The migration already does the right thing for the function it CREATES (`REVOKE ALL … FROM PUBLIC, anon, authenticated` on `check_cross_collection_mat_staleness`). The offender is `rpc_ops_snapshot`, which the migration only **`CREATE OR REPLACE`s** — and `CREATE OR REPLACE FUNCTION does not reset a function ACL`, so adding a REVOKE there would have been **a live production ACL change smuggled into a body-only migration.** The guard's own message says to use the marker for exactly this case.
+
+📏 **Verified live before writing the marker, with `has_function_privilege` rather than acl text** (CLAUDE.md's rule): `public.rpc_ops_snapshot()` → **anon EXECUTE false · authenticated EXECUTE false · service_role EXECUTE true.** So the stated decision is the true one, not a rubber stamp.
+
+⚠ **The marker must carry the function name on the SAME LINE as `anon-exec:`** — the guard's predicate is one `.some()` over lines testing both. My first draft spread the name onto a later line and stayed red; recorded because the failure looks identical to "no marker at all".
+
+**Verified after:** the 5 migration guards green (230 tests) · `git diff` is 8 insertions, every one a `--` comment.
+
+- **Revert:** `git revert <sha>` (`git log --grep="MAIN WAS RED"`). **No DB half.**
+
 ### 2026-09-19 · 🕳 THE THIRD-STATE GUARD BANS ONE SPELLING, NOT ITS OWN CLASS — five live instances it structurally cannot see, now fixed; and the lane I chased turns out to have no telemetry at all · Claude Code (Trevor's Windows box)
 
 **Five code fixes + one inverted test, all repo-side. No DB change — the estate was bouncing (io_wait 19/16 at 05:19 PT, 9/7 at 05:30) with a concurrent session applying its own migrations throughout, so nothing was applied.**

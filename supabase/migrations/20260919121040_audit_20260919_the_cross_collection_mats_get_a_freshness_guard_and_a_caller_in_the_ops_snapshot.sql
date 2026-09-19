@@ -83,6 +83,14 @@ COMMENT ON FUNCTION public.check_cross_collection_mat_staleness(numeric) IS
 
 REVOKE ALL ON FUNCTION public.check_cross_collection_mat_staleness(numeric) FROM PUBLIC, anon, authenticated;
 
+-- anon-exec: intentional -- public.rpc_ops_snapshot() stays service_role-only; NO GRANT IS MADE OR CHANGED HERE. This is a
+-- CREATE OR REPLACE of an EXISTING function, and CREATE OR REPLACE FUNCTION does
+-- not reset a function ACL, so adding a REVOKE would be a live production ACL
+-- change smuggled into a body-only migration. The decision is stated instead, as
+-- the guard intends for a snapshot migration.
+-- Verified live 2026-09-19 against has_function_privilege, not inferred from acl
+-- text: anon EXECUTE false, authenticated EXECUTE false, service_role EXECUTE
+-- true on public.rpc_ops_snapshot(). It is an operator/ops read, never anon.
 CREATE OR REPLACE FUNCTION public.rpc_ops_snapshot()
  RETURNS jsonb
  LANGUAGE sql
