@@ -15,7 +15,7 @@
 --     return payload counts rows / unverified / unmapped.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260919012821_audit_20260918_atlas_listing_syncs_scan_the_open_book_once_per_tick.sql);
+-- (supabase/migrations/20260919021449_audit_20260918_revert_atlas_listing_syncs_to_their_0907_bodies_under_an_io_spell.sql; the body is the 09-07 one, restored verbatim);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -26,11 +26,9 @@ BEGIN;
 CREATE TABLE public.topshot_atlas_market_events (
   uuid text PRIMARY KEY, product text, kind text, completed boolean, nft_id text, atlas_edition_id text,
   set_id_onchain integer, play_id_onchain integer, serial_number integer, price_cents bigint,
-  seller_address text, tier text, listed_at timestamptz, last_seen_at timestamptz,
-  listing_resource_id text);  -- read into _open24 (2026-09-18); appended so positional inserts stay valid
+  seller_address text, tier text, listed_at timestamptz, last_seen_at timestamptz);
 CREATE TABLE public.topshot_atlas_edition_map (atlas_edition_id text PRIMARY KEY, rpc_edition_id uuid, external_id text);
-CREATE TABLE public.editions (id uuid PRIMARY KEY, player_name text, team_name text, set_name text, tier text, series smallint, circulation_count integer,
-  thumbnail_url text);  -- read into _open24 (2026-09-18); appended so positional inserts stay valid
+CREATE TABLE public.editions (id uuid PRIMARY KEY, player_name text, team_name text, set_name text, tier text, series smallint, circulation_count integer);
 CREATE TABLE public.ts_listings (
   listing_id text PRIMARY KEY, flow_id text, set_id integer, play_id integer, parallel_id integer, serial_number integer,
   circulation_count integer, price_usd numeric, seller_address text, player_name text, set_name text, moment_tier text,
@@ -38,7 +36,7 @@ CREATE TABLE public.ts_listings (
 
 -- >>> BEGIN verbatim sync_ts_listings_from_atlas (keep byte-identical to the migration) >>>
 
-CREATE OR REPLACE FUNCTION public.sync_ts_listings_from_atlas(p_diag boolean DEFAULT true)
+CREATE OR REPLACE FUNCTION public.sync_ts_listings_from_atlas()
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -46,49 +44,33 @@ SET search_path TO 'public', 'pg_temp'
 AS $$
 DECLARE v_started timestamptz := clock_timestamp(); v_n int; v_ins int; v_upd int; v_del int; v_unverified int; v_unmapped int;
 BEGIN
-  -- Diagnostics: open nba listings we could not map to an edition are counted, never guessed
-  -- at, and listings the verify probes have not re-seen in 24 h are counted the same way.
-  -- Both are slow-moving stocks read off a 395k-row index (18k + 33k buffers per read), so
-  -- the tick SAMPLES them (p_diag) — an unsampled tick publishes NULL, never 0.
-  IF p_diag THEN
-    SELECT count(*) INTO v_unmapped
-      FROM public.topshot_atlas_market_events ev
-      LEFT JOIN public.topshot_atlas_edition_map m ON m.atlas_edition_id = ev.atlas_edition_id
-     WHERE ev.product = 'nba' AND ev.kind = 'listing' AND NOT ev.completed AND m.rpc_edition_id IS NULL;
-    SELECT count(*) INTO v_unverified
-      FROM public.topshot_atlas_market_events ev
-     WHERE ev.product = 'nba' AND ev.kind = 'listing' AND NOT ev.completed AND ev.last_seen_at <= now() - interval '24 hours';
-  END IF;
+  -- Open nba listings we could not map to an edition are counted, never guessed at.
+  SELECT count(*) INTO v_unmapped
+    FROM public.topshot_atlas_market_events ev
+    LEFT JOIN public.topshot_atlas_edition_map m ON m.atlas_edition_id = ev.atlas_edition_id
+   WHERE ev.product = 'nba' AND ev.kind = 'listing' AND NOT ev.completed AND m.rpc_edition_id IS NULL;
+  SELECT count(*) INTO v_unverified
+    FROM public.topshot_atlas_market_events ev
+   WHERE ev.product = 'nba' AND ev.kind = 'listing' AND NOT ev.completed AND ev.last_seen_at <= now() - interval '24 hours';
 
-  -- The open book, built ONCE per transaction: every open, verified-in-24h, mapped nba listing
-  -- with a price, carrying every column the three consumers of this set read. Raw rows — one
-  -- Moment may carry several (a relisted Moment keeps its superseded listing "open" until the
-  -- verify probe flips it); each consumer applies its own DISTINCT ON / ordering below.
-  DROP TABLE IF EXISTS _open24;  -- a caller may run the sync twice in one transaction (the pin does)
-  CREATE TEMP TABLE _open24 ON COMMIT DROP AS
-  SELECT ev.uuid, ev.nft_id, ev.atlas_edition_id, ev.set_id_onchain, ev.play_id_onchain, ev.serial_number,
-         ev.price_cents, ev.seller_address, ev.tier AS ev_tier, ev.listed_at, ev.last_seen_at, ev.listing_resource_id,
-         m.external_id, m.rpc_edition_id,
-         e.circulation_count, e.player_name, e.team_name, e.set_name, e.tier::text AS edition_tier, e.series, e.thumbnail_url
+  -- The wanted set. One row per Moment: a relisted Moment carries its superseded listing as
+  -- "open" until the verify probe flips it, so the NEWEST listing per nft wins here.
+  DROP TABLE IF EXISTS _tsl_want;  -- a caller may run the sync twice in one transaction (the pin does)
+  CREATE TEMP TABLE _tsl_want ON COMMIT DROP AS
+  SELECT DISTINCT ON (ev.nft_id)
+         ev.uuid AS listing_id, ev.nft_id AS flow_id, ev.set_id_onchain AS set_id, ev.play_id_onchain AS play_id,
+         COALESCE(NULLIF(split_part(m.external_id, '::', 2), '')::int, 0) AS parallel_id,
+         ev.serial_number, e.circulation_count, (ev.price_cents::numeric / 100) AS price_usd,
+         ev.seller_address, COALESCE(e.player_name, e.team_name) AS player_name, e.set_name,
+         COALESCE(ev.tier, e.tier::text) AS moment_tier, e.series AS series_number,
+         false AS is_locked, NULL::text AS asset_path_prefix, ev.last_seen_at AS ingested_at, ev.listed_at
     FROM public.topshot_atlas_market_events ev
     JOIN public.topshot_atlas_edition_map m ON m.atlas_edition_id = ev.atlas_edition_id
     JOIN public.editions e ON e.id = m.rpc_edition_id
    WHERE ev.product = 'nba' AND ev.kind = 'listing' AND NOT ev.completed
      AND ev.nft_id IS NOT NULL AND ev.price_cents > 0
-     AND ev.last_seen_at > now() - interval '24 hours';
-
-  -- The wanted set. One row per Moment: the NEWEST listing per nft wins.
-  DROP TABLE IF EXISTS _tsl_want;
-  CREATE TEMP TABLE _tsl_want ON COMMIT DROP AS
-  SELECT DISTINCT ON (o.nft_id)
-         o.uuid AS listing_id, o.nft_id AS flow_id, o.set_id_onchain AS set_id, o.play_id_onchain AS play_id,
-         COALESCE(NULLIF(split_part(o.external_id, '::', 2), '')::int, 0) AS parallel_id,
-         o.serial_number, o.circulation_count, (o.price_cents::numeric / 100) AS price_usd,
-         o.seller_address, COALESCE(o.player_name, o.team_name) AS player_name, o.set_name,
-         COALESCE(o.ev_tier, o.edition_tier) AS moment_tier, o.series AS series_number,
-         false AS is_locked, NULL::text AS asset_path_prefix, o.last_seen_at AS ingested_at, o.listed_at
-    FROM _open24 o
-   ORDER BY o.nft_id, o.listed_at DESC NULLS LAST;
+     AND ev.last_seen_at > now() - interval '24 hours'
+   ORDER BY ev.nft_id, ev.listed_at DESC NULLS LAST;
   SELECT count(*) INTO v_n FROM _tsl_want;
 
   -- Gone: rows no longer in the wanted set (sold, cancelled by a verify read, aged out of the window,
@@ -126,7 +108,7 @@ BEGIN
   SELECT count(*) FILTER (WHERE inserted), count(*) FILTER (WHERE NOT inserted) INTO v_ins, v_upd FROM up;
 
   RETURN jsonb_build_object('rows', v_n, 'inserted', v_ins, 'updated', v_upd, 'deleted', v_del,
-                            'unverified_24h', v_unverified, 'unmapped', v_unmapped, 'diag_sampled', p_diag,
+                            'unverified_24h', v_unverified, 'unmapped', v_unmapped,
                             'duration_ms', (extract(epoch from clock_timestamp() - v_started) * 1000)::int);
 END $$;
 -- <<< END verbatim sync_ts_listings_from_atlas <<<
