@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🔁 RETRACTION — the guard I said was "owed" ALREADY EXISTS, already fired, and I nearly built a duplicate of it · Cowork cloud
+
+**No code, no SQL. Correcting the entry below** (*"I rebuilt a materialized view and handed anon a grant back"*), which closed with: *"Owed, and it is the only durable fix: a guard that reds when a migration … creates a materialized view without a following REVOKE"*, and asserted that `check_secdef_anon_exec_drift()` *"is blind here by construction"*.
+
+⛔ **The first half is simply WRONG.** `check_public_security_invariants()` has carried **arm (d), `mv_anon_readable`**, for some time — materialized views in `public` readable by `anon`/`authenticated`, read via `has_table_privilege` on `pg_class`. Its own comment states the exact reason it has to work that way: *"an MV is INVISIBLE to `information_schema.role_table_grants` (0 rows for all 34), so the infoschema arms above are structurally blind here."* Someone had already met this hazard and built the detector for it. **The second half was true but irrelevant** — the secdef drift check IS blind to matview grants, and saying so while a different function covered it was a real claim about the wrong instrument.
+
+⭐ **I CAUGHT THIS THE ONLY WAY IT GETS CAUGHT: by grepping before building.** I sat down to write the guard, listed the existing `check_*` functions first, and found a 36th would have duplicated an arm that already worked. *A guard I am about to build is a claim that none exists — and that claim gets checked like any other.*
+
+📏 **NOT TAKEN ON TRUST EITHER — the arm's zero is a MEASURED zero.** A ban-at-zero check is worthless until it is shown it can return something, so I ran its own predicate with the relkind relaxed from `'m'` to `'v'`: **69 rows.** The `has_table_privilege`-on-`pg_class` mechanism works; the arm is empty because there is nothing to find, not because the probe is broken. Whole-function read right now: `check_public_security_invariants()` returns **`[]`** — every arm clean, `mv_anon_readable` included. Population re-measured: **35 public matviews, anon SELECT false and authenticated SELECT false on all 35** — a unanimous invariant with no exceptions to allowlist.
+
+📏 **AND DETECTION IS SYSTEMATIC, NOT LUCK, which is what I actually failed to check before calling it owed.** Five consumers: `analytics_smoke_run`, `rpc_ops_snapshot`, `/api/cron/data-integrity`, `/api/smoke-test`, `scripts/smoke-gate.py`. `analytics-smoke` ran **47 times in the last 24 h, a ~31-minute cadence**, last run 19:13 UTC. So the worst-case exposure for an unintended grant on a public matview is about half an hour, by a lane that is demonstrably alive — not "until a human happens to look".
+
+⛔ **AND THE REPO-SIDE GUARD I PROPOSED IS THE WRONG INSTRUMENT HERE, on evidence from today.** A migration-text scan can only see migrations that have repo files, and this workflow applies a large share of its DDL through the Supabase MCP — **six fileless migrations landed between 18:01 and 18:13 today alone** (the `migration-parity` job names them). A scan that is structurally blind to the dominant apply path would report green while the live grant existed, which is worse than no guard: it would move confidence to the instrument that cannot see. The live check reads the DATABASE and therefore catches the grant **however it arrived** — migration, MCP, manual, or a default-privileges change.
+
+**So: nothing is owed on this. The residual is latency (~31 min), not coverage** — and shortening it means raising the cadence of an already-running lane on an IO-saturated instance (R46), which is a cost decision and Trevor's, not a missing guard.
+
+⚠ **The mistake in the entry below still stands exactly as written** — I rebuilt a matview and handed anon a grant back after measuring that it did not have one. Nothing here softens that. What changes is only the remedy: the system already caught it, on purpose, within its designed window.
+
+**Falsifier for this entry:** if `check_public_security_invariants()` ever returns `mv_anon_readable` rows and no alert follows within ~1 hour, the consumer chain is decorative and the "systematic, not luck" claim here is wrong.
+
+- **Revert:** nothing to revert — this entry only corrects a claim.
+
 ### 2026-09-19 · ⛔ I REBUILT A MATERIALIZED VIEW AND HANDED anon A GRANT BACK — after measuring, in the same session, that anon did not have it · Cowork cloud
 
 **Ownership entry. No code, no SQL — the fix was already shipped by the session that caught it** (`20260919190415` + `20260919190531`, both with repo files on `origin/main`). Recording it because the *shape* of the mistake is the useful part and it is not in any guard.
