@@ -25,6 +25,27 @@ By every instrument the lane is healthy. And yet:
 | edition age p50 / p90 / max | **276 h · 1,384 h · 1,562 h** | `percentile_cont` over `now()-last_seen_at` |
 | trustworthy coverage | **35.3%**, from 36.2% (09-06) and 37.9% (08-04) | `panini_coverage_summary` |
 
+⛔ **CORRECTION TO MY OWN FRAMING, same day.** The `pct_trustworthy` row above sits in this table
+next to the staleness figures, which invites the reading that the walk fix will reverse it. **That
+is not what it measures.** `pct_trustworthy` is the share of editions whose SET carries
+`coverage_flag = 'broad'`, and that flag is banded purely on `sum(for_sale_count) /
+sum(pulled_count)` (read live from `panini_coverage_audit`) — **listing bias, not freshness**. It
+falls as discovery reaches into more listing-gated sets, which is what has been happening. It is a
+DISCOVERY-completeness measure belonging to a different problem: Panini publishes no checklist, so
+an edition is indexed only once it has been listed.
+
+⚠ **A first draft of this very correction overstated it.** I wrote that walking a set more often
+"does not move it by a single point" — wrong. `for_sale_count` and `pulled_count` are themselves
+refreshed BY the walk, so clearing the stale backlog WILL update the band's inputs and can move
+`pct_trustworthy` — **in an unpredictable direction**, since a refreshed set may land in any band.
+The honest statement is the narrow one: **a move in `pct_trustworthy` is not evidence for or
+against the walk fix, either way.**
+
+👉 **So tomorrow's falsifier reads `pct_editions_stale_45d`, NOT `pct_trustworthy`** — and if
+anyone quotes the latter as evidence for or against the walk fix, they have crossed two measures.
+⭐ The general form: two numbers that both trend downward on the same dashboard are not thereby
+the same finding.
+
 `last_seen_at` is stamped unconditionally on every edition a walk touches
 (`lib/chains/panini/ingest-normalize.ts`), so it genuinely means *walked*, not *changed*.
 
