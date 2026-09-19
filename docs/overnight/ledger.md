@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · ⚡ PACK HOLDINGS SYNC — ONE REQUEST PER WALLET, CONFIRMED ON THE NEXT TICK (was ~50 min), 1 h / 3 h freshness (was 12 h / 24 h) · Claude Code (cloud) for Trevor, "tighten that up"
+
+**One migration (applied), docs, CLAUDE.md lesson.** Fourth sitting.
+
+- ⭐ **Measured before changing:** Dapper's `searchPackNft` honours `first:1000` — Trevor's 954-pack wallet came back in ONE request (410 KB, `hasNextPage:false`); `first:500` paged. A collect carrying that page plus six other requests took **4.6 s**. So the 100-per-page walk (one page per 5-min lane tick, ~50 min for this wallet) was the whole latency.
+- **`20260919053000`:** `request_wallet_pack_sync` dispatches `first:1000` and re-syncs a viewed wallet after **1 h** (was 12 h); `collect_pack_nft_identity` pages at 1,000 for wallets above that; `sweep_saved_wallet_pack_syncs` re-syncs a saved wallet after **3 h** (was 24 h; still 10 per hourly tick, 27 saved wallets cycle in ~3 h). Nothing else moved — the advisory lock, cursor guard, 60-page cap and four page outcomes are as shipped. Live bodies md5-match the file.
+- ✅ **Verified against Trevor's official pages the same night:** Top Shot 15,490 moments / 375 packs · All Day 3,707 / 59 — the RPC returns those four numbers exactly. ⚠ **Moments are a different clock:** the `seed-wallet-refresh` sweep is 6-hourly via cron-job.org (+ the GHA backstop), so moments and packs can still disagree for hours after a rip; the freshness line under the pack list is the honest reading, and tightening moments is an operator (cron-job.org) change, not code.
+- **CLAUDE.md:** the honesty sub-class *"a DONE stamp in an ELSE that cannot tell IN FLIGHT from FINISHED"* (#123) added by displacing the ISR bullet's parenthetical (verbatim in `claude-md-condensed-originals.md`); full case in `key-files-and-honesty.md`. Headroom after: **2 chars**.
+- **Still open, stated:** worker `wrangler deploy` (Trevor); marketplace walker's reach on the sell side; 3 index rows with status `unknown`; `dispatch_pack_nft_identity` returns a `count(*)` over the ~109k-row queue every tick (where the 7:38pm timeout happened to land — cheap when healthy, not a measured cause).
+
+- **Revert (code):** `git revert <sha>` — find by message (`git log --grep="ONE REQUEST PER WALLET"`). **Revert (DB):** re-apply the three bodies from `20260919041500` (first 100, 12 h, 24 h).
+
+---
+
 ### 2026-09-18 · 🧭 R50'S EXIT CONDITION WAS DUE 11 DAYS AGO AND ITS FALSIFIER WOULD HAVE REOPENED EIGHT ROWS FOR ONE SPELL — tested, corrected, and one real board named · Cowork cloud
 
 **Docs only — register row R50.** A closed row carrying an untested exit condition and a falsifier that cannot do its job is worse than an open one, because both read as finished.
