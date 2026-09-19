@@ -2,6 +2,16 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⛔ TWO WAYS THE `pgss_snap` DELTA LIES, BOTH HIT IN ONE SESSION (2026-09-19) — join on FOUR keys, and drop rows whose counters went BACKWARDS
+
+The 2-hourly `audit_20260830_pgss_snap` → live diff is the right instrument (it is what measured R108). ⚠ **Both of these produce a confident, plausible, completely false number.**
+
+🚨 **1. `pg_stat_statements` IS KEYED ON `(userid, dbid, toplevel, queryid)` — JOINING ON `queryid` ALONE PAIRS DIFFERENT ROLES' ROWS.** The register row has always said "diff two snapshots on (userid, dbid, toplevel, queryid)"; I joined on `queryid` and it manufactured a **fake estate #1**: `refresh_mv_pack_ev_latest` at **156 GB over "1,721 calls in 80 minutes"**. The function has two rows — `cron_heavy` (1,724 calls) and `postgres` (3) — and the join subtracted one from the other. ⭐ **The tell was arithmetic, free, and should be the reflex: its schedule is `3,33 * * * *` = 2 calls/hour, and `cron.job_run_details` confirmed exactly 2 runs in that window.** **Sanity-check any implied call RATE against the lane's schedule before believing a delta.**
+
+🚨 **2. THE ENTRY TABLE IS AT CAPACITY, SO COUNTERS RESET UNDER YOU.** Measured 2026-09-19: `pg_stat_statements.max` = **5000**, live entries **4,986**, and each snapshot holds ~4,900 rows. **An evicted entry that runs again reappears with `calls` starting at 0**, so `live.calls - pre.calls` goes NEGATIVE — or, worse, the row is re-created mid-window and the delta counts a partial lifetime as if it were the window. ⭐ **Guard every delta with `WHERE live.calls >= pre.calls AND live.shared_blks_read >= pre.shared_blks_read`** and treat a dropped row as *unmeasurable this window*, not as zero.
+
+✅ **A delta that survives both guards is trustworthy** — R108's target and control were each verified to have exactly ONE row per source (both `postgres`) and monotonic counters before the numbers were quoted.
+
 ## ⛔ NEVER ATTRIBUTE A LANE FIX FROM `cron.job_run_details` DURATIONS — THEY ARE LOAD-SENSITIVE AND WILL CREDIT YOUR FIX FOR THE ESTATE CALMING (2026-09-19, R108)
 
 **Measured the same afternoon, on the same change, with two instruments that gave OPPOSITE answers.** The fix was R108's nfl partial index (built 14:09Z). Both readings split on that change point.
