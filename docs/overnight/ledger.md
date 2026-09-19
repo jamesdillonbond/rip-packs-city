@@ -10,6 +10,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 📏 TWO REGISTER ROWS SETTLED BY RE-MEASUREMENT — R62's own exit condition is MET, and R29's headline is REFUTED with its two failure classes SWAPPED IN RANK · Claude Code cloud
+
+**Docs-only, READ-ONLY against the DB.** The register instructs every pass to *"re-measure each OPEN item's evidence number and record whether it grew, shrank, or resolved."* Two P1/P2 rows had stamps from 08-29 and 09-02 and were quotable as current. Both are now wrong in different directions.
+
+**✅ R62 RESOLVED — and by the row's OWN stated exit, read from the REAL CALLER, not a manual run.** The exit was *"a sentinel row carrying `email`"*. `pipeline_runs` now carries **two consecutive sentinel ticks** (5:04 PM and 6:04 PM PT) with `notifications: ["telegram","email","github-actions-native"]`. ⭐ **The flip is datable to inside one hour:** the 4:04 PM PT tick still read `email-FAILED:not_configured`, the 5:04 PM one read `email` — matching today's `fix(alerts)` ship. ⚠ **Worth keeping: this row's FALSIFIER had already half-fired.** It said *"if a row shows `email-FAILED` instead, the vars are set and the Resend call is failing — a different fix."* Every pre-today tick read `email-FAILED:`**`not_configured`** — so the emitter had been upgraded to say WHY it was mute while the vars stayed unset. **The original diagnosis was right; the silence had simply stopped being silent first, and a falsifier written against a two-state world read the three-state one ambiguously.**
+
+**🚨 R29's HEADLINE IS REFUTED FOR THE CURRENT WINDOW, AND THE RANK SWAPPED.** The row asserts *"`job startup timeout` is 67–80% of all pg_cron failures."* Re-derived over 8 days (09-11 → 09-19) **with a positive control on the classifier — every failure class enumerated, not only the one the row names**, which is what makes this a measurement rather than a confirmation:
+
+| class | n | share of failures |
+|---|---:|---:|
+| **`statement timeout`** | **2,142** | **68.9%** |
+| **`job startup timeout`** | **963** | **31.0%** |
+| `job canceled` | 2 | 0.1% |
+| deadlock detected | 2 | 0.1% |
+| invalid transaction termination | 1 | 0.0% |
+
+⛔ **`job startup timeout` is ~31%, not 67–80% — and `statement timeout` now holds the majority position the row attributes to it.** Daily share of failures: **31.7 / 52.3 / 29.6 / 7.0 / 0.0 / 12.6 / 5.6 / 17.9 %** — **not one day inside the 67–80 band.** ⭐ **Both totals cross-check against the daily series (963 and 3,110 summed two ways), which is the only reason I trust a single query here.**
+
+⚠ **AND THE DENOMINATOR MOVED, so the row's percentages are wrong twice over:** dispatches are now **~9,000–9,300/day** against the row's *"~4,000 dispatches/day"* — consistent with `cron.job` growing 104 → 149 (measured earlier tonight). As a share of dispatches the class is **0.00–5.31%, mostly ≤1.5%**. ⭐ **A rate whose denominator doubled is not a rate that shrank; it is a rate nobody can read without re-deriving both halves.**
+
+⛔ **NOT claimed as a fix, deliberately:** the last `job startup timeout` was **2026-09-18 5:20 AM PT**, none in the ~13 h since — **but that window contains the #122 outage, and one quiet stretch is not a trend.** ⭐ **The MECHANISM (`max_worker_processes = 6` vs `cron.max_running_jobs = 32`) is untouched by any of this — only the severity and the ranking are.** The honest consequence is that **R29 should no longer be cited as the dominant pg_cron failure mode**, and anything sized off its 67–80% needs re-costing.
+
+**Files:** `docs/audits/deep-audit-register.md` (R62 resolved, R29 re-derived).
+
+**Revert path:** `git revert <sha>` — docs-only, no DB half, nothing deployed.
+
 ### 2026-09-18 · 🔒 THE ANON WRITE-GRANT SET, DIFFED TO MEMBERSHIP AT LAST — run 5 §10's own deferred item. The conclusion HOLDS, and the fifth object fails closed BY ACCIDENT · Claude Code cloud
 
 **Docs-only. READ-ONLY against the DB; no migration, no revoke, no prod state touched.** Picked up because deep-audit run 5 §10 re-ran the security half at 12:55 PM PT, found the anon write-grant count had moved **20 → 5**, and explicitly deferred the rest: *"Not re-derived to the object level this pass — flagged for the next pass to diff the membership, since a shrink is as much a set change as a growth."* ⭐ **A shrink on a security surface is not self-evidently good news** — until the membership is named, nobody can say whether the right 15 left or the wrong one stayed.
