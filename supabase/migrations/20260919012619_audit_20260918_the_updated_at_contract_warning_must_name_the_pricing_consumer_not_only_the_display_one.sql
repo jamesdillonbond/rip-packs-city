@@ -1,0 +1,44 @@
+-- audit_20260918_the_updated_at_contract_warning_must_name_the_pricing_consumer_not_only_the_display_one
+--
+-- WHY. `edition_offers.updated_at` changed contract on 2026-08-28 (offers-sweep died,
+-- the Atlas writer replaced it, #81): it went from LAST CONFIRMED to LAST CHANGED,
+-- and the name did not move. The 2026-09-13 audit wrote that warning into this
+-- column's comment and named the DISPLAY consumer that had to be fixed
+-- (`lib/market/ask-freshness.ts askStampKind()`).
+--
+-- ⛔ IT DID NOT NAME THE PRICING CONSUMER, AND THAT ONE STILL READS THE OLD MEANING.
+-- `app/api/fmv-recalc/route.ts` builds `editionAskAgeHoursById` from this column and
+-- feeds it to `liveAskAgeHours`, which `lib/fmv-confidence.ts` compares against
+-- `MAX_ASK_AGE_HOURS_CORROBORATION` (7 days). So an ask whose price has merely been
+-- STABLE for eight days is scored as "no longer evidence about the price".
+--
+-- MEASURED 2026-09-19 01:22Z, not inferred:
+--   · 4,576 of 13,102 Top Shot asks (34.9%) sit past the 7-day bound, against the
+--     155 of 12,259 (1.3%) recorded in lib/fmv-confidence.ts when the bound was set
+--     on 2026-08-29 — one day AFTER the contract changed.
+--   · Joined through `low_ask_nft_id` to `topshot_atlas_market_events.last_seen_at`
+--     — a stamp that DOES mean confirmed — 4,561 of 4,561 past-bound rows resolve to
+--     an OPEN listing and ZERO are stale at the same 7-day bound.
+--     Mean age: 9.4 days by this column, 71.8 h by the confirmation stamp.
+--
+-- WHAT. The comment only. This migration changes no behaviour, no grant and no data.
+-- It exists because a comment is the only thing the NEXT reader of this column will
+-- see, and the last one told them the pricing path was fine.
+--
+-- 👉 THE FIX IS NOT HERE, and the reason is stated rather than implied: taking the
+-- age from the confirmation stamp moves the confidence tier of up to 1,633 currently
+-- LOW Top Shot editions, and MEDIUM is what gates the public Below-FMV board. The
+-- GAIN is also unmeasured (a lift also needs >=3 sales inside the +/-25% band, and an
+-- eligibility count is not a gain count). That is a change to what RPC tells users a
+-- moment is worth — a human decision. Full filing:
+-- docs/overnight/inbox/2026-09-19T0130Z-the-ask-corroboration-bound-reads-a-stamp-that-stopped-meaning-confirmed.md
+--
+-- ⛔ AND DO NOT "FIX" THIS BY WIDENING `MAX_ASK_AGE_HOURS_CORROBORATION`. The bound is
+-- correct and was measured; its INPUT is wrong. Widening it silently re-admits the
+-- genuinely dead asks the 2026-08-29 measurement was taken to exclude.
+--
+-- REVERT: re-apply the previous comment (audit_20260913's text, which is the first
+-- paragraph of the string below, up to and including "(audit_20260913).").
+
+COMMENT ON COLUMN public.edition_offers.updated_at IS
+'LAST CHANGED, NOT LAST CONFIRMED — and not necessarily about the ASK. Bumped by sync_edition_offers_from_atlas() only when low_ask/low_ask_nft_id actually change (its ON CONFLICT carries an IS DISTINCT FROM guard), by the same function when it NULLs an ask verified gone, and by raise_edition_offers_from_chain() when the HIGHEST_OFFER rises. So a fresh stamp can describe an offer move on an ask nobody has looked at, and an old stamp can describe a price that has simply been stable. It was a true confirmation stamp until 2026-08-28, when offers-sweep (which stamped every row it wrapped, 8-18x/day) died and the Atlas writer replaced it (#81) — the meaning changed, the name did not. Surfaces must say "last changed" for Top Shot: lib/market/ask-freshness.ts askStampKind() (audit_20260913). ⛔ AND A PRICING CONSUMER STILL READS THE OLD MEANING (audit_20260918, R103). app/api/fmv-recalc/route.ts builds editionAskAgeHoursById from THIS column and feeds it to liveAskAgeHours, which lib/fmv-confidence.ts compares against MAX_ASK_AGE_HOURS_CORROBORATION (7 days) — so an ask whose price has merely been STABLE for 8 days is scored as no longer being evidence about the price. Measured 2026-09-19 01:22Z: 4,576 of 13,102 Top Shot asks (34.9%) sit past that bound, against the 1.3% recorded when the bound was set on 2026-08-29; joined through low_ask_nft_id to topshot_atlas_market_events.last_seen_at — a stamp that DOES mean confirmed — 4,561 of 4,561 resolve and ZERO are stale at the same 7-day bound (mean age 71.8 h vs this column''s 9.4 days). The fix is to take the AGE from the confirmation stamp; do NOT widen the bound, which is correct and would silently re-admit genuinely dead asks. Ceiling 1,633 currently-LOW editions; the GAIN is unmeasured. Not shipped: it moves what RPC tells users a moment is worth.';
