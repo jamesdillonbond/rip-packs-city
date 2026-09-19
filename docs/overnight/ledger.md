@@ -11,6 +11,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · ⏳ CLOSE-OUT — R110's last residual closed as a DECISION, and CLAUDE.md restructured to make room for three rules it did not have · Cowork cloud
+
+**Shipped: 1 migration + CLAUDE.md + 5 reference docs + register + session log. No behaviour change beyond the migration.**
+
+**R110 residual closed (migration `20260919212812`).** `rpc-allday-resolve-rip-dist-api` (jobid 26) was the one edge lane still carrying *"could not identify its target table"* — **a gap in a watchlist reads as coverage.** The target relation is still unproven and deliberately left so (no committed source per R21; `get_edge_function` hands back a live gate key, so reading it is not safe). 📏 What IS measured: **All Day `pack_rips` is 2,816,781 rows with 2,816,781 `dist_id` set and ZERO null** — the queue such a lane would drain is empty; `allday_dist_opened_expiry` is 104 rows, newest 13.8 h old; `cron.job_run_details` 46 ok / 2 failed in 48 h ⚠ **which is the DISPATCH succeeding, the exact non-instrument R110 exists to name.** ⭐ So an outcome check would be **permanently stale, and a permanently-stale instrument is indistinguishable from a broken one** — same call as its sibling jobid 27. `observed_via='none'` is now reasoned and dated; **`edge_lane_watch` carries zero "could not identify" rows** (verified). 👉 **EXIT CONDITION, re-TEST don't re-read: any All Day rip with a NULL `dist_id` means this lane has a queue — move it to `outcome_freshness` on `pack_rips`.**
+
+**CLAUDE.md was at 39,997 of 40,000 — three characters.** Three rules earned a place and had to DISPLACE, never spend. Moved **verbatim** (nothing deleted, one-line pointer left for each): the `CREATE INDEX CONCURRENTLY` / `SET …;`-transaction-block / `RESET ALL` mechanics, the differential-upsert bullet (R101 v2) and the `PGRST002` burst → [database.md](../reference/database.md); the compounding queue walk and the `rows_written = 0` null instrument → [cron-and-schedulers.md](../reference/cron-and-schedulers.md). Back to **39,997** exactly, limit test green.
+
+**The three rules added, all earned today:**
+- ⚠ **A window sitting ENTIRELY AFTER a change point cannot tell a STEP from a LEVEL** — and **read the live alarm's OWN `detail`/ack text before fixing what it already covers.** Both halves are the R114 retraction.
+- ⚠ **A background-task notification's `exit code 0` is the WRAPPER's, not the command's** — a run printing `VITEST=1` was reported as 0.
+- ⭐ **This sandbox CAN run the DB-invariant suite + migration parse check locally** (`initdb` as `postgres`; root is refused).
+
+**Register:** R113 (sentinel arm starvation + the unreproducible blindness verdict) and R114 (cadence collapse, shipped-then-retracted) added to RESOLVED; R110's row closed.
+
+⛔ **Inbox filings were NOT archived.** `INDEX.md` is the more specific authority and rejects it: *"A date is not a drained-determination… archiving is Trevor's call, not a chore."* It is a listing, not a status — **the canonical open list is the register**, which is where the resolutions went.
+
+**Revert path:** `git revert <sha>` (`git log --grep="CLOSE-OUT"`). DB half: `UPDATE public.edge_lane_watch SET note = '<prior text>' WHERE jobname = 'rpc-allday-resolve-rip-dist-api';` — prior text is in migration `20260919181934`.
+
 ### 2026-09-19 · 🔴→✅ main was red for ~4 minutes — the verbatim displacement carried a SELF-LINK · Cowork cloud
 
 **`b08cbe74e` reddened `Memory-doc links`.** The Cadence block moved into `apis-and-cadence.md` **verbatim**, and its last sentence ended `Addresses … + gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md)`. Correct in CLAUDE.md, at the repo root. Inside `docs/reference/apis-and-cadence.md` it resolves to `docs/reference/docs/reference/apis-and-cadence.md` — a link to itself, through a path that does not exist.
