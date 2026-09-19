@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · ✅ SHIPPED (prod: table + 2 functions + pg_cron) — a pack page was reading 71 MB and 33.6 SECONDS of heap per render; it now reads one row · Cowork cloud
+
+**Trevor approved this one explicitly.** ⭐ **And the design flipped twice on measurement — both reversals are the valuable part.**
+
+📏 **THE COST, `EXPLAIN (ANALYZE, BUFFERS)` on dist_id 4184:** `Buffers: shared hit=11 read=8910 written=1657`, **Execution 33,644 ms**, `Heap Blocks: exact=8783` for 16,854 rows. **~1.9 rows per page, so ONE dist touches 41 % of the whole 21,521-page table.**
+
+📏 **Blast radius, and it is a narrow tail:** of 1,849 Top Shot dists — **4 at ≥10,000 rows · 15 at 5k–10k · 51 at 2k–5k · 173 at 500–2k · 1,606 under 500.** **70 dists (3.8 %) carry 301,680 of 591,919 rows — 51 % of the table.**
+
+⛔ **REVERSAL 1 — A COVERING INDEX IS NOT THE FIX, AND THAT WAS MEASURED.** An index-only scan needs the visibility map, and this table cannot hold one: the backfill walker re-UPSERTS every row with no change detection, so `relallvisible/relpages` read **5.3 %**, and I watched dead tuples go **25,512 → 49,650 in ~40 minutes** of the walker running. An index-only scan would heap-fetch ~85 % of rows — **MORE row-level fetches than the bitmap scan's 8,783 page reads.**
+
+⛔ **REVERSAL 2 — THE FIRST REFRESH I SHIPPED WAS WRONG AND I KILLED IT IN THREE MINUTES.** A whole-table `GROUP BY dist_id` per collection (migration `20260919180201`): the **All Day arm alone was still on `IO / DataFileRead` at 1 m 38 s** and rolled back with 0 rows written. ⭐ **And even if it had fit, it would hold a MULTI-MINUTE TRANSACTION — the exact mechanism R109 blames for `wallet_moments_cache` never holding a visibility map. A refresh built to cut reads would have worsened the estate's worst read problem.** The cost driver is **two ordered aggregates per group** (`percentile_cont … WITHIN GROUP` and `array_agg … ORDER BY`), each sorting every group.
+
+**Shipped instead — a BOUNDED, RESUMABLE slice** (`20260919180521`): roster from `pack_distributions` (5,520 rows), cursor `computed_at ASC`, **soft deadline checked BETWEEN dists** so a tick landing on a 16k-row dist commits what it finished. **Measured steady state: 408 ms/dist** (60 in 24,468 ms; the first call read 1,021 ms/dist because it also seeded the roster).
+
+⭐⭐ **THE COUNTER-INTUITIVE NUMBER, AND THE ONE I NEARLY GOT BACKWARDS: A CACHE ONLY PAYS IF IT REFRESHES LESS OFTEN THAN ITS PAGES RENDER.** A refresh costs about what a render costs (same per-dist aggregate). At ~19,500 renders/day over 5,880 pack pages = **~3.3 renders/page/day**, refreshing faster than ~3×/day would spend MORE IO than it saves. So jobid 527 runs **60 dists every 15 min ≈ 1 full cycle/day: ~11 GB/day against the ~39 GB/day removed** — and every page becomes a single-row lookup regardless. ⚠ **That trade depends on the RENDER RATE — re-derive before speeding it up.**
+
+🚨 **THE HONESTY-CRITICAL LINE IS THE HIT TEST, AND IT IS `computed_at > '-infinity'`, NOT `FOUND`.** The roster seeds a row for every dist with `n_sales = 0`, so a row EXISTS for dists never computed. Serving one would publish **"this pack has no sales"** about a pack the cache simply had not reached — and `fetchPackMarket` renders a null row as "no market data", not as an error. ✅ **Verified on dist 1096, seeded-but-uncomputed with 5,284 real sales: the function returned n_sales = 5284 via the live fallback, not the seeded zero.** ⚠ A genuine computed zero is still cached and still returns no row — **computed-zero and never-computed stay different states.**
+
+✅ **EQUIVALENCE PROVEN, 10 cached All Day dists vs a fresh live aggregate: 0 mismatches on n_sales / min_price_all / max_price_all / last_sale_price / last_sale_at.** ⚠ The 30d/90d columns are deliberately EXCLUDED from that comparison — they depend on `now()` and drift as the window slides. **That drift is the one semantic difference this cache introduces**, bounded by the refresh cycle.
+
+⚠ **`retail_price` / `secondary_vs_retail_ratio` are NOT cached** — read live from `mv_pack_ev_latest` (440 kB, indexed) on both paths, so the cache cannot serve a stale retail price.
+
+**Security:** RLS ON, anon SELECT/INSERT **false**, authenticated SELECT **false**, `check_secdef_anon_exec_drift()` **0**, `check_public_security_invariants()` **0 rows**.
+
+⚠ **Because the fallback exists, a dead refresh degrades SILENTLY back to 33-second renders.** That is why the refresh writes a `pipeline_runs` row every tick carrying `dists_refreshed`, `hit_soft_deadline` and `stalest_remaining`. **The cache was 86 of 5,520 dists computed at the time of writing — it fills over ~1 day.**
+
+**Revert:** ⭐ **`TRUNCATE public.pack_market_sales_cache;`** — with an empty cache every call takes the live path and behaviour is identical. No DDL, instant. Full teardown: `SELECT cron.unschedule('rpc-pack-market-sales-cache-refresh'); DROP FUNCTION public.refresh_pack_market_sales_cache(integer,integer); DROP TABLE public.pack_market_sales_cache;` plus re-applying the pre-cache body from `20260726180543`.
+
 ### 2026-09-19 · 🔧 CI CAUGHT THE HALF OF THE TOP-SALES FIX I DID NOT GREP FOR — a second guard pinning the same set, in a file the first one did not name · Cowork cloud
 
 **One test file. No code change, no DB change.** Follow-up to the three Candy entries below.
