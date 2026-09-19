@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendOpsAlert } from "@/lib/ops-alert";
+import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -81,6 +82,59 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // CRON-30S (2026-09-19). This route gained a cron-job.org caller (`RPC Stale FMV
+  // Monitor`, job 8474274, 19/49) because GitHub delivers ops-monitor.yml's
+  // 13,43 schedule at ~6/day (register #124). cron-job.org aborts at 30 s, marks
+  // the run FAILED and auto-disables the entry after enough of those — and this
+  // route ran >28 s on 8 of 24 ticks during the 2026-09-19 IO spell (p50 11 s,
+  // max 64 s, maxDuration 60). Its FIRST console tick was fine (5.23 s); the
+  // failures arrive with the next saturation spell, which is exactly when an FMV
+  // staleness alarm is worth having. So the console caller passes `?ack=1`, gets
+  // 202 at once, and the check runs to completion inside after() on the same
+  // invocation — the sentinel's pattern (app/api/sentinel/route.ts), copied here.
+  //
+  // ⚠ 202 means ACCEPTED, NOT FRESH. The ack body carries no `status`, no
+  // staleness minutes, nothing a caller could render as a verdict; the answer
+  // lives in pipeline_runs (pipeline='stale-fmv-monitor', written by logRun below
+  // on every run that returns) and in the ops page the run itself fires. The GHA
+  // lane omits `ack` and keeps the synchronous report it greps for `status`.
+  //
+  // ⭐ The route writes its own invocation heartbeat in ack mode, because a
+  // fire-and-forget caller has no runner to write one: an ack tick killed at
+  // maxDuration inside after() would otherwise leave NO row of any kind and be
+  // indistinguishable from a cron that never fired (CLAUDE.md's after()-heartbeat
+  // rule; register #80). `event: "cron-ack"`, never `"schedule"` — the GHA
+  // watchdog counts only `schedule` heartbeats and a healthy console lane must
+  // not be able to mask a total GitHub stall. The heartbeat must never block the
+  // dispatch: telemetry does not get to break the alarm it measures.
+  if (request.nextUrl.searchParams.get("ack") === "1") {
+    try {
+      await writeInvocationHeartbeat({
+        pipeline: "stale-fmv-monitor",
+        startedAtMs: Date.now(),
+        extra: { source: "api-route", event: "cron-ack" },
+      });
+    } catch (e: any) {
+      console.error("[stale-fmv-monitor] ack-mode heartbeat threw:", e?.message ?? e);
+    }
+    after(async () => {
+      try {
+        await runMonitor();
+      } catch (e: any) {
+        // The 202 has already gone out; a throw here would otherwise vanish.
+        console.error("[stale-fmv-monitor] ack-mode run threw:", e?.message ?? e);
+      }
+    });
+    return NextResponse.json({ accepted: true, mode: "ack" }, { status: 202 });
+  }
+
+  return runMonitor();
+}
+
+// The check itself, unchanged from the synchronous handler it was lifted out of.
+// Returns the same NextResponse both callers used to get; in ack mode the response
+// object is simply discarded (the run's evidence is the pipeline_runs row).
+async function runMonitor(): Promise<NextResponse> {
   // deep-audit D7: this route had NO log_pipeline_run anywhere, so an FMV-staleness
   // ALARM that was itself failing 40.8% of ticks (29x200 / 20x504 over 30h) said
   // nothing about it — the one instrument that would have shown the alarm was down
