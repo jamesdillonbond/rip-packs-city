@@ -10,6 +10,60 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🔦 A GUARD THAT HAD NEVER ONCE RUN — the badge-art drift check's live query was broken from the day it was written, and no workflow called it either · Claude Code (Trevor's Windows box)
+
+**Two stacked silences on one instrument, both fixed. No DB change; the estate was in a live IO spell throughout and nothing was applied to it.**
+
+**What was wrong.** `scripts/check-badge-art-registry-drift.mjs` compares the static share-card registry (`lib/badges/official-art.ts`) against `badge_taxonomy` + `badge_art_overrides`, in both directions, plus the `/api/badge-image` allowlist. Its override read was `.select("normalized_key, icon_url, collections(slug)")` — a PostgREST embed. ⛔ **`badge_art_overrides.collection_id` carries NO foreign key to `collections`** (verified live: zero FK constraints on the table, and no migration in this repo ever created one — the table is not in `supabase/migrations/**` at all), so PostgREST cannot infer the relationship and every run died on `Could not find a relationship between 'badge_art_overrides' and 'collections' in the schema cache`, exit 2, on its FIRST live read. It has been this way since `054b2467e`, the single commit that created it.
+
+⭐ **And the second silence is why nobody noticed the first: the guard was wired into NOTHING.** `badges:art:check` was declared in `package.json` and invoked by no workflow, no test and no other script — a permanently-broken instrument that no path could reach. **Ask what RUNS a guard, not only whether it passes.**
+
+**What shipped.**
+- **Query fixed** — the embed is replaced by a second `collections` read and an id→slug `Map`. Both reads keep the existing count assertion (an empty read is not "no drift").
+- **A third state that was missing** — an override whose `collection_id` resolves to no `collections` row is now a stated problem rather than a silent `continue`. With no FK to prevent it, that is exactly the row this table can hold, and skipping it would drop the override from the comparison while the guard still reported a clean inspection. A resolvable id for a collection that simply publishes no badge art (Golazos/Pinnacle/UFC/Candy) remains a legitimate skip — three states, not two.
+- **Wired into `.github/workflows/db-pin-staleness.yml`**, which already holds the service-role secret, already soft-skips without it, and already exists to catch live-vs-repo drift that in-tree CI cannot see.
+
+**📏 FIRST SUCCESSFUL LIVE MEASUREMENT OF THIS PROPERTY, EVER:** 53 `badge_taxonomy` rows + 15 overrides against 9 Top Shot + 8 All Day registry entries ⇒ **0 problems**. `badge_art_overrides` = 15 rows, **0 orphaned `collection_id`s**. So the registry is currently correct — but that was an *unknown*, not a *known-good*, until this morning.
+
+✅ **POSITIVE CONTROL, because a clean guard proves nothing on its own.** Perturbed `rookiemint: "rookieMint"` → `"rookieMintZZCONTROL"` in the registry (occurrence count asserted = 1 before the replace) and re-ran: **2 problems, exit 1** — the slug-drift arm AND the proxy-allowlist arm both fired. Restored from a full-path backup and re-verified `git diff --quiet` clean + guard green again (no-change control).
+
+⚠ **EXIT CODE IS FLAKY ON WINDOWS AND FAILS CLOSED — measured, not assumed: 1 run in 3** prints the clean ✓ and then dies in libuv teardown (`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`, `src\win\async.c:76`) with **127**, because `process.exit()` races the supabase-js keep-alive agent's handle close. A clean result can surface as non-zero — a false alarm, never a missed defect. Not observed on Linux CI. Recorded in the script header; **read the printed verdict line, not only the code.**
+
+⚠ **"RUNNABLE AND VISIBLE" IS NOT "WATCHED", and the entry says so rather than implying otherwise.** GitHub does not honour this repo's daily schedules (#80 — DAILY fired 0 of 73), so in practice this step runs on `workflow_dispatch`. Strictly better than a guard nothing can reach; **do not read a green history there as evidence it has been running.**
+
+**Verified after:** `npx tsc --noEmit` exit 0 · `npm run lint:ratchet` 715/715 baseline, exit 0 · all 7 suites that read either edited file green (290 tests) · workflow YAML parses, 5 steps.
+
+⚠ **NOT MINE, recorded so the next session does not chase it:** `npm test` is RED — `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` names `20260919121040_audit_20260919_the_cross_collection_mats_get_a_freshness_guard_and_a_caller_in_the_ops_snapshot.sql`, an **untracked** migration written at 05:12 PT by a **concurrent session** that was editing `CLAUDE.md` and three `docs/reference/*.md` in this same working tree while this ran. The guard is doing its job pre-commit. **Left untouched deliberately** — editing another session's in-flight file is the collision this repo has been bitten by before. This commit is path-scoped to the three files named below for the same reason.
+
+- **Revert:** `git revert <sha>` (find by message, `git log --grep="had never once run"`). Restores the broken embed, the missing third state and the un-wired state. **No DB half — nothing was applied.**
+
+### 2026-09-19 · 🎯 THE OFFSET PROBE RETIRES R109's NUMBERS TOO — the head of the index is 2.8× worse than its body, so every heap-fetch figure came from its least representative slice; the cross-collection mats finally get a freshness guard · Cowork cloud
+
+**One DB change shipped (migration `20260919121040`): `check_cross_collection_mat_staleness()` + a `cross_collection_mat_staleness` key in `rpc_ops_snapshot()`. Plus CLAUDE.md, three reference docs, and five migration filenames corrected.**
+
+⭐ **THE ASSUMPTION I NAMED THIS MORNING WAS NOT JUST UNTESTED — IT WAS WRONG, AND IT INVALIDATES R109's MAGNITUDE.** Every heap-fetch reading in R109 came from the first 5,000 index entries. Seeking to `pg_stats.histogram_bounds` quantiles (free — ANALYZE already computed them) and re-running the identical bounded scan:
+
+| seek point | Heap Fetches / 5,000 | rate | buffers read |
+|---|---|---|---|
+| head (p00) | 2,127 | **42.5%** | 1,949 |
+| p25 | 713 | **14.3%** | 626 |
+| p50 | 860 | **17.2%** | 703 |
+| p75 | 769 | **15.4%** | 547 |
+
+⛔ **The head runs ~2.8× the body's rate; the representative rate is ~14–17%, not ~40%.** 🚨 **And the slice was far narrower than "0.23% of rows" implied — `n_distinct(wallet_address)` is 859 across 2.16M rows (~2,500 rows per wallet), so a 5,000-row `LIMIT` on an index LEADING with that column samples roughly TWO WALLETS.** ⭐ **Reusable: when an index's leading column has few distinct values, a ROW-count `LIMIT` is a KEY-count sample, and the two are not interchangeable.**
+
+⇒ ⚠ **R109's magnitude falls with its mechanism.** From the body rate the full scan is ~259,000 buffers ≈ 2 GB ≈ **~95 s at the estate's ~22 MB/s floor — INSIDE the 600 s ceiling**, not the "~27 minutes on an idle box" extrapolated from the head. ✅ **What still stands, measured three times: step1 fails at 600.0 s** (09-17, 09-18, and 09-19 03:02 PT on the new schedule) **and the mat is 61 h stale.** ⛔ **What is open again is WHY** — contention was dismissed on a SINGLE 110 s cancellation at io_wait 2, which against a ~95 s scan estimate is no longer surprising enough to rule it out. ⛔ **Do not now assert contention either.** 👉 **Decisive test, not run (box at io_wait 12): the full aggregate on a genuinely quiet box under a generous `SET LOCAL statement_timeout`, recording an actual COMPLETION TIME. A cancellation is only a lower bound and three of them have now been over-read.**
+
+✅ **THE MONITORING GAP IS CLOSED, on its third consideration and this time with the trade measured instead of asserted.** `check_cross_collection_mat_staleness(p_max_hours numeric DEFAULT 26)` — ban-at-zero, jsonb ARRAY — now has a caller in `rpc_ops_snapshot()`. ⭐ **It shipped with its control pair already in the data, no synthetic setup:** the cohort mat was 61.0 h old and the overlap mat 12.7 h old, so a correct guard at 26 h had to return **exactly one entry naming the cohort mat and not the overlap mat** — it did; and at `p_max_hours=1000` it returns 0, so the non-empty reading is not vacuous. ⚠ **Expect it non-empty until R109 is fixed — that is the guard working; do not widen the threshold to silence it.** ⛔ **Why NOT the trust-health arm the filing asked for, now measured rather than asserted for the third time:** `v_rpc_trust_health` is **48,766 chars across 37 `UNION ALL` branches** and `rpc_trust_health_precompute` has **no `breach_at` column**, so every threshold lives in the view text with no data-driven path — a worse trade than a key on the 5,991-char snapshot every session reads first.
+
+🔧 **Fidelity on the snapshot rewrite, and a gotcha worth keeping.** The added key was verified by stripping it and re-hashing to the pre-change definition: **stripped length 5,991 and md5 `0b0571977831d0f562629a58534d9940`, byte-identical.** ⚠ **But the first attempt read as a FAILURE for a bogus reason — `regexp_replace(…, 'sn')`: the `s` and `n` flags CONFLICT, `n` wins, `.` stops matching newlines, and the pattern matched NOTHING.** ⭐ **Always assert the stripped length equals the original before trusting the verdict — a vacuous check that fails safe is still vacuous.**
+
+🗂 **Five migration filenames corrected.** The Supabase MCP `apply_migration` **assigns its own version at apply time** — the `name` you pass is kept, the version is not — so `20260919055500_…` was recorded as `20260919045716_…`, and four others likewise. ⚠ **`npm run db:migrations:recover` does not catch this: it matches by NAME.** `git mv`'d all five to the recorded versions, content untouched. The one genuinely fileless migration was recovered with that tool instead of re-typed, **md5-verified against prod**.
+
+📘 **CLAUDE.md 39,996 → 39,993 (7 spare, limit test green).** Promoted: *an AGGREGATE is never a proxy for the SLICE you measured*; *a freshness STAMP is not a RATE, and a candidate its own NO-CHANGE CONTROL outperforms is not shown to work*; *a pg_cron command with a `SET …;` prefix runs in a TRANSACTION BLOCK, so CIC cannot, and its budget must come from a ROLE default*. Paid for by displacing six instance details verbatim into [testing-and-ci.md](reference/testing-and-ci.md), [database.md](reference/database.md), [tooling-gotchas.md](reference/tooling-gotchas.md), known-issues.md, key-files-and-honesty.md and concierge.md — each verified present there first.
+
+- **Revert:** `DROP FUNCTION IF EXISTS public.check_cross_collection_mat_staleness(numeric);` after removing its one key from `rpc_ops_snapshot()`. **Target metric:** the key reads `[]` once step1 completes. **Falsifier for the guard itself:** if it ever reads `[]` while `max(computed_at)` on either mat is older than 26 h, the guard is broken, not the lane.
+
 ### 2026-09-19 · 🔴 MAIN'S SMOKE GATE WENT RED ON A STRAY `zz_r108_probe` TABLE — cleaned up, and the experiment that left it behind turns out to have PROVED the thing R108 needed to know · Cowork cloud
 
 **Two DB changes shipped in one migration (`20260919120000`): `public.zz_r108_probe` DROPPED and pg_cron job 516 `zz-r108-probe-setcic` UNSCHEDULED. Guarded on the table being exactly the 1-column / 100-row scratch probe with zero function or view readers.**
