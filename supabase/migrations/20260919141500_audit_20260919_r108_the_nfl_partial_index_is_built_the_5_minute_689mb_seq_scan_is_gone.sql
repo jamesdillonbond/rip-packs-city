@@ -1,0 +1,77 @@
+-- 2026-09-19 (Cowork cloud). AUTHORED 07:12 AM PT 09-19 = 14:12Z.
+--
+-- ✅ R108 IS FIXED. `idx_tame_nfl_nft_seen` IS BUILT AND VALID.
+--
+-- RECORD-ONLY, following the 20260913231800 precedent. `CREATE INDEX CONCURRENTLY` cannot run
+-- inside a transaction block, so it cannot be the body of an applied migration. The index was
+-- built live at 14:09Z; the body below is a no-op against the existing index (matched BY NAME)
+-- and is the correct non-concurrent form for a fresh database.
+--
+-- THE COMMAND THAT ACTUALLY RAN, as a one-off pg_cron job (jobid 525, username postgres,
+-- schedule '9 14 * * *', unscheduled immediately afterwards) -- ONE statement, NO prefix:
+--
+--     CREATE INDEX CONCURRENTLY idx_tame_nfl_nft_seen
+--       ON public.topshot_atlas_market_events (nft_id, last_seen_at DESC)
+--       INCLUDE (atlas_edition_id, serial_number)
+--       WHERE product = 'nfl' AND nft_id IS NOT NULL AND atlas_edition_id IS NOT NULL
+--
+-- Result: `succeeded`, return_message `CREATE INDEX`, **71.0 s**, 2,728 kB, indisvalid = true.
+--
+-- ============================================================================================
+-- ⭐⭐ HOW THE 120 s PINCER WAS BROKEN, AFTER FIVE FAILED ATTEMPTS ACROSS THREE SESSIONS
+-- ============================================================================================
+-- The four-sided pincer recorded in 20260919123500 was real, and the way through was the ONE
+-- side that had been dismissed too broadly. Restating it correctly, because the earlier note
+-- ("raising the postgres role default is UNSAFE") is true only of the UNSCOPED form:
+--
+--   ⛔ A `SET statement_timeout` PREFIX is impossible -- it creates the transaction block CIC
+--      refuses (measured, migration 20260919120000).
+--   ⇒ So the budget MUST come from a ROLE DEFAULT, which is applied at SESSION START and
+--     therefore needs no prefix at all. A single-statement pg_cron job picks it up for free.
+--
+-- ⭐ THE BLAST RADIUS IS MUCH NARROWER THAN "ALL POSTGRES JOBS", AND THAT IS THE KEY MEASUREMENT:
+--   1. `cron_heavy` carries its OWN role default (600 s), so raising postgres's default is
+--      INVISIBLE to every cron_heavy lane -- roughly half the long-running estate, untouched.
+--   2. Of the postgres-owned lanes, only a handful ever approach 120 s, and every one of them
+--      is postgres-owned, i.e. SHEDDABLE from this session. They were shed for the window:
+--      463, 464, 466, 451, 509, 469, 468.
+--   3. `ALTER ROLE postgres IN DATABASE postgres SET ...` writes a SEPARATE db-scoped row. It
+--      does NOT touch the ALL-DATABASES row, which on this cluster carries
+--      `search_path="$user", public, extensions`. ⚠ VERIFIED BEFORE AND AFTER -- and this is
+--      why `RESET ALL` must NEVER be used here: it would destroy that search_path.
+--
+-- SEQUENCE (all reverted within 3 minutes; a self-restoring net, jobid 524, was armed FIRST and
+-- carried the role RESET plus all seven lane restores, so nothing could strand):
+--     shed 7 lanes -> ALTER ROLE ... IN DATABASE ... SET statement_timeout='900s'
+--       -> CIC (71 s) -> ALTER ROLE ... RESET statement_timeout -> restore 7 lanes -> unschedule
+-- Post-state verified: postgres role settings back to the single ALL-DATABASES search_path row,
+-- 7 lanes active, 0 helper jobs, active job count back to its 150 baseline.
+--
+-- ⚠ AND THE SHED ALSO EXPLAINS WHY 71 s WAS ENOUGH: with the table's own writers shed,
+--   `WaitForLockers` is instant, and `oldest_xact` across the whole cluster read 0.0 s at the
+--   moment the job was scheduled. The 900 s budget was the insurance, not the mechanism.
+--
+-- ============================================================================================
+-- 📏 THE FALSIFIER, PRE-REGISTERED IN R108 AND NOW FIRED
+-- ============================================================================================
+-- BEFORE: `Parallel Seq Scan on topshot_atlas_market_events  ... Filter: (product = 'nfl')`
+--         cost 105,599 -- 689 MB walked every 5 minutes, 288x/day, ~200 GB/day on a 22 MB/s box.
+-- AFTER (plain EXPLAIN of Leg 1, taken 14:12Z):
+--         `Index Only Scan using idx_tame_nfl_nft_seen on topshot_atlas_market_events ev
+--          (cost=0.41..1382.84 rows=46025 width=25)`
+--         => ~76x cheaper on that node. The remaining cost in the plan is a Seq Scan on
+--            `unmapped_sales` (cost 10,533), which is a DIFFERENT object and NOT part of R108.
+--
+-- ⚠ STILL OWED, and deliberately not claimed here: the lane's own p50 against its 14.4 s calm
+--   baseline, and the next 2-hourly `audit_20260830_pgss_snap` delta dropping this query out of
+--   the top 5. Both need elapsed time. **Do not close R108's IO claim on the EXPLAIN alone** --
+--   a plan change is a cost estimate, not a measured read volume.
+--
+-- REVERT: `DROP INDEX CONCURRENTLY IF EXISTS public.idx_tame_nfl_nft_seen;` (as postgres, at an
+-- odd minute, with the three reader lanes shed -- an unbounded ACCESS EXCLUSIVE request queues
+-- ahead of new readers on a hot table, so always bound it with `SET lock_timeout` first).
+
+CREATE INDEX IF NOT EXISTS idx_tame_nfl_nft_seen
+  ON public.topshot_atlas_market_events (nft_id, last_seen_at DESC)
+  INCLUDE (atlas_edition_id, serial_number)
+  WHERE product = 'nfl' AND nft_id IS NOT NULL AND atlas_edition_id IS NOT NULL;
