@@ -2474,3 +2474,23 @@ table covers **2,794 distinct editions in 24 h against 12,940 rows with an ask (
 measuring firehose COVERAGE, not liveness. *A control whose population does not cover the set is not
 a control.*
 
+## Displaced from CLAUDE.md, 2026-09-19 (VERBATIM)
+
+The memory file reached 39,997 of its 40,000-character limit, so these three bullets moved
+here **whole** rather than being shortened. Nothing was deleted; CLAUDE.md keeps a one-line
+pointer to each. ⚠ **The ONE deviation from verbatim: relative link paths.** They were
+written for CLAUDE.md's depth at the repo root and would be dead from inside `docs/reference/`
+(`check-memory-doc-links.mjs` fails on exactly that, and caught it here). ⚠ Per that file's own rule, every figure below is a DATED SAMPLE —
+re-derive before quoting.
+
+### `apply_migration` / `execute_sql` / `CREATE INDEX CONCURRENTLY`
+
+- **`apply_migration` for DDL; `execute_sql` for reads/verification.** ⚠ `CREATE INDEX CONCURRENTLY` needs `execute_sql` and runs **only if it FINISHES inside the 60 s client cap** — a timeout ABORTS it, leaving an `indisvalid=false` index. Record it with an `IF NOT EXISTS` migration so it is not fileless. ⚠ **A `SET …;` prefix puts a pg_cron command in a TRANSACTION BLOCK — CIC cannot: budget it as a TEMPORARY role default + a ONE-statement job, then `RESET statement_timeout`, ⛔ never `RESET ALL` (drops `search_path`).** FMV writes are delete-then-insert, NEVER upsert. MCP + schema gotchas: [tooling-gotchas.md](tooling-gotchas.md).
+
+### The differential upsert (R101 v2)
+
+- ⚠ **A differential upsert (`ON CONFLICT DO UPDATE … WHERE row IS DISTINCT FROM EXCLUDED`) WRITES the delta but PROBES every offered row** — 55k probes to write ~60 were ~700k of a tick's 927k buffers. LEFT JOIN the target first (cast to ITS types) and offer only the delta: −79 %/call (R101 v2, database.md).
+
+### `apply_migration`'s PGRST002 burst
+
+- ⚠ **Every `apply_migration` causes a ~10–20 s burst of user-facing `PGRST002` 500s** (schema-cache re-introspection). Prefer a low-traffic window and batch migrations. `rpcWithRetry` does not save you — it retries for ~250 ms of a twenty-second outage.

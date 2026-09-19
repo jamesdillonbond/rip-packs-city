@@ -2356,3 +2356,112 @@ select * from agg where runs >= 20 and distinct_vals <= 3 order by runs desc;
 ⚠ **And a false lead it produced, worth knowing before you follow one:** the two dead `fmv-recalc` fields were also the only two with **no paired `_error` field**, while every leg that has one fires sometimes — a tidy correlation pointing at *"they fail silently"*, which is this repo's own `_error`-pairing rule. **It was wrong; they never ran at all.** ⛔ **A correlation that flatters an existing rule is exactly the one to check against the source before filing.**
 
 ⛔ **NOT shipped as a permanent arm.** Without a curated suppression list for (2) it is permanently noisy, and #25 records what a permanently-red instrument costs. **Re-run by hand.** ⚠ Yield so far, stated honestly: **two instances, both fixed** — a real class, but a small one.
+
+## Displaced from CLAUDE.md, 2026-09-19 (VERBATIM)
+
+The memory file reached its 40,000-character limit; these two bullets moved here **whole**
+rather than being shortened. Nothing was deleted — CLAUDE.md keeps a one-line pointer to
+each. ⚠ **The ONE deviation from verbatim: the trailing pointers.** In CLAUDE.md they
+linked HERE; from inside this file they are self-links, so they now read `(this file)`. ⚠ Every figure is a DATED SAMPLE; re-derive before quoting.
+
+### The compounding queue walk
+
+- ⚠ **A queue walk that starts at the top of what it resolves COMPOUNDS** (three in one day, 09-07): page a BOUNDED slice of the INDEX behind a cursor, filter the page, walk a temp-table page row-by-row (no stats → every filter on every row before its LIMIT). Wire a new pg_net lane into the 4xx arm in its creating migration. (this file)
+
+### `rows_written = 0` is a null instrument
+
+- ⚠ **`rows_written = 0` is a null instrument with three incompatible meanings, `ok = false` is overloaded the same way, and `extra.<step>=0` is the same trap one level down.** Read `extra` and `last_error`, pair every per-step count with an `_error` field, and **measure the OUTCOME table, not the self-report** — never retire a pipeline on `rows_written`. Cases: (this file)
+
+---
+
+## The sentinel starves the END of its own arm list (2026-09-19)
+
+The sweep bounds itself with ONE wall budget (`app/api/sentinel/route.ts`): when the 140 s
+query budget is spent, every remaining arm is REFUSED before its request leaves the process
+and reports INCONCLUSIVE. That rule is correct and earned — it replaced a 180 s Vercel kill
+that wrote nothing anywhere.
+
+🚨 **What nothing accounted for is that arm order was FIXED, so refusal was not a lottery.**
+Across the 83 sweeps then in retention (09-16 12:04 → 09-19 11:09 PT) refusals landed on a
+contiguous tail and nowhere else:
+
+| arm | refused | rate |
+|---|---|---|
+| `pg_net Dispatch` | 25 / 83 | 30.1% |
+| `Ops Probe Cost` | 25 / 83 | 30.1% |
+| `Wall Kills (24h)` | 20 / 83 | 24.1% |
+| `Cadence Collapse` | 6 / 83 | 7.2% |
+| `Zero-Yield Lanes` | 4 / 83 | 4.8% |
+| `Alert Delivery` | 4 / 83 | 4.8% |
+| **every arm above that block** | **0 / 83** | **0%** |
+
+`Measurement Blackout` reports how MANY arms were blind on a sweep — the population fact it
+was built for — and **nothing said the blind set was the same set every time.**
+
+**Fix:** `lib/sentinel/tail-rotation.ts`. The five rotatable tail arms are thunks run in a
+rotating order and recorded back in CANONICAL order, so execution order moves and the report
+does not (findings also truncate at `SENTINEL_MAX_FINDINGS`, so letting execution order reach
+that would silently decide which findings survive into the durable row).
+
+⚠ **Rotation buys NO budget and is not claimed to.** The same number of arms are refused;
+over n sweeps each arm holds each position once, so no single arm is always the blind one.
+
+⛔ **`Ops Probe Cost` is deliberately NOT rotated and KEEPS its ~30% refusal rate.** Its
+contract pins it last — it reads `pg_stat_statements` for the arms above it, so an earlier
+slot makes its reading a sweep stale. Trading a measured blind spot for a silently wrong
+number is the worse defect. Stated as a known cost; the lever is a cheaper sweep or a
+dedicated reserve, neither of which that change was.
+
+### The durable row could not reproduce its own blindness verdict
+
+`isBlind()` takes a `didEvaluate` override — it exists because an arm that successfully reads
+SOMEONE ELSE'S timeout was being scored as having timed out itself — and that field lived
+only in memory. `buildSentinelFindings` kept the detail text and dropped it.
+
+📏 Measured over the same 83 sweeps: re-deriving blindness from the stored text scores
+`Trust Health` blind on **38 of 83** sweeps and `Pipeline Success Coverage` on **24** — both
+arms that evaluated fine and were quoting somebody else's error. The error runs one way:
+over-count. Findings now carry `blind` and `refused`, ⚠ **computed from the RAW detail BEFORE
+the clamp** (the clamp removes the MIDDLE, so classifying clamped text loses a signature in a
+long detail).
+
+⭐ **Only `refused` re-derives soundly from stored text**, because no arm can inherit
+`sentinel wall budget spent` from an upstream error.
+
+## `cadence_exempt_lanes` — and the retraction that proves how to use it
+
+`public.cadence_exempt_lanes` suppresses lanes from `check_pipeline_cadence_collapse()`
+SCORING (never from `inspected`). Every row must carry a `reason`, an `evidence` string
+(CHECK ≥30 chars each) and a `review_by`. ⛔ **Past `review_by` a row STOPS SUPPRESSING and
+the payload names it** — fail-loud, because an exemption nobody re-examines is the
+filed-decision-nobody-rechecks shape. Suppression is reported on every verdict including
+`ok`, and a lapsed exemption floors the arm at `warn` on its own.
+
+🚨 **Its first use was WRONG and was retracted 40 minutes later — read this before adding a
+row.** Seven `wallet-backfill*` lanes were exempted on the evidence that their run count is
+demand-driven (trigger is `/api/public/queue-wallet`, no pg_cron job writes them). The
+24-day series refutes it:
+
+```
+08-26..09-12   320 446 471 616 375 571 536 500 568 569 569 516 517 624 487 582 621
+09-13          433   <- change point
+09-14..09-18   322 273 321 313 312   <- a tight plateau
+```
+
+⭐ **Demand does not settle onto 313/312/321.** That is a dated STEP from the deliberate
+2026-09-13 backstop-drift ship (`SEED_REFRESH_BACKSTOP_FRESH_HOURS`). The 72 h window used to
+justify the exemption sat ENTIRELY AFTER the change point, so it could not tell a step from
+a level.
+
+⭐⭐ **And another session had already diagnosed it and acked the arm to 2026-10-01 — a date
+that is exactly calibrated, not arbitrary.** The baseline window is
+`current_date-17 .. current_date-3`, so it goes fully post-change on precisely 2026-10-01:
+**the reading corrects itself on the day the ack expires.** The ack text was sitting in the
+arm's own `detail` on every sweep and was not read before a fix was built for what it already
+covered.
+
+⛔ Keeping the row would have been WORSE THAN NOTHING: suppressing until 2026-12-19 something
+that resolves on 10-01, replacing a VISIBLE ack with a silent `ok`, and masking any genuine
+wallet-backfill collapse in between. The mechanism is kept and now sits at a **population of
+zero**, which its tests prove is safe (migrations `20260919202050`/`202105`/`202147`,
+retraction `20260919210201`).

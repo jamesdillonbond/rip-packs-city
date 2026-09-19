@@ -1517,3 +1517,37 @@ data — those need egress and stay Cowork's or a desktop session's job.
 - ⭐ **Pin the near-misses as CONTROLS rather than by omission** — `"this edition sold 522 times"` (no colon) and `"no connection between these two editions"` must still classify as internal/page, so a future widening reds instead of silently swallowing an outage.
 
 ⚠ **`app/api/sentinel/route.ts` carried a BYTE-IDENTICAL private copy of `isSaturationError`** while only the lib copy had a test — widening one would have left the other narrow. It now imports the shared one. ⛔ **The third (`SATURATION_SIGNATURE`) is deliberately still separate:** widening it risks counting *a successful read of someone else's failure* as blindness, which that file documents as a real production over-count. Its mitigation is `didEvaluate`, so the fix there is to make unmarked arms DECLARE themselves, not to widen the sniffer.
+
+---
+
+## A background-task notification's "exit code 0" is the WRAPPER's (2026-09-19)
+
+CLAUDE.md already carries *a pipe reports the LAST command's exit code*. There is a second
+face of it that is easier to be fooled by, because the number arrives in an official-looking
+envelope rather than from a command you typed.
+
+A backgrounded `npm test 2>&1 | tail -12; echo "FULL_SUITE=${PIPESTATUS[0]}"` produced:
+
+```
+ Test Files  1 failed | 1560 passed (1561)
+ FULL_SUITE=1
+ [exited with code 0]          <- and the task notification said "exit code 0"
+```
+
+The harness reports the exit of the **whole shell invocation**, whose last command was
+`echo`. It is 0 essentially always. ⭐ **The only number that means anything is the one the
+script itself printed from `${PIPESTATUS[0]}`** — read that line, never the envelope.
+
+⚠ **And do not `| tail -N` a suite you might have to diagnose.** The same run truncated its
+own failure detail to 12 lines, so the failing FILE was unknowable and the ~8-minute suite
+had to be re-run. Redirect the whole thing to a file and tail the file:
+
+```bash
+npm test > /tmp/suite.log 2>&1; echo "FULL_SUITE=$?"   # no pipe, so $? is vitest's
+```
+
+## Provisioning a local Postgres here
+
+⭐ **This sandbox CAN run the DB-invariant suite and the migration parse check.** `initdb`
+refuses to run as root, which is what makes it look impossible — run it as `postgres`. Full
+recipe and what it buys: [testing-and-ci.md](testing-and-ci.md).

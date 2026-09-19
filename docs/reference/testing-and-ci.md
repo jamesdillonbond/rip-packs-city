@@ -3038,3 +3038,64 @@ what proves it.
 Moved here to make room for the eleventh honesty shape (register #112). The rule stays in CLAUDE.md; the three measured cases live here.
 
 - ⚠ **An exclusion justified by ANOTHER instrument is a claim about it — check that one can SEE the property.** Two guards skipped `app/api` as "in the primary gate"; coverage sees whether lines RUN, not whether `error` is handled — 7 defects, 259 unlooked reads. ⚠ **NOTHING here measures LAYOUT** (jsdom boxes are ZERO; only the real browser in `e2e/mobile-layout.spec.ts` sees it) **nor the BUILT BUNDLE** (turbopack dropped a quasi from a `+`-joined template). Both shipped WRONG for weeks with every gate green.
+
+---
+
+## The docs-only CI skip, caught live (2026-09-19)
+
+CLAUDE.md states the rule — *a CHECK THAT DIDN'T RUN reads identically to one that PASSED* —
+and on 2026-09-19 PT it happened in the open, so here is the concrete case to point at.
+
+**Main was RED on code for ~20 minutes while the CI badge read GREEN.**
+
+| run | sha | commit | conclusion | why |
+|---|---|---|---|---|
+| 5799 | `d96c088c1` | `feat(candy): the Collection tab is on` | **failure** | 2 real test failures |
+| 5800 | `dc447269c` | `docs(ledger): own it — …` | success | **docs-only: code jobs never ran** |
+| 5801 | `584b74dad` | `docs(handoff): second post-close …` | success | **docs-only: code jobs never ran** |
+
+Every code job in `ci.yml` is gated on `if: needs.changes.outputs.code == 'true'`. Two
+docs-only commits landed on top of the break, each went green, and the badge said the tree
+was healthy while `collections-chain-dispatch` and `share-card-view` were both failing.
+
+⭐ **The discriminator that settled it in one command** — and the reason not to guess:
+
+```bash
+git worktree add -q --detach /tmp/wt-base origin/main
+cd /tmp/wt-base && ln -s <repo>/node_modules node_modules
+npx vitest run <the failing files>      # reproduces on CLEAN origin/main => not yours
+```
+
+Both failures reproduced on untouched `origin/main`, which is what made it safe to say
+"not mine" rather than assume it. ⚠ **The inverse matters just as much:** a code push onto
+a red main runs the code jobs and WEARS the red, so the next author looks guilty. Check the
+last CODE run, not the last run.
+
+⛔ **Do not fix another session's in-flight feature tests on this evidence alone.** Here the
+fix required encoding *their* claim about seven routes; the owning session pushed
+`f294fc8c2` within minutes. Verify, report, and let the owner land it.
+
+---
+
+## The DB-invariant suite runs LOCALLY in the web sandbox (2026-09-19)
+
+Previously assumed to be CI-only because `scripts/run-db-tests.sh` and
+`scripts/check-migration-sql-parses.sh` both need `DATABASE_URL`. They do not need a
+*remote* one. Postgres 16 binaries are present; ⚠ **`initdb` refuses to run as root**, which
+is the whole reason this looked impossible — run it as the `postgres` user:
+
+```bash
+PGBIN="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)"
+rm -rf /tmp/pgpin && mkdir -p /tmp/pgpin/data /tmp/pgpin/sock && chown -R postgres:postgres /tmp/pgpin
+su postgres -c "$PGBIN/initdb -D /tmp/pgpin/data -A trust -U postgres"
+su postgres -c "$PGBIN/pg_ctl -D /tmp/pgpin/data -o '-p 5433 -k /tmp/pgpin/sock -h 127.0.0.1' -l /tmp/pgpin/log start -w"
+export DATABASE_URL="postgres://postgres@127.0.0.1:5433/postgres"
+bash scripts/run-db-tests.sh              # 194 files on 2026-09-19
+bash scripts/check-migration-sql-parses.sh # 1,146 files, 0 syntax errors
+```
+
+⭐ **Worth the two minutes.** `db-tests` is a BLOCKING CI gate, and a pin whose fixtures do
+not match a changed function body fails there rather than here — on 2026-09-19 a new
+function body read a THIRD table and the pin could not even run. It also makes the pin's
+assertions mutation-testable locally, which is the only way to know a new assertion is
+load-bearing.
