@@ -10,6 +10,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🔧 MAIN WAS RED ~35 MIN — a concurrent commit (`14f38e53c`) wrote `db-invariants-drift-guard.test.ts` from a STALE COPY and silently reverted the two R101 v2 PINS entries · Cowork cloud + laptop VM
+
+**What:** `14f38e53c` (10:5x AM PT, the Candy `resolve_moment_id` fix) added its own PINS entry correctly but carried the whole file from a copy older than `6ba6b3c58` (8:28 AM), so `sync_ts_listings_from_atlas` and `sync_edition_offers_from_atlas` were pointed back at the 09-18 revert migration `20260919021449` while their SQL copies (untouched) still hold the v2 bodies. The drift guard failed both (`byte-identical (normalized) to its migration`), so every CI run on main from `14f38e5` through `f4e8184` is red, and the docs-only `Inherited main status` job inherits it. **Live DB is unaffected** — the v2 bodies are what runs (md5 re-verified 9:4x AM). **Fix:** the two entries re-pointed to `20260919152824` (this commit; drift guard local 216/216). ⭐ **Lesson, and it is the standing `CREATE OR REPLACE` rule one file over:** a PINS edit is a whole-file write of a file three sessions touch in one morning — `git fetch && git rebase origin/main` immediately before the commit, and read the DIFF of that file, not only your own hunk. **Revert:** none needed (this restores the intended state); if v2 itself is reverted, point both at `20260919021449` again.
+
+
 ### 2026-09-19 · 🔁 PANINI, SECOND PASS — I shipped a completeness bug this morning and caught it by re-reading my own diff; and the squeeze board's headline turns out to be 52% asking prices nobody paid · Cowork cloud (Trevor: "keep going on what you can")
 
 **Shipped** `878ec188` + `73cec217`, migrations `20260919180946` / `181331`.
