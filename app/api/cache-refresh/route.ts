@@ -329,15 +329,30 @@ export async function GET(req: NextRequest) {
 
     // Step 3: Diff — new IDs not in cache
     const newIds = onChainIds.filter(function(id) { return !cachedIds.has(id) })
-    // IDs in cache but not on-chain (sold/burned)
-    // We need all cached IDs for this, not just the ones we queried
-    let removedCount = 0
-    if (cachedIds.size > 0) {
-      const onChainSet = new Set(onChainIds)
-      for (const id of cachedIds) {
-        if (!onChainSet.has(id)) removedCount++
-      }
-    }
+
+    // ⛔ `removed_count` IS STRUCTURALLY ALWAYS ZERO, AND THAT IS NOT A BUG TO "FIX" HERE — it is
+    // a field that must stop pretending to be a measurement. Removed 2026-09-19 (Cowork cloud).
+    //
+    // The old code diffed `cachedIds` against `new Set(onChainIds)` and counted the misses as
+    // "sold/burned". But `cachedIds` is built two blocks up ENTIRELY from rows matching
+    // `.in("moment_id", chunk)` where every chunk is a slice of `onChainIds` — so
+    // `cachedIds ⊆ onChainIds` BY CONSTRUCTION and the miss branch was unreachable. The loop ran
+    // over every cached id on every refresh to compute a constant.
+    //
+    // ⭐ The gap was NAMED IN PLACE and never closed: the deleted lines carried the comment
+    // "We need all cached IDs for this, not just the ones we queried". A comment that states a
+    // precondition the code does not meet is not a caveat, it is an unclosed bug with an alibi.
+    //
+    // WHO ACTUALLY REMOVES SOLD/BURNED MOMENTS (verified live 2026-09-19, so nobody re-derives it):
+    //   · `upsert_wallet_moments(wallet, collection, moments)` — the FULL-SET writer; it deletes
+    //     rows not present in the supplied set. This is the authoritative reconcile.
+    //   · `prune_stale_wmc()` — pg_cron jobid 199, weekly, Sundays.
+    //   · `purge_candy_wmc_ghost_rows()` — pg_cron jobid 201, daily.
+    // This route is the INCREMENTAL stub path. It inserts and enriches; it has never deleted, and
+    // `grep -n '\.delete('` over this file returns nothing. The key is kept at a literal 0 rather
+    // than dropped so the response shape is unchanged (it has no reader in this repo — checked),
+    // and so that a future reader meets this note instead of the loop.
+    const removedCount = 0
 
     console.log("[cache-refresh] wallet=" + wallet + " collection=" + collectionSlug +
       " onChain=" + onChainIds.length + " cached=" + cachedIds.size +
@@ -650,8 +665,12 @@ export async function GET(req: NextRequest) {
       const staleFilter = "lock_checked_at.is.null,lock_checked_at.lt." + staleCutoffIso
 
       // One query: stalest CAP rows + exact count of all stale rows (for `remaining`).
-      // Only currently-held moments remain in wmc (reconciled earlier in this route),
-      // so this is the wallet's live holdings.
+      // ⚠ CORRECTED 2026-09-19: this comment used to read "reconciled earlier in this route",
+      // which is FALSE — this route never deletes. Removal happens in `upsert_wallet_moments`
+      // (full-set writer), `prune_stale_wmc()` (jobid 199, weekly) and
+      // `purge_candy_wmc_ghost_rows()` (jobid 201, daily). So these rows are the wallet's live
+      // holdings AS OF THE LAST FULL-SET WRITE OR PRUNE, not as of this request — which matters
+      // because a weekly prune means the tail can be up to a week behind on this path.
       const { data: staleRows, count: staleTotal, error: staleErr } = await supabase
         .from("wallet_moments_cache")
         .select("moment_id", { count: "exact" })
