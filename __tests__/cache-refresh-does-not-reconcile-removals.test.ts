@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { stripComments } from "../scripts/lib/strip-comments.mjs"
 
 // /api/cache-refresh is the INCREMENTAL stub path: it inserts and enriches wallet_moments_cache
 // rows. It has never deleted one.
@@ -30,14 +31,13 @@ const RAW = readFileSync(join(process.cwd(), "app/api/cache-refresh/route.ts"), 
 // ("reconciled earlier in this route", `new Set(onChainIds)`) precisely so a future reader knows
 // what was deleted and why. A guard anchored on raw text punishes the documentation that makes it
 // legible, and the lesson it teaches is "delete the comment" — the opposite of what is wanted.
-// So comments are stripped before matching, and only the executable text is asserted on.
-const stripComments = (src: string) =>
-  src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((l) => l.replace(/(^|\s)\/\/.*$/, "$1"))
-    .join("\n")
-
+//
+// ⚠ AND MY FIRST STRIPPER WAS THE EXACT BLIND ONE `guards-use-the-shared-comment-stripper` EXISTS
+// TO RATCHET OUT: a local two-regex helper running the BLOCK regex before the LINE regex, so a
+// line comment mentioning a glob (`// used by /api/*`) opens a block that closes at the next `*/`
+// anywhere in the file — blanking real source with no error, which is why that ratchet says a
+// blind stripper "still runs, still reports a population, and still passes". CI caught it on the
+// population count, not on a wrong answer. Use the shared one; never hand-roll this.
 const SRC = stripComments(RAW)
 
 describe("/api/cache-refresh — does not reconcile removals, and must not pretend to", () => {
