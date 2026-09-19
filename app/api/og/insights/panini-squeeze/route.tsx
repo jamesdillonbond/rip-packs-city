@@ -31,6 +31,9 @@ export async function GET(_req: NextRequest) {
   let rows: any[] = [];
   let sealed = 0;
   let editions = 0;
+  // null = not measured (a partial or failed walk) => the card makes NO composition claim at all,
+  // rather than printing a 0% that would read as "none of this is asks".
+  let askPct: number | null = null;
   // 🚨 THE SUM MUST BE PAGED, AND THE COUNT NEXT TO IT IS WHY.
   //
   // This used to read `.select("sealed_fmv_exposure_usd", { count: "exact" })`
@@ -55,7 +58,15 @@ export async function GET(_req: NextRequest) {
     const top = await boundedRead(
       (supabaseAdmin as any)
         .from("panini_squeeze_board")
-        .select("player_name,set_name,mint_cap,still_in_packs,fmv_usd")
+        // `fmv_confidence` added 2026-09-19: sorting by fmv_usd DESC makes this top-3 a
+        // leaderboard of the HIGHEST prices on the board, and measured that day all three were
+        // ASK_ONLY — 0.90 x ONE seller's ask on a card with zero recorded sales (Dembele mint-12
+        // $900,000 from a $1,000,000 ask; Messi 1/1 $450,009 from $500,010; Mbappe 1/1 $144,000).
+        // The most valuable edition in the set that has ACTUALLY traded is $59,276. So the card's
+        // three headline rows were, by construction, the three most extreme unsold asks, printed
+        // as plain dollar values on the surface this file already notes is the one where "the
+        // number travels without the page around it".
+        .select("player_name,set_name,mint_cap,still_in_packs,fmv_usd,fmv_confidence")
         .not("fmv_usd", "is", null)
         .order("fmv_usd", { ascending: false })
         .limit(3),
@@ -65,6 +76,7 @@ export async function GET(_req: NextRequest) {
     rows = top.data ?? [];
 
     let total = 0;
+    let askTotal = 0;
     let seen = 0;
     let complete = false;
     let expected: number | null = null;
@@ -76,7 +88,7 @@ export async function GET(_req: NextRequest) {
       const { data, count, error } = await boundedRead(
         (supabaseAdmin as any)
           .from("panini_squeeze_board")
-          .select("sealed_fmv_exposure_usd", { count: page === 0 ? "exact" : undefined })
+          .select("sealed_fmv_exposure_usd,fmv_confidence", { count: page === 0 ? "exact" : undefined })
           .order("id", { ascending: true })
           .range(page * AGG_PAGE, page * AGG_PAGE + AGG_PAGE - 1),
         "og/insights/panini-squeeze/exposure-page",
@@ -84,8 +96,16 @@ export async function GET(_req: NextRequest) {
       );
       if (error) break;
       if (page === 0 && typeof count === "number") expected = count;
-      const batch = (data ?? []) as Array<{ sealed_fmv_exposure_usd: number | null }>;
-      for (const r of batch) total += Number(r.sealed_fmv_exposure_usd) || 0;
+      const batch = (data ?? []) as Array<{ sealed_fmv_exposure_usd: number | null; fmv_confidence: string | null }>;
+      // The ask-only share is accumulated in THIS SAME WALK on purpose. Reading it from
+      // `panini_squeeze_totals` instead would pair a percentage from one source with a total from
+      // another, which is the exact pairing defect this file's header was written about — and it
+      // would also escape the completeness gate below.
+      for (const r of batch) {
+        const v = Number(r.sealed_fmv_exposure_usd) || 0;
+        total += v;
+        if (r.fmv_confidence === "ASK_ONLY") askTotal += v;
+      }
       seen += batch.length;
       if (batch.length < AGG_PAGE) { complete = true; break; }
     }
@@ -93,6 +113,9 @@ export async function GET(_req: NextRequest) {
     if (complete && expected != null && seen === expected) {
       editions = expected;
       sealed = total;
+      // Same gate as the total, deliberately: a share computed over a partial walk is exactly the
+      // kind of number that reads as a measurement and is not one.
+      askPct = total > 0 ? Math.round((askTotal / total) * 100) : null;
     }
   } catch {
     /* fall through to a generic card */
@@ -108,7 +131,11 @@ export async function GET(_req: NextRequest) {
           Panini WC Prizm Squeeze
         </div>
         <div style={{ display: "flex", color: MUTED, fontSize: 26, marginTop: 12 }}>
-          {editions ? `${editions.toLocaleString("en-US")} editions · ${usd(sealed)} still sealed in packs` : "2026 Prizm World Cup Soccer — still-in-packs supply + FMV"}
+          {editions
+            ? `${editions.toLocaleString("en-US")} editions · ${usd(sealed)} still sealed in packs${
+                askPct != null && askPct >= 1 ? ` · ${askPct}% from asking prices` : ""
+              }`
+            : "2026 Prizm World Cup Soccer — still-in-packs supply + FMV"}
         </div>
         <div style={{ display: "flex", flexDirection: "column", marginTop: 34, gap: 12 }}>
           {rows.map((r, i) => (
@@ -118,6 +145,13 @@ export async function GET(_req: NextRequest) {
               <div style={{ display: "flex", color: MUTED, width: 300 }}>{r.set_name || ""} /{r.mint_cap}</div>
               <div style={{ display: "flex", color: MUTED, width: 150 }}>{r.still_in_packs} in packs</div>
               <div style={{ display: "flex", color: INK, fontWeight: 800 }}>{usd(r.fmv_usd)}</div>
+              {/* An ASK_ONLY price is 0.90x one seller's ask on a card with no recorded sale. On a
+                  card sorted by price DESC these rows are the norm, not the exception, so the
+                  marker is the difference between a price and a hope. Absent confidence => no
+                  marker, never a claim that it IS sale-backed. */}
+              {r.fmv_confidence === "ASK_ONLY" ? (
+                <div style={{ display: "flex", color: MUTED, fontSize: 20, marginLeft: 10, fontWeight: 700 }}>ask</div>
+              ) : null}
             </div>
           ))}
         </div>

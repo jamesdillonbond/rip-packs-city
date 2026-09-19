@@ -123,6 +123,58 @@ function mockBoardDistinct(total: number) {
   }))
 }
 
+/** Board whose exposure is part ASK_ONLY, with a real top-3 leaderboard.
+ *
+ * ⛔ WHY THIS EXISTS. The card sorts its top-3 by `fmv_usd DESC`, and on 2026-09-19 all three
+ * highest prices on the live board were ASK_ONLY — 0.90x ONE seller's ask on a card with ZERO
+ * recorded sales (Dembele mint-12 $900,000 from a $1,000,000 ask; Messi 1/1 $450,009 from
+ * $500,010; Mbappe 1/1 $144,000 from $160,000), against $59,276 for the most valuable edition in
+ * the set that has actually traded. So the card's three headline rows were BY CONSTRUCTION the
+ * three most extreme unsold asks, printed as plain dollar values — and 52.4% of the sealed total
+ * beside them came from the same class. This file's own header says why that matters more here
+ * than on the page: it is a SOCIAL card, the number travels without the page around it.
+ *
+ * ⛔ These cases pin the DISCLOSURE only. Nothing here asserts what an FMV should be — re-pricing
+ * ASK_ONLY is a real-money decision and is deliberately not made in a guard. */
+function mockBoardWithAsks(opts: { total: number; perRow: number; askShare: number; failFromPage?: number }) {
+  const askCount = Math.round(opts.total * opts.askShare)
+  const all = Array.from({ length: opts.total }, (_, i) => ({
+    sealed_fmv_exposure_usd: opts.perRow,
+    fmv_confidence: i < askCount ? "ASK_ONLY" : "HIGH",
+  }))
+  const top = [
+    { player_name: "Ousmane Dembele", set_name: "Base Choice Prizms Tiger Stripe", mint_cap: 12, still_in_packs: 1, fmv_usd: 900000, fmv_confidence: "ASK_ONLY" },
+    { player_name: "Lionel Messi", set_name: "Base Prizms Gold", mint_cap: 10, still_in_packs: 2, fmv_usd: 59276, fmv_confidence: "HIGH" },
+  ]
+  const shared = { call: 0 }
+  vi.doMock("@/lib/supabase", () => ({
+    supabaseAdmin: {
+      from: () => {
+        const b: Record<string, unknown> = {}
+        const chain = () => b
+        let ordered = false
+        Object.assign(b, {
+          select: chain,
+          not: chain,
+          order: (col: string) => { if (col === "id") ordered = true; return b },
+          limit: async () => ({ data: top, error: null }),
+          range: async (from: number, to: number) => {
+            const page = Math.floor(from / 1000)
+            if (opts.failFromPage != null && page >= opts.failFromPage) {
+              return { data: null, count: null, error: { message: "statement timeout" } }
+            }
+            const off = shared.call * 137
+            const view = ordered ? all : all.slice(off).concat(all.slice(0, off))
+            shared.call++
+            return { data: view.slice(from, to + 1), count: opts.total, error: null }
+          },
+        })
+        return b
+      },
+    },
+  }))
+}
+
 async function renderText(): Promise<string> {
   const { GET } = await import("@/app/api/og/insights/panini-squeeze/route")
   await GET({} as never)
@@ -191,5 +243,52 @@ describe("panini-squeeze OG card does not pair an exact count with a capped sum"
     expect(text).toContain("12 editions")
     expect(text).toContain("$1,200")
     expect(text).not.toContain(TAGLINE)
+  })
+})
+
+describe("panini-squeeze OG card says how much of its total is an unsold ask", () => {
+  it("publishes the ask-only share beside the sealed total", async () => {
+    mockBoardWithAsks({ total: 5000, perRow: 500, askShare: 0.524 })
+    const text = await renderText()
+    expect(text).toContain("5,000 editions")
+    expect(text).toContain("$2,500,000")
+    expect(text, "the composition must travel with the number").toContain("52% from asking prices")
+  })
+
+  it("marks an ASK_ONLY row in the top-3 and leaves a sale-backed one unmarked", async () => {
+    mockBoardWithAsks({ total: 2000, perRow: 100, askShare: 0.5 })
+    const text = await renderText()
+    expect(text).toContain("Ousmane Dembele")
+    expect(text).toContain("Lionel Messi")
+    // One marker, for the one ASK_ONLY row — not a blanket label on every row.
+    expect((text.match(/\bask\b/g) ?? []).length).toBe(1)
+  })
+
+  it("a walk it cannot finish makes NO composition claim (structurally — see the note)", async () => {
+    // Page 0 succeeds and CONTAINS ask rows; page 1 fails.
+    //
+    // ⚠ WHAT THIS CASE IS AND IS NOT, because it was written claiming more than it proves.
+    // It asserts the OBSERVABLE behaviour — a partial walk publishes no share — and that holds.
+    // It does NOT pin the `askPct` completeness gate: a mutation moving that assignment OUTSIDE
+    // the `complete && seen === expected` block was run and SURVIVED all eight cases. The reason
+    // is structural: the composition is rendered inside the `editions ? ... : TAGLINE` ternary,
+    // so when the total is withheld `editions` is 0 and the share is never read at all.
+    // ⭐ So the load-bearing protection is `editions`, and the gate on `askPct` is belt-and-braces.
+    // Recorded rather than deleted: a future reader who refactors the share OUT of that ternary
+    // loses the real guard and this case will not notice — the two mutations that DO red here are
+    // dropping the >=1 floor and dropping the row marker.
+    mockBoardWithAsks({ total: 5000, perRow: 500, askShare: 0.524, failFromPage: 1 })
+    const text = await renderText()
+    expect(text).toContain(TAGLINE)
+    expect(text).not.toContain("from asking prices")
+    expect(text).not.toContain("0% from")
+  })
+
+  it("NO-CHANGE CONTROL: a board with no ask-derived value says nothing about asks", async () => {
+    mockBoardWithAsks({ total: 1200, perRow: 100, askShare: 0 })
+    const text = await renderText()
+    expect(text).toContain("1,200 editions")
+    expect(text).toContain("$120,000")
+    expect(text, "a 0% claim would be noise, not disclosure").not.toContain("from asking prices")
   })
 })
