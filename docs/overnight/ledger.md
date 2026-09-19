@@ -20,7 +20,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 🧪 **Retention:** jobid 512 active as postgres, first run 04:47Z (9:47 PM PT). 30 days, not 7 — the 01:30Z filing derived an hour-of-day baseline over 8 days and R101 cites a 12-day trend. ⚠ **Lesson recorded for every session: do not aggregate `cron.job_run_details` for diagnosis under load** — each aggregation is a 189 MB walk today; read `pipeline_runs`, or one job's last N rows.
 
-- **Revert (retention):** `DO $$ BEGIN PERFORM cron.unschedule('rpc-cron-log-retention'); END $$;` (deleted log rows are gone by design). **Cleanup owed (index):** the drop above.
+✅ **Retention's first run 9:47 PM PT: `DELETE 146475`** (oldest row now 2026-08-20; the 189 MB shrinks when autovacuum reclaims it). 📏 **Quiet-window checks for the index at 9:10 and 10:05 PM PT: NOT quiet** — the Atlas tick still 22–107 s with killed-tick gaps of 4–22 min — so R108's build is left to the 1 AM pass with the recipe in its row; this session stops polling here.
+
+- **Revert (retention):** `DO $ BEGIN PERFORM cron.unschedule('rpc-cron-log-retention'); END $;` (deleted log rows are gone by design). **Cleanup owed (index):** the drop above.
 ### 2026-09-18 · 🏁 SESSION CLOSE — 7 migrations, 2 reusable rules promoted, and 6 items that need Trevor · Cowork cloud
 
 **Handoff:** [docs/handoff-2026-09-18-evening-cowork-r101-r103-r107.md](../handoff-2026-09-18-evening-cowork-r101-r103-r107.md). `main` at `bc7cbd239`, tree clean, **CI green with zero reds**.
