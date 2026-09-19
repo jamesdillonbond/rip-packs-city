@@ -33,8 +33,62 @@ import { collectionHasPage, dapperMarketMomentUrl, getCollectionUuid } from "@/l
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import IpfsImg from "@/components/media/IpfsImg"
 import { fmvBasis } from "@/lib/fmv-basis"
+import { askAgeStamp } from "@/lib/market/ask-freshness"
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
 import PackMarketView from "@/components/packs/PackMarketView"
+
+// ── Ask age ─────────────────────────────────────────────────────────────────
+//
+// ⛔ 2026-09-19 — THE MARKET TAB RENDERED EVERY ASK UNQUALIFIED, on every
+// collection. `cachedAt` was already in the `Listing` type and already emitted
+// by all four arms of /api/market (Pinnacle `floor_ask_updated_at`, All Day
+// `last_listed_at`, Candy `last_seen_at`, legacy `listed_at`) — the only two
+// mentions of it in this file were the type declaration and the mapper. So a
+// 55-day-old ask and one seen four minutes ago printed identically, with
+// nothing on the page saying which.
+//
+// ⭐ This is the same defect the EDITION page fixed on 2026-08-29, and the
+// tell is structural: on this very row the FMV cell already carries a
+// provenance sub-line (`fmvBasis`) while the ask cell beside it carried none.
+// Same row, same object — one side qualified, the other not.
+//
+// 🚨 IT MATTERS MOST ON CANDY, where it is not a nicety. Candy deactivation is
+// EVIDENCE-BASED, never absence-based (an absence-based sweep destroyed 419
+// standing asks on 2026-07-27), and Magic Eden listings carry no expiry —
+// measured 2026-09-19: `expiry IS NULL` on 217 of 217. So a listing whose
+// ending event fell outside the bounded activities walk stays active forever:
+// **217 of 1,997 active Candy listings (10.9%) unseen for 7+ days, 216 of them
+// 30+ days, the oldest 55 days, $46,385 of ask value.** ⛔ The fix for that is
+// NOT to deactivate on absence — that is the refuted approach — it is to say
+// how old the number is.
+//
+// ⚠ PROVENANCE GATE, not defensiveness: the stamp renders only when there IS an
+// ask for it to describe. Stamping a missing ask with a real-looking age is a
+// claim the reader cannot falsify, which is strictly worse than silence —
+// `lib/market/ask-freshness.ts` carries the long form of that argument.
+function AskAge({ cachedAt, askPrice, collectionSlug }: {
+  cachedAt: string | null
+  askPrice: number | null
+  collectionSlug: string | null | undefined
+}) {
+  const stamp = askAgeStamp(cachedAt, askPrice, collectionSlug)
+  if (!stamp) return null
+  return (
+    <div
+      className="rpc-mono"
+      title={stamp.title}
+      style={{
+        fontSize: 9,
+        letterSpacing: "0.04em",
+        color: stamp.stale ? "var(--rpc-warning)" : "var(--rpc-text-ghost)",
+        fontWeight: stamp.stale ? 700 : 400,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {stamp.label}
+    </div>
+  )
+}
 
 type Listing = {
   id: string
@@ -867,6 +921,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
           <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: "var(--rpc-text-primary)" }}>
             {fmtUsd(listing.askPrice)}
           </span>
+          <AskAge cachedAt={listing.cachedAt} askPrice={listing.askPrice} collectionSlug={collectionUrlSlug} />
           {listing.lowConfidenceFmv ? (
             <span
               className="rpc-mono"
@@ -1049,7 +1104,10 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                     {ownLockLabel(stats)}
                   </td>
                 )}
-                <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>{fmtUsd(l.askPrice)}</td>
+                <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>
+                  {fmtUsd(l.askPrice)}
+                  <AskAge cachedAt={l.cachedAt} askPrice={l.askPrice} collectionSlug={collectionUrlSlug} />
+                </td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>
                   {fmtUsd(l.fmv)}
                   {(() => { const b = fmvBasis(l.confidence); return b ? <div title={b.title} style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>{b.label}</div> : null })()}

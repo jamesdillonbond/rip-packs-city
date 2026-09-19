@@ -110,6 +110,23 @@ export function fmtAskAge(hours: number): string {
  *   · `nfl_all_day` / `laliga_golazos` — `cached_listings_v2.listed_at`, when the
  *     SELLER posted it, over an index a row LEAVES when the listing closes. A
  *     **listed** stamp; an old one describes a live listing, not a neglected one.
+ *   · `candy_mlb` — `candy_listings.last_seen_at`, written as
+ *     `new Date().toISOString()` on EVERY row the Magic Eden sweep upserts, not
+ *     only when the price moves. A real **checked** stamp, same shape as
+ *     Pinnacle's. ⚠ Added 2026-09-19 because the unknown-collection fallback
+ *     was giving Candy the `changed` wording — *"This ask last changed Nh ago
+ *     — that is when the price moved, not when we last re-checked it"* — which
+ *     is the exact inverse of what `last_seen_at` records. The fallback is
+ *     doing its job (the weakest claim), but a named collection must be named.
+ *     ⛔ AND THE AGE MATTERS HERE MORE THAN ANYWHERE: Candy deactivation is
+ *     EVIDENCE-BASED, never absence-based (the 2026-07-27 incident, where an
+ *     absence-based sweep destroyed 419 standing asks), and Magic Eden listings
+ *     carry NO expiry — measured 2026-09-19, `expiry IS NULL` on 217 of 217.
+ *     So a listing whose ending event fell outside the bounded activities walk
+ *     stays `is_active` forever: **217 of 1,997 active Candy listings (10.9%)
+ *     had not been seen in 7+ days, 216 of them in 30+ days, the oldest 55
+ *     days, carrying $46,385 of ask value.** That is not a bug to fix by
+ *     deactivating on absence — it is a bug to fix by SAYING SO.
  *
  * ⚠ UNKNOWN FALLS BACK TO THE WEAKEST CLAIM (`changed`), deliberately: a new
  * collection must not inherit a freshness promise nobody has checked for it.
@@ -121,7 +138,7 @@ export type AskStampKind = "changed" | "checked" | "listed"
 export function askStampKind(collectionSlug: string | null | undefined): AskStampKind {
   const s = (collectionSlug ?? "").replace(/-/g, "_").toLowerCase()
   if (s === "nfl_all_day" || s === "laliga_golazos") return "listed"
-  if (s === "disney_pinnacle") return "checked"
+  if (s === "disney_pinnacle" || s === "candy_mlb") return "checked"
   return "changed"
 }
 
@@ -172,3 +189,37 @@ export function askVerifiedAt(
   if (!offers || offers.low_ask == null) return null
   return offers.updated_at ?? null
 }
+
+/**
+ * The whole ask-age stamp decision, as data — so the surfaces stay dumb and the
+ * coverage gate can measure the rule.
+ *
+ * Extracted 2026-09-19 when the Market tab finally got a stamp: the decision has
+ * three moving parts (is there a timestamp, does it describe the value being
+ * rendered, is it past the staleness threshold) and putting them inline in a
+ * .tsx would have left the rule untested on the surface with the most listings.
+ *
+ * ⚠ `askPrice` IS A REQUIRED INPUT, not a convenience. The timestamp describes
+ * an ASK; with no ask on the row there is nothing for it to describe, and
+ * stamping the absence with a real-looking age is a claim the reader cannot
+ * falsify. Same argument as `askVerifiedAt` above, one surface down.
+ *
+ * Returns null when no stamp is honest.
+ */
+export function askAgeStamp(
+  cachedAt: string | null | undefined,
+  askPrice: number | null | undefined,
+  collectionSlug: string | null | undefined,
+  now: number | null = Date.now(),
+): { label: string; title: string; stale: boolean } | null {
+  if (!cachedAt || askPrice == null) return null
+  const hours = askAgeHours(cachedAt, now)
+  if (hours == null) return null
+  const stale = hours >= ASK_STALE_HOURS
+  return {
+    label: `${stale ? "⚠ " : ""}${fmtAskAge(hours)} old`,
+    title: askAgeTitle(hours, askStampKind(collectionSlug)),
+    stale,
+  }
+}
+

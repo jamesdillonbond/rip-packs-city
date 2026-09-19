@@ -10,6 +10,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · ⏳ THE MARKET TAB PRINTED A 55-DAY-OLD ASK AND A FOUR-MINUTE-OLD ONE IDENTICALLY — on every collection, with the timestamp already in its props · Cowork cloud
+
+**Shipped: 1 lib function + 1 client + 2 test files. No DB change.** Fourth pass of the Candy work, and the first one whose finding is NOT Candy-only.
+
+🚨 **`MarketClient` never rendered `cachedAt`.** The field is in its own `Listing` type and **all four arms of `/api/market` already emit it** — Pinnacle `floor_ask_updated_at`, All Day `last_listed_at`, Candy `last_seen_at`, legacy `listed_at`. Grepping the file for it returned exactly two hits: the type declaration and the mapper. ⭐ **The tell was structural and sitting on the same row:** the FMV cell already carries a provenance sub-line (`fmvBasis`) and the ask cell beside it carried none — the identical asymmetry the EDITION page fixed on 2026-08-29 (*"same row, same object, same timestamp: the offer side was qualified and the ask side was not"*). The house machinery for this has existed since 2026-09-13 in `lib/market/ask-freshness.ts` and this surface simply never called it.
+
+⛔ **AND ON CANDY IT IS NOT A NICETY, because the staleness is STRUCTURAL rather than incidental.** `candy-listings-indexer` deactivates on EVIDENCE only — an explicit `delist` or a fill from the activities feed — and that rule is **correct and must not be touched**: its own header records the 2026-07-27 incident where an absence-based sweep read Magic Eden's 7-listing answer as truth and destroyed **419 standing asks**. The second path, expiry, cannot reach these either: **measured 2026-09-19, `expiry IS NULL` on 217 of 217.** So a listing whose ending event fell outside the bounded activities walk stays `is_active` forever.
+
+📏 **The population, measured rather than estimated:** **217 of 1,997 active Candy listings (10.9%) unseen for 7+ days; 216 of them 30+ days; oldest last seen 2026-07-26 (55 days); $46,385.73 of ask value; 101 distinct editions; 84 distinct sellers.** Deactivation is otherwise healthy and not stalled — 5,317 inactive rows, the newest deactivated the same afternoon — so this is a specific unreachable cohort, not a dead lane. **⛔ The fix is not to deactivate on absence. The fix is to say how old the number is.**
+
+⚠ **`askStampKind("candy_mlb")` WAS SILENTLY LYING, and only by omission.** Candy was unnamed, so it took the unknown-collection fallback — `"changed"` — whose tooltip reads *"This ask last changed Nh ago — that is when the price moved, not when we last re-checked it."* That is the **exact inverse** of what `last_seen_at` records: the indexer writes `new Date().toISOString()` on every row it upserts, price change or not. Candy is a **`checked`** stamp, the same shape as Pinnacle's. The fallback was doing its job (a new collection must not inherit a freshness promise nobody checked for it); a named collection has to be named.
+
+⭐ **The decision was extracted to `askAgeStamp()` in lib rather than left inline in the .tsx**, following that file's own stated reason for existing — three moving parts (is there a timestamp, does it describe the value being rendered, is it past threshold) would otherwise have shipped untested on the surface with the most listings. **The provenance gate is the load-bearing part:** no stamp when the row has no ask, because a real-looking age attached to an absent value is a claim the reader cannot falsify, which is strictly worse than silence.
+
+**Verified after:** `ask-freshness` 20 → **25 tests** green, plus `api-market-feed` / `api-market-integration` / `api-market-deep` — 52 green across 4 files. **Mutation-proven:** removing `candy_mlb` from `askStampKind` reds **3 arms**, including *"carries the collection's OWN meaning, not one borrowed from another chain"* with `expected 'This ask last changed 3h ago…' to contain 'last checked'`. Controls held: no timestamp, an unparseable one, and an unknown clock (SSR) all stay silent rather than inventing an age. ⚠ `tsc --noEmit` OOM-killed on the VM again — owed to CI.
+
+⭐ **AND A SETTLED QUESTION WAS FOUND RATHER THAN RE-DERIVED, which changed the plan.** I set out to add a Candy arm to `mv_cross_collection_deals` and grepped first: **`candy_deals_board` already exists** — below FMV *and* below median sale, serial-named, 247 rows over 90 editions — and `app/api/market/route.ts` already carries the reasoning for why the MARKET tab deliberately does **not** read it (*"browsing a market through a deals filter would publish 'the Candy market' about 13% of it with the expensive 87% silently gone"*). So the cross-collection arm is a wiring job on an existing view, not a build.
+
+👉 **OWED, and deliberately not shipped blind:** a 4th arm on `mv_cross_collection_deals` for Candy. Sized: applying the other three arms' own gates (HIGH/MEDIUM confidence · ask ≥ $1 · a 3-day freshness gate matching Pinnacle's) leaves **41 editions, average discount 20.8%, max 67.6%, $461.30 of total headroom**. ⛔ **Without that freshness gate it would publish 10 deals last seen up to 51 days ago** — which is this entry's whole finding, re-committed as a public price claim.
+
+**Exit condition:** every listing row on `/candy-mlb/market` carries an age caption after deploy, and the 30-day-old ones carry `⚠`.
+**Falsifier:** if a Top Shot row's caption reads "last checked", the per-collection parameter has collapsed back to one sentence for all arms — the thing `askStampKind` was built to stop.
+
+- **Revert:** `git revert <sha>` (`git log --grep="55-DAY-OLD ASK"`). **No DB half.** Reverting restores an unqualified ask on every collection.
+
 ### 2026-09-19 · 🔴 I BROKE MAIN AND FIXED IT — my pack-detail migration never stated its anon-exec decision, and it outlived the OTHER session's fix for the same red · Cowork cloud
 
 **Owning this plainly: CI run 5762 was my push (`30b3456e3`) and it went red.**

@@ -9,7 +9,8 @@ import {
   askVerifiedAt,
   fmtAskAge,
   isAskStale,
-} from "@/lib/market/ask-freshness"
+
+  askAgeStamp,} from "@/lib/market/ask-freshness"
 
 // ⚠ WHY THIS EXISTS (2026-08-29). `edition_offers` has ONE writer for the ask side —
 // the `offers-sweep` cron — and when its upstream died the whole column froze: 12,259
@@ -125,6 +126,11 @@ describe("askStampKind — which of the three a collection's ask timestamp IS", 
     // disney_pinnacle: pinnacle_catalog_set_floor_asks() writes
     // floor_ask_updated_at on EVERY row every sweep -> last CHECKED.
     expect(askStampKind("disney_pinnacle")).toBe("checked")
+    // Candy: `candy_listings.last_seen_at` is stamped on every row the sweep
+    // upserts, not only when the price moves — the same shape as Pinnacle's.
+    // Named 2026-09-19; until then it took the unknown fallback and was told
+    // its re-observation timestamp was a price change.
+    expect(askStampKind("candy_mlb")).toBe("checked")
     // nfl_all_day / laliga_golazos: cached_listings_v2.listed_at -> when the
     // SELLER posted it, over an index a row leaves when the listing closes.
     expect(askStampKind("nfl_all_day")).toBe("listed")
@@ -138,6 +144,7 @@ describe("askStampKind — which of the three a collection's ask timestamp IS", 
     expect(askStampKind("nba-top-shot")).toBe("changed")
     expect(askStampKind("nfl-all-day")).toBe("listed")
     expect(askStampKind("disney-pinnacle")).toBe("checked")
+    expect(askStampKind("candy-mlb")).toBe("checked")
   })
 
   it("an unknown or missing slug falls back to the WEAKEST claim, not the friendliest", () => {
@@ -252,5 +259,59 @@ describe("edition page dates its below-FMV chip from the ask it is derived from"
     const chipSrc = src.slice(at, at + 600)
     expect(chipSrc).toMatch(/askAge !== null && askAge >= ASK_STALE_HOURS/)
     expect(chipSrc).toMatch(/fmtAskAge\(askAge\)/)
+  })
+})
+
+// ── askAgeStamp: the Market tab's stamp decision, as data ────────────────────
+//
+// ⛔ Until 2026-09-19 the Market tab rendered every ask unqualified, on every
+// collection, while `cachedAt` sat unread in its `Listing` type and all four
+// arms of /api/market already emitted it. On the same row, the FMV cell carried
+// a provenance sub-line and the ask cell beside it carried none.
+describe("askAgeStamp", () => {
+  const NOW = Date.parse("2026-09-19T18:00:00Z")
+  const hoursAgo = (h: number) => new Date(NOW - h * 3_600_000).toISOString()
+
+  it("stamps a fresh ask without the warning, and a stale one with it", () => {
+    const fresh = askAgeStamp(hoursAgo(2), 10, "candy_mlb", NOW)
+    expect(fresh).not.toBeNull()
+    expect(fresh!.stale).toBe(false)
+    expect(fresh!.label).not.toContain("⚠")
+
+    // 55 days — the real oldest active Candy listing measured that day.
+    const stale = askAgeStamp(hoursAgo(55 * 24), 10, "candy_mlb", NOW)
+    expect(stale!.stale).toBe(true)
+    expect(stale!.label).toContain("⚠")
+  })
+
+  it("⚠ never stamps a row with no ask — the timestamp would describe nothing", () => {
+    // The provenance rule. A real-looking age attached to an absent value is a
+    // claim the reader cannot falsify, which is worse than silence.
+    expect(askAgeStamp(hoursAgo(1), null, "candy_mlb", NOW)).toBeNull()
+    expect(askAgeStamp(hoursAgo(1), undefined, "candy_mlb", NOW)).toBeNull()
+  })
+
+  it("no-change control: no timestamp and an unparseable one both stay silent", () => {
+    expect(askAgeStamp(null, 10, "candy_mlb", NOW)).toBeNull()
+    expect(askAgeStamp("not-a-date", 10, "candy_mlb", NOW)).toBeNull()
+    // Unknown "now" (SSR with no clock) must not invent an age either.
+    expect(askAgeStamp(hoursAgo(1), 10, "candy_mlb", null)).toBeNull()
+  })
+
+  it("carries the collection's OWN meaning, not one borrowed from another chain", () => {
+    // Candy's last_seen_at is written on every sweep observation → "checked".
+    expect(askAgeStamp(hoursAgo(3), 10, "candy_mlb", NOW)!.title).toContain("last checked")
+    // Top Shot's is bumped only when the floor moves → "changed". If these two
+    // ever produce the same sentence, the per-collection parameter has collapsed.
+    const ts = askAgeStamp(hoursAgo(3), 10, "nba_top_shot", NOW)!.title
+    expect(ts).toContain("last changed")
+    expect(ts).not.toEqual(askAgeStamp(hoursAgo(3), 10, "candy_mlb", NOW)!.title)
+  })
+
+  it("the threshold it splits on is the shared one, not a private copy", () => {
+    const justUnder = askAgeStamp(hoursAgo(ASK_STALE_HOURS - 0.1), 10, "candy_mlb", NOW)
+    const justOver = askAgeStamp(hoursAgo(ASK_STALE_HOURS + 0.1), 10, "candy_mlb", NOW)
+    expect(justUnder!.stale).toBe(false)
+    expect(justOver!.stale).toBe(true)
   })
 })
