@@ -9,7 +9,7 @@ import WalletPacksView from "@/components/packs/WalletPacksView"
 import { buildEditionScopeKey } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKeyForChain, setOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
-import { isSupportedAddress } from "@/lib/address"
+import { detectAddressChain, isSupportedAddress } from "@/lib/address"
 import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { useWarmCache, usePrefetch, useWarmup } from "@/lib/warmup/WarmupContext"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
@@ -850,12 +850,33 @@ function WalletMomentsBody() {
   }, [router, collectionSlug, view.sortKey, view.sortDirection, view.playerFilter, view.seriesFilter, view.rarityFilter, view.leagueFilter])
 
   // Auto-search on mount: prefer the raw input the user last typed
-  // (rpc_last_wallet — username or address) over the resolved 0x ownerKey.
+  // (rpc_last_wallet — username or address) over the resolved ownerKey.
+  //
+  // ⛔ `rpc_last_wallet` IS STILL ONE GLOBAL SLOT, unlike the owner key, because
+  // it holds the RAW input — which may be a username, and a username has no
+  // chain. So the guard lives at the point of USE instead: a seed that is
+  // recognisably an address of ANOTHER chain is not searched here. Without it,
+  // opening /candy-mlb/collection after searching a Flow wallet auto-ran that
+  // Flow address against Candy, got zero rows, and rendered an EMPTY WALLET —
+  // a fabricated absence about a wallet Candy was never asked about.
+  //
+  // ⚠ A non-address seed is a username, and only a chain that can RESOLVE one
+  // should try: Candy's identity is an address (there is no Candy username to
+  // type), so a leftover Top Shot handle must not be run against it either.
+  // Nothing here narrows Flow — a non-canonical `0x…` reads as "unknown" and
+  // falls through to the username arm exactly as it did before.
   useEffect(function() {
     if (rows.length === 0 && !loading && !lastSearchedRef.current) {
       let saved = ""
       try { saved = localStorage.getItem("rpc_last_wallet") || "" } catch {}
-      const seed = saved || ownerKey
+      const candidate = saved || ownerKey
+      const seedChain = candidate ? detectAddressChain(candidate) : "unknown"
+      const seedUsableHere = !candidate
+        ? false
+        : seedChain !== "unknown"
+          ? ownerKeyMatchesChain(candidate, ownerKeyChain)
+          : supportsUsernameSearch
+      const seed = seedUsableHere ? candidate : ""
       if (seed) {
         setInput(seed)
         runSearch(seed)

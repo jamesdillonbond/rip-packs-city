@@ -11,6 +11,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🩸 RPC WAS RENDERING WALLET ADDRESSES THAT DO NOT EXIST — a Solana mint, lowercased and given a `0x` prefix, on live Candy pages; and one of them was a LINK · Cowork cloud
+
+**Shipped: 6 source files + 3 test files. No DB change.** `lib/address.ts` · `components/entity/_shared.tsx` · `lib/edition/fetchers.ts` · player page · edition page · `CollectionTabClient.tsx`.
+
+⛔ **THIS IS A FABRICATION, NOT AN ABSENCE, WHICH IS WHY IT OUTRANKED EVERYTHING ELSE LEFT OPEN.** Every wallet-display helper in this repo was written when every wallet was Flow, so they all do the same two things — `.toLowerCase()`, then prepend `0x` if missing. Applied to a Solana mint, which is **case-sensitive AND un-prefixed**, that string is wrong three ways at once: it claims a Flow shape, folding makes it a **different address**, and the result does not exist.
+
+📏 **Measured live BEFORE the fix, not reasoned about.** `/candy-mlb/player/mike-trout` rendered `0x2at8…jrqw`, `0xagzq…spcq`, `0x9kbz…n3kx`; `/candy-mlb/edition/mike-trout-pink` rendered `0x1bwu…ndix`, `0x674f…tudf`. ⚠ **On the SAME elements, the `title=` attribute carried the correct-case `AGzqZEJXbYeJze7aba6xTvQRHCt5ENmLhjbXejnzSpcQ`** — so the label disagreed with its own tooltip, and a reader who copied what they could see got a dead string.
+
+🚨 **AND THE WORST INSTANCE WAS NOT A LABEL — IT WAS AN HREF.** `WalletLink` built `/<collection>/collection?wallet=${lower}` from that same mangled value. So **every buyer / seller / owner link on every Candy edition page pointed the reader at the wallet analyzer with an address that resolves to nothing**, and the analyzer rendered an **EMPTY WALLET** — which reads as *"this collector holds nothing"*, not as a broken link. ⚠ **The destination is the Collection tab that shipped earlier the same day**, so the flip is precisely what put a reader in front of it.
+
+⭐ **ONE helper, not an eleventh.** A grep first (CLAUDE.md's rule: never build a tool without grepping for it) found **ten** existing truncation helpers. `displayAddress` / `truncateAddressForDisplay` now live in `lib/address.ts`, the canonical chain module, and only the Candy-reachable call sites were repointed — **the other nine were left alone**, because rewriting Flow-only surfaces to fix a Solana bug is how a one-line fix becomes a regression surface.
+
+⚠ **THE HEX PATH IS BYTE-IDENTICAL** — fold, then prefix — and that is pinned as its own arm in both test files. Without it, the Solana assertions are satisfied by a function that has quietly changed every Flow label in the product.
+
+**Also closed, the last open item from this thread's list:**
+⛔ **`rpc_last_wallet` is one global slot holding the RAW last input**, so opening `/candy-mlb/collection` after searching a Top Shot wallet **auto-ran that Flow address against Candy**, got zero rows, and rendered an empty wallet — a fabricated absence about a wallet Candy was never asked about. ⚠ **It is NOT chain-scoped like the owner key was, and deliberately: it can hold a USERNAME, and a username has no chain.** The guard is at the point of USE — a seed recognisably belonging to another chain is not searched here, and a non-address seed is only searched where a username can actually be RESOLVED (so a leftover Top Shot handle does not run against Candy either). 📏 A non-canonical `0x…` still reads as "unknown" and falls through to the username arm exactly as before, so nothing on Flow narrows.
+
+**Also:** `fetchOwnerUsernames` folded base58 into `.in("wallet_addr", …)`, a round trip that could never match for a Candy owner; it and both call sites now use `normalizeAddress`, keys and lookups consistent.
+
+📏 **Two mutations, controls throughout:** `displayAddress` folding-and-prefixing everything again reds 4 arms and **prints the exact live strings** (`'0xagzq…spcq'` vs `'AGzqZE…SpcQ'`) · the seed guard removed reds both auto-search arms while the Flow no-change control (wallet AND username) stays green. **Controls: 8 suites, 360 tests green**, including the entity/edition/SEO suites that read these helpers.
+
+**Verified after:** 19 suites green across the sweep · eslint adds **zero** new errors on all six changed source files · `git diff` against `origin/main` is exactly these 9 files.
+
+- **Revert:** `git revert <sha>` (`git log --grep="WALLET ADDRESSES THAT DO NOT EXIST"`). **No DB half.** ⚠ Reverting restores a live link that sends readers to an empty wallet.
+
 ### 2026-09-19 · 🔑 THE OWNER KEY WAS ONE GLOBAL SLOT, AND CHAIN TWO BROKE IT THREE WAYS — a route fix that was inert because its caller was gated, a "fix" that would have blanked every Flow surface, and a cross-account leak the repair itself opened · Cowork cloud
 
 **Shipped: 5 source files + 4 test files (1 new). No DB change.** `lib/owner-key.ts` · `lib/auth/device-keys.ts` · `lib/auth/supabase-client.ts` · `CollectionTabClient.tsx` · `MarketClient.tsx`.

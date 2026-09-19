@@ -6,6 +6,7 @@
 // Pinnacle: is_character flips labels Player→Character, Team→Franchise.
 
 import type { Metadata } from "next"
+import { truncateAddressForDisplay } from "@/lib/address"
 import { Suspense } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -147,11 +148,12 @@ async function TopSalesRows({ collection, collectionId, slug }: { collection: st
           <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {topSales.map(s => {
               const href = s.route_slug ? `/${collection}/edition/${encodeURIComponent(s.route_slug)}` : null
-              const truncAddr = (a: string | null) => {
-                if (!a) return "—"
-                const lower = a.toLowerCase().startsWith("0x") ? a.toLowerCase() : `0x${a.toLowerCase()}`
-                return lower.length > 12 ? `${lower.slice(0, 6)}…${lower.slice(-4)}` : lower
-              }
+              // ⛔ This folded and `0x`-prefixed unconditionally. On Candy MLB
+              // the buyer is a Solana mint — case-sensitive and un-prefixed — so
+              // the label rendered `0x2at8…jrqw` while the `title=` on the very
+              // same element carried the correct `AGzqZEJ…SpcQ`. Measured live
+              // 2026-09-19 on /candy-mlb/player/mike-trout.
+              const truncAddr = (a: string | null) => truncateAddressForDisplay(a)
               const inner = (
                 <div style={{ display: "grid", gridTemplateColumns: "minmax(90px, auto) 1fr minmax(100px, auto) minmax(110px, auto) minmax(110px, auto) minmax(90px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 560 }}>
                   <span className="rpc-mono" style={{ fontSize: 11, color: s.serial_number != null && s.serial_number > 0 ? "var(--rpc-text-secondary)" : "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
@@ -223,8 +225,10 @@ async function TopCollectorsSection({ playerName }: { playerName: string }) {
       </div>
       <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {collectors.map(c => {
-          const lower = c.wallet_address.toLowerCase().startsWith("0x") ? c.wallet_address.toLowerCase() : `0x${c.wallet_address.toLowerCase()}`
-          const label = c.username ? `@${c.username}` : (lower.length > 12 ? `${lower.slice(0, 6)}…${lower.slice(-4)}` : lower)
+          // Same fabrication as Top Sales above — latent here only because
+          // Candy has no rows in the ownership graph yet, which is a reason to
+          // fix it now rather than a reason it is fine.
+          const label = c.username ? `@${c.username}` : truncateAddressForDisplay(c.wallet_address)
           const inner = (
             <div style={{ display: "grid", gridTemplateColumns: "minmax(38px, auto) 1fr minmax(90px, auto) minmax(110px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 420 }}>
               <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: c.rnk <= 3 ? "var(--rpc-red)" : "var(--rpc-text-muted)" }}>#{c.rnk}</span>

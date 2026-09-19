@@ -1660,6 +1660,84 @@ describe("CollectionTabClient — the owner key follows the collection's chain",
     expect(await screen.findByPlaceholderText(/username or wallet address/)).toBeTruthy()
   })
 
+  it("\u26d4 does NOT auto-search a leftover FLOW wallet on the Candy tab", async () => {
+    // `rpc_last_wallet` is one global slot holding the raw last input. Opening
+    // /candy-mlb/collection after searching a Top Shot wallet auto-ran that Flow
+    // address against Candy, got zero rows, and rendered an EMPTY WALLET \u2014 a
+    // fabricated absence about a wallet Candy was never asked about.
+    PARAMS.collection = "candy-mlb"
+    const store: Record<string, string> = { rpc_last_wallet: "0xa1b2c3d4e5f60718" }
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => { store[k] = v },
+        removeItem: () => {}, clear: () => {},
+      },
+    })
+    render(<CollectionTabClient />)
+    await new Promise((r) => setTimeout(r, 60))
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/collection-moments"))).toBe(false)
+  })
+
+  it("\u26d4 does NOT auto-search a leftover USERNAME on a collection that cannot resolve one", async () => {
+    PARAMS.collection = "candy-mlb"
+    const store: Record<string, string> = { rpc_last_wallet: "collector" }
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => { store[k] = v },
+        removeItem: () => {}, clear: () => {},
+      },
+    })
+    render(<CollectionTabClient />)
+    await new Promise((r) => setTimeout(r, 60))
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/collection-moments"))).toBe(false)
+  })
+
+  it("DOES auto-search a Candy wallet on the Candy tab", async () => {
+    // The arms above are satisfied by a component that never auto-searches at
+    // all; this is what says the guard is a filter and not an off switch.
+    PARAMS.collection = "candy-mlb"
+    const store: Record<string, string> = { rpc_last_wallet: MINT }
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => { store[k] = v },
+        removeItem: () => {}, clear: () => {},
+      },
+    })
+    render(<CollectionTabClient />)
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/collection-moments"))).toBe(true)
+    })
+  })
+
+  it("no-change control: a Flow tab still auto-searches BOTH a wallet and a username", async () => {
+    for (const seed of ["0xmine", "collector"]) {
+      cleanup()
+      fetchMock.mockClear()
+      const store: Record<string, string> = { rpc_last_wallet: seed }
+      Object.defineProperty(window, "localStorage", {
+        configurable: true,
+        value: {
+          getItem: (k: string) => store[k] ?? null,
+          setItem: (k: string, v: string) => { store[k] = v },
+          removeItem: () => {}, clear: () => {},
+        },
+      })
+      render(<CollectionTabClient />)
+      await waitFor(() => {
+        expect(
+          fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.startsWith("/api/collection-moments")),
+          seed,
+        ).toBe(true)
+      })
+    }
+  })
+
   it("classifies a base58 address as an address, not a username", async () => {
     // `search-executed` is the only instrument that says whether Candy search is
     // used at all, and with the old `startsWith("0x")` test it reported 100% of

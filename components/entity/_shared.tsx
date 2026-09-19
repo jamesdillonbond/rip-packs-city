@@ -6,6 +6,7 @@
 // component.
 
 import Link from "next/link"
+import { displayAddress, truncateAddressForDisplay } from "@/lib/address"
 import type { ReactNode } from "react"
 import { fmvBasis } from "@/lib/fmv-basis"
 
@@ -56,13 +57,14 @@ export function fmtPercent(value: number | null | undefined, digits = 1): string
   return `${sign}${value.toFixed(digits)}%`
 }
 
-/** Wallet address: lowercase, 0x prefix, truncated to 0x1234…abcd. */
+/** Wallet address, truncated: `0x1234…abcd` on hex chains, `AGzq…SpcQ` on
+ *  Solana. ⛔ This used to lowercase and `0x`-prefix unconditionally, which on a
+ *  Candy MLB mint rendered a plausible address that does not exist — see
+ *  lib/address.ts. The hex path is unchanged; only base58 stops being mangled.
+ *  Used by EditionActivity and SalesTablePaginated, both of which render on
+ *  Candy's edition pages. */
 export function truncWallet(addr: string | null | undefined): string {
-  if (!addr) return EM_DASH
-  const lower = addr.toLowerCase()
-  const prefixed = lower.startsWith("0x") ? lower : `0x${lower}`
-  if (prefixed.length <= 12) return prefixed
-  return `${prefixed.slice(0, 6)}…${prefixed.slice(-4)}`
+  return truncateAddressForDisplay(addr, EM_DASH)
 }
 
 /** Compact relative time. Uses Intl.RelativeTimeFormat. */
@@ -210,7 +212,17 @@ export function StatCell({ label, value, sub }: { label: string; value: ReactNod
 
 export function WalletLink({ address, name, collectionUrlSlug }: { address: string | null | undefined; name?: string | null; collectionUrlSlug?: string | null }) {
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>{EM_DASH}</span>
-  const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
+  // ⛔ 2026-09-19 — THIS WAS THE WORST INSTANCE OF THE FOLD-AND-PREFIX BUG,
+  // because it is not only a label: the same mangled string was the link's HREF.
+  // On a Candy MLB edition page every buyer / seller / owner link pointed at
+  // `/candy-mlb/collection?wallet=0x12j1uhkq…` — a Solana mint lowercased (it
+  // is CASE-SENSITIVE, so that is a different address) and given a Flow prefix.
+  // The wallet analyzer then resolved nothing and rendered an EMPTY wallet,
+  // which reads as "this collector holds nothing" rather than as a broken link.
+  // ⚠ And the destination is the Collection tab that shipped for Candy earlier
+  // the same day, so the flip is what put a reader in front of this.
+  // `displayAddress` leaves hex output byte-identical.
+  const lower = displayAddress(address) ?? address
   // 2026-09-06 (Search Console): this linked to /profile/<address>, a URL that
   // does NOT EXIST — /profile/<handle> resolves an RPC username only, so every
   // buyer/seller/owner link on every sales table was a 404 for the reader and

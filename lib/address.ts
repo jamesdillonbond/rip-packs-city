@@ -117,3 +117,43 @@ const PANINI_USERNAME_REGEX = /^[A-Za-z0-9_.-]{2,16}$/;
 export function isPaniniUsername(value: string): boolean {
   return PANINI_USERNAME_REGEX.test(value.trim());
 }
+
+// ── Display ────────────────────────────────────────────────────────────────
+//
+// ⛔ WHAT THIS REPLACES, AND IT WAS A FABRICATION RATHER THAN AN ABSENCE. Every
+// wallet-display helper in this repo was written when every wallet was Flow, so
+// they all do the same two things: `.toLowerCase()`, then prepend `0x` if it is
+// missing. Applied to a Solana mint that is BOTH case-sensitive AND un-prefixed,
+// that produces a string which is wrong three ways at once — it claims a Flow
+// shape, it is a DIFFERENT address once folded, and it does not exist.
+//
+// Measured live 2026-09-19 on /candy-mlb/player/mike-trout and
+// /candy-mlb/edition/mike-trout-pink: buyer and owner labels rendered as
+// `0x2at8…jrqw`, `0x1bwu…ndix`, while the `title=` tooltip on the SAME element
+// carried the correct-case `AGzqZEJXbYeJze7aba6xTvQRHCt5ENmLhjbXejnzSpcQ`. So
+// the visible label and its own tooltip disagreed, and a reader who copied what
+// they could see got a dead string. ⚠ A page that renders nothing is honest; a
+// page that renders a plausible wrong address is not.
+//
+// ⚠ THE HEX PATH IS BYTE-IDENTICAL to what those helpers already did — fold,
+// then prefix — so no Flow surface moves.
+
+/** Canonical display form: base58 verbatim, hex lowercased and `0x`-prefixed. */
+export function displayAddress(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (isSolanaAddress(trimmed)) return trimmed;
+  const lower = trimmed.toLowerCase();
+  return lower.startsWith("0x") ? lower : `0x${lower}`;
+}
+
+/** `0x1234…abcd` / `AGzq…SpcQ`. Returns `fallback` for a missing address. */
+export function truncateAddressForDisplay(
+  value: string | null | undefined,
+  fallback = "—",
+): string {
+  const shown = displayAddress(value);
+  if (!shown) return fallback;
+  return shown.length <= 12 ? shown : `${shown.slice(0, 6)}…${shown.slice(-4)}`;
+}

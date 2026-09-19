@@ -8,6 +8,8 @@ import {
   chainKindForDbChain,
   isValidAddressForChain,
   normalizeAddress,
+  displayAddress,
+  truncateAddressForDisplay,
 } from "@/lib/address"
 
 // Chain-aware address validation. The load-bearing footgun: Solana base58 is
@@ -90,5 +92,52 @@ describe("normalizeAddress (the case-sensitivity footgun)", () => {
 
   it("trims surrounding whitespace", () => {
     expect(normalizeAddress("  0xBD94CADE097E50AC  ")).toBe("0xbd94cade097e50ac")
+  })
+})
+
+// ⛔ THE FOLD-AND-PREFIX FABRICATION, pinned 2026-09-19. Every wallet-display
+// helper in this repo was written when every wallet was Flow, so they all
+// lowercase the address and prepend `0x` if it is missing. On a Solana mint —
+// CASE-SENSITIVE and un-prefixed — that is wrong three ways at once: it claims
+// a Flow shape, it is a DIFFERENT address once folded, and it does not exist.
+//
+// 📏 Measured live before the fix, on /candy-mlb/player/mike-trout and
+// /candy-mlb/edition/mike-trout-pink: labels read `0x2at8…jrqw` / `0x1bwu…ndix`
+// while the `title=` on the SAME element carried the correct-case
+// `AGzqZEJXbYeJze7aba6xTvQRHCt5ENmLhjbXejnzSpcQ`. The element disagreed with
+// itself, and a reader copying what they could see got a dead string.
+describe("displayAddress / truncateAddressForDisplay", () => {
+  const MINT = "AGzqZEJXbYeJze7aba6xTvQRHCt5ENmLhjbXejnzSpcQ"
+
+  it("⚠ the hex path is BYTE-IDENTICAL to the fold-and-prefix it replaces", () => {
+    // This is the arm that makes the change safe to land everywhere at once:
+    // no Flow surface moves. Delete it and the Solana arms below are satisfied
+    // by a function that has quietly changed every Flow label in the product.
+    expect(displayAddress("0xABCDEF1234567890")).toBe("0xabcdef1234567890")
+    expect(displayAddress("ABCDEF1234567890")).toBe("0xabcdef1234567890")
+    expect(truncateAddressForDisplay("0xABCDEF1234567890")).toBe("0xabcd…7890")
+    expect(truncateAddressForDisplay("ABCDEF1234567890")).toBe("0xabcd…7890")
+  })
+
+  it("⛔ a Solana mint keeps its case and never grows a 0x prefix", () => {
+    expect(displayAddress(MINT)).toBe(MINT)
+    expect(displayAddress(MINT)).not.toContain("0x")
+    expect(displayAddress(MINT)).not.toBe(MINT.toLowerCase())
+  })
+
+  it("truncates a mint from its own characters, not from a mangled copy", () => {
+    expect(truncateAddressForDisplay(MINT)).toBe(`${MINT.slice(0, 6)}…${MINT.slice(-4)}`)
+    expect(truncateAddressForDisplay(MINT)).not.toMatch(/^0x/)
+  })
+
+  it("a missing address is an em-dash, never a prefix with nothing after it", () => {
+    expect(displayAddress(null)).toBeNull()
+    expect(displayAddress("   ")).toBeNull()
+    expect(truncateAddressForDisplay(null)).toBe("—")
+    expect(truncateAddressForDisplay(undefined, "n/a")).toBe("n/a")
+  })
+
+  it("a short hex address is returned whole rather than ellipsised into nonsense", () => {
+    expect(truncateAddressForDisplay("0x1234")).toBe("0x1234")
   })
 })

@@ -29,6 +29,7 @@
 // distinction is available if either ever moves above the fold.
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { normalizeAddress } from "@/lib/address"
 import { withQueryDeadline } from "@/lib/analytics/rpc-with-retry"
 
 /** Minimal shape used from the Supabase client, so tests can inject a stub. */
@@ -94,8 +95,13 @@ export async function fetchOwnerUsernames(
   injected?: TableClient,
 ): Promise<FetchResult<Map<string, string>>> {
   const out = new Map<string, string>()
+  // ⚠ `normalizeAddress`, not `.toLowerCase()`: Flow/EVM hex is
+  // case-insensitive and folds for a stable key, but a Solana mint is
+  // CASE-SENSITIVE — folding it produces a key that matches nothing, so the
+  // `.in()` below became a round trip that could never hit for a Candy owner.
+  // The map keys use the same function, so lookups stay consistent.
   const lowered = Array.from(
-    new Set(addresses.filter(Boolean).map((a) => a.toLowerCase())),
+    new Set(addresses.filter(Boolean).map((a) => normalizeAddress(a))),
   )
   // No addresses is a legitimate empty answer, not a failed read — and it must
   // NOT issue a query, because `.in()` on an empty list is a pointless round
@@ -119,7 +125,7 @@ export async function fetchOwnerUsernames(
     wallet_addr: string
     username: string | null
   }>) {
-    if (r.wallet_addr && r.username) out.set(r.wallet_addr.toLowerCase(), r.username)
+    if (r.wallet_addr && r.username) out.set(normalizeAddress(r.wallet_addr), r.username)
   }
   return { data: out, ok: true }
 }

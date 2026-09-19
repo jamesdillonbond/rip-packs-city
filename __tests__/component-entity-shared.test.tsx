@@ -155,3 +155,46 @@ describe("_shared formatters", () => {
     expect(text).not.toMatch(/\bnone found\b/i)
   })
 })
+
+// ⛔ The fold-and-prefix fabrication reached the ENTITY pages three ways, and
+// the third was the worst. Candy MLB's edition pages went live 2026-09-06 and
+// its Collection tab (the destination of every wallet click here) on
+// 2026-09-19, which is what put a reader in front of all three.
+describe("_shared — a Solana wallet is rendered as itself, not as a Flow address", () => {
+  const MINT = "AGzqZEJXbYeJze7aba6xTvQRHCt5ENmLhjbXejnzSpcQ"
+
+  it("truncWallet stops lowercasing and 0x-prefixing a base58 mint", () => {
+    // EditionActivity and SalesTablePaginated both label wallets with this, and
+    // both render on Candy's edition pages.
+    expect(truncWallet(MINT)).toBe(`${MINT.slice(0, 6)}…${MINT.slice(-4)}`)
+    expect(truncWallet(MINT)).not.toMatch(/^0x/)
+  })
+
+  it("no-change control: a Flow address still folds and prefixes exactly as before", () => {
+    expect(truncWallet("0xABCDEF1234567890")).toBe("0xabcd…7890")
+    expect(truncWallet("ABCDEF1234567890")).toBe("0xabcd…7890")
+  })
+
+  it("🚨 WalletLink's HREF carries the real mint — the mangled one was a dead link that rendered an EMPTY wallet", () => {
+    // This is not a cosmetic bug. The href is the wallet analyzer, so a folded,
+    // 0x-prefixed mint sent the reader to a Collection tab that resolved
+    // nothing — and an empty wallet reads as "this collector holds nothing",
+    // not as a broken link. Absence would have been honest; this was not.
+    const { container } = render(<WalletLink address={MINT} collectionUrlSlug="candy-mlb" />)
+    const a = container.querySelector("a")!
+    expect(a.getAttribute("href")).toBe(`/candy-mlb/collection?wallet=${MINT}`)
+    expect(a.getAttribute("href")).not.toContain("0x")
+    // ⚠ The label and its own title must agree. Before the fix the visible text
+    // said `0xagzq…spcq` while the title said `AGzqZEJ…SpcQ`, so a reader who
+    // copied what they could see got a string that does not exist.
+    expect(a.getAttribute("title")).toBe(MINT)
+    expect(a.textContent).toBe(`${MINT.slice(0, 6)}…${MINT.slice(-4)}`)
+  })
+
+  it("no-change control: a Flow WalletLink href is byte-identical to before", () => {
+    const { container } = render(<WalletLink address="0xAbC1234567890000" collectionUrlSlug="nba-top-shot" />)
+    expect(container.querySelector("a")!.getAttribute("href")).toBe(
+      "/nba-top-shot/collection?wallet=0xabc1234567890000",
+    )
+  })
+})
