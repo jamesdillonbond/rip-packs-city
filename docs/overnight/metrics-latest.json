@@ -1,27 +1,30 @@
 {
-  "generated_at_pt": "2026-09-19 ~01:10 AM PT",
-  "generated_at_utc": "2026-09-19T08:10Z",
-  "pass": "rpc-nightly-autonomous-pass, run-id np-20260919-sbx (Cowork cloud). PUSH-CAPABLE via .rpc-git-cred store helper (dry-run exit 0). Genuine overnight window (DB now 08:02:54Z == shell, clock not skewed; 01:02 PT).",
-  "shipped": 0,
+  "generated_at_pt": "2026-09-19 ~09:45 AM PT",
+  "generated_at_utc": "2026-09-19T16:45Z",
+  "pass": "Trevor-directed morning pass (Cowork, cloud container + laptop VM). PUSH-CAPABLE via the laptop VM (device_bash back after the 09-08 outage; .rpc-git-cred store helper, dry-run exit 0). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 15:04Z at start.",
+  "shipped": 3,
   "reverted": 0,
-  "verdict": "HEALTHY-UNDER-LOAD. Security 4/4 clean, engine writing (sales/FMV stamped 07:56Z), pipelines 0 stalled, trust precompute fresh (07:50Z). BUT the estate is in its ordinary evening/night IO-contention (io_wait 6/active 7, one 212s txn; rpc_ops_snapshot() timed out at statement 1) which produces the chronic read-timeout cluster on heavy user surfaces (pack-detail, edition, insights/squeeze). This is the pre-warned 'sweep ok != lanes ok' state, NOT a new regression. Nothing was clearly-safe AND net-positive to ship.",
+  "verdict": "HEALTHY-UNDER-LOAD in a daytime IO spell (io_wait 7-20 of 8-23 active backends all morning). Security 0 violations, secdef drift 0, stalled pipelines 0, 0 invalid indexes, 150/152 cron active, Atlas lanes restored. 63/63 public + 8/8 entity pages pass the rendered-DOM smoke from the sandbox; full vitest 1556 files / 17507 tests green; tsc clean. Vercel 24h: 50 error groups, all chronic read-timeout classes + the 09-18 DNS-outage <!DOCTYPE html> groups; none new. Sentry dark (SDK out of tree) - its zero is not health.",
   "health": {
-    "security_invariants": "clean (RLS-off public tables 0; anon/auth write-holes 0; check_public_security_invariants [] ; secdef_anon [])",
+    "security_invariants": "clean (check_public_security_invariants 0 rows; check_secdef_anon_exec_drift [])",
     "detect_stalled_pipelines": 0,
-    "trust_precompute_fresh_utc": "2026-09-19T07:50Z (FMV metrics)",
-    "io_positive_control": "io_wait 6 / active 7 / total_client 24 / oldest_active 212s @ 08:02Z (moderate, bouncing evening steady state)",
-    "engine": "ACTIVE + writing: max sales.ingested_at 07:56Z, max fmv_snapshots.computed_at 07:56Z (6 min before read)",
-    "rpc_ops_snapshot": "TIMED OUT at statement 1 under IO contention (expected under load; not an outage)"
+    "cron_jobs": "152 total / 150 active (baseline); 463/464/466 active on original schedules",
+    "io_state": "io_wait 14/15 @08:05, 7/8 @09:13, 20/23 @09:41 PT; jobid 303 refresh_wmc_fmv_changed at 150-390 s/run; mv_topshot_market_index_daily refresh ~500 s",
+    "engine": "writing (fmv_snapshots computed_at fresh, sales ingesting; sentinel 09:04 Sales Ingest read INCONCLUSIVE under saturation, not zero)",
+    "sentinel_0904": "CRITICAL -> one critical arm (Cadence Collapse, ack expired 09-13) + 11 warns (4 INCONCLUSIVE db-saturated, Dune configured stop, edge-fn-drift acked, pg_net #75, Wall Kills fmv-recalc 44.7%). Cadence Collapse re-acked to 2026-10-01 with mechanism (09-13 backstop fix halved wallet-backfill by design; baseline still pre-fix)."
   },
-  "fmv_high_med_share_pct": {"topshot": 43.9, "allday": 30.1, "candy": 60.8, "pinnacle": 27.5, "golazos": 0.7, "ufc": 0.0},
-  "fmv_high_med_fresh24h_pct": {"topshot": 54.3, "allday": 51.3, "candy": 61.3, "golazos": 3.1, "ufc": -1},
-  "editions_total": 21424,
-  "db_size_mb": 29000,
-  "vercel_error_groups_24h": {"total": 50, "live_today": 14, "stale_pre_recovery": 36, "note": "all 14 live groups are CHRONIC (first-seen weeks/months old); none new in 24-48h -> no regression from last night's ships"},
+  "shipped_items": [
+    {"what": "R101 v2 - atlas listing tick scans the open book once (slim _open24, no grants) + delta-first upserts", "migration": "20260919152824", "commit": "6ba6b3c", "instrument": "pgss queryid -3354316985779850203 blocks/call 927,297 -> ~145k-250k (n=7-16)", "revert": "re-apply 20260919021449 bodies; repoint pins"},
+    {"what": "R101 v2b - temp_buffers 48MB on the tick, work_mem 16MB on the three syncs", "migration": "20260919160033", "commit": "b2ae593", "instrument": "temp_blks_written/call 7,740 -> 2,899 (contract missed at -62%; residual measured to the _cl_want sort)", "revert": "RESET the four SETs"},
+    {"what": "R101 v2c - work_mem 32MB on sync_cached_listings_from_atlas only", "migration": "20260919162927", "commit": "2655dfe", "instrument": "temp_blks_written/call -> 0 (n=2)", "revert": "SET work_mem='16MB'"},
+    {"what": "Sentinel Cadence Collapse re-ack to 2026-10-01 (config row, not a threshold)", "revert": "restore the 09-13 ack text + 2026-09-13 19:00Z expiry (ledger entry)"}
+  ],
+  "vercel_error_groups_24h": {"total": 50, "note": "all chronic (pack-detail/edition/player/popular-on-collection read timeouts) plus the 09-18 DNS-outage groups; none first-seen in 24h"},
   "post_ship_watch": {
-    "atlas_sync_backoff_*/6": "PARTIAL RECOVERY: ts_listings staleness 71.8min (06:11Z) -> 21.5min; intermittent successes 07:42-07:55 then bouncing 08:02-08:14. Falsifier (100% for 2h) NOT tripped.",
-    "cohort_reschedule": "NOT YET FIRED (step1 next at 10:02Z / 3:02 AM PT, step2 10:35Z). Pre-fired falsifier stands (visibility-map rot => likely still times out). Re-check next pass.",
-    "code_ships_last24h": "packs holdings sync, R96/R98, R107 edition_fmv_current fix, retention job 512 -> no new Vercel error class attributable; clean.",
-    "R108_partial_index_build": "DEFERRED - precondition (quiet window, Atlas ticks <40s) NOT met tonight (io_wait 6, atlas at 120s ceiling). Inert invalid idx_tame_nfl_nft_seen still present."
-  }
+    "R101_v2_series": "READ THE PGSS CONTRACTS, NOT DURATIONS: blocks/call and temp_blks_written/call for the tick queryid on wholly-post windows (change points 15:28:24Z / 16:00:33Z / 16:29:27Z; counters in the ledger). Falsifiers: v2 <40% down -> revert to 20260919021449; v2c temp_w >500/call at n>=10 -> another spill exists.",
+    "R108_index": "measured and controlled by the concurrent session (~176 GB/day, control flat) - closed",
+    "cadence_collapse_ack": "expires 2026-10-01 19:00Z; if still >=5 degraded with wallet-backfill baseline <400/day, a caller stopped - console first",
+    "match_topshot_players": "weekly full run 09-19 08:00Z died at the 120 s upstream timeout in the night spell; gate retries next Saturday"
+  },
+  "needs_trevor": ["#22 purge residue GC + rotate", "#55 both 2-hourly Routines disabled since 09-01", "#75 pg_net response store 10.2 GB (VACUUM FULL)", "jobid 303 refresh_wmc_fmv_changed is the #1 reader (411 MB physical/call, 17 wmc indexes) - FMV path, needs a decision", "Dune sunset tick 09-23 12:00Z single-tick loss risk"]
 }
