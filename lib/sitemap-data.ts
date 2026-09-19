@@ -159,6 +159,16 @@ const EDITION_COLLECTION_IDS = [
   'dee28451-5d62-409e-a1ad-a83f763ac070', // nfl_all_day
   '06248cc4-b85f-47cd-af67-1855d14acd75', // laliga_golazos
   '9b4824a8-736d-4a96-b450-8dcc0c46b023', // ufc_strike
+  // candy_mlb — added 2026-09-19, in the SAME commit that registered Candy in
+  // lib/collection-slug.ts. The ordering matters and is the whole risk here: a
+  // sitemap URL whose route is not in that facade is a 404 handed to a crawler,
+  // which is strictly worse than being absent. Registered first, measured
+  // second — get_edition_detail / get_player_detail / get_set_detail /
+  // get_team_detail each answered live for this UUID before either edit.
+  // 125 editions, 100% FMV-covered, every row carrying player/set/team, so this
+  // adds ~125 edition URLs plus their derived player/set/team slugs — a rounding
+  // error against the ~23.5K already enumerated here.
+  '209ade70-32c5-4470-bc7c-4793d660f713', // candy_mlb
 ]
 
 // Pack distributions exist for the edition collections plus Disney Pinnacle.

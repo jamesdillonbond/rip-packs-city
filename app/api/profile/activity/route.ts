@@ -8,7 +8,8 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
-import { isFlowAddress } from "@/lib/postgrest-safe";
+import { isOnChainAddress } from "@/lib/postgrest-safe";
+import { normalizeAddress } from "@/lib/address";
 
 export async function GET() {
   let user;
@@ -52,14 +53,22 @@ export async function GET() {
   const bioMap = new Map<string, any>();
   (bios ?? []).forEach((b: any) => bioMap.set(b.user_id, b));
 
-  // wallet_addr is stored WITHOUT format validation (save_user_wallet only
-  // lower/trims), so it can carry PostgREST metacharacters — and it is spliced
-  // into an `.in.(...)` filter STRING below. Filter to canonical Flow addresses
-  // first: this blocks a stored-filter-injection AND is lossless, since a
-  // non-Flow-address value could never match sales.seller/buyer_address anyway.
+  // wallet_addr is stored WITHOUT format validation, so it can carry PostgREST
+  // metacharacters — and it is spliced into an `.in.(...)` filter STRING below.
+  // Filter to recognized on-chain addresses first: that blocks a stored-filter
+  // injection (see isOnChainAddress — neither accepted alphabet contains a
+  // filter-grammar metacharacter).
+  //
+  // ⛔ 2026-09-19 — THIS LINE USED `isFlowAddress` + `.toLowerCase()` AND BOTH
+  // HALVES DROPPED CANDY. The Flow-only filter removed every base58 address
+  // before the query, and the lowercase would have corrupted any that survived,
+  // since base58 is case-sensitive. Candy sales carry buyer/seller addresses on
+  // 142 of 142 rows in the trailing 7 days, so the friend feed answered `[]`
+  // for a Candy wallet — the empty-vs-absent confusion, on a social surface
+  // where "no activity" reads as a fact about your friends.
   const addresses = Array.from(
-    new Set(walletRows.map((w: any) => String(w.wallet_addr).toLowerCase()))
-  ).filter(isFlowAddress);
+    new Set(walletRows.map((w: any) => normalizeAddress(String(w.wallet_addr))))
+  ).filter(isOnChainAddress);
   if (addresses.length === 0) {
     return NextResponse.json({ activity: [] });
   }
@@ -106,7 +115,7 @@ export async function GET() {
   // Map address -> followee metadata (first match wins)
   const addressOwner = new Map<string, { user_id: string; collection_id: string }>();
   for (const w of walletRows) {
-    const key = `${String(w.wallet_addr).toLowerCase()}|${w.collection_id}`;
+    const key = `${normalizeAddress(String(w.wallet_addr))}|${w.collection_id}`;
     if (!addressOwner.has(key)) {
       addressOwner.set(key, { user_id: w.user_id, collection_id: w.collection_id });
     }
@@ -114,7 +123,10 @@ export async function GET() {
 
   const items: any[] = [];
   for (const s of salesRows) {
-    const matchKey = (addr: string) => `${String(addr).toLowerCase()}|${s.collection_id}`;
+    // Both sides of this join must normalize the SAME way, or a Candy row that
+    // survived the filter above would still miss: `normalizeAddress` lowercases
+    // Flow/EVM hex and leaves base58 verbatim.
+    const matchKey = (addr: string) => `${normalizeAddress(String(addr))}|${s.collection_id}`;
     const seller = s.seller_address ? addressOwner.get(matchKey(s.seller_address)) : null;
     const buyer = s.buyer_address ? addressOwner.get(matchKey(s.buyer_address)) : null;
     const owner = seller || buyer;

@@ -10,6 +10,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🔗 CANDY'S MARKET TAB HAS BEEN LINKING 54 ROWS A PAGE INTO A 404 SINCE 09-12 — and the guard that was supposed to prevent exactly this was green the whole time · Cowork cloud (Trevor present, "all of it")
+
+**Shipped: 6 code files + 3 test files, repo-side only. No DB change, no migration.** Trevor asked for Candy/Top Shot feature parity; the first thing the audit found was not a missing feature but a live defect.
+
+🚨 **MEASURED ON THE LIVE SITE BEFORE TOUCHING ANYTHING** (`www.rippackscity.com`, 2026-09-19 ~10:15 AM PT):
+
+| URL | status |
+|---|---|
+| `/candy-mlb/market` | **200** |
+| `/candy-mlb/edition/mike-trout-pink` | **404** |
+| `/candy-mlb/set/2026-mlb-base-series-icons` | **404** |
+
+and one render of that market page emits **54 edition links, 10 team links, 10 player links and a set link** — every one dead. `MarketClient` links each row to `/<collection>/edition/<editionKey>` (plus `momentSubjectHref` and `/set/<slug>`), and `lib/collection-slug.ts` is the gate all of those pass through. Candy was not in it.
+
+⭐ **THE GUARD IS THE REAL FINDING.** `__tests__/collection-registry-consistency.test.ts` existed precisely to stop a published collection from being absent from that facade. It enforced the rule by listing nine `ENTITY_CORPUS_PAGES` a "thin" collection may not expose — and **`market` was not one of the nine**. So when Candy gained its Market tab on 2026-09-12 (with real Solana dispatch, correctly), the guard stayed green while the links went dead. **A guard that enumerates what may NOT appear is satisfied by anything nobody thought to enumerate.** The assertion is now INVERTED: `ENTITY_LINKING_PAGES` names the tabs that DO emit entity links, and any published collection carrying one must RESOLVE through the facade. Proven to fail: removing Candy from the facade reds it with *"candy-mlb ships market — whose rows link to /candy-mlb/edition/... — but is absent from lib/collection-slug.ts, so every one of those links 404s"*. The residual is stated in the file: a future tab that links to `/edition/...` and is not added to that list still escapes, which is why the list carries the grep that regenerates it.
+
+⛔ **THE EXCLUSION'S OTHER HALF WAS ALSO FALSE, and I checked it rather than assuming the fix.** The comment said Candy has "no entity corpus … the entity pages are Flow-shaped". The entity pages read collection-generic RPCs, and **all four answered for Candy live, unchanged, before the edit**: `get_edition_detail('209ade70…','mike-trout-pink')` → FMV **$84.65 MEDIUM, 9 sales/30d**, set *2026 MLB Base Series ICONs*, LEGENDARY, circulation 15, Arweave art; `get_player_detail`, `get_set_detail`, `get_team_detail` likewise non-null. Candy's catalogue is **125 editions, 125 FMV-covered (67 MEDIUM / 49 LOW / 9 HIGH), 125/125 carrying player+set+tier+team+circulation**, and `external_id` is already an SEO-shaped slug (`mike-trout-pink`), not a Flow integer pair. The Flow-specific arms on those pages are collection-gated already — insight links are `nba-top-shot` only, the Top Shot CDN hero candidate is `isTopShotColl` only, `dapperMarketEditionUrl` returns null on a non-numeric `external_id`, and `proxyIpfsUrl` passes an `arweave.net` URL through untouched. Candy has **0 pack_distributions, 0 edition_offers, 0 special_serial_holders**, so those three sections render their honest empty/em-dash rather than a fabricated zero.
+
+🔁 **AND THE SAME FLOW-SHAPED ASSUMPTION WAS COSTING THREE WALLET READ ROUTES**, found by grepping the EXPRESSION not the file (the write path was fixed weeks ago; the reads were not):
+
+- `app/api/profile/top-moments` and `app/api/profile/hero-moment` gated the `saved_wallets` lookup on **`key.startsWith("0x")`** and then queried **`key.toLowerCase()`**. A base58 Candy address has no `0x`, so it never entered that branch at all — it fell through to the profile_bio USERNAME lookup, missed, and the route answered with **the viewer's own data under someone else's key**. That is a different answer, not an empty one, and it is the exact failure both files' headers were rewritten to stop. The `.toLowerCase()` would have killed it a second time anyway: base58 is case-sensitive and `saved_wallets` stores it verbatim, so read and write disagreed.
+- `app/api/profile/activity` filtered addresses with `isFlowAddress`, whose **own doc comment** claimed that was "lossless, since a non-Flow-address value could never match `sales.seller/buyer_address` anyway". **Measured: Candy sales carry base58 buyer AND seller addresses on 142 of 142 rows in the trailing 7 days.** Every Candy wallet was dropped before the query and the friend feed returned `[]` — "no activity" published as a fact about your friends.
+
+New `isOnChainAddress` in `lib/postgrest-safe.ts` widens the allowlist **without widening injection, by construction and not by hope**: the base58 alphabet `[1-9A-HJ-NP-Za-km-z]` contains no `,` `(` `)` or `%`, and the regex is anchored — asserted explicitly in the new test, along with both length bounds.
+
+⚠ **EVERY NEW ARM IS PAIRED WITH A FLOW NO-CHANGE CONTROL.** Without them "stop lowercasing" would satisfy the base58 assertions while silently breaking the Flow path that ~100% of today's saved wallets are on. Both new guards proven to fail against the unpatched code and green after; the controls stay green in both directions.
+
+**Also shipped:** Candy's UUID added to `EDITION_COLLECTION_IDS` in `lib/sitemap-data.ts`, **in the same commit that registered the facade** — deliberately, since a sitemap URL whose route is not in the facade is a 404 handed to a crawler, i.e. strictly worse than absence. ~125 edition URLs plus derived player/set/team slugs, a rounding error against the ~23.5K already enumerated. `PACK_COLLECTION_IDS` spreads that list but Candy has 0 pack distributions, so that half is a no-op today (same as Pinnacle).
+
+**Verified before:** 4 entity RPCs live against the Candy UUID · live status codes above · 142/142 Candy sale addresses · 0 pack dists / 0 edition offers / 0 special serials.
+**Verified after:** `collection-slug` + `collection-registry-consistency` + `api-wallet-reads` + the new base58 suite green (46 tests) · both new guards proven red under mutation and restored · ⚠ `npx tsc --noEmit` was **NOT** run — it was OOM-killed twice on the desktop VM (exit 137), so typecheck is owed to CI rather than claimed here.
+
+**Exit condition:** `/candy-mlb/edition/mike-trout-pink` and `/candy-mlb/set/2026-mlb-base-series-icons` answer **200** after the deploy, and a re-crawl of `/candy-mlb/market` finds 0 links resolving to 404.
+**Falsifier:** if those URLs 200 but render an em-dash hero with no FMV, the RPC evidence above was read at a moment that does not generalise — re-run the four detail RPCs before blaming the routing.
+
+- **Revert:** `git revert <sha>` (`git log --grep="LINKING 54 ROWS"`). **No DB half.** Reverting restores the 404s.
+
 ### 2026-09-19 · 🚨 SHIPPED (code) — the sentinel's most severe pages were carrying the ACKNOWLEDGEMENT and dropping the FINDING; and the alarm has not said ALL CLEAR once in 48 h · Cowork cloud
 
 **Trevor asked about "the alerts sentinel is sending out". This is the measured answer, and one defect fixed.**

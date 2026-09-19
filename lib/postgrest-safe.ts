@@ -38,3 +38,29 @@ export function sanitizeOrIlikeValue(v: string): string {
 export function isFlowAddress(v: string): boolean {
   return /^0x[0-9a-fA-F]{16}$/.test(v)
 }
+
+/**
+ * True for an on-chain wallet address on ANY chain RPC indexes sales for —
+ * canonical Flow (`0x` + 16 hex) or Solana base58 (32-44 chars).
+ *
+ * ⚠ ADDED 2026-09-19 because `isFlowAddress` was being used as BOTH an
+ * injection guard AND a completeness claim, and only the first half was true.
+ * Its doc comment argued the filter was "lossless: a value that is not a Flow
+ * address could never match the column anyway" — measured against Candy MLB
+ * that is false. Candy sales carry base58 seller/buyer addresses, 142 of 142 in
+ * the trailing 7 days on 2026-09-19, 43-44 chars, 100% populated. So every
+ * Candy wallet was dropped before the query, and the feed returned `[]` — an
+ * empty answer where the honest one was a list.
+ *
+ * SAFE FOR `.in.(...)` INTERPOLATION BY CONSTRUCTION, which is the only reason
+ * this may widen the guard at all: the base58 alphabet is
+ * `[1-9A-HJ-NP-Za-km-z]` — it contains no `,` `(` `)` or `%`, so a value
+ * matching this regex cannot carry a PostgREST filter-grammar metacharacter.
+ * The anchors make that exhaustive, not merely likely.
+ *
+ * ⛔ Do NOT `.toLowerCase()` a value that passed this test. Base58 is
+ * CASE-SENSITIVE; use `normalizeAddress` from lib/address.ts.
+ */
+export function isOnChainAddress(v: string): boolean {
+  return isFlowAddress(v) || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v)
+}

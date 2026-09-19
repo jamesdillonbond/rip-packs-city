@@ -18,6 +18,7 @@ import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
+import { isSupportedAddress, normalizeAddress } from "@/lib/address";
 import { COLLECTIONS } from "@/lib/collections";
 
 function isSmokeTestRequest(req: NextRequest): boolean {
@@ -77,11 +78,24 @@ type OwnerResolution =
 async function resolveUserId(ownerKey: string | null): Promise<OwnerResolution> {
   if (ownerKey) {
     const key = ownerKey.trim();
-    if (key.startsWith("0x")) {
+    // ⛔ 2026-09-19 — THIS GATE WAS `key.startsWith("0x")` AND THE LOOKUP WAS
+    // `key.toLowerCase()`. Both are Flow-shaped, and together they made a Candy
+    // wallet unreachable through this route in two independent ways:
+    //   1. a Solana base58 address has NO `0x` prefix, so it never entered the
+    //      saved_wallets branch at all — it fell through to the profile_bio
+    //      USERNAME lookup, missed, and the route answered with the VIEWER'S
+    //      OWN data under someone else's key (the exact different-answer
+    //      failure this file's header was rewritten to stop);
+    //   2. base58 is CASE-SENSITIVE, so even a base58 key that reached the
+    //      query would have been folded to a string matching zero rows.
+    // `isSupportedAddress` + `normalizeAddress` handle Cadence, EVM and base58
+    // by shape. The resolution ORDER is unchanged: an address that resolves to
+    // nobody still falls through to the username lookup and then the session.
+    if (isSupportedAddress(key)) {
       const { data, error } = await boundedRead(supabase
         .from("saved_wallets")
         .select("user_id")
-        .eq("wallet_addr", key.toLowerCase())
+        .eq("wallet_addr", normalizeAddress(key))
         .limit(1)
         .maybeSingle(), "api/profile/hero-moment/owner-by-wallet");
       if (error) return { ok: false, error };

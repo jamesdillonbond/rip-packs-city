@@ -39,12 +39,37 @@ describe("getCollectionByUuid / getCollectionByDbSlug", () => {
 })
 
 describe("listEntityPageCollections", () => {
-  it("returns all 5 published collections as a fresh copy", () => {
+  it("returns all 6 entity-page collections as a fresh copy", () => {
     const list = listEntityPageCollections()
-    expect(list).toHaveLength(5)
+    expect(list).toHaveLength(6)
     // mutating the returned array must not affect subsequent calls
     list.pop()
-    expect(listEntityPageCollections()).toHaveLength(5)
+    expect(listEntityPageCollections()).toHaveLength(6)
+  })
+})
+
+// Candy MLB (2026-09-19). Registered because /candy-mlb/market — shipped and
+// public since 2026-09-12 — links every row it renders to /candy-mlb/edition/
+// <editionKey>, /player, /team and /set, and this facade is the gate those
+// routes pass through. Measured on the LIVE page the day this was added: one
+// render emitted 54 edition links, all 404. Pinned here so a future "thin
+// collection" tidy-up cannot silently re-break them.
+describe("candy-mlb resolves through the facade", () => {
+  it("resolves by url slug, uuid and db slug to the same record", () => {
+    const byUrl = getCollectionByUrlSlug("candy-mlb")
+    expect(byUrl).not.toBeNull()
+    expect(byUrl!.dbSlug).toBe("candy_mlb")
+    expect(byUrl!.id).toBe("209ade70-32c5-4470-bc7c-4793d660f713")
+    expect(byUrl!.displayName).toBe("Candy MLB")
+    expect(getCollectionByUuid(byUrl!.id)).toEqual(byUrl)
+    expect(getCollectionByDbSlug("candy_mlb")).toEqual(byUrl)
+  })
+
+  it("is not treated as the Pinnacle special case", () => {
+    // isPinnacleUrlSlug gates a 308 to /pinnacle/moment/<render_id>. A false
+    // positive here would redirect every Candy edition URL into a key space
+    // that has no Candy rows.
+    expect(isPinnacleUrlSlug("candy-mlb")).toBe(false)
   })
 })
 

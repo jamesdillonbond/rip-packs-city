@@ -7,9 +7,42 @@
 // helpers. Returns null for unknown inputs so route handlers can call
 // notFound() cleanly.
 //
-// The five published collections are hardcoded here (no extra fields) so
+// The entity-page collections are hardcoded here (no extra fields) so
 // callers don't have to import the full Collection record when they only
 // need slugs + display name.
+//
+// ── Candy MLB added 2026-09-19 (it was deliberately excluded until now) ─────
+// The exclusion was recorded in __tests__/collection-registry-consistency.ts as
+// "THIN — overview only, no entity corpus ... the entity pages are Flow-shaped".
+// Both halves of that premise are now false, and the second one was costing
+// readers real pages:
+//
+//   1. NOT THIN. Candy shipped a Market tab on 2026-09-12 with its own Solana
+//      dispatch, and MarketClient links every row it renders to
+//      /<collection>/edition/<editionKey>, plus /player, /team and /set.
+//      MEASURED against the live page 2026-09-19: ONE render of
+//      /candy-mlb/market emits 54 edition links, 10 team links, 10 player links
+//      and a set link — and every one of them 404s, because this facade is the
+//      gate. Confirmed by status code: /candy-mlb/market 200,
+//      /candy-mlb/edition/mike-trout-pink 404, /candy-mlb/set/2026-mlb-base-
+//      series-icons 404. A shipped public tab whose every row is a dead link.
+//
+//   2. NOT FLOW-SHAPED. The entity pages read collection-generic RPCs, and they
+//      already answer for Candy TODAY, unchanged: get_edition_detail,
+//      get_player_detail, get_set_detail and get_team_detail were each called
+//      live against the Candy UUID before this edit and each returned a
+//      populated row (e.g. `mike-trout-pink` → FMV $84.65 MEDIUM, 9 sales/30d,
+//      set "2026 MLB Base Series ICONs", tier LEGENDARY, circulation 15,
+//      Arweave art). Candy's 125 editions are 100% FMV-covered, 125/125 carry
+//      player/set/tier/team/circulation, and `external_id` is already an
+//      SEO-shaped slug ("mike-trout-pink") rather than a Flow integer pair.
+//      The Flow-specific arms on those pages are collection-gated already —
+//      insight links are `collection === "nba-top-shot"` only, the Top Shot CDN
+//      hero candidate is `isTopShotColl` only, dapperMarketEditionUrl returns
+//      null for a non-numeric external_id, and proxyIpfsUrl passes an
+//      arweave.net URL through untouched.
+//
+// ⚠ Pinnacle stays the one special case (see isPinnacleUrlSlug).
 //
 // NOTE on UFC: Trevor's spec lists "ufc-strike" as the URL slug. The deployed
 // app currently routes UFC under "/ufc/..." (lib/collections.ts id "ufc").
@@ -58,6 +91,12 @@ const RECORDS: CollectionSlugInfo[] = [
     dbSlug: "disney_pinnacle",
     displayName: "Disney Pinnacle",
     urlSlug: "disney-pinnacle",
+  },
+  {
+    id: "209ade70-32c5-4470-bc7c-4793d660f713",
+    dbSlug: "candy_mlb",
+    displayName: "Candy MLB",
+    urlSlug: "candy-mlb",
   },
 ]
 

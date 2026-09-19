@@ -21,14 +21,68 @@ import {
 // These assertions fail the moment the two sources disagree.
 
 // The ENTITY-PAGE collections: published collections whose edition / player /
-// set / team pages exist. Candy MLB is published (2026-09-06) but THIN — overview
-// only, no entity corpus (its art is Arweave, its wallets Solana; the entity
-// pages are Flow-shaped) — so it is deliberately NOT in this facade.
-const ENTITY_PAGE_URL_SLUGS = ["nba-top-shot", "nfl-all-day", "laliga-golazos", "ufc", "disney-pinnacle"]
-const THIN_PUBLISHED = ["candy-mlb"]
+// set / team pages exist.
+//
+// ⛔ 2026-09-19 — CANDY MLB MOVED IN, AND THE GUARD THAT KEPT IT OUT WAS THE
+//    REASON THE DEFECT SHIPPED. What stood here before said Candy was "THIN —
+//    overview only, no entity corpus ... the entity pages are Flow-shaped", and
+//    enforced it with an ENTITY_CORPUS_PAGES list of nine page names.
+//    `market` was not one of the nine. So when Candy gained a Market tab on
+//    2026-09-12, this guard stayed green — while MarketClient linked every row
+//    it rendered to /<collection>/edition/<editionKey>, /player, /team and
+//    /set, none of which this facade would route.
+//
+//    MEASURED ON THE LIVE SITE 2026-09-19, before the fix:
+//      /candy-mlb/market                          → 200
+//      /candy-mlb/edition/mike-trout-pink         → 404
+//      /candy-mlb/set/2026-mlb-base-series-icons  → 404
+//    and ONE render of that market page emitted 54 edition links, 10 team
+//    links, 10 player links and a set link — every one of them dead.
+//
+//    The second half of the premise was false too: the entity pages read
+//    collection-generic RPCs. get_edition_detail / get_player_detail /
+//    get_set_detail / get_team_detail were each called live against the Candy
+//    UUID and each returned a populated row before the facade was touched.
+//
+// ⭐ THE LESSON IS IN THE SHAPE, NOT THE ENTRY. A guard that enumerates the
+//    pages which MAY NOT appear is satisfied by any page nobody thought to
+//    enumerate. The assertion below is therefore INVERTED: it names the pages
+//    that DO emit entity links, and requires any published collection carrying
+//    one to be IN the facade. A new tab that links to /edition/... and is not
+//    listed in ENTITY_LINKING_PAGES will still escape — that residual is real
+//    and is why the list carries the grep that regenerates it.
+const ENTITY_PAGE_URL_SLUGS = [
+  "nba-top-shot",
+  "nfl-all-day",
+  "laliga-golazos",
+  "ufc",
+  "disney-pinnacle",
+  "candy-mlb",
+]
+// Published collections that route NO entity pages. Empty today, and that is a
+// state not an invariant — a future thin launch belongs here, and must then
+// expose none of ENTITY_LINKING_PAGES.
+const THIN_PUBLISHED: string[] = []
+
+// Tabs whose components render a link into the entity corpus. Regenerate with:
+//   grep -rln '/edition/\|/player/\|/team/\|/set/\|editionHref\|momentSubjectHref' \
+//     'app/(collections)/[collection]'
+// `market` is here because omitting it is precisely what shipped 54 dead links.
+const ENTITY_LINKING_PAGES = [
+  "collection",
+  "market",
+  "sets",
+  "play",
+  "challenges",
+  "hot-floors",
+  "pack-sniper",
+  "packs",
+  "sniper",
+  "analytics",
+]
 
 describe("collection-slug facade agrees with the collections.ts registry", () => {
-  it("covers exactly the 5 entity-page collections and no more", () => {
+  it("covers exactly the entity-page collections and no more", () => {
     const facadeSlugs = listEntityPageCollections()
       .map((r) => r.urlSlug)
       .sort()
@@ -36,22 +90,30 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
     // The published registry = the entity-page set + the thin ones, exactly.
     expect(publishedCollections().map((c) => c.id).sort()).toEqual([...ENTITY_PAGE_URL_SLUGS, ...THIN_PUBLISHED].sort())
     // And a thin collection exposes nothing the facade would have to route.
-    //
-    // ⚠ ASSERTED AS "NO ENTITY-CORPUS PAGE", not as `pages === ["overview"]`.
-    // The old form was a proxy that stopped being true the moment Candy gained
-    // a legitimate non-entity tab (Market, 2026-09-12, with its own Solana
-    // dispatch) — and "the proxy broke" would have read as "the invariant
-    // broke". What this facade actually routes is the ENTITY corpus
-    // (/edition, /set, /player, /team, /series), and those come from the pages
-    // below; `overview` and `market` imply no entity pages at all.
-    const ENTITY_CORPUS_PAGES = ["collection", "sets", "play", "challenges", "hot-floors", "pack-sniper", "packs", "sniper", "analytics"]
     for (const id of THIN_PUBLISHED) {
       const pages = publishedCollections().find((c) => c.id === id)?.pages ?? []
       expect(
-        pages.filter((p) => ENTITY_CORPUS_PAGES.includes(p)),
-        `${id} exposes an entity-corpus page but is not in the facade`,
+        pages.filter((p) => ENTITY_LINKING_PAGES.includes(p)),
+        `${id} exposes an entity-linking page but is not in the facade`,
       ).toEqual([])
       expect(facadeSlugs).not.toContain(id)
+    }
+  })
+
+  // ⭐ THE ARM THAT WOULD HAVE CAUGHT THE 54 DEAD LINKS, stated in the
+  // direction that fails loudly: a published collection that RENDERS entity
+  // links must RESOLVE them. Run against the registry on 2026-09-12 (the day
+  // Candy's Market tab shipped) this reds; before that day it is green; after
+  // this commit it is green again for the right reason.
+  it("every published collection that renders entity links resolves through the facade", () => {
+    for (const c of publishedCollections()) {
+      const linking = c.pages.filter((p) => ENTITY_LINKING_PAGES.includes(p))
+      if (linking.length === 0) continue
+      expect(
+        getCollectionByUrlSlug(c.id),
+        `${c.id} ships ${linking.join("/")} — whose rows link to /${c.id}/edition/... — ` +
+          `but is absent from lib/collection-slug.ts, so every one of those links 404s`,
+      ).not.toBeNull()
     }
   })
 
@@ -93,8 +155,15 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
     expect(alias).toEqual(getCollectionByUrlSlug("ufc"))
   })
 
+  // ⚠ Candy was in this list until 2026-09-19 and is deliberately NOT replaced
+  // by a weaker assertion — it is now asserted the other way, above and in
+  // collection-slug.test.ts. Panini remains: it is genuinely unpublished
+  // (`published: false`, `collections.is_active = false`), its identity is a
+  // USERNAME not an address, and it has NO rows in `editions` at all — so an
+  // entity route for it would resolve nothing even if the facade let it
+  // through. That is a data fact, not a policy, which is why it still holds.
   it("does not expose unpublished chain-two placeholders through the entity facade", () => {
-    expect(getCollectionByUrlSlug("candy-mlb")).toBeNull()
     expect(getCollectionByUrlSlug("panini-blockchain")).toBeNull()
+    expect(getCollectionByUrlSlug("candy-mlb")).not.toBeNull()
   })
 })
