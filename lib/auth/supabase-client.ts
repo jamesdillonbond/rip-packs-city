@@ -14,6 +14,7 @@
 "use client"
 
 import { createBrowserClient } from "@supabase/ssr"
+import { clearAllOwnerKeys } from "@/lib/owner-key"
 
 let client: ReturnType<typeof createBrowserClient> | null = null
 
@@ -78,7 +79,9 @@ export async function signOut(): Promise<void> {
   const supabase = getSupabaseBrowser()
   await supabase.auth.signOut()
   if (typeof window !== "undefined") {
-    try { window.localStorage.removeItem("rpc_owner_key") } catch {}
+    // ⚠ EVERY chain's slot, not just Flow's — see lib/owner-key.ts. A sign-out
+    // that clears one chain leaves the other for whoever signs in next.
+    clearAllOwnerKeys()
     window.location.href = "/login"
   }
 }

@@ -21,7 +21,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
-import { getOwnerKey } from "@/lib/owner-key"
+import { getOwnerKeyForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
 import { momentSubjectHref } from "@/lib/entity-href"
 import { COLLECTION_TIERS } from "@/lib/collection-tiers"
@@ -29,7 +29,7 @@ import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIE
 import { filterListingsByOwned, collectBadgeOptions, countActiveFilters } from "@/lib/market/filters"
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
-import { collectionHasPage, dapperMarketMomentUrl, getCollectionUuid } from "@/lib/collections"
+import { collectionHasPage, dapperMarketMomentUrl, getCollection, getCollectionUuid } from "@/lib/collections"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import IpfsImg from "@/components/media/IpfsImg"
 import { fmvBasis } from "@/lib/fmv-basis"
@@ -290,11 +290,27 @@ function MarketInner() {
   // ── Owner key + edition counts (powers Owned filter + Owned/Locked col) ──
   const [ownerKey, setOwnerKey] = useState<string | null>(null)
   const [editionStats, setEditionStats] = useState<Map<string, { owned: number; locked: number }>>(new Map())
+  // ⛔ 2026-09-19 — BOTH LINES BELOW WERE FLOW-SHAPED, AND THE SECOND ONE IS WHY
+  // A FIX THAT SHIPPED EARLIER TODAY WAS INERT. `/api/wallet/edition-counts` was
+  // repaired to read a base58 wallet (verified live: editionCount 0 → 5 for a
+  // real Candy wallet), but this effect never CALLED it for one — the
+  // `startsWith("0x")` gate returned first, so Candy's Owned/Locked column and
+  // Owned filter were empty no matter what the reader had searched. Fixing a
+  // route does not fix the surface until its caller can reach it.
+  //
+  // ⚠ The key is read from the collection's OWN chain slot, not the single
+  // global `rpc_owner_key` — see lib/owner-key.ts for why one slot cannot hold
+  // two chains. `ownerKeyMatchesChain` then refuses to send a Cadence address to
+  // a Solana collection's counts (or the reverse), which is what keeps this from
+  // becoming a cross-chain query that returns an honest-looking zero. ⚠ Its
+  // Cadence arm stays the loose `startsWith("0x")` this line already used, so
+  // no Flow collector loses counts to a stricter shape test.
+  const ownerKeyChain = getCollection(collectionId)?.dbChain
   useEffect(() => {
-    setOwnerKey(getOwnerKey())
-  }, [])
+    setOwnerKey(getOwnerKeyForChain(ownerKeyChain))
+  }, [ownerKeyChain])
   useEffect(() => {
-    if (!ownerKey || !ownerKey.startsWith("0x") || !collectionId) return
+    if (!ownerKey || !collectionId || !ownerKeyMatchesChain(ownerKey, ownerKeyChain)) return
     let cancelled = false
     fetch(`/api/wallet/edition-counts?wallet=${encodeURIComponent(ownerKey)}&collection=${encodeURIComponent(collectionId)}`, {
       cache: "no-store",
@@ -311,7 +327,7 @@ function MarketInner() {
       })
       .catch(() => { /* silent */ })
     return () => { cancelled = true }
-  }, [ownerKey, collectionId])
+  }, [ownerKey, collectionId, ownerKeyChain])
 
   // ── Data ─────────────────────────────────────────────────────────────
   const [data, setData] = useState<MarketResponse | null>(null)

@@ -17,14 +17,20 @@
 const SESSION_USER_KEY = "rpc_session_user"
 
 const EXACT_KEYS = [
-  "rpc_owner_key",
   "rpc_last_wallet",
   "rpc_wallet_address",
   "rpc_last_hydrated",
   "rpc:first-run-completed",
 ]
 
-const PREFIXES = ["rpc_owned_"]
+// ⛔ `rpc_owner_key` MOVED FROM EXACT_KEYS TO A PREFIX, 2026-09-19. The owner
+// key became CHAIN-SCOPED that day (lib/owner-key.ts): a browser can now hold
+// `rpc_owner_key` AND `rpc_owner_key_solana`. Listed exactly, only the Flow one
+// was dropped on an account switch — so the next collector to sign in on that
+// device would have inherited the previous one's CANDY wallet, which is the
+// precise failure this file exists to prevent. A prefix also cannot go stale
+// when a third chain ships; an enumeration of chain names can, silently.
+const PREFIXES = ["rpc_owned_", "rpc_owner_key"]
 
 /**
  * Record `uid` as the account this browser is signed in as. When it differs

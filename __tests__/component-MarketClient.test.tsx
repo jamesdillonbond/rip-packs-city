@@ -39,7 +39,15 @@ vi.mock("@/components/BadgeIcon", () => ({
 }))
 
 let ownerKey: string | null = null
-vi.mock("@/lib/owner-key", () => ({ getOwnerKey: () => ownerKey }))
+// Chain-scoped since 2026-09-19 — see lib/owner-key.ts. The Market tab reads the
+// slot belonging to ITS collection's chain, so this mock answers both accessors
+// with the same fixture and the component's own `isValidAddressForChain` check
+// is what decides whether the key is used.
+vi.mock("@/lib/owner-key", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/owner-key")>()),
+  getOwnerKey: () => ownerKey,
+  getOwnerKeyForChain: () => ownerKey,
+}))
 
 const trackOutbound = vi.fn()
 vi.mock("@/lib/track-click", () => ({ trackOutboundClick: (...a: unknown[]) => trackOutbound(...a) }))
@@ -933,5 +941,55 @@ describe("MarketClient — outbound clicks and chips", () => {
     readyResponse = () => { throw new Error("ready down") }
     render(<MarketClient />)
     await screen.findByText("Damian Lillard")
+  })
+})
+
+// ─── Chain-scoped owner key ──────────────────────────────────────────────────
+//
+// ⛔ THE DEFECT THESE PIN. `/api/wallet/edition-counts` was repaired on
+// 2026-09-19 to read a base58 wallet (verified live: editionCount 0 → 5 for a
+// real Candy wallet) — and Candy's Owned/Locked column stayed empty anyway,
+// because THIS component never called it. The effect was gated on
+// `ownerKey.startsWith("0x")` and returned first. Fixing a route does not fix
+// the surface until its caller can reach it, and nothing in the route's own
+// tests could ever have caught that.
+describe("MarketClient — the owned column follows the collection's chain", () => {
+  const MINT = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+
+  afterEach(() => { PARAMS.collection = "nba-top-shot" })
+
+  it("requests edition counts for a Candy collector holding a base58 key", async () => {
+    PARAMS.collection = "candy-mlb"
+    ownerKey = MINT
+    render(<MarketClient />)
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("edition-counts"))).toBe(true)
+    })
+    // ⚠ And it must go up CASE-INTACT. A lowercased base58 mint is not a
+    // different formatting of the key, it is a different key — the read returns
+    // zero rows, which the column renders as "you own none of these".
+    const call = fetchMock.mock.calls.map((c) => String(c[0])).find((u) => u.includes("edition-counts"))!
+    expect(call).toContain(encodeURIComponent(MINT))
+  })
+
+  it("⛔ REFUSES to spend a cross-chain read: a Flow key on the Candy tab asks for nothing", async () => {
+    // The cross-chain query would not error. It would return no rows, and the
+    // Owned column would state a confident zero about a wallet it never looked
+    // at. Absence of the request IS the correct behaviour.
+    PARAMS.collection = "candy-mlb"
+    ownerKey = "0xmine"
+    render(<MarketClient />)
+    await screen.findByText("Damian Lillard")
+    expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("edition-counts"))).toBe(false)
+  })
+
+  it("no-change control: a Flow key on a Flow tab still requests counts", async () => {
+    // Without this the two arms above are satisfied by a component that simply
+    // never fetches, and the Flow regression would ship green.
+    ownerKey = "0xmine"
+    render(<MarketClient />)
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes("edition-counts"))).toBe(true)
+    })
   })
 })

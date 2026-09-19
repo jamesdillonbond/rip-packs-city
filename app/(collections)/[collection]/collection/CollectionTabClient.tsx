@@ -8,7 +8,8 @@ import WalletSoldMomentsView from "@/components/collection/WalletSoldMomentsView
 import WalletPacksView from "@/components/packs/WalletPacksView"
 import { buildEditionScopeKey } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
-import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
+import { getOwnerKeyForChain, setOwnerKeyForChain, onOwnerKeyChangeForChain, ownerKeyMatchesChain } from "@/lib/owner-key"
+import { isSupportedAddress } from "@/lib/address"
 import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { useWarmCache, usePrefetch, useWarmup } from "@/lib/warmup/WarmupContext"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
@@ -68,6 +69,15 @@ import {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+// ⚠ `|| startsWith("0x")` IS LOAD-BEARING, NOT REDUNDANT. `isSupportedAddress`
+// demands a canonical shape (16 hex for Cadence, 40 for EVM, base58 for Solana),
+// so using it ALONE would reclassify a non-canonical `0x…` input that the old
+// `startsWith("0x")` test accepted — narrowing behaviour on the Flow path while
+// fixing the Solana one. This only ever ADDS base58.
+function looksLikeAddress(value: string): boolean {
+  return isSupportedAddress(value) || value.startsWith("0x")
+}
+
 function WalletMomentsBody() {
   const router = useRouter()
   const routeParams = useParams()
@@ -98,6 +108,24 @@ function WalletMomentsBody() {
   }, [])
   const [hasSearched, setHasSearched] = useState(false)
   const [ownerKey, setOwnerKey] = useState("")
+
+  // ⛔ THE SEARCH PLACEHOLDER SAID "Enter Top Shot username or wallet address"
+  // ON EVERY COLLECTION'S TAB — All Day, Golazos, UFC, and from 2026-09-19 Candy
+  // MLB. For Candy it is wrong twice over: the username path on this tab is
+  // resolved by Top Shot's GraphQL (see the UFC skip below, which says so), and
+  // RPC's identity rule for Candy is an ADDRESS — there is no Candy username to
+  // type. So the copy invited an input the tab cannot resolve, on a tab that had
+  // just been turned on. Naming the collection is not enough; the username half
+  // has to disappear where no username exists.
+  const supportsUsernameSearch = collectionObj?.dbChain === "flow"
+  const collectionLabel = collectionObj?.label ?? "wallet"
+  const searchPlaceholder = supportsUsernameSearch
+    ? (ownerKey
+        ? `Enter ${collectionLabel} username or wallet address (or press Enter to load your wallet)`
+        : `Enter ${collectionLabel} username or wallet address`)
+    : (ownerKey
+        ? "Enter a wallet address (or press Enter to load your wallet)"
+        : "Enter a wallet address")
   const [packsByTitle, setPacksByTitle] = useState<Record<string, number>>({})
   // ⚠ THE THIRD STATE FOR THE PACKS COLUMN (2026-08-29). `packsByTitle = {}` is
   // produced by BOTH "this wallet holds no sealed packs" and "the sealed-pack
@@ -211,10 +239,17 @@ function WalletMomentsBody() {
       .catch(function() {})
   }, [collectionSlug])
 
+  // ⚠ CHAIN-SCOPED, 2026-09-19. This used to read the single global
+  // `rpc_owner_key`, which on `/candy-mlb/collection` meant a Top Shot user's
+  // FLOW address was shown as "Signed in as" and auto-searched against Candy —
+  // returning nothing, which reads as "you hold nothing here" rather than as the
+  // wrong key. Flow collections resolve to the identical storage slot, so this
+  // is a no-op for every collection that shipped before Candy.
+  const ownerKeyChain = collectionObj?.dbChain
   useEffect(function() {
-    setOwnerKey(getOwnerKey())
-    return onOwnerKeyChange(function(key) { setOwnerKey(key) })
-  }, [])
+    setOwnerKey(getOwnerKeyForChain(ownerKeyChain))
+    return onOwnerKeyChangeForChain(ownerKeyChain, function(key) { setOwnerKey(key) })
+  }, [ownerKeyChain])
 
   // ── Warm cache: saved wallets + per-wallet wallet-search prefetch ─────────
   // Reads the user's saved wallets (5-min TTL) and fires background fetches
@@ -578,13 +613,27 @@ function WalletMomentsBody() {
     const moments: ServerMoment[] = json.moments ?? []
     const momentRows = moments.map((m) => serverMomentToRow(m, collectionObj?.sport))
 
-    // Sync rpc_owner_key to the resolved 0x address so the sniper page can
-    // find this wallet's owned IDs automatically (especially for username searches).
+    // Sync the owner key to the resolved address so the sniper page can find
+    // this wallet's owned IDs automatically (especially for username searches),
+    // and so the Market tab's Owned/Locked column has a wallet to count.
+    //
+    // ⛔ 2026-09-19 — THIS WAS `resolvedWallet.startsWith("0x")` WRITING A SINGLE
+    // GLOBAL KEY, and both halves were wrong once a second chain shipped. The
+    // gate meant a Candy base58 address was NEVER written, so
+    // `/candy-mlb/market`'s Owned column had no wallet to count — the
+    // `/api/wallet/edition-counts` fix that landed earlier today (0 → 5 for a
+    // real Candy wallet) was inert because its CALLER had nothing to pass it.
+    // ⚠ And simply dropping the gate would have been worse: one global slot
+    // means a Flow user searching a Candy wallet loses their Flow key and every
+    // `0x`-gated Flow surface goes blank. The write is therefore chain-scoped
+    // AND chain-checked — `isValidAddressForChain` means a Cadence address can
+    // never land in the Solana slot or vice versa, whatever the route returns.
     const resolvedWallet: string | undefined = json.wallet
     try {
-      if (resolvedWallet && resolvedWallet.startsWith("0x")) {
-        const current = localStorage.getItem("rpc_owner_key")
-        if (current !== resolvedWallet) localStorage.setItem("rpc_owner_key", resolvedWallet)
+      if (resolvedWallet && ownerKeyMatchesChain(resolvedWallet, ownerKeyChain)) {
+        if (getOwnerKeyForChain(ownerKeyChain) !== resolvedWallet) {
+          setOwnerKeyForChain(ownerKeyChain, resolvedWallet)
+        }
       }
     } catch {}
 
@@ -633,7 +682,11 @@ function WalletMomentsBody() {
     const trimmed = query.trim()
     track("search-executed", {
       collection: collectionSlug,
-      input_kind: trimmed.startsWith("0x") ? "address" : "username",
+      // ⛔ Was `startsWith("0x")`, so every Candy base58 address was reported to
+      // telemetry as a USERNAME. `search-executed` is the only instrument that
+      // says whether Candy search is used at all, and it was lying about 100% of
+      // Candy searches. (Trevor's canon: distrust the instrument first.)
+      input_kind: looksLikeAddress(trimmed) ? "address" : "username",
     })
     setInput(trimmed)
     setActiveWallet(trimmed)
@@ -807,7 +860,10 @@ function WalletMomentsBody() {
         setInput(seed)
         runSearch(seed)
         // Check if this query matches a seeded (pre-cached) wallet.
-        if (!seed.startsWith("0x")) {
+        // ⚠ `/api/seeded-wallets` takes a USERNAME. Gating on `!startsWith("0x")`
+        // sent every Candy base58 ADDRESS down the username path — a wasted
+        // round trip on every mount that could never match.
+        if (!looksLikeAddress(seed)) {
           fetch("/api/seeded-wallets?username=" + encodeURIComponent(seed))
             .then(function(r) { return r.ok ? r.json() : null })
             .then(function(json) {
@@ -1061,7 +1117,8 @@ function WalletMomentsBody() {
             }}
           >
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-            Signed in as <span style={{ fontWeight: 600, color: "var(--rpc-text-primary)" }}>{/^0x[a-fA-F0-9]{16}$/.test(ownerKey) ? ownerKey.slice(0, 6) + "\u2026" + ownerKey.slice(-4) : ownerKey}</span>
+            Signed in as <span style={{ fontWeight: 600, color: "var(--rpc-text-primary)" }}>{/* A base58 Solana address is 32–44 chars; the old Flow-only regex rendered it in full and blew out this chip. */}
+            {ownerKey.length > 12 ? ownerKey.slice(0, 6) + "\u2026" + ownerKey.slice(-4) : ownerKey}</span>
             <span style={{ marginLeft: 4, color: "var(--rpc-text-ghost)" }}>· Loading wallet will update your profile stats</span>
           </div>
         )}
@@ -1072,7 +1129,7 @@ function WalletMomentsBody() {
             value={input}
             onChange={function(e) { setInput(e.target.value) }}
             onKeyDown={function(e) { if (e.key === "Enter" && !loading && input.trim()) handleSearch() }}
-            placeholder={ownerKey ? "Enter Top Shot username or wallet address (or press Enter to load your wallet)" : "Enter Top Shot username or wallet address"}
+            placeholder={searchPlaceholder}
             className="w-full sm:max-w-lg"
             style={{
               background: "var(--rpc-surface-raised)",

@@ -111,9 +111,25 @@ vi.mock("@/lib/profile/saved-wallet-for-collection", () => ({
 }))
 
 let ownerKey = ""
-vi.mock("@/lib/owner-key", () => ({
+// ⚠ The owner key is CHAIN-SCOPED (lib/owner-key.ts, 2026-09-19): one global
+// slot cannot hold a Flow address and a Solana address at once. The mock records
+// every write with the chain it was scoped to, so a test can assert not just
+// THAT the key was synced but INTO WHICH chain's slot — which is the whole
+// property, since the bug this replaced was a Flow key being clobbered.
+const ownerKeyWrites: Array<{ chain: string | null | undefined; key: string }> = []
+// ⚠ `importOriginal` on purpose: only the localStorage ACCESSORS are faked.
+// `ownerKeyMatchesChain` is the real implementation, because it is the predicate
+// under test — a hand-written stub of it would let the component and the guard
+// drift apart and still pass.
+vi.mock("@/lib/owner-key", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/owner-key")>()),
   getOwnerKey: () => ownerKey,
   onOwnerKeyChange: () => () => {},
+  getOwnerKeyForChain: () => ownerKey,
+  setOwnerKeyForChain: (chain: string | null | undefined, key: string) => {
+    ownerKeyWrites.push({ chain, key })
+  },
+  onOwnerKeyChangeForChain: () => () => {},
 }))
 
 // ⚠ `useWarmCache` is a DATA hook returning `{ data }`, not a cache object. A
@@ -1572,5 +1588,88 @@ describe("CollectionTabClient — row shapes", () => {
     expect(screen.getByTestId("moment-table").getAttribute("data-rows")).toBe("0")
     const urls = fetchMock.mock.calls.map((c) => String(c[0]))
     expect(urls.some((u) => u.startsWith("/api/badges"))).toBe(false)
+  })
+})
+
+// ─── Chain-scoped owner key ──────────────────────────────────────────────────
+//
+// ⛔ This component is the ONLY writer of the collector's owner key, and the
+// write was gated on `startsWith("0x")` against a single global slot. Both
+// halves broke the day a second chain shipped a Collection tab: a Candy base58
+// address was never written (so the Market tab's Owned column had no wallet to
+// count), and simply dropping the gate would have let a Candy search CLOBBER a
+// Flow collector's key, blanking every `0x`-gated Flow surface. The three arms
+// below are the three cases that has to distinguish.
+describe("CollectionTabClient — the owner key follows the collection's chain", () => {
+  const MINT = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+
+  afterEach(() => { PARAMS.collection = "nba-top-shot" })
+
+  it("writes a Candy wallet into the SOLANA slot", async () => {
+    PARAMS.collection = "candy-mlb"
+    ownerKeyWrites.length = 0
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: MINT, page: 1, total_count: 5, total_pages: 1, total_fmv: 42 })
+    searchParams = new URLSearchParams(`wallet=${MINT}`)
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(ownerKeyWrites.length).toBeGreaterThan(0))
+    // ⚠ The CHAIN is asserted, not just the key. A write of the right address
+    // into the wrong slot is the clobber this change exists to prevent.
+    expect(ownerKeyWrites[0]).toEqual({ chain: "solana", key: MINT })
+  })
+
+  it("⛔ does NOT write a Flow-shaped wallet while on the Candy tab", async () => {
+    // Whatever the route returns, a Cadence address must never land in the
+    // Solana slot — from there it would be handed to Candy's reads, which
+    // answer with nothing, which renders as a zero.
+    PARAMS.collection = "candy-mlb"
+    ownerKeyWrites.length = 0
+    momentsResponse = () =>
+      json(200, { moments: [MOMENT()], wallet: "0xa1b2c3d4e5f60718", page: 1, total_count: 1, total_pages: 1 })
+    searchParams = new URLSearchParams("wallet=0xa1b2c3d4e5f60718")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(screen.getByTestId("moment-table").getAttribute("data-has-searched")).toBe("true"))
+    expect(ownerKeyWrites).toEqual([])
+  })
+
+  it("no-change control: a Top Shot search still writes the FLOW slot, loose shape and all", async () => {
+    // `0xmine` is the long-standing fixture here and it is NOT a canonical
+    // 16-hex address. That is deliberate: the Cadence arm of the predicate was
+    // kept loose so no existing collector's stored key stops working, and this
+    // is the arm that proves it.
+    ownerKeyWrites.length = 0
+    searchParams = new URLSearchParams("wallet=0xmine")
+    render(<CollectionTabClient />)
+    await waitFor(() => expect(ownerKeyWrites.length).toBeGreaterThan(0))
+    expect(ownerKeyWrites[0]).toEqual({ chain: "flow", key: "0xmine" })
+  })
+
+  it("the search box stops advertising a username on a collection that has none", async () => {
+    // ⛔ The placeholder read "Enter Top Shot username or wallet address" on
+    // EVERY collection's tab. On Candy it invited an input the tab cannot
+    // resolve: the username path here is Top Shot GraphQL, and RPC's identity
+    // rule for Candy is an address.
+    PARAMS.collection = "candy-mlb"
+    render(<CollectionTabClient />)
+    expect(await screen.findByPlaceholderText(/wallet address/)).toBeTruthy()
+    expect(screen.queryByPlaceholderText(/username/)).toBeNull()
+  })
+
+  it("no-change control: a Flow collection still offers the username it can actually resolve", async () => {
+    render(<CollectionTabClient />)
+    expect(await screen.findByPlaceholderText(/username or wallet address/)).toBeTruthy()
+  })
+
+  it("classifies a base58 address as an address, not a username", async () => {
+    // `search-executed` is the only instrument that says whether Candy search is
+    // used at all, and with the old `startsWith("0x")` test it reported 100% of
+    // Candy searches as usernames.
+    PARAMS.collection = "candy-mlb"
+    render(<CollectionTabClient />)
+    const box = await screen.findByPlaceholderText(/wallet address/)
+    fireEvent.change(box, { target: { value: MINT } })
+    fireEvent.keyDown(box, { key: "Enter" })
+    await waitFor(() => expect(track).toHaveBeenCalled())
+    expect(track.mock.calls[0][1]).toMatchObject({ input_kind: "address" })
   })
 })
