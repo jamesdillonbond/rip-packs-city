@@ -4,7 +4,7 @@ import path from "node:path"
 // A plain .mjs script — TS resolves it under allowJs, so no directive is needed.
 // ⚠ An `@ts-expect-error` here is itself a tsc ERROR (TS2578, "unused directive"): green
 // vitest, red typecheck, the repo's most-repeated CI breakage met from a new angle.
-import { buildRow } from "../scripts/ingest-topshot-active-listings.mjs"
+import { buildRow, parseAtlasBoundary, atlasBoundaryBody, dedupeRows } from "../scripts/ingest-topshot-active-listings.mjs"
 
 // `scripts/ingest-topshot-active-listings.mjs` IS the whole of the
 // `topshot-active-listings-ingest` workflow, and it had no test. It is one of only two
@@ -150,5 +150,115 @@ describe("the script still runs when invoked directly", () => {
     // would have exited the vitest process before any test ran. Reaching this line is the
     // assertion; the expect makes it explicit rather than incidental.
     expect(typeof buildRow).toBe("function")
+  })
+})
+
+// ── the shared Atlas response rule (2026-09-19, ATLAS_FETCH_MODE=browser) ────────────
+// The night of 09-18 Cloudflare began answering curl with a JavaScript challenge from
+// both arms (known-issues #125). Both transports — curl and the new browser page — are
+// now judged by ONE parser, so a challenge page is classified the same way whichever
+// path fetched it, and the egress-probe short-circuit in main() sees the same signal.
+const CHALLENGE_HTML =
+  '<!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title><meta http-equiv="Content-Type" content="text/html">'
+
+describe("parseAtlasBoundary — one rule for every transport", () => {
+  it("returns the first transaction from a JSON body", () => {
+    const r = parseAtlasBoundary('{"transactions":[{"nftId":"7618856","serialNumber":"1","priceCents":"13500"}]}', 200)
+    expect("tx" in r && r.tx?.nftId).toBe("7618856")
+  })
+
+  it("returns tx:null when nothing is listed — distinct from a block", () => {
+    const r = parseAtlasBoundary('{"transactions":[]}', 200)
+    expect(r).toEqual({ tx: null })
+  })
+
+  it("classifies the Cloudflare challenge page as a block, naming the mechanism, for a 403", () => {
+    const r = parseAtlasBoundary(CHALLENGE_HTML, 403)
+    expect("blocked" in r).toBe(true)
+    expect((r as { blocked: string }).blocked).toMatch(/^challenge 403/)
+  })
+
+  it("classifies the same page as a challenge when the transport carries no status (curl)", () => {
+    const r = parseAtlasBoundary(CHALLENGE_HTML, null)
+    expect((r as { blocked: string }).blocked).toMatch(/^challenge:/)
+  })
+
+  it("keeps the legacy wording for a non-JSON body that is not a challenge", () => {
+    const r = parseAtlasBoundary("error code: 1015", null)
+    expect((r as { blocked: string }).blocked).toMatch(/^non-JSON \(WAF block\/throttle\)/)
+  })
+
+  it("treats any non-200 status as a block even when the body is JSON", () => {
+    const r = parseAtlasBoundary('{"message":"rate limited"}', 429)
+    expect((r as { blocked: string }).blocked).toMatch(/^http 429/)
+  })
+
+  it("never returns a tx from a block", () => {
+    for (const [text, status] of [[CHALLENGE_HTML, 403], ["", 502], ["<html>", null]] as const) {
+      const r = parseAtlasBoundary(text as string, status as number | null)
+      expect("tx" in r).toBe(false)
+    }
+  })
+})
+
+describe("atlasBoundaryBody — the request both transports send", () => {
+  it("is the exact SearchMarketplaceTransactions shape the console probe and the workflow use", () => {
+    const b = JSON.parse(atlasBoundaryBody(2402, "ASC"))
+    expect(b).toEqual({
+      product: "nba",
+      completed: false,
+      editionId: "2402",
+      sortByOption: "SERIAL_NUMBER",
+      sortByDirection: "ASC",
+      limit: "1",
+      offset: "0",
+      offers: false,
+    })
+  })
+
+  it("stringifies the edition id (Atlas rejects a numeric editionId)", () => {
+    expect(JSON.parse(atlasBoundaryBody(15601, "DESC")).editionId).toBe("15601")
+  })
+})
+
+describe("ATLAS_FETCH_MODE is validated at startup", () => {
+  it("a misspelt mode fails fast with exit 1 rather than silently curling", () => {
+    let status = 0
+    let stderr = ""
+    try {
+      execFileSync(process.execPath, [SCRIPT], {
+        encoding: "utf8",
+        env: { ...process.env, INGEST_SECRET_TOKEN: "x", ATLAS_FETCH_MODE: "brwoser" },
+        timeout: 60_000,
+      })
+    } catch (e) {
+      const err = e as { status?: number; stderr?: string }
+      status = err.status ?? -1
+      stderr = err.stderr ?? ""
+    }
+    expect(status).toBe(1)
+    expect(stderr).toMatch(/ATLAS_FETCH_MODE must be curl or browser/)
+  })
+})
+
+describe("dedupeRows — one row per (edition_id, serial_number) before an upsert", () => {
+  // A 1-of-1 edition yields the same listing at both boundaries; two rows with one
+  // primary key in a single INSERT is a Postgres error that discards the whole chunk.
+  const one = { rpc_edition_id: "e1", external_id: "1:1", no1_estimate_usd: 500, perfect_estimate_usd: 500, circulation_count: 1 }
+  it("collapses the #1 and perfect rows of a 1-of-1 into one, keeping the #1 pick", () => {
+    const tx = { serialNumber: 1, priceCents: 12345, nftId: "77", uuid: "u" }
+    const rows = dedupeRows([buildRow(one, tx, true), buildRow(one, tx, false)])
+    expect(rows).toHaveLength(1)
+    expect(rows[0].serial_fmv_usd).toBe(500)
+  })
+  it("keeps distinct serials of the same edition and the same serial of different editions", () => {
+    const a = buildRow({ ...one, circulation_count: 99 }, { serialNumber: 1, priceCents: 1 }, true)
+    const b = buildRow({ ...one, circulation_count: 99 }, { serialNumber: 99, priceCents: 1 }, false)
+    const c = buildRow({ ...one, rpc_edition_id: "e2" }, { serialNumber: 1, priceCents: 1 }, true)
+    expect(dedupeRows([a, b, c])).toHaveLength(3)
+  })
+  it("is a no-op on an already-unique buffer and preserves order", () => {
+    const rows = [1, 2, 3].map((n) => buildRow(one, { serialNumber: n, priceCents: n }, n === 1))
+    expect(dedupeRows(rows).map((r) => r.serial_number)).toEqual([1, 2, 3])
   })
 })

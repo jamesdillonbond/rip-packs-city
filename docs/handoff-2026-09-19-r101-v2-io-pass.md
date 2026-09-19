@@ -68,3 +68,7 @@ Final: v2 **−79 % blocks/call at n=35**, v2c **temp_w 0 at n=21** — both con
 - Read, no change: `Smoke Concierge Daily` (30 s cap in the night spell, n=2), the Dune entry (harmless past the sunset), 17 inactive entries all deliberate (schedule doc now says which and why).
 
 **Needs you (new):** #125's transport decision. **Unchanged:** #22, #55, #75, jobid 303, Dune sunset one-tick risk.
+
+## "Keep going" (14:0x–15:0x PM PT): #125 solved to one operator command
+
+The active-listings lane's transport: **a headless Chromium page on dapper.market, in-page fetch** (`ATLAS_FETCH_MODE=browser`, default in the Windows runner). Measured on the laptop VM: curl still challenged; DB-feed derivation refuted (11/357); the "sold" shortcut refuted (relisted moments); headless shell challenged; full Chromium without automation flags + desktop UA → 200. **A full 897-target sweep ran from the VM (0 skipped, 352 upserted, 53 deactivated) — the board is fresh as of 14:51 PT.** Latent 1-of-1 duplicate-key bug fixed. 👉 **You: `npx playwright install chromium` once on the Windows box (repo root)**, then the 3-hourly task takes over; falsifier on its first tick is `atlas_mode: browser, targets_skipped: 0` in `pipeline_runs.extra`.

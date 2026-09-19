@@ -10,7 +10,7 @@
 #
 # It loads the bearer token from .env.local (prefers INGEST_SECRET_TOKEN, falls
 # back to CRON_SECRET — the route accepts either), then runs the Node runner,
-# which curls Atlas for each candidate's #1/perfect serial and POSTs the rows to
+# which fetches Atlas (browser page since 2026-09-19; curl before) for each candidate's #1/perfect serial and POSTs the rows to
 # /api/cron/topshot-active-listings-ingest (all DB I/O stays on Vercel).
 #
 # Manual run:        powershell -ExecutionPolicy Bypass -File scripts\run-active-listings-ingest.ps1
@@ -20,10 +20,27 @@
 #   see docs/overnight/ledger.md (2026-06-16 underpriced-serials) for the
 #   Register-ScheduledTask one-liner, or scripts\register-active-listings-task.ps1
 
+# 2026-09-19: ATLAS TRANSPORT IS NOW A REAL BROWSER PAGE, NOT CURL. The night of
+# 09-18 Cloudflare bot management on Atlas began answering curl from THIS machine's
+# residential IP with a JavaScript challenge (403 "Just a moment...") - the same
+# block the GitHub runner gets - and this arm went silent for 19 h with no error
+# (known-issues #125). A headless Chromium launched without the automation flags,
+# with a desktop Chrome UA, parked on dapper.market, gets the API 200 (measured
+# on the laptop VM 2026-09-19; a full 897-target sweep ran that way, 0 skipped).
+# So this runner sets ATLAS_FETCH_MODE=browser. ONE-TIME PREREQUISITE on this
+# machine (as the logged-in user, from the repo root):
+#     npx playwright install chromium
+# or set -BrowserChannel chrome to drive the installed Google Chrome instead.
+# If a run logs "dapper.market landing was challenged", re-run with -Headful
+# (Cloudflare tolerates a visible window more than a headless one) and note it.
+
 param(
   [string]$Floor = "100",
   [string]$MaxTargets = "",
-  [switch]$DryRun
+  [switch]$DryRun,
+  [string]$AtlasFetchMode = "browser",   # browser | curl (curl is challenged since 2026-09-19)
+  [string]$BrowserChannel = "",          # "" = Playwright's bundled Chromium; "chrome" = installed Google Chrome
+  [switch]$Headful
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,6 +63,9 @@ $env:BASE_URL            = "https://www.rippackscity.com"
 $env:FLOOR               = $Floor
 $env:MAX_TARGETS         = $MaxTargets
 $env:DRY_RUN             = if ($DryRun) { "1" } else { "" }
+$env:ATLAS_FETCH_MODE    = $AtlasFetchMode
+$env:ATLAS_BROWSER_CHANNEL  = $BrowserChannel
+$env:ATLAS_BROWSER_HEADLESS = if ($Headful) { "0" } else { "1" }
 
 # ── run + log (single rolling log under LOCALAPPDATA) ────────────────────────
 $stamp  = Get-Date -Format "yyyy-MM-ddTHH-mm-ssK"
