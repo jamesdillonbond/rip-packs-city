@@ -118,7 +118,14 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // is the feature: it is what made the anon-gating arm in
     // sitemap-urls-are-anon-public.test.ts fire on the same commit, catching
     // that proxy.ts would have 302'd the new URL to /login for Googlebot.
-    expect(s).toHaveLength(74)
+    // 74 → 75 on 2026-09-19: Candy MLB gained its Collection tab. Same derived
+    // coupling as 09-12 — `pages` grew, so /candy-mlb/collection entered segment 0
+    // by itself and this number is the record, not the cause. The tab shipped
+    // because a route-by-route sweep found the data path was already Solana-safe
+    // and only Flow-shaped GATES in front of it were failing (7 routes fixed);
+    // proxy.ts's anon rule gained a second member in the same commit, which is
+    // what keeps sitemap-urls-are-anon-public.test.ts green.
+    expect(s).toHaveLength(75)
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/ufc/sniper`)).toBeUndefined()
     // …and the no-change control: the other collections still advertise theirs.

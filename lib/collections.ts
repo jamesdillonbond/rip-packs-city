@@ -272,9 +272,37 @@ export const COLLECTIONS: Collection[] = [
     // so this tab is not a Flow component pointed at a Solana collection. The
     // feed measured 1,821 active listings the day it shipped, every one carrying
     // a price, a serial, an FMV and a thumbnail — MarketClient renders it with
-    // no Candy-specific branch. Collection / Packs / Sniper still have no Solana
-    // dispatch and so are still absent.
-    pages: ["overview", "market"],
+    // no Candy-specific branch.
+    //
+    // 2026-09-19 — COLLECTION added (Trevor's call), after a route-by-route
+    // sweep of every endpoint CollectionTabClient calls. The bar this entry set
+    // was "re-add tabs only WITH their Solana dispatch", and the sweep found the
+    // DATA path never needed one — what needed fixing were Flow-shaped GATES in
+    // front of it. Verified live against a real Candy wallet:
+    //   collection-moments    503 -> 200, total_count 5 (Misiorowski #149 $6.53)
+    //   wallet/edition-counts  editionCount 0 (folded address) -> 5, verbatim
+    //   sets                  500 -> 200 `set_tracking_unavailable` (typed)
+    //   cost-basis            bare [] -> `cost_basis_unavailable` (typed)
+    //   collection-series     reads the table instead of short-circuiting
+    //   cache-refresh         diagnoses the collection, not the address
+    //   wallet-summary        base58 read as an address, not a username
+    // Clean on inspection: fmv, best-offers, wallet-cache, seeded-wallets,
+    // wallet-packs. Badges is correctly scoped — the client passes Candy's UUID,
+    // so no Top Shot badge can bleed onto a Candy moment.
+    //
+    // ⚠ WHAT DEGRADES, AND IT DEGRADES TO ABSENCE RATHER THAN TO A ZERO, which
+    // is the condition that made this shippable: the sets strip does not render
+    // (`nearCompleteSets()` returns [] for both null and []), per-row cost basis
+    // is a Map lookup that misses (not $0), the series filter is honestly empty,
+    // and the background cache-refresh 400 is swallowed by the same
+    // fire-and-forget branch that already swallows it for Golazos, Pinnacle and
+    // UFC. No panel states a fabricated zero about a Candy wallet.
+    //
+    // ⛔ PACKS and SNIPER stay absent, and not for want of dispatch: Candy has
+    // ZERO rows in `pack_distributions`, and the Sniper's job is now done by the
+    // Candy leg on /insights/deals (41 editions). Either would be a tab built
+    // for its own sake.
+    pages: ["overview", "market", "collection"],
     published: true,
     supabaseCollectionId: "209ade70-32c5-4470-bc7c-4793d660f713",
     pitch: "Wallet analytics, FMV, and pack/edition intelligence for Candy MLB on Solana — Metaplex Core, secondary on Magic Eden.",

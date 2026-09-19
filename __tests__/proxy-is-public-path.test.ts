@@ -438,7 +438,7 @@ describe("THIN_COLLECTION_MISSING_TABS is the complement of the registry", () =>
 
   it("redirect-shape rows: a missing tab matches, and a REAL tab does not", async () => {
     const { THIN_COLLECTION_MISSING_TABS } = await import("@/proxy")
-    for (const p of ["/candy-mlb/sniper", "/candy-mlb/collection", "/candy-mlb/packs/"]) {
+    for (const p of ["/candy-mlb/sniper", "/candy-mlb/sets", "/candy-mlb/packs/"]) {
       expect(THIN_COLLECTION_MISSING_TABS.test(p), p).toBe(true)
     }
     for (const p of [
@@ -447,6 +447,13 @@ describe("THIN_COLLECTION_MISSING_TABS is the complement of the registry", () =>
       // day the tab became real — and a stale `true` here is a login redirect
       // served to crawlers for a working page.
       "/candy-mlb/market",
+      // ⭐ THE SAME PIN, 2026-09-19. `/candy-mlb/collection` sat in the `true`
+      // list above until the Collection tab became real — the registry gained
+      // `collection` in `pages` and proxy.ts dropped it from the alternation, in
+      // the same commit as this line. Both pins exist because the failure mode is
+      // invisible in production: the page renders for a signed-in reader, the
+      // sitemap lists it, and only the crawler sees the 307.
+      "/candy-mlb/collection",
       "/candy-mlb",
       "/candy-mlb/edition/foo",
       "/nba-top-shot/sniper",

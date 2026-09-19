@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+
+### 2026-09-19 · 🏁 CANDY'S COLLECTION TAB IS ON — the parity gap was never missing features, it was five Flow-shaped gates in front of features that already worked · Cowork cloud
+
+**Shipped: 3 files (`lib/collections.ts`, `proxy.ts`, and the two guards that pin them). No DB change in this commit — the DB half of this pass shipped earlier under its own entries.**
+
+⭐ **THE FINDING THAT MADE THIS A THREE-LINE CHANGE INSTEAD OF A BUILD.** The entry that set Candy's bar wrote *"re-add tabs only WITH their Solana dispatch"*, which reads as "Collection needs a Solana arm". A route-by-route sweep of every endpoint `CollectionTabClient` calls found **the data path never needed one.** What needed fixing was a Flow-shaped GATE in front of it — `startsWith("0x")`, `.toLowerCase()` on a **case-sensitive base58** address, a `contractName` short-circuit — each one failing *silently in the direction of "this collection has no data."* Seven routes were fixed under earlier entries in this pass; this commit is what turns the tab on.
+
+⚠ **AND IT WAS ADDED AS ITS OWN RULE, NOT BY APPENDING `candy-mlb` TO THE FLOW ALTERNATION IN `isPublicPath`.** That alternation carries ten tab names; widening it would have opened ten Candy URLs at once, **eight of which are tabs Candy does not have.** The opening would have been *invisible* — `THIN_COLLECTION_MISSING_TABS` still 307s all eight today — right up until someone shrinks that regex for the NEXT real tab and silently un-gates the rest along with it. proxy.ts's own comment states this rule; the set simply has two members now.
+
+📏 **Anon-safety RE-CHECKED for this tab rather than inherited from Market.** What an anonymous reader reaches is a wallet's holdings and FMV — the same surface `/share/<wallet>` already exposes anonymously, from the same `wallet_moments_cache` rows. The session-scoped parts stay gated: `/api/cost-basis` is behind the auth wall (**verified live: it 307s to `/login` for an anonymous caller**, with `/api/collection-series` returning 200 on the identical method as the positive control), and saved wallets require a session.
+
+⚠ **WHAT DEGRADES, AND IT DEGRADES TO ABSENCE RATHER THAN TO A ZERO** — which is the condition that made this shippable at all. The sets strip does not render (`nearCompleteSets()` returns `[]` for both `null` and `[]`), per-row cost basis is a Map lookup that **misses** rather than reading `$0`, the series filter is honestly empty, and the background `cache-refresh` 400 is swallowed by the same fire-and-forget branch that already swallows it for Golazos, Pinnacle and UFC. **No panel states a fabricated zero about a Candy wallet.**
+
+⛔ **PACKS and SNIPER stay absent, and not for want of dispatch.** Candy has **ZERO rows in `pack_distributions`**, and the Sniper's job is now done by the Candy leg on `/insights/deals` (41 editions). Either would be a tab built for its own sake.
+
+⭐ **THE THREE GUARD MUTATIONS, because a flip that no test can fail is not shipped:**
+- **alternation left un-shrunk** (registry has the tab, proxy still redirects it) → `proxy-is-public-path` red **twice**, once on the hardcoded pin and once on the derived arm: *"collection IS a real Candy tab and must not redirect"*. This is the crawler-facing failure — a 307 to `/login` for a page that renders.
+- **anon rule left at market-only** → `sitemap-urls-are-anon-public` red, naming the URL: *"these sitemap URLs 302 to /login for an anonymous Googlebot: `['/candy-mlb/collection']`"*.
+- **registry `pages` reverted** (proxy changes kept) → the derived arm red the OTHER way (*"collection is missing and must redirect"* — the soft-404 direction) **and** the sitemap count red at 74 vs 75.
+- **No-change control: all 242 tests across the six suites green.** Each mutation was reverted before the next.
+
+📌 **The sitemap count moved on its own and the number is the RECORD, not the cause** — segment 0 derives tab URLs from `pages ∩ PUBLIC_TAB_PAGES`, so `/candy-mlb/collection` entered the sitemap the instant the registry changed. That coupling is the feature: it is what makes the anon-gating arm fire on the same commit.
+
+**Verified after:** 6 suites green, 242 tests (`proxy-is-public-path`, `sitemap-data`, `sitemap-urls-are-anon-public`, `collection-registry-consistency`, `collections-published-gating`, `public-wallet-surface-contract`) · `git diff` against `origin/main` is exactly these 4 files · a stale proxy.ts comment naming `/candy-mlb/collection` as a Flow-only tab was corrected in the same commit rather than left to mislead the next reader.
+
+- **Revert:** `git revert <sha>` (`git log --grep="CANDY'S COLLECTION TAB"`). **No DB half.** ⚠ A partial revert is a trap: reverting only `lib/collections.ts` leaves a soft-404 and reverting only `proxy.ts` leaves a crawler redirect. The three files move together, which is what the two guards above enforce.
+
 ### 2026-09-19 · ⏰🔴 SHIPPED (console: Stale FMV Monitor recreated on `?ack=1`, job 8474496) · RELIEF (institutional snapshot hand-dispatched, HIGH silence clears) · NEW #125 — `topshot-active-listings-ingest` dead on BOTH arms since 09-18 21:13 PT, Atlas now JS-challenges curl from GitHub AND the residential IP · Cowork cloud + Chrome + laptop VM
 
 **Console.** The ack-mode deploy (`b43530a`) went live (`?ack=1` → `202 {"accepted":true,"mode":"ack"}` in 543 ms from the VM). Switching job 8474274's URL to `?ack=1` **failed silently three times** — keyboard type, `insertText`, and a real SAVE click each produced `Cronjob saved successfully.` and a server read-back WITHOUT the query string, while `RPC Pipeline Sentinel`'s `?ack=1` (typed at creation) sits in the same field. ⭐ **Rule for the recipe: a query string added by EDITING an existing job does not persist; CREATE the job with it (clone → type URL → save).** Did exactly that: deleted 8474274 (Actions → Delete → dialog DELETE via JS — a coordinate click on Delete opens a dialog that freezes screenshots; the dialog is a normal MUI one and its button clicks fine), cloned `RPC Check Alerts` → **job 8474496**, URL `…/stale-fmv-monitor?ack=1`, `19,49`, enabled, both notifications on, header key present; read back from the server: URL with `?ack=1`. First ack tick due 13:49 PT — verify `202` + a `cron-ack` heartbeat row in `pipeline_runs`.

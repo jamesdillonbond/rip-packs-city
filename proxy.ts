@@ -331,7 +331,7 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // there and not added here serves a soft-404. Both directions are pinned in
 // __tests__/proxy-is-public-path.test.ts.
 export const THIN_COLLECTION_MISSING_TABS =
-  /^\/(candy-mlb)\/(collection|packs|sniper|sets|analytics|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
+  /^\/(candy-mlb)\/(packs|sniper|sets|analytics|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
 
 // A PUBLISHED collection that has most tabs but not this one. The thin regex
 // above covers overview-only collections; this covers the partial case, and the
@@ -848,15 +848,16 @@ export function isPublicPath(pathname: string, method: string): boolean {
     return true
   }
 
-  // Candy MLB's Market tab — anon-public, 2026-09-12.
+  // Candy MLB's Market tab — anon-public, 2026-09-12. Collection joined it
+  // 2026-09-19; see the dated note below.
   //
   // ⚠ ITS OWN RULE, NOT candy-mlb APPENDED TO THE ALTERNATION ABOVE. Adding the
-  // slug there would open TEN Candy URLs at once, and nine of them are tabs
-  // Candy does not have — `/candy-mlb/collection`, `/candy-mlb/sniper` and the
-  // rest are Flow-dispatched pages with no Solana arm. They are redirected today
-  // by THIN_COLLECTION_MISSING_TABS, so the widening would be invisible right up
+  // slug there would open TEN Candy URLs at once, and eight of them are tabs
+  // Candy does not have — `/candy-mlb/sniper`, `/candy-mlb/packs` and the rest
+  // are Flow-dispatched pages with no Solana arm. They are redirected today by
+  // THIN_COLLECTION_MISSING_TABS, so the widening would be invisible right up
   // until someone shrinks that regex for the NEXT real tab and silently un-gates
-  // eight others along with it. One tab, one rule.
+  // the others along with it. One tab, one rule.
   //
   // Anon-safety is the same argument as the five above and was re-checked, not
   // inherited: /api/market's Candy arm is a service-role read of
@@ -865,9 +866,24 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // no cost basis, no saved wallets. The comment above says "Panini/Candy tabs
   // stay gated (no multi-chain pre-launch)"; that was written on 2026-07-17,
   // before Candy published on 09-06. Panini is still unpublished and still out.
+  //
+  // 2026-09-19 — COLLECTION joins MARKET here, and it is added to THIS SET rather
+  // than by appending `candy-mlb` to the Flow alternation above, for exactly the
+  // reason the paragraph above gives: that would open ten Candy URLs at once,
+  // eight of which are still tabs Candy does not have. One tab, one rule — the
+  // set simply has two members now.
+  //
+  // Anon-safety RE-CHECKED for this tab, not inherited from Market. What an
+  // anonymous visitor can reach is a wallet's holdings and FMV — the same
+  // surface `/share/<wallet>` already exposes anonymously, from the same
+  // `wallet_moments_cache` rows. The session-scoped parts are gated elsewhere
+  // and stay gated: `/api/cost-basis` is behind the auth wall (verified: it 307s
+  // to /login for an anonymous caller), and saved wallets require a session.
+  // Sets and cost-basis therefore render as absent for an anon reader, never as
+  // a zero.
   if (
     (method === "GET" || method === "HEAD") &&
-    pathname === "/candy-mlb/market"
+    (pathname === "/candy-mlb/market" || pathname === "/candy-mlb/collection")
   ) {
     return true
   }
