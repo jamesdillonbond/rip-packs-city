@@ -15,6 +15,30 @@ const root = process.cwd()
 
 const PINS = [
   {
+    // Added 2026-09-18. Pins the FIX for "my wallet shows 0 sold packs when I have
+    // sold hundreds" (Trevor). pack_purchases.seller_address is the transaction
+    // PAYER — Dapper's escrow on every marketplace sale (103,396 of 103,398 Top
+    // Shot secondary rows) — so "seller = wallet" matched nobody and every wallet
+    // read 0 sold. The seller lives in topshot_pack_sales_history /
+    // allday_pack_sales_history.storefront_address, which this body UNIONs in.
+    // Also pins the three fabricated-zero shapes it removed (buy_price,
+    // pull_value_usd, realized_pl_usd were COALESCE(.., 0)) and that a sealed
+    // pack's distribution resolves from ANY marketplace row, or stays NULL.
+    fn: "get_wallet_pack_history",
+    test: "supabase/tests/get_wallet_pack_history.sql",
+    migration:
+      "supabase/migrations/20260919004500_audit_20260918_wallet_packs_sold_from_marketplace_history_and_sealed_pack_identity.sql",
+  },
+  {
+    // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
+    // sold_proceeds_usd, packs_purchased, spent) over the same union, one row per
+    // (collection, pack) so a purchase both sources saw counts once.
+    fn: "get_wallet_pack_summary",
+    test: "supabase/tests/get_wallet_pack_summary.sql",
+    migration:
+      "supabase/migrations/20260919004500_audit_20260918_wallet_packs_sold_from_marketplace_history_and_sealed_pack_identity.sql",
+  },
+  {
     // Added 2026-09-11 with the arm itself. Pins the RATE detector that exists
     // because a SILENCE detector cannot see a cadence collapse — nine lanes ran at
     // 1/12th cadence for two days while `cron_silent` (1,800-minute threshold) and

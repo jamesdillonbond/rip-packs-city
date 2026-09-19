@@ -13,8 +13,9 @@ import { cdc, cdcEvent, eventBlock } from "./helpers/flow-cdc-fixture"
 // runtime-agnostic (env-injected Supabase + global fetch), so the REAL handler
 // runs here with no prod change and no miniflare. Pins:
 //   - secondary_sale: ListingCompleted(PackNFT type, purchased) paired with the
-//     same-tx PackNFT.Deposit for the buyer; seller = tx payer; DUC currency
-//     derivation from the vault type;
+//     same-tx PackNFT.Deposit for the buyer; seller = the same-tx
+//     PackNFT.Withdraw.from, with the tx payer (Dapper's escrow) only as a
+//     fallback (2026-09-18); DUC currency derivation from the vault type;
 //   - primary_withdraw: PackNFT.Withdraw ONLY when from = the contract reserve
 //     address, paired deposit for the buyer, null price (off-chain Dapper);
 //   - a user-to-user Withdraw and a non-pack ListingCompleted never classify;
@@ -155,7 +156,8 @@ describe("pack-events-ingest worker — event_kind classification", () => {
       jsonRoute(encodeURIComponent(EVT_WITHDRAW), [
         // Primary: withdraw FROM the contract reserve.
         eventBlock({ height: 1102, txId: txPri, eventType: EVT_WITHDRAW, payload: withdrawPayload("43", CONTRACT_RESERVE) }),
-        // User-to-user withdraw (a secondary transfer leg) — never primary.
+        // The SELLER's withdraw leg of the marketplace sale — never primary,
+        // and (2026-09-18) the source of seller_address for pack 42.
         eventBlock({ height: 1103, txId: txSec, eventType: EVT_WITHDRAW, payload: withdrawPayload("42", "0x9999999999999999") }),
       ]),
       jsonRoute("/v1/transactions/", { payer: "0x3333333333333333" }),
@@ -190,7 +192,7 @@ describe("pack-events-ingest worker — event_kind classification", () => {
     expect(secondary).toMatchObject({
       event_kind: "secondary_sale",
       buyer_address: "0x1111111111111111",
-      seller_address: "0x3333333333333333", // tx payer
+      seller_address: "0x9999999999999999", // same-tx Withdraw.from = the seller, NOT the payer
       sale_price: 25,
       sale_currency: "DUC",
       commission_amount: 1.25,

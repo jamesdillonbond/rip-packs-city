@@ -397,7 +397,10 @@ async function getSealedHeight(): Promise<number> {
   return Number(json[0]?.header?.height ?? 0);
 }
 
-// Used to derive seller_address per the spec ("the transaction's payer field").
+// FALLBACK for seller_address when the purchase tx carries no same-tx
+// PackNFT.Withdraw for the pack (the spec's original "the transaction's payer
+// field"). On Dapper the payer is the ESCROW account, not the seller; see
+// withdrawByTxAndId in fetchTopShotPurchasesChunk (2026-09-18).
 const txPayerCache = new Map<string, string | null>();
 async function getTransactionPayer(txId: string): Promise<string | null> {
   if (txPayerCache.has(txId)) return txPayerCache.get(txId) ?? null;
@@ -516,6 +519,18 @@ async function fetchTopShotPurchasesChunk(
     if (nftId === undefined || nftId === null) continue;
     depositByTxAndId.set(`${dep.transaction_id}:${String(nftId)}`, dep);
   }
+  // 2026-09-18: index PackNFT.Withdraw the same way. On a marketplace sale the
+  // pack is withdrawn FROM THE SELLER'S collection inside the purchase tx, so
+  // Withdraw.from IS the seller. The transaction payer, which seller_address
+  // used until now, is Dapper's escrow (0x18eb4ee6b3c026d2) on 103,396 of
+  // 103,398 Top Shot secondary rows: a column that named the seller on exactly
+  // two sales platform-wide. The payer stays as the fallback only.
+  const withdrawByTxAndId = new Map<string, FlatEvent>();
+  for (const wd of packWithdraws) {
+    const nftId = wd.decoded["id"];
+    if (nftId === undefined || nftId === null) continue;
+    withdrawByTxAndId.set(`${wd.transaction_id}:${String(nftId)}`, wd);
+  }
 
   const rows: PurchaseRow[] = [];
   let eventsProcessed = 0;
@@ -537,7 +552,11 @@ async function fetchTopShotPurchasesChunk(
     const buyerAddress = dep.decoded["to"];
     if (typeof buyerAddress !== "string") continue;
 
-    const sellerAddress = await getTransactionPayer(lc.transaction_id);
+    const wdFrom = withdrawByTxAndId.get(`${lc.transaction_id}:${nftIdStr}`)?.decoded["from"];
+    const sellerAddress =
+      typeof wdFrom === "string" && wdFrom.toLowerCase() !== TS_PACKNFT_CONTRACT_ADDR
+        ? wdFrom.toLowerCase()
+        : await getTransactionPayer(lc.transaction_id);
 
     const vaultTypeId = extractTypeId(d["salePaymentVaultType"]);
     const salePrice = d["salePrice"] === undefined || d["salePrice"] === null

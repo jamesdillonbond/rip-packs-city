@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
+import { packBuyLabel, packIdentityNote, packMarketLabel } from "@/lib/packs-wallet-view-format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import {
@@ -228,6 +229,14 @@ interface HistoryRow {
   first_event_at: string | null
   latest_event_at: string | null
   rip_id: string | null
+  // 2026-09-18 (get_wallet_pack_history v4), all optional; NULL = unknown.
+  buy_usd?: number | null
+  buy_price_source?: "onchain" | "marketplace" | "retail" | null
+  sell_source?: "onchain" | "marketplace" | null
+  dist_source?: "rip" | "own_row" | "peer_sale" | null
+  lowest_ask_usd?: number | null
+  pack_ev_usd?: number | null
+  last_sale_usd?: number | null
 }
 
 interface History {
@@ -765,7 +774,11 @@ function Th({ children, right }: { children: React.ReactNode; right?: boolean })
 }
 
 function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; isOpen: boolean; lifecycle: any; onClick: () => void }) {
-  const buyText = row.has_buy ? fmtUsd(row.buy_price) + (row.buy_currency ? " " + row.buy_currency : "") : "—"
+  // 2026-09-18: NULL buy price renders "—" (the RPC no longer coalesces an
+  // unpriced primary drop to 0); a retail-priced drop is tagged.
+  const buyText = packBuyLabel(row)
+  const identityNote = packIdentityNote(row)
+  const marketText = packMarketLabel(row)
   const sellText = row.has_sell ? fmtUsd(row.sell_price) + (row.sell_currency ? " " + row.sell_currency : "") : "—"
   const pullTint = row.has_buy && row.has_rip && row.buy_price != null && row.pull_value_usd != null
     ? (row.pull_value_usd >= row.buy_price ? "#34D399" : "var(--rpc-red, #E03A2F)")
@@ -793,10 +806,10 @@ function ExpandableRow({ row, isOpen, lifecycle, onClick }: { row: HistoryRow; i
                 </Link>
               ) : (
                 <span style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, color: "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {packNameContent} <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>· Unknown distribution</span>
+                  {packNameContent} <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>· {identityNote ?? "Unknown distribution"}</span>
                 </span>
               )}
-              <span style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{row.collection_name}</span>
+              <span style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{row.collection_name}{marketText ? ` · ${marketText}` : ""}</span>
             </div>
           </div>
         </td>

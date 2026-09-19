@@ -94,3 +94,52 @@ export function relativePackTime(iso: string | null | undefined, now: number = D
   if (mos < 12) return mos + "mo ago"
   return Math.floor(mos / 12) + "y ago"
 }
+
+// ── 2026-09-18: honest identity + provenance for the pack column ─────────────
+//
+// get_wallet_pack_history v4 emits NULL (never 0) for an unknown price and adds
+// provenance keys. A sealed Top Shot primary-drop pack has NO distribution
+// recorded anywhere on this platform until it is opened or resold, so its name
+// cannot be known; the row must SAY that instead of dressing a serial fragment
+// up as a name.
+
+export type BuyPriceSource = "onchain" | "marketplace" | "retail" | null
+
+/** Second line under the pack name. `null` when nothing needs saying. */
+export function packIdentityNote(
+  row: { dist_id: string | null; status: string; pack_name?: string | null },
+): string | null {
+  if (row.dist_id) return null
+  if (row.status === "held") return "Sealed · distribution not recorded until opened or resold"
+  return "Distribution unknown"
+}
+
+/** The Buy cell. A primary drop prices at the distribution's retail price
+ *  (tagged so "$0" reads as "free reward pack", not as a missing number). */
+export function packBuyLabel(row: {
+  has_buy: boolean
+  buy_usd?: number | null
+  buy_price?: number | null
+  buy_currency?: string | null
+  buy_price_source?: BuyPriceSource
+}): string {
+  if (!row.has_buy) return "—"
+  const usd = row.buy_usd ?? row.buy_price
+  if (usd == null) return "—"
+  if (row.buy_price_source === "retail") return usd === 0 ? "$0 (reward)" : fmtPackUsd(usd) + " retail"
+  return fmtPackUsd(usd) + (row.buy_currency ? ` ${row.buy_currency}` : "")
+}
+
+/** Market context for a row whose distribution is known: floor ask · EV ·
+ *  last sale, each omitted when unknown. Empty string when nothing is known. */
+export function packMarketLabel(row: {
+  lowest_ask_usd?: number | null
+  pack_ev_usd?: number | null
+  last_sale_usd?: number | null
+}): string {
+  const parts: string[] = []
+  if (row.lowest_ask_usd != null) parts.push("Ask " + fmtPackUsd(row.lowest_ask_usd))
+  if (row.pack_ev_usd != null) parts.push("EV " + fmtPackUsd(row.pack_ev_usd))
+  if (row.last_sale_usd != null) parts.push("Last " + fmtPackUsd(row.last_sale_usd))
+  return parts.join(" · ")
+}

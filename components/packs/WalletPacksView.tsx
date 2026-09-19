@@ -20,7 +20,10 @@ import { getCollection, toDbSlug } from "@/lib/collections"
 import {
   fmtPackUsd,
   netPlTint,
+  packBuyLabel,
   packDisplayName,
+  packIdentityNote,
+  packMarketLabel,
   packStatusColor,
   realizedPlTint,
   relativePackTime,
@@ -65,6 +68,15 @@ interface HistoryRow {
   pull_value_usd: number | null
   realized_pl_usd: number | null
   latest_event_at: string | null
+  // 2026-09-18 (get_wallet_pack_history v4) — every one optional so an older
+  // payload still renders. NULL means unknown; the RPC never emits 0 for it.
+  buy_usd?: number | null
+  buy_price_source?: "onchain" | "marketplace" | "retail" | null
+  sell_source?: "onchain" | "marketplace" | null
+  dist_source?: "rip" | "own_row" | "peer_sale" | null
+  lowest_ask_usd?: number | null
+  pack_ev_usd?: number | null
+  last_sale_usd?: number | null
 }
 
 interface History {
@@ -272,11 +284,11 @@ export default function WalletPacksView({ collection }: { collection: string }) 
               ? `No sealed packs held in ${getCollection(collection)?.label ?? "this collection"}.`
               : packFilter === "opened"
                 ? `No opened packs for this wallet in ${getCollection(collection)?.label ?? "this collection"}.`
-                : `No packs sold on while sealed in ${getCollection(collection)?.label ?? "this collection"}.`}
+                : `No marketplace pack sales recorded for this wallet in ${getCollection(collection)?.label ?? "this collection"}. Sales are read from the Dapper marketplace history, which can lag a few days.`}
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontFamily: mono, fontSize: 11 }}>
+            <table style={{ width: "100%", minWidth: 760, borderCollapse: "collapse", fontFamily: mono, fontSize: 11 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--rpc-border)", color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", fontSize: 9 }}>
                   <Th>Pack</Th>
@@ -286,6 +298,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
                   <Th right>Sell</Th>
                   <Th right>Pull value</Th>
                   <Th right>Realized P&L</Th>
+                  <Th right>Market</Th>
                 </tr>
               </thead>
               <tbody>
@@ -293,6 +306,8 @@ export default function WalletPacksView({ collection }: { collection: string }) 
                   const sc = packStatusColor(row.status)
                   const plTint = realizedPlTint(row.realized_pl_usd)
                   const packName = packDisplayName(row.pack_name, row.pack_nft_id)
+                  const note = packIdentityNote(row)
+                  const market = packMarketLabel(row)
                   return (
                     <tr key={row.pack_nft_id} style={{ borderBottom: "1px solid var(--rpc-border)" }}>
                       <td style={{ padding: "9px 12px" }}>
@@ -320,22 +335,31 @@ export default function WalletPacksView({ collection }: { collection: string }) 
                               is keyed on the pack_nft_id we already have and
                               308-redirects to the distribution page when the
                               lifecycle data is thin. */}
-                          {row.dist_id ? (
-                            <Link
-                              href={`/${collection}/packs/simulator/${encodeURIComponent(row.dist_id)}`}
-                              style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: display, fontWeight: 700, fontSize: 12 }}
-                            >
-                              {packName}
-                            </Link>
-                          ) : (
-                            <Link
-                              href={`/${collection}/pack/${encodeURIComponent(row.pack_nft_id)}`}
-                              title="Sealed pack — which distribution it came from is only recorded on-chain when the pack is opened."
-                              style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: display, fontWeight: 700, fontSize: 12 }}
-                            >
-                              {packName}
-                            </Link>
-                          )}
+                          <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                            {row.dist_id ? (
+                              <Link
+                                href={`/${collection}/packs/simulator/${encodeURIComponent(row.dist_id)}`}
+                                style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: display, fontWeight: 700, fontSize: 12 }}
+                              >
+                                {packName}
+                              </Link>
+                            ) : (
+                              <Link
+                                href={`/${collection}/pack/${encodeURIComponent(row.pack_nft_id)}`}
+                                title="Sealed pack — which distribution it came from is only recorded when the pack is opened or resold on the marketplace."
+                                style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: display, fontWeight: 700, fontSize: 12 }}
+                              >
+                                {packName}
+                              </Link>
+                            )}
+                            {/* 2026-09-18: a sealed primary-drop pack has NO
+                                distribution recorded anywhere on the platform
+                                until it is opened or resold, so "Pack #394446"
+                                is an id fragment, not a name. Say so. */}
+                            {note && (
+                              <span style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>{note}</span>
+                            )}
+                          </span>
                         </div>
                       </td>
                       <td style={{ padding: "9px 12px" }}>
@@ -344,12 +368,14 @@ export default function WalletPacksView({ collection }: { collection: string }) 
                         </span>
                       </td>
                       <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)" }}>{relativePackTime(row.latest_event_at)}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>
-                        {row.has_buy ? fmtPackUsd(row.buy_price) + (row.buy_currency ? ` ${row.buy_currency}` : "") : "—"}
-                      </td>
+                      {/* NULL price -> "—". The RPC no longer coalesces an
+                          unknown primary-drop price to 0, and a retail-priced
+                          drop is tagged so "$0 (reward)" reads as a fact. */}
+                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{packBuyLabel(row)}</td>
                       <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{row.has_sell ? fmtPackUsd(row.sell_price) : "—"}</td>
                       <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{row.has_rip ? fmtPackUsd(row.pull_value_usd) : "—"}</td>
                       <td style={{ padding: "9px 12px", textAlign: "right", color: plTint, fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(row.realized_pl_usd)}</td>
+                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)", whiteSpace: "nowrap" }}>{market || "—"}</td>
                     </tr>
                   )
                 })}

@@ -10,6 +10,9 @@ import {
   packDisplayName,
   fmtPackUsd,
   relativePackTime,
+  packIdentityNote,
+  packBuyLabel,
+  packMarketLabel,
 } from "@/lib/packs-wallet-view-format"
 
 // Pins the pure formatting/mapping logic lifted out of
@@ -154,5 +157,44 @@ describe("relativePackTime", () => {
     // A moment ~2 hours ago reads as an hours-ago label with the default clock.
     const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000).toISOString()
     expect(relativePackTime(twoHoursAgo)).toBe("2h ago")
+  })
+})
+
+describe("packIdentityNote (2026-09-18)", () => {
+  it("says a sealed pack's distribution is not recorded, instead of faking a name", () => {
+    expect(packIdentityNote({ dist_id: null, status: "held" })).toMatch(/not recorded/)
+  })
+  it("says 'Distribution unknown' for a non-sealed row with no dist", () => {
+    expect(packIdentityNote({ dist_id: null, status: "ripped" })).toBe("Distribution unknown")
+    expect(packIdentityNote({ dist_id: null, status: "sold" })).toBe("Distribution unknown")
+  })
+  it("says nothing when the distribution is known", () => {
+    expect(packIdentityNote({ dist_id: "6224", status: "held" })).toBeNull()
+  })
+})
+
+describe("packBuyLabel (2026-09-18)", () => {
+  it("never renders $0 for an unknown price", () => {
+    expect(packBuyLabel({ has_buy: true, buy_usd: null, buy_price: null, buy_price_source: null })).toBe("—")
+    expect(packBuyLabel({ has_buy: false, buy_usd: 10 })).toBe("—")
+  })
+  it("tags a retail-priced primary drop, and a $0 retail as a reward pack", () => {
+    expect(packBuyLabel({ has_buy: true, buy_usd: 10, buy_price_source: "retail" })).toBe("$10.00 retail")
+    expect(packBuyLabel({ has_buy: true, buy_usd: 0, buy_price_source: "retail" })).toBe("$0 (reward)")
+  })
+  it("renders a secondary buy with its currency", () => {
+    expect(packBuyLabel({ has_buy: true, buy_usd: 10, buy_price: 10, buy_currency: "DUC", buy_price_source: "onchain" })).toBe("$10.00 DUC")
+    expect(packBuyLabel({ has_buy: true, buy_usd: 30, buy_currency: "USD", buy_price_source: "marketplace" })).toBe("$30.00 USD")
+  })
+  it("falls back to buy_price when buy_usd is absent (older payloads)", () => {
+    expect(packBuyLabel({ has_buy: true, buy_price: 8, buy_currency: "DUC" })).toBe("$8.00 DUC")
+  })
+})
+
+describe("packMarketLabel (2026-09-18)", () => {
+  it("joins only the parts that are known", () => {
+    expect(packMarketLabel({ lowest_ask_usd: 22.5, pack_ev_usd: 31.2, last_sale_usd: 19 })).toBe("Ask $22.50 · EV $31.20 · Last $19.00")
+    expect(packMarketLabel({ lowest_ask_usd: null, pack_ev_usd: 31.2 })).toBe("EV $31.20")
+    expect(packMarketLabel({})).toBe("")
   })
 })
