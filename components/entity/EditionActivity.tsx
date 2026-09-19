@@ -15,6 +15,7 @@ import { useMemo, useState } from "react"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
 import Link from "next/link"
 import { EM_DASH, fmtUsd, truncWallet } from "./_shared"
+import { displayAddress } from "@/lib/address"
 import RelTime from "./RelTime"
 import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 import SalesTablePaginated from "./SalesTablePaginated"
@@ -80,7 +81,15 @@ const TD: React.CSSProperties = {
 
 function WalletCell({ address, name, collectionUrlSlug }: { address: string | null; name?: string | null; collectionUrlSlug?: string | null }) {
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>{EM_DASH}</span>
-  const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
+  // ⛔ 2026-09-19 — the fold-and-prefix fabrication, and this copy feeds the
+  // HREF as well as the title. On a Candy MLB edition page a Solana mint was
+  // lowercased (it is CASE-SENSITIVE) and given a Flow prefix, so every
+  // buyer/seller link resolved to nothing and the analyzer rendered an EMPTY
+  // WALLET — "this collector holds nothing" rather than a broken link.
+  // ⚠ This is its OWN copy, not `WalletLink`'s: the first sweep scoped the grep
+  // to app/(collections)/** and missed components/entity/**. Hex output is
+  // byte-identical.
+  const lower = displayAddress(address) ?? address
   // 2026-09-06 (Search Console): this linked to /profile/<address>, a URL that
   // does NOT EXIST — /profile/<handle> resolves an RPC username only, so every
   // buyer/seller/owner link on every sales table was a 404 for the reader and

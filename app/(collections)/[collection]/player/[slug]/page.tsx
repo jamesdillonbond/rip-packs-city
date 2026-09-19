@@ -6,7 +6,7 @@
 // Pinnacle: is_character flips labels Player→Character, Team→Franchise.
 
 import type { Metadata } from "next"
-import { truncateAddressForDisplay } from "@/lib/address"
+import { displayAddress, truncateAddressForDisplay } from "@/lib/address"
 import { Suspense } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -228,6 +228,12 @@ async function TopCollectorsSection({ playerName }: { playerName: string }) {
           // Same fabrication as Top Sales above — latent here only because
           // Candy has no rows in the ownership graph yet, which is a reason to
           // fix it now rather than a reason it is fine.
+          // ⚠ AND IT WAS NOT ONLY THE LABEL: the row's `href` below used the same
+          // mangled value, so a Candy collector's row linked to `/share/0x…` — a
+          // share page for an address that does not exist. `tsc` caught this one
+          // (the deleted `lower` was still referenced); the grep did not, because
+          // the variable was defined 15 lines above its second use.
+          const shown = displayAddress(c.wallet_address) ?? c.wallet_address
           const label = c.username ? `@${c.username}` : truncateAddressForDisplay(c.wallet_address)
           const inner = (
             <div style={{ display: "grid", gridTemplateColumns: "minmax(38px, auto) 1fr minmax(90px, auto) minmax(110px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 420 }}>
@@ -238,7 +244,7 @@ async function TopCollectorsSection({ playerName }: { playerName: string }) {
             </div>
           )
           return (
-            <Link key={c.wallet_address} href={`/share/${encodeURIComponent(lower)}`} className="rpc-card" style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>
+            <Link key={c.wallet_address} href={`/share/${encodeURIComponent(shown)}`} className="rpc-card" style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>
           )
         })}
       </div>

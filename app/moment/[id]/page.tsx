@@ -24,6 +24,7 @@
 //     the hero and Recent Activity, with linked Team.
 
 import type { Metadata } from "next"
+import { displayAddress, truncateAddressForDisplay } from "@/lib/address"
 import { notFound, redirect, permanentRedirect } from "next/navigation"
 import Link from "next/link"
 // The data-access layer moved to lib/ (2026-08-13) so it lands inside the primary
@@ -1845,8 +1846,15 @@ function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
 
 function OwnerLink({ address, name, collectionUrlSlug }: { address: string | null | undefined; name?: string | null; collectionUrlSlug?: string | null }) {
   if (!address) return <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
-  const lower = address.toLowerCase().startsWith("0x") ? address.toLowerCase() : `0x${address.toLowerCase()}`
-  const trunc = address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
+  // ⛔ 2026-09-19 — fold-and-prefix again, and it feeds the HREF. /moment/<mint>
+  // resolves for Candy MLB since the base58 branch landed in resolve_moment_id
+  // this morning, so this renders for a real reader today: the owner link went to
+  // /candy-mlb/collection?wallet=0x<lowercased mint>, which resolves nothing and
+  // renders an EMPTY WALLET. ⚠ `trunc` below was ALREADY correct (it slices the
+  // raw address), which is why the label looked right while the link did not —
+  // the kind of split that makes this class survive a visual check.
+  const lower = displayAddress(address) ?? address
+  const trunc = truncateAddressForDisplay(address)
   // 2026-09-06 (Search Console): this linked to /profile/<address>, a URL that
   // does NOT EXIST — /profile/<handle> resolves an RPC username only, so every
   // buyer/seller/owner link on every sales table was a 404 for the reader and

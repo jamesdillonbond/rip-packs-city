@@ -11,6 +11,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🔴→🟢 MAIN RED ON `tsc`, AND THE COMPILER FOUND THREE MORE LIVE INSTANCES MY GREP HAD MISSED · Cowork cloud
+
+**Fix: 4 source files. No DB change.** Main was red from `b1341a692` until this commit — **`TypeScript` job only; every test job was green**, which is the point.
+
+⛔ **THE RED ITSELF WAS ONE LINE:** `player/[slug]/page.tsx(241,77): error TS2304: Cannot find name 'lower'`. I removed the fold-and-prefix `const lower = …` and repointed the LABEL, and **a second use of that variable sat 15 lines below, building the row's `href`**. So the Top Collectors row linked to `/share/0x<lowercased mint>` — a share page for an address that does not exist.
+
+⭐ **AND CHASING IT PROPERLY FOUND TWO MORE, both live today.** CLAUDE.md's own rule is *grep for the EXPRESSION, not the file* — I had grepped the **expression** but scoped the **paths** to `app/(collections)/**`:
+- **`components/entity/EditionActivity.tsx`** and **`components/entity/SalesTablePaginated.tsx`** each carry their OWN copy of the fabrication, not `WalletLink`'s — both render on Candy edition pages, and both feed an `href`.
+- **`app/moment/[id]/page.tsx`** — and this one renders for a real reader *today*, because the base58 branch in `resolve_moment_id` landed this morning. ⚠ **Its `trunc` was ALREADY correct** (it slices the raw address), so the LABEL looked right while the LINK did not — the split that lets this class survive a visual check.
+
+📏 **The repo-wide sweep now returns ONE match and it is correctly out of scope:** `app/api/mcp/keys/[keyId]/route.ts` (Flow-only key ownership, no Candy surface).
+
+⚠ **TWO SCOPING LESSONS, and they are the same lesson twice in one day.** A sweep is only as wide as its PATH ARGUMENT — "I grepped for the expression" is not a claim about the repo unless the roots were the repo. And ⭐ **`tsc` is a REACHABILITY instrument, not just a type checker**: deleting a variable is how you find its other readers, which a grep for the *fixed* expression can never surface.
+
+⭐ **`npx tsc --noEmit` DOES run in the laptop VM** with `NODE_OPTIONS=--max-old-space-size=3072` (exit 0, clean) — it had OOM'd at the default heap earlier and I wrote it off as "let CI typecheck". That write-off is what let a compile error reach `main`. ⚠ **And `tsc … | tail` reports `tail`'s exit code** — CLAUDE.md warns about exactly this and I still did it; read `${PIPESTATUS[0]}` or redirect to a file.
+
+**Verified after:** `npx tsc --noEmit` exit 0, zero output, run locally · 6 suites green (80 tests) covering all four changed files · repo-wide expression sweep clean.
+
+- **Revert:** `git revert <sha>` (`git log --grep="THREE MORE LIVE INSTANCES"`). **No DB half.** ⚠ Reverting restores a compile error, not just the links.
+
 ### 2026-09-19 · 🩸 RPC WAS RENDERING WALLET ADDRESSES THAT DO NOT EXIST — a Solana mint, lowercased and given a `0x` prefix, on live Candy pages; and one of them was a LINK · Cowork cloud
 
 **Shipped: 6 source files + 3 test files. No DB change.** `lib/address.ts` · `components/entity/_shared.tsx` · `lib/edition/fetchers.ts` · player page · edition page · `CollectionTabClient.tsx`.
