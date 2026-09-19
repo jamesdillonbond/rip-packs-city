@@ -11,6 +11,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🧮 THE /PROFILE AGGREGATIONS DROPPED 1,726 MOMENTS AND STILL COUNTED THE WALLET AS ATTEMPTED — the third face of fold-and-prefix, and the only one that was never an honest absence · Cowork cloud
+
+**Shipped: 4 source files + 2 test files. No DB change.** `lib/address.ts` (`walletQueryKey`) + `/api/profile/{top-movers,tier-breakdown,cost-basis-summary}`.
+
+⛔ **WHY THIS ONE IS WORSE THAN THE DISPLAY BUG.** Each of the three `/profile` aggregations built its query key with `raw.startsWith("0x") ? raw : "0x" + raw` — correct while every saved wallet was Flow. ⚠ **`saved_wallets` accepts a Candy address now** (its own route was already fixed to use `normalizeAddress`), so the prepend turns a real base58 key into one that matches nothing.
+
+📏 **AND THESE RPCs DO SERVE CANDY — measured against `pg_proc`, not assumed: none of `get_top_movers` / `get_wallet_tier_counts` / `get_wallet_cost_basis` folds its input, and the first two read `wallet_moments_cache`, which holds 25,375 Candy rows.** So this was never a surface degrading to absence; it was a surface *refusing data that was there*. Live, on a real Candy wallet:
+
+| call | result |
+|---|---|
+| `get_wallet_tier_counts(<base58>)` | `{"COMMON": 1626, "LEGENDARY": 100}` |
+| `get_wallet_tier_counts('0x' ‖ <base58>)` | `{}` |
+| `get_top_movers(<base58>)` | real movers (2026 MLB Base Series ICONs, **−11.29%**) |
+| `get_top_movers('0x' ‖ <base58>)` | `{"losers": [], "gainers": []}` |
+
+🚨 **1,726 moments dropped from the tier chart — and the wallet still increments `walletsAttempted`,** so the surface reads "counted, and you hold nothing in any tier." **A measured zero about a portfolio the read never looked at.**
+
+⚠ **THE COUNT-OF-ROWS TRAP NEARLY CLOSED THIS AS "NO DIFFERENCE".** My first probe was `count(*)` over each variant and returned **1, 1, 1** — because the function returns a SINGLE row whose VALUE is the result. That shape is already recorded in memory (`health-fn-return-shapes`), and it would have exonerated a live defect. **Read the payload, never the row count, on a function that returns one row.**
+
+⭐ **SCOPE WAS MEASURED, NOT ASSUMED — the same expression appears 20+ times and most are correctly out of scope.** `collection-moments:175` is inside the Top Shot **username→flowAddress** resolver (unreachable for base58 — the identical shape as the `wallet-packs` retraction earlier in this thread); `wallet-sales-history` gates on `isFlowAddress` first; `wallet-hold-time` / `wallet-cost-basis` are called only by `components/analytics/*`, and **Candy has no analytics tab**; `/api/acquisition-stats` has **no caller at all**. Three routes qualified and three were changed. ⛔ **Reading the context is what kept this from becoming a 20-file change against Flow-only code.**
+
+⚠ **`walletQueryKey` is DELIBERATELY NOT `displayAddress`.** A display string folds for consistency; **a query key must not change what the database is handed.** These call sites never lowercased, so the hex path here is byte-identical *including the absence of a fold* — pinned as its own arm, because adding one would be a Flow regression smuggled in under a Solana fix.
+
+📏 **Two mutations, controls throughout:** prepending `0x` to base58 again reds the unit arm **and** the route arm (which asserts the counts LAND, not just that the key is right — asserting the key alone passes against a route that builds it correctly and drops the result) · folding the hex path reds the byte-identity arm alone. **Control: 114 tests green across 10 suites**, incl. the top-movers budget suite and `wallet-reads-do-not-fold-base58`.
+
+**Verified after:** `npx tsc --noEmit` exit 0 locally · 10 suites green · the pre-push test-tree grep run BEFORE pushing this time.
+
+- **Revert:** `git revert <sha>` (`git log --grep="DROPPED 1,726 MOMENTS"`). **No DB half.**
+
 ### 2026-09-19 · 🗃 A DAYTIME-MONITOR FILING WAS STRANDED ON THE WINDOWS BOX BY A 104-COMMIT-BEHIND CLONE — recovered, plus the push-capability and parity readings that clone made look broken · Claude Code (Windows box)
 
 **Shipped: 1 recovered filing + its two INDEX counts. No code, no DB change.**

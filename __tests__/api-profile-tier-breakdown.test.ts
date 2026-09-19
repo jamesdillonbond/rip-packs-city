@@ -126,6 +126,24 @@ describe("GET /api/profile/tier-breakdown — aggregation core", () => {
     ])
   })
 
+  // ⛔ A CANDY WALLET WAS QUERIED WITH A KEY THAT MATCHED NOTHING, and the
+  // wallet still counted as attempted — a measured zero about a portfolio the
+  // read never looked at. `saved_wallets` accepts base58 now (its route already
+  // uses `normalizeAddress`), and `get_wallet_tier_counts` DOES serve Candy: it
+  // does not fold its input and it reads `wallet_moments_cache`, which holds
+  // 25,375 Candy rows. 📏 Measured live 2026-09-19 on a real wallet:
+  // correct base58 -> {"COMMON":1626,"LEGENDARY":100}; '0x'-prefixed -> {}.
+  it("⛔ queries a Candy wallet with its REAL base58 key, not a 0x-prefixed one", async () => {
+    const MINT = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix"
+    state.rpc = { data: [wallet(MINT)], error: null }
+    state.tierCounts[MINT] = { data: { Legendary: 100, Common: 1626 }, error: null }
+    const body = await (await GET(req("https://t/api/profile/tier-breakdown?ownerKey=me"))).json()
+    expect(state.calls.filter((c) => c.name === "get_wallet_tier_counts").map((c) => c.args.p_wallet)).toEqual([MINT])
+    // ⚠ And the counts must actually LAND — asserting the key alone would pass
+    // against a route that builds the right key and then drops the result.
+    expect(body.total).toBe(1726)
+  })
+
   it("normalizes bare addresses to 0x and skips empty ones", async () => {
     state.rpc = { data: [wallet("bbb"), wallet(""), wallet("0x")], error: null }
     state.tierCounts["0xbbb"] = { data: { Legendary: 1 }, error: null }

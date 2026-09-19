@@ -157,3 +157,38 @@ export function truncateAddressForDisplay(
   if (!shown) return fallback;
   return shown.length <= 12 ? shown : `${shown.slice(0, 6)}…${shown.slice(-4)}`;
 }
+
+// ── Query keys ─────────────────────────────────────────────────────────────
+//
+// ⛔ THE THIRD FACE OF THE SAME BUG, and the costliest one measured so far. The
+// `/profile` aggregations (top-movers, tier-breakdown, cost-basis-summary) each
+// build their query key with `raw.startsWith("0x") ? raw : "0x" + raw`. That was
+// correct while every saved wallet was Flow. `saved_wallets` accepts a Candy
+// address now (its route already uses `normalizeAddress`), so the prepend turns
+// a real base58 key into one that matches nothing.
+//
+// ⚠ AND IT IS NOT AN HONEST ABSENCE, because these RPCs DO serve Candy — none of
+// them folds its input and both read `wallet_moments_cache`, which holds 25,375
+// Candy rows. Measured live 2026-09-19 against a real Candy wallet:
+//
+//   get_wallet_tier_counts(<base58>)        -> {"COMMON": 1626, "LEGENDARY": 100}
+//   get_wallet_tier_counts('0x' || <base58>) -> {}
+//   get_top_movers(<base58>)                -> real movers (ICONs, -11.29%)
+//   get_top_movers('0x' || <base58>)        -> {"losers": [], "gainers": []}
+//
+// So the tier chart drops 1,726 moments and still counts the wallet as
+// ATTEMPTED — a measured zero about a portfolio nobody looked at.
+//
+// ⚠ THE HEX PATH IS BYTE-IDENTICAL, including the ABSENCE of a lowercase: these
+// call sites never folded, and adding a fold here would change what the database
+// is handed on every Flow read — a regression smuggled in under a Solana fix.
+// (This is deliberately NOT `displayAddress`, which DOES fold, because a display
+// string and a query key have different jobs.)
+export function walletQueryKey(value: string | null | undefined): string {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  // base58 is the key exactly as stored: no fold, no prefix.
+  if (isSolanaAddress(trimmed)) return trimmed;
+  return trimmed.startsWith("0x") ? trimmed : `0x${trimmed}`;
+}

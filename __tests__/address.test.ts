@@ -10,6 +10,7 @@ import {
   normalizeAddress,
   displayAddress,
   truncateAddressForDisplay,
+  walletQueryKey,
 } from "@/lib/address"
 
 // Chain-aware address validation. The load-bearing footgun: Solana base58 is
@@ -139,5 +140,47 @@ describe("displayAddress / truncateAddressForDisplay", () => {
 
   it("a short hex address is returned whole rather than ellipsised into nonsense", () => {
     expect(truncateAddressForDisplay("0x1234")).toBe("0x1234")
+  })
+})
+
+// ⛔ THE THIRD FACE OF THE FOLD-AND-PREFIX BUG, and the costliest one measured.
+// The /profile aggregations built their query key with
+// `raw.startsWith("0x") ? raw : "0x" + raw`, which is correct only while every
+// saved wallet is Flow. `saved_wallets` accepts a Candy address now.
+//
+// 📏 Measured live 2026-09-19 against a real Candy wallet — and these RPCs DO
+// serve Candy (neither folds its input; both read wallet_moments_cache, which
+// holds 25,375 Candy rows), so this was never an honest absence:
+//   get_wallet_tier_counts(<base58>)         -> {"COMMON": 1626, "LEGENDARY": 100}
+//   get_wallet_tier_counts('0x' || <base58>) -> {}
+//   get_top_movers(<base58>)                 -> real movers (ICONs, -11.29%)
+//   get_top_movers('0x' || <base58>)         -> {"losers": [], "gainers": []}
+// 1,726 moments dropped, while the wallet still counted as ATTEMPTED.
+describe("walletQueryKey", () => {
+  const MINT = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix"
+
+  it("⛔ a base58 wallet is the key EXACTLY as stored — no prefix, no fold", () => {
+    expect(walletQueryKey(MINT)).toBe(MINT)
+    expect(walletQueryKey(MINT)).not.toMatch(/^0x/)
+    expect(walletQueryKey(MINT)).not.toBe(MINT.toLowerCase())
+  })
+
+  it("⚠ the hex path is BYTE-IDENTICAL, INCLUDING the absence of a lowercase", () => {
+    // These call sites never folded. Adding a fold here would change what the
+    // database is handed on every Flow read — a regression smuggled in under a
+    // Solana fix. This arm is what forbids that, and it is why walletQueryKey
+    // is NOT displayAddress (which does fold).
+    expect(walletQueryKey("0xABCDEF1234567890")).toBe("0xABCDEF1234567890")
+    expect(walletQueryKey("ABCDEF1234567890")).toBe("0xABCDEF1234567890")
+    expect(walletQueryKey("bbb")).toBe("0xbbb")
+  })
+
+  it("empty input yields an empty key, never a bare prefix", () => {
+    // The call sites guard with `if (!addr || addr === "0x") continue`, so a
+    // bare "0x" would silently become a query for nothing.
+    expect(walletQueryKey("")).toBe("")
+    expect(walletQueryKey("   ")).toBe("")
+    expect(walletQueryKey(null)).toBe("")
+    expect(walletQueryKey(undefined)).toBe("")
   })
 })

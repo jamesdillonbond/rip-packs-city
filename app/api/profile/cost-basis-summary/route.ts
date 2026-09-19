@@ -30,6 +30,7 @@
 // unauthenticated, no saved wallets — keep their honest 200 and meta hint.
 
 import { NextResponse } from "next/server";
+import { walletQueryKey } from "@/lib/address"
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { apiErrorResponse } from "@/lib/api-error";
@@ -100,7 +101,11 @@ export async function GET() {
       totalFmv += Number(w.cached_fmv_usd ?? 0) || 0;
 
       const raw = w.wallet_addr ?? "";
-      const addr = raw.startsWith("0x") ? raw : raw ? "0x" + raw : "";
+      // ⛔ was `raw.startsWith("0x") ? raw : "0x" + raw` — which PREPENDED `0x`
+      // to a Candy base58 wallet and matched nothing, while still counting the
+      // wallet as attempted. `saved_wallets` accepts base58 now. See
+      // lib/address.ts for the measured before/after.
+      const addr = walletQueryKey(raw);
       if (!addr || addr === "0x") continue;
       if (seenCb.has(addr)) continue;
       seenCb.add(addr);
