@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · ⛔ I REBUILT A MATERIALIZED VIEW AND HANDED anon A GRANT BACK — after measuring, in the same session, that anon did not have it · Cowork cloud
+
+**Ownership entry. No code, no SQL — the fix was already shipped by the session that caught it** (`20260919190415` + `20260919190531`, both with repo files on `origin/main`). Recording it because the *shape* of the mistake is the useful part and it is not in any guard.
+
+**WHAT HAPPENED.** `20260919184828` (the Candy deals arm, entry above) had to `DROP` and recreate `mv_cross_collection_deals`, because a materialized view has no `CREATE OR REPLACE`. On this database a new relation in `public` inherits `ALTER DEFAULT PRIVILEGES` grants for `anon` and `authenticated` — so the rebuilt MV came back **anon-readable**, and it had not been before. Another session noticed within minutes and revoked it. Current state re-verified here: `anon` SELECT **false**, `authenticated` SELECT **false**, board still `anon` **true**, 184 rows / 41 Candy — i.e. back to exactly the pre-change shape.
+
+🚨 **THE PART WORTH WRITING DOWN: I HAD THE NUMBER AND DID NOT CARRY IT.** Before applying I ran `has_table_privilege` across all four relations *specifically* to avoid breaking the public board, and recorded `anon_mv = false`, `anon_board = true`. I then used that reading to reason carefully about the VIEW — re-asserting `security_invoker=on` and re-granting `anon, authenticated` explicitly, with a comment saying a recreated view inherits neither — **and never asked the same question about the MV I was recreating in the same statement.** The migration header even says *"a recreated view does NOT inherit either"*. It says view. The defect was one object over.
+
+⭐ **A MEASUREMENT IS NOT A SAFEGUARD UNTIL IT IS ATTACHED TO THE THING BEING CHANGED.** The pre-flight read was correct, recent, and about the right relation — and it still did not fire, because I filed it as "context for the view" rather than "the invariant this DROP must restore". The general form: **when a migration drops and recreates ANY relation, the pre-flight ACL read must be re-run against that relation afterwards and asserted, not merely consulted beforehand.** `check_secdef_anon_exec_drift()` is blind here by construction — it is about SECURITY DEFINER *functions*, and this is a matview's default privileges.
+
+⚠ **Blast radius, stated rather than minimised:** `mv_cross_collection_deals` holds the same rows the public `cross_collection_deals_board` already serves anonymously, so nothing private was exposed and no reader saw anything new. The cost was a **silent, unintended widening of the anon surface** for roughly ten minutes, on an instance whose whole anon-surface posture is deliberately audited. That it was harmless this time is luck about *which* relation I rebuilt, not a property of what I did.
+
+👉 **Owed, and it is the only durable fix:** a guard that reds when a migration contains `DROP MATERIALIZED VIEW` / `CREATE MATERIALIZED VIEW` in `public` without a following `REVOKE ... FROM anon` (or an explicit marker saying the grant is intended), exactly parallel to `migration-new-function-states-its-anon-exec-decision`. ⛔ **Deliberately not written in this pass** — it needs its own positive control over the existing matview population before it can be trusted at zero, and bolting it on at the end of a long session is how a guard that reds on correct code grows an allowlist.
+
+**Falsifier for this entry:** if `has_table_privilege('anon','public.mv_cross_collection_deals','SELECT')` reads true again, something re-granted it and the two revokes did not hold.
+
+- **Revert:** nothing to revert — this entry records a fix made by another session, already on `origin/main` with both repo files present, so migration parity is closed.
+
 ### 2026-09-19 · ⏳ THE SENTINEL'S WALL BUDGET WAS STARVING THE SAME SIX ARMS EVERY TIME, and its durable row could not reproduce its own blindness verdict · Cowork cloud
 
 **Shipped: 1 new lib + 1 route + 2 test files. No DB change.** Both findings came out of re-deriving a distribution that `lib/sentinel/blind-checks.ts` had explicitly asked someone to re-derive (*"the distribution this threshold should have been fitted to starts accumulating in the sentinel logs from now on. Re-derive it before trusting the 6"*). That premise was stale in the caller's favour: the report **is** persisted now, in `pipeline_runs.extra.findings`, so the distribution existed.
