@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 📘 CONTEXT REFRESH — CLAUDE.md's four stale claims corrected, the headline metric re-read as a 27-LEG SERIES (which falsified my own first draft), and an OPEN security item that the register's index was telling everyone to skip · Claude Code cloud
+
+**Asked for:** *"refresh things like our roadmaps, Claude.md, memories, etc so agents are best equipped with the most recent and updated context."* Docs-only; no code, no prod state, no migration.
+
+**Four STALE CLAIMS in CLAUDE.md, each corrected against a live read rather than a re-quote:**
+
+1. *"Sentry drops every event since 08-18, SDK now OFF"* — the SDK came **out of the tree** on 09-18 (143 packages, `withSentryConfig` unwrapped, CSP tightened the same day). "Off" and "gone" are different facts for anyone costing a bundle.
+2. *"beacon LIVE and finding real defects (#34/#69)"* — **#69 was RETRACTED 09-11**: the 17 "user-facing" errors were one headless crawler. CLAUDE.md was still asserting the retracted claim.
+3. *"both 2-hourly Routines … re-verified still so 09-08"* — re-verified live this pass with a full `list_triggers`: still `enabled: false`, last fire **2026-09-01**, so the gap is **17 days**, not 8.
+4. *"TS HIGH/MED 58.1%, AD 29.9% (09-14)"* — both were **single legs**. Replaced with the series (below).
+
+**⭐ THE HEADLINE METRIC IS NOW A SERIES, AND IT CORRECTED THIS ENTRY'S OWN FIRST DRAFT.** `public.rpc_trust_health_history` (pg_cron jobid 488) has been capturing every six-hourly leg since 09-12, so a WEEK can be stated instead of a reading. **27 legs, 09-12 00:48 → 09-18 12:48 PT:** **M1 mean 53.1 (44.8–59.2), 23 of 27 at/over the 50 bar — MET on the series.** **M2 mean 28.7 (24.3–31.7), 6 of 27 at/over the 30 bar — NOT MET.**
+
+⛔ **I first wrote this block from one leg plus a hand-derivation (51.7/26.7 and 51.4/31.1) and claimed "M2 is above the bar for the first time". The series falsifies it — 09-15 12:48 PT hit 31.7 and five other legs cleared 30.** ⭐ **The durable finding is the instrument gap: on All Day a hand-derivation runs 1.7–4.4 points ABOVE the precompute leg (27.5 vs 25.8 on 09-10; 31.1 vs 26.7 today). Never mix them in one series, and never book a gate off the higher one.**
+
+**🚨 THE 09-10 BLOCK'S CENTRAL CLAIM HAS REVERSED, and it is worth more than the numbers.** That block concluded *"M2 is gated on All Day SALES VOLUME … liquidity cannot be manufactured"* — correct, and **its sample expired in one week**. Weekly `nfl_all_day` sales: 1,291 (wk 08-24) · **938 (wk 08-31)** · **5,269 (wk 09-07)** · 2,840 (wk 09-14, 5 of 7 days). **The 938 was a TROUGH read from inside it as a new level.** The NFL season arrived; all six at-or-over-bar M2 legs are 09-14 or later. ⛔ **The code-side sizing is unchanged and still small (~+0.1, ~+1.5, +1.1–2.7 pt) — the denominator's liquidity moved, not the arithmetic. Do not re-cost a code lever off this.**
+
+**⛔ CORRECTION — "UFC is 96.3% of prices >30 d stale" is EXPIRED.** Every collection reads 0.0% `*_fmv_pct_stale_30d`, hand-confirmed: UFC's newest FMV snapshot is **09-16**, two days old. The prices are **freshly computed and permanently LOW** because `sales` holds **zero UFC rows in 90 days**. ⭐ **The `*_at` rule in miniature — "stale" in that metric name means `computed_at` age, and the 96.3% figure was about a different property.**
+
+**🚨 REGISTER #22 — AN OPEN SECURITY ITEM WHOSE INDEX ROW READ ✅ closed.** The status is DERIVED from an item's opening words; #22's lead mentioned the branch **removal**, which outranked the two operator steps that were never taken (GitHub Support GC of the unreachable objects · rotate regardless). **The at-a-glance table was telling every reader to skip it.** Lead rewritten, index regenerated: **60 open · 15 partial · 45 closed** (was 59 · 15 · 46). ⭐ **Same class as #69, pointed the other way — a body does not govern a headline, and the generator reads the headline.**
+
+**CLAUDE.md stayed at its equilibrium: 39,993 → 40,000 characters, measured with Node `String.length`.** Every addition was PAID FOR by a displacement, never by spending room the file does not have. One new standing rule went in — the #122 engine-vs-path rule (*an engine that is up is not a platform that is reachable; log SILENCE is not engine silence; a `<!DOCTYPE html>` from Supabase IS Cloudflare's 522*) — funded by eight shortenings, **four of which were shortened only because the receiving doc already carried the full text, verified by grep before the cut**. All eight originals are verbatim in `docs/reference/claude-md-condensed-originals.md`.
+
+⛔ **One of those was a CORRECTION, not a trim:** *"Deleting a REMOTE branch 403s from the sandbox — hand the GitHub-UI deletion to Trevor"* is **false**; #22 records that a VM device-flow token did it on 09-08 and that **the 403 was the cloud proxy, not GitHub**. The rule now says so. ⭐ *"The sandbox cannot do X"* is the shape that expires most often in this file.
+
+**Files:** `CLAUDE.md` · `docs/reference/roadmap-status.md` (new dated block, 09-10 marked SUPERSEDED) · `docs/strategy/go-live-2026-09.md` (M1/M2 rows) · `docs/reference/known-issues.md` (#22 lead, #55 re-verification, index) · `docs/reference/claude-md-condensed-originals.md` · `docs/sessions/2026-09.md`.
+
+**Revert path:** `git revert <sha>` — docs-only, no DB half, nothing deployed. ⚠ **If reverting, note that the four stale claims come BACK**; prefer fixing forward.
+
 ### 2026-09-18 · 🛡 THE TXN-CONTROL PIN GUARD GETS A READER — `check_procedure_transaction_control_pin_drift()` wired into `rpc_ops_snapshot()`, with a positive control on the WIRE · Cowork cloud
 
 **Migration only — one `CREATE OR REPLACE` of `rpc_ops_snapshot()`. No app code, no data mutation, no grant change.** Discharges the deferral that `20260919003741` stated in as many words: the guard shipped earlier tonight and **nothing read it**, and a guard with no reader is not a guard, it is a function.
