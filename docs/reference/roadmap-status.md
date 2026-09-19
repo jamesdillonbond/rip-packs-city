@@ -106,7 +106,79 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
-## ⭐ HEADLINE METRIC — re-read live 2026-09-10 22:34 PT, WITH SWEEP POSITION (supersedes the 09-08 20:4x PT block below)
+## ⭐ HEADLINE METRIC — re-read live 2026-09-18 as a **27-LEG SERIES**, and **THE 09-10 BLOCK'S CENTRAL CLAIM HAS REVERSED** (supersedes the 09-10 22:34 PT block below)
+
+🚨 **READ THE SERIES, NOT THE LEG — and this block exists because the leg I first wrote it from was
+misleading.** `public.rpc_trust_health_history` (pg_cron jobid 488) has been capturing every
+six-hourly leg since 09-12, so for the first time a WEEK can be stated instead of a reading.
+**27 legs, 2026-09-12 00:48 → 2026-09-18 12:48 PT:**
+
+| gate | bar | mean | range | legs at/over bar | verdict |
+|---|---|---|---|---|---|
+| **M1** Top Shot HIGH/MED | ≥ 50% | **53.1%** | 44.8 – 59.2 | **23 of 27** | 🔵 **MET on the series** |
+| **M2** All Day HIGH/MED | ≥ 30% | **28.7%** | 24.3 – 31.7 | **6 of 27** | 🔴 **NOT MET — but it now TOUCHES the bar** |
+
+⛔ **WHAT A SINGLE LEG WOULD HAVE TOLD YOU, AND WHY THIS BLOCK NEARLY SHIPPED WRONG.** The
+2026-09-18 12:48 PM PT leg reads **M1 51.7 / M2 26.7**; a hand-derivation over `fmv_snapshots` at
+**5:49 PM PT** the same day reads **51.4 / 31.1**. Off those two numbers this block first claimed
+*"M2 is above the bar for the first time"* — **the series falsifies it: 09-15 12:48 PT hit 31.7 and
+five other legs cleared 30.** ⭐ **The correction is the finding: a hand-derivation and a precompute
+leg are two instruments, and on All Day the hand runs 1.7–4.4 points ABOVE the leg (27.5 vs 25.8 on
+09-10; 31.1 vs 26.7 today). Never mix them in one series, and never book a gate off the higher one.**
+
+⚠ **The 09-18 legs sit at the bottom of M1's week (51.8 / 51.7, after 44.8 at 00:48).** The
+#122 outage cost DB read-availability ~5:45 AM → 12:01 PM PT that day, but **the 44.8/44.9 pair
+PRE-DATES the outage window**, so do not attribute the dip to it without a control.
+
+### 🚨 THE 09-10 BLOCK SAID "M2 IS GATED ON ALL DAY SALES VOLUME". THE VOLUME CAME BACK.
+
+That block's measurement was right and **its sample expired in one week.** Weekly `sales` for
+`nfl_all_day`, re-derived 2026-09-18 ~6:0x PM PT:
+
+| wk of | 08-03 | 08-10 | 08-17 | 08-24 | 08-31 | 09-07 | 09-14 |
+|---|---|---|---|---|---|---|---|
+| sales | 1,609 | 2,479 | 3,012 | 1,291 | **938** | **5,269** | 2,840 *(5 of 7 days)* |
+
+⛔ **The 938 was the TROUGH, not a step down to a new level** — the 09-10 block was written inside
+it and read it as the binding constraint. The next week was **5,269**, and the week of 09-14 is at
+2,840 through five days (~3,976/wk run-rate). Trailing windows the same instant: **11,761 sales /
+30 d · 5,842 / 7 d** (~835/day, against ~392/day averaged over the 30). **This is the NFL season
+arriving — the one lever nobody here can pull and nobody needed to.**
+
+⭐ **So M2's stated blocker is no longer what it was, and the number moved with it: the six
+at-or-over-bar legs are all 09-14 or later.** ⚠ **That is a trend claim off 27 points and it is
+NOT a pass** — 21 of 27 are still under 30. **The honest next step is to re-read the series after
+a full NFL week with no outage in it, from `rpc_trust_health_history`, and book M2 then.**
+
+⛔ **And the 09-10 block's code-side sizing is still binding and still small** — ~+0.1 pt from
+finishing the sweep, ~+1.5 pt from a perfect confidence-rule lift, +1.1–2.7 pt from the missing
+accepted-offer lane. **Nothing in that arithmetic changed; the denominator's liquidity did.** Do
+not re-cost a code lever off this move.
+
+### The other four, from the 2026-09-18 12:48 PM PT leg (hand-derivation at 5:49 PM in brackets)
+
+| collection | share | priced | swept 24 h | HIGH/MED among SWEPT |
+|---|---|---|---|---|
+| Candy MLB | 58.4% [60.8] | 125 | 99.2% | 58.9% |
+| Pinnacle | 28.5% (2:55 PM PT leg, own schedule/table) | — | no sweep metric (keyed on the triple, not `edition_id`) | — |
+| Golazos | 0.7% [0.7] | 575 | 40.5% | 1.7% |
+| UFC | 0.0% [0.0] | 518 | 0.0% | **-1** (cannot-compute SENTINEL, never a percentage) |
+
+### ⛔ CORRECTION — "UFC is 96.3% of prices >30 d stale" IS EXPIRED, AND THE REASON MATTERS
+
+Every collection reads **0.0% `*_fmv_pct_stale_30d`**, hand-confirmed: UFC's newest FMV snapshot is
+**2026-09-16**, two days old. **UFC's prices are FRESHLY COMPUTED and permanently LOW.** The cause
+is not staleness — it is that `sales` holds **ZERO UFC rows in 90 days** (the collection does not
+appear in a 90-day group-by at all). ⚠ **So the 0.0% share is a CONFIDENCE FLOOR on a market with
+no trades, not a pricing defect and not a freshness defect** — the roadmap's "the only correct
+product answer is a label" still stands, but quote the reason correctly. ⭐ **This is the `*_at`
+rule in miniature: "stale" in the metric name means `computed_at` age, and the 96.3% figure was
+about a different property. Two names, one word, opposite conclusions.**
+
+Golazos is the same shape one notch up: 0.7% on 575 priced editions, and **66 sales in 30 days, 38
+of them in the last 7**. Not a pricing problem.
+
+## [SUPERSEDED] ⭐ HEADLINE METRIC — re-read live 2026-09-10 22:34 PT, WITH SWEEP POSITION (supersedes the 09-08 20:4x PT block below)
 
 **First reading taken with the sweep-completeness metrics shipped earlier the same night, which is what
 every previous reading in this file was missing.** `rpc_trust_health_precompute`, 20:42 PT leg, plus a

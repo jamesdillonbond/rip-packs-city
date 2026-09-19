@@ -520,3 +520,65 @@ they illustrate stay in CLAUDE.md verbatim**, and the section already ends with 
 character budget ever allows: "a guard anchored on an OPERATOR is blind to its class HOISTED into a
 name" is the shape that defeated both the divisor ban and the PostgREST-cap ban (register #71), and
 it is recorded in full in testing-and-ci.md and in known-issues #71.
+
+---
+
+## Displaced from CLAUDE.md 2026-09-18 (verbatim) — the context-refresh pass
+
+Six fragments were **shortened, not moved**, to fund three stale-fact corrections and one new
+standing rule (the #122 engine-vs-path rule, in `### Measurement discipline`). The file went
+39,993 → 39,993 characters: every addition was paid for. Each original is below, verbatim.
+
+⚠ **Four of the six were shortened only because the receiving doc ALREADY carried the full text —
+verified by grep before the cut, not assumed.** Those four are noted with where they live.
+
+1. **The memory-file limit formula** (preamble). The formula is data and it lives in the test that
+   enforces it (`__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`), which the same
+   paragraph already names.
+
+   > The memory-file limit is `max(40000, contextWindow × 0.05 × charsPerToken)` — **40,000 on a standard 200k session**, which is what the nightly pass, Cowork and every subagent run at.
+
+2. **The honesty section's instance count.** The file's own text called it stale — a count that
+   labels itself stale is not carrying the rule.
+
+   > **The single most productive defect class on this platform (37+ by 08-24 — a count, so already stale).**
+
+3. **The `SET statement_timeout` load-bearing ratio.** A dated ratio, quoted rather than
+   re-derived, against this file's own standing rule. The LOAD-BEARING claim survives without it;
+   re-derive from `pg_proc.proconfig` if the number is ever needed.
+
+   > ⛔ 122 of 195 are load-bearing — do NOT strip.
+
+4. **The Trevor-timezone incident detail.** The rule and its most recent breach date stay in
+   CLAUDE.md; the incident is in [tooling-gotchas.md](tooling-gotchas.md).
+
+   > (asked repeatedly; broken again 09-10, a whole session quoting `03:12Z` at his 8:12pm)
+
+5. **The trust-board arm-count caution** → already in [trust-board-and-safety.md](trust-board-and-safety.md).
+
+   > (⚠ the arm count drifts and the view CAN time out at 60 s — prefer the sentinel's `Trust Health` check to any number there)
+
+6. **The schema-truth staleness incident** → already in [schema-truth.md](schema-truth.md) §"THIS
+   FILE HAS NO GENERATOR SCRIPT", in more detail than the parenthetical carried.
+
+   > (no generator script; it once sat 25 days stale outranking a correct doc)
+
+7. **The inbox `INDEX.md` archival trap** → already in [autonomous-tasks.md](autonomous-tasks.md),
+   which states the same two counts and the conflict that makes them matter.
+
+   > (⚠ `INDEX.md` carries **4 CI assertions, TWO of them COUNTS** — archiving one deletes its entry too)
+
+8. **The push-route recipes** → already in [tooling-gotchas.md](tooling-gotchas.md). The one trap
+   that makes a route counter-intuitive (`/web-setup` authorizes at CREATION, so it fixes the NEXT
+   session, not this one) was KEPT in CLAUDE.md deliberately.
+
+   > - **When push IS genuinely denied:** repo-as-session-source · `/web-setup` in a real terminal (authorizes at CREATION — fixes the NEXT one) · desktop "Run this task" · or **`git format-patch` → the laptop `cowork-push` queue**, proven 3× on 09-12.
+
+### One CORRECTION, not a displacement
+
+The remote-branch-delete rule was **wrong**, not merely long. It read *"Deleting a REMOTE branch
+403s from the sandbox … hand the GitHub-UI deletion to Trevor"* — but on 2026-09-08 a Cowork
+session with a VM device-flow token deleted `claude/todo-implementation-e4tib3` itself, and
+known-issues #22 records the finding in one clause: **"the 403 was the cloud proxy, not GitHub."**
+The rule now says so. ⚠ **This is the class CLAUDE.md warns about in its own header — a recorded
+correction has a shelf life, and "the sandbox cannot do X" is the shape that expires most often.**
