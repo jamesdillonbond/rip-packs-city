@@ -6,6 +6,7 @@ import { isUpstreamDown, noteUpstreamFailure, noteUpstreamSuccess } from "@/lib/
 import { getCollection } from "@/lib/collections"
 import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
 import { lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
+import { isSupportedAddress } from "@/lib/address"
 
 /**
  * GET /api/collection-moments
@@ -116,8 +117,24 @@ async function fetchMomentMetaFromGql(momentId: string): Promise<{
   }
 }
 
+// ⛔ 2026-09-19 — THIS WAS FLOW-ONLY AND IT GATED THE WHOLE COLLECTION TAB.
+// The test was `value.startsWith("0x") && value.length === 18`, so a Candy MLB
+// (Solana, base58) wallet was not recognised as an address at all: it fell
+// through to `resolveWalletAddress`, which sent it to Top Shot's USERNAME
+// resolver, and the route answered 503 — *"Top Shot's username lookup is
+// unavailable right now. Try the wallet address (0x…) instead."* Told to a
+// reader who had just pasted their wallet address.
+//
+// ⭐ THE DATA PATH BEHIND IT ALREADY WORKED. Called directly with that exact
+// base58 wallet before this change, `get_wallet_moments_with_fmv` returned
+// `total_count 5` (Jacob Misiorowski #149, FMV $6.53) and `get_wallet_total_fmv`
+// returned $12.04 — and this route contains no `.toLowerCase()` anywhere, so
+// base58 survives it intact. The gate was the only thing in the way.
+//
+// Flow is kept as its own first branch so that path cannot shift.
 function isWalletAddress(value: string): boolean {
-  return value.startsWith("0x") && value.length === 18
+  const v = value.trim()
+  return (v.startsWith("0x") && v.length === 18) || isSupportedAddress(v)
 }
 
 type UsernameProfileResponse = {
@@ -187,8 +204,24 @@ export async function GET(req: NextRequest) {
     let collectionId: string | null = null
     if (collectionSlug) {
       const collectionObj = getCollection(collectionSlug)
+      // ⛔ THE SECOND FLOW-SHAPED GATE, and it would have made the first fix
+      // useless on its own: the slug→UUID hop went through
+      // `flowContractName` → `collection_config.flow_contract_name`. Candy is
+      // on Solana and has NO flowContractName, so `collectionId` stayed null
+      // and the query would not have scoped to Candy even once the address was
+      // accepted.
+      //
+      // ⚠ VERIFIED EQUIVALENT BEFORE BEING PREFERRED, not assumed: every row of
+      // `collection_config` maps to exactly the UUID the registry already
+      // carries as `supabaseCollectionId` (TopShot 95f28a17… · AllDay
+      // dee28451… · Golazos 06248cc4… · UFC 9b4824a8… · Pinnacle 7dd9dd11…,
+      // read 2026-09-19). So reading the registry first is byte-identical for
+      // all five Flow collections and additionally correct for Candy. The DB
+      // lookup stays as the fallback rather than being deleted — it is the
+      // source of record for anything the registry has not been told about.
+      collectionId = collectionObj?.supabaseCollectionId ?? null
       const contractName = collectionObj?.flowContractName
-      if (contractName) {
+      if (!collectionId && contractName) {
         const { data: config } = await (supabaseAdmin as any)
           .from("collection_config")
           .select("collection_id")

@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionUuid } from "@/lib/collections"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
+import { normalizeAddress } from "@/lib/address"
 
 // GET /api/wallet/edition-counts?wallet=0x...&collection=nba-top-shot
 //
@@ -21,6 +22,21 @@ interface CountRow {
 }
 
 export async function GET(req: NextRequest) {
+  // ⛔ 2026-09-19 — THIS ROUTE FOLDED THE WALLET AND wallet_moments_cache STORES
+  // CANDY BASE58 VERBATIM, so a Candy address matched zero rows and the route
+  // answered 200 with `editionCount: 0` — a confident "you own nothing" built
+  // from a mangled key. Measured live before the fix: the response echoed back
+  // `"wallet":"12j1uhkqcbyauomkvxdp2ma6mst3k8wx8ohhhv8genak"`, i.e. it published
+  // the corrupted address as the one it had read.
+  //
+  // ⚠ The echo below is normalized for the same reason the query is: a response
+  // that names a different address than the one it queried is unfalsifiable by
+  // the reader. `normalizeAddress` lowercases Cadence/EVM — so every Flow caller
+  // is byte-identical — and leaves base58 alone.
+  //
+  // This is the FOURTH route in this class; the other three (profile/top-moments,
+  // profile/hero-moment, profile/activity) were fixed earlier the same day. It
+  // was missed then because that sweep was scoped to app/api/profile/.
   const wallet = req.nextUrl.searchParams.get("wallet")?.trim() ?? ""
   const collection = req.nextUrl.searchParams.get("collection")?.trim() ?? "nba-top-shot"
 
@@ -44,7 +60,7 @@ export async function GET(req: NextRequest) {
       const { data, error } = await boundedRead((supabaseAdmin as any)
         .from("wallet_moments_cache")
         .select("edition_key, is_locked")
-        .eq("wallet_address", wallet.toLowerCase())
+        .eq("wallet_address", normalizeAddress(wallet))
         .eq("collection_id", collectionId)
         .not("edition_key", "is", null)
         // edition_key is NOT unique per wallet (many moments share one); moment_id is,
@@ -74,7 +90,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(
       {
-        wallet: wallet.toLowerCase(),
+        wallet: normalizeAddress(wallet),
         collection,
         editions,
         editionCount: counts.size,

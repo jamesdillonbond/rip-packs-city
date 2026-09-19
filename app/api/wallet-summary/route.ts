@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { apiErrorResponse } from "@/lib/api-error"
 import { boundedRead } from "@/lib/api/bounded-read"
 import { isWalletAddress, lookupCachedTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
+import { isSupportedAddress } from "@/lib/address"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,7 +30,16 @@ export async function GET(req: NextRequest) {
   const collectionId = req.nextUrl.searchParams.get("collection_id") || "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
   let address = wallet.trim()
-  if (!isWalletAddress(address)) {
+  // ⛔ 2026-09-19 — `isWalletAddress` is the FLOW shape (`0x` + 16 hex) and it
+  // lives in lib/chains/flow/, where being Flow-only is correct. What was wrong
+  // was using it alone as the is-this-an-address test on a route that takes a
+  // `collection_id` and serves every chain: a Candy MLB base58 wallet was sent
+  // to the Top Shot username ladder and came back 404 — *"That Top Shot
+  // username is not in our index yet — try the 0x wallet address."* — to a
+  // reader who had pasted an address, about a collection Top Shot does not
+  // index. `isSupportedAddress` recognises Cadence, EVM and base58, and the
+  // username ladder now runs only for input that is not an address at all.
+  if (!isWalletAddress(address) && !isSupportedAddress(address)) {
     let resolved: string | null = null
     try {
       resolved = await lookupCachedTopShotUsername(supabase as any, address)

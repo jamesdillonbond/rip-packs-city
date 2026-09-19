@@ -45,6 +45,38 @@ describe("GET /api/wallet-summary", () => {
     expect((await res.json()).error).not.toContain("nope")
   })
 
+  // ⛔ 2026-09-19 — A CANDY WALLET WENT TO THE TOP SHOT USERNAME LADDER. The
+  // is-this-an-address test was the FLOW shape alone, so a Solana base58 wallet
+  // was treated as a username, missed, and the route answered 404 with *"That
+  // Top Shot username is not in our index yet — try the 0x wallet address."* —
+  // to a reader who had pasted an address, about a collection Top Shot does not
+  // index. The RPC behind it already worked: called with that exact wallet,
+  // get_wallet_moments_with_fmv returned 5 moments and get_wallet_total_fmv
+  // $12.04.
+  it("treats a base58 (Solana/Candy) wallet as an ADDRESS, not a username", async () => {
+    const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+    rpc.data = { total_moments: 5 }
+    const res = await GET(req(
+      `https://t/api/wallet-summary?wallet=${CANDY}&collection_id=209ade70-32c5-4470-bc7c-4793d660f713`
+    ))
+    expect(res.status).toBe(200)
+    expect(resolver.calls, "a base58 address must never reach the username ladder").toEqual([])
+    // ⛔ Passed through VERBATIM — base58 is case-sensitive.
+    expect(rpc.lastArgs.p_wallet).toBe(CANDY)
+    expect(rpc.lastArgs.p_collection_id).toBe("209ade70-32c5-4470-bc7c-4793d660f713")
+  })
+
+  it("no-change control: a genuine username still goes to the ladder", async () => {
+    // Widening the address test must not swallow usernames — if it did, every
+    // username would be handed to the RPC as if it were an address and come
+    // back as a row of zeros, the exact defect this file was written for.
+    resolver.result = "0xb5081692483c2336"
+    rpc.data = { total_moments: 1 }
+    const res = await GET(req("https://t/api/wallet-summary?wallet=trevor"))
+    expect(res.status).toBe(200)
+    expect(resolver.calls).toEqual(["trevor"])
+  })
+
   it("resolves a Top Shot username to its address BEFORE calling the RPC", async () => {
     resolver.result = "0xb5081692483c2336"
     rpc.data = { total_moments: 15284, wallet_fmv: 28480.29 }

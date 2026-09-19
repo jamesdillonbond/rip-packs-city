@@ -13,7 +13,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // wallet/profile returns-a-Response via requireOwnedKey (which reads the session
 // through getCurrentUser and resolves ownership against profile_bio).
 
-const db: { tables: Record<string, any>; rpc: Record<string, any> } = { tables: {}, rpc: {} }
+const db: { tables: Record<string, any>; rpc: Record<string, any>; eqCalls: Array<{ table: string; col: string; val: any }> } =
+  { tables: {}, rpc: {}, eqCalls: [] }
 const authState: { user: { id: string } | null } = { user: null }
 
 // ── requireOwnedKey fixtures (wallet/profile) ───────────────────────────────
@@ -61,7 +62,11 @@ vi.mock("@/lib/supabase", () => {
   const makeBuilder = (t: string) => {
     if (t === "profile_bio") return profileBioBuilder()
     const b: any = {
-      select: () => b, eq: () => b, not: () => b, is: () => b, gt: () => b,
+      select: () => b,
+      // Records the filters so a test can assert WHAT was asked for, not just
+      // what came back — the wallet-folding defects are invisible otherwise.
+      eq: (col: string, val: any) => { db.eqCalls.push({ table: t, col, val }); return b },
+      not: () => b, is: () => b, gt: () => b,
       in: () => b, range: () => b, order: () => b, limit: () => b,
       then: (resolve: any) => resolve(db.tables[t] ?? { data: [], error: null }),
     }
@@ -93,6 +98,7 @@ import { GET as walletProfile } from "@/app/api/wallet/profile/route"
 const req = (u: string) => ({ nextUrl: new URL(u) }) as any
 
 beforeEach(() => {
+  db.eqCalls = []
   db.tables = {}
   db.rpc = {}
   authState.user = null
@@ -106,6 +112,34 @@ describe("wallet read routes — required-identifier guard", () => {
   it("pack-summary is auth-gated: 401 without a signed-in user", async () => {
     expect((await packSummary(req("https://t/api/wallet/pack-summary"))).status).toBe(401)
   })
+  // ⛔ 2026-09-19 — edition-counts FOLDED THE WALLET and wallet_moments_cache
+  // stores Candy base58 VERBATIM, so a Candy address matched zero rows and the
+  // route answered 200 with editionCount 0 — a confident "you own nothing"
+  // built from a mangled key. Measured live: the response echoed
+  // "12j1uhkqcbyauomkvxdp2ma6mst3k8wx8ohhhv8genak" back, publishing the
+  // corrupted address as the one it had read. Fourth route in this class.
+  it("edition-counts queries a base58 wallet VERBATIM and echoes what it queried", async () => {
+    const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+    db.tables.wallet_moments_cache = { data: [{ edition_key: "mike-trout-pink", is_locked: false }], error: null }
+    const res = await editionCounts(req(
+      `https://t/api/wallet/edition-counts?wallet=${CANDY}&collection=candy-mlb`
+    ))
+    expect(res.status).toBe(200)
+    const asked = db.eqCalls.find((c) => c.table === "wallet_moments_cache" && c.col === "wallet_address")
+    expect(asked, "no wallet_address filter was applied").toBeDefined()
+    expect(asked!.val).toBe(CANDY)
+    expect(asked!.val).not.toBe(CANDY.toLowerCase())
+    // The echo must name the address actually queried, or it is unfalsifiable.
+    expect((await res.json()).wallet).toBe(CANDY)
+  })
+
+  it("no-change control: a Flow wallet is still folded to lowercase", async () => {
+    db.tables.wallet_moments_cache = { data: [], error: null }
+    await editionCounts(req("https://t/api/wallet/edition-counts?wallet=0xBD94CADE097E50AC&collection=nba-top-shot"))
+    const asked = db.eqCalls.find((c) => c.table === "wallet_moments_cache" && c.col === "wallet_address")
+    expect(asked!.val).toBe("0xbd94cade097e50ac")
+  })
+
   it("edition-counts 400s without wallet", async () => {
     expect((await editionCounts(req("https://t/api/wallet/edition-counts"))).status).toBe(400)
   })
