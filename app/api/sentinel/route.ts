@@ -6,7 +6,8 @@ import { isSaturationError } from "@/lib/pipeline/saturation";
 import { fitTelegramMessage, fitTelegramText } from "@/lib/telegram-message";
 import { summariseAlertDelivery } from "@/lib/sentinel/alert-delivery";
 import { summariseZeroYield } from "@/lib/sentinel/zero-yield";
-import { summariseBlindChecks, BLIND_CHECK_NAME } from "@/lib/sentinel/blind-checks";
+import { summariseBlindChecks, BLIND_CHECK_NAME, isBlind, isRefused } from "@/lib/sentinel/blind-checks";
+import { rotateStarvedTail } from "@/lib/sentinel/tail-rotation";
 import { summariseCadenceCollapse } from "@/lib/sentinel/cadence-collapse";
 import { summariseWallKills } from "@/lib/sentinel/wall-kills";
 import { summariseProbeCost } from "@/lib/sentinel/probe-cost";
@@ -243,19 +244,49 @@ export function clampSentinelDetail(s: string, max: number): string {
   return s.slice(0, keepHead) + marker + s.slice(s.length - keepTail)
 }
 
+/**
+ * ⭐ `blind` and `refused` ARE PERSISTED BECAUSE THE REPORT COULD NOT OTHERWISE BE
+ * REPRODUCED FROM ITS OWN RECORD.
+ *
+ * `isBlind()` takes a `didEvaluate` override, and that override existed ONLY in
+ * memory: it is consulted while the sweep runs and then dropped here, so the row
+ * in `pipeline_runs` kept the detail text and threw away the one field that says
+ * how to read it. An auditor re-deriving blindness from `extra.findings` has no
+ * choice but to re-run the SATURATION signature — which is exactly the heuristic
+ * `didEvaluate` exists to correct, and it disagrees in the direction that
+ * over-counts.
+ *
+ * Measured 2026-09-19 over the 83 sweeps then in retention: re-deriving from the
+ * stored text scored `Trust Health` blind on 38 of 83 sweeps and
+ * `Pipeline Success Coverage` on 24 — both arms that had evaluated fine and were
+ * quoting somebody else's timeout, which is the precise over-count
+ * lib/sentinel/blind-checks.ts documents. `refused` re-derives correctly (only
+ * the wall budget can refuse an arm, so that string cannot be inherited), and it
+ * is persisted alongside anyway so the two never have to be told apart by regex.
+ *
+ * ⚠ BOTH ARE COMPUTED FROM THE RAW DETAIL, BEFORE THE CLAMP. The saturation
+ * signature can sit anywhere in the string and `clampSentinelDetail` removes the
+ * middle, so classifying the clamped text would silently lose long details —
+ * the annotation-prefix case that clamp exists for is the same shape.
+ */
 export function buildSentinelFindings(
-  checks: Array<{ name: string; status: string; detail?: string }>,
+  checks: Array<{ name: string; status: string; detail?: string; didEvaluate?: boolean }>,
   maxFindings: number = SENTINEL_MAX_FINDINGS,
   detailChars: number = SENTINEL_DETAIL_CHARS,
-): Array<{ name: string; status: string; detail: string }> {
+): Array<{ name: string; status: string; detail: string; blind: boolean; refused: boolean }> {
   return checks
     .filter((c) => c.status !== "ok")
     .slice(0, maxFindings)
-    .map((c) => ({
-      name: c.name,
-      status: c.status,
-      detail: clampSentinelDetail(redactSecrets(String(c.detail ?? "")), detailChars),
-    }));
+    .map((c) => {
+      const raw = String(c.detail ?? "");
+      return {
+        name: c.name,
+        status: c.status,
+        detail: clampSentinelDetail(redactSecrets(raw), detailChars),
+        blind: isBlind(raw, c.didEvaluate),
+        refused: isRefused(raw),
+      };
+    });
 }
 
 // How many changed arm names the header will list before it stops naming them.
@@ -2486,6 +2517,22 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     });
   }
 
+  // ── THE STARVED TAIL, ROTATED (2026-09-19) ────────────────────────────────
+  // These five arms are collected as thunks and run in a ROTATING order, then
+  // recorded in their canonical declaration order below. Execution order moves;
+  // the report does not.
+  //
+  // Arm order used to be fixed, and the wall budget therefore refused the same
+  // arms every time: measured over the 83 sweeps in retention, `pg_net Dispatch`
+  // was refused on 30.1% of sweeps and every arm above this block on 0%. The
+  // full measurement and the reason `Ops Probe Cost` is NOT in this rotation
+  // (its contract pins it last) are in lib/sentinel/tail-rotation.ts.
+  //
+  // ⚠ Rotation does not buy budget — the same NUMBER of arms are refused. It
+  // buys that no single arm is the one always blinded.
+  const tailArms: Array<{ name: string; run: () => Promise<void> }> = [];
+  const tailChecks: HealthCheck[] = [];
+
   // ── DID ANYONE HEAR THE LAST ALARM? (2026-09-11) ──────────────────────────
   // This route has recorded per-channel delivery in `extra.notifications` since
   // 2026-08-29 — and NOTHING HAS EVER READ IT. Measured today, across all 18 runs
@@ -2505,6 +2552,9 @@ async function runSentinelWithin(clock: WallBudgetClock) {
   // ⚠ It reads the PREVIOUS runs, never the current one. A check cannot observe
   // its own delivery, because the message it would be judging has not been sent
   // when the check runs. Full argument: lib/sentinel/alert-delivery.ts.
+  tailArms.push({
+    name: "Alert Delivery",
+    run: async () => {
   try {
     const { data: delRows, error: delErr } = await supabase
       .from("pipeline_runs")
@@ -2514,7 +2564,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       .limit(12);
     if (delErr) {
       const sat = isSaturationError(delErr.message);
-      checks.push({
+      tailChecks.push({
         name: "Alert Delivery",
         status: sat ? "warn" : "critical",
         detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(delErr.message)}`,
@@ -2529,19 +2579,21 @@ async function runSentinelWithin(clock: WallBudgetClock) {
           notifications: r?.extra?.notifications,
         })),
       );
-      checks.push({
+      tailChecks.push({
         name: "Alert Delivery",
         status: verdict.status,
         detail: verdict.detail,
       });
     }
   } catch (e: any) {
-    checks.push({
+    tailChecks.push({
       name: "Alert Delivery",
       status: "warn",
       detail: exceptionDetail(e),
     });
   }
+    },
+  });
 
   // ── LANES THAT RAN, SUCCEEDED, AND FOUND NOTHING (2026-09-10, #79) ────────
   // The fourth lane state. `Pipeline Silence` sees a lane ticking; `Pipeline
@@ -2553,26 +2605,31 @@ async function runSentinelWithin(clock: WallBudgetClock) {
   // declaration — because a finished backfill's zero is CORRECT. Calibrated
   // before it shipped: 5 lanes of 243. Full argument: lib/sentinel/zero-yield.ts
   // and the SQL in check_zero_yield_lanes().
+  tailArms.push({
+    name: "Zero-Yield Lanes",
+    run: async () => {
   try {
     const { data: zyData, error: zyErr } = await supabase.rpc("check_zero_yield_lanes");
     if (zyErr) {
       const sat = isSaturationError(zyErr.message);
-      checks.push({
+      tailChecks.push({
         name: "Zero-Yield Lanes",
         status: sat ? "warn" : "critical",
         detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(zyErr.message)}`,
       });
     } else {
       const verdict = summariseZeroYield(zyData as any);
-      checks.push({ name: "Zero-Yield Lanes", status: verdict.status, detail: verdict.detail });
+      tailChecks.push({ name: "Zero-Yield Lanes", status: verdict.status, detail: verdict.detail });
     }
   } catch (e: any) {
-    checks.push({
+    tailChecks.push({
       name: "Zero-Yield Lanes",
       status: "warn",
       detail: exceptionDetail(e),
     });
   }
+    },
+  });
 
   // ── LANES STILL RUNNING, STILL GREEN, AT A FRACTION OF THEIR CADENCE ──────
   // The state #76 lived in for two days with every instrument reading fine.
@@ -2589,11 +2646,14 @@ async function runSentinelWithin(clock: WallBudgetClock) {
   // 10:00 PT. That is handled where it belongs — a dated, reasoned, EXPIRING ack
   // row seeded by the same migration — and not by softening the threshold, which
   // would be permanent damage to fix a transient reading.
+  tailArms.push({
+    name: CADENCE_CHECK_NAME,
+    run: async () => {
   try {
     const { data: ccData, error: ccErr } = await supabase.rpc("check_pipeline_cadence_collapse");
     if (ccErr) {
       const sat = isSaturationError(ccErr.message);
-      checks.push({
+      tailChecks.push({
         name: CADENCE_CHECK_NAME,
         status: sat ? "warn" : "critical",
         detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(ccErr.message)}`,
@@ -2604,7 +2664,7 @@ async function runSentinelWithin(clock: WallBudgetClock) {
         thr(CADENCE_CHECK_NAME, "warn_at", 1),
         thr(CADENCE_CHECK_NAME, "crit_at", 5),
       );
-      checks.push({
+      tailChecks.push({
         name: CADENCE_CHECK_NAME,
         status: verdict.status,
         detail: verdict.detail,
@@ -2612,12 +2672,14 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       });
     }
   } catch (e: any) {
-    checks.push({
+    tailChecks.push({
       name: CADENCE_CHECK_NAME,
       status: "warn",
       detail: exceptionDetail(e),
     });
   }
+    },
+  });
 
   // ── WALL KILLS (2026-09-13) ──────────────────────────────────────────────
   // A `maxDuration` kill writes NO terminal pipeline_runs row, so it is
@@ -2629,26 +2691,31 @@ async function runSentinelWithin(clock: WallBudgetClock) {
   // apply-fmv-haircut was killed at 300 s and the first thing to notice was
   // the 30 h silence arm a day later; the same 24 h held 31 kills on
   // fmv-recalc that nothing reported. Argument + rules: lib/sentinel/wall-kills.ts.
+  tailArms.push({
+    name: WALL_KILLS_CHECK_NAME,
+    run: async () => {
   try {
     const { data: wkData, error: wkErr } = await supabase.rpc("check_wall_kills");
     if (wkErr) {
       const sat = isSaturationError(wkErr.message);
-      checks.push({
+      tailChecks.push({
         name: WALL_KILLS_CHECK_NAME,
         status: "warn",
         detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(wkErr.message)}`,
       });
     } else {
       const verdict = summariseWallKills(wkData as any, thr(WALL_KILLS_CHECK_NAME, "warn_at", 3));
-      checks.push({ name: WALL_KILLS_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
+      tailChecks.push({ name: WALL_KILLS_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
     }
   } catch (e: any) {
-    checks.push({
+    tailChecks.push({
       name: WALL_KILLS_CHECK_NAME,
       status: "warn",
       detail: exceptionDetail(e),
     });
   }
+    },
+  });
 
   // ── pg_net DISPATCH + RESPONSE STORE (2026-09-13) ─────────────────────────
   // Every edge-function lane, Atlas walk and DB-dispatched probe goes out
@@ -2657,11 +2724,14 @@ async function runSentinelWithin(clock: WallBudgetClock) {
   // relation on the instance at 13 GB for ~5,400 rows, its TOAST never
   // autovacuumed (register #75) — had no instrument reporting its size.
   // Argument + thresholds: lib/sentinel/pg-net.ts. ~30 buffers per sweep.
+  tailArms.push({
+    name: PG_NET_CHECK_NAME,
+    run: async () => {
   try {
     const { data: pnData, error: pnErr } = await supabase.rpc("check_pg_net_dispatch");
     if (pnErr) {
       const sat = isSaturationError(pnErr.message);
-      checks.push({
+      tailChecks.push({
         name: PG_NET_CHECK_NAME,
         status: "warn",
         detail: `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(pnErr.message)}`,
@@ -2670,14 +2740,28 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       // warn_at is the STORE SIZE in bytes (the slow-moving fact an operator tunes);
       // the queue-depth line stays at one pg_net batch (200) in the summariser.
       const verdict = summarisePgNet(pnData as any, thr(PG_NET_CHECK_NAME, "warn_at", 8 * 1024 ** 3));
-      checks.push({ name: PG_NET_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
+      tailChecks.push({ name: PG_NET_CHECK_NAME, status: verdict.status, detail: verdict.detail, value: verdict.value });
     }
   } catch (e: any) {
-    checks.push({
+    tailChecks.push({
       name: PG_NET_CHECK_NAME,
       status: "warn",
       detail: exceptionDetail(e),
     });
+  }
+    },
+  });
+
+  for (const arm of rotateStarvedTail(tailArms, now.getTime())) {
+    await arm.run();
+  }
+  // ⚠ Appended in CANONICAL order, not execution order. The rotation is a
+  // budget-fairness device; letting it reorder the report too would make every
+  // sweep's findings list shuffle for no reader's benefit, and `buildSentinelFindings`
+  // truncates at SENTINEL_MAX_FINDINGS — so execution order would silently decide
+  // which findings survive into the durable row.
+  for (const arm of tailArms) {
+    for (const c of tailChecks) if (c.name === arm.name) checks.push(c);
   }
 
   // ── OPS PROBE COST (2026-09-13) ──────────────────────────────────────────

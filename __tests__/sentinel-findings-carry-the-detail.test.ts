@@ -31,9 +31,14 @@ describe("buildSentinelFindings — the detail survives into the durable row", (
       { name: "Pipeline Success", status: "warn", detail: "foo 972m since the last success (>360m, medium)" },
       { name: "Sales Freshness", status: "critical", detail: "0 new sales in last 2 hours" },
     ])
+    // ⚠ Exact-shape, deliberately: `toEqual` here is what makes a silently
+    // ADDED field a test failure rather than an invisible schema drift in a row
+    // the alert views join on every tick. `blind`/`refused` landed 2026-09-19
+    // and are asserted false on a healthy finding, which is the control for the
+    // blindness block at the bottom of this file.
     expect(out).toEqual([
-      { name: "Pipeline Success", status: "warn", detail: "foo 972m since the last success (>360m, medium)" },
-      { name: "Sales Freshness", status: "critical", detail: "0 new sales in last 2 hours" },
+      { name: "Pipeline Success", status: "warn", detail: "foo 972m since the last success (>360m, medium)", blind: false, refused: false },
+      { name: "Sales Freshness", status: "critical", detail: "0 new sales in last 2 hours", blind: false, refused: false },
     ])
   })
 
@@ -123,5 +128,72 @@ describe("buildSentinelFindings — the detail survives into the durable row", (
       expect(f.detail).toBe(long(400))
       expect(f.detail).not.toContain("…[cut]…")
     })
+  })
+})
+
+// ── THE BLINDNESS VERDICT IS PERSISTED, NOT LEFT TO BE RE-GUESSED ───────────
+//
+// 🚨 The same defect class as the block at the top of this file, one field
+// along. `isBlind()` takes a `didEvaluate` override — it exists because an arm
+// that successfully reads SOMEONE ELSE'S timeout was being scored as having
+// timed out itself — and that override lived only in memory. The durable row
+// kept the detail text and dropped the field that says how to read it, so
+// anyone re-deriving blindness from `extra.findings` had to re-run the very
+// heuristic the override corrects.
+//
+// Measured 2026-09-19 over the 83 sweeps then in retention: re-deriving from
+// stored text scored `Trust Health` blind on 38 of 83 sweeps and
+// `Pipeline Success Coverage` on 24 — both had evaluated fine. The report could
+// not be reproduced from its own record, and the error ran one way: over-count.
+describe("buildSentinelFindings — blindness is recorded, not re-derived", () => {
+  const SAT = "canceling statement due to statement timeout"
+  const REFUSED = "aborted: sentinel wall budget spent (155.8s elapsed of a 140.0s query budget)"
+
+  it("records an arm that could not evaluate as blind", () => {
+    const [f] = buildSentinelFindings([
+      { name: "A", status: "warn", detail: `INCONCLUSIVE (db saturated) — RPC error: ${SAT}` },
+    ])
+    expect(f.blind).toBe(true)
+    expect(f.refused).toBe(false)
+  })
+
+  // ⭐ The override, and the whole reason this field is worth persisting: the
+  // detail carries a saturation signature AND the arm evaluated fine. Text
+  // alone cannot tell these apart; this is the case that was being got wrong.
+  it("believes an arm that states it evaluated, though its detail quotes a timeout", () => {
+    const [f] = buildSentinelFindings([
+      { name: "Pipeline Success Coverage", status: "warn", didEvaluate: true,
+        detail: `daily-portfolio-snapshot 0/1 ok, 0 rows — ${SAT}` },
+    ])
+    expect(f.blind).toBe(false)
+  })
+
+  it("separates REFUSED (never issued) from merely slow — both are blind, only one is refused", () => {
+    const [refused, timedOut] = buildSentinelFindings([
+      { name: "pg_net Dispatch", status: "warn", detail: `INCONCLUSIVE (db saturated) — ${REFUSED}` },
+      { name: "Trust Health", status: "warn", detail: `INCONCLUSIVE (db saturated) — ${SAT}` },
+    ])
+    expect([refused.blind, refused.refused]).toEqual([true, true])
+    expect([timedOut.blind, timedOut.refused]).toEqual([true, false])
+  })
+
+  // ⚠ THE ORDERING BUG THIS PINS. `clampSentinelDetail` keeps both ENDS and
+  // removes the MIDDLE. Classify the clamped string and a long detail whose
+  // signature sits in the middle reads as a healthy arm — a failed read
+  // rendering as an answer, inside the alarm, exactly where this repo keeps
+  // finding it. Mutation-proven: classifying after the clamp reds this.
+  it("classifies the RAW detail, so a signature the clamp cuts is still seen", () => {
+    const detail = long(300) + SAT + long(300)
+    const [f] = buildSentinelFindings([{ name: "A", status: "warn", detail }])
+    expect(f.detail).toContain("…[cut]…")
+    expect(f.detail).not.toContain(SAT)   // the clamp really did remove it
+    expect(f.blind).toBe(true)            // and the verdict survived anyway
+  })
+
+  it("does not invent blindness for a healthy finding", () => {
+    const [f] = buildSentinelFindings([
+      { name: "Sniper Feed", status: "warn", detail: "3 lanes below the floor (warn at 5)." },
+    ])
+    expect([f.blind, f.refused]).toEqual([false, false])
   })
 })
