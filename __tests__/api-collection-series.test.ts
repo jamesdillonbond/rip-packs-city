@@ -10,21 +10,28 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // RETURNS errors rather than throwing. A mock that only ever yields `{ data }`
 // cannot express the failure this suite exists to pin, and the route's old
 // `const { data } = ...` would have passed against it forever.
-const state: { config: any; configError: any; series: any; seriesError: any } = {
+const state: {
+  config: any; configError: any; series: any; seriesError: any
+  tables: string[]; eqCalls: Array<{ col: string; val: any }>
+} = {
   config: { collection_id: "uuid-1" },
   configError: null,
   series: [],
   seriesError: null,
+  // Which tables were touched and with what filter — the only way to tell a
+  // route that LOOKED and found nothing from one that never asked.
+  tables: [],
+  eqCalls: [],
 }
 
 vi.mock("@/lib/supabase", () => {
   const b: any = {
     select: () => b,
-    eq: () => b,
+    eq: (col: string, val: any) => { state.eqCalls.push({ col, val }); return b },
     maybeSingle: async () => ({ data: state.config, error: state.configError }),
     order: async () => ({ data: state.series, error: state.seriesError }),
   }
-  return { supabaseAdmin: { from: () => b } }
+  return { supabaseAdmin: { from: (t: string) => { state.tables.push(t); return b } } }
 })
 
 import { GET } from "@/app/api/collection-series/route"
@@ -32,6 +39,8 @@ import { GET } from "@/app/api/collection-series/route"
 const req = (url: string) => ({ nextUrl: new URL(url) }) as any
 
 beforeEach(() => {
+  state.tables = []
+  state.eqCalls = []
   state.config = { collection_id: "uuid-1" }
   state.configError = null
   state.series = []
@@ -124,5 +133,62 @@ describe("GET /api/collection-series — a failed read is not an empty answer", 
     const res = await GET(req("https://t/api/collection-series?collection=nba-top-shot"))
     expect(res.status).toBe(200)
     expect(res.headers.get("Cache-Control")).toContain("s-maxage=300")
+  })
+})
+
+// ⛔ 2026-09-19 — THE RIGHT ANSWER FOR THE WRONG REASON. This route used to
+// start at `flowContractName` and return `{ series: [] }` when there wasn't
+// one. Candy MLB is on Solana and has none, so it published "this collection
+// has no series" from a lookup that never asked the series table anything.
+//
+// That answer is TRUE today — measured the same day, `collection_series` holds
+// 26 rows and every one belongs to a Flow collection — and that is precisely
+// what made it a trap and not a bug: seed one Candy row tomorrow and the route
+// still answers [], silently and forever. This file already draws the
+// distinction for the failure case ("Genuinely absent, not unreadable — an
+// honest empty"); an empty that never looked is neither.
+describe("a non-Flow collection is LOOKED UP, not short-circuited", () => {
+  it("queries collection_series with Candy's registry UUID", async () => {
+    state.series = []
+    const res = await GET(req("https://t/api/collection-series?collection=candy-mlb"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).series).toEqual([])
+    // The point: the series table was actually read.
+    expect(state.tables).toContain("collection_series")
+    expect(state.eqCalls).toContainEqual({ col: "collection_id", val: "209ade70-32c5-4470-bc7c-4793d660f713" })
+    // And no Flow-contract detour was needed to get there. ⚠ This assertion is
+    // scoped to the NON-FLOW branch on purpose: the Flow path still reads
+    // collection_config exactly as it always did, which is what keeps this
+    // suite's config-read-failure arm alive. A first attempt at this fix
+    // skipped that read for every collection and silently made that arm
+    // unreachable — the test caught it.
+    expect(state.tables).not.toContain("collection_config")
+  })
+
+  it("so a Candy series row, once seeded, actually surfaces", async () => {
+    // The whole reason the short-circuit had to go: this case was unreachable.
+    state.series = [{ series_number: 1, display_label: "Series 1", season: null }]
+    const res = await GET(req("https://t/api/collection-series?collection=candy-mlb"))
+    expect((await res.json()).series).toEqual([
+      { series_number: 1, display_label: "Series 1", season: null },
+    ])
+  })
+
+  it("no-change control: a Flow collection STILL goes through collection_config", async () => {
+    // Byte-for-byte the old path — it looks the UUID up by flow_contract_name
+    // and uses whatever that read returns (here the fixture's "uuid-1"). This
+    // is the arm that keeps the config-read-failure test above reachable, so
+    // it is asserting the DETOUR, not a particular UUID.
+    state.series = []
+    state.config = { collection_id: "uuid-1" }
+    await GET(req("https://t/api/collection-series?collection=nba-top-shot"))
+    expect(state.tables).toContain("collection_config")
+    expect(state.eqCalls).toContainEqual({ col: "flow_contract_name", val: "TopShot" })
+    expect(state.eqCalls).toContainEqual({ col: "collection_id", val: "uuid-1" })
+  })
+
+  it("no-change control: an unknown slug is still a 400, not an empty list", async () => {
+    const res = await GET(req("https://t/api/collection-series?collection=not-a-collection"))
+    expect(res.status).toBe(400)
   })
 })

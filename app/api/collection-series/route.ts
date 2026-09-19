@@ -17,10 +17,45 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unknown collection" }, { status: 400 })
   }
 
-  // Look up collection UUID from collection_config using flow_contract_name
+  // ⛔ 2026-09-19 — THE EARLY RETURN HERE WAS THE RIGHT ANSWER FOR THE WRONG
+  // REASON. It read `if (!contractName) return { series: [] }`, so Candy MLB —
+  // on Solana, with no Flow contract — published "this collection has no
+  // series" from a lookup that never asked the series table anything.
+  //
+  // That answer is TRUE today (measured: `collection_series` holds 26 rows and
+  // every one belongs to one of the five Flow collections), and that is exactly
+  // what made it a TRAP rather than a bug: seed one Candy row tomorrow and the
+  // route would still answer `[]`, silently and forever. This file already
+  // draws the distinction for the failure case — its own comment below marks
+  // the no-config branch "Genuinely absent, not unreadable — an honest empty".
+  // An empty that never looked is neither.
+  //
+  // ⚠ DELIBERATELY THE SMALLEST POSSIBLE CHANGE: the Flow path is untouched,
+  // contract lookup and all. A first attempt preferred the registry UUID for
+  // EVERY collection and skipped the `collection_config` read — which was
+  // tidier, and wrong: it made that read dead code for all five Flow
+  // collections and thereby made this suite's config-read-failure arm
+  // unreachable. A guard that can no longer fire is worse than no guard, and
+  // the existing test caught it. Registry UUID is the fallback for a
+  // collection with NO Flow contract, and nothing else changes.
   const contractName = collectionObj.flowContractName
   if (!contractName) {
-    return NextResponse.json({ series: [] })
+    const registryId = collectionObj.supabaseCollectionId
+    // No Flow contract AND no DB identity — an unpublished placeholder, which
+    // really is honestly empty.
+    if (!registryId) return NextResponse.json({ series: [] })
+    const { data: series, error: seriesError } = await boundedRead((supabaseAdmin as any)
+      .from("collection_series")
+      .select("series_number, display_label, season")
+      .eq("collection_id", registryId)
+      .order("series_number", { ascending: true }), "api/collection-series/collection_series")
+    if (seriesError) {
+      return apiErrorResponse(seriesError, "collection-series/series", "Series filters are unavailable right now.")
+    }
+    return NextResponse.json(
+      { series: series ?? [] },
+      { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } },
+    )
   }
 
   // ⚠ THERE ARE THREE STATES HERE, NOT TWO — read failed / read ok + no config

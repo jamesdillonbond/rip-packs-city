@@ -10,6 +10,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🪤 AN EMPTY THAT NEVER LOOKED — and an existing test caught me making its own failure arm unreachable · Cowork cloud
+
+**Shipped: 1 route + its test.** Next endpoint off the Candy Collection-tab list. Small, and the interesting half is what went wrong on the first attempt.
+
+**THE DEFECT.** `/api/collection-series` opened with `if (!contractName) return { series: [] }`. Candy MLB is on Solana and has no Flow contract, so it took that early return and published *"this collection has no series"* **from a lookup that never asked the series table anything.**
+
+⚠ **THE ANSWER WAS TRUE, AND THAT IS WHAT MADE IT A TRAP RATHER THAN A BUG.** Measured: `collection_series` holds 26 rows and every one belongs to one of the five Flow collections — Candy has none. So the route was right today and would have stayed "right" forever: **seed one Candy row tomorrow and it still answers `[]`, silently.** This file already draws exactly this distinction for the failure case — its own comment marks the no-config branch *"Genuinely absent, not unreadable — an honest empty"*. **An empty that never looked is neither.**
+
+🚨 **MY FIRST FIX WAS TIDIER AND WRONG, AND THE SUITE SAID SO.** I preferred the registry UUID for *every* collection and skipped the `collection_config` read — one fewer DB round trip on an IO-saturated instance, which felt like a free win. It reddened `does NOT return an empty series list when the config read fails`, and the red was correct: **skipping that read makes it dead code for all five Flow collections, and the guard pointed at it can then never fire.** ⭐ *A guard that can no longer fire is worse than no guard* — it reports green forever while proving nothing. This is the same hazard the audit-drain discipline names for behavioural pins ("an error-injection test that drops a table the new body no longer reads silently stops proving anything"), met here from the other direction: **not a stale pin, but a refactor quietly removing the thing a live pin was watching.** I would not have noticed it in review; the test did.
+
+**THE SHIPPED FIX IS THEREFORE THE SMALLEST POSSIBLE ONE.** The Flow path is untouched — contract lookup, config read, error branches, all byte-for-byte. Only the `!contractName` early return changes: a collection with no Flow contract now reads `collection_series` with its registry UUID and returns whatever is genuinely there. No dead code, no unreachable guard, and Candy's empty is now an empty that looked.
+
+**Verified after:** 12 tests green (8 → 12), including the config-read-failure arm that caught the first attempt — **still reachable, still passing, which is the point.** **Mutation-proven:** restoring the early return reds exactly the two new arms (`expected [] to include 'collection_series'`), and the second of those is the one that matters: *"so a Candy series row, once seeded, actually surfaces"* — it fails under the old code, which is the trap stated as a test. Controls: the Flow path still takes the `flow_contract_name` detour and uses what that read returns; an unknown slug is still a 400, not an empty list.
+
+⚠ **Still groundwork — Candy's `pages` is unchanged.** Running total off the Collection-tab blocker list: `collection-moments`, `wallet-summary`, `wallet/edition-counts`, `sets`, `collection-series`. `/api/badges` came off it as a probe artifact.
+
+**Exit condition:** `/api/collection-series?collection=candy-mlb` still answers `{"series":[]}` after deploy — **unchanged output, which is the correct result here** — and would answer with rows if any were seeded. The behaviour change is invisible until the data exists, so the test IS the exit condition.
+**Falsifier:** if a Flow collection's series list changes at all, the "byte-for-byte untouched" claim is false — revert immediately.
+
+- **Revert:** `git revert <sha>` (`git log --grep="EMPTY THAT NEVER LOOKED"`). **No DB half.**
+
 ### 2026-09-19 · 🩺 "FAILED TO LOAD SETS" WAS US BLAMING OURSELVES FOR A QUESTION THE ROUTE CANNOT BE ASKED · Cowork cloud
 
 **Shipped: 1 route + its test. No DB change.** Next item off the Candy Collection-tab blocker list, and the only one on it that was a real defect rather than a missing feature.
