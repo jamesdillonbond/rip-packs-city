@@ -10,6 +10,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · ⚡ R101 RE-DERIVED AND ONE HALF OF IT FIXED — the Atlas listing lane's 120 s kills are a ROTTED VISIBILITY MAP, and the fix is two reloptions: 117,758 heap fetches → 713 · Cowork cloud
+
+**One migration: `ALTER TABLE public.topshot_atlas_market_events SET (autovacuum_vacuum_scale_factor=0.02, autovacuum_analyze_scale_factor=0.02)` + a table COMMENT.** Catalog-only, instant, reversible, no rewrite, no function replaced. Guarded with `SET LOCAL lock_timeout='3s'` so it could not queue an ACCESS EXCLUSIVE lock behind one of the table's own 120 s scans.
+
+🔁 **THE FILED FINDING WAS A HYPOTHESIS AND TWO-THIRDS OF IT DIED ON CONTACT.** R101 read *"`ts-listings-atlas-sync` loses **58.6%** of ticks invisibly"* and *"the register files it under `job startup timeout`."*
+
+1. ⛔ **The rate is a RANGE, not a constant** — by UTC day on jobid 466: **6.3% (09-16) · 22.2% (09-17) · 28.9% (09-18) · 45.8% (09-11)**. A single number here is a window artifact.
+2. ⛔ **The scheduler is NOT dropping ticks.** 30 runs/hour, exactly the `*/2` cadence, essentially every hour. Every "lost" tick **started and failed**.
+3. ⛔ **The register was ALREADY corrected** — it has said since ~09-14 that 189 of 201 failures (94%) are statement timeouts, not startup, *and it already names the right lever*: **"statement timeout says the job RAN and was cancelled at its budget, so the lever is the WORK."** R101's complaint about the register is itself stale. **This entry pulls that lever.**
+
+🔬 **WHY IT WAS INVISIBLE, mechanically — and why the obvious fix is a no-op.** `atlas_listing_verify_tick` wraps six calls in one `BEGIN … EXCEPTION WHEN OTHERS` and calls `log_pipeline_run` **after** it. An EXCEPTION handler cannot isolate a `statement_timeout` — the recovery path needs budget the timeout already spent — so the function aborts and the log line never runs. **`pipeline_runs` therefore shows this lane 351 rows / 351 ok / 0 fail over 12 h while ~29% of its ticks died**, and every pipeline-level instrument (`pipeline_fails_24h`, `detect_stalled_pipelines`) calls it healthy. ⛔ **A HEARTBEAT ROW CANNOT FIX THIS** — pg_cron runs the tick as one statement in one implicit transaction, so a row written *before* the work rolls back with the timeout exactly like the one after it. The heartbeat pattern this repo uses elsewhere works only for HTTP lanes. ⭐ **And nothing needs building: `check_pgcron_failure_rate()` already sees it and already ranks `rpc-ts-listings-atlas-sync` #1 at 169 of 420 fleet fails/24 h.** This lane's truth lives in `cron.job_run_details`, never in `pipeline_runs`.
+
+📏 **THE MEASUREMENT, and it is a plan-level one, not a timing.** The most common failing context on jobid 466 (**366 occurrences, avg 125.3 s**) is the open-listing count inside `atlas_edition_verify_settle()`. `EXPLAIN (ANALYZE, BUFFERS)` on it, 20.0 h after the last autovacuum, showed the registered tell for a rotted visibility map — **`Heap Fetches: 117758` on an INDEX-ONLY scan.** The index is not the problem: `idx_tame_open_by_edition` is exactly right and the planner picks it.
+
+✅ **THE SAME EXPLAIN, before → after the first autovacuum under the new setting** (fired within 90 s of the ALTER, because 295,504 dead was already above the new 47,549 trigger):
+
+| | before (20.0 h post-vacuum) | after | |
+|---|---:|---:|---|
+| **Heap Fetches** | **117,758** | **713** | **165× fewer** |
+| Buffers hit | 74,293 | 27,426 | 2.7× |
+| Buffers read | 7,642 | 1,544 | 4.9× |
+| Buffers written | 1,712 | 0 | gone |
+| **Execution Time** | **9,385 ms** | **678 ms** | **13.8× faster** |
+
+Both readings warm, and **Heap Fetches is a plan-level count that does not depend on the cache** — this is not a cache hit dressed up as a fix.
+
+⚠ **713 IS THE BEST CASE, NOT THE STEADY STATE.** The honest claim is the **ceiling**: at the new 47,549-dead trigger the same scan should top out near **~19,000** heap fetches against ~118,000 before — ~6× on the ceiling, much better on average. Sizing: n_live 2,374,943 · n_dead 294,302 (11.0%) · old trigger **475,040** dead ≈ one vacuum every **~32 h** at the measured ~14,715 dead/h; new trigger **47,549** ≈ every **~3.2 h**. ⚠ The decay rate is from **ONE** time point (the 2026-08-29 `sales_2026` sizing used two and verified linearity), which is exactly why 0.02 was taken rather than the 0.01 the arithmetic alone would justify. Inserts are **not** the driver here (6,345 since last vacuum vs 294,302 dead), so `insert_scale_factor` was deliberately left alone.
+
+⛔ **AND ONE HALF OF MY OWN DIAGNOSIS IS REFUTED BY THE SAME READING.** I attributed the 38% row underestimate to stale statistics. **It is not staleness:** immediately after a fresh ANALYZE the estimate is 140,792 against an actual 197,557 — still ~29% low. The underestimate is **structural** (no cross-column stats tying `product`/`kind` to `completed` on that partial index); extended statistics is the lever *if it ever matters*, and it costs far less than the heap fetches did, so it was not chased. 👉 **The `autovacuum_analyze_scale_factor` half of this change therefore rests on CADENCE alone, not on this measurement — do not cite the EXPLAIN as evidence for that knob.**
+
+🤝 **A SECOND LANE GETS THE SAME BENEFIT FOR FREE:** `atlas_market_drain` (jobid 463, also `*/2`, 58 fails/24 h) runs the *same* unbounded count purely as telemetry in its `extra` jsonb — so that ~118k-heap-fetch scan was being paid up to **1,440 times a day** across the two lanes.
+
+📏 **FALSIFIER, dated and re-testable — and the failure rate is NOT the test.** Re-run the identical EXPLAIN after ~24 h of steady state. **PASS:** Heap Fetches stays ≤ ~20,000. **FAIL:** six figures again ⇒ the visibility map is not the mechanism, `RESET` both reloptions and look at `atlas_edition_verify_settle`'s per-row correlated counts instead. ⚠ **Do NOT score this on the 120 s failure rate** — that rate moves with the evening IO spell, so a window straddling this change measures neither state. ⛔ **And do not expect the fleet's wasted hours to fall by this lane's share:** this register item's own mechanism says waste may be a property of CONTENTION, and the last time the biggest contributor was fixed the total ratio did not move.
+
+- **Revert:** `ALTER TABLE public.topshot_atlas_market_events RESET (autovacuum_vacuum_scale_factor, autovacuum_analyze_scale_factor);` — and the table COMMENT, which is documentation only.
+
 ### 2026-09-18 · 📘 CONTEXT REFRESH — CLAUDE.md's four stale claims corrected, the headline metric re-read as a 27-LEG SERIES (which falsified my own first draft), and an OPEN security item that the register's index was telling everyone to skip · Claude Code cloud
 
 **Asked for:** *"refresh things like our roadmaps, Claude.md, memories, etc so agents are best equipped with the most recent and updated context."* Docs-only; no code, no prod state, no migration.
