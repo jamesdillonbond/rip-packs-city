@@ -10,6 +10,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔒 THE ANON WRITE-GRANT SET, DIFFED TO MEMBERSHIP AT LAST — run 5 §10's own deferred item. The conclusion HOLDS, and the fifth object fails closed BY ACCIDENT · Claude Code cloud
+
+**Docs-only. READ-ONLY against the DB; no migration, no revoke, no prod state touched.** Picked up because deep-audit run 5 §10 re-ran the security half at 12:55 PM PT, found the anon write-grant count had moved **20 → 5**, and explicitly deferred the rest: *"Not re-derived to the object level this pass — flagged for the next pass to diff the membership, since a shrink is as much a set change as a growth."* ⭐ **A shrink on a security surface is not self-evidently good news** — until the membership is named, nobody can say whether the right 15 left or the wrong one stayed.
+
+**✅ THE ROW'S STANDING CONCLUSION HOLDS. The anon write-grant set is exactly 5 objects**, resolved against `pg_policies`: `email_subscribers` · `funnel_events` · `outbound_clicks` · `support_conversations` are all **INSERT-only with 5–16 length/range `with_check` clauses** — deliberate, bounded, exactly the shape the register recorded. Nothing regressed.
+
+**⚠ THE FIFTH IS `portfolios`, AND IT IS THE ONLY ONE THAT IS NOT BY DESIGN.** `cmd ALL`, granted to `{public}` (so anon DELETE/INSERT/UPDATE). **It is not reachable** — its policy compares `wallet_address` to a `wallet` JWT claim **nothing in this system sets**, so the predicate is NULL and RLS denies. ⭐ **It fails closed by accident of a removed feature, not by design:** 0 rows, **0 repo references**, and `portfolio_moments` (its only FK) is also 0 rows.
+
+⛔ **NOT REVOKED AND NOT DROPPED, DELIBERATELY — and the reason is a rule this file already carries.** pg_cron **jobid 490 `rpc-portfolio-snapshot-retry`** lives in that table's dependency neighbourhood, and CLAUDE.md's revoke rule is explicit that `REVOKE … FROM PUBLIC, anon, authenticated` **orphans a pg_cron caller holding no explicit grant and fails as SILENCE**. ⭐ **The lane itself is healthy and is NOT writing the dead table:** `portfolio_snapshots` holds **2,052 rows**, newest **2026-09-18 11:17:00Z**, written by that job's own tick (5/5 ok in 7 d). So the cron is fine; only `portfolios` is dead. A 0-row defence-in-depth item does not earn an unattended security migration — the fix, exit condition and falsifier are specified in the filing instead.
+
+**Two other owed probes re-run, both clean:**
+- **`cron.job.command` credential scan** — the register's known-blind corpus, read through a REDACTING query, never raw. **13 of 149 jobs carry a gate key in the URL** (12 active; the 13th is the paused jobid 16). **0 JWT literals, 0 `Bearer` literals.** The 09-02 reading was 14 — ⚠ **14 → 13 is the paused/retired delta, NOT a fix; the class is unchanged.**
+- **pg_cron disabled/orphan invariant** — **149 / 147 active**, and **the invariant HOLDS because both inactive rows carry a ledger-recorded pause**: jobid 16 (dead-host) and jobid 491 (`rpc-ccm-step2-retry`, deactivated 09-13, migration `20260913173902_…`, #108).
+
+⚠ **NAMED FOR THE THIRD TIME: the job population grew 104 → 149 in 16 days and there is still no census to diff membership against.** This register already records the consequence twice — *"the two removed jobs are now unnameable because no 08-15 snapshot exists."* A periodic `cron.job` census is the only thing that closes it. **Not built here: it is new state and wants a deliberate owner.** ⛔ And I deliberately did not hand-transcribe the 149-row census into a file — this repo's own rule is that transcription is how bytes drift, and a census nobody can re-derive is worse than none.
+
+**Files:** `docs/audits/deep-audit-register.md` (3 rows re-stamped: anon write grants, pg_cron count, hardcoded credentials) · `docs/overnight/inbox/2026-09-19T0117Z-…-dead-residue.md` (new) · `docs/overnight/inbox/INDEX.md` (entry + counts via `fix-inbox-index-counts.mjs`, 513 → 514).
+
+**Revert path:** `git revert <sha>` — docs-only, no DB half, nothing deployed.
+
 ### 2026-09-18 · ⚡ R101 RE-DERIVED AND ONE HALF OF IT FIXED — the Atlas listing lane's 120 s kills are a ROTTED VISIBILITY MAP, and the fix is two reloptions: 117,758 heap fetches → 713 · Cowork cloud
 
 **One migration: `ALTER TABLE public.topshot_atlas_market_events SET (autovacuum_vacuum_scale_factor=0.02, autovacuum_analyze_scale_factor=0.02)` + a table COMMENT.** Catalog-only, instant, reversible, no rewrite, no function replaced. Guarded with `SET LOCAL lock_timeout='3s'` so it could not queue an ACCESS EXCLUSIVE lock behind one of the table's own 120 s scans.
