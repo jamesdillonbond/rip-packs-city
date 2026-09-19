@@ -30,6 +30,11 @@ const TOTALS: Totals = {
   sealed_fmv_exposure_usd_hc: 644215,
   sealed_copies_hc: 35317,
   pct_sealed_usd_from_biased_sets: 60.6,
+  // Added 2026-09-19 — the live readings, so the fixture is a real shape and not an invented one.
+  editions_ask_only: 871,
+  sealed_fmv_exposure_usd_ask_only: 1338443,
+  pct_sealed_usd_from_asks_only: 52.4,
+  pct_sealed_usd_sale_backed: 39.5,
 }
 
 const row = (over: Record<string, unknown> = {}) => ({
@@ -283,6 +288,44 @@ describe("PaniniSqueezeClient — sort + filter controls", () => {
 // The coverage banner is a chain of conditional clauses, each of which is a live
 // disclosure obligation (listing-gated basis, per-parallel range, still-discovering
 // players, rotation-age). Every clause was dark — renderBoard passes coverage=null.
+// The headline `sealed_fmv_exposure_usd` is the figure a reader QUOTES, and on 2026-09-19 it was
+// not majority sale-backed: 52.4% of it came from 871 ASK_ONLY editions — 0.90 x ONE seller's ask
+// on a card with zero recorded sales — against 39.5% standing on a real sale. The board's own top
+// row was a mint-12 card at $900,000 from a $1,000,000 ask with no sales, while the most valuable
+// edition in the set that had actually traded sat at $59,276.
+//
+// ⭐ The per-ROW basis was already disclosed ("from asks"). The defect was that the AGGREGATE said
+// nothing, and an aggregate is what leaves the page — so the composition has to travel with it.
+// ⛔ These cases pin the DISCLOSURE, not a price: nothing here asserts what the FMV should be.
+describe("PaniniSqueezeClient — what the headline total is made of", () => {
+  it("states the ask-only share, the edition count and the sale-backed counterweight", () => {
+    const { container } = render(
+      <PaniniSqueezeClient initialRows={[row()]} totals={TOTALS} fetchedAt="2026-09-19T00:00:00Z" />,
+    )
+    const t = container.textContent ?? ""
+    expect(t).toMatch(/52\.4%[\s\S]*871[\s\S]*single seller.s asking price/i)
+    expect(t).toMatch(/no recorded sale/i)
+    expect(t).toMatch(/39\.5%[\s\S]*a real sale stands behind/i)
+    // The reader must be told what to DO with the number, not just its composition.
+    expect(t).toMatch(/upper bound/i)
+  })
+
+  it("makes NO claim at all when the composition is unknown — never a measured zero", () => {
+    const { container } = render(
+      <PaniniSqueezeClient
+        initialRows={[row()]}
+        totals={{ ...TOTALS, pct_sealed_usd_from_asks_only: null, editions_ask_only: null }}
+        fetchedAt="2026-09-19T00:00:00Z"
+      />,
+    )
+    const t = container.textContent ?? ""
+    expect(t).not.toMatch(/What this total is made of/i)
+    expect(t).not.toMatch(/asking price/i)
+    // A payload predating the migration must still render the board itself.
+    expect(container.querySelectorAll("tbody tr").length).toBeGreaterThan(0)
+  })
+})
+
 describe("PaniniSqueezeClient — coverage banner", () => {
   const COVERAGE: Coverage = {
     total_editions: 4149,

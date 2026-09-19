@@ -99,7 +99,13 @@ async function fetchTotals(db: Db): Promise<any> {
     .from("panini_squeeze_totals")
     .select(
       "editions,sealed_fmv_exposure_usd,chases_lte_25,sealed_copies," +
-        "editions_hc,sealed_fmv_exposure_usd_hc,sealed_copies_hc,pct_sealed_usd_from_biased_sets"
+        "editions_hc,sealed_fmv_exposure_usd_hc,sealed_copies_hc,pct_sealed_usd_from_biased_sets," +
+        // Added 2026-09-19 (migration 20260919181331). sealed_fmv_exposure_usd is the number a
+        // reader quotes, and measured that day 52.4% of it came from 871 ASK_ONLY editions —
+        // 0.90 x ONE seller's ask on a card with zero recorded sales — against 39.5% standing on
+        // a real sale. The per-ROW basis was already disclosed; the AGGREGATE said nothing.
+        "editions_ask_only,sealed_fmv_exposure_usd_ask_only,pct_sealed_usd_from_asks_only," +
+        "pct_sealed_usd_sale_backed"
     )
     .limit(1)
   if (error) {

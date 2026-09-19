@@ -46,6 +46,15 @@ export type Totals = {
   sealed_fmv_exposure_usd_hc: number | null;
   sealed_copies_hc: number | null;
   pct_sealed_usd_from_biased_sets: number | null;
+  // Added 2026-09-19. What the headline is MADE OF. ASK_ONLY = 0.90 x one seller's ask on a card
+  // with NO recorded sale, so this is the share of the published total that no trade supports:
+  // 52.4% on the day it was added, against 39.5% sale-backed. The board's own top row was a mint-12
+  // card at $900,000 from a $1,000,000 ask with zero sales, while the most valuable edition that
+  // has actually traded sat at $59,276. Optional so a payload predating the migration still renders.
+  editions_ask_only?: number | null;
+  sealed_fmv_exposure_usd_ask_only?: number | null;
+  pct_sealed_usd_from_asks_only?: number | null;
+  pct_sealed_usd_sale_backed?: number | null;
 };
 
 export type Coverage = {
@@ -349,6 +358,25 @@ export default function PaniniSqueezeClient({
           )}{" "}
           A set&rsquo;s band comes from the share of its pulled copies currently listed — a <b>bias-risk indicator</b>,
           not a measurement of how much of the checklist we hold.
+        </div>
+      ) : null}
+
+      {/* What the headline is MADE OF. An aggregate is what a reader quotes, and this one is not
+          majority sale-backed — so the composition travels with it. Rendered whenever the figure
+          is present and non-trivial; null => no claim at all, never a measured zero. */}
+      {totals?.pct_sealed_usd_from_asks_only != null && Number(totals.pct_sealed_usd_from_asks_only) >= 1 ? (
+        <div className="psq-note">
+          <b>What this total is made of:</b>{" "}
+          <b>{num(totals.pct_sealed_usd_from_asks_only, 1)}%</b> of the sealed value above comes from{" "}
+          <b>{num(totals.editions_ask_only)}</b> editions priced from a <b>single seller&rsquo;s asking price</b>
+          {" "}with no recorded sale
+          {totals.pct_sealed_usd_sale_backed != null ? (
+            <>
+              , and <b>{num(totals.pct_sealed_usd_sale_backed, 1)}%</b> from editions a real sale stands behind
+            </>
+          ) : null}
+          . An asking price is what someone hopes to get, not what anyone paid — treat the headline as an
+          upper bound.
         </div>
       ) : null}
 
