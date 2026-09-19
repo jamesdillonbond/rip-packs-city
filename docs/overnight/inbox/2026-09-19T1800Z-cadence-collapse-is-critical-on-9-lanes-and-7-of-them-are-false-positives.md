@@ -82,6 +82,12 @@ just not the question this arm is asking, and this arm cannot answer it.**
 2. **Require the drop to PERSIST** — N consecutive 12 h windows below ratio, not one. Demand
    fluctuates; a genuine collapse does not recover on its own. This needs no new curation and
    would have excluded all six wallet lanes without naming them.
+   ⚠ **BUT IT BUYS THE QUIET WITH LATENCY, AND I HAVE NOT SIZED THAT.** N windows of 12 h means a
+   lane that genuinely stops is not paged for **N × 12 h**. Today's pack-sales outage ran **six
+   days** before anyone looked, so delaying the one arm that can see a stop is not obviously the
+   right trade. ⛔ **Do not ship this without deciding what the acceptable time-to-page for a
+   STOPPED lane is** — and note the `stopped` branch and the `degraded` branch may deserve
+   different answers, since a stop is unambiguous and a ratio is not.
 3. **Pair the ratio with the OK RATE.** A lane at 96 % ok and 38 % of baseline is being asked to do
    less; a lane at 30 % ok and 38 % of baseline is broken. ⛔ Do not use ok-rate alone — the
    `offers-sweep` 36/36 breaker split shows ok-rate is itself gameable by a breaker.
