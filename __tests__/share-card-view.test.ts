@@ -103,13 +103,34 @@ describe("shareHeadline — per-collection tile basis", () => {
 // tab to look at a collection they do not have. It now follows the wallet's own
 // holdings — and, because not every collection ships a `collection` tab, it
 // reads the registry rather than assuming the tab exists.
+//
+// ⭐ RE-PINNED LATER THE SAME DAY, and the turnover is the lesson. The Candy
+// row below asserted `/candy-mlb/overview` because Candy had no Collection tab;
+// hours later it shipped one, and this test went red on a PREMISE that had
+// changed, not on a defect — so it is re-pinned to the now-true destination
+// rather than inverted. ⚠ The property it exists to protect is NOT "Candy goes
+// to overview", it is "the tab comes from the registry", so the fallback arm is
+// kept alive by a collection that genuinely lacks the tab (Panini: overview +
+// sniper). Delete that arm and this describe block stops proving anything.
 describe("fullCollectionHref", () => {
   const W = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
 
-  it("sends a Candy-only wallet to Candy's overview, NOT to a collection tab it does not have", () => {
-    // Candy ships pages: ["overview", "market"]. Linking to /candy-mlb/collection
-    // would swap one wrong destination for a 404.
-    expect(fullCollectionHref([{ slug: "candy_mlb", moments: 5 }], W)).toBe("/candy-mlb/overview")
+  it("sends a Candy-only wallet to Candy's OWN collection tab, now that it has one", () => {
+    // Candy shipped pages: ["overview", "market", "collection"] on 2026-09-19.
+    // ⚠ The base58 wallet must survive the round trip CASE-INTACT — a Solana
+    // address is case-sensitive, so a lowercased href is a dead link, not a typo.
+    expect(fullCollectionHref([{ slug: "candy_mlb", moments: 5 }], W)).toBe(
+      `/candy-mlb/collection?wallet=${W}`,
+    )
+  })
+
+  it("⚠ THE PROPERTY, not the row: a collection WITHOUT a `collection` tab still falls back to overview", () => {
+    // Panini ships pages: ["overview", "sniper"]. This is the arm that makes the
+    // registry read load-bearing; without it, `fullCollectionHref` could go back
+    // to hardcoding `/<slug>/collection` and every assertion here would pass.
+    expect(fullCollectionHref([{ slug: "panini_blockchain", moments: 7 }], "0xabc")).toBe(
+      "/panini-blockchain/overview",
+    )
   })
 
   it("no-change control: a Top Shot wallet still lands on the Top Shot collection tab", () => {

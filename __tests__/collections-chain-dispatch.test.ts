@@ -72,7 +72,16 @@ describe("dbChain registry invariant", () => {
     // `market` gained its Solana arm on 2026-09-12: /api/market dispatches
     // Candy's collection id to fetchCandyMarketListings → candy_market_board,
     // 1,821 active listings, all with price + serial + FMV + thumbnail.
-    solana: ["overview", "market"],
+    //
+    // ⭐ `collection` joined on 2026-09-19 ON A DIFFERENT BASIS FROM `market`,
+    // and the difference is the whole finding. `market` needed an ARM written.
+    // `collection` did not: a route-by-route sweep of every endpoint
+    // CollectionTabClient calls found the data path already chain-agnostic, and
+    // what blocked it were Flow-shaped GATES in front of it — `startsWith("0x")`,
+    // `.toLowerCase()` on a CASE-SENSITIVE base58 key, a `contractName`
+    // short-circuit. So the dispatch being asserted here is the ABSENCE of those
+    // gates, and the test below pins exactly that, behaviourally.
+    solana: ["overview", "market", "collection"],
     ethereum: ["overview"],
   }
 
@@ -104,6 +113,43 @@ describe("dbChain registry invariant", () => {
     expect(route).toContain("CANDY_COLLECTION_ID_FOR_DISPATCH")
     expect(route).toContain("209ade70-32c5-4470-bc7c-4793d660f713")
   })
+  // ⚠ THE OTHER HALF, for `collection`. It cannot be the same SHAPE of check as
+  // the `market` one above, because there is no Candy-specific function to name
+  // — that is the point: the Collection tab works for Solana precisely because
+  // nothing on its path is chain-specific any more. So this pins the two things
+  // that make "chain-agnostic" TRUE rather than merely claimed: the address
+  // helpers behave correctly for base58 (called, not grepped), and the routes the
+  // tab calls are keyed on those helpers instead of a Flow shape.
+  it("⚠ the Solana `collection` permission is backed by chain-aware address handling, not a Flow gate", async () => {
+    const { isSupportedAddress, normalizeAddress, detectAddressChain } = await import("@/lib/address")
+    const MINT = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+
+    expect(detectAddressChain(MINT)).toBe("solana")
+    expect(isSupportedAddress(MINT)).toBe(true)
+    // ⛔ THE DEFECT THIS REPLACED: base58 is CASE-SENSITIVE, so the Flow habit
+    // of folding a wallet to lowercase does not normalise a Solana key, it
+    // DESTROYS it — and the read then returns zero rows, which reads as "this
+    // wallet holds nothing" rather than as an error.
+    expect(normalizeAddress(MINT)).toBe(MINT)
+    // No-change control: Flow/EVM addresses must still fold, or every Flow
+    // caller regresses while this test stays green.
+    expect(normalizeAddress("0xAABBCCDDEEFF0011")).toBe("0xaabbccddeeff0011")
+    // …and a username is still not an address, so widening the gate did not
+    // turn a Panini handle into a wallet.
+    expect(isSupportedAddress("trevor")).toBe(false)
+
+    const read = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8")
+    // The three reads behind the tab's moment grid and counts.
+    expect(read("app/api/collection-moments/route.ts")).toContain("isSupportedAddress")
+    expect(read("app/api/wallet/edition-counts/route.ts")).toContain("normalizeAddress(wallet)")
+    expect(read("app/api/wallet-summary/route.ts")).toContain("isSupportedAddress")
+    // ⚠ And the two panels that genuinely CANNOT answer for Solana say so in a
+    // typed field. This is the line that keeps the tab honest: absence, never a
+    // fabricated zero. Deleting either reason string should fail here.
+    expect(read("app/api/sets/route.ts")).toContain("set_tracking_unavailable")
+    expect(read("app/api/cost-basis/route.ts")).toContain("cost_basis_unavailable")
+  })
+
   it("every published FLOW collection still declares dbChain flow (the chain filters key on it)", () => {
     for (const c of COLLECTIONS) {
       if (!c.published || c.id === "candy-mlb") continue

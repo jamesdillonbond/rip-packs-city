@@ -11,6 +11,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🔴→🟢 MAIN WAS RED FOR ELEVEN MINUTES ON THE CANDY TAB FLIP — two guards I never ran, and only one of them was a premise that had changed · Cowork cloud
+
+**Fix: 3 files (`lib/share-card-view.ts`, `__tests__/share-card-view.test.ts`, `__tests__/collections-chain-dispatch.test.ts`). No DB change.** Main was red from the push at ~13:33 PT until this commit.
+
+⛔ **THE PROCESS FAILURE, stated first because it is the reusable part: I chose the suites to run by reading the files I had EDITED, and both guards that fired live in files I did not touch.** They key on `getCollection("candy-mlb").pages` — a registry value — so *any* change to `pages` reaches them. ⭐ **The cheap check I skipped is `grep -rl "candy" __tests__` (40 files) before pushing a registry edit, not after CI goes red.** Shard 2/2 was green; shard 1/2 carried both.
+
+**They failed for two different reasons and only one of them was mine:**
+
+⭐ **`__tests__/share-card-view.test.ts` — A PREMISE THAT CHANGED, NOT A DEFECT.** I wrote that test **earlier the same day**: it asserted a Candy-only wallet lands on `/candy-mlb/overview` *because Candy had no Collection tab*. Hours later it had one, and `fullCollectionHref` correctly returned `/candy-mlb/collection?wallet=…`. ⚠ **Per CLAUDE.md that is a RE-PIN, not an inversion** — nothing was wrong with the code. But re-pinning the row would have left the describe block proving nothing, because **every published collection now has a `collection` tab**, so the registry read could be replaced by a hardcoded `/<slug>/collection` and all the rows would still pass. **The fallback arm is therefore kept alive by Panini** (`pages: ["overview", "sniper"]`), which genuinely lacks the tab. 📏 Mutation: hardcoding the href reds exactly that arm (`'/panini-blockchain/collection?wallet=…'` vs `'/panini-blockchain/overview'`). The stale comment in `lib/share-card-view.ts` that cited Candy as the example of a tab-less collection was corrected in the same commit — it had gone false within hours of being written.
+
+⚠ **`__tests__/collections-chain-dispatch.test.ts` — THE GUARD WAS RIGHT AND IT COST ME NOTHING TO SATISFY HONESTLY, which is why its design is worth copying.** Its message: *"candy-mlb exposes `collection` with no solana dispatch — add the arm before the tab"*. ⭐ **It is built so that widening the allow-list is not clerical: each `(chain, page)` permission must be PAIRED with a falsifiable test that the dispatch exists** (the `market` permission is paired with a source-fact check that `/api/market` really branches on Candy's UUID). Its own comment says the old hardcoded form *"taught the next person that this guard is something you update, not something you satisfy."*
+
+⭐ **And the pairing for `collection` could not be the same SHAPE, which is the finding restated.** `market` needed an ARM written; `collection` did not — its data path was already chain-agnostic and what blocked it were Flow-shaped GATES in front of it. **There is no Candy-specific function to name, because that is the point.** So the new pin asserts the two things that make "chain-agnostic" TRUE rather than claimed: the address helpers are **called, not grepped** (`detectAddressChain(mint) === "solana"`, `isSupportedAddress(mint)`, and `normalizeAddress(mint)` returning the mint **case-intact**), and the five routes behind the tab are keyed on those helpers or answer with a typed absence reason.
+
+📏 **Three mutations, each reverted before the next:**
+- **`normalizeAddress` folds everything** (the original defect) → reds on the case-intact assertion, `'12j1uhkq…'` vs `'12J1uhKQ…'`, **while the `0xAABB…` no-change control still passes** — so the control is not what fires.
+- **`set_tracking_unavailable` renamed** → reds the typed-absence pin. ⚠ This is the line that keeps the tab honest: the panels that cannot answer for Solana must say so, never return a zero.
+- **`fullCollectionHref` hardcoded** → reds the Panini arm only.
+- **No-change control: 315 tests green across 9 suites**, including the two flag-contract files and MobileNav that also read Candy's pages.
+
+**Verified after:** 9 suites green (315) · both originally-failing assertions now green · the CI job log was read rather than the run re-triggered, so the fix targets the two named failures and nothing else.
+
+- **Revert:** `git revert <sha>` (`git log --grep="MAIN WAS RED FOR ELEVEN MINUTES"`). **No DB half.** ⚠ Reverting this WITHOUT reverting the tab flip puts main back to red.
+
 ### 2026-09-19 · ⚖️ DELEGATED DECISIONS TAKEN ("do what you think is best") — and the diff I recommended refuted my own lead · Cowork cloud
 
 Trevor delegated the parked items explicitly. Per the audit-drain convention, delegation means DECIDE and write the cost argument so it stays re-litigable. Three decisions, each with its exit condition.

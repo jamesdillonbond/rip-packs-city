@@ -79,10 +79,14 @@ export function closedMarketNote(perCollection: ShareCollectionRow[] | null | un
 // have. `perCollection[].slug` is the DB slug (`candy_mlb`), so it goes through
 // DB_SLUG_TO_SLUG to reach the route segment.
 //
-// ⚠ Not every collection HAS a `collection` tab — Candy ships overview + market
-// only (lib/collections.ts), and linking to a tab that does not exist would
-// trade one wrong destination for a 404. So the tab is chosen from the
-// registry's own `pages`, and `overview` is the fallback, never a guess.
+// ⚠ Not every collection HAS a `collection` tab, and linking to one that does
+// not exist would trade one wrong destination for a 404. So the tab is chosen
+// from the registry's own `pages`, and `overview` is the fallback, never a
+// guess. ⚠ THE EXAMPLE IN THIS COMMENT USED TO BE CANDY ("overview + market
+// only") and it went stale within hours — Candy gained its Collection tab on
+// 2026-09-19. The live example is Panini (`overview` + `sniper`), and the
+// registry read is what made that turnover a no-op here. Do not re-hardcode a
+// collection's tab list into this file.
 export function fullCollectionHref(
   perCollection: Array<{ slug: string; moments: number }> | undefined,
   wallet: string,
