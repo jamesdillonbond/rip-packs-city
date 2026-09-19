@@ -1,0 +1,175 @@
+-- audit_20260918_tame_visibility_map_rots_between_vacuums_and_the_atlas_listing_lane_pays_for_it
+--
+-- ============================================================================
+-- WHY. R101 filed `ts-listings-atlas-sync` as "losing 58.6% of ticks invisibly"
+-- and the issue register files it under `job startup timeout`. Re-derived
+-- 2026-09-18 evening PT, both halves of that filing are wrong, and the real
+-- cause is measurable in one EXPLAIN.
+--
+-- (1) THE RATE IS A RANGE, NOT A CONSTANT. cron.job_run_details, jobid 466,
+--     by UTC day -- runs / not-succeeded:
+--       09-16  720 / 45   (6.3%)
+--       09-17  720 / 160  (22.2%)
+--       09-18  698 / 202  (28.9%)
+--       09-11  720 / 330  (45.8%)
+--     The scheduler is NOT dropping ticks: 30 runs/hour, exactly the `*/2`
+--     cadence, essentially every hour. Every lost tick is a run that STARTED
+--     and FAILED.
+--
+-- (2) THE BUCKET IS WRONG BY ~14x. Of the ~1,500 recorded failures on jobid 466,
+--     `job startup timeout` accounts for 24. Every other one is
+--     `canceling statement due to statement timeout` at the cluster-wide 120 s
+--     cap. Estate-wide over 24 h, check_pgcron_failure_rate reads
+--     statement_timeouts 339 vs startup_timeouts 80 -- and it already ranks
+--     `rpc-ts-listings-atlas-sync` #1 at 169 of 420 fails. ⭐ THE INSTRUMENT
+--     THAT SEES THIS ALREADY EXISTS. Nothing needs to be built.
+--
+-- (3) WHY IT IS INVISIBLE, mechanically. `atlas_listing_verify_tick` wraps six
+--     calls in one `BEGIN ... EXCEPTION WHEN OTHERS` and calls
+--     `log_pipeline_run` AFTER it. An EXCEPTION handler cannot isolate a
+--     statement_timeout -- the recovery path needs budget the timeout already
+--     consumed -- so the whole function aborts and the log line never runs.
+--     Result: `pipeline_runs` shows this lane 351 rows / 351 ok / 0 fail over
+--     12 h while ~29% of its ticks died. Every pipeline-level instrument
+--     (`pipeline_fails_24h`, `detect_stalled_pipelines`) reports it healthy.
+--     ⛔ AND A HEARTBEAT ROW CANNOT FIX THAT. pg_cron runs the whole tick as one
+--     statement in one implicit transaction, so an in-function INSERT written
+--     BEFORE the work rolls back with the timeout exactly like the one after it.
+--     The heartbeat pattern this repo uses elsewhere works only for HTTP lanes,
+--     where the heartbeat is its own transaction. Do not ship it here.
+--
+-- (4) THE ACTUAL COST, measured. The single most common failing context on
+--     jobid 466 (366 occurrences, avg 125.3 s) is the open-listing count inside
+--     `atlas_edition_verify_settle()`. EXPLAIN (ANALYZE, BUFFERS) on it,
+--     2026-09-18 ~6:15 PM PT, 20.0 h after the last autovacuum:
+--
+--       Parallel Index Only Scan using idx_tame_open_by_edition
+--         (cost=0.42..8522.77 rows=142899) (actual rows=197563 loops=2)
+--         Heap Fetches: 117758
+--         Buffers: shared hit=74293 read=7642 dirtied=7 written=1712
+--       Execution Time: 9385.461 ms
+--
+--     TWO defects in one plan node, and the index is NOT one of them --
+--     `idx_tame_open_by_edition` is exactly the right index and the planner
+--     picks it:
+--       a. Heap Fetches 117,758 on an INDEX-ONLY scan. That is the registered
+--          tell for a stale visibility map (memory:
+--          stale-visibility-map-breaks-index-only-scans). Warm, it still costs
+--          9.4 s; cold, under the evening IO spell, it is the 120 s kill.
+--       b. rows 142,899 estimated vs 197,563 actual per worker -- a 38%
+--          underestimate, on a table whose hot predicates (`NOT completed`,
+--          `last_seen_at`) are the two columns that churn every 2 minutes.
+--
+-- ============================================================================
+-- WHAT, and how it is sized.
+--
+--   n_live_tup 2,374,943 · n_dead_tup 294,302 (11.0%) · n_mod_since_analyze
+--   227,342 · n_ins_since_vacuum 6,345 · reloptions NULL (global defaults).
+--
+--   ⓘ INSERTS ARE NOT THE DRIVER here (6,345 since the last vacuum against
+--   294,302 dead tuples), so `autovacuum_vacuum_insert_scale_factor` is
+--   deliberately left alone -- the same call the 2026-08-29 sales_2026 pass made
+--   in reverse, and for the same reason: size the knob the churn actually moves.
+--
+--   VACUUM. Trigger was 50 + 0.2 x 2,374,943 = 475,040 dead. At the measured
+--   ~14,715 dead/h that is one vacuum every ~32 h, and the map rots the whole
+--   way. 0.02 puts the trigger at 47,549 -- a vacuum every ~3.2 h (~7.4/day vs
+--   ~0.75/day). MEASURED CEILING EFFECT, see the RESULT block below: ~118k -> ~19k.
+--   ⚠ THE RATE IS FROM ONE TIME POINT (117,758 fetches at 20.0 h => ~5,890/h,
+--   assuming zero at vacuum time). The 2026-08-29 sizing used TWO points and
+--   verified linearity; this one did not, so 0.02 is deliberately the
+--   conservative step and not the 0.01 the arithmetic alone would justify.
+--
+--   COST, at this instance's ~22 MB/s IO floor: 689 MB heap (mostly SKIPPED once
+--   the map is warm) + 535 MB of index cleanup across 10 indexes ~= 24 s of IO
+--   per pass, ~178 s/day at the new cadence. Autovacuum is cost-throttled and is
+--   NOT subject to statement_timeout, so it cannot fail the way jobid 380 did.
+--   Set against it: that count runs on the every-2-minute lane AND inside
+--   `atlas_market_drain` (also every 2 min), so ~118k heap fetches is being paid
+--   up to 1,440 times a day today.
+--
+--   ANALYZE. Trigger was 50 + 0.1 x 2,374,943 = 237,544 mods -- one analyze every
+--   ~15.8 h at ~15k mods/h. 0.02 puts it at 47,549, every ~3.2 h. An ANALYZE
+--   samples 30,000 rows (default_statistics_target 100), touches no index, and
+--   its cost does not scale with the table, so this half is close to free.
+--
+-- ============================================================================
+-- 📏 FALSIFIER, dated and re-testable. Re-run the EXPLAIN above after the next
+-- autovacuum completes:
+--     explain (analyze, buffers, timing off)
+--     select count(*) from public.topshot_atlas_market_events e2
+--     where e2.product='nba' and e2.kind='listing' and not e2.completed;
+--   PASS: Heap Fetches falls by an order of magnitude (<= ~20,000) and the
+--         row estimate lands within ~15% of actual.
+--   FAIL: Heap Fetches stays six figures => the visibility map is NOT the
+--         mechanism, this change is a no-op, RESET both options and look at
+--         `atlas_edition_verify_settle`'s per-row correlated counts instead.
+--   ⚠ Do NOT score it on the 120 s failure RATE alone. That rate moves with the
+--   evening IO spell, so a window straddling this change measures neither state.
+--   Heap Fetches is the reading that belongs to this change.
+--
+-- 👉 NOT FIXED HERE, stated rather than dropped: the tick still has no way to
+--    report its own death, because a pg_cron statement_timeout rolls back
+--    anything it would have written. The lane's truth lives in
+--    cron.job_run_details and in check_pgcron_failure_rate, NOT in
+--    pipeline_runs -- and any future reader of this lane's health must be
+--    pointed there.
+--
+-- REVERT:
+--   ALTER TABLE public.topshot_atlas_market_events
+--     RESET (autovacuum_vacuum_scale_factor, autovacuum_analyze_scale_factor);
+-- ============================================================================
+
+-- Fail fast rather than queueing an ACCESS EXCLUSIVE lock behind one of this
+-- table's own 120 s scans and blocking every writer behind it. A catalog-only
+-- ALTER that cannot get the lock in 3 s is better re-run than left to block.
+SET LOCAL lock_timeout = '3s';
+
+ALTER TABLE public.topshot_atlas_market_events SET (
+  autovacuum_vacuum_scale_factor  = 0.02,
+  autovacuum_analyze_scale_factor = 0.02
+);
+
+COMMENT ON TABLE public.topshot_atlas_market_events IS
+  'Atlas marketplace event mirror (~2.37M rows, 689 MB heap + 535 MB indexes as of 2026-09-18). '
+  'Per-table autovacuum/autoanalyze scale factors are set to 0.02 (global defaults 0.2/0.1) because '
+  'this table is UPDATE-churned by the every-2-minute Atlas listing lanes: its visibility map rots '
+  'fast enough that the open-listing count degrades from an index-only scan into ~118k heap fetches. '
+  'Measured 2026-09-18, see migration audit_20260918_tame_visibility_map_rots_between_vacuums_*. '
+  'Do NOT reset these to the global defaults without re-running that migration''s falsifier EXPLAIN.';
+
+-- ============================================================================
+-- 📊 RESULT — the falsifier was run 2 minutes after this migration applied, not
+-- filed as a promise. Setting the scale factor put n_dead_tup (295,504) ABOVE the
+-- new 47,549 trigger immediately, so autovacuum picked the table up on its next
+-- naptime tick: `autovacuum: VACUUM ANALYZE public.topshot_atlas_market_events`
+-- was observed running at 01:14:29Z and finished 01:15:28Z (~90 s, cost-throttled,
+-- nothing else waiting on it). n_dead_tup 295,504 -> 1,176.
+--
+-- The IDENTICAL EXPLAIN, before (20.0 h post-vacuum) vs after (fresh):
+--
+--     Heap Fetches       117,758  ->      713     165x fewer   ✅ bar was <= ~20,000
+--     Buffers hit         74,293  ->   27,426     2.7x fewer
+--     Buffers read         7,642  ->    1,544     4.9x fewer
+--     Buffers written      1,712  ->        0     eliminated
+--     Execution Time     9,385 ms ->   678 ms     13.8x faster
+--
+--   Both readings are warm, and Heap Fetches is a plan-level count that does not
+--   depend on the cache either way -- so this is not a cache-hit dressed up as a fix.
+--
+--   ⚠ 713 is the BEST case (immediately post-vacuum), not the steady state. The
+--   honest claim is the CEILING: at the new 47,549-dead trigger the same scan
+--   should top out near 117,758 x (47,549 / 295,504) ~= 19,000 heap fetches,
+--   against ~118,000 before. Roughly 6x on the ceiling, much better on average.
+--
+-- ⛔ AND ONE HALF OF MY OWN DIAGNOSIS IS REFUTED BY THIS SAME READING. I attributed
+--    the 38% row underestimate to stale statistics. It is NOT staleness: immediately
+--    after a fresh ANALYZE the estimate is 140,792 against an actual 197,557 -- still
+--    ~29% low. A fresh ANALYZE does not move it. The underestimate is structural
+--    (the planner has no cross-column stats tying `product`/`kind` to `completed`
+--    on this partial index), and an extended statistics object is the lever if it
+--    ever matters. It costs far less than the heap fetches did, so it is NOT chased
+--    here -- but the `autovacuum_analyze_scale_factor` half of this change is
+--    therefore justified on CADENCE grounds alone, NOT by this measurement, and
+--    anyone re-reading this file should not cite it as evidence for the analyze knob.
+-- ============================================================================
