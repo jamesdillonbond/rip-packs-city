@@ -64,6 +64,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 - **Revert:** nothing to revert; no change was made. · **Owed:** re-run the split at n ≥ 40; then, if v2 is confirmed not to have worked, the temp-table `ANALYZE` + `listing_id` index is the next candidate — **coordinate with whoever owns R101 rather than racing a second full-body write onto the same pinned function.**
 
+⚖️ **CORRECTION, 09:3x AM PT — MY OWN HEADLINE DECAYED WITH SAMPLE SIZE. R101 v2 IS NEUTRAL, NOT HARMFUL.** I flagged n=12 as possibly noise; it was. Re-measured twice more on the same split:
+
+| n (post) | fail % AFTER v2 | fail % BEFORE v2 |
+|---|---:|---:|
+| 12 | 83.3 % | 56.6 % |
+| 16 | 75.0 % | 62.5 % |
+| **23 (6 h window)** | **69.6 %** | **66.7 %** |
+
+⭐ **Monotone convergence toward the baseline across three readings ⇒ the apparent regression was SMALL-SAMPLE NOISE, and both controls moved in the same direction over the same window** (464: 46.4 → 40.0 %; 463: 7.8 → 8.3 %). 🚨 **So do NOT cite "83.3 % vs 56.6 %" — that number was real when taken and wrong as a conclusion.** The accurate statement: **v2 neither fixed nor broke the lane; p50 is still pinned at 120.0 / 120.1 s, so the tick still exceeds its ceiling and the board is still stale.** ⚠ Still short of the n ≥ 40 I asked for, but the direction is unambiguous across three samples.
+
+⛔ **AND THE TEMP-TABLE CANDIDATE NAMED ABOVE IS DEAD — measured, not reconsidered: the `DELETE … NOT EXISTS` anti-join runs in 47.8 ms** (Hash Right Anti Join; exact row counts barely matter for a full-table hash join, so the missing `ANALYZE` costs nothing). **Do not ship it.** The real cost is the two diagnostic counters and the 339,661-row stale backlog behind them — see the entry above.
+
+
 
 ### 2026-09-19 · 🔁 R101 v2 SHIPPED — the Atlas listing tick scans the open book ONCE and feeds ON CONFLICT only the delta; applied into a live IO spell on purpose, judged on BUFFERS, not on wall-clock · Cowork (desktop VM, push-capable)
 
