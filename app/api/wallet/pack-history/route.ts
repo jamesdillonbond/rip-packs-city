@@ -11,7 +11,7 @@
 // underscore-form DB slug (nba_top_shot, …) or the hyphen-form URL slug
 // (nba-top-shot, …); both are normalized via SLUG_TO_DB_SLUG.
 
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
 import { boundedRead } from "@/lib/api/bounded-read";
 import { supabaseAdmin } from "@/lib/supabase"
@@ -96,6 +96,20 @@ export async function GET(req: NextRequest) {
       { status: 403 },
     )
   }
+
+  // 2026-09-18: ask Dapper's pack index for this wallet's holdings in the
+  // background. request_wallet_pack_sync is a no-op when a sync completed in
+  // the last 12 h or one is in flight; otherwise it dispatches page 1 and the
+  // pack-nft-identity lane pages the rest within a tick. The response below
+  // is what we hold NOW; `identity_sync` in it says how fresh that is.
+  after(async () => {
+    try {
+      const { error: syncErr } = await sb.rpc("request_wallet_pack_sync", { p_wallet: wallet })
+      if (syncErr) console.error("[wallet/pack-history] sync request", syncErr.message)
+    } catch (err) {
+      console.error("[wallet/pack-history] sync request threw", err instanceof Error ? err.message : String(err))
+    }
+  })
 
   try {
     const { data, error } = await boundedRead(sb.rpc("get_wallet_pack_history", {

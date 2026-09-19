@@ -28,8 +28,10 @@ const PINS = [
     test: "supabase/tests/get_wallet_pack_history.sql",
     // v5 (same day): status 'transferred' from Dapper's pack index + the index as
     // a dist source of last resort.
+    // v6 (same night): the index as a holdings source -- packs the wallet holds
+    // or opened that no buy/rip of ours ever saw.
     migration:
-      "supabase/migrations/20260919031500_audit_20260918_wallet_packs_transferred_status_and_identity_lane_covers_rips.sql",
+      "supabase/migrations/20260919041500_audit_20260918_wallet_pack_holdings_synced_from_dapper_index_the_unopened_tab_was_a_quarter_of_the_truth.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

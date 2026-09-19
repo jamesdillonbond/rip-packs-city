@@ -19,6 +19,7 @@ import { getOwnerKey } from "@/lib/owner-key"
 import { getCollection, toDbSlug } from "@/lib/collections"
 import {
   fmtPackUsd,
+  identitySyncNote,
   netPlTint,
   packBuyLabel,
   packDisplayName,
@@ -84,6 +85,15 @@ interface HistoryRow {
 interface History {
   packs: HistoryRow[]
   total_count: number
+  // 2026-09-18: when this wallet's holdings were last confirmed with Dapper's
+  // pack index (null = never; completed_at null = in flight).
+  identity_sync?: {
+    requested_at?: string | null
+    completed_at?: string | null
+    pages?: number | null
+    packs?: number | null
+    last_error?: string | null
+  } | null
 }
 
 const PAGE_SIZE = 25
@@ -397,7 +407,14 @@ export default function WalletPacksView({ collection }: { collection: string }) 
         )}
       </section>
 
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        {/* The Unopened list is only as complete as the last holdings sync:
+            packs acquired before on-chain coverage exist only in Dapper's
+            index. Say how fresh that is instead of letting the tab read as
+            complete. */}
+        {history && !loading && !error && (
+          <span style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)" }}>{identitySyncNote(history.identity_sync)}</span>
+        )}
         <Link href="/dashboard/packs" className="rpc-chip" style={{ color: accent, borderColor: accent }}>
           Full pack history + lifecycle →
         </Link>

@@ -13,6 +13,7 @@ import {
   packIdentityNote,
   packBuyLabel,
   packMarketLabel,
+  identitySyncNote,
 } from "@/lib/packs-wallet-view-format"
 
 // Pins the pure formatting/mapping logic lifted out of
@@ -198,6 +199,22 @@ describe("packBuyLabel (2026-09-18)", () => {
   })
   it("falls back to buy_price when buy_usd is absent (older payloads)", () => {
     expect(packBuyLabel({ has_buy: true, buy_price: 8, buy_currency: "DUC" })).toBe("$8.00 DUC")
+  })
+})
+
+describe("identitySyncNote (2026-09-18)", () => {
+  const now = Date.parse("2026-09-19T00:00:00Z")
+  it("never calls an unsynced list complete", () => {
+    expect(identitySyncNote(null)).toMatch(/not yet confirmed/)
+    expect(identitySyncNote({ requested_at: "2026-09-18T23:58:00Z", completed_at: null }, now)).toMatch(/Confirming holdings/)
+  })
+  it("reports a completed sync with its age and pack count", () => {
+    expect(identitySyncNote({ completed_at: "2026-09-18T22:00:00Z", packs: 434 }, now)).toBe(
+      "Holdings confirmed with the Dapper pack index 2h ago (434 packs).",
+    )
+  })
+  it("says a failed sync may have left the list incomplete", () => {
+    expect(identitySyncNote({ completed_at: "2026-09-18T22:00:00Z", packs: 100, last_error: "http_503" }, now)).toMatch(/failed 2h ago .*incomplete/)
   })
 })
 

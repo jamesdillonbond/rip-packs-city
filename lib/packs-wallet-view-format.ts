@@ -138,6 +138,30 @@ export function packBuyLabel(row: {
   return fmtPackUsd(usd) + (row.buy_currency ? ` ${row.buy_currency}` : "")
 }
 
+export interface IdentitySync {
+  requested_at?: string | null
+  completed_at?: string | null
+  pages?: number | null
+  packs?: number | null
+  last_error?: string | null
+}
+
+/** One line on how complete the holdings list is. Dapper's pack index is
+ *  consulted per wallet; until a sync completes the list is only what our own
+ *  tables hold, and the line must say so rather than let the tab read as
+ *  complete. `now` is injectable for tests. */
+export function identitySyncNote(sync: IdentitySync | null | undefined, now: number = Date.now()): string {
+  if (!sync) return "Holdings not yet confirmed with the Dapper pack index — this list is what our own tables hold."
+  if (sync.completed_at) {
+    const ago = relativePackTime(sync.completed_at, now)
+    const n = sync.packs != null ? ` (${sync.packs.toLocaleString("en-US")} packs)` : ""
+    return sync.last_error
+      ? `Holdings check with the Dapper pack index failed ${ago}${n} — list may be incomplete.`
+      : `Holdings confirmed with the Dapper pack index ${ago}${n}.`
+  }
+  return "Confirming holdings with the Dapper pack index now — refresh in a few minutes for the full list."
+}
+
 /** Market context for a row whose distribution is known: floor ask · EV ·
  *  last sale, each omitted when unknown. Empty string when nothing is known. */
 export function packMarketLabel(row: {

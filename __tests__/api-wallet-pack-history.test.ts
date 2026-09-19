@@ -32,6 +32,13 @@ vi.mock("@/lib/supabase", () => {
     },
   }
 })
+// The route requests a background holdings sync in after(); stub it so the
+// request scope is not required and the sync call is observable.
+const afterCalls: Array<() => unknown> = []
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: (fn: () => unknown) => { afterCalls.push(fn) } }
+})
 vi.mock("@/lib/auth/supabase-server", () => ({
   requireUser: async () => {
     if (!state.user)
@@ -52,6 +59,7 @@ beforeEach(() => {
   state.rpc = { data: null, error: null }
   state.rpcParams = null
   state.rpcThrows = false
+  afterCalls.length = 0
 })
 
 const verified = () => {
@@ -131,6 +139,27 @@ describe("GET /api/wallet/pack-history", () => {
     await GET(req("https://t/api/wallet/pack-history?wallet=0xabc&status=sold_any&limit=9999"))
     expect(state.rpcParams.p_status).toBe("sold_any")
     expect(state.rpcParams.p_limit).toBe(200)
+  })
+
+  it("schedules a background holdings sync for the wallet, and only after the ownership check", async () => {
+    verified()
+    const rpcNames: string[] = []
+    const origRpc = (await import("@/lib/supabase")).supabaseAdmin.rpc as any
+    ;((await import("@/lib/supabase")).supabaseAdmin as any).rpc = async (fn: string, params: any) => { rpcNames.push(fn); return origRpc(fn, params) }
+    const res = await GET(req("http://x/api/wallet/pack-history?wallet=0xABC"))
+    expect(res.status).toBe(200)
+    expect(afterCalls).toHaveLength(1)
+    await afterCalls[0]()
+    expect(rpcNames).toContain("request_wallet_pack_sync")
+    ;((await import("@/lib/supabase")).supabaseAdmin as any).rpc = origRpc
+  })
+
+  it("does NOT schedule a sync for a wallet that is not saved on the account", async () => {
+    state.user = { id: "u1" }
+    state.owned = { data: [], error: null }
+    const res = await GET(req("http://x/api/wallet/pack-history?wallet=0xabc"))
+    expect(res.status).toBe(403)
+    expect(afterCalls).toHaveLength(0)
   })
 
   it("500s when the history RPC returns an error", async () => {
