@@ -29,8 +29,25 @@
 import { useCallback, useState, type CSSProperties, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { trackFunnelEvent } from "@/lib/track-funnel"
+import { isSupportedAddress } from "@/lib/address"
 
 const FLOW_ADDRESS = /^0x[0-9a-fA-F]{16}$/
+
+// ⛔ 2026-09-19 — THIS BOX WAS RPC'S FRONT DOOR AND IT REFUSED HALF THE PRODUCT.
+// The submit path gated on FLOW_ADDRESS alone, so a Candy MLB collector pasting
+// their Solana wallet fell through to the USERNAME resolver, missed, and was
+// told "Couldn't find that username. Try a Flow wallet address (0x…)."
+//
+// ⭐ The destination already worked. Measured live the same day, before any
+// change here: /share/12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK returns 200
+// and renders $13.00 across 5 moments with real Arweave art and per-collection
+// rollup ("Candy MLB", 5 moments, $13). RPC holds 25,458 Candy wmc rows over 421
+// wallets at 100% FMV coverage. NOTHING was missing except this regex's
+// willingness to navigate there.
+//
+// `isSupportedAddress` (lib/address.ts) recognises Cadence, EVM and base58, so
+// this box now opens for every chain RPC indexes rather than the one it started
+// on. FLOW_ADDRESS stays — see the ordering note in `submit`.
 // deep-audit R28. The default placeholder and aria-label BOTH promise "moment
 // ID", and HOME_STEPS repeats it, but the submit path had no branch for one: a
 // numeric id fell through to the username resolver, missed, and rendered
@@ -171,7 +188,12 @@ export default function WalletSearch({
     }
 
     setError(null)
-    if (FLOW_ADDRESS.test(raw)) {
+    // Flow first, then any other supported chain. The order is not cosmetic:
+    // FLOW_ADDRESS is the narrowest and most common shape, and keeping it as its
+    // own branch means this change cannot alter what a Flow paste does.
+    if (FLOW_ADDRESS.test(raw) || isSupportedAddress(raw)) {
+      // ⛔ Pass `raw`, NOT a lowercased copy. base58 is case-sensitive and the
+      // share route keys on the address verbatim.
       go(raw)
       return
     }
@@ -200,12 +222,14 @@ export default function WalletSearch({
       }
       const data = await res.json().catch(() => null)
       const addr: string | undefined = data?.walletAddress
-      if (addr && FLOW_ADDRESS.test(addr)) {
+      if (addr && (FLOW_ADDRESS.test(addr) || isSupportedAddress(addr))) {
         go(addr)
         return
       }
       setError(
-        data?.error || "Couldn't find that username. Try a Flow wallet address (0x…)."
+        // The old copy named ONE chain ("Try a Flow wallet address (0x…)"),
+        // which was advice to a Candy holder to type something they do not have.
+        data?.error || "Couldn't find that username. Try a wallet address instead."
       )
     } catch {
       setError("Something went wrong resolving that. Try again in a moment.")

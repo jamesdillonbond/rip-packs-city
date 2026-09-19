@@ -81,6 +81,14 @@ const COPY: Record<string, { title: string; placeholder: string; hint: ReactNode
     placeholder: "Top Shot username or 0x wallet…",
     hint: "Free, no signup. Total FMV + your top moments.",
   },
+  // Candy MLB is on Solana, so the __default copy ("Flow wallet address (0x…)")
+  // was instructing a Candy collector to paste something that does not exist for
+  // their chain — on the tab for their own collection. 2026-09-19.
+  "candy-mlb": {
+    title: "What's your collection worth?",
+    placeholder: "Solana wallet address…",
+    hint: "Free, no signup. Total FMV + your top moments.",
+  },
   __default: {
     title: "What's your collection worth?",
     placeholder: "Flow wallet address (0x…)",

@@ -55,6 +55,14 @@ export const TOP_SALES_VALID_COLLECTIONS = new Set([
   "laliga_golazos",
   "disney_pinnacle",
   "ufc_strike",
+  // candy_mlb added 2026-09-19. This set is a 400-gate on ?collection=, and it
+  // was narrower than the view it guards: `v_insights_top_sales` already carries
+  // Candy rows (7 in the 30d window, top sale $203.72, measured that day), so
+  // /api/public/insights/top-sales?collection=candy_mlb answered
+  // "collection must be one of …" for rows it was ALREADY serving under
+  // collection=all. A filter that rejects data the endpoint returns is a bug in
+  // the filter, not a policy.
+  "candy_mlb",
 ])
 
 // moment_id intentionally omitted — it is NULL in the view (see header note).

@@ -61,14 +61,22 @@ type ApiResponse = {
   rows: Row[]
 }
 
-type CollectionFilter = "all" | "nba_top_shot" | "nfl_all_day"
+type CollectionFilter = "all" | "nba_top_shot" | "nfl_all_day" | "candy_mlb"
 type WindowFilter = "7d" | "30d"
 type SortKey = "price" | "recent"
 
+// ⚠ EVERY value here must be in TOP_SALES_VALID_COLLECTIONS, or the chip sends
+// a request the API answers with a 400. Pinned by the suite, because these are
+// two hardcoded lists in two files that nothing else forces to agree — the same
+// shape as the collection-slug facade drift fixed earlier on 2026-09-19.
 const COLLECTIONS: { val: CollectionFilter; label: string }[] = [
   { val: "all", label: "All" },
   { val: "nba_top_shot", label: "Top Shot" },
   { val: "nfl_all_day", label: "NFL All Day" },
+  // Candy rows were already rendering under "All" — there was simply no way to
+  // filter to them. Thin by design: Candy ran 7 sales over $100 in the trailing
+  // 30 days on 2026-09-19, comparable to All Day's 2 in 7 days.
+  { val: "candy_mlb", label: "Candy MLB" },
 ]
 const WINDOWS: { val: WindowFilter; label: string }[] = [
   { val: "7d", label: "7 days" },

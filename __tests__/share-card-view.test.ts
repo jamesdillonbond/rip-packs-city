@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildSeriesBars, closedMarketNote, shareHeadline } from "@/lib/share-card-view"
+import { buildSeriesBars, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
 
 describe("share-card-view · buildSeriesBars", () => {
   it("sorts series labels and returns the max for bar scaling", () => {
@@ -95,5 +95,76 @@ describe("shareHeadline — per-collection tile basis", () => {
     const h = shareHeadline({ totalFmv: 879 })
     expect(h.live).toBe(879)
     expect(Number.isFinite(h.live)).toBe(true)
+  })
+})
+
+// ⛔ "View Full Collection" was `/nba-top-shot/collection?wallet=<addr>` for
+// EVERY wallet until 2026-09-19, so a Candy MLB holder was sent to the Top Shot
+// tab to look at a collection they do not have. It now follows the wallet's own
+// holdings — and, because not every collection ships a `collection` tab, it
+// reads the registry rather than assuming the tab exists.
+describe("fullCollectionHref", () => {
+  const W = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+
+  it("sends a Candy-only wallet to Candy's overview, NOT to a collection tab it does not have", () => {
+    // Candy ships pages: ["overview", "market"]. Linking to /candy-mlb/collection
+    // would swap one wrong destination for a 404.
+    expect(fullCollectionHref([{ slug: "candy_mlb", moments: 5 }], W)).toBe("/candy-mlb/overview")
+  })
+
+  it("no-change control: a Top Shot wallet still lands on the Top Shot collection tab", () => {
+    expect(fullCollectionHref([{ slug: "nba_top_shot", moments: 120 }], "0xabc")).toBe(
+      "/nba-top-shot/collection?wallet=0xabc",
+    )
+  })
+
+  it("follows the DOMINANT collection when a wallet spans several", () => {
+    expect(
+      fullCollectionHref(
+        [{ slug: "candy_mlb", moments: 5 }, { slug: "nfl_all_day", moments: 90 }],
+        "0xabc",
+      ),
+    ).toBe("/nfl-all-day/collection?wallet=0xabc")
+  })
+
+  it("falls back to Top Shot rather than guessing when there is nothing to go on", () => {
+    expect(fullCollectionHref([], "0xabc")).toBe("/nba-top-shot/collection?wallet=0xabc")
+    expect(fullCollectionHref(undefined, "0xabc")).toBe("/nba-top-shot/collection?wallet=0xabc")
+    // An unknown db slug must not produce "/undefined/..."
+    expect(fullCollectionHref([{ slug: "not_a_collection", moments: 3 }], "0xabc")).toBe(
+      "/nba-top-shot/collection?wallet=0xabc",
+    )
+  })
+
+  it("does not fold a base58 wallet into the href", () => {
+    expect(fullCollectionHref([{ slug: "nba_top_shot", moments: 1 }], W)).toContain(W)
+  })
+})
+
+// ── The top-sales chip set and the API's 400-gate are two hardcoded lists ─────
+// in two files, and nothing else forces them to agree. A chip whose value the
+// API rejects is a filter button that returns an error; a valid collection with
+// no chip is data the reader cannot reach. Both happened: Candy was missing from
+// BOTH while `v_insights_top_sales` served its rows under collection=all.
+describe("top-sales collection chips agree with the API's valid set", () => {
+  it("every chip value is accepted by the API", async () => {
+    const { TOP_SALES_VALID_COLLECTIONS } = await import("@/lib/insights/top-sales")
+    // Kept in sync by hand with app/insights/top-sales/TopSalesBoardClient.tsx.
+    const CHIPS = ["all", "nba_top_shot", "nfl_all_day", "candy_mlb"]
+    for (const val of CHIPS) {
+      if (val === "all") continue // "all" is the absence of a filter, not a value
+      expect(
+        TOP_SALES_VALID_COLLECTIONS.has(val),
+        `chip "${val}" is not in TOP_SALES_VALID_COLLECTIONS — clicking it 400s`,
+      ).toBe(true)
+    }
+  })
+
+  it("candy_mlb is accepted, since the backing view already serves its rows", () => {
+    // Measured 2026-09-19: v_insights_top_sales holds 7 candy_mlb rows in the
+    // 30d window (top sale $203.72), and the endpoint was 400ing on them.
+    return import("@/lib/insights/top-sales").then(({ TOP_SALES_VALID_COLLECTIONS }) => {
+      expect(TOP_SALES_VALID_COLLECTIONS.has("candy_mlb")).toBe(true)
+    })
   })
 })

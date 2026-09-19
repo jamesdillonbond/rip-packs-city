@@ -56,6 +56,44 @@ describe("WalletSearch bindings", () => {
     expect(pushMock).toHaveBeenCalledWith(`/share/${ADDR}`)
   })
 
+  // ⛔ THE FRONT DOOR WAS FLOW-ONLY UNTIL 2026-09-19. The submit path gated on
+  // /^0x[0-9a-fA-F]{16}$/, so a Candy MLB collector pasting their Solana wallet
+  // fell through to the username resolver and was told "Couldn't find that
+  // username." — while /share/<that exact address> already returned 200 with
+  // $13.00 across 5 moments and real Arweave art. Nothing was missing but this
+  // box's willingness to navigate.
+  it("navigates a base58 (Solana/Candy) wallet to its share card", () => {
+    const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+    const { container } = render(<WalletSearch surface="t" />)
+    submit(container, CANDY)
+    expect(pushMock).toHaveBeenCalledWith(`/share/${CANDY}`)
+  })
+
+  it("⛔ sends base58 VERBATIM — folding the case would address a different wallet", () => {
+    const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+    const { container } = render(<WalletSearch surface="t" />)
+    submit(container, CANDY)
+    const pushed = pushMock.mock.calls[0][0] as string
+    expect(pushed).toContain(CANDY)
+    expect(pushed).not.toContain(CANDY.toLowerCase())
+  })
+
+  it("no-change control: a Flow address still goes straight to /share, unresolved", () => {
+    // The Flow branch must be untouched by widening the gate — this is the
+    // path ~100% of today's pastes take.
+    const { container } = render(<WalletSearch surface="t" />)
+    submit(container, ADDR)
+    expect(pushMock).toHaveBeenCalledWith(`/share/${ADDR}`)
+  })
+
+  it("no-change control: a plain username still goes to the resolver, not to /share", async () => {
+    // Widening the address gate must not swallow usernames — if it did, every
+    // username lookup would navigate to a share card for a non-address.
+    const { container } = render(<WalletSearch surface="t" />)
+    submit(container, "trevor")
+    expect(pushMock).not.toHaveBeenCalled()
+  })
+
   it("puts a caller's className on the WRAPPER, so breakpoint-dependent sizing can live in CSS", () => {
     // Why the wrapper and not the form: the wrapper is the flex ITEM of the
     // caller's row, so it is the box whose main-axis size flips meaning when

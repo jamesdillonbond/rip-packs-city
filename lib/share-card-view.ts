@@ -6,6 +6,7 @@
 // plural), which is an HONESTY line — closed-market moments are counted but
 // excluded from Total FMV, and the copy must say so correctly.
 
+import { DB_SLUG_TO_SLUG, getCollection } from "@/lib/collections"
 export const NO_SERIES_LABEL = "No series"
 
 /**
@@ -69,4 +70,30 @@ export function closedMarketNote(perCollection: ShareCollectionRow[] | null | un
   if (closed.length === 0) return null
   const names = closed.map((c) => c.name).join(", ")
   return `${names} ${closed.length === 1 ? "market is" : "markets are"} closed — ${closed.length === 1 ? "its" : "their"} moments are counted but excluded from Total FMV.`
+}
+
+// Resolve the tab a "View Full Collection" click should land on, from the
+// wallet's OWN holdings rather than a hardcoded collection. 2026-09-19: this
+// link was `/nba-top-shot/collection?wallet=<addr>` for every wallet, so a Candy
+// MLB holder was sent to the Top Shot tab to look at a collection they do not
+// have. `perCollection[].slug` is the DB slug (`candy_mlb`), so it goes through
+// DB_SLUG_TO_SLUG to reach the route segment.
+//
+// ⚠ Not every collection HAS a `collection` tab — Candy ships overview + market
+// only (lib/collections.ts), and linking to a tab that does not exist would
+// trade one wrong destination for a 404. So the tab is chosen from the
+// registry's own `pages`, and `overview` is the fallback, never a guess.
+export function fullCollectionHref(
+  perCollection: Array<{ slug: string; moments: number }> | undefined,
+  wallet: string,
+): string {
+  const enc = encodeURIComponent(wallet)
+  const dominant = (perCollection ?? [])
+    .slice()
+    .sort((a, b) => (b.moments ?? 0) - (a.moments ?? 0))[0]
+  const urlSlug = dominant ? DB_SLUG_TO_SLUG[dominant.slug] : undefined
+  if (!urlSlug) return `/nba-top-shot/collection?wallet=${enc}`
+  const coll = getCollection(urlSlug)
+  if (coll?.pages.includes("collection")) return `/${urlSlug}/collection?wallet=${enc}`
+  return `/${urlSlug}/overview`
 }

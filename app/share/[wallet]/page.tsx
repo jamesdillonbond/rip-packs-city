@@ -6,8 +6,9 @@ import FunnelTracker from "@/components/FunnelTracker"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { formatClosedOn } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
-import { buildSeriesBars, closedMarketNote, shareHeadline } from "@/lib/share-card-view"
+import { buildSeriesBars, closedMarketNote, shareHeadline, fullCollectionHref } from "@/lib/share-card-view"
 import { OG_INHERITED } from "@/lib/seo"
+import { normalizeAddress } from "@/lib/address"
 
 interface SnapshotData {
   wallet: string
@@ -142,17 +143,31 @@ export async function generateMetadata(
   const ogImage = `${siteUrl()}/api/og/share?wallet=${encodeURIComponent(params.wallet)}`
   // Flow addresses are hex and case-insensitive in practice, so /share/0xABC
   // and /share/0xabc are the SAME card at two indexable URLs (deep-audit R12).
-  // Canonicalise on the lowercase form so the duplicate does not split ranking
-  // signals — this page is shared by hand, so both spellings really do occur.
-  const canonical = `${siteUrl()}/share/${encodeURIComponent(params.wallet.toLowerCase())}`
+  // Canonicalise so the duplicate does not split ranking signals — this page is
+  // shared by hand, so both spellings really do occur.
+  //
+  // ⛔ 2026-09-19 — THIS WAS `.toLowerCase()`, WHICH IS ONLY TRUE FOR HEX. A
+  // Solana/Candy address is base58 and CASE-SENSITIVE, so folding it produced a
+  // canonical pointing at a DIFFERENT key that resolves to nothing. Verified on
+  // the live page: the card for 12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK
+  // rendered `<link rel="canonical" href=".../share/12j1uhkqcbyauomkvxdp...">`
+  // — i.e. it told Google the authoritative URL for a working page was a broken
+  // one. `normalizeAddress` folds hex and leaves base58 verbatim, so the R12
+  // de-duplication is preserved exactly for the chain it was written for.
+  const canonical = `${siteUrl()}/share/${encodeURIComponent(normalizeAddress(params.wallet))}`
   return {
     title: `Collection Card — ${params.wallet}`,
     alternates: { canonical },
-    description: `View the NBA Top Shot collection for wallet ${params.wallet} on Rip Packs City.`,
+    // ⛔ Named "NBA Top Shot" until 2026-09-19 while the card itself is
+    // cross-collection (see the per-collection rollup below) — so a Candy MLB
+    // wallet's card described itself, in its own <meta> and in every social
+    // unfurl, as a Top Shot collection. The snapshot is not fetched here, so the
+    // honest form is the collection-neutral one rather than a guess.
+    description: `View the collection for wallet ${params.wallet} on Rip Packs City.`,
     openGraph: {
       ...OG_INHERITED,
       title: `Collection Card — ${params.wallet}`,
-      description: `NBA Top Shot collection snapshot for ${params.wallet}`,
+      description: `Collection snapshot for ${params.wallet}`,
       type: "website",
       url: `${siteUrl()}/share/${encodeURIComponent(params.wallet)}`,
       siteName: "Rip Packs City",
@@ -166,7 +181,7 @@ export async function generateMetadata(
       site: "@RipPacksCity",
       creator: "@RipPacksCity",
       title: `Collection Card — ${params.wallet}`,
-      description: `NBA Top Shot collection snapshot for ${params.wallet}`,
+      description: `Collection snapshot for ${params.wallet}`,
       images: [{ url: ogImage, alt: "Collection Card — Rip Packs City" }],
     },
   }
@@ -560,7 +575,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             Run the full report →
           </a>
           <a
-            href={`/nba-top-shot/collection?wallet=${encodeURIComponent(wallet)}`}
+            href={fullCollectionHref(data.perCollection, wallet)}
             style={{ padding: "12px 24px", border: "1px solid var(--rpc-border)", borderRadius: 8, color: "var(--rpc-text-secondary)", fontWeight: 700, fontSize: 14, textDecoration: "none", letterSpacing: "0.04em" }}
           >
             View Full Collection

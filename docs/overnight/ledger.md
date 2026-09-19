@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🚪 THE FRONT DOOR TOLD A CANDY COLLECTOR THEIR WALLET DID NOT EXIST — while the page it refused to navigate to was already rendering their collection correctly · Cowork cloud
+
+**Shipped: 4 code files + 2 test files. No DB change.** Third and last pass of the Candy parity work (see the two entries below). This is the one a user would actually hit first.
+
+🚨 **`components/WalletSearch.tsx` — the box mounted on every collection tab, the /insights hub and the marketing home — gated its submit path on `FLOW_ADDRESS = /^0x[0-9a-fA-F]{16}$/`.** A Candy MLB collector pasting their Solana wallet therefore fell through to the USERNAME resolver, missed, and got: *"Couldn't find that username. Try a Flow wallet address (0x…)."* — copy that tells the reader to type something their chain does not have.
+
+⭐ **AND THE DESTINATION ALREADY WORKED.** Before changing a line I fetched `/share/12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK`: **HTTP 200**, Total Collection FMV **$13.00 across 5 moments**, real Arweave art, per-collection rollup reading **"Candy MLB · 5 moments · $13"**, rarest moment *Jacob Misiorowski #149/250*. RPC holds **25,458 Candy wmc rows over 421 wallets at 100% FMV coverage**. Nothing was missing but one regex's willingness to navigate. `isSupportedAddress` now opens the box to Cadence, EVM and base58; `FLOW_ADDRESS` stays as its own first branch so the path ~100% of today's pastes take is provably untouched.
+
+🔎 **THE SAME LIVE FETCH EXPOSED THREE MORE DEFECTS ON THAT CARD, all shipped here:**
+
+1. ⛔ **The canonical was lowercased.** `/share/[wallet]` emitted `<link rel="canonical" href=".../share/12j1uhkqcbyauomkvxdp2ma6mst3k8wx8ohhhv8genak">` — telling Google the authoritative URL for a working page is a **different key that resolves to nothing**. The R12 de-duplication it implements is correct *for hex*; base58 is case-sensitive. `normalizeAddress` folds hex and leaves base58 verbatim, so R12 is preserved exactly for the chain it was written for.
+2. ⛔ **The card called itself an NBA Top Shot collection** — in `description`, `og:description` and `twitter:description`, i.e. in every social unfurl — while the card's own body is cross-collection by design. Now collection-neutral. Deliberately NOT guessed per-wallet: the snapshot is not fetched in `generateMetadata`, so a specific claim there would be unfounded.
+3. ⛔ **"View Full Collection" was `/nba-top-shot/collection?wallet=<addr>` for every wallet**, sending a Candy holder to the Top Shot tab to look at a collection they do not have. Now `fullCollectionHref` follows the wallet's **dominant** collection from `perCollection`. ⚠ It reads the registry rather than assuming the tab exists — **Candy ships `pages: ["overview","market"]` with no `collection` tab**, so linking to `/candy-mlb/collection` would have traded a wrong destination for a 404. Moved into `lib/share-card-view.ts` so the coverage gate measures it, per that file's own stated reason for existing.
+
+✅ **AND ONE THING DELIBERATELY NOT "FIXED", because it is already honest:** the card's wallet-intel highlights link to `/nba-top-shot/edition/<external_id>`, which would be a dead link for a Candy wallet — but `/api/public/wallet-intel` hard-rejects a non-Flow address (*"wallet query param must be a 0x-prefixed 16-hex Flow address"*), `fetchWalletIntel` returns null on `!res.ok`, and the section is hidden. Verified by fetching it. Degrading to absence, not to a wrong link.
+
+**Also:** `TOP_SALES_VALID_COLLECTIONS` was **narrower than the view it guards** — `v_insights_top_sales` already carries 7 Candy rows (top sale $203.72), served under `collection=all`, while `?collection=candy_mlb` answered *"collection must be one of …"*. A filter that rejects data the endpoint returns is a bug in the filter. Chip added too, and a guard now pins the chip list ⊆ the API's valid set — **two hardcoded lists in two files that nothing forced to agree, the same shape as the facade drift in the entry below.**
+
+**Verified after:** 49 tests green across `component-WalletSearch-bindings` (11), `component-WalletSearchBand` (20) and `share-card-view` (18→20) · **mutation-proven**: restoring the Flow-only gate reds exactly the two base58 arms and **leaves both no-change controls green** (a Flow address still reaches `/share`, a username still reaches the resolver). ⚠ `tsc --noEmit` OOM-killed on the VM again (exit 137) — owed to CI.
+
+⚠ **CI ON THE PREVIOUS COMMIT (`14f38e53c`) IS RED AND IT IS NOT MINE.** `db-invariants-drift-guard` + `db-pin-points-at-the-newest-defining-migration` name **`sync_ts_listings_from_atlas` and `sync_edition_offers_from_atlas`**, whose pins still point at `20260919021449` while `20260919152824_…r101_v2_atlas_listing_tick…` also defines them. `resolve_moment_id` is NOT among the offenders — its pin, migration and live `prosrc` all md5 to `7952c150…`. Left for the session that owns those lanes: the re-pin's step 3 is "re-check that file's assertions against the new body", which is their in-flight work, not a mechanical edit.
+
+**Exit condition:** pasting a base58 address into the box on any surface lands on that wallet's share card; `view-source` on it shows a canonical that is **not** lowercased.
+**Falsifier:** if a Top Shot USERNAME of 32–44 base58-legal characters now routes to `/share/<username>` instead of the resolver, the widened gate is too greedy — the username no-change control covers the realistic case, but a long handle would not be caught by it.
+
+- **Revert:** `git revert <sha>` (`git log --grep="FRONT DOOR TOLD"`). **No DB half.**
+
 ### 2026-09-19 · 🪙 A BIGINT GATE IN FRONT OF A TEXT QUERY — /moment/<mint> 404'd for every Candy NFT, and the lookup that answers it had been sitting in the function, unreachable, the whole time · Cowork cloud
 
 **Shipped: 1 migration (`20260919174322`) + its pin + the drift-guard registration + one test correction.** Second pass of the Candy parity work; the first (`afa38c36b`) is the entry below.
