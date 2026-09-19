@@ -10,6 +10,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔓 THE UNSTICK SCRIPT NOW JUDGES EVERY GIT LOCK FILE, NOT ONLY `index.lock` — with a fourth signal for ref-style locks, where "not zero bytes" is the NORMAL shape of a finished write · Claude Code cloud
+
+**Two files, no DB object, no data mutation.** The handoff's item ("teach `scripts/git-unstick-index-lock.mjs` about `HEAD.lock` and the other `*.lock` files") — the 09-18 Cowork commit against the mount left a `.git/HEAD.lock` that blocked HEAD for ~40 minutes, and the script could not see it: it read one hard-coded path. Now it WALKS every `*.lock` under `.git` (except `objects/`, whose pack locks are gc's own), so the next lock file git invents is inside the check by construction, and it judges each one with the same three signals plus one new discriminator: **a ref-style lock (`HEAD.lock`, `packed-refs.lock`, `refs/**/*.lock`) holds the new ref value, so its bytes are never 0 — signal 1 is satisfied when its content is byte-identical to its target** (a write that finished and only failed its cleanup unlink, exactly the mount case). Content that DIFFERS from the target is a write in flight and is refused as before; `index.lock` keeps the zero-bytes rule unchanged. One `--check` run, one sample wait for all candidates, exit 1 if any lock is refused.
+
+🧪 **Gate — red first:** the four new tests (content-equal ref lock is stale · differing content refused with "differs from its target" · the walk finds `HEAD.lock`/`index.lock`/`packed-refs.lock`/`refs/heads/main.lock` and skips `objects/` · NO-CHANGE control: a clean git dir yields `[]`) are **4 red against the committed script, 11/11 green against the new one**; the three suites that read the script green · `tsc` **0** · `lint:ratchet` **715 vs baseline 715** · full `npm test` green (1552 files).
+
+- **Revert:** `git revert <sha>` — find by message (`git log --grep="judges every git lock file"`). **No DB half.**
 ### 2026-09-18 · 🔔 THE OPS ALERT PLANE HAD A SECOND CHANNEL ALL ALONG AND IT WAS MUTE BECAUSE OF ONE CONSTANT — plus a triage of the 2:04 PM sentinel, where 19 of 21 alerts had already cleared by the time they were read · Cowork cloud
 
 **Code + tests, four files. No migration, no DB object, no data mutation.** Acts on the `Alert Delivery` warn, and records the re-measure of every other alert in that sentinel run.

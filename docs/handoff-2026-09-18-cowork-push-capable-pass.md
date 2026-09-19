@@ -86,7 +86,7 @@ Left by this session's first commit — `git commit` succeeded but its cleanup `
 
 ## 4. Owed / next
 
-1. 👉 **Read the CI runs for the nine commits.** This pass could not.
+1. ✅ **READ 2026-09-18 ~4:5x PM PT (Claude Code cloud, which can reach the GitHub API):** all nine (`1232b44ec` → `ec22f1f58`) are **`completed / success`** on the `CI` workflow, as are the twelve other main pushes around them (22 of 22 in the window). Nothing to chase.
 2. 🕐 **`candy_offers_unverified_pct` = 100 against a breach_at of 25** — the only trust-health breach. Its falsifier is `candy-offers-indexer`'s ~00:50Z tick. **Under 25 ⇒ self-healed, close. Still 100 after a clean run ⇒ a real verification/deactivation-arm defect, and the ARM is what to investigate, not the indexer cadence.**
 3. **`reconcile_all_saved_wallet_stats`** is the last function in `public` with an unpinned `search_path`. Deliberately left: 9.9 kB of body with ~9 references this pass could not prove schema-qualified, and it is INVOKER so the advisor's escalation concern does not apply. Pin it *after* qualifying the references, not before.
 4. **R98's other half** (`/api/cache-refresh` unbounded anonymous service-role writes) and **R96** (`/api/allday-pack-ev` POST) both need a **product call on anonymous write amplification**, not a code fix. Still open, unchanged.
