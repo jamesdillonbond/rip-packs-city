@@ -239,18 +239,54 @@ export async function GET(req: NextRequest) {
   try {
     const sp = req.nextUrl.searchParams
     const wallet = sp.get("wallet")?.trim()
-    if (!wallet || !wallet.startsWith("0x")) {
-      return NextResponse.json({ error: "wallet param required (0x...)" }, { status: 400 })
+    if (!wallet) {
+      return NextResponse.json({ error: "wallet param required" }, { status: 400 })
     }
 
     // Auth: either INGEST_SECRET_TOKEN or no auth required (public for own-wallet refresh)
     // The route is lightweight and read-mostly, so we allow unauthenticated calls
     // but cap enrichment to 50 moments per call to prevent abuse.
 
+    // ⛔ 2026-09-19 — THE COLLECTION CHECK NOW RUNS FIRST, AND THE ORDER IS THE
+    // WHOLE FIX. Both guards were real, but they were sequenced so the wrong one
+    // spoke: a Candy MLB wallet (Solana base58) failed the `0x` test and got
+    // **`"wallet param required (0x...)"`**, which is false twice over — the
+    // param was present, and this route could not have served `candy-mlb`
+    // whatever address you passed it.
+    //
+    // ⭐ THIS ROUTE IS CADENCE-SCRIPT-DRIVEN BY CONSTRUCTION, and the honest
+    // diagnosis is the collection, not the address: COLLECTION_SCRIPTS holds
+    // exactly TWO entries (nba-top-shot, nfl-all-day), so Golazos, Pinnacle and
+    // UFC have always been "Unsupported collection" here too. Candy is not a
+    // special case; it is the fourth member of an existing set, and the answer
+    // it should get is the one those three already get.
+    //
+    // ⚠ NOT "ADD CANDY SUPPORT" — the Candy equivalent ALREADY EXISTS as
+    // `app/api/wallet-backfill-candy`, which reads Metaplex Core via DAS and
+    // upserts the same `wallet_moments_cache` rows. Teaching a Cadence-script
+    // route to speak Solana would duplicate a working lane. Grep before you
+    // build; the thing was already there.
     const collectionSlug = sp.get("collection")?.trim() || "nba-top-shot"
     const scripts = COLLECTION_SCRIPTS[collectionSlug]
     if (!scripts) {
-      return NextResponse.json({ error: "Unsupported collection: " + collectionSlug }, { status: 400 })
+      return NextResponse.json(
+        {
+          error: "Unsupported collection: " + collectionSlug,
+          supported: Object.keys(COLLECTION_SCRIPTS),
+        },
+        { status: 400 }
+      )
+    }
+
+    // Shape check AFTER the collection is known to be one this route serves, so
+    // the message is about the address and nothing else. Separated from the
+    // missing-param case above: "absent" and "present but not a Flow address"
+    // are different states and were previously collapsed into one string.
+    if (!wallet.startsWith("0x")) {
+      return NextResponse.json(
+        { error: "wallet must be a Flow address (0x...) for " + collectionSlug },
+        { status: 400 }
+      )
     }
 
     const collectionId = scripts.collectionId

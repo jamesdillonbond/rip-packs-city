@@ -46,9 +46,39 @@ describe("GET /api/cache-refresh", () => {
     expect((await res.json()).error).toContain("wallet param required")
   })
 
-  it("400s when wallet does not start with 0x", async () => {
+  it("400s when wallet does not start with 0x, and says THAT rather than 'required'", async () => {
     const res = await GET(req("https://t/api/cache-refresh?wallet=deadbeef"))
     expect(res.status).toBe(400)
+    // ⚠ "absent" and "present but not a Flow address" were one message until
+    // 2026-09-19 — `wallet param required (0x...)` for a param that was there.
+    const err = (await res.json()).error
+    expect(err).toContain("Flow address")
+    expect(err).not.toContain("required")
+  })
+
+  // ⛔ 2026-09-19 — A CANDY WALLET WAS TOLD ITS WALLET PARAM WAS MISSING. Both
+  // guards were real; they were SEQUENCED so the wrong one spoke. This route is
+  // Cadence-script-driven — COLLECTION_SCRIPTS holds exactly two entries — so
+  // the honest diagnosis for candy-mlb is the collection, and it is the same
+  // answer Golazos, Pinnacle and UFC have always received here.
+  it("diagnoses the COLLECTION first, so a base58 wallet is not told its param is missing", async () => {
+    const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+    const res = await GET(req(`https://t/api/cache-refresh?wallet=${CANDY}&collection=candy-mlb`))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain("Unsupported collection: candy-mlb")
+    expect(body.error).not.toContain("wallet param required")
+    // Names what it CAN serve, rather than leaving the caller to guess.
+    expect(body.supported).toEqual(["nba-top-shot", "nfl-all-day"])
+  })
+
+  it("no-change control: the same answer for the Flow collections this route never served", async () => {
+    // Candy is not a special case — it is the fourth member of an existing set.
+    for (const slug of ["laliga-golazos", "disney-pinnacle", "ufc"]) {
+      const res = await GET(req(`https://t/api/cache-refresh?wallet=0xbd94cade097e50ac&collection=${slug}`))
+      expect(res.status, slug).toBe(400)
+      expect((await res.json()).error, slug).toContain("Unsupported collection")
+    }
   })
 
   it("400s on an unsupported collection slug", async () => {
