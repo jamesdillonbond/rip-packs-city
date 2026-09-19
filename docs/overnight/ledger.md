@@ -11,6 +11,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · ⚖️ DELEGATED DECISIONS TAKEN ("do what you think is best") — and the diff I recommended refuted my own lead · Cowork cloud
+
+Trevor delegated the parked items explicitly. Per the audit-drain convention, delegation means DECIDE and write the cost argument so it stays re-litigable. Three decisions, each with its exit condition.
+
+**1. ⛔ ASK_ONLY FMV — NO PRICE CHANGE TODAY. Decided, not deferred by default.**
+The measured defect is real: **52.4% of the squeeze board's $2,552,633 headline comes from 871 ASK_ONLY editions** — 0.90 × ONE ask on a card with zero recorded sales — topped by a mint-12 at **$900,000** from a $1,000,000 ask against **$59,276** for the most valuable edition in the set that has actually traded. RPC's own principle already covers this class (*"zero-lifetime-sale editions with a lone ask = troll listings — never auto-price them"*), and a clamp exists for Top Shot (`fmv_clamp_disconnected_ask_topshot`), so a Panini equivalent is the obvious shape.
+👉 **Not shipped anyway, for three reasons in order of weight:** (a) the stalest-first walk — the one experiment this whole day was built around — fires at **2:00 PM PT and WRITES Panini FMV**; changing pricing logic inside that window confounds the only measurement that can falsify the fix; (b) a pricing rule needs its own pass with a defensible predicate, a no-change control and a revert, not the tail of a fourteen-hour session; (c) **the honesty cost is already paid** — both the page and the OG card now state the composition, so nobody is misled while it waits.
+💰 **What deferring costs, stated:** the board keeps publishing a $900k headline row for at least another cycle, disclosed. **Exit condition:** once the walk fix is proven, design the clamp against **zero-sale editions whose ask is disconnected from the collection's traded range** — and measure the blast radius (871 editions, $1.34 M of exposure) before touching a single price.
+
+**2. ⛔ `panini-ingest` severity STAYS `info` — and the reason changed from "unknown" to "measured as unmeasurable".**
+The standing premise for parking it was *"the box drops ~15% of ticks by design"*. **That premise cannot be checked with the instruments this estate has:** `pipeline_runs` retains ~73 h (16 walks against ~17.4 expected = 92%, a 1–2 tick difference, i.e. noise), and `panini_editions.last_seen_at` is last-write-wins, so it cannot be the long-horizon substitute — **645 editions have their latest walk today and ZERO have theirs on 09-10**, not because no walk ran but because everything from that day was re-walked.
+👉 Raising severity into a cadence nobody can measure manufactures a chronically-red arm — the cry-wolf failure this repo has already paid for twice (`ufc_fmv_stale_hours`, and the ≥800/day Panini gate retired 08-13). **Exit condition:** after the backlog clears, `last_seen_at` becomes a per-cycle record (no more re-walking), so tick reliability becomes observable — re-measure over a week and raise to `medium` if drops are under ~5%.
+⚠ **And my own fix breaks the existing zero-day escalation** — once every edition is walked every ~3 days, every day older than that reads zero and the arm fires on all of them. It must gate on TICKS, not dated editions. **I could not fix it: that task is not in the server-side list** (6 tasks, `has_more:false`), so it is retired or in the desktop app's local store.
+
+**3. ⛔ The P1 bridge stays UNEXECUTED — unchanged, and the gate is now sharper.** 1,264 editions are 45+ days stale; bridging writes those into every cross-collection rollup. Gate: `pct_editions_stale_45d` ~0 and holding a week.
+
+---
+
+⭐ **AND THE DAY'S SHARPEST SELF-CORRECTION CAME FROM DOING MY OWN HOMEWORK.** The 20:12Z inbox filing said a live Atlas mirror might be a second feeder for the Underpriced board and that *"the cheap next step is a diff, not a swap"*. **I ran the diff. It refuted the lead.** Of the 357 rows the board calls `active`: **113 (31.7%) are ABSENT from the mirror**, **78 of 244 matched (32%) disagree on price**, and on those the mirror is fresher on only **2** — averaging **70.5 h OLDER** than the board's already-18.7 h-old rows. 🚨 **So the "36 seconds old" that made it look ready was an AGGREGATE over 2.38 M nfts used as a proxy for a PER-ROW property — the identical error class I had found on the Panini board eight hours earlier, made again in the filing that named it.** Two lesser traps on the way: `offer_type='SERIAL'` selects **bids, not asks** (listings are `kind='listing'`, `offer_type IS NULL`) and showed as a too-clean **259/259** price disagreement — *a 100% disagreement rate is a broken join, not a finding*; and "still live" has **three predicates that disagree** (`completed` 13,497 = `purchased_at` 13,497 ≠ `purchased` 8,031).
+✅ **What survives and matters: 83 of the 244 matched rows are `completed` upstream while the public board still shows them ACTIVE** — a real accuracy defect, independent of any replacement. 👉 The fix is the boring one: get `topshot-active-listings-ingest` running again on a box that is demonstrably awake.
+
+**Revert:** nothing in this entry changed behaviour; all three decisions are to NOT act, each with its exit condition above.
+
 ### 2026-09-19 · 🏁 CANDY'S COLLECTION TAB IS ON — the parity gap was never missing features, it was five Flow-shaped gates in front of features that already worked · Cowork cloud
 
 **Shipped: 3 files (`lib/collections.ts`, `proxy.ts`, and the two guards that pin them). No DB change in this commit — the DB half of this pass shipped earlier under its own entries.**
