@@ -10,6 +10,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🌙 NIGHTLY: nothing shipped — HEALTHY-UNDER-LOAD, the pre-warned "sweep ok ≠ lanes ok" night, every live lever already owned · Cowork cloud (np-20260919-sbx)
+
+**0 shipped, 0 reverted.** Push-capable (`.rpc-git-cred` store helper, dry-run exit 0). Real time confirmed from DB (`now()` 08:02:54Z == shell — clock not skewed; 01:02 AM PT, genuine overnight). Full handoff: [docs/handoff-2026-09-19-overnight-pass.md](../handoff-2026-09-19-overnight-pass.md).
+
+📏 **Health:** security 4/4 clean; engine ACTIVE + writing (`sales`/`fmv_snapshots` both stamped 07:56Z ⇒ the 09-18 read-availability event is self-cleared for external clients — discharges the prior lock's owed positive control); `detect_stalled_pipelines()` **0**; trust precompute FRESH (07:50Z) so the arms are trustworthy. **But** io_wait 6 / active 7 / one 212 s txn @ 08:02Z, and `rpc_ops_snapshot()` **timed out at statement 1** — the ordinary evening IO-contention, the exact "sweep ok ≠ lanes ok" the 06:11Z monitor pre-warned. FMV share: TS 43.9 / AD 30.1 / candy 60.8 / pinnacle 27.5 / golazos 0.7 / ufc 0.0 (last two documented-limited). Vercel: 50 error groups, **14 live / 36 the 09-18 outage tail; all 14 live are CHRONIC** (first-seen weeks/months old) ⇒ **no new error class from last night's ships.** db 29 GB, editions 21,424.
+
+🔭 **Post-ship watch:** ① atlas `*/6` back-off (`20260919064000`) — **partial recovery**, `ts_listings` 71.8→**21.5 min** stale, succeeds@07:42/48/55 then fails@08:02/08/14; falsifier NOT tripped. ② cohort reschedule (step1 `2 10`, step2 `35 10`) — **not yet fired** (next 10:02Z/10:35Z), pre-fired falsifier stands (visibility-map rot ⇒ ~27 min on an idle box vs 600 s ceiling); re-check next pass, do not credit the move with a recovery. ③ code ships (packs holdings sync, R96/R98, R107, retention 512) — no attributable new Vercel error class, clean.
+
+⛔ **Nothing was clearly-safe AND net-positive to ship.** The two live levers (atlas, cohort) are already shipped by the 09-18 evening session with pre-fired falsifiers — not mine to re-derive. **R108 partial-index build DEFERRED** — its recipe requires a quiet window (Atlas ticks <40 s); precondition not met tonight (io_wait 6, Atlas at its 120 s ceiling); the inert `indisvalid=false` `idx_tame_nfl_nft_seen` remains.
+
+📋 **Queued (each night-count +1 or new):** (a) **NEW** `portfolios` anon write-grant revoke — dead residue (0 rows, fails closed by accident); verified `portfolios`/`snapshot_all_user_portfolios()` both owned by `postgres` and jobid 490 runs as postgres ⇒ revoke is a confirmed no-op for the lane. Ready SQL in handoff. Not auto-shipped: defence-in-depth (its own filing said don't ship unattended) + a REVOKE's schema-cache 500 burst is not net-positive under tonight's load. (b) `cross_collection_cohort_stale_hours` trust arm (breach ≈26) — full-body `CREATE OR REPLACE` of the trust surface, supervised only. (c) inbox backlog: **523 un-archived files back to 08-09** — archival lapsed; not bulk-moved tonight (INDEX.md CI assertions + active concurrent use). (d) periodic `cron.job` census (104→149 jobs, no membership snapshot).
+
+- **Revert:** n/a (nothing shipped). **No-op turn for `main` code/DB state.**
+
 ### 2026-09-18 · 🔴 `rpc-ts-listings-atlas-sync` IS THE RATCHET — 14/14 ticks failing at its 120 s ceiling on a 2-minute cadence, 35.7 min of zero output, and the cadence is a PRODUCT call so I did not take it · Cowork cloud
 
 **Nothing shipped into this lane. READ-ONLY.** An **escalation of another session's owned item** (its 02:45Z filing: "IO saturation since ~6:30 PM PT … the Atlas listing lane times out on 9 of 12 ticks"), filed because the condition moved from 9/12 to **14/14** and `detect_stalled_pipelines()` is firing on it. [Filing](inbox/2026-09-19T0531Z-ts-listings-atlas-sync-is-at-100-percent-failure-and-its-own-cadence-is-the-ratchet.md).
