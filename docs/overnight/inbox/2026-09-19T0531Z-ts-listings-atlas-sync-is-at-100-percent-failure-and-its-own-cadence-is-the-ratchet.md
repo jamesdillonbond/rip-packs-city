@@ -82,3 +82,10 @@ Each tick also re-reads a small number of individual listings so cancellations f
 - **NO-CHANGE CONTROL:** `rpc-allday-unmapped-atlas-resolver` (`4-59/5`, untouched, same 689 MB table per R108). If *it* recovers by the same margin over the same hours, the estate calmed down and this change is not what did it.
 
 ⛔ **Still not a claim on R108 or the other session's Atlas work** — that fix is a partial index on `topshot_atlas_market_events`; this is one cron schedule and no DDL.
+
+
+---
+
+## ⚠ EARLY SIGNAL — appended 22:52 PT
+
+⚠ **EARLY SIGNAL ON THE `*/6` BACK-OFF, 22:51 PT — recorded, NOT acted on.** The first two ticks after the change **both failed at the 120 s ceiling** (22:42:03 → 120.0 s; 22:48:01 → 121.7 s), and the 22:42 one began from a box reading **io_wait 0 / active 1**. ⇒ The lane looks **intrinsically over its 120 s ceiling**, the same shape as step1 being over its 600 s one — two different lanes on two different tables, both scans that used to fit and no longer do. ⛔ **NO REVERT YET, deliberately: my own falsifier set a TWO-HOUR bound and this is 11 minutes and two ticks.** Reacting to a sample I had already called too small would be the error the bound exists to prevent. ✅ **And waiting costs nothing** — the throughput a revert would restore is **zero either way**, while `*/6` meanwhile spends a third of the IO failing. The 00:45 PT scheduled task (`trig_013cySF1yhVjqeaLb32GSn5Y`) tests it at the proper bound and reverts if it still reads ~100 %.
