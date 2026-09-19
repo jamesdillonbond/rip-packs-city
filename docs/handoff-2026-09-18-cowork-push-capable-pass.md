@@ -37,7 +37,7 @@
 | 4 | **R105** — the homepage stops quoting multipliers the model does not implement | 2 src + 1 test | `git log --grep="R105"` |
 | 5 | **R102** — the cadence-collapse arm publishes the TRUE last run | migration `20260918225454` + SQL test + drift pin | header of that migration |
 | 6 | **R104** — `editions.badges` documented rather than dropped, **and its premise refuted** | migration `20260918225909` | header of that migration |
-| 7 | `rpc_trust_health_precompute_refresh_p` search_path pinned | same migration | same |
+| 7 | ~~`rpc_trust_health_precompute_refresh_p` search_path pinned~~ **RETRACTED — see below** | migration `20260919002535` | n/a |
 
 ### The one that matters most, and its verification
 `next@16.2.9` sits inside the affected range of an eleven-CVE bundle whose headline is **GHSA-2xp9-vwfh-vxw4, unauthenticated RCE through AVIF handling in the Image Optimization API** — an endpoint RPC serves publicly on every board, moment tile and OG card. It had been found by an earlier session and written into `docs/handoff-2026-09-18-dep-cves.md` **only because that session had no push credential.**
@@ -47,6 +47,22 @@
 ⚠ `npm audit --omit=dev` after the bump: **28 vulnerabilities, 0 critical**, everything remaining transitive under `@onflow/*`, `@walletconnect/*` and `viem` (the `ws` memory-disclosure/DoS family). **Deliberately not touched** — no test here exercises a live socket, and an unattended pass must not trade a working chain read for an advisory number. 👉 **Cheaper question first: RPC does no wallet connect at all, so measure whether `@walletconnect/*` and `viem` are reachable before upgrading them. A dead dependency is deleted, not upgraded.**
 
 ---
+
+### ⛔ RETRACTION added 2026-09-18 ~17:3x PT — item 7 above was WRONG and is self-reverted
+
+I pinned `search_path` on `rpc_trust_health_precompute_refresh_p()`. Migration **`20260914055000`**, four days old and sitting in this repo, carries that exact statement in its header under *"REVERT OF THIS REVERT (do not, without solving the COMMIT problem first)"*.
+
+**A procedure with a `SET` clause runs inside an implicit transaction block and may not execute `COMMIT` or `ROLLBACK`.** That procedure is `prokind='p'` with eight `PERFORM … COMMIT` pairs.
+
+📏 **Nothing broke, and the reason is its own finding:** `cron.job` holds **no job that calls this procedure**. The legs are dispatched individually (jobids **324–331**); jobid 488 is a plain INSERT, not a CALL — so the 09-14 header's *"jobid 488 CALLs it every 10 minutes"* is **stale** and the procedure has no caller at all. 0 failures across all nine trust-health jobs and **zero runs of the procedure** over the 110 minutes the pin was live. Reverted anyway, because the pin arms a landmine for whoever next gives it a caller.
+
+⛔ **My "positive control" was the same category error that migration names, in almost the same words.** I checked that all eight leg identities resolve under the pinned path — correct, and **irrelevant**: the hazard was never name resolution, it was transaction semantics. I also read the precompute's freshness *after* the pin and took "all legs fresh" as safety; every `computed_at` in that read predated the pin.
+
+👉 **Rule: check `prokind` FIRST. For `prokind='p'`, grep the body for `\m(commit|rollback)\M` and stop.** The `scripts/` search_path guard checks name resolution and does not check this.
+
+⚠ **Consequently `functions_without_pinned_search_path` is 2, not 1** — the deliberate state register #115 records. Owed item 3 in §4 below is **withdrawn**; a concurrent session corrected it in the same window and its version is the one to read.
+
+🚨 **AND IT IS WORSE THAN "a migration four days old": THIS IS THE THIRD ATTEMPT AT THIS CLASS.** Per that corrected item 3, the same pin was shipped and reverted on **2026-08-22/23** (R14, closed **WONTFIX**, *"do NOT re-attempt"*) and again on **2026-09-13/14** (`20260914053000`, reverted by `20260914055000` twenty minutes later when jobid 259 failed its first tick in 0.5 s). **Mine is the third.** ⭐ Three sessions, three months, one PostgreSQL rule: `2D000 invalid transaction termination` at the first `COMMIT` of any routine carrying an attached `SET`. **A WONTFIX with "do not re-attempt" on it was not enough to stop a third attempt — the thing that would have stopped it is a guard, and `scripts/`'s search_path guard checks name resolution only.**
 
 ## 2. Three things this pass got WRONG or had to retract — read these, they are the useful part
 

@@ -2,10 +2,9 @@
   "generated_at_pt": "2026-09-18 ~16:2x PT",
   "generated_at_utc": "2026-09-18T23:2xZ",
   "pass": "Cowork cloud, operator-directed ('work on any known issues across the project'). PUSH-CAPABLE — the laptop VM shell is alive again and the .rpc-git-cred device-flow token authenticates, so this pass shipped rather than queued.",
-  "shipped": 9,
+  "shipped": 10,
   "reverted": 0,
   "verdict": "HEALTHY. The 09-18 platform outage is fully behind us: detect_stalled_pipelines() 10 -> 1, and 39 of 50 Vercel error groups have a last-seen BEFORE the 19:01Z recovery. Nine commits landed across two pushes, including a CRITICAL next.js CVE bump that had been sitting un-pushable on the mount. Two migrations applied with their repo halves committed in the same session, so migration-parity stays green.",
-
   "capability": {
     "device_bash": "ALIVE (recovered since the 2026-09-08 Windows-update failure)",
     "push_path": "PATH 1 — fresh $HOME clone on the laptop VM + credential.helper store --file=.rpc-git-cred. Dry-run exit 0, two real pushes landed.",
@@ -15,7 +14,6 @@
     "db_tests": "NEWLY POSSIBLE — psql 16 is present in the cloud container and a container-local Postgres runs on :55432 as the unprivileged user with -k in a writable dir. 192 DB-invariant files pass; 1,089 migrations parse. Previous passes had no way to run these at all.",
     "github_api": "BLOCKED in the cloud (403 'GitHub access to this repository is not enabled') and `gh` is absent on the laptop VM, so CI RUN STATUS WAS NOT READ THIS PASS. Vercel deployment state was used instead."
   },
-
   "health": {
     "pipeline_runs_60m": 2738,
     "pipeline_fails_60m": 8,
@@ -27,30 +25,26 @@
     "anon_write_surface_rows": 0,
     "secdef_anon_exec_drift": 0,
     "db_size": "28 GB",
-    "functions_without_pinned_search_path": 1,
-    "note_functions_without_pinned_search_path": "was 2; rpc_trust_health_precompute_refresh_p pinned this pass. The remaining one is reconcile_all_saved_wallet_stats, deliberately left (INVOKER, 9.9 kB body with unproven qualification)."
+    "functions_without_pinned_search_path": 2,
+    "note_functions_without_pinned_search_path": "CORRECTED 2026-09-18 ~17:3x PT. This file previously said 1, claiming a pin on rpc_trust_health_precompute_refresh_p as a ship. That pin was WRONG and has been self-reverted (migration 20260919002535): a PROCEDURE with a SET clause runs inside an implicit transaction block and may not COMMIT, and that procedure has eight COMMITs. migration 20260914055000 names this exact statement in its header as the thing not to do. 2 is the DELIBERATE state register #115 records -- both remaining routines are procedures with transaction control -- not a gap. Nothing broke: the procedure has no caller at all (the legs are dispatched individually as jobids 324-331), so zero runs occurred while the pin was live."
   },
-
   "traction": {
     "registered_users": 28,
     "new_users_7d": 2,
     "note": "Up from 21 on 2026-08-18. Accuracy is still the gate — this is recorded, not acted on."
   },
-
   "outage_aftermath_2026_09_18": {
     "falsifier": "DISCHARGED, POSITIVE. The ledger's open question was whether the ten stalled lanes would resume on their own schedules after the ~19:01Z recovery.",
     "measured": "candy-sales-indexer 21:20:13Z · topshot-onchain-art-backfill 21:22:06Z · allday-listing-serial-backfill 21:34:14Z · golazos-sales-history-backfill 21:34:19Z · candy-listings-indexer 21:35:12Z · allday-unmapped-resolver-tail 21:40:48Z · allday-studio-sales-history-backfill 21:52:08Z · golazos-studio-sales-history-backfill 21:56:27Z · pinnacle-studio-sales-history-backfill 21:58:37Z",
     "conclusion": "Every lane resumed on its own scheduled minute. The silences were the outage's shadow, not a new fault. The three studio lanes fire at :52/:56/:58 and were read TWICE — the first read was before they were due and proved nothing.",
     "vercel_error_split": "50 groups / 2,630 occurrences / 658 users over 6 h. 39 groups have a last-seen BEFORE 19:01Z (outage shadow, already stopped). 11 groups are still live, 950 occurrences."
   },
-
   "live_error_classes_after_recovery": {
     "pack_detail_page": "~478 occurrences across 5 groups on /[collection]/pack/dist/[distId] — pack_table_rows, ev_contributors, pack_lifecycle, pack_realized_ev, pack_market, each exceeding its own 5,000 ms bound, last seen 23:1xZ. CHRONIC and already analysed (inbox 2026-09-04, 2026-08-14); recorded, NOT re-diagnosed.",
     "public_profile_resolve": "200 occurrences / 101 USERS — the largest user-count of any group — [profile/public-profile-resolve] read exceeded 6000 ms on /api/og/trophy-case/[username] and /api/public/profile/[username], last 21:45Z.",
     "sixty_second_lambda_timeouts": "169 occurrences / 17 users, 'Vercel Runtime Timeout Error: Task timed out after 60 seconds' on /api/wallet-backfill, /api/ready, /api/wmc-fmv-populate. ⚠ /api/ready is a READINESS endpoint timing out.",
     "dep0169": "76 occurrences — known, root-caused 2026-09-05 (node-fetch via cross-fetch, fires on use not import). Not re-filed."
   },
-
   "shipped_detail": [
     "next 16.2.9 -> 16.3.5 — eleven CVEs including unauthenticated RCE via AVIF in the Image Optimization API. VERIFIED: the deployment carrying it (dpl_HxyQAiaVaitZpcjTXnGsYzgedcF5, commit 5a8ca4e3) reached READY, and a live OG card renders a real 58 KB PNG.",
     "R97 + R98(half) — INGEST_SECRET_TOKEN and RPC_ADMIN_TOKEN out of URLs; the no-env-secret-in-fetch-url walker now reads .mjs/.js/.sh/.ps1/.bat/.py with per-language env recognisers and an inspected-population assertion. Positive-controlled against the pre-fix script.",
@@ -58,9 +52,8 @@
     "R105 — the homepage stops quoting two serial multipliers the model does not implement, pinned copy->code by a new guard. VERIFIED LIVE in production HTML.",
     "R102 — check_pipeline_cadence_collapse() publishes the TRUE last run instead of null (migration 20260918225454). The 12h_cadence_gate exemption it also asked for was DECLINED as a suppression.",
     "R104 — PREMISE PARTLY REFUTED then documented (migration 20260918225909): editions.badges is NOT universally empty — 25 live Candy MLB rows hold parallel labels, so 'drop the column' would have destroyed data.",
-    "rpc_trust_health_precompute_refresh_p search_path pinned, positive-controlled (all eight legs resolve under the pinned path)."
+    "RETRACTED -- rpc_trust_health_precompute_refresh_p search_path pin was applied at 22:59Z and SELF-REVERTED at 00:25Z (migration 20260919002535). A SET clause on a prokind='p' routine forbids COMMIT; my 'positive control' (all eight leg identities resolve under the pinned path) answered a question the hazard did not live in -- the same category error 20260914055000 names in almost the same words. No damage: the procedure has no caller."
   ],
-
   "gate": {
     "tsc": 0,
     "lint_ratchet": "715 vs baseline 715",
@@ -70,11 +63,14 @@
     "standalone_guards": "check-brand-tokens, check-driver-message-leaks, check-unhandled-third-state, check-responsive-flex-basis, check-unbounded-server-reads, check-lane-egress, check-register-integrity, check-memory-doc-links, check-cowork-skill-bundles, check-retired-rules — all exit 0",
     "npm_run_build": "NOT RUN — no env. The deploy is the end-to-end proof and it reached READY."
   },
-
   "owed": [
     "CI run status for the nine commits was NOT read (no gh on the VM, GitHub API 403 in the cloud). Check it.",
     "candy_offers_unverified_pct = 100 (breach_at 25) — re-read after candy-offers-indexer's ~00:50Z tick. Under 25 = self-healed; still 100 after a clean run = a real verification-arm defect.",
     "npm audit --omit=dev still reports 28 vulnerabilities, 0 critical, all transitive under @onflow/@walletconnect/viem (the ws family). Measure whether @walletconnect/* and viem are reachable at all before upgrading — RPC does no wallet connect.",
-    "rpc-dune-free-tier-sunset is a one-shot self-pause (0 12 23 9 *) firing 2026-09-23."
+    "rpc-dune-free-tier-sunset is a one-shot self-pause (0 12 23 9 *) firing 2026-09-23.",
+    "search_path: 2 routines in public remain unpinned and BOTH SHOULD STAY THAT WAY -- they are procedures with transaction control (register #115). Before any future pin, check prokind first and grep the body for commit/rollback. The scripts/ search_path guard checks name resolution and does NOT check this, which is how a second instance was available four days after the first."
+  ],
+  "corrections_after_the_fact": [
+    "2026-09-18 ~17:3x PT: the search_path pin above was retracted, and this file was corrected rather than left claiming it. Also retracted from the same afternoon's handoff."
   ]
 }
