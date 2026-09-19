@@ -194,3 +194,58 @@ denominator is the same trap as §3's family MAX.
 **Consequence for the roadmap:** §4's ordering stands unchanged, and this is now a positive reason
 to believe step 2 is reachable — once Panini's targets come from its own catalogue, it has the same
 shape as five lanes that already hold 100%/100%.
+
+---
+
+## 8. Two second-order consequences of the fix, measured 2026-09-19 ~11:5x PT
+
+### 8a. `panini-ingest` severity — the premise for keeping it at `info` cannot be measured
+
+The open item (P3 in the 09-06 audit, and the route header) parks the watchlist severity at `info`
+because *"the box drops ~15% of ticks by design and a chronically-red arm trains operators to skim
+past it."* That premise is **not measurable with the instruments this estate has**, in either
+direction:
+
+- **`pipeline_runs` retains ~73 h.** Over the only window it can see: **16 walks against ~17.4
+  expected (92%)**, with all six scheduled hours (01/05/09/13/17/21 UTC) represented. That neither
+  confirms nor refutes ~15% — the difference is 1–2 ticks, which is noise at this sample size, and
+  it is all the instrument will ever hold.
+- **`panini_editions.last_seen_at` is last-write-wins**, so it cannot serve as the long-horizon
+  substitute. Proof, taken live: **645 editions have their latest walk today and ZERO have theirs
+  on 2026-09-10** — not because no walk ran that day, but because everything walked then has since
+  been re-walked.
+
+👉 **So the severity decision is currently resting on a number nobody can check.** If it should be
+decided on evidence, something has to record tick ARRIVALS durably — a tiny append-only table, or a
+retention bump on this one pipeline. Until then, the honest framing for Trevor is "we do not know
+the drop rate", not "~15%".
+
+### 8b. ⚠ The stalest-first walk BREAKS the zero-day escalation, and that is my change's doing
+
+There is (or was) a `panini-freshness-check` task carrying a **zero-day escalation** that reads
+`panini_editions.last_seen_at` day by day, on the stated logic that *"a zero day shows as a MISSING
+ROW, not a 0."*
+
+**That arm is already unable to do what it claims**, and the fix makes it worse:
+
+1. **It cannot distinguish the two cases it must.** A day with no walk and a day where every
+   walked edition was later re-walked BOTH read as zero. Under the old ~2–3× re-walk regime those
+   were routinely the same reading.
+2. **Today it mostly survives by accident** — 64 of the ~66 days since 2026-07-16 still have at
+   least one edition whose latest walk falls on them, and the reason is precisely the **stale tail**
+   this fix is designed to eliminate. The backlog was leaving fingerprints on old dates.
+3. 🚨 **So once every edition is walked every ~3 days, no edition will retain a latest-walk older
+   than ~3 days, and EVERY older day will read zero.** An arm that fires on "zero editions dated
+   that day" will then fire on essentially every historical day — the cry-wolf failure this repo
+   has already paid for twice (`ufc_fmv_stale_hours`, and the ≥800/day Panini gate retired
+   2026-08-13 for exactly this).
+
+👉 **The arm must gate on TICKS, not on dated editions** — `pipeline_runs` walk-grouping inside its
+retention, or the durable tick record 8a asks for. ⓘ **I could not fix it from here: that task is
+not in the server-side scheduled-task list** (6 tasks, `has_more: false`), so it is either retired
+or held in the desktop app's local store. **If it still runs, it needs this change before the
+backlog clears.**
+
+⭐ Both halves are the same lesson as §3 in a different costume: an instrument that answers a
+question it was never able to answer, and a change to the SYSTEM silently changing what the
+INSTRUMENT's output means.
