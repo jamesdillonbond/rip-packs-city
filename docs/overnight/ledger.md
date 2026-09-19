@@ -11,6 +11,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · ⏳ CADENCE COLLAPSE WAS CRITICAL ON SEVEN DEMAND-DRIVEN LANES — run count is not cadence when a visitor's paste is the trigger · Cowork cloud
+
+**Shipped: 3 migrations + 1 lib + 1 test file.** The arm fired on 62.7% of the 83 sweeps in retention and drove 15 of 22 CRITICAL pages. Re-derived before acting, and the re-derivation MOVED: it is now **8 entries, not the 9 I filed** — `ts-listings-atlas-sync` and `fmv-recalc`, the two I had called the REAL ones, have dropped off entirely.
+
+🚨 **The seven scored entries are all `wallet-backfill*`, and their run count is DEMAND, not cadence.** Ratios 0.274–0.372 against a 0.40 threshold, all against an identical `baseline_per_day` of 526.5 — that identical baseline across seven distinct lanes was the tell worth pulling. **Measured trigger:** `/api/public/queue-wallet` (anon-reachable; fires when a visitor pastes an address on `/share`), the same orchestrator a signed-in user triggers, plus the 4×/day GHA backstop `wallet-backfill-backstop.yml`. ⭐ **NO pg_cron job writes any `wallet-backfill*` pipeline** (`cron.job` scanned). So there is no schedule for these to collapse away from, and observed/baseline was measuring *how many people pasted a wallet*. They are demonstrably alive, not stalled: `wallet-backfill-allday` wrote **20,757 / 8,227 / 27,239** rows on 09-17/18/19 at a 315/317 ok rate.
+
+⚠ **CORRECTION to my own earlier framing — `offers-sweep` was never contributing to the severity.** `lib/sentinel/cadence-collapse.ts` says so in its own header: *"stopped IS REPORTED AS CONTEXT AND NEVER SCORED."* It lands in `stopped`, so the CRITICAL came purely from the seven degraded lanes against `crit_at = 5`. It is deliberately NOT exempted — the line costs nothing and is useful context (#81).
+
+**Fix: `public.cadence_exempt_lanes`** — a suppression table, because CLAUDE.md's rule is *ban at zero over an allowlist; make SUPPRESSION the curated list*. Every row must carry a `reason`, an `evidence` string (CHECK ≥30 chars each — a filed decision with no number in it is the tell of a weak one) and a **`review_by`**. ⛔ **Past `review_by` a row STOPS SUPPRESSING and the lane fires again**, and the payload names it — fail-loud, because an exemption nobody re-examines is the "filed DECISION NOT TO ACT that nobody re-checks". Suppression is REPORTED on every verdict including `ok`, and a lapsed exemption floors the arm at `warn` on its own.
+
+**Result: `degraded_count` 7 → 0, `suppressed_count` 7, `inspected` unchanged at 97** — suppressed from SCORING, not from the population.
+
+**Controls, both directions, run live:** POSITIVE — at `p_ratio := 0.95` the scoring path still yields 21 degraded lanes (`fmv-recalc`, `ts-listings-atlas-sync` among them) with **0 exempt lanes leaking in**, so the zero at 0.40 is real and not a broken path. EXPIRED — a temporary past-dated row for `offers-sweep` appeared as `expired_exemptions: offers-sweep (18d)`, did NOT suppress, and the lane still reported; re-dated forward it DID suppress (`stopped` → none); row then deleted and prod state verified restored. Summariser mutation-proven both ways.
+
+⚠ Also caught locally rather than in CI this time: `migration-new-function-states-its-anon-exec-decision` — the same guard that reddened main this morning. Marker added (anon/authenticated EXECUTE both read FALSE live, one overload); **a REVOKE would have been a production ACL change smuggled into a body swap, since `CREATE OR REPLACE` does not reset a function ACL.** All three migration files are byte-exact against prod (md5s compared over `array_to_string(statements, E'\n')`); the anon-exec comment block is the only divergence and says so in place.
+
+**Revert path:** behaviour reverts with ONE statement — `DELETE FROM public.cadence_exempt_lanes WHERE pipeline_pattern = 'wallet-backfill%';` restores `degraded_count` to 7. Code: `git revert <sha>` (find by message: `git log --grep="run count is not cadence"`). The function's extra payload keys are additive; the pre-change body was md5 `fd20c540aad24102ca0a34da607b3bb2` (deflen 5538).
+
 ### 2026-09-19 · 🔴→🟢 MAIN WAS RED FOR ELEVEN MINUTES ON THE CANDY TAB FLIP — two guards I never ran, and only one of them was a premise that had changed · Cowork cloud
 
 **Fix: 3 files (`lib/share-card-view.ts`, `__tests__/share-card-view.test.ts`, `__tests__/collections-chain-dispatch.test.ts`). No DB change.** Main was red from the push at ~13:33 PT until this commit.
