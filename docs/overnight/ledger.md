@@ -10,6 +10,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🚨 THE EQUIVALENCE CHECK THAT WAS SUPPOSED TO BE A FORMALITY — `edition_fmv_current` serves the PRE-HAIRCUT ask as FMV on 162 Top Shot editions, and it is what eleven public boards read (R107) · Cowork cloud
+
+**One DB COMMENT shipped. The board swap this started as was DELIBERATELY NOT SHIPPED, and that is the point of the entry.**
+
+🎯 **THE WORK I SET OUT TO DO.** R50's residual is *"point the remaining boards at `edition_fmv_current` instead of a per-row `fmv_snapshots` LATERAL"* — the recipe that took `allday_scarcity_board` 22,742 → 8,888 buffers on 09-02. `v_topshot_parallel_premiums` qualified on every count: **calm p50 6,437 ms against a 9,100 ms budget** (measured only in the 21 of 28 sweeps where the rest of the fleet was calm — see the sentinel entry below for why breadth is the discriminator), **p90 60,054 ms, worst 93,725 ms — over the 60 s prerender ceiling that can fail a production build**, and **61% of its 55,490 buffers are the two LATERALs**. Coverage was perfect: **4,477 of 4,477** parallel editions and **9,539 of 9,539** base editions present in the cache.
+
+⛔ **THEN THE VALUE CHECK FAILED, AND IT IS NOT THE HOURLY LAG.** The lag hypothesis predicts different `computed_at` values. These are identical:
+
+```
+edition 151:5629 (Angel Reese)
+  fmv_snapshots (newest) : computed_at 2026-09-18 06:45:00.19936Z
+                           fmv_usd 4,949.45 · ask_proxy_fmv 8999
+                           floor_price_usd 8999 · ASK_ONLY
+                           algo_version  ultimate-v1_haircut
+  edition_fmv_current    : computed_at 2026-09-18 06:45:00.19936Z   ← SAME STAMP
+                           fmv_usd 8,999.00
+```
+
+**Every top offender is off by EXACTLY 0.55×** — the cache is publishing the **pre-haircut ask** as FMV.
+
+🔬 **MECHANISM, and the writer is not the culprit.** `refresh_edition_fmv_current()` is the **only** writer (every routine body scanned for INSERT/UPDATE against the table) and its `DISTINCT ON (edition_id) ORDER BY computed_at DESC` is **correct**. The defect is its incremental window — `computed_at > max(computed_at in the cache) - interval '2 hours'`. **FMV writes in this repo are DELETE-THEN-INSERT, so a later pass can replace a snapshot while KEEPING its original `computed_at`; once the watermark moves more than 2 h past that stamp the replacement is never read again.** The `WHERE EXCLUDED.computed_at >= t.computed_at` guard cannot save it — the row never enters the window. ⭐ **A denormalised cache keyed on a column its writer does not bump.**
+
+📏 **BLAST RADIUS — Top Shot, measured against the exact source row each cached row NAMES** (join on `edition_id` + `computed_at`, so this tests the cache's own pointer, not a fresh LATERAL):
+
+| | |
+|---|---:|
+| cache rows | 14,016 |
+| pointer still resolves | 13,489 |
+| …**disagrees on `fmv_usd`** | **26** · net **+$46,060.16** · max **$4,049.55** |
+| pointer resolves to **nothing** | 527 |
+| …edition unpriced entirely | **0** ✅ |
+| …has a NEWER snapshot | 469 |
+| …cache AHEAD of source | 58 |
+| …**would change value** | **136** · max $254.85 |
+
+⇒ **162 of 14,016 (1.16%) publish a value their own source contradicts, skewed HIGH.**
+
+⚠ **THE OTHER FOUR COLLECTIONS ARE NOT MEASURED** — the all-collections form statement-timed out at 120 s. **Do not quote a platform-wide number from this entry.**
+
+⛔ **THREE THINGS DELIBERATELY NOT DONE.** (1) **The swap.** That board reads `fmv_snapshots` directly today, which is the ACCURATE source — pointing it at the cache would have made a public pricing board **faster and wronger**. R50's recipe is still right about cost and now carries a correctness precondition. (2) **A data patch.** Aligning the 162 rows with one UPDATE clears the symptom, leaves the mechanism, and makes the incidence unmeasurable — the failure this file already records as fixing a guard without fixing its record. (3) **A refresh change.** Both candidates alter what users are told a moment is worth.
+
+👉 **THE FIX, SPECIFIED RATHER THAN ATTEMPTED:** (a) a periodic FULL reconcile — the function already has the branch, but its own comment says **~1.23M rows, "minutes when cold"**, so it needs a cost measurement on this IO-bound instance and a quiet window; or (b) an `updated_at`/version column on `fmv_snapshots` for the incremental refresh to key on. 📏 **FALSIFIER for the whole row:** re-run the pointer join — `fmv_mismatch = 0` and ~0 orphans means this was transient and R107 should be closed, not acted on.
+
+🔭 **STILL OWED, and recorded so it is not lost with the swap:** `v_topshot_parallel_premiums` really is the one board with a per-board cost problem. In the 21 calm sweeps it went over budget 5 times at a calm p50 of 6,437 ms, while the next two (`topshot_2025_rookie_cohort_stats` 1,828 ms, `panini_sale_feed_status` 909 ms) sit **under** their budgets and every other board's calm p50 is in the tens of milliseconds. Its cost fix is owed — it just cannot be this one until the cache is trustworthy.
+
+- **Revert:** `COMMENT ON TABLE public.edition_fmv_current IS NULL;` — it had no comment before. Documentation only; no behaviour, grant, schedule or data changed.
+
 ### 2026-09-18 · ⏪ R101 REVERTED 42 MINUTES AFTER IT SHIPPED — every lane on the instance slowed in two steps that coincide with the two applies; the revert removed my variable, and the read AFTER it found a 23-minute autovacuum of `wallet_moments_cache` (940 MB) running through the whole window · Claude Code cloud
 
 **Migration `20260919021449` restores the four function bodies VERBATIM from the committed 09-07 migrations (each md5-checked against the live pre-change `prosrc` before applying: all four match), drops the 1-arg `sync_ts_listings_from_atlas(boolean)`, recreates the 0-arg one, RESETs `work_mem`/`temp_buffers`, restates the ACLs; the two pin tests and PINS entries point at the revert migration (the newest one defining them). `20260919012821` and `20260919014753` stay committed as the record of what was applied.** No data changed in either direction — `ts_listings`, `cached_listings`, `edition_offers` received the same writes throughout.
