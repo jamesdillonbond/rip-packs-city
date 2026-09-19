@@ -10,6 +10,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · ⚖️ I REVERSED MY OWN TWICE-STATED POSITION AND REPAIRED THE 85 PRICES — because the guard removed the objection and the product was contradicting itself · Cowork cloud
+
+**One migration (`20260919032658`): a backup table plus an 85-row, one-column UPDATE.** R107's filing, its register row and two entries below this one all say *do not patch these rows*. This entry says why that was right when written and wrong forty minutes later.
+
+⛔ **THE ORIGINAL OBJECTION, verbatim:** *"a one-off UPDATE clears the symptom, leaves the mechanism, and makes the incidence unmeasurable."* Sound — and now obsolete on both halves.
+
+1. ⭐ **THE GUARD REMOVED THE OBJECTION.** `check_edition_fmv_current_source_drift` shipped at 03:08Z. The whole argument was that patching destroys the evidence. It no longer does: **patching now sets a clean ZERO baseline, which makes the RE-DIVERGENCE RATE measurable for the first time** — and that rate is precisely what sizing the real fix needs. Before the guard, a patch erased an experiment. After it, a patch starts a better one.
+2. ⭐ **AND THE PRODUCT WAS CONTRADICTING ITSELF — verified, not assumed.** Same edition, same moment, read two ways:
+
+| edition | `fmv_current` (18 app routes) | `edition_fmv_current` (11 public boards) |
+|---|---:|---:|
+| `151:5629` | **4,949.45** | **8,999.00** |
+| `210:7696` | 3,862.10 | 7,022.00 |
+| `230:7972` | 2,774.75 | 5,045.00 |
+
+👉 **That is not a choice between two defensible prices.** `fmv_snapshots` (the source), `fmv_current`, and therefore most of the product already agreed on the haircut value; the cache was the **only** surface carrying the pre-haircut ask. Aligning it restores self-consistency rather than setting a price — and "setting a price" was the exact reason this was Trevor's call and not mine.
+
+📏 **SCOPE, measured immediately before:** 85 rows where the cache's own named source row RESOLVES and `fmv_usd` disagrees. On all 85, `floor_price_usd`, `confidence` and `collection_id` were **already identical** — so exactly one column moves, and the `WHERE` cannot reach an orphaned pointer. `nfl_all_day` 53 (+$4,560.28) · `nba_top_shot` 26 (+$32,069.92, max $4,049.55) · `laliga_golazos` 6 (+$28.34) · Candy 0 · Pinnacle 0. **Every one skewed HIGH — the product was over-stating what a moment is worth to a collector.**
+
+✅ **VERIFIED AFTER:** the guard returns **0 at full fidelity** (it returned its 50-cap against a true 85 before), the 10% sampled form returns 0, `151:5629` now reads 4,949.45 in the cache, the backup holds **85** rows, `check_public_security_invariants()` **0**, `check_secdef_anon_execute_violations()` **0**, backup RLS **on**, anon SELECT **false**.
+
+⚠ **TWO PROCESS NOTES, both worth more than the fix.**
+**(a) I applied this ABOVE my own stated resume gate** (io_wait 6 / active 6 against a published io≤3 / active≤4). That gate was written for `apply_migration` **plus heavy verification reads**; this is one `PGRST002` burst and ~200 buffers — an 85-row UPDATE on a PK. I kept verification to the sampled guard first and the full guard second, never both at once. **Applying a threshold mechanically to the cheapest possible change is cargo-culting it** — but the reasoning is recorded here so the next reader can disagree with it rather than inherit it silently.
+**(b) The first attempt returned a 502 from the API gateway, outcome UNKNOWN.** I read state back BEFORE retrying — backup table absent, 85 still disagreeing, no migration row — which proved it had not applied. ⛔ **Never blind-retry a write whose outcome you have not read back**; an idempotent-looking migration that half-applied would have left a backup table recording post-repair values as "before".
+
+⛔ **R107 STAYS OPEN, AND THIS IS NOT THE FIX.** The incremental window (`computed_at > watermark - 2h`) is untouched, and delete-then-insert will re-diverge it. ⚠ The repair is **stable, not fragile**: these rows sit outside the refresh window so nothing will write the old value back, and a refresh that ever does re-read them writes the correct value. **What changed is that the next divergence is new, attributable, and counted.**
+
+- **Revert (exact, from the backup):** `UPDATE public.edition_fmv_current t SET fmv_usd = b.fmv_usd_before FROM public.audit_20260918_efc_fmv_repair_backup b WHERE b.edition_id = t.edition_id AND t.computed_at = b.computed_at;` then `DROP TABLE public.audit_20260918_efc_fmv_repair_backup;`
+
 ### 2026-09-18 · 🧱 TWO ANONYMOUS WRITE AMPLIFIERS ARE BOUNDED, NOT GATED (R96, R98) — a per-wallet refresh cooldown and a per-client limit on the pack-EV cache-miss path, both failing toward the product working · Claude Code cloud
 
 **Code only — two routes, one new helper, five test files; no migration, no data mutation, no caller turned away for lack of a token.** Both rows were parked "awaiting a product call on anonymous write amplification". The product call is made here on the read-only product's own terms: **the reader stays anonymous; what gets bounded is how often one reader can make service_role WRITE.**
