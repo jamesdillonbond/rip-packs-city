@@ -10,6 +10,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🔎 LIVE SPELL AT 02:00Z — the atlas listing lane is failing ~every tick, and it is NEITHER session's change: `refresh_wmc_fmv_changed` + a cluster of `fmv_current` reads own the IO · Cowork cloud
+
+**Docs only. Nothing shipped.** Written immediately because a concurrent session reverted its R101 change *"under an IO spell"* at 02:14Z and this is what the spell actually is.
+
+📏 **THE EVENT.** `cron.job_run_details` by hour: 21:00Z **1** fail / 190 · 22:00Z 9/387 · 23:00Z 7/383 · 00:00Z **0**/405 · 01:00Z 6/388 · **02:00Z 29/205**. Minute-level from 01:58Z, `rpc-ts-listings-atlas-sync` (jobid 466) fails on **almost every `*/2` tick** — 02:00, 02:02, 02:04, 02:06, 02:08, 02:10, 02:12, 02:14, 02:16, 02:18, 02:20, 02:22, 02:28, 02:30 — with two successes in between (02:24:30 in **119.0 s**, 02:26:29 in 23.5 s). ⭐ **And 02:10:00Z is a one-minute total stall: 8 runs, 8 failures, across eight unrelated jobs** (`atlas-editions-dispatch`, `atlas-market-dispatch`, `golazos-badge-low-ask-refresh`, `pinnacle-mints-backfill`, `topshot-pack-sales-backfill`, `trust-health-history`, `allday-dist-opened-backfill`, jobid 466).
+
+🎯 **WHAT OWNS THE IO, read live from `pg_stat_activity` at 02:31Z** — every one of them `wait_event_type = IO`:
+
+| query | elapsed | wait |
+|---|---:|---|
+| `refresh_wmc_fmv_changed(30, 200000)` | **301 s** | DataFileRead |
+| `atlas_listing_verify_tick(2)` | 120 s | DataFileWrite |
+| `seed_topshot_parallel_base_targets(60,4000,10000)` | 58 s | DataFileRead |
+| `atlas_market_drain()` | 58 s | DataFileWrite |
+| **four** concurrent PostgREST reads of **`fmv_current`** | 1–18 s | IO |
+
+`refresh_wmc_fmv_changed` is this instance's **#1 lifetime disk reader** (2,073 GB, 84.2% hit) and CLAUDE.md already files it as *"wasteful, NOT broken, SIZED"*. ⭐ **The four concurrent `fmv_current` reads are the documented full-scan trap** — `fmv_current` is the `DISTINCT ON` view that `edition_fmv_current` exists to replace, which ties this spell directly to R107 one entry up.
+
+✅ **MY OWN CHANGE IS EXONERATED, and by the cheapest possible control.** The 01:13Z autovacuum change on `topshot_atlas_market_events` has fired **exactly once** — `autovacuum_count` read **150** at 01:16Z and **150** again at 02:32Z, with `n_dead_tup` 24,447 against the new 47,549 trigger. **Not one additional vacuum pass has run**, so it cannot be contributing to a failure band that began at 01:58Z. ⚠ I went looking for the opposite: more frequent vacuums on the exact table those `_tsl_want` / `_cl_want` / `_open24` temp tables scan is a plausible amplifier, and it had to be checked rather than assumed.
+
+✅ **AND THE SAME READING RETIRES MY OWN CORRECTION FROM AN HOUR AGO.** I flagged that the table's churn might be ~30,000 dead tuples/h — double my sizing — off a 25-minute sample taken during another session's deploy. Over the 51 minutes 01:41Z → 02:32Z it is 12,674 → 24,447 = **~13,850/h**, which matches the original ~14,715/h. **The sizing was right; the "correction" was the short-sample artifact.** A burst hour is not a rate, including when it is my own.
+
+⛔ **WHAT THIS DOES NOT ESTABLISH, stated because the temptation is strong.** It does NOT show the concurrent session's revert was unnecessary — its `_open24` temp table appears in two of the 02:10/02:12 failures, so it had its own evidence. It does NOT identify a single cause: `refresh_wmc_fmv_changed` at 301 s is the largest reader in the window but a spell is contention, not one query. **And my own probes were part of the load** — an `EXPLAIN (ANALYZE)` on `v_topshot_parallel_premiums` (71 s, 55,490 buffers) and an all-collections pointer join that statement-timed out at 120 s both ran inside this hour. Heavy probing stopped at 02:32Z.
+
+👉 **FOR WHOEVER READS THIS NEXT:** the lane's failure rate in this window is worth **nothing** as a measure of either R101 fix — it is pooled across a change, a revert, a spell and my probes, which is four change points in one hour. The autovacuum change's attributable reading remains the `Heap Fetches` EXPLAIN, and the scheduled 2026-09-20 01:30Z re-check carries the corrected timeline.
+
+- **Revert:** n/a — documents only.
+
 ### 2026-09-18 · 🚨 THE EQUIVALENCE CHECK THAT WAS SUPPOSED TO BE A FORMALITY — `edition_fmv_current` serves the PRE-HAIRCUT ask as FMV on 162 Top Shot editions, and it is what eleven public boards read (R107) · Cowork cloud
 
 **One DB COMMENT shipped. The board swap this started as was DELIBERATELY NOT SHIPPED, and that is the point of the entry.**
