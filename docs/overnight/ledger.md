@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · ✅ EXIT CONDITIONS MET ON THE LIVE SITE — and one thing I flagged as a possible defect turns out to be my own probe, which is worth saying out loud · Cowork cloud
+
+**No code. Verification record + one retraction**, closing the entry below (*"the Collection tab's two gates come down"*).
+
+**BOTH EXIT CONDITIONS ANSWERED BY THE DEPLOYED ROUTES, not by the diff:**
+
+| probe | before | after |
+|---|---|---|
+| `/api/collection-moments?wallet=<base58>&collection=candy-mlb` | **503** *"Top Shot's username lookup is unavailable…"* | **200**, `total_count: 5` — Jacob Misiorowski #149 $6.53 · Bryan Woo #49 $1.86 · Kyle Tucker #159 $1.29 |
+| `/api/wallet/edition-counts?wallet=<base58>&collection=candy-mlb` | **200** `editionCount: 0`, address echoed folded | **200** `editionCount: 5`, all five editions, **address echoed verbatim in its true case** |
+
+The figures match what the RPCs returned when called directly *before* any change (total_count 5, Misiorowski $6.53) and what the share card has rendered for that wallet all along — three independent instruments agreeing, which is the point of quoting all three. **Falsifier did not fire:** Top Shot's collection scoping is unchanged, pinned by the no-change arm. CI on `7d2926aec`: **18 green, zero failures** — including TypeScript, which I had owed to CI on every commit today because `tsc --noEmit` was OOM-killed on the desktop VM each time.
+
+🔁 **RETRACTION — `/api/badges` IS NOT A DEFECT, AND THE BUG WAS IN MY PROBE.** The previous entry recorded that it *"answers a Candy query with Top Shot editions"* and hedged it as *"not yet established as a defect"*. Established now, and the hedge was doing real work: **that route takes `collection_id` (a UUID) and I passed `collection=candy-mlb` (a slug)**, which it correctly ignores while falling back to its documented Top Shot default. It is also a **catalogue** endpoint filtered by season/parallel/team/player — it ignored my `wallet=` param too. So it returned exactly what it was asked for. ⭐ **The lesson is the cheap one and I nearly spent an investigation on it: when a probe returns the wrong collection's data, suspect the parameter NAME before the route** — and never let a probe artifact enter the ledger as an unqualified finding, because the next reader cannot tell it from a real one.
+
+**So the remaining blocker list for a Candy Collection tab is shorter and sharper than it read yesterday:** `/api/sets` **500s** for a base58 wallet (real, measured) — and `/api/badges` comes off the list entirely. Candy's `pages` stays unchanged until the rest of `CollectionTabClient`'s ~15 endpoints are swept the same way.
+
+- **Revert:** nothing to revert — this entry records verification and corrects a claim.
+
 ### 2026-09-19 · 🚧 THE COLLECTION TAB'S TWO GATES COME DOWN — and a FOURTH wallet route was still folding base58, missed this morning because I scoped the sweep to one folder · Cowork cloud
 
 **Shipped: 3 routes + 3 test files. No DB change.** ⚠ **This is GROUNDWORK, not a working tab, and the difference matters** — see the honest scope at the end.
