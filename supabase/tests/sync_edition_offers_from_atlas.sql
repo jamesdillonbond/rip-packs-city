@@ -16,7 +16,7 @@
 --   * a re-run over unchanged data writes 0 rows (WHERE guards).
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260919021449_audit_20260918_revert_atlas_listing_syncs_to_their_0907_bodies_under_an_io_spell.sql; the body is the 09-07 one, restored verbatim);
+-- (supabase/migrations/20260919152824_audit_20260919_r101_v2_atlas_listing_tick_scans_the_open_book_once_and_upserts_only_the_delta.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -33,6 +33,7 @@ CREATE TABLE public.edition_offers (
   low_ask_serial integer, low_ask_nft_id text, PRIMARY KEY (collection_id, external_id));
 
 -- >>> BEGIN verbatim sync_edition_offers_from_atlas (keep byte-identical to the migration) >>>
+
 CREATE OR REPLACE FUNCTION public.sync_edition_offers_from_atlas()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -41,30 +42,74 @@ SET search_path TO 'public', 'pg_temp'
 AS $$
 DECLARE v_started timestamptz := clock_timestamp(); v_n int; v_nulled int; v_offers int;
 BEGIN
-  WITH floor AS (
-    SELECT DISTINCT ON (m.external_id)
-           m.external_id, (ev.price_cents::numeric / 100) AS low_ask, ev.serial_number, ev.nft_id
-      FROM public.topshot_atlas_market_events ev
-      JOIN public.topshot_atlas_edition_map m ON m.atlas_edition_id = ev.atlas_edition_id
-     WHERE ev.product = 'nba' AND ev.kind = 'listing' AND NOT ev.completed
-       AND ev.nft_id IS NOT NULL AND ev.price_cents > 0
-       AND ev.last_seen_at > now() - interval '24 hours'
-       AND m.external_id ~ '^[0-9]+:[0-9]+(::[0-9]+)?$'
-     ORDER BY m.external_id, ev.price_cents ASC, ev.serial_number ASC NULLS LAST
-  ), up AS (
-    INSERT INTO public.edition_offers (collection_id, external_id, low_ask, low_ask_serial, low_ask_nft_id, updated_at)
-    SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', f.external_id, f.low_ask, f.serial_number, f.nft_id, now()
-      FROM floor f
-    ON CONFLICT (collection_id, external_id) DO UPDATE
-      SET low_ask = EXCLUDED.low_ask,
-          low_ask_serial = EXCLUDED.low_ask_serial,
-          low_ask_nft_id = EXCLUDED.low_ask_nft_id,
-          updated_at = now()
-      WHERE public.edition_offers.low_ask IS DISTINCT FROM EXCLUDED.low_ask
-         OR public.edition_offers.low_ask_nft_id IS DISTINCT FROM EXCLUDED.low_ask_nft_id
-    RETURNING 1
-  )
-  SELECT count(*) INTO v_n FROM up;
+  -- The floor: lowest open ask per edition. DELTA FIRST — the floor is compared against
+  -- edition_offers in one join and only new/changed editions reach ON CONFLICT; the guard on
+  -- the conflict arm is unchanged. Inside the tick the floor is read off the open book
+  -- sync_ts_listings_from_atlas built (same raw rows — the floor never joined editions — same
+  -- extra predicate, same ordering); standalone it reads the base tables as before.
+  IF to_regclass('pg_temp._open24') IS NOT NULL THEN
+    WITH floor AS (
+      SELECT DISTINCT ON (o.external_id)
+             o.external_id, (o.price_cents::numeric / 100) AS low_ask, o.serial_number, o.nft_id
+        FROM _open24 o
+       WHERE o.external_id ~ '^[0-9]+:[0-9]+(::[0-9]+)?$'
+       ORDER BY o.external_id, o.price_cents ASC, o.serial_number ASC NULLS LAST
+    ), cand AS (
+      SELECT f.*
+        FROM floor f
+        LEFT JOIN public.edition_offers eo
+               ON eo.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' AND eo.external_id = f.external_id
+       WHERE eo.external_id IS NULL
+          OR eo.low_ask IS DISTINCT FROM f.low_ask::numeric
+          OR eo.low_ask_nft_id IS DISTINCT FROM f.nft_id
+    ), up AS (
+      INSERT INTO public.edition_offers (collection_id, external_id, low_ask, low_ask_serial, low_ask_nft_id, updated_at)
+      SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', f.external_id, f.low_ask, f.serial_number, f.nft_id, now()
+        FROM cand f
+      ON CONFLICT (collection_id, external_id) DO UPDATE
+        SET low_ask = EXCLUDED.low_ask,
+            low_ask_serial = EXCLUDED.low_ask_serial,
+            low_ask_nft_id = EXCLUDED.low_ask_nft_id,
+            updated_at = now()
+        WHERE public.edition_offers.low_ask IS DISTINCT FROM EXCLUDED.low_ask
+           OR public.edition_offers.low_ask_nft_id IS DISTINCT FROM EXCLUDED.low_ask_nft_id
+      RETURNING 1
+    )
+    SELECT count(*) INTO v_n FROM up;
+  ELSE
+    WITH floor AS (
+      SELECT DISTINCT ON (m.external_id)
+             m.external_id, (ev.price_cents::numeric / 100) AS low_ask, ev.serial_number, ev.nft_id
+        FROM public.topshot_atlas_market_events ev
+        JOIN public.topshot_atlas_edition_map m ON m.atlas_edition_id = ev.atlas_edition_id
+       WHERE ev.product = 'nba' AND ev.kind = 'listing' AND NOT ev.completed
+         AND ev.nft_id IS NOT NULL AND ev.price_cents > 0
+         AND ev.last_seen_at > now() - interval '24 hours'
+         AND m.external_id ~ '^[0-9]+:[0-9]+(::[0-9]+)?$'
+       ORDER BY m.external_id, ev.price_cents ASC, ev.serial_number ASC NULLS LAST
+    ), cand AS (
+      SELECT f.*
+        FROM floor f
+        LEFT JOIN public.edition_offers eo
+               ON eo.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' AND eo.external_id = f.external_id
+       WHERE eo.external_id IS NULL
+          OR eo.low_ask IS DISTINCT FROM f.low_ask::numeric
+          OR eo.low_ask_nft_id IS DISTINCT FROM f.nft_id
+    ), up AS (
+      INSERT INTO public.edition_offers (collection_id, external_id, low_ask, low_ask_serial, low_ask_nft_id, updated_at)
+      SELECT '95f28a17-224a-4025-96ad-adf8a4c63bfd', f.external_id, f.low_ask, f.serial_number, f.nft_id, now()
+        FROM cand f
+      ON CONFLICT (collection_id, external_id) DO UPDATE
+        SET low_ask = EXCLUDED.low_ask,
+            low_ask_serial = EXCLUDED.low_ask_serial,
+            low_ask_nft_id = EXCLUDED.low_ask_nft_id,
+            updated_at = now()
+        WHERE public.edition_offers.low_ask IS DISTINCT FROM EXCLUDED.low_ask
+           OR public.edition_offers.low_ask_nft_id IS DISTINCT FROM EXCLUDED.low_ask_nft_id
+      RETURNING 1
+    )
+    SELECT count(*) INTO v_n FROM up;
+  END IF;
 
   -- (a) evidence-based NULL: verified COMPLETE within 24 h, and no open listing remains.
   WITH gone AS (
@@ -119,6 +164,7 @@ BEGIN
   RETURN jsonb_build_object('rows', v_n, 'nulled', v_nulled, 'offers', v_offers,
                             'duration_ms', (extract(epoch from clock_timestamp() - v_started) * 1000)::int);
 END $$;
+
 -- <<< END verbatim sync_edition_offers_from_atlas <<<
 
 INSERT INTO public.topshot_atlas_edition_map VALUES ('E1', '99:3372'), ('E2', '99:3372::17'), ('E3', 'a1b2c3d4-0000-4000-8000-000000000000:x');
