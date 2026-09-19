@@ -29,3 +29,21 @@
 ## Update 8:07 PM PT (03:07Z) — EASING, not over
 
 Same instrument, 7:46 → 8:07 PM PT: `rpc-ts-listings-atlas-sync` **64.7 s p50 / 2 of 10 failed** (was 120 / 11 of 15) · `rpc-atlas-market-drain` **18.7 s** (was 48.6) · `rpc-allday-unmapped-atlas-resolver` 84.0 s / 1 of 4 (was 114.5 / 3 of 6) · `rpc-refresh-wmc-fmv-changed` 168 s (was 361). Baseline for the first two is 12.9 s and 7.5 s, so the estate is ~half-way back. Two candidates weakened by measurement: `topshot_atlas_market_events` has NOT vacuumed again since 6:15 PM PT (`autovacuum_count` 150 at both 7:18 and 8:05 PM; 33k dead tuples against a ~47k trigger), so the 0.02 factor did not fire repeatedly tonight; and a 43 s `pg_stat_io` delta at 8:05 PM read ~3 MB/s of client-backend relation reads with zero vacuum reads — quiet at that instant. What remains unexplained is the 6:30–7:45 PM plateau itself; the WMC vacuum (6:55–7:20) and the new pack lanes remain the candidates with a mechanism.
+
+## Update 8:40 PM PT (03:40Z) — ATTRIBUTED by the instrument that was already here, and the relapse
+
+**Read this before re-deriving anything above.** `audit_20260830_pgss_snap` holds a full `pg_stat_statements` snapshot every 2 h (`rpc-pgss-snapshot`, :05). The 00:05 → 02:05Z delta (5:05–7:05 PM PT; 16.4M blocks = 128 GB of disk reads in two hours) ranks the readers:
+
+| statement | calls | blocks read | temp blocks written |
+|---|---:|---:|---:|
+| `allday_resolve_unmapped_via_atlas(10)` | 21 | **1,982,989** (15.5 GB) | 0 |
+| `atlas_listing_verify_tick(2)` | 53 | 1,360,539 | **159,130** |
+| a PostgREST RPC (`pgrst_call.*`) | 2,281 | 743,840 | 0 |
+| `atlas_market_drain()` | 60 | 633,636 | 0 |
+| this session's two `cron.job_run_details` aggregations | 1 + 1 | 624,700 + 577,663 | 0 |
+| public `v_allday_pack_lifecycle` via PostgREST | 2,257 | 528,093 | 0 |
+
+- **The All Day resolver's Leg 1 is a `Parallel Seq Scan` of the 689 MB events table (plain EXPLAIN, cost 105,599) every 5 minutes** — no index leads on `product` without a `NOT completed` predicate that leg does not carry; nfl is 2.4% of 2.37M rows. **A 2.6 MB partial index fixes it and was ATTEMPTED 8:35–8:42 PM PT but NOT built** — as postgres the build died at the cluster-wide 120 s statement_timeout while waiting for the 120 s Atlas ticks before validation; cron_heavy cannot (not the owner). An inert invalid `idx_tame_nfl_nft_seen` remains. Recipe, DDL and falsifier: register **R108**. ⛔ Not for a saturated hour — the build is itself a 689 MB read. Legs 2–3 are index-driven.
+- **My own diagnostics were the #5 and #6 readers** — `cron.job_run_details` is 189 MB / 330k rows with no retention since 07-09. A 30-day daily purge is scheduled (`rpc-cron-log-retention`, jobid 512, first run 9:47 PM PT). ⚠ Until then, do NOT aggregate that table for diagnosis under load; read `pipeline_runs` or a single job's last N rows.
+- The other session's new pack lane is not in the top 14.
+- **The estate RELAPSED after the 8:08 PM easing:** 8:10–8:30 PM the Atlas tick failed 4 of 9 at 99.7 s p50, the drain read 39 s. Consistent with the resolver's 5-minute 740 MB walks plus the tick's own temp sorts as the standing load, with vacuums on top.
