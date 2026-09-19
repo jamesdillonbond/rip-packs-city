@@ -102,6 +102,22 @@ const GRANDFATHERED = new Set([
   "20260425224118_pinnacle_unresolved_with_owner_revert_to_snapshot.sql",
   "20260728170943_audit_20260728_panini_squeeze_honest_coverage_column.sql",
   "20260801012254_audit_20260801_pack_ev_sentinel_price_guard.sql",
+  // Same treatment again, 2026-09-19 — and this time the guard caught it on the SAME DAY,
+  // in the same session, from the author who had just written the lesson into a migration
+  // header and still did not know this guard existed. Two files, three views:
+  //   · 20260919172027 replaced `panini_coverage_summary` to add the per-edition age
+  //     columns and did not restate the mode, so an already-hardened view silently
+  //     reverted to DEFINER — the exact byte-identical failure the message above names.
+  //   · 20260919173527 created the two read-only P1 bridge candidate views the same way.
+  // Fixed FORWARD by 20260919173610_restore_security_invoker_on_the_three_panini_views_
+  // create_or_replace_had_reset_it.sql (an ALTER VIEW ×3), never by editing history.
+  // ⚠ GRANDFATHERED ONLY BECAUSE THAT FIX IS APPLIED AND VERIFIED LIVE — read live at
+  // 2026-09-19 ~10:4x PT, all three carry reloptions {security_invoker=true} and
+  // `check_public_security_invariants()` returns 0 rows, having returned exactly 3
+  // (kind `view_unexpected_definer`, naming these three and nothing else) beforehand.
+  // That before/after pair is the authority here, not this comment — re-run it.
+  "20260919172027_panini_coverage_summary_measures_the_edition_age_distribution_not_only_the_family_max.sql",
+  "20260919173527_panini_bridge_candidates_shows_exactly_what_p1_would_write_and_writes_nothing.sql",
 ])
 
 /**
@@ -218,7 +234,15 @@ describe("migrations must state a security mode when creating a public view", ()
     // the other one. The entry is legitimate ONLY because the forward fix
     // (20260913012823) is applied and verified live; the pin is what forces a
     // reader to check that rather than take the list's word for it.
-    expect(GRANDFATHERED.size).toBe(17)
+    //
+    // 17 -> 19 on 2026-09-19: the two Panini files above. ⭐ THE PIN WORKED AGAIN, and the
+    // catch is more useful than the previous one: the author had just written "CREATE OR
+    // REPLACE VIEW resets reloptions" into a migration header as a durable lesson, and
+    // committed the same defect twice in the same session anyway — because knowing the rule
+    // is not the same as having a check run it. `check_public_security_invariants()` found
+    // the live half in ~20 minutes; THIS guard found the half that live state cannot show,
+    // namely that the migration files would replay the defect.
+    expect(GRANDFATHERED.size).toBe(19)
   })
 
   it("the two deals views were repaired forward by an ALTER, not by editing history", () => {
