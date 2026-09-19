@@ -10,6 +10,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🧭 R50'S EXIT CONDITION WAS DUE 11 DAYS AGO AND ITS FALSIFIER WOULD HAVE REOPENED EIGHT ROWS FOR ONE SPELL — tested, corrected, and one real board named · Cowork cloud
+
+**Docs only — register row R50.** A closed row carrying an untested exit condition and a falsifier that cannot do its job is worse than an open one, because both read as finished.
+
+✅ **THE EXIT CONDITION IS MET, AND NOBODY HAD TESTED IT.** R50 was closed 2026-09-07 with *"the next 7 days show no board over its budget on a majority of samples."* That window elapsed on 09-14. Measured 09-18 over 28 sweeps × 44 boards: worst board **42.9%** over budget, next **35.7%** — **no board on a majority.** ⭐ *Re-TEST a stated exit condition, never re-read it* — this one had been quietly inherited as true for eleven days.
+
+⛔ **ITS FALSIFIER, THOUGH, IS MIS-SPECIFIED, AND APPLYING IT LITERALLY WOULD HAVE REOPENED EIGHT ROWS.** *"A board with p50 over budget for 3 consecutive sweeps reopens this row for THAT board"* matches `panini_sale_feed_status` and `v_topshot_parallel_premiums` (4 consecutive) plus six more at 3. ⭐ **And every one of those runs ENDS AT THE SAME SWEEP — 2026-09-18 06:28:01Z.** The liveness probe times all 44 boards in ONE pass, so "consecutive sweeps over budget" cannot distinguish a board that regressed from an instance that was saturated.
+
+📊 **THE PER-SWEEP BREADTH SAYS IT WITHOUT AMBIGUITY — it is bimodal, not a gradient:**
+
+| boards over budget in a sweep | sweeps | fleet p50 |
+|---|---:|---|
+| 0–2 | **20 of 28** | 25–86 ms |
+| 9–12 | **8 of 28** | 251–662 ms (fleet max 30–94 s) |
+
+✅ **CORRECTED FALSIFIER — the discriminator is BREADTH, not persistence:** a board reopens the row only if it goes over budget in sweeps where the FLEET is calm (≤2 boards over in that same sweep). Over the 21 calm sweeps, exactly **three** boards ever go over, and only one is a cost problem: **`v_topshot_parallel_premiums`, 5 of 21, calm p50 6,437 ms against a 9,100 ms budget.** The other two — `topshot_2025_rookie_cohort_stats` (calm p50 1,828 ms) and `panini_sale_feed_status` (909 ms) — are **under** budget at p50 and are near-budget noise. Every other board's calm p50 is in the tens of milliseconds.
+
+🔭 **AND THE ONE REAL BOARD IS NOT IN R50'S ORIGINAL LIST OF 11.** `v_topshot_parallel_premiums`: p90 **60,054 ms**, worst **93,725 ms** — over the 60 s prerender ceiling R50 itself warns can fail a production build — and 61% of its 55,490 warm buffers are two per-row `fmv_snapshots` LATERALs. ⛔ **Its fix is blocked by R107:** R50's own recipe is "read `edition_fmv_current` instead", and that cache is currently publishing values its own source rows contradict on 162 of 14,016 Top Shot editions, skewed HIGH. The board reads `fmv_snapshots` directly today, which is accurate. **Fix R107, then swap.**
+
+⭐ **THE REUSABLE RULE, and it generalises past this row:** an alarm that samples its whole population in one pass can only ever report *that* something was slow, never *which* thing is slow. **Its per-subject falsifier has to condition on the breadth of that same sample** — otherwise every shared-resource incident reopens every subject at once, and the rows that matter are buried in the ones that do not.
+
+- **Revert:** `git revert <this sha>` — restores R50's prior exit-condition/falsifier text. Documentation only.
+
 ### 2026-09-18 · 📈 THE 02:00Z SPELL ESCALATED 3× IN TEN MINUTES AND IS PURE READ-BANDWIDTH — contributors named, and this session stood DOWN on all DB writes · Cowork cloud
 
 **Docs only. An addendum to the entry below it, written because the picture changed and a concurrent session is working live.**
