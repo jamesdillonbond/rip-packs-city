@@ -12,6 +12,23 @@ substitution below is NOT verified equivalent — see §4 before acting on it.**
 | `snapshot-institutional-wallets` | **high** | **31.8 h** | 2026-09-18 12:17Z | 1,800 min |
 | `topshot-active-listings-ingest` | medium | 18.9 h | 2026-09-19 01:13Z | 900 min |
 
+> ⛔ **CORRECTION, ~7 MINUTES AFTER THIS FILE WAS WRITTEN — THE HIGH ONE HAD ALREADY CLEARED.**
+> `snapshot-institutional-wallets` ran at **20:10:45Z**, `ok`, 3 rows, 64,093 moments snapshotted.
+> `detect_stalled_pipelines()` now reads **1**, not 2, and the only entry is
+> `topshot-active-listings-ingest`. **Everything below about that lane stands; the HIGH row above
+> does not.**
+>
+> ⭐ **And the lesson is NOT "re-measure before filing" — I did.** The reading was taken at ~20:05Z
+> and was true then; the run landed at 20:09–20:10Z, while this file was being written. The defect
+> is that a **point-in-time sample was published as a standing state**. This repo has the same
+> shape on record for the Panini freshness check — *"the alarm was true-when-written and
+> stale-when-read"*. 👉 **An alarm table in a filing needs its clock ON the row, and a reader needs
+> telling to re-run `detect_stalled_pipelines()` before acting on any line of it.**
+>
+> ⓘ The lane is erratic rather than dead: it ran 10:07Z and 12:17Z on 09-17 and 09-18, then skipped
+> 09-19's morning slot and came back at 20:10Z — a **31.8 h gap against a 30 h threshold**. Worth a
+> cadence look, not an outage response.
+
 The watchlist note on the second says a >900 min gap *"means the desktop that is the board's only
 feeder has been dark, which is exactly the detection"*.
 
