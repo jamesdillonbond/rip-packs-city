@@ -10,6 +10,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · ✅ THE HELD WORK SHIPPED AT 8:08 PM PT ON THE FIRST CALM READING — the R107 guard is live, and its first run says the defect is 85 rows, not 26 · Cowork cloud
+
+**One migration, two changes, deliberately batched into a single `PGRST002` burst.** Applied `20260919030840`. This discharges the hold recorded two entries down.
+
+⏳ **THE GATE HELD, AND THEN IT CLEARED.** The resume condition written into that entry was `io_wait ≤ 3 AND active ≤ 4` plus under 3% cron failures over a trailing 15 minutes. Readings from 02:30Z: **6/7 → 8/7 → 11/13 → 20/21 → 8/8 → 5/6 → 8/8**, and then at **03:08Z: io 0 · active 3 · 2 failures of 96 (2.1%)**. Applied on that reading and not before. ⭐ **The temptation to relax a published number because the work was ready is exactly what the gate is for** — it was 40 minutes and four re-probes, and two of the intervening readings looked good enough to act on and were not.
+
+🛡 **CHANGE 1 — `check_edition_fmv_current_source_drift(p_sample_mod)`.** Ban-at-zero, jsonb ARRAY (clean is `jsonb_array_length() = 0`, never `count(*) = 1`), SECDEF, `anon` and `authenticated` EXECUTE both verified **false**, `service_role` true. It flags rows of `edition_fmv_current` whose `(edition_id, computed_at)` pointer still RESOLVES but whose `fmv_usd` disagrees with that row — the cache publishing a number its own named source contradicts.
+
+⭐ **AND ITS FIRST RUN CORRECTS R107'S OWN FILING.** That row said *"other four collections NOT measured"* because the all-collections query statement-timed out during the spell. Measured now, whole table, exact:
+
+| collection | diverged rows | net overstated | max abs delta |
+|---|---:|---:|---:|
+| `nfl_all_day` | **53** | $4,560.28 | $450.00 |
+| `nba_top_shot` | 26 | **$32,069.92** | **$4,049.55** |
+| `laliga_golazos` | 6 | $28.34 | $27.00 |
+| `candy_mlb`, `disney_pinnacle` | **0** | — | — |
+| **total** | **85** | **$36,658.54** | |
+
+👉 **All Day carries TWICE Top Shot's row count; Top Shot owns 87% of the dollar skew.** The skew is HIGH in every affected collection. **A filing that measured one collection and said so was right to say so — the number it could not reach was 3.3× its own.**
+
+⛔ **NOT WIRED INTO `rpc_ops_snapshot()`, AND THE THRESHOLD DECIDED IT RATHER THAN TASTE.** The rule was set BEFORE measuring: wire it only if the full form runs under ~2 s. Measured warm: **86,963 buffers / 6,261 ms** over 21,424 inspected rows (a seq scan of the cache plus a per-row index probe into `fmv_snapshots_2026`, which is 85,527 of those buffers). It missed by 3×. That snapshot has already statement-timed out once tonight inside `board_mv_refresh_max_stale_hours`; adding a six-second key would trade a measured defect for an unmeasurable one. 👉 **A guard with no reader is a known gap, not a silent one** — the two honest options are in the migration header: wire the SAMPLED form (`p_sample_mod => 10`, ~600 ms, but a ban-at-zero over a 10% sample goes quiet below ~10 offenders), or give it its own low-frequency pg_cron caller at full fidelity.
+
+⚠ **THE GUARD'S OUTPUT IS CAPPED AT 50 — READ ITS LENGTH AS A FLOOR.** At apply time it returned exactly 50 against a true 85. That is by design (an offender list, not a census) and is stated in its own `COMMENT`, but it is precisely the shape that becomes a wrong number in someone's summary.
+
+📝 **CHANGE 2 — `get_editions_latest_fmv`'s COMMENT stops quoting a refuted figure.** It claimed **"1,334,789 buffers / 16.7 s"** — a 249× win, refuted on 2026-09-02 because that benchmark's before-arm wrote the ids as `IN (SELECT … FROM a CTE ORDER BY external_id)`, a hash semi-join over the fully materialised view that PostgREST never sends (it emits `edition_id = ANY($1)`). Replaced with the measured **8–17×** range, cold and warm both labelled. ⭐ **The refuted number is now named INSIDE the comment** so it cannot be quietly reinstated by someone who meets it again in an older doc. The 09-02 entry parked this for *"the next migration that touches FMV"* — this is that migration, 16 days later.
+
+⛔ **THE 85 ROWS ARE STILL WRONG AND WERE DELIBERATELY NOT PATCHED.** A one-off UPDATE aligning them to source clears tonight's symptom, leaves the incremental-window mechanism intact, and makes the incidence unmeasurable — the exact failure this file records as fixing a guard without fixing its record. **The fix is still the refresh, and it still needs Trevor:** a periodic full reconcile (~1.23M rows, *"minutes when cold"* by the function's own comment — measure it first) or an `updated_at` column on `fmv_snapshots` for the incremental refresh to key on.
+
+⚠ **One cosmetic wart, recorded rather than re-burst:** the new guard's own COMMENT contains a literal `%%` where a single `%` was meant (plain SQL, not `format()`). Harmless; fold it into the next migration that touches this function rather than spending a `PGRST002` burst on it — which is the same rule that batched these two changes together.
+
+- **Revert:** `DROP FUNCTION public.check_edition_fmv_current_source_drift(integer);` and restore the prior `get_editions_latest_fmv` comment, whose refuted text is quoted verbatim in the migration header.
+
 ### 2026-09-18 · ⚡ PACK HOLDINGS SYNC — ONE REQUEST PER WALLET, CONFIRMED ON THE NEXT TICK (was ~50 min), 1 h / 3 h freshness (was 12 h / 24 h) · Claude Code (cloud) for Trevor, "tighten that up"
 
 **One migration (applied), docs, CLAUDE.md lesson.** Fourth sitting.
