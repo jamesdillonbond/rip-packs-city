@@ -11,6 +11,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 📚 THE CHAIN-TWO CANON IS WRITTEN DOWN — and paying for it in CLAUDE.md surfaced a stale lock that had blocked `git add` on this box for 5½ hours · Cowork cloud
+
+**Docs only: `CLAUDE.md` + 4 reference docs (1 new). No code, no DB change.**
+
+⭐ **CLAUDE.md had ZERO mentions of base58, case-sensitivity or `.toLowerCase()`** — measured, not assumed — while the fold-and-prefix class produced **four live fabrications** today. It now carries a `### Chain two` footgun section beside the other CRITICAL footgun, plus three cross-cutting rules the day earned: **a fix to a ROUTE is not a fix to the SURFACE until its CALLER can reach it** · **a REGISTRY VALUE has no file of its own — grep the TEST TREE, not the files you edited** · **a test red on a changed PREMISE is a RE-PIN, and re-pinning the row is not enough — check the property is still EXERCISED.** The full instance list, and the rule that **the data path almost never needs a new arm — the GATE in front of it does**, went to `chain-strategy.md`.
+
+⚠ **PAID FOR, not appended.** CLAUDE.md's own guard requires **an addition to arrive paired with its displacement**, moving DATA and never judgement. Displaced: the **Reference index** → new `docs/reference/README.md`; the **command block** → `tooling-gotchas.md`; the **open-items snapshot** → `roadmap-status.md`. Each leaves a one-line pointer, and the two judgements inside the index (condensed-originals, schema-truth's stamp) stayed inline. Final: **39,986 of 40,000.**
+
+⛔ **THE MEASUREMENT TRAP IN THAT GUARD, and it bit: the limit is CHARACTERS as JavaScript counts them.** Python read 39,993 and the guard read 40,001 — an 8-unit gap, because astral emoji (🩸 U+1FA78, 🚨 U+1F6A8) are **two UTF-16 units each** and one Python code point. The guard has an arm asserting bytes ≠ chars on this file; it needs the third unit too. Swapping three astral emoji for BMP ones was most of the fix.
+
+🚨 **AND THE DOC PASS FOUND A LATENT BLOCKER NOTHING ELSE WOULD HAVE.** A guard that probes `git add --dry-run` failed — not on its property, but on `fatal: Unable to create '.git/index.lock': File exists`. **A 0-byte `.git/index.lock` from 17:24 PT had been orphaned for 5½ hours**, so every `git add`/`git commit` on this box was dead the whole session. ⭐ **It was invisible because the temp-index plumbing (`GIT_INDEX_FILE`) never touches `.git/index`** — the shipping path worked perfectly while the ordinary one was broken. `scripts/git-unstick-index-lock.mjs --check` called it STALE by all three discriminators (0 bytes · 0 git processes · frozen mtime across samples); cleared, plus an 11-day-old orphaned ref lock. ⚠ **The quarantined `.git/rpc-stale-locks/session-20260824/*` were LEFT** — they are preserved evidence, not live locks.
+
+⚠ **Two stray probe artifacts also cleaned** (`tmp-gitignore-probe/`, `docs/tmp-gitignore-probe*`): that guard creates and deletes its own probes, and its cleanup dies on this mount because deletes need approval. Untracked junk that a concurrent `git add -A` would have swept into a commit.
+
+⛔ **RE-SPLICED ONTO FRESH `origin/main`, NOT COMMITTED FROM DISK — and this was not theoretical.** A concurrent session had edited **CLAUDE.md** (condensing it to 39,974) and **`tooling-gotchas.md`** (a new push-recipe section) while I worked. Committing my disk copies would have silently reverted both. Every changed doc was rebuilt from `git show origin/main:<path>` and re-verified: **removed-from-remote = 0** on each, except the one Candy status line I deliberately replaced.
+
+**Verified after:** 7 doc/ledger guards green (58 tests) · `git add` works again on this box · `removed-from-remote` checked per file.
+
+- **Revert:** `git revert <sha>` (`git log --grep="CHAIN-TWO CANON IS WRITTEN DOWN"`). **No DB half.** ⚠ A revert puts CLAUDE.md back over the character limit only if the displacements are reverted without the additions — revert the whole commit, never half.
+
 ### 2026-09-19 · 🔴→🟢 MAIN RED ON `tsc`, AND THE COMPILER FOUND THREE MORE LIVE INSTANCES MY GREP HAD MISSED · Cowork cloud
 
 **Fix: 4 source files. No DB change.** Main was red from `b1341a692` until this commit — **`TypeScript` job only; every test job was green**, which is the point.

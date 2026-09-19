@@ -697,3 +697,12 @@ in `pinnacle_sales`** — querying the usual tables for all five returns NULL/0 
 ## Displaced from CLAUDE.md 2026-09-06 (verbatim; the self-link re-pointed to this file so the link guard resolves it)
 
 - **The one measured-but-unshipped DB fix is LOW-STAKES** (numbers: [roadmap-status.md](roadmap-status.md)). ⭐ Another stated blocker was itself a MEASUREMENT — **re-read a "blocked" item's blocker before inheriting it.**
+
+## Open items (moved verbatim from CLAUDE.md's "Prioritized next actions", 2026-09-19)
+
+**Open items, stated rather than quietly dropped:**
+
+- **sports-proxy `403` — ⛔ "PROXY ESPN" IS MEASURED DEAD** (#8).
+- `fmv-recalc` — wasteful, NOT broken, SIZED (it owns the DB's #1 reader): roadmap-status.md.
+- 🚨 **Needs TREVOR, not code — two:** the **credential-purge residue** (branch deleted 09-07; ask GitHub to **GC** the unreachable objects, **rotate regardless** — #22) · ⛔ **both 2-hourly Routines STILL DISABLED, no approval card — re-verified live 09-18, last fire 09-01, 17 days dead** (#55).
+- **GO-LIVE bars + blockers: [go-live-2026-09.md](../strategy/go-live-2026-09.md)** — verification gate DROPPED (#59), beacon LIVE (its "first real finding" was RETRACTED — a crawler, #69), **M1 53.1 / M2 28.7 mean, 27 legs to 09-18 (23/27 ≥50 · 6/27 ≥30) — READ THE SERIES (`rpc_trust_health_history`), NEVER A LEG; M2's blocker RELAXED (NFL season)** (#63, #64).

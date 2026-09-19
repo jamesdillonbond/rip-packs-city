@@ -1551,3 +1551,27 @@ npm test > /tmp/suite.log 2>&1; echo "FULL_SUITE=$?"   # no pipe, so $? is vites
 ⭐ **This sandbox CAN run the DB-invariant suite and the migration parse check.** `initdb`
 refuses to run as root, which is what makes it look impossible — run it as `postgres`. Full
 recipe and what it buys: [testing-and-ci.md](testing-and-ci.md).
+
+## Frequently used commands (moved verbatim from CLAUDE.md, 2026-09-19)
+
+Moved to pay for CLAUDE.md's chain-two section, per that file's rule that an addition arrives paired with its displacement. This is package.json data, not judgement.
+
+```bash
+npm ci                   # ⚠ RUN FIRST in a fresh sandbox — without it `npx vitest`/`tsc` die on
+                         #   `MODULE_NOT_FOUND … vitest.config.ts`, which reads like a broken config.
+npm run dev
+npx tsc --noEmit         # before deploying, esp. when Vercel is rate-limited.
+                         # ⭐ 2026-09-19: this DOES run in the laptop VM with
+                         #   NODE_OPTIONS=--max-old-space-size=3072 (exit 0, clean). It OOMs at the
+                         #   default heap, and writing it off as "CI will typecheck" is what put a
+                         #   compile error on main. ⚠ `tsc … | tail` reports TAIL's exit code —
+                         #   redirect to a file, or read ${PIPESTATUS[0]}.
+npm test                 # vitest run — route + lib suites (single file: npx vitest run <path>)
+npm run test:coverage    # primary gate (what CI ratchets on)
+npm run test:coverage:components   # component gate
+npm run test:coverage:workers      # workers gate
+npm run db:pins:check    # live DB-invariant pin drift (needs service-role key)
+npm run test:cadence     # extract inline Cadence + `flow cadence lint`
+git add -A && git commit -m "feat: ..." && git push origin main   # Git Bash (MINGW64) on Windows
+# Vercel redeploy / env writes — PowerShell Invoke-WebRequest ONLY; see below
+```

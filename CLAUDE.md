@@ -10,20 +10,7 @@
 
 ## Reference index
 
-All under `docs/reference/`:
-
-- **`key-files-and-honesty.md`** — largest and most-read. Key modules + the full honesty canon, leak guards, fabricated-number shapes, OG cards, Workers.
-- **`database.md`** — `editions` · `wmc` · `fmv_snapshots` · `sales`, role timeouts, PostgREST caps, `apply_migration` cost, security posture.
-- **`testing-and-ci.md`** — vitest layers, the 3 coverage gates + ratchets, DB-invariant SQL pins, mutation categories, CI jobs, Playwright.
-- **`known-issues.md`** — open/resolved register (stable item numbers), deferred hardening, deep-audit follow-ups.
-- **`cron-and-schedulers.md`** — the 4 schedulers, pg_cron mechanics, `pipeline_runs` retention + rollup traps, fleet health, saturation.
-- **`trust-board-and-safety.md`** — trust board (⚠ read its own "arm count drifts / 60 s timeout" caution first), precompute split, destructive-op breaker, cross-session coordination.
-- **`chain-strategy.md`** — multi-chain thesis, Candy/Solana + Panini readiness, chain-abstraction Phases A–F.
-- **`routes-and-surfaces.md`** — route structure, per-collection `pages`, API endpoints, search.
-- **`apis-and-cadence.md`** — Top Shot / All Day GraphQL, Flowty, Flow REST, the RPC FMV API, contracts, Cadence gotchas.
-- **`concierge.md`** · **`brand-auth-proxy.md`** · **`tooling-gotchas.md`** · **`packs.md`** · **`architecture-notes.md`** · **`ledger-discipline.md`** · **`autonomous-tasks.md`** · **`roadmap-status.md`** · **`session-and-archive-conventions.md`** · **`parallels-variants-data-model.md`** · **`revert-map-2026-07-25.md`**.
-- **`claude-md-condensed-originals.md`** — verbatim pre-restructure text of sections **shortened rather than moved**. ⚠ **Check here first if a detail seems missing.**
-- **`schema-truth.md`** — read from the live DB; **wins on any disagreement with prose — but only as fresh as its stamp** (no generator; read the stamp).
+**[docs/reference/README.md](docs/reference/README.md)** (moved 2026-09-19 — navigation data; every section below carries its own pointer). Two judgements stay here: ⚠ **`claude-md-condensed-originals.md` holds sections SHORTENED rather than moved — check there first if a detail seems missing**; **`schema-truth.md` wins over prose, but only as fresh as its stamp** (no generator — read it).
 
 ---
 
@@ -98,20 +85,8 @@ Never omit `teamId` on a Vercel API/MCP call.
 
 ## Frequently used commands
 
-```bash
-npm ci                   # ⚠ RUN FIRST in a fresh sandbox — without it `npx vitest`/`tsc` die on
-                         #   `MODULE_NOT_FOUND … vitest.config.ts`, which reads like a broken config.
-npm run dev
-npx tsc --noEmit         # before deploying, esp. when Vercel is rate-limited
-npm test                 # vitest run — route + lib suites (single file: npx vitest run <path>)
-npm run test:coverage    # primary gate (what CI ratchets on)
-npm run test:coverage:components   # component gate
-npm run test:coverage:workers      # workers gate
-npm run db:pins:check    # live DB-invariant pin drift (needs service-role key)
-npm run test:cadence     # extract inline Cadence + `flow cadence lint`
-git add -A && git commit -m "feat: ..." && git push origin main   # Git Bash (MINGW64) on Windows
-# Vercel redeploy / env writes — PowerShell Invoke-WebRequest ONLY; see tooling-gotchas.md
-```
+**List moved to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-19** (package.json data). ⚠ **`npm ci` FIRST in a fresh sandbox**, or `npx vitest`/`tsc` die on `MODULE_NOT_FOUND … vitest.config.ts` — reads like a broken config. ⭐ **`tsc --noEmit` DOES run in the laptop VM** with `--max-old-space-size=3072`; it OOMs at the default heap, and writing that off as "CI will typecheck" put a compile error on `main` (09-19).
+
 
 ⚠ **A pipe reports the LAST command's exit code** (`… | tail -5 && echo $?` printed `EXIT=0` with no `node_modules`) — read `${PIPESTATUS[0]}`. ⚠ **`grep <log> && git push` gates on grep FINDING a line, not on the run PASSING** (pushed a red suite 09-04). Branch on the EXIT value. ⚠ **A background-task notification's `exit code 0` is the WRAPPER's, not the command's.**
 
@@ -151,6 +126,8 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - ⚠ **Ask what a passing guard is structurally SILENT about — its DERIVATION fixes its blast radius, and its ROOT *and stated CLASS* are CLAIMS** (see testing-and-ci.md). **Prefer a tree walk over a curated list and a ban at zero over an allowlist; make *suppression* the curated list; assert an exclusion at the PROPERTY's granularity — and assert that a SECOND root CONTRIBUTES.** ⚠ **A control's POPULATION must be the set the property is TRUE of, not a proxy that coincides today** — a proxy expires silently. ⛔ **An AGGREGATE is never a proxy for the SLICE you measured** (98.1% all-visible, yet 42% heap fetches on the index’s first 0.23% — R109). ⛔ **A pin RE-DERIVED FROM THE OBSERVED STATE can never disagree with reality**: assert the DELTA it stood in for.
 - ⚠ **A vacuous assertion reads as coverage everywhere, and mutation testing cannot find the worst kind** — **a test stating the contract in a comment and asserting something weaker.** The tell is the TITLE: a name carrying a negative claim or a transformation is a promise the assertion usually fails to keep. **Assert the ABSENCE of the false claim, not the PRESENCE of an error message.**
 - ⚠ **Grep for the guards that READ a file before you EDIT it** — a pinned exemption reddened main (08-22).
+- ⛔ **A REGISTRY VALUE has no file of its own — grep the TEST TREE for it, not the files you edited.** One tab added to `lib/collections.ts` reddened two guards in files never opened, both keyed on `getCollection(…).pages`; main was red 11 minutes. `grep -rl <collection> __tests__` costs seconds, BEFORE the push.
+- ⚠ **A test red because its PREMISE changed is a RE-PIN, not an inversion** — the code was fine. ⛔ **But re-pinning the row is not enough: check the property is still EXERCISED.** Once every collection had the tab, a hardcoded path passed every row; the arm had to be kept alive by a subject that genuinely lacks it.
 - ⚠ **Tests that pin the defect they were named to prevent get INVERTED, never deleted** — a passing test asserting a promise is what holds that promise in place. **Pin the property, not the spelling**.
 - ⚠ **A not-vacuous check must be satisfiable at a population of ZERO**, or the guard punishes its own success. Same for a guard that NAMES its instances — three have died on a rename. ⚠ **Strip comments before grepping source — with `scripts/lib/strip-comments.mjs`, NEVER a fresh copy.** **Still prefer a check that does not NEED it right** (`copyOf`).
 - ⚠ **FIXING A GUARD WITHOUT FIXING ITS RECORD leaves the incidence unmeasurable** — fix the guard AND the field an observer keys on (testing-and-ci.md).
@@ -164,6 +141,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 
 - ⚠ **A filed FINDING is a hypothesis — re-derive what it measured before acting** (several refuted). ⚠ **So is a filed DECISION NOT TO ACT, and that is the one nobody re-checks — the tell is a cost stated with no number in it.** ⚠ **A WEAK reason CROWDS OUT the strong one and becomes PERMISSION when it dissolves.** ⚠ **A freshness STAMP is not a RATE, and a candidate its own NO-CHANGE CONTROL outperforms is not shown to work** — a stale `max(ingested_at)` read as “zero output” shipped a cadence change reverted 6 h later. ⚠ **Re-TEST a stated exit condition, never re-read it** — a "once cleared" 114 was 5.
 - ⚠ **A plausible mechanism is not a measurement**, including when it flatters this file — a cheap sample beats a good story. ⚠ **And a probe whose HARNESS differs from production in the ONE dimension the answer depends on is not a measurement of production**: with **no `fonts`** supplied, `→` cost no fetch; production always passes `brandFonts()`, where it does.
+- ⛔ **A FIX TO A ROUTE IS NOT A FIX TO THE SURFACE until its CALLER can reach it.** `/api/wallet/edition-counts` was repaired and **verified live (0 → 5)** while the client that renders it still returned early on `!ownerKey.startsWith("0x")` — the column stayed empty all day and **no route-level test could have caught it**.
 - ⚠ **Name the caller before you touch the function** — an afternoon went into one with **zero** callers. **EIGHT sources, and the last two are INVISIBLE from a sandbox**; a TRIGGER function has no textual caller. ⚠ **A TABLE’s WRITERS the same — grep the DB: two pg_cron ones REFUTED a filed finding (#81).** Full list: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
 - ⚠ **Read `cron.job.command` to learn what a schedule calls; never infer the callee from the name** — two objects one suffix apart yielded *opposite* conclusions.
 - ⚠ **A directional claim needs a DISTRIBUTION, not a snapshot; a delta between two STOCKS is neither a rate nor a sign; `max()` on a `text` cursor is lexicographic.**
@@ -234,6 +212,15 @@ Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes
 
 ⚠ **That CHECK is on `flowty_transactions` ONLY** (verified live 08-22), so `'ufc_strike'` fails LOUDLY there and persists SILENTLY in the other two, where it never matches. Bridge: the `analytics_sales` view (long → short via CASE).
 
+### Chain two — a Solana address is not a Flow address with different characters (CRITICAL footgun)
+
+Flow/EVM: hex, `0x`-prefixed, **case-INsensitive**. Solana: **base58, un-prefixed, CASE-SENSITIVE** (no `0`/`O`/`I`/`l`). So this repo's two reflexes — `.toLowerCase()` and *prepend `0x` if missing* — do not normalise a Candy key, they **destroy** it. ⚠ **And it fails SILENTLY IN THE WRONG DIRECTION: the read returns zero rows, which renders as "this wallet holds nothing."**
+
+- **Use [lib/address.ts](lib/address.ts) — never a bare `.toLowerCase()`, and never a fresh helper** (a grep found TEN truncation helpers already). Which function for which job: [chain-strategy.md](docs/reference/chain-strategy.md).
+- ⛔ **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(k,"flow")` demands exactly 16 hex — **stricter** than the `startsWith("0x")` it looks like a drop-in for. **Pin the hex path as its own no-change arm**, or the Solana assertions are satisfied by a function that changed every Flow label in the product.
+- ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence** — the worst 4 were **HREFs** on live pages, sending readers to an analyzer that resolved nothing: an empty wallet. ⚠ **A sweep is only as wide as its PATH ARGUMENT**, and `tsc` is a REACHABILITY instrument: deleting the variable finds its other readers.
+- ⚠ **A per-device identity key must be chain-scoped, and the sweep that clears it on sign-out / account-switch must be by PREFIX** — an exact-name list left the other chain's key for the next collector on that browser.
+
 ### Collection UUIDs
 
 All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-truth.md) — ⚠ **09-08: Candy MLB (`solana`) is `is_active=true` (#63); Panini (`ethereum`) is the ONLY inactive row.**
@@ -286,12 +273,7 @@ The rest: [concierge.md](docs/reference/concierge.md).
 
 **The canonical forward plan is [docs/strategy/roadmap-2026-08-03.md](docs/strategy/roadmap-2026-08-03.md).** Thesis: **accuracy is the GATE, not a phase** — growth tactics stay removed until the data beats the sites collectors already use; headline metric is the share of prices at HIGH/MEDIUM confidence. Still binding: **intelligence-first**; Cart / Trade Hub / gifting removed (**read-only product**); **monetization tabled until 50+ weekly active users**; no infra spend pre-revenue.
 
-**Open items, stated rather than quietly dropped:**
-
-- **sports-proxy `403` — ⛔ "PROXY ESPN" IS MEASURED DEAD** (#8).
-- `fmv-recalc` — wasteful, NOT broken, SIZED (it owns the DB's #1 reader): roadmap-status.md.
-- 🚨 **Needs TREVOR, not code — two:** the **credential-purge residue** (branch deleted 09-07; ask GitHub to **GC** the unreachable objects, **rotate regardless** — #22) · ⛔ **both 2-hourly Routines STILL DISABLED, no approval card — re-verified live 09-18, last fire 09-01, 17 days dead** (#55).
-- **GO-LIVE bars + blockers: [go-live-2026-09.md](docs/strategy/go-live-2026-09.md)** — verification gate DROPPED (#59), beacon LIVE (its "first real finding" was RETRACTED — a crawler, #69), **M1 53.1 / M2 28.7 mean, 27 legs to 09-18 (23/27 ≥50 · 6/27 ≥30) — READ THE SERIES (`rpc_trust_health_history`), NEVER A LEG; M2's blocker RELAXED (NFL season)** (#63, #64).
+**Open items** — dated snapshot moved to [roadmap-status.md](docs/reference/roadmap-status.md) 2026-09-19 (status data; goes stale by nature). ⚠ **Two need TREVOR, not code:** the credential-purge residue (#22) and both 2-hourly Routines still disabled (#55).
 
 Full status + accuracy measurements: [docs/reference/roadmap-status.md](docs/reference/roadmap-status.md). Issue register: [docs/reference/known-issues.md](docs/reference/known-issues.md).
 
