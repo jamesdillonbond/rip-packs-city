@@ -10,6 +10,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🎯 WHY THE ATLAS LISTING TICK SITS ON ITS 120 s CEILING: ~29 s of every tick is TWO DIAGNOSTIC COUNTERS scanning a 339,661-row stale backlog the lane clears at 2 per tick · Cowork cloud
+
+**READ-ONLY. Nothing shipped — every fix changes a pinned payload or mutates 339k rows, and both are Trevor's call, not mine.** ⭐ **Four hypotheses died on measurement before this one; the dead ones are recorded because each would have been a wasted, risky ship.**
+
+📏 **THE COST SPLIT, measured with `EXPLAIN (ANALYZE, BUFFERS)` on the REAL statements** (against the tick's own `pipeline_runs.extra`: total **93,705 ms**, `sync` leg **55,316 ms**):
+
+| statement | time | buffers | what it returns |
+|---|---|---|---|
+| `v_unverified` count (open nba listings **older than 24 h**) | **18,869 ms** | ~189 MB, 339,660 rows | one number in a JSON payload |
+| `v_unmapped` count (open nba listings with no edition map) | **9,742 ms** | ~344 MB, 396,542 rows | **`0` — and it has been 0** |
+| **the two diagnostics together** | **~28.6 s** | **~533 MB** | **~52 % of the `sync` leg, ~31 % of the whole tick** |
+| `_open24` (the real base scan) | ~12 s | ~364 MB | the actual working set |
+
+⭐⭐ **AND THE ROOT CAUSE BEHIND BOTH COUNTS: a stale backlog SIX TIMES the working set.** `product='nba' AND kind='listing' AND NOT completed` splits **339,661 older than 24 h** against **56,881 fresh**; the oldest open listing dates to **2026-09-12**. 🚨 **The lane's own cleaner is `atlas_listing_verify_tick(2)` — it dispatches TWO verifies per tick: 60/hour, 1,440/day. At that rate draining 339,661 takes ~236 DAYS**, so the pile only grows, and every tick pays ~29 s to count it.
+
+⛔ **FOUR HYPOTHESES KILLED BY MEASUREMENT — do not re-run these:**
+1. ⛔ **"R108's partial-index pattern transfers."** No: the base scan **already** uses `idx_tame_open_listing_by_seen` with a clean Index Cond. There is no seq scan to remove.
+2. ⛔ **"The temp tables lack an index/ANALYZE, so the `DELETE … NOT EXISTS` anti-join is slow."** **MEASURED AT 47.8 ms.** The planner picks a Hash Right Anti Join, which is correct, and exact row counts barely matter for a full-table hash join. ⭐ **I was one step from a `CREATE OR REPLACE` on a pinned public-board function, racing another session, for a fix worth 47 milliseconds.**
+3. ⛔ **"Stats are stale."** Autoanalyzed 06:59 PT, 1.2 % modified, scale factors already 0.02. (The planner still estimates 14,397 against 56,145 actual — correlated-predicate estimation, a `CREATE STATISTICS` candidate, not staleness.)
+4. ⛔ **"The scan is duplicated across the three sync functions."** Only `sync_ts_listings_from_atlas` builds `_open24`; the other two carry a `to_regclass` reuse guard. Already deduplicated.
+
+👉 **THREE FIXES, none shippable by me, in rough order of attractiveness:**
+- **(a) Drain the backlog** — raise `atlas_listing_verify_tick(p_max)` above 2, or settle week-old unverified listings in bulk. ⭐ Collapses BOTH counts at once and fixes the cause rather than the symptom. ⚠ **The dispatch makes outbound Atlas probes, so raising it is a RATE/SPEND decision**, and a bulk settle is a 339k-row mutation on a table feeding a public board — **destructive-SQL class, explicitly off-limits unsupervised.**
+- **(b) Bound `v_unmapped` to the same 24 h window the rest of the function uses.** It currently counts a population the function never acts on (the wanted set IS 24 h-bounded). Cheap, and arguably a latent bug — ⚠ but it CHANGES a documented return value.
+- **(c) Compute the diagnostics every Nth tick.** Cheapest to implement, ⚠ also changes the payload.
+- ⛔ **An index cannot fix either count: 339,660 matching index entries IS the answer-set size.**
+
+⚠ **ALL THREE TOUCH `sync_ts_listings_from_atlas`, WHICH IS PINNED BYTE-IDENTICALLY** (`supabase/tests/sync_ts_listings_from_atlas.sql`, guarded by `__tests__/db-invariants-drift-guard.test.ts`, and the pin explicitly asserts *"the return payload counts rows / unverified / unmapped"*). **Another session rewrote that body at 15:28Z today (R101 v2).** 🚨 **A `CREATE OR REPLACE` is a FULL-BODY WRITE — two sessions drafting one against the same object is how one silently reverts the other.**
+
+- **Revert:** nothing to revert; no change made. · **Owed:** R101 v2 is still **not shown to work** (75.0 % fail on n=16 post vs 62.5 % pre, p50 pinned at 120 s both sides, controls flat) — **re-run that split at n ≥ 40.** 👉 **Whoever takes this should start with (a): it is the only one that fixes the cause, and it makes (b) and (c) unnecessary.**
+
+
 ### 2026-09-19 · ⚠️ R101 v2 HAS NOT FIXED THE ATLAS LISTING TICK — 26 minutes and 12 ticks in, the lane is at 83.3 % failure against 56.6 % before, with both controls flat · Cowork cloud
 
 **READ-ONLY. Nothing shipped into this lane by me — this is a measurement on ANOTHER session's change, filed before anyone records it as fixed.** Change point **15:28:24Z** (migration `20260919152824`, commit `6ba6b3c58`).
