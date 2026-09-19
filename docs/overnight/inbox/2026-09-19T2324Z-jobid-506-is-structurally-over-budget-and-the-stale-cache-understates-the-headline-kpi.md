@@ -1,6 +1,6 @@
 # RPC — candidate filing (CORRECTED): jobid 506 is structurally over budget — and its staleness reaches ONE INTERNAL INSTRUMENT, not the headline KPI I first claimed
 
-> ⚠ **Self-correction (see §5).** The first push of this file claimed the stale cache under-reports the roadmap headline KPI by ~6 points. **It does not** — nothing user-facing reads the table. The cost measurements in §1–§4 are unaffected. ⚠ **The filename still carries the retracted claim**; it is kept because `docs/overnight/inbox/` is append-only and filings are permanent citation targets.
+> ⚠ **TWO self-corrections, both against my own first push.** (1) **§5** — it claimed the stale cache under-reports the roadmap headline KPI by ~6 points. **It does not**; nothing user-facing reads the table. (2) **§4** — the loose-index-scan candidate it proposed is **WITHDRAWN**, having failed the very cold-start control that version said it still owed. **§1–§3 are direct measurements and are unaffected; what survives is a well-measured problem and NO accepted fix.** ⚠ **The filename still carries the retracted claim**; it is kept because `docs/overnight/inbox/` is append-only and filings are permanent citation targets.
 
 **Run:** 2026-09-19 4:24 PM PT (23:24Z) · Claude Code, Windows box · **READ-ONLY, nothing shipped.** · quiet window (io_wait 0 / active 1 / 17 conns), which is what made the measurement possible
 **Follows:** `2026-09-19T2106Z.md` — specifically its **Candidate 2**. ⚠ That file has since been CORRECTED by its own author: the `trust_precompute_max_age_hours` breach it originally pinned on 506 is written by **jobid 324** (`rpc-thp-leg-impossible-parallel`), not by 506. **This filing is about jobid 506 only**, which that correction keeps as a real but separate, smaller issue. It measures it and **kills the obvious fix**.
@@ -62,7 +62,20 @@ A skip-scan (recursive walk of distinct `edition_id`, then one `ORDER BY compute
 
 ⛔ **On BUFFERS — the metric CLAUDE.md says to compare — the candidate is 3.4× WORSE.** It wins only because its 216k buffer touches are all *hits* against a tiny working set, while the incumbent's smaller total includes 13k *physical reads* it must pay on every single run. **On an IO-bound instance the reads are the cost and the hits are cheap CPU — but that is a reasoned trade, not a measured win, and quoting "18× faster" would be quoting a timing.**
 
-👉 **STILL OWED BEFORE THIS SHIPS:** a **cold-start control** for the candidate. Its 0 reads were measured immediately after a full scan had warmed the cache; the claim that its working set *stays* resident has NOT been demonstrated from cold. ⚠ It also multiplies per-edition round trips, so it degrades differently under concurrency than the incumbent does.
+👉 **COLD-START CONTROL RUN 2026-09-19 16:4x PT — ⛔ THE CANDIDATE FAILS IT. I am withdrawing it.**
+
+The 0 reads above were measured immediately after a full scan had warmed the cache. Re-measured on **`nfl_all_day`**, a collection untouched all session (same shape: 6,189 editions from 471,075 snapshots, 76:1), running the **candidate FIRST while genuinely cold** and the incumbent second — an order that **favours the incumbent's cache state and still flatters the candidate's**:
+
+| on `nfl_all_day` | total buffers | physical reads | exec |
+|---|---|---|---|
+| **loose index scan (COLD, ran first)** | **92,498** | **9,913** | 3,246 ms |
+| DISTINCT ON (ran second, partly warm) | **29,018** | **5,791** | 3,307 ms |
+
+⛔ **Cold, the candidate reads MORE (9,913 vs 5,791), touches 3.2× more buffers, and is not faster (3.25 s vs 3.31 s).** Its whole case was that its working set stays resident; **from cold it does not.**
+
+⭐ **And the decisive number is ORDER-INDEPENDENT, which is why this is a conclusion and not another confounded reading.** Buffer *touches* are the same pages whichever runs first — cache state moves the hit/read split, never the total. That total is **3.2× worse on NFL (92,498 vs 29,018) and 3.4× worse on Top Shot (216,403 vs 63,753)** — the same ratio on both collections, measured in opposite cache states. **The incumbent does strictly less work; it just pays for more of it in physical IO.**
+
+⚠ **CLAUDE.md's "compare BUFFERS, never timings" called this correctly from the first measurement and I nearly talked myself past it** on an 18× timing that was pure cache. The rule earned its place again.
 
 ## 5 — 🔁 RETRACTED: the staleness reaches ONE INTERNAL INSTRUMENT, not the roadmap's headline KPI
 
@@ -81,11 +94,13 @@ A skip-scan (recursive walk of distinct `edition_id`, then one `ORDER BY compute
 
 ⭐ **The lesson, which is the durable part:** the cost measurements in §1–§4 were direct and survive intact; the *consequence* sentence was inherited from the framing of the filing I was following up, and I did not re-derive it. **`grep` the repo AND the DB for readers before stating what a stale cache costs** — here the two disagreed with my assumption in the same direction, and the whole claim rested on it.
 
-## 6 — Suggested action (SUPERVISED; ⛔ not auto-shippable)
+## 6 — Suggested action (SUPERVISED; ⛔ nothing here is auto-shippable)
 
-- **Do NOT** point this at `edition_fmv_current` (§3).
-- **Do NOT** simply move 506 to `cron_heavy`/600 s: it treats the symptom, holds a worker slot up to 10 min, and the estate already runs **32 concurrent pg_cron jobs against 6 worker slots** (filing `2026-09-19T…-pg-cron-32-concurrent`). It also lets the amplification keep growing silently.
-- **Preferred:** rewrite `sentinel_fmv_confidence_rows` to the §4 skip-scan **after** the cold-start control, or give the precompute a per-collection watermark so Top Shot is not recomputed from all history every 4 h.
-- ⚠ **Whatever ships, the arm to watch is Top Shot's `duration_ms`, not the function's total** — the total hides which arm moved.
+- ⛔ **Do NOT** point this at `edition_fmv_current` (§3) — unchanged, that remains forbidden in writing.
+- ⛔ **Do NOT** ship the loose index scan (§4) — **withdrawn on its own cold-start control.**
+- 🔁 **CORRECTION to this filing's first version: my objection to `cron_heavy` was overstated.** I wrote that it "holds a worker slot up to 10 min". ⚠ **But a FAILING run already holds that slot for the full 120 s and produces nothing** — the job's duration is what it is (~118 s when healthy), and raising the ceiling converts a guillotined failure into a completed run rather than lengthening a healthy one. The real residual risk is narrower and should be stated as such: **under an IO spell the run could stretch toward 600 s**, on an estate already scheduling 32 concurrent pg_cron jobs against 6 worker slots.
+- 🚨 **AND IT HAS A PRECONDITION THAT FAILS AS SILENCE — verified, do not skip it.** `has_function_privilege('cron_heavy', 'public.refresh_fmv_confidence_precompute()', 'EXECUTE')` is **FALSE**, as is EXECUTE on the inner `sentinel_fmv_confidence_rows(uuid)`. **SECURITY DEFINER is what the function RUNS AS, not who may CALL it.** Moving jobid 506 to `cron_heavy` without a `GRANT EXECUTE` **in the same migration** produces a job that keeps getting dispatched, shows the failure only in `cron.job_run_details`, and **never writes a `pipeline_runs` row** — i.e. it looks like the lane simply stopped. This is the documented orphaned-caller trap; it is one line to avoid and invisible to hit.
+- ⭐ **The structurally right fix remains the one nobody has costed: stop recomputing Top Shot from all history every 4 h.** A per-collection watermark, or splitting the Top Shot arm onto its own schedule so one 100.8 s arm is not sharing a 120 s budget with four arms worth 17.5 s. ⚠ Splitting needs a parameterised entry point — the function takes no arguments and loops all five internally.
+- ⚠ **Whatever ships, watch Top Shot's `duration_ms`, not the function total** — the total hides which arm moved.
 
 **Not-candidates (recorded so they are not re-raised):** `disney_pinnacle` counts `{}` with `duration_ms: 5` is **not** an error — Pinnacle FMV is keyed on the (`character_name`,`set_name`,`variant_type`) triple and has no `fmv_snapshots` rows under this collection_id; it is a genuine absence, though ⚠ `coalesce(…, '{}')` means a real read failure would be indistinguishable from it, which is worth its own look. `detect_stalled_pipelines()` read **[]** at 23:20Z — no stalled pipelines estate-wide.
