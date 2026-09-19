@@ -10,6 +10,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🚨 A CONTROL FOR TONIGHT'S ATLAS FIX — the #122 outage made the lane look HEALTHY for six hours by stopping it working, and the improvement started TWO HOURS BEFORE the migration · Claude Code cloud
+
+**Docs-only, READ-ONLY. A control for another session's fix, NOT a challenge to it** — ⛔ **R101 is their row and was worked under an hour ago, so it was not touched** (claim convention, added today).
+
+**How it came up:** attributing R29's refuted class. `statement timeout` is now **2,142 of 3,110** pg_cron failures (68.9%), and it is **not fleet-wide**: `rpc-ts-listings-atlas-sync` **1,231 (57.5% of the entire class)**, `rpc-allday-unmapped-atlas-resolver` **359 (16.8%)**, `rpc-atlas-market-drain` **289 (13.5%)**. ⭐ **Three Atlas lanes are 87.7% of every statement timeout in the fleet** — which is a different problem from the worker-starvation one R29 describes, and worth stating plainly now that R29's headline is gone.
+
+The top lane is R101's subject, and `388dc4783` (autovacuum 0.2/0.1 → 0.02/0.02 on `topshot_atlas_market_events`) shipped for it tonight with a falsifier to be tested at 24 h. **Three things make the window it will be measured against invalid:**
+
+1. ⛔ **THE LANE HAS NO QUIET HOUR.** 7 days, hour-of-day, excluding the last 14 h: timeouts **7.2%–55.2% in EVERY hour**, avg **25–85 s** (worst 18:00Z at 55.2% / 84.6 s). **Zero-timeout hours were never normal here**, so "no timeouts since the fix" is easy to over-read.
+2. 🚨 **TODAY 13:00–19:00Z IS CONTAMINATED AND MUST BE EXCLUDED.** Those six hours read **0 timeouts at 2.1–3.5 s average** — and that is **not the lane going fast, it is the lane NOT DOING ITS WORK.** #122 was an **outbound-path** failure while Postgres kept serving, so a lane that calls out short-circuits in ~3 s instead of paying its 25–85 s. ⭐ **"0 timeouts, 3 s average" is the signature of a BROKEN lane, not a healthy one** — and six consecutive such hours sit immediately before this fix.
+3. ⛔ **THE GAIN PRE-DATES THE FIX BY 2 h 07 m.** Migration applied **6:13 PM PT**, first autovacuum under the new setting **6:15 PM PT** (`pg_stat_user_tables`: **`vacuum_count = 0`, `last_vacuum` NULL** — so no manual vacuum was ever run and the autovacuum is the only candidate). **The lane's last statement timeout was 4:06 PM PT**, and 20:00–21:00Z had already gone **60 consecutive ticks clean at 12.8–13.0 s against a 40.0% / 71.4 s baseline.**
+
+⚠ **Post-fix evidence is ~14 ticks over ~13 minutes and shows NO step change yet:** the 01:00Z hour reads **0 timeouts / 21.7 s** against the **PRE-fix** 00:00Z hour's **0 / 18.4 s**. Indistinguishable on the production-caller signal so far.
+
+⛔ **NONE OF THIS SAYS THE FIX IS WRONG.** Thirteen minutes proves nothing either way and the mechanism is well evidenced (117,758 Heap Fetches on an index-only scan is the registered tell for a rotted visibility map). ⭐ **It says the exit number needs a baseline that excludes the outage window, and that "timeouts since apply = 0" would over-credit it.**
+
+**Amended falsifier proposed in the filing:** exclude 13:00–19:00Z · compare **hour-of-day to hour-of-day**, never a pooled mean (the baseline swings 7.2 → 55.2 across the day) · carry **`avg_secs` beside the count**, because a timeout count is CENSORED — it only fires at the cap, and duration would have shown the 20:00Z improvement two hours before the fix landed · and take the **no-change control the fix cannot move**: `rpc-allday-unmapped-atlas-resolver` reads a different table and is untouched, so if it improves in the same proportion the gain is not this fix.
+
+**Files:** `docs/overnight/inbox/2026-09-19T0130Z-…-falsifier-should-say-so.md` (new) · `docs/overnight/inbox/INDEX.md` (entry + counts, 514 → 515).
+
+**Revert path:** `git revert <sha>` — docs-only, no DB half, nothing deployed.
+
 ### 2026-09-18 · 🎯 R103 RE-DERIVED — the number is right and the conclusion is wrong: the ask-corroboration bound reads a stamp that stopped meaning "confirmed", and 4,561 of 4,561 past-bound Top Shot asks are confirmed LIVE · Cowork cloud
 
 **One DB COMMENT shipped. Nothing in the pricing path changed — deliberately, and the reason is below rather than implied.**
