@@ -10,6 +10,58 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · ✅ SHIPPED (prod: table + function + sentinel arm) — R110's exit condition: an edge-function lane nobody watches now SAYS SO · Cowork cloud
+
+**Closes the hole this morning's 6-day pack-sales outage went through.** Five of the twelve active cron jobs POSTing to `/functions/v1/` write **no `pipeline_runs` row**, and every sentinel pipeline arm is scoped to `pipeline_cadence_watchlist` over `pipeline_runs` — so those lanes are out of scope **BY CONSTRUCTION**. No watchlist edit could ever have reached them.
+
+⭐ **THE SHAPE IS A BAN AT ZERO, NOT AN ALLOWLIST OF PROBLEMS.** `check_edge_lane_observability()` reads `cron.job` DIRECTLY and reports any active edge-function job absent from `edge_lane_watch`. **A new edge lane is UNOBSERVED-BY-DEFAULT and announces itself** — which is precisely the property whose absence let the outage run six days: nothing anywhere knew the lane existed.
+
+**The registry records HOW each lane is observed**, so "covered elsewhere" is a reviewable claim rather than an omission: `outcome_freshness` (table/column/age bound, checked here) · `pipeline_runs` (covered by the arms above under a NAMED pipeline) · `none` (nothing watches it; reported, never counted clean).
+
+⚠ **`observed_via = 'pipeline_runs'` IS A CLAIM ABOUT ANOTHER INSTRUMENT, so the check VERIFIES it rather than trusting it** — CLAUDE.md's rule that "an exclusion justified by ANOTHER instrument is a claim about it". Each such row must NAME its pipeline (a CHECK constraint enforces it), and a lane whose claimed coverage has written nothing inside `pipeline_runs`' ~73 h retention is reported as stale.
+
+📏 **First clean reading: inspected 12 · unregistered 0 · stale 0 · fresh 10 · unchecked 2.** ⭐ **The first run reported `unregistered_count: 7` — correct by its own rule and USELESS as a signal**, because those seven do write `pipeline_runs`. Flagging them beside a genuinely blind lane buries the one that matters; `observed_via` is the fix, and the ban survives intact.
+
+⭐ **MUTATION-TESTED BOTH BRANCHES ON PROD, then restored:** deactivating one registry row surfaced that exact lane in `unregistered`; setting an impossible `max_age_hours` surfaced it in `stale` at `age_hours 3.0`.
+
+⚠ **Two lanes are `unchecked` BY DESIGN and the arm states them WITHOUT paging** — `rpc-allday-dist-opened-backfill` (info: a completed backfill whose head a live forward lane carries) and `rpc-allday-resolve-rip-dist-api` (warn: **its outcome table is not identified, which is the remaining open work on R110**). ⭐ **Escalating on `unchecked` would make the arm permanently amber — the exact failure mode that makes this estate's alarms unreadable — so a standing gap is STATED, not paged.** Pinned by a test.
+
+⚠ **`inspected: 0` is UNMEASURED, not clean** (a rebuilt database or a renamed job set): a verdict from zero lanes is not a verdict, and the arm says so.
+
+⚠ **Injection surface closed deliberately:** the registry holds table/column NAMES only and the dynamic SQL is `format('%I')` on identifiers. **A column holding an executable predicate inside a SECURITY DEFINER function would be an injection hole**, which is why `outcome_table`/`outcome_column`/`max_age_hours` are all-or-nothing under a CHECK constraint.
+
+**Shipped:** migrations `20260919181832` (table + first function), `20260919181934` (`observed_via`/`pipeline_name` + current function), `20260919182000` (registry seed, idempotent); sentinel arm **Edge Lane Observability** with 7 tests, **mutation-verified** (removing `unreg.length` from the severity sum fails the unregistered test).
+
+**Security:** RLS ON, anon/authenticated revoked, `check_secdef_anon_exec_drift()` **0**, `check_public_security_invariants()` **0 rows**.
+
+**Revert:** `git revert` the code commit, then `DROP FUNCTION public.check_edge_lane_observability(); DROP TABLE public.edge_lane_watch;`
+
+### 2026-09-19 · ⚠️ RETRACTED (my own filing, same day) — the "threshold-vs-cadence" side-finding was WRONG IN BOTH HALVES, and chasing it found a real declining lane · Cowork cloud
+
+**I filed this 25 minutes earlier as a cheap, obvious fix. It measured out wrong twice, and the second wrong turn is the useful one.**
+
+⛔ **HALF ONE RETRACTED — "a DAILY zero-yield lane cannot trigger the `Zero-Yield Lanes` arm because its population needs ≥50 runs."** The floor is real (`check_zero_yield_lanes(p_baseline_days, p_zero_days, p_min_runs DEFAULT 50)`), but **the lane I cited as its victim would not qualify anyway, for a different and CORRECT reason.**
+
+📏 **Swept the floor rather than arguing about it — offenders at `p_min_runs` = 50 / 30 / 20 / 10 / 5: `1, 2, 2, 2, 2`.** Lowering it adds **exactly one** lane and then nothing. ⭐ **And that one lane is `topshot-dupe-sales-watch` (31 runs, 1 baseline find) — a WATCH lane, for which finding nothing is the DESIRED outcome. Lowering the floor would add a false positive, not a true one.**
+
+⭐ **`match-topshot-players` does not appear even at `p_min_runs = 5`, and the reason kills my premise: it is NOT zero-yield by the arm's definition. Over 30 days it ran 31 times and found 15,683 rows — it simply WROTE 0.** Finding 15,683 and writing 0 is the plausible steady state of a matcher whose candidates are already matched. **The arm's predicate is "found nothing", and this lane finds plenty. It was never in scope, and the ≥50 floor is not why.** ⛔ **Do not lower `p_min_runs`.**
+
+⛔ **HALF TWO RETRACTED, AND THIS ONE MATTERS — "`Pipeline Silence` flagging `topshot-active-listings-ingest` silent 952m (>900m) is a threshold-vs-cadence artifact on a lane that is merely irregular."** **It is not an artifact. The arm is right and I was wrong.**
+
+🚨 **THE LANE IS IN REAL DECLINE**, from `pipeline_runs_daily`:
+
+| day | 09-07 | 09-08 | 09-09 | 09-10 | 09-11 | 09-12 | 09-13 | 09-14 | 09-15 | 09-16 | 09-17 | 09-18 | 09-19 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| runs | **8** | 4 | 3 | 3 | 3 | 2 | 4 | 2 | **absent** | 1 | 1 | 1 | **1** |
+
+**8/day → 1/day in twelve days, with 09-15 missing entirely — and every run `ok`.** ⭐ **The tell I nearly explained away: `duration_ms_avg` is 1,075,776–1,403,533 ms — EIGHTEEN TO TWENTY-THREE MINUTES per run.** A lane whose ticks take 20 minutes on an IO-saturated box fits fewer of them into a day, so the cadence decays as a *symptom* of the saturation rather than of a scheduler fault. `Pipeline Silence` is reporting exactly that, and my "raise its `max_silent_minutes`" instinct would have **silenced a real degradation to make a warning go away.**
+
+⭐ **THE LESSON, and it is the one CLAUDE.md already states: a threshold that looks mismatched to a cadence may be reporting that THE CADENCE MOVED.** I reached for the config row before reading the lane's own history. The 21-day history was one query away and it reversed the conclusion.
+
+ⓘ **Filed, not fixed:** `topshot-active-listings-ingest` at 1 run/day and ~20 min/run is a new open item — nothing here establishes whether 1/day is sufficient for active-listing freshness, or what the lane's intended cadence is. That is the next question, and it is NOT a threshold question.
+
+**Nothing shipped. Revert: n/a.** The earlier filing `2026-09-19T1715Z-…` has been corrected in place rather than deleted, per the inbox's no-clobber rule.
+
 ### 2026-09-19 · 🔧 MAIN WAS RED ~35 MIN — a concurrent commit (`14f38e53c`) wrote `db-invariants-drift-guard.test.ts` from a STALE COPY and silently reverted the two R101 v2 PINS entries · Cowork cloud + laptop VM
 
 **What:** `14f38e53c` (10:5x AM PT, the Candy `resolve_moment_id` fix) added its own PINS entry correctly but carried the whole file from a copy older than `6ba6b3c58` (8:28 AM), so `sync_ts_listings_from_atlas` and `sync_edition_offers_from_atlas` were pointed back at the 09-18 revert migration `20260919021449` while their SQL copies (untouched) still hold the v2 bodies. The drift guard failed both (`byte-identical (normalized) to its migration`), so every CI run on main from `14f38e5` through `f4e8184` is red, and the docs-only `Inherited main status` job inherits it. **Live DB is unaffected** — the v2 bodies are what runs (md5 re-verified 9:4x AM). **Fix:** the two entries re-pointed to `20260919152824` (this commit; drift guard local 216/216). ⭐ **Lesson, and it is the standing `CREATE OR REPLACE` rule one file over:** a PINS edit is a whole-file write of a file three sessions touch in one morning — `git fetch && git rebase origin/main` immediately before the commit, and read the DIFF of that file, not only your own hunk. **Revert:** none needed (this restores the intended state); if v2 itself is reverted, point both at `20260919021449` again.

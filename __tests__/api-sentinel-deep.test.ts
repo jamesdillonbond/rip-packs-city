@@ -235,6 +235,23 @@ function greenFixtures(): Fixtures {
     ],
     // Per-collection + per-source ingest health — all within their ceilings.
     "rpc:sentinel_sales_ingest_health": { data: ingestHealthy(), error: null },
+    // Edge Lane Observability: the healthy shape is a FULL registry - every
+    // active edge-function cron job accounted for. ⚠ `unchecked` is non-zero
+    // in production by design (two known gaps) and must NOT escalate, which the
+    // "does not escalate on unchecked alone" case below pins.
+    "rpc:check_edge_lane_observability": {
+      data: {
+        inspected: 12,
+        unregistered_count: 0,
+        unregistered: [],
+        stale_count: 0,
+        stale: [],
+        unchecked_count: 0,
+        unchecked: [],
+        fresh_count: 12,
+      },
+      error: null,
+    },
     // Pipeline Success Coverage: two watchlisted pipelines, both with at least one
     // success in the window. NOTE the arm reports INCONCLUSIVE (warn) on an EMPTY
     // watchlist by design — "we measured nothing" is not "everything is fine" — so
@@ -796,6 +813,114 @@ describe("POST /api/sentinel — full battery", () => {
       install(withPackSales(null, { message: "canceling statement due to statement timeout" }))
       stubFetch([sniperOk, telegramOk, resendOk])
       const c = check(await (await POST(post())).json(), "Pack Sales Ingest (All Day)")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("INCONCLUSIVE")
+    })
+  })
+
+  // Edge Lane Observability — R110's exit condition. The five edge-function cron
+  // lanes that write no pipeline_runs row are invisible to every arm above BY
+  // CONSTRUCTION, and two of them were dead for 6 and 7 days before anyone
+  // looked. This arm's job is that a lane nobody watches SAYS SO.
+  describe("Edge Lane Observability", () => {
+    const withElo = (payload: Record<string, unknown> | null, err: unknown = null) => {
+      const g = greenFixtures()
+      return { ...g, "rpc:check_edge_lane_observability": { data: payload, error: err } } as typeof g
+    }
+    const base = {
+      inspected: 12, unregistered_count: 0, unregistered: [],
+      stale_count: 0, stale: [], unchecked_count: 0, unchecked: [], fresh_count: 12,
+    }
+
+    it("is ok when every edge lane is registered and fresh, and states the count", async () => {
+      install(withElo(base))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).toBe("ok")
+      // The healthy detail must still say HOW MANY it inspected - a green arm
+      // that does not state its population is the silence trap.
+      expect(c.detail).toContain("12")
+      expect(c.value).toBe("0")
+    })
+
+    // ⭐ THE PROPERTY THE WHOLE ARM EXISTS FOR: an edge lane nobody registered is
+    // an edge lane nobody watches, and it must be named.
+    it("⭐ pages on an UNREGISTERED edge lane and names it", async () => {
+      install(withElo({
+        ...base,
+        unregistered_count: 1,
+        unregistered: [{ jobid: 99, jobname: "rpc-brand-new-edge-lane", schedule: "*/5 * * * *" }],
+        fresh_count: 11,
+      }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).not.toBe("ok")
+      expect(c.detail).toContain("rpc-brand-new-edge-lane")
+      expect(c.detail).toContain("UNREGISTERED")
+    })
+
+    it("pages on a stale outcome and states the bound it broke", async () => {
+      install(withElo({
+        ...base,
+        stale_count: 1,
+        stale: [{
+          jobname: "rpc-topshot-pack-sales-backfill",
+          outcome: "topshot_pack_sales_history.block_time",
+          age_hours: 144, max_age_hours: 24, severity: "critical",
+        }],
+        fresh_count: 11,
+      }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).not.toBe("ok")
+      expect(c.detail).toContain("topshot_pack_sales_history.block_time")
+      expect(c.detail).toContain("144")
+      expect(c.detail).toContain("24")
+    })
+
+    // ⚠ `unchecked` is a STANDING known gap (two lanes today). If it escalated,
+    // this arm would be permanently amber — the exact failure mode that makes an
+    // alarm unreadable. It must be STATED without paging.
+    it("⭐ does NOT escalate on `unchecked` alone, but still says so", async () => {
+      install(withElo({
+        ...base,
+        unchecked_count: 2,
+        unchecked: [
+          { jobname: "rpc-allday-dist-opened-backfill", note: "completed backfill", severity: "info" },
+          { jobname: "rpc-allday-resolve-rip-dist-api", note: "outcome table unidentified", severity: "warn" },
+        ],
+        fresh_count: 10,
+      }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).toBe("ok")
+      expect(c.detail).toContain("unchecked by design")
+      expect(c.detail).toContain("rpc-allday-resolve-rip-dist-api")
+    })
+
+    // ⚠ A verdict from zero lanes is not a verdict. Assert the ABSENCE of an
+    // all-clear, not merely the presence of wording.
+    it("⭐ treats `inspected: 0` as UNMEASURED, not as an all-clear", async () => {
+      install(withElo({ ...base, inspected: 0, fresh_count: 0 }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).not.toBe("ok")
+      expect(c.detail).toContain("INCONCLUSIVE")
+      expect(c.detail).toContain("zero")
+    })
+
+    it("does not fabricate a verdict from an unreadable payload", async () => {
+      install(withElo({ nonsense: true }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("INCONCLUSIVE")
+    })
+
+    it("warns rather than pages when the RPC fails under saturation", async () => {
+      install(withElo(null, { message: "canceling statement due to statement timeout" }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Edge Lane Observability")
       expect(c.status).toBe("warn")
       expect(c.detail).toContain("INCONCLUSIVE")
     })

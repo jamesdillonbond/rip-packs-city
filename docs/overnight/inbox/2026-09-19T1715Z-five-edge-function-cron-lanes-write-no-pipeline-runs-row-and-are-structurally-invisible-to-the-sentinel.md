@@ -119,6 +119,35 @@ the 5.6 and 6.7 days they were frozen at this morning.
 `done`-latch that killed the two pack-sales lanes is, as far as this estate's state tables can
 show, **a two-lane problem and not a pattern.**
 
+## ⛔ RETRACTED 2026-09-19 11:2x AM PT — THE SIDE FINDING BELOW IS WRONG IN BOTH HALVES
+
+**Left in place per the inbox's no-clobber rule. Read the retraction, not the claim.**
+
+**Half one — "a daily zero-yield lane cannot trigger the arm because of the ≥50-run floor":** the floor
+is real, but the lane I cited would not qualify anyway. Measured offenders at `p_min_runs` =
+50 / 30 / 20 / 10 / 5 are **1, 2, 2, 2, 2** — lowering it adds exactly ONE lane, and that lane is
+`topshot-dupe-sales-watch` (31 runs, 1 baseline find), **a WATCH lane for which finding nothing is
+the desired outcome. Lowering the floor adds a FALSE positive.** And `match-topshot-players` is
+absent even at 5, because over 30 days it ran 31 times and **found 15,683 rows while writing 0** —
+the arm's predicate is "found nothing", so it was never in scope and the floor is not why.
+⛔ **Do not lower `p_min_runs`.**
+
+**Half two — "Pipeline Silence flagging `topshot-active-listings-ingest` at 952m is a
+threshold-vs-cadence artifact":** 🚨 **it is not an artifact; the arm is right.** That lane went
+**8 runs/day (09-07) → 1/day (09-16..19), with 09-15 missing entirely**, every run `ok`, at
+**1,075,776–1,403,533 ms per run (18–23 minutes)**. Its cadence is decaying as a SYMPTOM of IO
+saturation. ⭐ **Raising its `max_silent_minutes` — which is what I proposed — would have silenced a
+real degradation to make a warning go away.**
+
+⭐ **The reusable lesson: a threshold that looks mismatched to a cadence may be reporting that THE
+CADENCE MOVED.** The 21-day history was one query away and reversed the conclusion.
+
+ℹ **New open item out of the retraction:** `topshot-active-listings-ingest` at 1 run/day and ~20
+min/run. Nothing here establishes whether 1/day is sufficient for active-listing freshness or what
+its intended cadence is. **That is the next question, and it is not a threshold question.**
+
+---
+
 ## ⚠ Side finding: a DAILY zero-yield lane cannot trigger the `Zero-Yield Lanes` arm
 
 `match-topshot-players` has found **0 rows on 12 consecutive daily runs** and the arm does not name

@@ -1151,6 +1151,120 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     }
   }
 
+  // Edge Lane Observability — R110's exit condition, and the arm that closes the
+  // hole the 2026-09-19 pack-sales outage went through.
+  //
+  // 🚨 THE HOLE: five of the twelve active cron jobs that POST to
+  // `/functions/v1/` write NO `pipeline_runs` row. Every pipeline arm above is
+  // scoped to `pipeline_cadence_watchlist` over `pipeline_runs`, so those lanes
+  // are out of scope BY CONSTRUCTION — the key never appears, and no amount of
+  // watchlist editing reaches them. Two were dead for 6 and 7 days while pg_cron
+  // recorded 955 `succeeded` dispatches a day, because a `net.http_post`
+  // succeeds when the POST is ENQUEUED, not when the function did work.
+  //
+  // ⭐ THE SHAPE IS A BAN AT ZERO, NOT AN ALLOWLIST OF PROBLEMS.
+  // `check_edge_lane_observability()` reads `cron.job` directly and reports any
+  // ACTIVE edge-function job absent from `edge_lane_watch`. A new edge lane is
+  // therefore UNOBSERVED-BY-DEFAULT and says so. That is the property whose
+  // absence let the outage run six days: nothing anywhere knew the lane existed.
+  //
+  // The registry records HOW each lane is observed, so "covered elsewhere" is a
+  // reviewable claim rather than an omission:
+  //   * `outcome_freshness` — a table/column/age bound, checked here.
+  //   * `pipeline_runs`     — covered by the arms above under a NAMED pipeline,
+  //                           and this arm VERIFIES that pipeline has written a
+  //                           row inside retention. ⚠ An exclusion justified by
+  //                           another instrument is a claim ABOUT that
+  //                           instrument, so it is checked, not trusted.
+  //   * `none`              — nothing watches it; reported as `unchecked` with
+  //                           its reason, never counted clean.
+  //
+  // ⚠ `unchecked` IS NOT `ok` AND IS NOT `stale`. A lane nobody has wired a
+  // check for is a known gap, and the whole point of this arm is that a gap
+  // reads as a gap. Two exist today by design: `rpc-allday-dist-opened-backfill`
+  // (info — a completed backfill whose head a live forward lane carries) and
+  // `rpc-allday-resolve-rip-dist-api` (warn — its outcome table is not yet
+  // identified, which is the open work on R110).
+  //
+  // ⚠ ZERO INSPECTED IS UNMEASURED, NOT CLEAN. If the function reports
+  // `inspected: 0` — a rebuilt database with no pg_cron estate, or a renamed job
+  // set — a verdict from zero lanes is not a verdict, and this arm says so
+  // rather than reporting an all-clear it did not earn.
+  try {
+    const ELO = "Edge Lane Observability";
+    const eloWarn = thr(ELO, "warn_at", 1);
+    const eloCrit = thr(ELO, "crit_at", 3);
+    const { data: eloData, error: eloErr } = await supabase.rpc(
+      "check_edge_lane_observability",
+    );
+    if (eloErr) {
+      const sat = isSaturationError(eloErr.message);
+      checks.push({
+        name: ELO,
+        status: sat ? "warn" : "critical",
+        detail: `${sat ? INCONCLUSIVE : ""}RPC error: ${errorText(eloErr.message)}`,
+      });
+    } else {
+      const p: any = eloData ?? {};
+      const inspected = typeof p.inspected === "number" ? p.inspected : null;
+      if (inspected === null) {
+        checks.push({
+          name: ELO,
+          status: "critical",
+          detail: `${INCONCLUSIVE}check_edge_lane_observability returned no readable payload`,
+        });
+      } else if (inspected === 0) {
+        checks.push({
+          name: ELO,
+          status: "warn",
+          detail: `${INCONCLUSIVE}inspected 0 edge-function cron jobs — a verdict from zero lanes is not a verdict (has the job set been renamed?)`,
+        });
+      } else {
+        const unreg: any[] = Array.isArray(p.unregistered) ? p.unregistered : [];
+        const stale: any[] = Array.isArray(p.stale) ? p.stale : [];
+        const unchecked: any[] = Array.isArray(p.unchecked) ? p.unchecked : [];
+        // Only the two ACTIONABLE classes drive severity. `unchecked` is stated
+        // in the detail but never escalates on its own — it is a standing, known
+        // gap, and letting it page would make the arm permanently amber, which
+        // is the failure mode this whole estate keeps hitting.
+        const actionable = unreg.length + stale.length;
+        const parts: string[] = [];
+        if (unreg.length > 0) {
+          parts.push(
+            `${unreg.length} UNREGISTERED edge lane(s) — nothing observes them: ${unreg.map((u) => u?.jobname ?? "?").join(", ")}`,
+          );
+        }
+        if (stale.length > 0) {
+          parts.push(
+            `${stale.length} stale: ${stale.map((s) => `${s?.jobname ?? "?"} (${s?.outcome ?? "?"} ${s?.age_hours ?? "?"}h > ${s?.max_age_hours ?? "?"}h)`).join(", ")}`,
+          );
+        }
+        if (parts.length === 0) {
+          parts.push(`${p.fresh_count ?? "?"} of ${inspected} edge lanes observed and fresh`);
+        }
+        if (unchecked.length > 0) {
+          parts.push(
+            `${unchecked.length} unchecked by design: ${unchecked.map((u) => u?.jobname ?? "?").join(", ")}`,
+          );
+        }
+        checks.push({
+          name: ELO,
+          status:
+            actionable >= eloCrit ? "critical" : actionable >= eloWarn ? "warn" : "ok",
+          detail: parts.join(" · "),
+          value: `${actionable}`,
+        });
+      }
+    }
+  } catch (e: any) {
+    const sat = isSaturationError(e?.message);
+    checks.push({
+      name: "Edge Lane Observability",
+      status: sat ? "warn" : "critical",
+      detail: exceptionDetail(e),
+    });
+  }
+
   // Portfolio Cache Drain — an OUTCOME check on `saved_wallets.cached_*`, the
   // columns the signed-in dashboard now reads for every portfolio number
   // (app/api/profile/collection-stats/route.ts went cache-first on 2026-09-12,
