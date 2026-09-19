@@ -10,6 +10,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🛡 THE TXN-CONTROL PIN GUARD GETS A READER — `check_procedure_transaction_control_pin_drift()` wired into `rpc_ops_snapshot()`, with a positive control on the WIRE · Cowork cloud
+
+**Migration only — one `CREATE OR REPLACE` of `rpc_ops_snapshot()`. No app code, no data mutation, no grant change.** Discharges the deferral that `20260919003741` stated in as many words: the guard shipped earlier tonight and **nothing read it**, and a guard with no reader is not a guard, it is a function.
+
+🔁 **THE CLASS, for the reader who lands here first:** a routine carrying an attached `SET` clause runs inside an implicit transaction block and may not `COMMIT`/`ROLLBACK` — it dies `2D000 invalid transaction termination` at its first commit. Pinning `search_path` on a procedure that COMMITs therefore **breaks** it. **That mistake has now been made three times on this database** — R14 2026-08-22/23 (closed WONTFIX, *"do NOT re-attempt"*), 2026-09-13/14 (pg_cron jobid 259 died in 0.5 s on its first tick), and 2026-09-18 (mine, self-reverted by `20260919002535`). **Twice by a session that had read the warning.** A comment is only read by someone already in that file; the class needed an instrument, and now it has one with a caller.
+
+🔬 **FOUR THINGS VERIFIED AT APPLY TIME, none of them asserted:**
+
+1. **Fidelity.** `CREATE OR REPLACE` is a FULL-BODY WRITE, so the body was taken from a live `pg_get_functiondef` read immediately before writing *and* re-read immediately before applying. With only the four added comment lines and the one added key removed, the migration's body hashes to **md5 `d9a1ba3481400bd32b4b90722dc26895` at 5558 chars — byte-identical to live.** That is a proof, not an eyeball: a REPLACE drafted off a stale dump silently reverts whatever another session shipped in the gap, and rewrites its pin too, so nothing reds.
+2. **It executes.** The snapshot returns **16 keys (was 15)**; the new one is a jsonb array of length 0.
+3. **A POSITIVE CONTROL ON THE WIRE, not on the guard.** Inside one `DO` block: create a scratch procedure that both COMMITs *and* carries `SET search_path`, read the snapshot, then `RAISE` so the whole block rolls back. **The snapshot surfaced the offender with its full remediation detail.** Residue afterwards: 0. The guard's own creating migration proved the *guard*; this proves the *snapshot does not swallow a non-empty reading* — a distinct claim, and the one that was actually new today.
+4. **Non-vacuity.** `public` holds **3** procedures before and after, and the guard reads `[]` over them. A ban-at-zero that reads clean over an empty population is indistinguishable from a broken one, so the population is stated rather than left implicit.
+
+⚠ **READING IT: ban-at-zero, jsonb ARRAY, like its three neighbours in the same snapshot — clean is `jsonb_array_length() = 0`, NEVER `count(*) = 1`.** It sits deliberately next to `function_search_path_drift`, which is its exact inverse: that one flags a function **missing** a pin, this one flags a procedure that must **not have** one.
+
+👉 **STILL OPEN, and stated rather than quietly dropped: `rpc_ops_snapshot()` has no scheduled caller.** It is an operator/agent aggregator, so this gives the class a *reader*, not an *alarm*. Promoting it to a sentinel arm is a separate change with its own config row and per-tick cost — not folded in here silently.
+
+- **Revert:** re-apply the previous definition (drop the single `'procedure_txn_control_pins'` line and its comment block); md5 of the prior body is recorded above. The guard function itself is untouched by this entry.
+
 ### 2026-09-18 · ✅ THE LAST OWED FALSIFIER IS DISCHARGED — `candy_offers_unverified_pct` 100 → 0 on the 00:50Z tick, exactly as the exit condition specified · Cowork cloud
 
 **Docs only. Nothing shipped.** Closes the one item this session left open with a dated, falsifiable exit condition rather than a guess.
