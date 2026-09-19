@@ -46,14 +46,35 @@ here. Do not read it as "wrote nothing on purpose".
    ```
    No seq scan, index-only, correct join order. **There is no plan fix to make.**
 
-## What it actually is
+## What it actually is: 🚨 THIS IS **R109**, AND THIS LANE IS ITS SECOND VICTIM
 
-**Volume plus an incomplete visibility map.** The nested loop passes an estimated **678,376 rows**
-— every FMV-bearing moment of every saved wallet, aggregated from scratch daily.
-`wallet_moments_cache` is **940 MB heap / 2,212 MB of indexes / 2.2 M rows**, and
-`relallvisible` is **97,513 of 120,286 pages = 81 %**. So ~19 % of the index-only scan's rows still
-take a heap fetch — on the order of 10⁵ random reads, which is exactly the difference between the
-1.9 s run and the 120 s ones.
+**Do not investigate this as a new problem.** Register row **R109** (first seen 2026-09-18) already
+states it: *"`wallet_moments_cache` cannot hold a clean visibility map, and the cohort rebuild is
+the first lane to die of it"*. Same table, **same index** — R109's measurement is taken on
+`idx_wmc_cohort_cover`, which is the exact index this query's plan uses. R109 has already refuted
+index bloat, a plan flip, and contention, and its standing hypothesis is UPDATE-in-place churn
+(wmc is rewritten by `refresh_wmc_fmv_changed`) against long-open snapshots, so vacuum can run
+hourly and never get the map clean.
+
+⭐ **The contribution of this filing is therefore NOT a diagnosis — it is that the class has
+SPREAD.** R109 called the cohort rebuild "the first lane to die of it"; `daily-portfolio-snapshot`
+is the **second**, and it is the one with a user-visible, permanently-lost artifact.
+
+⚠ **AND A CORRECTION TO MY OWN FIRST DRAFT, because it made the error R109 itself is cited for.**
+I wrote that `relallvisible` = 97,513/120,286 = **81 %**, therefore "~19 % of rows take a heap
+fetch". **That inference is invalid and is the exact trap CLAUDE.md attributes to R109:** an
+AGGREGATE is never a proxy for the SLICE you measured. R109's own numbers are **85.8 % all-visible
+yet 36.7 % heap fetches** on a real slice — more than double what the aggregate would predict. So
+the heap-fetch share for THIS query is **not known** and must be measured on its own slice before
+anyone sizes a fix from it.
+
+ℹ One number here IS new and worth carrying to R109: `relallvisible` read **97,513 / 120,286 =
+81.1 %** today against R109's **103,213 / 120,286 = 85.8 %** on 09-18. **The map has degraded
+further**, which is consistent with R109's churn hypothesis and is a free datapoint for it.
+
+The volume half stands on its own: the nested loop passes an estimated **678,376 rows** — every
+FMV-bearing moment of every saved wallet, re-aggregated from zero daily — over a **940 MB heap /
+2,212 MB indexed / 2.2 M row** table.
 
 ⭐ **The spread itself is the diagnosis: 1.9 s → 13.5 s → 22.5 s → 120 s for the SAME ~27 rows of
 output.** Identical work, an order of magnitude of variance ⇒ **IO-contention-bound, not
@@ -65,10 +86,11 @@ so the slowness is current and not an artifact of the 07:05Z runs.
 
 ## Candidates, none costed, none obviously right
 
-1. **Raise the VM coverage** (`VACUUM` / a lower `autovacuum_vacuum_scale_factor` on
-   `wallet_moments_cache`) so the index-only scan stops fetching heap. ⚠ Measure first: at 81 % the
-   headroom is 19 %, which may not be the whole gap, and a vacuum of a 940 MB table with 2.2 GB of
-   indexes is itself real IO on a box that is short of it.
+1. ⛔ **"Raise the VM coverage" is R109's question, not this row's, and R109 has already shown the
+   knob is not the lever** — its control pair found `wallet_moments_cache` at 85.8 % against
+   `topshot_atlas_market_events` at 99.7 % on **the same `autovacuum_vacuum_scale_factor = 0.02`**,
+   14× the not-all-visible share. **The autovacuum knob is NOT the difference.** Anything done here
+   belongs on R109.
 2. **Make it incremental.** The function recomputes every user's entire portfolio from zero every
    day. Only wallets whose `wallet_moments_cache` rows changed need re-aggregating.
 3. ⛔ **Do NOT just raise the 120 s budget.** The standing rule is to not raise a timeout under
