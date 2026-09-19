@@ -92,6 +92,59 @@ editions the board does not show. A row-count match is not equivalence.
 **The cheap next step is a diff, not a swap:** for the 357 currently-`active` rows, compare ask and
 liveness against the mirror and count the disagreements before anyone repoints anything.
 
+---
+
+## 4b. ⛔ I RAN THAT DIFF, AND IT REFUTES MY OWN LEAD — the mirror is NOT a drop-in, and not even fresher
+
+Same session, ~20 minutes later. Three findings, in the order they arrived, because two of them are
+mistakes I made while testing my own suggestion.
+
+**(i) The obvious filter selects the wrong side of the market.** My first join used
+`offer_type = 'SERIAL'` — which looks right for a serial-level board and is **bids, not asks**.
+Listings in this table are `kind = 'listing'` with **`offer_type IS NULL`**. The tell was a result
+too clean to be real: **259 of 259 prices "disagreed"**, because I was comparing asks against
+offers. ⭐ *A 100% disagreement rate is not a finding, it is a broken join.*
+
+**(ii) "Is it still live" has THREE predicates here and they do not agree.** Over listings seen in
+the last 2 h: `completed` = 13,497, `purchased_at IS NOT NULL` = 13,497 (identical), but
+`purchased` = **8,031**. Pick the wrong one and "active" silently means something else.
+
+**(iii) 🚨 THE LEAD IN §4 IS WRONG, AND THE DIFF IS WHY.** Corrected join (`kind='listing'`, latest
+row per `nft_id`) against the 357 rows the board calls `active`:
+
+| | count | of 357 |
+|---|---|---|
+| matched a listing row in the mirror | 244 | 68.3% |
+| **absent from the mirror entirely** | **113** | **31.7%** |
+| of the 244: mirror says `completed` | **83** | 34% of matched |
+| of the 244: prices agree | 166 | 68% |
+| of the 244: **prices disagree** | **78** | **32%** |
+
+And the decisive one — I expected the disagreements to be the board being stale and the mirror
+being right. **They are not.** Of those 78: the mirror is fresher on **2**, the board on **76**,
+and the mirror's rows average **70.5 hours OLDER** than the board's already-18.7-hour-old rows.
+
+⭐⭐ **So §4's "36 seconds old" was an AGGREGATE over 2.38 M nfts used as a proxy for a PER-ROW
+property, and for these particular listings it is false.** That is the identical error class this
+same session found on the Panini squeeze board eight hours earlier — a whole-group statistic
+standing in for a per-slice one — **made again, by me, in the filing that named it.**
+
+## 4c. What survives, and what to do instead
+
+✅ **The board really is publishing finished listings as live.** Independent of the mirror's
+suitability, **83 of the 244 matched rows are `completed`** upstream while the board still shows
+them `active` — which is exactly what an 18.7 h-stale `active` flag produces, and it is a real
+accuracy defect on a public surface.
+
+⛔ **Do NOT repoint the board at `topshot_atlas_market_events`.** It misses 31.7% of the rows,
+disagrees on 32% of the prices, and is ~3 days staler per-row on the disagreements. The row count
+and ingest rate that made it look like a ready replacement describe the TABLE, not the LISTINGS.
+
+👉 **The actual fix is the boring one: get `topshot-active-listings-ingest` running again** (§1–§2
+— the task is silent on a box that is demonstrably awake). A second feeder may still be the right
+long-term answer, but this table is not it on today's evidence.
+
+
 ## 5. Not done, and why
 
 Nothing was shipped. The two live causes need Trevor's box (Task Scheduler is UIPI-blocked from
