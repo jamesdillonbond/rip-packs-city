@@ -16,9 +16,20 @@ export const dynamic = "force-dynamic";
 // (measured 7 of 24 recent hourly buckets missing, feeding gappy FMV charts). The
 // RPC only ever writes the PRIOR hour and is idempotent (ON CONFLICT DO NOTHING),
 // so a longer budget is risk-free and the write completes server-side even if the
-// cron caller disconnects first. Follow-up (logic change, not done): add
-// `edition_id IS NOT NULL AND price_usd > 0` to the RPC's WHERE so it can use the
-// idx_sales_2026_fmv_recalc_window partial index (also drops junk from OHLC).
+// cron caller disconnects first.
+//
+// 2026-09-18 (R100): the RPC no longer writes only the prior hour. It walks the last
+// 48 completed hours and inserts whatever bucket is missing (still ON CONFLICT DO
+// NOTHING, so every bucket is idempotent and all-or-nothing), and its hour-window
+// scan now carries `price_usd > 0 AND edition_id IS NOT NULL` so it rides the
+// idx_sales_2026_fmv_recalc_window partial index (plan cost 18,532 -> 2.66; proven
+// output-neutral over 22,044 rows). A missed or killed tick is repaired by the next
+// one instead of losing that hour forever — measured 138 of 168 hours lost before.
+// A cron_heavy pg_cron job (rpc-price-snapshots-hourly, :12) drives the same RPC
+// and writes the same pipeline_runs row, so this route is the SECOND driver now.
+// `editions_snapshotted` is the rows inserted across the whole window this run;
+// `bucket` is still the prior hour; `missing_before`/`missing_after` is the loss
+// the register asked to watch (hours with sales and no bucket, in the window).
 export const maxDuration = 60;
 
 // The pipeline_runs name. Stable and route-owned — NOT the workflow step label,
@@ -57,7 +68,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(
-      `[price-snapshots] ${data.editions_snapshotted} editions snapshotted for bucket ${data.bucket}`
+      `[price-snapshots] ${data.editions_snapshotted} rows inserted across ${data.buckets_scanned ?? "?"} buckets (latest ${data.bucket}); missing ${data.missing_before ?? "?"} -> ${data.missing_after ?? "?"}`
     );
 
     await logTerminalRun({
@@ -69,7 +80,14 @@ export async function POST(request: NextRequest) {
       // "not measured" rather than as a snapshot-less hour.
       rowsWritten:
         typeof data?.editions_snapshotted === "number" ? data.editions_snapshotted : null,
-      extra: { stage: "done", bucket: data?.bucket ?? null },
+      extra: {
+        stage: "done",
+        bucket: data?.bucket ?? null,
+        // Window fields from the RPC (2026-09-18). Absent, not 0, if it stops sending them.
+        buckets_filled: typeof data?.buckets_filled === "number" ? data.buckets_filled : null,
+        missing_before: typeof data?.missing_before === "number" ? data.missing_before : null,
+        missing_after: typeof data?.missing_after === "number" ? data.missing_after : null,
+      },
     });
 
     return NextResponse.json({ status: "ok", ...data });
