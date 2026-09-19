@@ -97,10 +97,27 @@ Each stale one is explained:
 ✅ **And the fix is holding:** both pack-sales cursors now read **0.0 h** in this same sweep, against
 the 5.6 and 6.7 days they were frozen at this morning.
 
-⚠ **Three are NOT cleared, only un-investigated** — `allday_mint_scan_state` (82 d),
-`sales_ingest_state` (56 d), `dune_budget_state` (28 d). Each may be a completed backfill like
-`pack_opens_api_state`, or may be another latch. **The discriminator is the same one:** does a
-forward lane carry the head? Do not unlatch any of them without answering that first.
+✅ **AND THE THREE STRAGGLERS ARE NOW CLOSED TOO — none is a latch, all three are explained.**
+
+* `sales_ingest_state` (56 d, `cursor_end = 2022-01-01` against a `floor_date = 2019-01-01`, so
+  the walk did **NOT** reach its floor) — ⛔ **NOT a finding: its lane was DELIBERATELY RETIRED on
+  2026-07-28**, which matches the 2026-07-25 freeze. The disposition is recorded in-tree and is
+  cited by two sibling routes as precedent (`topshot-flowty-sales-history-backfill`,
+  `evm-transfers-ingest`): the route is KEPT, only the schedule was removed, and its own test file
+  describes it as `auth + inert`. **Do not "fix" it.**
+* `dune_budget_state` (28 d) — written by `lib/dune/budget.ts`. The only Dune lane still running is
+  `sales-seller-recovery-dune`, which the sentinel reports **EXHAUSTED** ("the cycle cap is spent
+  and every Dune lane paces at 0 until the reset — a configured stop, not a failure"). Consistent;
+  nothing to do.
+* `allday_mint_scan_state` (82 d) — **an ORPHAN table.** Zero references in live code, zero in
+  `cron.job.command`, zero in any `public` function body; it appears only in two ARCHIVED handoffs
+  from 2026-06-29. It holds **1 row** and nothing has written it since. Its staleness is explained
+  by there being no writer at all. ⚠ Filed as an observation, not a cleanup instruction — dropping
+  a table is Trevor's call and the row is harmless.
+
+⭐ **So the sweep closes completely: 20 of 20 state tables explained, 0 further dead lanes.** The
+`done`-latch that killed the two pack-sales lanes is, as far as this estate's state tables can
+show, **a two-lane problem and not a pattern.**
 
 ## ⚠ Side finding: a DAILY zero-yield lane cannot trigger the `Zero-Yield Lanes` arm
 
