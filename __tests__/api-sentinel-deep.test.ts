@@ -185,20 +185,37 @@ function greenFixtures(): Fixtures {
       },
       error: null,
     },
-    // ⚠ THREE ARMS READ `pipeline_runs`, IN THIS ORDER, so the fixture is a
+    // ⚠ FOUR ARMS READ `pipeline_runs`, IN THIS ORDER, so the fixture is a
     // SEQUENCE — the harness hands successive calls successive elements and
     // clamps at the last. A single object here would feed all three the same
     // payload, and the Portfolio Cache Drain arm would then read a row with no
     // `extra` and correctly report UNREADABLE, turning this green battery amber.
     //   [0] Ownership Index Freshness — most recent PRODUCTIVE run of either
     //       ownership writer. Fresh => ok.
-    //   [1] Portfolio Cache Drain — most recent reconcile run, read for
+    //   [1] Pack Sales Ingest (Top Shot / All Day) — the unlatch guard row.
+    //       ⚠ Its OWN age is checked first, so a row older than 40 min is
+    //       CRITICAL however healthy its contents look; a green battery has to
+    //       model this element, not omit it.
+    //   [2] Portfolio Cache Drain — most recent reconcile run, read for
     //       `extra.oldest_cache_h`. 0.9h taken just now => ok.
-    //   [2] the notification-delivery read, which wants `extra.notifications`
+    //   [3] the notification-delivery read, which wants `extra.notifications`
     //       and finds none — exactly what it saw before this sequence existed.
     pipeline_runs: [
       {
         data: [{ pipeline: "ownership-onchain-walk", started_at: new Date().toISOString() }],
+        error: null,
+      },
+      {
+        data: [
+          {
+            pipeline: "pack-sales-cursor-unlatch",
+            started_at: new Date().toISOString(),
+            extra: {
+              topshot: { sale_age_hours: 1.6, was_latched: false },
+              allday: { sale_age_hours: 49.0, was_latched: false },
+            },
+          },
+        ],
         error: null,
       },
       {
@@ -557,13 +574,13 @@ describe("POST /api/sentinel — full battery", () => {
   // detect_stalled_pipelines() and Pipeline Success Coverage all green.
   describe("Portfolio Cache Drain", () => {
     const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
-    /** Element [1] of the pipeline_runs sequence is the drain arm's read. */
+    /** Element [2] of the pipeline_runs sequence is the drain arm's read. */
     const withDrain = (row: Record<string, unknown> | null, err: unknown = null) => {
       const g = greenFixtures()
       const seq = g.pipeline_runs as unknown as Array<Record<string, unknown>>
       return {
         ...g,
-        pipeline_runs: [seq[0], { data: row === null ? [] : [row], error: err }, seq[2]],
+        pipeline_runs: [seq[0], seq[1], { data: row === null ? [] : [row], error: err }, seq[3]],
       } as typeof g
     }
 
@@ -662,6 +679,123 @@ describe("POST /api/sentinel — full battery", () => {
       install(withDrain(null, { message: "canceling statement due to statement timeout" }))
       stubFetch([sniperOk, telegramOk, resendOk])
       const c = check(await (await POST(post())).json(), "Portfolio Cache Drain")
+      expect(c.status).toBe("warn")
+      expect(c.detail).toContain("INCONCLUSIVE")
+    })
+  })
+
+  // Pack Sales Ingest — the arm that exists because a SIX-DAY outage (Top Shot
+  // pack sales, 2026-09-13..19) ran with every other instrument green. The
+  // writers are edge functions that write no pipeline_runs row at all, so every
+  // pipeline arm was out of scope by construction, not by curation.
+  describe("Pack Sales Ingest", () => {
+    const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
+    /** Element [1] of the pipeline_runs sequence is the unlatch guard's row. */
+    const withPackSales = (
+      row: Record<string, unknown> | null,
+      err: unknown = null,
+    ) => {
+      const g = greenFixtures()
+      const seq = g.pipeline_runs as unknown as Array<Record<string, unknown>>
+      return {
+        ...g,
+        pipeline_runs: [
+          seq[0],
+          { data: row === null ? [] : [row], error: err },
+          seq[2],
+          seq[3],
+        ],
+      } as typeof g
+    }
+    const guardRow = (topshot: number, allday: number, ageMin = 1) => ({
+      pipeline: "pack-sales-cursor-unlatch",
+      started_at: minsAgo(ageMin),
+      extra: {
+        topshot: { sale_age_hours: topshot, was_latched: false },
+        allday: { sale_age_hours: allday, was_latched: false },
+      },
+    })
+
+    // ⭐ THE SHARPEST PROPERTY IN THIS BLOCK, and the one a "simplify it to one
+    // threshold" refactor breaks: ONE reading, ONE number, OPPOSITE verdicts.
+    // 49h is normal for All Day (1-25 sales/day, 7 empty days in six weeks) and
+    // is a dead lane for Top Shot (sales EVERY day, 105-804/day). A shared
+    // threshold would have to be the All Day one -- which is what let the Top
+    // Shot outage run for six days.
+    it("gives opposite verdicts to the two lanes on the SAME 49h reading", async () => {
+      install(withPackSales(guardRow(49, 49)))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const body = await (await POST(post())).json()
+      expect(check(body, "Pack Sales Ingest (Top Shot)").status).toBe("critical")
+      expect(check(body, "Pack Sales Ingest (All Day)").status).toBe("ok")
+    })
+
+    it("is ok on the healthy case and states each lane's age", async () => {
+      install(withPackSales(guardRow(1.6, 49)))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const body = await (await POST(post())).json()
+      const ts = check(body, "Pack Sales Ingest (Top Shot)")
+      expect(ts.status).toBe("ok")
+      expect(ts.value).toBe("1.6h")
+    })
+
+    it("pages on the 2026-09-13 outage shape: Top Shot silent for six days", async () => {
+      install(withPackSales(guardRow(144, 49)))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)")
+      expect(c.status).toBe("critical")
+    })
+
+    // ⚠ A FROZEN READING IS THE FAILED-READ-AS-ANSWER SHAPE. If the unlatch job
+    // dies, its last row keeps a healthy `sale_age_hours` forever, and that
+    // number is indistinguishable from a current one. Assert the ABSENCE of the
+    // false claim (an `ok`), not merely the presence of some wording.
+    it("refuses to conclude from a reading older than the guard's own cadence", async () => {
+      install(withPackSales(guardRow(1.6, 49, 90)))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const body = await (await POST(post())).json()
+      for (const n of ["Pack Sales Ingest (Top Shot)", "Pack Sales Ingest (All Day)"]) {
+        const c = check(body, n)
+        expect(c.status, n).not.toBe("ok")
+        expect(c.status, n).not.toBe("warn")
+        expect(c.detail, n).toContain("INCONCLUSIVE")
+        // The frozen healthy age must NOT be published as the current one.
+        expect(c.detail, n).not.toContain("1.6h ago")
+      }
+    })
+
+    // pipeline_runs prunes at ~73h, so "no row" means the guard has been gone
+    // longer than that -- the lanes have no self-heal AND no coverage. Treating
+    // it as ok would silence the arm exactly when it matters most.
+    it("treats a missing guard row as CRITICAL, not ok", async () => {
+      install(withPackSales(null))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const body = await (await POST(post())).json()
+      for (const n of ["Pack Sales Ingest (Top Shot)", "Pack Sales Ingest (All Day)"]) {
+        expect(check(body, n).status, n).toBe("critical")
+      }
+    })
+
+    // A row that exists but carries no age must not default to a number -- that
+    // would fabricate health out of an unreadable payload.
+    it("does not fabricate an age when the payload lacks one", async () => {
+      install(
+        withPackSales({
+          pipeline: "pack-sales-cursor-unlatch",
+          started_at: minsAgo(1),
+          extra: { topshot: {}, allday: {} },
+        }),
+      )
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Pack Sales Ingest (Top Shot)")
+      expect(c.status).toBe("critical")
+      expect(c.detail).toContain("INCONCLUSIVE")
+    })
+
+    it("warns rather than pages when the query itself fails under saturation", async () => {
+      install(withPackSales(null, { message: "canceling statement due to statement timeout" }))
+      stubFetch([sniperOk, telegramOk, resendOk])
+      const c = check(await (await POST(post())).json(), "Pack Sales Ingest (All Day)")
       expect(c.status).toBe("warn")
       expect(c.detail).toContain("INCONCLUSIVE")
     })

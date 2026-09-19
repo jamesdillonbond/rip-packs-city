@@ -975,6 +975,151 @@ async function runSentinelWithin(clock: WallBudgetClock) {
     });
   }
 
+  // Pack Sales Ingest — an OUTCOME check on the two pack-sales history tables,
+  // and the arm that exists because a SIX-DAY outage ran with every instrument
+  // on this box reading green.
+  //
+  // ⚠ WHY NO ARM ABOVE COULD SEE IT, and it is not a curation gap. The writers
+  // `backfill-topshot-pack-sales` / `backfill-allday-pack-sales` are edge
+  // functions that write NO pipeline_runs row under any name (verified
+  // 2026-09-19 against all 196 pipelines seen in 72h). Every pipeline arm here —
+  // Silence, Success, Success Coverage — is scoped to
+  // `pipeline_cadence_watchlist` over `pipeline_runs`, so a lane that writes no
+  // row is out of scope BY CONSTRUCTION. Measured the same day: 5 of the 12
+  // active edge-function cron jobs are blind this way.
+  //
+  // What happened: `*_pack_sales_cursor.done` is a TERMINAL LATCH. Once true the
+  // edge function returns `{"done":true}` and no-ops, and nothing clears it. Top
+  // Shot sat latched from 2026-09-14, All Day from 2026-09-12, while pg_cron
+  // recorded ~955 `succeeded` dispatches/day across the two — because a
+  // `net.http_post` succeeds when the POST is ENQUEUED, never when work happens.
+  // ⛔ So do NOT "simplify" this into a cadence or a pipeline_runs-success check;
+  // both of those were already true and green throughout the outage.
+  //
+  // SOURCE is the `pack-sales-cursor-unlatch` row written by
+  // `public.unlatch_pack_sales_cursors()` (migration 20260919164919) — the ONLY
+  // pipeline_runs writer these two lanes have. It reports `block_time`, not
+  // `ingested_at`, because the latter has no index; see that migration for the
+  // ~45 GB/day that choice avoids.
+  //
+  // ⚠ THE READING'S OWN AGE IS CHECKED BEFORE ITS CONTENTS, and that is
+  // load-bearing. If the unlatch job dies, its last row keeps a `sale_age_hours`
+  // frozen at whatever it was — a stale number that reads exactly like a current
+  // healthy one. That is a failed read rendering as an answer, so an old row is
+  // reported as "cannot conclude", never as its contents. (The job's own silence
+  // is separately watchlisted at 40 min, so this arm and that one corroborate.)
+  //
+  // ⚠ THRESHOLDS ARE PER-LANE AND MEASURED, NOT SHARED. Over 2026-08-01..09-13
+  // Top Shot pack sales landed EVERY day (105–804/day, no empty day), so 12h is
+  // already abnormal there. All Day is thin and gappy — 1–25/day, 7 empty days
+  // in that window, worst normal gap near 3 days — so the same number would page
+  // constantly. A single shared threshold would have to be the All Day one,
+  // which is ~14x too loose for Top Shot and would have let its outage run a
+  // full week. ⚠ Both are DATED SAMPLES: re-derive from the daily counts before
+  // quoting or tightening either.
+  try {
+    const PS_PIPELINE = "pack-sales-cursor-unlatch";
+    // jobid 526 ticks every 10 min; 40 allows three shed ticks before the
+    // reading stops being usable. This is the guard's CADENCE, not a health
+    // threshold, which is why it is not a `thr()` knob.
+    const PS_ROW_MAX_AGE_MIN = 40;
+    const PS_LANES: Array<{
+      key: "topshot" | "allday";
+      name: string;
+      warn: number;
+      crit: number;
+    }> = [
+      {
+        key: "topshot",
+        name: "Pack Sales Ingest (Top Shot)",
+        warn: thr("Pack Sales Ingest (Top Shot)", "warn_at", 12),
+        crit: thr("Pack Sales Ingest (Top Shot)", "crit_at", 24),
+      },
+      {
+        key: "allday",
+        name: "Pack Sales Ingest (All Day)",
+        warn: thr("Pack Sales Ingest (All Day)", "warn_at", 96),
+        crit: thr("Pack Sales Ingest (All Day)", "crit_at", 168),
+      },
+    ];
+
+    const { data: psRows, error: psErr } = await supabase
+      .from("pipeline_runs")
+      .select("started_at, extra")
+      .eq("pipeline", PS_PIPELINE)
+      .order("started_at", { ascending: false })
+      .limit(1);
+
+    const pushAll = (status: "ok" | "warn" | "critical", detail: string) => {
+      for (const lane of PS_LANES) checks.push({ name: lane.name, status, detail });
+    };
+
+    if (psErr) {
+      const sat = isSaturationError(psErr.message);
+      pushAll(
+        sat ? "warn" : "critical",
+        `${sat ? INCONCLUSIVE : ""}Query error: ${errorText(psErr.message)}`,
+      );
+    } else if (!psRows || psRows.length === 0) {
+      // ⚠ NOT healthy. No row means `unlatch_pack_sales_cursors` has not run
+      // inside pipeline_runs retention (~73h), i.e. the lanes' only guard AND
+      // their only coverage are both gone — which is strictly worse than any
+      // staleness number this arm could report.
+      pushAll(
+        "critical",
+        `no ${PS_PIPELINE} run within pipeline_runs retention (~73h) — the pack-sales lanes have no guard and no coverage (pg_cron jobid 526)`,
+      );
+    } else {
+      const rowAgeMin =
+        (now.getTime() - new Date(psRows[0].started_at).getTime()) / 60_000;
+      const extra: any = psRows[0].extra ?? {};
+      if (rowAgeMin > PS_ROW_MAX_AGE_MIN) {
+        pushAll(
+          "critical",
+          `${INCONCLUSIVE}last ${PS_PIPELINE} reading is ${rowAgeMin.toFixed(0)}min old (cadence 10min) — its sale ages are frozen, not current`,
+        );
+      } else {
+        for (const lane of PS_LANES) {
+          const age = extra?.[lane.key]?.sale_age_hours;
+          const latched = extra?.[lane.key]?.was_latched === true;
+          if (typeof age !== "number") {
+            // The reading exists but does not carry the field — say so rather
+            // than defaulting to a number, which would fabricate health.
+            checks.push({
+              name: lane.name,
+              status: "critical",
+              detail: `${INCONCLUSIVE}${PS_PIPELINE}.extra.${lane.key}.sale_age_hours absent or non-numeric`,
+            });
+            continue;
+          }
+          const status =
+            age < lane.warn ? "ok" : age < lane.crit ? "warn" : "critical";
+          checks.push({
+            name: lane.name,
+            status,
+            detail:
+              `Newest ${lane.key} pack sale: ${age.toFixed(1)}h ago ` +
+              `(warn ${lane.warn}h / crit ${lane.crit}h)` +
+              (latched ? " — cursor was LATCHED and has just been reset" : ""),
+            value: `${age.toFixed(1)}h`,
+          });
+        }
+      }
+    }
+  } catch (e: any) {
+    const sat = isSaturationError(e?.message);
+    for (const name of [
+      "Pack Sales Ingest (Top Shot)",
+      "Pack Sales Ingest (All Day)",
+    ]) {
+      checks.push({
+        name,
+        status: sat ? "warn" : "critical",
+        detail: exceptionDetail(e),
+      });
+    }
+  }
+
   // Portfolio Cache Drain — an OUTCOME check on `saved_wallets.cached_*`, the
   // columns the signed-in dashboard now reads for every portfolio number
   // (app/api/profile/collection-stats/route.ts went cache-first on 2026-09-12,
