@@ -10,6 +10,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🎯 R103 RE-DERIVED — the number is right and the conclusion is wrong: the ask-corroboration bound reads a stamp that stopped meaning "confirmed", and 4,561 of 4,561 past-bound Top Shot asks are confirmed LIVE · Cowork cloud
+
+**One DB COMMENT shipped. Nothing in the pricing path changed — deliberately, and the reason is below rather than implied.**
+
+✅ **R103'S NUMBER IS CONFIRMED AND CURRENT.** `edition_offers`, Top Shot, measured 01:22Z: **4,576 of 13,102 asks (34.9%) sit past the 7-day `MAX_ASK_AGE_HOURS_CORROBORATION`**, against the **155 of 12,259 (1.3%)** written into `lib/fmv-confidence.ts` when that bound was measured and set on 2026-08-29. ~27×, exactly as filed.
+
+⛔ **AND THE CONCLUSION THAT NUMBER INVITES — "a third of our ask book has gone stale" — IS WRONG.** `app/api/fmv-recalc/route.ts` builds `editionAskAgeHoursById` from `edition_offers.updated_at` and feeds it to `liveAskAgeHours`. That column's **own comment** has said since the 09-13 audit: *"LAST CHANGED, NOT LAST CONFIRMED … It was a true confirmation stamp until 2026-08-28, when offers-sweep died and the Atlas writer replaced it (#81) — the meaning changed, the name did not."* The Atlas writer bumps it **only when the price actually moves** (`IS DISTINCT FROM` guard on its ON CONFLICT). 👉 **So an ask whose price has simply been STABLE for eight days is being scored as "no longer evidence about the price"** — and, the other way round, a row can read *fresh* because `highest_offer` moved on an ask nobody looked at.
+
+🚨 **THE BOUND WAS SET ONE DAY AFTER THE CONTRACT CHANGED.** 08-28 the meaning flipped; 08-29 the 1.3% was measured against a population still carrying the dying sweep's confirmation stamps. The bound has been drifting away from its own premise ever since, and nothing said so.
+
+⭐ **THIS IS A FOURTH SURFACE ON A TRAP CLAUDE.md ALREADY RECORDS FOR THIS EXACT COLUMN** (*"a `*_at` name is not its contract — and the contract is its WRITER's, so REPLACING a writer silently REDEFINES the column while the name holds"*). The 09-13 audit fixed the **display** side (`lib/market/ask-freshness.ts askStampKind()`) and wrote the warning into the column comment — **naming only the display consumer.** The pricing consumer was left reading the old meaning, and the comment told the next reader everything was handled.
+
+📏 **THE DECISIVE MEASUREMENT — an independent stamp that does mean confirmed.** `topshot_atlas_market_events.last_seen_at` is written every time the mirror sees a listing, price move or not. Joining the past-bound rows through `low_ask_nft_id` to open, not-completed listings:
+
+| | |
+|---|---:|
+| past-bound rows carrying an `nft_id` | 4,561 |
+| **resolvable in the Atlas mirror** | **4,561 (100%)** |
+| **stale by the Atlas stamp at the same 7-day bound** | **0** |
+| mean age by `updated_at` (what the bound reads) | **9.4 days** |
+| mean age by `last_seen_at` (what confirmed means) | **71.8 h** |
+
+**Not one of the 4,561 is actually past the bound.** ⚠ **Honest qualification:** the Atlas stamp's own mean is 3.0 days, not hours (only 66 rows seen inside 12 h) — the mirror is not minute-fresh either, which is consistent with `ts-listings-atlas-sync` having been failing ~29% of its ticks (two entries up). The stamp is *correct in kind* and *comfortably inside the bound*; it is not evidence of a minute-fresh ask book.
+
+📐 **THE PRIZE IS A CEILING AND IS NOT THE GAIN.** Of the 4,561 by current `edition_fmv_current.confidence`: **LOW 1,633** · MEDIUM 1,442 · ASK_ONLY 1,360 · HIGH 107 · other 20. Corroboration lifts **LOW→MEDIUM only**, so **1,633 is the ceiling**. ⛔ **The GAIN is NOT measured and must not be quoted as 1,633** — a lift also needs ≥3 sales *and* a median inside the ±25% band. *An eligibility count is not a gain count*: the last time this estate sized a lever at 173 rows it moved **54**, because 119 were already in the target state. A real number means reproducing fmv-recalc's own sales window, 90-day thin-edition re-fetch included.
+
+👉 **THE FIX, stated so the next session does not have to re-derive it:** take the ask AGE from the confirmation stamp (`topshot_atlas_market_events.last_seen_at` via `low_ask_nft_id`, proven above at 100% resolution over 4,561 rows) and keep `edition_offers.updated_at` for what it now means — "has the price moved". ⛔ **Do NOT widen `MAX_ASK_AGE_HOURS_CORROBORATION`.** The bound is not wrong; its INPUT is. Widening it silently re-admits the genuinely dead asks the 08-29 measurement was taken to exclude.
+
+⛔ **WHY IT IS NOT SHIPPED TONIGHT, with DB and push access in hand.** It moves the confidence tier of up to 1,633 Top Shot editions, and **MEDIUM is what gates the public Below-FMV board** — this changes what RPC tells users a moment is worth, on a gain nobody has measured yet. That is a human decision, the same call the 09-14 pass made on arming 28 lanes. **What shipped instead is the one thing that is free and that was actually missing: the column comment now names the pricing consumer**, so the next reader of `edition_offers.updated_at` is not told the problem was handled in September.
+
+📄 Full filing with every query: `docs/overnight/inbox/2026-09-19T0130Z-the-ask-corroboration-bound-reads-a-stamp-that-stopped-meaning-confirmed.md`
+
+- **Revert:** re-apply the 09-13 comment text (the first paragraph of the new string, through `(audit_20260913).`). Documentation only — no behaviour, grant or data changed.
+
 ### 2026-09-18 · 📏 TWO REGISTER ROWS SETTLED BY RE-MEASUREMENT — R62's own exit condition is MET, and R29's headline is REFUTED with its two failure classes SWAPPED IN RANK · Claude Code cloud
 
 **Docs-only, READ-ONLY against the DB.** The register instructs every pass to *"re-measure each OPEN item's evidence number and record whether it grew, shrank, or resolved."* Two P1/P2 rows had stamps from 08-29 and 09-02 and were quotable as current. Both are now wrong in different directions.
