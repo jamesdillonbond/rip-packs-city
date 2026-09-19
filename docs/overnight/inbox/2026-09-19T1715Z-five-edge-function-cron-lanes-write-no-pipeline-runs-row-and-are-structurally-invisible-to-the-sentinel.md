@@ -73,3 +73,44 @@ Only for the two pack-sales lanes, and only as a side effect:
 3. A generic arm that reads `cron.job_run_details` for edge-function jobs and pairs it with an
    outcome-table freshness registry — the only option that scales, and the only one that would
    have caught this without knowing the lane existed.
+
+---
+
+## ✅ NEGATIVE CONTROL: the `done`-latch pattern is NOT widespread — swept, 2026-09-19 10:5x AM PT
+
+Before anyone repeats this: **every `*_cursor` / `*_state` base table in `public` carrying an
+`updated_at` was swept for the same staleness tell (20 tables).** Result — **no further dead lanes.**
+Each stale one is explained:
+
+| table | age | explanation |
+|---|---|---|
+| `ufc_studio_sales_history_state` | 2,051 h | UFC market closed 2026-05-13 — **expected** |
+| `allday_mint_scan_state` | 1,960 h | not investigated — see below |
+| `pack_opens_api_state` | 1,671 h | completed backfill, **live forward lane** (`allday-pack-opens-forward`) |
+| `sales_ingest_state` | 1,344 h | not investigated — see below |
+| `dune_budget_state` | 669 h | not investigated — see below |
+| `sales_seller_recovery_state` | 273 h | matches `sales-seller-recovery-dune`'s last find (09-08); already reported by the `Zero-Yield Lanes` arm |
+| `match_topshot_players_state` | 202 h | lane runs daily and succeeds with `rows_found = 0, rows_written = 0` **every day for 12 days** — genuinely nothing to match, not a latch |
+| `rtr_user_state`, `trade_chain_state` | NULL | empty tables |
+| everything else | ≤ 14.6 h | healthy |
+
+✅ **And the fix is holding:** both pack-sales cursors now read **0.0 h** in this same sweep, against
+the 5.6 and 6.7 days they were frozen at this morning.
+
+⚠ **Three are NOT cleared, only un-investigated** — `allday_mint_scan_state` (82 d),
+`sales_ingest_state` (56 d), `dune_budget_state` (28 d). Each may be a completed backfill like
+`pack_opens_api_state`, or may be another latch. **The discriminator is the same one:** does a
+forward lane carry the head? Do not unlatch any of them without answering that first.
+
+## ⚠ Side finding: a DAILY zero-yield lane cannot trigger the `Zero-Yield Lanes` arm
+
+`match-topshot-players` has found **0 rows on 12 consecutive daily runs** and the arm does not name
+it, because the arm's population is `7d zero / 30d baseline / ≥50 runs` — **a daily lane can never
+reach 50 runs in the window.** So the arm is structurally blind to exactly the lanes whose waste is
+cheapest to stop.
+
+⭐ This is the same **threshold-vs-cadence** class as `Pipeline Silence` warning that
+`topshot-active-listings-ingest` is "silent 952m (>900m)" when that lane is simply irregular and
+succeeded on its last three runs (349 / 281 / 361 rows). **Neither is a false alarm exactly — each
+is a population whose shape the threshold was not chosen for.** Cheap to fix (scale the run-count
+floor by the lane's cadence rather than using a constant); not shipped here.
