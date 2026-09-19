@@ -82,3 +82,23 @@ the migration existed.
 `rpc-ts-listings-atlas-sync` timeouts fall below ~5% of own runs in **every** hour-of-day bucket, while
 the control lane's rate is unchanged. **Falsifier:** the control lane improves too, or the gain
 disappears at the 17:00–21:00Z peak where the baseline is worst.
+
+---
+
+## ⭐ FOLLOW-UP 2026-09-18 7:3x PM PT — THE CAUTION ABOVE IS CONFIRMED, AND THE STORY INVERTS
+
+An hour on, with the sample the 13-minute reading did not have. **The autovacuum setting SURVIVED the R101 revert** (`reloptions` still `0.02/0.02`), so it can be split cleanly. Three phases, `rpc-ts-listings-atlas-sync`:
+
+| phase | window (PT) | ticks | timeouts | % | avg secs |
+|---|---|---:|---:|---:|---:|
+| 1 · post-recovery, **before** the autovacuum fix | 12:02 → 6:12 PM | 186 | 8 | **4.3%** | 21.9 |
+| 2 · autovacuum fix **+ R101 bodies live** | 6:14 → 7:14 PM | 31 | 12 | **38.7%** | 71.4 |
+| 3 · after the R101 **revert** (autovacuum still on) | 7:16 → 7:28 PM | 7 | 4 | **57.1%** | 104.7 |
+
+⭐ **THE CENTRAL CAUTION IS BORNE OUT.** This filing warned that *"timeouts since apply = 0"* would over-credit the fix. Pooled since apply it is now **16 of 38 = 42.1%**, and **no phase after the fix is below 38%**. The 13-minute zero was the quiet tail of phase 1, exactly as flagged.
+
+🚨 **AND THE INVERSION: the six hours BEFORE the fix were the lane's best stretch on record — 4.3% / 21.9 s against a 7-day baseline of 7.2–55.2% / 25–85 s.** That is the point this filing was making from the other direction: **the post-outage window is not a valid baseline, and here it was anomalously GOOD rather than anomalously bad.** Anyone comparing "after the fix" to "the hours before it" will read a large regression that the fix may have nothing to do with.
+
+⛔ **CAUSE NOT ASSERTED, and three reasons why it must not be.** (a) Phase 2 straddles **two** concurrent changes — the autovacuum setting and the R101 bodies — so it cannot attribute to either. (b) Phase 3 is **7 ticks over 12 minutes**, below anything worth a verdict. (c) The revert commit itself records an **IO spell**, and `avg_secs` of 104.7 is consistent with one, so load is an unexcluded confound. ⚠ **What can be said: the autovacuum change has NOT demonstrated a gain, and the lane is currently worse than in the hours before it landed.**
+
+**Amended exit, unchanged in spirit:** judge it on a full 24 h, **hour-of-day against hour-of-day**, with 13:00–19:00Z excluded AND **phase 1 excluded too** — it is now demonstrably not representative either.
