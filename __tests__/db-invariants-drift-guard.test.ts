@@ -317,7 +317,7 @@ const PINS = [
   {
     fn: "resolve_moment_id",
     test: "supabase/tests/resolve_moment_id.sql",
-    migration: "supabase/migrations/20260704020000_audit_20260704_resolve_moment_id_cached_listings_fallback.sql",
+    migration: "supabase/migrations/20260919174322_audit_20260919_resolve_moment_id_resolves_a_base58_mint.sql",
   },
   {
     fn: "backfill_allday_edition_jersey",
@@ -382,16 +382,14 @@ const PINS = [
   {
     fn: "sync_ts_listings_from_atlas",
     test: "supabase/tests/sync_ts_listings_from_atlas.sql",
-    // 2026-09-18: pointed at 20260919012821 for 42 minutes, then REVERTED by 20260919021449 (same-evening IO spell, later RULED OUT as the cause).
-    // 2026-09-19: R101 v2 — scan-once (slim _open24, no memory grants) + delta-first upserts; equivalence proven on prod data before apply.
-    migration: "supabase/migrations/20260919152824_audit_20260919_r101_v2_atlas_listing_tick_scans_the_open_book_once_and_upserts_only_the_delta.sql",
+    // 2026-09-18: pointed at 20260919012821 for 42 minutes, then REVERTED by 20260919021449 (same-evening IO spell, cause unresolved) — back to the 09-07 body.
+    migration: "supabase/migrations/20260919021449_audit_20260918_revert_atlas_listing_syncs_to_their_0907_bodies_under_an_io_spell.sql",
   },
   {
     fn: "sync_edition_offers_from_atlas",
     test: "supabase/tests/sync_edition_offers_from_atlas.sql",
-    // 2026-09-18: pointed at 20260919012821 for 42 minutes, then REVERTED by 20260919021449 (same-evening IO spell, later RULED OUT as the cause).
-    // 2026-09-19: R101 v2 — scan-once (slim _open24, no memory grants) + delta-first upserts; equivalence proven on prod data before apply.
-    migration: "supabase/migrations/20260919152824_audit_20260919_r101_v2_atlas_listing_tick_scans_the_open_book_once_and_upserts_only_the_delta.sql",
+    // 2026-09-18: pointed at 20260919012821 for 42 minutes, then REVERTED by 20260919021449 (same-evening IO spell, cause unresolved) — back to the 09-07 body.
+    migration: "supabase/migrations/20260919021449_audit_20260918_revert_atlas_listing_syncs_to_their_0907_bodies_under_an_io_spell.sql",
   },
   {
     fn: "mcp_get_fmv",

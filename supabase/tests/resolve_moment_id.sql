@@ -8,11 +8,24 @@
 --   4. moments.nft_id        (bigint input)                  → kind 'moment'
 --   5. wallet_moments_cache  (bigint input, TS wins ties)    → kind 'moment'
 --   6. cached_listings_v2    (bigint input, active > done)   → kind 'edition'
--- Two subtle invariants this pins: the wmc fallback PREFERS Top Shot on a
--- cross-collection nft-id collision, and the cached-listing fallback prefers an
--- OPEN listing (completed_at IS NULL) over a completed one. DDL below is a
--- VERBATIM copy of the committed migration
--- (supabase/migrations/20260704020000_audit_20260704_resolve_moment_id_cached_listings_fallback.sql),
+--   7. wallet_moments_cache  (BASE58 input, Solana/Candy)     → kind 'moment'
+-- Three subtle invariants this pins: the wmc fallback PREFERS Top Shot on a
+-- cross-collection nft-id collision; the cached-listing fallback prefers an
+-- OPEN listing (completed_at IS NULL) over a completed one; and step 7 is
+-- reachable AT ALL.
+--
+-- ⛔ WHY STEP 7 EXISTS (2026-09-19). Steps 5 and 7 are THE SAME QUERY. Step 5
+-- was already text-keyed (`WHERE w.moment_id = p_id`) and could always have
+-- answered a Solana mint — but it lives inside `IF v_nft IS NOT NULL`, a BIGINT
+-- GATE in front of a TEXT QUERY, so every Candy MLB /moment/<mint> URL fell past
+-- all six branches and 404'd. Measured live that day: /insights/top-sales (a
+-- public 200 page) was publishing 7 Candy sale rows whose click-through was one
+-- of those 404s, against 6,847 distinct Candy sale mints all resolvable through
+-- wmc. The arm below therefore pins REACHABILITY, not a new lookup — and the
+-- step-5 arms stay exactly as they were, as the no-change control.
+--
+-- DDL below is a VERBATIM copy of the committed migration
+-- (supabase/migrations/20260919174322_audit_20260919_resolve_moment_id_resolves_a_base58_mint.sql),
 -- which is byte-identical to live prod (verified via pg_get_functiondef).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
@@ -125,6 +138,36 @@ BEGIN
     IF FOUND THEN RETURN; END IF;
   END IF;
 
+  -- base58 fallback (2026-09-19): Candy MLB is on Solana, whose mint address is
+  -- base58 -- not a uuid and not a bigint -- so a Candy /moment/<mint> URL fell
+  -- through every branch above and 404'd. The wmc lookup that resolves it was
+  -- ALREADY HERE and already text-keyed (`w.moment_id = p_id`); it was simply
+  -- unreachable, sitting inside `IF v_nft IS NOT NULL` -- a bigint GATE in front
+  -- of a text QUERY. Measured 2026-09-19: 6,847 distinct Candy sale mints, all
+  -- resolvable through wmc (25,458 Candy wmc rows), while /insights/top-sales
+  -- was publishing 7 Candy rows whose click-through was one of those 404s.
+  --
+  -- No Top Shot tie-break here, and none is needed: Flow nft_ids are numeric, so
+  -- a base58 key cannot collide across chains. Ordered deterministically anyway
+  -- so the returned row never depends on the plan. Measured over the whole
+  -- base58 population: 0 moment_ids map to more than one (edition_key, serial).
+  --
+  -- Cost: one probe of idx_wmc_moment_collection_cover (moment_id, collection_id)
+  -- INCLUDE (edition_key, serial_number) -- an existing covering index, so this
+  -- adds no new index and no new scan shape (R46: a new read states its cost).
+  IF p_id ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$' THEN
+    RETURN QUERY
+    SELECT 'moment'::TEXT, NULL::UUID, e.id, w.serial_number,
+           w.collection_id, c.slug::TEXT, NULL::TEXT
+    FROM wallet_moments_cache w
+    JOIN collections c ON c.id = w.collection_id
+    JOIN editions e ON e.collection_id = w.collection_id AND e.external_id = w.edition_key
+    WHERE w.moment_id = p_id
+    ORDER BY w.collection_id, w.edition_key, w.serial_number
+    LIMIT 1;
+    IF FOUND THEN RETURN; END IF;
+  END IF;
+
   RETURN;
 END;
 $function$;
@@ -135,8 +178,9 @@ DECLARE
   ts    uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';  -- nba_top_shot
   ad    uuid := 'dee28451-5d62-409e-a1ad-a83f763ac070';  -- nfl_all_day
   pin   uuid := '7dd9dd11-e8b6-45c4-ac99-71331f959714';  -- disney_pinnacle
+  cdy   uuid := '209ade70-32c5-4470-bc7c-4793d660f713';  -- candy_mlb (Solana)
 BEGIN
-  INSERT INTO public.collections VALUES (ts,'nba_top_shot'),(ad,'nfl_all_day'),(pin,'disney_pinnacle');
+  INSERT INTO public.collections VALUES (ts,'nba_top_shot'),(ad,'nfl_all_day'),(pin,'disney_pinnacle'),(cdy,'candy_mlb');
 
   -- editions: TS+AllDay keyed for the wmc fallback; a standalone edition-by-uuid;
   -- two AllDay editions for the cached-listing active-vs-completed tie-break.
@@ -145,7 +189,8 @@ BEGIN
     ('a0000000-0000-0000-0000-000000000002', ad, 'ekey-ad'),   -- wmc AllDay row
     ('22222222-2222-2222-2222-222222222222', ts, 'ekey-eo'),   -- edition-by-uuid
     ('33333333-3333-3333-3333-333333333333', ad, 'ekey-clA'),  -- clv active
-    ('44444444-4444-4444-4444-444444444444', ad, 'ekey-clD');  -- clv completed
+    ('44444444-4444-4444-4444-444444444444', ad, 'ekey-clD'),  -- clv completed
+    ('55555555-5555-5555-5555-555555555555', cdy, 'junior-caminero-pink');  -- base58/wmc
 
   -- moment A: hit by both its UUID (scenario 2) and its nft_id 700700 (scenario 4)
   INSERT INTO public.moments VALUES
@@ -159,6 +204,11 @@ BEGIN
   INSERT INTO public.wallet_moments_cache VALUES
     ('800800', 5, ts, 'ekey-ts'),
     ('800800', 9, ad, 'ekey-ad');
+
+  -- base58 (Solana) mint: the real shape, from a real Candy sale. Absent from
+  -- moments and unparseable as uuid OR bigint, so ONLY step 7 can answer it.
+  INSERT INTO public.wallet_moments_cache VALUES
+    ('24XCd26urKPWKBfjqwcep6qk7kMRQ21XkAEWBxUSmDCN', 2, cdy, 'junior-caminero-pink');
 
   -- cached-listing fallback (bigint 900900 absent from moments+wmc): a COMPLETED
   -- row (older) and an ACTIVE row (newer) — active must win regardless of order.
@@ -192,7 +242,21 @@ SELECT _assert_eq((SELECT serial_number::text FROM resolve_moment_id('800800')),
 SELECT _assert_eq((SELECT kind FROM resolve_moment_id('900900')), 'edition', 'cached-listing fallback → edition');
 SELECT _assert_eq((SELECT edition_id::text FROM resolve_moment_id('900900')), '33333333-3333-3333-3333-333333333333', 'active listing (completed_at NULL) wins over completed');
 
--- 7. unknown ids return no rows (numeric miss and text miss)
+-- 7. base58 (Solana / Candy MLB) mint resolves through the wmc fallback.
+--    ⚠ This is the arm that reds against the pre-2026-09-19 body: the identical
+--    query at step 5 is gated behind `IF v_nft IS NOT NULL`, so a base58 id
+--    reached it in neither branch and the function returned zero rows.
+SELECT _assert_eq((SELECT kind FROM resolve_moment_id('24XCd26urKPWKBfjqwcep6qk7kMRQ21XkAEWBxUSmDCN')), 'moment', 'base58 mint → moment (step 7 is reachable)');
+SELECT _assert_eq((SELECT collection_slug FROM resolve_moment_id('24XCd26urKPWKBfjqwcep6qk7kMRQ21XkAEWBxUSmDCN')), 'candy_mlb', 'base58 mint resolves to candy_mlb');
+SELECT _assert_eq((SELECT serial_number::text FROM resolve_moment_id('24XCd26urKPWKBfjqwcep6qk7kMRQ21XkAEWBxUSmDCN')), '2', 'base58 mint carries the right SERIAL, not just the edition');
+SELECT _assert_eq((SELECT edition_id::text FROM resolve_moment_id('24XCd26urKPWKBfjqwcep6qk7kMRQ21XkAEWBxUSmDCN')), '55555555-5555-5555-5555-555555555555', 'base58 mint resolves via editions.external_id = wmc.edition_key');
+
+-- 7b. NO-CHANGE CONTROL for step 7: a base58-SHAPED id that is in no wmc row
+--     must still return nothing. Without this, "always resolve" would satisfy
+--     7 while turning every unknown mint into a fabricated moment page.
+SELECT _assert_eq((SELECT count(*)::text FROM resolve_moment_id('ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ')), '0', 'unknown base58 id → still no rows');
+
+-- 8. unknown ids return no rows (numeric miss and text miss)
 SELECT _assert_eq((SELECT count(*)::text FROM resolve_moment_id('123456789')), '0', 'unknown numeric id → no rows');
 SELECT _assert_eq((SELECT count(*)::text FROM resolve_moment_id('no-such-id')), '0', 'unknown text id → no rows');
 

@@ -34,6 +34,10 @@ import { GET } from "@/app/api/search/route"
 
 const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
+// Panini Blockchain — published:false, collections.is_active false, and ZERO
+// rows in `editions`, so it has no entity route and never will until it gets
+// one. It replaced Candy as this file's route-less fixture on 2026-09-19.
+const PANINI = "d1a0a7f5-609a-49f4-a1a7-4eaac55b020b"
 
 const req = (qs: string) =>
   ({ nextUrl: new URL("http://localhost/api/search" + qs) }) as any
@@ -103,14 +107,43 @@ describe("GET /api/search", () => {
   })
 
   it("drops rows whose collection has no public route", async () => {
-    // candy_mlb is published:false — linking to /candy-mlb/player/... would 404.
+    // ⚠ THIS FIXTURE WAS CANDY UNTIL 2026-09-19, on the stated premise
+    // "candy_mlb is published:false". That premise was wrong in two ways: Candy
+    // has been published:true since 2026-09-06, and what actually dropped the
+    // row was its absence from lib/collection-slug.ts, which the route reads via
+    // getCollectionByUuid. So this test was green for a reason it did not state,
+    // and it was ALSO pinning a real defect in place — rpc_search_catalog has
+    // always returned Candy hits (7 for "trout", measured live), and every one
+    // of them was being thrown away before it reached the reader.
+    //
+    // Panini is the honest fixture for this invariant: published:false,
+    // collections.is_active false, and zero rows in `editions`, so there is no
+    // entity route to link to and a link would genuinely 404.
     state.rpc = {
-      data: [row(), row({ collection_id: CANDY, label: "Mickey Moniak", slug: "mickey-moniak" })],
+      data: [row(), row({ collection_id: PANINI, label: "Mickey Moniak", slug: "mickey-moniak" })],
       error: null,
     }
     const j = await (await GET(req("?q=mickey"))).json()
     expect(j.results).toHaveLength(1)
     expect(j.results[0].label).toBe("Damian Lillard")
+  })
+
+  // The other half of the same rule, and the one that was missing: a collection
+  // that DOES have a public entity route must survive and be linked to it.
+  it("keeps a Candy MLB hit and links it to the Candy entity route", async () => {
+    state.rpc = {
+      data: [row({ collection_id: CANDY, collection_slug: "candy_mlb", label: "Mike Trout", slug: "mike-trout", edition_count: 6 })],
+      error: null,
+    }
+    const j = await (await GET(req("?q=trout"))).json()
+    expect(j.results).toHaveLength(1)
+    expect(j.results[0]).toMatchObject({
+      kind: "player",
+      label: "Mike Trout",
+      href: "/candy-mlb/player/mike-trout",
+      collection: "candy-mlb",
+      collectionName: "Candy MLB",
+    })
   })
 
   it("drops a row whose kind has no known route instead of guessing one", async () => {

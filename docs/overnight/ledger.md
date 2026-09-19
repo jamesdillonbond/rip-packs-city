@@ -10,6 +10,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-19 · 🪙 A BIGINT GATE IN FRONT OF A TEXT QUERY — /moment/<mint> 404'd for every Candy NFT, and the lookup that answers it had been sitting in the function, unreachable, the whole time · Cowork cloud
+
+**Shipped: 1 migration (`20260919174322`) + its pin + the drift-guard registration + one test correction.** Second pass of the Candy parity work; the first (`afa38c36b`) is the entry below.
+
+🚨 **`/insights/top-sales` is a public 200 page and it was publishing dead links.** `v_insights_top_sales` carries **7 Candy rows** in the 30d window; every one has an `nft_id`, so `rowHref()` sends the reader to `/moment/<base58 mint>`. Probed live before the fix: `/moment/24XCd26urKPWKBfjqwcep6qk7kMRQ21XkAEWBxUSmDCN` → **404**, `/moment/Gf2g1FAKJNWArEYBt6NL6EVJvvsR3LqCpqtHwN5czWmG` → **404**, `/insights/top-sales` itself → 200. Same class as the market-tab 404s below, different resolver.
+
+🔬 **MECHANISM — and it is the sharpest thing in this pass.** `resolve_moment_id` walks three key spaces: a Pinnacle render id (text), a uuid, and an on-chain id parsed as **BIGINT**. A Solana mint is base58, so it is none of them and the function fell past every branch. ⭐ **But the query that resolves a Candy mint was ALREADY IN THE FUNCTION and was ALREADY TEXT-KEYED** — the 2026-06-11 wmc fallback reads `WHERE w.moment_id = p_id`, a text comparison. It was unreachable for one reason only: it sits inside `IF v_nft IS NOT NULL`. **A bigint gate in front of a text query.** So this migration adds no lookup; it makes the existing one reachable for a key shape it could always answer.
+
+📏 **Measured before applying, not after:** 6,847 distinct Candy sale mints · 25,458 Candy `wallet_moments_cache` rows keyed by that mint · three sampled mints resolve to the right edition **and the right serial** (2 / 9 / 1, matching the serial on the sale row) · **ambiguity check over the whole base58 population: 0 moment_ids map to more than one (edition_key, serial_number)**, so the `LIMIT 1` cannot pick wrong. Ordered deterministically anyway, so the returned row never depends on the plan.
+
+💰 **Cost stated because R46 says it must be:** one probe of the **existing** covering index `idx_wmc_moment_collection_cover (moment_id, collection_id) INCLUDE (edition_key, serial_number)`. No new index, no new scan shape, and the branch is shape-gated on `^[1-9A-HJ-NP-Za-km-z]{32,44}$` so it never runs for a Flow id.
+
+**Verified after, every existing key space unchanged:** TS nft_id → `moment/nba_top_shot` · moments uuid → `moment` · pinnacle render id → `pinnacle_edition` · unknown numeric → 0 rows · unknown text → 0 rows · base58 mint → `moment/candy_mlb` serial 2, edition `junior-caminero-pink`. ACLs preserved (`CREATE OR REPLACE` does not reset them; anon EXECUTE **false**, authenticated **false**, service_role **true**, verified with `has_function_privilege` both before and after) · `check_secdef_anon_exec_drift()` length **0**.
+
+**Three-file discipline followed:** pin `supabase/tests/resolve_moment_id.sql` rebuilt **from its own verbatim block** (pin md5 == live md5 == `eedccdd6…` BEFORE the edit, and pin == migration == live == `7952c150…` after), ladder extended to step 7, and the registration row in `__tests__/db-invariants-drift-guard.test.ts` repointed at the new migration. New arms pin the base58 mint's **kind, collection, serial AND edition_id** — plus **7b, the no-change control**: a base58-shaped id in no wmc row must still return zero rows, or "always resolve" would satisfy the new arm by turning every unknown mint into a fabricated moment page. The step-5 arms are untouched and serve as the second control.
+
+⚠ **THE ANON-EXEC MARKER FAILED THE SAME WAY IT FAILED THIS MORNING**, and the note now lives in the migration itself: the guard's predicate is one `.some()` testing `anon-exec:` **and** the function name **on a single line**, so a name on the next line reds identically to no marker at all.
+
+🔁 **AND CI CAUGHT A SECOND DEFECT THE FIRST COMMIT HAD UNCOVERED — a test that was green for a reason it did not state.** `__tests__/api-search.test.ts > drops rows whose collection has no public route` reddened, and it was right to. Its fixture comment read *"candy_mlb is published:false"* — **false since 2026-09-06**. What actually dropped the row was Candy's absence from `lib/collection-slug.ts`, which `/api/search` reads through `getCollectionByUuid`. ⛔ **So that test was pinning a live defect in place: `rpc_search_catalog` has ALWAYS returned Candy hits — 7 for the query "trout" (1 player + 6 editions), measured live — and the route threw every one away before it reached the reader.** Site search now returns them. Panini took over as the route-less fixture (published false, `is_active` false, **zero rows in `editions`**, so a link would genuinely 404 — a data fact, not a policy), and a positive arm now pins the other half of the rule: a collection that HAS a route must survive and be linked to `/candy-mlb/player/mike-trout`.
+
+**Verified after:** `db-invariants-drift-guard` + `migration-new-function-states-its-anon-exec-decision` green (216 tests) · `api-search` green (16) · live resolver probes above. ⚠ `npx tsc --noEmit` again NOT run — OOM-killed on the desktop VM (exit 137); typecheck is owed to CI.
+
+**Exit condition:** after deploy, `/moment/24XCd26urKPWKBfjqwcep6qk7kMRQ21XkAEWBxUSmDCN` answers 200 and renders serial **#2** of Junior Caminero PINK; a search for "trout" returns Candy results.
+**Falsifier:** if a Flow `/moment/<nft_id>` URL changes what it renders, the branch is not as additive as the shape gate claims — revert immediately, since that would mean the regex matched a numeric id.
+
+- **Revert:** `git revert <sha>` (`git log --grep="BIGINT GATE"`) **plus the DB half** — re-apply the function body from `supabase/migrations/20260704020000_audit_20260704_resolve_moment_id_cached_listings_fallback.sql` verbatim, i.e. delete the final `IF p_id ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$' THEN … END IF;` block. The function writes no data, so the revert is complete.
+
 ### 2026-09-19 · 🩹 PANINI: THE LANE HAS NEVER FAILED AND COULD NOT REACH A QUARTER OF ITS CATALOGUE — and the public board's freshness disclosure was structurally unable to say so · Cowork cloud (Trevor present, chose all three scopes)
 
 **Shipped** `8e40e742` + `3c5756dd`, migrations `20260919172027` / `173527` / `173610`.
