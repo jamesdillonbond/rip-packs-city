@@ -295,8 +295,20 @@ describe("PaniniSqueezeClient — coverage banner", () => {
     worst_family_checklist_pct: 7,
     checklist_players_seen: 487,
     checklist_players_new_24h: 5,
-    oldest_family_refresh_h: 384, // >= 48 → rotation-age clause fires
+    oldest_family_refresh_h: 384, // legacy MAX-per-parallel pair; kept, no longer the copy
     newest_family_refresh_h: 3,
+    // Added 2026-09-19. The pair above is a MAX PER PARALLEL, so a parallel reads as freshly
+    // refreshed the moment ANY ONE of its editions is walked — measured that day, `Base Prizms
+    // Aguila` reported 0.0h while 62.1% of its editions were 45+ days stale. These are the real
+    // per-edition ages and they are what the banner must now say. Values are the live 2026-09-19
+    // readings so the fixture is a real shape, not an invented one.
+    edition_age_p50_h: 276,
+    edition_age_p90_h: 1384,
+    edition_age_max_h: 1562,
+    editions_stale_45d: 1265,
+    pct_editions_stale_45d: 24.9,
+    editions_walked_7d: 1671,
+    pct_editions_walked_7d: 32.9,
   }
 
   it("renders the full disclosure chain when every field is populated", () => {
@@ -309,7 +321,14 @@ describe("PaniniSqueezeClient — coverage banner", () => {
     expect(cov).toMatch(/87%[\s\S]*down to[\s\S]*7%/i) // best/worst per-parallel range
     expect(cov).toMatch(/12/) // listing_gated_families of families
     expect(cov).toMatch(/new in the last 24h/i)
-    expect(cov).toMatch(/16 days/i) // oldest 384h rounded to 16 days
+    // The freshness clause is now per-EDITION, not per-parallel. 276h -> 12 days typical,
+    // 1384h -> 58 days for the oldest tenth, and the 45-day backlog is stated outright.
+    expect(cov).toMatch(/typical row was last checked\s*12\s*days ago/i)
+    expect(cov).toMatch(/oldest tenth[\s\S]*58\s*days ago/i)
+    expect(cov).toMatch(/25%[\s\S]*1,265[\s\S]*not been re-checked in over 45 days/i)
+    // ⚠ The old wording quoted `oldest_family_refresh_h` (384h -> "16 days"). It must NOT come
+    // back while the per-edition figures are present: it understates row age by construction.
+    expect(cov).not.toMatch(/16 days/i)
     expect(cov).toMatch(/floor, not a census/i)
   })
 
@@ -319,14 +338,18 @@ describe("PaniniSqueezeClient — coverage banner", () => {
         initialRows={[row()]}
         totals={TOTALS}
         coverage={{ ...COVERAGE, best_family_checklist_pct: null, worst_family_checklist_pct: null,
-          listing_gated_editions: 0, checklist_players_new_24h: 0, oldest_family_refresh_h: 3 }}
+          listing_gated_editions: 0, checklist_players_new_24h: 0, oldest_family_refresh_h: 3,
+          // Null the per-edition ages too, so this case exercises the LEGACY branch and proves it
+          // still stays silent under 48h — a payload predating migration 20260919172027.
+          edition_age_p50_h: null, edition_age_p90_h: null, pct_editions_stale_45d: null }}
         fetchedAt="2026-08-02T00:00:00Z"
       />,
     )
     const cov = container.querySelector(".psq-cov")?.textContent ?? ""
     expect(cov).toMatch(/thinnest exactly where cards are scarcest/i)
     expect(cov).not.toMatch(/new in the last 24h/i) // 0 new → clause omitted
-    expect(cov).not.toMatch(/refreshed in rotation/i) // oldest < 48h → clause omitted
+    expect(cov).not.toMatch(/refreshed in rotation/i) // oldest < 48h → legacy clause omitted
+    expect(cov).not.toMatch(/last checked/i) // and no per-edition clause without the new fields
   })
 
   it("omits the banner entirely when the set has zero indexed editions", () => {
