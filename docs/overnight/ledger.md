@@ -10,6 +10,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 🏁 SESSION CLOSE — 7 migrations, 2 reusable rules promoted, and 6 items that need Trevor · Cowork cloud
+
+**Handoff:** [docs/handoff-2026-09-18-evening-cowork-r101-r103-r107.md](../handoff-2026-09-18-evening-cowork-r101-r103-r107.md). `main` at `bc7cbd239`, tree clean, **CI green with zero reds**.
+
+✅ **SHIPPED TO THE DB (7):** the txn-control pin guard got a caller in `rpc_ops_snapshot()` · autovacuum tightened on `topshot_atlas_market_events` (**117,758 → 713 heap fetches**, 9,385 → 678 ms) · four documentation migrations (R103's pricing consumer, `portfolio_snapshots`' invisible backstop, R107's staleness class, `get_editions_latest_fmv`'s refuted 249×) · `check_edition_fmv_current_source_drift()` · **and the 85-price repair**, after which the guard reads **0 at full fidelity**.
+
+🚨 **THE FINDING OF THE NIGHT, and it came out of a refusal.** Swapping `v_topshot_parallel_premiums` onto `edition_fmv_current` was routine R50 work that qualified on every cost measure. The equivalence check — meant to be a formality — showed the cache publishing values its own source rows contradict: **85 rows, all skewed HIGH, serving the pre-haircut ask as FMV on 11 public boards**, while `fmv_current` (18 app routes) served the correct 4,949.45 for an edition the cache priced at 8,999.00. ⭐ **The swap would have made a public pricing board faster and wronger. Not shipping it is the result.**
+
+📚 **TWO RULES PROMOTED OUT OF THIS LOG, because a fact left only here stops being read.** CLAUDE.md had **10 characters** of headroom, so the first one DISPLACED rather than spent: *a `*_at` name is its WRITER's contract, and a **CACHE keyed on one rots INVISIBLY — the tell is it disagreeing with the row it NAMES, not with `now()`***. Both displaced instance details were already in `database.md`, which now carries the full class. The second went to `testing-and-ci.md`: *an alarm that samples its whole population in one pass can only report THAT something was slow, never WHICH* — R50's falsifier would otherwise have reopened eight rows for one IO spell.
+
+🔁 **FOUR CORRECTIONS TO MY OWN WORK, all recorded in place:** a pooled ~29% rate (real: ~5%) · a 30k/h churn figure that was itself a short-sample artifact (real: ~13,850/h, matching the original sizing) · reversing a twice-stated "do not patch" once the guard removed its only objection · and applying one migration above my own published resume gate, with the reasoning written down so it can be argued with rather than inherited.
+
+👉 **NEEDS TREVOR (6):** R107's real fix (the refresh window) · R103's corroboration input · a reader for the new guard · `v_topshot_parallel_premiums`' cost fix (blocked on R107) · edge-fn `*_GATE_KEY` secrets and the pg_net `VACUUM FULL` · and ⏰ **`rpc-dune-free-tier-sunset` fires 2026-09-23 12:00Z** — ordering verified safe, with the one-line manual fallback in the handoff.
+
+⏰ **SCHEDULED, UNATTENDED:** the R101 falsifier fires **2026-09-20 01:30Z**, carrying the full four-change-point timeline so it cannot misattribute, and told to read only on a calm instance.
+
+- **Revert:** n/a — this entry documents only. Per-item revert paths are in each migration header and in the handoff.
+
 ### 2026-09-18 · ⚖️ I REVERSED MY OWN TWICE-STATED POSITION AND REPAIRED THE 85 PRICES — because the guard removed the objection and the product was contradicting itself · Cowork cloud
 
 **One migration (`20260919032658`): a backup table plus an 85-row, one-column UPDATE.** R107's filing, its register row and two entries below this one all say *do not patch these rows*. This entry says why that was right when written and wrong forty minutes later.
