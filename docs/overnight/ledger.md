@@ -11,6 +11,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🗃 A DAYTIME-MONITOR FILING WAS STRANDED ON THE WINDOWS BOX BY A 104-COMMIT-BEHIND CLONE — recovered, plus the push-capability and parity readings that clone made look broken · Claude Code (Windows box)
+
+**Shipped: 1 recovered filing + its two INDEX counts. No code, no DB change.**
+
+⭐ **THE FINDING IS THE STRANDING MECHANISM, NOT THE FILING.** The `c:\Users\TDill\rip-packs-city` clone was **104 commits behind `origin/main`** with 123 files reading as modified and 36 untracked. Every one of those was already upstream — the clone was a stale snapshot, and `git diff origin/main` confirmed it: 72 differing files, **162 insertions against 7,087 deletions**, i.e. origin has grown past this tree everywhere. ⚠ **The danger is that this state is INDISTINGUISHABLE AT A GLANCE from a box holding a pile of unpushed work**, so the safe-looking move (leave it alone) is what stranded the filing, and the fast move (reset) is what would have destroyed it. **What separated them was one command:** the local HEAD `cc83e096f` was an **ancestor** of `origin/main`, so the sync was a `git merge --ff-only` — a fast-forward, not a discard.
+
+📏 **Exactly ONE artifact in that tree was not upstream:** `docs/overnight/inbox/2026-09-19T2106Z.md`, a 2:06 PM PT daytime-monitor filing carrying a live BREACH (`trust_precompute_max_age_hours` 20.31 vs 13; jobid **506** `rpc-refresh-fmv-confidence-precompute` failing on the 120 s ceiling at 09:35Z and 13:35Z, 118.4 s at 05:35Z). **It had been invisible to every other session all afternoon.** The other two local-only files were junk and are deleted: `_to_delete_pwsmoke.mjs` (the throwaway Playwright probe from the #125 Atlas work) and `20260919141347_…r108_the_nfl_partial_index…sql`, a record-only duplicate whose own header points at the committed `…141500` file.
+
+✅ **PUSH FROM THIS BOX WORKS — and the error string is the whole reason I can say so.** `git push --dry-run origin main` was **rejected**, which is what a credential failure looks like. It read `! [rejected] main -> main (non-fast-forward)` + *"the tip of your current branch is behind its remote counterpart"* — **BEHIND, not DENIED.** CLAUDE.md's discriminator, paying for itself: had I read "push failed" and stopped, the recovery would have gone out through `format-patch` for no reason.
+
+🔁 **RETRACTION, MINE, INSIDE THE SAME TURN: I read migration parity as broken in both directions and it is GREEN.** The DB holds `20260919141347` / `20260919123239` where the repo holds `…141500` / `…123500` — the same two migrations under different version stamps, which looks like drift each way. **`scripts/check-migration-parity.mjs` matches on NAME, not version, deliberately and with its reasoning in the file header**, because `apply_migration` assigns its own stamp at apply time and the filename is a later manual step. **Ran it rather than reasoned about it: `237 applied to prod, 1145 versioned files committed · ✓ every migration applied in the window has a committed file`, exit 0.** ⚠ *A version-vs-name mismatch is this repo's NORMAL state, not a finding* — I will not re-raise it, and neither should the next session.
+
+**Verified after:** 5 inbox guards green, **27 tests** (`inbox-index-lists-every-filing`, `…entries-sit-under-their-own-date`, `inbox-corrections-cannot-be-silently-clobbered`, `inbox-is-append-only-since-the-rule`, `fix-inbox-index-counts`) · INDEX counts moved **530 → 531** and **09-19 18 → 19**, both asserted against the directory by CI · working tree clean at `ee749b881` before the commit · the pre-sync tree is preserved in `git stash@{0}` on this box if anything here is wrong.
+
+- **Revert:** `git revert <sha>` (`git log --grep="STRANDED ON THE WINDOWS BOX"`). **No DB half, no deploy** — docs-only, and the tip is docs-only by design here because no code is waiting to ship. ⚠ A partial revert is wrong in the usual inbox way: dropping the filing without dropping both INDEX counts reds `inbox-index-lists-every-filing`.
+
 ### 2026-09-19 · 📚 THE CHAIN-TWO CANON IS WRITTEN DOWN — and paying for it in CLAUDE.md surfaced a stale lock that had blocked `git add` on this box for 5½ hours · Cowork cloud
 
 **Docs only: `CLAUDE.md` + 4 reference docs (1 new). No code, no DB change.**
