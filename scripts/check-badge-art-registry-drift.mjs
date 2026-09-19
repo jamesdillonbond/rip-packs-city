@@ -21,6 +21,22 @@
 // inspected zero rows — an empty query result, a renamed table — exits 0 and
 // reads as coverage. It fails instead if either live table comes back empty.
 //
+// ⚠ WHAT RUNS IT: the `Check badge-art registry drift` step in
+// .github/workflows/db-pin-staleness.yml, added 2026-09-19. Before that date NO
+// path reached this file — it was declared in package.json as `badges:art:check`
+// and invoked by no workflow, no test and no other script. Read that workflow's
+// header before assuming a green history means it has been running: GitHub does
+// not honour this repo's daily schedules (#80), so it is effectively
+// dispatch-only.
+//
+// ⚠ EXIT CODE IS FLAKY ON WINDOWS AND FAILS CLOSED. Measured 2026-09-19 on
+// Trevor's box: 1 run in 3 prints the clean ✓ line and then dies in libuv
+// teardown (`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`) with 127,
+// because process.exit() races the supabase-js keep-alive agent's handle close.
+// A clean result can therefore surface as a non-zero exit — a false alarm, never
+// a missed defect. Not observed on Linux CI. Read the printed verdict line, not
+// only the code.
+//
 // Usage:
 //   node scripts/check-badge-art-registry-drift.mjs          # report + non-zero exit on drift
 //   node scripts/check-badge-art-registry-drift.mjs --json   # machine-readable
@@ -168,9 +184,32 @@ if (!taxonomy || taxonomy.length === 0) {
   process.exit(2)
 }
 
+// ⚠ RESOLVED WITH A SECOND READ, NOT A PostgREST EMBED, and that is not a style
+// choice. This was `.select("normalized_key, icon_url, collections(slug)")` from
+// the day the guard was written (054b2467e) and it has NEVER once succeeded:
+// `badge_art_overrides.collection_id` carries NO foreign key to `collections`
+// (verified live 2026-09-19 — zero FK constraints on the table, and no migration
+// in this repo ever created one), so PostgREST cannot infer the relationship and
+// every run died on `Could not find a relationship … in the schema cache`.
+//
+// ⭐ The guard therefore exited 2 on its FIRST live read, every time — which is
+// why nothing it is supposed to watch has ever been measured. It was also wired
+// into no workflow, so the permanent failure was never seen either. Two layers of
+// silence stacked: a broken instrument that nothing ran.
+const { data: collections, error: colErr } = await sb.from("collections").select("id, slug")
+if (colErr) {
+  console.error(`collections read failed: ${colErr.message}`)
+  process.exit(2)
+}
+if (!collections || collections.length === 0) {
+  console.error("collections returned 0 rows — this check inspected nothing")
+  process.exit(2)
+}
+const SLUG_BY_ID = new Map(collections.map((c) => [c.id, c.slug]))
+
 const { data: overrides, error: ovErr } = await sb
   .from("badge_art_overrides")
-  .select("normalized_key, icon_url, collections(slug)")
+  .select("normalized_key, icon_url, collection_id")
 if (ovErr) {
   console.error(`badge_art_overrides read failed: ${ovErr.message}`)
   process.exit(2)
@@ -191,7 +230,20 @@ for (const row of taxonomy) {
   live[platform][row.normalized_key] = slug
 }
 for (const row of overrides) {
-  const platform = PLATFORM_BY_SLUG[row.collections?.slug]
+  // ⚠ THREE STATES, not two. An id that resolves to a collection which simply
+  // publishes no badge art (Golazos, Pinnacle, UFC, Candy) is a legitimate skip.
+  // An id that resolves to NOTHING is a dangling reference — with no FK to stop
+  // it, that is exactly the row this table can hold — and silently `continue`ing
+  // past it would let the override vanish from the comparison while the guard
+  // still reported a clean inspection.
+  const collectionSlug = SLUG_BY_ID.get(row.collection_id)
+  if (collectionSlug === undefined) {
+    problems.push(
+      `override "${row.normalized_key}" names collection_id ${row.collection_id}, which no row in collections carries — the override is unresolvable and was NOT compared`,
+    )
+    continue
+  }
+  const platform = PLATFORM_BY_SLUG[collectionSlug]
   if (!platform) continue
   const slug = slugOf(row.icon_url)
   if (!slug) continue
