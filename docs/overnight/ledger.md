@@ -10,6 +10,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
+### 2026-09-18 · 📈 THE 02:00Z SPELL ESCALATED 3× IN TEN MINUTES AND IS PURE READ-BANDWIDTH — contributors named, and this session stood DOWN on all DB writes · Cowork cloud
+
+**Docs only. An addendum to the entry below it, written because the picture changed and a concurrent session is working live.**
+
+📈 **ESCALATION, `pg_stat_activity` (io_wait / active / total):** 02:30Z **6 / 7 / 26** → 02:36Z **8 / 7 / 38** → 02:40Z **11 / 13 / 41** → 02:43Z **20 / 21 / 47**. Against the documented healthy control of roughly **io ≤ 3 / active ≤ 4**, this is ~7× the io-wait depth in thirteen minutes.
+
+🎯 **EVERY non-idle backend is `IO/DataFileRead` — it is read bandwidth, not locks, not CPU.** Longest-running at 02:43Z:
+
+| query | elapsed |
+|---|---:|
+| `refresh_wmc_fmv_changed(30, 200000)` | 149 s |
+| `run_pack_nft_identity_lane()` | 87 s |
+| `rekey_topshot_wmc_parallels(20000)` | 87 s |
+| `atlas_listing_verify_tick(2)` | 87 s |
+| 4 × PostgREST `pgrst_call` | 72 s |
+| `allday_resolve_unmapped_via_atlas(10)` · `refresh_candy_treasury_wallet()` · `topshot_moment_hydrate_tick(80)` · `atlas_market_drain()` | 27–28 s |
+| `autovacuum: ANALYZE public.editions` | 27 s |
+
+⚠ **NO SINGLE RUNAWAY.** ~15 heavy readers overlapping on a 2-core instance with a ~22 MB/s IO floor is the documented saturation class (#73/#84/R46), not one bad query. `refresh_wmc_fmv_changed` is the largest single reader and is already filed as *"wasteful, NOT broken, SIZED"* — **do not re-derive it**.
+
+👉 **FOR THE CONCURRENT SESSION:** `run_pack_nft_identity_lane()` is new tonight and is taking **87 s of pure read** per tick in this window. That is an observation, not an accusation — a spell makes every lane look expensive, and you already have a commit recording its per-tick cost. Worth a look once the instance is calm, against a calm baseline rather than this one.
+
+⛔ **WHAT THIS SESSION DID ABOUT IT: NOTHING TO THE DATABASE, DELIBERATELY.** Three things were ready to ship and were all held:
+1. `check_edition_fmv_current_source_drift()` — the R107 guard that would make that defect measurable instead of invisible.
+2. The `get_editions_latest_fmv` `COMMENT ON FUNCTION` correction — it still quotes the **refuted 249×** (1,334,789 buffers) instead of the measured **17×** (424,475 → 24,760 on the 6,190-id All Day list; 8–13× on 500 ids cold/warm). The 09-02 entry parks this explicitly: *"fix it on the next migration that touches FMV rather than burning a `PGRST002` burst on a comment."* This session touched FMV twice tonight, so it is owed — and batching it with the guard is exactly the intent.
+3. The R107 targeted repair of the 162 diverged cache rows.
+
+**Every one needs `apply_migration`, which costs a ~10–20 s user-facing `PGRST002` burst of schema-cache re-introspection, and the guard and the repair both need real reads to verify.** Adding any of that to a 20-deep IO-wait queue would make the instance worse and produce a reading that measures the spell rather than the change. ⭐ **The repo's own rule — *"a reading taken while its SUBJECT CHANGED is not a reading"*, and *"your OWN PROBE is the load here"* — applies to shipping, not only to measuring.**
+
+⚪ **ALSO CHECKED AND CORRECTLY NOT DONE:** the 18 remaining `.from("fmv_current")` call sites in `app/`. The 2026-09-02 entry already measured and ranked them — the one collection-scoped shape out-read **every** id-list call in the product by **3.6× from 1% of the calls**, and the verdict was *"convert an id-list site when a wider helper exists for another reason or its tail becomes the common case — not to drive a count to zero."* They are also guarded for shape by `fmv-current-reads-are-keyed-on-edition-id`. **A settled question, re-read rather than re-derived.**
+
+📏 **RESUME CONDITION for the held work:** `io_wait ≤ 3 AND active ≤ 4` on `pg_stat_activity`, plus under ~3% cron failures over a trailing 15 minutes. Verify with the same one-line probe before applying anything.
+
+- **Revert:** n/a — documents only.
+
 ### 2026-09-18 · 📦 THE UNOPENED TAB WAS A QUARTER OF THE TRUTH — Dapper's index says the wallet holds 375 sealed Top Shot + 59 sealed All Day packs; our tables knew 94. A per-wallet holdings sync now fills the gap, and a held/opened pack the index alone knows renders honestly · Claude Code (cloud) for Trevor, "keep going"
 
 **One migration (applied), route + UI + tests, docs.** Third sitting.
