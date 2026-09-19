@@ -1,0 +1,30 @@
+-- audit_20260919: mv_cross_collection_deals was born anon/authenticated-readable
+-- again at 18:48Z, when `20260919184828_audit_20260919_cross_collection_deals_gets_its_candy_arm`
+-- recreated the materialized view (a concurrent session's ship, applied via MCP;
+-- its repo file had not landed when this was written). This DB's
+-- `ALTER DEFAULT PRIVILEGES` for `postgres` in `public` grants anon=r,
+-- authenticated=r on every new MV (measured 2026-08-24, see
+-- 20260824233704_audit_20260824_security_invariant_mv_anon_readable_arm.sql), so
+-- every DROP + CREATE of an MV re-opens it — that arm exists for exactly this.
+--
+-- Found by the deploy-triggered Smoke Tests on 985ae50 (11:4x AM PT):
+--   HARD | public base tables: RLS on + no anon write | 1 violation(s):
+--        mv_anon_readable:mv_cross_collection_deals
+-- and confirmed live: check_public_security_invariants() → 1 row; relacl carried
+-- anon=rxm, authenticated=rxtm.
+--
+-- SAFE FOR THE BOARD, checked before applying: `cross_collection_deals_board`
+-- (security_invoker=on) reads this MV, but its only reader is
+-- app/api/public/insights/deals/route.ts, which uses `supabaseAdmin`
+-- (service_role). Anon never reads the MV directly — and could not this morning
+-- either, when the invariant read 0 and the board was up. The MV's refresher
+-- `refresh_cross_collection_deals()` runs as its pg_cron owner and is untouched.
+--
+-- ⚠ To the session that owns 20260919184828: include these two REVOKEs in that
+-- file (or in any future recreate of this MV) so the intended posture is stated
+-- where the object is created. This migration is idempotent beside it.
+--
+-- Revert: none intended. (`GRANT SELECT ON public.mv_cross_collection_deals TO anon,
+-- authenticated;` would re-open the invariant violation.)
+
+REVOKE ALL ON public.mv_cross_collection_deals FROM PUBLIC, anon, authenticated;
