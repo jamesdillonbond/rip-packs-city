@@ -2,6 +2,111 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐⭐ AN AGGREGATE IS NEVER A PROXY FOR THE SLICE YOU MEASURED — and a freshness STAMP is not a RATE (2026-09-19, register R109)
+
+Two errors in one night, both of which produced confident wrong conclusions, and both cheap to avoid.
+
+### 1. The aggregate/slice error — it killed a whole diagnosis
+R109 explained a slow index-only scan on `wallet_moments_cache` as visibility-map rot, and the
+evidence was `relallvisible / relpages` — **85.8% for that table against 99.7% for a same-size,
+same-`autovacuum_vacuum_scale_factor` neighbour.** That looked like a clean control pair.
+
+⛔ **It licensed nothing, because the probe read the FIRST 5,000 index entries — 0.23% of the
+table — and the head of an index is not a random sample of it.** `relallvisible` aggregates
+120,286 pages; the probe touched a few hundred.
+
+**The estate then ran the falsifier for free.** Overnight the map recovered *on its own* to
+**98.1%** after an autovacuum completed at 04:16 PT (75.4% → 78.1% → 98.1%). If the table-wide
+map drove the heap fetches, they had to collapse. They did not:
+
+| reading | table-wide all-visible | Heap Fetches / 5,000 |
+|---|---|---|
+| 22:15 PT (vacuum running — contaminated) | 85.8% | 2,407 (48.1%) |
+| 22:45 PT (idle box, clean) | ~78% | 1,833 (36.7%) |
+| 04:47 PT (clean) | **98.1%** | **2,127 (42.5%)** |
+
+**Four readings spanning 75.4% → 98.1% coverage; the heap-fetch rate sat at 36–43% in every one,
+and was HIGHER at 98.1% than at 78%.**
+
+⚠ **Timings were NOT the comparison** — load differed between readings. `Heap Fetches` is a
+load-independent count, which is exactly why it is the comparable quantity here. Pick the
+instrument that does not move with the thing you cannot hold still.
+
+✅ **What survived:** the scan really does ~40% heap fetches, stably, under every condition tested.
+⛔ **What died:** the explanation and its lever — "let the visibility map recover" is refuted,
+because it recovered completely, unaided, and nothing improved.
+⚠ **Newly named untested assumption:** that the head of the index is representative. It may be its
+worst part. The open probe is `pg_visibility` on the specific page range those entries touch
+(extension available, NOT installed), plus a probe sampling the index at several offsets.
+
+### ⭐ THE OFFSET PROBE, 2026-09-19 05:20 PT — the head of the index is ~2.8× worse than its body, so EVERY R109 heap-fetch number was taken from its least representative slice
+
+The assumption named one section above — *"that the head of the index is representative; it may be
+its worst part"* — was tested by seeking to `pg_stats.histogram_bounds` quantiles (free: already
+computed by ANALYZE) and re-running the identical bounded scan at each.
+
+| seek point | Heap Fetches / 5,000 | rate | buffers read |
+|---|---|---|---|
+| head (p00) | 2,127 | **42.5%** | 1,949 |
+| p25 `0x3c06…` | 713 | **14.3%** | 626 |
+| p50 `0x8e8f…` | 860 | **17.2%** | 703 |
+| p75 `0xd266…` | 769 | **15.4%** | 547 |
+
+⛔ **The head is ~2.8× the body's rate. The representative rate is ~14–17%, not ~40%.**
+
+🚨 **And the slice was even narrower than "0.23% of rows" suggested: `pg_stats.n_distinct` for
+`wallet_address` is 859 across 2.16M rows — ~2,500 rows per wallet — so a 5,000-row `LIMIT` on an
+index LEADING with that column samples roughly TWO values.** When an index's leading column has few
+distinct values, a row-count `LIMIT` is a key-count sample, and the two are not interchangeable.
+
+⚠ **This refutes R109's magnitude as well as its mechanism.** Extrapolating from the body rate
+(~600 buffers per 5,000 rows) the full scan is ~259,000 buffers ≈ 2 GB ≈ **~95 s of pure IO at the
+estate's ~22 MB/s floor — inside the 600 s ceiling, not the "~27 minutes on an idle box" R109
+claimed from the head.**
+
+✅ **What still stands, unchanged and measured three times:** `refresh_cross_collection_cohort_step1()`
+really does fail at 600.0 s (09-17, 09-18, and again 09-19 03:02 PT on its new schedule), and the mat
+really is 61 h stale.
+⛔ **What is now open again:** WHY. Contention was the first hypothesis and it was dismissed on a
+single 110 s cancellation at io_wait 2 — a reading that, against a ~95 s scan estimate, is no longer
+surprising enough to rule contention out. **Do not now assert contention either.**
+👉 **THE DECISIVE TEST, not run here because the box was at io_wait 12:** run the full step1
+aggregate on a genuinely quiet box under a generous `SET LOCAL statement_timeout` and record an
+actual COMPLETION TIME rather than another cancellation. A cancellation gives a lower bound and
+three of them have now been over-read.
+
+### 2. A freshness STAMP is not a RATE — this one shipped a bad change
+A lane was declared to have **"zero output"** on the strength of `max(ingested_at)` being 38 minutes
+old. Counted properly afterwards, it had taken **2,837 rows in the preceding 2 h** — degraded
+(16–32 rows/10 min), not silent — **and the output cliff preceded the change by ~35 minutes.**
+
+⭐ "Compare against the MEASURED state, not the DESIGNED one" was the right instinct. **The measured
+state was itself wrong, because a stamp was read as a rate.** If the claim is about throughput,
+count rows in a window; a newest-timestamp answers a different question.
+
+### 3. A candidate its own NO-CHANGE CONTROL outperforms has not been shown to work
+The cadence change taken on that premise was reverted 6 h later. The decisive reading was **not**
+the lane's own recovery — it was that the untouched control lane (`rpc-allday-unmapped-atlas-resolver`,
+same table, never modified) went **55% fail → 32% → 0% (9 of 9)** over the same hours while the
+CHANGED lane was still mixed, and **both recovered at the same instant.** The estate calmed down.
+
+Two further tells that the knob was wrong, either of which was enough on its own:
+- **The first 80 minutes at the new cadence were 100% failure (15 of 15).**
+- **The failing work was per-tick FIXED:** 12 of 17 timeouts were two `CREATE TEMP TABLE … DISTINCT ON`
+  builds, which cost the same at either cadence. ⭐ That also retired the *proposed follow-up*, which
+  would have held throughput constant by ADDING work to a tick that already could not finish.
+
+### 4. ⚠ `regexp_replace` flags `s` and `n` CONFLICT — and a strip that matches nothing reads as a FAILURE
+The fidelity check for a full-body `CREATE OR REPLACE` works by stripping the added lines and
+re-hashing to the pre-change md5. With flags `'sn'`, **`n` wins, `.` stops matching newlines, the
+pattern matches nothing, and the md5 "fails"** — which looks exactly like a corrupted body.
+
+✅ **Always assert the STRIPPED LENGTH equals the original length before trusting the verdict.**
+Here `stripped_len` came back identical to `current_len` (6,604), proving the strip was a no-op;
+with flags `'g'` and `[\s\S]*?` it stripped to 5,991 and the md5 matched exactly. **A vacuous check
+that fails safe is still vacuous.**
+
+
 
 ## ⭐⭐ AN ALARM THAT SAMPLES ITS WHOLE POPULATION IN ONE PASS CANNOT NAME A SUBJECT — its per-subject falsifier must condition on BREADTH (2026-09-18, register R50)
 

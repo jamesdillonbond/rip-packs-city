@@ -2,6 +2,66 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## 🚨 A pg_cron COMMAND WITH ANY PREFIX RUNS IN A TRANSACTION BLOCK — so `CREATE INDEX CONCURRENTLY` cannot (2026-09-19, register R108)
+
+A probe job ran `SET statement_timeout = '900s'; CREATE INDEX CONCURRENTLY …` and failed in **0.4 s**:
+
+> `ERROR: CREATE INDEX CONCURRENTLY cannot run inside a transaction block`
+
+⇒ **A MULTI-STATEMENT pg_cron command is wrapped in a transaction block.** The standing note that
+*"a one-off pg_cron job CAN run CIC — fresh libpq connection, no transaction block, no 60 s client
+cap"* holds **only for a command that is ONE statement with NO prefix.**
+
+⛔ **So the build budget cannot be bought with a `SET` prefix — the prefix is precisely what
+destroys the property CIC requires.** Both jaws of the R108 pincer are now measured, not assumed:
+
+| role | owns `topshot_atlas_market_events` | role-level `statement_timeout` |
+|---|---|---|
+| `postgres` | **yes** | **none** — inherits the cluster file default |
+| `cron_heavy` | no | **600 s** |
+
+⚠ **And the 120 s that kills the build is NOT a role default.** `pg_settings` reports
+`statement_timeout = 120000`, `source = 'configuration file'`,
+`/etc/postgresql-custom/platform-defaults.conf` — a Supabase platform default. Precedence is
+file < database < **role** < session `SET`, which is why `cron_heavy` gets 600 s and `postgres`
+does not.
+
+👉 **The only remaining route is a SINGLE-STATEMENT job under a role that BOTH owns the table AND
+carries a role-level timeout above the build time.** Today no such role exists, so it needs a
+deliberate, bounded, supervised `ALTER ROLE … SET statement_timeout` window with a `RESET`
+afterwards — which widens the guardrail for **every new session of that role** while it is open.
+**Do NOT re-try the SET-prefix form; it is refuted.**
+
+## The two cross-collection mats have a freshness guard as of 2026-09-19
+
+`check_cross_collection_mat_staleness(p_max_hours numeric DEFAULT 26)` — BAN-AT-ZERO, returns a
+**jsonb ARRAY** (clean is `jsonb_array_length() = 0`, **never** `count(*) = 1`), called from
+`rpc_ops_snapshot()` under the key `cross_collection_mat_staleness`.
+
+It covers `cross_collection_cohort_mat` (rebuilt by `rpc-ccm-step1`) and
+`cross_collection_ts_set_overlap_mat` (`rpc-ccm-step2`). **Neither had any freshness arm** —
+`board_mv_refresh_stale_hours` guards the board MVs, not these — which is how the cohort mat
+reached **53.5 h stale on 09-18 and 61.0 h on 09-19** behind `/insights/cross-collection` with
+nothing alarming.
+
+⭐ **It shipped with its control pair already in the data, no synthetic setup:** at install time the
+cohort mat was 61.0 h old and the overlap mat 12.7 h old, so a correct guard at 26 h had to return
+**exactly one entry, naming the cohort mat and not the overlap mat.** It did. At
+`p_max_hours = 1000` it returns 0, so its non-empty reading is not vacuous.
+
+⚠ **Expect the key NON-EMPTY until R109 is fixed** — `refresh_cross_collection_cohort_step1()`
+cannot complete inside its 600 s ceiling. That is the guard working. **Do not widen the threshold
+to silence it.** 26 h is sized from the TRUE cron cadence (daily ⇒ ~24 h healthy maximum, 2 h slack).
+
+⚠ **Why not a `v_rpc_trust_health` arm, which is where the filing asked for it:** measured rather
+than asserted — that view is **48,766 chars across 37 `UNION ALL` branches**, and
+`rpc_trust_health_precompute (metric, value, computed_at, duration_ms)` has **no `breach_at`
+column**, so every threshold lives in the view text and there is no data-driven path. Rewriting
+48,766 chars to add six lines, on the surface that gates public trust, is a worse trade than adding
+a key to the 5,991-char `rpc_ops_snapshot()` that every session already reads first. The trust arm
+remains the right long-term home.
+
+
 # Supabase / Postgres reference
 
 > Collection UUIDs and the two collection-string vocabularies stay in CLAUDE.md (small, stable, used constantly). Everything else lives here.

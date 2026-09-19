@@ -2,6 +2,39 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⚠ Supabase MCP `apply_migration` ASSIGNS ITS OWN VERSION — your filename timestamp is not what prod records (2026-09-19)
+
+The `name` you pass becomes the migration's name. **The version is the APPLY time, chosen by the
+tool.** So a repo file you name `20260919055500_…` is recorded in
+`supabase_migrations.schema_migrations` as `20260919045716_…`, and the repo and prod silently
+disagree on identity and ordering while agreeing on name.
+
+Five migrations drifted this way in one session before it was noticed:
+
+| repo filename version | version prod actually recorded |
+|---|---|
+| 20260919055500 | 20260919045716 |
+| 20260919061000 | 20260919052253 |
+| 20260919064000 | 20260919053516 |
+| 20260919115000 | 20260919114619 |
+| 20260919120000 | 20260919115448 |
+
+⚠ **`npm run db:migrations:recover` does not catch this** — it matches by NAME, so it reports the
+migration as having a file and moves on. Read
+`select version, name from supabase_migrations.schema_migrations where version >= …` and rename the
+repo files to the recorded versions (`git mv`, content untouched).
+
+✅ **The fix for a FILELESS one is still `npm run db:migrations:recover`** — it writes the file
+straight from prod and md5-verifies it, which is strictly better than re-typing the SQL from the
+transcript. It needs `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`; `set -a; . ./.env.local; set +a`
+supplies both without echoing them.
+
+⚠ **Hand-written repo copies may carry richer header comments than the applied text** (comments are
+stripped from nothing, but a shorter header is often passed to the tool to save tokens). That
+divergence is comment-only and schema-identical — but say so where it happens rather than leaving
+two versions of a file that look like they should be the same.
+
+
 ## ⛔ 2026-09-04 — the pipe-exit trap in a NEW COSTUME: `grep <log> && git push` gates on grep, not on the run
 
 The known rule is *"a pipe reports the LAST command's exit code"*. The variant that actually cost
