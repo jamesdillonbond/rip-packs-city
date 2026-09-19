@@ -27,10 +27,10 @@
 # (known-issues #125). A headless Chromium launched without the automation flags,
 # with a desktop Chrome UA, parked on dapper.market, gets the API 200 (measured
 # on the laptop VM 2026-09-19; a full 897-target sweep ran that way, 0 skipped).
-# So this runner sets ATLAS_FETCH_MODE=browser. ONE-TIME PREREQUISITE on this
-# machine (as the logged-in user, from the repo root):
-#     npx playwright install chromium
-# or set -BrowserChannel chrome to drive the installed Google Chrome instead.
+# So this runner sets ATLAS_FETCH_MODE=browser. No install is required: when
+# Playwright's bundled Chromium is absent it drives the installed Google Chrome
+# (channel "chrome"). `npx playwright install chromium` (repo root) switches it to the
+# bundled build; -BrowserChannel overrides either way.
 # If a run logs "dapper.market landing was challenged", re-run with -Headful
 # (Cloudflare tolerates a visible window more than a headless one) and note it.
 
@@ -64,6 +64,15 @@ $env:FLOOR               = $Floor
 $env:MAX_TARGETS         = $MaxTargets
 $env:DRY_RUN             = if ($DryRun) { "1" } else { "" }
 $env:ATLAS_FETCH_MODE    = $AtlasFetchMode
+# No install step by default: if Playwright's bundled Chromium is not present under
+# %LOCALAPPDATA%\ms-playwright, drive the machine's installed Google Chrome instead
+# (Playwright channel "chrome"; it launches its own profile, so an open Chrome is
+# untouched). An explicit -BrowserChannel always wins.
+if (-not $BrowserChannel -and $AtlasFetchMode -eq "browser") {
+  $pwBundled = Join-Path $env:LOCALAPPDATA "ms-playwright"
+  $hasBundled = (Test-Path $pwBundled) -and ((Get-ChildItem -Path $pwBundled -Directory -Filter "chromium-*" -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0)
+  if (-not $hasBundled) { $BrowserChannel = "chrome" }
+}
 $env:ATLAS_BROWSER_CHANNEL  = $BrowserChannel
 $env:ATLAS_BROWSER_HEADLESS = if ($Headful) { "0" } else { "1" }
 

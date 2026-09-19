@@ -603,3 +603,13 @@ The three rules added: the **differential-upsert probes every offered row** bull
 8. Two collection-string conventions — `(verified live 08-22; the other two carry no `collection` CHECK)` → `(verified live 08-22)`. The sentence that follows still states the consequence (silent persistence in `flowty_loans`/`flowty_loan_events`).
 9. Hot wallet — `— `lib/breaks/server-authz.ts` silently used p256 + SHA3-256 for months;` → `(`server-authz.ts` used p256 + SHA3-256 for months);`.
 10. Series map — `— a real 2026-08-05 incident silently dropped 385,734 TS rows.` → `— a 2026-08-05 incident dropped 385,734 TS rows.`; Collection UUIDs — `re-read 2026-09-08: Candy MLB (`solana`) is now` → `09-08: Candy MLB (`solana`) is`; and the stray blank line between Concierge rules 2 and 3.
+
+
+## 2026-09-19 (afternoon) — four trims to pay for the backlog-bound rule (verbatim originals)
+
+Rule added to Measurement discipline: *A shed schedule (6/day for 72) is a defect only if the lane is BACKLOG-BOUND — measure `rows_written × deliveries` against the backlog first (#124).* Case: cron-and-schedulers.md ("GITHUB SHEDS EVERY HIGH-FREQUENCY SCHEDULE…").
+
+1. Autonomous Cowork tasks — was: `Two scheduled Cowork tasks run here — coordinate via the shared ledger so work doesn't collide.`
+2. Autonomous Cowork tasks, nightly bullet — was: `Off-limits (queued, never auto-shipped): hot/payer wallet, secrets/env, auth (`proxy.ts`), destructive SQL, **metered SPEND** — full list in [autonomous-tasks.md](docs/reference/autonomous-tasks.md).` Displaced detail: the list is QUEUED rather than auto-shipped; `auth` means `proxy.ts`; the payer wallet is included with the hot wallet; `secrets/env` covers Vercel env too.
+3. Series map — was: `` `lib/collection/series-param.ts` now resolves BOTH (`fdf84ee4`); which label WINS is still open. `` The resolving commit is `fdf84ee4`.
+4. Two collection-string conventions — was: `persists SILENTLY in `flowty_loans`/`flowty_loan_events`, where it simply never matches.` The two tables are `flowty_loans` and `flowty_loan_events` (named in the bullet above it).

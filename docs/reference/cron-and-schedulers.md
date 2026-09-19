@@ -2,6 +2,12 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## ⭐ GITHUB SHEDS EVERY HIGH-FREQUENCY SCHEDULE TO ~6/DAY — MOVE THE MONITORS THAT MATTER TO cron-job.org, MEASURE THE REST BEFORE MOVING THEM (2026-09-19, #124 closed)
+
+Seven workflows asked for 24–96 runs/day and received ~6 (`e2e-smoke`, asking 4, received 4 — the no-change control that makes it a cap on high frequency, not a slowdown). The cost of leaving that alone was measured the same day: `data-integrity`, the route that runs `check_public_security_invariants()`, was running ~6×/day, and an anon-readable materialized view sat open for 16 minutes and was caught by a *deploy* smoke instead. Decisions, per workflow, in `docs/operations/cron-schedule.md` and known-issues #124: **`ops-monitor` → two cron-job.org entries** (`RPC Data Integrity` 13,28,43,58 · `RPC Stale FMV Monitor` 19,49 with `?ack=1`); the sentinel already had one; the two backstops back lanes whose primaries are already cron-job.org entries; `site-availability-alarm` cannot move (it must run on the plane that survives a Vercel pause); and **none of `rpc-pipeline`'s four caller-less steps is backlog-bound** (`already_complete` every run · candidate set 0 · 0 missing buckets and its own pg_cron driver · a fixed residue of unresolvable nulls), so moving them would add 12× load to the FMV family for nothing. ⭐ **"It runs 6×/day instead of 72" is only a problem if the lane is backlog-bound — measure `rows_written × 6` against the backlog before touching the schedule.**
+
+⚠ **Two cron-job.org console facts learned doing it** (full recipe: `docs/cowork-skills/rpc-cron-ops/SKILL.md`): a route that can exceed 30 s needs `?ack=1` (202 + `after()` + its own `cron-ack` heartbeat) or the console will mark it failed and eventually auto-disable it — the 09-10 class; and **a query string added by EDITING an existing job's URL does not persist** (three saves, three "saved successfully", none kept it) — clone the job with the full URL instead.
+
 ## ⛔ TWO WAYS THE `pgss_snap` DELTA LIES, BOTH HIT IN ONE SESSION (2026-09-19) — join on FOUR keys, and drop rows whose counters went BACKWARDS
 
 The 2-hourly `audit_20260830_pgss_snap` → live diff is the right instrument (it is what measured R108). ⚠ **Both of these produce a confident, plausible, completely false number.**
