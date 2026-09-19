@@ -169,6 +169,7 @@ Full detail: [docs/reference/testing-and-ci.md](docs/reference/testing-and-ci.md
 - ⚠ **A directional claim needs a DISTRIBUTION, not a snapshot; a delta between two STOCKS is neither a rate nor a sign; `max()` on a `text` cursor is lexicographic.**
 - ⚠ **When an instrument's first finding is SURPRISING, establish WHO generated it before believing WHAT it says** — 17 "user-facing" client errors were ONE headless crawler, `ua` in the payload all along (#69). **A `count(*)` over an OPEN endpoint counts REQUESTS, not READERS.**
 - ⚠ **A rate POOLED ACROSS A FIX measures the fix's ABSENCE and reads as its FAILURE** — a kill rate was 87.5% pre-deploy, 0% post, **56% pooled**. ⛔ **Under an IO spell a cron DURATION or completion rate measures the ESTATE, not your fix — judge per-call work on pgss blocks/call** (R101 v1: reverted on durations, exonerated 26 min later). Split on the change point: [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md).
+- ⛔ **A DISCOVERY mechanism must never double as the REFRESH list.** Panini's scroll was also its refresh list: **1,265 of 5,072 editions went 45+ days unwalked under 2,103 runs, 0 fails.** Refresh reads your OWN catalogue: [panini](docs/strategy/panini-go-live-2026-09-19.md).
 - ⚠ **Diff the SET, not the count** — a total can hold while membership turns over twice, so the number reads "no change" across a fix landing *and* a new arm firing. Case: [trust-board-and-safety.md](docs/reference/trust-board-and-safety.md).
 - ⚠ **Controls, both directions:** a NULL result needs a positive control; a POSITIVE needs a no-change control **the fix cannot move**; a DIFFERENCE needs both sides counted by the same instrument. **Never pair a count from one table with a property from another.** ⚠ **A control must use the PRODUCTION CALLER**: a `postgres` MCP call cannot prove a `cron_heavy` job runs.
 - ⚠ **FOUR ways a measurement lies about a change: a byte-identical HTTP response is as much a CACHE HIT as a fix; a DB A/B must be WARM-vs-WARM; an unordered `LIMIT` is physical order, not a sample** (use `abs(hashtext(k)) % N`); **and a reading taken while its SUBJECT CHANGED is not a reading** — ⛔ **and your OWN PROBE is the load here**. **Freeze the tree, then measure.** ⭐ **Warm-vs-warm also DIAGNOSES: expensive WARM = COMPUTE-bound (precompute it); cheap warm + expensive COLD = IO-bound (no index helps).**
@@ -248,7 +249,7 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 
 ### Cadence
 
-**Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, fetch the deployed mainnet source via the Cadence MCP and verify the functions/fields/types exist** — training data is frequently wrong for Cadence 1.0. MCP is dev-time verification ONLY; production reads route through the proxy (egress blocked). Addresses (incl. the service payer wallet) + gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
+⚠ **MCP-verify deployed mainnet source before any `.cdc`, Cadence literal or FCL `mutate`/`query`** — [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
 
 ---
 

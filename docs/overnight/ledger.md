@@ -11,6 +11,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · ✅ CLAUDE.md: the discovery-vs-refresh rule is in, paid for by displacing the Cadence pre-flight · Cowork cloud
+
+**The addition arrived WITH its displacement, because the guard makes that the only way in.** `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts` caps the file at **40,000 characters** and it was sitting at 39,997 — three characters of room for a rule earned by a 24.9% silent coverage hole.
+
+**Added** (Measurement discipline): *a DISCOVERY mechanism must never double as the REFRESH list* — Panini's scroll was also its refresh list; **1,265 of 5,072 editions went 45+ days unwalked under 2,103 runs and 0 failures.** Links to [panini-go-live-2026-09-19.md](../strategy/panini-go-live-2026-09-19.md).
+
+**Displaced:** the **Cadence pre-flight**, verbatim, into [apis-and-cadence.md](../reference/apis-and-cadence.md) under a note saying why, with a one-line pointer left in CLAUDE.md.
+
+⚠ **The candidate was NOT picked by section size.** The guard's own header bans that — the big sections are big because they carry incidents. It was picked on **"does the need announce itself"**: you are already inside a `.cdc` file when the Cadence rule applies, so the pointer finds you. The rules that must survive in CLAUDE.md are the ones a reader needs *before* they know to go looking.
+
+📏 **39,997 → 39,991 chars, headroom 9.** The pointer line also needed a blank line before the following `---`, or Markdown reads the pair as a setext `<h2>` and the rule becomes a heading. Guard 3/3 green.
+
+**Revert path:** `git revert <this sha>` — it restores the Cadence section to CLAUDE.md and removes the displaced copy; the addition goes with it, which is correct, since the pair is one unit.
+
 ### 2026-09-19 · ✅ THE WALK FIX IS CONFIRMED BY THE REAL CALLER — first fixed tick, watched live, and every number is the predicted one · Cowork cloud
 
 **Stayed for the 2:00 PM PT tick rather than delegating it to the scheduled check.** The walk started **21:03:40Z** and the enum marker is the fix in one line:

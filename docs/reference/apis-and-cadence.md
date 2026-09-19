@@ -308,3 +308,15 @@ When onboarding a new collection or building the planned Pinnacle direct integra
 
 ---
 
+## Displaced from CLAUDE.md 2026-09-19 (verbatim) — the Cadence pre-flight
+
+> Moved here to buy room for the discovery-vs-refresh rule, per the pairing discipline in
+> `__tests__/claude-md-stays-under-the-memory-file-limit.test.ts`: an addition arrives WITH its
+> displacement and the displaced text moves VERBATIM. That guard's header warns explicitly against
+> ranking sections by SIZE — the big ones are big because they carry incidents. This was chosen on
+> 'does the need ANNOUNCE ITSELF': you are already in a `.cdc` file when you need it, unlike the
+> rules a reader must have before knowing to look. CLAUDE.md keeps a one-line pointer.
+
+### Cadence
+
+**Before modifying any `.cdc` file, Cadence string literal, or FCL `mutate`/`query`, fetch the deployed mainnet source via the Cadence MCP and verify the functions/fields/types exist** — training data is frequently wrong for Cadence 1.0. MCP is dev-time verification ONLY; production reads route through the proxy (egress blocked). Addresses (incl. the service payer wallet) + gotchas: [apis-and-cadence.md](docs/reference/apis-and-cadence.md).
