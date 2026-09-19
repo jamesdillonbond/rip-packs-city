@@ -50,6 +50,10 @@ export type CadenceCollapsePayload = {
   excluded_heartbeats?: unknown
   degraded?: unknown
   stopped?: unknown
+  /** Lanes that WOULD have been scored but hold a live row in cadence_exempt_lanes. */
+  suppressed?: unknown
+  /** Exemptions past their review_by. These are NOT suppressing any more. */
+  expired_exemptions?: unknown
   window?: { window_hours?: number; baseline_days?: number; ratio?: number | string; exclude_days?: number }
 }
 
@@ -94,11 +98,46 @@ export function summariseCadenceCollapse(
 
   const degraded = Array.isArray(payload.degraded) ? (payload.degraded as CadenceOffender[]) : []
   const stoppedCount = Array.isArray(payload.stopped) ? payload.stopped.length : 0
+
+  // ── SUPPRESSION IS STATED, NEVER SILENT (2026-09-19) ──────────────────────
+  // `cadence_exempt_lanes` removes lanes whose run count is DEMAND rather than
+  // cadence — today the seven `wallet-backfill*` lanes, which fire when a
+  // visitor pastes a wallet on /share and so have no schedule to collapse away
+  // from. They were driving this arm to CRITICAL on their own (7 against
+  // crit_at 5, ratios 0.274–0.372).
+  //
+  // ⚠ A count that quietly excludes rows is the defect one level up from the
+  // one this arm exists to catch, so the suppressed count rides in `scope` on
+  // EVERY verdict including `ok`. A reader who thinks the fleet is clean must
+  // be able to see that seven lanes were held back and go look at why.
+  const suppressedCount = Array.isArray(payload.suppressed) ? payload.suppressed.length : 0
+  const suppressedClause = suppressedCount > 0 ? `, ${suppressedCount} suppressed (demand-driven, see cadence_exempt_lanes)` : ""
+
+  // ⛔ An exemption past `review_by` has ALREADY stopped suppressing in the SQL,
+  // so its lane is scored again and the count jumps. Naming it is what turns
+  // that jump from a mystery into a scheduled review — and it floors the status
+  // at `warn` even when nothing is degraded, because an unreviewed suppression
+  // list is itself the finding.
+  const expired = Array.isArray(payload.expired_exemptions)
+    ? (payload.expired_exemptions as Array<{ pattern?: string; review_by?: string; days_expired?: number | string }>)
+    : []
+  const expiredClause =
+    expired.length > 0
+      ? ` ⛔ ${expired.length} cadence exemption(s) LAPSED and are no longer suppressing: ${expired
+          .slice(0, 4)
+          .map((e) => `${e.pattern ?? "?"} (due ${e.review_by ?? "?"}, ${num(e.days_expired) ?? "?"}d ago)`)
+          .join("; ")} — review or extend them.`
+      : ""
+
   const w = payload.window ?? {}
-  const scope = `${inspected} lanes inspected, ${num(payload.excluded_heartbeats) ?? 0} heartbeats excluded, ${stoppedCount} stopped (not scored — see Pipeline Silence) · ${w.window_hours ?? "?"}h vs ${w.baseline_days ?? "?"}d baseline at ratio ${w.ratio ?? "?"}`
+  const scope = `${inspected} lanes inspected, ${num(payload.excluded_heartbeats) ?? 0} heartbeats excluded, ${stoppedCount} stopped (not scored — see Pipeline Silence)${suppressedClause} · ${w.window_hours ?? "?"}h vs ${w.baseline_days ?? "?"}d baseline at ratio ${w.ratio ?? "?"}`
 
   if (degraded.length < Math.max(1, warnAt)) {
-    return { status: "ok", detail: `no lane is running below its own cadence — ${scope}`, value: degraded.length }
+    return {
+      status: expired.length > 0 ? "warn" : "ok",
+      detail: `no lane is running below its own cadence — ${scope}${expiredClause}`,
+      value: degraded.length,
+    }
   }
 
   // Worst first, so the six that fit in a Telegram message are the six worth reading.
@@ -115,5 +154,5 @@ export function summariseCadenceCollapse(
       ? `${degraded.length} lanes are running FAR below their own cadence — that many at once is a CALLER fault (scheduler / budget / console), not ${degraded.length} lane faults`
       : `${degraded.length} lane(s) running below their own cadence`
 
-  return { status, detail: `${lead}: ${named}${more} — ${scope}`, value: degraded.length }
+  return { status, detail: `${lead}: ${named}${more} — ${scope}${expiredClause}`, value: degraded.length }
 }

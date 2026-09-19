@@ -26,7 +26,7 @@
 -- say anything useful about them.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260912054710_audit_20260911_a_silence_detector_cannot_see_a_cadence_collapse.sql);
+-- (supabase/migrations/20260919202147_audit_20260919_cadence_collapse_honours_exempt_lanes.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- ⚠ Fixtures are the two tables the function reads, with only the columns it
@@ -46,20 +46,40 @@ CREATE TABLE pipeline_runs (
   started_at timestamptz NOT NULL
 );
 
+-- ⚠ THE THIRD TABLE (2026-09-19). The body now reads the suppression list, so a
+-- pin without this fixture does not assert the new behaviour -- it fails to run
+-- at all. Seeded EMPTY on purpose: every assertion below it was written against
+-- a body with no suppression, and they must all still hold when nothing is
+-- exempt. Section (8) is where rows get added.
+CREATE TABLE cadence_exempt_lanes (
+  pipeline_pattern text PRIMARY KEY,
+  reason           text NOT NULL,
+  evidence         text NOT NULL,
+  review_by        date NOT NULL
+);
+
 -- >>> BEGIN verbatim check_pipeline_cadence_collapse (keep byte-identical to the migration) >>>
-CREATE OR REPLACE FUNCTION public.check_pipeline_cadence_collapse(
-  p_baseline_days integer DEFAULT 14,
-  p_exclude_days  integer DEFAULT 3,
-  p_window_hours  integer DEFAULT 12,
-  p_ratio         numeric DEFAULT 0.40,
-  p_min_baseline  integer DEFAULT 24
-)
-RETURNS jsonb
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path TO 'public', 'pg_temp'
+CREATE OR REPLACE FUNCTION public.check_pipeline_cadence_collapse(p_baseline_days integer DEFAULT 14, p_exclude_days integer DEFAULT 3, p_window_hours integer DEFAULT 12, p_ratio numeric DEFAULT 0.40, p_min_baseline integer DEFAULT 24)
+ RETURNS jsonb
+ LANGUAGE sql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
-  with base as (
+  with exempt as (
+    -- Lanes whose run count is DEMAND, not cadence (public.cadence_exempt_lanes).
+    -- ⛔ An exemption past its review_by is NOT applied: it stops suppressing and
+    -- the lane fires again. Fail-loud is deliberate -- a suppression nobody ever
+    -- re-examines is the "filed DECISION NOT TO ACT that nobody re-checks".
+    select e.pipeline_pattern, e.reason
+    from public.cadence_exempt_lanes e
+    where e.review_by >= current_date
+  ),
+  expired as (
+    select e.pipeline_pattern, e.review_by
+    from public.cadence_exempt_lanes e
+    where e.review_by < current_date
+  ),
+  base as (
     select
       d.pipeline,
       percentile_cont(0.5) within group (order by d.runs)::numeric as baseline_per_day,
@@ -82,7 +102,7 @@ AS $function$
   last_seen as (
     -- R102 (2026-09-18). The published `last_run_at` used to come from `obs`, i.e.
     -- from the OBSERVATION WINDOW, so a lane with zero runs in the last 12 h got a
-    -- NULL through the left join and the payload said `"last_run_at": null` for
+    -- NULL through the left join and the payload said "last_run_at": null for
     -- eight lanes whose last run was plainly readable in pipeline_runs. The field
     -- NAME claims "when did this lane last run"; the value answered a different
     -- question, inside a SAFETY instrument. That is the #80 mirror defect -- an
@@ -114,11 +134,31 @@ AS $function$
     left join last_seen l on l.pipeline = b.pipeline
     where b.baseline_per_day >= p_min_baseline
   ),
-  hits as (
+  raw_hits as (
     select *,
            case when observed_runs = 0 then 'stopped' else 'degraded' end as state
     from scored
     where observed_per_day < p_ratio * baseline_per_day
+  ),
+  -- ⚠ A lane matching TWO patterns must not become two rows: the lateral picks
+  -- exactly one, so `suppressed` and `hits` stay a partition of `raw_hits` and
+  -- the counts cannot double-count.
+  suppressed as (
+    select h.*, e.pipeline_pattern, e.reason
+    from raw_hits h
+    cross join lateral (
+      select e2.pipeline_pattern, e2.reason
+      from exempt e2
+      where h.pipeline like e2.pipeline_pattern
+      order by e2.pipeline_pattern
+      limit 1
+    ) e
+  ),
+  hits as (
+    select h.* from raw_hits h
+    where not exists (
+      select 1 from exempt e where h.pipeline like e.pipeline_pattern
+    )
   )
   select jsonb_build_object(
     'inspected',           (select count(*) from scored),
@@ -138,6 +178,29 @@ AS $function$
                                and d.pipeline like '%-heartbeat'),
     'degraded_count',      (select count(*) from hits where state = 'degraded'),
     'stopped_count',       (select count(*) from hits where state = 'stopped'),
+    -- ⭐ Suppression is REPORTED, never a silent skip. A reader can see exactly
+    -- what would have fired, at what ratio, and on whose stated reason.
+    'suppressed_count',    (select count(*) from suppressed),
+    'suppressed',          coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'pipeline',         s.pipeline,
+               'state',            s.state,
+               'ratio',            s.ratio,
+               'observed_per_day', s.observed_per_day,
+               'baseline_per_day', s.baseline_per_day,
+               'pattern',          s.pipeline_pattern,
+               'reason',           s.reason
+             ) order by s.ratio)
+      from suppressed s), '[]'::jsonb),
+    -- An exemption past review_by is already NOT suppressing (see `exempt`).
+    -- Naming it here is what turns that from a surprise into a scheduled review.
+    'expired_exemptions',  coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'pattern',      x.pipeline_pattern,
+               'review_by',    x.review_by::text,
+               'days_expired', (current_date - x.review_by)
+             ) order by x.review_by)
+      from expired x), '[]'::jsonb),
     'degraded',            coalesce((
       select jsonb_agg(jsonb_build_object(
                'pipeline',         h.pipeline,
@@ -154,7 +217,6 @@ AS $function$
     'stopped',             coalesce((
       select jsonb_agg(jsonb_build_object(
                'pipeline',         h.pipeline,
-               'baseline_per_day', h.baseline_per_day,
                'last_run_at',      h.last_run_at,
                'hours_since_last_run',
                  case when h.last_run_at is null then null
@@ -164,7 +226,6 @@ AS $function$
       from hits h where h.state = 'stopped'), '[]'::jsonb)
   );
 $function$;
-
 -- <<< END verbatim check_pipeline_cadence_collapse <<<
 
 -- ── Fixtures ────────────────────────────────────────────────────────────────
@@ -330,5 +391,71 @@ SELECT _assert_eq((SELECT (e->>'last_run_at') IS NOT NULL FROM jsonb_array_eleme
 SELECT _assert_eq((SELECT e->>'observed_runs' FROM jsonb_array_elements(check_pipeline_cadence_collapse()->'degraded') e
                     WHERE e->>'pipeline' = 'zz-degraded'), '4',
   'and observed_runs, so the published ratio can be checked against its numerator');
+
+-- ── (8) SUPPRESSION (2026-09-19): it removes a lane from SCORING, never from the
+--     POPULATION, and it EXPIRES ─────────────────────────────────────────────
+-- Seven `wallet-backfill*` lanes were holding this arm at CRITICAL on their own.
+-- Their run count is DEMAND (trigger: /api/public/queue-wallet, fired when a
+-- visitor pastes an address on /share; no pg_cron job writes them), so there is
+-- no cadence for them to collapse away from. The danger introduced with the cure
+-- is that an arm gets quieter and nobody can see why, so both halves are pinned:
+-- what suppression MUST do, and what it must NOT.
+
+CREATE TEMP TABLE _pre AS
+  SELECT (check_pipeline_cadence_collapse()->>'inspected')::int      AS inspected,
+         (check_pipeline_cadence_collapse()->>'degraded_count')::int AS degraded;
+
+-- A pattern matching NOTHING is the no-change control: it must move no number.
+INSERT INTO cadence_exempt_lanes VALUES
+  ('zz-no-such-lane%', 'control row that must match no lane at all here',
+   'exists to prove an inert exemption changes nothing measurable', current_date + 30);
+SELECT _assert_eq((check_pipeline_cadence_collapse()->>'degraded_count'), (SELECT degraded::text FROM _pre),
+  'NO-CHANGE CONTROL: an exemption matching no lane does not change the degraded count');
+SELECT _assert_eq((check_pipeline_cadence_collapse()->>'suppressed_count'), '0',
+  'NO-CHANGE CONTROL: and suppresses nothing');
+
+-- Now one that DOES match.
+INSERT INTO cadence_exempt_lanes VALUES
+  ('zz-degraded%', 'this lane is demand-driven for the purposes of this fixture',
+   'seeded by the pin so both directions of suppression are asserted', current_date + 30);
+
+SELECT _assert_eq((SELECT count(*)::text FROM jsonb_array_elements(check_pipeline_cadence_collapse()->'degraded') e
+                    WHERE e->>'pipeline' = 'zz-degraded'), '0',
+  'an exempt lane is NOT scored as degraded');
+SELECT _assert_eq((SELECT count(*)::text FROM jsonb_array_elements(check_pipeline_cadence_collapse()->'suppressed') e
+                    WHERE e->>'pipeline' = 'zz-degraded'), '1',
+  'it is REPORTED as suppressed instead -- never a silent skip');
+SELECT _assert_eq((check_pipeline_cadence_collapse()->>'degraded_count'), (SELECT (degraded-1)::text FROM _pre),
+  'and the degraded count falls by exactly one');
+
+-- ⭐ THE LOAD-BEARING CONTROL. `inspected` counts the POPULATION. If suppression
+-- ever shrank it, the arm would be reporting a smaller fleet rather than a
+-- smaller finding, and every ratio downstream would quietly change meaning.
+SELECT _assert_eq((check_pipeline_cadence_collapse()->>'inspected'), (SELECT inspected::text FROM _pre),
+  'suppression removes a lane from SCORING, never from the POPULATION');
+
+-- The suppressed entry must carry its own justification, or the report cannot be
+-- audited without re-deriving the decision.
+SELECT _assert((SELECT length(e->>'reason') FROM jsonb_array_elements(check_pipeline_cadence_collapse()->'suppressed') e
+                 WHERE e->>'pipeline' = 'zz-degraded') >= 30,
+  'a suppressed lane publishes the stated reason it was exempted');
+
+-- ⛔ EXPIRY, the other direction. Past review_by the row stops suppressing and the
+-- lane is scored again -- fail-loud, so an exemption nobody re-examines cannot
+-- quietly keep an arm quiet forever.
+UPDATE cadence_exempt_lanes SET review_by = current_date - 1 WHERE pipeline_pattern = 'zz-degraded%';
+SELECT _assert_eq((SELECT count(*)::text FROM jsonb_array_elements(check_pipeline_cadence_collapse()->'degraded') e
+                    WHERE e->>'pipeline' = 'zz-degraded'), '1',
+  'an EXPIRED exemption stops suppressing and the lane is scored again');
+SELECT _assert_eq((check_pipeline_cadence_collapse()->>'suppressed_count'), '0',
+  'and it is no longer counted as suppressed');
+SELECT _assert_eq((SELECT count(*)::text FROM jsonb_array_elements(check_pipeline_cadence_collapse()->'expired_exemptions') e
+                    WHERE e->>'pattern' = 'zz-degraded%'), '1',
+  'the lapsed exemption is NAMED, so the count jumping is a scheduled review rather than a mystery');
+SELECT _assert_eq((SELECT e->>'days_expired' FROM jsonb_array_elements(check_pipeline_cadence_collapse()->'expired_exemptions') e
+                    WHERE e->>'pattern' = 'zz-degraded%'), '1',
+  'and says how long it has been lapsed');
+
+SELECT '✓ check_pipeline_cadence_collapse suppression invariants pass' AS result;
 
 ROLLBACK;

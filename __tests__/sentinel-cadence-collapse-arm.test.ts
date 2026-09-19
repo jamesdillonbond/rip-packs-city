@@ -147,3 +147,93 @@ describe("⚠ the ack pass must cover EVERY arm, not the ones above some line", 
     expect(src.split("const ack = cfgMap[c.name]?.ack;").length - 1).toBe(1)
   })
 })
+
+// ── SUPPRESSION IS STATED, AND A LAPSED EXEMPTION IS ITSELF A FINDING ───────
+//
+// 🚨 WHY THIS EXISTS, measured 2026-09-19 PT. Seven `wallet-backfill*` lanes
+// were holding this arm at CRITICAL on their own (7 against crit_at 5, ratios
+// 0.274–0.372 against an identical 526.5/day baseline). They are not degraded:
+// their trigger is /api/public/queue-wallet — fired when a visitor pastes an
+// address on /share — plus a 4x/day backstop, and NO pg_cron job writes them.
+// Run count there is DEMAND, so a quiet day read as a fleet failure. They are
+// demonstrably alive: wallet-backfill-allday wrote 20,757 / 8,227 / 27,239 rows
+// on 09-17 / 09-18 / 09-19 at a 315/317 ok rate.
+//
+// ⭐ The risk being pinned here is the one suppression always carries: that the
+// arm gets quieter without anyone being able to see why. The count rides on
+// EVERY verdict including `ok`, and an exemption past its review_by stops
+// suppressing in SQL and is named here.
+describe("cadence collapse: suppression is visible, lapsed exemptions are loud", () => {
+  it("states the suppressed count even when the verdict is ok", () => {
+    const v = summariseCadenceCollapse(
+      healthy({ suppressed: [lane("wallet-backfill", 0.27), lane("wallet-backfill-ufc", 0.34)] }),
+    )
+    expect(v.status).toBe("ok")
+    expect(v.detail).toContain("2 suppressed")
+    expect(v.detail).toContain("cadence_exempt_lanes")
+  })
+
+  it("states it on a FIRING verdict too, so a reader can see what was held back", () => {
+    const v = summariseCadenceCollapse(
+      healthy({
+        degraded: [lane("fmv-recalc", 0.1)],
+        suppressed: [lane("wallet-backfill", 0.27)],
+      }),
+    )
+    expect(v.status).toBe("warn")
+    expect(v.detail).toContain("1 suppressed")
+  })
+
+  // ⚠ Satisfiable at a population of ZERO — a guard that punishes its own
+  // success is how three checks in this repo have died.
+  it("says nothing about suppression when nothing is suppressed", () => {
+    const v = summariseCadenceCollapse(healthy())
+    expect(v.status).toBe("ok")
+    expect(v.detail).not.toContain("suppressed")
+  })
+
+  // ⭐ THE LOAD-BEARING ONE. An unreviewed suppression list is the finding, so a
+  // lapsed exemption must escalate off `ok` on its own — with nothing degraded.
+  it("floors the status at warn when an exemption has lapsed, even with zero degraded", () => {
+    const v = summariseCadenceCollapse(
+      healthy({
+        expired_exemptions: [{ pattern: "wallet-backfill%", review_by: "2026-12-19", days_expired: 5 }],
+      }),
+    )
+    expect(v.status).toBe("warn")
+    expect(v.detail).toContain("wallet-backfill%")
+    expect(v.detail).toContain("LAPSED")
+    expect(v.value).toBe(0)
+  })
+
+  it("names the lapsed exemption on a firing verdict as well", () => {
+    const v = summariseCadenceCollapse(
+      healthy({
+        degraded: [lane("wallet-backfill", 0.27)],
+        expired_exemptions: [{ pattern: "wallet-backfill%", review_by: "2026-12-19", days_expired: 2 }],
+      }),
+    )
+    expect(v.detail).toContain("LAPSED")
+    expect(v.detail).toContain("due 2026-12-19")
+  })
+
+  // Suppression must not touch the SCORE's subject: `value` is the degraded
+  // count, and a suppressed lane is not a degraded one.
+  it("does not let suppressed lanes inflate the reported degraded count", () => {
+    const v = summariseCadenceCollapse(
+      healthy({
+        degraded: [lane("fmv-recalc", 0.1)],
+        suppressed: [lane("wallet-backfill", 0.27), lane("wallet-backfill-ufc", 0.34)],
+      }),
+    )
+    expect(v.value).toBe(1)
+  })
+
+  // A malformed payload must not crash the arm or fabricate a clean reading.
+  it("treats unreadable suppressed/expired fields as absent rather than throwing", () => {
+    const v = summariseCadenceCollapse(healthy({ suppressed: "nope", expired_exemptions: 7 }))
+    expect(v.status).toBe("ok")
+    expect(v.detail).not.toContain("suppressed")
+    expect(v.detail).not.toContain("LAPSED")
+  })
+})

@@ -62,8 +62,12 @@ const PINS = [
     // that carries the LIVE body, not the one that created the function — the
     // 20260912 file is now historical, and leaving the pin on it would have made
     // this guard assert the test copy against superseded DDL while reporting green.
+    // ⚠ REPOINTED AGAIN 2026-09-19 to the exempt-lanes migration. The body now
+    // reads a THIRD table (public.cadence_exempt_lanes), so the pin's fixtures had
+    // to gain it — a repoint without that would have left the copy unrunnable
+    // while this guard reported only "stale pin".
     migration:
-      "supabase/migrations/20260918225454_audit_20260918_cadence_collapse_publishes_the_true_last_run.sql",
+      "supabase/migrations/20260919202147_audit_20260919_cadence_collapse_honours_exempt_lanes.sql",
   },
   {
     // Added 2026-09-02 with the fields it pins. This function had ONE input —
