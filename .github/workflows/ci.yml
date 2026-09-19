@@ -677,9 +677,22 @@ jobs:
             echo "::error::node unavailable, so the future-date ledger guard cannot run. Failing rather than skipping: a guard that silently no-ops is indistinguishable from a passing one."
             exit 1
           fi
-          FD=$(node "$FUTD" "$LEDGER")
-          echo "future-dated headings: ${FD:-0}"
-          if [ "${FD:-0}" -gt 0 ]; then
+          # ⚠ `|| FD=""` + an explicit emptiness check, exactly like the clobber
+          # detector below. Two reasons, and the second is the one that bites:
+          # (1) under `bash -e` a bare assignment ABORTS the step the moment node
+          # exits non-zero, so every line below — including this guard's own
+          # ::error:: — is dead code on exactly the failure it exists for;
+          # (2) `${FD:-0}` reads a DETECTOR THAT DID NOT RUN as "0 future-dated
+          # headings", i.e. CLEAN. That is the `?? 0` fabricated-value shape this
+          # repo bans at zero in application code, applied to a CI guard: the one
+          # state that must never render as a pass is "no answer".
+          FD=$(node "$FUTD" "$LEDGER") || FD=""
+          if [ -z "$FD" ]; then
+            echo "::error::the future-date ledger detector produced no output, so it did not run. Failing rather than skipping: a guard that silently no-ops is indistinguishable from a passing one."
+            exit 1
+          fi
+          echo "future-dated headings: ${FD}"
+          if [ "$FD" -gt 0 ]; then
             echo "::error file=docs/overnight/ledger.md::${FD} ledger heading(s) are dated in a day that has not happened in PACIFIC time."
             node "$FUTD" --show "$LEDGER"
             echo "::error::FIX: the ledger is dated PT, not UTC. After 17:00 PT the UTC clock is already on tomorrow, so a date -u stamp writes the wrong day. Take the date from PowerShell Get-Date (it prints the offset, so it cannot be wrong silently) or an explicit America/Los_Angeles conversion, correct the heading, re-push."
@@ -737,14 +750,34 @@ jobs:
           # the reason ("not preceded by a backtick" misses the very incident that
           # motivated it).
           SWALL=scripts/find-swallowed-ledger-headings.awk
-          SW_BEFORE=$(git show HEAD~1:"$LEDGER" 2>/dev/null | awk -f "$SWALL")
-          SW_AFTER=$(awk -f "$SWALL" "$LEDGER")
-          echo "swallowed headings: ${SW_BEFORE:-0} -> ${SW_AFTER:-0}"
-          if [ "${SW_AFTER:-0}" -gt "${SW_BEFORE:-0}" ]; then
-            echo "::error file=docs/overnight/ledger.md::A ledger heading was SWALLOWED INTO PROSE (${SW_BEFORE} -> ${SW_AFTER}). Your entry spliced on the substring '### ' and landed mid-sentence, so it has no '^### ' heading of its own and the host line was cut in half."
-            awk -v show=1 -f "$SWALL" "$LEDGER"
-            echo "::error::FIX: splice at the first line whose FIRST CHARACTERS are '### ' (a line-start anchor), never at a substring match. Re-read the file from disk, put your heading on its own line, re-push."
-            exit 1
+          # ⚠ THE BASELINE WAS READ THROUGH A PIPE, AND THIS STEP DOES NOT SET
+          # `pipefail` (GitHub's default shell is `bash -e {0}`, -e only). So a
+          # failing `git show` was INVISIBLE: awk read empty stdin and printed 0,
+          # which is indistinguishable from "the parent had no swallowed
+          # headings". With THREE pre-existing swallowed headings in the file
+          # today (CLAUDE.md pins that count), that silently turns the delta into
+          # `3 > 0` — a FALSE ALARM telling the pusher their entry spliced on a
+          # substring when it did not, i.e. exactly the "never state a cause the
+          # error did not" trap. Capture the blob first so "no baseline" is its
+          # own state, and drop the `${…:-0}` defaults: a detector that did not
+          # run must never render as the clean value.
+          SW_BASE=$(git show HEAD~1:"$LEDGER" 2>/dev/null) || SW_BASE=""
+          if [ -z "$SW_BASE" ]; then
+            echo "::notice::no HEAD~1 copy of $LEDGER — swallowed-heading DELTA skipped (no baseline to compare against). The absolute future-date arm above still ran."
+          else
+            SW_BEFORE=$(printf '%s\n' "$SW_BASE" | awk -f "$SWALL") || SW_BEFORE=""
+            SW_AFTER=$(awk -f "$SWALL" "$LEDGER") || SW_AFTER=""
+            if [ -z "$SW_BEFORE" ] || [ -z "$SW_AFTER" ]; then
+              echo "::error::the swallowed-heading detector produced no output, so it did not run. Failing rather than skipping: a guard that silently no-ops is indistinguishable from a passing one."
+              exit 1
+            fi
+            echo "swallowed headings: ${SW_BEFORE} -> ${SW_AFTER}"
+            if [ "$SW_AFTER" -gt "$SW_BEFORE" ]; then
+              echo "::error file=docs/overnight/ledger.md::A ledger heading was SWALLOWED INTO PROSE (${SW_BEFORE} -> ${SW_AFTER}). Your entry spliced on the substring '### ' and landed mid-sentence, so it has no '^### ' heading of its own and the host line was cut in half."
+              awk -v show=1 -f "$SWALL" "$LEDGER"
+              echo "::error::FIX: splice at the first line whose FIRST CHARACTERS are '### ' (a line-start anchor), never at a substring match. Re-read the file from disk, put your heading on its own line, re-push."
+              exit 1
+            fi
           fi
           if [ -n "$GONE" ]; then
             if git log -1 --pretty=%B | grep -qF '[ledger-roll]'; then
@@ -901,8 +934,19 @@ jobs:
             # a wrong remedy in an error is worse than none.
             if [ ! -f "$f" ]; then
               REMOVED=$((REMOVED + 1))
-              LOST_R=$(node "$DETECT" /tmp/inbox_before.md /dev/null) || LOST_R="0"
-              if [ "${LOST_R:-0}" -gt 0 ]; then
+              # ⚠ `|| LOST_R="0"` SUBSTITUTED THE CLEAN VALUE. A detector that
+              # failed here was recorded as "this removed filing carried 0
+              # correction blocks", INSPECTED was still incremented, and the job
+              # reported a clean inspection of a file it had never read — while
+              # the sibling call to the SAME detector twelve lines below already
+              # failed CLOSED on the same condition. Two calls to one detector in
+              # one loop must not disagree about what "no answer" means.
+              LOST_R=$(node "$DETECT" /tmp/inbox_before.md /dev/null) || LOST_R=""
+              if [ -z "$LOST_R" ]; then
+                echo "::error::the inbox clobber detector produced no output for the REMOVED filing $f, so it did not run. Failing rather than skipping: a guard that silently no-ops is indistinguishable from a passing one."
+                exit 1
+              fi
+              if [ "$LOST_R" -gt 0 ]; then
                 FAILED=$((FAILED + 1))
                 echo "::error file=$f::This filing was REMOVED and carried ${LOST_R} correction block(s). docs/overnight/inbox/ is APPEND-ONLY since 2026-08-17 (see docs/overnight/focus.md and __tests__/inbox-is-append-only-since-the-rule.test.ts) — filings are permanent citation targets, referenced by path from CLAUDE.md, the ledger, committed migrations and live product source. Restore the file."
               fi

@@ -24,7 +24,13 @@ name: Scheduler liveness
 # "reduce total load".
 #
 # ⚠ ONE 24h WINDOW, n=17. The cap value ~5 is a point estimate — re-derive from
-# this check's own output before quoting it. Discriminator between a per-WORKFLOW
+# this check's own output before quoting it.
+# ⭐ RE-DERIVED 2026-09-18 (3 workflows × 7 full days, schedule events only): the
+# cap HOLDS three weeks on and has drifted slightly UP, to ~6/day —
+# site-availability-alarm (asks 96) 5–8 median 6; pipeline-sentinel (asks 24) 5–7
+# median 6; e2e-smoke (asks 4) 4/4 every day. That last one is the no-change
+# control the cap cannot move, and it is what rules out "Actions got slower" in
+# favour of a cap on high-frequency schedules. Quote ~6, dated, not ~5. Discriminator between a per-WORKFLOW
 # cap and a per-REPO budget, which this window cannot separate: disable a few
 # high-frequency workflows and see whether the others' counts RISE (budget) or
 # hold at ~5 (per-workflow cap).

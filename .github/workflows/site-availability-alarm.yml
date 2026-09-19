@@ -25,10 +25,28 @@ name: Site Availability Alarm
 # fully Vercel-independent. Until they exist this step says so and still fails the
 # job, so the badge and GitHub's own notification remain the fallback.
 #
-# ⚠ NO COOLDOWN, DELIBERATELY. During a real outage this fires on each delivered
-# tick (GitHub sheds most of them, so at most ~4/hour). Being told four times an
-# hour that the site is down is the correct amount of annoying; the 2026-09-10
-# failure was silence, not noise.
+# ⚠ NO COOLDOWN, DELIBERATELY. During a real outage this fires on every
+# delivered tick.
+#
+# ⛔ "at most ~4/hour" — what this comment claimed until 2026-09-18 — WAS WRONG BY
+# ~15×, in the direction that flatters the alarm. The cron asks for 96 runs/day;
+# GitHub delivers 6–8. Re-derived 2026-09-18 from this workflow's own
+# schedule-event run history (7 full days: 5, 6, 6, 6, 6, 7, 8 — median 6), with
+# two corroborating series measured the same way:
+#     pipeline-sentinel   asks 24/day  →  5–7   (median 6)
+#     e2e-smoke           asks  4/day  →  4/4 every day   ← NO-CHANGE CONTROL
+# The control is the part that makes this a measurement rather than a story: a
+# workflow asking at or below the cap receives exactly what it asks for, so this
+# is a CAP on high-frequency schedules, not a general degradation of Actions.
+#
+# ⭐ CONSEQUENCE, and it is the reason this correction is worth its lines: this
+# alarm LOOKS about every 3–4 hours, NOT every 15 minutes. Nothing above changes
+# — the recovered-outage window arm in
+# __tests__/site-availability-alarm-fails-loudly.test.ts was already sized
+# against DELIVERY for exactly this reason (measured ~8/day on 2026-09-14) — but
+# a reader who took the cron at face value would size the next detector wrong.
+# Being told a few times a day that the site is down is what is actually on
+# offer; the 2026-09-10 failure was silence, not noise.
 #
 # ⚠ Minutes 4/19/33/49 are GHA-EMPTY on this repo, derived from every `cron:` in
 # .github/workflows rather than assumed, and re-derived by the test.
