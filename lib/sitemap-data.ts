@@ -484,7 +484,7 @@ interface PinnacleRenderRow {
 }
 
 async function getPinnacleRenderRows(): Promise<PinnacleRenderRow[]> {
-  // One sitemap entry per Pinnacle render → /pinnacle/moment/<render_id> (the
+  // One sitemap entry per Pinnacle render → /disney-pinnacle/edition/<render_id> (the
   // render-keyed per-pin page, Wave 1b). pinnacle_catalog has no collection_id
   // (it's all Pinnacle), so page it directly rather than via fetchAllByCollection.
   // Limited to catalogued pins (character_name present) — a DATED SAMPLE:
@@ -671,7 +671,12 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
     const pinnaclePinPages: MetadataRoute.Sitemap = pinnacleRenders
       .filter((r) => typeof r.render_id === 'string' && r.render_id.length > 0)
       .map((r) => ({
-        url: `${BASE_URL}/pinnacle/moment/${encodeURIComponent(r.render_id)}`,
+        // 🔄 2026-09-20: was `/pinnacle/moment/<render_id>`. The page moved into
+        // the collection namespace as `/disney-pinnacle/edition/<render_id>`
+        // and the old URL is a permanent redirect, so the sitemap must advertise
+        // the DESTINATION — advertising a redirect wastes crawl budget and
+        // contradicts the page's own canonical tag.
+        url: `${BASE_URL}/disney-pinnacle/edition/${encodeURIComponent(r.render_id)}`,
         lastModified: r.updated_at ? new Date(r.updated_at) : now,
         changeFrequency: 'weekly' as const,
         priority: 0.55,

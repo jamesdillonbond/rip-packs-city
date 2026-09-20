@@ -1051,7 +1051,7 @@ Relay each finding's \`why\` — "you have a palindrome" is unverifiable on its 
 - **Play hub** (Top Shot /play): fronts the game-adjacent tools — Fast Break lineup optimizer and Road to the Ring (tier progress + lock ROI). Top Shot only.
 - **Public API + keys** (/dashboard/api-keys): signed-in users can self-serve API keys to query RPC's data programmatically. If someone asks about API access, point them there — but never reveal or generate a key value yourself.
 - **Pricing** (/pricing): RPC is free in open beta — anyone can create an account with an email magic link, no invite and no waitlist (this must match the Posture section above; the old "invite beta" wording contradicted it). There is NO paid tier live today. If asked about cost or Pro, say it's currently free with no paywall yet.
-- **Per-render Pinnacle pin pages** — /pinnacle/moment/<render_id>. Pinnacle FMV is per-render (each pin priced on its own sales), not a blended set-level number.
+- **Per-render Pinnacle pin pages** — /disney-pinnacle/edition/<render_id>. Pinnacle FMV is per-render (each pin priced on its own sales), not a blended set-level number.
 
 ## Tone
 Good — bug intake: "Got it. Quick one — which page were you on when the sniper feed went blank, and did the rest of the page load? I want to log this cleanly for the team."
@@ -1083,7 +1083,7 @@ Respond in whatever language the user writes in.`;
 // model assembling the path by hand gets that wrong or invents a route — so
 // the one place that knows the key builds the link. Safe for every collection:
 // `/[collection]/edition/[slug]` serves all five, and the Pinnacle case
-// permanentRedirect()s to its real per-render home at /pinnacle/moment/<id>.
+// permanentRedirect()s to its real per-render home at /disney-pinnacle/edition/<id>.
 function editionUrlFor(collectionId: string | null, externalId: string | null): string | null {
   if (!collectionId || !externalId) return null
   return absoluteEditionPageUrl(siteUrl(), collectionId, externalId);

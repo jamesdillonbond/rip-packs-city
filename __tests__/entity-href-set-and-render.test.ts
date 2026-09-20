@@ -36,20 +36,42 @@ describe("setEntityHref", () => {
 })
 
 describe("pinnacleRenderHref", () => {
-  it("points at the canonical render page", () => {
-    expect(pinnacleRenderHref("OEV1-TOYS-BUZZ-S4B")).toBe("/pinnacle/moment/OEV1-TOYS-BUZZ-S4B")
+  // 🔄 INVERTED 2026-09-20, and the inversion IS the point — this block used to
+  // assert that the canonical Pinnacle URL was NOT the `/edition/` spelling,
+  // because the page lived at `/pinnacle/moment/<render_id>` and the house-shaped
+  // URL 308'd away to it. The page moved into the collection namespace, so the
+  // house-shaped URL is now the canonical one and the old URL is the redirect.
+  // The property being pinned is unchanged: ONE canonical spelling, and internal
+  // links use it rather than a redirect.
+  it("points at the collection-namespaced edition page", () => {
+    expect(pinnacleRenderHref("OEV1-TOYS-BUZZ-S4B")).toBe(
+      "/disney-pinnacle/edition/OEV1-TOYS-BUZZ-S4B",
+    )
   })
 
-  it("is NOT the /disney-pinnacle/edition/ spelling, which 308s to it", () => {
-    const id = "OEV1-TOYS-BUZZ-S4B"
-    // editionHref still builds the redirecting form by design (it is the
-    // edition-row helper); the set tracker must not use it for Pinnacle.
-    expect(editionHref("disney-pinnacle", null, id)).toMatch(/\/edition\//)
-    expect(pinnacleRenderHref(id)).not.toMatch(/\/edition\//)
-    expect(pinnacleRenderHref(id)).not.toBe(editionHref("disney-pinnacle", null, id))
+  it("is the SAME spelling as editionHref — one implementation, not two", () => {
+    // ⛔ Two href builders for one collection is how Pinnacle accumulated its
+    // special cases. pinnacleRenderHref is an alias and must stay one.
+    for (const id of ["OEV1-TOYS-BUZZ-S4B", "STAR-OEV1-SWHM:Digital Display:1", "a/b c"]) {
+      expect(pinnacleRenderHref(id)).toBe(editionHref("disney-pinnacle", null, id))
+    }
+  })
+
+  it("never emits the retired /pinnacle/moment/ spelling", () => {
+    // That URL still resolves — as a permanent redirect. An internal link to it
+    // costs the reader a hop and hands the crawler a duplicate.
+    expect(pinnacleRenderHref("OEV1-TOYS-BUZZ-S4B")).not.toMatch(/^\/pinnacle\/moment\//)
   })
 
   it("encodes an id that would otherwise break the path", () => {
-    expect(pinnacleRenderHref("a/b c")).toBe("/pinnacle/moment/a%2Fb%20c")
+    expect(pinnacleRenderHref("a/b c")).toBe("/disney-pinnacle/edition/a%2Fb%20c")
+  })
+
+  it("round-trips a legacy set-level key, which carries colons and spaces", () => {
+    // These reach the disambiguation arm of the edition body; a mangled key
+    // would 404 a page that exists.
+    const key = "STAR-OEV1-SWHM:Digital Display:1"
+    const href = pinnacleRenderHref(key)
+    expect(decodeURIComponent(href.replace("/disney-pinnacle/edition/", ""))).toBe(key)
   })
 })

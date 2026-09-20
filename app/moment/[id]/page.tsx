@@ -143,7 +143,7 @@ interface MomentResolved {
 
 // Wave 2 (PIN-FMV-REKEY): a Pinnacle legacy edition_key maps to MANY renders.
 // get_moment_detail returns the render-true set so /moment/<legacy-key> can
-// disambiguate to the per-pin /pinnacle/moment/<render_id> pages instead of
+// disambiguate to the per-pin /disney-pinnacle/edition/<render_id> pages instead of
 // showing one arbitrary character's set-level blend.
 interface PinnacleRender {
   render_id: string
@@ -321,7 +321,7 @@ export async function generateMetadata(
         }
   }
   // Pinnacle render disambiguation (Wave 2): a legacy edition_key maps to many
-  // renders — noindex,follow (mirrors /pinnacle/moment/<legacy-key>).
+  // renders — noindex,follow (mirrors /disney-pinnacle/edition/<legacy-key>).
   const pinRenders =
     detail.resolved?.kind === "pinnacle_edition" ? (detail.renders ?? []) : []
   if (pinRenders.length > 1) {
@@ -434,7 +434,7 @@ export default async function MomentPage(
   if (detail.resolved?.kind === "pinnacle_edition") {
     const renders = detail.renders ?? []
     if (renders.length === 1) {
-      redirect(`/pinnacle/moment/${encodeURIComponent(renders[0].render_id)}`)
+      redirect(`/disney-pinnacle/edition/${encodeURIComponent(renders[0].render_id)}`)
     }
     if (renders.length > 1) {
       return <PinnacleDisambiguation renders={renders} />
@@ -1643,7 +1643,7 @@ export default async function MomentPage(
 
 // Wave 2 (PIN-FMV-REKEY): "Pick a pin" list for a Pinnacle legacy edition_key
 // that fans out to multiple renders. Each card links to the render-true per-pin
-// page at /pinnacle/moment/<render_id> (the canonical Pinnacle surface).
+// page at /disney-pinnacle/edition/<render_id> (the canonical Pinnacle surface).
 function PinnacleDisambiguation({ renders }: { renders: PinnacleRender[] }) {
   return (
     <>
@@ -1708,7 +1708,7 @@ function PinnacleDisambiguation({ renders }: { renders: PinnacleRender[] }) {
           {renders.map((r) => (
             <Link
               key={r.render_id}
-              href={`/pinnacle/moment/${encodeURIComponent(r.render_id)}`}
+              href={`/disney-pinnacle/edition/${encodeURIComponent(r.render_id)}`}
               style={{
                 display: "flex",
                 gap: 12,

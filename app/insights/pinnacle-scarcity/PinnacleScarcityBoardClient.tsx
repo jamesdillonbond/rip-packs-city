@@ -5,7 +5,7 @@
 // Client interactivity layer for the public Pinnacle Scarcity Board. The
 // server component (page.tsx) fetches the default-view rows (scarcity desc)
 // from pinnacle_scarcity_board server-side and passes them in as `initialRows`,
-// so the ranked table + per-row /pinnacle/moment/<id> drill-down links render
+// so the ranked table + per-row /disney-pinnacle/edition/<id> drill-down links render
 // in the raw server HTML (crawlable) instead of only after JS. This component
 // layers on franchise / chasers / sort filters as progressive enhancement and
 // only refetches when those change.
@@ -226,7 +226,7 @@ export default function PinnacleScarcityBoardClient({
                 <tr key={r.render_id}>
                   <td className="rpc-ps-td-edition">
                     <Link
-                      href={`/pinnacle/moment/${encodeURIComponent(r.render_id)}`}
+                      href={`/disney-pinnacle/edition/${encodeURIComponent(r.render_id)}`}
                       className="rpc-ps-edition-link"
                       title={`Open ${r.character_name ?? "this Pinnacle"} detail`}
                     >

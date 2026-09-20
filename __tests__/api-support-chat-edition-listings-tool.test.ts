@@ -436,7 +436,10 @@ describe("get_edition_listings — Disney Pinnacle (per-render)", () => {
     expect(out.listings_status).toBe("listed")
     expect(out.floor_ask).toBe(42.5)
     expect(out.discount_pct).toBe(29.2)
-    expect(String(out.edition_url)).toContain("/pinnacle/moment/r-1")
+    // 🔄 2026-09-20: the Pinnacle edition page moved into the collection
+    // namespace. The concierge must hand the user the canonical URL — a link
+    // that redirects is a worse answer, and one that 404s is a false one.
+    expect(String(out.edition_url)).toContain("/disney-pinnacle/edition/r-1")
     // ⚠ Must NOT claim a live query — this column is a periodic snapshot.
     expect(String(out.listings_note)).toMatch(/snapshot, not a live quote/i)
     expect(out.floor_listed_at).toBe("2026-08-15T20:00:00Z")

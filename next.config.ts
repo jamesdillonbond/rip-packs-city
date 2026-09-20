@@ -109,9 +109,20 @@ const nextConfig: NextConfig = {
       // redirects also run BEFORE the proxy.ts auth gate (verified live:
       // /pinnacle/overview 308s cleanly instead of bouncing to /login), so an
       // anonymous crawler gets one hop straight to the rendered page.
+      // 🔄 RE-POINTED 2026-09-20. This used to send the guessable
+      // /disney-pinnacle/moment/<render_id> OUT to /pinnacle/moment/<id>,
+      // because that was where the page lived. The page now lives at
+      // /disney-pinnacle/edition/<render_id> — a Pinnacle render IS the
+      // edition-grain object, and that is what the segment is called for the
+      // other four collections — so this hop stays in-namespace.
+      // ⚠ The paragraph above ("Direction chosen deliberately: /pinnacle/moment/*
+      // is the canonical surface") describes the OLD arrangement and is kept for
+      // the history; the direction was reversed on purpose, with the old URL
+      // held open as a permanent redirect in app/pinnacle/moment/[id]/page.tsx
+      // so none of its indexed URLs are thrown away.
       {
         source: "/disney-pinnacle/moment/:id",
-        destination: "/pinnacle/moment/:id",
+        destination: "/disney-pinnacle/edition/:id",
         permanent: true,
       },
       // Audit 2026-05-20 (F17): panini-blockchain is unpublished + off-platform; neutralize the dead route.

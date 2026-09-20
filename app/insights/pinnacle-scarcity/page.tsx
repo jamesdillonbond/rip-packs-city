@@ -4,7 +4,7 @@
 // rows (scarcity desc) directly from the public pinnacle_scarcity_board view
 // via supabaseAdmin (exactly as /api/public/insights/pinnacle-scarcity does)
 // and hands them to the client interactivity layer as `initialRows`. This puts
-// the ranked table AND the per-row /pinnacle/moment/<id> drill-down links into
+// the ranked table AND the per-row /disney-pinnacle/edition/<id> drill-down links into
 // the raw server HTML so the unique scarcity content is crawlable. The client
 // (PinnacleScarcityBoardClient) layers on franchise/chasers/sort filters as
 // progressive enhancement and only refetches when those change.

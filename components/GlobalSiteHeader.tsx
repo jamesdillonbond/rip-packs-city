@@ -8,7 +8,7 @@ import GlobalSearch from "@/components/search/GlobalSearch"
 
 // Site-wide sticky header (no collection dependency). Extracted from the
 // (collections) group layout so top-level routes OUTSIDE that group — e.g.
-// /pinnacle/moment/[id] — can render the same global nav instead of being
+// the Pinnacle edition page — can render the same global nav instead of being
 // orphaned with no way back into the site.
 export default function GlobalSiteHeader() {
   return (
