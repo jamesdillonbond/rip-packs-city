@@ -29,6 +29,18 @@ import path from "node:path"
 //     _shared copy takes a SporkConfig; the edge copy closes over module
 //     constants), so byte-equality is the wrong assertion. Only isTransient,
 //     which is constant-free, is pinned.
+//   • pinnacle-mint-parse::extractDeposit vs pinnacle-owner-discovery and
+//     pinnacle-owner-discovery-forward — REMOVED 2026-09-19 after the extractor
+//     fix below made the comparison real for the first time. They are the same
+//     ALGORITHM written twice, not a maintained copy: the mirror uses
+//     `u`/`id`/`to`/`toAddr` and one combined null-check, the inline copies use
+//     `unwrapped`/`idField`/`toField`/`to` and two separate checks. ⛔ And the
+//     decisive part — each logs its OWN function name on the catch path
+//     (`[ingest-pinnacle-mints]` vs `[pinnacle-owner-discovery]`), which is
+//     CORRECT behaviour, so byte-equality can never hold and pinning it would
+//     demand a wrong log prefix in one of them. Behaviour was compared by hand
+//     and is equivalent. `ingest-pinnacle-mints` keeps its pin: its copy IS
+//     verbatim, log prefix included.
 //   • ufc-wallet-enrich::inferTier / titleCase vs seed-ufc-editions — those are
 //     two INDEPENDENTLY-authored functions that merely share a name; they are
 //     not a maintained copy. NOTE a real latent discrepancy recorded for the
@@ -52,19 +64,77 @@ const norm = (s: string) =>
     .replace(/\s+/g, " ")
     .trim()
 
-// Brace-matched extraction of a top-level `function <name>(...) { ... }` body.
+/**
+ * A statement keyword. Present in every real function BODY; absent from a
+ * return-type object literal. This is what makes the extraction self-checking.
+ */
+export const BODY_TOKEN = /\breturn\b|\bconst\b|\bfor\b|\btry\b|\bif\b|\blet\b|\bthrow\b|\bswitch\b|=>/
+
+/**
+ * Brace-match that SKIPS string/template literals and comments.
+ *
+ * ⚠ 2026-09-19: the previous version counted every `{` character, so a brace
+ * inside a STRING — `trimmed.startsWith("{")` in hybrid-custody-backfill's
+ * extractScriptResultB64 — left the depth permanently unbalanced and the
+ * extraction returned null. Null on both sides is caught by the assertions
+ * below, so it failed loudly rather than silently; but it made a whole class of
+ * parser unpinnable for a reason no one could see from the pin list.
+ */
+function matchBrace(src: string, open: number): number {
+  let depth = 0
+  for (let i = open; i < src.length; i++) {
+    const c = src[i]
+    if (c === '"' || c === "'" || c === "`") {
+      const quote = c
+      i++
+      while (i < src.length) {
+        if (src[i] === "\\") { i += 2; continue }
+        if (src[i] === quote) break
+        i++
+      }
+      continue
+    }
+    if (c === "/" && src[i + 1] === "/") { const nl = src.indexOf("\n", i); if (nl < 0) return -1; i = nl; continue }
+    if (c === "/" && src[i + 1] === "*") { const e = src.indexOf("*/", i + 2); if (e < 0) return -1; i = e + 1; continue }
+    if (c === "{") depth++
+    else if (c === "}") { depth--; if (depth === 0) return i }
+  }
+  return -1
+}
+
+/**
+ * Extraction of a top-level `function <name>(...) { ... }` BODY.
+ *
+ * 🚨 2026-09-19 — WHY THIS IS NOT `indexOf("{")` ANY MORE, AND WHY IT MATTERED.
+ * A function whose RETURN TYPE is an object literal —
+ *
+ *     function extractDeposit(b64: string): { nftId: string; to: string } | null {
+ *
+ * — has its first `{` in the TYPE, not the body. The old extractor matched that
+ * brace, so the pin compared two RETURN TYPES and was structurally incapable of
+ * seeing a body change. **Seven of the 47 pins were in that state**, including
+ * `computeDualPrice` and `editionExtKey` on `compute-topshot-pack-ev` — whose
+ * own pin comments read "drift silently re-prices every pack" and "a mis-key
+ * attributes pulls to the wrong edition". They asserted neither.
+ *
+ * Fixing it surfaced REAL divergence in two pins that had always "passed"
+ * (see the pinnacle-owner-discovery exclusion below).
+ *
+ * The rule is now self-checking: the body is the FIRST brace group containing a
+ * statement keyword, so a type literal can never be returned as a body.
+ */
 function extractFn(src: string, name: string): string | null {
   const sig = src.search(new RegExp(`(export\\s+)?function ${name}\\(`))
   if (sig < 0) return null
-  const open = src.indexOf("{", sig)
-  if (open < 0) return null
-  let depth = 0
-  for (let i = open; i < src.length; i++) {
-    if (src[i] === "{") depth++
-    else if (src[i] === "}") {
-      depth--
-      if (depth === 0) return norm(src.slice(sig, i + 1))
-    }
+  let cursor = sig
+  // At most a few groups: [type params]? [return type]? [body].
+  for (let n = 0; n < 4; n++) {
+    const open = src.indexOf("{", cursor)
+    if (open < 0) return null
+    const close = matchBrace(src, open)
+    if (close < 0) return null
+    if (BODY_TOKEN.test(src.slice(open + 1, close))) return norm(src.slice(sig, close + 1))
+    cursor = close + 1
   }
   return null
 }
@@ -83,8 +153,13 @@ const PINS: Array<[string, string, string, string]> = [
   ["hybrid-custody-parse", "parseAccountUpdatedPayload", "hybrid-custody-events", "account-link ownership attribution"],
   ["hybrid-custody-parse", "unwrap", "hybrid-custody-events", "account-link event unwrap"],
   // Pinnacle mint Deposit.to extraction — feeds owner discovery.
-  ["pinnacle-mint-parse", "extractDeposit", "pinnacle-owner-discovery", "mint recipient / owner discovery"],
-  ["pinnacle-mint-parse", "extractDeposit", "pinnacle-owner-discovery-forward", "mint recipient / owner discovery"],
+  // ⛔ pinnacle-mint-parse::extractDeposit for pinnacle-owner-discovery{,-forward}
+  //    was pinned here until 2026-09-19 and is REMOVED, not merely un-pinned —
+  //    see the "Deliberately NOT pinned" note at the top of this file. In short:
+  //    those two are INDEPENDENTLY authored, not a maintained copy, and each logs
+  //    its OWN function name, so byte-equality is impossible by construction. The
+  //    pin only ever passed because the old extractor compared return types.
+  //    `ingest-pinnacle-mints` keeps its pin below — that one IS a verbatim copy.
   // Positive-serial coercion (0/negative/NaN → null) on the AllDay serial backfill.
   ["cdc-reduced", "toSerial", "backfill-allday-listing-serials", "serial coercion; a bad 0/NaN pollutes serials"],
   // Transient-vs-fatal classification of a spork fetch failure — the retry/abort decision.
@@ -257,6 +332,17 @@ describe("edge-fn inline-copy drift guard — deployed copies match their tested
       }
       const shared = extractFn(readShared(mod), fn)
       const inline = extractFn(edgeSrc, fn)
+      // ⭐ NON-VACUITY, added 2026-09-19. Before the extractor fix, a function
+      // whose return type is an object literal had its TYPE extracted instead of
+      // its body, so the pin compared `{ nftId: string; to: string }` on both
+      // sides and passed however the bodies diverged. Seven pins were in that
+      // state. Asserting a statement keyword makes that state impossible to
+      // re-enter, in the place it would re-enter.
+      expect(
+        shared === null || BODY_TOKEN.test(shared),
+        `_shared/${mod}.ts::${fn} extracted no statement keyword — this pin is VACUOUS ` +
+          `(a return-type literal was captured instead of the body): ${shared}`,
+      ).toBe(true)
       // A null on the SHARED side means the mirror export was renamed/removed
       // out from under this pin — fail loudly rather than pass vacuously.
       expect(shared, `_shared/${mod}.ts no longer exports function ${fn}`).not.toBeNull()
@@ -266,4 +352,59 @@ describe("edge-fn inline-copy drift guard — deployed copies match their tested
       expect(inline).toBe(shared)
     },
   )
+})
+
+// ── guards on the GUARD, added 2026-09-19 ───────────────────────────────────
+//
+// The extractor is the whole mechanism here: if it captures the wrong region,
+// every pin above compares the wrong text and passes. That is not theoretical —
+// it is what happened to SEVEN pins until this date. These cases pin the two
+// shapes that broke it, against fixtures, so the failure cannot return silently.
+describe("edge-fn inline-copy drift guard — the EXTRACTOR itself", () => {
+  const RETURN_TYPE_LITERAL = `
+function extractDeposit(payloadBase64: string): { nftId: string; to: string } | null {
+  const raw = JSON.parse(atob(payloadBase64))
+  return { nftId: String(raw.id), to: String(raw.to) }
+}
+`
+  const BRACE_IN_STRING = `
+function extractScriptResultB64(rawText: string): string | null {
+  const trimmed = rawText.trim()
+  if (trimmed.startsWith("{") || trimmed.startsWith("\\"")) return JSON.parse(trimmed).value
+  return trimmed
+}
+`
+
+  it("captures the BODY, not a return-type object literal", () => {
+    const got = extractFn(RETURN_TYPE_LITERAL, "extractDeposit")
+    expect(got).not.toBeNull()
+    // The bug produced exactly `{ nftId: string to: string }` and nothing else.
+    expect(got).toContain("JSON.parse")
+    expect(BODY_TOKEN.test(got!)).toBe(true)
+  })
+
+  it("is not fooled by a brace inside a string literal", () => {
+    const got = extractFn(BRACE_IN_STRING, "extractScriptResultB64")
+    expect(got).not.toBeNull()
+    expect(got).toContain("return trimmed")
+  })
+
+  it("DETECTS a body change — the mutation proof, both directions", () => {
+    const a = extractFn(RETURN_TYPE_LITERAL, "extractDeposit")
+    const mutated = RETURN_TYPE_LITERAL.replace("String(raw.to)", "String(raw.recipient)")
+    const b = extractFn(mutated, "extractDeposit")
+    expect(b).not.toBeNull()
+    expect(b).not.toBe(a)
+    // …and an irrelevant reformat is still equal, so the guard is not brittle.
+    const reformatted = RETURN_TYPE_LITERAL.replace(/\n/g, "\n  ") + "\n// trailing comment\n"
+    expect(extractFn(reformatted, "extractDeposit")).toBe(a)
+  })
+
+  it("every pinned _shared body carries a statement keyword (no vacuous pins)", () => {
+    const vacuous = PINS.filter(([mod, fn]) => {
+      const body = extractFn(readShared(mod), fn)
+      return body !== null && !BODY_TOKEN.test(body)
+    }).map(([mod, fn]) => `${mod}::${fn}`)
+    expect(vacuous, `vacuous pin(s): ${vacuous.join(", ")}`).toEqual([])
+  })
 })
