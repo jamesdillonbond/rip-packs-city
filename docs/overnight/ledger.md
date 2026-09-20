@@ -11,6 +11,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ CANDY'S MARKET FILTERS JOIN PINNACLE'S — and the two arms now share ONE implementation instead of a second copy · Claude Code cloud
+
+**Shipped: `applyBrowseFilters` + `exactSetMatch` extracted and parameterised by column name; the Candy arm wired through them; the Pinnacle arm rewired to the shared pair; 2 new arms (both mutation-proved); **#129** updated. No DB change.**
+
+⭐ **COLUMNS CHECKED, NOT ASSUMED — and both guesses I would have made were wrong.** #129 recorded Candy as "fixable the same way, price/series column names **not verified**". Verified now: the price column is **`ask_usd`**, not `ask_price`; and **there is no `series_name` column on `candy_market_board` at all**. ⛔ Filtering a column that does not exist errors the read, and this route renders a failed Candy read as an **empty market** — so a pasted copy of the Pinnacle body would have turned a silently-ignored filter into a confidently empty one, on the collection whose arm exists precisely because that fall-through cannot serve it.
+
+ⓘ **Candy's Set chip was the HARMLESS one and that is worth stating**, because "it was broken everywhere" would be the tidier and less true story: `candy_market_board` carries exactly **ONE** distinct `set_name` across **2,144** rows, so filtering by it returned everything — which happened to be the right answer. **The Player typeahead and Min price were not harmless.**
+
+⛔ **ONE IMPLEMENTATION, DELIBERATELY.** The two arms need the same four filters against different column names (`character_name` vs `player_name`, `floor_ask` vs `ask_usd`). CLAUDE.md's rule for exactly this shape — *when you find one, grep for the EXPRESSION, not the file; it has spread by copy-paste five times* — says the second copy drifts, so the logic is parameterised and the Pinnacle arm was rewired onto it rather than left as the original. **Add an arm by passing its column map, never by pasting the body.**
+
+✅ **Mutation-proved in both directions, twice:** removing the Candy helper call reds the Candy arm; *adding* a `series: "series_name"` column it does not have reds the arm that pins its absence. Restored, 8/8. ⭐ **The second of those is the one worth having** — it fails on the "obvious" completion a future reader would reach for.
+
+⚠ **Test file RENAMED** `api-market-pinnacle-filters` → **`api-market-browse-filters`**, and the header says why: it is named for the FILTERS, not for one collection, so when Top Shot or All Day gains RPC parameters its arms belong here rather than in a third file.
+
+📋 **#129 now reads PINNACLE + CANDY FIXED; TOP SHOT + ALL DAY NEED RPC PARAMS** — those two are RPCs returning a capped, sort-ordered window, and the do-not-filter-that-in-memory warning stands.
+
+✅ **Verified:** `npm test` **1,576 files / 17,935 tests green**, `tsc --noEmit` clean, `lint:ratchet` 712/712, known-issues index regenerated (**128** after upstream filed #130) and `--check` green.
+
+- **Revert:** `git log --grep="CANDY'S MARKET FILTERS JOIN"` → `git revert <sha>`. ⚠ Reverting restores the silently-ignored Player/Min-price filters on Candy AND un-extracts the shared helper, so Pinnacle's arm goes back to its own copy. No DB half.
+
 ### 2026-09-20 · 📚 THREAD CLOSE — CLAUDE.md takes the R123 write-order rule (two clauses displaced verbatim), the canon gets the three write-side sub-shapes and their fixes, the deploy skill gets today's precondition and bundle facts, and the Pinnacle-mints 403 is filed as #130 · Cowork cloud
 
 **Shipped (docs only): `CLAUDE.md` (39,985 chars — the WRITE-side bullet gains *"a failed CURSOR/STATE write fails the RUN and reports the cursor where it IS; close a delete-then-insert window by ORDER"*; the pre-2026-08-03 revert note and the Git-Bash/PDT clause condensed, their text parked verbatim at the end of `tooling-gotchas.md`) · `docs/reference/key-files-and-honesty.md` (R123 section under the twelfth shape: the money/entitlement write → retryable status; the cursor/state write → fail the run, report the real cursor, throw on a failed read; the delete-then-insert window → order, PK-aware, delete only what you did not write; the run-row form; the harness facts; the five inverted pins) · `docs/cowork-skills/rpc-edge-fn-deploy` (§1: the 08-12 break repeated 39 days later on `ingest-pinnacle-mints` and the "prove the deployed build reads the env var and is answering its cron" precondition; §4 MCP: redacted drift check first, `_shared` bundle naming, the anonymous boot probe, `deno check` from npm in the sandbox) + bundle · `docs/reference/known-issues.md` #130 (the live 403, attributed, with the one-secret fix) + index · `metrics-latest.json`.**
