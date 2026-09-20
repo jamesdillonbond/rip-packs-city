@@ -75,6 +75,36 @@ gating command in the FOREGROUND and capture `$?` immediately, or write the valu
 
 ⚠ **COROLLARY — a push range tells you what YOUR push MOVED THE REF PAST, not what you authored.** Commits that arrived by someone else's push sit inside `abc..def` and read as yours. A session claimed to have pushed a peer's commit on exactly this misreading; the peer's reflog settled it, because its own push records `update by push` while a ref moved by someone else arrives as `fetch: fast-forward`.
 
+## 🚨 `git add <shared file>` STAGES THE OTHER SESSION'S UNCOMMITTED EDITS — three times in one evening, and `git add -p` IS NOT AVAILABLE TO FIX IT (2026-09-19)
+
+**Two Claude Code sessions share ONE working tree on this box.** `git add docs/overnight/ledger.md` does not stage *your change*; it stages **the file**, including every hunk a concurrent session has written and not yet committed. Three occurrences on 2026-09-19, in both directions:
+
+| commit | swept | whose |
+|---|---|---|
+| `fa795a146` | a ledger entry spliced ~90 s earlier | session -52's, taken by -88 |
+| `2091ff824` | a `#126` index-set paragraph | session -88's, taken by -52 |
+| (a third on `known-issues.md`) | — | same shape |
+
+⛔ **THREE CONSEQUENCES, and the second is the one that bites later:**
+1. Your commit contains a paragraph its message does not describe, so `git log --grep` and `git log -S` attribute it to the wrong work.
+2. **A revert of your commit silently takes their work with it.** This is why a ledger revert path must key on a MIGRATION FILENAME or a DB OBJECT, never on a grep of your own commit subject.
+3. It compounds the identity problem: both box sessions author as `Trevor <tdillonbond@gmail.com>`, so **nothing in git distinguishes whose hunk is whose** after the fact (see the three-writers section above).
+
+⛔ **THE OBVIOUS REMEDY IS UNAVAILABLE HERE, AND IT FAILS IN THE QUIET WAY. MEASURED 2026-09-19:** `git add -p <file> < /dev/null` prints the hunk and its `Stage this hunk [y,n,q,a,d,e,p,P,?]?` prompt, hits EOF, **exits `rc=0` — and stages NOTHING** (`git diff --cached --stat` empty). It does not error and it does not hang; it reports success having done no work. ⚠ **So `git add -p … && git commit -F msg` proceeds to a commit with an empty index** — the `&&` gate passes on a no-op. ⭐ **Same family as the two other traps on this page: a command whose exit code describes the wrapper rather than the work.** Both sessions independently proposed `git add -p` for this problem and **neither could have run it — an agreed remedy nobody tested.** What actually works, in order of cost:
+
+    # 1. LOOK before staging — cheap, and catches every case above
+    git status --short                      # is anything else dirty?
+    git diff -- <file> | head -60           # is every hunk YOURS?
+
+    # 2. NARROW THE WINDOW — edit, verify, commit in the same turn.
+    #    Every sweep tonight happened in a gap of 90 s to a few minutes.
+
+    # 3. TRUE PARTIAL STAGE, non-interactively, when the file IS shared:
+    git diff -- <file> > /tmp/mine.patch    # then edit /tmp/mine.patch down to your hunks
+    git checkout -- <file> && git apply /tmp/mine.patch   # ⚠ only with their copy saved first
+
+⚠ **Step 3's `git checkout --` DESTROYS uncommitted work** (see the entry on that below) — copy the file first. ⭐ **In practice step 1 plus step 2 is the whole fix: the sweeps were not subtle, and one `git diff` before `git add` would have shown a stranger's prose every time.** ⚠ **And if you do sweep one, say so in the message rather than re-committing over it** — the content is not lost, but the next reader needs to know the commit is not what its subject claims.
+
 ## Key env vars (displaced VERBATIM from CLAUDE.md 2026-08-25 to restore memory-file headroom)
 
 CLAUDE.md was at **39,996 of 40,000 characters — four characters of headroom** — which is one edit away from
