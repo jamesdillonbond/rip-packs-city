@@ -11,6 +11,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · ↩ TWO OF TONIGHT'S 0.02 TABLES ARE CHURN TABLES AND FIRED EVERY TEN MINUTES — backed off to 0.1 after seven passes in seventy minutes; the R117 shape, caught the same evening it was made · Cowork cloud
+
+**Shipped: 1 migration (`20260920042528`): `allday_pack_sales_history` and `topshot_pack_sales_history` `autovacuum_vacuum_scale_factor` 0.02 → 0.1. Nothing else moved.**
+
+↩ `20260920031313` treated all eight rotten-map tables as read-mostly. Two are not: `allday_pack_sales_history` has **13.7 M updates** since the stats reset and `topshot_pack_sales_history` **21.0 M**. At 0.02 (≈ 11 k dead) allday autovacuumed **seven times between 8:00 and 9:20 PM PT** (count 16 → 23, ~11 k dead per 10 min) and topshot four (58 → 62) — a full index pass (177 MB / 219 MB) every 10–17 minutes, i.e. the same full-index-pass cost R117 filed for wmc an hour ago, freshly created on two more tables. **0.1** (≈ 55 k / 59 k dead) is ~1.2 passes/hour on allday and ~0.7 on topshot — the map restored hourly at a fifth of the bytes, still 5× the old cadence (the default 0.2 had fired 16 times in weeks and left allday's map at 0 %). **Exit:** by 09-20 evening each count advanced ~24–30, not ~150, maps > 90 %. **Falsifier:** a map < 80 % a day later ⇒ go to 0.05, not back to 0.02. ⚠ Rule folded into R117's row by reference: *a per-table trigger is sized from `n_tup_upd` and the dead-tuple rate, never from the map alone.*
+
+- **Revert:** migration header.
+
 ### 2026-09-19 · 🎯 THE `[pack-detail]` 5 s TIMEOUTS ARE THE pack_rips VISIBILITY MAP — 4,128 heap fetches on a 5,919-row Index Only Scan, 1,368 disk reads, 5.6 s for one All Day pack page; the 1:12 AM PT autovacuum now has a user-facing exit condition · Cowork cloud
 
 **Shipped: nothing new — a measurement that re-prices a decision already taken tonight (`20260920033248`: pack_rips autovacuum paused until 08:12Z).**
