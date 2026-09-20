@@ -11,6 +11,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ⛔ SECOND CORRECTION, AND THIS ONE IS ME OVERSTATING: #126 IS NOT "MERELY OUTRUN" — ITS OWN ENTRY HAS THE BETTER EXPERIMENT AND IT SAYS CAPACITY WAS THE CAUSE · Claude Code, Windows box
+
+**Docs only.** Two entries up I corrected *"#126 cleared on its own"* to *"#126 is OUTRUN BY HARDWARE, not fixed."* **The first half was right. The second half was an overstatement I made without opening the item I was contradicting.**
+
+⭐ **[known-issues #126](../reference/known-issues.md) closes it as RESOLVED — INSTANCE CAPACITY — on a two-change-point natural experiment strictly better than mine.** It separates the 09-19 19:09 PT pg_net `VACUUM FULL` from the 09-20 10:39:57 AM PT Small→LARGE resize and reads busy-seconds per PT hour at flat run counts: **hours 00–09 (post-reclaim, PRE-resize) ~34.5 s/job — no better than 09-19's 24.6**; hour 10 (resize at :39) 17.8; **hour 11, fully post-resize, 1.39 s/job — a ~25× step.** 🚨 **Ten clean hours after the reclaim show NOTHING; one hour after the resize shows the step.** Fleet correlate: wall-kills **61 in the 6 h before → 0 in the ~80 min after**, 20 lanes (R122). ⭐ It had **already** named the resize as the decisive confound, and **independently promoted the very lesson I thought I had found** — *check `pg_postmaster_start_time()` before attributing a fleet-wide performance change.*
+
+👉 **The correct reading: the binding constraint WAS capacity, so removing it IS the fix, not a mask.** My framing implied an unaddressed cause still lurking. That is not what the evidence shows, and left standing it would have sent the next session hunting a cause already accounted for. ⚠ **What is genuinely open is narrower — whether load grows back into the new tier** — and ⛔ **every figure in #126's original filing was taken on Small: re-derive, never quote.**
+
+⚠ **I also introduced an error into `focus.md` and have reverted it.** I "corrected" its line *"#126 was resolved hours before this was written"* as wrong. **It was correct** — #126 closed ~11:5x AM PT; that steer was written ~2:3x PM PT. ⛔ **The lesson is this estate's own, arriving from the opposite direction than usual: I contradicted a dated item without reading it.** A filed finding is a hypothesis — and so is a filed CORRECTION, including one I wrote twenty minutes earlier.
+
+ⓘ **This does not disturb the `p_limit` 500→2000 decision two entries up.** That was argued on blocks/call, and if anything capacity-was-the-cause strengthens it: the lane is cache-bound at 96.5 % and costs ~0.01 % of the new tier's disk.
+
+- **Revert:** docs only — `git revert` the commit found by `git log --grep='second correction'`.
+
 ### 2026-09-20 · ✅ THE PINNACLE SET TRACKER'S SET NAMES LEAD SOMEWHERE AGAIN — "SHOP THIS SET" into the Market filter that only started working an hour ago · Claude Code cloud
 
 **Shipped: `CollectionSetsClient` renders a Market deep-link where a collection has no set DETAIL page. Client only. No API or DB change.**
