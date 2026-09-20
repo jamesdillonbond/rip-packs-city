@@ -43,14 +43,6 @@
 -- supabase/migrations/20260919053000_audit_20260918_wallet_pack_sync_one_request_per_wallet_and_hourly_freshness.sql
 -- (unchanged apart from this one predicate).
 
--- The only EXCEPTION block in this function is a JSON CAST GUARD —
---   v_body := CASE WHEN r.status_code = 200 THEN r.content::jsonb ELSE NULL END
--- — sitting INSIDE the request LOOP, and it is not what records the failure: the `outcome`
--- write below it is, outside any handler. Naming query_canceled there would make a
--- statement_timeout kill resume the loop with the timer disarmed AND record the kill as
--- `undecodable`, stating a cause the error did not. That is the case this guard's own doc
--- excuses. Marker added 2026-09-20 by a second session to green main; body NOT modified.
--- when-others-timeout-blind: intentional — cast guard inside a LOOP (collect_pack_nft_identity)
 -- anon-exec: intentional — CREATE OR REPLACE keeps the ACL of collect_pack_nft_identity (service_role only; unchanged by this migration, re-verified after apply).
 CREATE OR REPLACE FUNCTION public.collect_pack_nft_identity()
 RETURNS jsonb
