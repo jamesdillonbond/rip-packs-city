@@ -149,6 +149,15 @@ whole-group statistic used as a proxy for a per-slice property.
    `would_insert_editions` 5,074 · `would_upsert_sets` 62 · `would_upsert_players` 552 ·
    collisions 0/0 · `blocked` **false**.
 
+   🚨 **DO NOT TIGHTEN `MAX_STALE_PCT` TO 0.0 — it would deadlock the bridge permanently.** R120
+   (filed the same morning) proves `editions_stale_45d` **cannot reach a true zero**: three rows of
+   5,074 have `id = external_id` instead of the `__<span>_<cap>` convention, so the `last_seen_at`
+   write never lands on them even though they are walked every four hours (113 serials captured
+   09-20 6:05 AM PT, all `is_listed`). **1.0 is load-bearing precisely because it clears that
+   3-row artifact** — 0.0 would be a permanently-closed gate held shut by a metric defect, which is
+   this repo's "a permanently-red instrument is indistinguishable from a broken one". ✅ Once R120
+   is fixed and the metric can reach 0, tightening is safe — and *that* is the moment to do it.
+
    ⛔ **`blocked: false` IS NOT A GO.** The gate answers staleness only. **Two things still stand
    between here and a live run**, and neither is code: the **7-day hold** (step 1), and the
    **2026-07-19 parity assessment's editorial objection** — bridging makes a listing-gated index
