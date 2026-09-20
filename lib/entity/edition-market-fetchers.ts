@@ -90,11 +90,19 @@ export interface MarketBundle {
   /**
    * Count of open market listings for this edition ("% Listed").
    *
-   * `null` = no fresh listing source for the collection (Top Shot's ts_listings
-   * feed is dead; UFC/Pinnacle have none) → the page renders an em-dash, never a
-   * fake 0%. `0` = a live source with nothing currently listed, i.e. an honest
-   * "0.0% listed". Collapsing those two is how a dead feed becomes a market
-   * claim, so the distinction must survive any refactor of this field.
+   * `null` = no fresh listing source for the collection → the page renders an
+   * em-dash, never a fake 0%. `0` = a live source with nothing currently listed,
+   * i.e. an honest "0.0% listed". Collapsing those two is how a dead feed
+   * becomes a market claim, so the distinction must survive any refactor.
+   *
+   * ⚠ Corrected 2026-09-20: this said "Top Shot's ts_listings feed is dead".
+   * It came back on 2026-09-07 (Atlas firehose, ~60k open listings rebuilt
+   * every ~2 min) and Top Shot % Listed has been live ever since — verified on
+   * production, edition 51:1997 renders "0.1% · 73 of 60,000 listed". The
+   * `null` case is now UFC/Pinnacle only. Nobody had to change code for that:
+   * `get_edition_market_bundle` gates its Top Shot arm on a DERIVED freshness
+   * test (`max(ingested_at) > now() - interval '6 hours'`) rather than a
+   * hardcoded retirement date, so it self-healed the day the feed returned.
    */
   active_listings: number | null
 }

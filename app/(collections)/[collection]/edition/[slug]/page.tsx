@@ -522,14 +522,20 @@ export default async function EditionPage(
   // active_listings is null when the collection has no fresh listing source
   // feeding `get_edition_market_bundle` → render em-dash, not a fake 0%.
   //
-  // ⚠ For Top Shot that is a bundle-wiring gap, NOT an absent feed. This comment
-  // read "Top Shot's ts_listings feed is dead" until 2026-09-20; the table was
-  // rewired to the Atlas firehose on 2026-09-07 and now carries ~60k open
-  // listings over ~2,377 editions, rebuilt every ~2 min. The bundle reads
-  // `cached_listings_v2`, which Top Shot is not written to, so % Listed still
-  // em-dashes here — correct behaviour, wrong reason. Wiring the TS book into
-  // the bundle would light this metric up for Top Shot; it is an open item, not
-  // a missing source.
+  // ⚠ This comment read "Top Shot's ts_listings feed is dead" until 2026-09-20.
+  // It is not: the table was rewired to the Atlas firehose on 2026-09-07 and
+  // carries ~60k open listings over ~2,377 editions, rebuilt every ~2 min.
+  // Top Shot % Listed is LIVE and has been since that day — verified on
+  // production 2026-09-20: edition 51:1997 renders "0.1% · 73 of 60,000
+  // listed", matching get_edition_market_bundle exactly.
+  //
+  // ⭐ WHY IT SELF-HEALED, which is the transferable part: the bundle's Top Shot
+  // arm gates on `max(ingested_at) > now() - interval '6 hours'` — a DERIVED
+  // freshness test, not a hardcoded retirement date. When the feed came back the
+  // metric simply started working, with nobody touching it. The analytics tab's
+  // Order Book Depth card made the opposite choice and published a false
+  // "retired on 2026-05-26" claim for 13 days; it now gates the same way.
+  // Prefer this shape over a constant, every time.
   const listedSupply = currentSibling?.circulation_count ?? detail.circulation_count
   const pctListed =
     bundle.active_listings != null && listedSupply != null && listedSupply > 0
