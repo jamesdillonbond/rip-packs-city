@@ -11,6 +11,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🔬 #126 ADVANCED: THE WHOLE FLEET IS ~10× SLOWER AT CONSTANT WORK SINCE 09-15 — and tonight's sixteen migrations make the obvious falsifier unusable · Claude Code (Windows box)
+
+**Shipped: register #126 advanced + #75 CLOSED. No code, no DB change.**
+
+⭐⭐ **THE HEADLINE OF MY OWN ITEM WAS WRONG AND IS CORRECTED IN IT.** `cron.job_run_details` retains **31 days** (checked — the first read looked like a 1-day window and would have been quoted as one). Total cron busy-seconds per day, **against flat run counts of ~9,300**: 09-13 **149,247** · 09-14 82,543 · **09-15 34,236** · 09-16 66,422 · 09-17 122,744 · 09-18 168,859 · **09-19 233,894**. 🚨 **The same work is taking 6.8× longer.** ⛔ **So it is not "four lanes stepped on 09-17" — the load climbs MONOTONICALLY from 09-15 and 09-17 is merely where it crossed the statement-timeout threshold.**
+
+📏 **PER-JOB AT IDENTICAL CADENCE, which is what rules out one bad lane:** `refresh-mv-pack-ev-latest` 48→48 runs, 375→**7,467** s (**19.9×**) · `refresh-market-index-daily` 12→12, 412→**4,912** (**11.9×**) · `roll-pack-ask-hourly-low` 96→96, 289→**3,386** · `refresh-cross-collection-deals` 48→48, 312→**3,565** · `refresh-wmc-fmv-changed` 144→144, 2,879→**28,679** · `atlas-editions-drain` 720→718, 498→**4,569**. **Unrelated subsystems, one multiplier.**
+
+✅ **RULED OUT BY A READ, NOT AN ARGUMENT:** bloat (dead tuples low fleet-wide — wmc **0.5 %** with 1,318 autovacuums; the worst is a 127 MB table at 19.1 %, far too small to move the fleet) · schema (no migration 09-16→09-18) · **#73's mechanism** (`job startup timeout` writes NO `pipeline_runs` row; these write rows, so the body ran and was cancelled). ⚠ **Named confound: six lanes created 09-19 total ~14,900 s/day (6.4 % of 09-19) — real, nowhere near 6.8×, and they postdate the climb.** ⚠ **Structural, not causal: `shared_buffers` 512 MB against an 18 GB database; the instance restarted 09-18 ~19:15Z, so cumulative `pg_stat_database` cannot reach the 09-15 control.**
+
+✅ **#75 CLOSED — its subject is gone, but NOT by its own decision.** It refused a `VACUUM FULL` on the pg_net store; a concurrent session ran it tonight (`20260920020934`). 📏 **13,554,974,720 bytes on 09-14 = 41.4 % OF THE DATABASE IT SAT IN → 550,895,616 / 5,778 rows = 2.8 % now.** ⛔ **Its refusal rested on *"dead pages nobody reads cost ≈ 0 IO"* — a cost claim with no number in it.** ⚠ **Closed deliberately, not tidily: the question it turned on MOVED to #126.**
+
+🚨🚨 **AND THEN THE FALSIFIER DIED — INCLUDING THE ONE THE EVENING HANDOFF STATED INDEPENDENTLY.** That handoff says *"if the 02–18Z band does not return on 09-20, that was the mechanism"*; I had written the same shape. ⛔ **Both are invalid: SIXTEEN migrations landed between 00:16Z and 02:44Z, at least ten of them load-moving in BOTH directions** — reducing (pg_net reclaim · R115's precompute · the candy board's −92 % · two partial indexes · R107's cached daily) and **adding** (R107's one-off full reconcile · match-topshot-players onto pg_cron · the portfolio snapshot becoming pg_cron-primary). **Ten fixes, one window — the repo's own "a rate POOLED ACROSS A FIX" rule one level up.** ⭐ **The series still answers *did the fleet get better*; it can no longer answer *because of what*.**
+
+👉 **THE REPEAT IS THE TEST, not tonight's coincidence:** `20260920020934` installs that `VACUUM FULL` **weekly**, so the store climbs and is reclaimed on a known cadence. **A sawtooth in busy-seconds locked to it is attributable.** ⚠ **Record the store's SIZE alongside busy-seconds — neither is persisted anywhere today, which is why 09-14's 13.5 GB had to be recovered from a register entry rather than an instrument.**
+
+- **Revert:** `git revert <sha>` (`git log --grep="THE WHOLE FLEET IS"`). **Docs only.** ⛔ Nothing throttled, paused or re-tuned.
+
 ### 2026-09-19 · 🏁 R115 CLOSES STRUCTURALLY — the confidence precompute reads the 21k-row newest-snapshot cache R107 made trustworthy tonight instead of streaming 1.1 M snapshots through a DISTINCT ON: Top Shot 5,286 ms → 31 ms · Cowork cloud + laptop VM
 
 **Shipped: 1 migration (`20260920024430`): `refresh_fmv_confidence_precompute()` re-sourced, two provenance columns on `fmv_confidence_precompute`, `efc_drift_rows` in the run record. In-migration positive control as the job's role.**
