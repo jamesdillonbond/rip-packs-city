@@ -11,6 +11,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🕳 SEVEN OF THE 47 EDGE-FN DRIFT PINS COMPARED RETURN TYPES, NOT BODIES — including the two on the pack-EV writer, and fixing the extractor found real divergence · Claude Code (Windows box)
+
+**Shipped: 1 test file (`__tests__/edge-inline-copy-drift-guard.test.ts`). No source, no DB change — the guard was wrong, not the code it guards.**
+
+🚨 **THE DEFECT: `extractFn` took `src.indexOf("{", sig)` as the start of a function BODY.** For a function whose RETURN TYPE is an object literal — `function extractDeposit(b64: string): { nftId: string; to: string } | null {` — the first `{` is **in the type**. So the pin compared two return-type literals and was **structurally incapable of seeing a body change**. ⛔ **7 of 47 pins were in that state**, and two of them are `computeDualPrice` and `editionExtKey` on `compute-topshot-pack-ev` — the guard's own comments for those rows read *"drift silently re-prices every pack"* and *"a mis-key attributes pulls to the wrong edition"*. **They asserted neither.** Same family as a vacuous test that reads as coverage; this one read as coverage in a GUARD.
+
+⭐ **A SECOND, QUIETER HOLE IN THE SAME FUNCTION: the brace counter was not string-aware.** `trimmed.startsWith("{")` in `hybrid-custody-backfill` left depth permanently unbalanced, so extraction returned null and that whole class of parser was unpinnable — **for a reason invisible from the pin list**. ✅ That direction at least failed LOUDLY (the existing null assertions catch it); the return-type one did not.
+
+🚨 **FIXING IT IMMEDIATELY FOUND REAL DIVERGENCE IN TWO PINS THAT HAD ALWAYS PASSED.** `pinnacle-mint-parse::extractDeposit` vs `pinnacle-owner-discovery{,-forward}`: mirror uses `u`/`id`/`to`/`toAddr` with one combined null-check, the inline copies use `unwrapped`/`idField`/`toField`/`to` with two. ⭐ **And the decisive detail — each logs its OWN function name on the catch path** (`[ingest-pinnacle-mints]` vs `[pinnacle-owner-discovery]`), which is CORRECT, **so byte-equality can NEVER hold and the pin was impossible by construction.** ✅ Behaviour compared by hand: equivalent. **Both rows REMOVED and recorded in the file's existing "excluded for cause" list** — not silently dropped. ⚠ `ingest-pinnacle-mints` KEEPS its pin: that copy really is verbatim, log prefix included.
+
+✅ **THE FIX IS SELF-CHECKING RATHER THAN CLEVERER:** the body is the FIRST brace group containing a statement keyword, so a type literal can never be returned as a body. Plus a **non-vacuity assertion** on every pin, in the place it would re-enter, and four fixture cases pinning both broken shapes.
+
+📏 **MUTATION-PROVEN IN BOTH DIRECTIONS, not asserted:** reverting `extractFn` to the old `indexOf` reds **10 tests** — the 4 new extractor cases, the 5 formerly-vacuous pins, and the completeness walk. Restored: **51 pass**. ⭐ **A no-change control is in the same case:** an irrelevant reformat + trailing comment must still compare EQUAL, so the guard is not merely brittle. **Control: 1565 files / 17,704 tests green, `tsc` 0, ratchet 712 = baseline.**
+
+⚠ **WHAT THIS DOES NOT CLAIM.** The 5 other formerly-vacuous pins now compare bodies and MATCH — so no drift had occurred there; what was missing was the ability to notice. **And a pin still proves a symbol is pinned, not that the risky logic is** — the ratchet header's own caveat is unchanged.
+
+- **Revert:** `git revert <sha>` (`git log --grep="COMPARED RETURN TYPES"`). **Test-only.** ⚠ Reverting restores 7 vacuous pins and re-hides the two impossible ones.
+
+### 2026-09-19 · 📐 #126 GETS THE INSTRUMENT ITS ONLY VALID TEST NEEDS — the pg_net store size and daily cron busy-seconds are now persisted, and the first reading reproduces the register's hand-derived 233,894 to the decimal · Claude Code (Windows box)
+
+**Shipped: 1 migration (`20260920025836`): `record_instance_load_series()` + pg_cron jobid 559 `ops-instance-load-series` at `19 0 * * *`. No code, no user-facing surface.**
+
+🎯 **WHY, in one line: the entry directly above closes with *"record the store's SIZE alongside busy-seconds — neither is persisted anywhere today"*, and that is the blocker on #126's replacement test.** The one-shot 09-20 band test is confounded by sixteen load-moving migrations; the surviving test is **a sawtooth locked to the weekly `VACUUM FULL` (`20260920020934`)**. That needs a multi-week series, and `cron.job_run_details` retains **31 days** before the evidence is simply gone.
+
+🔧 **No new table — the archive already existed and was unused for this.** `pipeline_runs` is pruned at ~73 h, but `rollup_pipeline_runs()` folds it into `pipeline_runs_daily` (indefinite), and that table carries **`extra_num_sums`: the SUM of every numeric `extra` key, per pipeline per UTC day**. A pipeline writing **exactly one row per UTC day** therefore has sum == value, preserved for free by machinery already verified.
+
+⚠ **THE ONCE-PER-DAY GUARD IS LOAD-BEARING, NOT TIDINESS — it is what makes `extra_num_sums` read as a VALUE.** A second row the same UTC day (a retry, a hand-dispatch) would silently DOUBLE every figure in the archive, and the archive is the only copy once the raw rows are pruned. **Proven, not asserted: the second call in the same minute returned `skipped` and wrote nothing.**
+
+📏 **Recorded per day:** `pgnet_store_bytes` · `pgnet_live_rows` · `db_size_bytes` · `cron_runs_prev_utc_day` · `cron_busy_seconds_prev_utc_day` (bounded to the **previous COMPLETE** UTC day, so a partial day can never read as a drop).
+
+⭐ **POSITIVE CONTROL ON THE FIRST READING, which is the part worth keeping: `cron_busy_seconds_prev_utc_day` = 233,894.1 for 09-19 against the register's independently hand-derived 233,894.** An instrument that cannot reproduce today's known value cannot be trusted with tomorrow's. First row also: store **568,770,560 B (542 MB) / 5,782 rows**, database **19,770,027,155 B (19.8 GB)**, 9,513 cron runs.
+
+🔒 **Honesty by construction:** each read sits in its own exception block and a failed read **omits its key** and sets `ok=false` with the message — it never writes a `0`, which here would read as *"the store was empty that day"* or *"the fleet did no work that day"*. `rows_written` counts the metrics **actually** recorded (5), so a partial day is a number, not just a flag.
+
+✅ **Verified:** `anon`/`authenticated` EXECUTE **false**, `postgres` true (the job's role) · `check_secdef_anon_exec_drift()` **length 0** (jsonb-array shape — read the LENGTH, not the row count) · end-to-end through the rollup: `pipeline_runs_daily` row `runs=1` carrying all five values exactly · cost measured before scheduling at **23,199 buffers / 933 ms once a day** (seq scan; `job_run_details` has no index on `start_time` — not worth one for a single daily read).
+
+⚠ **Day-one caveat, so a future reader does not treat it as a step:** the first row was written at **~8:0x PM PT** (a probe), whereas every scheduled row lands at **5:19 PM PT** (`19 0 * * *` UTC). The store grows through the week, so 09-20's size is sampled ~3 h later in its day than the rest of the series will be.
+
+- **Revert:** `select cron.unschedule('ops-instance-load-series'); drop function if exists public.record_instance_load_series();` then `git revert <sha>` (`git log --grep="GETS THE INSTRUMENT"`). ⛔ Nothing throttled, paused or re-tuned; no existing object altered.
+
 ### 2026-09-19 · 🔬 #126 ADVANCED: THE WHOLE FLEET IS ~10× SLOWER AT CONSTANT WORK SINCE 09-15 — and tonight's sixteen migrations make the obvious falsifier unusable · Claude Code (Windows box)
 
 **Shipped: register #126 advanced + #75 CLOSED. No code, no DB change.**
