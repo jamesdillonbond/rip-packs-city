@@ -537,10 +537,16 @@ block and it landed **one line outside the window** — silently, with the guard
 why. **Put the marker phrase on the LAST line of the block, immediately above the CREATE.** ⚠ This is
 the same silent-ignore that the helper's own doc records happening twice on 2026-09-07.
 
-⭐ **And check whether the guard is even the right target.** Its `RECORDING` test is **body-scoped**
+🚨 **AND BEFORE YOU REACH FOR IT AT ALL, CHECK WHETHER THE GUARD IS THE RIGHT TARGET — on 2026-09-20
+it was not, and the marker was the WRONG FIX.** Its `RECORDING` test was **body-scoped**
 (`log_pipeline_run` / `statement_timeout` / `57014` / `999` anywhere in the function), so a small
-handler that records nothing — a JSON cast guard, say — is flagged because some *other* part of the
-15,849-char body mentions one of those. Read the handler before assuming the code is wrong.
+handler that records nothing — a JSON cast guard, say — was flagged because some *other* part of the
+15,849-char body mentioned one of those, ~200 lines away. The guard's author then **narrowed it**: each
+region is now bounded at its block terminator before being asked whether it records, and the marker
+was removed as dead. ⭐ **A suppression is a claim that the guard is right and the code is wrong. When
+the guard is the one that is wrong, a marker buys silence and leaves the next honest instance to be
+flagged too** — which is exactly the reason its author gave. The marker is still correct for a handler
+that genuinely records inside an unbounded LOOP; it is not a way to quiet a false alarm.
 
 ### 🚨 In an App Router tree, a basename-keyed backup is a COLLISION BY DEFAULT
 
