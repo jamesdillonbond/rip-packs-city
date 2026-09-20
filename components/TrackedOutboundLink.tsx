@@ -2,7 +2,7 @@
 //
 // Client wrapper for an outbound marketplace link that logs the click to
 // outbound_clicks (via lib/track-click) before the browser follows the href.
-// Used on the public server-rendered detail pages (/moment, /<collection>/edition)
+// Used on the public server-rendered detail pages (/moment, /pinnacle/moment)
 // where the page itself is a server component but the click must fire a
 // client-side beacon. Fire-and-forget — the beacon never blocks navigation.
 

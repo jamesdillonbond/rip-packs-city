@@ -15,8 +15,7 @@
 //     already-pinned, which reads as covering the detail page and does not.
 //     Two pages sharing a path prefix is all it took.
 //
-//   • THE OTHER, the Pinnacle edition body (app/(collections)/[collection]/
-//     edition/[slug]/PinnacleEditionDetail.tsx since 2026-09-20), is the shareable Pinnacle
+//   • THE OTHER, app/pinnacle/moment/[id]/page.tsx, is the shareable Pinnacle
 //     pin URL — the same surface class as /moment/[id], which DID get this fix.
 //     None of its reads destructured `error` at all, so a statement timeout fell
 //     through `if (!ed)` into `notFound()`.
@@ -66,16 +65,7 @@ function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = path.join(dir, entry)
     if (statSync(full).isDirectory()) walk(full, out)
-    // ⚠ WIDENED 2026-09-20 from `page.tsx | layout.tsx` to every .tsx under
-    // app/. A page body does not have to live in a file called `page.tsx`: when
-    // `/pinnacle/moment/[id]/page.tsx` moved into the collection namespace, its
-    // 600 lines of reads became `PinnacleEditionDetail.tsx` beside the route —
-    // and fell straight out of this sweep's population, silently, on a green
-    // run. The population was never "pages"; it was "server code that can
-    // 404", and the candidate filter below already says so.
-    // ⓘ Measured on widening: files 183 → 303, candidates 25 → 26, findings
-    // 0 → 0. It costs one extra candidate and closes the hole for good.
-    else if (entry.endsWith(".tsx")) out.push(full)
+    else if (entry === "page.tsx" || entry === "layout.tsx") out.push(full)
   }
   return out
 }
@@ -132,7 +122,7 @@ function nullOnFailure(src: string): { kind: string; at: number }[] {
 /** A supabase read that never destructures `error` at all.
  *
  * ⚠ This is the spelling a grep for `if (error)` structurally cannot find, and
- * it is what the Pinnacle pin page actually did. supabase-js RETURNS
+ * it is what app/pinnacle/moment/[id]/page.tsx actually did. supabase-js RETURNS
  * errors rather than throwing, so omitting `error` from the destructure leaves
  * `data` undefined on failure — byte-identical to a genuinely empty result. */
 function readDropsError(src: string): { kind: string; at: number }[] {
@@ -158,17 +148,8 @@ describe("server pages: a failed read must not render as an answer (directory sw
 
   it("finds a real population to check (guards the guard)", () => {
     // If a refactor moved every 404 out of app/, this sweep would pass while
-    // checking nothing. 8 is comfortably below the 11 measured on 2026-08-15
-    // (26 after the 2026-09-20 widening).
+    // checking nothing. 8 is comfortably below the 11 measured on 2026-08-15.
     expect(candidates.length).toBeGreaterThanOrEqual(8)
-    // ⭐ And the specific regression that motivated the widening, named: a
-    // co-located server page BODY must be in the population. A floor of 8
-    // against 26 cannot notice one file leaving.
-    expect(
-      candidates.some((f) => f.endsWith("PinnacleEditionDetail.tsx")),
-      "the Pinnacle edition body is not in the sweep — walk() has narrowed back " +
-        "to page.tsx, or the file moved without this arm moving with it",
-    ).toBe(true)
   })
 
   it("no server page that can 404 collapses a failed read into `null`", () => {
@@ -219,11 +200,8 @@ describe("server pages: a failed read must not render as an answer (directory sw
       "a malformed address is an ANSWER, not a failure — it must stay ok:true"
     ).toMatch(/FLOW_ADDR_RE\.test\(addr\)\) return \{ data: null, ok: true \}/)
 
-    // 🔄 The Pinnacle pin page moved 2026-09-20 — same code, new home, same two
-    // properties. Re-pinned rather than dropped: the arm is the behavioural
-    // backstop for the sweep and deleting it would quietly retire it.
     const pin = stripComments(
-      readFileSync(path.join(ROOT, "app", "(collections)", "[collection]", "edition", "[slug]", "PinnacleEditionDetail.tsx"), "utf8")
+      readFileSync(path.join(ROOT, "app", "pinnacle", "moment", "[id]", "page.tsx"), "utf8")
     )
     expect(pin, "the pin page must branch on the read's own verdict").toContain("if (!ok)")
     expect(
@@ -238,7 +216,7 @@ describe("server pages: a failed read must not render as an answer (directory sw
     // ranking — the fix has to cover both halves.
     for (const rel of [
       ["app", "(analytics)", "analytics", "wallets", "[address]", "page.tsx"],
-      ["app", "(collections)", "[collection]", "edition", "[slug]", "PinnacleEditionDetail.tsx"],
+      ["app", "pinnacle", "moment", "[id]", "page.tsx"],
       ["app", "moment", "[id]", "page.tsx"],
     ]) {
       const src = stripComments(readFileSync(path.join(ROOT, ...rel), "utf8"))

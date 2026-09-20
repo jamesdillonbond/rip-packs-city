@@ -210,15 +210,12 @@ describe("GET /api/pinnacle-set-progress", () => {
     expect(body.retryable).toBe(true)
   })
 
-  // 🔄 RE-PINNED 2026-09-20 when the Pinnacle edition page moved into the
-  // collection namespace. The property is unchanged — link to the CANONICAL
-  // URL, never to one that redirects — only the canonical moved.
-  it("links a piece to the canonical edition page, not the retired redirecting URL", async () => {
+  it("links a piece to the canonical render page, not the redirecting edition URL", async () => {
     state.catalogPages = [page([render("OEV1-TOYS-BUZZ-S4B")])]
     state.ownedPages = [page([])]
     const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
-    expect(s.missing[0].topshotUrl).toBe("/disney-pinnacle/edition/OEV1-TOYS-BUZZ-S4B")
-    expect(s.missing[0].topshotUrl).not.toMatch(/^\/pinnacle\/moment\//)
+    expect(s.missing[0].topshotUrl).toBe("/pinnacle/moment/OEV1-TOYS-BUZZ-S4B")
+    expect(s.missing[0].topshotUrl).not.toMatch(/\/edition\//)
   })
 
   it("puts the Pinnacle VARIANT in the tier slot (Pinnacle has no tiers)", async () => {

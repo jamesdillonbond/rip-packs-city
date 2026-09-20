@@ -1,6 +1,6 @@
 // lib/pinnacle/moment-detail.ts
 //
-// The read behind /disney-pinnacle/edition/<render_id> — the platform's shareable PINNACLE pin
+// The read behind /pinnacle/moment/[id] — the platform's shareable PINNACLE pin
 // URL, and the sister surface to /moment/[id].
 //
 // ⚠ WHY THIS IS IN lib/. It lived in a `page.tsx`, which neither coverage gate

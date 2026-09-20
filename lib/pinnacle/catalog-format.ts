@@ -1,7 +1,7 @@
 // lib/pinnacle/catalog-format.ts
 //
 // Pure catalog-field formatters for the Disney Pinnacle moment page
-// (the Pinnacle edition page, now app/(collections)/[collection]/edition/[slug]/PinnacleEditionDetail.tsx). Lifted inline so the jsonb-array parse
+// (app/pinnacle/moment/[id]/page.tsx). Lifted inline so the jsonb-array parse
 // path is unit-tested. Byte-identical to the page's inline copy; the page
 // imports this.
 

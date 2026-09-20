@@ -76,19 +76,14 @@ export function momentSubjectName(
 /**
  * The canonical page for one Disney Pinnacle render.
  *
- * 🔄 2026-09-20: this used to return `/pinnacle/moment/<render_id>`, the
- * out-of-namespace URL the page lived at. The page moved to
- * `/disney-pinnacle/edition/<render_id>` — a render IS the edition-grain
- * object, and that is the segment every other collection uses — so this is now
- * a thin alias of `editionHref`. ⛔ Deliberately ONE implementation and not two
- * spellings that can drift: a second href builder beside the house one is how
- * Pinnacle accumulated its special cases in the first place.
- *
- * Kept as a named export because call sites that hold only a `render_id` read
- * far better for it than `editionHref("disney-pinnacle", null, id)`.
+ * ⚠ `/disney-pinnacle/edition/<render_id>` is NOT it — that route
+ * `permanentRedirect`s here (app/(collections)/[collection]/edition/[slug]/page.tsx),
+ * so an internal link built with `editionHref` costs the reader a hop and hands
+ * the crawler a duplicate URL. The sitemap already publishes this spelling
+ * (lib/sitemap-data.ts), which is what makes it the canonical one.
  */
 export function pinnacleRenderHref(renderId: string): string {
-  return editionHref("disney-pinnacle", null, renderId)
+  return `/pinnacle/moment/${encodeURIComponent(renderId)}`
 }
 
 /**

@@ -37,11 +37,9 @@ export default async function EditionSegmentLayout({ children, params }: LayoutP
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
 
-  // 🔄 2026-09-20: Pinnacle edition URLs are no longer 308'd away — the page
-  // RENDERS them (PinnacleEditionDetail). Still not gated here, and the reason
-  // is unchanged and load-bearing: the Pinnacle key space is `render_id` /
-  // legacy edition_key in `pinnacle_catalog`, NOT get_edition_detail's, so this
-  // gate would 404 every valid Pinnacle URL. The body 404s for itself.
+  // Pinnacle edition URLs are 308'd to /pinnacle/moment/<render_id> by the page
+  // itself. Do not gate them here — the redirect must win, and the Pinnacle key
+  // space is not get_edition_detail's.
   if (isPinnacleUrlSlug(collection)) return <>{children}</>
 
   // The ~6,404 inert UUID-keyed Top Shot fossil editions: canonical TS slugs are

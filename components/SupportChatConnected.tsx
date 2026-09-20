@@ -57,7 +57,7 @@ export default function SupportChatConnected() {
       pageEntity = { kind, slug: slug.slice(0, 120) };
     }
   } else if (maybeCollection === "pinnacle" && segments[1] === "moment" && segments[2]) {
-    // /disney-pinnacle/edition/<render_id> — the per-render Pinnacle pin page.
+    // /pinnacle/moment/<render_id> — the per-render Pinnacle pin page.
     pageLabel = "moment (pinnacle)";
     collectionId = "disney-pinnacle";
     pageEntity = { kind: "pinnacle_render", slug: segments[2].slice(0, 120) };

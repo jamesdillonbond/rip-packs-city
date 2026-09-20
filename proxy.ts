@@ -723,13 +723,10 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // Public so social-share links work without an account.
   if (pathname === "/moment" || pathname.startsWith("/moment/")) return true
   if (pathname === "/api/moment" || pathname.startsWith("/api/moment/")) return true
-  // /pinnacle/moment/<id> — the Pinnacle edition page's FORMER home. Since
-  // 2026-09-20 it renders at /disney-pinnacle/edition/<render_id> (public via
-  // the entity-detail regex below) and this path is a permanent redirect into
-  // it. ⛔ IT MUST STAY PUBLIC: ~2,600 of these URLs were in the sitemap and it
-  // was the 11th busiest route on the site, so gating it would turn every
-  // indexed link and every shared link into a 307 to /login instead of a 308 to
-  // the page. A redirect the crawler cannot reach transfers nothing.
+  // /pinnacle/moment/<id> — Pinnacle-specific per-edition detail page
+  // (Pinnacle uses pinnacle_editions, separate from the shared editions
+  // table the /moment route reads). Linked from /insights/pinnacle-
+  // scarcity per-row drill-downs. Same public-share rationale.
   if (pathname.startsWith("/pinnacle/moment/")) return true
 
   // ── Public entity detail pages ───────────────────────────────────────

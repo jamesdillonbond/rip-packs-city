@@ -9,12 +9,10 @@ import type { Metadata } from "next"
 import { normalizeAddress } from "@/lib/address"
 import { Suspense } from "react"
 import Link from "next/link"
-import { notFound } from "next/navigation"
-import { connection } from "next/server"
+import { notFound, permanentRedirect } from "next/navigation"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
-import PinnacleEditionDetail, { pinnacleEditionMetadata } from "./PinnacleEditionDetail"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { sectionRows, sectionRowsResult } from "@/lib/entity-section-rpc"
 import { sectionEmptyCopy } from "@/lib/entity/section-empty-copy"
@@ -397,13 +395,10 @@ export async function generateMetadata(
   const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return NOT_FOUND_METADATA
-  // 🔄 2026-09-20: this used to `permanentRedirect` Pinnacle AWAY to
-  // /pinnacle/moment/<render_id>, which put the one collection whose entity
-  // page lived outside this namespace at a URL shaped like nothing else on the
-  // site. A Pinnacle render IS the edition-grain object, so this route now OWNS
-  // it and the old URL redirects here. `rawSlug` (not `slug`) is passed on
-  // purpose: the Pinnacle loader decodes for itself.
-  if (isPinnacleUrlSlug(collection)) return pinnacleEditionMetadata(rawSlug)
+  // Pinnacle edition pages are retired in favor of the render-keyed per-pin
+  // surface at /pinnacle/moment/<render_id> (which also disambiguates legacy
+  // set-level keys). Funnel all Pinnacle edition URLs there. (Item 2, 2026-06-26.)
+  if (isPinnacleUrlSlug(collection)) permanentRedirect(`/pinnacle/moment/${encodeURIComponent(slug)}`)
   if (isTopShotFossilSlug(collection, slug)) return NOT_FOUND_METADATA
   // ⚠ BOUNDED (deep-audit R19). Measured over 7 days to 2026-08-23:
   // "edition detail unavailable: rpc get_edition_detail timed out after 45000ms"
@@ -436,32 +431,10 @@ export default async function EditionPage(
   const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
-  // Pinnacle renders ARE editions, so this route renders them (2026-09-20). The
-  // body resolves a render_id directly and a legacy set-level key to a
+  // Pinnacle edition pages → the render-keyed per-pin page (Item 2, 2026-06-26).
+  // The moment page resolves a render_id directly and a legacy set-level key to a
   // disambiguation list, so no Pinnacle edition URL ever shows an arbitrary pin.
-  // ⚠ `rawSlug`, not `slug` — the Pinnacle loader decodes for itself, and
-  // decoding twice would corrupt any key containing a literal percent sign.
-  if (isPinnacleUrlSlug(collection)) {
-    // 🚨 `await connection()` KEEPS PINNACLE DYNAMIC, and it is not optional.
-    //
-    // This segment exports `revalidate = 600`. The page Pinnacle moved FROM had
-    // no segment config at all — it rendered per request. Letting the move
-    // silently put it under ISR would change far more than a URL: the body's
-    // failed-read branch renders `PinUnavailableCard`, and ISR CACHES A FAILED
-    // READ for the whole window, so one transient blip would serve "this pin
-    // didn't load" to every visitor for up to ten minutes on what was the
-    // site's 11th busiest route. CLAUDE.md names that exact trap.
-    //
-    // ⛔ So this is a RENAME, and a rename must not smuggle in a caching change.
-    // Whether Pinnacle SHOULD be on ISR is a real question with a real upside
-    // (it is a per-request read fan-out against the binding constraint) — it
-    // just needs its own measurement, not a side effect of moving a URL.
-    //
-    // ⓘ The other four collections stay on ISR: `connection()` marks THIS
-    // render dynamic, not the segment.
-    await connection()
-    return <PinnacleEditionDetail id={rawSlug} />
-  }
+  if (isPinnacleUrlSlug(collection)) permanentRedirect(`/pinnacle/moment/${encodeURIComponent(slug)}`)
   if (isTopShotFossilSlug(collection, slug)) notFound()
 
   // ⚠ BOUNDED (R19). Same read, same timeout. `!detail` means the RPC answered

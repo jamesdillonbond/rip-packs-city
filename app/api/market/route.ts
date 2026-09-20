@@ -240,7 +240,7 @@ const CANDY_COLLECTION_ID_FOR_DISPATCH = "209ade70-32c5-4470-bc7c-4793d660f713"
 // sniper feed (capped ~96 listed NFTs). We read it directly and reshape into the
 // legacy cached_listings row shape so the downstream clamp / discount / sort /
 // paginate pipeline stays untouched. editionKey = render_id (the
-// /disney-pinnacle/edition/<render_id> route RENDERS the render page since 2026-09-20).
+// /disney-pinnacle/edition/<render_id> route redirects to /pinnacle/moment/<id>).
 async function fetchPinnacleModernListings(
   collectionId: string,
   filters: { tier: string; maxPrice: number; sortBy: string },

@@ -384,20 +384,14 @@ describe("segment 4 — pack distributions + Pinnacle pins", () => {
     ])
     const s = await buildSitemapSegment(4)
     const packs = s.filter((x) => x.url.includes("/pack/dist/"))
-    // 🔄 2026-09-20: the Pinnacle pin URL moved from /pinnacle/moment/<render_id>
-    // into the collection namespace. The sitemap must advertise the DESTINATION,
-    // not the redirect — a sitemap full of 308s wastes crawl budget and
-    // contradicts the page's own canonical tag.
-    const pins = s.filter((x) => x.url.includes("/disney-pinnacle/edition/"))
+    const pins = s.filter((x) => x.url.includes("/pinnacle/moment/"))
     expect(packs.map((x) => x.url)).toEqual([
       `${BASE}/nba-top-shot/pack/dist/d1`,
       `${BASE}/nba-top-shot/pack/dist/unknown0`,
       `${BASE}/nba-top-shot/pack/dist/unknownnull`,
     ])
     expect(packs[0].priority).toBe(0.5)
-    expect(pins.map((x) => x.url)).toEqual([`${BASE}/disney-pinnacle/edition/r1`])
-    // …and the retired spelling is GONE, not merely outnumbered.
-    expect(s.some((x) => x.url.includes("/pinnacle/moment/"))).toBe(false)
+    expect(pins.map((x) => x.url)).toEqual([`${BASE}/pinnacle/moment/r1`])
     expect(pins[0].priority).toBe(0.55)
     expect((pins[0].lastModified as Date).toISOString()).toBe("2026-06-01T00:00:00.000Z")
   })
@@ -416,7 +410,7 @@ describe("segment 4 — pack distributions + Pinnacle pins", () => {
     h.t.pinnacle_catalog = ok([{ render_id: "r9", updated_at: null }])
     const s = await buildSitemapSegment(4)
     expect(s.some((x) => x.url.includes("/pack/dist/"))).toBe(false)
-    expect(s.some((x) => x.url === `${BASE}/disney-pinnacle/edition/r9`)).toBe(true)
+    expect(s.some((x) => x.url === `${BASE}/pinnacle/moment/r9`)).toBe(true)
   })
 })
 

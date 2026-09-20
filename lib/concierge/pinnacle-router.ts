@@ -484,7 +484,7 @@ export async function getPinnacleEditionListings(
         "fmv is a modelled per-render estimate, NOT an ask. Never present it as a price something is listed at.",
       discount_pct:
         listed && fmv != null && fmv > 0 ? Math.round(((fmv - ask!) / fmv) * 1000) / 10 : null,
-      edition_url: `${siteBase.replace(/\/+$/, "")}/disney-pinnacle/edition/${encodeURIComponent(r.render_id)}`,
+      edition_url: `${siteBase.replace(/\/+$/, "")}/pinnacle/moment/${encodeURIComponent(r.render_id)}`,
       special_serials_listed: [],
       special_serials_note:
         "Chase-serial listings are a Top Shot feed; Pinnacle asks are per-render, not per-serial.",
