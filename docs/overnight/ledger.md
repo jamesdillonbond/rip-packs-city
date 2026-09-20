@@ -11,6 +11,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 📚 CLAUDE.md + reference docs updated for the pack-inventory work — one new cross-cutting rule, four displacements, net +118 chars · Claude Code cloud
+
+Session close-out. **CLAUDE.md 39,592 → 39,717 chars (headroom 408 → 283).** Measured with `node -e … .length`, never `wc -c` — which reads **40,263 BYTES** on this file and would have said "already over".
+
+⚠ **CLAUDE.md IS A MOVING TARGET AND MY SESSION-START COPY WAS STALE.** Two anchors I wrote edits against — the `check_*` MIXED-shapes line and the DISCOVERY-vs-REFRESH-list bullet — **no longer existed**: other sessions had already displaced both to reference docs and left pointers. The edit script asserted each anchor appeared exactly once and **aborted before writing**, so nothing was corrupted. ⭐ **Re-read the live file and re-verify every anchor; the rule this file states for `CREATE OR REPLACE` applies to CLAUDE.md itself.**
+
+**ADDED (the one new rule, honesty canon):** ⛔ *An ADD-ONLY refresh never retires what its source STOPPED returning* — trust an ownership claim only at or after the walk that CONFIRMED it, keep the floor where a re-dispatch cannot clear it, fail OPEN with no clean walk, and ⭐ *100 % of them being ONE status class names the missing re-check path.*
+
+**EXTENDED (2 existing pointers, a few chars each):** the cron pointer now names *a SWEEP under-covers two ways, both reporting success — too few slots (`N ≥ population ÷ staleness_hours`) and the WRONG POPULATION*; the database pointer now names *THREE `check_*` shapes, a jsonb OBJECT makes `jsonb_array_length` ERROR, and LENGTH IS NOT SEVERITY*.
+
+**DISPLACED VERBATIM (4), so the additions cost room rather than spending it:** concierge rules 2–3 → already present with MORE detail at `concierge.md:27,66` and test-guarded, so nothing was duplicated · the leg-324 hour-set recital · the STEP-vs-LEVEL case · the R101 pooled-rate numbers → `cron-and-schedulers.md`.
+
+**Reference docs gained the full cases:** `key-files-and-honesty.md` (the add-only-refresh defect class, the 100 %-one-status tell, why the `transferred` arm could not catch it, both mutation proofs, and a pointer to the wmc neighbour) · `cron-and-schedulers.md` (sweep capacity arithmetic + the proxy-population sweep + the dedup-hang below) · `database.md` (the three `check_*` shapes, a shape-agnostic reader, LENGTH ≠ SEVERITY, and ⭐ *`grep -l` returning 1 was a COMMENT, not a caller*).
+
+⚠ **A guard I broke and fixed in the same pass:** my new `## Displaced from CLAUDE.md — 2026-09-20 (verbatim)` H2 **duplicated one another session had added hours earlier**, and `memory-docs-have-no-duplicated-blocks` caught it — the only red in a 17,786-test run. Renamed to `… second pass (verbatim)` rather than merged, so each block still names why it moved. **Two sessions displacing into the same file on the same day will collide on a dated heading; date is not a unique key.**
+
+**Verified:** full suite **1,569 files / 17,786 tests green**, `claude-md-stays-under-the-memory-file-limit` ✅, `check-memory-doc-links` 240 links across 26 files all resolve, `live-docs-md-links-resolve` ✅.
+
+📌 **ALSO FOUND, NOT FIXED — a page-dedup guard that hangs the walk it protects.** `collect_pack_nft_identity`'s next-page guard matches on `(wallet, cursor, dispatched_at within 2h)` and **never on whether that request is still UNCOLLECTED**, so an already-collected request from a PREVIOUS cycle suppresses the current cycle's dispatch and the sync never completes. Observed on `0xd0a99bf6d6c93396`: forced re-sync 10:25 PT derived a cursor identical to the 09:18 PT page-2 request, `uncollected_requests = 0`, `completed_at` NULL. ⭐ **It recurs because the cursor is STABLE across cycles while holdings are stable** (`ce68d6d1` for days) — any multi-page wallet re-synced inside 2 h can collide with its own chain. **Bounded:** it self-heals (the sweep re-requests at `requested_at < now() - 2h`; this one at 12:25 PT) and corrupts nothing, because `last_clean_sync_at` survives the re-dispatch so the read guard keeps using the last clean walk (`no_floor = 0`, floor-drift `[]` throughout). **One-line fix: `AND d.collected_at IS NULL`** — it still suppresses a genuinely in-flight page, so it does not re-open the premature-completion hole the 09-19 arm was added for. ⚠ Needs a full-body replace of a 15.6 KB hot lane and **no committed copy is byte-identical to live** (the two 09-19 migrations differ by 4–5 chars), so patch from a freshly fetched live body with an md5 check. Full write-up: cron-and-schedulers.md.
+
+**Final pack state:** 26/27 wallets complete, 1 mid-walk, 0 errors, every wallet carrying a confirmation floor, `check_wallet_pack_sync_floor_drift()` → `[]`.
+
+**Revert:** docs-only — `git revert` this commit.
+
 ### 2026-09-20 · 🚨 THE KILL-RATE CLI AND THE SENTINEL ARM IT SAYS IT MIRRORS GAVE OPPOSITE VERDICTS ON THE SAME LANE — `npm run pipelines:kills` was pinned at exit 1 by a workflow that is working exactly as designed · Claude Code cloud
 
 **Shipped: `lib/pipeline/kill-rate.ts` (new `unverified` verdict) + `scripts/analysis/killed-after-routes.mjs` (output + exit-code doc) + 7 new test arms, 2 re-pinned.**

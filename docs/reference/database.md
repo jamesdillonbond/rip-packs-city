@@ -2662,3 +2662,36 @@ where c.relname in (...);
 **>120 s (timeout) → 34.2 s (index) → 9.8 s (vacuum)**; total buffers **100,428 → 62,639**, read 6,298 → 422.
 
 ⚠ **The 34 s and 9.8 s runs are both WARM and the planner launched 1 worker then 0, so the TIMES are not a clean A/B.** Quote the **buffer and heap-fetch counts**, which are structural. And verify with the **production caller** — here, the cron tick that then succeeded in 73.9 s with 10 probes dispatched, not the hand-run query.
+
+---
+
+## `check_*` invariants: THREE return shapes, and LENGTH IS NOT SEVERITY (2026-09-20)
+
+CLAUDE.md long carried *"`check_*` return shapes are MIXED: a jsonb-array one reads CLEAN as `count(*) = 1` (read the LENGTH), a SETOF one as ZERO rows."* **That is right but incomplete, and the missing third shape errors outright.** Swept all 36 `check_*` functions in `public` on 2026-09-20; the shapes actually in use are:
+
+| shape | clean reads as | how to read it |
+|---|---|---|
+| **SETOF / TABLE** | **0 rows** | `SELECT count(*) FROM public.check_x()` |
+| **jsonb ARRAY** | `[]` | `jsonb_array_length(public.check_x())` — ⛔ `count(*)` is **1** either way |
+| **jsonb OBJECT** | a report, no "clean" value | read the payload; ⛔ `jsonb_array_length` raises **`22023 cannot get array length of a non-array`** |
+
+Shape-agnostic reader, which is what to use when sweeping several at once:
+
+```sql
+SELECT name, jsonb_typeof(v) AS shape,
+       CASE WHEN jsonb_typeof(v)='array' THEN jsonb_array_length(v)::text
+            ELSE left(v::text, 220) END AS verdict
+FROM (VALUES ('x', public.check_x()), ('y', public.check_y())) AS t(name, v);
+```
+
+⛔ **And a non-zero LENGTH is not a violation count.** `check_unmapped_backlog_growth()` returns **2**, which is *two collections reported* — **both `severity: info`**, one of them a perfectly healthy draining backlog. Reading the count instead of the payload would have filed a false alarm. **`severity` is the function's own verdict; do not overrule it from outside on a row count.** This is the same family as *"`count(*)` over a function that returns ONE ROW is not a measurement — read the payload."*
+
+Check the return type first: `SELECT proname, proretset, pg_get_function_result(oid) FROM pg_proc WHERE proname LIKE 'check\_%'`.
+
+### ⚠ A guard EXISTING is not a guard being READ — and `grep -l` will lie to you about it
+
+Of the 36, two were red. Both turned out to be genuinely surfaced (`check_pipelines_running_but_not_succeeding` is called by `get_pipeline_alerts()`), **but two others have no caller at all**: `check_unmapped_backlog_growth()` and `check_wmc_ownership_freshness()` — no route, no cron, no other function.
+
+🚨 **`grep -rl <fn> app lib scripts .github` returned a count of 1 for `check_wmc_ownership_freshness`, which reads exactly like a reader. It is a COMMENT** (`app/api/wallet-backfill/route.ts:343`, *"with check_wmc_ownership_freshness() — set-returning, 0 rows = clean"*). **Grep the call, not the name** — `grep -rn` and look at the line, or check `pg_proc.prosrc` and `cron.job.command` for DB-side callers.
+
+**Dated clean snapshot (2026-09-20 ~10:55 PT)** — 15 clean, incl. every security and search-path invariant: `check_secdef_anon_exec_drift` · `check_secdef_anon_execute_violations` · `check_public_security_invariants` · `check_anon_write_surface` · `check_function_search_path_drift` · `check_procedure_search_path_unpinned_drift` · `check_procedure_transaction_control_pin_drift` · `check_when_others_timeout_blind` · `check_wallet_pack_sync_floor_drift` · `check_backward_cursor_rewind` · `check_cursor_stall_threshold_drift` · `check_suppression_parked_claim_drift` · `check_cron_heavy_job_exec_drift` · `check_edge_lane_observability` · `check_maintenance_load`. ⚠ Dated sample — re-run, do not quote.

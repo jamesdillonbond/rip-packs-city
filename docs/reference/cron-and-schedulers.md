@@ -2562,3 +2562,79 @@ The first two ticks under the new budget were **both lost to `job startup timeou
 ⭐ **What found the real cause was the R118 handler shipped in the SAME migration.** The killed ticks began recording `mapped_from_events: 10, probes_dispatched: 0` — leg 1 completes, leg 2 dies. Before it, they logged nothing at all. **A recording fix pays for itself even when the performance fix beside it is wrong; ship them together.**
 
 Real causes, both in leg 2's candidate query (see database.md for the plan detail): an unindexed `NOT EXISTS` on a computed key, and a table that had **never been vacuumed**. After both: the 10:19 PT tick **succeeded in 73.9 s with 10 probes dispatched**, against three consecutive 120 s kills immediately before.
+
+---
+
+## A sweep's capacity is arithmetic, and a sweep keyed to a PROXY population never covers the real one (2026-09-20)
+
+Two failure modes found in one pass, on two sweeps that both look healthy from every instrument that exists. **In both, every row still reports a completed refresh — just an ever-older one.** Neither has an alarm on the crossing.
+
+### 1. Capacity — `N ≥ population ÷ staleness_hours`
+
+`sweep_saved_wallet_pack_syncs(p_limit)` (jobid 510, `17 * * * *`) re-syncs any saved wallet whose last completed walk is **older than 3 h**, `p_limit` wallets per hourly tick.
+
+Steady state therefore needs **wallets_becoming_stale_per_hour ≤ p_limit**, i.e. `N / 3 ≤ p_limit`:
+
+| p_limit | ceiling (saved wallets) |
+|---|---|
+| 10 | **30** |
+| 15 | **45** |
+
+Measured 2026-09-20: **27 saved wallets against a ceiling of 30.** Four short, with nothing watching it. Raised to 15 the same day (ceiling 45). ⭐ **It is headroom, not a fix — every one of the 27 was inside 3 h when measured.**
+
+⚠ **The crossing is SILENT and reads as health.** Past the ceiling the sweep does not error, does not fall behind visibly, and does not empty a queue — it simply hands out slots slower than wallets go stale, and the oldest wallets drift. `pack_wallet_sync.completed_at` is non-NULL for all of them the whole time. **Write the arithmetic down next to the limit, because no instrument derives it for you.**
+
+### 2. ⛔ Population — the moments sweep reads `seeded_wallets`, not `saved_wallets`
+
+`wallet_moments_cache` ownership is re-verified only by a wallet re-scan that stamps `wallet_backfill_state.last_scanned_at`. The only thing that schedules those is `app/api/seed-wallet-refresh/route.ts` (4 cron-job.org cohorts every 6 h, `.github/workflows/wallet-backfill-backstop.yml` behind it), and **it selects cohorts from `seeded_wallets` (`seeded_wallets.id % N = K`). It never reads `saved_wallets`.**
+
+So a user's moments are re-verified **only if their wallet also happens to be a seeded demo/benchmark wallet.** Measured across all 27 saved wallets, 135 (wallet, collection) pairs:
+
+| population | wallets | pairs | `last_scanned_at` age |
+|---|---|---|---|
+| saved **and** seeded → swept | 22 | 110 | **0.2 – 0.7 days** |
+| saved, **not** seeded → never swept | 5 | 25 | **5.9 – 42.9 days** |
+
+⭐ **The ranges do not overlap, and 5 wallets × 5 collections is exactly the 25 stale pairs.** Membership of `seeded_wallets` fully determines whether a user's moments are re-verified — there is no third explanation left to test.
+
+⛔ **This is strictly worse than a capacity ceiling and no amount of capacity fixes it.** The pack sweep was keyed to the right set and merely too small. This one is keyed to a **demo population**, and **every genuinely new user arrives saved-but-not-seeded** — so the unswept share grows toward 100 %. It is 19 % today only because most current saved wallets were seeded first.
+
+**Not fixed in that pass, deliberately:** the fix permanently widens a fan-out of on-chain Cadence walks, 5 collections per wallet, into an instance measured that day at **93 % of Supabase Small's 22 MB/s baseline**, on a backstop already measured **73.1 % killed (n=788)**. That is a cost decision, not a code change. **Falsifier:** if a saved-but-not-seeded wallet's `last_scanned_at` ever advances without someone visiting it (the three on-demand callers are `app/api/profile/resolve-and-associate`, `app/api/public/queue-wallet`, `lib/allow-list/prewarm.ts`), the population claim is wrong.
+
+### The generalised rule
+
+> **A sweep has two independent ways to under-cover, and both report success: too few slots per tick for the population (arithmetic), and the wrong population entirely (a proxy set that coincides today). Check the SET the sweep enumerates, then check the RATE against it.**
+
+---
+
+## ⚠ A page-dedup guard that does not test IN-FLIGHT hangs the walk it protects (2026-09-20, FOUND NOT FIXED)
+
+`collect_pack_nft_identity` decides whether to dispatch a wallet's next page with:
+
+```sql
+ELSIF NOT EXISTS (SELECT 1 FROM pack_nft_identity_requests d
+                    WHERE d.kind = 'wallet' AND d.wallet = r.wallet
+                      AND d.after_cursor = <endCursor>
+                      AND d.dispatched_at > now() - interval '2 hours')
+```
+
+…else it falls through to *"the next page is already in flight; the sync stays open"*. That arm was added 2026-09-19 to stop **premature completion** (6 wallets read "confirmed (700 packs)" while page 6 was still on the wire) and it fixed that correctly.
+
+⛔ **But it matches on `dispatched_at` alone — never on whether the request is still UNCOLLECTED.** A request from a *previous* cycle, long since collected, suppresses the *current* cycle's dispatch. Nothing will ever complete that sync, because the row it is waiting on is already done.
+
+**Observed 2026-09-20 on `0xd0a99bf6d6c93396`:** a forced re-sync at 10:25 PT collected page 1, derived an `endCursor` identical to the previous cycle's page-2 request dispatched at **09:18 PT** — inside the 2 h window — so no page 3 was dispatched and `completed_at` stayed NULL with `uncollected_requests = 0`.
+
+⭐ **Why it recurs rather than being a one-off:** the cursor is **stable across cycles while holdings are stable** (`ce68d6d1` for days on this wallet). Any multi-page wallet re-synced inside 2 h can collide with its own previous chain. A force-sweep of all wallets ~68 min after the hourly sweep is exactly the shape that triggers it.
+
+**Severity is low and bounded:** it **self-heals** — `sweep_saved_wallet_pack_syncs` re-requests any wallet with `completed_at IS NULL AND requested_at < now() - interval '2 hours'` — and it corrupts nothing, because `last_clean_sync_at` is preserved across the re-dispatch, so the read guard keeps using the last clean walk (`no_floor = 0`, `check_wallet_pack_sync_floor_drift() = []` throughout). Cost is one wasted cycle and up to ~2 h extra staleness.
+
+**The one-line fix, when someone next touches that function:** add `AND d.collected_at IS NULL` to the guard. It still suppresses a genuinely in-flight page (the case the 09-19 fix exists for) and stops suppressing on an already-collected one, which can never complete the sync anyway — so it does **not** re-open the premature-completion hole. ⚠ Requires a full-body `CREATE OR REPLACE` of a 15.6 KB hot-lane function, and no committed copy is byte-identical to live (checked: the two 2026-09-19 migrations differ by 4–5 chars from `pg_get_functiondef`), so patch from a **freshly fetched live body with an md5 check**, never from the repo copy.
+
+---
+
+## Displaced from CLAUDE.md — 2026-09-20, second pass (verbatim)
+
+Moved to keep the memory file under its character limit while the add-only-refresh rule was added to it. Content is VERBATIM; CLAUDE.md keeps each rule and points here for the numbers.
+
+- ⚠ **A rate POOLED ACROSS A FIX measures the fix's ABSENCE and reads as its FAILURE** — a kill rate was 87.5% pre-deploy, 0% post, **56% pooled**. ⛔ **Under an IO spell a cron DURATION or completion rate measures the ESTATE, not your fix — judge per-call work on pgss blocks/call** (R101 v1: reverted on durations, exonerated 26 min later).
+- ⚠ **A window sitting ENTIRELY AFTER a change point cannot tell a STEP from a LEVEL** — 72 h read as "lower demand" what 24 days showed as a dated step onto a flat plateau, shipping a suppression RETRACTED 40 min later. ⚠ **Read the live alarm's OWN `detail`/ack text before building a fix for what it already covers.**

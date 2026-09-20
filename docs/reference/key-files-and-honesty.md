@@ -2060,3 +2060,70 @@ So the block now publishes **its own provenance** and the surface derives the ve
 2. **Never gate user-facing copy on a hardcoded feed-state date.** Gate on the data's own published age.
 3. **A test pinning the SPELLING of such a disclosure is a re-pin when the premise changes, not an inversion** — the code was fine when written.
 4. **Check the re-pin is still EXERCISED.** One assertion here had gone vacuous, searching for "sampler was switched off", a string no longer present anywhere in the tree — it would have passed against a gate leaking to every collection.
+
+---
+
+## An ADD-ONLY refresh can never retire a claim it stopped seeing (2026-09-20)
+
+**The defect class, in one line: a cache that is only ever written from "what the source returned" keeps asserting the last thing it saw, forever, about everything the source stopped returning.**
+
+Shipped fix: `20260920170756_*` + `20260920171011_*`. Surface: the wallet Packs **"Unopened"** tab (`PACK_FILTER_STATUS.unopened === "held"`), on `/dashboard/packs` and the Collection tab's Packs body.
+
+### What happened
+
+`pack_nft_identity` is Dapper's pack index, filled by a per-wallet walk (`request_wallet_pack_sync` → `collect_pack_nft_identity`). The walk upserts every pack the wallet holds. It has **no delete arm and no absence arm** — a pack the wallet has parted with is simply not in the response, so its row keeps `owner_address = the old wallet` indefinitely.
+
+`get_wallet_pack_history`'s `index_holds` CTE read exactly:
+
+```sql
+WHERE owner_address = v_wallet AND status IN ('Sealed', 'Opened')
+```
+
+so every departed pack classified as `held` — presented to that user, in their own inventory, as an unopened pack they still own.
+
+### ⭐ The tell was that 100% of them were ONE status
+
+Measured across the 27 saved wallets, using each wallet's own completed walk as the control (`checked_at < requested_at` ⇒ the walk did not return it): **23 rows on 5 wallets, and 23 of 23 were `Sealed`.**
+
+That is not a coincidence and it is the part worth transferring. `pack_nft_identity_queue` only ever enqueues a pack that carries a **purchase or rip row**. So:
+
+- an **Opened** pack that leaves is re-checked anyway, through the *new* owner's purchase row;
+- a **Sealed** pack that leaves **by transfer** has **no re-check path at all**.
+
+**A defect that accumulates in exactly one class, and is absent from the other, is telling you where the re-check path is missing.** When a population is 100 % one value, ask what mechanism covers the other value — do not treat the skew as sampling noise.
+
+### ⛔ Why the existing `transferred` arm could not catch it
+
+```sql
+WHEN has_buy AND current_owner IS NOT NULL AND current_owner <> v_wallet THEN 'transferred'
+```
+
+A stale row still says the owner **is us**, so `current_owner <> v_wallet` is false and the pack fell straight through to `held`. **An arm that tests "who holds it now" is useless when the bug is that "now" is stale.** The fix had to add a *separate* signal (`index_departed`), not tighten the existing comparison.
+
+### The fix: trust a claim only at or after the walk that CONFIRMED it
+
+Entirely read-side. No row mutated, no ownership invented.
+
+- `pack_wallet_sync.last_clean_sync_at` — the `requested_at` of the last **clean** full walk (every page, no error, page cap not hit).
+- Written by a **BEFORE trigger** (`pack_wallet_sync_stamp_clean_floor_trg`), not by a line inside `collect_pack_nft_identity`: the 15.6 KB hot lane is left alone, and **any future writer of the table is covered automatically**. ⚠ A trigger has no textual caller, so grepping the column name will not find its writer — that is what the column COMMENT is for.
+- **Never cleared.** `request_wallet_pack_sync` re-dispatches with `completed_at = NULL`; if that wiped the floor the guard would switch off for the minutes a sync is in flight — exactly when a user is most likely to be looking at the page that triggered it. Verified live during a forced 26-wallet re-sync: `no_floor` stayed 0 throughout.
+- The reader excludes unconfirmed rows from `index_holds`, routes bought-then-departed packs to `transferred`, nulls `current_owner` rather than repeating a name known wrong, and projects `identity_departed` + `last_clean_sync_at` as **provenance**.
+
+### ⚠ The guard is OFF when there is no clean walk, and that is load-bearing
+
+NULL floor — never synced, in flight, errored, or the 60-page cap hit — means **trust the index as-is**. Suppressing on a PARTIAL walk would read "we have not looked yet" as "you no longer own it": the same lie pointing the other way. `supabase/tests/get_wallet_pack_history.sql` **P19** is the no-change control for precisely that, on a wallet with no sync row, and the fix cannot move it.
+
+### Mutation-proved before shipping (both directions)
+
+- Floor set to NULL → `total_count` 15 → 16, the phantom returns.
+- `OR coalesce(index_departed, false)` removed → **P18 reads `held` instead of `transferred`** — the exact production symptom.
+
+Live confirmation, per wallet: `dd33ebbd` 126 → **125** (1 phantom), `f06746d6` 80 → **76** (4 phantoms). No-change controls: `8bc1c024` **2140 before and after**, `a55063c1` **110 before and after**, both with zero phantoms.
+
+### 🚨 Where else this shape lives — CHECK BEFORE ASSUMING IT IS PACK-ONLY
+
+Same day, applying "grep for the SHAPE, not the file", the neighbour `wallet_moments_cache` was found to have **no read-side confirmation floor at all**, and its freshness guard (`check_wmc_ownership_freshness`, SETOF, 0 rows = clean) returns **47 rows** with nothing calling it. See `cron-and-schedulers.md` → *A sweep keyed to a PROXY population*. **The guard existing is not the guard being read.**
+
+### The generalised rule
+
+> **Trust a cached ownership/holdings claim only at or after the walk that confirmed it. Keep that floor where a re-dispatch cannot clear it, fail OPEN when no clean walk exists, and project the provenance instead of asserting silently.**
