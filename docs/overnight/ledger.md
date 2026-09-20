@@ -11,6 +11,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅↩ BOTH FIXES TESTED ON REAL TICKS: pinnacle PASSED and named the actual bug in one run; classify FAILED ITS OWN FALSIFIER, and the flaw was mine — I set the wall EQUAL to the ceiling it exists to stay under · Claude Code cloud
+
+**Shipped: `app/api/cron/classify-acquisitions-multicollection/route.ts` (`WALL_MS_DEFAULT` 120_000 → 90_000) + a margin arm in its test. No DB change.**
+
+✅ **`pinnacle-metadata-backfill` — EXIT MET on the first tick that ran the fix (10:22:11 AM PT).** After **twelve** consecutive heartbeat-only hours it wrote a terminal row, and the row is the whole point: **`ok=false`, `error: "discovery: canceling statement due to statement timeout"`, `extra.failed_step: "discovery"`, `duration_ms: 32,280`.** ⭐ **The blackout's real cause was named by the first run that could speak**: `pinnacle_metadata_discovery` is timing out. ⚠ And the last HEALTHY run (09-19 21:22, ok=true) took **31,697 ms** — the lane was already sitting on the edge of that timeout while reporting success, which is why nothing looked wrong until it tipped. 👉 **That timeout is the real bug and it is now a normal, visible failure** rather than an absence; it is FMV/DB-side query cost, consistent with #126.
+
+↩ **`classify-acquisitions-multicollection` — MY FALSIFIER FIRED, and I am recording it as a failure rather than waiting for a kinder tick.** The 10:06:20 tick ran the deployed fix (`dpl_7pWoeBWCHdVHgrZmgWKXtfi3SnEv` = `f8f91964e`, a descendant of `69b54ba5b`), returned **202**, was **NOT killed**, and still wrote **no terminal row** seven minutes later against a 120 s wall.
+
+📏 **Ruled out by measurement, not argument, before blaming the platform:** (a) **not a kill** — zero Vercel runtime errors for the route in 40 min, where every earlier failure logged `Task timed out after 120 seconds`; (b) **not the database refusing writes** — the sentinel did report `db saturated` at 10:04, which made that the obvious answer, but **17 other pipelines wrote terminal rows in the same 12-minute window**; (c) **not a regression I introduced** — the silent-drop starts at the 09:06 tick and my deploy landed 09:41.
+
+🚨 **THE FLAW WAS IN MY OWN SIZING, and the arm I added would have caught it.** I set `WALL_MS = 120_000` — **exactly `maxDuration`** — carving out only a 10 s reserve, so the deadline sat **8 %** under the very ceiling it exists to stay beneath, leaving nothing for platform overhead and assuming `after()` receives the full `maxDuration`, which is not documented anywhere. ⭐ **The working precedent was already in this repo and I did not follow it:** `drain-fmv-cold-tail` runs a **45 s budget inside a 60 s `maxDuration` — a 25 % margin.** Now 90 s inside 120 s.
+
+📏 **And 90 s is sized against a LIVE leg cost, measured rather than inherited.** Calling `backfill_acquisitions_for_collection` directly with **`p_limit = 1`**: the All Day leg took **56.7 s to process ZERO rows**. ⚠ That is **16× the 3.5 s** its own TARGETS comment records from 2026-08-03 — the second lane today whose per-leg numbers are a dated sample from a quiet box (see `fmv-recalc`, R122). ⭐ It also confirms that comment's own claim that **`limit` is not the lever**: one row, 56.7 s, all of it candidate scan. A 50 s deadline would abandon All Day and classify nothing; 80 s lets it finish and still leaves UFC a real slice.
+
+🔬 **The margin is now pinned, and the arm is mutation-proven against the exact mistake:** restoring `WALL_MS_DEFAULT = 120_000` reds it (*"the wall (120000 ms) must leave at least 20 % of maxDuration (120000 ms) as margin"*), 90_000 passes. It asserts the SHAPE — a real margin — not a number, so retuning either constant stays legal and only collapsing the margin goes red.
+
+⚠ **NOT claimed: that the resize fixes it.** One tick is one sample, and the 09:06 tick failed the same way BEFORE my code was live, so a cause I have not identified may still be in play. **Exit:** the 11:06 PT tick writes a terminal row. **Falsifier:** it does not ⇒ the truncation is not the wall at all but the `after()` dispatch itself, which no in-body budget can reach — the mechanism `fmv-recalc`'s header already documents — and the lever becomes moving this work off `after()` entirely.
+
+📝 **Also checked:** the full suite showed 1 failure that was **not mine** (`migration-new-function-states-its-anon-exec-decision`, a concurrent session's `20260920163320` order-book migration). Read the failing job before assuming ownership — it was fixed upstream within minutes and is green after a pull.
+
+- **Revert:** `git revert <sha>` (restores `WALL_MS_DEFAULT = 120_000`). ⚠ The margin arm would then red, which is the arm working.
+
 ### 2026-09-20 · 🔁 R120 FOLLOW-UP — the same read found a FOURTH swallowed write: `fmv` was reporting rows OFFERED under a name every reader takes for rows WRITTEN, and neither the delete nor the insert had its error read at all · Claude Code Windows box
 
 **Shipped: `app/api/cron/panini-ingest/route.ts` (fmv delete + insert errors now read; `fmv` = rows WRITTEN, new `fmv_offered` and `fmv_error`) + 2 new test arms with the mock rework they needed. Also: two inbox filings from other sessions indexed, which had `main` red on `inbox-index-lists-every-filing`. No DB change.**
