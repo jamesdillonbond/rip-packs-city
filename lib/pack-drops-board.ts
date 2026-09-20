@@ -206,6 +206,26 @@ function num(v: number | string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+// Vaultopolis ships some names with the unicode escape UNDECODED — the literal
+// twelve characters `Johann\u{e8}s`, not `Johannès`. Measured on the live board
+// 2026-09-20: 4 names across 6 rows (\u{e8}, \u{fc}, \u{e1}, \u{107} x2), and it
+// broke three things at once — the board PRINTED the escape to users, the
+// player drill-down slugified to a 404, and the FMV match is a player_name
+// ILIKE that an escaped name can never satisfy, so those rows priced off the
+// name alone. Decoding once at ingest fixes all three; decoding at render
+// would fix only the first.
+//
+// Same class as the JSON-argument deploys that decode escapes in transit.
+export function decodeUnicodeEscapes(v: string | null): string | null {
+  if (v == null || v.indexOf("\\u") === -1) return v
+  return v
+    .replace(/\\u\{([0-9a-fA-F]{1,6})\}/g, (m, h) => {
+      const cp = parseInt(h, 16)
+      return cp <= 0x10ffff ? String.fromCodePoint(cp) : m
+    })
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_m, h) => String.fromCharCode(parseInt(h, 16)))
+}
+
 function keyOf(player: string | null, set: string | null, series: number | null): string {
   return `${(player ?? "").toLowerCase()}|${(set ?? "").toLowerCase()}|${series ?? ""}`
 }
@@ -218,7 +238,13 @@ export async function scoreDrop(
   listItem: VaultopolisDropListItem | null,
   flowUsd: number | null
 ): Promise<ScoredDrop> {
-  const assets = comp.assets?.TopShot ?? []
+  // Normalise BEFORE keyOf/pricing — see decodeUnicodeEscapes. An escaped name
+  // would otherwise group separately from its decoded twin and price off-name.
+  const assets = (comp.assets?.TopShot ?? []).map((a) => ({
+    ...a,
+    playerName: decodeUnicodeEscapes(a.playerName),
+    setName: decodeUnicodeEscapes(a.setName),
+  }))
 
   // Distinct (player, set, series) with count + operator metadata (estimatedValue,
   // valueTier, parallel) carried from the first asset of each group.

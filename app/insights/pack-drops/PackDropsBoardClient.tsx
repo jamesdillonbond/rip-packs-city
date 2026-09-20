@@ -16,6 +16,7 @@
 // mismatch can miss an edition — both flagged, never papered over.
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { slugifyPlayerName } from "@/lib/entity-labels"
 // ⓘ Lives under lib/entity/ but is deliberately NOT entity-scoped: its own header
 // calls it "a fifth ENTRY POINT rather than a fifth POLICY … so the next section
 // cannot invent its own phrasing." Reused here rather than duplicated, per
@@ -83,10 +84,13 @@ function editionHref(r: ScoredEdition): string | null {
   // the exact external_id (name-matched, not nft-resolved), so the player page
   // is the honest target.
   if (!r.player) return null
-  const slug = r.player
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+  // ⚠ This used to hand-roll the slug, and a hand-rolled slug turns every
+  // diacritic into a separator: "Marine Johannès" became `marine-johann-s`,
+  // which 404s, while slugifyPlayerName strips combining marks first and
+  // yields `marine-johannes`, which resolves. lib/entity-labels.ts is the one
+  // place that knows the player resolver also matches unaccent(p.name) - do
+  // not re-inline this.
+  const slug = slugifyPlayerName(r.player).replace(/^-+|-+$/g, "")
   if (!slug) return null
   return `/nba-top-shot/player/${slug}`
 }
