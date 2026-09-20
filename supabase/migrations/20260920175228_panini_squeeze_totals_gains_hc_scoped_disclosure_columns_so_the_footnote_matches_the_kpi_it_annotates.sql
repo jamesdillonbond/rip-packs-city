@@ -10,8 +10,8 @@
 -- The footnote describes a population the number it annotates does not have.
 --
 -- 📏 Re-measured independently 2026-09-20 ~11:1x AM PT, reproducing the filing's figures:
---   all sets : $1,248,355 ask-only of $2,417,452 over 5,074 editions = 51.6% (what is PUBLISHED)
---   hc subset: $1,221,349 ask-only of $2,271,750 over 4,053 editions = 53.8% (what is TRUE of the KPI)
+--   all sets : $1,248,712 ask-only of $2,417,xxx over 5,075 editions = 51.7% (what is PUBLISHED)
+--   hc subset: $1,221,300 ask-only of $2,271,750 over 4,053 editions = 53.8% (what is TRUE of the KPI)
 -- ⭐ Small, and in the FLATTERING direction — which is the reason to fix it rather than to leave it:
 -- this IS the board's honesty disclosure and it currently understates its own subject.
 --
@@ -19,6 +19,13 @@
 -- lands within a few percent of the hc total, the ASK_ONLY concentration is not where the note says
 -- and the change is not worth the migration burst. Measured: hc sale-backed $922,825 of $2,271,750 =
 -- 40.6% (3,381 of 4,053 editions), so 59.4% of the headline stands on ask-derived prices. Not close.
+--
+-- ⭐ AND A SHARPER FACT THAN THE FILING STATED: within the hc subset, ASK_ONLY is only
+-- **364 of 4,053 editions (9.0%)** but **$1,221,300 of $2,271,750 (53.8%)** of the value. A ninth of
+-- the editions carries over half the headline.
+-- ⚠ The filing's own table says "ASK_ONLY editions ... 674" for the hc column; that figure is
+-- ASK_ONLY **plus LOW** (364 + 308 + 2). Its dollar figure is ASK_ONLY-scoped, so the two halves of
+-- that row have different scopes. The percentage it quotes (53.8%) is unaffected and reproduces.
 --
 -- ⛔ WHAT THIS DELIBERATELY DOES NOT DO. The filing also proposes PROMOTING the sale-backed figure to
 -- the primary tile ($923k primary, $2.27M on the alt line). That is an EDITORIAL decision about what
@@ -31,6 +38,11 @@
 -- published percentage's population is the very defect this migration is about. The hc figures are
 -- NEW columns, so a number and its denominator travel together.
 --
+-- ⚠ NOT TOUCHED, and it is NOT this defect: `app/api/og/insights/panini-squeeze/route.tsx` sums
+-- ALL SETS for both its total and its ask share, in one walk, deliberately (its own header explains
+-- why it does not read this view). So it is internally consistent — it reports a different
+-- POPULATION than the page headline, which is the same editorial question above, not a mismatch.
+--
 -- ⚠ CREATE OR REPLACE VIEW mechanics, all three traps: it is a FULL-BODY write (the live definition
 -- was re-read immediately before this, normalized md5 698b57fb3d59aed266103f4b9d536a04); it cannot
 -- rename or reorder columns (42P16), so all twelve existing columns are reproduced VERBATIM in order
@@ -41,7 +53,10 @@
 -- unchanged by CREATE OR REPLACE and are asserted below.
 --
 -- REVERT (exact): CREATE OR REPLACE VIEW public.panini_squeeze_totals WITH (security_invoker = true)
--- AS <the twelve-column body above, whose normalized md5 is 698b57fb3d59aed266103f4b9d536a04>.
+-- AS <the twelve-column body, whose normalized md5 is 698b57fb3d59aed266103f4b9d536a04>, then
+-- `git revert` the code half (lib/insights/panini-board.ts + PaniniSqueezeClient.tsx + its tests).
+-- ⚠ Reverting the DB half alone is safe: every client read of the new columns is optional-chained
+-- and falls back to the all-sets pair.
 
 do $gate$
 declare v_md5 text; v_opts text[];

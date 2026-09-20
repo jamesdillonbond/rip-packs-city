@@ -105,7 +105,15 @@ async function fetchTotals(db: Db): Promise<any> {
         // 0.90 x ONE seller's ask on a card with zero recorded sales — against 39.5% standing on
         // a real sale. The per-ROW basis was already disclosed; the AGGREGATE said nothing.
         "editions_ask_only,sealed_fmv_exposure_usd_ask_only,pct_sealed_usd_from_asks_only," +
-        "pct_sealed_usd_sale_backed"
+        "pct_sealed_usd_sale_backed," +
+        // Added 2026-09-20. The same disclosure, scoped to the broad+partial subset the HEADLINE
+        // reports. The 09-19 columns above are all-sets, so the footnote was describing a
+        // population the number it annotates does not have (51.7% published vs 53.8% true of the
+        // KPI, in the flattering direction). The all-sets columns stay as they are - other
+        // consumers may read them, and silently repopulating a published percentage is the defect
+        // itself - so the client prefers the _hc pair whenever it is rendering the _hc headline.
+        "editions_hc_ask_only,sealed_fmv_exposure_usd_hc_ask_only," +
+        "pct_sealed_usd_from_asks_only_hc,pct_sealed_usd_sale_backed_hc"
     )
     .limit(1)
   if (error) {

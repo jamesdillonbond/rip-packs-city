@@ -310,6 +310,49 @@ describe("PaniniSqueezeClient — what the headline total is made of", () => {
     expect(t).toMatch(/upper bound/i)
   })
 
+  // ⚠ ADDED 2026-09-20 — THE DENOMINATOR HAS TO BE THE ONE THE SENTENCE POINTS AT.
+  // The sentence reads "of the sealed value ABOVE", and "above" is `sealed_fmv_exposure_usd_hc`
+  // whenever `hc` is true. The 09-19 columns are computed over ALL SETS, so the footnote described
+  // a population the KPI does not have — and it ran in the FLATTERING direction (51.7% published
+  // against 53.8% true of the headline), which is the reason to fix it rather than leave it.
+  // Fixture values are the live readings taken 2026-09-20 ~11:1x AM PT, so this is a real shape.
+  const TOTALS_HC_DISCLOSURE: Totals = {
+    ...TOTALS,
+    editions_ask_only: 743,
+    pct_sealed_usd_from_asks_only: 51.7,
+    pct_sealed_usd_sale_backed: 40.3,
+    editions_hc_ask_only: 364,
+    sealed_fmv_exposure_usd_hc_ask_only: 1221300,
+    pct_sealed_usd_from_asks_only_hc: 53.8,
+    pct_sealed_usd_sale_backed_hc: 40.6,
+  }
+
+  it("annotates the _hc headline with the _hc composition, not the all-sets one", () => {
+    const { container } = render(
+      <PaniniSqueezeClient initialRows={[row()]} totals={TOTALS_HC_DISCLOSURE} fetchedAt="2026-09-20T00:00:00Z" />,
+    )
+    const t = container.textContent ?? ""
+    // The hc figures are what the sentence must carry.
+    expect(t).toMatch(/53\.8%[\s\S]*364[\s\S]*single seller.s asking price/i)
+    expect(t).toMatch(/40\.6%[\s\S]*a real sale stands behind/i)
+    // ⛔ And the all-sets figures must NOT appear in it — asserting the ABSENCE of the false
+    // claim, not merely the presence of the true one, because both could render at once.
+    const madeOf = t.slice(t.indexOf("What this total is made of"))
+    expect(madeOf).not.toMatch(/51\.7%/)
+    expect(madeOf).not.toMatch(/\b743\b/)
+    expect(madeOf).not.toMatch(/40\.3%/)
+  })
+
+  it("falls back to the all-sets composition when the _hc columns are absent", () => {
+    // A payload predating migration 20260920... must still render, and must not invent an _hc
+    // number it was never given. TOTALS carries only the 09-19 all-sets columns.
+    const { container } = render(
+      <PaniniSqueezeClient initialRows={[row()]} totals={TOTALS} fetchedAt="2026-09-20T00:00:00Z" />,
+    )
+    const t = container.textContent ?? ""
+    expect(t).toMatch(/52\.4%[\s\S]*871[\s\S]*single seller.s asking price/i)
+  })
+
   it("makes NO claim at all when the composition is unknown — never a measured zero", () => {
     const { container } = render(
       <PaniniSqueezeClient

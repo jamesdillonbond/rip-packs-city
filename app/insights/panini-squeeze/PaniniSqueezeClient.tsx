@@ -55,6 +55,16 @@ export type Totals = {
   sealed_fmv_exposure_usd_ask_only?: number | null;
   pct_sealed_usd_from_asks_only?: number | null;
   pct_sealed_usd_sale_backed?: number | null;
+  // Added 2026-09-20. The SAME disclosure scoped to the broad+partial subset, because the four
+  // fields above are computed over ALL SETS while the sentence that renders them says "of the
+  // sealed value ABOVE" - and "above" is the _hc headline whenever `hc` is true. A footnote
+  // describing a different population than the number it annotates is the defect, and it ran in
+  // the flattering direction (51.7% published vs 53.8% true). Optional, same fail-soft convention
+  // as the 09-19 additions, so a payload predating migration 20260920... still renders.
+  editions_hc_ask_only?: number | null;
+  sealed_fmv_exposure_usd_hc_ask_only?: number | null;
+  pct_sealed_usd_from_asks_only_hc?: number | null;
+  pct_sealed_usd_sale_backed_hc?: number | null;
 };
 
 export type Coverage = {
@@ -363,22 +373,42 @@ export default function PaniniSqueezeClient({
 
       {/* What the headline is MADE OF. An aggregate is what a reader quotes, and this one is not
           majority sale-backed — so the composition travels with it. Rendered whenever the figure
-          is present and non-trivial; null => no claim at all, never a measured zero. */}
-      {totals?.pct_sealed_usd_from_asks_only != null && Number(totals.pct_sealed_usd_from_asks_only) >= 1 ? (
+          is present and non-trivial; null => no claim at all, never a measured zero.
+
+          ⚠ 2026-09-20 — THE DENOMINATOR HAS TO MATCH THE NUMBER THIS SENTENCE POINTS AT. It says
+          "of the sealed value ABOVE", and "above" is `sealed_fmv_exposure_usd_hc` whenever `hc` is
+          true. The 09-19 columns are computed over ALL SETS, so for six weeks this footnote
+          described a population the KPI did not have — 51.7% published against 53.8% true of the
+          headline, i.e. it understated its own subject. Now it reads the `_hc` pair while the
+          headline is `_hc`, and falls back to the all-sets pair otherwise. The all-sets columns are
+          deliberately unchanged: other consumers may read them, and silently repopulating a
+          published percentage is this very defect. */}
+      {(() => {
+        const askPct = hc && totals?.pct_sealed_usd_from_asks_only_hc != null
+          ? totals.pct_sealed_usd_from_asks_only_hc
+          : totals?.pct_sealed_usd_from_asks_only
+        const askEditions = hc && totals?.pct_sealed_usd_from_asks_only_hc != null
+          ? totals?.editions_hc_ask_only
+          : totals?.editions_ask_only
+        const salePct = hc && totals?.pct_sealed_usd_from_asks_only_hc != null
+          ? totals?.pct_sealed_usd_sale_backed_hc
+          : totals?.pct_sealed_usd_sale_backed
+        return askPct != null && Number(askPct) >= 1 ? (
         <div className="psq-note">
           <b>What this total is made of:</b>{" "}
-          <b>{num(totals.pct_sealed_usd_from_asks_only, 1)}%</b> of the sealed value above comes from{" "}
-          <b>{num(totals.editions_ask_only)}</b> editions priced from a <b>single seller&rsquo;s asking price</b>
+          <b>{num(askPct, 1)}%</b> of the sealed value above comes from{" "}
+          <b>{num(askEditions)}</b> editions priced from a <b>single seller&rsquo;s asking price</b>
           {" "}with no recorded sale
-          {totals.pct_sealed_usd_sale_backed != null ? (
+          {salePct != null ? (
             <>
-              , and <b>{num(totals.pct_sealed_usd_sale_backed, 1)}%</b> from editions a real sale stands behind
+              , and <b>{num(salePct, 1)}%</b> from editions a real sale stands behind
             </>
           ) : null}
           . An asking price is what someone hopes to get, not what anyone paid — treat the headline as an
           upper bound.
         </div>
-      ) : null}
+        ) : null
+      })()}
 
       {/* ASK-DERIVED FMV disclosure (2026-08-01). This board's single largest FMV was 90% of one
           $500,010 ask on a card that has never traded, rendered identically to a sale-derived
