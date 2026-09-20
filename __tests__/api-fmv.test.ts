@@ -30,7 +30,12 @@ vi.mock("@supabase/supabase-js", () => {
     return b
   }
   return {
-    createClient: () => ({ from: (table: string) => makeBuilder(table) }),
+    createClient: () => ({
+      from: (table: string) => makeBuilder(table),
+      // The FMV read is an RPC since 2026-09-20 (get_editions_latest_fmv_wide); the
+      // fixture key is the harness convention `rpc:<name>`.
+      rpc: async (name: string) => fmvMock[`rpc:${name}`] ?? { data: [], error: null },
+    }),
   }
 })
 
@@ -83,7 +88,7 @@ describe("GET /api/fmv — lookup outcomes", () => {
   })
 
   it("200s with 'No FMV data yet' when the edition exists but has no snapshot", async () => {
-    setMock({ editions: { data: [EDITION] }, fmv_current: { data: [] } })
+    setMock({ editions: { data: [EDITION] }, "rpc:get_editions_latest_fmv_wide": { data: [] } })
     const res = await GET(new Request("http://t/api/fmv?edition=73:2785"))
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -92,7 +97,7 @@ describe("GET /api/fmv — lookup outcomes", () => {
   })
 
   it("returns the documented FMV shape for a priced edition (no serial)", async () => {
-    setMock({ editions: { data: [EDITION] }, fmv_current: { data: [snapshot()] } })
+    setMock({ editions: { data: [EDITION] }, "rpc:get_editions_latest_fmv_wide": { data: [snapshot()] } })
     const res = await GET(new Request("http://t/api/fmv?edition=73:2785"))
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -110,7 +115,7 @@ describe("GET /api/fmv — lookup outcomes", () => {
   })
 
   it("applies the serial multiplier: #1 serial → 12× the base FMV", async () => {
-    setMock({ editions: { data: [EDITION] }, fmv_current: { data: [snapshot()] } })
+    setMock({ editions: { data: [EDITION] }, "rpc:get_editions_latest_fmv_wide": { data: [snapshot()] } })
     const res = await GET(new Request("http://t/api/fmv?edition=73:2785&serial=1"))
     const body = await res.json()
     expect(body.serialMult).toBe(12)
@@ -118,7 +123,7 @@ describe("GET /api/fmv — lookup outcomes", () => {
   })
 
   it("applies the low-serial tier: serial ≤ 10 → 4.5×", async () => {
-    setMock({ editions: { data: [EDITION] }, fmv_current: { data: [snapshot()] } })
+    setMock({ editions: { data: [EDITION] }, "rpc:get_editions_latest_fmv_wide": { data: [snapshot()] } })
     const res = await GET(new Request("http://t/api/fmv?edition=73:2785&serial=5"))
     const body = await res.json()
     expect(body.serialMult).toBe(4.5)

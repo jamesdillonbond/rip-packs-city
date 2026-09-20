@@ -71,7 +71,7 @@ import { GET } from "@/app/api/sniper-feed/route"
  *  `st.fmv` — otherwise the "a failed All Day FMV map read is named" case would
  *  seed an error nothing ever returns and pass on an empty board instead. */
 async function defaultRpc(name: string) {
-  if (name === "get_editions_latest_fmv") {
+  if (name === "get_editions_latest_fmv" || name === "get_editions_latest_fmv_wide") {
     if (st.throwOn.has("fmv_current")) throw new Error("socket hang up")
     if (st.fmv.error) return { data: null, error: st.fmv.error }
     return { data: st.fmv.data, error: null }

@@ -141,7 +141,7 @@ function enrichedTables(over: Record<string, any> = {}) {
         },
       ],
     },
-    fmv_current: {
+    "rpc:get_editions_latest_fmv_wide": {
       data: [
         {
           edition_id: "uuid-1-2",
@@ -228,7 +228,7 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
   })
 
   it("returns an unpriced feed when editions resolve but no FMV snapshot exists", async () => {
-    fx.tables = enrichedTables({ fmv_current: { data: [] } })
+    fx.tables = enrichedTables({ "rpc:get_editions_latest_fmv_wide": { data: [] } })
     const res = await GET(get("?collection=nba-top-shot"))
     expect(res.status).toBe(200)
     expect(Array.isArray((await res.json()).deals)).toBe(true)
@@ -255,7 +255,7 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
   // value for an edition that has none. A missing FMV must drop the row.
   it("NULL fmv_usd → row EXCLUDED, never repriced off the floor ask (ask_proxy)", async () => {
     fx.tables = enrichedTables({
-      fmv_current: {
+      "rpc:get_editions_latest_fmv_wide": {
         data: [
           {
             edition_id: "uuid-1-2",
@@ -281,7 +281,7 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
   // still allowed to use the documented ask-proxy signal. Only NULL drops.
   it("a real near-zero fmv_usd still takes the documented ask_proxy path", async () => {
     fx.tables = enrichedTables({
-      fmv_current: {
+      "rpc:get_editions_latest_fmv_wide": {
         data: [
           {
             edition_id: "uuid-1-2",
@@ -348,7 +348,7 @@ describe("sniper-feed prices Atlas-fed ts_listings through their on-chain ids", 
           { id: "uuid-1-2-17", external_id: "1:2::17", set_id_onchain: 1, play_id_onchain: 2, thumbnail_url: "https://img/1-2-17.png" },
         ],
       },
-      fmv_current: {
+      "rpc:get_editions_latest_fmv_wide": {
         data: [
           { edition_id: "uuid-1-2", fmv_usd: 100, wap_usd: 95, floor_price_usd: 80, confidence: "HIGH", days_since_sale: 2, sales_count_30d: 14, computed_at: "2026-07-16T00:00:00Z" },
           { edition_id: "uuid-1-2-17", fmv_usd: 400, wap_usd: 380, floor_price_usd: 300, confidence: "HIGH", days_since_sale: 2, sales_count_30d: 9, computed_at: "2026-07-16T00:00:00Z" },

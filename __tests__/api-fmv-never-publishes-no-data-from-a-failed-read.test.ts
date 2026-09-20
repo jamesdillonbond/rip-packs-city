@@ -34,6 +34,9 @@ const st = vi.hoisted(() => ({
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
+    // The FMV lookup is get_editions_latest_fmv_wide since 2026-09-20 — same payload the
+    // fmv_current table key served, so st.fmv drives both the RPC and the history read.
+    rpc: async (name: string) => (name === "get_editions_latest_fmv_wide" ? st.fmv : { data: [], error: null }),
     from(table: string) {
       let limitUsed = false
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

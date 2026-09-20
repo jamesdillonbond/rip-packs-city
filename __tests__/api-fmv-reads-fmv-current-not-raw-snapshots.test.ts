@@ -14,6 +14,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const tablesQueried: string[] = []
+const rpcsCalled: string[] = []
 
 const EDITION = { id: "ed-uuid-1", external_id: "73:2785" }
 const FMV_ROW = {
@@ -34,9 +35,7 @@ vi.mock("@supabase/supabase-js", () => {
     const payload = () =>
       table === "editions"
         ? { data: [EDITION], error: null }
-        : table === "fmv_current"
-          ? { data: [FMV_ROW], error: null }
-          : { data: [], error: null }
+        : { data: [], error: null }
     const b: Record<string, unknown> = {}
     for (const m of ["select", "in", "eq", "order", "limit", "gte", "lte"]) {
       b[m] = () => b
@@ -44,22 +43,36 @@ vi.mock("@supabase/supabase-js", () => {
     b.then = (resolve: (v: unknown) => unknown) => resolve(payload())
     return b
   }
-  return { createClient: () => ({ from: (t: string) => makeBuilder(t) }) }
+  return {
+    createClient: () => ({
+      from: (t: string) => makeBuilder(t),
+      rpc: async (name: string) => {
+        rpcsCalled.push(name)
+        return name === "get_editions_latest_fmv_wide"
+          ? { data: [{ ...FMV_ROW, asp_without_outliers: FMV_ROW.wap_without_outliers }], error: null }
+          : { data: [], error: null }
+      },
+    }),
+  }
 })
 
-describe("/api/fmv resolves FMV from fmv_current, not raw fmv_snapshots", () => {
+describe("/api/fmv resolves FMV from get_editions_latest_fmv_wide, not raw fmv_snapshots", () => {
   beforeEach(() => {
     tablesQueried.length = 0
+    rpcsCalled.length = 0
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co"
     process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test-key"
   })
 
-  it("queries fmv_current and never raw fmv_snapshots for the lookup", async () => {
+  it("calls get_editions_latest_fmv_wide and never raw fmv_snapshots for the lookup", async () => {
     const { GET } = await import("@/app/api/fmv/route")
     const res = await GET(new Request("http://t/api/fmv?edition=73:2785") as never)
     expect(res.status).toBe(200)
 
-    expect(tablesQueried).toContain("fmv_current")
+    // 2026-09-20: the read is the per-id helper, not the DISTINCT ON view (the view walked
+    // ~76 snapshots per edition; the helper is one index probe per id, same rows).
+    expect(rpcsCalled).toContain("get_editions_latest_fmv_wide")
+    expect(tablesQueried).not.toContain("fmv_current")
     // The only legitimate raw-snapshots read in this route is the bounded
     // 21-row price-history query, which requires &history=1. A plain lookup
     // must not touch the history table at all.

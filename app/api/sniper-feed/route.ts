@@ -791,20 +791,23 @@ async function fetchFmvBatch(
     thumbnailByExt.set(row.external_id, row.thumbnail_url ?? null);
   }
 
-  // Read fmv_current (DISTINCT-ON latest-per-edition, 1 row/edition) NOT raw
-  // fmv_snapshots DESC — the latter overflows PostgREST's 1000-row cap (~35 history
-  // rows/edition) and silently drops COLD editions, whose FMV then resolves null and
-  // whose (possibly underpriced) listing is dropped from the deal board. Chunk the id
-  // list at 1000 so a >1000-edition feed can't cap either. (asp_usd is exposed as
-  // wap_usd by the view.)
+  // Read the latest snapshot per edition (1 row/edition) NOT raw fmv_snapshots DESC —
+  // the latter overflows PostgREST's 1000-row cap (~35 history rows/edition) and
+  // silently drops COLD editions, whose FMV then resolves null and whose (possibly
+  // underpriced) listing is dropped from the deal board. Chunk the id list so a
+  // >500-edition feed can't cap either. (asp_usd is exposed as wap_usd.)
   const fmvEditionIds = Array.from(extToUuid.values());
   const fmvRows: any[] = [];
-  const FMV_CHUNK = 1000;
+  // 2026-09-20: `.from("fmv_current").in("edition_id", chunk)` → the per-id helper. The
+  // view's DISTINCT ON walks ~76 snapshots per edition before Unique keeps one (pgss: the
+  // 8-column shape of this read was 902 calls at a 6.0 s mean); the helper is one index
+  // probe per id and returns every column the view exposed (wap_usd = asp_usd). Same rows,
+  // set-difference 0 on 100 ids. 500 ids per call: an RPC result is capped at PostgREST's
+  // 1000 rows too, and one row per id must never sit exactly on the cap.
+  const FMV_CHUNK = 500;
   for (let i = 0; i < fmvEditionIds.length; i += FMV_CHUNK) {
     const { data } = await (supabase as any)
-      .from("fmv_current")
-      .select("edition_id, fmv_usd, wap_usd, floor_price_usd, confidence, days_since_sale, sales_count_30d, computed_at")
-      .in("edition_id", fmvEditionIds.slice(i, i + FMV_CHUNK));
+      .rpc("get_editions_latest_fmv_wide", { p_edition_ids: fmvEditionIds.slice(i, i + FMV_CHUNK) });
     if (data?.length) fmvRows.push(...data);
   }
 

@@ -31,6 +31,16 @@ type FmvSnapshotRow = {
   wap_usd: number | null;
 };
 
+// get_editions_latest_fmv_wide returns the view's columns under the snapshot's own names —
+// `asp_without_outliers` here is what the view read aliased to `wap_without_outliers`. A row
+// that already carries `wap_without_outliers` (older fixtures, a future rename) is kept as is.
+function fromWideRows(rows: unknown): FmvSnapshotRow[] {
+  return ((rows ?? []) as Array<FmvSnapshotRow & { asp_without_outliers?: number | null }>).map(r => ({
+    ...r,
+    wap_without_outliers: r.wap_without_outliers ?? r.asp_without_outliers ?? null,
+  }));
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function lookupEditions(supabase: any, editionKeys: string[], serial?: number) {
   if (!editionKeys.length) return { results: [], extToId: new Map<string, string>() };
@@ -84,14 +94,18 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
     // public product API, and then cached for five minutes. Step 1 already
     // throws on `edErr`; step 2 must too, so a read failure reaches
     // `apiErrorResponse` and is reported as a failure rather than as an answer.
+    // 2026-09-20: the view read (`.from("fmv_current").in("edition_id", chunk)`) became the
+    // per-id helper — the view's DISTINCT ON walked ~76 snapshots per edition before Unique
+    // kept one (pgss: 6,103 calls at a 6.2 s mean across the routes that read it); the helper
+    // is one index probe per id, returns every column the view exposed, same rows (set-diff 0
+    // on 100 ids). The PostgREST alias `wap_without_outliers:asp_without_outliers` cannot ride
+    // an RPC, so the rename happens here.
     const { data: fmvRows, error: fmvErr } = await supabase
-      .from("fmv_current")
-      .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers:asp_without_outliers, sales_count_30d, days_since_sale, wap_usd")
-      .in("edition_id", chunk);
+      .rpc("get_editions_latest_fmv_wide", { p_edition_ids: chunk });
 
-    if (fmvErr) throw new Error(`fmv_current lookup: ${fmvErr.message}`);
+    if (fmvErr) throw new Error(`get_editions_latest_fmv_wide lookup: ${fmvErr.message}`);
 
-    for (const row of (fmvRows ?? []) as FmvSnapshotRow[]) {
+    for (const row of fromWideRows(fmvRows)) {
       if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row);
     }
   }
@@ -265,13 +279,12 @@ export async function POST(req: Request) {
       const fmvChunks = [];
       for (let i = 0; i < internalIds.length; i += CHUNK) {
         fmvChunks.push(
-          // fmv_current = DISTINCT-ON latest-per-edition (1 row/edition), so cold
+          // Latest snapshot per edition (1 row/edition) via the per-id helper, so cold
           // editions in a mixed batch aren't dropped past the 1000-row cap and
-          // wrongly reported "No FMV data yet". (asp_usd is exposed as wap_usd.)
+          // wrongly reported "No FMV data yet". (asp_usd is exposed as wap_usd; see
+          // lookupEditions for why the view read moved here.)
           supabase
-            .from("fmv_current")
-            .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers:asp_without_outliers, sales_count_30d, days_since_sale, wap_usd")
-            .in("edition_id", internalIds.slice(i, i + CHUNK))
+            .rpc("get_editions_latest_fmv_wide", { p_edition_ids: internalIds.slice(i, i + CHUNK) })
         );
       }
       const fmvResults = await Promise.all(fmvChunks);
@@ -284,8 +297,8 @@ export async function POST(req: Request) {
       // `Promise.all` does not help here: supabase-js RESOLVES on a query
       // error, so every chunk "succeeds" and the error rides in `.error`.
       for (const { data: fmvRows, error: fmvErr } of fmvResults) {
-        if (fmvErr) throw new Error(`fmv_current lookup: ${fmvErr.message}`);
-        for (const row of (fmvRows ?? []) as FmvSnapshotRow[]) {
+        if (fmvErr) throw new Error(`get_editions_latest_fmv_wide lookup: ${fmvErr.message}`);
+        for (const row of fromWideRows(fmvRows)) {
           if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row);
         }
       }

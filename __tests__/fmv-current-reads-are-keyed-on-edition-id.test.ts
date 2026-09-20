@@ -89,7 +89,11 @@ describe("fmv_current is never scanned whole", () => {
     // root, a rename, a bad extension filter) returns [] and every check below
     // passes over an empty set. Three guards in this repo have died that way.
     const sites = callSites()
-    expect(sites.length).toBeGreaterThanOrEqual(12)
+    // 15 sites on 2026-09-02; 10 on 2026-09-20 after the five hottest readers (wallet-search ×2,
+    // cache-refresh, sniper-feed fetchFmvBatch, /api/fmv ×2) moved to get_editions_latest_fmv_wide
+    // (migration 20260920044216 — the view walks ~76 snapshots per edition, the helper one probe).
+    // A floor of 8 still catches a dead walk; lower it only with the site list re-derived.
+    expect(sites.length).toBeGreaterThanOrEqual(8)
     // …and it reached both layers, not just whichever one is listed first.
     expect(sites.some((s) => s.file.startsWith("app/"))).toBe(true)
     expect(sites.some((s) => s.file.startsWith("lib/"))).toBe(true)
