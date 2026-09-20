@@ -58,7 +58,7 @@ Cost triage recipe: `sum(end_time - start_time)` per job over 24h, split by stat
 
 - **DB migrations via `apply_migration`** (load the `rpc-migration` skill). Guarded splices that RAISE on no-match; assert on the arm/function **anchor**, never a bare substring; pair every `CREATE OR REPLACE VIEW` with `ALTER VIEW … SET (security_invoker = on)`.
 - ⚠ Every Cowork DB change opens a prod/repo drift window. **Write the matching `supabase/migrations/<version>_<name>.sql` in the same session** — use the exact version `apply_migration` recorded, revert path in the file header — and commit it through whichever push path §0 found (path 3 needs no credential at all). Only if all three are dead does it go to the laptop folder for a later commit.
-- Edge functions via MCP (ship `deno.json` alongside `index.ts`).
+- Edge functions via MCP (ship `deno.json` alongside `index.ts`) — **only after the `rpc-edge-fn-deploy` §4 redacted drift check proves deployed == repo**, and ⛔ never a `?key=`-gated function whose DEPLOYED build still hardcodes its key (the secret is unproven; #130 is what deploying ahead of it looks like: 403 on every dispatch, `pipeline_runs` silent, pg_cron `succeeded`).
 - **Not shippable unattended:** route/`.tsx`/worker code → `rpc-handoff` skill (the push path is not the blocker any more; the missing local test run is).
 
 ## 5. Verify the fix, not the diagnosis
