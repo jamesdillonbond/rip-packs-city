@@ -3144,3 +3144,20 @@ While re-testing the fleet after a compute resize, an ad-hoc split-window script
 - ⛔ **A test written for a defect you have not reproduced in the code under test will usually pass for the wrong reason.** Reproduce it against the real function first.
 - ⛔ **Removing the fix must red the arms.** If it does not, the arms are describing something else.
 - ⚠ **The specific trap, now pinned:** if you want a before/after rate, hand the FULL sequence to `classifyKillRecord` and let it pool. Feeding it two windows and calling the output a p-value manufactures certainty — it briefly had a lane filed as `recovered` on two ticks.
+
+---
+
+## Before you suppress a guard, check whether the GUARD is wrong (2026-09-20)
+
+Two sessions independently added a `when-others-timeout-blind: intentional` marker to silence `new-plpgsql-recording-handlers-catch-query-canceled`, and **both markers were dead within hours** — the guard's author narrowed it the same day, scoping its `RECORDING` test to the **handler region** (bounded at `END;`) instead of the whole function body. One `log_pipeline_run` anywhere in a function had been making *every* handler in it "recording", including bare loop handlers that record nothing and that CLAUDE.md explicitly says must stay bare.
+
+⭐ **The reusable lesson is the order of operations.** A guard firing on code you believe is correct is two hypotheses, not one: *your code is wrong*, or *the guard is*. **Suppressing is the answer to the first and a cover-up of the second** — and a suppression marker, once committed, reads as a considered decision to everyone after you. Ask what property the guard is actually testing and whether your subject has it, **before** reaching for the escape hatch. Here the property was "a handler that RECORDS A FAILURE cannot see a cancel", and the subject — a JSON-parse fallback assigning `v_body := NULL` — records nothing, so it never belonged in scope.
+
+⚠ **If you do need the marker, its placement is not where the message implies.** The failure text says to add it "in a comment above it", which reads as *above the handler*; the code anchors its lookback at the **`CREATE OR REPLACE` declaration**:
+
+```js
+const line = src.slice(0, at).split("\n").length - 1   // `at` = offset of the declaration
+if (isMarkerSuppressed(rawLines, line, MARKER, LOOKBACK)) continue
+```
+
+⛔ **So the marker belongs in the migration HEADER, outside the function body — and putting it inside the body is actively harmful**, because a comment there is part of `prosrc`: a documentation-only edit becomes a schema change, and the file stops matching the deployed function until a second migration re-applies it. That nearly cost a redundant migration on 2026-09-20 before the marker moved to the header and the body reverted byte-identical to production. Also: a reason longer than the lookback window pushes the marker out of it — put the prose first, the marker line last.
