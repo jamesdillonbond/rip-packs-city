@@ -48,7 +48,25 @@ const PER_COLLECTION_LIMIT = 500
 // Overridable for TESTS ONLY, so the budget path can be proven without burning
 // two real minutes per arm — the same seam and the same reason as
 // PINNACLE_BACKFILL_SYNC_BUDGET_MS. Production never sets it.
-const WALL_MS_DEFAULT = 120_000
+// 🚨 90_000, NOT 120_000, AND THE FIRST VERSION OF THIS WALL GOT IT WRONG.
+// It was set equal to `maxDuration` with only TERMINAL_RESERVE_MS carved out —
+// i.e. the wall was the very ceiling it exists to stay under, leaving no margin
+// for the platform's own overhead or for whatever budget `after()` actually
+// gets (which is NOT documented to equal maxDuration). Measured outcome: the
+// 10:06 PT tick on 2026-09-20 ran this code, returned 202, was NOT killed
+// (zero Vercel runtime errors for the route) and STILL wrote no terminal row.
+//
+// ⭐ The working precedent in this repo is `drain-fmv-cold-tail`: a 45 s budget
+// inside a 60 s maxDuration — a 25 % margin, not 8 %. 90 s inside 120 s matches it.
+//
+// 📏 And 90 s is sized against a LIVE leg cost, not a dated one. Measured
+// 2026-09-20 10:15 PT by calling the RPC directly with `p_limit = 1`:
+// **the All Day leg took 56.7 s to process ZERO rows** — 16x the 3.5 s the
+// TARGETS comment below records from 2026-08-03, and proof that `limit` is not
+// the lever (that comment says so; this is its live confirmation). So the
+// deadline of 80 s lets All Day finish and still leaves UFC a real slice,
+// where a 50 s deadline would abandon All Day and classify nothing.
+const WALL_MS_DEFAULT = 90_000
 function wallMs(): number {
   const raw = Number(process.env.CLASSIFY_WALL_MS ?? "")
   return Number.isFinite(raw) && raw > 0 ? raw : WALL_MS_DEFAULT

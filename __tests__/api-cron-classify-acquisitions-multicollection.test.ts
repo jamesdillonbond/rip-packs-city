@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest"
 import { makeReq } from "./cron-req-helper"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 
 // Route integration test for POST /api/cron/classify-acquisitions-multicollection.
 // Data seam: supabaseAdmin from @/lib/supabase. Auth compares the Bearer token
@@ -343,6 +345,36 @@ describe("POST /api/cron/classify-acquisitions-multicollection — the wall budg
     // cannot mistake "we asked and got nothing" for "we never asked".
     expect(cst.calls.map((c) => c.slug)).toEqual(["nfl_all_day"])
   }, 20_000)
+
+  it("the wall must stay MEANINGFULLY under maxDuration — a wall equal to its ceiling is not a wall", () => {
+    // 🚨 THE ARM THAT THIS FIX'S OWN FIRST VERSION WOULD HAVE FAILED. The wall
+    // originally shipped at 120_000 — EQUAL to maxDuration — with only
+    // TERMINAL_RESERVE_MS carved out, so the deadline sat 8 % under the very
+    // ceiling it exists to stay beneath. That leaves nothing for the platform's
+    // own overhead, and `after()` is not documented to receive the full
+    // maxDuration at all. Live outcome: the 2026-09-20 10:06 PT tick ran that
+    // code, returned 202, was NOT killed (zero Vercel runtime errors for the
+    // route) and still wrote no terminal row.
+    //
+    // ⭐ The working precedent is drain-fmv-cold-tail: 45 s inside a 60 s
+    // maxDuration, a 25 % margin. This asserts the SHAPE (a real margin), not a
+    // specific number, so retuning either constant stays legal and only
+    // collapsing the margin goes red.
+    const src = readFileSync(
+      join(process.cwd(), "app/api/cron/classify-acquisitions-multicollection/route.ts"),
+      "utf8",
+    )
+    const wall = Number(/const WALL_MS_DEFAULT = ([0-9_]+)/.exec(src)?.[1]?.replace(/_/g, ""))
+    const maxD = Number(/export const maxDuration = ([0-9_]+)/.exec(src)?.[1]?.replace(/_/g, ""))
+    expect(Number.isFinite(wall) && wall > 0, "could not read WALL_MS_DEFAULT").toBe(true)
+    expect(Number.isFinite(maxD) && maxD > 0, "could not read maxDuration").toBe(true)
+    const maxDurationMs = maxD * 1000
+    expect(
+      wall,
+      `the wall (${wall} ms) must leave at least 20 % of maxDuration (${maxDurationMs} ms) as margin — ` +
+        "a wall set to its own ceiling cannot stop the platform killing the run before the terminal row",
+    ).toBeLessThanOrEqual(maxDurationMs * 0.8)
+  })
 
   it("CONTROL: with every leg fast, nothing is skipped and the tick is clean", async () => {
     // Without this arm the fix could be "skip everything", which would satisfy
