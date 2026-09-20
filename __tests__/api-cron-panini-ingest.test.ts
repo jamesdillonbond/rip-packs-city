@@ -11,6 +11,10 @@ import { makeReq } from "./cron-req-helper"
 const st = vi.hoisted(() => ({
   edUpsert: { data: [{ id: "e1" }] as { id: string }[] | null, error: null as any },
   serUpsert: { data: [{ id: "s1" }] as { id: string }[] | null, error: null as any },
+  // R120: the fmv insert sits behind the same FK that was aborting the editions upsert, so its
+  // error has to be injectable — it was previously unreadable by construction (`insert` resolved
+  // to a bare { error: null } and nothing looked at it).
+  fmvInsert: { data: [{ id: "f1" }] as { id: string }[] | null, error: null as any },
   // Sale writes are UPDATEs, not upserts — keyed by the sku each call filtered on, so a test can
   // say "this sku matched a row, that one did not" (the sales_missed signal).
   saleUpdate: {} as Record<string, { data: { id: string }[] | null; error: any }>,
@@ -30,15 +34,17 @@ vi.mock("@/lib/supabase", () => ({
     rpc: async (_n: string, args: any) => { st.runs.push(args); return { data: null, error: null } },
     from(table: string) {
       let isUpdate = false
+      let isInsert = false
       let rec: (typeof st.updates)[number] | null = null
       const b: any = {
-        upsert: () => b, insert: async () => ({ error: null }), delete: () => b,
+        upsert: () => b, insert: () => { isInsert = true; return b }, delete: () => b,
         in: () => b, gte: () => b,
         update: (patch: any) => { isUpdate = true; rec = { table, patch, sku: null, or: null }; st.updates.push(rec); return b },
         eq: (_c: string, v: any) => { if (rec) rec.sku = v; return b },
         or: (expr: string) => { if (rec) rec.or = expr; return b },
         select: async () => {
           if (isUpdate) return (rec?.sku != null && st.saleUpdate[rec.sku]) || st.saleUpdateDefault
+          if (isInsert && table === "panini_fmv_snapshots") return st.fmvInsert
           return table === "panini_editions" ? st.edUpsert : st.serUpsert
         },
         then: (r: any) => r({ data: [], error: null }),
@@ -67,6 +73,7 @@ beforeEach(() => {
   delete process.env.CRON_SECRET
   st.edUpsert = { data: [{ id: "e1" }], error: null }
   st.serUpsert = { data: [{ id: "s1" }], error: null }
+  st.fmvInsert = { data: [{ id: "f1" }], error: null }
   st.saleUpdate = {}; st.saleUpdateDefault = { data: [{ id: "u1" }], error: null }
   st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false
 })
@@ -223,6 +230,29 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.runs[0].p_extra.editions).toBe(0)
     expect(st.runs[0].p_extra.editions_error).toBeNull()
     expect(st.runs[0].p_extra.serials_error).toBeNull()
+  })
+
+  // R120. `fmv` reported `fmvRows.length` — rows OFFERED — under a name every reader takes for
+  // rows written, and neither the delete nor the insert had its error read at all. A count that
+  // cannot go DOWN when the write fails is not a measurement of the write.
+  it("reports fmv rows WRITTEN, not rows offered, and fails the run when the insert is rejected", async () => {
+    st.fmvInsert = { data: null, error: { message: "fmv err" } }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }, { sku: "c2", fmv: 7 }] })
+    await st.captured!()
+    expect(st.runs[0].p_ok).toBe(false)
+    expect(st.runs[0].p_extra.fmv).toBe(0)
+    expect(st.runs[0].p_extra.fmv_offered).toBe(2)
+    expect(st.runs[0].p_extra.fmv_error).toBe("fmv err")
+  })
+
+  it("on a healthy fmv write the written count and the offered count agree", async () => {
+    st.fmvInsert = { data: [{ id: "f1" }, { id: "f2" }], error: null }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }, { sku: "c2", fmv: 7 }] })
+    await st.captured!()
+    expect(st.runs[0].p_ok).toBe(true)
+    expect(st.runs[0].p_extra.fmv).toBe(2)
+    expect(st.runs[0].p_extra.fmv_offered).toBe(2)
+    expect(st.runs[0].p_extra.fmv_error).toBeNull()
   })
 
   // nftSalesData realized-sale writes (2026-08-08). These are UPDATEs onto serial rows we have

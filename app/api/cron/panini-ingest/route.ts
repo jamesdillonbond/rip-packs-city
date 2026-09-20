@@ -130,6 +130,8 @@ export async function POST(req: NextRequest) {
     let serialsError: string | null = null;
     let salesError: string | null = null;
     let salesErrors = 0;
+    let fmvError: string | null = null;
+    let fmvWritten = 0;
     try {
       const nowIso = new Date().toISOString();
       // editions (dedup by external_id within the batch)
@@ -140,12 +142,24 @@ export async function POST(req: NextRequest) {
         const { data, error } = await (supabaseAdmin as any).from("panini_editions").upsert(editionRows.slice(i, i + CHUNK), { onConflict: "external_id,collection_id" }).select("id");
         if (error) { editionsError = editionsError ?? error.message; console.log(`[${PIPELINE}] editions upsert: ${error.message}`); } else written += data?.length ?? 0;
       }
-      // fmv snapshots (delete-then-insert per edition; daily history intentional)
+      // fmv snapshots (delete-then-insert per edition; daily history intentional).
+      // R120: `fmv` used to report fmvRows.length — rows OFFERED, reported under a name that
+      // reads as rows written — and NEITHER the delete nor the insert had its error read at all.
+      // `edition_id` is the same upstream sku that keys panini_editions, so these writes sit
+      // behind the same FK that was aborting the editions upsert; a count that cannot go down
+      // when the write fails is not a measurement. `fmv` is now WRITTEN, `fmv_offered` is the
+      // batch size, and their disagreement is itself readable.
       const fmvRows = cards.map((c) => toFmvRow(c, nowIso)).filter(Boolean) as any[];
       if (fmvRows.length) {
         const ids = [...new Set(fmvRows.map((f) => f.edition_id))];
-        for (let i = 0; i < ids.length; i += CHUNK) await (supabaseAdmin as any).from("panini_fmv_snapshots").delete().in("edition_id", ids.slice(i, i + CHUNK)).gte("computed_at", nowIso.slice(0, 10));
-        for (let i = 0; i < fmvRows.length; i += CHUNK) await (supabaseAdmin as any).from("panini_fmv_snapshots").insert(fmvRows.slice(i, i + CHUNK));
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const { error } = await (supabaseAdmin as any).from("panini_fmv_snapshots").delete().in("edition_id", ids.slice(i, i + CHUNK)).gte("computed_at", nowIso.slice(0, 10));
+          if (error) { fmvError = fmvError ?? `delete: ${error.message}`; console.log(`[${PIPELINE}] fmv delete: ${error.message}`); }
+        }
+        for (let i = 0; i < fmvRows.length; i += CHUNK) {
+          const { data, error } = await (supabaseAdmin as any).from("panini_fmv_snapshots").insert(fmvRows.slice(i, i + CHUNK)).select("id");
+          if (error) { fmvError = fmvError ?? error.message; console.log(`[${PIPELINE}] fmv insert: ${error.message}`); } else fmvWritten += data?.length ?? 0;
+        }
       }
       // pack state
       if (packs.length) {
@@ -192,11 +206,13 @@ export async function POST(req: NextRequest) {
       const writeErrors = [
         editionsError ? `editions: ${editionsError}` : null,
         serialsError ? `serials: ${serialsError}` : null,
+        fmvError ? `fmv: ${fmvError}` : null,
         salesError ? `sales: ${salesError}` : null,
       ].filter(Boolean) as string[];
       await logRun(startedAtIso, found, written, writeErrors.length === 0, writeErrors.length ? writeErrors.join(" | ") : null, {
         editions: written, editions_error: editionsError,
-        fmv: fmvRows.length, packs: packs.length,
+        fmv: fmvWritten, fmv_offered: fmvRows.length, fmv_error: fmvError,
+        packs: packs.length,
         serials: serialsWritten, serials_error: serialsError,
         sales_seen: sales.length, sales_serials: latestSales.length, sales_applied: salesApplied,
         sales_missed: salesMissed, sales_errors: salesErrors, sales_error: salesError,
