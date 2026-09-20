@@ -31,6 +31,8 @@
 // would silently start gating the game surfaces on verification — the same
 // reason that module records for staying separate from `fetchBoundWallet`.
 
+import { normalizeAddress } from "@/lib/address"
+
 export interface VerifiedWallet {
   wallet_addr: string
   verified_at: string | null
@@ -77,7 +79,13 @@ export async function fetchVerifiedWallets(
     const seen = new Map<string, VerifiedWallet>()
     for (const w of json.wallets) {
       if (!w || typeof w.wallet_addr !== "string") continue
-      const k = w.wallet_addr.toLowerCase()
+      // ⚠ normalizeAddress, NOT .toLowerCase(). `k` is not only the dedupe key —
+      // it is STORED as `wallet_addr` below and is what the selector on
+      // /dashboard/history and /dashboard/packs then queries with. Folding a
+      // base58 address here destroys the wallet at its source, and the pages
+      // downstream cannot tell a destroyed key from a wallet that holds nothing.
+      // Hex is unaffected: normalizeAddress folds it exactly as this line did.
+      const k = normalizeAddress(w.wallet_addr)
       const verifiedAt = typeof w.verified_at === "string" ? w.verified_at : null
       const prev = seen.get(k)
       if (!prev) seen.set(k, { wallet_addr: k, verified_at: verifiedAt })

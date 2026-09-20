@@ -11,6 +11,8 @@
 // self-contained and does not import the page.
 
 /** Minimal shape of a per-collection stats row (get_wallet_collection_stats). */
+import { normalizeAddress } from "@/lib/address"
+
 export interface WalletStatRow {
   collection_id: string | null
   moment_count?: number | null
@@ -77,7 +79,10 @@ export interface WalletGroup<T> {
 export function groupWalletsByAddress<T extends GroupableWallet>(wallets: T[]): WalletGroup<T>[] {
   const map = new Map<string, WalletGroup<T>>()
   for (const w of wallets) {
-    const key = w.wallet_addr.toLowerCase()
+    // ⚠ Chain-scoped: folding base58 would merge two distinct Candy wallets
+    // that differ only in case. `addr` below still carries the ORIGINAL string,
+    // so the group's identity is never the folded form. Hex is unaffected.
+    const key = normalizeAddress(w.wallet_addr)
     const existing = map.get(key)
     if (existing) {
       existing.rows.push(w)

@@ -149,3 +149,55 @@ describe("both dashboard pages branch on the failure BEFORE the empty state", ()
     expect(src).not.toMatch(/fetch\(\s*["']\/api\/profile\/saved-wallets["']/)
   })
 })
+
+// ── The stored address is chain-scoped (2026-09-20) ─────────────────────────
+//
+// ⚠ `k` here is not only a dedupe key — it is STORED as `wallet_addr` and is
+// what the selector on /dashboard/history and /dashboard/packs then queries
+// with. It folded to lower case, so a saved Candy wallet would have been
+// DESTROYED AT THE SOURCE: base58 is case-sensitive, and the pages downstream
+// cannot tell a destroyed key from a wallet that holds nothing. That is this
+// file's own defect class — a failed read rendering as a fact — reached by a
+// different route.
+//
+// ⚠ LATENT, NOT LIVE. Measured 2026-09-20: `saved_wallets` holds 135 rows, 0
+// non-hex, 0 with any uppercase. It fires on the first Candy wallet saved.
+describe("fetchVerifiedWallets — the address it stores survives the round trip", () => {
+  const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+
+  it("returns a base58 address verbatim, not folded", async () => {
+    const out = await fetchVerifiedWallets(
+      async () => okBody([{ wallet_addr: CANDY, verified_at: null }]) as any,
+    )
+    expect(out.ok).toBe(true)
+    expect(out.wallets.map((w) => w.wallet_addr)).toEqual([CANDY])
+    // The assertion that would have failed before: the folded form is a
+    // different string, and it is the one that used to be stored.
+    expect(out.wallets[0].wallet_addr).not.toBe(CANDY.toLowerCase())
+  })
+
+  it("keeps two base58 addresses differing only in case as two wallets", async () => {
+    const other = CANDY.slice(0, -1) + "k"
+    const out = await fetchVerifiedWallets(
+      async () =>
+        okBody([
+          { wallet_addr: CANDY, verified_at: null },
+          { wallet_addr: other, verified_at: null },
+        ]) as any,
+    )
+    expect(out.wallets).toHaveLength(2)
+  })
+
+  it("hex no-change arm: still folds Flow and still dedupes on the folded form", async () => {
+    const out = await fetchVerifiedWallets(
+      async () =>
+        okBody([
+          { wallet_addr: "0xBD94CADE097E50AC", verified_at: null },
+          { wallet_addr: "0xbd94cade097e50ac", verified_at: "2026-01-01" },
+        ]) as any,
+    )
+    expect(out.wallets).toHaveLength(1)
+    expect(out.wallets[0].wallet_addr).toBe("0xbd94cade097e50ac")
+    expect(out.wallets[0].verified_at).toBe("2026-01-01")
+  })
+})

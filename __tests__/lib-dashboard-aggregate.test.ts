@@ -91,3 +91,46 @@ describe("dashboard aggregate — groupWalletsByAddress", () => {
     expect(groupWalletsByAddress([])).toEqual([])
   })
 })
+
+// ── Chain-scoped grouping key (2026-09-20) ──────────────────────────────────
+//
+// `groupWalletsByAddress` keyed on `.toLowerCase()`. On Flow that is right —
+// hex is case-insensitive, and the two arms above pin that behaviour unchanged.
+// On Solana it is wrong: base58 is CASE-SENSITIVE, so two distinct Candy
+// wallets differing only in case would have merged into one card.
+//
+// ⚠ LATENT, NOT LIVE, and said plainly rather than dressed up: measured
+// 2026-09-20, `saved_wallets` holds 135 rows, 0 non-hex and 0 with any
+// uppercase — no Candy wallet has ever been saved. This fires on the first one.
+describe("dashboard aggregate — the grouping key is chain-scoped", () => {
+  const CANDY_A = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+  // Same characters, one case flip: a DIFFERENT Solana address, not the same one.
+  const CANDY_B = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAk"
+
+  it("keeps two base58 addresses that differ only in case as separate wallets", () => {
+    const groups = groupWalletsByAddress([
+      { wallet_addr: CANDY_A, nickname: "candy-one", verified_at: null },
+      { wallet_addr: CANDY_B, nickname: "candy-two", verified_at: null },
+    ])
+    expect(groups).toHaveLength(2)
+    expect(groups.map((g) => g.addr).sort()).toEqual([CANDY_A, CANDY_B].sort())
+  })
+
+  it("carries the base58 address through with its case intact", () => {
+    const groups = groupWalletsByAddress([
+      { wallet_addr: CANDY_A, nickname: null, verified_at: null },
+    ])
+    expect(groups[0].addr).toBe(CANDY_A)
+    expect(groups[0].addr).not.toBe(CANDY_A.toLowerCase())
+  })
+
+  it("hex no-change arm: two Flow rows differing only in case still merge", () => {
+    const groups = groupWalletsByAddress([
+      { wallet_addr: "0xBD94CADE097E50AC", nickname: null, verified_at: null },
+      { wallet_addr: "0xbd94cade097e50ac", nickname: "main", verified_at: null },
+    ])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].addr).toBe("0xBD94CADE097E50AC")
+    expect(groups[0].rows).toHaveLength(2)
+  })
+})

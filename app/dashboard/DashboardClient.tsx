@@ -299,10 +299,12 @@ function ProfilePageInner() {
     const param = search.get("verify");
     if (!param || wallets.length === 0) return;
     verifyParamHandled.current = true;
-    const want = param.trim().toLowerCase();
+    // ⚠ normalizeAddress, not .toLowerCase(): base58 is case-sensitive, so a
+    // ?wallet= deep link to a Candy wallet folded to a string matching nothing.
+    const want = normalizeAddress(param);
     let target: string | null = null;
     if (want.startsWith("0x")) {
-      target = wallets.find((w) => w.wallet_addr.toLowerCase() === want)?.wallet_addr ?? null;
+      target = wallets.find((w) => normalizeAddress(w.wallet_addr) === want)?.wallet_addr ?? null;
     }
     if (!target) {
       target =
@@ -536,7 +538,7 @@ function ProfilePageInner() {
       }
 
       // Per-wallet collection stats (one fetch per unique wallet_addr).
-      const uniqueAddrs = Array.from(new Set(walletList.map((w) => w.wallet_addr.toLowerCase())));
+      const uniqueAddrs = Array.from(new Set(walletList.map((w) => normalizeAddress(w.wallet_addr))));
       refreshStats(uniqueAddrs);
       refreshRetried.current = false; // clean load resets the retry guard
     } catch (e) {
@@ -608,7 +610,7 @@ function ProfilePageInner() {
         const d = await res.json();
         const ws: SavedWallet[] = d?.wallets ?? [];
         setWallets(ws);
-        const uniqueAddrs = Array.from(new Set(ws.map((w) => w.wallet_addr.toLowerCase())));
+        const uniqueAddrs = Array.from(new Set(ws.map((w) => normalizeAddress(w.wallet_addr))));
         // Refresh per-collection stats so the spinner numbers populate as the
         // background indexer finishes each collection. Read the FRESHLY-returned
         // stats for the early-exit check — reading the `statsByWallet` state here
@@ -828,7 +830,7 @@ function ProfilePageInner() {
       refresh().catch(() => {});
       return;
     }
-    const uniqueAddrs = Array.from(new Set(wallets.map((w) => w.wallet_addr.toLowerCase())));
+    const uniqueAddrs = Array.from(new Set(wallets.map((w) => normalizeAddress(w.wallet_addr))));
     refreshStats(uniqueAddrs);
   }, [wallets, refreshStats, walletsFailed, refresh]);
 
@@ -1335,7 +1337,7 @@ function ProfilePageInner() {
                 <WalletGroupCard
                   key={g.addr}
                   group={g}
-                  stats={statsByWallet[g.addr.toLowerCase()] ?? []}
+                  stats={statsByWallet[normalizeAddress(g.addr)] ?? []}
                   /* ⚠ `?? []` above is a FALLBACK, never a result. An empty
                      array is what a failed read and a genuinely empty wallet
                      both look like from in here, and the card has no other way
@@ -1343,9 +1345,9 @@ function ProfilePageInner() {
                      "MOMENTS 0" on all five collections of a 19,273-Moment
                      wallet even AFTER the headline tiles had switched to
                      "Could not load" (2026-09-12). Pass the provenance. */
-                  failed={walletsFailed || statsFailed.includes(g.addr.toLowerCase())}
+                  failed={walletsFailed || statsFailed.includes(normalizeAddress(g.addr))}
                   loading={statsLoading}
-                  covered={statsMeta[g.addr.toLowerCase()]?.covered ?? null}
+                  covered={statsMeta[normalizeAddress(g.addr)]?.covered ?? null}
                   indexing={indexing}
                   onRemove={() => removeWallet(g.rows[0])}
                 />
