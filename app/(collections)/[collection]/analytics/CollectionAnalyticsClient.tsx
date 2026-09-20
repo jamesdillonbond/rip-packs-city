@@ -28,7 +28,7 @@ import CostBasisCard from "@/components/analytics/CostBasisCard"
 import SalesHistoryCard from "@/components/analytics/SalesHistoryCard"
 import CrossCollectionHoldingsCard from "@/components/analytics/CrossCollectionHoldingsCard"
 import { fmt, fmtUsd, shortAddr, relativeDate, shortSlug } from "@/lib/analytics/format"
-import { hasRetiredOrderbookSource, TS_ORDERBOOK_RETIRED_LABEL, TS_ORDERBOOK_RETIRED_BODY } from "@/lib/analytics/ts-listings-retired"
+import { classifyTsOrderbook, TS_ORDERBOOK_STALE_LABEL, tsOrderbookStaleBody, TS_ORDERBOOK_UNKNOWN_LABEL, TS_ORDERBOOK_UNKNOWN_BODY } from "@/lib/analytics/ts-orderbook-freshness"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
 // URL slug ("nba-top-shot") → RPC short slug ("topshot") used by the
@@ -182,6 +182,12 @@ type ListingsSummaryResponse = {
     median_ask_usd?: number
     p90_ask_usd?: number
     locked_count?: number
+    // Provenance the block publishes about itself (2026-09-20). `age_hours` is
+    // computed server-side so the first render is anchored to a prop rather
+    // than a clock (React #418), and is null when the RPC learned no age at
+    // all — which classifyTsOrderbook reads as `unknown`, never as fresh.
+    newest_ingested_at?: string | null
+    age_hours?: number | null
   } | null
   marketplace_listings?: Array<{
     collection: string
@@ -503,9 +509,15 @@ function OrderBookCard({ short }: { short: string }) {
     : undefined
   // For Top Shot prefer the orderbook block (locked-aware); for others read from marketplace_listings.
   const isTs = short === "topshot"
-  // Retired-source check is deliberately independent of the fetch outcome: a
-  // SUCCESSFUL read of a dead table still must not render as depth (D12b).
-  const retiredSource = hasRetiredOrderbookSource(short)
+  // Provenance is deliberately independent of the fetch outcome: a SUCCESSFUL
+  // read of a STALE book still must not render as depth (D12b). What changed on
+  // 2026-09-20 is WHERE that judgement comes from — the block's own published
+  // `age_hours`, not a hardcoded retirement date that could not notice its
+  // premise had expired. `ts_listings` was rewired to the Atlas firehose on
+  // 2026-09-07 and is rebuilt every ~2 min; the old constant suppressed 60k
+  // live rows for 13 days. Non-Top-Shot collections read `marketplace_listings`
+  // and are untouched by this gate.
+  const tsProvenance = isTs ? classifyTsOrderbook(orderbook?.age_hours) : "fresh"
   const count = isTs ? (orderbook?.count ?? 0) : (fromMarket?.count ?? 0)
   const median = isTs ? (orderbook?.median_ask_usd ?? null) : (fromMarket?.median_ask_usd ?? null)
   const p90 = isTs ? (orderbook?.p90_ask_usd ?? null) : (fromMarket?.p90_ask_usd ?? null)
@@ -517,16 +529,23 @@ function OrderBookCard({ short }: { short: string }) {
       </div>
       {loading ? (
         <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
-      ) : retiredSource ? (
+      ) : tsProvenance === "stale" ? (
         // ⚠ D12b. This branch comes BEFORE the failed/count tests on purpose.
-        // For Top Shot the orderbook block is computed from `ts_listings`, a
-        // sampler retired 2026-05-26 holding one row from 2026-05-15 — so the
-        // read SUCCEEDING is not good news and its count is not a market fact.
-        // Neither the failed copy (which would blame our own read) nor the zero
-        // copy (false — Top Shot carries thousands of live asks) is true here.
+        // A SUCCESSFUL read of a book nobody has rebuilt for hours is not good
+        // news and its count is not a market fact. Neither the failed copy
+        // (which would blame our own read) nor the zero copy (false — Top Shot
+        // carries thousands of live asks) is true here.
         <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">
-          <span className="font-semibold text-[color:var(--rpc-text-secondary)]">{TS_ORDERBOOK_RETIRED_LABEL}</span>{" "}
-          {TS_ORDERBOOK_RETIRED_BODY}
+          <span className="font-semibold text-[color:var(--rpc-text-secondary)]">{TS_ORDERBOOK_STALE_LABEL}</span>{" "}
+          {tsOrderbookStaleBody(orderbook?.age_hours as number)}
+        </div>
+      ) : tsProvenance === "unknown" && isTs ? (
+        // The third state. We did not learn the age, which is NOT the same fact
+        // as knowing it is old — collapsing the two is how a failed read gets
+        // published as a measurement.
+        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">
+          <span className="font-semibold text-[color:var(--rpc-text-secondary)]">{TS_ORDERBOOK_UNKNOWN_LABEL}</span>{" "}
+          {TS_ORDERBOOK_UNKNOWN_BODY}
         </div>
       ) : failed ? (
         <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load the order book.</div>

@@ -333,6 +333,12 @@ export interface ListingsTopShotOrderbookSection {
   avg_ask_usd: number | null
   total_ask_usd: number | null
   locked_count: number
+  // PROVENANCE of this block, added 2026-09-20. `age_hours` is computed
+  // server-side (the client must not read a clock during render — React #418)
+  // and is NULL when the filtered set is empty: an unknown age, never a zero.
+  // The rendering surface gates on it via lib/analytics/ts-orderbook-freshness.
+  newest_ingested_at: string | null
+  age_hours: number | null
 }
 
 export interface ListingsMarketplaceCollectionEntry {

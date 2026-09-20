@@ -520,7 +520,16 @@ export default async function EditionPage(
   // Feature 1 — "% Listed" = open listings ÷ supply. Supply is per-printing
   // honest: on a ::subID parallel page use that printing's own circulation.
   // active_listings is null when the collection has no fresh listing source
-  // (Top Shot's ts_listings feed is dead) → render em-dash, not a fake 0%.
+  // feeding `get_edition_market_bundle` → render em-dash, not a fake 0%.
+  //
+  // ⚠ For Top Shot that is a bundle-wiring gap, NOT an absent feed. This comment
+  // read "Top Shot's ts_listings feed is dead" until 2026-09-20; the table was
+  // rewired to the Atlas firehose on 2026-09-07 and now carries ~60k open
+  // listings over ~2,377 editions, rebuilt every ~2 min. The bundle reads
+  // `cached_listings_v2`, which Top Shot is not written to, so % Listed still
+  // em-dashes here — correct behaviour, wrong reason. Wiring the TS book into
+  // the bundle would light this metric up for Top Shot; it is an open item, not
+  // a missing source.
   const listedSupply = currentSibling?.circulation_count ?? detail.circulation_count
   const pctListed =
     bundle.active_listings != null && listedSupply != null && listedSupply > 0

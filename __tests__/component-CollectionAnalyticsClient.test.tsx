@@ -94,7 +94,14 @@ function baseRoutes(): Routes {
     "/api/market-analytics": () => json(200, MARKET),
     "/api/ready": () => json(200, { per_collection: [{ slug: "nba-top-shot", sales_24h: 900 }] }),
     "/api/analytics/listings/summary": () =>
-      json(200, { topshot_orderbook: { count: 12_400, median_ask_usd: 4, p90_ask_usd: 19 }, marketplace_listings: [] }),
+      // ⚠ `age_hours` is the block's own provenance (2026-09-20). The default
+      // fixture is FRESH, because that is the production state: `ts_listings`
+      // is rebuilt from the Atlas firehose every ~2 min. Omitting it would make
+      // every unrelated card test run against the `unknown` branch.
+      json(200, {
+        topshot_orderbook: { count: 12_400, median_ask_usd: 4, p90_ask_usd: 19, age_hours: 0.05 },
+        marketplace_listings: [],
+      }),
     "/api/analytics/fmv/tier-pulse": () => json(200, { rows: [{ tier: "RARE", priced: 900, total: 1000 }] }),
     "/api/analytics/packs/summary": () => json(200, { rows: [{ dist_id: "1", pack_name: "Base", ev: 12, ask: 9 }] }),
     "/api/analytics/fmv/liquidity-distribution": () =>
@@ -209,10 +216,11 @@ describe("CollectionAnalyticsClient — each card's failed branch precedes its e
   }
 
   it("order book: says it could not load, not 'No live listings.' (live-source collection)", async () => {
-    // ⚠ All Day, not Top Shot. Top Shot's orderbook source is RETIRED, so its
-    // card discloses that ahead of any fetch outcome (D12b) and cannot pin the
-    // failed-vs-empty distinction any more. All Day reads marketplace_listings,
-    // a live source, so it is the collection that still can.
+    // ⚠ All Day, not Top Shot. A failed read leaves the Top Shot block with no
+    // age at all, so its card takes the `unknown` provenance branch ahead of
+    // any fetch outcome (D12b) and cannot pin the failed-vs-empty distinction.
+    // All Day reads marketplace_listings, which carries no age of its own, so
+    // it is the collection that still can.
     PARAMS.collection = "nfl-all-day"
     try {
       routes["/api/ready"] = () => json(200, { per_collection: [{ slug: "nfl-all-day", sales_24h: 900 }] })
@@ -224,20 +232,60 @@ describe("CollectionAnalyticsClient — each card's failed branch precedes its e
     }
   })
 
-  it("order book: Top Shot discloses the retired sampler instead of publishing a count", async () => {
-    // ⚠ INVERTED from "renders the depth when there is any" (deep-audit D12b).
-    // That test asserted the card printed 12,400 listings for Top Shot. It was
-    // pinning the defect: the figure comes from `ts_listings`, retired
-    // 2026-05-26, holding ONE row from 2026-05-15. A SUCCESSFUL read of a dead
-    // table is still not a market fact.
-    //
-    // Asserts the ABSENCE of the false claim, not merely the presence of a
-    // string — a card that rendered both would pass a presence-only check.
+  // ── The three states of the Top Shot order book ────────────────────────────
+  //
+  // HISTORY, because both directions have now shipped broken. D12b inverted an
+  // original test that asserted the card printed "12,400 listings" for Top Shot
+  // while `ts_listings` held one row from 2026-05-15 — a successful read of a
+  // dead table is not a market fact. The replacement pinned the SPELLING of the
+  // retirement sentence, so when the table was rewired to the Atlas firehose on
+  // 2026-09-07 the card went on suppressing a real 60k-row book for 13 days and
+  // this suite stayed green.
+  //
+  // So the pin is now the PROPERTY — depth is published if and only if the
+  // block says it is fresh — exercised from all three directions. A fixture
+  // world where every arm is fresh would pass a one-sided check, which is how
+  // the last two versions of this test died.
+
+  it("order book: Top Shot publishes the depth when the block reports it fresh", async () => {
     render(<CollectionAnalyticsClient />)
-    await screen.findByText(/sampler was switched off on 2026-05-26/)
+    // The default fixture is fresh (age_hours 0.05), so the real number renders.
+    await waitFor(() => expect(document.body.textContent).toContain("12,400"))
+    expect(screen.queryByText(/has not been rebuilt/)).toBeNull()
+    expect(screen.queryByText("No live listings.")).toBeNull()
+    expect(screen.queryByText(/Couldn't load the order book/)).toBeNull()
+  })
+
+  it("order book: Top Shot discloses the measured age instead of publishing a stale count", async () => {
+    // The D12b property, re-pointed at the condition that actually makes the
+    // count meaningless. Asserts the ABSENCE of the false claim, not merely the
+    // presence of a string — a card rendering both would pass a presence check.
+    routes["/api/analytics/listings/summary"] = () =>
+      json(200, {
+        topshot_orderbook: { count: 12_400, median_ask_usd: 4, p90_ask_usd: 19, age_hours: 24 * 120 },
+        marketplace_listings: [],
+      })
+    render(<CollectionAnalyticsClient />)
+    await screen.findByText(/has not been rebuilt for 120 days/)
     expect(document.body.textContent).not.toContain("12,400")
     expect(screen.queryByText("No live listings.")).toBeNull()
     expect(screen.queryByText(/Couldn't load the order book/)).toBeNull()
+  })
+
+  it("order book: an unknown age is not published as depth and not called stale", async () => {
+    // The third state. A block carrying no age at all is what the RPC emits
+    // when it learned nothing; rendering that as either a count or a staleness
+    // claim republishes the original defect with new words.
+    routes["/api/analytics/listings/summary"] = () =>
+      json(200, {
+        topshot_orderbook: { count: 12_400, median_ask_usd: 4, p90_ask_usd: 19, age_hours: null },
+        marketplace_listings: [],
+      })
+    render(<CollectionAnalyticsClient />)
+    await screen.findByText(/could not confirm when the Top Shot order book was last rebuilt/i)
+    expect(document.body.textContent).not.toContain("12,400")
+    expect(screen.queryByText(/has not been rebuilt for/)).toBeNull()
+    expect(screen.queryByText("No live listings.")).toBeNull()
   })
 
   it("order book: still says 'No live listings.' on a genuine zero (live-source collection)", async () => {
@@ -255,19 +303,28 @@ describe("CollectionAnalyticsClient — each card's failed branch precedes its e
   })
 
   it("order book: a live-source collection still renders its real depth", async () => {
-    // The retirement branch must be Top-Shot-only. If it leaked to every
-    // collection this guard would catch it: All Day's depth is a live number.
+    // The provenance branch must be Top-Shot-only. If it leaked to every
+    // collection this guard would catch it: All Day's depth is a live number
+    // read from marketplace_listings, which carries no age of its own.
+    //
+    // ⚠ The stale fixture below is deliberate. This assertion previously looked
+    // for "sampler was switched off", a string that no longer exists anywhere
+    // in the tree — it would have passed against a card that leaked the gate to
+    // every collection. A control's population must be the set the property is
+    // true of, not a proxy that happens to coincide.
     PARAMS.collection = "nfl-all-day"
     try {
       routes["/api/ready"] = () => json(200, { per_collection: [{ slug: "nfl-all-day", sales_24h: 900 }] })
       routes["/api/analytics/listings/summary"] = () =>
         json(200, {
-          topshot_orderbook: { count: 12_400, median_ask_usd: 4, p90_ask_usd: 19 },
+          // Stale enough to fire the gate IF it leaked past Top Shot.
+          topshot_orderbook: { count: 12_400, median_ask_usd: 4, p90_ask_usd: 19, age_hours: 24 * 120 },
           marketplace_listings: [{ collection: "allday", count: 1_234, median_ask_usd: 3, p90_ask_usd: 8 }],
         })
       render(<CollectionAnalyticsClient />)
       await waitFor(() => expect(document.body.textContent).toContain("1,234"))
-      expect(screen.queryByText(/sampler was switched off/)).toBeNull()
+      expect(screen.queryByText(/has not been rebuilt/)).toBeNull()
+      expect(screen.queryByText(/could not confirm when/i)).toBeNull()
     } finally {
       PARAMS.collection = "nba-top-shot"
     }
