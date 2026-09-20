@@ -1,8 +1,8 @@
 {
-  "generated_at_pt": "2026-09-19 ~07:45 PM PT",
-  "generated_at_utc": "2026-09-20T02:45Z",
+  "generated_at_pt": "2026-09-19 ~08:00 PM PT",
+  "generated_at_utc": "2026-09-20T03:00Z",
   "pass": "Trevor-directed evening health pass (Cowork cloud + laptop VM). PUSH-CAPABLE via path A (laptop VM, .rpc-git-cred; d1c11a79c confirmed by ls-remote == HEAD). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 23:59Z at start.",
-  "shipped": 18,
+  "shipped": 19,
   "reverted": 0,
   "verdict": "HEALTHY SINCE NOON PT. The alert board's high/medium failure_rate rows are 2-day windows straddling the morning IO spell; split on the change point: cron.job_run_details 0 failures in 5 h (~405 runs/h) vs 30-108/h before noon; pipeline_runs 0.31% failing (11/3,589) vs 1.85% in the prior 12 h; ts-listings 161/161 ok. Security 0/0/0/0, stalled 0, Atlas lanes active. Sentry zero PAIRED with Vercel: 50 groups/24h, all chronic shapes, none new; the [pack-detail] 5 s read-timeout family still fires post-noon and is the next user-facing cost. Telegram pager channel was DARK 12:04-5:07 PM PT (a '<' in an ack note) and is repaired.",
   "health": {
@@ -119,6 +119,12 @@
       "migration": "20260920023318",
       "instrument": "11:46 PM PT tick rows_written = user count; 12:05 AM PT route ok with already_snapshotted = that count",
       "revert": "header"
+    },
+    {
+      "what": "R115 structural: refresh_fmv_confidence_precompute reads edition_fmv_current (nba_top_shot 5,286 ms -> 31 ms); provenance columns + efc_drift_rows",
+      "migration": "20260920024430",
+      "instrument": "10:35 PM PT jobid 506 tick: nba_top_shot duration_ms < 2000, source = edition_fmv_current, efc_drift_rows 0",
+      "revert": "header (re-apply the 20260920001632 body)"
     }
   ],
   "vercel_error_groups_24h": {
@@ -127,7 +133,7 @@
   },
   "post_ship_watch": {
     "jobid_324_thp_leg": "MOVED to 31 0,6,12,18 (20260920005312). 11:31 PM PT tonight, then 5:31 AM / 11:31 AM PT ticks must read succeeded (31 0,6,12,18 is UTC; PDT = UTC-7 — first draft of this line was an hour off); a 600 s kill at :31 with io_wait < 3 means the leg's own cost moved",
-    "jobid_506_precompute": "6:35 PM PT tick succeeded under 300 s; nba_top_shot duration_ms < 200,000",
+    "jobid_506_precompute": "10:35 PM PT tick: nba_top_shot duration_ms < 2,000 (was 5,286 quiet / 100,800 in a spell), efc_drift_rows = 0, Candy ~62 %, Pinnacle ~28 %",
     "step1_1002Z": "read relallvisible/relpages on wallet_moments_cache at ~3:00 AM PT first; then 3:02 AM PT tick must succeed",
     "jobid_490_portfolio_snapshot": "4:17 AM PT tick must write a daily-portfolio-snapshot pipeline_runs row with extra.via=pg_cron (20260920014230); the 07:05Z route run stays R109's measurement",
     "sentinel_telegram": "VERIFIED 6:04 PM PT: notifications = [telegram, email, github-actions-native]",
@@ -137,7 +143,8 @@
     "pgnet_weekly_vacuum": "Sunday 2:43 AM PT: succeeded under 120 s; store stays < 1 GB",
     "matcher_pgcron": "09-21 12:32 AM PT: pipeline_runs match-topshot-players via=pg_cron (gated ok); 08:00Z edge tick gated:true",
     "portfolio_primary": "09-20 11:46 PM PT jobid 546 succeeded with 27 rows; 12:05 AM PT route logs ok in < 1 s with already_snapshotted=27; 4:17 AM PT jobid 490 0 inserted",
-    "cache_refresh_429": "Vercel runtime logs: no 429 from /api/cache-refresh for a real visitor (only enumeration shapes); none expected"
+    "cache_refresh_429": "Vercel runtime logs: no 429 from /api/cache-refresh for a real visitor (only enumeration shapes); none expected",
+    "pgnet_toast_and_the_09_17_band": "#126 candidate: if the 02-18Z slow-reads band does NOT return on 09-20 after the 10 GB dead-TOAST reclaim, that was the mechanism; if it returns, it was not"
   },
   "needs_trevor": [
     "#22 purge residue GC + rotate",

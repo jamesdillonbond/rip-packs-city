@@ -74,10 +74,16 @@ Ledger entry (top of `docs/overnight/ledger.md`) carries revert paths for all fo
 - ⚠ A 3-minute spell at 6:28–6:31 PM PT killed two pg_cron lanes (121 s / 120 s) and one `refresh_wmc_fmv_changed`; all recovered by 6:32. Unattributed (possibly my EXPLAIN probes — no IO-history table exists to check). Recorded in the ledger so it is not read as a regression.
 - CI: `e7c8372a8`, `66089747d`, `33fe4d9bb`, `d63e04367` all 21/21 green; `79b33a55c` building at 7:45 PM PT.
 
+## Sixth pass (7:45–8:00 PM PT) — R115 closes structurally
+
+- 🏁 **R115 structural half shipped** (`20260920024430`). With R107 closed, `edition_fmv_current` is the newest-snapshot-per-edition table, so the confidence precompute reads it (21k rows) instead of streaming 1.1 M `fmv_snapshots` rows through a DISTINCT ON. Equivalence proved per edition (2,068 disagreements, every one newer than the cache's last refresh; 0 behind-but-older, 0 missing). In-migration control as the job's role: **Top Shot 5,286 ms → 31 ms**, Candy 62.4 % and Pinnacle 28.0 % unchanged to the decimal, Top Shot HIGH+MEDIUM 52.7 %. Provenance columns `source` / `source_newest_computed_at`; `efc_drift_rows` in each run record. Exit: the 10:35 PM PT jobid 506 tick.
+- 📉 Read the Windows-box session's #126 entry (four lanes stepped on 09-17 16:52Z, instance-level, diurnal 02–18Z bands, cause not established). One candidate worth a falsifiable watch rather than a claim: `net._http_response` carried **10 GB of dead TOAST** until tonight's VACUUM FULL (7.7 s, → 469 MB); autovacuum re-walking that much dead TOAST on a 22 MB/s tier is the right shape for a slow-reads band. **If the 02–18Z band does not return on 09-20, that was the mechanism; if it returns, it was not.** No stats survive the rewrite to prove it either way tonight.
+- CI: every commit through `d63e04367` 21/21 green; `79b33a55c`/`43b1cee32`/`4c0296bfd` in flight at 8:00 PM PT.
+
 ## Needs Trevor
 
 #22 purge residue · #55 the two 2-hourly Routines · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader (FMV path) · whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.
 
 ## Not done, deliberately
 
-the `[pack-detail]` 5 s read timeouts (mostly the smoke fixture measuring itself) · R115's structural watermark rewrite (Top Shot 78:1 DISTINCT ON) · `pack_table_rows` view shape (pinned; 35 k buffers CPU-bound) · an `updated_at`/version column on `fmv_snapshots` (the daily full reconcile bounds the hide time at ≤ 24 h) · backfilling the missed 09-12 `portfolio_snapshots` day (an absent point is more honest than an interpolated one).
+the `[pack-detail]` 5 s read timeouts (mostly the smoke fixture measuring itself) · `pack_table_rows` view shape (pinned; 35 k buffers CPU-bound) · an `updated_at`/version column on `fmv_snapshots` (the daily full reconcile bounds the hide time at ≤ 24 h) · backfilling the missed 09-12 `portfolio_snapshots` day (an absent point is more honest than an interpolated one).
