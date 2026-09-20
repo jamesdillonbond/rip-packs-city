@@ -1911,6 +1911,31 @@ const PINS = [
       "supabase/migrations/20260913032000_audit_20260912_pull_value_usd_is_current_fmv_for_every_collection.sql",
   },
   {
+    // Added 2026-09-20. THE OTHER WRITER of pack_rips.pull_value_usd, and the
+    // reason the entry above was not enough: that pin's header calls this path
+    // "the same source and same shape", and it was a mirror claim with no test.
+    // This body wrote COALESCE(SUM(fc.fmv_usd), 0), so it did the OPPOSITE on the
+    // exact case that pin exists for -- 82,864 Top Shot rows carried a fabricated
+    // 0 (28.4 % of every valued Top Shot rip; 0 of 600 sampled were genuine), and
+    // through mv_topshot_pack_rip_values they entered realized_mean and
+    // calibrated_ev on the pack-EV board. 9 dists read a realized mean of exactly
+    // USD 0.00. Pins: all-or-nothing, whole-pack (count = moments_pulled), that a
+    // stored 0 is CLEARED but a stored POSITIVE is PRESERVED (the delete-then-
+    // insert defence), that the #93 stamped-but-unvalued population is reachable,
+    // and that every repair leg orders by a column the function itself writes --
+    // `sealed_at DESC` made the All Day leg re-read its own head forever.
+    // ⚠ Re-pointed the SAME DAY to 20260920210651: the leg ORDER BY fix in
+    // 20260920204056 carried a 28x buffer regression (a parallel seq scan plus a
+    // 16 MB external-merge sort, caught by the production run's duration_ms, not
+    // by my own correctness probe), and the repair is a PARTIAL INDEX plus the
+    // matching predicate in the leg. That predicate is load-bearing, not
+    // cosmetic: a partial index is unusable unless the query repeats it.
+    fn: "backfill_pack_rip_metadata",
+    test: "supabase/tests/backfill_pack_rip_metadata.sql",
+    migration:
+      "supabase/migrations/20260920210651_audit_20260920_allday_repair_leg_gets_the_index_predicate_its_new_order_by_needs.sql",
+  },
+  {
     // pg_cron `40 9 * * *`. Sets players.team from the catalogue.
     //
     // ⚠ THE 18-MONTH WINDOW IS ANCHORED TO THE CATALOGUE'S OWN MAX game_date,

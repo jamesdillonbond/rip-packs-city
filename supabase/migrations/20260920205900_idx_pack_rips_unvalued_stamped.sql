@@ -1,0 +1,49 @@
+-- 2026-09-20 · idx_pack_rips_unvalued_stamped — the index the two repair legs' ORDER BY needs
+--
+-- REPO RECORD of an object created OUTSIDE the migration channel.
+-- `CREATE INDEX CONCURRENTLY` cannot run through `apply_migration` (it refuses
+-- inside a transaction block), so this index was built with a single-statement
+-- `execute_sql` and this file is its committed record. Written IF NOT EXISTS so it
+-- is a no-op on any environment already in this state.
+--
+-- WHY. 20260920204056 re-ordered `backfill_pack_rip_metadata`'s All Day repair leg
+-- from `sealed_at DESC` to the stamp the function itself writes -- a correctness
+-- fix (the old ORDER BY could never move off its own unpriceable head). ⛔ AND IT
+-- CARRIED A 28x COST REGRESSION THAT THE CORRECTNESS MEASUREMENT DID NOT SHOW.
+-- `sealed_at DESC` had `idx_pack_rips_collection_time_pv (collection_id,
+-- sealed_at DESC)` to walk; `metadata_updated_at` had nothing, so the leg became
+-- a parallel seq scan of a 3.69M-row table plus a 16 MB external-merge sort.
+--
+-- MEASURED, same leg, same LIMIT 50, EXPLAIN (ANALYZE, BUFFERS) on the LARGE
+-- instance (postmaster start 10:39 AM PT, so all three are the same box):
+--     sealed_at DESC, indexed .............   6,908 buffers ·    18 ms
+--     metadata_updated_at, NO index ....... 195,112 shared + 22,834 temp · 2,144 ms
+--     metadata_updated_at, THIS index .....   1,778 buffers ·    10 ms
+-- End to end at the production p_limit of 500: 36.4 s -> 5.8 s of a 50 s budget.
+-- ⭐ So the indexed stamp order is cheaper than the sealed_at order it replaced --
+-- the correctness fix is now free rather than merely affordable.
+--
+-- ⚠ THE `metadata_updated_at IS NOT NULL` HALF OF THE PREDICATE IS WHAT MAKES IT
+-- SMALL: 385,909 rows rather than the ~3.37M with a NULL pull_value_usd, so
+-- 2,720 kB rather than ~110 MB on a table already carrying 11 indexes and 1.5 GB
+-- of them. 20260920210651 adds the matching `metadata_updated_at IS NOT NULL`
+-- clause to the All Day leg so it can use this index; without that clause the leg
+-- reverts to the seq scan with nothing to report it.
+--
+-- ⚠ IT SHRINKS AS ITS OWN LEGS SUCCEED, which is the intended shape: the rows it
+-- indexes are exactly the ones the repair legs are draining. A guard keyed on its
+-- size would therefore red on success -- do not write one.
+--
+-- SERVES two legs of `backfill_pack_rip_metadata`:
+--   allday_repair   collection_id = <all day>, ordered by the stamp
+--   unpriced_retry  register #93's orphans, ordered by the stamp (81 buffers)
+--
+-- REVERT: DROP INDEX CONCURRENTLY IF EXISTS public.idx_pack_rips_unvalued_stamped;
+--   ⛔ Revert the FUNCTION first (back to 20260920204056 or earlier), or the leg
+--   silently returns to the 195k-buffer plan.
+--
+-- Verified live after the build: indisvalid = true, indisready = true, 2720 kB.
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pack_rips_unvalued_stamped
+  ON public.pack_rips (metadata_updated_at)
+  WHERE pull_value_usd IS NULL AND metadata_updated_at IS NOT NULL;
