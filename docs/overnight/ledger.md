@@ -11,6 +11,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🔁 R120 FOLLOW-UP — the same read found a FOURTH swallowed write: `fmv` was reporting rows OFFERED under a name every reader takes for rows WRITTEN, and neither the delete nor the insert had its error read at all · Claude Code Windows box
+
+**Shipped: `app/api/cron/panini-ingest/route.ts` (fmv delete + insert errors now read; `fmv` = rows WRITTEN, new `fmv_offered` and `fmv_error`) + 2 new test arms with the mock rework they needed. Also: two inbox filings from other sessions indexed, which had `main` red on `inbox-index-lists-every-filing`. No DB change.**
+
+🔎 **Why it was invisible.** `fmv: fmvRows.length` is the count of rows CONSTRUCTED, published under a key that reads as a write count — and `.insert(...)` was awaited with **no destructuring at all**, so the error was unreadable by construction rather than merely ignored. ⛔ **A count that cannot go DOWN when the write fails is not a measurement of the write.** This is the same defect as the editions/serials/sales swallow fixed an hour earlier, in the same 20 lines; I found it only because the FK work forced me to ask what ELSE keys on `panini_editions.id` — and `panini_fmv_snapshots.edition_id` is that same upstream sku, sitting behind the very FK that was aborting the editions upsert. ⚠ **So on the 12 aborted ticks, `fmv: 2` and `fmv: 5` were NOT evidence the fmv writes succeeded** — which is how I read them at 9:3x AM PT when sizing the blast radius. The editions/serials asymmetry that proved the mechanism still holds (serials genuinely have no FK), but the fmv half of that sentence was never measured.
+
+✅ **Now:** `fmv` is rows written, `fmv_offered` is the batch size, `fmv_error` carries the first failure, and their disagreement is itself readable. 🔬 **Mutation-controlled in isolation:** both new arms fail against the route as it stood after the first fix and pass after this one — so they pin THIS change, not the earlier one. ⚠ **The mock had to be reworked to make the arm possible at all** — `insert` resolved to a bare `{ error: null }`, so no test could ever have injected an fmv failure. **A harness that cannot express a failure is a coverage claim with no assertion behind it.**
+
+🧹 **Not mine, fixed anyway (second time this turn): `main` was red** on `inbox-index-lists-every-filing` — two Cowork filings landed without INDEX entries (`2026-09-20T1709Z` the Panini ask-only disclosure population mismatch; `2026-09-20T1730Z` the Supabase Small 22 MB/s floor measurement). Both indexed with what they FOUND, counts re-derived by `inbox:index:fix`, and the 1730Z file itself committed — it was untracked, so the entry alone would have reddened the guard from the other side.
+
+✅ **Verified:** `tsc --noEmit` clean, `lint:ratchet` **712/712 at baseline**, full vitest **1568 files / 17,775 tests** with the only red the inbox guard above, now green.
+
+- **Revert:** `git revert <sha>`. ⚠ Reverting restores a `pipeline_runs` row whose `fmv` count cannot distinguish "wrote 5" from "offered 5 and wrote none".
+
 ### 2026-09-20 · 🚨 jobid 466 HAD STOPPED WRITING ENTIRELY — the tick could not finish, so a real delta rolled back every time; degenerate, and my own cadence change made recovery slower · Claude Code Windows box
 
 **Found at 10:23 PT while verifying something else.** `ts_listings.max(ingested_at)` was frozen at **09:01 PT (82 minutes)** while the upstream was healthy — `topshot_atlas_market_events` open nba listings had `max(last_seen_at)` = **10:21, two minutes old, 59,181 rows**. Firehose fine; the SYNC was not propagating.
