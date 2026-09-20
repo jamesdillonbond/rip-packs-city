@@ -11,6 +11,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ R122 RE-TESTED AND RESOLVED — 61 fleet kills before the 10:39:57 resize, 0 after; its falsifier did NOT fire, so `DEFAULT_LIMIT` stays, and its stated EXIT was itself a pooling trap · Claude Code cloud
+
+**Shipped: `docs/audits/deep-audit-register.md` (R122 row). No code, no DB.**
+
+📏 **Split on the compute resize (10:39:57 AM PT), `-heartbeat` vs terminal-row correlation, 6 h either side:**
+
+| lane | pre (kills/markers) | post | p(clean run is luck) | verdict |
+|---|---|---|---|---|
+| `fmv-recalc` | **23 / 38** | **0 / 6** | 3.8e-3 | ✅ **RECOVERED** |
+| `wmc-fmv-populate` | 9 / 73 | 0 / 12 | 0.21 | too early |
+| `drain-fmv-cold-tail` | 8 / 12 | 0 / 2 | 0.11 | too early |
+| `pinnacle-metadata-backfill` | 5 / 6 | 0 / 1 | 0.17 | too early |
+| `classify-acquisitions-multicollection` | 6 / 6 | 0 / 1 | 0 ⚠ | **too early — see below** |
+
+**Fleet: 61 kills before, 0 after, every lane.** ⚠ **Only `fmv-recalc` clears `kill-rate.ts`'s own recovery test.** The rest are not recovered, they are unmeasured, and reporting them as fixed on a 62-minute window is the exact error this module exists to prevent.
+
+⚠ **`classify` reads p = 0 for a degenerate reason, not a strong one: a 100 % pooled pre-rate makes `(1-r)^n` EXACTLY 0 for ANY single clean tick.** So one success flips `failing` → `recovered` whenever a lane has never succeeded in the window. Recorded rather than patched — the recovery test is shared by every lane in the fleet and a Laplace correction would move every verdict at once, which is not a change to make on the strength of one degenerate row.
+
+⛔ **R122's FALSIFIER DID NOT FIRE** (*"#126 resolves, the kill rate stays near 50 % ⇒ the page size IS the lever"*). The cost was the estate, exactly as the row argued. **`DEFAULT_LIMIT = 500` STAYS — do not halve it**, and this morning's refusal to tune it against a moving subject was right.
+
+🚨 **AND ITS EXIT CONDITION WAS A TRAP, restated rather than ticked.** *"Kill rate back under ~25 % on a 72 h window"* **pools across the resize** and will read ~50 % for two more days — it would measure the fix's ABSENCE and read as its failure, which is the defect `lib/pipeline/kill-rate.ts` was written for, embedded in the exit of a row that cites that very rule. ⭐ **Restated: 0 kills over a window STARTING at 10:39:57 AM PT holding ≥ 24 markers.** ⚠ **A stated exit is a claim like any other — re-derive it, do not inherit it.**
+
+👉 **What this does NOT retire:** every instrument fix shipped this morning. They govern what happens when a tick IS killed — a terminal row on every exit, per-lane provenance, per-leg bounds, an `unverified` verdict, a cadence arm. The resize removed today's cause; it did not make the failure mode observable next time, and the estate will grow back into the new tier.
+
+- **Revert:** `git log --grep='R122 RE-TESTED'` → `git revert <sha>` (docs only).
+
 ### 2026-09-20 · 🚨 A PUBLIC BOARD HAS BEEN RENDERING CASE-DESTROYED SOLANA ADDRESSES AS WALLET IDENTITIES SINCE 09-19 — and the board's own "named parties" counter was counting them as resolved @handles · Claude Code cloud
 
 **Shipped: `lib/flowty-username.ts` + `lib/analytics/username-resolver.ts` (copy-paste twins, both fixed) + `__tests__/flowty-username-keys-are-chain-scoped.test.ts` (14 arms, planted-defect control: 4 red / 14 green). No DB change.**
