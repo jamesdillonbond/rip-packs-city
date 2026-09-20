@@ -13,8 +13,15 @@ import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat";
 // Pattern mirrors /api/cron/refresh-special-serial-owners-mv.
 //
 // Also refreshes the sibling deal-board guard topshot_thin_fmv_editions (the thin-data
-// FMV flag, audit_20260621_topshot_thin_fmv_deal_flag), so wiring this one cron keeps
-// BOTH honesty guards current.
+// FMV flag, audit_20260621_topshot_thin_fmv_deal_flag).
+//
+// ⚠ THAT SENTENCE USED TO END "so wiring this one cron keeps BOTH honesty guards
+// current", and on 2026-09-20 that was measurably false: the table held 7 rows all
+// stamped 09-18 01:30 PT, 57.9 h stale, because this route was killed at its 120 s
+// wall on 09-19 and 09-20 AND pg_cron job 63 (`rpc-refresh-thin-fmv-guard`, the
+// independent daily backstop) timed out at ~604 s on the same two days. This route
+// is ONE of two writers and neither is guaranteed; see the LANE PROVENANCE note in
+// the body for why every counter here now carries its provenance.
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -64,8 +71,39 @@ async function run(request: NextRequest) {
     let ok = true;
     let errMsg: string | null = null;
     let flagged = 0;
-    let remapped = 0;
-    let thinFmvFlagged = 0;
+
+    // ── LANE PROVENANCE (2026-09-20) ────────────────────────────────────────
+    // 🚨 MEASURED, not hypothesised. `topshot_thin_fmv_editions` — the deal
+    // board's thin-data caveat set, which alerts also suppress on — was read at
+    // 11:2x AM PT holding 7 rows, EVERY ONE stamped 2026-09-18 01:30 PT: 57.9
+    // hours stale. Both of its writers were down at once:
+    //   * this route, killed at the 120 s wall on 09-19 and 09-20 (heartbeat
+    //     rows, no terminal row);
+    //   * pg_cron job 63 `rpc-refresh-thin-fmv-guard`, FAILED on 09-19 and
+    //     09-20 with `canceling statement due to statement timeout` at ~604 s.
+    // Nothing paged: no `check_*` invariant names this table, and a pg_cron
+    // failure shows only in `cron.job_run_details`, never in `pipeline_runs`.
+    //
+    // ⛔ AND WHEN THIS ROUTE *DID* COMPLETE, IT REPORTED THE OUTAGE AS A ZERO.
+    // All three sweeps below are deliberately non-fatal, and each one swallowed
+    // its error into a `console.log` while its counter stayed at its `0`
+    // initialiser — so `thin_fmv_flagged: 0` in `extra` read exactly like "ran
+    // fine, nothing to flag", and `p_ok` stayed TRUE. That is CLAUDE.md's named
+    // worst sub-class, a SWEEP whose `ok` means it COMPLETED, not that its LANES
+    // worked, sitting on top of the fabricated-value shape.
+    //
+    // ⚠ So every non-fatal counter starts `null` (UNKNOWN) rather than `0`
+    // (MEASURED), each lane records its error, and `p_ok` is false when any lane
+    // failed. Non-fatal still means non-fatal: a thin-FMV failure must not stop
+    // the conflation refresh. It must only stop it being reported as a success.
+    //
+    // ⚠ The two remap sweeps are counted SEPARATELY and summed only when BOTH
+    // succeeded — a partial sum persisted as `sales_remapped` would be a PARTIAL
+    // READ published as the fact.
+    let remapBaseToParallel: number | null = null;
+    let remapParallelToBase: number | null = null;
+    let thinFmvFlagged: number | null = null;
+    const laneErrors: Record<string, string> = {};
     try {
       // Sweep first: redirect any base-keyed sale whose nft is a known parallel
       // onto its `::subID` edition. This is the durable "periodic historical-remap
@@ -75,10 +113,19 @@ async function run(request: NextRequest) {
       // Non-fatal: a remap failure must not block the guard refresh below.
       try {
         const rm = await supabaseAdmin.rpc("remap_topshot_base_keyed_parallel_sales");
-        if (rm.error) console.log(`[${PIPELINE_NAME}] remap rpc err: ${rm.error.message}`);
-        else remapped = Number(rm.data ?? 0);
+        if (rm.error) {
+          laneErrors.remap_base_to_parallel = rm.error.message;
+          console.log(`[${PIPELINE_NAME}] remap rpc err: ${rm.error.message}`);
+        } else if (rm.data == null) {
+          // A SECURITY DEFINER `RETURNS integer` that hands back no row is not a
+          // zero — it is an unread result, and `?? 0` is how it used to become one.
+          laneErrors.remap_base_to_parallel = "rpc returned no row count";
+        } else {
+          remapBaseToParallel = Number(rm.data);
+        }
       } catch (e) {
-        console.log(`[${PIPELINE_NAME}] remap rpc threw: ${e instanceof Error ? e.message : String(e)}`);
+        laneErrors.remap_base_to_parallel = e instanceof Error ? e.message : String(e);
+        console.log(`[${PIPELINE_NAME}] remap rpc threw: ${laneErrors.remap_base_to_parallel}`);
       }
 
       // Reverse sweep: re-key any sale mis-attributed ONTO a `::` parallel back to
@@ -89,10 +136,17 @@ async function run(request: NextRequest) {
       // Non-fatal.
       try {
         const rmr = await supabaseAdmin.rpc("remap_topshot_parallel_to_base_misattributed");
-        if (rmr.error) console.log(`[${PIPELINE_NAME}] parallel->base remap err: ${rmr.error.message}`);
-        else remapped += Number(rmr.data ?? 0);
+        if (rmr.error) {
+          laneErrors.remap_parallel_to_base = rmr.error.message;
+          console.log(`[${PIPELINE_NAME}] parallel->base remap err: ${rmr.error.message}`);
+        } else if (rmr.data == null) {
+          laneErrors.remap_parallel_to_base = "rpc returned no row count";
+        } else {
+          remapParallelToBase = Number(rmr.data);
+        }
       } catch (e) {
-        console.log(`[${PIPELINE_NAME}] parallel->base remap threw: ${e instanceof Error ? e.message : String(e)}`);
+        laneErrors.remap_parallel_to_base = e instanceof Error ? e.message : String(e);
+        console.log(`[${PIPELINE_NAME}] parallel->base remap threw: ${laneErrors.remap_parallel_to_base}`);
       }
 
       const res = await supabaseAdmin.rpc("refresh_topshot_conflated_editions");
@@ -112,16 +166,38 @@ async function run(request: NextRequest) {
       // refresh or its pipeline_runs signal.
       try {
         const tf = await supabaseAdmin.rpc("refresh_topshot_thin_fmv_editions");
-        if (tf.error) console.log(`[${PIPELINE_NAME}] thin-fmv rpc err: ${tf.error.message}`);
-        else thinFmvFlagged = Number(tf.data ?? 0);
+        if (tf.error) {
+          laneErrors.thin_fmv = tf.error.message;
+          console.log(`[${PIPELINE_NAME}] thin-fmv rpc err: ${tf.error.message}`);
+        } else if (tf.data == null) {
+          laneErrors.thin_fmv = "rpc returned no row count";
+        } else {
+          thinFmvFlagged = Number(tf.data);
+        }
       } catch (e) {
-        console.log(`[${PIPELINE_NAME}] thin-fmv rpc threw: ${e instanceof Error ? e.message : String(e)}`);
+        laneErrors.thin_fmv = e instanceof Error ? e.message : String(e);
+        console.log(`[${PIPELINE_NAME}] thin-fmv rpc threw: ${laneErrors.thin_fmv}`);
       }
     } catch (e) {
       ok = false;
       errMsg = e instanceof Error ? e.message : String(e);
       console.log(`[${PIPELINE_NAME}] refresh rpc threw: ${errMsg}`);
     }
+
+    // ⚠ Summed ONLY when both sweeps succeeded: a partial sum published as
+    // `sales_remapped` is a partial read persisted as the fact.
+    const remapped =
+      remapBaseToParallel === null || remapParallelToBase === null
+        ? null
+        : remapBaseToParallel + remapParallelToBase;
+
+    // ⭐ `ok` means THE LANES WORKED, not that the body reached its end. The
+    // whole reason this route's thin-FMV outage was invisible is that the old
+    // `p_ok` answered the second question while every reader asked the first.
+    const lanesFailed = Object.keys(laneErrors).sort();
+    const finalOk = ok && lanesFailed.length === 0;
+    const laneSummary = lanesFailed.map((n) => `${n}: ${laneErrors[n]}`).join(" | ");
+    const finalError = errMsg ?? (laneSummary ? `lane(s) failed — ${laneSummary}` : null);
 
     try {
       await supabaseAdmin.rpc("log_pipeline_run", {
@@ -130,9 +206,19 @@ async function run(request: NextRequest) {
         p_rows_found: flagged,
         p_rows_written: flagged,
         p_rows_skipped: 0,
-        p_ok: ok,
-        p_error: errMsg,
-        p_extra: { duration_ms: Date.now() - startedMs, flagged_editions: flagged, sales_remapped: remapped, thin_fmv_flagged: thinFmvFlagged },
+        p_ok: finalOk,
+        p_error: finalError,
+        p_extra: {
+          duration_ms: Date.now() - startedMs,
+          flagged_editions: flagged,
+          // ⚠ null = the lane did not report, NEVER 0 = the lane reported none.
+          sales_remapped: remapped,
+          remap_base_to_parallel: remapBaseToParallel,
+          remap_parallel_to_base: remapParallelToBase,
+          thin_fmv_flagged: thinFmvFlagged,
+          lanes_failed: lanesFailed,
+          lane_errors: laneErrors,
+        },
       });
     } catch (logErr) {
       console.log(
