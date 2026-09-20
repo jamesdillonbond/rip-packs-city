@@ -11,6 +11,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 📏 THE "LANE GOES DARK" CLASS, MEASURED ACROSS THE WHOLE FLEET INSTEAD OF ANECDOTALLY — 47 heartbeated pipelines, and the two I fixed tonight are not the worst two · Claude Code cloud
+
+**Shipped: nothing (measurement + one refuted finding). The two fixes it generalises are `b29695dae` and `69b54ba5b`, already in.**
+
+📏 **The instrument.** For every pipeline carrying a `<name>-heartbeat`, compare heartbeat count against terminal-row count over 24 h — the OUTCOME table, not any self-report. A heartbeat with no terminal row is a tick that was invoked and never said what happened. ⚠ `pipeline_runs` is ~58k rows and the unbounded `LIKE` form **timed out at 60 s** under today's IO; bound it to `started_at > now() - 24h` first.
+
+| pipeline | beats | terminals | lost |
+|---|---|---|---|
+| `fmv-recalc` | 150 | 76 | **74 (49 %)** |
+| `drain-fmv-cold-tail` | 48 | 31 | **17 (35 %)** |
+| `pinnacle-metadata-backfill` | 24 | 10 | 14 — **fixed tonight** |
+| `classify-acquisitions-multicollection` | 24 | 13 | 11 — **fixed tonight** |
+| `dead-lane-backstop` | 7 | 0 | **7 — NOT A DEFECT, see below** |
+| `wallet-backfill` · `allday-lock-refresh` · `check-alerts` · 5 others | — | — | 1–6 each |
+
+🚨 **FINDING REFUTED BEFORE IT WAS FILED, and it is the more useful half.** `dead-lane-backstop` reads **0 terminals out of 7** — the most extreme row in the table, and the obvious headline ("the backstop that catches dead lanes is itself a dead lane"). ⛔ **It is correct by design.** That name is not a pipeline at all: it is a GitHub-Actions **scheduler-liveness probe**, and the workflow's own header says the heartbeat is the only row it may write — *"rows_* stay NULL, never 0 — a heartbeat has measured NOTHING"* — with *"whether the lanes actually ran is read from `pipeline_runs`, not from this workflow's badge."* ⭐ **So the instrument has a FALSE-POSITIVE class it cannot see: a `-heartbeat` whose base name is a PROBE, not a lane.** Anyone re-running this query must read the subject before believing the row — which is the register's own "a filed FINDING is a hypothesis", caught here by reading a workflow header instead of shipping a headline.
+
+⚠ **`fmv-recalc` IS real, and it is the engine behind the roadmap's headline metric.** Evidence, not inference: its last SUCCESSFUL run wrote 712 rows in **290,247 ms against its own `max_duration_s: 300`** — 97 % of the wall — and `/api/fmv-recalc` is named in the live Vercel group *"Task timed out after 300 seconds"*. So the 74 missing terminals are 300 s kills, not silent exits. ⭐ **Its recorded failures are HONEST where it survives to record them** (two consecutive ticks at 09:15 and 09:28 PT: `ok=false`, `stage: step1b_refetch_empty`, `sales_fetch_errors: 1`, `rows_found 500 / rows_written 0`) — this lane's problem is the wall, not its reporting.
+
+⛔ **DELIBERATELY NOT FIXED TONIGHT, with the reason stated so it is re-litigable.** The classify fix was a wall over a loop with nothing bounding its total; **`fmv-recalc` is already at its wall and already pages** (`offset 0 → 500`, `has_more: true`, `edition_limit: 500`). Its lever is therefore the PAGE SIZE, and shrinking a page changes how much FMV is recomputed per tick — a cadence/accuracy decision on the metric the roadmap gates on, not an observability patch. ⚠ **And a second session is live in the FMV lane this morning** (`/api/fmv`, the sniper feed's `fetchFmvBatch`), so a concurrent edit here is the shared-tree hazard CLAUDE.md names. **Exit for whoever takes it:** `fmv-recalc` terminals/beats over 24 h rises above ~0.9. **Falsifier:** page size cut and the ratio does not move ⇒ the cost is not per-edition and the wall is the wrong lever.
+
+📝 **`drain-fmv-cold-tail` (35 %) is unexamined** — same family, same FMV lane, not looked at tonight. Named rather than left implied.
+
+- **Revert:** n/a (measurement).
+
 ### 2026-09-20 · ⏱ `classify-acquisitions-multicollection` IS STILL BEING KILLED AT 120 s — the 08-03 per-leg windows were real fixes and did not fix THIS: three legs run sequentially and nothing bounded their TOTAL · Claude Code cloud
 
 **Shipped: `app/api/cron/classify-acquisitions-multicollection/route.ts` (a wall-clock deadline over the `after()` loop, each leg bounded by `boundedRead` to the time actually remaining, skipped legs named) + 3 arms in `__tests__/api-cron-classify-acquisitions-multicollection.test.ts`. No DB change. Suite 1569 files / 17,768 tests, `tsc` clean, `lint:ratchet` 712/712 at baseline.**
