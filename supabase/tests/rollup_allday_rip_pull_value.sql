@@ -52,6 +52,20 @@
 --      rather than an oversight — same treatment as the concurrency backstops in
 --      attribute_topshot_rips_empirical and fill_ts_artless_from_rep_moments.
 --
+--   5. ⚠ WHOLE-PACK — `agg.total_pulls = r.moments_pulled`, added 2026-09-20 in the
+--      SAME migration as the identical clause in backfill_pack_rip_metadata's
+--      `allday_pull_values` CTE. ⭐ THE PAIRING IS THE POINT: these are the two
+--      writers of `pack_rips.pull_value_usd`, and register #128 is the record of
+--      what their disagreeing costs — one wrote `COALESCE(SUM(...), 0)` for three
+--      weeks while this file pinned the opposite. Fixing one arm alone recreates
+--      that divergence one property over, and the 2026-09-12 basis change already
+--      failed that way once (see app/dashboard/packs/PackHistoryClient.tsx).
+--      Without it, "every pull row we hold is priced" becomes "the pack is worth
+--      this much" on a pack whose pull rows are STILL LANDING. Measured free over
+--      the POPULATION, not a sample: pull count = moments_pulled on 419,233 of
+--      419,233 All Day rips holding pull rows — 0 mismatches, 0 valued on a short
+--      pack — so it is a BAN AT ZERO, and satisfiable at zero violations.
+--
 -- ⚠ `total_fmv IS NOT NULL` beside guard 1 is UNREACHABLE: a rip with no pulls
 -- never enters `agg` at all (the CTE groups over `allday_pack_pull` rows), so
 -- every group has at least one row, and `valued_pulls = total_pulls >= 1`
@@ -71,7 +85,7 @@
 -- Nothing left to do is not a reason to re-scan the same window next hour.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260913032000_audit_20260912_pull_value_usd_is_current_fmv_for_every_collection.sql),
+-- (supabase/migrations/20260920230950_audit_20260920_both_allday_pull_value_writers_gain_the_whole_pack_check_together.sql),
 -- which the migration's own header states is pg_get_functiondef output read back
 -- from production after the apply. Confirmed against live pg_get_functiondef on
 -- 2026-09-13. __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
@@ -104,6 +118,7 @@ CREATE TABLE public.pack_rips (
   collection_id       uuid,
   pack_nft_id         text,
   pull_value_usd      numeric,
+  moments_pulled      integer,
   metadata_updated_at timestamptz
 );
 
@@ -150,6 +165,15 @@ BEGIN
     AND r.pack_nft_id = agg.pack_nft_id
     -- all-or-nothing per pack: a partly priced pack contributes nothing
     AND agg.valued_pulls = agg.total_pulls AND agg.total_fmv IS NOT NULL
+    -- ⚠ WHOLE-PACK, added 2026-09-20 in the SAME migration as the sibling check in
+    -- backfill_pack_rip_metadata's allday_pull_values CTE. These are the two
+    -- writers of this one column; changing one alone makes them fight, which is
+    -- how the 2026-09-12 basis change failed on its first attempt. Without it,
+    -- "every pull row we hold is priced" silently becomes "the pack is worth this
+    -- much" on a pack whose pull rows are still landing. Measured FREE: pull-row
+    -- count = moments_pulled on 419,233 of 419,233 All Day rips holding any pull
+    -- rows -- zero mismatches estate-wide, so it removes nothing today.
+    AND agg.total_pulls = r.moments_pulled
     AND r.pull_value_usd IS DISTINCT FROM round(agg.total_fmv,2);
   GET DIAGNOSTICS n = ROW_COUNT;
 
@@ -194,7 +218,12 @@ INSERT INTO public.allday_pack_pull (pack_nft_id, edition_id, fmv_usd, updated_a
   ('P-NULLED',  NULL,          1000.00, '2026-06-01T00:00:00Z'),
   ('P-SAME',    :ESAME::uuid,  1000.00, '2026-06-01T00:00:00Z'),
   ('P-LATEST',  :ELATE::uuid,  1000.00, '2026-06-01T00:00:00Z'),
-  ('P-WRONGC',  :EWRONG::uuid, 1000.00, '2026-06-01T00:00:00Z');
+  ('P-WRONGC',  :EWRONG::uuid, 1000.00, '2026-06-01T00:00:00Z'),
+  -- P-SHORT: TWO pulls, BOTH priced, but the rip says it yielded THREE moments.
+  -- Guard 1 alone passes this and would write 30.00 for a pack we have only two
+  -- thirds of. Only the whole-pack comparison catches it.
+  ('P-SHORT',   :E1::uuid,     1000.00, '2026-06-01T00:00:00Z'),
+  ('P-SHORT',   :E2::uuid,     1000.00, '2026-06-01T00:00:00Z');
 
 -- ⚠ :ENONE deliberately has NO row here — that is what "unpriced" now means.
 -- ⚠ :ELATE has TWO rows and their INSERT ORDER IS LOAD-BEARING: the stale 99.00
@@ -212,18 +241,22 @@ INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, computed_at) VALUES
   (:ELATE::uuid,  99.00,  '2026-06-01T00:00:00Z'),
   (:ELATE::uuid,   7.00,  '2026-06-05T00:00:00Z');
 
-INSERT INTO public.pack_rips (collection_id, pack_nft_id, pull_value_usd) VALUES
-  (:AD::uuid, 'P-FULL',    NULL),
-  (:AD::uuid, 'P-PARTIAL', NULL),
-  (:AD::uuid, 'P-NULLED',  NULL),
-  (:AD::uuid, 'P-EMPTY',   NULL),
-  (:AD::uuid, 'P-SAME',    50.00),
-  (:AD::uuid, 'P-LATEST',  NULL),
-  (:TS::uuid, 'P-WRONGC',  NULL);
+-- ⚠ `moments_pulled` is load-bearing since 2026-09-20 (property 5) — it must equal
+-- each pack's pull-row count for every case EXCEPT P-SHORT, which is the arm.
+INSERT INTO public.pack_rips (collection_id, pack_nft_id, pull_value_usd, moments_pulled) VALUES
+  (:AD::uuid, 'P-FULL',    NULL,  3),
+  (:AD::uuid, 'P-PARTIAL', NULL,  3),
+  (:AD::uuid, 'P-NULLED',  NULL,  1),
+  (:AD::uuid, 'P-EMPTY',   NULL,  0),
+  (:AD::uuid, 'P-SAME',    50.00, 1),
+  (:AD::uuid, 'P-LATEST',  NULL,  1),
+  (:TS::uuid, 'P-WRONGC',  NULL,  1),
+  -- 2 priced pulls against a 3-moment pack -> must stay NULL (property 5)
+  (:AD::uuid, 'P-SHORT',   NULL,  3);
 
 SELECT _assert_eq(
   public.rollup_allday_rip_pull_value()::text, '2',
-  'only the two fully-priced rips are written — P-SAME is unchanged, so it does not count'
+  'only the two fully-priced WHOLE rips are written — P-SAME is unchanged and P-SHORT is short, so neither counts'
 );
 
 SELECT _assert_eq(
@@ -249,6 +282,18 @@ SELECT _assert_eq(
   (SELECT coalesce(pull_value_usd::text, 'NULL') FROM public.pack_rips WHERE pack_nft_id = 'P-PARTIAL'),
   'NULL',
   'a rip with ANY unpriced pull is left NULL — a partial sum would understate the pack and look real'
+);
+
+-- ⚠ PROPERTY 5, and it is the one guard 1 CANNOT catch: both of P-SHORT's pulls
+-- ARE priced (10 + 20), so `valued_pulls = total_pulls` passes and 30.00 would be
+-- written as the total value of a pack that yielded THREE moments. Only the
+-- comparison against `moments_pulled` sees it. ⭐ Added 2026-09-20 with the clause,
+-- in the same migration as the identical guard on the other writer of this column
+-- (register #128 is the record of what those two disagreeing costs).
+SELECT _assert_eq(
+  (SELECT coalesce(pull_value_usd::text, 'NULL') FROM public.pack_rips WHERE pack_nft_id = 'P-SHORT'),
+  'NULL',
+  'a pack with fewer pull rows than moments_pulled is left NULL even though every pull it HAS is priced'
 );
 
 -- ⚠ Same property, reached the other way: no edition at all, so no snapshot to

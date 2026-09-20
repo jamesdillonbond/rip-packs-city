@@ -24,7 +24,13 @@
 --      used to write a partial sum -- the understatement). The second is the one
 --      that fails in the reassuring direction: a smaller number that reads
 --      exactly like a real one.
---   2. ⚠ WHOLE-PACK. `count(*) = moments_pulled`. A rip whose acquisitions are
+--   2. ⚠ WHOLE-PACK, ON BOTH ARMS since 2026-09-20. `count(*) = moments_pulled`.
+--      ⭐ The All Day arm gained the same clause in the SAME migration as
+--      `rollup_allday_rip_pull_value` — they are the two writers of this column and
+--      changing one alone makes them fight (the 2026-09-12 basis change failed that
+--      way once). Measured free over the POPULATION, not a sample: pull-row count =
+--      moments_pulled on 419,233 of 419,233 All Day rips holding pull rows, 0
+--      mismatches, 0 valued on a short pack. A rip whose acquisitions are
 --      still landing is UNKNOWN, not cheap. Without this, "every acquisition we
 --      have is priced" silently becomes "the pack is worth this much" on a
 --      half-ingested rip. Measured free when added: acquisitions = moments_pulled
@@ -77,10 +83,12 @@
 --   · The dist_id vote (`pack_drop_pool` full-match) is exercised only far enough
 --     to prove it does not interfere; it has no dedicated arm. A separate pin
 --     covers attribute_topshot_rips_empirical.
---   · The All Day arm has NO whole-pack check (property 2 is generic-arm only) --
---     neither this writer nor rollup_allday_rip_pull_value compares its pull count
---     to moments_pulled. Measured 1,436/1,436 equal on 2026-09-20, so it is LATENT.
---     Closing it means changing BOTH writers together, which is its own commit.
+--   · ~~The All Day arm has NO whole-pack check~~ — CLOSED 2026-09-20 in
+--     20260920230950, both writers together, and BOTH arms are asserted here (the
+--     generic one by R_SHORT, the All Day one by P-AD-SHORT in its own scenario).
+--     ⚠ P-AD-SHORT exists because the mutation run found that arm UNCOVERED while
+--     every other assertion stayed green — the header said it was covered and it
+--     was not. Assert the arm, do not describe it.
 --   · Leg SHARES (20/15/10/5/remainder) are not pinned as numbers. Property 6's
 --     assertion depends on the All Day share being 1 at p_limit 10; if the shares
 --     are re-cut, that assertion breaks loudly rather than silently, which is the
@@ -119,9 +127,9 @@
 -- and concludes it is vacuous.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260920210651_audit_20260920_allday_repair_leg_gets_the_index_predicate_its_new_order_by_needs.sql),
--- itself byte-identical to production: prosrc md5 db0798a87fad8de84215f839ebe013f7,
--- length 11557, read back after the apply on 2026-09-20.
+-- (supabase/migrations/20260920230950_audit_20260920_both_allday_pull_value_writers_gain_the_whole_pack_check_together.sql),
+-- itself byte-identical to production: prosrc md5 10c43230629503ec4e846f4450c2d9c4,
+-- length 12242, read back after the apply on 2026-09-20.
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -362,6 +370,14 @@ BEGIN
   ),
   -- All Day: exact join on pack_nft_id, priced from the SAME current-FMV source
   -- as Top Shot, ALL-OR-NOTHING per pack.
+  -- ⚠ WHOLE-PACK TOO, since 2026-09-20, and it had to change in the SAME
+  -- migration as rollup_allday_rip_pull_value(): they are the two writers of this
+  -- one column and changing one alone makes them fight. Without
+  -- `count(*) = c.moments_pulled`, "every allday_pack_pull row we hold is priced"
+  -- silently becomes "the pack is worth this much" on a pack whose pull rows are
+  -- still landing. Measured FREE when added: pull-row count = moments_pulled on
+  -- 419,233 of 419,233 All Day rips that have any pull rows -- zero mismatches
+  -- estate-wide, so it removes nothing today and bans the shape going forward.
   allday_pull_values AS (
     SELECT c.id AS rip_id,
            SUM(fc.fmv_usd)::numeric(14,2) AS pull_value_usd
@@ -375,8 +391,9 @@ BEGIN
       LIMIT 1
     ) fc ON true
     WHERE c.collection_id = v_allday
-    GROUP BY c.id
+    GROUP BY c.id, c.moments_pulled
     HAVING count(*) = count(fc.fmv_usd)
+       AND count(*) = c.moments_pulled
   ),
   upd AS (
     UPDATE public.pack_rips pr
@@ -641,6 +658,36 @@ SELECT _assert_eq(
   (SELECT metadata_updated_at::text FROM public.pack_rips WHERE pack_nft_id = 'P-AD-STUCK'),
   '2026-08-01 00:00:00+00',
   'the leg did not even LOOK at the newer unpriceable row -- its one slot went to the older stamp'
+);
+
+-- ── Property 2 ON THE ALL DAY ARM, which needs its own scenario ────────────
+-- ⚠ The property-6 block above deliberately runs at p_limit 10 so the All Day leg
+-- gets exactly ONE slot; that makes it useless for this, because a single slot
+-- cannot show that a SHORT pack is skipped rather than simply not reached. So:
+-- a fresh fixture, p_limit wide, one All Day pack whose two pull rows are BOTH
+-- priced against a `moments_pulled` of 3.
+-- ⭐ This arm exists because the mutation run found it MISSING: dropping the All
+-- Day arm's `count(*) = c.moments_pulled` passed every other assertion in this
+-- file, while the same mutation on the generic arm reddened immediately. A clause
+-- shipped in a migration and covered by nothing is the shape this repo keeps
+-- paying for (register #128 is the record of exactly that on this column).
+DELETE FROM public.pack_rips;
+DELETE FROM public.allday_pack_pull;
+
+INSERT INTO public.pack_rips
+  (id, collection_id, pack_nft_id, dist_id, pull_value_usd, moments_pulled, sealed_at, metadata_updated_at) VALUES
+  ('ccccccc1-0000-0000-0000-000000000001'::uuid, :AD::uuid, 'P-AD-SHORT', NULL, NULL, 3, '2026-05-01T00:00:00Z', '2026-01-01T00:00:00Z');
+
+INSERT INTO public.allday_pack_pull (pack_nft_id, edition_id, fmv_usd, updated_at) VALUES
+  ('P-AD-SHORT', :E1::uuid, 1000.00, '2026-06-01T00:00:00Z'),
+  ('P-AD-SHORT', :E2::uuid, 1000.00, '2026-06-01T00:00:00Z');
+
+SELECT public.backfill_pack_rip_metadata(5000);
+
+SELECT _assert_eq(
+  (SELECT coalesce(pull_value_usd::text, 'NULL') FROM public.pack_rips WHERE pack_nft_id = 'P-AD-SHORT'),
+  'NULL',
+  'the ALL DAY arm also refuses a short pack -- both its pull rows are priced (30.00) but the rip yielded 3 moments'
 );
 
 -- ── The negative-LIMIT guard (20260920204628). Every other share has a

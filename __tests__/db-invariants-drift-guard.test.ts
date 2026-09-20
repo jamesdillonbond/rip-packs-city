@@ -1905,10 +1905,15 @@ const PINS = [
     // is inclusive, because re-processing is free (change-detection) while
     // skipping is not. The inclusive half is asserted; the before-vs-after half
     // needs a concurrent writer and is documented as a harness limit.
+    // ⚠ Re-pointed 2026-09-20: this body gained a WHOLE-PACK clause
+    // (`agg.total_pulls = r.moments_pulled`) in the SAME migration as the identical
+    // clause on the OTHER writer of this column. The pairing is the invariant —
+    // register #128 is the record of what these two disagreeing costs, and fixing
+    // one arm alone recreates that divergence one property over.
     fn: "rollup_allday_rip_pull_value",
     test: "supabase/tests/rollup_allday_rip_pull_value.sql",
     migration:
-      "supabase/migrations/20260913032000_audit_20260912_pull_value_usd_is_current_fmv_for_every_collection.sql",
+      "supabase/migrations/20260920230950_audit_20260920_both_allday_pull_value_writers_gain_the_whole_pack_check_together.sql",
   },
   {
     // Added 2026-09-20. THE OTHER WRITER of pack_rips.pull_value_usd, and the
@@ -1933,7 +1938,7 @@ const PINS = [
     fn: "backfill_pack_rip_metadata",
     test: "supabase/tests/backfill_pack_rip_metadata.sql",
     migration:
-      "supabase/migrations/20260920210651_audit_20260920_allday_repair_leg_gets_the_index_predicate_its_new_order_by_needs.sql",
+      "supabase/migrations/20260920230950_audit_20260920_both_allday_pull_value_writers_gain_the_whole_pack_check_together.sql",
   },
   {
     // pg_cron `40 9 * * *`. Sets players.team from the catalogue.
