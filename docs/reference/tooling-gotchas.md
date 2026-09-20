@@ -192,6 +192,20 @@ CLAUDE.md already says **assert the occurrence count before a scripted replace**
 
 ⚠ **ASSERT PRESENCE (`>= 1`), NOT AN UNCHANGED COUNT (`== 1`) — the third way this check misfires, hit while writing the paragraph above.** Adding that mutation-proof QUOTED two of the strings it was checking, so their counts went **1 → 2** and an `== before` assertion would have failed a correct edit. ⇒ **Three distinct misfires now recorded for one check: FALSE POSITIVE (unanchored pattern matching its own warning), FALSE NEGATIVE (string retyped from memory), and COUNT DRIFT (the edit legitimately quotes the string).** ⭐ **The survivable form is `after >= 1 && before >= 1`; reach for an exact count only when you know the edit does not mention the string.**
 
+⛔⛔ **AND THE FOURTH, WHICH EVERY CHECK ABOVE PASSES CLEANLY — A SILENT NO-OP. `String.replace` WITH A STALE ANCHOR RETURNS THE INPUT UNCHANGED AND THROWS NOTHING.** Capture an anchor line, mutate something *inside that same line*, then `s.replace(anchorLine, …)`: the anchor no longer exists, the replace matches nothing, **the write succeeds and the file is written** — and **every survival grep passes, correctly, because nothing was destroyed. The addition simply never arrived.** 🚨 **THE ASYMMETRY IS THE POINT, and it was built into the control: a survival check proves nothing was LOST. It says NOTHING about whether your change ARRIVED.** ✅ **Fix, one line — `if (!after.includes(<marker from your addition>)) throw` — plus: READ EVERY ANCHOR *AFTER* ALL PRIOR MUTATIONS, never before them. A multi-step edit invalidates its own anchors as it goes.** ⭐ **`s.split(anchor).join(…)` guarded by an occurrence assertion is immune to this one** (a missing anchor gives 0 occurrences and throws); a bare `.replace()` is not — which is the whole argument for the guarded split form above.
+
+⚠ **FOUR MISFIRES OF ONE CHECK, ALL ON 2026-09-19** — and note they fail in every possible direction, so no single assertion covers them:
+
+| misfire | fires when | caught by |
+|---|---|---|
+| **FALSE POSITIVE** | everything is fine (pattern matches its own warning text) | anchoring the pattern to line start |
+| **FALSE NEGATIVE** | nothing is wrong (string retyped from memory) | running the grep BEFORE the edit too |
+| **COUNT DRIFT** | the edit legitimately quotes the string it checks | asserting presence (`>= 1`), not an unchanged count |
+| **SILENT NO-OP** | the edit never happened at all | asserting the ADDITION arrived, not just that nothing died |
+
+⭐ **A fifth instance, recorded because it happened during the ARRIVAL AUDIT for this very section: a check for a committed ledger heading returned 0 and read as "never landed" — the file says `the clock SPLITS`, the check had been typed `THE CLOCK SPLITS`.** **Case is part of the string.** ⭐⭐ **THE THROUGH-LINE FOR ALL OF IT: none of these fixes makes anyone more careful — each converts a SILENT failure into a LOUD one. That is the only thing that has ever worked here, because every trap on this page was walked into by someone who had already written it down.**
+
+
 ⭐ **This is the same shape as the other traps on this page — `git add -p` exiting 0 having staged nothing, `python` resolving but never executing, `$?` reporting a pipe's last command, an unanchored grep matching its own warning. In every case the operation reported success and only an INDEPENDENT CHECK OF THE RESULT disagreed.** ⚠ **Knowing the trap does not prevent it; three of these were walked into by sessions that had already documented them the same evening.** **Build the check so the output contradicts itself when wrong.**
 
 
