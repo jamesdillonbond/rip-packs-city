@@ -95,6 +95,57 @@ const PIPELINE_NAME = "pinnacle-metadata-backfill"
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts?block_height=sealed"
 
+// ── Terminal row on EVERY exit ─────────────────────────────────────────────
+//
+// 🚨 WHY THIS EXISTS. Between 2026-09-19 21:22 PT and 2026-09-20 08:22 PT this
+// lane went ELEVEN consecutive hourly ticks writing its `-heartbeat` row and no
+// terminal row at all. `detect_stalled_pipelines` could therefore only classify
+// it `invoked_but_never_logged` with 11 uncorrelated heartbeats — it was invoked,
+// it did something, and NOTHING in the database said what. The last terminal row
+// before the silence was ok=true in 31.7 s, so the lane had not been failing
+// loudly; it simply stopped reporting.
+//
+// ⭐ The cause was structural, not incidental: `runBackfill` had FIVE early
+// `return NextResponse.json(..., 500)` exits — q1 load, q1 wmc lookup, q2 load,
+// discovery error, discovery empty-payload — and every one of them returned
+// BEFORE the `log_pipeline_run` call at the end of the function. On the deferred
+// path (work > the 20 s sync budget, which the 31.7 s run already used) that 500
+// response is handed to `after()` and DISCARDED, so the failure left no trace in
+// `pipeline_runs` and no trace in the HTTP response the scheduler saw either.
+// A thrown error was the same shape: `after()`'s catch console.errored it.
+//
+// ⚠ This is CLAUDE.md's rule one level down — "give each failing unit its own
+// row", and "`rows_written = 0` is a null instrument with three incompatible
+// meanings". A lane that reports NOTHING is strictly worse than one reporting
+// zero: zero is falsifiable, silence is not.
+//
+// Non-fatal by construction, like the heartbeat above it: telemetry must never
+// be able to kill the lane it measures.
+async function logTerminalFailure(
+  step: string,
+  message: string,
+  started: number,
+  startedAtIso: string,
+): Promise<void> {
+  try {
+    await supabaseAdmin.rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME,
+      p_started_at: startedAtIso,
+      p_rows_found: null,
+      p_rows_written: null,
+      p_rows_skipped: null,
+      p_ok: false,
+      p_error: `${step}: ${message}`,
+      p_collection_slug: "disney_pinnacle",
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { duration_ms: Date.now() - started, failed_step: step },
+    })
+  } catch (e: any) {
+    console.error(`[${PIPELINE_NAME}] terminal-failure log threw:`, e?.message ?? e)
+  }
+}
+
 const Q1_CAP = 100
 const Q2_CAP = 50
 const Q3_CAP = 25
@@ -370,7 +421,16 @@ export async function GET(req: NextRequest) {
   // terminal row and the caller gets a 202 dispatch receipt — which carries NO
   // counts, because a receipt rendered as a result is the same lie as a failed
   // read rendered as an answer.
-  const work = runBackfill(started, startedAtIso)
+  // ⚠ `.catch` here, not a try/catch around the await: on the DEFERRED path the
+  // 202 has already gone out and `work` sits pending until `after()` attaches to
+  // it, so a rejection in that window would be an unhandled rejection. Catching
+  // at creation records the failure AND resolves the promise, so every exit —
+  // early return, throw, or success — ends in a terminal row.
+  const work = runBackfill(started, startedAtIso).catch(async (e: any) => {
+    const message = e?.message ?? String(e)
+    await logTerminalFailure("unhandled", message, started, startedAtIso)
+    return NextResponse.json({ ok: false, error: `unhandled: ${message}` }, { status: 500 })
+  })
   let timer: ReturnType<typeof setTimeout> | undefined
   const budget = new Promise<"deferred">((resolve) => {
     timer = setTimeout(() => resolve("deferred"), syncBudgetMs())
@@ -427,6 +487,7 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
       .order("created_at", { ascending: true })
       .limit(Q1_CAP)
     if (error) {
+      await logTerminalFailure("q1 load", error.message, started, startedAtIso)
       return NextResponse.json({ ok: false, error: `q1 load: ${error.message}` }, { status: 500 })
     }
     const candidates = (peRows ?? []) as Array<{ id: string; edition_key: string }>
@@ -439,7 +500,8 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
         .in("edition_key", keys)
         .limit(keys.length * 5)
       if (wmcErr) {
-        return NextResponse.json({ ok: false, error: `q1 wmc lookup: ${wmcErr.message}` }, { status: 500 })
+        await logTerminalFailure("q1 wmc lookup", wmcErr.message, started, startedAtIso)
+      return NextResponse.json({ ok: false, error: `q1 wmc lookup: ${wmcErr.message}` }, { status: 500 })
       }
       const sampleByKey = new Map<string, { wallet: string; momentId: string }>()
       for (const row of (wmcRows ?? []) as Array<{ wallet_address: string; moment_id: string; edition_key: string }>) {
@@ -474,6 +536,7 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
       .order("last_seen_at", { ascending: false })
       .limit(Q2_CAP)
     if (error) {
+      await logTerminalFailure("q2 load", error.message, started, startedAtIso)
       return NextResponse.json({ ok: false, error: `q2 load: ${error.message}` }, { status: 500 })
     }
     for (const row of (data ?? []) as Array<{ id: string; wallet_address: string; moment_id: string }>) {
@@ -513,6 +576,7 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
       p_q4_limit: Q4_CAP,
     })
     if (error) {
+      await logTerminalFailure("discovery", error.message, started, startedAtIso)
       return NextResponse.json({ ok: false, error: `discovery: ${error.message}` }, { status: 500 })
     }
     if (!data || typeof data !== "object" || Array.isArray(data)) {
@@ -522,6 +586,7 @@ async function runBackfill(started: number, startedAtIso: string): Promise<NextR
       // array-shaped body (what PostgREST returns for a SET-returning function,
       // and what a wrong rpc name can yield) would otherwise pass this check and
       // then read as two empty queues.
+      await logTerminalFailure("discovery", "empty payload (no rows and no error)", started, startedAtIso)
       return NextResponse.json(
         { ok: false, error: "discovery: empty payload (no rows and no error)" },
         { status: 500 },

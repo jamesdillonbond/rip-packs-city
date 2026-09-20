@@ -440,7 +440,56 @@ describe("pinnacle-metadata-backfill — load failures + limits", () => {
       expect((await res.json()).ok).toBe(false)
       expect(fetchMock.calls).toHaveLength(0)
     })
+
+    // 🚨 THE ARM THAT WOULD HAVE CAUGHT AN ELEVEN-HOUR BLACKOUT. Each of these
+    // exits returned its 500 BEFORE the log_pipeline_run at the end of
+    // runBackfill. On the deferred path (work > the 20 s sync budget — which the
+    // last healthy run, at 31.7 s, already used) that response is handed to
+    // after() and DISCARDED, so the failure reached neither pipeline_runs nor the
+    // scheduler. Between 2026-09-19 21:22 PT and 2026-09-20 08:22 PT the lane
+    // wrote its heartbeat eleven times and no terminal row at all, and
+    // detect_stalled_pipelines could say only `invoked_but_never_logged`.
+    //
+    // ⚠ Asserts the ROW and the NAMED STEP, not merely that some rpc fired: a row
+    // that does not say which step died leaves the next reader exactly where the
+    // blackout did. Satisfying this by logging ok=true would be worse than
+    // silence, so p_ok is asserted false explicitly.
+    it(`records a terminal ok=false row naming "${label}" — silence is not falsifiable`, async () => {
+      const spy = install(fixtures)
+      fetchMock = installFetchMock([])
+      await GET(req())
+      const terminal = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+      expect(terminal.length, "a failing exit wrote NO terminal pipeline_runs row").toBe(1)
+      const args = terminal[0].args as Record<string, unknown>
+      expect(args.p_ok, "a failed run must not be recorded as ok").toBe(false)
+      expect(String(args.p_error), "the row must name the step that died").toContain(
+        label.startsWith("q3+q4") ? "discovery" : label,
+      )
+      expect((args.p_extra as Record<string, unknown>).failed_step).toBeTruthy()
+    })
   }
+
+  it("an UNHANDLED throw inside the work also lands a terminal row", async () => {
+    // The fifth exit shape. after()'s catch console.errored a throw and moved on,
+    // so a crash was as invisible as an early return. The .catch at the work's
+    // creation (not a try/catch around the await) is deliberate: on the deferred
+    // path the 202 is already out and the promise sits pending until after()
+    // attaches, so catching later would leave an unhandled rejection window.
+    const spy = install({
+      pinnacle_editions: [{ data: [{ id: "pe1", edition_key: "RC:Std:1" }], error: null }],
+    })
+    ;(spy.fixture as any).from = () => {
+      throw new Error("connection reset")
+    }
+    fetchMock = installFetchMock([])
+    const res = await GET(req())
+    expect(res.status).toBe(500)
+    const terminal = spy.rpcCalls.filter((c) => c.name === "log_pipeline_run")
+    expect(terminal.length, "a thrown run wrote NO terminal row").toBe(1)
+    const args = terminal[0].args as Record<string, unknown>
+    expect(args.p_ok).toBe(false)
+    expect(String(args.p_error)).toContain("connection reset")
+  })
 
   it("counts a Q1 candidate with no sample wmc row as skipped rather than dropping it silently", async () => {
     const spy = install({
