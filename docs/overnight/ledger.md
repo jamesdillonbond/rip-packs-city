@@ -11,6 +11,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🔧 THE FOLD SWEEP REACHES THE WRITE PATH — `/api/wallet/save` destroyed a base58 wallet AT THE MOMENT OF SAVING IT, and the seeder answered for a chain it cannot read · Claude Code cloud
+
+**Shipped: `app/api/wallet/save` · `app/api/wallet/seed` (now 400s an unsupported chain instead of returning rows of zeros) · `lib/profile/saved-wallet-quota` · `lib/profile/public-profile`. 9 new/re-pinned test arms across 3 files, planted-defect control 3 red / 35 green. No DB change.**
+
+✅ **THE 11:37 FIX IS VERIFIED LIVE.** `/api/public/insights/top-sales?collection=candy_mlb`, 11:57 AM PT, `x-vercel-cache: MISS`: `buyer_name` is now **`1Ttv9X…ZEQV`** (was the whole folded 43-char string) and `seller_name` **`F6JUS3…kTE7`**. Case intact, ellipsis present — so the board's `named` counter reads them as unresolved, which is what they are.
+
+⛔ **THE WRITE PATH WAS THE ONE THAT MATTERED.** `/api/wallet/save` wrote `walletAddress.trim().toLowerCase()` into `saved_wallets` and handed the same string to `/api/wallet/seed`. `/api/profile/saved-wallets` was fixed 2026-09-19; **this route is the same write and has NO IN-REPO CALLER, which is exactly why it went unfixed** — a sweep is only as wide as its path argument, and a route nobody imports is invisible to one that follows imports. ⚠ **Still LATENT, and the measurement is the same one as an hour ago:** `saved_wallets` holds 135 rows, **0 non-hex** — a folded base58 would still be non-hex, so nobody has lost a wallet to this. It fires on the first Candy save.
+
+⭐ **`/api/wallet/seed` IS CADENCE-ONLY AND NOW SAYS SO.** Every spec in it is a hardcoded Cadence script taking `address: Address`. Handed a base58 wallet it still RAN — four scripts, four failures — and returned **`ok: true` with a row per collection**: CLAUDE.md's *"a SWEEP whose `ok` means it COMPLETED, not that its LANES worked"*, with counts of 0 a caller reads as a measured empty wallet. It now returns `400 unsupported_chain_for_seeder` with **no `results` array at all**, so there is no zero for anything downstream to find, and the arm asserts that ABSENCE rather than the presence of an error string.
+
+⚠ **ONE RED WAS A PREMISE CHANGE, NOT AN INVERSION.** `api-wallet-seed-deep` seeded with `"0xAbC"` — three hex characters, never a Flow address. The fixture was wrong, not the code, so it was RE-PINNED to a real address; and because a re-pin can quietly stop exercising the property, the new gate got an arm of its own.
+
+🚨 **PROCESS FAILURE, MINE, AND CLAUDE.md WARNS ABOUT IT BY NAME.** I backed up files for the planted-defect control keyed on `basename` — and `app/api/wallet/save/route.ts` and `app/api/wallet/seed/route.ts` **both basename to `route.ts`**, so the restore wrote seed's 334 lines over save's 65. The tell was the restore coming back **WORSE than the planted run** (11 failures vs 3), not better. Recovered in full — both files were tracked and my edits were re-appliable from the patch script — but CLAUDE.md's rule is verbatim *"Key any backup on the FULL PATH, never the basename — three `page.tsx` targets shared one `.bak` and two files of uncommitted work were destroyed."* ⭐ **In a Next.js App Router tree EVERY route file is `route.ts`, so the collision is not a corner case here, it is the default.** The re-run keyed on the full path with `tr '/' '__'`.
+
+**Revert:** `git revert` the commit touching `app/api/wallet/save/route.ts`. No DB half.
+
+
 ### 2026-09-20 · ✅ THE PAGE-DEDUP HANG IS FIXED — and the reason I deferred it yesterday was itself a measurement error · Claude Code cloud
 
 **Shipped:** `20260920185051_audit_20260920_pack_page_dedup_tests_in_flight_not_merely_dispatched`. `collect_pack_nft_identity`'s next-page guard now tests **`AND d.collected_at IS NULL`**.
