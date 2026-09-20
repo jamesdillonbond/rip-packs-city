@@ -11,6 +11,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🔧 `/analytics/sales` PANEL THREE OF FOUR — "Biggest Sales" joined THREE tables across the whole window and only THEN took its top 10; it now limits first and enriches after, and Candy/Pinnacle/Golazos go 500 → 200 (Top Shot does NOT, and that is R121's index) · Claude Code cloud
+
+**Shipped: 1 migration (`20260920170000`), `analytics_sales_top_moves`. Plus register row **R121** (P1) for the fourth panel, which is NOT fixed. No repo code changed beyond the migration and the register.**
+
+🔎 **THE PAGE'S SCORECARD, all measured through the production caller today:** `sales/leaderboard` was always **200**; `sales/timeseries` **500 → 200** (migrations `20260920163600`/`165000`, earlier entry); `sales/top-moves` **500 → 200** (this one, for the collections below); `sales/summary` **still 500 for the big collections** — R121. **Three of four panels on a public page were dead and nothing was reporting it.**
+
+🚨 **A THIRD DEFECT THE OTHER TWO DID NOT HAVE, and it is the expensive one.** Beyond the shared family faults (view-read, `IS NULL OR` bounds, filter on a CASE expression), `analytics_sales_top_moves` **LEFT JOINed `editions`, `players` and `sets` across EVERY sale in the window and only then applied `ORDER BY price_usd DESC LIMIT p_limit`.** A ten-row panel paid for three joins over the whole range — and the editions join is **`e.id::text = s.edition_id`**, a **cast on the join key**, which defeats the index on `editions.id` for every one of those rows. ⭐ **The fix is ordering, not cleverness: top-N each source on its own, merge, re-limit, THEN enrich. The three joins now see at most `p_limit` rows.**
+
+⚠ **THE CAST STAYS, and that is correct rather than an oversight I missed:** `pinnacle_sales.edition_id` is **TEXT** while `sales.edition_id` is **UUID**, so the union column has to be text and the cast is unavoidable. What changed is its blast radius — 10 rows instead of the window.
+
+📏 **MEASURED, Top Shot 7 d (15,050 qualifying sales), warm-vs-warm:** before **statement timeout**; after **657 ms / 9,841 buffers** for the ordering scan. ⚠ **19.4 s for the SAME read cold off 2,143 disk reads** — the estate's IO spell, not the query.
+
+✅ **VERIFIED LIVE, before/after on identical URLs:** `candy_mlb&l30` **500 → 200**, fully enriched (rank 1 Junior Caminero #2 $203.72, magic_eden, tx hash, player and set names). `pinnacle&l7` **200** — the restructured UNION arm, $799 top sale, Flow `0x…` addresses, text edition ids like `PIXR-OEV1-CARS:Digital Display:1`, which is exactly why the union had to be text. ⭐ **Equivalence by an INDEPENDENT function:** the new top-5 for Candy is identical to what `get_top_sales()` (a different function, reached via `/api/market-analytics`) returns for the same collection and window — same order, same prices, same player and set names.
+
+⛔ **TOP SHOT top-moves IS STILL 500, AND I AM NOT CLAIMING OTHERWISE.** The ordering scan still heap-fetches, because `ORDER BY price_usd DESC` over the window needs a column set no single index covers — **the same root cause as R121**. This migration makes the panel WORK for every collection whose window fits the budget; it does not make it cheap. **R121's covering index — `(collection, sold_at DESC) INCLUDE (price_usd, buyer_address, seller_address, marketplace)` — is the fix for both this and the summary panel.**
+
+📌 **R121 FILED, AND IT CORRECTS MY OWN PUBLISHED HYPOTHESIS FROM TWO HOURS EARLIER.** The previous ledger entry proposed fixing `analytics_sales_summary` with *two index-only scans*. ⛔ **That is wrong and would have been worse than the 500:** the two scans would filter on DIFFERENT COLUMNS (`collection` text vs `collection_id` uuid), and `sales.collection_id` is **NULLABLE** while `sales.collection` is **NOT NULL** — so any row with a null id is counted by the main stats and dropped by the marketplace breakdown, making `sum(marketplace_breakdown)` silently disagree with `total_sales` **inside one response**. A fabricated-consistency defect is worse than an honest error. ⭐ **The lesson for the file: a candidate fix recorded in a ledger entry is a HYPOTHESIS with the same shelf life as a finding — re-derive it before acting, including when the author was me, this morning.**
+
+⚠ **WHY THE INDEX WAS NOT BUILT TODAY, dated rather than vague:** it is a `CREATE INDEX CONCURRENTLY` per partition; CIC needs `execute_sql` and dies at the 60 s cap leaving `indisvalid=false` (CLAUDE.md); and the instance was mid-IO-spell — `refresh_mv_pack_ev_latest` had been running **7m57s** with nearly every backend on `IO/DataFileRead`. **Build it on a quiet instance, one partition at a time, checking `indisvalid` after each.**
+
+⚠ **PARAMETER NUMBERING HAS A DELIBERATE GAP:** on the unfiltered branch `$4` is unreferenced while `$5` is used. `EXECUTE … USING` accepts that — **verified on this instance before applying, not assumed**.
+
+- **Revert:** re-apply the previous body, md5 `a697c73d9903d30f7609e63fd7624fda` (820 chars) — a single RETURN QUERY over `analytics_sales` with three LEFT JOINs ahead of the LIMIT. Reverting restores the 500 for every collection.
+
 ### 2026-09-20 · 🚨 `/analytics/sales`' VOLUME CHART HAS BEEN 500ing IN PRODUCTION FOR EVERY COLLECTION — found while checking whether Candy deserved a chip there; two structural defects, both fixed, Top Shot 15,079 sales/7 d now answers in 18 ms · Claude Code cloud
 
 **Shipped: 2 migrations. `20260920163600` — `analytics_sales_timeseries` stops reading the `analytics_sales` VIEW and reads `sales` + `pinnacle_sales` directly, with sargable date bounds and a `collection_id` filter. `20260920165000` — v2, the filtered branch groups by `collection_id` so the covering index serves it INDEX-ONLY. No repo code changed; both are DB-side.**
