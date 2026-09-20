@@ -33,6 +33,8 @@ Session close-out. **CLAUDE.md 39,592 → 39,717 chars (headroom 408 → 283).**
 
 **Final pack state:** 26/27 wallets complete, 1 mid-walk, 0 errors, every wallet carrying a confirmation floor, `check_wallet_pack_sync_floor_drift()` → `[]`.
 
+🚨 **AND THEN I PUSHED CLAUDE.md 8 CHARACTERS OVER THE LIMIT.** The rebase merged another session's CLAUDE.md additions with mine and the total came to **40,008**. The limit test **did fail** — and the push went out anyway, because I chained it as `npx vitest … | tail -4 && git push`. **The pipe made `&&` gate on `tail`'s exit code, not vitest's.** That is verbatim the trap this file already states: *a pipe reports the LAST command's status (read `${PIPESTATUS[0]}`)*. Main was red on the memory-file guard for ~2 min. ⭐ **Fixed by trimming MY OWN three additions rather than displacing anyone else's text** — all three are stated in full in the reference docs, so nothing was lost — back to **39,865 / 135 headroom**, and both guards re-verified **by exit code, not through a pipe**. ⚠ **The rule was already written down and I still hit it: a guard's verdict only counts if you read the guard's OWN exit status.**
+
 **Revert:** docs-only — `git revert` this commit.
 
 ### 2026-09-20 · 🚨 THE KILL-RATE CLI AND THE SENTINEL ARM IT SAYS IT MIRRORS GAVE OPPOSITE VERDICTS ON THE SAME LANE — `npm run pipelines:kills` was pinned at exit 1 by a workflow that is working exactly as designed · Claude Code cloud
