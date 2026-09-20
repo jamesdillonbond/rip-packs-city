@@ -3,6 +3,57 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## ⭐ THE THIRTEENTH SHAPE (2026-09-20): A DISCLOSURE THAT DOES NOT SHARE ITS KPI'S DENOMINATOR — the honesty note itself carried the false claim
+
+⭐ **The defect was INSIDE the fix for an earlier one.** `/insights/panini-squeeze` headlines
+`sealed_fmv_exposure_usd_hc` — the broad+partial ("lower-bias") subset — whenever that column is
+present. Directly beneath it, the 2026-09-19 composition disclosure read:
+
+> *"**X%** of the sealed value **above** comes from **N** editions priced from a single seller's
+> asking price"*
+
+…using `pct_sealed_usd_from_asks_only` and `editions_ask_only`, which `panini_squeeze_totals`
+computes over **ALL SETS** (the `FILTER (WHERE fmv_confidence = 'ASK_ONLY')` carried no
+`coverage_flag` predicate). **"The sealed value above" was not the population those columns
+describe.** Measured 2026-09-20: **51.7% published against 53.8% true of the KPI.**
+
+🚨 **THE SHAPE, stated generally: a footnote, basis line or methodology note is READ AS A PROPERTY
+OF THE NUMBER IT SITS UNDER. If it is computed over a different population, it is a false statement
+about that number — and it is the WORST place for one, because a disclosure is what a careful reader
+consults precisely when they are trying not to be misled.** This is R109's *"an AGGREGATE is never a
+proxy for the SLICE you measured"* applied to prose rather than to a metric.
+
+⚠ **AND THE DIRECTION MATTERS THE OTHER WAY ROUND FROM INSTINCT.** The error was small (2.1 points)
+and **flattering** — it understated how much of the headline rests on unsold asks. ⭐ **A small
+flattering error in an honesty disclosure is a REASON TO FIX, not a reason to defer: the entire value
+of the note is that a reader can trust it against their own scepticism.**
+
+✅ **FIXED** (migration `20260920175228` + `lib/insights/panini-board.ts` +
+`PaniniSqueezeClient.tsx`): four `_hc`-scoped columns APPENDED to the view, and the client reads the
+`_hc` pair whenever it is rendering the `_hc` headline, falling back to the all-sets pair otherwise.
+⛔ **The existing all-sets columns were deliberately LEFT ALONE** — other consumers may read them,
+and *silently repopulating a published percentage is this very defect*. The number and its
+denominator now travel together as separate columns.
+
+📏 **What the corrected disclosure exposes, which is why it was worth it: within the hc subset,
+ASK_ONLY is 364 of 4,053 editions (9.0%) but $1,221,300 of $2,271,750 (53.8%) of the value.** A ninth
+of the editions carries over half the headline.
+
+⛔ **NOT shipped, and the boundary is the point:** the source filing also proposed PROMOTING the
+sale-backed figure ($923k) to the primary tile and demoting the $2.27M blend. **That is an editorial
+decision about what a public board leads with — the owner's, not a defect.** Fixing a falsehood and
+re-choosing a headline are different acts; only the first is a bug fix. The new columns make the
+promotion a one-line change if it is ever wanted.
+
+⚠ **Checked and NOT a member of this class: `app/api/og/insights/panini-squeeze/route.tsx`.** It sums
+ALL SETS for **both** its total and its ask share, in one walk, deliberately (its own header explains
+why it does not read the totals view). So it is internally consistent — it reports a different
+POPULATION than the page headline, which is the same editorial question above, not a mismatch.
+⭐ **The test for this class is not "do the two numbers differ from the page" but "do the number and
+its annotation share a denominator".**
+
+---
+
 ## 🚨🚨 THE TWELFTH SHAPE (2026-09-20, register R120/R121): THE CLASS HAS A **WRITE** SIDE — a failed WRITE rendered as a successful RUN
 
 Every shape above is a failed READ published as a fact. This is its mirror, and the canon had no entry for it: **a write is rejected, and the pipeline's own record says the run succeeded.** It ran **66 days** in `app/api/cron/panini-ingest/route.ts` and was found only because an unrelated freshness metric disagreed with the row it named.
@@ -39,6 +90,21 @@ A fleet sweep (register **R121**) found this expression in **20+ writers**. Two 
 - **The clones are byte-level.** `allday-offers-indexer`/`golazos-offers-indexer`, `compute-allday-pack-ev`/`compute-golazos-pack-ev`, `special-serial-sweep`/`special-serial-delta`, `ingest-allday-pack-opens`/`ingest-topshot-pack-opens-history` are clones **including their comments**. Every fix is a pair.
 - ⭐ **THREE files already carry a long comment fixing this exact class on the READ path while the WRITE beside it stays swallowed** (`allday-offers-indexer:297`, `ingest-allday-pack-opens:243`, `candy-listings-indexer:571`). **A hardened read next to an un-hardened write, in the same function, is itself a grep-able signature.**
 - ⚠ **And the honest note: my own first pass on the origin file missed one.** I fixed editions, serials, fmv and sales, then the sweep found `panini_pack_state` still had shape 2 and `packs: packs.length` still had shape 4 — **in the very function I had just declared clean.** Sweep the file you fixed, with the same grep you use on the fleet.
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — the OG-font instance of "a probe whose HARNESS differs from production"
+
+CLAUDE.md keeps the RULE and now points here for the case. The displaced text, verbatim:
+
+> ⚠ **And a probe whose HARNESS differs from production in the ONE dimension the answer depends on
+> is not a measurement of production**: with **no `fonts`** supplied, `→` cost no fetch; production
+> always passes `brandFonts()`, where it does.
+
+⭐ **Why this one is the canonical instance:** the probe was correct in every respect except the one
+that decided the answer. A glyph that needs no font fetch is free; the same glyph under
+`brandFonts()` is not. The harness did not *approximate* production badly — it differed in exactly
+the dimension under test, which is the only difference that can invert a result.
+
+---
 
 ## Displaced from CLAUDE.md 2026-09-20 (verbatim) — the SERVER-SEEDED PROP bullet
 

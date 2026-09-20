@@ -129,6 +129,12 @@ whole-group statistic used as a proxy for a per-slice property.
    `select edition_age_p50_h, edition_age_p90_h, pct_editions_stale_45d, pct_editions_walked_7d from panini_coverage_summary`.
    **Exit: `pct_editions_stale_45d` ≤ 1% every day through 2026-09-26.**
 
+   📏 **Re-read 2026-09-20 ~11:3x AM PT, later the same day — still falling:** `pct_editions_stale_45d`
+   **0.0%** (1 edition), age p50 **56.9 h**, walked ≤7 d **64.9%**. ⚠ **That last 1 is not a walk
+   problem and must not be read as one:** it is register **R120**'s residual — one edition
+   (`packcard-2332_486965_12679054_413`, Khuliso Mudau) that the walk is not reaching at all, for a
+   cause distinct from the FK defect that froze the other two. **Judge step 1 on the other 5,073.**
+
    ⚠ **`pct_trustworthy` did NOT move (36.2% → 35.2%) and that is not a counter-result** — §1's
    correction says exactly this: it bands on listing bias, not freshness. Do not read it either way.
 2. **Then the P1 bridge.** The mapping is settled and executable (§5). It is ~2 days of work, not
@@ -235,8 +241,24 @@ this is exactly the case it was written for.
 - **`panini-ingest` severity `info` → `medium`** at go-live (P3 in the 09-06 audit, missed on
   08-01). It pages his own residential box, so it is his call, and it should wait for §4 step 1 —
   raising it while a quarter of the catalogue is stale trains him to skim past it.
+  ⭐ **That precondition has now largely cleared** (see the §4 step-1 table), so this is live again
+  as soon as the 7-day hold completes. ⚠ §8a still stands: the "~15% of ticks dropped by design"
+  premise it rests on **cannot be measured** with this estate's instruments, so decide it on the
+  cost of a missed page, not on that number.
 - **#58 (`OPENSEA_API_KEY`) stays moot** under #64 unless the bridge plane is revisited.
-- The `published` / `is_active` flips themselves.
+- The `published` / `is_active` flips themselves. ⚠ **The `published` flip is not cosmetic** — it
+  rewrites the site-wide provenance badge (§5 gap 1); that specific defect is fixed and pinned, but
+  re-read the pin before flipping.
+- 🆕 **2026-09-20 — THE SQUEEZE BOARD'S HEADLINE TILE.** The ask-only disclosure's denominator
+  defect is FIXED (migration `20260920175228`: the footnote now shares the KPI's population). The
+  source filing ALSO proposed **promoting the sale-backed figure to the primary tile** — primary
+  `$923k` sale-backed, `$2.27M incl. ask-derived` demoted to the existing `psq-alt` line. **That was
+  deliberately NOT shipped: it is a decision about what a public board LEADS with, not a defect.**
+  The measurement that motivates it: within the lower-bias subset, **ASK_ONLY is 364 of 4,053
+  editions (9.0%) but 53.8% of the value** — a ninth of the editions carries over half the headline.
+  The columns exist, so it is a one-line client change either way. **Same question, same owner, for
+  `app/api/og/insights/panini-squeeze/route.tsx`**, which reports the all-sets population for both
+  its figures (internally consistent, so not a defect — just a different choice from the page).
 
 ---
 
