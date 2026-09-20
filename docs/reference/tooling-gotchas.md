@@ -106,7 +106,24 @@ gating command in the FOREGROUND and capture `$?` immediately, or write the valu
                                             # re-attach the diff header, write mine.patch
     git apply --cached mine.patch           # rc=0; nothing else is disturbed
 
-⛔ **`-U1` IS LOAD-BEARING, NOT A PREFERENCE — AND AT GIT'S DEFAULT THE RECIPE SILENTLY DEGRADES TO ALL-OR-NOTHING. MEASURED 2026-09-19, both sessions independently:** two edits **4 lines apart** → `git diff -U3` (the DEFAULT) yields **1 hunk**, `-U1` yields **2**; **6 lines apart** → `-U3` still yields **1**, `-U1` still **2**. ⇒ **At default context, any two sessions editing within ~6 lines of each other produce a SINGLE inseparable hunk, so "keep only your hunks" quietly becomes "take both or neither" — it does not error, it just stops being a partial stage.** ⭐ **Always pass `-U1` here, and if a hunk still contains someone else's line, STOP: that is the recipe telling you the edits genuinely overlap and the only safe move is to wait or coordinate.**
+⛔ **CONTEXT WIDTH IS LOAD-BEARING, AND AT GIT'S DEFAULT THE RECIPE SILENTLY DEGRADES TO ALL-OR-NOTHING.** ⭐ **The general rule, measured across gaps 0–7 at three widths (2026-09-19, `core.autocrlf=false`): two changes collapse into ONE hunk iff `gap ≤ 2 × U`**, where **`gap` = the number of UNCHANGED lines BETWEEN them** and `U` = context width. ⚠ **State that unit whenever you quote the threshold** — "six lines apart" is ambiguous between index distance and lines-between, and two sessions measuring this tonight produced an apparent conflict that was purely the definition (same trap as the 2.2 GB vs 1.59 GiB denominators earlier that evening).
+
+| `gap` (unchanged lines between) | `-U0` | `-U1` | `-U3` (default) |
+|---:|:---:|:---:|:---:|
+| 0 | **1** | **1** | **1** |
+| 1–2 | 2 | **1** | **1** |
+| 3–6 | 2 | 2 | **1** |
+| 7+ | 2 | 2 | 2 |
+
+⇒ **At the default `-U3`, any two sessions editing within SIX unchanged lines of each other produce a single inseparable hunk**, so "keep only your hunks" quietly becomes "take both or neither" — it does not error, it just stops being a partial stage. **`-U1` drops that radius to two.**
+
+⭐ **AND THERE IS AN ESCAPE HATCH FOR THE LAST TWO LINES, verified end to end: `-U0` NEVER merges (`gap ≤ 0`), but a zero-context patch needs its own apply flag.** On a `gap = 1` case that `-U1` cannot split:
+
+    git diff -U0 -- <file> > all0.patch     # keep your hunks -> mine0.patch
+    git apply --cached mine0.patch                  # rc=1  "patch does not apply"  ← LOUD
+    git apply --cached --unidiff-zero mine0.patch   # rc=0  staged MINE, unstaged THEIRS
+
+⭐ **So: `-U1` normally, `-U0 --unidiff-zero` when the edits are within a line or two — and the failure mode is a hard rc=1, never a silent partial.** ⚠ **The stop condition still applies above all of it: if a hunk STILL contains someone else's line, the edits genuinely overlap — wait or coordinate, do not widen the net.**
 
 ⭐ **Step 3 is the one to reach for when the file genuinely holds both sessions' work and neither can wait.** Measured on a throwaway repo with two edits far apart in one file: after `git apply --cached`, `git diff --cached` showed **only** the author's hunk, `git diff` showed **only** the other session's, and the working tree still contained both. ⚠ **It emits the usual `LF will be replaced by CRLF` warnings on this box and works anyway** — do not read those as failure. ⛔ **An earlier draft of this section proposed `git checkout -- <file> && git apply …` instead. DO NOT USE IT: `git checkout --` destroys the working-tree copy, which on a shared tree means destroying the OTHER session's unstaged edit — the exact loss this whole section exists to prevent.** `--cached` never touches the working tree, which is why it is the right verb here. ⭐ **In practice step 1 plus step 2 is the whole fix: the sweeps were not subtle, and one `git diff` before `git add` would have shown a stranger's prose every time.** ⚠ **And if you do sweep one, say so in the message rather than re-committing over it** — the content is not lost, but the next reader needs to know the commit is not what its subject claims.
 
