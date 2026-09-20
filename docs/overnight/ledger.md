@@ -11,6 +11,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 📋 SWEPT ALL 36 `check_*` INVARIANTS AND READ EACH VERDICT — 2 are red, and the one nothing reads has a lane that has NEVER drained · Claude Code cloud
+
+Generalising what the moments finding above taught: **the guard existed, was red, and nothing was reading it.** So: enumerate every `check_*` in `public`, read each one's verdict, and ask of each *what runs it*. Read-only, no writes.
+
+⚠ **Shape first, because this file's own rule bit me twice in ten minutes.** Return shapes are MIXED and cannot be assumed: **SETOF** (clean = 0 rows), **jsonb ARRAY** (clean = `[]` — read the LENGTH), and **jsonb OBJECT** (a report, where `jsonb_array_length` errors outright). I wrote an array-length read across four of them and got `22023 cannot get array length of a non-array`. ⛔ **And length is not severity:** `check_unmapped_backlog_growth()` returns 2, which is **two collections reported, both `severity: info`** — not two violations. Reading the count would have filed a false alarm.
+
+**CLEAN (0 / `[]` / no offenders), as of 2026-09-20 ~10:55 PT:** `check_secdef_anon_exec_drift` · `check_secdef_anon_execute_violations` · `check_public_security_invariants` · `check_anon_write_surface` · `check_function_search_path_drift` · `check_procedure_search_path_unpinned_drift` · `check_procedure_transaction_control_pin_drift` · `check_when_others_timeout_blind` · `check_wallet_pack_sync_floor_drift` (new today) · `check_backward_cursor_rewind` · `check_cursor_stall_threshold_drift` · `check_suppression_parked_claim_drift` · `check_cron_heavy_job_exec_drift` (133 inspected, 0 offenders) · `check_edge_lane_observability` (`stale: []`, 1 documented deliberate exclusion) · `check_maintenance_load` (0 vacuums/clusters/index builds, 2 io_waiters).
+
+**RED, and BOTH have a watcher — so these are surfaced, not silent:** `check_pipelines_running_but_not_succeeding` → **5 lanes firing with zero ok and zero rows** (`allday-lock-refresh`, `atlas-market-events-prune`, `lock-check-batch`, `pinnacle-metadata-backfill`, `run-insider-detectors`). It is called by `get_pipeline_alerts()`, so it is doing its job. ⚠ Its own `detail` text states the thing worth keeping: the cadence arm and `detect_stalled_pipelines()` both read `max(started_at)` with **no ok filter**, so these rows keep the silence clocks green and **this arm is the only one that can see them**. `check_panini_editions_missing_card_stats` → 1, and Panini card stats is being actively worked in another session tonight — left alone.
+
+🚨 **`check_unmapped_backlog_growth()` HAS ZERO CALLERS — not a route, not a cron, not another function.** (`check_wmc_ownership_freshness` likewise: its single repo "hit" is a **comment** in `app/api/wallet-backfill/route.ts:343`, not a call — verified, because a `grep -l` count of 1 reads exactly like a reader.) And what it reports, nobody is reading:
+
+- `nfl_all_day` — **healthy**: 74,199 open, `net_24h −1,436`, drain_ratio 11.3, `drain_stalled false`, last resolved 34 min ago. Draining, ~9 days to clear. This is the lane another session is working tonight.
+- ⚠ `ufc_strike` — **`drain_stalled: true`, `last_resolved_at: NULL`, `outflow_7d = 0`**: 1,070 open rows, oldest sale **2025-12-30**, and **not one row has ever been resolved**. A null `last_resolved_at` is not "slow", it is "this lane has never run".
+
+⚠ **NOT ACTED ON, and the reason matters more than the finding:** UFC is a thin market and 1,070 rows may be a deliberate non-priority — **`severity: info` is the function's own verdict, and I am not going to overrule it from outside.** What is defensible to say is narrower: *nothing reads this check, so the distinction between "deliberately unstaffed" and "silently never wired" is currently unrecorded anywhere.* That is the gap, not the row count.
+
+**Cheapest next step if anyone wants it:** wire `check_unmapped_backlog_growth()` into `app/api/cron/data-integrity` beside `check_wallet_pack_sync_floor_drift` (added today) and flag only on `drain_stalled = true`, so a lane that never drains is visible without alarming on a healthy backlog. ⚠ That route's legs are **serially bounded** and its worst case is already 23 s against a 30 s `maxDuration` — add it INSIDE the existing `Promise.all`, not as a seventh serial leg.
+
+**No revert path — nothing was changed.**
+
 ### 2026-09-20 · ⚾ CANDY JOINS THE MARKET PULSE — it was missing from the public board, the homepage 24h stats AND the email digest, and its absence was being rendered as a measured **$0** · Claude Code cloud
 
 **Shipped: 1 migration (`20260920175000`). `get_market_pulse_all` + `get_market_pulse_windows` gain `candy_mlb`. No repo code changed — the board needed none.**
