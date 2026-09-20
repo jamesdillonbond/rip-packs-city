@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { redactSecrets } from "@/lib/redact-secrets";
 import { OPS_ALERT_EMAIL } from "@/lib/ops-alert";
 import { isSaturationError } from "@/lib/pipeline/saturation";
-import { fitTelegramMessage, fitTelegramText } from "@/lib/telegram-message";
+import { escapeTelegramHtml, fitTelegramMessage, fitTelegramText } from "@/lib/telegram-message";
 import { summariseAlertDelivery } from "@/lib/sentinel/alert-delivery";
 import { summariseZeroYield } from "@/lib/sentinel/zero-yield";
 import { summariseBlindChecks, BLIND_CHECK_NAME, isBlind, isRefused } from "@/lib/sentinel/blind-checks";
@@ -363,6 +363,26 @@ export function summarizeSentinelChange(
   if (cleared.length) parts.push(`cleared: ${list(cleared)}`);
   if (!parts.length) return `no change since ${when}`;
   return `${parts.join(" | ")} (vs ${when})`;
+}
+
+/**
+ * One Telegram line per check. The NAME and DETAIL are values, so they are
+ * escaped; the `<b>` around the name is ours and is not.
+ *
+ * 🚨 Pulled out of the handler on 2026-09-19 because the raw interpolation it
+ * replaces (`<b>${c.name}</b>: ${c.detail}`) cost the sentinel its Telegram
+ * channel for five hours that day: an acknowledgement reason containing
+ * `baseline_per_day < 400` reached this line through the detail, and Telegram
+ * rejected every send with `can't parse entities: Unsupported start tag ""`.
+ * The detail is BUILT FROM DATA — ack reasons, lane names, error strings from
+ * Postgres and upstream APIs — so it is not ours to keep angle-bracket-free;
+ * the boundary has to be. See `escapeTelegramHtml` for the contract.
+ */
+export function renderSentinelTelegramLine(
+  c: { status: string; name: string; detail: string },
+  emoji: (status: string) => string,
+): string {
+  return `${emoji(c.status)} <b>${escapeTelegramHtml(c.name)}</b>: ${escapeTelegramHtml(c.detail)}`;
 }
 
 async function sendTelegram(text: string): Promise<Delivery> {
@@ -2944,14 +2964,18 @@ async function runSentinelWithin(clock: WallBudgetClock) {
       // it at 4096 characters. The builder drops the least severe lines first
       // and declares what it dropped, so a large incident degrades the DETAIL
       // rather than the DELIVERY.
+      // \u26A0 Every VALUE on these lines is escaped for Telegram's HTML parser \u2014
+      // `changeLine` carries check names and a failure reason, and the details
+      // carry ack reasons and upstream error strings. A raw `<` in any of them
+      // is a rejected send (observed 2026-09-19; see renderSentinelTelegramLine).
       const tgLines = checks.map((c) => ({
         status: c.status,
         name: c.name,
-        text: `${emoji(c.status)} <b>${c.name}</b>: ${c.detail}`,
+        text: renderSentinelTelegramLine(c, emoji),
       }));
       const tgMsg = fitTelegramMessage(
         `${statusEmoji} <b>RPC Sentinel - ${overallStatus}</b> \u00B7 ${countLine}\n` +
-          `${formatPT(now.toISOString())}\n${changeLine}`,
+          `${formatPT(now.toISOString())}\n${escapeTelegramHtml(changeLine)}`,
         tgLines,
       );
       const tg = await sendTelegram(tgMsg);

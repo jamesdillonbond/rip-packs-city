@@ -47,6 +47,39 @@
 /** Telegram's documented `sendMessage` cap on `text`, in CHARACTERS (not bytes). */
 export const TELEGRAM_TEXT_LIMIT = 4096
 
+/**
+ * Escape a piece of PLAIN TEXT for interpolation into a `parse_mode: "HTML"`
+ * Telegram message.
+ *
+ * 🚨 OBSERVED LIVE 2026-09-19, 12:04 PM → 5:04 PM PT (and it would have run to
+ * 2026-10-01). The sentinel's `Cadence Collapse` acknowledgement reason, saved
+ * that morning, contained the substring `baseline_per_day < 400`. The ack text is
+ * prepended to the check's detail, the detail is interpolated raw into the
+ * Telegram line, and Telegram's HTML parser answered every send with
+ *
+ *     http_400 … "Bad Request: can't parse entities: Unsupported start tag \"\""
+ *
+ * so the fleet alarm lost its Telegram channel for five hours on a `<` that a
+ * human typed into a NOTE. Email still delivered, which is the only reason it
+ * was visible at all (`Alert Delivery` arm). It is the same class as the 09-11
+ * length rejection one paragraph up: a property of the CONTENT decides whether
+ * the alarm is heard, and the failure's output is silence.
+ *
+ * ⚠ Telegram is stricter than a browser here: a bare `<` that does not open a
+ * tag it recognises is a hard reject, not a literal. `>` and `&` are tolerated
+ * in practice but documented as requiring escape, so all three are escaped —
+ * the documented contract, not the observed leniency.
+ *
+ * Apply it to the VALUES (names, details, reasons), never to the markup you add
+ * around them — `<b>${escapeTelegramHtml(name)}</b>` is the shape.
+ */
+export function escapeTelegramHtml(s: unknown): string {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+}
+
 export type AlertLine = {
   /** "ok" | "warn" | "critical" — anything else ranks with "ok". */
   status?: string
