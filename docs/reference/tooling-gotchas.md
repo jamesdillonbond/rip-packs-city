@@ -520,6 +520,48 @@ one before writing it down.** `CREATE DATABASE` twice in the same cluster settle
 it is the difference between recording a cause and recording an alibi. Establish the green baseline
 BEFORE editing a pin, so a failure you meet mid-change is never ambiguous in the first place.
 
+### ⚠ The `when-others-timeout-blind` marker: anchored at the DECLARATION, phrase on the LAST line
+
+`__tests__/new-plpgsql-recording-handlers-catch-query-canceled.test.ts` computes the suppression line
+from the `CREATE … FUNCTION` match, **not from the handler** — so the marker goes in the file HEADER,
+above the CREATE, and NOT inside the `$` body. ⭐ **That is the good news and worth knowing before you
+reach for it: suppressing this guard changes no SQL, so live `prosrc` is untouched and any md5 pin on
+the body still holds.** (Used 2026-09-20 to green main on another session's `collect_pack_nft_identity`:
+diff was 8 insertions, 0 deletions, all above `CREATE OR REPLACE`.)
+
+🚨 **BUT THE LOOKBACK IS FIXED AT 8 AND SQL `--` COMMENTS DO NOT EXTEND IT.** `marker-suppression.mjs`
+grows its window by walking a contiguous comment block above the anchor — recognising `//`, `*` and
+`/*`, the **JavaScript** prefixes. A SQL `--` is none of them, so on a migration **only the raw 8-line
+lookback applies**. A first attempt put the marker phrase on the FIRST line of an 8-line justification
+block and it landed **one line outside the window** — silently, with the guard still red and no hint
+why. **Put the marker phrase on the LAST line of the block, immediately above the CREATE.** ⚠ This is
+the same silent-ignore that the helper's own doc records happening twice on 2026-09-07.
+
+⭐ **And check whether the guard is even the right target.** Its `RECORDING` test is **body-scoped**
+(`log_pipeline_run` / `statement_timeout` / `57014` / `999` anywhere in the function), so a small
+handler that records nothing — a JSON cast guard, say — is flagged because some *other* part of the
+15,849-char body mentions one of those. Read the handler before assuming the code is wrong.
+
+### 🚨 In an App Router tree, a basename-keyed backup is a COLLISION BY DEFAULT
+
+CLAUDE.md's rule is *"Key any backup on the FULL PATH, never the basename"*, and it was written after
+three `page.tsx` targets shared one `.bak`. **It bit again on 2026-09-20, harder, because the shape is
+structural here:** `app/api/wallet/save/route.ts` and `app/api/wallet/seed/route.ts` **both basename to
+`route.ts`** — as does every one of the ~150 route handlers in this repo. A planted-defect control did
+`cp "$f" "/tmp/bak/$(basename $f)"` over both, and the restore wrote seed's 334 lines over save's 65.
+
+⭐ **THE TELL WAS THE RESTORE COMING BACK *WORSE* THAN THE PLANTED RUN** — 11 failures where the
+deliberate defect had produced 3. A restore that does not return you to the baseline you measured is a
+destroyed file until proven otherwise; **measure the baseline first so you can recognise it.**
+
+Recovery was total only because both files were tracked and the edits were re-appliable from the patch
+script (`git checkout --` + re-run). **Write the patch as a script, not as hand-edits** — that, not the
+backup, is what made this survivable. The safe form:
+
+```bash
+cp "$f" "/tmp/bak/$(echo "$f" | tr '/' '__')"   # FULL PATH as the key
+```
+
 ### ⚠ The anon-exec marker must sit on ONE line with the function name
 
 `__tests__/migration-new-function-states-its-anon-exec-decision.test.ts` accepts a marker only when a

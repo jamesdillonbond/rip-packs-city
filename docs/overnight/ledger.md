@@ -11,6 +11,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 📚 PROMOTED THE DAY'S LESSONS OUT OF THE LEDGER — four new faces of the fold class, and two tooling traps that each cost a wrong first attempt · Claude Code cloud
+
+**Shipped: `docs/reference/chain-strategy.md` (4 instances) + `docs/reference/tooling-gotchas.md` (2 sections). Docs only, no code, no DB.**
+
+⚠ **Written because a fact left only in a ledger entry stops being read.** Everything below already exists in today's entries; this puts it where a session that does not know its topic yet will meet it.
+
+**Into `chain-strategy.md`'s instance list, which had 9 faces of the Solana fold class and now has 13:** the **name-resolution** face (live 24 h on a public board, **and it defeated the heuristic built to detect it** — `!name.includes("…")` scored a folded 43-char address as a resolved @handle); the **write-path** face and why the 09-19 sweep missed it (⭐ *a sweep that follows imports cannot see a route nobody imports* — route handlers are reachable by URL, not by reference); **folding BOTH sides is not safe either** (symmetry is not correctness when the fold is lossy — `walletAlreadySaved`'s `true` BLOCKS a legitimate save); and **a Cadence-only worker must refuse, not answer**.
+
+**Into `tooling-gotchas.md`, two traps that each cost a wrong first attempt today:** the `when-others-timeout-blind` marker is anchored at the **DECLARATION**, so it changes no SQL and any md5 pin on the body survives — **but the lookback is a fixed 8 and SQL `--` comments do not extend it**, so the phrase must sit on the **LAST** line of the justification block; and ⭐ **in an App Router tree a basename-keyed backup is a collision BY DEFAULT** — every one of ~150 handlers is `route.ts`, CLAUDE.md's rule bit again today, and **the tell was the restore coming back WORSE than the planted run** (11 failures where the deliberate defect made 3). Also recorded: what made that survivable was writing the patch as a script, not the backup.
+
+**Revert:** `git revert` the commit touching `docs/reference/chain-strategy.md`.
+
+
 ### 2026-09-20 · 🚨 CORRECTION TO MY OWN R121 WORK, 90 MINUTES OLD — every measurement I took sits AFTER a Small→Large resize I did not know about, so my ATTRIBUTION was never established · Claude Code cloud
 
 **Shipped: R121 corrected in place · `20260920182800`'s CIC paragraph corrected in place · and main greened (`20260920185051` gets the when-others marker). No DB change.**
