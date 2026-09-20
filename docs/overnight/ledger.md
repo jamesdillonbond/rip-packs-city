@@ -11,6 +11,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ⚖ CORRECTION TO MY OWN THREE ENTRIES TODAY — THE CHANGE POINT IS A COMPUTE RESIZE AT 10:39:57 AM PT, NOT "THE BOX CALMED DOWN"; thin-FMV re-measured 604 s → 11.23 s and the 57.9 h stale guard is cleared · Claude Code cloud
+
+**Shipped: one data mutation (`refresh_topshot_thin_fmv_editions()`, 7 → 11 rows). No code.**
+
+🚨 **`pg_postmaster_start_time()` = 2026-09-20 10:39:57 AM PT**, with `max_connections 160 · shared_buffers 2GB · work_mem 12MB` — the **Small → LARGE** resize. Every measurement I took this morning straddles it:
+
+| reading | PT | tier |
+|---|---|---|
+| classify All Day leg **56.7 s** | 10:15 | Small |
+| pinnacle discovery KILLED, 32,332 ms | 10:22 | Small |
+| — **resize 10:39:57** — | | |
+| classify whole 3-leg loop **3.2 s** | 11:06 | Large |
+| drain 4/4 slugs 5.1 s, `deadline_hit:false` | 11:17 | Large |
+| pinnacle `ok`, 1,693 ms | 11:22 | Large |
+
+⚖ **My verdicts stand; my MECHANISM was wrong and that is the part worth correcting.** I recorded all three as *confounded, not proof* — correct — but attributed the confound to ambient IO settling and to #126. It was **hardware**. A reader of those entries would go looking for a spell that had passed instead of a dated tier change. ⚠ This is the file's own rule landing on me: *a reading taken while its SUBJECT CHANGED is not a reading* — I checked that the subject was calm and never checked whether it was the SAME MACHINE.
+
+📏 **thin-FMV, re-measured on the new tier before acting** (read-only probe: the function's SELECT half, no TRUNCATE, no INSERT): **11.23 s, 11 editions**. Against `canceling statement due to statement timeout` at **601 s / 604 s** on 09-19 and 09-20. ~54×. So **both writers self-heal on their own schedules** — the pg_cron tick at 01:30 PT needs 11 s of a 600 s ceiling, the route tick at 08:17 PT needs 11 s of a 120 s wall.
+
+⭐ **And the stale set was measurably WRONG, not merely old: 7 rows held vs 11 flagged now.** Four Top Shot editions became thin after 09-18 and were **not** flagged, so the deal board showed a confident discount and alerts did not suppress them — the exact harmful direction the watchlist note names, now observed rather than predicted. Ran the refresh: **11 rows, computed_at 11:41:52 AM PT**, 57.9 h of staleness gone.
+
+👉 **The "deliberately did not tune it" call was right, for a better reason than I gave.** The lever was the compute tier, and it had already been pulled 45 minutes before I wrote that line. ⚠ **The route fix and the watchlist row stand regardless — they are about the INSTRUMENT, not the speed.** The lane had four blind instruments; the next time it dies, something sees it. ⚠ And this lane is the shape the new **CADENCE AND BUDGET ARE ONE DECISION** rule describes: a killed tick's delta rolls back and then GROWS against the frozen table, so staleness compounds rather than plateaus.
+
+⛔ **Re-derive, do not quote: every pre-09-20 finding on this estate citing the 22 MB/s floor was measured on SMALL.** Today's are Large. That includes my own morning unifying result.
+
+- **Revert:** n/a — the mutation is `refresh_topshot_thin_fmv_editions()`, a delete-then-insert the daily schedule repeats; the prior contents were the 57.9 h stale set.
+
 ### 2026-09-20 · 🔬 A CONFIDENCE SHARE FELL 30 POINTS WITH NO PRICING CHANGE — the Panini freshness check reported ✅ over a 43%-of-median walk, and the metric that moved has no owner in the precompute · Cowork
 
 **Shipped: `docs/reference/roadmap-status.md` gains a dated block on the 09-19 Panini composition step (cohort control included). The `panini-freshness-check` Cowork scheduled task was rewritten — 5 queries/2 escalations → 7 queries/4 escalations. No app code, no migration, no DB state touched.**
