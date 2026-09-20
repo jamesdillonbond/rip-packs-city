@@ -117,6 +117,12 @@ export type KillVerdict =
   | 'recovered'
   /** Kills are present and the record does not separate — genuinely intermittent, or too few ticks to tell. */
   | 'intermittent'
+  /**
+   * NOTHING correlated, because there is no terminal writer to correlate AGAINST.
+   * ⚠ This is not a rate of 100% — it is the absence of the evidence a rate needs.
+   * See the UNVERIFIED block below for why it is a verdict and not a filter.
+   */
+  | 'unverified'
 
 export type KillRecord = {
   pipeline: string
@@ -203,6 +209,7 @@ export function classifyKillRecord(
   pipeline: string,
   ticks: readonly KillTick[],
   wallSec: number | null = null,
+  terminalRowsInWindow: number | null = null,
 ): KillRecord {
   const ordered = [...ticks].sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime())
   const total = ordered.length
@@ -250,6 +257,75 @@ export function classifyKillRecord(
       chanceRunIsLuck: null,
       ...wallFields,
       note: `${total} ticks, no kills` + wall.wallNote,
+    }
+  }
+
+  // ── UNVERIFIED: no writer to correlate AGAINST (2026-09-20) ────────────────
+  // 🚨 THE DIVERGENCE THAT FOUND THIS. `check_wall_kills()` — the SQL arm whose
+  // header says it MIRRORS this module — has carried this rule since 2026-09-13.
+  // This module never got it. Read live on 2026-09-20 within a minute of each
+  // other, against the same `pipeline_runs` rows:
+  //
+  //   check_wall_kills()   dead-lane-backstop → `unverified`, 8 heartbeats, NOT an offender
+  //   correlateRuns()      dead-lane-backstop → `failing`, 15/15 = 100%, TOP OF THE LIST
+  //
+  // Same table, same correlation, opposite verdict — and the divergent one is
+  // the operator-facing CLI, `npm run pipelines:kills`, whose exit code is 1 on
+  // any `failing` record. `dead-lane-backstop` is a GitHub-Actions
+  // scheduler-liveness probe: `.github/workflows/dead-lane-backstop.yml` writes
+  // `dead-lane-backstop-heartbeat` and BY DESIGN never writes a terminal row.
+  // There is nothing to fix in that lane, so the script exits 1 on every run,
+  // forever — and CLAUDE.md's rule is that a permanently-red instrument is
+  // indistinguishable from a broken one and stops being read.
+  //
+  // ⭐ THE DEFECT IS THE HONESTY ONE, not a cosmetic verdict name. What the
+  // correlation OBSERVED is "no terminal row". That has two incompatible
+  // meanings — the tick was killed, or this lane has no terminal writer at all —
+  // and `failing` publishes one of them as a fact. A marker with no writer to
+  // correlate against is UNPROVEN, not dead.
+  //
+  // ⚠ THE DISCRIMINATOR IS THE DATA, NEVER A NAME ALLOWLIST — the same rule the
+  // `-dispatch` convention below already follows. A writer is PROVEN by a
+  // terminal row for this base existing anywhere in the window, not by what the
+  // pipeline is called. So a lane that really is killed on every tick still
+  // reads `failing` as long as ONE terminal row exists to prove the writer runs.
+  // That arm is kept alive in the tests by a subject that genuinely has one.
+  //
+  // ⚠ THE PRICE, stated rather than discovered later: a lane whose FIRST kill
+  // arrives before its first success, and a lane killed on every tick for the
+  // whole ~73 h window, both read `unverified` instead of `failing`. That is a
+  // downgrade from alarm to warning, NOT to silence — `unverified` is a verdict,
+  // it is NAMED in the report with its heartbeat count, and it sorts above
+  // `recovered` and `healthy`. It is also the same trade this file already makes
+  // for `-dispatch` markers (see DISPATCH_SUFFIX), where it is currently a
+  // DROP-OUT: there the lane vanishes from the report entirely. The instrument
+  // that covers a lane which never produces output is the sentinel's silence
+  // arm, not this one.
+  //
+  // ⚠ `terminalRowsInWindow === null` means the caller did not say. Then the only
+  // evidence available is the correlation itself, and every marker being
+  // unmatched is exactly "no terminal row was seen" — so it reads `unverified`
+  // too. A caller that CAN count terminal rows (correlateRuns does) overrides
+  // that with the stronger fact, in both directions.
+  const writerProven = terminalRowsInWindow === null ? killed < total : terminalRowsInWindow > 0
+  if (!writerProven) {
+    return {
+      pipeline,
+      ticks: total,
+      killed,
+      killRatePct,
+      cleanTicks: 0,
+      lastKillAt,
+      lastOkAt,
+      verdict: 'unverified',
+      chanceRunIsLuck: null,
+      ...wallFields,
+      note:
+        `${total} markers, NOT ONE with a terminal row anywhere in the window — so there is no ` +
+        `writer to correlate against and ${killRatePct}% is NOT a kill rate, it is the absence of ` +
+        `the evidence a rate needs. Either this lane writes a marker and no terminal row by design ` +
+        `(dead-lane-backstop does), or it has been killed on every tick for the whole window. ` +
+        `This instrument cannot tell those apart; the silence/zero-yield arms can.` + wall.wallNote,
     }
   }
 
@@ -412,11 +488,15 @@ export function correlateRuns(rows: readonly PipelineRunRow[], walls?: WallMap):
     pushTerm(r.pipeline, at.getTime(), durationMs)
   }
 
+  // ⚠ `unverified` outranks `recovered`: "I cannot tell" needs a reader more than
+  // "it stopped" does, and burying it under the healthy tail is how the SQL arm's
+  // rule would have gone unnoticed here for another week.
   const rank: Record<KillVerdict, number> = {
     failing: 0,
     intermittent: 1,
-    recovered: 2,
-    healthy: 3,
+    unverified: 2,
+    recovered: 3,
+    healthy: 4,
   }
 
   return [...heartbeats.entries()]
@@ -428,7 +508,11 @@ export function correlateRuns(rows: readonly PipelineRunRow[], walls?: WallMap):
       })
       // ⚠ `walls.get` returning undefined (pipeline not in the map) and a mapped
       // null (route sets no maxDuration) both mean "no wall to read against".
-      return classifyKillRecord(pipeline, ticks, walls?.get(pipeline) ?? null)
+      // ⚠ `term.length` is the count of terminal rows for this base ANYWHERE in the
+      // window, which is a strictly stronger fact than "every marker was unmatched":
+      // a lane whose terminal rows all land outside the ±5 s window has a writer,
+      // and must keep reading `failing` rather than being excused as unverified.
+      return classifyKillRecord(pipeline, ticks, walls?.get(pipeline) ?? null, term.length)
     })
     .sort((a, b) => rank[a.verdict] - rank[b.verdict] || b.killRatePct - a.killRatePct)
 }

@@ -174,7 +174,16 @@ describe('correlateRuns — the step that was re-derived by hand and got it wron
     const noTerminals = ROWS.filter((r) => r.pipeline.endsWith('-heartbeat'))
     const [r] = correlateRuns(noTerminals)
     expect(r.killed).toBe(25)
-    expect(r.verdict).toBe('failing')
+    // ⚠ RE-PINNED 2026-09-20, and it is a re-pin rather than an inversion: the
+    // PROPERTY this control exists for — that removing the terminal rows changes
+    // the reading, so the test above cannot pass on a broken join — is the
+    // `killed` assertion above, and it is untouched. What moved is the VERDICT:
+    // with zero terminal rows in the window there is no writer to correlate
+    // against, and calling that `failing` is what pinned `npm run pipelines:kills`
+    // at exit 1 forever on dead-lane-backstop. See the UNVERIFIED block in
+    // lib/pipeline/kill-rate.ts. `failing` at a 100% rate is kept EXERCISED by
+    // the arm below, whose subject genuinely has a terminal writer.
+    expect(r.verdict).toBe('unverified')
   })
 
   it('NEGATIVE CONTROL: a terminal row OUTSIDE the window does not clear a kill', () => {
@@ -207,6 +216,12 @@ describe('correlateRuns — the step that was re-derived by hand and got it wron
     const mixed = [
       ...ROWS,
       { pipeline: 'other-heartbeat', started_at: '2026-08-28T01:00:00Z' },
+      // ⚠ Load-bearing since 2026-09-20: `other` needs a terminal row SOMEWHERE in
+      // the window to prove it has a writer, or it reads `unverified` and this arm
+      // stops testing the ranking of `failing` at all. This one is an hour away
+      // from the marker, so it proves the writer without correlating — the tick
+      // itself is still a kill.
+      { pipeline: 'other', started_at: '2026-08-28T02:00:00Z' },
     ]
     const out = correlateRuns(mixed)
     expect(out[0].pipeline).toBe('other')
@@ -400,5 +415,104 @@ describe('the wall reading is a SEPARATE counter — it never redefines `killed`
     expect(r.wallStatus).toBe('unmapped')
     expect(r.wallClipped).toBeNull()
     expect(r.wallSec).toBeNull()
+  })
+})
+
+describe('correlateRuns — a marker with NO WRITER is unverified, not 100% killed (2026-09-20)', () => {
+  // ── THE LIVE DIVERGENCE THIS ARM EXISTS FOR ────────────────────────────────
+  // `check_wall_kills()` (lib/sentinel/wall-kills.ts documents it) has carried
+  // this rule since 2026-09-13 and its header says it MIRRORS lib/pipeline/
+  // kill-rate.ts. It did not. Read live on 2026-09-20, same `pipeline_runs`
+  // rows, minutes apart:
+  //
+  //   check_wall_kills()  →  dead-lane-backstop: `unverified`, 8 heartbeats
+  //   correlateRuns()     →  dead-lane-backstop: `failing`, 15/15 = 100%, rank 0
+  //
+  // The divergent one is the operator CLI, and it exits 1 on any `failing`
+  // record — so `npm run pipelines:kills` was pinned red on a healthy lane.
+  //
+  // `.github/workflows/dead-lane-backstop.yml` POSTs `dead-lane-backstop-
+  // heartbeat` with every rows_* null and writes NO terminal row, ever. There is
+  // nothing in that lane to fix.
+
+  const backstopBeats = [
+    '2026-09-20T13:00:07Z', '2026-09-20T14:00:11Z', '2026-09-20T15:00:04Z',
+    '2026-09-20T16:00:09Z', '2026-09-20T17:00:06Z',
+  ].map((t) => ({ pipeline: 'dead-lane-backstop-heartbeat', started_at: t }))
+
+  it('the real lane reads UNVERIFIED — the CLI verdict now agrees with the SQL arm', () => {
+    const [r] = correlateRuns(backstopBeats)
+    expect(r.pipeline).toBe('dead-lane-backstop')
+    expect(r.ticks).toBe(5)
+    expect(r.verdict).toBe('unverified')
+  })
+
+  it('and the note REFUSES to let 100% be read as a kill rate', () => {
+    const [r] = correlateRuns(backstopBeats)
+    // ⚠ Asserts the ABSENCE of the false claim, not the presence of a word: the
+    // defect was publishing "KILLED" as a fact about an absent observation.
+    expect(r.note).not.toMatch(/most recent tick was KILLED/)
+    expect(r.note).toMatch(/NOT a kill rate/)
+  })
+
+  it('🚨 THE POINT: the CLI exit code is no longer pinned at 1 by a healthy lane', () => {
+    // `process.exit(records.some(r => r.verdict === 'failing') ? 1 : 0)`.
+    const records = correlateRuns(backstopBeats)
+    expect(records.some((r) => r.verdict === 'failing')).toBe(false)
+  })
+
+  it('🚨 NEGATIVE CONTROL: ONE terminal row proves a writer, and 100% reads FAILING again', () => {
+    // Without this the new rule would excuse every genuinely-dead lane. The
+    // discriminator is the DATA — a terminal row existing at all — never the name.
+    // This row is an hour from any marker, so it correlates with nothing: every
+    // tick is still a kill, and the verdict must be `failing`, not `unverified`.
+    const withWriter = [
+      ...backstopBeats,
+      { pipeline: 'dead-lane-backstop', started_at: '2026-09-20T13:30:00Z' },
+    ]
+    const [r] = correlateRuns(withWriter)
+    expect(r.killed).toBe(5)
+    expect(r.verdict).toBe('failing')
+  })
+
+  it('NO-CHANGE CONTROL: a lane with kills AND successes is untouched by the new rule', () => {
+    // The rule must move exactly one population. candy-listings-indexer has 11
+    // terminal rows, so `writerProven` is true and its verdict is what it was.
+    const [r] = correlateRuns([
+      ...[
+        '2026-08-25T03:35:09Z', '2026-08-25T06:35:09Z', '2026-08-25T09:35:09Z',
+      ].map((t) => ({ pipeline: 'nc-heartbeat', started_at: t })),
+      { pipeline: 'nc', started_at: '2026-08-25T06:35:09.340Z' },
+      { pipeline: 'nc', started_at: '2026-08-25T09:35:09.340Z' },
+    ])
+    expect(r.killed).toBe(1)
+    // `intermittent`, not `recovered`: 2 clean ticks at a pooled 33% gives
+    // p = 0.44 that the run is luck, nowhere near the threshold. The control's
+    // claim is that the new rule did not MOVE this verdict, not that it is clean.
+    expect(r.verdict).toBe('intermittent')
+  })
+
+  it('an unverified lane sorts ABOVE recovered and healthy — it must not hide in the tail', () => {
+    const mixed = [
+      ...backstopBeats,
+      { pipeline: 'fine-heartbeat', started_at: '2026-09-20T13:00:00Z' },
+      { pipeline: 'fine', started_at: '2026-09-20T13:00:00.200Z' },
+    ]
+    const out = correlateRuns(mixed)
+    expect(out.map((r) => r.verdict)).toEqual(['unverified', 'healthy'])
+  })
+
+  it('classifyKillRecord keeps its old 3-arg signature, and the 4th arg overrides BOTH ways', () => {
+    const allKilled = [
+      { startedAt: new Date('2026-09-20T13:00:00Z'), killed: true },
+      { startedAt: new Date('2026-09-20T14:00:00Z'), killed: true },
+    ]
+    // No count supplied: the correlation itself saw no terminal row.
+    expect(classifyKillRecord('x', allKilled).verdict).toBe('unverified')
+    // Counted and zero: same answer, stronger evidence.
+    expect(classifyKillRecord('x', allKilled, null, 0).verdict).toBe('unverified')
+    // ⚠ Counted and non-zero: a writer exists, so this really is failing. The
+    // override has to work in this direction or the rule is a one-way excuse.
+    expect(classifyKillRecord('x', allKilled, null, 3).verdict).toBe('failing')
   })
 })

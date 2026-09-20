@@ -154,7 +154,7 @@ if (JSON_OUT) {
     ),
   )
 } else {
-  const ICON = { failing: '🚨', intermittent: '⚠ ', recovered: '✅', healthy: '  ' }
+  const ICON = { failing: '🚨', intermittent: '⚠ ', unverified: '❔', recovered: '✅', healthy: '  ' }
   console.log(`\n${records.length} heartbeated pipelines seen in the ~73h pipeline_runs window`)
   console.log(
     `walls: ${wallMap.routes} routes read, ${wallMap.mapped} pipeline names mapped` +
@@ -171,13 +171,34 @@ if (JSON_OUT) {
     console.log(`${ICON[r.verdict]} ${r.verdict.toUpperCase().padEnd(13)} ${r.pipeline}  [${wall}]`)
     console.log(`   ${r.note}`)
   }
+  const unverified = records.filter((r) => r.verdict === 'unverified')
   console.log(
     '\n⚠ Read the VERDICT, not the %. A pooled kill rate cannot tell "broken now"' +
-      '\n  from "was broken, fixed, and the rate still carries the corpse".\n'
+      '\n  from "was broken, fixed, and the rate still carries the corpse".'
   )
+  // ⚠ Named on its own line, not left to be spotted in the list: an `unverified`
+  // lane is the one case where this instrument is reporting that it CANNOT
+  // measure, and a reader skimming for 🚨 would otherwise read that as a clean
+  // bill of health for a lane nothing is watching.
+  if (unverified.length) {
+    console.log(
+      `\n❔ ${unverified.length} pipeline(s) UNVERIFIED — a marker with no terminal writer anywhere in` +
+        '\n  the window. NOT a 100% kill rate; this instrument cannot see them at all.' +
+        `\n  ${unverified.map((r) => `${r.pipeline} (${r.ticks} markers)`).join(', ')}` +
+        '\n  Expected for dead-lane-backstop (a GHA liveness probe, heartbeat-only by design).' +
+        '\n  Any OTHER name here needs the sentinel silence/zero-yield arms, not this one.'
+    )
+  }
+  console.log('')
 }
 
-// Exit non-zero only on a pipeline that is failing RIGHT NOW. `intermittent` and
-// `recovered` are reports, not alarms — a check that goes red on history stays
-// red forever and stops being read.
+// Exit non-zero only on a pipeline that is failing RIGHT NOW. `intermittent`,
+// `recovered` and `unverified` are reports, not alarms — a check that goes red on
+// history stays red forever and stops being read.
+//
+// ⚠ `unverified` is deliberately NOT an alarm, and that is the fix of 2026-09-20:
+// before it existed, `dead-lane-backstop` — a GHA liveness probe that writes a
+// heartbeat and by design never a terminal row — scored 100% killed and pinned
+// this exit code at 1 on EVERY run, which is the permanently-red instrument
+// CLAUDE.md warns about. It is still printed, and named in its own block.
 process.exit(records.some((r) => r.verdict === 'failing') ? 1 : 0)
