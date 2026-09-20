@@ -1,8 +1,8 @@
 {
-  "generated_at_pt": "2026-09-19 ~05:30 PM PT",
-  "generated_at_utc": "2026-09-20T00:30Z",
+  "generated_at_pt": "2026-09-19 ~06:10 PM PT",
+  "generated_at_utc": "2026-09-20T01:10Z",
   "pass": "Trevor-directed evening health pass (Cowork cloud + laptop VM). PUSH-CAPABLE via path A (laptop VM, .rpc-git-cred; d1c11a79c confirmed by ls-remote == HEAD). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 23:59Z at start.",
-  "shipped": 4,
+  "shipped": 6,
   "reverted": 0,
   "verdict": "HEALTHY SINCE NOON PT. The alert board's high/medium failure_rate rows are 2-day windows straddling the morning IO spell; split on the change point: cron.job_run_details 0 failures in 5 h (~405 runs/h) vs 30-108/h before noon; pipeline_runs 0.31% failing (11/3,589) vs 1.85% in the prior 12 h; ts-listings 161/161 ok. Security 0/0/0/0, stalled 0, Atlas lanes active. Sentry zero PAIRED with Vercel: 50 groups/24h, all chronic shapes, none new; the [pack-detail] 5 s read-timeout family still fires post-noon and is the next user-facing cost. Telegram pager channel was DARK 12:04-5:07 PM PT (a '<' in an ack note) and is repaired.",
   "health": {
@@ -10,23 +10,67 @@
     "detect_stalled_pipelines": 0,
     "cron_jobs": "154 total / 152 active; 463/464/466 active on original schedules; jobid 506 now carries SET statement_timeout='300s'",
     "io_state": "io_wait 0 / active 0 of 28 backends at 5:00 PM PT (quiet box)",
-    "trust_breaches": ["public_board_slow_count=2 (instrument lies; not chased)", "trust_precompute_max_age_hours=23.2 (jobid 324 next tick 5:48 PM PT)"],
+    "trust_breaches": [
+      "public_board_slow_count=2 (instrument lies; not chased)"
+    ],
     "cross_collection_mats": "BOTH FRESH (cohort 5:13 PM PT, overlap 5:16 PM PT); check_cross_collection_mat_staleness() = []",
-    "sentinel_latest": "5:04 PM PT: email delivered, telegram-FAILED (repaired at 5:07 PM PT; next sweep is the verification)"
+    "sentinel_latest": "6:04 PM PT: telegram + email delivered (Telegram channel restored); CRITICAL on Pipeline Success Coverage only (24 h-window readings from the night spell)"
   },
   "shipped_items": [
-    {"what": "Sentinel Telegram: escape name/detail/change-line for parse_mode HTML; DB ack text '< 400' -> 'below 400'", "commit": "d1c11a79c", "instrument": "pipeline_runs sentinel notifications must read 'telegram' on the next sweep", "revert": "git revert d1c11a79c (no DB half)"},
-    {"what": "R109 decisive test: step1 25.0 s, step2 30.4 s, portfolio aggregate 5.2 s on a quiet box (relallvisible 1.000); both mats refreshed", "migration": "none (one-off pg_cron jobids 528/529, unscheduled)", "instrument": "check_cross_collection_mat_staleness() = []", "revert": "n/a"},
-    {"what": "R115+R116: confidence precompute 300 s budget prefix on jobid 506, derived collection list, Pinnacle from pinnacle_fmv_history, no coalesce('{}'), pipeline_runs row, ops-snapshot keys derived", "migration": "20260920001632", "instrument": "control run 50.4 s: 6 rows, candy 62.4%, pinnacle 28.0%", "revert": "header of the migration"},
-    {"what": "portfolios: REVOKE INSERT/UPDATE/DELETE FROM PUBLIC, anon, authenticated (dead residue)", "migration": "20260920001811", "instrument": "anon write-grant set = 4, all INSERT-only", "revert": "GRANT INSERT, UPDATE, DELETE ON public.portfolios TO anon, authenticated"}
+    {
+      "what": "Sentinel Telegram: escape name/detail/change-line for parse_mode HTML; DB ack text '< 400' -> 'below 400'",
+      "commit": "d1c11a79c",
+      "instrument": "pipeline_runs sentinel notifications must read 'telegram' on the next sweep",
+      "revert": "git revert d1c11a79c (no DB half)"
+    },
+    {
+      "what": "R109 decisive test: step1 25.0 s, step2 30.4 s, portfolio aggregate 5.2 s on a quiet box (relallvisible 1.000); both mats refreshed",
+      "migration": "none (one-off pg_cron jobids 528/529, unscheduled)",
+      "instrument": "check_cross_collection_mat_staleness() = []",
+      "revert": "n/a"
+    },
+    {
+      "what": "R115+R116: confidence precompute 300 s budget prefix on jobid 506, derived collection list, Pinnacle from pinnacle_fmv_history, no coalesce('{}'), pipeline_runs row, ops-snapshot keys derived",
+      "migration": "20260920001632",
+      "instrument": "control run 50.4 s: 6 rows, candy 62.4%, pinnacle 28.0%",
+      "revert": "header of the migration"
+    },
+    {
+      "what": "portfolios: REVOKE INSERT/UPDATE/DELETE FROM PUBLIC, anon, authenticated (dead residue)",
+      "migration": "20260920001811",
+      "instrument": "anon write-grant set = 4, all INSERT-only",
+      "revert": "GRANT INSERT, UPDATE, DELETE ON public.portfolios TO anon, authenticated"
+    },
+    {
+      "what": "leg 324 rpc-thp-leg-impossible-parallel moved 48 -> 31 0,6,12,18 (collided with jobid 65's 47 */6 MV refresh; both died at 600 s on 5/6 shared ticks)",
+      "migration": "20260920005312",
+      "instrument": "trust_precompute_max_age_hours 23.2 -> 5.09 h; 6:31 AM PT tick must read succeeded",
+      "revert": "header of the migration (cron.schedule back to 48 0,6,12,18 as cron_heavy)"
+    },
+    {
+      "what": "lib/ops-alert.ts escapes the Telegram body for parse_mode HTML (second data-fed sender)",
+      "commit": "3b884ec23",
+      "instrument": "__tests__/ops-alert-telegram-text-is-html-escaped.test.ts",
+      "revert": "git revert 3b884ec23"
+    }
   ],
-  "vercel_error_groups_24h": {"total": 50, "note": "all chronic; pack-detail 5 s read timeouts 1,421/24h on /[collection]/pack/dist/[distId], still firing post-noon; Telegram send non-OK 400 first seen 12:04 PM PT (fixed)"},
+  "vercel_error_groups_24h": {
+    "total": 50,
+    "note": "all chronic; pack-detail 5 s read timeouts 1,421/24h on /[collection]/pack/dist/[distId], still firing post-noon; Telegram send non-OK 400 first seen 12:04 PM PT (fixed)"
+  },
   "post_ship_watch": {
-    "jobid_324_thp_leg": "5:48 PM PT tick: trust_precompute_max_age_hours must drop under 13; a 600 s kill on a quiet box means the leg's own cost moved",
+    "jobid_324_thp_leg": "MOVED to 31 0,6,12,18 (20260920005312). 6:31 AM PT / 12:31 PM PT ticks must read succeeded; a 600 s kill at :31 with io_wait < 3 means the leg's own cost moved",
     "jobid_506_precompute": "6:35 PM PT tick succeeded under 300 s; nba_top_shot duration_ms < 200,000",
     "step1_1002Z": "read relallvisible/relpages on wallet_moments_cache at ~3:00 AM PT first; then 3:02 AM PT tick must succeed",
     "jobid_490_portfolio_snapshot": "4:17 AM PT tick writes a portfolio_snapshots row (second half of the portfolios exit)",
-    "sentinel_telegram": "next sweep notifications contain 'telegram'"
+    "sentinel_telegram": "VERIFIED 6:04 PM PT: notifications = [telegram, email, github-actions-native]"
   },
-  "needs_trevor": ["#22 purge residue GC + rotate", "#55 both 2-hourly Routines disabled since 09-01", "#75 pg_net response store 10.2 GB (VACUUM FULL)", "jobid 303 refresh_wmc_fmv_changed is the #1 reader - FMV path, needs a decision", "R107 edition_fmv_current reconcile (changes prices users read)", "retire portfolios + portfolio_moments outright (option b) now that the grant is gone"]
+  "needs_trevor": [
+    "#22 purge residue GC + rotate",
+    "#55 both 2-hourly Routines disabled since 09-01",
+    "#75 pg_net response store 10.2 GB (VACUUM FULL)",
+    "jobid 303 refresh_wmc_fmv_changed is the #1 reader - FMV path, needs a decision",
+    "R107 edition_fmv_current reconcile (changes prices users read)",
+    "retire portfolios + portfolio_moments outright (option b) now that the grant is gone"
+  ]
 }

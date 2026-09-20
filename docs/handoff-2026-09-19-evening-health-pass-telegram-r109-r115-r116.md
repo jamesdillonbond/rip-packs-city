@@ -36,10 +36,19 @@ Ledger entry (top of `docs/overnight/ledger.md`) carries revert paths for all fo
 - **jobid 490 at 4:17 AM PT** — a new `portfolio_snapshots` row (second half of the `portfolios` exit).
 - **Next sentinel sweep** — `notifications` contains `telegram`, not `telegram-FAILED`.
 
+## Second half of the pass (5:45–6:10 PM PT) — verified, then shipped two more
+
+- ✅ **Telegram is back.** The 6:04 PM PT sentinel sweep recorded `notifications: ["telegram","email","github-actions-native"]` against `telegram-FAILED` on every sweep since noon. (The `Alert Delivery` arm still reads warn for a while — it inspects the last 12 attempts.)
+- ✅ **`trust_precompute_max_age_hours` 23.2 h → 5.09 h (ok).** Watched the 5:48 PM PT tick: leg 324 and jobid 65 (`rpc-allday-ev-corrected-refresh`, `47 */6`, the same four hours) ran together, drove the box from io_wait 0 to 7, and finished at 272 s / 374 s — survivors only because nothing else contended; on 5 of 6 shared ticks since 09-18 both died at 600 s. **Shipped `20260920005312`: leg 324 moved `48 → 31 0,6,12,18`** (measured least-loaded minute; the old "healer 219 must run before 324" ordering is moot — 219 was retired 09-12). Exit: 6:31 AM / 12:31 PM PT ticks `succeeded`, arm under 13.
+- ✅ **`lib/ops-alert.ts` escaped too** (`3b884ec23` on main) — its callers pass data-built plain text (the smoke-test detail carried `<!DOCTYPE html>` during the 09-18 outage). Two other `parse_mode:"HTML"` senders (`alerts-send`, `detect-league-drift`) are **not audited**.
+- 🧾 The `[pack-detail] read exceeded 5000ms` family is 25 in the 5 h since noon (1,421/24 h), and the survivors are mostly the smoke fixture `dist/5048` with `cache=BYPASS` every ~10 min. `get_pack_lifecycle_row('5048')` is 19 ms warm / 2.0 s + 3,441 physical reads cold — IO, not the query. Not fixed.
+- 🚫 `pg_visibility` cannot be installed (superuser only) — thread-close item 6 closes as unreachable.
+- Sentinel at 6:04 PM PT: **CRITICAL on one arm only** (`Pipeline Success Coverage`: daily-portfolio-snapshot / golazos-buyer-backfill / match-topshot-players — all 24 h-window readings from the night spell; the first two re-test at 4:17 AM PT and their own next ticks, the third retries Saturday). Warns: Alert Delivery (lagging), Detector Health (acked), Dune (configured stop), pg_net #75, Golazos 0 sales/7d (market), `public_board_slow_count=2` (instrument), Wall Kills, Zero-Yield.
+
 ## Needs Trevor (unchanged from the morning, plus one)
 
 #22 purge residue · #55 the two 2-hourly Routines · #75 pg_net response store 10.2 GB (VACUUM FULL) · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader · R107 (both fixes change prices users read) · **new:** whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone.
 
 ## Not done, deliberately
 
-`ops-alert.ts` escaping (queued) · the `[pack-detail]` 5 s read timeouts · R115's watermark rewrite · R107's full reconcile (needs the cold measurement and Trevor) · backfilling the missed `portfolio_snapshots` days (product call).
+the two un-audited `parse_mode:"HTML"` senders (`alerts-send`, `detect-league-drift`) · the `[pack-detail]` 5 s read timeouts · R115's watermark rewrite · R107's full reconcile (needs the cold measurement and Trevor) · backfilling the missed `portfolio_snapshots` days (product call).
