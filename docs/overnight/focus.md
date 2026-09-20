@@ -6,7 +6,7 @@
 
 ## STEER — added 2026-09-20 ~2:3x PM PT (Claude Code cloud; the pack-rip zero drain is running, and ONE decision is left with its numbers already taken)
 
-⭐ **`pack_rips.pull_value_usd` no longer fabricates zero (register #128), and 82,534 existing zeros are draining at ~75/tick, ~1,800/day → ~46 DAYS.** Until then `mv_topshot_pack_realized_ev.realized_mean` is understated on 162 of 295 Top Shot dists and **exactly USD 0.00 on nine** (`7738, 7185, 8431, 5270, 8612, 8753, 7730, 1765, 6150`), and **no surface says so**. Watch `pipeline_runs.extra.zero_repriced + zero_cleared` on `backfill-pack-rip-metadata` — those keys were shipped in the same pass and are the ONLY external view of the drain.
+⭐ **`pack_rips.pull_value_usd` no longer fabricates zero (register #128), and ~82,200 existing zeros are draining at ~75/tick, ~1,800/day → ~46 DAYS.** ✅ **The nine dists that read exactly USD 0.00 are ALREADY CLEARED** (365 rips; backdated stamps put them at the front of the shipped `zero_repair` leg rather than duplicating its logic — `8753` went from USD 0.00 to a **USD 80.19** mean). ⚠ **The DILUTION is what remains:** `mv_topshot_pack_realized_ev.realized_mean` stays understated on **162 of 295** Top Shot dists until the drain finishes, and **no surface says so**. Watch `pipeline_runs.extra.zero_repriced + zero_cleared` on `backfill-pack-rip-metadata` — those keys were shipped in the same pass and are the ONLY external view of the drain.
 
 ⚠ **`zero_repriced + zero_cleared` reading 0 while `pack_rips.pull_value_usd = 0` still has rows means the leg STOPPED REACHING them** — a different failure from the drain finishing, and indistinguishable in `value_resolved`, which the stale leg also moves.
 

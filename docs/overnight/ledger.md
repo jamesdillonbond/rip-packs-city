@@ -11,6 +11,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ THE NINE PACK DISTS READING "REALIZED USD 0.00" ARE CLEARED — 365 rips, done by the shipped leg rather than a second copy of its logic, and one of them was publishing zero for a pack averaging USD 80.19 of pulls · register #128 · Claude Code cloud
+
+📏 **Why these nine and not the whole 82,534.** `mv_topshot_pack_realized_ev` gates on `n_opens >= 10`, and these dists are SMALL (10–136 attributed opens, 365 rips total) — so their whole attributed set was fabricated zeros and `realized_mean` came out exactly 0.00. The rest of the population is diluted, not zeroed; **365 rows is the entire user-visible USD 0.00 symptom.**
+
+⭐ **HOW, and this is the part worth copying: a SCHEDULING NUDGE, not a second repair.** The `zero_repair` leg is ordered `metadata_updated_at ASC`, so backdating those 365 rows' stamp to `1970-01-01` put them at the front of a leg that already exists. ⛔ **The alternative — a hand-rolled targeted UPDATE — would have been a SECOND COPY of the all-or-nothing pricing logic, which is the exact defect class this pass was fixing** (two writers of one column that nobody diffed). One tick at `p_limit 2000` consumed all 365 (`zero_repriced 339`, `zero_cleared 36` — the stale leg picked up the overflow, since a backdated stamp also satisfies its `< now() - 7 days`), and `metadata_updated_at = '1970-01-01'` is back to **0 rows**, which is the completion check.
+
+📏 **RESULT, `pack_rips` re-read per dist (still_zero → now_positive / now_null, new mean):**
+`8753` 76 → 64/12, **USD 80.19** · `8612` 136 → 115/21, 16.26 · `5270` 67 → 67/0, 5.47 · `7730` 10 → 10/0, 3.02 · `6150` 19 → 19/0, 2.87 · `7185` 22 → 22/0, 1.85 · `8431` 12 → 12/0, 1.27 · `7738` 21 → 18/3, 0.74 · `1765` 12 → 12/0, 0.24. **`still_zero` is 0 on all nine.**
+⭐ **`8753` is the single best illustration of what the fabrication cost: the board published USD 0.00 realized value for a pack whose pulls average eighty dollars — a buy/no-buy signal inverted, not merely imprecise.** 36 of the 365 became honest NULLs.
+
+⏳ **The BOARDS follow on their own cadence, deliberately not forced:** pg_cron 208 refreshes `mv_topshot_pack_rip_values` at `5 */6 * * *` (next 00:05Z) and 245 refreshes `mv_topshot_pack_realized_ev` at `42 * * * *`, so the nine correct by ~00:42Z without me spending IO on two CONCURRENT refreshes hours after #126's fleet slowdown was resolved.
+
+**Revert:** nothing to revert in the sense that matters — no code and no schema changed, and the values written are the shipped function's own output. The 365 stamps were restamped to `now()` by the function itself, so the backdating left no trace. ⛔ **The old zeros are NOT recoverable** (they were never measurements), which is the same note the parent entry carries.
+
 ### 2026-09-20 · ✅ `pack_rips.pull_value_usd` STOPS FABRICATING ZERO — 82,864 Top Shot rips (28.4 % of every valued one) published a measured USD 0, one dist page read "USD 0.05 avg realized value" over 1,213 opened packs, and it had DEFEATED the 2026-08-01 fix for this exact defect from the other side · register #128, #93 partly closed · Claude Code cloud
 
 📏 **Found by DIFFING TWO WRITERS OF ONE COLUMN, not by reading either.** `rollup_allday_rip_pull_value()` is all-or-nothing and pinned on it since 2026-09-12; its pin file says *"a rip with no pulls at all is left NULL, NOT WRITTEN AS 0"* and its header calls the Top Shot path *"the same source and same shape"*. `backfill_pack_rip_metadata` read `COALESCE(SUM(fc.fmv_usd), 0)` and did the opposite. A mirror claim with no test, exactly the shape CLAUDE.md names.
