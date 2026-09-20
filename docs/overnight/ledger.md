@@ -11,6 +11,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🔍 BOTH CANDY BOARDS RETURN THE SAME LISTING TWICE — found by looking at the rows of a fix I had just verified as "working" · Claude Code cloud
+
+**Shipped: **#131** filed with both causes separated, the numbers, and the migration hazard. Docs only — deliberately NOT patched.**
+
+⭐ **HOW IT WAS FOUND IS THE POINT, AGAIN.** I probed production to confirm the Candy player filter worked — `player=Judge` → 20 rows, all Aaron Judge, filter clearly working. **Then I read the rows**, and the first two were the same `token_mint` at the same serial. ⚠ **The assertion I set out to make ("the filter works") was TRUE, and the payload was still wrong.** A probe that only checks the property you are testing cannot see the one you are not.
+
+📊 `candy_market_board` **2,144 rows / 1,972 distinct mints — 172 duplicates (+8.7%)**; `candy_deals_board` **300 / 251 — 49 duplicates (+19.5%)**. ⛔ The duplicate rows are **byte-identical across every column the Market API selects**, so nothing downstream can dedupe them and a rendered-DOM QA cannot see it either — on the page it reads as two people listing the same card.
+
+⭐ **TWO CAUSES, kept separate rather than rounded into one:** **170 of 172** are a `LEFT JOIN wallet_moments_cache ON w.moment_id = l.token_mint` **fanout** (297 Candy mints carry >1 cache row, worst 3; 172 of those are actively listed); **2 of 172** are `candy_listings` holding **two active rows for one mint** (1,974 active rows over 1,972 mints). ⚠ **A view-side dedupe masks the second and does not fix it** — worth knowing before someone reports the count "fixed".
+
+🚨 **WHY FILED AND NOT PATCHED.** The fix is `CREATE OR REPLACE VIEW` on two boards that both carry **`reloptions = {security_invoker=on}`**, and CLAUDE.md states that a replace **RESETS reloptions and strips it** — silently converting two public-facing views to definer rights. ⛔ **That is not a change to make at the end of a long session on a day that already produced one production outage**, and it needs a verification step (`pg_class.reloptions` re-read) that belongs with the fix, not after it.
+
+⚠ **AND IT CASTS DOUBT ON A QUOTED FIGURE:** the "1,821 active listings" census in `app/api/market/route.ts`'s Candy comments (2026-09-12) came from this population and may carry the same inflation. #131 says to re-derive it on `count(distinct token_mint)` before re-quoting. ⭐ **A number inherited from a defective view is defective even where the prose around it is right.**
+
+ⓘ **Not caused by the #129 filter work** — the filters only narrow; they cannot duplicate a row. Pre-existing, and stated as such.
+
+✅ **Verified:** known-issues index **128 → 129**, `--check` green, `known-issues-index-lists-every-item` 11/11.
+
+- **Revert:** docs only — `git revert <sha>`.
+
 ### 2026-09-20 · ✅ CANDY'S MARKET FILTERS JOIN PINNACLE'S — and the two arms now share ONE implementation instead of a second copy · Claude Code cloud
 
 **Shipped: `applyBrowseFilters` + `exactSetMatch` extracted and parameterised by column name; the Candy arm wired through them; the Pinnacle arm rewired to the shared pair; 2 new arms (both mutation-proved); **#129** updated. No DB change.**
