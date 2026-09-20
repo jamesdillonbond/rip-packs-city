@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { pickEmpty } from "@/lib/schonely"
+import { runBadgeStatus, todayUtcDate } from "@/lib/fast-break-client-compute"
 
 type LineupPlayer = {
   nba_player_id: string
@@ -186,6 +187,14 @@ export default function FastBreakClient() {
   // reads it as "the best lineup available scores nothing", which is a claim about the
   // slate, not about us.
   const score = data?.recommended_score ?? null
+  // ⚠ NOT `meta.run_is_active` ALONE. Measured in production 2026-09-19, the
+  // optimizer returned run_is_active TRUE with run_end_date "2026-05-19" — so
+  // the badge rendered a pulsing red LIVE dot and "Ends May 19" to a visitor in
+  // September, for a run that had finished four months earlier. The flag is
+  // wrong in `fast_break_runs` (a product/data call), but the payload already
+  // carries the end date, so the surface must not be able to claim "live" for a
+  // date it is holding. See runBadgeStatus().
+  const runBadge = useMemo(() => runBadgeStatus(meta, todayUtcDate()), [meta])
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
@@ -242,17 +251,17 @@ export default function FastBreakClient() {
                 alignItems: "center",
                 gap: 10,
                 padding: "6px 14px",
-                background: meta.run_is_active ? "var(--rpc-red-bg)" : "var(--rpc-surface-raised)",
-                border: "1px solid " + (meta.run_is_active ? "var(--rpc-red-border)" : "var(--rpc-border)"),
+                background: runBadge.live ? "var(--rpc-red-bg)" : "var(--rpc-surface-raised)",
+                border: "1px solid " + (runBadge.live ? "var(--rpc-red-border)" : "var(--rpc-border)"),
                 borderRadius: 999,
                 fontFamily: "var(--font-mono)",
                 fontSize: 11,
                 letterSpacing: "0.12em",
                 textTransform: "uppercase",
-                color: meta.run_is_active ? "var(--rpc-red)" : "var(--rpc-text-muted)",
+                color: runBadge.live ? "var(--rpc-red)" : "var(--rpc-text-muted)",
               }}
             >
-              {meta.run_is_active && (
+              {runBadge.live && (
                 <span
                   style={{
                     width: 6,
@@ -268,7 +277,7 @@ export default function FastBreakClient() {
                 <>
                   <span style={{ opacity: 0.6 }}>·</span>
                   <span>
-                    {meta.run_is_active ? "Ends" : "From"}{" "}
+                    {runBadge.label}{" "}
                     {new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(
                       new Date(meta.run_end_date + "T00:00:00Z")
                     )}

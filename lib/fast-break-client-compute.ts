@@ -95,3 +95,46 @@ export function applyUseBumps(
   for (const id of removed) bumps[id] = Math.max(0, (bumps[id] ?? 0) - 1)
   return bumps
 }
+
+// ── run-badge status ───────────────────────────────────────────────────────
+//
+// 🚨 2026-09-19: the Fast Break hero badge derived "this run is LIVE" from the
+// `is_active` BOOLEAN ALONE — a pulsing red dot, red border, and the label
+// "Ends <date>" in the future tense. Measured against production the same day:
+//
+//   GET /api/nba/fast-break/optimize
+//   → run_name "Playoffs Run 1", run_is_active TRUE, run_end_date "2026-05-19"
+//
+// i.e. a run that ended FOUR MONTHS earlier still rendered as live and
+// "Ends May 19", to a visitor in September. ⛔ The flag is wrong in the data
+// (`fast_break_runs` carries is_active on the OLDER of two runs, both long
+// finished) and fixing that is a product/data decision — but the surface should
+// not be able to claim "live" for a date it is already holding and can compare.
+//
+// So the badge keys on BOTH: a run is live only while it is flagged active AND
+// its end date has not passed. A finished run reads "Ended", past tense, with
+// the live treatment off — which is true whatever the flag says.
+//
+// ⚠ `run_end_date` is a plain YYYY-MM-DD calendar date and is compared as a
+// STRING against a UTC "today" of the same shape. No Date parsing, so no
+// timezone can shift the comparison across a day boundary (the payload's own
+// dates are rendered with timeZone "UTC" for the same reason).
+export type RunBadge = { live: boolean; label: "Ends" | "Ended" | "From" }
+
+export function runBadgeStatus(
+  meta: { run_is_active?: boolean; run_end_date?: string } | null | undefined,
+  todayUtc: string,
+): RunBadge {
+  const endDate = meta?.run_end_date
+  const flaggedActive = meta?.run_is_active === true
+  // No end date: the flag is all there is, so trust it rather than invent one.
+  if (!endDate) return { live: flaggedActive, label: flaggedActive ? "Ends" : "From" }
+  const finished = endDate < todayUtc
+  if (finished) return { live: false, label: "Ended" }
+  return { live: flaggedActive, label: flaggedActive ? "Ends" : "From" }
+}
+
+/** Today as YYYY-MM-DD in UTC — the shape `run_end_date` uses. */
+export function todayUtcDate(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10)
+}
