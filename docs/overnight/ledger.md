@@ -11,6 +11,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🚪 R98 CLOSES — `/api/cache-refresh` gets the per-CLIENT bound its per-WALLET cooldown could not be, and the register cell that called the half "UNSHIPPED" was a day stale · Cowork cloud + laptop VM
+
+**Shipped: one route change + one test (mutation-proven), register R98 corrected. No DB change.**
+
+🔍 **The stale cell first.** R98's status read *"⛔ the `/api/cache-refresh` unbounded-write half is UNSHIPPED and needs a product call"* — but `cd0ab66a1` (09-18 8:29 PM PT) had already shipped a per-(wallet, collection) COOLDOWN there (10 min auto / 60 s manual, INGEST bypass, failed read → refresh anyway), and the ledger entry for it exists. A register row that lags its own ledger by a day is the *"filed decision not to act"* shape in reverse: a fix that reads as still owed. Corrected from `git log -- app/api/cache-refresh/route.ts`, not from memory.
+
+🚪 **What was still genuinely open, and is now closed.** The cooldown bounds repeat refreshes of ONE wallet. It does nothing about a client naming a DIFFERENT wallet each call — every distinct whale address was a fresh full pass as service_role (getIDs, N/500 cached-id reads, a `last_seen_at` touch on every cached row, stub upserts), and nothing bounded that enumeration. Trevor's delegation ("what's best for RPC long term and our users") + the R96 precedent make this the house call: **bounded, not gated.** `makeInstanceRateLimiter` per platform client key, **12 refreshes/min sliding**, refused with **429 + Retry-After BEFORE the cooldown read** (a refused call costs no DB read at all). An honest Collection-tab visitor fires one call per (wallet, collection) view plus one manual refresh — a dozen a minute is browsing, not enumeration. INGEST bearer is not counted; no platform client header → not limited (the helper's contract, and why the five existing `cache-refresh` suites needed no fixture change). The client already swallows non-OK (`r.ok ? r.json() : null`), so a 429 renders as nothing, never as a claim. **Deliberately NOT cut:** the per-CALL cost of one whale wallet — the touch-every-row write is the product's own "Last updated" contract.
+
+📏 **Proof:** `__tests__/api-cache-refresh-client-bound.test.ts` — 12 distinct-wallet calls from one key pass (positive control: ≥12 chain reads, ≥12 `from()` opens), the 13th is 429 with `Retry-After` 1–60 s, a body with no `ok`/totals, **0 chain reads and 0 `from()` opens**; unkeyed requests never limited (15/15 200 — the no-change control); trusted bearer 15/15 and the same key still has its budget after. **Mutation: against the stashed old route the 13th call is a 200 with a chain read** (1 failed | 2 passed). `tsc` exit 0; eslint ratchet 712 = baseline; all six `cache-refresh` suites + `invariants-postgrest-cap` green.
+
+- **Revert:** `git revert` the commit titled `fix(cache-refresh): bound distinct-wallet refreshes per client (R98 closes)`. No DB half.
+
 ### 2026-09-19 · ⚖️ DECISIONS TAKEN ("do what you think is best for RPC long term and our users") — R107's full reconcile is callable, ran, and runs daily; the 10 GB pg_net TOAST reclaimed in 7.7 s and made weekly; the Candy special-serials board −92 % · Cowork cloud + laptop VM
 
 **Shipped: 5 migrations (`20260920020102`, `020119`, `020523`, `020934`, `021121`), 1 pre-reconcile backup table, 1 VACUUM FULL. Each decision carries its cost argument here so it can be re-litigated.**
