@@ -29,3 +29,24 @@ Established 2026-06-23 (Cowork, live-DB verified). How each collection represent
 - **ASK_ONLY parity (shipped 2026-06-23):** floor×0.90 ≤$10k applies per-edition (AllDay) and per-render (Pinnacle), so a scarce parallel/variant with a live floor gets its own ASK_ONLY price.
 - **Scarcity boards:** TS = squeeze (lock/burn); AllDay = `allday_scarcity_board` (set+tier family); Pinnacle = `pinnacle_scarcity_board` (variant family). Each uses the collection's natural comparable cohort.
 - **Serial-FMV / special serials:** TS-only. AllDay serial capture is sparse (`allday_moment_serials` ~64 rows) → data-gated. Pinnacle has no serial axis (render-keyed art).
+
+## 🚨 SET COMPLETION COUNTS SUBJECTS, NOT PRINTINGS (added 2026-09-20, after shipping it wrong)
+
+The section above establishes that all three collections are **de-conflated for PRICING** — each printing is independently keyed and independently priced. ⛔ **That is the opposite of the rule for COMPLETION**, and reading this doc without the distinction is exactly how the Pinnacle Set Tracker shipped a checklist that hid **445 real set completions across 57 of 144 wallets (45% of every completion)**.
+
+**The house rule, read out of the live function rather than assumed:** `get_topshot_set_progress` computes `COUNT(DISTINCT play_id_onchain)` for **both** `total_plays` and `owned_plays`. A Top Shot parallel is `setID:playID::subID` — a different EDITION of the SAME play — so every parallel collapses into **one checklist slot**, and owning ANY printing fills it. **A 100-play set is 100 slots no matter how many parallels exist.**
+
+| collection | pricing grain (independent) | completion grain (collapses) |
+|---|---|---|
+| Top Shot | edition — `setID:playID::subID` | **`play_id_onchain`** |
+| NFL All Day | edition — each `(Parallel)` set row | the base play/edition subject |
+| Disney Pinnacle | render — `render_id` | **`shape_render_id`** |
+
+⭐ **`shape_render_id` is Pinnacle's `play_id_onchain`**, and it is clean — verified live 2026-09-20: **918 distinct shapes, 0 carrying more than one `character_name`, 0 rows missing it, 0 spanning two sets.** So it can neither merge two characters nor leak a slot across sets. A Pinnacle set is typically **9 characters × 6 variants = 54 renders → 9 slots**; keyed on `render_id` a collector holding all nine in Standard read **9/54 = 17%** where the rule says **100%**.
+
+**Consequences for any new completion surface:**
+- A missing subject is priced at its **CHEAPEST printing** — that is what filling the slot costs — and the row should name the variant a buyer would actually take. With nothing in the slot listed, fall back to the lowest mint so the row still names a real printing, and still quote no price.
+- An owned subject is best represented by the **rarest printing held**.
+- ⭐ **Keep the printing axis as its OWN number, never folded into completion** (`ownedPrintings` / `totalPrintings` on `/api/pinnacle-set-progress`). Completion answers *have you finished the set*; depth answers *how deep do you go*. With Pinnacle's ~13× Standard→premium spread a completionist wants both, and mixing them is the defect above.
+
+⚠ **This is the COMPLETION rule only.** Market, Sniper, wallet-holdings and the scarcity boards all stay at printing grain — a Standard and its Golden are different things to buy, and the section above is why.

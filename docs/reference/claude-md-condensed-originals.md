@@ -627,3 +627,23 @@ Rule added to Measurement discipline: *A shed schedule (6/day for 72) is a defec
 2. Autonomous Cowork tasks, nightly bullet — was: `Off-limits (queued, never auto-shipped): hot/payer wallet, secrets/env, auth (`proxy.ts`), destructive SQL, **metered SPEND** — full list in [autonomous-tasks.md](docs/reference/autonomous-tasks.md).` Displaced detail: the list is QUEUED rather than auto-shipped; `auth` means `proxy.ts`; the payer wallet is included with the hot wallet; `secrets/env` covers Vercel env too.
 3. Series map — was: `` `lib/collection/series-param.ts` now resolves BOTH (`fdf84ee4`); which label WINS is still open. `` The resolving commit is `fdf84ee4`.
 4. Two collection-string conventions — was: `persists SILENTLY in `flowty_loans`/`flowty_loan_events`, where it simply never matches.` The two tables are `flowty_loans` and `flowty_loan_events` (named in the bullet above it).
+
+---
+
+## 2026-09-20 — three CLAUDE.md lines condensed to pay for the deploy-gate rule
+
+The Vercel section gained *"A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMANTICS"* after `await connection()` inside a `revalidate = 600` segment raised `DYNAMIC_SERVER_USAGE` and 500'd every `/disney-pinnacle/edition/<render_id>`. Headroom was 23 characters, so it was paid for rather than spent. **Measured: 39,977 → 39,989 of 40,000 (headroom 23 → 11).**
+
+**1. The disk-IO build bullet — DISPLACED, not shortened.** Its full text already lives in `tooling-gotchas.md` (verified, 2 hits), so CLAUDE.md now carries only the pointer. Original:
+
+> - **A disk-IO saturation spell can FAIL THE WHOLE PRODUCTION BUILD** (prerendered `/insights` pages get 60 s each) — now a ban at zero, `insights-server-pages-bound-their-reads`; ⚠ twice the failing page was one the pushing commit never touched. Log traps: tooling-gotchas.md.
+
+**2. The server-seeded-prop bullet — SHORTENED.** Its full case lives in `key-files-and-honesty.md` (verified, 9 hits). Original:
+
+> - ⚠ **A SERVER-SEEDED PROP (`initial={rows}`) is a fifth layer the table does not cover** — `[]` with no provenance, and a mount effect hides it from every client test. Pass `initialFailed`, assert by SSR: key-files-and-honesty.md.
+
+**3. The stale-justification clause — SHORTENED, and this is the one that needed checking.** The RULE is kept in CLAUDE.md; only its worked example was cut, and that example's data lives in `key-files-and-honesty.md` (the buyer-coverage table, `nba_top_shot` **95.2 %**). ⚠ It was added the SAME DAY by another session, so it is recorded here in full rather than trusted to memory. Original:
+
+> ⛔ **And a stale JUSTIFICATION can be INVERTED, not merely out of date — the thing it named may now be the WEAKEST member of the set it excluded** (Top Shot, 95.2%, was gated in as the ONLY collection with buyer coverage). **The tell is a reason citing a SHIP DATE, not a re-runnable probe.**
+
+⚠ **The `get_deployment.state` LAG bullet was AMENDED, not condensed** — "aliases attached" was dropped from its corroboration list because 2026-09-20 proved it can be absent while the domain serves that very build, and the rollback case was added in its place.
