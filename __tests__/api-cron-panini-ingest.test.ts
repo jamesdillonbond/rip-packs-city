@@ -193,14 +193,36 @@ describe("panini-ingest — the after() walk", () => {
     expect(run.p_extra.packs).toBe(1)
   })
 
-  it("tolerates editions + serials upsert errors (written stays 0)", async () => {
+  // R120 (2026-09-20) INVERTED this arm; it is not a new test. It asserted `p_ok === true`
+  // on a rejected write, which is the claim that let the defect live: a PK rewrite blocked by
+  // `panini_fmv_snapshots_edition_id_fkey` aborted the WHOLE multi-row editions statement twice
+  // per walk for 66 days, the error was only console.log-ged, and the run reported success — so
+  // ~4.8% of the day's edition-walk records were discarded with nothing in pipeline_runs to read
+  // it off. The property pinned is the ABSENCE of the false claim, not the text of any message.
+  it("records rejected editions + serials upserts as a FAILED run, each zero paired to its own error", async () => {
     st.edUpsert = { data: null, error: { message: "ed err" } }
     st.serUpsert = { data: null, error: { message: "ser err" } }
     await accept({ cards: [{ sku: "c1", fmv: 5 }], serials: [{ sku: "s1", ed: "c1" }] })
     await st.captured!()
-    expect(st.runs[0].p_ok).toBe(true)
+    expect(st.runs[0].p_ok).toBe(false)
     expect(st.runs[0].p_extra.editions).toBe(0)
     expect(st.runs[0].p_extra.serials).toBe(0)
+    expect(st.runs[0].p_extra.editions_error).toBe("ed err")
+    expect(st.runs[0].p_extra.serials_error).toBe("ser err")
+  })
+
+  // The control that keeps the arm above from being satisfied by "always fail". A run that wrote
+  // nothing because there WAS nothing to write is healthy, and the _error field is the only thing
+  // that tells the two zeros apart — which is the whole reason each count carries one.
+  it("a zero with NO error is still a healthy run — the paired error field is what makes a zero readable", async () => {
+    st.edUpsert = { data: [], error: null }
+    st.serUpsert = { data: [], error: null }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }], serials: [{ sku: "s1", ed: "c1" }] })
+    await st.captured!()
+    expect(st.runs[0].p_ok).toBe(true)
+    expect(st.runs[0].p_extra.editions).toBe(0)
+    expect(st.runs[0].p_extra.editions_error).toBeNull()
+    expect(st.runs[0].p_extra.serials_error).toBeNull()
   })
 
   // nftSalesData realized-sale writes (2026-08-08). These are UPDATEs onto serial rows we have
@@ -237,13 +259,18 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.runs[0].p_extra.sales_applied).toBe(1)
   })
 
-  it("tolerates a sale update error without failing the run", async () => {
+  // R120 (2026-09-20) INVERTED this arm too. It asserted `sales_missed === 1` on an ERRORED
+  // update — contradicting the sibling test's own comment three tests up ("a miss = a serial we
+  // have not walked yet, not an error"). A failed write was being counted as a clean absence.
+  it("a sale update ERROR is recorded as an error, never as a not-yet-walked miss", async () => {
     st.saleUpdate = { a: { data: null, error: { message: "sale err" } } }
     await accept({ sales: [{ sku: "a", amt: 10, at: "2026-08-02T10:08:02Z" }] })
     await st.captured!()
-    expect(st.runs[0].p_ok).toBe(true)
+    expect(st.runs[0].p_ok).toBe(false)
     expect(st.runs[0].p_extra.sales_applied).toBe(0)
-    expect(st.runs[0].p_extra.sales_missed).toBe(1)
+    expect(st.runs[0].p_extra.sales_missed).toBe(0)
+    expect(st.runs[0].p_extra.sales_errors).toBe(1)
+    expect(st.runs[0].p_extra.sales_error).toBe("sale err")
   })
 
   it("counts a sales-only body as work (not an empty no-op) and echoes it in the 202", async () => {

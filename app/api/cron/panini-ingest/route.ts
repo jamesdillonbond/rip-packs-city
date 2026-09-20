@@ -121,6 +121,15 @@ export async function POST(req: NextRequest) {
       extra: { found, cards: cards.length, packs: packs.length, serials: serials.length, sales: sales.length },
     });
     let written = 0;
+    // A failed WRITE must not render as a successful run (R120). These carried the
+    // first error of each batch out to the pipeline_runs row: before 2026-09-20 a
+    // rejected editions upsert was console.log-ged and the run still reported
+    // ok=true, which is how a PK rewrite blocked by an FK ran unseen for 66 days
+    // while silently discarding ~5% of the day's edition-walk records.
+    let editionsError: string | null = null;
+    let serialsError: string | null = null;
+    let salesError: string | null = null;
+    let salesErrors = 0;
     try {
       const nowIso = new Date().toISOString();
       // editions (dedup by external_id within the batch)
@@ -129,7 +138,7 @@ export async function POST(req: NextRequest) {
       const editionRows = [...byKey.values()];
       for (let i = 0; i < editionRows.length; i += CHUNK) {
         const { data, error } = await (supabaseAdmin as any).from("panini_editions").upsert(editionRows.slice(i, i + CHUNK), { onConflict: "external_id,collection_id" }).select("id");
-        if (error) console.log(`[${PIPELINE}] editions upsert: ${error.message}`); else written += data?.length ?? 0;
+        if (error) { editionsError = editionsError ?? error.message; console.log(`[${PIPELINE}] editions upsert: ${error.message}`); } else written += data?.length ?? 0;
       }
       // fmv snapshots (delete-then-insert per edition; daily history intentional)
       const fmvRows = cards.map((c) => toFmvRow(c, nowIso)).filter(Boolean) as any[];
@@ -151,7 +160,7 @@ export async function POST(req: NextRequest) {
         const serialRows = [...bySku.values()];
         for (let i = 0; i < serialRows.length; i += CHUNK) {
           const { data, error } = await (supabaseAdmin as any).from("panini_card_serials").upsert(serialRows.slice(i, i + CHUNK), { onConflict: "sku" }).select("id");
-          if (error) console.log(`[${PIPELINE}] serials upsert: ${error.message}`); else serialsWritten += data?.length ?? 0;
+          if (error) { serialsError = serialsError ?? error.message; console.log(`[${PIPELINE}] serials upsert: ${error.message}`); } else serialsWritten += data?.length ?? 0;
         }
       }
       // sales -> realized prices onto EXISTING serial rows (nftSalesData; see ingest-normalize).
@@ -172,14 +181,25 @@ export async function POST(req: NextRequest) {
           // ionally rather than shaping a filter from upstream text.
           if (isStrictIsoUtc(s.sold_at)) q = q.or(`last_sale_at.is.null,last_sale_at.lte.${s.sold_at}`);
           const { data, error } = await q.select("id");
-          if (error) { console.log(`[${PIPELINE}] sale update ${s.sku}: ${error.message}`); return 0; }
+          if (error) { salesErrors++; salesError = salesError ?? error.message; console.log(`[${PIPELINE}] sale update ${s.sku}: ${error.message}`); return -1; }
           return data?.length ?? 0;
         }));
-        for (const n of applied) { if (n > 0) salesApplied += n; else salesMissed++; }
+        for (const n of applied) { if (n > 0) salesApplied += n; else if (n === 0) salesMissed++; }
       }
-      await logRun(startedAtIso, found, written, true, null, {
-        editions: written, fmv: fmvRows.length, packs: packs.length, serials: serialsWritten,
-        sales_seen: sales.length, sales_serials: latestSales.length, sales_applied: salesApplied, sales_missed: salesMissed,
+      // ok is now DERIVED from whether the writes actually landed, never asserted.
+      // Each count is paired with its own _error field so a zero is readable: 0 with a
+      // null error is "nothing to write", 0 with an error is "the write was rejected".
+      const writeErrors = [
+        editionsError ? `editions: ${editionsError}` : null,
+        serialsError ? `serials: ${serialsError}` : null,
+        salesError ? `sales: ${salesError}` : null,
+      ].filter(Boolean) as string[];
+      await logRun(startedAtIso, found, written, writeErrors.length === 0, writeErrors.length ? writeErrors.join(" | ") : null, {
+        editions: written, editions_error: editionsError,
+        fmv: fmvRows.length, packs: packs.length,
+        serials: serialsWritten, serials_error: serialsError,
+        sales_seen: sales.length, sales_serials: latestSales.length, sales_applied: salesApplied,
+        sales_missed: salesMissed, sales_errors: salesErrors, sales_error: salesError,
       });
     } catch (e) {
       await logRun(startedAtIso, found, written, false, e instanceof Error ? e.message : String(e), {});

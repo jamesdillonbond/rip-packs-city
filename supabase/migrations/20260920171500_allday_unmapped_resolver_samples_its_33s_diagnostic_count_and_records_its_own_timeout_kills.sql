@@ -1,3 +1,7 @@
+-- anon-exec: unchanged (allday_resolve_unmapped_via_atlas) — CREATE OR REPLACE of an EXISTING function, so the ACL is
+-- preserved and a REVOKE here would silently CHANGE production while reading as a body-only
+-- edit. Verified live 2026-09-20 ~10:1x AM PT with has_function_privilege (NOT the proacl
+-- text): anon EXECUTE = false, authenticated EXECUTE = false, prosecdef = true.
 -- ─────────────────────────────────────────────────────────────────────────────
 -- jobid 464 `rpc-allday-unmapped-atlas-resolver`: sample the diagnostic, and
 -- record a timeout kill instead of vanishing.

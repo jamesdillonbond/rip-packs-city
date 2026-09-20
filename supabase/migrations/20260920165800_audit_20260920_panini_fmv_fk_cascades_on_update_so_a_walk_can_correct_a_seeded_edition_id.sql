@@ -1,0 +1,62 @@
+-- audit_20260920_panini_fmv_fk_cascades_on_update
+--
+-- R120. `panini_editions.id` is upstream's serial-level `sku`
+-- (lib/chains/panini/ingest-normalize.ts:26 — `String(c?.sku ?? c?.psku)`), and the
+-- walker upserts on `(external_id, collection_id)`, so its DO UPDATE re-asserts `id`
+-- on every pass. For the three rows hand-seeded on 2026-07-16 the id is the bare
+-- `psku`, so that update CHANGES the primary key — and this FK was ON DELETE CASCADE
+-- with NO ACTION on update (`confupdtype = 'a'`), so Postgres rejected it.
+--
+-- Because the walker writes editions as one multi-row `INSERT … ON CONFLICT`, the
+-- rejection aborted the WHOLE statement, not just the offending row, and
+-- app/api/cron/panini-ingest/route.ts only `console.log`ged the error — so the run
+-- still reported ok=true and simply wrote fewer editions than it walked.
+--
+-- Measured 2026-09-20 ~9:3x AM PT before this migration:
+--   * 12 of 459 `panini-ingest` runs in 24 h wrote `editions: 0` while `serials`
+--     AND `fmv` landed (the serials path keys on the FK-free text column
+--     `panini_card_serials.edition_external_id`, so it survives the abort).
+--   * Those 12 are exactly TWO PER WALK across all five walks, and their
+--     `started_at` matches the three seed rows' serial `captured_at` to the tenth
+--     of a second (13:05:51.100 vs .223; 13:06:08.685 vs 13:06:09.885 UTC).
+--   * Cost: 93 edition-walk records discarded in 24 h, 5-12 per aborted tick,
+--     ~4.8% of the day's 1,856 edition writes. `editions_walked_7d` therefore
+--     UNDERSTATES real coverage, and `editions_stale_45d` read 3 for editions that
+--     were in fact being walked every four hours.
+--
+-- ON UPDATE CASCADE removes the failure mode for EVERY edition, not just the three:
+-- any card whose upstream `sku` changes can now have its id re-asserted. The three
+-- seed rows then self-heal on the next walk, which is the exit condition below.
+--
+-- ⚠ Deliberately NOT done here: rewriting the three ids by hand. `id` embeds a
+-- point-in-time value (its span component equals `min(serial_number)` on only
+-- 3,447 of 5,070 rows), SEVEN of ten dependent objects read `panini_editions.id`
+-- (including `editions_unified` and the materialised `mv_panini_squeeze`), and a
+-- hand-repaired id can be rewritten again on any later `sku` change — so repairing
+-- the rows without this constraint change would leave the failure mode in place.
+--
+-- No function is created or replaced by this migration, so there is no
+-- anon-exec decision to state.
+--
+-- Safety: `panini_fmv_snapshots` is 16 MB / 59,843 rows and ALREADY satisfies the
+-- constraint (verified immediately before: zero snapshot `edition_id`s without a
+-- matching `panini_editions.id`), so the re-add validates in a single small scan.
+-- One statement, so the drop and the re-add cannot be left half-applied.
+--
+-- Exit:      `editions: 0`-with-serials runs go to 0/day; `editions_stale_45d` -> 0.
+-- Falsifier: aborted ticks persist => a SECOND child object blocks the id rewrite;
+--            re-read `pg_constraint` for other FKs onto `panini_editions(id)`.
+--
+-- Revert:
+--   ALTER TABLE public.panini_fmv_snapshots
+--     DROP CONSTRAINT panini_fmv_snapshots_edition_id_fkey,
+--     ADD  CONSTRAINT panini_fmv_snapshots_edition_id_fkey
+--       FOREIGN KEY (edition_id) REFERENCES public.panini_editions(id) ON DELETE CASCADE;
+--   ⚠ Reverting re-introduces the aborted-upsert defect. If the three seed rows have
+--   already healed by then, the revert is harmless until the next upstream sku change.
+
+ALTER TABLE public.panini_fmv_snapshots
+  DROP CONSTRAINT panini_fmv_snapshots_edition_id_fkey,
+  ADD  CONSTRAINT panini_fmv_snapshots_edition_id_fkey
+    FOREIGN KEY (edition_id) REFERENCES public.panini_editions(id)
+    ON DELETE CASCADE ON UPDATE CASCADE;
