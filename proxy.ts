@@ -974,6 +974,20 @@ export function isPublicPath(pathname: string, method: string): boolean {
     // caller is how the surface grows without anyone deciding to grow it.
     "/api/pinnacle-sniper-feed", "/api/pack-listings",
     "/api/allday-set-progress",
+    // 🚨 2026-09-20: `/api/pinnacle-set-progress` shipped the SAME DAY as
+    // Pinnacle's Sets tab and was missing from this set — the identical shape
+    // this file's header already names ("a public PAGE whose only backing API
+    // was still gated (pinnacle-wallet)"), and the identical shape as
+    // `/api/pinnacle-sniper-feed` two entries above. `/disney-pinnacle/sets` is
+    // anon-public by the feature-tab regex below AND is now in the sitemap, so
+    // an anonymous reader's only fetch would have 307'd to /login and the Set
+    // Tracker would have rendered an error for a wallet that resolves fine.
+    // Same anon-safety class as its four siblings here: GET-only, no session,
+    // service-role read over the public catalog plus on-chain holdings.
+    // ⚠ Caught by fetching the deployed route, not by the test suite — which is
+    // why `set-tracker-backends-are-anon-public.test.ts` now derives this list
+    // from the client's dispatch instead of trusting a fifth hand-kept row.
+    "/api/pinnacle-set-progress",
     "/api/ufc-set-progress", "/api/topshot/challenge-plan", "/api/topshot/challenges",
     "/api/wallet-summary", "/api/seeded-wallets", "/api/owned-flow-ids",
     "/api/wallet/edition-counts", "/api/wallet-cache", "/api/ready",
