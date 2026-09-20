@@ -1721,3 +1721,14 @@ git add -A && git commit -m "feat: ..." && git push origin main   # Git Bash (MI
 ## Windows / Git Bash — the CRLF / heredoc / curl bullet (moved verbatim from CLAUDE.md, 2026-09-19)
 
 - CRLF silently breaks Node string-replace patches — normalize CRLF→LF before matching, or target by line number. Heredocs truncate on long files; never use one containing `${{}}`. `curl` fails silently here for Vercel REST calls — always PowerShell `Invoke-WebRequest`.
+
+---
+
+## Hot wallet & secrets — MOVED VERBATIM from CLAUDE.md 2026-09-19 to restore memory-file headroom
+
+*Nothing deleted or reworded; CLAUDE.md keeps a pointer plus the secp256k1/SHA2-256 constraint inline. Topic-specific: only needed once a session knows it is touching Flow signing.*
+
+- Flow CLI hot wallet: `0x3aa11c84d776838f` (Key 0, **ECDSA_secp256k1, SHA2_256**). NOT account-linked. `flow.json` gitignored. NEVER use a HybridCustody / linked wallet as the hot wallet. Code signing as this wallet MUST use secp256k1 + SHA2-256 (`server-authz.ts` used p256 + SHA3-256 for months); tests for signing code must verify signatures **cryptographically**, never assert output shape/length.
+- Key env vars (8, incl. 3 absent from `.env.example`): [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+
+---

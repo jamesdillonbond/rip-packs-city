@@ -158,6 +158,10 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - ⚠ **AN ENGINE THAT IS UP IS NOT A PLATFORM THAT IS REACHABLE, and log SILENCE is not engine silence** — 09-18 the instance lost **outbound DNS** while Postgres kept writing (#122). ⭐ **A `<!DOCTYPE html>` from Supabase IS Cloudflare's `522`; probe an endpoint reading NONE of our tables to split ENGINE from PATH.**
 - ⚠ **Read the ERROR STRING, never the duration — and ALL of it: the clause you SKIP discriminates.** Two ~2-min timeouts (gateway vs `statement_timeout`) give one number, two meanings: [database.md](docs/reference/database.md). ⛔ **Never state a cause the error did not** — half a string became false user-facing copy on 09-14.
 
+### Concurrent sessions — THREE writers, and two are indistinguishable
+
+⛔ **"Not mine" + "not mine" ESTABLISHES NOTHING** — who you can MESSAGE ≠ who writes; a Cowork pass ships unannounced. `git log -1 --format=%an` tells Cowork from this box; **nothing tells two sessions ON it apart.** ⛔ **`git add <shared file>` stages the OTHER session's uncommitted hunks** — `git diff` it first, commit same turn; **`git add -p` exits 0 staging NOTHING.** ⛔ **Before any before/after, list migrations in your window** — "freeze the tree" is unactionable here, so windows are MINUTES. ⭐ **ARRIVAL ≠ SURVIVAL — assert your change LANDED, not just that nothing died.** ⭐ **Remove the failure mode; do not soften the detector.** [tooling-gotchas.md](docs/reference/tooling-gotchas.md)
+
 ### Timestamps
 
 🚨 **EVERY TIME YOU REPORT TO TREVOR IS PT — chat, summaries, ledger headings, all of it. NEVER quote a UTC/`Z` time to him** (asked repeatedly; broken again 09-10). ⚠ **READ THE ZONE BEFORE CONVERTING — four incidents came from a plausible timestamp produced by a clock whose zone was assumed.** ⚠ Git Bash lies BOTH ways and the **web sandbox is PDT, not UTC**, so "subtract 7h from `date -u`" lands a day early. Trustworthy clocks + the conversion recipe: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
@@ -232,9 +236,7 @@ All 7 live in the DB-derived table in [schema-truth.md](docs/reference/schema-tr
 
 ### Series map (on-chain UInt32 → display name)
 
-`0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".** ⚠ **These are the REPO's names; the live `collection_series.display_label` reads `Series 5/6/7` for 6/7/8 (re-verified 08-24) and drives the Collection tab filter via `/api/collection-series`** — check which convention your surface parses. `series-param.ts` resolves BOTH; which label WINS is open.
-
-⚠ **This 0↔1 collision is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections.** `wmc.series_number` is ON-CHAIN; `editions.series` is DISPLAY. All Day / Golazos / Pinnacle use `1` legitimately and **`ufc_strike` has BOTH 0 and 1**, so a blanket remap corrupts four collections — a 2026-08-05 incident dropped 385,734 TS rows. Check `collection_series` before touching any series logic.
+⚠ **0↔1 is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections** (dropped 385,734 TS rows). Full map + `collection_series` divergence: [database.md](docs/reference/database.md).
 
 ### Cadence
 
@@ -265,10 +267,7 @@ The rest: [concierge.md](docs/reference/concierge.md).
 
 ## Hot wallet & secrets
 
-- Flow CLI hot wallet: `0x3aa11c84d776838f` (Key 0, **ECDSA_secp256k1, SHA2_256**). NOT account-linked. `flow.json` gitignored. NEVER use a HybridCustody / linked wallet as the hot wallet. Code signing as this wallet MUST use secp256k1 + SHA2-256 (`server-authz.ts` used p256 + SHA3-256 for months); tests for signing code must verify signatures **cryptographically**, never assert output shape/length.
-- Key env vars (8, incl. 3 absent from `.env.example`): [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
-
----
+Flow CLI hot wallet `0x3aa11c84d776838f`. ⛔ **Signing MUST be ECDSA_secp256k1 + SHA2_256** (`server-authz.ts` used p256 + SHA3-256 for months) and signing tests must verify **cryptographically**, never assert output shape. Wallet rules, HybridCustody ban, the 8 key env vars: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
 ## Prioritized next actions
 

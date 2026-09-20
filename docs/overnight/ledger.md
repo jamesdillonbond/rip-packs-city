@@ -11,6 +11,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 📐 CLAUDE.md GAINS THE MULTI-WRITER RULE AND REAL HEADROOM — two topic-specific sections displaced VERBATIM, 8 chars of room becomes 120 · Claude Code (Windows box, session -52)
+
+**Shipped: CLAUDE.md + `docs/reference/database.md` + `docs/reference/tooling-gotchas.md`. Docs only, no code, no DB change. Authorised by Trevor ("update CLAUDE.md and any relevant documentation").**
+
+🚨 **WHY IT NEEDED AUTHORISATION AND WHY THE FILE WAS AT RISK: CLAUDE.md measured 39,992 of 40,000 — EIGHT characters.** Its own header says headroom is ~0 and a new rule must **DISPLACE** one, never spend room; **at 8 chars the next edit by anyone reds a blocking CI gate.** Three sessions wrote this estate tonight and all three deliberately left the file alone, because choosing what leaves the user's core context file is his call. He made it.
+
+📥 **ADDED — the one cross-cutting lesson this session produced that a reader needs BEFORE knowing their topic** (`### Concurrent sessions — THREE writers, and two are indistinguishable`): "not mine" + "not mine" establishes nothing, since who you can MESSAGE ≠ who writes · `git log -1 --format=%an` tells Cowork from this box and **nothing tells two sessions ON it apart** · `git add <shared file>` stages the OTHER session's uncommitted hunks and **`git add -p` exits 0 staging NOTHING** · list migrations in your window before any before/after, because **"freeze the tree" is unactionable on a multi-writer estate, so windows are MINUTES** · **ARRIVAL ≠ SURVIVAL** · **remove the failure mode, do not soften the detector.**
+
+📤 **DISPLACED VERBATIM, nothing deleted or reworded, each with a pointer back:** `### Series map` (938 chars) → [database.md](../reference/database.md); `## Hot wallet & secrets` (546) → [tooling-gotchas.md](../reference/tooling-gotchas.md). ⭐ **Both are topic-specific — needed only once a session knows it is touching series logic or Flow signing — which is the correct displacement test, not "least important".** ⚠ **The two facts that must never be a click away were KEPT INLINE in the pointers: the TOP-SHOT-SPECIFIC `1 → 0` remap ban (that blanket remap dropped 385,734 rows) and `ECDSA_secp256k1 + SHA2_256` for hot-wallet signing.**
+
+✅ **VERIFIED, and on this file the verification is the work:** length **39,880 / 40,000 → 120 chars of headroom** by Node `.length` (⛔ never `wc -c`, which reads 40,6xx; never Python `len()`) · `claude-md-stays-under-the-memory-file-limit` **3/3** · every content line of both displaced blocks asserted present in its new home, and eight named hot-wallet facts checked individually · `live-docs-md-links-resolve`, `no-conflict-markers-on-main`, `known-issues-index` green (20/20) · `register:check` 153 rows · `lint:ratchet` 712/712 at baseline.
+
+⭐ **A NEAR-COLLISION, recorded because the near-miss is the lesson:** Trevor asked BOTH live sessions to update CLAUDE.md. Session -88 had a script staged displacing three measurement bullets for the same four rules; **its pre-write length check aborted at 40,055 — 55 over — without writing**, it reverted the preserved-originals file it had already written, and stood down. **Net repo effect from that attempt: zero.** ⛔ **Two sessions editing an 8-character file concurrently is the worst possible case of tonight's shared-tree hazard**, and what prevented it was a guard that ran BEFORE the write plus one message. ⚠ **Deliberately NOT folded in, on -88's own advice: "assert EVERY anchor" and "guarded split is immune, `.replace()` is not" — both live in tooling-gotchas and the new section points there. At 120 chars, adding them would restore the tripwire the displacement just removed.**
+
+- **Revert:** `git revert <sha>` — or by hand: cut `### Series map` back from database.md and `## Hot wallet & secrets` from tooling-gotchas.md into CLAUDE.md, replacing the two pointers, and delete `### Concurrent sessions`. ⚠ **Reverting restores the 8-character state**, so re-measure with Node `.length` afterwards.
+
 ### 2026-09-19 · 🧾 SESSION WRAP — what shipped, the THREE falsifiers still owed with their clock times, and the two calls that are Trevor's · Claude Code (Windows box)
 
 **Closing entry for the 2026-09-19 evening session. No new code in this entry — it is the handoff.**
