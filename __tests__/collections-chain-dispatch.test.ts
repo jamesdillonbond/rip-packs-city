@@ -84,7 +84,13 @@ describe("dbChain registry invariant", () => {
     // `.toLowerCase()` on a CASE-SENSITIVE base58 key, a `contractName`
     // short-circuit. So the dispatch being asserted here is the ABSENCE of those
     // gates, and the test below pins exactly that, behaviourally.
-    solana: ["overview", "market", "collection"],
+    //
+    // ⭐ `analytics` joined 2026-09-20, on the `collection` basis (gates, not an
+    // arm) PLUS one genuine data gap that had to be closed first, and the test
+    // below pins both halves. Every panel on the tab was read against Candy live
+    // before this line was widened — see the registry comment on candy-mlb for
+    // the per-panel numbers.
+    solana: ["overview", "market", "collection", "analytics"],
     ethereum: ["overview"],
   }
 
@@ -151,6 +157,57 @@ describe("dbChain registry invariant", () => {
     // fabricated zero. Deleting either reason string should fail here.
     expect(read("app/api/sets/route.ts")).toContain("set_tracking_unavailable")
     expect(read("app/api/cost-basis/route.ts")).toContain("cost_basis_unavailable")
+  })
+
+  // ⚠ THE BACKING HALF FOR `analytics`. Two independent failures had to be fixed
+  // before the tab could be honest, and BOTH failed SILENTLY — an empty card, not
+  // an error — so neither a route test nor a 200 check could have caught them.
+  // This pins each one at the layer it lives in, and pins the no-change arm that
+  // makes the first assertion non-vacuous.
+  it("⚠ the Solana `analytics` permission is backed by a real key derivation and a real listings source", async () => {
+    const { shortSlug } = await import("@/lib/analytics/format")
+
+    // (1) THE KEY. Every card on the tab queries /api/analytics/* with
+    // shortSlug(urlSlug). The analytics_* RPCs normalize with
+    // `CASE … ELSE c.slug`, so Candy's key is the UNDERSCORE slug. Returning the
+    // hyphen slug (the old five-entry hardcoded map's fall-through) matches zero
+    // rows in every one of them, and each card renders that as its EMPTY state.
+    expect(shortSlug("candy-mlb")).toBe("candy_mlb")
+    // ⛔ NO-CHANGE CONTROL — without this, deriving the key could have rewritten
+    // the five Flow collections' keys and this test would still be green.
+    expect(shortSlug("nba-top-shot")).toBe("topshot")
+    expect(shortSlug("nfl-all-day")).toBe("allday")
+    expect(shortSlug("laliga-golazos")).toBe("golazos")
+    expect(shortSlug("disney-pinnacle")).toBe("pinnacle")
+    expect(shortSlug("ufc")).toBe("ufc")
+
+    // (2) THE LISTINGS SOURCE. Candy has ZERO rows in `cached_listings` — its
+    // asks are indexed into `candy_listings` — so `analytics_listings_summary`
+    // returned an empty order book for it, which the Order Book Depth card
+    // renders as the literal words "No live listings." about ~1,900 live asks.
+    // Pinned as a SOURCE fact on the migration, because the function body is the
+    // only place the arm exists and there is no local harness for it here.
+    const { readdirSync } = await import("node:fs")
+    const migDir = join(process.cwd(), "supabase/migrations")
+    const candyArm = readdirSync(migDir).find((f) =>
+      f.includes("candy_arm_for_analytics_listings_summary"),
+    )
+    expect(candyArm, "the migration adding the Candy arm to analytics_listings_summary is missing").toBeTruthy()
+    const sql = readFileSync(join(migDir, candyArm as string), "utf8")
+    expect(sql).toContain("CREATE OR REPLACE FUNCTION public.analytics_listings_summary")
+    expect(sql).toContain("FROM candy_listings l")
+    expect(sql).toContain("candy_fmv_current")
+    // ⛔ The arm must not emit a row when Candy is filtered OUT: a zero-count row
+    // is the fabricated-value shape, and the card cannot tell it from real depth.
+    expect(sql).toContain("HAVING COUNT(*) > 0")
+    // The shared cached_listings arm must survive the rewrite untouched.
+    expect(sql).toContain("FROM cached_listings cl")
+
+    // (3) THE LABEL. The Candy row now reaches /analytics/listings too, and
+    // resolveCollectionLabel falls back to the RAW SLUG.
+    const { resolveCollectionLabel } = await import("@/lib/analytics-listings-compute")
+    expect(resolveCollectionLabel("candy_mlb")).toBe("Candy MLB")
+    expect(resolveCollectionLabel("topshot")).toBe("Top Shot")
   })
 
   it("every published FLOW collection still declares dbChain flow (the chain filters key on it)", () => {

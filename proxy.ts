@@ -325,13 +325,21 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // __tests__/sitemap-urls-are-anon-public.test.ts reported the first time the tab
 // was switched on, before this line changed.
 //
+// ⚠ SHRUNK AGAIN 2026-09-20: `analytics` is GONE for the same reason `market`
+// was. Candy's Analytics tab is now in `pages`, and every panel on it was read
+// against Candy live before the tab was switched on — 31 daily volume rows,
+// 1,564 sales / $7,063 in 30 d, 125 priced editions, ~1,900 live asks. Leaving
+// `analytics` here would 302 /candy-mlb/analytics to /login while the sitemap
+// advertises it, which is precisely the Googlebot-gets-a-login-redirect failure
+// the 09-12 note above describes.
+//
 // ⚠ THE INVARIANT IS THAT THIS ALTERNATION IS THE COMPLEMENT OF THE REGISTRY'S
 // `pages`. A tab added to lib/collections.ts and not removed here is silently
 // unreachable to anonymous visitors AND still listed for crawlers; a tab removed
 // there and not added here serves a soft-404. Both directions are pinned in
 // __tests__/proxy-is-public-path.test.ts.
 export const THIN_COLLECTION_MISSING_TABS =
-  /^\/(candy-mlb)\/(packs|sniper|sets|analytics|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
+  /^\/(candy-mlb)\/(packs|sniper|sets|badges|challenges|hot-floors|pack-sniper|fast-break|road-to-the-ring|play|series|profile)(?:\/|$)/
 
 // A PUBLISHED collection that has most tabs but not this one. The thin regex
 // above covers overview-only collections; this covers the partial case, and the
@@ -881,9 +889,25 @@ export function isPublicPath(pathname: string, method: string): boolean {
   // to /login for an anonymous caller), and saved wallets require a session.
   // Sets and cost-basis therefore render as absent for an anon reader, never as
   // a zero.
+  //
+  // 2026-09-20 — ANALYTICS joins them, same set, same "one tab, one rule".
+  //
+  // Anon-safety RE-CHECKED, and this tab is the easiest of the three to clear
+  // because it adds NO new API surface: every endpoint the tab calls
+  // (/api/market-analytics, the /api/analytics subtree, /api/ready) is already
+  // anon-public and already serves all five published Flow collections' analytics tabs
+  // anonymously — the only new thing is Candy's collection id in the query
+  // string. All of it is aggregate market data: daily volume by marketplace,
+  // tier and series rollups, the FMV liquidity grid, an order-book summary and a
+  // buyer/seller volume leaderboard over public Magic Eden + on-chain activity.
+  // The tab's optional wallet-lookup box reads the same public holdings
+  // /share/<wallet> already exposes. Nothing session-scoped: cost basis and
+  // saved wallets are gated elsewhere and stay gated.
   if (
     (method === "GET" || method === "HEAD") &&
-    (pathname === "/candy-mlb/market" || pathname === "/candy-mlb/collection")
+    (pathname === "/candy-mlb/market" ||
+      pathname === "/candy-mlb/collection" ||
+      pathname === "/candy-mlb/analytics")
   ) {
     return true
   }

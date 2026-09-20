@@ -2,6 +2,8 @@
 // (app/(collections)/[collection]/analytics/page.tsx) and its extracted card
 // components. Behavior-identical verbatim move — no logic changes.
 
+import { toDbSlug } from "@/lib/collections"
+
 export function relativeDate(iso: string): string {
   const t = new Date(iso).getTime()
   if (!Number.isFinite(t)) return ""
@@ -62,7 +64,15 @@ export function pickLatest(...isos: Array<string | null | undefined>): string | 
   return valid[valid.length - 1] ?? null
 }
 
-/** Map a URL hyphen-slug ("nba-top-shot") to its short DB slug ("topshot"); unknown → passthrough. */
+/**
+ * The EXPLICIT arms: a URL hyphen-slug ("nba-top-shot") whose analytics key is a
+ * SHORT form ("topshot") rather than its DB slug.
+ *
+ * ⚠ This map is the mirror of the `CASE c.slug WHEN 'nba_top_shot' THEN 'topshot'
+ * … END` that every analytics_* RPC normalizes with — NOT an allowlist of the
+ * collections that have analytics. Read `shortSlug` below for why that
+ * distinction is the whole point.
+ */
 export const URL_TO_SHORT_SLUG: Record<string, string> = {
   "nba-top-shot": "topshot",
   "nfl-all-day": "allday",
@@ -79,8 +89,40 @@ function ownValue<T>(map: Record<string, T>, key: string): T | undefined {
   return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined
 }
 
+/**
+ * URL hyphen-slug → the collection key the `analytics_*` RPCs actually emit and
+ * filter on.
+ *
+ * ⭐ 2026-09-20 — THIS IS NOW A DERIVATION, NOT A LOOKUP, and the change is the
+ * fix rather than a tidy-up. Every analytics_* RPC normalizes with the same
+ * shape:
+ *
+ *     CASE c.slug WHEN 'nba_top_shot' THEN 'topshot' … ELSE c.slug END
+ *
+ * so a collection WITHOUT a CASE arm is keyed by its DB slug — it is not
+ * dropped. The three lines below are that CASE, arm for arm:
+ *   1. URL_TO_SHORT_SLUG  = the explicit WHEN arms
+ *   2. toDbSlug()         = `ELSE c.slug`
+ *   3. `?? urlSlug`       = a slug in no registry at all (never reached from a
+ *                           rendered route, which resolves through the registry)
+ *
+ * 🚨 WHY IT HAD TO CHANGE. The old body was `ownValue(map) ?? urlSlug` — a
+ * five-entry hardcoded allowlist sitting beside lib/collections, the exact shape
+ * CLAUDE.md bans. Candy MLB went live 2026-09-06 and is absent from the map, so
+ * `shortSlug("candy-mlb")` returned the HYPHEN slug "candy-mlb", while the RPCs
+ * emit and filter on the UNDERSCORE slug "candy_mlb". Nothing 500s: every card
+ * on the collection analytics tab would have queried a key matching zero rows
+ * and rendered its EMPTY state — "No live listings.", an empty liquidity grid,
+ * an empty whale board — about a collection carrying ~1,900 live asks, 125
+ * priced editions and 1,564 sales in 30 days. It was latent only because Candy
+ * had no `analytics` page; enabling the tab is what would have fired it.
+ *
+ * ⭐ Deriving arm 2 means the next collection added to the registry is keyed
+ * correctly with NO edit here — the map can no longer go stale by omission, only
+ * by a genuinely wrong explicit arm, which is what the guard test asserts.
+ */
 export function shortSlug(urlSlug: string): string {
-  return ownValue(URL_TO_SHORT_SLUG, urlSlug) ?? urlSlug
+  return ownValue(URL_TO_SHORT_SLUG, urlSlug) ?? toDbSlug(urlSlug) ?? urlSlug
 }
 
 /** Display label per marketplace key; unknown key → capitalized key. */

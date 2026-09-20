@@ -95,8 +95,35 @@ describe("shortSlug", () => {
     expect(shortSlug("disney-pinnacle")).toBe("pinnacle")
     expect(shortSlug("ufc")).toBe("ufc")
   })
-  it("passes an unknown slug through unchanged", () => {
-    expect(shortSlug("candy-mlb")).toBe("candy-mlb")
+
+  // ⭐ RE-PINNED 2026-09-20 — the PREMISE changed, so this is a re-pin, not an
+  // inversion. `shortSlug("candy-mlb")` used to be asserted here as the
+  // fall-through example returning "candy-mlb". That was never a property of
+  // Candy; it was the ABSENCE of an arm for it, and it was WRONG as an
+  // analytics key: every analytics_* RPC normalizes with
+  // `CASE … ELSE c.slug`, so Candy's key is the DB slug `candy_mlb`. Querying
+  // those RPCs with "candy-mlb" matches zero rows, which the cards render as
+  // their EMPTY state — "No live listings." about ~1,900 live asks.
+  it("keys a registry collection with no explicit arm by its DB slug (the RPCs' `ELSE c.slug`)", () => {
+    expect(shortSlug("candy-mlb")).toBe("candy_mlb")
+    // Unpublished but registry-known: same derivation, no edit needed here.
+    expect(shortSlug("panini-blockchain")).toBe("panini_blockchain")
+  })
+
+  // ⚠ THE FALL-THROUGH ARM IS KEPT ALIVE ON PURPOSE, with a subject that
+  // GENUINELY lacks a registry entry. Candy used to be this test's subject; now
+  // that it resolves, asserting the passthrough through Candy would pass
+  // vacuously against the derivation and stop exercising the final `?? urlSlug`.
+  it("passes a slug that is in NO registry through unchanged", () => {
+    expect(shortSlug("not-a-real-collection")).toBe("not-a-real-collection")
+    expect(shortSlug("")).toBe("")
+  })
+
+  // ⚠ Prototype-pollution guard on the explicit map — a bare `MAP[key]` read
+  // would return a truthy Object.prototype member instead of falling through.
+  it("does not resolve inherited Object.prototype keys", () => {
+    expect(shortSlug("toString")).toBe("toString")
+    expect(shortSlug("constructor")).toBe("constructor")
   })
 })
 

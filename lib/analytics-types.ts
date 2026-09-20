@@ -348,7 +348,13 @@ export interface ListingsSummaryResponse {
   loan_offers: ListingsLoanOffersSection
   topshot_orderbook: ListingsTopShotOrderbookSection
   marketplace_listings: ListingsMarketplaceCollectionEntry[]
-  data_caveats?: string[] | null
+  // ⚠ An OBJECT in practice — analytics_listings_summary builds it with
+  // jsonb_build_object, so it arrives as { topshot_sample: "…", … }. This was
+  // typed `string[]` until 2026-09-20, which type-checked a guard
+  // (`data_caveats.length > 0`) that is ALWAYS falsy on an object, so the
+  // "About this data" section never rendered. Read it through
+  // normalizeDataCaveats(), never directly.
+  data_caveats?: Record<string, string> | string[] | null
   as_of: string
 }
 

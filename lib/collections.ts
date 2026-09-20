@@ -323,11 +323,39 @@ export const COLLECTIONS: Collection[] = [
     // fire-and-forget branch that already swallows it for Golazos, Pinnacle and
     // UFC. No panel states a fabricated zero about a Candy wallet.
     //
+    // 2026-09-20 — ANALYTICS added, and like `collection` it needed GATES removed
+    // rather than an arm written, plus ONE real data gap closed. Every panel was
+    // measured live against Candy before the tab was enabled, not assumed:
+    //   market-analytics (volume/tiers/top sales/series/period)  real — 31 daily
+    //     rows, 1,564 sales / $7,063 in 30 d, top sale $203.72 (Caminero /15)
+    //   FMV tier pulse       real — LEGENDARY 24 eds, COMMON 100
+    //   liquidity heatmap    real — 125 editions, 0 cold
+    //   whale leaderboard    real — 60+ base58 wallets, top buyer $1,534
+    //   badge premium        RPC returns SQL NULL -> panel() gives [] -> the
+    //                        honest empty state (Candy has no badge scheme)
+    //   pack EV              "not yet available for this collection" — TRUE of
+    //                        `pack_distributions`, which has zero Candy rows
+    //   /api/ready           readiness_collection_stats lists Candy,
+    //                        thin_volume=false, so no false thin-volume banner
+    //
+    // 🚨 THE TWO THINGS THAT HAD TO BE FIXED FIRST, both silent-empty, not 500s:
+    //   1. `shortSlug("candy-mlb")` returned the HYPHEN slug from a five-entry
+    //      hardcoded map beside this registry, while the analytics_* RPCs key on
+    //      `candy_mlb`. EVERY card would have rendered its empty state. Now
+    //      derived from `toDbSlug` (lib/analytics/format.ts).
+    //   2. `analytics_listings_summary` read only `cached_listings`, where Candy
+    //      has 0 rows — its ~1,900 live asks are in `candy_listings`. The Order
+    //      Book card renders count===0 as "No live listings.", a false claim
+    //      about the market. Migration 20260920153900 adds the Candy arm;
+    //      verified 1,939 asks, median $4.44.
+    //
     // ⛔ PACKS and SNIPER stay absent, and not for want of dispatch: Candy has
     // ZERO rows in `pack_distributions`, and the Sniper's job is now done by the
     // Candy leg on /insights/deals (41 editions). Either would be a tab built
-    // for its own sake.
-    pages: ["overview", "market", "collection"],
+    // for its own sake. (Candy DOES have a native pack plane — `candy_packs`
+    // 2,501 rows, `candy_pack_ev_model` — but it is surfaced on
+    // /insights/candy-mlb and is not what the shared Packs tab reads.)
+    pages: ["overview", "market", "collection", "analytics"],
     published: true,
     supabaseCollectionId: "209ade70-32c5-4470-bc7c-4793d660f713",
     pitch: "Wallet analytics, FMV, and pack/edition intelligence for Candy MLB on Solana — Metaplex Core, secondary on Magic Eden.",

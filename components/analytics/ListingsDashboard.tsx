@@ -31,6 +31,7 @@ import {
   resolveSortOption,
   isSparseListingCount,
   normalizeMarketplaceListings,
+  normalizeDataCaveats,
 } from "@/lib/analytics-listings-compute"
 
 const ALL_COLLECTIONS = [
@@ -140,6 +141,10 @@ export default function ListingsDashboard() {
   // Audit 2026-05-20: analytics_listings_summary RPC can return marketplace_listings
   // as {} (not []) when empty; ?? [] only catches null/undefined, so .map would throw.
   const marketplace = normalizeMarketplaceListings(summary?.marketplace_listings)
+  // ⚠ The RPC emits `data_caveats` as an OBJECT, so the old
+  // `summary.data_caveats.length > 0` gate read `undefined` and this whole
+  // disclosure section had never rendered. See normalizeDataCaveats().
+  const caveats = normalizeDataCaveats(summary?.data_caveats)
   const sortOption = resolveSortOption(sort)
 
   return (
@@ -508,7 +513,7 @@ export default function ListingsDashboard() {
       </section>
 
       {/* About this data — caveats expandable */}
-      {summary?.data_caveats && summary.data_caveats.length > 0 ? (
+      {caveats.length > 0 ? (
         <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
           <button
             type="button"
@@ -527,7 +532,7 @@ export default function ListingsDashboard() {
           </button>
           {showCaveats ? (
             <ul className="mt-3 space-y-1.5 text-xs text-[color:var(--rpc-text-secondary)] leading-relaxed list-disc pl-4">
-              {summary.data_caveats.map((c, i) => (
+              {caveats.map((c, i) => (
                 <li key={i}>{c}</li>
               ))}
             </ul>

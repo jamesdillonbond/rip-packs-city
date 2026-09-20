@@ -13,6 +13,7 @@ import {
   resolveSortOption,
   isSparseListingCount,
   normalizeMarketplaceListings,
+  normalizeDataCaveats,
 } from "@/lib/analytics-listings-compute"
 
 // Pins the pure formatting / address / sort / normalize logic lifted out of
@@ -150,14 +151,36 @@ describe("resolveCollectionLabel", () => {
     expect(resolveCollectionLabel(null)).toBeNull()
     expect(resolveCollectionLabel(undefined)).toBeUndefined()
   })
-  it("COLLECTION_LABEL covers all five collections", () => {
+  // ⭐ RE-PINNED 2026-09-20 (5 → 6 keys), and the title changed with it because
+  // "all five collections" stopped being the property. The real property is
+  // COMPLEMENTARITY: every key `analytics_listings_summary` can put in
+  // `marketplace_listings.collection` must have a label, because
+  // resolveCollectionLabel falls back to the RAW SLUG and /analytics/listings
+  // would render a row literally labelled "candy_mlb".
+  //
+  // The RPC keys rows with `CASE c.slug WHEN … ELSE c.slug END`, so the emitted
+  // set is {the five short codes} ∪ {the DB slug of any collection with no CASE
+  // arm}. Candy joined it today when the RPC gained an arm reading
+  // `candy_listings` (migration 20260920153900) — verified live the same hour:
+  // analytics_listings_summary(NULL) → ["allday","candy_mlb","golazos","topshot"].
+  it("COLLECTION_LABEL labels every key the listings RPC can emit", () => {
     expect(Object.keys(COLLECTION_LABEL).sort()).toEqual([
       "allday",
+      "candy_mlb",
       "golazos",
       "pinnacle",
       "topshot",
       "ufc",
     ])
+    // ⚠ NON-VACUITY: the list above is satisfied by a map of empty strings, so
+    // assert the two shapes actually resolve — a short code and the one LONG
+    // slug, which is the arm that was missing and the one a future collection
+    // will land on.
+    expect(resolveCollectionLabel("candy_mlb")).toBe("Candy MLB")
+    expect(resolveCollectionLabel("topshot")).toBe("Top Shot")
+    // …and the fall-through stays alive on a key no registry has, so it keeps
+    // exercising the raw-slug branch rather than passing against a label.
+    expect(resolveCollectionLabel("panini_blockchain")).toBe("panini_blockchain")
   })
 })
 
@@ -195,5 +218,42 @@ describe("normalizeMarketplaceListings", () => {
     expect(normalizeMarketplaceListings(undefined)).toEqual([])
     // The RPC's empty-payload footgun: {} typed as an array at the call site.
     expect(normalizeMarketplaceListings({} as unknown as unknown[])).toEqual([])
+  })
+})
+
+describe("normalizeDataCaveats — the disclosure that had never rendered", () => {
+  // 🚨 REGRESSION PIN, 2026-09-20. `analytics_listings_summary` emits
+  // data_caveats as a jsonb OBJECT; ListingsSummaryResponse typed it `string[]`
+  // and the dashboard gated the "About this data" section on
+  // `data_caveats.length > 0`. On an object that is `undefined`, so the section
+  // has NEVER rendered on /analytics/listings. The declared type was wrong about
+  // the runtime shape, so tsc type-checked the lie and no test could see it.
+  it("reads the OBJECT shape the RPC actually emits", () => {
+    const live = {
+      topshot_sample: "ts_listings is a recent sample of the Top Shot orderbook, not the full state",
+      cached_sniper_bias: "cached_listings is sourced from Sniper deal scans - biased toward low-priced inventory",
+      dead_listing_filter: "Dropped asks > 50x FMV (or > $100K when FMV unknown) to exclude listing-reward farming",
+      candy_source: "Candy MLB asks come from candy_listings (Solana / Magic Eden), not cached_listings, and are a full active-ask snapshot rather than a Sniper-scan sample",
+    }
+    const out = normalizeDataCaveats(live)
+    expect(out).toHaveLength(4)
+    // ⚠ The Candy provenance sentence is the reason this was worth fixing now:
+    // the table gained a row whose source is neither the Sniper feed nor Flow.
+    expect(out.some((c) => c.includes("Magic Eden"))).toBe(true)
+    // …and the guard the dashboard uses is now TRUE on the live payload, which
+    // is the actual defect being pinned — not the array contents.
+    expect(out.length > 0).toBe(true)
+  })
+
+  it("still accepts a list, in case a writer emits one", () => {
+    expect(normalizeDataCaveats(["a", "b"])).toEqual(["a", "b"])
+  })
+
+  it("yields [] for nullish/garbage so the section hides rather than throwing", () => {
+    expect(normalizeDataCaveats(null)).toEqual([])
+    expect(normalizeDataCaveats(undefined)).toEqual([])
+    expect(normalizeDataCaveats({})).toEqual([])
+    // Non-string values are dropped, not rendered as "[object Object]".
+    expect(normalizeDataCaveats({ a: "keep", b: 3 as unknown as string, c: "" })).toEqual(["keep"])
   })
 })

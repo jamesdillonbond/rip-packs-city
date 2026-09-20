@@ -8,6 +8,16 @@ export const COLLECTION_LABEL: Record<string, string> = {
   golazos: "Golazos",
   pinnacle: "Pinnacle",
   ufc: "UFC",
+  // ⚠ 2026-09-20 — REQUIRED BY THE SAME CHANGE THAT MADE THE ROW APPEAR, not a
+  // speculative addition. `analytics_listings_summary` gained a Candy arm today
+  // (migration 20260920153900) because Candy's ~1,900 live asks live in
+  // `candy_listings`, never in `cached_listings`, so the RPC reported an empty
+  // order book for it. The key is the LONG slug because that RPC family's
+  // `CASE … ELSE c.slug` emits `candy_mlb` — the same key
+  // lib/analytics-sets-dashboard-compute.ts has labelled since 2026-07-31.
+  // resolveCollectionLabel() falls back to the RAW SLUG, so without this line
+  // /analytics/listings renders a row literally labelled "candy_mlb".
+  candy_mlb: "Candy MLB",
 }
 
 export interface ListingsSortOption {
@@ -101,4 +111,37 @@ export function isSparseListingCount(count: number | null | undefined): boolean 
 // null/undefined, so a later .map would throw. Coerce to a real array.
 export function normalizeMarketplaceListings<T>(raw: T[] | null | undefined): T[] {
   return Array.isArray(raw) ? raw : []
+}
+
+/**
+ * `data_caveats` → a flat list of caveat sentences to render.
+ *
+ * 🚨 WHY THIS EXISTS (found 2026-09-20 while adding the Candy arm, and it is a
+ * DEAD DISCLOSURE, not a formatting nit). `analytics_listings_summary` has
+ * always emitted `data_caveats` as a jsonb OBJECT —
+ * `{ topshot_sample: "…", cached_sniper_bias: "…", dead_listing_filter: "…" }`
+ * — while ListingsSummaryResponse typed it `string[]` and the dashboard gated
+ * the whole "About this data" section on `data_caveats.length > 0`. On an
+ * object that reads `undefined`, so the guard has ALWAYS been falsy and the
+ * section has NEVER rendered. `tsc` could not see it: the declared type was
+ * simply wrong about the runtime shape, so the lie type-checked.
+ *
+ * ⚠ That matters more now than it did yesterday. The same RPC now returns a
+ * Candy MLB row whose provenance differs from every other row in the table —
+ * a FULL active-ask snapshot from Magic Eden on Solana, not a Sniper-scan
+ * sample of a Flow orderbook. The sentence saying so is one of these caveats.
+ * A caveat that cannot render is not a disclosure.
+ *
+ * Accepts both shapes because only the object shape is observed today and a
+ * future writer may legitimately emit a list; anything else yields `[]` so the
+ * section simply does not render rather than throwing.
+ */
+export function normalizeDataCaveats(
+  raw: Record<string, string> | string[] | null | undefined
+): string[] {
+  if (Array.isArray(raw)) return raw.filter((c): c is string => typeof c === "string" && c.length > 0)
+  if (raw && typeof raw === "object") {
+    return Object.values(raw).filter((c): c is string => typeof c === "string" && c.length > 0)
+  }
+  return []
 }

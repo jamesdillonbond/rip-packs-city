@@ -5,7 +5,7 @@ import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 export const metadata: Metadata = analyticsMetadata({
   title: "Listings — Open Offers and Orderbook",
   description:
-    "Historical Flowty loan offers and a sample of the Top Shot orderbook. Marketplace ask data sourced from the Sniper deal feed across Top Shot, NFL All Day, Golazos, UFC, and Pinnacle. Flowty loan offers are a frozen archive (marketplace closed May 2026).",
+    "Historical Flowty loan offers and a sample of the Top Shot orderbook. Flow marketplace ask data is sourced from the Sniper deal feed across Top Shot, NFL All Day, Golazos, UFC, and Pinnacle; Candy MLB asks are a full active-listing snapshot from Magic Eden on Solana. Flowty loan offers are a frozen archive (marketplace closed May 2026).",
   path: "/analytics/listings",
 })
 
@@ -14,7 +14,7 @@ const datasetJsonLd = {
   "@type": "Dataset",
   name: "Rip Packs City Listings Analytics",
   description:
-    "Historical Flowty loan offers (marketplace closed May 2026) and Sniper-feed ask snapshots across Flow collectibles. The Top Shot orderbook sampler was retired 2026-05-26 and no depth is shown for it.",
+    "Historical Flowty loan offers (marketplace closed May 2026), Sniper-feed ask snapshots across Flow collectibles, and a full Magic Eden ask snapshot for Candy MLB on Solana. The Top Shot orderbook sampler was retired 2026-05-26 and no depth is shown for it.",
   creator: { "@type": "Organization", name: "Rip Packs City" },
   url: `${ANALYTICS_BASE_URL}/analytics/listings`,
   distribution: [

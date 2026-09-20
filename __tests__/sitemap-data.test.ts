@@ -125,9 +125,29 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // and only Flow-shaped GATES in front of it were failing (7 routes fixed);
     // proxy.ts's anon rule gained a second member in the same commit, which is
     // what keeps sitemap-urls-are-anon-public.test.ts green.
-    expect(s).toHaveLength(75)
+    // 75 → 76 on 2026-09-20: Candy MLB gained its Analytics tab. Same derived
+    // coupling for the third time — `pages` grew, /candy-mlb/analytics entered
+    // segment 0 by itself, and this number is the record. The tab shipped after
+    // a per-panel sweep against live Candy rows (31 daily volume rows, 1,564
+    // sales in 30 d, 125 priced editions, ~1,900 live asks) plus TWO silent-empty
+    // fixes it needed first: shortSlug() was handing the RPCs a hyphen slug they
+    // key nothing on, and analytics_listings_summary read only `cached_listings`,
+    // where Candy has zero rows. proxy.ts's Candy anon rule gained a third member
+    // in the same commit and `analytics` left THIN_COLLECTION_MISSING_TABS.
+    expect(s).toHaveLength(76)
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/ufc/sniper`)).toBeUndefined()
+    // ⚠ PRESENCE, not just the count — a bare length pin is satisfied by ANY
+    // 76th URL, so each Candy tab that entered the sitemap is named here. That
+    // is what makes the anon-gating arm in sitemap-urls-are-anon-public.test.ts
+    // meaningful: it can only check a URL the sitemap actually advertises.
+    expect(s.find((x) => x.url === `${BASE}/candy-mlb/analytics`)).toBeTruthy()
+    expect(s.find((x) => x.url === `${BASE}/candy-mlb/market`)).toBeTruthy()
+    expect(s.find((x) => x.url === `${BASE}/candy-mlb/collection`)).toBeTruthy()
+    // …and the tabs Candy does NOT have stay out (the complement proxy.ts
+    // redirects). A sitemap entry for one is a login redirect handed to a crawler.
+    expect(s.find((x) => x.url === `${BASE}/candy-mlb/sniper`)).toBeUndefined()
+    expect(s.find((x) => x.url === `${BASE}/candy-mlb/packs`)).toBeUndefined()
     // …and the no-change control: the other collections still advertise theirs.
     expect(s.find((x) => x.url === `${BASE}/nba-top-shot/sniper`)).toBeTruthy()
     // Root is priority 1.0, changeFrequency daily.
