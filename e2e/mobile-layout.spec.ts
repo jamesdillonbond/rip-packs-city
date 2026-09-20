@@ -258,7 +258,53 @@ test.describe("mobile layout", () => {
 test.describe("mobile layout (touch context)", () => {
   test.use({ viewport: PHONE, hasTouch: true, isMobile: true })
 
-    test("no form control sits under the 16px iOS zoom floor", async ({ page }) => {
+    test("the nav and footer links own a 44px box, and steal nothing", async ({ page }) => {
+    // MEASURED 2026-09-20 before the fix: 16 nav links and 22 footer links per
+    // page at 17px tall, the social handle at 14px, one footer link at 10px —
+    // height from line-height alone, zero padding, on every page on the site.
+    // That misses even the 24x24 floor, never mind 44x44.
+    //
+    // Grown rather than overlaid on purpose: these are block anchors in a
+    // gapless flex column, so min-height adds REAL layout height. .rpc-tap44
+    // would have been wrong here — rpc-tokens.css warns its ::after can
+    // overflow and steal a neighbour's clicks, which in a stacked list is
+    // exactly what would happen. The second assertion is that guarantee.
+    //
+    // ⚠ This rule lives in an @media (pointer: coarse) block, so it needs the
+    // touch context this describe provides — see the note above.
+    await page.goto("/insights", { waitUntil: "domcontentloaded" })
+    await page.waitForTimeout(1500)
+
+    const r = await page.evaluate(() => {
+      const els = Array.from(document.querySelectorAll("nav a, footer a")).filter((e) => {
+        const b = e.getBoundingClientRect()
+        return b.width > 0 && b.height > 0
+      })
+      const short = els
+        .filter((e) => e.getBoundingClientRect().height < 44)
+        .map((e) => `${(e.textContent || "").trim().slice(0, 18)} ${Math.round(e.getBoundingClientRect().height)}px`)
+      const stolen: string[] = []
+      for (const e of els) {
+        const b = e.getBoundingClientRect()
+        const cx = b.left + b.width / 2
+        const cy = b.top + b.height / 2
+        // elementFromPoint returns null outside the viewport — skip, don't fail.
+        if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) continue
+        const hit = document.elementFromPoint(cx, cy)
+        if (!(hit === e || e.contains(hit) || (hit && hit.contains(e)))) {
+          stolen.push((e.textContent || "").trim().slice(0, 18))
+        }
+      }
+      return { checked: els.length, short, stolen }
+    })
+
+    // Positive control: a selector that stops matching must fail, not pass quietly.
+    expect(r.checked, "no nav or footer links matched").toBeGreaterThanOrEqual(20)
+    expect(r.short, "nav/footer links under the 44px floor").toEqual([])
+    expect(r.stolen, "nav/footer links whose own centre is covered by something else").toEqual([])
+  })
+
+  test("no form control sits under the 16px iOS zoom floor", async ({ page }) => {
       // iOS Safari zooms the page when a control under 16px takes focus and does
       // NOT zoom back out — the user lands on a horizontally-panned page with the
       // rest of the UI off-screen. Chromium reproduces this at no viewport, which

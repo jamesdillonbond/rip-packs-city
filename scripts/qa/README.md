@@ -48,3 +48,38 @@ Every counter in a record is a hypothesis; the screenshot is the evidence.
 It does not assert; it measures. `e2e/mobile-layout.spec.ts` carries the pinned
 layout assertions that run in CI. This script is the broad sweep you run before a
 release or after a layout change, then read.
+
+## ⚠ A green deploy does not mean a CSS change shipped (2026-09-20)
+
+Twice in one afternoon a committed rule in `app/globals.css` reached a READY
+production deployment and was **not** in the served stylesheet.
+
+- `7b44062` — chunk rebuilt (97,553 → 97,576 B) but the rule absent. The +23 B
+  was Tailwind content-scanning picking up tokens from a `.mjs` edit in the
+  same commit.
+- `b176156` — chunk **byte-identical** to the previous build. The build log
+  showed `Restored build cache from previous deployment` and
+  `Compiled successfully in 6.5s`; a cache-warm Turbopack build served the old
+  compiled CSS.
+
+Both failures were `cat >>` appends. Both re-lands (`bf38905`, `7946a82`)
+rewrote the whole file with `fs.writeFileSync`. **Mechanism is not
+established** — treat this as "verify, don't assume", not as a known rule.
+
+### How to check, and the trap in checking
+
+Read the DEPLOYED chunk and grep for the **declarations**, not the at-rule:
+
+```bash
+node _to_delete/dumpcss.mjs           # prints the chunk URL, bytes
+curl -s <chunk-url> | grep -c "min-height:44px"
+```
+
+⚠ **Lightning CSS merges adjacent `@media (pointer:coarse)` blocks into one.**
+Counting occurrences of `coarse` therefore stays at 1 no matter how many blocks
+you add, and reads as "my rule was dropped" when it shipped fine. That false
+alarm cost a whole extra commit. Grep the declaration; and if the chunk is
+byte-identical to the previous build, nothing shipped.
+
+Behaviour on prod is the real gate either way — `_to_delete/verify44.mjs` and
+`verify16.mjs` measure it.
