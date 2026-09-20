@@ -11,6 +11,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · ↩ THE ROUTE HALF SHIPPED AFTER ALL — `wallet-search` ×2 and `cache-refresh` now read `get_editions_latest_fmv_wide`; the fixture surgery was a key rename, not a re-shape, and it is mutation-checked · Cowork cloud
+
+**Shipped: 2 routes (`app/api/wallet-search/route.ts` two sites, `app/api/cache-refresh/route.ts` one site) → `.rpc("get_editions_latest_fmv_wide", { p_edition_ids: chunk })`; 5 test files' `fmv_current` fixture keys → `"rpc:get_editions_latest_fmv_wide"`; database.md's "not worth a migration" section carries the 09-19 re-litigation. No DB change.**
+
+↩ The previous entry deferred this as "~20 fixture places to re-shape". Wrong on inspection: the harness's `rpc:<name>` fixture returns the same `{ data, error }` envelope as a table read, and the routes read only `edition_id / fmv_usd / confidence / sales_count_30d / computed_at`, all of which the wide helper returns under the same names. So the change is a key rename in `api-wallet-search-deep` / `-edges`, `wallet-search-enriches-each-moment-once`, `wallet-search-fills-from-cache…`, `api-cache-refresh-allday-fmv` — 15 lines. **Mutation check:** with the rpc name misspelled in both routes, 4 tests fail across 2 files; with the right name, all 15 suites that import either route pass (116 tests), `fmv-current-reads-are-keyed-on-edition-id` still counts sites in `app/` and `lib/`, tsc clean, lint ratchet 712 = baseline. Chunk sizes unchanged (50 / 100 ids), well under the PostgREST 1000-row cap on an RPC result.
+
+📏 **What this should do to the estate:** the 5-column id-list read of `fmv_current` was 6,103 calls at a 6.2 s mean since 08-11 (631 min of DB time). **Exit:** by 09-21 the `fmv_current` 5-col shape stops accruing calls in pgss and `get_editions_latest_fmv_wide` accrues them at a mean < 200 ms; Vercel `[wallet-search]` / `[cache-refresh] fmv lookup err` lines → ~0. **Falsifier:** wallet-search still > 5 s on a p90 wallet ⇒ the cost is the chunk COUNT (a 3,000-edition wallet is 60 chunks of 50 in parallel) — raise CHUNK to 200 before blaming the helper; the helper is linear in ids.
+
+📝 `fetchFmvBatch` (`lib/`) and `/api/fmv` are the two remaining wide readers; same one-line edit, not done tonight because each has its own guard suite (`api-fmv-reads-fmv-current-not-raw-snapshots`, D27) that asserts the *view* by name and should be re-pointed deliberately, not by rename.
+
+- **Revert:** `git revert` the code commit (routes + fixtures + database.md paragraph); the function stays, inert.
+
 ### 2026-09-19 · 🎯 THE PRODUCT'S HOTTEST QUERY SHAPE GETS ITS CHEAP TWIN — `get_editions_latest_fmv_wide(uuid[])` returns all 15 `fmv_current` columns in 40 ms where the view takes 22–41 s on the same 100 ids, set-difference 0 both ways; the five readers the narrow helper could not serve can now move · Cowork cloud
 
 **Shipped: 1 migration (`20260920044216`): `public.get_editions_latest_fmv_wide(uuid[])`, plpgsql STABLE SECURITY DEFINER, service_role only (REVOKEd from PUBLIC/anon/authenticated, DO-block asserted). Inert until a caller lands — no route changed tonight.**
