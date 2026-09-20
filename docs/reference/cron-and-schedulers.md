@@ -2679,3 +2679,61 @@ So a watchlist row is **silent for its own `max_silent_minutes` after insertion*
 ⭐ **The reusable move: a lane with a pg_cron backstop is not doubly covered, it is doubly INVISIBLE** unless something correlates the two. Both writers here died the same two days — the route killed at its 120 s wall, the cron timing out at ~604 s — and no single instrument saw both.
 
 ⚠ **And the cron half fails as SILENCE.** `SET statement_timeout` on a function is INERT on pg_cron: this one declared `'120s'` and pg_cron ran it **604 s** before killing it. Confirmed live 2026-09-20, not quoted.
+
+## The moments ownership sweep — the WRONG POPULATION class, second confirmed instance (2026-09-20)
+
+⭐ **This is the same defect as the pack sweep's, found 11 days apart in two different lanes, which is what makes it a CLASS rather than an anecdote.** A recurring job reported success on every tick while the set it selected was not the set that needed the work. Nothing was broken; nothing alarmed; the job was simply pointed at the wrong table.
+
+**The mechanism.** `wallet_moments_cache` is re-verified only by a wallet re-scan, and the only recurring dispatcher is `app/api/seed-wallet-refresh/route.ts`, whose cohorts were selected `seeded_wallets.id % N = K`. It never read `saved_wallets`. So a wallet a real user SAVED was re-verified only if it also happened to be a seeded demo/benchmark wallet, and a moment the wallet had already sold stayed in the portfolio indefinitely with no staleness disclosed.
+
+**The measurement that settled it** — all 27 saved wallets, 135 (wallet, collection) pairs:
+
+| population | wallets | pairs | `last_scanned_at` age |
+|---|---|---|---|
+| saved **and** active-seeded → swept | 22 | 110 | 0.18 – 0.71 days |
+| saved, **not** seeded → never swept | 5 | 25 | 5.86 – 42.87 days |
+
+⭐ **THE RANGES DO NOT OVERLAP AND 5 × 5 IS EXACTLY THE STALE SET.** That is the shape that proves a population bug rather than a capacity one: a capacity ceiling produces a CONTINUUM of ages, a wrong population produces TWO DISJOINT CLUSTERS with membership as the only predictor. ⚠ **Look for the gap before reaching for a throughput explanation** — "we cannot keep up" and "we never look at these" both present as stale rows, and only the distribution tells them apart.
+
+### Two traps in the diagnosis, both of which nearly produced a wrong number
+
+⛔ **THE FRESHNESS FUNCTION'S THRESHOLD IS NOT THE ONE YOU ASSUME, AND ITS POPULATION IS NARROWER THAN ITS NAME.** `check_wmc_ownership_freshness()` takes `p_max_age_days DEFAULT 7` and its `EXISTS` clause counts only pairs that actually hold rows in `wallet_moments_cache`. So of the 25 stale pairs it flagged **5 rows / 4 wallets**, not 25 — the other 20 are stale-but-empty and correctly ignored. ⚠ **Reading "47 flagged rows" as "47 stale pairs" overstates by ~5x.** Read `pg_proc.proargdefaults` / the body before quoting a health function's output as a population count.
+
+⛔ **A WALLET'S `max(last_scanned_at)` READS FRESH WHILE A LATER LEG IS STILL IN FLIGHT.** The function is per (wallet, collection) PAIR, and `wallet-backfill-multicollection` walks the five collections SEQUENTIALLY at ~10 s each (measured: 18:44:57 → 18:45:35 for one wallet). A verification run 20 s after dispatch showed the wallet's max as current AND still flagged its All Day pair. ⚠ **This is "a reading taken while its SUBJECT CHANGED is not a reading" in a form that looks like a partial failure rather than a timing artifact** — it invites a fix for a bug that is not there. Wait for the full leg set, then measure.
+
+### Sizing the widen — the part that had been deferred as "a cost decision"
+
+The fix had sat unshipped because widening a per-wallet on-chain Cadence fan-out (5 collections each) looks unbounded. It is not, and two reframings are what made it decidable:
+
+1. ⭐ **THE COST IS THE MARGINAL SET, NOT THE POPULATION.** 22 of the 27 saved wallets were ALREADY walked by their own seeded cohort; excluding them left a marginal set of **5 wallets**. ~25 walks/day against the ~2,540/day the seeded herd already runs (254 active × 5 collections × 2 waves) — **+1%**. ⛔ **Compute `|target \ already-covered|` BEFORE believing a headline cost.** The naive figure ("every user's wallet, forever") was ~5x the real one and was the whole reason for the deferral.
+2. ⛔ **A PER-TICK CAP IS NOT A RATE — IT BOUNDS THE BURST ONLY.** With a staleness threshold, a wallet becomes a candidate only once its newest walk ages past it, so it costs one walk-set per threshold period no matter how many waves observe it. The cap (10/wave × 8 invocations = 80 slots/day) is 16x the steady-state number and is not a rate at all; it only decides how fast a backlog drains. ⚠ **Quoting the cap as the cost is how a +1% change gets deferred as a spend commitment.** State the two knobs separately, always.
+
+### What shipped
+
+`SEED_REFRESH_SAVED_STALE_HOURS` (default 24, **0 disables the whole sweep with no deploy**) and `SEED_REFRESH_SAVED_MAX_PER_WAVE` (default 10). Selection is a pure exported function (`planSavedWalletSweep`) because the route suite stubs `after()` — anything left inside it is unreachable from a test, which is the same reason `dispatchPlan` was extracted on 2026-09-13.
+
+⛔ **COHORT BY A STABLE HASH OF THE ADDRESS (FNV-1a), mirroring `seeded_wallets.id % N`.** The four cohorts run in separate lambdas minutes apart, never see each other's picks, and the walks are async — so `last_scanned_at` has NOT moved when the next cohort reads. A shared candidate list would fan each wallet out **4x, not 1x**. Verified live: fired **1 / 0 / 3 / 1** across cohorts 0–3, each wallet dispatched exactly once.
+
+⛔ **The chain gate is `isCadenceAddress`, never `startsWith("0x")`** — this route fans out to the five published Flow collections, so a Candy (base58) or EVM (40-hex) saved wallet has nothing here to walk. It is excluded **AND COUNTED** (`saved_sweep_non_cadence`), because "this sweep does not cover that chain" and "that wallet is fresh" are different facts and only one is true.
+
+**Telemetry shape, and why the counts are NULL rather than 0.** The terminal `pipeline_runs` row carries `saved_sweep_state` ∈ `{ok, disabled, read_failed}` with every count NULL unless a count was actually taken. A `0` would render *disabled*, *could not look* and *nothing was stale* identically — the fabricated-measurement shape. ⭐ **The pre-deploy run of the SAME workflow 45 min earlier wrote `saved_sweep_state=NULL` on all four cohorts, which is a free positive control** that the fields came from this deploy rather than from something already running.
+
+**Verified 2026-09-20:** `check_wmc_ownership_freshness()` → zero rows for any `saved_wallets` wallet (47 → 42 total), worst saved-only pair **42.87 days → 0.011**. ⭐ **And the first re-verify found real drift, which is the point:** one wallet's Top Shot cache went **2,850 → 2,941** with `last_found_count` now equal to `cached_rows` — 91 moments the cache did not have.
+
+⏳ **NOT verified on an UNFORCED wave.** The backlog was cleared by a `workflow_dispatch` of the GHA backstop (`?force=1`), which is the only secret-free lever — the route needs `INGEST_SECRET_TOKEN` and harvesting it would print a live secret. The cadence gate executes only UTC hours 0/1/12/13, so **the first ordinary primary wave to exercise this code lands at 00:45 UTC**. The sweep is not gated by `forceWave` (it has its own staleness gate), so a primary should behave identically — but that is an inference, not a measurement.
+
+### Still open — the 41 wallets this fix deliberately does NOT cover
+
+Of the 42 rows still flagged, **41 belong to wallets that are neither saved nor seeded** (1 is seeded-inactive), worst age **66.2 days**. They carry no `user_profiles` row and no `allow_list` row: drive-by/anonymous lookups that left a cache behind and that nothing sweeps.
+
+⚠ **Do NOT assume they are all truncation stubs — I nearly did.** The ten worst by age are all exactly 50 rows, but that is a BIASED SAMPLE; across all 31 flagged non-saved wallets the distribution is 15 at exactly 50, 7 at 1, and a tail up to 3,874. ⭐ **Estate-wide, though, the truncation signature is large: 776 of 1,545 cached wallets sit at exactly 50 rows and 810 on some `SUSPICIOUS_COUNTS` value** — a wallet genuinely holding 50 is indistinguishable from a truncated walk without re-walking, which is precisely what that heuristic encodes.
+
+⛔ **The route's existing `SUSPICIOUS_COUNTS` force-full-walk repair never fires for them, because it only applies to wallets ALREADY in a swept population.** The mitigation and the gap are the same mechanism seen from two sides. Widening to this population is a genuinely different decision from the saved-wallet one — the set is unbounded (any anonymous lookup joins it) and none of it is a logged-in user's portfolio — so it is recorded, not swept.
+
+---
+
+## Displaced from CLAUDE.md — 2026-09-20, third pass (verbatim)
+
+Moved to make room for the marginal-cost / cap-is-not-a-rate rule. Content is VERBATIM; CLAUDE.md keeps the rule and points here for the cases.
+
+- ⚠ **Re-TEST a stated exit condition, never re-read it** — a "once cleared" 114 was 5. ⚠ **RE-TEST it BEFORE acting** — a 36 % kill rate was 100 % by ship.

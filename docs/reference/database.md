@@ -2768,3 +2768,12 @@ console.log(c.createHash("md5").update(s.slice(b,e+1)).digest("hex"))'
 Pure lookup data, moved to keep the memory file under its character limit. CLAUDE.md keeps the project ID, the tier name and the re-measure warning, and points here.
 
 - Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = LARGE** since 2026-09-20 — 8 GB RAM / 2 dedicated vCPU, `max_connections`=160, `shared_buffers`=2 GB, `work_mem`=12 MB). Sustained disk **79 MB/s / 3,600 IOPS**. ⚠ Pre-09-20 findings citing the **22 MB/s floor** are the OLD Small tier — re-measure. Tiers: database.md.
+
+---
+
+## Displaced from CLAUDE.md — 2026-09-20, third pass (verbatim)
+
+Moved to make room for the marginal-cost / cap-is-not-a-rate rule while keeping CLAUDE.md under its character limit. Content is VERBATIM; CLAUDE.md keeps each rule and points here for the case.
+
+- Same shape: `prosrc ILIKE '%lower(%'` said a function folded its wallet; the matching LINES showed `player_name` and `tier`. **Print the lines, not the predicate.**
+- `/api/wallet/edition-counts` was repaired and **verified live (0 → 5)** while the client that renders it still returned early on `!ownerKey.startsWith("0x")` — the column stayed empty all day and **no route-level test could have caught it**.
