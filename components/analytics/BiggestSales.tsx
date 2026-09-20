@@ -4,6 +4,7 @@ import { useMemo } from "react"
 import Link from "next/link"
 import type { SalesTopMoveRow } from "@/lib/analytics-types"
 import { useResolveUsernames } from "@/lib/analytics/username-resolver"
+import { collectionLabel } from "@/lib/analytics/format"
 
 // BiggestSales — card grid showing the largest individual sales in the
 // active window. The RPC pre-joins player_name / set_name when the
@@ -40,19 +41,20 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-const COLLECTION_LABEL: Record<string, string> = {
-  topshot: "Top Shot",
-  allday: "All Day",
-  golazos: "Golazos",
-  pinnacle: "Pinnacle",
-  ufc: "UFC",
-}
+// ⚠ The local five-entry map this replaced fell back to the RAW KEY, so a
+// collection without an entry rendered the literal string `candy_mlb` in a
+// public table. collectionLabel() keeps those five spellings verbatim and
+// DERIVES everything else from the registry — see lib/analytics/format.ts.
 
 const MARKETPLACE_LABEL: Record<string, { label: string; className: string }> = {
   topshot: { label: "Top Shot", className: "border-emerald-500/30 text-emerald-400" },
   flowty: { label: "Flowty", className: "border-violet-500/30 text-violet-400" },
   "on-chain": { label: "On-chain", className: "border-sky-500/30 text-sky-400" },
   pinnacle: { label: "Pinnacle", className: "border-sky-500/30 text-sky-400" },
+  // Candy MLB's only marketplace. `sales.marketplace` carries the UNDERSCORED
+  // form — verified against the live payload — and without an entry the badge
+  // rendered the raw string `magic_eden` in a public table.
+  magic_eden: { label: "Magic Eden", className: "border-orange-500/30 text-orange-400" },
 }
 
 function isLinkableAddr(a: string | null | undefined): a is string {
@@ -83,14 +85,14 @@ export default function BiggestSales({ rows }: BiggestSalesProps) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {rows.map((r) => {
-        const collectionLabel = COLLECTION_LABEL[r.collection?.toLowerCase()] ?? r.collection
+        const collLabel = collectionLabel(r.collection?.toLowerCase()) ?? r.collection
         const mp = MARKETPLACE_LABEL[r.marketplace?.toLowerCase()] ?? {
           label: r.marketplace,
           className: "border-[color:var(--rpc-border)] text-[color:var(--rpc-text-secondary)]",
         }
-        const title = r.player_name || `${collectionLabel} #${r.serial_number ?? "—"}`
+        const title = r.player_name || `${collLabel} #${r.serial_number ?? "—"}`
         const subtitle = r.player_name
-          ? r.set_name || collectionLabel
+          ? r.set_name || collLabel
           : r.set_name || ""
 
         return (
@@ -101,7 +103,7 @@ export default function BiggestSales({ rows }: BiggestSalesProps) {
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="min-w-0 flex-1">
                 <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
-                  #{r.rank} · {collectionLabel}
+                  #{r.rank} · {collLabel}
                 </div>
                 <h3 className="font-semibold text-[color:var(--rpc-text-primary)] truncate" title={title}>
                   {title}

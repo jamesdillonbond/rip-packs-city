@@ -118,13 +118,34 @@ describe("BiggestSales — formatter + fallback branches", () => {
     expect(container.textContent).toContain("—")
   })
 
-  it("falls back to the raw collection/marketplace strings when unknown", () => {
+  // ⭐ INVERTED 2026-09-20 — this test PINNED THE DEFECT it was named for.
+  // It asserted that an unlabelled collection renders its RAW KEY, using
+  // `candy_mlb` as the example, and `candy_mlb` is a LIVE published collection
+  // whose rows reach this table. So the test was holding in place a public
+  // table that prints `candy_mlb` and `magic_eden` at a reader. The raw-value
+  // FALLBACK is still a real property and still pinned below — just not through
+  // a subject that should resolve.
+  it("labels a collection and marketplace that DO resolve, rather than leaking the raw key", () => {
     const { container } = render(
-      <BiggestSales rows={[row({ collection: "candy_mlb", marketplace: "magiceden" })]} />,
+      <BiggestSales rows={[row({ collection: "candy_mlb", marketplace: "magic_eden" })]} />,
     )
-    // COLLECTION_LABEL / MARKETPLACE_LABEL have no entry -> raw value shown.
-    expect(container.textContent).toContain("candy_mlb")
-    expect(container.textContent).toContain("magiceden")
+    expect(container.textContent).toContain("Candy MLB")
+    expect(container.textContent).toContain("Magic Eden")
+    // ⛔ The raw keys must be ABSENT, not merely "also present" — asserting only
+    // the label would pass while the slug still rendered somewhere on the row.
+    expect(container.textContent).not.toContain("candy_mlb")
+    expect(container.textContent).not.toContain("magic_eden")
+  })
+
+  it("still falls back to the raw strings for a genuinely unknown collection/marketplace", () => {
+    const { container } = render(
+      <BiggestSales rows={[row({ collection: "not_a_collection", marketplace: "not_a_market" })]} />,
+    )
+    // ⚠ The fallback arm is kept alive by subjects that resolve NOWHERE, so it
+    // keeps exercising the degrade-to-itself branch instead of passing
+    // vacuously against a name the registry now supplies.
+    expect(container.textContent).toContain("not_a_collection")
+    expect(container.textContent).toContain("not_a_market")
   })
 
   it("uses the collection label as the subtitle when set_name is null but player_name is present", () => {

@@ -35,6 +35,17 @@
 -- immediately before this replace) with ONLY Section 2 extended -- today's
 -- `candy` arm from another session is carried through untouched.
 -- ─────────────────────────────────────────────────────────────────────────────
+-- ⚠ ADDED 2026-09-20 BY A DIFFERENT SESSION (Claude Code cloud), comment only, no SQL change.
+-- This file was already applied and committed when `migration-new-function-states-its-anon-exec-decision`
+-- went red on main: the guard requires every migration that CREATE OR REPLACEs a public
+-- function to state its anon-execute decision, and this one did not. Marker rather than a
+-- REVOKE because CREATE OR REPLACE does not reset a function ACL, so adding a revoke here
+-- would smuggle a production ACL change into what was a body rewrite. The ACL was re-read
+-- live before writing this line, not inherited from the other migration that touched this
+-- same function today.
+-- ⚠ The marker must be ONE line carrying both `anon-exec:` and the function name - the guard
+-- tests them per LINE, so a reason split across a comment block silently does nothing.
+-- anon-exec: intentional — SNAPSHOT migration; CREATE OR REPLACE does not reset a function ACL. public.analytics_listings_summary is already service_role-only and stays that way — VERIFIED with has_function_privilege (not acl text) at 10:03 AM PT: anon EXECUTE false, authenticated EXECUTE false, service_role EXECUTE true. Reached only through /api/analytics/listings/summary, a service-role route.
 CREATE OR REPLACE FUNCTION public.analytics_listings_summary(p_collections text[] DEFAULT NULL::text[])
  RETURNS jsonb
  LANGUAGE plpgsql

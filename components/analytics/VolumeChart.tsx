@@ -30,11 +30,24 @@ const COLLECTION_COLORS: Record<string, string> = {
   golazos: "#f59e0b",
   pinnacle: "#a78bfa",
   ufc: "#fb7185",
+  // ⚠ NOT cosmetic. Without an entry, `colorFor` falls through to the INDEXED
+  // palette below, whose first five members are these same five colours — so a
+  // stacked chart showing Top Shot and Candy together handed BOTH series
+  // #10b981 and the legend stopped distinguishing them. This is Candy's
+  // registry accent (lib/collections.ts), so chart and chrome agree.
+  candy_mlb: "#fb923c",
 }
 
 export function colorFor(collection: string, idx: number): string {
+  // ⚠ Own-property read: a bare `MAP[key]` matches inherited Object.prototype
+  // members, so a collection key of "constructor" or "toString" would return a
+  // truthy FUNCTION and be handed to the chart as a colour. Keys here come from
+  // DB rows.
+  const own = Object.prototype.hasOwnProperty.call(COLLECTION_COLORS, collection)
+    ? COLLECTION_COLORS[collection]
+    : undefined
   return (
-    COLLECTION_COLORS[collection] ||
+    own ||
     ["#10b981", "#38bdf8", "#f59e0b", "#a78bfa", "#fb7185", "#22d3ee"][idx % 6]
   )
 }

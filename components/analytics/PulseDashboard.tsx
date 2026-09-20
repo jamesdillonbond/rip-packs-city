@@ -55,6 +55,12 @@ const ALL_COLLECTIONS = [
   { key: "golazos", label: "Golazos" },
   { key: "ufc", label: "UFC Strike" },
   { key: "pinnacle", label: "Pinnacle" },
+  // ⭐ Candy MLB joined 2026-09-20, and ONLY after every panel behind this chip
+  // was read against live Candy rows — pulse_24h 130 sales / $212.54 / 16 buyers, hourly 25 rows, activity 20 rows. The key is the LONG slug because the
+  // analytics_* RPCs normalize with `CASE … ELSE c.slug`, so Candy is keyed
+  // `candy_mlb` — the same key lib/analytics-sets-dashboard-compute.ts has
+  // labelled since 2026-07-31.
+  { key: "candy_mlb", label: "Candy MLB" },
 ]
 
 // ── Activity row event configuration ────────────────────────────────────────

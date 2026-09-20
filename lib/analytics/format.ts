@@ -2,7 +2,7 @@
 // (app/(collections)/[collection]/analytics/page.tsx) and its extracted card
 // components. Behavior-identical verbatim move — no logic changes.
 
-import { toDbSlug } from "@/lib/collections"
+import { toDbSlug, fromDbSlug, getCollection } from "@/lib/collections"
 
 export function relativeDate(iso: string): string {
   const t = new Date(iso).getTime()
@@ -125,6 +125,59 @@ export function shortSlug(urlSlug: string): string {
   return ownValue(URL_TO_SHORT_SLUG, urlSlug) ?? toDbSlug(urlSlug) ?? urlSlug
 }
 
+/**
+ * The five analytics keys whose display string PREDATES the registry and does
+ * not match either `label` or `shortLabel` on it. Kept verbatim so this helper
+ * cannot silently reword existing UI: the registry would render "NBA Top Shot"
+ * and "Strike" where every analytics surface has always said "Top Shot" and
+ * "UFC".
+ */
+const ANALYTICS_COLLECTION_LABEL: Record<string, string> = {
+  topshot: "Top Shot",
+  allday: "All Day",
+  golazos: "Golazos",
+  pinnacle: "Pinnacle",
+  ufc: "UFC",
+}
+
+/** Analytics collection key → the URL slug, for the keys that have an arm. */
+const ANALYTICS_KEY_TO_URL_SLUG: Record<string, string> = {
+  topshot: "nba-top-shot",
+  allday: "nfl-all-day",
+  golazos: "laliga-golazos",
+  pinnacle: "disney-pinnacle",
+  ufc: "ufc",
+}
+
+/**
+ * Display label for a collection key as the `analytics_*` RPCs emit it.
+ *
+ * 🚨 WHY THIS EXISTS. Six analytics modules each carried their OWN five-entry
+ * `COLLECTION_LABEL` map, every one of them falling back to the RAW KEY —
+ * `BiggestSales`, `RecentWhaleTrades`, the pulse / listings / sets / fmv compute
+ * libs. That is the allowlist-beside-a-registry shape CLAUDE.md bans, copied
+ * six times, and the failure is silent and user-visible: a collection with no
+ * entry renders the literal string `candy_mlb` in a public table.
+ *
+ * ⭐ The fallback is DERIVED, so it cannot go stale by omission. The RPCs key a
+ * collection with no CASE arm by its DB slug (`… ELSE c.slug`), so `fromDbSlug`
+ * resolves it and the registry supplies the name — `candy_mlb` → `candy-mlb` →
+ * "Candy MLB", with no edit here, and the same for the next collection added.
+ * Only the five legacy spellings above are hand-held, and only because changing
+ * them would reword shipped UI.
+ *
+ * Returns the key unchanged when nothing resolves, so an unknown key degrades to
+ * itself rather than to a wrong name.
+ */
+export function collectionLabel(key: string | null | undefined): string {
+  const raw = key ?? ""
+  const k = raw.toLowerCase()
+  const legacy = ownValue(ANALYTICS_COLLECTION_LABEL, k)
+  if (legacy) return legacy
+  const urlSlug = ownValue(ANALYTICS_KEY_TO_URL_SLUG, k) ?? fromDbSlug(k) ?? k
+  return getCollection(urlSlug)?.label ?? raw
+}
+
 /** Display label per marketplace key; unknown key → capitalized key. */
 export const MARKETPLACE_LABEL: Record<string, string> = {
   topshot: "TopShot Native",
@@ -132,6 +185,11 @@ export const MARKETPLACE_LABEL: Record<string, string> = {
   golazos: "Golazos Native",
   pinnacle: "Pinnacle Native",
   flowty: "Flowty",
+  // ⚠ Candy MLB's ONLY marketplace, and the value `sales.marketplace` actually
+  // carries is the UNDERSCORED one — verified against the live payload
+  // (`"marketplace":"magic_eden"`). Without this the generic fallback
+  // capitalizes it to "Magic_eden" on every Candy row.
+  magic_eden: "Magic Eden",
   "on-chain": "On-chain",
   unknown: "Unknown",
 }
@@ -147,6 +205,9 @@ export const MARKETPLACE_COLOR: Record<string, string> = {
   golazos: "#22C55E",
   pinnacle: "#A855F7",
   flowty: "#3B82F6",
+  // Candy's registry accent (lib/collections.ts), so the marketplace mix and
+  // the collection chrome agree rather than defaulting this slice to grey.
+  magic_eden: "#FB923C",
   "on-chain": "#94A3B8",
   unknown: "#6B7280",
 }

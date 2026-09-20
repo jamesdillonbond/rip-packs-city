@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { fmtUsd, fmt, shortAddr, relativeDate, deltaPct, pickEarliest, pickLatest, shortSlug, marketplaceLabel, marketplaceColor } from "@/lib/analytics/format"
+import { fmtUsd, fmt, shortAddr, relativeDate, deltaPct, pickEarliest, pickLatest, shortSlug, marketplaceLabel, marketplaceColor,
+  collectionLabel,
+} from "@/lib/analytics/format"
 
 // Shared analytics formatters. Pure except relativeDate (Date.now); pin the
 // deterministic money/address formatting + relativeDate's invalid-date guard.
@@ -165,4 +167,56 @@ describe("prototype-key slugs/keys fall back, never return a prototype member", 
       expect(marketplaceColor(key)).toBe("#6B7280")
     })
   }
+})
+
+describe("collectionLabel — one derived resolver replacing six copied maps", () => {
+  // 🚨 WHY IT EXISTS. Six analytics modules each carried their own five-entry
+  // COLLECTION_LABEL map, every one falling back to the RAW KEY. A collection
+  // with no entry rendered the literal string "candy_mlb" in a public table.
+  it("keeps the five legacy analytics spellings EXACTLY", () => {
+    // ⚠ These are NOT the registry's own strings and must not become them: the
+    // registry says "NBA Top Shot" and "Strike" where analytics has always said
+    // "Top Shot" and "UFC". Pinning them is what lets the fallback be derived
+    // without silently rewording shipped UI.
+    expect(collectionLabel("topshot")).toBe("Top Shot")
+    expect(collectionLabel("allday")).toBe("All Day")
+    expect(collectionLabel("golazos")).toBe("Golazos")
+    expect(collectionLabel("pinnacle")).toBe("Pinnacle")
+    expect(collectionLabel("ufc")).toBe("UFC")
+  })
+
+  it("DERIVES a collection that has no legacy arm, from its DB slug", () => {
+    // The RPCs key a collection with no CASE arm by its DB slug (ELSE c.slug),
+    // so this is the arm that stops the raw-slug leak — and it needed no entry.
+    expect(collectionLabel("candy_mlb")).toBe("Candy MLB")
+    expect(collectionLabel("panini_blockchain")).toBe("Panini Blockchain")
+  })
+
+  it("is case-insensitive on the key", () => {
+    expect(collectionLabel("TOPSHOT")).toBe("Top Shot")
+    expect(collectionLabel("Candy_MLB")).toBe("Candy MLB")
+  })
+
+  it("degrades to the key itself, never to a wrong name", () => {
+    expect(collectionLabel("not_a_collection")).toBe("not_a_collection")
+    expect(collectionLabel("")).toBe("")
+    expect(collectionLabel(null)).toBe("")
+    expect(collectionLabel(undefined)).toBe("")
+  })
+
+  it("does not resolve inherited Object.prototype keys", () => {
+    expect(collectionLabel("toString")).toBe("toString")
+    expect(collectionLabel("constructor")).toBe("constructor")
+  })
+
+  // ⚠ NON-VACUITY: the derived arm must be what answers for candy_mlb. If a
+  // future edit re-adds candy_mlb as a hardcoded legacy entry, the assertion
+  // above still passes while the map is stale again for the NEXT collection.
+  // This pins that the resolver reaches the registry rather than a literal.
+  it("resolves through the registry, not a hardcoded entry", async () => {
+    const { getCollection } = await import("@/lib/collections")
+    const fromRegistry = getCollection("candy-mlb")?.label
+    expect(fromRegistry).toBe("Candy MLB")
+    expect(collectionLabel("candy_mlb")).toBe(fromRegistry)
+  })
 })

@@ -10,6 +10,7 @@ import type {
   PulseActivityRow,
   PulseHourlyRow,
 } from "@/lib/analytics-types"
+import { collectionLabel as resolveCollectionLabel } from "@/lib/analytics/format"
 
 // ── Number / price formatters (branch-heavy) ────────────────────────────────
 
@@ -68,6 +69,11 @@ export function isLinkableAddr(a: string | null | undefined): a is string {
 
 // ── Collection label map + activity-row summarization ───────────────────────
 
+// ⚠ KEPT AS AN EXPORT because tests and callers reference it, but it is no
+// longer what resolves a label — `summarizeKind` now goes through the shared
+// `collectionLabel()`, whose fallback is DERIVED from the registry. The local
+// map fell back to the RAW KEY, so an activity row for a collection with no
+// entry read "… · candy_mlb" in a public feed.
 export const COLLECTION_LABEL: Record<string, string> = {
   topshot: "Top Shot",
   allday: "All Day",
@@ -78,7 +84,7 @@ export const COLLECTION_LABEL: Record<string, string> = {
 
 export function summarizeKind(row: PulseActivityRow): string {
   const d = (row.details ?? {}) as Record<string, unknown>
-  const collectionLabel = COLLECTION_LABEL[row.collection?.toLowerCase()] ?? row.collection
+  const collectionLabel = resolveCollectionLabel(row.collection)
   switch (row.kind) {
     case "loan_originated": {
       const term = d.term_days != null ? `${d.term_days}d` : "—"

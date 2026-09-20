@@ -43,6 +43,12 @@ const ALL_COLLECTIONS: Array<{ key: string; label: string }> = [
   { key: "golazos", label: "Golazos" },
   { key: "ufc", label: "UFC Strike" },
   { key: "pinnacle", label: "Pinnacle" },
+  // ⭐ Candy MLB joined 2026-09-20, and ONLY after every panel behind this chip
+  // was read against live Candy rows — summary 1,564 sales / $7,063 in 30 d, timeseries 31 buckets, leaderboard 60+ wallets, top-moves enriched. The key is the LONG slug because the
+  // analytics_* RPCs normalize with `CASE … ELSE c.slug`, so Candy is keyed
+  // `candy_mlb` — the same key lib/analytics-sets-dashboard-compute.ts has
+  // labelled since 2026-07-31.
+  { key: "candy_mlb", label: "Candy MLB" },
 ]
 
 interface TimeseriesResponse {

@@ -10,14 +10,9 @@ import { useEffect, useState } from "react"
 import { Flame } from "lucide-react"
 import type { SalesTopMoveRow } from "@/lib/analytics-types"
 import { fetchJson } from "@/lib/analytics/fetch-json"
+import { collectionLabel } from "@/lib/analytics/format"
 
-const COLLECTION_LABEL: Record<string, string> = {
-  topshot: "Top Shot",
-  allday: "All Day",
-  golazos: "Golazos",
-  pinnacle: "Pinnacle",
-  ufc: "UFC",
-}
+// ⚠ Replaced by the shared resolver — the local map fell back to the raw key.
 
 const TIER_COLOR: Record<string, string> = {
   ULTIMATE: "var(--tier-ultimate)",
@@ -88,7 +83,7 @@ export default function RecentWhaleTrades() {
           <ol className="divide-y divide-[color:var(--rpc-border-subtle)]">
             {rows.map((r) => {
               const collKey = (r.collection || "").toLowerCase()
-              const collLabel = COLLECTION_LABEL[collKey] ?? r.collection
+              const collLabel = collectionLabel(collKey) ?? r.collection
               const tier = (r as any).tier ? String((r as any).tier).toUpperCase() : ""
               const tierColor = TIER_COLOR[tier] ?? "var(--rpc-text-muted)"
               return (
