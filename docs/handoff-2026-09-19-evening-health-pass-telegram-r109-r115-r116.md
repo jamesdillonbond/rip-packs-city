@@ -137,6 +137,13 @@ Ledger entry (top of `docs/overnight/ledger.md`) carries revert paths for all fo
 - ↩ **jobid 542 weekly pg_net VACUUM FULL, 2:43 AM Sunday: 117 s of its 120 s** inside the reconcile's window, holding ACCESS EXCLUSIVE on `net._http_response` — every pg_net lane blocked for two minutes. Moved to `16 9 * * 0` (`20260920095221`). Both jobs were mine from the same evening; I never checked them against each other.
 - **Watches:** 09-21 2:36 AM PT reconcile ok < 200 s · 09-27 2:16 AM PT VACUUM FULL < 30 s · 4:17 AM jobid 490 · 4:59 AM leg 324 at :59.
 
+## Fifteenth pass (4:15–5:25 AM PT) — two watches, one more move, and the hour-of-day fact
+
+- ✅ **jobid 490 4:17 AM:** ok 526 ms, `via pg_cron`, `already_snapshotted 27`, 0 inserted.
+- ✅ **pack-detail:** `[pack-detail] allday_pack_lifecycle … exceeded 5000ms` = **0** since the pass ended (363 in the 3 h before); 839 × 200 on `/nfl-all-day/pack/dist/*` in the same window.
+- ↩ **leg 324 at :59 died too** (602 s, io_wait 13–15, into the `0 */2` + `3,33` pile). Measured the hours: **06Z/12Z/18Z are the three busiest cron hours of the day** (13,870 / 12,066 / 11,523 busy-s/day) — every `*/6`, `*/3`, `*/2` job lands there. Moved to `52 1,7,13,19` (`20260920121349`; {1,7,13,19} = 23,029 busy-s/day vs 45,213; :52 = 642 s/day overlap vs 1,494). **Last move this pass.** Exit: 6:52 AM / 12:52 PM PT succeed < 300 s; if both die, the read is the lever.
+- ⭐ For the schedule doc / skill: **hours divisible by 6 carry ~2× the cron load of adjacent hours**; the "divisible-by-3 waste band" rule is the weaker version of this measurement.
+
 ## Needs Trevor
 
 #22 purge residue · #55 the two 2-hourly Routines · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader (FMV path) · whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.
