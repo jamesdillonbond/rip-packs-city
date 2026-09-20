@@ -11,6 +11,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ THE FABRICATED-ZERO SWEEP #128 OWED CAME BACK CLEAN — 79 sites, 19 write-side, and the most dangerous-looking survivor has ZERO instances · the class is CONTAINED · docs only · Claude Code cloud
+
+📏 CLAUDE.md's rule after finding a fabrication is *"grep for the EXPRESSION, not the file — it has spread by copy-paste five times now"*. Swept `pg_proc` for `COALESCE(SUM|AVG|MAX|MIN(...), 0)`: **79 functions**. ⛔ **A POPULATION, not a defect list** — a sum over an empty set is legitimately 0 for a points ledger, a raffle pot, a spend counter, a GMV window. Filing 79 as debt would be its own false claim.
+
+**Discriminator, derived from what made #128 dangerous rather than guessed:** the 0 is a defect only where it (a) feeds a PERSISTED column rather than a returned figure, (b) is indistinguishable from *unknown*, and (c) has no companion known-count to caption it. Narrowing on (a) cuts 79 → **19**, and most of those are the legitimate ledger shapes. ⚠ One of the 19 is `backfill_pack_rip_metadata` itself, matching only on the COMMENT the fix left describing the old expression — a false positive to expect on a re-run.
+
+📏 **The most dangerous-looking survivor is CLEAN.** `aggregate_saved_wallet_stats` persists `saved_wallets.cached_fmv_usd` from `COALESCE(SUM(wmc.fmv_usd), 0)` — structurally identical to #128, on a column CLAUDE.md already flags a sibling trap for. Live: **135 rows · 0 at `cached_fmv_usd = 0` · 0 holding moments at zero FMV · 43 correctly NULL.** Unknowns are NULL, not zero.
+
+⭐ **So #128 was the exception, not the tip of an iceberg**, and that bound is the deliverable — it stops the next session reading 79 grep hits as 79 defects. ⚠ What would make it live again: a new writer persisting a coalesced value sum with no paired known-count (the thing `20260912221500` added on the read side). **Re-run the sweep; do not re-derive the reasoning.**
+
+**Revert:** docs only — `git log --grep='FABRICATED-ZERO SWEEP'` → `git revert <sha>`. No DB, no code.
+
 ### 2026-09-20 · ✅ #121 CLOSED — `rpc_ops_snapshot()` is 659 ms warm against the 45 s it was blowing through, and the mechanism was the VISIBILITY MAP, not the compute tier · one optimisation tested and REJECTED with numbers · docs only, no ship · Claude Code cloud
 
 📏 **Re-derived, not re-quoted.** 2,705 ms cold · **757 / 659 / 689 ms on three consecutive warm calls** · the named hotspot `sentinel_fmv_confidence_rows('<top shot>')` returns in **2,835 ms** with the same 20 s budget it was measured timing out inside. ⭐ And it is doing MORE work than at filing: three migrations since (`20260914154116`, `20260919010452`, `20260919121040`) each added a guard caller to it.
