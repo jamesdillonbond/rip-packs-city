@@ -3,6 +3,7 @@ import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 import { createClient } from "@supabase/supabase-js"
 import { getCollection } from "@/lib/collections"
+import { makeInstanceRateLimiter, clientKeyFrom } from "@/lib/http/instance-rate-limit"
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,6 +27,26 @@ const supabase: any = createClient(
 // fabricated "recently refreshed".
 const AUTO_REFRESH_COOLDOWN_MS = 10 * 60 * 1000
 const MANUAL_REFRESH_COOLDOWN_MS = 60 * 1000
+
+// ── Per-client bound (R98, second half, 2026-09-19) ─────────────────────────
+// The cooldown above bounds how often ONE wallet is refreshed; it does nothing
+// about a client that names a DIFFERENT wallet each call — every distinct whale
+// address is a fresh full pass (getIDs, N/500 cached-id reads, a touch write on
+// every cached row, stub upserts) as service_role, and nothing bounded that
+// enumeration. Same house shape as the /api/allday-pack-ev cache-miss path:
+// per client key on this instance, sliding minute, refused with 429 +
+// Retry-After BEFORE the cooldown read (a refused call costs no DB read at all).
+// Bounded, not gated: an honest Collection-tab visitor fires one call per
+// (wallet, collection) view plus one manual refresh — a dozen a minute is
+// browsing, not enumeration. An INGEST bearer is not counted. A request with no
+// platform client header (never on Vercel; every NextRequest in a test) is not
+// limited, by the helper's contract. The client swallows a non-OK response
+// (`r.ok ? r.json() : null`), so a 429 renders as nothing, never as a claim.
+const REFRESHES_PER_CLIENT_PER_MINUTE = 12
+const refreshLimiter = makeInstanceRateLimiter({
+  limit: REFRESHES_PER_CLIENT_PER_MINUTE,
+  windowMs: 60 * 1000,
+})
 
 // ── Collection-specific Cadence scripts ──────────────────────────────────────
 
@@ -298,6 +319,21 @@ export async function GET(req: NextRequest) {
     const manualRefresh = sp.get("refreshLocked") === "1"
     const cooldownMs = manualRefresh ? MANUAL_REFRESH_COOLDOWN_MS : AUTO_REFRESH_COOLDOWN_MS
     if (!trustedCaller) {
+      // Per-client bound first: a refused call must cost no DB read.
+      const clientKey = clientKeyFrom(req.headers)
+      if (clientKey) {
+        const verdict = refreshLimiter.check(clientKey)
+        if (!verdict.allowed) {
+          return NextResponse.json(
+            {
+              error: "rate_limited",
+              detail: "Too many wallet refreshes from this client; try again shortly.",
+              retry_after_seconds: verdict.retryAfterSeconds,
+            },
+            { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } }
+          )
+        }
+      }
       const { data: recent, error: recentErr } = await supabase
         .from("wallet_moments_cache")
         .select("last_seen_at")
