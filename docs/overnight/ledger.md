@@ -11,6 +11,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ⚖ THE CLASSIFY EXIT IS MET AND I CANNOT CLAIM THE FIX EARNED IT — the failing tick ran saturated, the passing tick ran calm, and the same leg swung 56.7 s → 3.2 s inside one hour · Claude Code cloud
+
+**Shipped: nothing (verification). Subject: `69b54ba5b` + the 90 s resize in `8a5f88c6d`.**
+
+✅ **The stated exit is MET.** The 11:06:22 AM PT tick wrote a terminal row: **`ok=true`, `legs_attempted: 3`, `skipped_for_budget: []`, `wall_ms: 3221`** — all three legs in **3.2 seconds**, nothing skipped, first terminal row since 04:06 AM.
+
+⛔ **AND IT DOES NOT ISOLATE THE FIX, so it is not being written up as proof.** The two ticks differ in more than my code:
+
+| tick | box | outcome |
+|---|---|---|
+| 10:06 | sentinel reported `db saturated` at 10:04 | no terminal row |
+| 11:06 | `io_wait 2 · active 2 · 21 conns` | ok, 3.2 s |
+
+🚨 **The confound is measurable, not hypothetical: the All Day leg alone measured 56.7 s at 10:15 AM PT** (direct RPC call, `p_limit = 1`, zero rows) **and the WHOLE three-leg loop took 3.2 s at 11:06** — the same work, a **~17× swing inside one hour.** A loop that finishes in 3.2 s never reaches a 90 s wall, so this tick exercised the fix's *presence*, not its *function*. ⭐ This is the register's own rule — *a reading taken while its SUBJECT CHANGED is not a reading*, and *a rate pooled across a fix measures the fix's absence* — applied to my own change rather than someone else's.
+
+👉 **The honest status: the resize is CORRECT (a wall equal to its ceiling is not a wall, and that arm is mutation-proven) but UNTESTED in the condition it exists for.** **Exit, restated so it can actually fail:** a tick that runs while `io_wait` is high writes a terminal row — with `skipped_for_budget` naming the legs it could not afford. **Falsifier:** such a tick still leaves only a heartbeat ⇒ the truncation is the `after()` dispatch itself, which no in-body budget can reach, and the lever becomes moving this work off `after()`.
+
+📏 **What the 56.7 s → 3.2 s swing DOES establish, and it is the more valuable half:** it is a clean before/after on the estate, not on my code, and it confirms the morning's unifying result from a fourth angle. Every per-leg constant in that route's TARGETS comment (34.8 s / 3.5 s / 68.3 s, measured 2026-08-03) is a **quiet-box sample**, and the live spread around it is an order of magnitude in both directions. ⛔ **Nobody should tune a page size, a window or a wall against those numbers again without re-measuring under load first.**
+
+⏳ **Still open on its own clock:** `pinnacle-metadata-backfill`'s 11:22 tick — the prediction there is `ok=true` with `q3_keys_scanned` advancing, since the box is calm and the whole discovery read measured 13 ms warm. `drain-fmv-cold-tail`'s bound ships this hour and its first real test is a :17 tick.
+
+- **Revert:** n/a (verification).
+
 ### 2026-09-20 · 🚨 THE PANINI BOARD'S HONESTY DISCLOSURE WAS ANNOTATING A DIFFERENT POPULATION THAN THE KPI IT SITS UNDER — "X% of the sealed value ABOVE" was computed over ALL SETS while "above" is the broad+partial headline, and it ran in the FLATTERING direction · Claude Code cloud
 
 **Shipped: 1 migration (`20260920175228`, four APPENDED columns on `panini_squeeze_totals`) + `lib/insights/panini-board.ts` + `app/insights/panini-squeeze/PaniniSqueezeClient.tsx` + 2 new test arms. Executes inbox filing `2026-09-20T1709Z` (Cowork cloud, Trevor-directed), which could not ship it — the fix needs a `.tsx` change and Cowork cannot push `.tsx`.**
