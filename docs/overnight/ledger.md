@@ -11,6 +11,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ THE #128 DRAIN GOES 500 → 2000 — decided on BLOCKS/CALL, and the wall-clock number the decision had been resting on was the misleading one · focus.md's one open decision, now closed · Claude Code, Windows box
+
+**Shipped: `app/api/cron/backfill-pack-rip-metadata/route.ts` `p_limit` 500 → 2000, plus its re-pinned guard.** focus.md had this as *"THE ONE DECISION LEFT, and its measurement is already done"* — it was **not** done. What existed was wall-clock (**5.8 s vs 7.4 s**, read as *"4× the rows for 1.28× the time, rows are nearly free"*) plus a pgss figure of **449,416 blocks / 9.1 MB WAL per call** pooled over 657 calls **across both compute tiers AND four body changes the same day**. ⛔ **Neither is a reading of now, and the wall-clock one points the wrong way.**
+
+📏 **THE CLEAN MEASUREMENT** — warm, LARGE tier, 15:05–15:08 PT, `pg_stat_statements.track='top'` so the tracked row IS the whole call. ⚠ **500 and 2000 jumble to the SAME queryid (`$1`), so this cannot be two rows** — it is sequential before/after deltas on one row. Run as **500 → 2000 → 500** so the two 500 arms straddle the comparison:
+
+| p_limit | blks/call | disk reads/call | cache hit | zeros/tick | **blks per zero** | **disk blks per zero** |
+|---|---|---|---|---|---|---|
+| 500 (arm A) | 49,246 | — | — | 75 | 657 | — |
+| 500 (arm C) | 49,211 | 1,780 | 96.4 % | 75 | 656 | 23.7 |
+| **2000** | **160,322 / 162,455** | **5,686** | **96.5 %** | **300** | **534** | **19.0** |
+
+⭐ **The two 500 arms agree to 0.07 %**, so there is no order effect — and they also **straddle an unrelated migration** (`20260920220641`, which touches neither the function nor `pack_rips`; checked, per *read what landed inside your own window*). ⭐ **4× the rows for 3.26× the blocks** — so rows are **not** "nearly free" as the wall clock implied, **but they are 19 % cheaper per unit of work**, and 20 % cheaper in real disk. ⭐ **Cache hit is 96.5 % at BOTH limits: this lane is CACHE-bound, not IO-bound**, which is what makes the burst harmless on this tier.
+
+👉 **THE DECIDING FRAME, and it is not the per-day cost.** At 24 ticks/day: 500 → **1.18 M blocks/day, 1,800 zeros/day, ~45 days**; 2000 → **3.85 M blocks/day, 7,200 zeros/day, ~11 days**. **Per DAY 2000 costs 3.3×. To FINISH it costs LESS: ~42 M blocks over ~11 days vs ~53 M over ~45** (and ~6.1 GB WAL vs ~7.2 GB). The extra disk is **~750 MB/day** against a tier doing 79 MB/s sustained — ~0.01 %. **Shipping it buys a 4× shorter window on a live accuracy defect for less total work.**
+
+⚠ **WHY THIS WAS WORTH SPENDING NOW, stated honestly:** `mv_topshot_pack_realized_ev.realized_mean` stays understated on **162 of 295** Top Shot dists until the drain finishes **and no surface discloses it**, so the window itself is the harm. ⛔ **But #126 is masked, not fixed** (its recovery was the 10:39 AM PT LARGE restart — see the correction two entries up), so this deliberately spends headroom that is currently hiding an unestablished cause. **It is cache-bound and ~0.01 % of disk, which is why that is acceptable; if #126 resurfaces, this is a one-constant revert and an obvious first thing to back out.**
+
+⚠ **The guard was RE-PINNED, not loosened** — `api-cron-backfill-pack-rip-metadata-deferred` asserted `{ p_limit: 500 }`. Its premise changed, its property did not: it holds that the route passes a **deliberate** rate rather than falling through to the function default, so the number stays load-bearing and a silent change still reddens it. Title and value updated together, with the reasoning in the route.
+
+- **Revert:** `git revert` the commit found by `git log --grep='p_limit 500 -> 2000'`, or simply restore `p_limit: 500` in the route and its test. **No schema, no data to undo** — the drain's writes are the intended repair and are not reversed by lowering the rate. Ledger committed before the code so the code commit is the tip and deploys.
+
 ### 2026-09-20 · 🚨 THE MARKET TAB'S Set / Series / Player / Min-price FILTERS DO NOTHING ON FOUR OF FIVE COLLECTIONS, AND THE UI COUNTS THEM AS ACTIVE — found chasing a Pinnacle parity item · Claude Code cloud
 
 **Shipped: `/api/market` Pinnacle arm now honours all four at the SOURCE; 6 new arms (mutation-proved); **#129** filed for Top Shot + All Day + Candy, which need a migration. No DB change.**
