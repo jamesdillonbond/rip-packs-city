@@ -12,6 +12,7 @@ const state = {
   editionsCount: 0 as number | null,
   highConfCount: 0 as number | null,
   marketPulse: [] as any[],
+  pulseError: null as any,
   movers: [] as any[],
   /** Every table the route actually read, in order. */
   tablesRead: [] as string[],
@@ -35,7 +36,7 @@ vi.mock("@/lib/supabase", () => {
   const admin: any = {
     from: (t: string) => builder(t),
     rpc: async (name: string) => {
-      if (name === "get_market_pulse_all") return { data: state.marketPulse, error: null }
+      if (name === "get_market_pulse_all") return { data: state.pulseError ? null : state.marketPulse, error: state.pulseError }
       if (name === "get_fmv_movers") return { data: state.movers, error: null }
       return { data: null, error: null }
     },
@@ -51,6 +52,7 @@ beforeEach(() => {
   state.editionsCount = 0
   state.highConfCount = 0
   state.marketPulse = []
+  state.pulseError = null
   state.movers = []
   state.tablesRead = []
 })
@@ -80,6 +82,48 @@ describe("GET /api/overview-stats", () => {
     // volume24h resolves via the dbSlug (nba_top_shot) row in the market pulse.
     expect(body.volume24h).toBe(1234.5)
     expect(body.movers).toEqual([{ edition_id: "u1", delta_pct: 12.3 }])
+
+    // ⭐ ADDED 2026-09-20 — the four non-answers are NULL, never a measured $0.
+    // `countOrNull` in this route already states the rule ("a count we could not
+    // read is null, never 0") and getVolume24hFromPulse was breaking it in four
+    // places at once.
+  })
+
+  it("publishes volume24h as NULL when the collection is ABSENT from the pulse payload", async () => {
+    // 🚨 THE CASE THAT SURFACED THIS, and it is not an outage. get_market_pulse_all
+    // carried a hardcoded slug list; a collection missing from it made
+    // rows.find(...) undefined, and `?? 0` turned "not in the list" into
+    // "traded $0 in 24h". Candy MLB was exactly that until 2026-09-20 while
+    // trading 129 times a day.
+    state.editionsCount = 125
+    state.highConfCount = 75
+    state.marketPulse = [{ slug: "nba_top_shot", sales_24h: 40, volume_24h: 1234.5 }]
+
+    const res = await GET(req("https://t/api/overview-stats?collection=candy-mlb"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.volume24h).toBeNull()
+    // ⛔ Specifically NOT 0 — that is the whole point of the assertion.
+    expect(body.volume24h).not.toBe(0)
+    // The independent stats still answer; a missing pulse row zeroes nothing else.
+    expect(body.totalEditions).toBe(125)
+    expect(body.highConfCount).toBe(75)
+  })
+
+  it("publishes volume24h as NULL when the pulse read FAILS", async () => {
+    state.editionsCount = 19126
+    state.highConfCount = 5232
+    state.pulseError = { message: "pulse boom" }
+
+    const res = await GET(req("https://t/api/overview-stats?collection=nba-top-shot"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.volume24h).toBeNull()
+    expect(body.volume24h).not.toBe(0)
+    // ⚠ The resilient fan-out's own promise: a failed pulse can never zero the
+    // edition + confidence counts.
+    expect(body.totalEditions).toBe(19126)
+    expect(body.highConfCount).toBe(5232)
     // Sets the SWR cache header on the success path.
     expect(res.headers.get("Cache-Control")).toContain("s-maxage=300")
     // 🚨 And it counted the MATERIALISED table, not the DISTINCT ON view. A

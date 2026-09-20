@@ -21,18 +21,46 @@ type MarketPulseRow = {
   volume_24h: number | null
 }
 
-async function getVolume24hFromPulse(dbSlug: string | null): Promise<number> {
-  if (!dbSlug) return 0
+/**
+ * 24 h volume for one collection, or `null` when we could not read it.
+ *
+ * 🚨 EVERY RETURN HERE USED TO BE `0`, and this file's own `countOrNull` states
+ * the rule it was breaking: "A count we could not read is `null`, never `0`."
+ * Four distinct non-answers were all publishing a measured-looking $0 —
+ * no slug, a failed RPC, a thrown fetch, and (the one that surfaced this)
+ * **a collection simply ABSENT from the pulse payload**.
+ *
+ * ⚠ THE ABSENT-ROW CASE IS THE INTERESTING ONE because it is not an outage.
+ * `get_market_pulse_all` carried a hardcoded slug list that omitted Candy MLB
+ * until 2026-09-20 (migration `20260920175000`), so `rows.find(...)` returned
+ * undefined and `?? 0` turned "this collection is not in the list" into
+ * "this collection traded $0 in 24 hours" — about a collection that traded 129
+ * times that day. The list is fixed; this makes the SHAPE safe for the next
+ * collection added, which is the half that outlives the data fix.
+ *
+ * ⛔ HONEST FRAMING, because this route documents its own status below:
+ * `/api/overview-stats` HAS NO CALLER and logged zero production requests in
+ * 72 h. **This is landmine removal, not a measured user-facing win** — do not
+ * quote it as one. It is fixed rather than left because the next person to wire
+ * an overview panel would otherwise inherit a `?? 0` that is already written and
+ * looks reviewed, which is exactly the reasoning recorded for the
+ * `edition_fmv_current` swap in `standardStats` below.
+ */
+async function getVolume24hFromPulse(dbSlug: string | null): Promise<number | null> {
+  if (!dbSlug) return null
   try {
     const { data, error } = await (supabaseAdmin as any).rpc(
       "get_market_pulse_all"
     )
-    if (error) return 0
+    if (error) return null
     const rows = (data ?? []) as MarketPulseRow[]
     const hit = rows.find((r) => r.slug === dbSlug)
-    return Number(hit?.volume_24h ?? 0)
+    // Absent row and null value are both "not measured", never zero.
+    if (!hit || hit.volume_24h == null) return null
+    const n = Number(hit.volume_24h)
+    return Number.isFinite(n) ? n : null
   } catch {
-    return 0
+    return null
   }
 }
 
@@ -168,7 +196,9 @@ export async function GET(req: NextRequest) {
     ])
 
     const stats = statsSettled.status === "fulfilled" ? statsSettled.value : { totalEditions: 0, highConfCount: 0 }
-    const volume24h = volumeSettled.status === "fulfilled" ? volumeSettled.value : 0
+    // ⚠ A REJECTED read is not a zero either — it is the same non-answer as the
+    // four inside getVolume24hFromPulse, and it must not become $0 here.
+    const volume24h = volumeSettled.status === "fulfilled" ? volumeSettled.value : null
     const movers = moversSettled.status === "fulfilled" ? (moversSettled.value.data ?? []) : []
 
     return NextResponse.json(
