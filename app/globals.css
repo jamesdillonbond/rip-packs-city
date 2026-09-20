@@ -54,3 +54,17 @@ select optgroup {
     min-height: 44px;
   }
 }
+
+/* The insights boards' filter pills and sort selects. Measured 2026-09-20 at
+   390x844: every pill 34px and every select 36px, on every board. The pill
+   styles live in each board's own client component under per-board class names
+   (rpc-rb-pill, rpc-ss-pill, ...), so this matches the GROUP wrapper instead of
+   enumerating them. Buttons in a gapped flex row, so min-height cannot overlap
+   a neighbour - verified on set-squeeze, first-mint and offer-spread: under-44
+   12/11/9 -> 0, overflow 0, and the hit-test count unchanged. */
+@media (pointer: coarse) {
+  main [class*="pill-group"] > button,
+  main select {
+    min-height: 44px;
+  }
+}
