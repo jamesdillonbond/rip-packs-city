@@ -11,6 +11,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🏀 THE FAST BREAK BADGE RENDERED A PULSING "LIVE" DOT FOR A RUN THAT ENDED FOUR MONTHS AGO — found by pulling #8's read path, which turned out to be honest · Claude Code (Windows box)
+
+**Shipped: 3 files (1 lib helper + 1 client + 1 route comment) + 1 test file. No DB change.** ⛔ **The DATA defect underneath is deliberately NOT touched — it is Trevor's call (see the last block).**
+
+⭐ **HOW I GOT HERE: #8 says its own cheapest fix is "an arm, not a repair", and I went to build the arm and stopped.** CLAUDE.md is explicit that **a permanently-red arm desensitises every other arm** (the retired `ufc_fmv_stale_hours` is the precedent), and `sync-nba-projections` cannot be fixed from here — it is downstream of the operator-gated sports-proxy 403. **An alarm on a lane that cannot be repaired is the anti-pattern, not the fix.** So I asked the READER question instead: who consumes the stale table?
+
+📏 **#8 RE-DERIVED, and it is worse than its last stamp:** 8 runs / **0 ok** in 24 h, `all_upstreams_failed` throughout, newest 03:07Z · still **0 of 170** `pipeline_cadence_watchlist` rows (was 0 of 102 on 08-22 — the watchlist GREW and still excludes it) · `detect_stalled_pipelines()` returns 0 rows · not suppressed · `nba_player_projections` **485 rows, newest 2026-07-20 = 61 days stale** (was 32.8 on 08-22).
+
+⛔ **THE REPO GREP FOUND NO READER AND WAS WRONG — the reader is a SECDEF function, invisible to it.** `optimize_fast_break_lineup` reads the table and is reached by a live public surface: `/nba/fast-break` → `FastBreakClient` → `/api/nba/fast-break/optimize`. **Named the caller before touching anything, per the standing rule, and the repo grep alone would have closed this as "no consumer".**
+
+✅ **THE API AND THE EMPTY STATE ARE HONEST — stated because it is the half a sweep usually omits.** Probed live: the endpoint returns `eligible_players_pool_size: 0`, `lineup: []`, and exposes `run_start_date` / `run_end_date`; the client renders **"0 eligible projections in pool"** and uses `?? null` (not `?? 0`) for the score — a `?? 0` there is called out in its own comment as a past defect. **The offseason drought is reported, not papered over.**
+
+🚨 **WHAT IS NOT HONEST IS THE RUN BADGE.** Live payload: `run_name "Playoffs Run 1"`, **`run_is_active: true`**, **`run_end_date: "2026-05-19"`**. The badge derived "live" from the BOOLEAN ALONE, so a visitor in September saw a **pulsing red dot, red border and "Ends May 19"** — present tense, for a run finished four months earlier. ⭐ **The payload was already carrying the end date; the surface simply never compared it.**
+
+✅ **FIXED AT THE PRESENTATION LAYER, which is the right one here:** `runBadgeStatus()` in `lib/fast-break-client-compute.ts` (the established home for this client's pure logic) treats a run as live only while it is flagged active **AND** its end date has not passed, and labels a finished run **"Ended"**. ⭐ **String comparison on the `YYYY-MM-DD` shape — no `Date` parsing, so no timezone can shift it across a day boundary.** **This is robust to the flag staying wrong**, which matters because the flag is not mine to change.
+
+📏 **MUTATION-PROVEN IN BOTH HALVES, because the helper's tests cannot see whether the client USES it** — the repo's own "a fix to the route is not a fix to the surface until its CALLER reaches it". Reverting one client call site to `meta.run_is_active` **reds the wiring guard (2 tests)**; making the helper ignore the end date **reds the logic (3 tests)**. ⭐ **No-change control in the same file:** the identical payload read on 2026-05-01 must still be `live: true / "Ends"`, so the fix cannot degrade to "never live". Boundary pinned both sides (live on 05-19, ended on 05-20). **28 tests; control 1566 files / 17,734 green, `tsc` 0, ratchet 712 = baseline.**
+
+✅ **AND A FALSE PREMISE IN THE ROUTE HEADER, corrected not deleted:** it read *"Projections sync every 2h so 15 min is comfortably fresh for the live slate."* **False since 2026-08-04.** The 15-min TTL is left alone deliberately — harmless either way, and lowering it only re-fetches the same frozen rows. What is corrected is the **stated reason**, because the next reader would size a cache on a cadence that no longer exists.
+
+🟡 **NEEDS TREVOR — A DATA DECISION I DID NOT MAKE.** `fast_break_runs` holds 2 rows and **`is_active = true` sits on the OLDER one** ("Playoffs Run 1", 2026-04-18 → 2026-05-19) while the NEWER "Playoffs Run 2" (2026-05-21 → 2026-06-26) reads `false`. **Both finished months ago**, so in the offseason arguably neither should be active. ⛔ **Flipping a production flag is a product call, not a cleanup** — the surface is now honest either way, so this is no longer urgent.
+
+⛔ **ALSO INVESTIGATED AND CORRECTLY DROPPED: 84 tables carry `authenticated` INSERT/UPDATE/DELETE grants that no policy can exercise.** I was one step from proposing an 84-table revoke. **The memory store already holds the triage:** it is `pg_default_acl` residue, **fixed for NEW objects on 2026-06-28**, and base tables were **intentionally not swept because they are RLS-backstopped**. ✅ My sweep re-verified that premise still holds — every one of the 84 has RLS on with no policy permitting the granted write — so this is a 3-month-old decision **re-confirmed, not a finding**. **Grepping memory before publishing is what stopped it.**
+
+- **Revert:** `git revert <sha>` (`git log --grep="FAST BREAK BADGE"`). **No DB half.** ⚠ Reverting restores a pulsing LIVE badge on a finished run.
+
 ### 2026-09-19 · 🔁 THE EVENING SPELLS HAD A SECOND AUTHOR I HAD NOT NAMED — the weekly wmc REINDEX wave runs Saturday 7:03–9:03 PM PT, my pack_rips pass killed its 399 MB leg at 600 s and left an invalid `_ccnew`, and reindex-6 has been aimed at an index dropped on 09-14 · Cowork cloud + Claude in Chrome
 
 **Shipped: 1 migration (`20260920035444`, jobid 478 re-pointed at `idx_wmc_wallet_coll_ek_fmv_tier`), 1 one-off `DROP INDEX CONCURRENTLY` (jobid 561, 1.8 s, unscheduled). Two ledger entries below are corrected by this one.**
