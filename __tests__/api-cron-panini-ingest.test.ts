@@ -15,6 +15,7 @@ const st = vi.hoisted(() => ({
   // error has to be injectable — it was previously unreadable by construction (`insert` resolved
   // to a bare { error: null } and nothing looked at it).
   fmvInsert: { data: [{ id: "f1" }] as { id: string }[] | null, error: null as any },
+  packUpsert: { data: [{ id: "p1" }] as { id: string }[] | null, error: null as any },
   // Sale writes are UPDATEs, not upserts — keyed by the sku each call filtered on, so a test can
   // say "this sku matched a row, that one did not" (the sales_missed signal).
   saleUpdate: {} as Record<string, { data: { id: string }[] | null; error: any }>,
@@ -45,6 +46,7 @@ vi.mock("@/lib/supabase", () => ({
         select: async () => {
           if (isUpdate) return (rec?.sku != null && st.saleUpdate[rec.sku]) || st.saleUpdateDefault
           if (isInsert && table === "panini_fmv_snapshots") return st.fmvInsert
+          if (table === "panini_pack_state") return st.packUpsert
           return table === "panini_editions" ? st.edUpsert : st.serUpsert
         },
         then: (r: any) => r({ data: [], error: null }),
@@ -74,6 +76,7 @@ beforeEach(() => {
   st.edUpsert = { data: [{ id: "e1" }], error: null }
   st.serUpsert = { data: [{ id: "s1" }], error: null }
   st.fmvInsert = { data: [{ id: "f1" }], error: null }
+  st.packUpsert = { data: [{ id: "p1" }], error: null }
   st.saleUpdate = {}; st.saleUpdateDefault = { data: [{ id: "u1" }], error: null }
   st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false
 })
@@ -253,6 +256,30 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.runs[0].p_extra.fmv).toBe(2)
     expect(st.runs[0].p_extra.fmv_offered).toBe(2)
     expect(st.runs[0].p_extra.fmv_error).toBeNull()
+  })
+
+  // R120 second pass. The pack-state upsert was the LAST write in this function with no error
+  // binding at all — `await …upsert(...)` with nothing destructured — so no test could reach it
+  // and `packs` published rows OFFERED beside three counts that had just been made honest. A
+  // fleet sweep found the same shape in 20+ other writers; this arm closes it here.
+  it("records a rejected pack-state upsert as a FAILED run and reports packs WRITTEN, not offered", async () => {
+    st.packUpsert = { data: null, error: { message: "pack err" } }
+    await accept({ packs: [{ pack_sku: "p1" }, { pack_sku: "p2" }] })
+    await st.captured!()
+    expect(st.runs[0].p_ok).toBe(false)
+    expect(st.runs[0].p_extra.packs).toBe(0)
+    expect(st.runs[0].p_extra.packs_offered).toBe(2)
+    expect(st.runs[0].p_extra.packs_error).toBe("pack err")
+  })
+
+  it("on a healthy pack-state write the written and offered counts agree", async () => {
+    st.packUpsert = { data: [{ id: "p1" }, { id: "p2" }], error: null }
+    await accept({ packs: [{ pack_sku: "p1" }, { pack_sku: "p2" }] })
+    await st.captured!()
+    expect(st.runs[0].p_ok).toBe(true)
+    expect(st.runs[0].p_extra.packs).toBe(2)
+    expect(st.runs[0].p_extra.packs_offered).toBe(2)
+    expect(st.runs[0].p_extra.packs_error).toBeNull()
   })
 
   // nftSalesData realized-sale writes (2026-08-08). These are UPDATEs onto serial rows we have

@@ -132,6 +132,7 @@ export async function POST(req: NextRequest) {
     let salesErrors = 0;
     let fmvError: string | null = null;
     let fmvWritten = 0;
+    let packsError: string | null = null;
     try {
       const nowIso = new Date().toISOString();
       // editions (dedup by external_id within the batch)
@@ -161,10 +162,15 @@ export async function POST(req: NextRequest) {
           if (error) { fmvError = fmvError ?? error.message; console.log(`[${PIPELINE}] fmv insert: ${error.message}`); } else fmvWritten += data?.length ?? 0;
         }
       }
-      // pack state
+      // pack state. R120 second pass: this was the last write in the function with NO error
+      // binding at all — `await …upsert(...)` with nothing destructured, so the failure was
+      // unreadable by construction rather than merely unlogged, and `packs` published
+      // packs.length (rows OFFERED) beside three counts that had just been made honest.
+      let packsWritten = 0;
       if (packs.length) {
         const packRows = packs.map((p) => toPackRow(p, nowIso));
-        await (supabaseAdmin as any).from("panini_pack_state").upsert(packRows, { onConflict: "id" });
+        const { data, error } = await (supabaseAdmin as any).from("panini_pack_state").upsert(packRows, { onConflict: "id" }).select("id");
+        if (error) { packsError = error.message; console.log(`[${PIPELINE}] pack state upsert: ${error.message}`); } else packsWritten += data?.length ?? 0;
       }
       // serials -> panini_card_serials (dedup by sku within the batch; upsert on sku)
       let serialsWritten = 0;
@@ -207,12 +213,13 @@ export async function POST(req: NextRequest) {
         editionsError ? `editions: ${editionsError}` : null,
         serialsError ? `serials: ${serialsError}` : null,
         fmvError ? `fmv: ${fmvError}` : null,
+        packsError ? `packs: ${packsError}` : null,
         salesError ? `sales: ${salesError}` : null,
       ].filter(Boolean) as string[];
       await logRun(startedAtIso, found, written, writeErrors.length === 0, writeErrors.length ? writeErrors.join(" | ") : null, {
         editions: written, editions_error: editionsError,
         fmv: fmvWritten, fmv_offered: fmvRows.length, fmv_error: fmvError,
-        packs: packs.length,
+        packs: packsWritten, packs_offered: packs.length, packs_error: packsError,
         serials: serialsWritten, serials_error: serialsError,
         sales_seen: sales.length, sales_serials: latestSales.length, sales_applied: salesApplied,
         sales_missed: salesMissed, sales_errors: salesErrors, sales_error: salesError,
