@@ -11,6 +11,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🚨 I SHIPPED THE SET TRACKER'S BACKEND BEHIND THE AUTH WALL — a full green suite, a READY deploy, and an anonymous reader would have got the login page; caught by FETCHING the deployed route, not by any test · Claude Code cloud
+
+**Shipped: `proxy.ts` (`/api/pinnacle-set-progress` added to `PUBLIC_READ_APIS`) + `__tests__/set-tracker-backends-are-anon-public.test.ts` (new, DERIVED population). Follow-up to `df464e9ab` in the same session.**
+
+🚨 **`/disney-pinnacle/sets` is anon-public by proxy.ts's feature-tab regex AND is now in the sitemap — and its ONLY fetch was gated.** An anonymous reader would have received the login HTML, `.json()` would have thrown, and the Set Tracker would have rendered an error **for a wallet that resolves perfectly well**. The route was correct, deployed and READY; the SURFACE was broken. ⛔ **CLAUDE.md states this exactly — *a fix to a route is not a fix to the surface until its CALLER can reach it* — and I had quoted that rule to myself while building the thing.**
+
+⭐ **THIS IS THE FIFTH INSTANCE OF ONE SHAPE, and `proxy-is-public-path.test.ts`'s own header lists the earlier ones**: `/api/pinnacle-wallet` (07-26), `/api/pinnacle-sniper-feed` + `/api/pack-listings` (09-04), `/api/profile/me` (09-04). ⚠ **Three of the five are Pinnacle**, because Pinnacle's surfaces each have a bespoke backend rather than a shared one, so every new one is a fresh chance to miss the list.
+
+🚨 **WHAT FOUND IT AND WHAT DID NOT.** `npm test` 1,574 files / 17,911 tests **green**. `tsc` clean. `lint:ratchet` at baseline. Deploy **READY with aliases attached**. ⛔ **Every instrument said ship.** It was found by fetching the deployed route and reading **`x-matched-path: /login`** on a **200** — the file's own rule, *verify by rendered DOM / the matched path, not by HTTP 200*, arriving one step later than it should have. ⚠ **A green suite is a statement about the properties someone wrote down**, and nobody had written down "the tab's backend is reachable by the reader who can see the tab".
+
+⛔ **THE FIX IS NOT A FIFTH HAND-KEPT ROW.** `PUBLIC_READ_APIS` is a hardcoded allowlist beside a registry, which is the defect class, not the cure. The new guard **DERIVES its population from the dispatch in `CollectionSetsClient.tsx`** — every `/api/…` literal the client can call, comments stripped — and asserts each is `isPublicPath(ep, "GET")`. A sixth collection with its own backend reds this unless the backend is reachable. It also pins the MIRROR (the page public on all four slugs), and carries a vacuity arm naming three known endpoints so a narrowed regex cannot pass it empty.
+
+✅ **Mutation-proved in both directions before shipping, not assumed:** with the proxy line removed the guard fails and names the route (`× /api/pinnacle-set-progress is anon-public`, 1 failed / 6 passed); restored, 7/7. ⭐ **A guard that has never been seen to fail is not known to work.**
+
+✅ **Verified:** `npm test` **1,575 files / 17,918 tests green** (+1 file, +7 arms), `tsc --noEmit` clean, `lint:ratchet` 712/712, `proxy-is-public-path` 179 rows green.
+
+- **Revert:** `git log --grep='behind the auth wall'` → `git revert <sha>`. ⚠ Reverting re-gates the Set Tracker's backend while leaving the tab live and sitemapped — i.e. it restores the broken surface. Revert `df464e9ab` as well, or neither. No DB half.
+
 ### 2026-09-20 · ✅ DISNEY PINNACLE GAINS THE SET TRACKER — the last per-collection gap on that tab — and the generic route it *should* have used had been answering "this collection has no sets" for 159 days · Claude Code cloud
 
 **Shipped: 1 new API route (`/api/pinnacle-set-progress`), Pinnacle's `sets` tab in the registry, 2 href helpers, the Pinnacle variant stripe map, `/api/sets-db`'s Pinnacle entry REMOVED, 3 test files (2 new), 3 docs. No migration, no DB write.**
