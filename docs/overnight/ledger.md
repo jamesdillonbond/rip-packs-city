@@ -11,6 +11,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🔬 THE PINNACLE BLACKOUT'S NAMED CAUSE, DIAGNOSED — `pinnacle_metadata_discovery` is not a slow function; it is a CHEAP-WARM, EXPENSIVE-COLD read, i.e. #126 wearing a third mask · Claude Code cloud
+
+**Shipped: nothing (diagnosis; three hypotheses refuted). Follows the 10:22 AM PT terminal row that the `b29695dae` fix made possible.**
+
+🔎 **The named step was `discovery` — so I went and measured it instead of assuming.** All read-only, on the live instance at 10:4x AM PT:
+
+| probe | result |
+|---|---|
+| the recursive loose-index walk over `wallet_moments_cache` for **all 417** distinct Pinnacle `edition_key`s | **0.05 s** |
+| the same walk **+ the Q4 `targets` NOT EXISTS pass** over all 417 | **0.013 s total** (4 targets) |
+| stuck lock on `pinnacle_metadata_backfill_state` (the function takes `FOR UPDATE` on one row) | **none** — zero rows in `pg_locks` for it |
+| `idle in transaction` / any txn older than 2 min | **none** |
+| instance load at the time of those probes | **io_wait 0, active 0, 21 connections** |
+
+⛔ **THREE HYPOTHESES REFUTED, each one the obvious next guess.** (1) *The 417-key recursive walk is the cost* — it is 50 ms. (2) *The Q4 `NOT EXISTS` fan-out over 417 keys is the cost* — the whole thing is 13 ms. (3) ⭐ **The best one: a killed lambda left its transaction holding the `FOR UPDATE` row lock on the single state row, so every subsequent tick blocked and timed out.** That would have explained a *persistent* twelve-hour failure far better than anything else, and it is simply not there — no lock, no idle-in-transaction.
+
+⚠ **AND THE MEASUREMENT THAT LOOKS LIKE AN ALL-CLEAR IS WARM, WHICH IS THE WHOLE POINT.** io_wait 0 / active 0 says the box was quiet when I probed, so 13 ms is a WARM number and I have **not** measured this read cold. CLAUDE.md's own diagnostic reads it directly: **cheap WARM + expensive COLD = IO-bound, and no index helps.** The 10:22 tick failed while the sentinel was reporting `db saturated` (10:04, *"supabase-js reports a request aborted or dropped under load"*), when the cache holding `wallet_moments_cache` — 940 MB heap, ~1.6 GB of indexes, the instance's #1 physical reader — would have been evicted. ⇒ **`pinnacle_metadata_discovery` is not a slow function. It is a fast function on a saturated box.**
+
+⭐⭐ **THE UNIFYING RESULT OF THE WHOLE MORNING, and it is the same root cause three times over.** Every lane I opened today failed the same way: **a per-component number measured on a quiet box, still written down as if it were a constant, and no longer true under #126.**
+- `fmv-recalc` — sized against *"23.6 % killed at the wall"*; now **53.1 %** (R122).
+- `classify-acquisitions-multicollection` — All Day leg documented at **3.5 s**; measured today at **56.7 s for ZERO rows** at `p_limit = 1`, **16×**.
+- `pinnacle-metadata-backfill` — discovery ran **31,697 ms on its last healthy tick** and then tipped past its timeout; warm it is **13 ms**.
+👉 **So none of the three is a route defect, and none is fixed by tuning the route.** They are one estate-level IO problem surfacing in three places, and CLAUDE.md's rule about dated samples is the thing each of them broke.
+
+✅ **What the morning's fixes DID buy, stated precisely:** not throughput — **visibility**. The pinnacle lane went from twelve hours of unfalsifiable silence to a row naming its failing step within one tick, which is the only reason any of the above could be measured at all. ⛔ **The lane is still dark and will stay dark while the box is saturated.** **Exit:** with `#126` eased, the hourly tick reads ok=true with `q3_keys_scanned` advancing. **Falsifier:** a tick fails at `discovery` while `io_wait` is low and the box is calm ⇒ it IS the function after all, and the cold read is the lever.
+
+- **Revert:** n/a (measurement).
+
 ### 2026-09-20 · 📟 A 330-BUFFER INSTRUMENT FOR R120's CLASS — and I got its ROOT CAUSE wrong first: the runner is not to blame, the DB write ABORTS. Plus main was RED on someone else's migration for 15 min and two pushes inherited it · Claude Code cloud
 
 **Shipped: 2 migrations (`20260920165032` `check_panini_editions_missing_card_stats()`; `20260920170139` a COMMENT-only correction of it), the R120 register row merged with a concurrent session's better diagnosis, and an `anon-exec` marker added to `20260920163320` — another session's migration — to get `main` green.**
