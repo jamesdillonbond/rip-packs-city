@@ -97,7 +97,7 @@ async function run(request: NextRequest) {
           // `pack_rips.pull_value_usd = 0` still has rows means the leg STOPPED
           // reaching them, which is a different failure from the drain finishing
           // -- and the two are indistinguishable in `value_resolved`, which is
-          // exactly the trap the `allday_resolved` note below this one records.
+          // exactly the trap the `allday_resolved` note ABOVE this one records.
           // ⛔ `?? null` and not `?? 0`: on an older function body these keys are
           // ABSENT, and a 0 there would read as "the leg ran and found nothing".
           zero_cleared: data?.zero_cleared ?? null,
