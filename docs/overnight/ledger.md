@@ -11,6 +11,76 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🏗 THE COMPUTE TIER WAS THE FLOOR — Small → **Large** at 10:39 AM PT, after measuring us at **93 % of Small's published sustained disk baseline** · Cowork cloud (Trevor-approved, Trevor-executed)
+
+**This entry exists to stop the next session optimising against a ceiling that has moved.** Every
+pre-09-20 finding that blames "the 22 MB/s floor" is about the OLD tier. ⛔ **Re-measure before citing
+any of them** — R117's pass count, #126's morning band, R101/R108's per-tick budgets, the
+"VACUUM is unreachable on this instance" family, and the `job startup timeout` launcher blackouts are
+all downstream of a number that just changed by 3.6×.
+
+**The measurement that made the case** (two `pg_stat_database` samples in SEPARATE transactions,
+17:23:27Z → 17:24:28Z, 60.7 s, during a live spell):
+
+| quantity | measured on Small | Small published baseline | **Large published baseline** |
+|---|---:|---:|---:|
+| disk read throughput | **20.4 MB/s** | 22 MB/s | **79 MB/s** |
+| read IOPS | **2,607** | 1,000 | **3,600** |
+| live cache hit | 83.3 % | — | — |
+| `io_wait` / `active` | **16 / 16** | — | — |
+
+93 % of the throughput ceiling and 2.6× the IOPS baseline — continuously drawing down burst credit,
+which is why the box collapsed to the floor and stayed there. The "22 MB/s" in the memory notes was
+never an estimate: it is Supabase's published Small baseline, matched to within 7 % by measurement.
+
+⚠ **Instrument trap, recorded because it nearly buried the finding:** a single statement that reads
+`pg_stat_database` twice returns the SAME row both times — stats snapshots are transaction-stable.
+The first attempt reported **0 `blks_read` over 20 s** during a spell with `io_wait 14`. **Sample
+across two calls.**
+
+⛔ **Medium was ruled out by measurement, not preference** — the measured 2,607 read IOPS already
+exceeded Medium's 2,000 baseline. And provisioning extra disk IOPS/throughput "requires Large compute
+size or above", so the disk add-on is unlocked BY this upgrade, not an alternative to it.
+
+**Settings delta, read live at 10:42 AM PT (uptime 2 m 31 s):**
+
+| setting | before | after |
+|---|---:|---:|
+| `shared_buffers` | 512 MB | **2 GB** |
+| `effective_cache_size` | 1.5 GB | **6 GB** |
+| `work_mem` | 5 MB | **12 MB** |
+| `maintenance_work_mem` | 128 MB | **512 MB** |
+| `max_connections` | 90 | **160** |
+| `statement_timeout` | 120 s | **120 s (unchanged)** |
+| `max_parallel_workers` / `_per_gather` | 2 / 1 | **2 / 1 (unchanged)** |
+| `max_worker_processes` | 6 | **6 (unchanged)** |
+
+👉 **The three unchanged rows are the ones to think about next.** The 120 s platform default is what
+every over-budget lane dies at, and it did not move with the tier.
+
+⛔ **DO NOT MEASURE YET AND DO NOT REVERT ANYTHING ON A FRESH READING.** The instance restarted at
+**10:39:56 AM PT**; `shared_buffers` is cold and the estate has not spun back up. A reading taken in
+the first hours will be *worse* than steady state and will look like the upgrade failed. Give it a
+warm cache and a real load band.
+
+**Exit (the pre-committed test):** 6-hour `cron.job_run_details` failure rate **under 3 %** — it was
+**393 / 2,446 = 16 %** at 09:14 AM PT today — and the 06Z/12Z/18Z band gone from `job startup
+timeout`.
+**Falsifier:** the band survives 8 GB and 79 MB/s ⇒ IO supply was not the cause, this entry is wrong,
+and the answer is XL or shedding lanes rather than more index work.
+**Second check, 24–48 h:** re-run the two-sample throughput measurement during a spell. Pinned near
+**79 MB/s** with `io_wait` still tracking `active` ⇒ demand exceeds Large ⇒ **go XL**.
+
+**Queued, explicitly NOT taken in the same breath as the upgrade** (one change at a time, so the
+upgrade's own exit stays attributable): the autovacuum scale factors backed off to 0.1 on the two
+churn tables · the `pack_rips` 50/50 throttle · the `maintenance_work_mem`-dependent claim that
+"VACUUM is unreachable on this instance" (512 MB may falsify it) · the 120 s default. **Each needs its
+own dated re-measure on a warm box.**
+
+**Revert.** Supabase dashboard → Compute and Disk → Small. Billed hourly, under 2 minutes of
+downtime. ⚠ Reverting also reverts `shared_buffers`/`work_mem`/`max_connections`, so anything tuned
+against the Large values must be re-checked first.
+
 ### 2026-09-20 · ✅ jobid 466 RESOLVED (both fixes were needed) + CLAUDE.md and the reference docs carry the day's rules · Claude Code Windows box
 
 **jobid 466 exit MET.** The `1-56/5` slot let a tick start and the 240 s budget let it finish: **10:36 PT, `ok=true`, 147 s** — it would have died at 120 s — committing **598 inserted / 118 updated / 2,435 deleted**. `ts_listings` un-froze: **92 minutes stale → 7 minutes**, 58,513 rows, `max(ingested_at)` 10:33. ⭐ **Three separate failures, and each one alone was a misleading data point:** the 36 % kill rate (stale by ship time), a tick that could not FINISH (budget), and a launcher minute where nothing starts at all (slot). Fixing any one of them looked like a failure of that fix.

@@ -73,7 +73,7 @@ Stack: Next.js 16 · React 19 · TS 5 · Tailwind 4 · Supabase (Pro, Small) · 
 
 ## Infrastructure IDs (required on every tool call)
 
-- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = SMALL** — 2 GB RAM / 2-core, `max_connections`=90). ⚠ The **22 MB/s** burst floor is the COMPUTE TIER's IO budget, NOT the disk. Saturation is **IO-, not CPU-bound** — fix expensive queries, don't upgrade (Medium/Large tier numbers: database.md).
+- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = LARGE** since 2026-09-20 — 8 GB RAM / 2 dedicated vCPU, `max_connections`=160, `shared_buffers`=2 GB, `work_mem`=12 MB). Sustained disk **79 MB/s / 3,600 IOPS**. ⚠ Pre-09-20 findings citing the **22 MB/s floor** are the OLD Small tier — re-measure. Tiers: database.md.
 - Vercel project ID: `prj_YBJ6Utl32GfyBOIzbsp3kbshJh96`
 - Vercel team ID: `team_YWGCVToPBJSS60NgVh8jiCFV`
 - GitHub repo ID: `1188272071`
