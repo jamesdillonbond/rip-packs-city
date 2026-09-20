@@ -1182,7 +1182,7 @@ const PINS = [
     fn: "rpc_thp_leg_impossible_parallel",
     test: "supabase/tests/rpc_thp_leg_impossible_parallel.sql",
     migration:
-      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
+      "supabase/migrations/20260920151857_audit_20260920_leg_324_baseline_grain_moves_to_months_the_live_year_alone_was_480_s.sql",
   },
   {
   // ⚠ Two deliberate blind spots pinned because they look like health: a collection under
