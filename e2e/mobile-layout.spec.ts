@@ -247,3 +247,62 @@ test.describe("mobile layout", () => {
     expect(band!.formH).toBeGreaterThanOrEqual(44)
   })
 })
+
+// ⚠ A SEPARATE DESCRIBE WITH ITS OWN CONTEXT, and that is the whole point.
+// The block above sets only { viewport } — a viewport override does NOT make
+// Chromium report a coarse pointer, so `(pointer: coarse)` is FALSE there and
+// the app/globals.css rule this test exists to protect never applies. Pinned
+// inside that block, the test passed for the wrong reason until its own
+// positive control failed and said so. hasTouch is what flips the media
+// feature; isMobile brings the rest of the phone emulation with it.
+test.describe("mobile layout (touch context)", () => {
+  test.use({ viewport: PHONE, hasTouch: true, isMobile: true })
+
+    test("no form control sits under the 16px iOS zoom floor", async ({ page }) => {
+      // iOS Safari zooms the page when a control under 16px takes focus and does
+      // NOT zoom back out — the user lands on a horizontally-panned page with the
+      // rest of the UI off-screen. Chromium reproduces this at no viewport, which
+      // is why nothing in this repo saw it for the platform's whole life.
+      //
+      // MEASURED 2026-09-20 by scripts/qa/mobile-sweep.mjs over 56 live pages: 53
+      // carried at least one — text inputs 14px, the catalog search and every
+      // native select 12px, number inputs 11px, including the early-access email
+      // field. Fixed by the coarse-pointer floor in app/globals.css.
+      //
+      // ⚠ THE FIX NEEDS !important AND THE RULE NEEDS TO STAY SHORT, and both
+      // halves were learned the hard way in one afternoon:
+      //   1. The first draft had no !important and was a silent no-op — these
+      //      controls set font-size in an INLINE style attribute, which outranks
+      //      any stylesheet rule that is not !important (the WalletSearchBand
+      //      lesson again: an inline style is the one declaration a media query
+      //      cannot override).
+      //   2. The second draft HAD !important and still never reached the deployed
+      //      stylesheet. The built chunk grew while `coarse` stayed at 0 — on the
+      //      deployment URL as well as the alias, so not an edge cache. Shortening
+      //      the comment and unquoting the attribute values landed it.
+      // So this test is pinned against the DEPLOYED build, and its real job is to
+      // catch the rule silently vanishing from the bundle again.
+      await page.goto("/nba-top-shot/collection", { waitUntil: "domcontentloaded" })
+      await page.waitForTimeout(1500)
+
+      const result = await page.evaluate(() => {
+        const els = Array.from(document.querySelectorAll("input, select, textarea")).filter((e) => {
+          const b = e.getBoundingClientRect()
+          return b.width > 0 && b.height > 0
+        })
+        const under = els
+          .filter((e) => !["checkbox", "radio", "range"].includes((e as HTMLInputElement).type))
+          .map((e) => ({ t: e.tagName.toLowerCase(), fs: parseFloat(getComputedStyle(e).fontSize) || 0 }))
+          .filter((x) => x.fs < 16)
+          .map((x) => `${x.t} ${x.fs}px`)
+        return { checked: els.length, under, coarse: matchMedia("(pointer: coarse)").matches }
+      })
+
+      // Positive controls. A context that does not report a coarse pointer would
+      // pass this test while proving nothing, and so would a route that stopped
+      // rendering its controls — both are the guard-measuring-nothing shape.
+      expect(result.coarse, "emulated context does not report (pointer: coarse)").toBe(true)
+      expect(result.checked, "no form controls matched on this route").toBeGreaterThanOrEqual(5)
+      expect(result.under, "form controls under the 16px iOS zoom floor").toEqual([])
+    })
+})
