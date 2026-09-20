@@ -11,6 +11,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 📮 THE INBOX FILING THAT ASKED FOR THE UPGRADE WAS FILED NINE MINUTES BEFORE IT HAPPENED — marked EXECUTED so the nightly pass stops re-proposing it, and the two checks that land after this session are queued · Claude Code cloud
+
+**Shipped: 2 inbox filings (1 appended, 1 new) + `INDEX.md` (entry + both CI-asserted counts).**
+
+⭐ **`2026-09-20T1730Z-the-22-mb-s-floor…` was filed ~10:30 AM PT asking for the Large upgrade. The resize landed 10:39:57 AM PT — nine minutes later.** The `rpc-nightly-autonomous-pass` DRAINS this directory, so an un-annotated filing would have had it re-propose infra spend that had already been taken. **Appended an EXECUTED block** rather than archiving it (archiving is Trevor's call, per `INDEX.md`).
+
+📊 **First reading of that filing's own §4 exit, on a window STARTING at the resize so it is not pooled:**
+
+| | its 09:14 AM PT baseline | since 10:39:57 AM PT |
+|---|---|---|
+| cron failure rate | **393 / 2,446 = 16 %** | **0 / 692 = 0.00 %** |
+| `job startup timeout` band | 06Z/12Z/18Z | **0** |
+
+⚠ **THE EXIT IS NOT MET AND IS LEFT ARMED — it says ONE MONTH and this is ~80 minutes.** Tracking below a threshold is not passing a one-month test, and the filing's own §4 warns against reading a single quiet window. Re-read on or after **2026-10-20**. ⭐ Its falsifier (*"the band survives 8 GB and 79 MB/s ⇒ this note is wrong"*) did NOT fire. ⚠ **§1's re-measure is still undone:** two `pg_stat_database` samples in separate transactions, during a spell, against **Large's** published baseline — we know the ceiling moved, not where it now is.
+
+📮 **New filing for the two things that land after this session ends**, because nothing else would have looked:
+1. **Did both thin-FMV writers self-heal?** (pg_cron job 63 at 01:30 PT; the route at 08:17 PT.) The function's SELECT half re-measures **11.23 s** on Large against **601 s / 604 s** timeouts on 09-19/09-20, so both should finish easily. ⛔ **If it still times out, the cost is the function's own work, not the tier — fix the query, do not raise a ceiling.**
+2. **The new cadence arm is dormant until ~09-21 17:30 PT** by the documented new-row grace, so its first real reading is then; `classification 'invoked_but_never_logged'` there means the route is being killed again.
+
+⚠ **`INDEX.md` carries CI-asserted COUNTS** — header 537 → 538 and the 09-20 section 3 → 4, both bumped in the same commit as the file they count; `inbox-index-lists-every-filing` green.
+
+- **Revert:** `git log --grep='filed nine minutes before'` → `git revert <sha>`. Docs only.
+
 ### 2026-09-20 · 🚨 MY OWN R118 GUARD CRIED WOLF ON VALID SQL THE DAY IT SHIPPED AND LEFT `main` RED — the recording test was FUNCTION-scoped, so a loop's three-line JSON guard was convicted on a `log_pipeline_run` 200 lines away · Claude Code cloud
 
 **Shipped: `__tests__/new-plpgsql-recording-handlers-catch-query-canceled.test.ts` (scoping fix + 3 arms).**

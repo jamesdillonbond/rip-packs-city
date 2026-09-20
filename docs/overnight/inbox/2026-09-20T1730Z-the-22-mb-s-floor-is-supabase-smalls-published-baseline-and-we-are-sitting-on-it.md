@@ -86,3 +86,44 @@ or at shedding lanes, not at more index work.
 📌 **Re-measure §1 the same way after any resize** — two samples, separate transactions, during a
 spell, against the published baseline for the new tier. That single number tells you whether the
 ceiling moved.
+
+---
+
+## ✅ THE UPGRADE WAS TAKEN — NINE MINUTES AFTER THIS WAS FILED (appended 2026-09-20 ~12:2x PM PT, Claude Code cloud)
+
+📏 **`pg_postmaster_start_time()` = 2026-09-20 10:39:57 AM PT**, and the instance now reports
+`max_connections 160 · shared_buffers 2GB · work_mem 12MB` — **Small → LARGE** (8 GB / 2 dedicated
+vCPU, sustained 79 MB/s / 3,600 IOPS). This note was filed ~10:30 AM PT. **Read it as EXECUTED, not
+open** — do not re-propose the upgrade.
+
+📊 **First reading of §4's exit, on a window that STARTS at the resize so it is not pooled across it:**
+
+| | before (09:14 AM PT, this note's own figure) | since 10:39:57 AM PT |
+|---|---|---|
+| cron failure rate | **393 / 2,446 = 16 %** | **0 / 692 = 0.00 %** |
+| `job startup timeout` | the 06Z/12Z/18Z band | **0** |
+
+⚠ **THE EXIT IS NOT MET — it says ONE MONTH and this is ~80 minutes.** Tracking far below the 3 %
+threshold is not the same as having passed a one-month test, and a single quiet window is exactly
+what §4 warns against. **Leave the exit armed; re-read it on or after 2026-10-20.**
+
+⭐ **The falsifier did NOT fire.** §4: *"the band survives 8 GB and 79 MB/s ⇒ the cause is not IO
+supply and this note is wrong."* The band is gone within the hour, so the note's thesis — that
+supply had become the cheaper variable — is supported on its first test.
+
+📌 **Corroborating evidence gathered elsewhere the same day** (full detail: `docs/reference/database.md`,
+"The compute resize of 2026-09-20", and known-issue **#126**, now RESOLVED):
+- Busy-seconds per PT hour at **flat run counts**: hours 00–09 averaged **34.5 s per job**; hour 11,
+  fully post-resize, **1.39 s per job** — a ~25× step.
+- ⛔ **Ten of those pre-resize hours sit AFTER the pg_net `VACUUM FULL` (09-19 19:09:34 PT) and show
+  no improvement**, which is what separates capacity from the reclaim and vindicates #75's refusal.
+- Vercel wall-kills across the fleet: **61 in the 6 h before → 0 in the ~80 min after** (~120 markers,
+  20 lanes). Only `fmv-recalc`, `drain-fmv-cold-tail` and `pinnacle-metadata-backfill` yet clear
+  `lib/pipeline/kill-rate.ts`'s recovery test; the rest are too early.
+
+⚠ **§1's re-measure instruction still stands and has NOT been done:** two `pg_stat_database` samples
+in separate transactions, during a spell, against **Large's** published baseline. Until then we know
+the ceiling moved, not where it now is.
+
+⛔ **And the standing consequence for every other session: every figure on this estate citing the
+22 MB/s floor or 512 MB `shared_buffers` is a SMALL-tier sample. Re-derive; do not quote.**
