@@ -275,7 +275,6 @@ async function fetchPinnacleModernListings(
       // whose listing has since been pulled shouldn't render as a live market row.
       .gte("floor_ask_updated_at", new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
     if (filters.maxPrice > 0) q = q.lte("floor_ask", filters.maxPrice)
-    if (filters.minPrice > 0) q = q.gte("floor_ask", filters.minPrice)
     // ⚠ `ilike %name%` and NOT `.in("set_name", …)`. `pinnacle_catalog.set_name`
     // carries stray leading/trailing whitespace on 22 of its 169 distinct names
     // (" Lucasfilm Ltd. • Star Wars Alphabet Vol.1", "… Mandalorian Vol.1 "),
@@ -288,9 +287,7 @@ async function fetchPinnacleModernListings(
     // decides. Measured today: 169 trimmed names, 0 substring collisions — but
     // that is a dated sample, and the in-memory pass is what makes it safe
     // regardless.
-    if (filters.sets.length === 1) q = q.ilike("set_name", `%${filters.sets[0]}%`)
-    if (filters.seriesList.length > 0) q = q.in("series_name", filters.seriesList)
-    if (filters.player) q = q.ilike("character_name", `%${filters.player}%`)
+    q = applyBrowseFilters(q, { set: "set_name", player: "character_name", price: "floor_ask", series: "series_name" }, filters)
     // PostgREST hard-caps reads at 1,000 rows, so order the fetch by the SAME
     // dimension the UI sort leads with — otherwise a fixed cheapest-first window
     // would hide the expensive renders under "Price ↓" / "FMV ↓". Final ordering
@@ -311,11 +308,7 @@ async function fetchPinnacleModernListings(
     // EXACT pass. The DB filters above narrow; these decide, on the same
     // trimmed value the caller sent. Multi-select sets are handled here rather
     // than in the query because PostgREST cannot express "trim(col) IN (…)".
-    let rows: any[] = data ?? []
-    if (filters.sets.length > 0) {
-      const want = new Set(filters.sets.map((x) => x.trim()))
-      rows = rows.filter((r: any) => want.has(String(r.set_name ?? "").trim()))
-    }
+    const rows: any[] = exactSetMatch(data ?? [], filters.sets, "set_name")
     return rows.map((r: any) => ({
       id: `pinnacle:${r.render_id}`,
       flow_id: null,                 // edition-grain row — no single on-chain moment
@@ -413,6 +406,50 @@ async function fetchAllDayMarketEditions(
   }))
 }
 
+/** The browse filters the modern arms used to DROP (register #129), applied to a
+ *  PostgREST query over whatever this arm's columns happen to be called.
+ *
+ * 🚨 ONE IMPLEMENTATION, DELIBERATELY. The Pinnacle and Candy arms need the same
+ * four filters against different column names (`character_name` vs
+ * `player_name`, `floor_ask` vs `ask_usd`), and CLAUDE.md's rule for exactly
+ * this shape is that a second copy drifts — it has cost this repo five times.
+ * Add an arm by passing its column map, never by pasting the body.
+ *
+ * ⚠ THE SET FILTER ONLY NARROWS. A `%name%` pattern is used because a stored
+ * name may carry stray leading/trailing whitespace while the row this API
+ * returns — and therefore the value the UI sends back — is TRIMMED, so equality
+ * would match NOTHING for those rows and render as "no listings in this set"
+ * (22 of Pinnacle's 169 names are like this). A pattern can over-match, so
+ * `exactSetMatch` below DECIDES. Never use one without the other.
+ */
+function applyBrowseFilters(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  q: any,
+  cols: { set: string; player: string; price: string; series?: string },
+  f: { sets: string[]; seriesList: string[]; player: string; minPrice: number },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any {
+  if (f.minPrice > 0) q = q.gte(cols.price, f.minPrice)
+  // A single set can be narrowed in the DB; a multi-select cannot, because
+  // PostgREST has no "trim(col) IN (…)". Both are settled by exactSetMatch.
+  if (f.sets.length === 1) q = q.ilike(cols.set, `%${f.sets[0]}%`)
+  if (f.player) q = q.ilike(cols.player, `%${f.player}%`)
+  if (cols.series && f.seriesList.length > 0) q = q.in(cols.series, f.seriesList)
+  return q
+}
+
+/** The EXACT half of the set filter — compares on the same trimmed value the
+ *  caller sent, so a substring over-match ("Vol.1" inside "Vol.10") is dropped. */
+function exactSetMatch<T extends Record<string, unknown>>(
+  rows: T[],
+  sets: string[],
+  setCol: string,
+): T[] {
+  if (sets.length === 0) return rows
+  const want = new Set(sets.map((x) => x.trim()))
+  return rows.filter((r) => want.has(String(r[setCol] ?? "").trim()))
+}
+
 // Candy MLB (Solana / Metaplex Core) — the ONLY non-Flow arm in this route.
 //
 // ⚠ THE REST OF THIS FILE IS FLOW-SHAPED, and Candy has none of the Flow
@@ -435,7 +472,17 @@ async function fetchAllDayMarketEditions(
 // ingest can currently detect a second venue, so the honest label is the one
 // venue we can actually observe. See docs/reference/chain-strategy.md.
 async function fetchCandyMarketListings(
-  filters: { tier: string; maxPrice: number; sortBy: string; limit: number }
+  filters: {
+    tier: string; maxPrice: number; sortBy: string; limit: number
+    // Register #129 — dropped here too until 2026-09-20. ⓘ Candy's Set chip was
+    // the harmless one: `candy_market_board` carries exactly ONE distinct
+    // set_name over 2,144 rows, so filtering by it returned everything, which
+    // happened to be right. The Player typeahead and Min price were NOT
+    // harmless. ⚠ No `series_name` column exists on this board, so no series
+    // filter is offered — the chip has no options to build from, which is the
+    // honest outcome rather than a silent no-op.
+    sets: string[]; seriesList: string[]; player: string; minPrice: number
+  }
 ): Promise<any[] | null> {
   let q = (supabaseAdmin as any)
     .from("candy_market_board")
@@ -444,6 +491,7 @@ async function fetchCandyMarketListings(
     )
   if (filters.tier && filters.tier !== "all") q = q.eq("tier", filters.tier.toUpperCase())
   if (filters.maxPrice > 0) q = q.lte("ask_usd", filters.maxPrice)
+  q = applyBrowseFilters(q, { set: "set_name", player: "player_name", price: "ask_usd" }, filters)
 
   // Sort is pushed to Postgres so the limit below takes the RIGHT rows, not an
   // arbitrary 500 that the client then sorts into a wrong answer.
@@ -462,7 +510,13 @@ async function fetchCandyMarketListings(
     return null
   }
 
-  return (data ?? []).map((r: any) => ({
+  // The exact half of the set filter — see applyBrowseFilters. A no-op when no
+  // set was requested, and the only thing that makes the `%name%` narrowing safe.
+  // ⚠ Compares `set_name`, which is what the row below reports as `setName`
+  // (its `?? edition_name` fallback is a DISPLAY fallback and must not become a
+  // second thing the filter matches on — that would let an edition name satisfy
+  // a set filter).
+  return exactSetMatch(data ?? [], filters.sets, "set_name").map((r: any) => ({
     id: r.token_mint ?? `${CANDY_COLLECTION_ID_FOR_DISPATCH}:${r.edition_id}`,
     flow_id: null,
     moment_id: r.token_mint ?? null,
@@ -508,6 +562,7 @@ async function fetchModernListings(
   if (collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH) {
     return fetchCandyMarketListings({
       tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
+      sets: filters.sets, seriesList: filters.seriesList, player: filters.player, minPrice: filters.minPrice,
     })
   }
   if (collectionId === PINNACLE_COLLECTION_ID_FOR_DISPATCH) {
