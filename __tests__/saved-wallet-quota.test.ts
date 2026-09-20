@@ -96,3 +96,33 @@ describe("evaluateSavedWalletCap", () => {
     expect(evaluateSavedWalletCap(five, "0xf", 5).allowed).toBe(false);
   });
 });
+
+// ── The "already saved?" comparison is chain-scoped (2026-09-20) ───────────
+//
+// ⚠ Folding BOTH sides looks symmetrical and is still wrong for base58: two
+// DIFFERENT Candy wallets that differ only in case compared equal, and this
+// function's `true` BLOCKS the save. The failure is a refusal to store a wallet
+// the collector really owns — the same class as a false empty state, reached
+// from the write side.
+describe("walletAlreadySaved — base58 case is identity, not noise", () => {
+  const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+  const CANDY_CASE_FLIP = CANDY.slice(0, -1) + "k" // a DIFFERENT wallet
+
+  it("does not call a different base58 wallet 'already saved'", () => {
+    expect(walletAlreadySaved([{ wallet_addr: CANDY }], CANDY_CASE_FLIP)).toBe(false)
+  })
+
+  it("still recognises the SAME base58 wallet", () => {
+    expect(walletAlreadySaved([{ wallet_addr: CANDY }], CANDY)).toBe(true)
+    expect(walletAlreadySaved([{ wallet_addr: `  ${CANDY}  ` }], CANDY)).toBe(true)
+  })
+
+  it("hex no-change arm: Flow stays case-insensitive", () => {
+    expect(
+      walletAlreadySaved([{ wallet_addr: "0xBD94CADE097E50AC" }], "0xbd94cade097e50ac"),
+    ).toBe(true)
+    expect(
+      walletAlreadySaved([{ wallet_addr: " 0xbd94cade097e50ac " }], "0xBD94CADE097E50AC"),
+    ).toBe(true)
+  })
+})

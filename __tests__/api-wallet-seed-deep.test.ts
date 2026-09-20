@@ -93,7 +93,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 async function seed() {
-  const res = await POST(req({ token: "tok", body: { walletAddress: "0xAbC", ownerKey: "ok1" } }))
+  const res = await POST(req({ token: "tok", body: { walletAddress: "0xBD94cade097e50AC", ownerKey: "ok1" } }))
   expect(res.status).toBe(200)
   return (await res.json()).results as Array<{ collection: string; count: number; status: string }>
 }
@@ -127,9 +127,9 @@ describe("POST /api/wallet/seed", () => {
     st.editions = { data: [{ id: "E1", external_id: "m1", player_name: "LeBron", set_name: "S", tier: "RARE", thumbnail_url: "t" }] }
     st.fmv = { data: [{ edition_id: "E1", fmv_usd: 5, computed_at: "2026-01-01" }] }
 
-    const res = await POST(req({ token: "tok", body: { walletAddress: "0xAbC", ownerKey: "ok1" } }))
+    const res = await POST(req({ token: "tok", body: { walletAddress: "0xBD94cade097e50AC", ownerKey: "ok1" } }))
     const json = await res.json()
-    expect(json.walletAddress).toBe("0xabc") // trimmed + lowercased
+    expect(json.walletAddress).toBe("0xbd94cade097e50ac") // trimmed + lowercased (hex no-change arm)
     expect(json.ownerKey).toBe("ok1")
     expect(statusOf(json.results, "nba-top-shot")).toBe("ok")
 
@@ -163,5 +163,39 @@ describe("POST /api/wallet/seed", () => {
     const results = await seed()
     expect(statusOf(results, "laliga-golazos")).toContain("error:")
     expect(statusOf(results, "nba-top-shot")).toBe("ok") // isolation held
+  })
+})
+
+// ── The seeder is Cadence-only and says so (2026-09-20) ────────────────────
+//
+// Before this gate a non-Flow wallet still RAN the four Cadence scripts, failed
+// all four, and came back `ok: true` with a row per collection — counts of 0
+// that read as a measured empty wallet. CLAUDE.md names that shape: a sweep
+// whose `ok` means it COMPLETED, not that its lanes worked.
+describe("POST /api/wallet/seed — an unsupported chain is not an empty wallet", () => {
+  const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+
+  it("400s a base58 wallet with a typed reason instead of rows of zeros", async () => {
+    const res = await POST(req({ token: "tok", body: { walletAddress: CANDY, ownerKey: "ok1" } }))
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.ok).toBe(false)
+    expect(json.error).toBe("unsupported_chain_for_seeder")
+    expect(json.chain).toBe("solana")
+    // THE ASSERTION IS THE ABSENCE OF THE FALSE CLAIM: no results array at all,
+    // so nothing downstream can read a zero out of this.
+    expect(json.results).toBeUndefined()
+    // And the address comes back with its case intact, not folded.
+    expect(json.walletAddress).toBe(CANDY)
+  })
+
+  it("hex no-change arm: a real Flow address still walks every collection", async () => {
+    const res = await POST(
+      req({ token: "tok", body: { walletAddress: "0xBD94cade097e50AC", ownerKey: "ok1" } }),
+    )
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(Array.isArray(json.results)).toBe(true)
+    expect(json.results.length).toBeGreaterThan(0)
   })
 })

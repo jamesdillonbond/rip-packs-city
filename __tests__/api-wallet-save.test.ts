@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // scope. Mocks supabaseAdmin (rpc for the route, from() for the guard's
 // profile_bio lookups).
 
-const rpc: { data: any | null; error: any | null; calls: number } = { data: { ok: true }, error: null, calls: 0 }
+const rpc: { data: any | null; error: any | null; calls: number; lastArgs: any } = { data: { ok: true }, error: null, calls: 0, lastArgs: null }
 
 // ── requireOwnedKey fixtures ────────────────────────────────────────────────
 // `ownership.claimantId` is who claims the requested key (null = unclaimed); the
@@ -59,8 +59,9 @@ function profileBioBuilder() {
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     from: (_t: string) => profileBioBuilder(), // the guard's only table read
-    rpc: async () => {
+    rpc: async (_name: string, args: any) => {
       rpc.calls++
+      rpc.lastArgs = args
       return { data: rpc.data, error: rpc.error }
     },
   },
@@ -84,6 +85,7 @@ beforeEach(() => {
   rpc.data = { ok: true }
   rpc.error = null
   rpc.calls = 0
+  rpc.lastArgs = null
   auth.user = { id: "u1" }
   ownership.claimantId = "u1"
   ownership.claimantErr = null
@@ -149,5 +151,31 @@ describe("POST /api/wallet/save", () => {
     const res = await POST(req({ ownerKey: "some-username", walletAddress: "0xABC" }))
     expect(res.status).toBe(403)
     expect(rpc.calls).toBe(0)
+  })
+})
+
+// ── The saved address survives the write (2026-09-20) ─────────────────────
+//
+// ⛔ This route WROTE `walletAddress.trim().toLowerCase()` to saved_wallets and
+// then handed the same string to /api/wallet/seed. Folding a base58 address
+// there destroys the wallet at the moment of saving it, and every read
+// afterwards reports an honest-looking zero about a portfolio that exists.
+// `/api/profile/saved-wallets` was fixed 2026-09-19; this route has no in-repo
+// caller, which is exactly why it went unfixed.
+describe("POST /api/wallet/save — the stored address is chain-scoped", () => {
+  const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+
+  it("writes a base58 address verbatim, not folded", async () => {
+    const res = await POST(req({ ownerKey: "u1", walletAddress: CANDY }))
+    expect(res.status).toBe(200)
+    expect(rpc.lastArgs?.p_wallet_address).toBe(CANDY)
+    // The assertion that would have failed before.
+    expect(rpc.lastArgs?.p_wallet_address).not.toBe(CANDY.toLowerCase())
+  })
+
+  it("hex no-change arm: a Flow address is still folded and still trimmed", async () => {
+    const res = await POST(req({ ownerKey: "u1", walletAddress: "  0xBD94CADE097E50AC  " }))
+    expect(res.status).toBe(200)
+    expect(rpc.lastArgs?.p_wallet_address).toBe("0xbd94cade097e50ac")
   })
 })

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { apiErrorResponse } from "@/lib/api-error";
 import { supabaseAdmin } from "@/lib/supabase"
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
+import { normalizeAddress } from "@/lib/address"
 
 export async function POST(request: NextRequest) {
   let body: {
@@ -33,7 +34,14 @@ export async function POST(request: NextRequest) {
   const gate = await requireOwnedKey(ownerKey)
   if (gate instanceof Response) return gate
 
-  const normalizedWallet = walletAddress.trim().toLowerCase()
+  // ⚠ normalizeAddress, NOT `.toLowerCase()`. This value is WRITTEN to
+  // saved_wallets and then handed to /api/wallet/seed, so folding a base58
+  // address here destroys the wallet at the moment of saving it — and every
+  // read afterwards would report an honest-looking zero about a portfolio that
+  // exists. `/api/profile/saved-wallets` was fixed 2026-09-19; this route is
+  // the same write with no in-repo caller, which is exactly why it went unfixed.
+  // Hex is byte-identical: normalizeAddress folds it just as this line did.
+  const normalizedWallet = normalizeAddress(walletAddress)
 
   const { data, error } = await (supabaseAdmin as any).rpc("save_user_wallet", {
     p_owner_key: ownerKey,

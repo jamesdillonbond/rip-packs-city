@@ -18,6 +18,8 @@ type CollectionSpec = {
   editionsTable: "editions" | "pinnacle_editions"
 }
 
+import { normalizeAddress, isCadenceAddress, detectAddressChain } from "@/lib/address"
+
 const COLLECTIONS: CollectionSpec[] = [
   {
     slug: "nba-top-shot",
@@ -242,7 +244,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "walletAddress required" }, { status: 400 })
   }
 
-  const wallet = walletAddress.trim().toLowerCase()
+  const wallet = normalizeAddress(walletAddress)
+
+  // ⛔ THIS SEEDER IS CADENCE-ONLY and now says so rather than answering.
+  // Every spec above is a hardcoded Cadence script taking `address: Address`,
+  // so a Solana/EVM wallet cannot be seeded here at all. Before this gate it
+  // still RAN — four scripts, four failures — and returned `ok: true` with a
+  // row per collection. That is the shape CLAUDE.md names: a sweep whose `ok`
+  // means it COMPLETED, not that its lanes worked, and a caller reading
+  // `results` sees counts of 0 that look like a measured empty wallet.
+  if (!isCadenceAddress(wallet)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "unsupported_chain_for_seeder",
+        detail:
+          "This seeder reads Flow (Cadence) collections only. The address is not a Flow address, so no holdings were read — this is not a statement that the wallet is empty.",
+        walletAddress: wallet,
+        chain: detectAddressChain(wallet),
+      },
+      { status: 400 },
+    )
+  }
+
   const results: Array<{ collection: string; count: number; status: string }> = []
 
   for (const spec of COLLECTIONS) {

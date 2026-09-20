@@ -43,14 +43,20 @@ export function countDistinctWallets(rows: readonly SavedWalletAddrRow[] | null 
  * write is a RE-SAVE and must skip the cap (otherwise a user at their limit
  * could never refresh or re-associate the wallet they already own).
  */
+import { normalizeAddress } from "@/lib/address";
+
 export function walletAlreadySaved(
   rows: readonly SavedWalletAddrRow[] | null | undefined,
   candidate: string
 ): boolean {
-  const want = candidate.trim().toLowerCase();
+  // ⚠ Chain-scoped on BOTH sides. Folding both looks symmetrical and is still
+  // wrong for base58: two DIFFERENT Candy wallets that happen to differ only in
+  // case would compare equal, and this function's `true` BLOCKS the save. The
+  // failure is a refusal to store a wallet the collector really owns.
+  const want = normalizeAddress(candidate);
   if (want === "") return false;
   return (rows ?? []).some(
-    (r) => typeof r?.wallet_addr === "string" && r.wallet_addr.trim().toLowerCase() === want
+    (r) => typeof r?.wallet_addr === "string" && normalizeAddress(r.wallet_addr) === want
   );
 }
 

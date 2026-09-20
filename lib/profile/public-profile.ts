@@ -28,6 +28,7 @@
 // cache, the source of truth is auth.users.id.
 
 import { cache } from "react"
+import { normalizeAddress } from "@/lib/address";
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { withBoardBudget } from "@/lib/insights/board-page-fetch"
 
@@ -320,7 +321,9 @@ async function getPublicProfileUncached(
   // another wallet.
   const walletCount = new Set(
     (wallets ?? [])
-      .map((w: any) => (typeof w.wallet_addr === "string" ? w.wallet_addr.trim().toLowerCase() : ""))
+      // ⚠ Chain-scoped: folding base58 would collapse two distinct Candy
+      // wallets into one and UNDERCOUNT a collector's wallets. Hex unchanged.
+      .map((w: any) => (typeof w.wallet_addr === "string" ? normalizeAddress(w.wallet_addr) : ""))
       .filter((a: string) => a !== "")
   ).size
 
