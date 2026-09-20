@@ -35,7 +35,7 @@ Real time from the DB (`select now()`), never the prompt. Then: take the LOCK, c
 
 ## 2. Health sweep — and the instruments that lie
 
-Run security invariants, `detect_stalled_pipelines`, `get_pipeline_alerts`, trust health, Sentry, and Vercel runtime logs. Then distrust each:
+Run security invariants, `detect_stalled_pipelines`, `get_pipeline_alerts`, trust health, `jsonb_array_length(check_when_others_timeout_blind())` (0 — R118: a plpgsql recording handler blind to a 57014 kill; non-zero names the function), Sentry, and Vercel runtime logs. Then distrust each:
 
 - ⚠ **`public_board_slow_count` = 0 does NOT mean the boards are healthy.** The probe times `SELECT count(*) FROM <view>`, which the planner prunes — it read 0 while five of five candy-mlb queries were timing out. **For public-page health the instrument is Vercel runtime logs.** Group 5xx by route, then read `level=error` lines.
 - ⚠ **A page can serve HTTP 200 with `cache=STALE` while every query behind it dies.** Invisible to 5xx metrics. Worse in a paginated board: a page-3 failure renders the top rows *as the whole ranking*.

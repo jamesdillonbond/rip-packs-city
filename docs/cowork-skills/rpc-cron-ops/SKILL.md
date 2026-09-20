@@ -1,6 +1,6 @@
 ---
 name: "rpc-cron-ops"
-description: "Rip Packs City cron operations — load when scheduling, moving, debugging, or automating cron-job.org entries or GitHub Actions schedules for RPC, or driving the cron-job.org console in Chrome."
+description: "Rip Packs City cron operations — load when scheduling, moving, debugging, or automating cron-job.org entries, pg_cron jobs or GitHub Actions schedules for RPC, picking a pg_cron slot for a heavy job, or driving the cron-job.org console in Chrome."
 ---
 
 # RPC cron operations
@@ -60,6 +60,16 @@ The console (console.cron-job.org, React/MUI) **SILENTLY IGNORES synthetic edits
 - `Actions → Delete` opens a normal MUI dialog whose DELETE button clicks fine via JS; a coordinate click on the menu item can leave the tab's screenshot capture hanging for 30 s — the page is fine, use JS to read/act until the next navigation.
 - 🚨 A `javascript_tool` result is BLOCKED (`Cookie/query string data`) if it returns any URL carrying a query string — the edge-function entries' URLs carry `?key=` gate keys, so a list-page sweep must strip everything from `?` on before returning, or return titles/status only. That block is the secret guard working; do not route around it.
 - ✅ **Health-sweep recipe that passes the guard (2026-09-19):** on `/jobs`, map each `table tbody tr` to `title | last execution | next execution` using ONLY `innerText` lines containing no `http`, no `?`, no `supabase`, no `rippackscity`, and strip `https?://\S+` / `\?\S*` from the other cells; flag `Failed` in the last-execution cell and `Inactive` in the next-execution cell. Baseline 2026-09-19 8:45 PM PT: **88 entries, 17 inactive, all deliberate** (listed by reason in `docs/operations/cron-schedule.md`) — an 18th inactive row is an auto-disable to investigate. A lane healthy at 7–11 s on its history page that fails only inside an IO spell is estate-bound, not a console problem.
+
+## pg_cron slot science (2026-09-20, learned on leg 324's four kills)
+
+- 📏 **Measure the HOUR before the minute, in busy cron-seconds, not arrivals:** `sum(end_time - start_time)` per UTC hour over 4 days, every job but the one you are placing. Every `*/6`, `*/3`, `*/2` job lands on hours divisible by 6 — measured `{0,6,12,18}` = 45,213 busy-s/day vs `{1,7,13,19}` = 23,029 (a dated sample: re-run it). A "free minute" inside a busy hour is not free.
+- 📏 **Score a candidate minute by OTHER-JOB SECONDS overlapping a window as wide as the job**, including runs that START in the next hour (`:59` + 300 s runs into `0 */2` and `3,33`). Check weekday-only jobs (Sunday 08:08Z `rpc-allday-dedup-full-weekly`) and check two heavy jobs against EACH OTHER, not only against the estate.
+- ⛔ **Two kills on two measured slots with io_wait > 9 ⇒ the READ is the lever; stop moving it.** Re-shape (store closed time-slices, probe the live slice) — a third move is a fourth kill.
+- ⚠ **`job startup timeout` for every job in a minute where only 2–3 run is the launcher blacked out by disk saturation, not slot exhaustion** — a control that reads that says nothing about the job; reschedule it.
+- ⚠ **A control for a `cron_heavy` job must run AS cron_heavy through its SECDEF function** (a one-off `zz-*` job calling `run_thp_leg_logged(...)`); the role has no table SELECT and a `postgres` run measures a different budget. **Unschedule every `zz-*` probe in-session** (`SET LOCAL ROLE cron_heavy; SELECT cron.unschedule('zz-…'); RESET ROLE;` — as `postgres` it reads "could not find valid entry") and assert `count(*) FROM cron.job WHERE jobname LIKE 'zz-%'` = 0 before closing. `cron.schedule(<same jobname>, …)` preserves the jobid; verify a move by its next TICKS in `cron.job_run_details`, never by the schedule string.
+- ⚠ **A "warm number" is not a control:** a run right after another job streamed the same rows measures the cache, not the read (R107's 45 s control was 600+ s cold). Say the cache state with every duration.
+- ⚠ `cron.job.command` carries live gate keys: `command !~* 'key|token|secret|bearer'` before printing one.
 
 ## When a cron-fired pipeline fails intermittently
 

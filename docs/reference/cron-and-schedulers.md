@@ -86,6 +86,16 @@ from cron.job where jobname = '<name>';
 
 ⚠ `cron.schedule` on an EXISTING jobname **updates in place and PRESERVES the jobid** — use it to amend a command. Do not unschedule+reschedule, which churns the jobid and breaks anything keyed on it.
 
+## ⛔ A 600 s READER WANTS AN HOUR-SET, NOT A MINUTE — hours divisible by 6 are the three busiest of the day, and after two slot moves the READ is the lever (2026-09-20, leg 324)
+
+Jobid 324 `rpc-thp-leg-impossible-parallel` (cron_heavy, a ~270 s reader) was killed at 600 s on **four consecutive slots** — `48 0,6,12,18`, `31 0,6,12,18`, `59 23,5,11,17`, `52 1,7,13,19` — each chosen from a measured "free minute". Three things the fourth kill taught, in the order they should be applied next time:
+
+1. 📏 **Measure the HOUR first, in busy cron-seconds, not arrivals.** `sum(end_time - start_time)` per UTC hour over 4 days, every job but the one you are placing: **06Z 13,870 · 12Z 12,066 · 18Z 11,523 · 00Z 7,754** against **19Z 3,714 · 14Z 4,215**. Every `*/6`, `*/3` and `*/2` job lands on the hours divisible by 6, so the set `{0,6,12,18}` carries **45,213** busy-s/day and `{1,7,13,19}` **23,029**. A minute inside a busy hour cannot be free.
+2. 📏 **Score a candidate minute by OTHER-JOB SECONDS OVERLAPPING A WINDOW AS WIDE AS THE JOB (300 s here), including runs that start in the NEXT hour** — `:59` scored well on arrivals and ran straight into the `0 */2` / `3,33` pile. Check weekday-specific jobs (Sunday 08:08Z `rpc-allday-dedup-full-weekly`) and check two heavy jobs against EACH OTHER, not each against the estate.
+3. ⛔ **Two moves with the same kill and io_wait > 9 both times ⇒ stop moving it: the read is the lever.** The fix that worked was the same one every other lever that week took — partition the read by time, store the closed slices (`rpc_impossible_parallel_baseline`, a month grain, refreshed stalest-first inside a soft budget by jobid 575), probe only the live slice (61.5 s against 600+). The year grain was measured first (**480 s** for the live year) and rejected for being within reach of the cap. ⚠ A watermark on `sold_at` was the tempting cheap fix and is wrong for this metric: a re-key of an OLD sale never crosses the watermark.
+
+⚠ **"Startup timeout for every job in a minute where 2–3 are running" is the launcher blacked out by disk saturation, not slot exhaustion** (see the `job startup timeout` section below) — a control run that reads `job startup timeout` says nothing about the job; reschedule it. ⚠ **A control for a `cron_heavy` job must run AS cron_heavy through the SECDEF function** (`run_thp_leg_logged` via a one-off `zz-*` job) — `cron_heavy` has no table SELECT, so a hand query as that role fails `permission denied for table …`, and a `postgres` run measures a different plan budget. Unschedule every `zz-*` probe in-session (`SET LOCAL ROLE cron_heavy` when it owns it) and assert `count(*) FROM cron.job WHERE jobname LIKE 'zz-%'` = 0 before closing.
+
 ## ⛔ PICK A CRON SLOT FROM THE MEASURED HOURLY DISTRIBUTION — "the nightly band is busy" is BACKWARDS on this estate (2026-09-13)
 
 When `rpc-ccm-step2` (jobid 4, `25 23 * * *`) died on a 300 s timeout, the inbox filing's suggested durable fix was the intuitive one: **"move step2 off the spell band."** ⛔ **Refuted by the first query, before any work was done on it.**

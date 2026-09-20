@@ -1732,3 +1732,20 @@ git add -A && git commit -m "feat: ..." && git push origin main   # Git Bash (MI
 - Key env vars (8, incl. 3 absent from `.env.example`): [the "Key env vars" section of this file](#key-env-vars-displaced-verbatim-from-claudemd-2026-08-25-to-restore-memory-file-headroom) — the CLAUDE.md pointer this line carried resolved to THIS file, so displaced verbatim it became a self-link the memory-doc link guard reads as broken (CI red on `41239adb6`, 2026-09-19 10:50 PM PT).
 
 ---
+
+---
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — the "Windows / Git Bash" section
+
+Moved here whole to make room for R118 and the leg-324 hour-set rule; CLAUDE.md keeps a three-item pointer. Verbatim except the three self-links, re-pointed from `docs/reference/tooling-gotchas.md` to `tooling-gotchas.md` so they resolve from this directory (the link guard demands it).
+
+### (was CLAUDE.md) Windows / Git Bash
+
+- CRLF / heredoc / `curl`-vs-PowerShell: [tooling-gotchas.md](tooling-gotchas.md).
+- ⚠ **BACKTICKS IN `git commit -m "..."` ARE COMMAND SUBSTITUTION AND DELETE THE WORD SILENTLY** — the commit SUCCEEDS and the message still reads like prose. Write it to a file with a quoted heredoc (`<<'EOF'`) and use `git commit -F`.
+- ⚠ **Assert the occurrence count before a scripted replace** (`n = s.count(old); assert n == 1`) — a silent no-op replace has produced a mutation "result" off a broken baseline, and a first-occurrence replace has hit a file's own header comment. ⚠ **Key any backup on the FULL PATH, never the basename** — three `page.tsx` targets shared one `.bak` and two files of uncommitted work were destroyed.
+- ⚠ **Secret safety:** never broad-query the DOM (`querySelectorAll('input')`, full `read_page`) on pages that can hold secrets, and never echo Bearer/token values. ⚠ **`get_edge_function` AND `cron.job.command` BOTH hand back live gate keys** — each has burned one into a transcript (09-12). Redact or hash; never echo. Recipes: [tooling-gotchas.md](tooling-gotchas.md).
+
+Full detail: [docs/reference/tooling-gotchas.md](tooling-gotchas.md).
+
+

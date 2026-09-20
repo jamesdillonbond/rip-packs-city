@@ -87,7 +87,7 @@ Never omit `teamId` on a Vercel API/MCP call.
 **List moved to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-19** (package.json data). ⚠ **`npm ci` FIRST in a fresh sandbox**, or `npx vitest`/`tsc` die on `MODULE_NOT_FOUND … vitest.config.ts` — reads like a broken config. ⭐ **`tsc --noEmit` DOES run in the laptop VM** with `--max-old-space-size=3072`; it OOMs at the default heap, and writing that off as "CI will typecheck" put a compile error on `main` (09-19).
 
 
-⚠ **A pipe reports the LAST command's exit code** (`… | tail -5 && echo $?` printed `EXIT=0` with no `node_modules`) — read `${PIPESTATUS[0]}`. ⚠ **`grep <log> && git push` gates on grep FINDING a line, not on the run PASSING** (pushed a red suite 09-04). Branch on the EXIT value. ⚠ **A background-task notification's `exit code 0` is the WRAPPER's, not the command's.**
+⚠ **Exit-code traps — a pipe reports the LAST command's status (read `${PIPESTATUS[0]}`); `grep <log> && git push` gates on grep FINDING a line, not on the run PASSING; a background-task notification's `exit code 0` is the WRAPPER's** (verbatim: tooling-gotchas.md).
 
 ---
 
@@ -168,21 +168,18 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 
 ### Windows / Git Bash
 
-- CRLF / heredoc / `curl`-vs-PowerShell: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
-- ⚠ **BACKTICKS IN `git commit -m "..."` ARE COMMAND SUBSTITUTION AND DELETE THE WORD SILENTLY** — the commit SUCCEEDS and the message still reads like prose. Write it to a file with a quoted heredoc (`<<'EOF'`) and use `git commit -F`.
-- ⚠ **Assert the occurrence count before a scripted replace** (`n = s.count(old); assert n == 1`) — a silent no-op replace has produced a mutation "result" off a broken baseline, and a first-occurrence replace has hit a file's own header comment. ⚠ **Key any backup on the FULL PATH, never the basename** — three `page.tsx` targets shared one `.bak` and two files of uncommitted work were destroyed.
-- ⚠ **Secret safety:** never broad-query the DOM (`querySelectorAll('input')`, full `read_page`) on pages that can hold secrets, and never echo Bearer/token values. ⚠ **`get_edge_function` AND `cron.job.command` BOTH hand back live gate keys** — each has burned one into a transcript (09-12). Redact or hash; never echo. Recipes: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
-
-Full detail: [docs/reference/tooling-gotchas.md](docs/reference/tooling-gotchas.md).
+**Section moved VERBATIM to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) 2026-09-20.** The three that bite most: ⚠ **backticks in `git commit -m` are command substitution** (write the message to a file, `git commit -F`); ⚠ **assert the occurrence count before a scripted replace, and key any backup on the FULL PATH**; 🚨 **`get_edge_function` AND `cron.job.command` hand back live gate keys — redact or hash, never echo**, and never broad-query a DOM that can hold secrets.
 
 ### Database — the traps that bite most often
 
 - **PostgREST caps reads at 1000 rows and CLAMPS an explicit `.limit()` above that**; a bare `.select()` clamps too. For a total, read the returned `count` (`head: true`), never `rows.length`.
 - ⚠ **Any `.range()` pagination MUST carry a deterministic `.order()`** on a UNIQUE key, or it reads the right *number* of rows and the wrong *rows*. The duplicates and omissions **cancel**, so every count-based check passes — only a DISTINCT count or a set comparison sees it. Now a **ban at zero**.
 - **A batch `.insert()` is ALL-OR-NOTHING — never swallow `23505` on one.** One duplicate fails the whole statement and writes none of the batch; on a cursored indexer that is permanent loss.
-- ⚠ **A `LIMIT` bounds a query's OUTPUT, not its COST — "lower the limit" is often not a lever.** Cut ITEMS per tick, not rows per item, and compare **BUFFERS**, never timings — one `WHERE collection_id` took `drain_fmv_cold_tail` from 66,499 buffers to 741. ⚠ **Scoping an aggregate is an EQUIVALENCE claim: PROVE it over the population.**
+- ⚠ **A `LIMIT` bounds a query's OUTPUT, not its COST — "lower the limit" is often not a lever.** Cut ITEMS per tick, not rows per item, and compare **BUFFERS**, never timings — one `WHERE collection_id` took `drain_fmv_cold_tail` from 66,499 buffers to 741. ⚠ **Scoping an aggregate is an EQUIVALENCE claim: PROVE it over the population.** ⭐ **For an id list, one `LATERAL … ORDER BY ts DESC LIMIT 1` probe per key beats a table-streaming `DISTINCT ON` (5 instances; 40 ms vs 22–41 s) — and only a COLD A/B shows it.**
 - ⚠ **A differential upsert WRITES the delta but PROBES every offered row** — 55k probes to write ~60 were ~700k of a tick's 927k buffers. LEFT JOIN the target first (cast to ITS types), offer only the delta: −79 %/call (R101 v2, database.md).
 - ⚠ **`SET statement_timeout` on a function is INERT on pg_cron; via PostgREST only a HIGHER one applies (gateway cap ~120 s).** ⛔ Most are load-bearing — do NOT strip.
+- 🚨 **`EXCEPTION WHEN OTHERS` DOES NOT CATCH A 57014 KILL (R118, 35 handlers were blind).** A record-and-exit handler says `WHEN query_canceled OR OTHERS` — and ONLY where its tail is bounded: the timer is NOT re-armed after the catch. Loop handlers stay bare. `check_when_others_timeout_blind()` → `[]`; a forward-only migration guard (database.md).
+- ⛔ **A 600 s pg_cron reader wants an HOUR-SET before a minute — hours divisible by 6 carry ~2× the busy-seconds of `{1,7,13,19}` — and after two kills on two slots the READ is the lever: store the closed time-slices, probe the live one** (leg 324: cron-and-schedulers.md).
 - ⚠ **A queue walk that starts at the top of what it resolves COMPOUNDS** (three in one day, 09-07) — page a BOUNDED slice of the INDEX behind a cursor. Wire a new pg_net lane into the 4xx arm in its creating migration. [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
 - ⚠ **Every `apply_migration` causes a ~10–20 s burst of user-facing `PGRST002` 500s** (schema-cache re-introspection) — batch them, prefer a low-traffic window, and `rpcWithRetry` does NOT save you (database.md).
 - ⛔ **`CREATE OR REPLACE` IS A FULL-BODY WRITE — RE-READ THE LIVE OBJECT IMMEDIATELY BEFORE ONE.** A draft off a 40-min-old dump would have reverted another session's guard silently — you rewrite its pin too, so nothing reds; `pg_get_functiondef` LENGTH caught it. ⚠ On a VIEW it also RESETS reloptions, stripping `security_invoker=on` (4×) and cannot rename/reorder columns (`42P16`). [database.md](docs/reference/database.md)

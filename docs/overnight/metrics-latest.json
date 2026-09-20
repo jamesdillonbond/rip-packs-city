@@ -95,7 +95,7 @@
     "read": "atlas family ~87k s/day + jobid 303 wmc-fmv-changed 28.3k s/day dominate; R117 wmc autovacuum is one contributor, not the driver; all owned / Trevor / route-adjacent"
   },
   "post_ship_watch_pending": {
-    "jobid_324_thp_leg": "KILLED at 13:52Z too (602 s, io_wait 9-11) - four slots, four kills; the READ is the lever (4,477 parallel editions x ~385 sales across 7 partitions, serial_number from heap). Not moving again. 19:52Z (12:52 PM PT) is the last data point; then Trevor decides: covering (edition_id) INCLUDE (serial_number) on sales_* vs a watermark. NOTE: no 999 / terminal row was written by any kill until 20260920140611 (R118)",
+    "jobid_324_thp_leg": "RE-SHAPED 15:19Z (8:19 AM PT), migrations 20260920150414/151857/152137: stored per-month baseline (rpc_impossible_parallel_baseline, jobid 575 rotate 22 19 * * * cron_heavy, soft 420 s) + live-month probe. Control 8:21 AM PT 61.5 s, value 0, arm computed_at refreshed. Rotation control: 61 months / 320.6 s (budget 300); 19 months left for the scheduled runs. Exit: 19:52Z (12:52 PM PT) succeeded < 120 s; 19:22Z rotation ok=true months_refreshed >= 7. Falsifier: kill with io_wait < 3 => split the live month by week.",
     "jobid_506_precompute": "VERIFIED 09:35Z: 69 s (was 204), efc_drift_sample_mod=64, drift 0, nba_top_shot 7 ms; Pinnacle arm 57 s is the lane now",
     "r107_daily_reconcile": "FAILED 09:36Z at 600 s (cold streaming DISTINCT ON). Fixed 20260920095145 (per-edition probe, 74.7 s cold, control 51 s). NEXT: 09-21 09:36Z succeeded, pipeline_runs ok=true wall_ms<200000; NOTE the wrapper wrote no row for the 57014 - its killed-run-still-logs claim is unproven",
     "jobid_560_pack_rips_autovacuum": "DONE 09:07Z (2:07 AM PT, 55 min at 50/50): count 3, map 98.1 %, dead 431; dist 5974 lifecycle read Heap Fetches 4128 -> 93, 5.6 s -> 1.3 s cold. COST: six whole-minute launcher blackouts during the index phase (32 job startup timeouts, 0 ok in those minutes, 2-3 jobs running) = disk saturation at the minute boundary, NOT slot exhaustion",
@@ -105,7 +105,8 @@
     "matcher_pgcron": "VERIFIED: jobid 543 07:32Z ok 508 ms via=pg_cron gated:true; 08:00Z edge tick should read gated:true too",
     "pgnet_weekly_vacuum_full": "09:43Z Sunday took 117 s of 120 s inside the reconcile window, ACCESS EXCLUSIVE blocked every pg_net lane ~2 min. Moved to 16 9 * * 0 (20260920095221). NEXT: 09-27 09:16Z < 30 s",
     "jobid_490_portfolio_retry": "VERIFIED 11:17Z: ok 526 ms via=pg_cron already_snapshotted=27",
-    "r118_when_others": "NEW P1: EXCEPTION WHEN OTHERS does not catch query_canceled; five pg_cron wrappers fixed 14:06Z (20260920140611) with a positive control (killed leg now logs ok=false 57014). OWED: 8 pinned legs + 34 functions + a repo guard. EXIT: next real 600 s kill of any leg writes a terminal thp-leg-* row ok=false"
+    "r118_when_others": "NEW P1: EXCEPTION WHEN OTHERS does not catch query_canceled; five pg_cron wrappers fixed 14:06Z (20260920140611) with a positive control (killed leg now logs ok=false 57014). OWED: 8 pinned legs + 34 functions + a repo guard. EXIT: next real 600 s kill of any leg writes a terminal thp-leg-* row ok=false",
+    "r118_sweep": "COMPLETE 09-20 ~8:10 AM PT: 35 handlers catch query_canceled (20260920140611/143546/143959), 12 loop handlers left bare, check_when_others_timeout_blind() = [] (instrument 20260920144120), leg pins assert the 999 IS reachable, repo guard new-plpgsql-recording-handlers-catch-query-canceled shipped by the concurrent Claude Code session. Exit: instrument stays []; the next real 600 s leg kill writes 999 + its terminal row."
   },
   "needs_trevor": [
     "#126: jobid 303 refresh_wmc_fmv_changed (28.3k s/day, #1 FMV reader) and atlas-sync family (~87k s/day) are the cron-fleet cost - both need a product/architecture decision, not an autonomous lever",
@@ -115,5 +116,22 @@
     "Golazos Sales Ingest >168h warn threshold vs a market with ~10-day gaps"
   ],
   "evening_pass_addendum_0215pt": "Cowork evening session read four watches after this file was written; results folded into post_ship_watch_pending above. Ledger entry 2026-09-20 \"THE pack_rips QUIET-HOUR PASS COMPLETED\".",
-  "evening_pass_addendum_0305pt": "Cowork evening session: jobid 539 reconcile re-shaped (20260920095145) and jobid 542 moved (20260920095221) after both failed/collided on their first scheduled Sunday ticks; ledger entry 2026-09-20 \"R107 DAILY FULL RECONCILE DIED AT 600 s\"."
+  "evening_pass_addendum_0305pt": "Cowork evening session: jobid 539 reconcile re-shaped (20260920095145) and jobid 542 moved (20260920095221) after both failed/collided on their first scheduled Sunday ticks; ledger entry 2026-09-20 \"R107 DAILY FULL RECONCILE DIED AT 600 s\".",
+  "evening_pass_addendum_0835pt": {
+    "shipped": [
+      "20260920143546 R118 batch two",
+      "20260920143959 R118 batch three (pinned)",
+      "20260920144120 check_when_others_timeout_blind()",
+      "20260920150414/151857/152137 leg 324 month-grain baseline + jobid 575",
+      "29ea0e4d9 /api/fmv + fetchFmvBatch on get_editions_latest_fmv_wide",
+      "skills rpc-migration/rpc-cron-ops/rpc-audit-drain/rpc-nightly-autonomous-pass extended + re-packed",
+      "CLAUDE.md R118 + hour-set + probe-shape rules (Windows/Git Bash section displaced verbatim)"
+    ],
+    "verified": [
+      "rpc-cron-ops installed md5 == repo (Trevor's save)",
+      "zz-* probes 0",
+      "leg 324 control 61.5 s value 0",
+      "rotation control 61 months ok=true"
+    ]
+  }
 }

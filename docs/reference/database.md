@@ -1961,6 +1961,19 @@ client actually sends; it is not one for concluding a query never ran.
    19.5 s, six pages, paired statement-timeout + 45 s lambda kill.
 3. **`fmv_current`** in the same route's `computeAllDaySniperFeed`, the read `fetchFmvBatch` two
    functions away had always done correctly.
+4. **`refresh_edition_fmv_current(true)`** — R107's daily full reconcile (2026-09-20): the streaming
+   `DISTINCT ON` over ~1.2 M snapshots died at 600 s on its first cold tick after a 45 s WARM control;
+   re-shaped to `editions e CROSS JOIN LATERAL (… WHERE fs.edition_id = e.id ORDER BY computed_at
+   DESC LIMIT 1)` — 74.7 s cold, 51 s control (`20260920095145`).
+5. **`get_editions_latest_fmv_wide(uuid[])`** — the id-list readers of `v_fmv_current_wide` /
+   `fmv_current` (100 ids: 40 ms via the per-id probe against 22–41 s through the view).
+
+⭐ **The general shape, five times now: when the caller has an id list or a bounded slice, one
+ordered index probe per key (`LATERAL … ORDER BY ts DESC LIMIT 1`) beats a `DISTINCT ON` that streams
+the whole table, and the gap grows with cache pressure — a warm A/B hides it entirely.** ⚠ **The
+"warm number" trap that shipped R107 wrong:** a control run right after another job streamed the
+same rows is a warm measurement of a read that will run cold. Measure after an eviction, or state
+the cache state with the number.
 
 ### ⛔ "THE DB SIDE IS ALREADY CLEAN" — the sweep that said so MISSED TWO LIVE INSTANCES IN app/
 

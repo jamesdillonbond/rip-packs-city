@@ -86,6 +86,12 @@ Wrap in a 3-attempt retry (origin moves constantly). Hard rules, each learned th
   (content lands, attribution muddles — acceptable); they may ship the OPPOSITE fix to yours (one
   session reverts, the other adapts) — the ledger is how it converges, so write yours immediately.
 
+### Path A from the cloud, proven 2026-09-19/20 (patches → VM `git am` → push)
+
+Commit in the cloud clone → `git format-patch origin/main -o /mnt/user-data/outputs/pN` → `device_commit_files` into `…\_to_delete\cowork-patches-<date>\pN-000X.patch` → on the VM: `git fetch && git reset --hard origin/main && git am -3 -q <patches> && git … push origin HEAD:refs/heads/main`, 3 attempts. ⛔ **`HEAD == ls-remote` is NOT the success test on this path** — after a failed `am` HEAD still equals origin and the loop printed `PUSH_CONFIRMED` over a push that never happened. Gate on `git am`'s exit AND `git log -1 --format=%s | grep -q '<your subject>'` on the pushed tip. `am` rewrites the sha, so the cloud clone then reads "unpushed": `git fetch && git reset --hard origin/main` — ⛔ **only after `git stash -u` of uncommitted work, and `git stash` does NOT cover a LOCAL COMMIT** (one was dropped and recovered by `git cherry-pick`; check `git log origin/main..HEAD` first). ⛔ **Never `git checkout -- <file>` to undo a mutation check** — it reverts the whole file's uncommitted edits; undo with the inverse `sed`.
+
+⭐ **Skills:** the repo sources are `docs/cowork-skills/<name>/SKILL.md`; edit there, `node scripts/pack-cowork-skill.mjs <name>` (deterministic zip), `npm run skills:bundles:check`, then hand Trevor a `propose_skills` improvement card (target = the installed skill name) — a one-tap save from mobile. Verify a save by md5 of the installed body under `~/.claude/skills/synced/*/<name>/SKILL.md` against the repo source.
+
 ## 2. DB shipping
 
 - `apply_migration` for DDL; then **read the version from `supabase_migrations.schema_migrations` and
@@ -101,6 +107,7 @@ Wrap in a 3-attempt retry (origin moves constantly). Hard rules, each learned th
   marker (or a 3-role REVOKE) or `migration-new-function-states-its-anon-exec-decision` reds. Same
   signature preserves ACLs; say so in the marker, and verify post-apply: anon EXECUTE false +
   `jsonb_array_length((select check_secdef_anon_exec_drift())) = 0`.
+- 🚨 **`EXCEPTION WHEN OTHERS` does not catch a 57014 kill** — a record-and-exit handler needs `WHEN query_canceled OR OTHERS`, only where its tail is bounded; loop handlers stay bare (R118, rpc-migration skill). Repointing a route from a view to an RPC is a fixture KEY rename in the shared harness (`rpc:<name>` serves `rpc(name)` with the same `{data,error}` envelope); a hand-rolled `vi.mock("@supabase/supabase-js")` needs an explicit `rpc` method. Mutation-check by misspelling the RPC name — the tests must go red.
 - Changing a function's behavioural pin also means auditing the pin's OWN tests — an error-injection
   test that drops a table the new body no longer reads silently stops proving anything.
 - pg_cron: `cron.schedule(<same jobname>,...)` preserves jobid; `cron_heavy`-owned jobs need
