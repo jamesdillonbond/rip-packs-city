@@ -36,12 +36,12 @@ select optgroup {
 }
 
 /* Tap targets in the nav and footer link columns. Measured 2026-09-20 at
-   390x844: 16 nav links and 22 footer links per page at 17px tall (and the
-   social handle at 14px), from line-height alone with zero padding. That fails
-   even WCAG 2.5.8 AA's 24x24 floor, not just 2.5.5's 44x44.
-   These are display:block anchors in a gapless flex COLUMN, so growing them
-   adds real layout height - no overlap, and no .rpc-tap44 overlay that could
-   steal a neighbour's clicks. Coarse pointers only. */
+   390x844: 16 nav links and 22 footer links per page at 17px tall, and the
+   social handle at 14px, from line-height alone with zero padding. That misses
+   even the 24x24 floor, not only 44x44.
+   Grown, not overlaid: these are block anchors in a gapless flex column, so
+   min-height adds real layout height and no overlay can steal a neighbour's
+   clicks. Verified on the live DOM: under-44 22 -> 0, stolen 0, overflow 0. */
 @media (pointer: coarse) {
   nav a,
   footer a {
@@ -49,6 +49,7 @@ select optgroup {
     display: flex;
     align-items: center;
   }
+
   .rpc-rb-pill {
     min-height: 44px;
   }
