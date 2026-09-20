@@ -81,7 +81,22 @@ function unreachable() {
 // ⚠ RATCHET, NOT A TARGET. Lower it in the SAME commit that extracts or mirrors
 // a function; never raise it. A NEW edge function shipping with nothing reachable
 // pushes the count above the budget and reds CI — which is the point.
-const BUDGET = 10
+/* 10 -> 9 on 2026-09-19: `hybrid-custody-backfill` (388 lines) left the NEITHER
+ * bucket — its two probe decoders were mirrored into
+ * `_shared/hybrid-custody-probe-decode.ts`, unit-tested (16 cases), and pinned.
+ * Bucket is now 9 fns / 1,470 lines (was 10 / 1,858).
+ *
+ * ⚠ Worth being exact about what that buys, because this file's own header says
+ * a mirror is a PROXY: what is now reachable is the two decoders that decide the
+ * probe's outcome — both of which fail to an EMPTY value (null / []) rather than
+ * to an error. The other ~300 lines of that function are still unreachable. The
+ * budget moved because the ratchet's definition says it did, not because the
+ * function is covered.
+ *
+ * ⭐ It was only pinnable at all after the drift guard's extractor was fixed the
+ * same day: `extractScriptResultB64` contains `startsWith("{")`, and the old
+ * brace-counter unbalanced on that string literal. */
+const BUDGET = 9
 
 describe("edge functions have behaviour a test can reach", () => {
   it("the walk and the registry both found their populations (not vacuously passing)", () => {

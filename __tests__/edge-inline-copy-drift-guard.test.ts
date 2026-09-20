@@ -210,6 +210,16 @@ const PINS: Array<[string, string, string, string]> = [
   ["pack-ev-edition", "computeDualPrice", "compute-topshot-pack-ev", "primary-vs-secondary pack price selection; drift silently re-prices every pack"],
   ["pack-ev-edition", "editionExtKey", "compute-topshot-pack-ev", "edition keying for the EV pool; a mis-key attributes pulls to the wrong edition"],
   ["pack-ev-edition", "normalizeTier", "compute-topshot-pack-ev", "tier normalisation feeding grail odds"],
+  // ── Added 2026-09-19, and only possible BECAUSE of the extractor fix above ──
+  // `extractScriptResultB64` contains `startsWith("{")`. Under the old
+  // brace-counter that string literal unbalanced the depth and extraction
+  // returned null, so this parser could not be pinned at all — a gap invisible
+  // from the pin list. Both functions here fail to an EMPTY value rather than to
+  // an error (null / []), which is the platform's most productive defect class:
+  // an account WITH linked children reads as an account with none. Unit-tested
+  // in __tests__/edge-hybrid-custody-probe-decode.test.ts (16 cases).
+  ["hybrid-custody-probe-decode", "extractScriptResultB64", "hybrid-custody-backfill", "Flow REST /v1/scripts shape sniffer; a wrong branch feeds JSON to atob()"],
+  ["hybrid-custody-probe-decode", "parseAddressArray", "hybrid-custody-backfill", "Cadence Address[] decode; drift silently reports linked children as none"],
   // Cadence/base64 decode paths — a drift here corrupts the whole on-chain read rather
   // than failing loudly, which is what makes these worth pinning over prettier targets.
   ["cdc", "unwrapCdc", "ingest-pinnacle-mints", "JSON-Cadence decode for Pinnacle mint events"],
