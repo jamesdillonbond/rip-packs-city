@@ -11,6 +11,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🏁 R115 CLOSES STRUCTURALLY — the confidence precompute reads the 21k-row newest-snapshot cache R107 made trustworthy tonight instead of streaming 1.1 M snapshots through a DISTINCT ON: Top Shot 5,286 ms → 31 ms · Cowork cloud + laptop VM
+
+**Shipped: 1 migration (`20260920024430`): `refresh_fmv_confidence_precompute()` re-sourced, two provenance columns on `fmv_confidence_precompute`, `efc_drift_rows` in the run record. In-migration positive control as the job's role.**
+
+🏁 **The chain that made this shippable.** Entry 1's `20260920001632` raised jobid 506's ceiling and wrote in its header that the structural fix stayed open — and why the obvious source was off limits: *"Reading `edition_fmv_current` instead is forbidden in writing by that table's own column comment (R107)."* Entry 4 closed R107 (full reconcile callable, ran, daily; drift guard 0) and rewrote that comment into a GATE for new readers: drift guard at zero + a fresh full-reconcile row. Both hold (drift `[]` at 7:5x PM PT; full reconcile 7:03 PM PT). So the ban's premise is gone and the table is exactly what the precompute wants — the newest snapshot per edition.
+
+📏 **Equivalence proved over the population, not assumed.** At 7:5x PM PT the cache disagreed with the live DISTINCT ON on **2,068 editions** (233 of them on `confidence`) — and **every one of them had its newest snapshot stamped AFTER the cache's last refresh** (7:08–7:36 PM PT): `behind_but_older_than_watermark = 0`, `missing_from_cache = 0`. The cache is the live answer minus at most one hourly refresh of lag. The precompute's only consumer is `rpc_ops_snapshot()` at 6-hourly cadence, so a ≤ 1 h-old distribution is *fresher* than the previous tick's. ⚠ A first, sloppier comparison (DISTINCT ON bounded by the cache's global `max(computed_at)`) showed 155 rows of "drift" — an artifact of bounding by a global stamp when the lag is per-edition. The per-edition check is the one that counts.
+
+🔧 **What changed:** the snapshot arm is `SELECT confidence, count(*) FROM edition_fmv_current WHERE collection_id = … GROUP BY 1`; the Pinnacle arm is untouched; each row now records `source` and `source_newest_computed_at` (the lag is readable, not inferred); each `pipeline_runs` row carries `efc_drift_rows` from the full drift guard (so a distribution computed off a drifting cache says so). `sentinel_fmv_confidence_rows(uuid)` is kept (pinned, history) with no scheduled caller. Same signature ⇒ ACL preserved (asserted: anon/authenticated false, service_role true).
+
+✅ **Control (inside the migration, as postgres):** `nba_top_shot` **5,286 ms → 31 ms**, run total 5.9 s (of which the drift guard ~4 s); **Candy 62.4 % and Pinnacle 28.0 % unchanged to the decimal** vs the 6:35 PM PT run under the old source — the no-change control the register asked for; Top Shot HIGH+MEDIUM **52.7 %** (CLAUDE.md's observed 53 %); `efc_drift_rows` 0; secdef drift 0. ⚠ One guard round: the `anon-exec` marker must carry the function name on ITS OWN line — a wrapped marker reds `migration-new-function-states-its-anon-exec-decision` (fixed before commit). **Exit:** the 10:35 PM PT tick succeeds with Top Shot < 2 s and `source = 'edition_fmv_current'` on five rows. **Falsifier:** `efc_drift_rows > 0` on a run ⇒ the counts inherit R107's drift; a UFC/Golazos lag of days is expected (no new snapshots), a Top Shot lag > 2 h is not (jobid 357 stalled).
+
+- **Revert:** migration header (re-apply the `20260920001632` body; the columns are nullable and may stay).
+
 ### 2026-09-19 · 📉 FOUR LANES STEPPED ON 09-17 AND THE TRIAGE BLAMES AN OUTAGE FROM THE NEXT DAY — plus the three-day clean control that proves it is not the tier's ceiling · Claude Code (Windows box)
 
 **Shipped: register item #126 + this entry. No code, no DB change — a measurement.**
