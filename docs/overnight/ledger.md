@@ -11,6 +11,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ THE PAGE-DEDUP HANG IS FIXED — and the reason I deferred it yesterday was itself a measurement error · Claude Code cloud
+
+**Shipped:** `20260920185051_audit_20260920_pack_page_dedup_tests_in_flight_not_merely_dispatched`. `collect_pack_nft_identity`'s next-page guard now tests **`AND d.collected_at IS NULL`**.
+
+**The defect.** The guard matched `(wallet, cursor, dispatched_at within 2 h)` and **never whether that request was still UNCOLLECTED**, so an already-collected request from a PREVIOUS cycle suppressed the CURRENT cycle's dispatch and nothing could complete the sync — the row it waited on was already done. ⭐ It RECURS because the cursor is **stable across cycles while holdings are stable**, so any multi-page wallet re-synced inside 2 h collides with its own chain.
+
+🚨 **THE DEFERRAL REASON WAS WRONG, AND THAT IS THE LESSON.** I wrote that "no committed copy is byte-identical to live (the two 09-19 migrations differ by 4–5 chars)" and used it to justify not touching a 15.6 KB hot lane. **I had compared the wrong things.** `pg_get_functiondef` **REFORMATS THE HEADER** (` RETURNS jsonb`, ` LANGUAGE plpgsql` gain leading spaces), so diffing it against a migration FILE shows a few characters of difference that are pure formatting and read as drift. ⭐ **`prosrc` is stored VERBATIM.** The body of `20260919053000_*.sql` is **byte-identical to live `prosrc` — 15,432 chars, md5 `d951ad91e2a1829d2b7bacefbb0c6dd0`** — which made this a two-minute patch from a cryptographically verified base. ⚠ **Compare `prosrc` to the migration's BODY, never `functiondef` to the file.** This is exactly the filed-decision-not-to-act CLAUDE.md warns about: *a cost stated with no number in it*, and nobody re-checks it.
+
+**Applied against a re-verified base** (live `prosrc` md5 still `d951ad91…` immediately before apply, anchor present exactly once, not already patched), parse-tested on a local Postgres first.
+
+⭐ **Proved the DB holds exactly the committed file, not merely something equivalent:** applying that file to a local cluster yields `prosrc` md5 **`9217c411a9e17fc38e8508947f6bd362` / 15,849 chars**, and live reads the identical md5 and length. ACL re-verified after apply: anon `false`, service_role `true`, `prosecdef` true.
+
+**POSITIVE CONTROL, by the production caller, with the failing condition actually present.** ⚠ The first re-sync was NOT a valid test and is recorded as such: the old colliding request had aged past 2 h, so the bug could not have reproduced — that run proves no regression, nothing more. So I **rebuilt the collision**: completed a sync (page 2 dispatched minutes earlier, then collected), then forced another. Asserted the precondition first — `collected_page2_inside_window = 1` — then ran the lane: page 2 **dispatched** (`pending_requests: 1`) where the old guard would have suppressed it, and the next tick returned **`wallets_done: 1`**.
+
+**Result: 27/27 wallets complete, 0 walking, 0 errored, 0 without a floor**, `check_wallet_pack_sync_floor_drift()` → `[]`, `check_secdef_anon_exec_drift()` → `[]`.
+
+⭐ **The moments finding from earlier today is CLOSED and VERIFIED, by outcome not by merge.** Another session shipped `defc1d55e` (a saved-wallet sweep riding the four existing cohorts, excluding wallets an active seeded row already walks). `check_wmc_ownership_freshness()` saved-wallet stale pairs: **5 → 0** (worst was 42.9 days). 42 stale pairs remain, none of them a saved wallet. ⚠ **Filing it with a measurement rather than shipping it was the right call** — it was fixed properly by the session that owned that lane, and it sized the marginal load at exactly the 5 wallets measured.
+
+⚠ **AND THE COST PREMISE I CITED HAS SINCE EXPIRED.** I declined to widen that fan-out because the instance sat at **93 % of Small's 22 MB/s baseline**. Compute moved to **LARGE** the same day (79 MB/s / 3,600 IOPS), so that objection no longer holds — CLAUDE.md now flags every pre-09-20 finding citing the 22 MB/s floor for re-measurement, and **my 40.8 s whale-wallet reading is one of them** (already refuted separately: 139 ms warm).
+
+**Revert:** re-apply the `collect_pack_nft_identity` body from `supabase/migrations/20260919053000_audit_20260918_wallet_pack_sync_one_request_per_wallet_and_hourly_freshness.sql` — unchanged apart from this one predicate.
+
 ### 2026-09-20 · 🔭 SWEPT THE FOLD CLASS PAST THE ONE THAT BLED — three more base58-destroying sites, all LATENT, and the measurement that says so is the point · Claude Code cloud
 
 **Shipped: `app/dashboard/DashboardClient.tsx` (8 key sites) + `lib/wallet/verified-wallets.ts` + `lib/dashboard/aggregate.ts`, all onto `normalizeAddress`. 7 new test arms across 2 existing files, planted-defect control 3 red / 28 green. No DB change.**
