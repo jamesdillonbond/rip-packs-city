@@ -1,6 +1,6 @@
 ---
-name: rpc-cron-ops
-description: "Rip Packs City cron operations — load when scheduling, moving, debugging, or automating cron-job.org entries or GitHub Actions schedules for RPC. Triggers on \"cron job\", \"cron-job.org\", \"schedule a job\", \"stagger\", \"change the frequency\", \"the cron is failing\", \"next execution\", or driving the cron-job.org console in Chrome. Encodes the auth gotchas, the stagger discipline, the 30s-cap rule, and the hard-won console automation recipe."
+name: "rpc-cron-ops"
+description: "Rip Packs City cron operations — load when scheduling, moving, debugging, or automating cron-job.org entries or GitHub Actions schedules for RPC, or driving the cron-job.org console in Chrome."
 ---
 
 # RPC cron operations
