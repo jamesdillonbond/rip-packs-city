@@ -1938,9 +1938,15 @@ Top Shot ids: view **40.9 s cold / 22.6 s warm, ~7,400 buffers**; `get_editions_
 Migration `20260920044216` adds `public.get_editions_latest_fmv_wide(uuid[])` — the narrow helper's
 selection rule returning **all 15 view columns** (`wap_usd` = `asp_usd`), service_role only.
 `wallet-search` ×2 and `cache-refresh` were repointed the same night (fixtures moved to the
-harness's `rpc:` key, mutation-checked); `fetchFmvBatch` and `/api/fmv` are the two remaining
-wide readers and take the same one-line edit. The rule stands — *rank by observed total* — it is
-the total that moved.
+harness's `rpc:` key, mutation-checked); **`fetchFmvBatch` (sniper-feed, 500 ids per call) and
+`/api/fmv` (both reads, with a `fromWideRows()` shim: the helper's `asp_without_outliers` is the
+route's `wap_without_outliers`) followed 09-20 8:0x AM PT** — the five hottest id-list readers are
+on the helper. **Twelve `fmv_current` readers remain on the view**, each small-list or capped:
+`allday-pack-ev`, `pack-ev`, `golazos-sniper-feed`, `allday-wallet-search`, `wallet/seed`,
+`profile/watchlist` + `watchlist` (via the chunked helper), `alerts`, `support-chat`, `rtr/lock-roi`,
+`recent-sales` (capped 50 — leave it) and `lib/market-sources.ts`. Convert one when
+`pg_stat_statements` ranks it, not before (`fmv-current-reads-are-keyed-on-edition-id` pins the
+floor at 8 sites). The rule stands — *rank by observed total* — it is the total that moved.
 
 ⚠ Both readings above carry one caveat: `pg_stat_statements` sits at **4,905 of 5,000 entries**, so it
 is evicting and every total here is a LOWER BOUND. It is the right instrument for reading what a
