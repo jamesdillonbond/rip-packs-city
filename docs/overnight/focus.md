@@ -4,6 +4,27 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-19 ~10:1x PM PT (Claude Code, Windows box; session close — THREE falsifiers owed on the clock, and the steer below this one is SPENT)
+
+⛔ **THE 2026-09-18 STEER DIRECTLY BELOW IS SPENT — DO NOT ACT ON IT.** Its subject is the platform outage, and **#122 was RESOLVED 2026-09-18 12:0x PM PT**. Everything it says about probing `/auth/v1/health`, the 522s and the owed `pg_stat_activity` read is history. ⚠ Its one durable line is worth keeping in mind and nothing else: **ISR masks a dead database from a browser — probe the API routes, never a page.**
+
+👉 **THE LIVE ITEM IS #126** — *the whole cron fleet is ~10× slower at constant work since 09-15*. Total busy-seconds per day at **flat ~9,300 runs**: 09-15 **34,236** → 09-19 **233,894**. ⛔ **Cause NOT established.** Ruled out by reading: bloat, schema change, and #73's worker-starvation mechanism. **R117 (wmc autovacuum, ~3.4 h/day of index-pass IO) is the leading candidate and is not proven.**
+
+## ⏳ THREE FALSIFIERS OWED, each gated on a clock — do these FIRST, they are cheap and dated
+
+1. **R115 is UNMEASURED and looks measured.** jobid **506** last ran 01:35Z and **succeeded in 12.3 s** (vs 124.1 s / 120.4 s failures before it) — but that tick **PREDATES R115 by 69 minutes** (applied 02:44Z). ⛔ **Do not credit R115 with the 12.3 s.** First genuine post-R115 run: **05:35Z** (`35 1,5,9,13`).
+2. **The `candy_special_serials_board` −92 % prune is unverified.** `public_board_liveness_state` still holds the **pre-prune 00:28Z** sweep (**5,193 ms** vs a 4,100 ms budget). **Next sweep 06:28Z** (jobid 288). **Holds ⇒ that board leaves the over-budget set on its own; does not ⇒ the prune missed the path the probe exercises.**
+3. **The vacuum-saturation falsifier wants its post-06:00Z series.** So far: **3** (04:18Z) · **2** (04:21Z) · **0** (04:37Z) · **0** (05:03Z). ⚠ **Only the last two are after the 04:25:28Z churn-table back-off.** **Persistently 3 ⇒ the 0.02 thresholds on 41 tables need sizing against a 22 MB/s budget; 0–1 ⇒ catch-up and that paragraph is spent.** ⚠ `pack_rips` is excluded until **08:12Z**, so an earlier sample is not the full set.
+
+## ⛔ MEASUREMENT PRECONDITION THAT NOW BINDS EVERY READING HERE
+
+🚨 **THE TREE CANNOT BE FROZEN — two to three sessions ship this estate unannounced.** Three separate readings on 2026-09-19 spanned an intervention the measurer did not know had landed. 👉 **Before interpreting ANY before/after, run `SELECT version, name FROM supabase_migrations.schema_migrations WHERE version >= '<your window start>'` and read what landed inside your own window.** One query, decisive, and it would have caught all three. **Windows are MINUTES, not hours.**
+
+## 🟡 NEEDS TREVOR — two, and neither is code
+
+- **`fast_break_runs.is_active` sits on the OLDER of two long-finished runs** (`Playoffs Run 1`, ended 2026-05-19) while the newer reads `false`. The surface is now honest either way (the badge compares the end date), so this is **not urgent** — but in the offseason arguably neither run should be active. **Product call.**
+- **`CLAUDE.md` headroom.** ⚠ **Measure with Node `.length` and nothing else**: on the 09-19 file `wc -c` read **40,641** (would declare it 641 OVER) and Python `len()` **39,987** (5 more than exists — exactly 5 non-BMP 🚨 characters). **The two wrong tools fail in opposite directions on the real file.**
+
 ## STEER — added 2026-09-18 ~09:3x AM PT (Claude Code desktop; the DB event is PLATFORM-SIDE — do not chase our own load)
 
 🚨 **IF THE DB IS STILL UNREACHABLE WHEN YOU RUN, THE CAUSE IS ALREADY SETTLED AND IT IS NOT OURS. Do not re-derive it, and do not act on the nightly pass's "first suspect".** That handoff names *"connection-pool/IO saturation from concurrent pipeline load on the SMALL tier (wallet-backfill fan-out back-pressure, inbox 09-13)"* as the leading candidate. **It is NOT SUPPORTED for this event.** ⛔ **Do NOT throttle a pipeline, pause an ingest lane, or re-tune `fmv-recalc` on account of it** — that is a fix aimed at a fault we do not own, and pausing an ingest lane creates real data gaps.
