@@ -66,10 +66,18 @@ Ledger entry (top of `docs/overnight/ledger.md`) carries revert paths for all fo
 - 📏 `pack_table_rows` measured (35 k buffers, CPU-bound, pinned view) — not changed.
 - Not taken: dropping `portfolios`/`portfolio_moments`; Golazos threshold; backfilling 09-12's snapshot.
 
-## Needs Trevor (unchanged from the morning, plus one)
+## Fifth pass (7:20–7:45 PM PT) — the structural residuals, and a stale register cell
 
-#22 purge residue · #55 the two 2-hourly Routines · #75 pg_net response store 10.2 GB (VACUUM FULL) · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader · **new:** whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · **new:** the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.
+- 🚪 **R98 closed** (`66089747d`, deployed READY). The register still called the `/api/cache-refresh` half "UNSHIPPED" a day after `cd0ab66a1` shipped its per-wallet cooldown — corrected from `git log`. What was genuinely open: a client naming a *different* whale each call. Now bounded per client key, 12/min sliding, 429 + Retry-After **before** the cooldown read (a refused call costs no DB read). Mutation-proven; six suites + tsc + ratchet green. Per-call cost of one whale wallet deliberately untouched (the "Last updated" contract).
+- 🧭 **Matcher's weekly full run has a pg_cron home** (`20260920022633`, jobid 543, 12:32 AM PT, 300 s prefix, no gateway). The 08:00Z edge tick becomes the gated daily check. Probe as the production caller: row written, gated, 35 ms.
+- 📸 **Portfolio snapshot re-designed around the day, not the caller** (`20260920023318`). The aggregate is scoped to users without today's row (done path: 34 buffers / 13 ms, wmc scan `never executed`); pg_cron primary jobid 546 at **11:46 PM PT**, the 12:05 AM route and jobid 490 (4:17 AM) become millisecond retries. Probes: 27 rows / 4.4 s, then 0 / 33 ms. ⚠ 09-20's snapshot is therefore stamped 7:34 PM PT (the probe), not 11:46 PM — a one-time shift, not a gap.
+- ⚠ A 3-minute spell at 6:28–6:31 PM PT killed two pg_cron lanes (121 s / 120 s) and one `refresh_wmc_fmv_changed`; all recovered by 6:32. Unattributed (possibly my EXPLAIN probes — no IO-history table exists to check). Recorded in the ledger so it is not read as a regression.
+- CI: `e7c8372a8`, `66089747d`, `33fe4d9bb`, `d63e04367` all 21/21 green; `79b33a55c` building at 7:45 PM PT.
+
+## Needs Trevor
+
+#22 purge residue · #55 the two 2-hourly Routines · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader (FMV path) · whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.
 
 ## Not done, deliberately
 
-the two un-audited `parse_mode:"HTML"` senders (`alerts-send`, `detect-league-drift`) · the `[pack-detail]` 5 s read timeouts · R115's watermark rewrite · R107's full reconcile (needs the cold measurement and Trevor) · backfilling the missed `portfolio_snapshots` days (product call).
+the `[pack-detail]` 5 s read timeouts (mostly the smoke fixture measuring itself) · R115's structural watermark rewrite (Top Shot 78:1 DISTINCT ON) · `pack_table_rows` view shape (pinned; 35 k buffers CPU-bound) · an `updated_at`/version column on `fmv_snapshots` (the daily full reconcile bounds the hide time at ≤ 24 h) · backfilling the missed 09-12 `portfolio_snapshots` day (an absent point is more honest than an interpolated one).
