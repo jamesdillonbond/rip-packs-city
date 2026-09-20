@@ -11,6 +11,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 📏 #126 NOW HAS ITS PER-PIPELINE CONTROL: THE FIVE LANES IT WAS FILED ABOUT ARE **0 OF 34 FAILED** SINCE THE RESIZE, AND THE FIVE ALARM ROWS STILL READING high/medium ARE A WINDOW ARTEFACT · Cowork cloud
+
+**Shipped: docs only** — this entry plus a dated verification block on `known-issues.md` #126. No code, no DDL, nothing deployed.
+
+📏 **Measured 2026-09-20 4:40 PM PT, `pipeline_runs` 48 h window, split at the ONE change point that matters — the instance restart at 10:39:57 AM PT (Small → Large).** #126 resolved on an hourly *cost* series (34.5 s/job pre, 1.39 s/job post); this is the same claim on the *outcome* series, per lane, for the exact five pipelines #126 was filed about:
+
+| pipeline | pre-resize | post-resize |
+|---|---|---|
+| `backfill-pack-rip-metadata` | 29 / 42 failed (69.0 %) | **0 / 6** |
+| `lock-check-batch` | 42 / 81 failed (51.9 %) | **0 / 12** |
+| `run-insider-detectors` | 24 / 41 failed (58.5 %) | **0 / 6** |
+| `price-snapshots` | 8 / 52 failed (15.4 %) | **0 / 8** |
+| `fmv-backfill` | 6 / 12 failed (50.0 %) | **0 / 2** |
+| **total** | **109 / 228 (47.8 %)** | **0 / 34** |
+
+⭐ **0 of 34 against a pooled 47.8 % base rate is p ≈ 2.5e-10**, and `lock-check-batch` clears on its own sample alone (12 / 12 clean against 51.9 %, p ≈ 1.5e-4) — so this is not one lucky lane carrying the total.
+
+🚨 **THE OPERATIONAL POINT, because tomorrow's digest will mislead whoever reads it: `get_pipeline_alerts()`'s `failure_rate` arm pools TWO DAYS, so it straddles the restart and will keep publishing pre-resize rates until ~09-22 10:40 AM PT.** At 4:38 PM PT today it published `backfill-pack-rip-metadata` 61.0 % **high**, `run-insider-detectors` 52.6 % **high**, `lock-check-batch` 44.4 %, `fmv-backfill` 47.1 %, `daily-portfolio-snapshot` 28.6 % — **every one of those numbers is dominated by hours that no longer exist.** ⛔ Do NOT re-triage them as live defects; split at 10:39:57 AM PT first. This is CLAUDE.md's own *"a window straddling a deploy measures neither state"*, met in the wild on the estate's loudest arm.
+
+⚠ **`run-insider-detectors`' quoted last error — `nba_top_shot: upstream request timeout` — is a PRE-resize string.** It reads like a live upstream problem and is not one; the lane has answered 6 of 6 since.
+
+⚖ **What this establishes and what it does not.** Established: the outcome series steps at the same change point as #126's cost series, at flat run counts, across five independently-scheduled lanes. NOT established: causation from a single uncontrolled step (#126's own caveat stands), and the post window is only **6.0 h** — `fmv-backfill` contributes 2 runs and **`daily-portfolio-snapshot` contributes ZERO, so it is UNMEASURED, not clean** (it is also not one of #126's five).
+
+📌 **Falsifier, armed: any of the five recording a `statement timeout` failure before 2026-09-22 10:40 AM PT ⇒ capacity was not the whole story and that lane owns a defect of its own.** Exit condition: at 09-22 10:40 AM PT the alarm window is entirely post-resize and these five rows should have cleared themselves with no edit; a row still red then is a real finding.
+
+⛔ **Unchanged and still Trevor's — #130 is a LIVE outage, now ~5 h old:** `ingest-pinnacle-mints` forward + backfill have been silent since **11:40 AM PT** (304 and 298 silent minutes at 4:38 PM), **179 `{"error":"forbidden"}` dispatches since 11:40:55 AM**, sentinel `pg_net_http_403` **critical**. Cursors hold, so nothing is lost — it resumes on `supabase secrets set PINNACLE_MINTS_GATE_KEY=<the ?key= value jobids 83/84 send>`. ✅ The 403 alarm's OTHER population is the Atlas Cloudflare baseline (382 `Just a moment` bodies in the same 12 h, `first_pt` 10:40 AM) — **split the arm by body shape before attributing it.**
+
+- **Revert:** docs only — `git revert` the commit found by `git log --grep='per-pipeline control'`.
+
 ### 2026-09-20 · ✅ THE `p_limit` 2000 SHIP IS VERIFIED BY THE PRODUCTION CALLER, and CLAUDE.md gains the two rules this session actually earned · Claude Code, Windows box
 
 **Shipped: docs only** (CLAUDE.md + three reference docs + the inbox INDEX). ⚠ **Written from a throwaway worktree** — the shared tree holds another live session's uncommitted `app/globals.css`, and `git merge --ff-only` **correctly REFUSED** rather than clobber it. Recipe: `git worktree add --detach` at a SHORT path, commit, push, `worktree remove`; the shared tree is never touched and their work is never stashed. ⚠ **Origin moved twice mid-edit, including CLAUDE.md and this ledger — both were RE-APPLIED onto upstream's copies rather than written back.**
