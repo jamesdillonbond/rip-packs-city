@@ -268,3 +268,10 @@ regression that arrives quietly. If it ever becomes genuinely noisy, the princip
 are: require **2 consecutive** breaches (a real regression persists; contention does not), or
 normalise each probe against the same tick's sweep average so contention divides out — not a bigger
 number in `max_ms`.
+
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — diff the SET, not the count
+
+Displaced for space (see database.md’s twin note). **Still in force — moved, not retired**; its case already lived in this file, which is why it lands here. ⚠ **Its trailing self-pointer was rebased** (see the bullet) — a VERBATIM copy of a repo-root bullet into `docs/reference/` breaks every relative link it carries.
+
+⚠ **Diff the SET, not the count** — a total can hold while membership turns over twice, so the number reads "no change" across a fix landing *and* a new arm firing. Case: **this file** — the original pointed here by relative link, which is the ONE deviation from verbatim: kept as-is it resolved to `docs/reference/docs/reference/…` and the memory-doc link guard caught it.

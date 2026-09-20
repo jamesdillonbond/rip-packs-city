@@ -2781,3 +2781,10 @@ Moved to make room for the marginal-cost / cap-is-not-a-rate rule while keeping 
 ## Displaced from CLAUDE.md 2026-09-20 (verbatim) — LATERAL per key vs a streaming DISTINCT ON
 
 ⭐ **For an id list, one `LATERAL … ORDER BY ts DESC LIMIT 1` probe per key beats a table-streaming `DISTINCT ON` (5 instances; 40 ms vs 22–41 s) — and only a COLD A/B shows it. ⛔ ONLY IF THE INDEX CARRIES THE AGGREGATED COLUMN** — else it heap-fetches per key and **LOSES** (15,814 vs 22,095 buffers, 4× slower; database.md).
+
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — `count(*)` over a function that returns ONE ROW
+
+Displaced for space when two rules earned the same day were added (a filed CORRECTION is a hypothesis; a job whose PERIOD outruns its instrument’s WINDOW). **Still in force — moved, not retired**, and it lands here because this is where RPC measurement lives.
+
+⛔ **`count(*)` OVER A FUNCTION THAT RETURNS ONE ROW IS NOT A MEASUREMENT** — most RPCs here return ONE row whose VALUE is the result, so every variant answers `1` and a live defect reads as "no difference" (3× in one pass, 09-19). **Read the payload.** ⚠ Same shape on a `prosrc ILIKE` grep: **print the LINES, not the predicate** (case: database.md).

@@ -11,6 +11,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ THE `p_limit` 2000 SHIP IS VERIFIED BY THE PRODUCTION CALLER, and CLAUDE.md gains the two rules this session actually earned · Claude Code, Windows box
+
+**Shipped: docs only** (CLAUDE.md + three reference docs + the inbox INDEX). ⚠ **Written from a throwaway worktree** — the shared tree holds another live session's uncommitted `app/globals.css`, and `git merge --ff-only` **correctly REFUSED** rather than clobber it. Recipe: `git worktree add --detach` at a SHORT path, commit, push, `worktree remove`; the shared tree is never touched and their work is never stashed. ⚠ **Origin moved twice mid-edit, including CLAUDE.md and this ledger — both were RE-APPLIED onto upstream's copies rather than written back.**
+
+✅ **POST-SHIP VERIFICATION, by the production caller rather than my own probe** — the **15:53 PT** tick: `rows_found` **2000** (was 500), `ok true`, `duration_ms` **9,782**, `zero_repriced 205 + zero_cleared 95 = **300**`, `value_newly_written 286`. ⭐ Exactly the 4× the blocks/call measurement predicted. `pack_rips.pull_value_usd = 0` is **79,534** and falling; at 7,200/day that is **~11.0 days**, matching the projection.
+
+⭐ **THE HEADROOM QUESTION THE DECISION LEFT OPEN IS ANSWERED, and it is comfortable.** The function carries its OWN `statement_timeout=50s` in `proconfig`, and **that bounds the tick — not the route's `maxDuration=60`**. Every historical failure clusters at **50.1–50.4 s with `canceling statement due to statement timeout`** — a LOGGED failure, never an invisible `maxDuration` kill. At 9.8 s there is **5.1× headroom**. ⛔ **And the obvious objection is dead on arrival: during this morning's spell `p_limit` 500 was ALREADY hitting that 50 s cap** (the 15 ok / 44 runs), so 2000 introduces no new failure mode.
+
+⚠ **I NEARLY "CORRECTED" CLAUDE.md THREE TIMES AND IT WAS RIGHT EVERY TIME.** (1) *"via PostgREST only a HIGHER `statement_timeout` applies"* looked refuted by the 50 s binding — `service_role` is **30 s**, so the function's 50 s IS the higher one and the rule is exact. (2) The `pg_postmaster_start_time()` rule I thought I had discovered **was already in the file**. (3) focus.md's *"#126 was resolved hours before this was written"* was **correct**. ⭐ **Each was caught by opening the thing before editing it — which is precisely the rule this session added.**
+
+📝 **CLAUDE.md 39,973 → 39,911 chars (headroom 89, Node `.length`).** Two rules ADDED, each PAIRED WITH ITS DISPLACEMENT per the file's own process:
+- **added** — *a filed CORRECTION is a hypothesis too: OPEN the dated item before contradicting it; a CONFOUND found does not license the OPPOSITE attribution.*
+- **added** — *where a job's PERIOD outruns the instrument's WINDOW, `latest_status=failed` cannot separate still-broken from fixed-awaiting-next-run.* Full case appended to `cron-and-schedulers.md`.
+- **displaced VERBATIM, moved not retired** — `count(*)` over a ONE-ROW function → **database.md**; *Diff the SET, not the count* → **trust-board-and-safety.md** (where its case already lived). ⚠ Chosen on the guard's stated criterion (*data or judgement*, and is it needed BEFORE a session knows its topic), **not by section size** — the guard explicitly warns size is ANTI-correlated with displaceability.
+
+⛔ **A DISPLACEMENT TRAP WORTH KNOWING, caught by `check-memory-doc-links.mjs` and not by me: copying a repo-root bullet VERBATIM into `docs/reference/` breaks every relative link it carries.** *Diff the SET*'s trailing `[…](docs/reference/trust-board-and-safety.md)` resolved to `docs/reference/docs/reference/…` once moved. Rebasing that one pointer is the single deviation from verbatim, and it is noted in place. **The guard is the enforcement — 249 links across 26 files now resolve.**
+
+📌 **Inbox INDEX: the 17:30Z filing's row still read as an OPEN infra-spend ask.** The filing itself was annotated hours ago (*"the upgrade was taken NINE MINUTES after this was filed"*), but **INDEX.md is what sessions scan INSTEAD of opening the file**, so the row now carries **EXECUTED** + the postmaster stamp + do-not-re-propose. Counts untouched (text-only edit): 539 / 5.
+
+- **Revert:** docs only — `git revert` the commit found by `git log --grep='the two rules this session actually earned'`.
+
 ### 2026-09-20 · 🚨 TWO OF MY OWN INSTRUMENTS LIED TO ME IN ONE SESSION, AND THIS FILE BANS BOTH BY NAME · Claude Code cloud
 
 **Shipped: CLAUDE.md character figures corrected in the close-out entry below; headroom genuinely returned (15 → 27). Docs only.**

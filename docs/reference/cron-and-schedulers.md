@@ -2743,3 +2743,43 @@ Moved to make room for the marginal-cost / cap-is-not-a-rate rule. Content is VE
 ## Displaced from CLAUDE.md 2026-09-20 (verbatim) — PUT THE NUMBER ON IT / a CAP is not a RATE
 
 ⭐ **PUT THE NUMBER ON IT: size the MARGINAL set (`target \ already-covered`); a CAP IS NOT A RATE — a threshold bounds the RATE, a per-tick cap only the BURST** (+1 %, quoted as 16x).
+
+
+## Added from CLAUDE.md 2026-09-20 — a job whose PERIOD outruns the instrument's WINDOW
+
+⛔ **`check_pgcron_recent_failures()` reported `rpc-weekly-wmc-reindex-6` as `latest_status='failed'` with
+`ERROR: relation "public.idx_wmc_wallet_coll_ek_fmv" does not exist` — and the job had ALREADY BEEN FIXED,
+eleven minutes after the run it was reporting.** The daytime monitor read that row at 11:12 AM PT and filed it
+HIGH; it was closed the same day without a code change.
+
+**The dated chain:**
+
+| when (PT) | what |
+|---|---|
+| 09-14 | `idx_wmc_wallet_coll_ek_fmv` **dropped**, superseded by the `_tier` covering index (`20260914001340`) |
+| 09-19 20:43 | jobid 478 runs and fails — **the row the instrument still reports** |
+| 09-19 **20:54** | jobid 478 **repointed** at the successor (`20260920035444`) — **11 minutes later** |
+| 09-19 21:17 | `run_wmc_reindex_verify()`'s target array updated in lockstep (`20260920041743`) |
+
+👉 **THE GENERAL RULE: where a job's PERIOD exceeds the instrument's LOOKBACK WINDOW, `latest_status` cannot
+distinguish "still broken" from "fixed, awaiting its next run."** jobid 478 is **weekly** (`43 3 * * 0`), so no
+post-fix run can enter the window until the following Saturday — the instrument is structurally stuck on the last
+failure for up to seven days, and it reads identically to a live defect.
+
+⭐ **Resolve against LIVE STATE instead, which is one query:** read `cron.job.command` and check the object it
+names actually exists.
+
+```sql
+SELECT j.jobname, j.schedule, j.command,
+       (SELECT count(*) FROM pg_indexes i
+         WHERE 'public.' || i.indexname = regexp_replace(j.command, '^.*s', '')) AS target_exists
+FROM cron.job j WHERE j.jobname = 'rpc-weekly-wmc-reindex-6';
+```
+
+⚠ **A SECOND trap compounded it, and it is this file's existing rule arriving again:** the error names
+`idx_wmc_wallet_coll_ek_fmv`, the live command names `idx_wmc_wallet_coll_ek_fmv_**tier**` — *two objects one
+suffix apart, opposite conclusions.* Reading the failure message instead of the command is what made a fixed job
+look broken.
+
+⚠ **And the filing that raised it to HIGH was the SECOND to see it** — the 15:13Z filing had already declined to
+re-file it as known (ledger 09-19). **A row an earlier pass deliberately did not re-file is a signal, not noise.**
