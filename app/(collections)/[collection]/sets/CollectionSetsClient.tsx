@@ -169,6 +169,15 @@ export default function CollectionSetsClient({ collection }: { collection: strin
   // Pinnacle's collectibles are PINS, not moments — the same relabel
   // components/collection/PackSubNav.tsx already makes on the sub-nav.
   const pieceNoun = isPinnacle ? "pins" : "moments";
+  // Where a collection has no set DETAIL page (Pinnacle), the Market tab
+  // filtered to that set is the honest destination — and as of 2026-09-20 that
+  // filter actually works on this arm (it was silently ignored before; #129).
+  // ⚠ It shows only what is LISTED, not the whole checklist, so the affordance
+  // is labelled "SHOP", never "VIEW FULL SET PAGE".
+  const marketSetHref = (name: string) =>
+    collectionObj?.pages.includes("market")
+      ? `/${collectionSlug}/market?set=${encodeURIComponent(name.trim())}`
+      : null;
   // Each collection's word for a second printing of the same subject. Top Shot
   // calls them parallels (`setID:playID::subID`), Pinnacle calls them variants;
   // both are the same axis (docs/reference/parallels-variants-data-model.md).
@@ -554,14 +563,21 @@ export default function CollectionSetsClient({ collection }: { collection: strin
                 null for Pinnacle, whose sets live in pinnacle_catalog and have
                 no `sets`/`editions` rows for get_set_detail to find — the link
                 would 404 (lib/entity-href.ts). */}
-            {openSetHref && (
+            {openSetHref ? (
               <Link
                 href={openSetHref}
                 style={{ display: "inline-block", fontFamily: monoFont, fontSize: 11, color: accent, textDecoration: "none", border: `1px solid ${accent}4D`, padding: "6px 14px", borderRadius: 4, marginBottom: 14, letterSpacing: "0.08em" }}
               >
                 VIEW FULL SET PAGE →
               </Link>
-            )}
+            ) : marketSetHref(openSet.setName) ? (
+              <Link
+                href={marketSetHref(openSet.setName)!}
+                style={{ display: "inline-block", fontFamily: monoFont, fontSize: 11, color: accent, textDecoration: "none", border: `1px solid ${accent}4D`, padding: "6px 14px", borderRadius: 4, marginBottom: 14, letterSpacing: "0.08em" }}
+              >
+                SHOP THIS SET →
+              </Link>
+            ) : null}
             {mOwned.length === 0 && mMissing.length === 0 ? (
               <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted, padding: "20px 0", textAlign: "center" }}>
                 {openSet.ownedCount > 0
