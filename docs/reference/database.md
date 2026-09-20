@@ -2788,3 +2788,20 @@ Moved to make room for the marginal-cost / cap-is-not-a-rate rule while keeping 
 Displaced for space when two rules earned the same day were added (a filed CORRECTION is a hypothesis; a job whose PERIOD outruns its instrument’s WINDOW). **Still in force — moved, not retired**, and it lands here because this is where RPC measurement lives.
 
 ⛔ **`count(*)` OVER A FUNCTION THAT RETURNS ONE ROW IS NOT A MEASUREMENT** — most RPCs here return ONE row whose VALUE is the result, so every variant answers `1` and a live defect reads as "no difference" (3× in one pass, 09-19). **Read the payload.** ⚠ Same shape on a `prosrc ILIKE` grep: **print the LINES, not the predicate** (case: database.md).
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — two bullets moved to pay for the read-layer/write-layer rule
+
+Moved to buy the headroom for the honesty rule register #128 earned (*a fix at the READ layer does not
+close a fabrication the WRITE layer can re-create*). Nothing was deleted; CLAUDE.md carries a one-line
+pointer to each. Both are still binding.
+
+- ⚠ **A differential upsert WRITES the delta but PROBES every offered row** — 55k probes to write ~60 were ~700k of a tick's 927k buffers. LEFT JOIN the target first (cast to ITS types), offer only the delta: −79 %/call (R101 v2, database.md).
+- 🚨 **`EXCEPTION WHEN OTHERS` DOES NOT CATCH A 57014 KILL (R118, 35 handlers were blind).** A record-and-exit handler says `WHEN query_canceled OR OTHERS` — and ONLY where its tail is bounded: the timer is NOT re-armed after the catch. Loop handlers stay bare. `check_when_others_timeout_blind()` → `[]`; a forward-only migration guard (database.md).
+
+### Also displaced from CLAUDE.md 2026-09-20 (verbatim) — three PostgREST/write bullets
+
+Moved in the same pass, to pay for the read-layer/write-layer honesty rule. Still binding.
+
+- ⚠ **Any `.range()` pagination MUST carry a deterministic `.order()`** on a UNIQUE key, or it reads the right *number* of rows and the wrong *rows*. The duplicates and omissions **cancel**, so every count-based check passes — only a DISTINCT count or a set comparison sees it. Now a **ban at zero**.
+- **A batch `.insert()` is ALL-OR-NOTHING — never swallow `23505` on one.** One duplicate fails the whole statement and writes none of the batch; on a cursored indexer that is permanent loss.
+- ⚠ **Every `apply_migration` causes a ~10–20 s burst of user-facing `PGRST002` 500s** (schema-cache re-introspection) — batch them, prefer a low-traffic window, and `rpcWithRetry` does NOT save you (database.md).

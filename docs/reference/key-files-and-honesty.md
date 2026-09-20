@@ -2346,3 +2346,75 @@ green unit suite proved nothing here.
 ## Displaced from CLAUDE.md 2026-09-20 (verbatim) — the DB fabricated-value tell and its PROVENANCE rule
 
 ⭐ **The DB form's tell is a PERFECT CORRELATION: `never_checked AND value=true` EXACTLY 0 means the value is the DEFAULT** (#112). ⛔ **A function projecting such a value must project its PROVENANCE too.**
+
+## 2026-09-20 — A READ-LAYER FIX DOES NOT CLOSE A FABRICATION THE WRITE LAYER CAN RE-CREATE (register #128)
+
+The canon's newest member, and the one that says something the other twelve did not: **a fabrication can
+be fixed correctly, at the right layer, with a test, and come back — from the other side of the same
+column.**
+
+### The shape
+
+`pack_rips.pull_value_usd` has exactly TWO writers.
+
+| writer | contract |
+|---|---|
+| `rollup_allday_rip_pull_value()` | ALL-OR-NOTHING, **pinned** since 2026-09-12; its pin file says *"a rip with no pulls at all is left NULL, **NOT WRITTEN AS 0**"* |
+| `backfill_pack_rip_metadata()` | read `COALESCE(SUM(fc.fmv_usd), 0)` — **the exact opposite, on the exact case the pin exists for** |
+
+⭐ And the All Day pin's own header described the Top Shot path as *"the same source and same shape"* — a
+**mirror claim with no test**, which CLAUDE.md already names. The two bodies were never diffed.
+
+### Why the reader's fix could not save it
+
+`20260801204912_audit_20260801_pack_lifecycle_realized_value_never_fabricate_zero` is **correct**. It made
+`get_pack_lifecycle_row()` return NULL when nothing is priced and divide by the count of rips that
+actually carry a value. ⛔ **It was defeated within weeks, because a fabricated 0 is not ABSENT:**
+`count(pull_value_usd)` counts it, `sum()` adds it, and `mv_topshot_pack_rip_values` selects it
+*precisely because* it `IS NOT NULL`. The reader cannot tell a measured 0 from a manufactured one.
+
+### Measured (2026-09-20, dated samples)
+
+- **82,864** Top Shot rips at `pull_value_usd = 0` — **28.4 %** of every valued Top Shot rip; All Day 0.
+- Sampled 600 by `abs(hashtext(id)) % 100 = 7`: **0 genuine zeros.** 148 had acquisitions and not one
+  priced (fabrication) · 91 partly priced (understatement) · 361 fully priced with non-zero FMVs (a
+  stale 0 that was priceable at the time of reading) · **0** where every pull was priced at 0.00.
+- Blast radius: through `mv_topshot_pack_realized_ev` into `realized_mean` / median / p10 / p90 /
+  winsorized and, via `calibrated_ev` (realized weighted up to 0.85), **the pack-EV ranking itself**.
+  Of 295 dists with `n_opens >= 10`: 124 unaffected · 162 diluted · **9 reading exactly USD 0.00**.
+  Median understatement among the diluted **1.162×**.
+- The surface, read from its own RPC: `get_pack_lifecycle_row('7738')` → `packs_opened 1213`,
+  `moments_pulled 3639`, `realized_pull_value_usd 63.42`, **`avg_realized_value_per_pack 0.05`**.
+  ⭐ `8753` was publishing **USD 0.00** realized value for a pack whose pulls average **USD 80.19**.
+
+### The rules it earned
+
+1. 🚨 **When you delete a `COALESCE(x, 0)` from a view, grep for the WRITER of the column it reads.**
+   Fixing the reader is necessary and not sufficient.
+2. ⛔ **Where TWO functions write one column, the claim that they agree is a CLAIM. Diff them, or pin
+   both.** They disagreed for weeks with every instrument green.
+3. ⚠ **The follow-up sweep is a POPULATION, not a defect list.** `COALESCE(SUM|AVG|MAX|MIN(...), 0)`
+   matches **79** functions here; a sum over an empty set is legitimately 0 for a points ledger, a
+   raffle pot, a spend counter, a GMV window. **Discriminator:** the 0 is a defect only where it (a)
+   feeds a **PERSISTED** column, (b) is indistinguishable from *unknown*, and (c) has **no companion
+   known-count** to caption it. Narrowing on (a) gives **19**, mostly legitimate ledgers.
+   ⭐ **Checked the most dangerous survivor and it is CLEAN:** `aggregate_saved_wallet_stats` persists
+   `saved_wallets.cached_fmv_usd` from `COALESCE(SUM(wmc.fmv_usd), 0)` — structurally identical — and
+   `saved_wallets` reads **135 rows, 0 at zero, 43 correctly NULL**. So #128 was the exception, not an
+   iceberg. **Re-run the sweep (79 / 19 / the (a)(b)(c) test); do not re-derive the reasoning, and do
+   not file the 79 as debt.**
+4. ⚠ **The asymmetry that makes the repair safe:** clear a stored **0** to NULL, but **PRESERVE** a
+   stored positive value you cannot recompute. `fmv_snapshots` is written delete-then-insert, so "not
+   priceable right now" can be a momentary absence; a rule that downgraded every uncomputable row could
+   blank a large share of the column on one unlucky tick. A 0 has no such defence — it was never a
+   measurement. Asserted as pin property 4 so it is not "simplified" away.
+
+### Where it is pinned
+
+`supabase/tests/backfill_pack_rip_metadata.sql` (7 properties, mutation-proven in 9 directions) and
+`supabase/tests/rollup_allday_rip_pull_value.sql` (5 properties). ⭐ **Both were re-pointed together on
+2026-09-20 when both writers gained the WHOLE-PACK check** — that pairing is itself the invariant.
+⚠ **One mutation is a NO-OP and it is worth knowing which:** restoring `COALESCE(SUM(...), 0)` while
+leaving the `HAVING` in place changes nothing, because the `HAVING` already excludes every row the
+COALESCE could fire on. **The load-bearing half of the fix is the HAVING, not the removal of the
+COALESCE** — a reviewer reading only the diff would get that backwards.

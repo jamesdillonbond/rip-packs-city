@@ -11,6 +11,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ BOTH All Day `pull_value_usd` writers gain the WHOLE-PACK check IN ONE MIGRATION (#128 residual (b) closed) · and the mutation run found the arm I had just shipped COVERED BY NOTHING · plus CLAUDE.md pays for four new rules by displacement · Claude Code cloud
+
+**Shipped:** `20260920230950` (both writers) · `supabase/tests/{backfill_pack_rip_metadata,rollup_allday_rip_pull_value}.sql` re-pinned and both PINS entries re-pointed · `CLAUDE.md` (4 rules added, 6 bullets displaced verbatim) · `docs/reference/{key-files-and-honesty,cron-and-schedulers,database}.md` · register #128 residual (b) closed.
+
+📏 **Re-derived over the POPULATION, not the sample the residual quoted.** #128 recorded 1,436/1,436 from a sample; a predicate that can only REMOVE rows needs more than that. Every All Day rip holding any `allday_pack_pull` row: **419,233 of 419,233** have pull-row count = `moments_pulled` — **0 mismatches, 0 valued on a short pack.** So it is a **ban at zero**, satisfiable at zero violations, and it removed nothing (smoke: `allday_resolved 199 · zero_repriced 226 · zero_cleared 74`).
+
+⭐ **WHY ONE MIGRATION AND NOT TWO:** these are the two writers of one column, and #128 IS the record of what their disagreeing costs. Fixing the Top Shot arm's whole-pack check alone would have recreated that divergence one property over — and `PackHistoryClient.tsx` already records that the 2026-09-12 basis change had to move both together *"because changing one alone makes them fight, which is how the first attempt at this failed."*
+
+🚨 **THE FIND OF THE PASS, and it is against my own work: the mutation run showed the backfill's ALL DAY arm clause was COVERED BY NOTHING.** Dropping it passed every assertion in that pin, while the identical mutation on the generic arm reddened instantly — because the pin's All Day fixtures have `moments_pulled` equal to their pull count either way. ⚠ **I had even written a header line claiming the All Day assertion lived in the sibling pin. It did not.** Added `P-AD-SHORT` in its own scenario (p_limit wide, so the property-6 forced-choice block is undisturbed); all three clauses now caught. ⭐ **A clause shipped in a migration and covered by nothing is this register's recurring shape — assert the arm, do not describe it.**
+
+✅ **CLAUDE.md: 39,996 chars (limit 40,000, headroom 4), measured with `node .length`.** Four rules added, each paid for by displacing existing text **verbatim** into its reference file — nothing deleted:
+- 🚨 **A READ-LAYER FIX DOES NOT CLOSE A FABRICATION THE WRITE LAYER CAN RE-CREATE** (honesty section) — a fabricated 0 is not ABSENT, so `count()` counts it; grep the column's WRITERS, and where two write one column PIN BOTH. Full case + the 79/19/0 sweep discriminator → `key-files-and-honesty.md`.
+- ⚠ **A LEG'S `ORDER BY` DECIDES WHETHER IT PROGRESSES AT ALL** — absorbed the old queue-walk bullet; an IMMUTABLE key re-reads its own head forever and a SHARED counter hid a leg at 0.
+- ⚠ **FIVE ways a measurement lies; the fifth: a CORRECTNESS PROBE IS SILENT ABOUT COST BY CONSTRUCTION** — read the next PRODUCTION row's duration after a plan change.
+- ⚠ **A filed CORRECTION is a hypothesis too** — one I nearly propagated was WITHDRAWN a commit later; **read the ITEM, never an excerpt** (a grep of #118's first paragraph cost a change it twice forbids).
+Plus two extensions: `relallvisible`/`relpages` beside the `last_vacuum` rule (*"not a missing index"* can be one word short), and **measure even a blessed pattern** on the `LATERAL` rule (#121: 3.1× faster, 24 % worse in buffers — not shipped).
+**Displaced verbatim:** `database.md` ← differential upsert · `EXCEPTION WHEN OTHERS`/57014 · `.range()` needs a deterministic `.order()` · batch `.insert()` all-or-nothing · `apply_migration` PGRST002 burst. `cron-and-schedulers.md` ← the four measurement-lies ways · the queue-walk bullet · CADENCE AND BUDGET · the 600 s pg_cron reader.
+
+⚠ **AND A DISPLACEMENT BROKE A LINK — `memory-doc-links-guard` caught it, which is exactly what it is for.** The queue-walk bullet I moved verbatim ended with `[cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)`; **inside `docs/reference/` that resolves to `docs/reference/docs/reference/…`** — the precise `docs/reference/`-prefix bug that guard was written for, and self-referential besides. Left the prose verbatim and neutralised the pointer to plain text with a note saying why. ⭐ **A verbatim displacement is not link-safe: a RELATIVE pointer's meaning changes with the file it lands in.**
+
+✅ **Verified:** `npm test` · `tsc --noEmit` clean · `lint:ratchet` 712/712 · local DB-invariant suite · migration parse check · `claude-md-stays-under-the-memory-file-limit` green · `register:check` + `memory:retired:check` + `docs:issues-index` (129) green · both prosrc md5s identical in prod, migration file and pin (`10c43230629503ec4e846f4450c2d9c4` / `29bca401c90d8af10c5559bc9e9c42a1`) · ACLs and `proconfig` re-read after the apply.
+
+**Revert (code):** `git log --grep='whole_pack_check_together'` → `git revert <sha>`. **DB:** re-apply `rollup_allday_rip_pull_value` from `20260913032000` AND `backfill_pack_rip_metadata` from `20260920210651`. ⚠ **Both or neither** — a half revert IS the divergence this closes. ⛔ `20260913032000` does not carry `SET statement_timeout = '50s'`, so re-apply that `ALTER FUNCTION` after it. No data half.
+
 ### 2026-09-20 · 📏 #126 NOW HAS ITS PER-PIPELINE CONTROL: THE FIVE LANES IT WAS FILED ABOUT ARE **0 OF 34 FAILED** SINCE THE RESIZE, AND THE FIVE ALARM ROWS STILL READING high/medium ARE A WINDOW ARTEFACT · Cowork cloud
 
 **Shipped: docs only** — this entry plus a dated verification block on `known-issues.md` #126. No code, no DDL, nothing deployed.

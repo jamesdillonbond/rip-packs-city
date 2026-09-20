@@ -2783,3 +2783,50 @@ look broken.
 
 ⚠ **And the filing that raised it to HIGH was the SECOND to see it** — the 15:13Z filing had already declined to
 re-file it as known (ledger 09-19). **A row an earlier pass deliberately did not re-file is a signal, not noise.**
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — the measurement-lies bullet and the queue-walk bullet
+
+Moved to pay for two rules this estate earned on 2026-09-20: a **fifth** way a measurement lies (a
+correctness probe is silent about cost by construction), and the generalised leg-`ORDER BY` rule that
+absorbed the queue-walk one. **Nothing was deleted and both are still binding** — CLAUDE.md carries a
+one-line pointer to each, and the surviving CLAUDE.md bullets state the new halves.
+
+- ⚠ **FOUR ways a measurement lies about a change: a byte-identical HTTP response is as much a CACHE HIT as a fix; a DB A/B must be WARM-vs-WARM; an unordered `LIMIT` is physical order, not a sample** (use `abs(hashtext(k)) % N`); **and a reading taken while its SUBJECT CHANGED is not a reading** — ⛔ **and your OWN PROBE is the load here**. **Freeze the tree, then measure.** 🚨 **A CALM box and the SAME box are different claims: read `pg_postmaster_start_time()` before attributing ANY fleet-wide performance change** — a resize restarts Postgres (#126: database.md). ⭐ **Warm-vs-warm also DIAGNOSES: expensive WARM = COMPUTE-bound (precompute it); cheap warm + expensive COLD = IO-bound (no index helps).**
+- ⚠ **A queue walk that starts at the top of what it resolves COMPOUNDS** (three in one day, 09-07) — page a BOUNDED slice of the INDEX behind a cursor. Wire a new pg_net lane into the 4xx arm in its creating migration. `cron-and-schedulers.md` *(the trailing pointer in the CLAUDE.md original named THIS file; left as plain text because a link here would be self-referential — and as written it was the exact `docs/reference/`-prefix bug `check-memory-doc-links.mjs` exists to catch, which is how it was found)*
+
+### THE FIFTH WAY, in full (2026-09-20, register #128)
+
+⭐ **A CORRECTNESS PROBE IS SILENT ABOUT COST BY CONSTRUCTION.** Re-ordering a repair leg off an
+immutable key onto a stamp the job writes was the right fix and was proven right by a before/after on
+its OUTPUT (`allday_resolved` 0 → 10). That before/after **cannot see cost**, and the change carried a
+**28× buffer regression**: the new `ORDER BY` had no index, so the leg became a parallel seq scan of a
+3.69M-row table plus a 16 MB external-merge sort — **195,112 shared + 22,834 temp buffers against
+6,908**. ⚠ **What caught it was the next PRODUCTION row, not any probe of mine:**
+`pipeline_runs.extra.duration_ms` read **37,000 ms against 4,746** an hour earlier, same box, same
+`p_limit`. 👉 **After an ORDER BY / plan change on a hot lane, read the lane's own next duration.** The
+repair was a partial index (`idx_pack_rips_unvalued_stamped`, 2,720 kB) **plus the matching predicate in
+the leg** — a partial index is unusable unless the query repeats its predicate, so the clause is
+load-bearing and deleting it as redundant silently restores the seq scan.
+
+### THE LEG-`ORDER BY` RULE, in full (2026-09-20, register #128)
+
+⛔ **A leg ordered by an IMMUTABLE key re-reads its own head forever.** The All Day repair leg of
+`backfill_pack_rip_metadata` ordered `sealed_at DESC`. A row it selects and *can* price gets a value and
+leaves the population; a row it cannot **stays exactly where it was, at the head**, and is selected
+again next tick. So the leg advances through everything resolvable and **accumulates the unresolvable
+permanently above its own frontier** — throughput decays to zero, monotonically.
+📏 Measured: **10 of 10 slots** at `p_limit` 100 were such residue (`allday_resolved` 0) while
+**57,650 of 58,397** rows in that leg's population (98.7 %) were fully priceable.
+🚨 **And nothing would have reported it:** `pipeline_runs.extra.allday_resolved` read 135–217/tick
+throughout, because the STALE leg re-prices All Day rows through the same arm and the counter is not
+per-leg. **A shared counter hid a leg at zero.**
+👉 **Order a repair leg by a column the job itself WRITES** (here `metadata_updated_at`, which the
+function restamps on every candidate), so each pass rotates the population instead of re-reading its
+head — and index that column, per the fifth-way note above.
+
+### Also displaced from CLAUDE.md 2026-09-20 (verbatim) — the cadence/budget bullet
+
+Still binding; CLAUDE.md carries a pointer.
+
+- ⚠ **CADENCE AND BUDGET ARE ONE DECISION** — nothing fixes a tick that cannot FINISH; its killed delta rolls back, then GROWS against the frozen table. ⚠ **≡0 mod 5 minutes blackout worst (9.15/5.72%); a slot move can kill in-job clock SAMPLING.**
+- ⛔ **A 600 s pg_cron reader wants an HOUR-SET before a minute, and the READ is the lever, not the slot** (leg 324: cron-and-schedulers.md).
