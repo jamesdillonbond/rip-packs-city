@@ -695,12 +695,15 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       const fmvChunks: Promise<any>[] = []
       for (let i = 0; i < internalIds.length; i += CHUNK) {
         fmvChunks.push(
-          // fmv_current = DISTINCT-ON latest-per-edition (1 row/edition), so cold
-          // editions in a whale wallet aren't dropped past the 1000-row cap.
+          // get_editions_latest_fmv_wide = latest snapshot per requested edition
+          // (1 row/edition, every fmv_current column) via a per-id index probe.
+          // 2026-09-19: this WAS `.from("fmv_current").in("edition_id", chunk)`;
+          // a qual on the view's DISTINCT ON key reaches the index but does not
+          // bound rows per group, so each chunk walked ~76 snapshots per edition
+          // (pgss: 6,103 calls at a 6.2 s mean). Same rows (set-diff 0 on 100
+          // ids), 40 ms vs 22–41 s. Migration 20260920044216.
           (supabaseAdmin as any)
-            .from("fmv_current")
-            .select("edition_id, fmv_usd, confidence, sales_count_30d, computed_at")
-            .in("edition_id", internalIds.slice(i, i + CHUNK))
+            .rpc("get_editions_latest_fmv_wide", { p_edition_ids: internalIds.slice(i, i + CHUNK) })
         )
       }
       const fmvResults = await Promise.all(fmvChunks)
@@ -781,12 +784,10 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
             const newFmvChunks: Promise<any>[] = []
             for (let i = 0; i < newInternalIds.length; i += CHUNK) {
               newFmvChunks.push(
-                // fmv_current = DISTINCT-ON latest-per-edition (1 row/edition), so cold
-                // editions aren't dropped past the 1000-row cap.
+                // Same per-id helper as the primary lookup above (see the note
+                // there); the view read this replaced walked every snapshot.
                 (supabaseAdmin as any)
-                  .from("fmv_current")
-                  .select("edition_id, fmv_usd, confidence, sales_count_30d, computed_at")
-                  .in("edition_id", newInternalIds.slice(i, i + CHUNK))
+                  .rpc("get_editions_latest_fmv_wide", { p_edition_ids: newInternalIds.slice(i, i + CHUNK) })
               )
             }
             const newFmvResults = await Promise.all(newFmvChunks)

@@ -660,12 +660,14 @@ export async function GET(req: NextRequest) {
           const fmvByInternal = new Map<string, { fmv_usd: number | null; confidence: string | null; sales_count_30d: number | null }>()
           for (let i = 0; i < internalIds.length; i += CHUNK_KEYS) {
             const slice = internalIds.slice(i, i + CHUNK_KEYS)
-            // fmv_current = DISTINCT-ON latest-per-edition (1 row/edition), so cold
-            // editions aren't dropped past the raw-fmv_snapshots 1000-row cap.
+            // get_editions_latest_fmv_wide = latest snapshot per requested edition
+            // (1 row/edition, every fmv_current column) via a per-id index probe.
+            // 2026-09-19: this WAS `.from("fmv_current").in("edition_id", slice)`;
+            // the view's DISTINCT ON walks ~76 snapshots per edition before
+            // Unique keeps one. Same rows, 40 ms vs 22–41 s per 100 ids.
+            // Migration 20260920044216.
             const { data: snaps } = await supabase
-              .from("fmv_current")
-              .select("edition_id, fmv_usd, confidence, sales_count_30d, computed_at")
-              .in("edition_id", slice)
+              .rpc("get_editions_latest_fmv_wide", { p_edition_ids: slice })
             for (const s of snaps ?? []) {
               if (!fmvByInternal.has(s.edition_id)) {
                 fmvByInternal.set(s.edition_id, {

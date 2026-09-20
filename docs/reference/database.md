@@ -1884,6 +1884,21 @@ mostly does: over 1,165 wallets, distinct editions run **p50 50 · p90 3,196 · 
 the view. **Convert these when a wider helper exists for another reason, or if the large-wallet tail
 becomes the common case; not before.** `recent-sales` is capped at 50 ids and should be left alone.
 
+⭐ **2026-09-19 — the wider helper now exists, and the verdict above was re-litigated on TIME, not
+blocks.** Re-read 9:40 PM PT: the 5-column id-list shape is **6,103 calls · mean 6,204 ms · 631 min
+of DB time · 1,203 physical blocks/call**, the 8-column shape 902 calls at 6,046 ms. Blocks per call
+fell since 09-02 (2,042 → 1,203) while seconds per call went to six, because this week the estate's
+bottleneck is disk IO under contention (#126, R109, R117), and a read that touches ~7,400 buffers
+per 100 ids with ~5,500 of them physical is exactly the kind that queues. Hand A/B on a fixed 100
+Top Shot ids: view **40.9 s cold / 22.6 s warm, ~7,400 buffers**; `get_editions_latest_fmv_wide`
+**40 ms, 1,617 buffers**; set difference on `(edition_id, fmv_usd, computed_at)` **0 both ways**.
+Migration `20260920044216` adds `public.get_editions_latest_fmv_wide(uuid[])` — the narrow helper's
+selection rule returning **all 15 view columns** (`wap_usd` = `asp_usd`), service_role only.
+`wallet-search` ×2 and `cache-refresh` were repointed the same night (fixtures moved to the
+harness's `rpc:` key, mutation-checked); `fetchFmvBatch` and `/api/fmv` are the two remaining
+wide readers and take the same one-line edit. The rule stands — *rank by observed total* — it is
+the total that moved.
+
 ⚠ Both readings above carry one caveat: `pg_stat_statements` sits at **4,905 of 5,000 entries**, so it
 is evicting and every total here is a LOWER BOUND. It is the right instrument for reading what a
 client actually sends; it is not one for concluding a query never ran.

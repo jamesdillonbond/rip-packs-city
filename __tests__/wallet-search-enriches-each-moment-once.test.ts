@@ -134,7 +134,7 @@ function install() {
       { data: [{ id: "uuid-ed-1", external_id: "3:45" }], error: null },
     ],
     cached_listings: { data: [], error: null },
-    fmv_current: { data: [], error: null },
+    "rpc:get_editions_latest_fmv_wide": { data: [], error: null },
     wallet_moments_cache: { data: [], error: null },
     moment_acquisitions: { data: null, error: null },
     sales: { data: [], error: null },

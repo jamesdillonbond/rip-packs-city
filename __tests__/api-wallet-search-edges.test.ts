@@ -119,7 +119,7 @@ function baseFixtures(over: Fixtures = {}): Fixtures {
       { data: [{ id: "uuid-ed-1", external_id: "3:45" }], error: null },
     ],
     cached_listings: { data: [], error: null },
-    fmv_current: { data: [], error: null },
+    "rpc:get_editions_latest_fmv_wide": { data: [], error: null },
     wallet_moments_cache: { data: [], error: null },
     moment_acquisitions: { data: null, error: null },
     sales: { data: [], error: null },
@@ -268,7 +268,7 @@ describe("wallet-search — FMV fallback + ceiling", () => {
           { data: [], error: null }, // key resolve finds nothing
           { data: [{ id: "uuid-fb", play_id_onchain: 45 }], error: null }, // fallback
         ],
-        fmv_current: {
+        "rpc:get_editions_latest_fmv_wide": {
           data: [{ edition_id: "uuid-fb", fmv_usd: 33.25, confidence: "MEDIUM", sales_count_30d: 2, computed_at: "2026-07-20T00:00:00Z" }],
           error: null,
         },
@@ -287,7 +287,7 @@ describe("wallet-search — FMV fallback + ceiling", () => {
           { data: [], error: null },
           { data: [{ id: "uuid-fb", play_id_onchain: 45 }], error: null },
         ],
-        fmv_current: {
+        "rpc:get_editions_latest_fmv_wide": {
           // Over the ceiling on two sales -> discarded, exactly as the primary
           // lookup would discard it.
           data: [{ edition_id: "uuid-fb", fmv_usd: 900000, confidence: "HIGH", sales_count_30d: 2, computed_at: "2026-07-20T00:00:00Z" }],

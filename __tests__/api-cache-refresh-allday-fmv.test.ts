@@ -147,7 +147,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
         error: null,
       },
       // Already ordered computed_at DESC, as the route requests it.
-      fmv_current: {
+      "rpc:get_editions_latest_fmv_wide": {
         data: [
           { edition_id: "ed-low", fmv_usd: 25, confidence: "MEDIUM", sales_count_30d: 1 },
           // Older row for the SAME edition — first-seen must win.
@@ -175,7 +175,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
       wallet_moments_cache: WMC_ALL_NEW,
       moment_acquisitions: { data: [], error: null },
       editions: { data: [{ id: "ed-ok", external_id: "K-HIGH-OK" }], error: null },
-      fmv_current: {
+      "rpc:get_editions_latest_fmv_wide": {
         data: [{ edition_id: "ed-ok", fmv_usd: 12000, confidence: "high", sales_count_30d: 3 }],
         error: null,
       },
@@ -196,7 +196,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
         ],
         error: null,
       },
-      fmv_current: {
+      "rpc:get_editions_latest_fmv_wide": {
         data: [
           { edition_id: "ed-null", fmv_usd: null, confidence: "HIGH", sales_count_30d: 9 },
           { edition_id: "ed-nan", fmv_usd: "not-a-number", confidence: "HIGH", sales_count_30d: 9 },
@@ -214,7 +214,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
       {
         wallet_moments_cache: WMC_ALL_NEW,
         moment_acquisitions: { data: [], error: null },
-        fmv_current: { data: [], error: null },
+        "rpc:get_editions_latest_fmv_wide": { data: [], error: null },
       },
       "editions",
     )
@@ -234,7 +234,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
       ],
       moment_acquisitions: { data: [], error: null },
       editions: { data: [{ id: "ed-low", external_id: "K-LOW" }], error: null },
-      fmv_current: {
+      "rpc:get_editions_latest_fmv_wide": {
         data: [{ edition_id: "ed-low", fmv_usd: 25, confidence: "HIGH", sales_count_30d: 9 }],
         error: null,
       },
@@ -255,7 +255,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
       wallet_moments_cache: WMC_ALL_NEW,
       moment_acquisitions: { data: [], error: null },
       editions: { data: [], error: null },
-      fmv_current: {
+      "rpc:get_editions_latest_fmv_wide": {
         data: [{ edition_id: "ed-low", fmv_usd: 25, confidence: "HIGH", sales_count_30d: 9 }],
         error: null,
       },
