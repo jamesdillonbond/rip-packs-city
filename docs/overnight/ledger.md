@@ -11,6 +11,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 📈 TOP ACCUMULATORS SHIPS ON FOUR MORE COLLECTIONS — the gate's stated reason was not stale, it was INVERTED, and the route was substituting one collection's buyers for another's · Claude Code cloud
+
+**Shipped: `app/api/analytics/top-buyers` (widened + stops substituting) · the `CollectionAnalyticsClient` gate · 1 inverted test + 8 new arms. Planted-defect controls both ways. No DB change.**
+
+🚨 **THE STATED REASON WAS BACKWARDS.** The panel was gated `short === "topshot"`, justified in the source as *"it's the only collection with resolved buyer_address coverage (the 2026-06-09 buyer-resolution ship)"*. Re-measured over 30 days, **Top Shot has the WORST coverage of any collection**: `nba_top_shot` **95.2%** (79,941 sales) · `nfl_all_day` **99.8%** · `laliga_golazos` **100%** · `candy_mlb` **100%** (1,549 sales / 95 distinct buyers) · Pinnacle **100%** in its own table. ⭐ **A three-month-old justification did not decay into wrongness — it was overtaken, and the one collection it named is now the weakest member of the set it excluded.** Candy MLB, AllDay, Golazos and UFC now get the panel.
+
+⛔ **PINNACLE STAYS OUT, AND THAT EXCLUSION IS NOW STATED, ENFORCED AND TESTED.** Its sales are in `pinnacle_sales`, which `get_top_accumulators` does not read (the reason `analytics_sales_summary` carries its own union arm). Serving it would return zero rows, which the caller renders as **"no buyer-resolved accumulation"** — a false claim about a collection with **240 distinct buyers in 30 d**. The route 400s it and a component arm asserts the panel is absent; **the two have to stay in agreement**, and both say why.
+
+🚨 **AND THE ROUTE WAS SUBSTITUTING, SILENTLY.** `?collection=<anything unrecognised>` **fell back to `nba_top_shot`** — so a caller asking for one collection was handed another's buyers, under a heading naming the one it asked for. ⚠ **Its own test PINNED that as the contract** (`expect(body.collection).toBe("nba_top_shot") // unknown → fallback`), so this is an **INVERSION, not a deletion** — a passing test asserting a promise is what holds that promise in place. An unrecognised slug now 400s `unsupported_collection` **with no `rows` and no `collection` in the body**, so there is no substituted answer to read; ⚠ **an ABSENT param still defaults, because a default is not a substitution.**
+
+⭐ **The call site passed `collection="nba_top_shot"` HARDCODED** — on whatever page it rendered. It now derives `toDbSlug(collection)` from the registry, and an arm asserts the request URL carries the page's OWN collection, per collection.
+
+**Revert:** `git revert` the commit touching `app/api/analytics/top-buyers/route.ts`. No DB half.
+
+
 ### 2026-09-20 · 🔒 THE FOLD CLASS GETS A BAN AT ZERO — and building it found one more live-shaped defect AND a VACUOUS FIRST DRAFT of the guard itself · Claude Code cloud
 
 **Shipped: `__tests__/addresses-are-never-folded-and-prefixed.test.ts` (5 arms, 3,089-file tree walk) + `app/api/mcp/keys/*` (2 routes) + 4 in-file suppressions with reasons. No DB change.**
