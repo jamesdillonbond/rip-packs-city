@@ -1,4 +1,16 @@
 # CLAUDE.md — verbatim originals of the sections that were CONDENSED
+
+## ⭐ HOW TO CHOOSE WHAT TO DISPLACE — the test is TOPIC-SPECIFICITY, not importance (established 2026-09-19)
+
+CLAUDE.md's preamble says a new rule must **DISPLACE** one rather than spend room, but it does not say **which** — and "move the least important thing" is the wrong instinct, because the file's most dangerous facts are often its most topic-specific.
+
+⭐ **THE TEST: does a session need this BEFORE it knows what it is working on, or only AFTER?** CLAUDE.md is the *before* file. Anything a reader needs only once they know their topic belongs in `docs/reference/*.md` behind a pointer, **however critical it is** — criticality decides what the pointer SAYS, not whether the block moves.
+
+📏 **Worked example, 2026-09-19 (8 chars of headroom → 120):** `### Series map` and `## Hot wallet & secrets` moved out — both carry severe footguns (a blanket `1 → 0` remap dropped **385,734 rows**; signing with p256 + SHA3-256 instead of `ECDSA_secp256k1 + SHA2_256` was live for months) — **because you cannot hit either unless you already know you are touching series logic or Flow signing.** ⚠ **The two one-line consequences stayed INLINE in the pointers**, precisely because *those* are needed before you know: the remap ban and the curve/hash pair. **The block moves; the trap stays.**
+
+⛔ **AND THE OPPOSITE CASE, so the test is not read as "move the big topic sections":** a rule about how sessions COLLIDE — shared-tree staging, `%an` attribution, contaminated measurement windows — is needed by every session at every moment, so it belongs in CLAUDE.md even though it is long. That is what replaced the two blocks above.
+
+✅ **VERIFY A DISPLACEMENT BY ORPHAN COUNT, NOT BY SPOT-CHECK.** Diff the commit, take EVERY removed line over ~40 chars, and search each one VERBATIM in its new home: `preserved: N · orphans: 0`. ⚠ **A spot-check of facts you thought to name cannot catch the loss of something neither party would have listed** — the two are different questions, and only the orphan count answers the second.
 ## Displaced from CLAUDE.md 2026-09-12 (verbatim) — the strip-comments "blind THREE times" bullet
 
 The guards bullet read, before the 2026-09-12 swap that replaced the un-countable "THREE times"
