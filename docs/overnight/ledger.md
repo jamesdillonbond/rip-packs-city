@@ -11,6 +11,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🔍 THE `zz-vac-1..8` SWEEP AT 8:00 PM PT — the clock SPLITS the attribution rather than settling it: the two big scans did cause a spell, the 8:06:23 PM cluster predates them, and the post-8:12 rise is neither · Claude Code (Windows box, session -52)
+
+**Shipped: nothing — no code, no DB change, nothing unscheduled by me. A measurement, a half-retraction of my own first call, an instrument trap, and one correction to tonight's handoff.**
+
+🔍 **WHAT RAN.** Eight `VACUUM (ANALYZE)` pg_cron jobs, `zz-vac-1..8` (jobids **551–558**, owner `postgres`), staggered `00 03 * * *` … `09 03 * * *`, over `allday_pack_sales_history` · `topshot_pack_sales_history` · `offers` · `topshot_moment_subeditions` · `moments` · `panini_card_serials` · `sales_2023` · `pack_rips`. 📏 **Six were CHEAP — 551–556 succeeded in 2.1–8.3 s.** ⛔ **Two did no useful work at all: 557 (`sales_2023`) and 558 (`pack_rips`, 2,045 MB) each died at EXACTLY 120.0 s on `statement_timeout`** — paying the IO and returning nothing, twice.
+
+✅ **OWNERSHIP RESOLVED WHILE THIS WAS BEING WRITTEN, and the owner filed the cost against itself:** the Cowork cloud + laptop VM session (visibility-map round, `ff6108616` / `518632576`), whose own correction two entries up measures **five lane failures at 8:07–8:11 PM PT** from those two scans — `lock-check-batch` 241 s, `rpc-allday-unmapped-atlas-resolver` and `rpc-ts-listings-atlas-sync` at 120 s, `topshot-buyer-backfill-historical` and `refresh_wmc_fmv_changed` at 30 s. ⚠ **I had filed ownership as UNRESOLVED after both live Claude sessions on this box disclaimed it — correct at the time, wrong within ten minutes. Three sessions were writing this estate tonight, and two of them asking each other is not a census.**
+
+🚨 **MY FIRST CALL WAS HALF WRONG, AND THE HALVES MATTER.** I saw a Vercel timeout cluster across five unrelated routes — `/[collection]/pack/dist/[distId]` (five fetchers in one render), `/[collection]/team/[slug]`, `/[collection]/player/[slug]`, `/[collection]/edition/[slug]`, both candy boards on `/api/cron/refresh-insights-cache` — and blamed the whole thing on the sweep.
+- ✅ **RIGHT for 03:07–03:11Z.** The two big scans ran there, and their owner independently counted five lane failures in that window. **My own worst reading belongs here: a real `authenticator` (PostgREST user request) blocked in `IO/DataFileRead` for 103.8 s, then 114.0 s, at 03:10–03:12Z.**
+- ⛔ **WRONG for the 03:06:23Z cluster, which is where most of the routes fired: NO vacuum was running then** — 556 ended 03:05:04 and 557 did not start until 03:07:01.
+- ⛔ **WRONG for the aftermath: once `vacuums_running` hit 0 at 03:12:14Z contention did not fall, it ROSE** — 11 → 17 active, 12 → 18 backends in `IO/DataFileRead`, zero on any lock, with `attribute_topshot_rips_empirical(20000)` at 159 s.
+⭐ **The lesson is the shape, not the verdict: one spell-looking window held THREE different causes, and a single snapshot would have sold any one of them as the whole story.** A cause absent before the symptom begins, and absent while it worsens, is not that symptom's cause — but it may still own the minutes in between.
+
+⚠ **INSTRUMENT TRAP, and it gave two sessions a wrong first read: `cron.job_run_details JOIN cron.job` SILENTLY HIDES THE HISTORY OF ANY UNSCHEDULED JOB** — the parent row is gone, so the inner join drops every run. My first pass saw only the job not yet cleaned up; session -88's returned NULL for all of them and would have read as *"these never ran"*. ⭐ **Query `job_run_details` BY `jobid` ALONE for any post-mortem: the moment someone cleans up, the join-based view of the incident evaporates.**
+
+🎯 **THE CORRECTION THIS FORCES ON TONIGHT'S HANDOFF, and it stands whatever the spell's cause.** That handoff names the `[pack-detail] read exceeded 5000ms` family (**1,421 / 24 h**) "the next user-facing cost". ⛔ **That figure is POOLED ACROSS THIS MORNING'S IO SPELL, so it sizes the spell and reads as a page defect.** The same handoff measures **25 in the 5 h since noon** — ~5/h, ~120/24 h, an order of magnitude down. ⭐ **And the shape says no query work will help: `get_pack_lifecycle_row` is 19 ms WARM vs 2.0 s COLD at 3,441 physical reads — cheap-warm/expensive-cold is IO-bound, where no index and no rewrite buys anything.** 👉 **Pack-detail's 5 s bound is a SYMPTOM INSTRUMENT for estate IO and is behaving correctly. Do not spend a session rewriting those fetchers — the work is #126.**
+
+- **Revert:** nothing to revert; this session changed nothing. All eight jobs were unscheduled by their owner; re-creating them is the only way back.
+
 ### 2026-09-19 · ⚠ CORRECTION TO THE ENTRY BELOW — the two big VACUUM scans that "died harmlessly" were themselves a 6-minute spell: five lane failures 8:08–8:14 PM PT, and now the 6:28 PM spell has a named suspect too · Cowork cloud + laptop VM
 
 **Shipped: nothing. A cost I caused, measured and filed the same hour.**
