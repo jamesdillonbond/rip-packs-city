@@ -1,222 +1,57 @@
 {
-  "generated_at_pt": "2026-09-20 ~12:05 AM PT",
-  "generated_at_utc": "2026-09-20T07:05Z",
-  "pass": "Trevor-directed evening health pass (Cowork cloud + laptop VM). PUSH-CAPABLE via path A (laptop VM, .rpc-git-cred; d1c11a79c confirmed by ls-remote == HEAD). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 23:59Z at start.",
-  "shipped": 30,
+  "generated_at_pt": "2026-09-20 ~01:10 AM PT",
+  "generated_at_utc": "2026-09-20T08:10Z",
+  "pass": "rpc-nightly-autonomous-pass (Cowork cloud). PUSH-CAPABLE via .rpc-git-cred credential store (dry-run exit 0). Real time from DB now() 08:03Z at start; genuine overnight, no clock skew.",
+  "shipped": 0,
   "reverted": 0,
-  "verdict": "HEALTHY SINCE NOON PT. The alert board's high/medium failure_rate rows are 2-day windows straddling the morning IO spell; split on the change point: cron.job_run_details 0 failures in 5 h (~405 runs/h) vs 30-108/h before noon; pipeline_runs 0.31% failing (11/3,589) vs 1.85% in the prior 12 h; ts-listings 161/161 ok. Security 0/0/0/0, stalled 0, Atlas lanes active. Sentry zero PAIRED with Vercel: 50 groups/24h, all chronic shapes, none new; the [pack-detail] 5 s read-timeout family still fires post-noon and is the next user-facing cost. Telegram pager channel was DARK 12:04-5:07 PM PT (a '<' in an ack note) and is repaired. EVENING ADDENDUM 8:40 PM PT: ~30 lane failures between 8:07 and 8:33 PM PT were self-inflicted (manual VACUUM scans + an unthrottled pack_rips autovacuum), all self-clearing; filed in the ledger as such.",
+  "verdict": "HEALTHY, NO REGRESSION. Security 4/4 clean, all structural drift arms []. Nothing clearly-safe + net-positive was un-owned to ship. Last night's 30 ships verified landing where clocks allowed; five items pending their tick clocks. #126 (cron fleet 10x busy-seconds since 09-15) re-measured PERSISTS and decomposed to the atlas family + jobid 303 wmc-fmv-changed; no autonomous lever. Sentry 0-new PAIRED with Vercel = all chronic shapes, no new error class.",
   "health": {
-    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off [], secdef_anon [])",
-    "detect_stalled_pipelines": 0,
-    "cron_jobs": "154 total / 152 active; 463/464/466 active on original schedules; jobid 506 now carries SET statement_timeout='300s'",
-    "io_state": "io_wait 0 / active 0 of 28 backends at 5:00 PM PT (quiet box)",
-    "trust_breaches": [
-      "public_board_slow_count=2 (instrument lies; not chased)"
-    ],
-    "cross_collection_mats": "BOTH FRESH (cohort 5:13 PM PT, overlap 5:16 PM PT); check_cross_collection_mat_staleness() = []",
-    "sentinel_latest": "6:04 PM PT: telegram + email delivered (Telegram channel restored); CRITICAL on Pipeline Success Coverage only (24 h-window readings from the night spell)",
-    "db_size_mb": 19000
+    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
+    "structural_drift": "clean (function/procedure search_path drift [], txn-control pins [], backward_cursor_rewinds [], suppression_parked_claim_drift [])",
+    "detect_stalled_pipelines": "1 (pinnacle-metadata-backfill invoked_but_never_logged, silent 223m, heartbeat 07:22Z firing - chronic cadence-only lane, medium, not new)",
+    "trust_precompute_max_age_hours": 7.93,
+    "trust_breaches": ["public_board_slow_count=3 (planner-prune instrument that lies; Vercel shows no board 5xx storm)"],
+    "sentinel_ts_uuid_editions_48h": 0,
+    "cross_collection_mat_staleness": "[]",
+    "sentry_new_24h": 0,
+    "vercel_error_groups_note": "top route /[collection]/pack/dist/[distId] 2100/24h - chronic 'read exceeded 5000ms' family logged at HTTP 200; genuine hard 5xx tiny (503x81, 500x19, 504x16, morning-spell)",
+    "db_size_mb": 19046,
+    "fmv_high_med_by_collection": {
+      "nba_top_shot": {"HIGH": 1341, "MEDIUM": 5900},
+      "nfl_all_day": {"HIGH": 61, "MEDIUM": 1573},
+      "disney_pinnacle": {"HIGH": 166, "MEDIUM": 549},
+      "candy_mlb": {"HIGH": 9, "MEDIUM": 69},
+      "laliga_golazos": {"HIGH": 0, "MEDIUM": 4},
+      "ufc_strike": {"HIGH": 0, "MEDIUM": 0}
+    },
+    "fmv_computed_at": "2026-09-20T05:46Z"
   },
-  "shipped_items": [
-    {
-      "what": "Sentinel Telegram: escape name/detail/change-line for parse_mode HTML; DB ack text '< 400' -> 'below 400'",
-      "commit": "d1c11a79c",
-      "instrument": "pipeline_runs sentinel notifications must read 'telegram' on the next sweep",
-      "revert": "git revert d1c11a79c (no DB half)"
+  "issue_126_cron_busy_seconds": {
+    "busy_s_per_day": {"09-15": 23020, "09-16": 66422, "09-17": 122744, "09-18": 168859, "09-19": 233894, "09-20_partial_8h": 82387},
+    "busy_s_per_run": {"09-19": 24.6, "09-20_partial": 24.1},
+    "failed_run_share_of_busy_s": "~33%",
+    "top_contributors_24h_busy_s": {
+      "rpc-ts-listings-atlas-sync": {"busy_s": 42589, "runs": 632, "failed": 239, "avg_s": 67.4},
+      "rpc-refresh-wmc-fmv-changed": {"busy_s": 28311, "runs": 144, "failed": 3, "avg_s": 196.6},
+      "rpc-allday-unmapped-atlas-resolver": {"busy_s": 20478, "runs": 282, "failed": 95, "avg_s": 72.6},
+      "rpc-atlas-market-drain": {"busy_s": 19414, "runs": 704, "failed": 30, "avg_s": 27.6},
+      "rpc-pack-nft-identity-lane": {"busy_s": 13401, "runs": 286, "failed": 25, "avg_s": 46.9}
     },
-    {
-      "what": "R109 decisive test: step1 25.0 s, step2 30.4 s, portfolio aggregate 5.2 s on a quiet box (relallvisible 1.000); both mats refreshed",
-      "migration": "none (one-off pg_cron jobids 528/529, unscheduled)",
-      "instrument": "check_cross_collection_mat_staleness() = []",
-      "revert": "n/a"
-    },
-    {
-      "what": "R115+R116: confidence precompute 300 s budget prefix on jobid 506, derived collection list, Pinnacle from pinnacle_fmv_history, no coalesce('{}'), pipeline_runs row, ops-snapshot keys derived",
-      "migration": "20260920001632",
-      "instrument": "control run 50.4 s: 6 rows, candy 62.4%, pinnacle 28.0%",
-      "revert": "header of the migration"
-    },
-    {
-      "what": "portfolios: REVOKE INSERT/UPDATE/DELETE FROM PUBLIC, anon, authenticated (dead residue)",
-      "migration": "20260920001811",
-      "instrument": "anon write-grant set = 4, all INSERT-only",
-      "revert": "GRANT INSERT, UPDATE, DELETE ON public.portfolios TO anon, authenticated"
-    },
-    {
-      "what": "leg 324 rpc-thp-leg-impossible-parallel moved 48 -> 31 0,6,12,18 (collided with jobid 65's 47 */6 MV refresh; both died at 600 s on 5/6 shared ticks)",
-      "migration": "20260920005312",
-      "instrument": "trust_precompute_max_age_hours 23.2 -> 5.09 h; 11:31 PM PT tonight then 5:31 AM PT tick must read succeeded",
-      "revert": "header of the migration (cron.schedule back to 48 0,6,12,18 as cron_heavy)"
-    },
-    {
-      "what": "lib/ops-alert.ts escapes the Telegram body for parse_mode HTML (second data-fed sender)",
-      "commit": "3b884ec23",
-      "instrument": "__tests__/ops-alert-telegram-text-is-html-escaped.test.ts",
-      "revert": "git revert 3b884ec23"
-    },
-    {
-      "what": "backfill_pack_rip_metadata gets a 50 s function-level statement_timeout (inside the route's 60 s wall) - the pipeline alert's failures were all 30 s service_role kills in the spells",
-      "migration": "20260920014006",
-      "instrument": "6:53 PM PT tick 5.3 s ok; falsifier = a post-apply failure at exactly 30.x s",
-      "revert": "ALTER FUNCTION ... RESET statement_timeout"
-    },
-    {
-      "what": "rpc-portfolio-snapshot-retry (jobid 490) now logs a daily-portfolio-snapshot pipeline_runs row (the 'permanent gap' never existed - the retry wrote 27 rows/day)",
-      "migration": "20260920014230",
-      "instrument": "4:17 AM PT tick writes a row with extra.via=pg_cron",
-      "revert": "header"
-    },
-    {
-      "what": "zero-yield suppressions for pinnacle-sales-history-backfill (spork floor), golazos-sales-indexer (live reader, empty market), sales-seller-recovery-dune (Dune stop, expires ~09-24)",
-      "migration": "20260920014558",
-      "instrument": "Zero-Yield arm no longer lists them; re-check conditions in the rows",
-      "revert": "DELETE the three rows"
-    },
-    {
-      "what": "partial indexes idx_sales_2025_null_buyer_coll_sold (golazos/allday buyer backfill candidate scan -98%) and idx_sales_2026_candy_edition_serial_sold (candy_special_serials_board -70%); the 2026 null-buyer twin built and dropped",
-      "migration": "20260920015138 (record-only)",
-      "instrument": "EXPLAIN before/after in the migration header",
-      "revert": "DROP INDEX CONCURRENTLY the two names"
-    },
-    {
-      "what": "match_topshot_players_run weekly full run hand-dispatched on the quiet box: 12.9 s (gateway-killed at 125 s in the storm)",
-      "migration": "none",
-      "instrument": "match_topshot_players_state.last_full_run_at = 6:45 PM PT; tomorrow's 08:00Z edge tick gated ok",
-      "revert": "n/a"
-    },
-    {
-      "what": "R107: refresh_edition_fmv_current(p_full) callable; daily full reconcile as cron_heavy 09:36Z with pipeline_runs; first run 45 s, drift 1->0, orphan pairs 105->0, 15 prices corrected",
-      "migration": "20260920020102 + 020119 + 020523",
-      "instrument": "check_edition_fmv_current_source_drift(1) = [] after each 2:36 AM PT run",
-      "revert": "headers; data from audit_20260919_efc_full_reconcile_backup"
-    },
-    {
-      "what": "#75: VACUUM FULL net._http_response (7.7 s; 10 GB -> 469 MB; db 29,082 -> 18,956 MB) + weekly Sunday 09:43Z job",
-      "migration": "20260920020934",
-      "instrument": "pg_net Dispatch arm store size; Sunday tick succeeded",
-      "revert": "cron.unschedule('rpc-weekly-vacuum-full-pgnet-response')"
-    },
-    {
-      "what": "candy_special_serials_board bounds its last-sale LATERAL to sold_at >= 2026-01-01 (partition pruning): 42,070 -> 3,516 buffers",
-      "migration": "20260920021121",
-      "instrument": "public_board_liveness_state.elapsed_ms for the view",
-      "revert": "header"
-    },
-    {
-      "what": "R98 closes: /api/cache-refresh per-client bound (12/min sliding, 429 before the cooldown read); register cell that read UNSHIPPED corrected from git log",
-      "commit": "66089747d",
-      "instrument": "__tests__/api-cache-refresh-client-bound.test.ts (mutation-proven)",
-      "revert": "git revert 66089747d"
-    },
-    {
-      "what": "match-topshot-players full run gets a pg_cron home (jobid 543, 07:32Z, 300 s prefix) before the 08:00Z edge tick",
-      "migration": "20260920022633",
-      "instrument": "12:32 AM PT tick writes a match-topshot-players row with extra.via=pg_cron; 08:00Z edge tick logs gated:true",
-      "revert": "header"
-    },
-    {
-      "what": "portfolio snapshot: aggregate scoped to users without today's row; pg_cron primary jobid 546 at 06:46Z; route + jobid 490 become ms retries",
-      "migration": "20260920023318",
-      "instrument": "11:46 PM PT tick rows_written = user count; 12:05 AM PT route ok with already_snapshotted = that count",
-      "revert": "header"
-    },
-    {
-      "what": "R115 structural: refresh_fmv_confidence_precompute reads edition_fmv_current (nba_top_shot 5,286 ms -> 31 ms); provenance columns + efc_drift_rows",
-      "migration": "20260920024430",
-      "instrument": "10:35 PM PT jobid 506 tick: nba_top_shot duration_ms < 2000, source = edition_fmv_current, efc_drift_rows 0",
-      "revert": "header (re-apply the 20260920001632 body)"
-    },
-    {
-      "what": "visibility maps: seven tables VACUUM (ANALYZE)d to 99-100 % (sales_2025 never autovacuumed); 0.02 thresholds on eight tables",
-      "migration": "20260920031313",
-      "instrument": "relallvisible/relpages > 95 % a day later with autovacuum_count climbing",
-      "revert": "header (ALTER TABLE ... RESET)"
-    },
-    {
-      "what": "pack_rips autovacuum throttled 50 ms / 50 credits (first try 20/200 did nothing under PG14's page-miss cost 2)",
-      "migration": "20260920032225 + 032539",
-      "instrument": "no job-startup-timeout step during the next pass",
-      "revert": "ALTER TABLE pack_rips RESET (autovacuum_vacuum_cost_delay, autovacuum_vacuum_cost_limit)"
-    },
-    {
-      "what": "pack_rips autovacuum paused; self-unscheduling jobid 560 re-enables at 08:12Z (1:12 AM PT, quietest hour)",
-      "migration": "20260920033248",
-      "instrument": "~1:30 AM PT: autovacuum_count 3, map > 95 %, no rpc-oneoff row left, 08-09Z failures within 3-4/day",
-      "revert": "header"
-    },
-    {
-      "what": "rpc-cron-ops skill: repo source merged with the installed 09-13 text + 09-19 console lessons + list-sweep recipe; bundle re-packed; update card offered (closes #32 when saved)",
-      "commit": "34f692e57",
-      "instrument": "skills:bundles:check green; installed copy == repo source after Trevor saves",
-      "revert": "git revert 34f692e57"
-    },
-    {
-      "what": "rpc-weekly-wmc-reindex-6 (jobid 478) re-pointed at idx_wmc_wallet_coll_ek_fmv_tier (target dropped 09-14); killed reindex-5's invalid _ccnew dropped",
-      "migration": "20260920035444",
-      "instrument": "Sunday 09-27 8:43 PM PT: 477 + 478 succeeded; verify invalid_left = 0",
-      "revert": "header"
-    },
-    {
-      "what": "run_wmc_reindex_verify() sixth target -> idx_wmc_wallet_coll_ek_fmv_tier (lockstep with jobid 478); R117 filed (wmc autovacuum ~3.4 h/day, durations recoverable from postgres_logs)",
-      "migration": "20260920041743",
-      "instrument": "Sunday 09-27 9:03 PM PT verify: absent=[], invalid_left=[]",
-      "revert": "header"
-    },
-    {
-      "what": "get_editions_latest_fmv_wide(uuid[]): all 15 fmv_current columns via the per-id probe, service_role only; A/B on 100 ids: view 40.9 s cold / 22.6 s warm vs helper 40 ms, set-diff 0",
-      "migration": "20260920044216",
-      "instrument": "pgss: the fmv_current 5-col id-list shape stops accruing; helper mean < 200 ms",
-      "revert": "DROP FUNCTION public.get_editions_latest_fmv_wide(uuid[])"
-    },
-    {
-      "what": "wallet-search x2 + cache-refresh read get_editions_latest_fmv_wide; 5 fixture files on the rpc: key (mutation-checked)",
-      "commit": "fa8ca839c",
-      "instrument": "[wallet-search] / [cache-refresh] fmv lookup err lines -> ~0; p90 wallet-search latency",
-      "revert": "git revert fa8ca839c"
-    },
-    {
-      "what": "refresh_fmv_confidence_precompute drift note sampled 1/64 (full check was 146 s of a 204 s tick); efc_drift_sample_mod key",
-      "migration": "20260920054402",
-      "instrument": "control jobid 563: 46.8 s; next ticks 2:35/6:35 AM PT < 90 s with efc_drift_sample_mod=64",
-      "revert": "header (re-apply 20260920024430 body)"
-    },
-    {
-      "what": "jobid 324 rpc-thp-leg-impossible-parallel moved 31 0,6,12,18 -> 59 23,5,11,17 (first :31 tick died at 608 s, io_wait 20; :59 was the schedule doc's own next candidate by 300 s overlap)",
-      "migration": "20260920064608 (superseded) + 20260920064646",
-      "instrument": "09-20 4:59 AM / 10:59 AM PT ticks succeeded < 200 s; trust_precompute_max_age_hours < 13",
-      "revert": "headers (back to 31 0,6,12,18)"
-    }
-  ],
-  "vercel_error_groups_24h": {
-    "total": 50,
-    "note": "all chronic; pack-detail 5 s read timeouts 1,421/24h on /[collection]/pack/dist/[distId], still firing post-noon; Telegram send non-OK 400 first seen 12:04 PM PT (fixed)"
+    "read": "atlas family ~87k s/day + jobid 303 wmc-fmv-changed 28.3k s/day dominate; R117 wmc autovacuum is one contributor, not the driver; all owned / Trevor / route-adjacent"
   },
-  "post_ship_watch": {
-    "jobid_324_thp_leg": "FAILED at the :31 slot on its first tick (09-19 11:31:30 PM PT, 608 s, io_wait 20 - the 06Z pile, not the leg). NOW 59 23,5,11,17 (20260920064646): 09-20 4:59 AM PT (11:59Z) and 10:59 AM PT must read succeeded < 200 s; trust_precompute_max_age_hours must stay < 13 (5:48 PM success ages out ~6:50 AM PT). Falsifier: a kill at :59 with io_wait < 3 = the leg's own cost.",
-    "jobid_506_precompute": "VERIFIED 10:35 PM PT: nba_top_shot 314 ms, source=edition_fmv_current, ok. Run was 204 s because of the full drift check -> sampled (20260920054402); next ticks 2:35 / 6:35 AM PT must read duration_ms < 90,000, efc_drift_sample_mod = 64; Pinnacle arm (~41-54 s under contention) is the remaining cost",
-    "step1_1002Z": "read relallvisible/relpages on wallet_moments_cache at ~3:00 AM PT first; then 3:02 AM PT tick must succeed",
-    "jobid_490_portfolio_snapshot": "4:17 AM PT tick must write a daily-portfolio-snapshot pipeline_runs row with extra.via=pg_cron (20260920014230); the 07:05Z route run stays R109's measurement",
-    "sentinel_telegram": "VERIFIED 6:04 PM PT: notifications = [telegram, email, github-actions-native]",
-    "backfill_pack_rip_metadata": "next IO spell: :53 runs should complete between 30 and 50 s; a failure at exactly 30.x s falsifies the proconfig lever",
-    "match_topshot_players": "09-20 08:00Z edge tick must log gated:true ok",
-    "r107_daily_reconcile": "2:36 AM PT tick succeeded; check_edition_fmv_current_source_drift(1) = []",
-    "pgnet_weekly_vacuum": "Sunday 2:43 AM PT: succeeded under 120 s; store stays < 1 GB",
-    "matcher_pgcron": "09-21 12:32 AM PT: pipeline_runs match-topshot-players via=pg_cron (gated ok); 08:00Z edge tick gated:true",
-    "portfolio_primary": "09-20 11:46 PM PT jobid 546 succeeded with 27 rows; 12:05 AM PT route logs ok in < 1 s with already_snapshotted=27; 4:17 AM PT jobid 490 0 inserted",
-    "cache_refresh_429": "Vercel runtime logs: no 429 from /api/cache-refresh for a real visitor (only enumeration shapes); none expected",
-    "pgnet_toast_and_the_09_17_band": "#126 candidate: if the 02-18Z slow-reads band does NOT return on 09-20 after the 10 GB dead-TOAST reclaim, that was the mechanism; if it returns, it was not",
-    "pack_rips_quiet_hour_pass": "1:12-1:30 AM PT 09-20: pack_rips autovacuum_count 2 -> 3, map 66.7 % -> > 95 %, no startup-timeout step; USER-FACING EXIT: [pack-detail] allday_pack_lifecycle \"exceeded 5000ms\" on /nfl-all-day/pack/dist/* drops from ~60/h to ~0 (EXPLAIN dist 5974: Heap Fetches 4128 -> ~0)",
-    "visibility_maps_day_after": "09-20 evening: the nine maps still > 95 %; topshot_pack_sales_history is the churn control (13.6 k dead 8 min after its vacuum)",
-    "weekly_wmc_reindex": "Sunday 8:23/8:43 PM PT: jobids 477 and 478 succeeded (REINDEX), 9:03 PM verify invalid_left = 0; the wave is 7:03-8:43 PM PT Saturday - schedule nothing heavy into it",
-    "cron_console": "cron-job.org: 88 entries / 17 inactive baseline; an 18th inactive row is an auto-disable",
-    "r117_wmc_autovacuum": "query postgres_logs for \"automatic vacuum of table \\\"postgres.public.wallet_moments_cache\\\"\" and sum dateDiff(session_start_time, timestamp): ~12,000 s/day on 09-19; a lever is only shipped with the idx_tame_open_by_edition heap-fetch falsifier attached",
-    "fmv_wide_helper": "09-21: pg_stat_statements - the fmv_current 5-col id-list read stops accruing calls; get_editions_latest_fmv_wide mean < 200 ms at 50-100 id chunks; falsifier: wallet-search p90 still > 5 s => chunk count, raise CHUNK to 200"
+  "post_ship_watch_pending": {
+    "jobid_324_thp_leg": "first :59 tick 11:59Z (4:59 AM PT) must succeed <200s, io_wait>=3 (a kill at io_wait<3 = the leg's own cost); 06:31Z 608s fail was the pre-move :31 tick",
+    "jobid_506_precompute": "first post-sample tick 09:35Z (2:35 AM PT) must read duration_ms<90000, efc_drift_sample_mod=64; 05:35Z 203.8s was pre-fix",
+    "r107_daily_reconcile": "09:36Z tick; check_edition_fmv_current_source_drift(1)=[]",
+    "jobid_560_pack_rips_autovacuum": "self-unschedules/re-enables 08:12Z; ~1:30 AM PT map>95%, no startup-timeout step",
+    "pack_detail_5s_timeouts": "expected to fall post ~1:30 AM PT (allday_pack_lifecycle heap-fetch reduction)",
+    "backfill_pack_rip_metadata": "lever verified (50.2s not 30.x); remaining fails are batch-size (route QUEUE)"
   },
   "needs_trevor": [
+    "#126: jobid 303 refresh_wmc_fmv_changed (28.3k s/day, #1 FMV reader) and atlas-sync family (~87k s/day) are the cron-fleet cost - both need a product/architecture decision, not an autonomous lever",
     "#22 purge residue GC + rotate",
     "#55 both 2-hourly Routines disabled since 09-01",
-    "jobid 303 refresh_wmc_fmv_changed is the #1 reader - FMV path, needs a decision",
-    "retire portfolios + portfolio_moments outright (option b) now that the grant is gone",
+    "retire portfolios + portfolio_moments outright (option b) now the grant is gone",
     "Golazos Sales Ingest >168h warn threshold vs a market with ~10-day gaps"
   ]
 }

@@ -11,6 +11,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🌙 QUIET HONEST NIGHT — nothing clearly-safe to ship; security 4/4 clean, no new error class, last night's 30 ships verified landing, #126 re-measured (persists) and decomposed · Cowork cloud
+
+**Shipped: 0.** Estate HEALTHY at ~01:0x AM PT (DB `now()` 08:03Z; genuine overnight, no clock skew). Nothing net-positive + reversible was un-owned — every live lever is already tabulated, FMV/ingest-adjacent, or a Trevor call.
+
+**Health:** `rpc_ops_snapshot` security invariants / anon-write / rls-off / secdef-anon all `[]`; structural drift (search_path, txn-control pins, cursor rewinds, suppression-claim) all `[]`; `trust_precompute_max_age_hours` 7.93 (ok); sentinel ts-uuid-editions-48h 0; cross-collection mats fresh. Only trust breach `public_board_slow_count`=3 — the known planner-prune instrument that lies; corroborated against the real instrument (Vercel runtime logs): no public-board 5xx storm, genuine hard 5xx over 24h tiny (503×81 / 500×19 / 504×16, all morning-spell), the 2,100 `/pack/dist` lines are the chronic `read exceeded 5000ms` family logged at HTTP 200. Sentry 0 new issues PAIRED with Vercel = all chronic shapes, none new → last night's 30 ships added no new error class. db 19,046 MB.
+
+**Post-ship watch (last night's 30):** ✅ daily-portfolio-snapshot wrote 27 rows at 02:34Z, dedup correct (06:46/07:05Z ticks → 0); ✅ match-topshot-players pg_cron (543, 07:32Z) + edge (08:00Z) both ok; ✅ pack-rip 50 s function-timeout lever falsifier CLEAN — recent fails at 50.2 s not 30.x s (lever took; remaining fails are the batch-cannot-finish-in-window shape → route-side batch-size QUEUE). ⏳ PENDING their clocks, re-check next pass: jobid 324 `:59` move (first new-schedule tick 11:59Z — the 06:31Z 608 s fail was the PRE-move `:31` tick, expected), jobid 506 drift-sample 1/64 (first post-fix tick 09:35Z — the 05:35Z 203.8 s was pre-fix), r107 daily reconcile (09:36Z), jobid 560 pack_rips autovacuum re-enable (08:12Z), pack-detail 5 s timeouts expected to drop post ~1:30 AM PT.
+
+**#126 advanced (read-only, no ship):** the cron fleet's ~10× busy-seconds since 09-15 PERSISTS after the 30-ship night — busy-s/run flat 24.6 (09-19) → 24.1 (09-20 partial); ~33 % of busy-s is failed runs burning their full statement_timeout. Decomposed over 24h: it is NOT a single regression — atlas family ≈ 87k s/day (`ts-listings-atlas-sync` 42.6k @ 38 % fail, `allday-unmapped-atlas-resolver` 20.5k, `atlas-market-drain` 19.4k, `atlas-editions-drain` 4.7k) + `rpc-refresh-wmc-fmv-changed` (jobid 303, 28.3k s/day, avg 196.6 s — the #1 FMV reader already flagged for Trevor). R117 (wmc autovacuum ~3.4 h/day) is ONE contributor, dwarfed by jobid 303's read cost. No clearly-safe autonomous lever — every top contributor is owned / a Trevor decision / route-adjacent.
+
+- **Revert:** n/a (nothing shipped).
+
 ### 2026-09-19 · ↩ LEG 324's FIRST TICK AT :31 DIED AT 608 s — the :31 "free set" scored arrivals, not overlap, and the schedule doc had already named :59; the leg now runs `59 23,5,11,17` (one minute before the same four hours) · Cowork cloud
 
 **Shipped: 2 schedule-only migrations on jobid 324 `rpc-thp-leg-impossible-parallel` (cron_heavy, jobid preserved, command untouched): `20260920064608` → `16 0,6,12,18` (applied, superseded 38 s later, committed for parity) and `20260920064646` → `59 23,5,11,17`. `docs/operations/cron-schedule.md` row updated.**
