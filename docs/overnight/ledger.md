@@ -11,6 +11,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🔁 THE LEG-324 RESCHEDULE IS SOUND BUT ITS TWO RECORDED CLAIMS WERE BOTH WRONG — the watch times were an hour off and :31 is the 5th-quietest minute, not the 1st · Claude Code (Windows box, post-handoff verification)
+
+**Shipped:** docs only. No schedule, code or DB change — the correction is that the shipped move is *under-sold*, not that it is wrong.
+
+**Verified first (all green, payloads read, not statuses):**
+- **Migration parity clean.** 3 files `20260920001632 / 001811 / 005312`, 3 live rows in `supabase_migrations.schema_migrations`, names identical. Nothing was left in the DB without a file.
+- **jobid 506 exit met.** 18:35 PT run `succeeded` in **12.3 s** (budget 300 s), `extra = {refreshed: 6, failed: []}`. `rows_written: 0` is the null instrument here — `refreshed` is the count that means something.
+- **R115/R116 falsifier holds on a LIVE scheduled run, not just the control:** Candy (9+69)/125 = **62.4 %**, Pinnacle (166+549)/2550 = **28.0 %**, both to the decimal, all 6 collections stamped 18:35 PT.
+- **Trust arm cleared.** `trust_precompute_max_age_hours` is absent from the breach list; the leg wrote `topshot_impossible_parallel_serials = 0` at 17:48 PT in 271.8 s. `public_board_slow_count = 2` still BREACHes (computed 13:48 PT, which is its own cadence, not staleness).
+- **No undeployed-code trap.** `3b884ec23` (lib/ops-alert.ts) is **READY in production** as its own deployment — the docs-only tip `2f977a1fa` did not strand it.
+
+**CORRECTION 1 — the watch times were an hour off.** The handoff says the exit is the "6:31 AM / 12:31 PM PT" ticks. `31 0,6,12,18` is **UTC**; PDT is UTC−7, so the ticks are **5:31 PM / 11:31 PM / 5:31 AM / 11:31 AM PT**. Confirmed empirically, not assumed: the old `48 */6` produced runs at 17:48 / 11:48 / 05:48 / 23:48 PT. The 00:31Z tick fired at 5:31 PM PT, **before** the migration applied at 5:53 PM PT — so **the first tick under the new schedule is 11:31 PM PT tonight**, and anyone checking a morning tick would have read the wrong thing twice over.
+
+**CORRECTION 2 — :31 is not the least-loaded minute.** The recorded basis counted jobs *arriving* in the minute. The leg runs ~272 s, so what binds is other-job-seconds **overlapping its window**. Scored across a 300 s window on hours 0,6,12,18: **:59 = 7,256 s · :58 = 8,291 · :00 = 8,803 · :01 = 8,898 · :31 = 13,912 · :48 (old) = 16,311.** :31 ranks **5th of 60**. Identical ordering in a post-spell-only window (n=5 hours: :59 = 2,925 vs :31 = 4,833), so not an IO-spell artifact. :31 inherits three neighbours the arrival count could not see — 288 (`28 0,6,11,20`, max 361 s), 240 (`30 */2`, max 265 s), 241 (`34 */2`, max 132 s).
+
+**Deliberately NOT shipped:** a second reschedule to :59. The :48→:31 move is a real −21 % and removes the demonstrated 600 s collision with jobid 65 entirely; moving again tonight would change the subject while measuring it and destroy attribution for the very first ticks. :59 is sized and waiting if :31 breaches.
+
+**Revert path:** `git log --grep="the watch times were an hour off"` → `git revert <sha>`. Docs-only; no DB half.
+
 ### 2026-09-19 · ✅ THE VISIBILITY MAP WAS THE MECHANISM — the 0.02 scale factors hold at 15,238 heap fetches a day later, and the new trigger has fired SEVEN more times, so this is steady state and not the honeymoon pass · Cowork cloud (scheduled dated falsifier, read-and-report)
 
 **Shipped: nothing — TEST 1 PASSED, so the revert was not taken. The 0.02 settings on `public.topshot_atlas_market_events` stay live.**
