@@ -10,7 +10,9 @@ CLAUDE.md's preamble says a new rule must **DISPLACE** one rather than spend roo
 
 ⛔ **AND THE OPPOSITE CASE, so the test is not read as "move the big topic sections":** a rule about how sessions COLLIDE — shared-tree staging, `%an` attribution, contaminated measurement windows — is needed by every session at every moment, so it belongs in CLAUDE.md even though it is long. That is what replaced the two blocks above.
 
-✅ **VERIFY A DISPLACEMENT BY ORPHAN COUNT, NOT BY SPOT-CHECK.** Diff the commit, take EVERY removed line over ~40 chars, and search each one VERBATIM in its new home: `preserved: N · orphans: 0`. ⚠ **A spot-check of facts you thought to name cannot catch the loss of something neither party would have listed** — the two are different questions, and only the orphan count answers the second.
+⚠ **A spot-check of facts you thought to name cannot catch the loss of something neither party would have listed** — the two are different questions, and only the orphan count answers the second. ⭐ **The sharper reason: the set you remember to enumerate is the set LEAST likely to contain the thing you dropped.**
+
+⚠ **ONE CAVEAT, so a future session does not panic at a clean result: a line REWORDED IN PLACE reads as removed and will not be found verbatim, producing a FALSE ORPHAN.** So `orphans: 0` is a strong proof and `orphans: N` is a **prompt to look**, not a failure — glance at each one and confirm it was reworded rather than lost. ⭐ **The asymmetry is what makes the check worth running: zero orphans is a guarantee no enumeration can give, and a non-zero count costs only a glance.**
 ## Displaced from CLAUDE.md 2026-09-12 (verbatim) — the strip-comments "blind THREE times" bullet
 
 The guards bullet read, before the 2026-09-12 swap that replaced the un-countable "THREE times"
