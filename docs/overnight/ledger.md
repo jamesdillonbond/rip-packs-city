@@ -11,6 +11,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ jobid 464 UNBLOCKED — my own falsifier fired, and the run records the R118 fix created are what found the real cause: an unindexed NOT EXISTS plus a table that had NEVER been vacuumed · Claude Code Windows box
+
+**The falsifier fired, exactly as written.** `20260920171500` sampled the resolver's 33 s diagnostic and predicted ticks would survive. They did not: the **10:09 and 10:14 PT ticks ran with `diag_sampled: false` — no diagnostic at all — and still died at 120 s.** That migration's header said in advance that this outcome means the cost is elsewhere and that the answer is NOT to re-cut items. Not re-cut.
+
+⭐ **The other half of that migration is what made the diagnosis possible.** With the R118 handler in place the killed ticks finally recorded something, and what they recorded was `mapped_from_events: 10, probes_dispatched: 0` — leg 1 completes, leg 2 dispatches nothing and dies. **Before the handler those ticks logged NOTHING**, which is why 14 h of this had to be inferred from a row-count deficit. The visibility fix paid for itself despite the performance prediction being wrong.
+
+**Cause 1 — a missing index.** Leg 2's candidate query carries `NOT EXISTS (… WHERE q.error = '__nft__' || us.nft_id AND q.drained_at IS NULL)`, and `topshot_atlas_market_requests` had only a pkey on `request_id` and a partial on `dispatched_at` — **no index on `error`** — so that subquery re-scanned the table per candidate across the ~16,800-row backlog. The query alone exceeded the 120 s gateway when run by hand. `20260920174500` adds `idx_tamr_error_open (error) WHERE drained_at IS NULL`. ⚠ Built in-hours **deliberately and safely**: the table is **640 kB / 4,614 rows, 2 of them open**, so the index is a few kB and the lock is milliseconds. Last night's 01:14–01:45 launcher blackouts were builds on ~300 MB+ tables; the lesson taken from them is to SIZE the build, not to avoid builds.
+
+**Cause 2 — `nft_edition_map` had NEVER been vacuumed.** `last_vacuum` AND `last_autovacuum` both NULL, 78.1 % visible, which turned its Index Only Scan into **46,674 heap fetches on 66,544 rows / 43,736 buffers**. Manual `VACUUM (ANALYZE)` (19 MB, seconds): **78.1 % → 100.0 % visible, dead tuples 3,992 → 64, heap fetches 46,674 → 19, that node's buffers 43,736 → 907.**
+
+**Measured, with the caveat stated.** Leg-2 query: **>120 s (timeout) → 34.2 s (index) → 9.8 s (vacuum)**; total buffers **100,428 → 62,639**, read 6,298 → 422. ⚠ The 34 s and 9.8 s runs are both WARM and the planner launched 1 worker then 0, so the **times are not a clean A/B** — the trustworthy figures are the buffer and heap-fetch counts, which are structural.
+
+**Verified by the PRODUCTION CALLER, not by hand:** the **10:19 PT cron tick — `ok=true`, 73.9 s, `probes_dispatched: 10`, `mapped_from_events: 10`** — against three consecutive 120 s kills with `probes_dispatched: 0` immediately before. First tick after the change.
+
+**Watch:** logged runs/hour rises from ~4.6 toward 12, and `open_unresolved` (sampled at minutes 4 and 34) falls faster than the measured −53/h. **Falsifier:** ticks still dying at 120 s with `probes_dispatched = 0` ⇒ the cost is another arm; `topshot_atlas_market_events` has `idx_tame_nft` so look at the regex/jsonb filters on `unmapped_sales` (`Rows Removed by Filter: 63,999`) before touching item counts.
+
+**Revert.** `DROP INDEX IF EXISTS public.idx_tamr_error_open;` The vacuum needs no revert.
+
+⚠ **Not mine, left alone:** `__tests__/inbox-index-lists-every-filing.test.ts` is red on `main` — filing `2026-09-20T1709Z-the-panini-ask-only-disclosure…` has no INDEX.md entry. `npm run inbox:index:fix` **refuses to auto-add by design** ("entries need a human, saying what the filing FOUND"). It belongs to the concurrent Panini session that filed it 10:09 PT; writing a summary of their finding would be me asserting something I did not establish. I reverted the partial count edit the script left behind rather than commit a header disagreeing with its entries.
+
 ### 2026-09-20 · ✅ R120 FIXED — a PRIMARY-KEY rewrite blocked by an FK was aborting the Panini editions upsert twice per walk for 66 days, and because the error was `console.log`-ged the run still reported `ok=true`; ~4.8% of daily edition-walk records were being discarded with nothing to read it off · Claude Code Windows box
 
 **Shipped: 1 migration (`20260920165800`) + `app/api/cron/panini-ingest/route.ts` + `__tests__/api-cron-panini-ingest.test.ts` (2 arms INVERTED, 1 control added) + anon-exec markers on three OTHER sessions' migrations that had `main` red before I arrived. No data was hand-edited — the three damaged rows self-heal on the next walk, which is the exit condition.**
