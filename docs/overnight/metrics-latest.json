@@ -1,30 +1,32 @@
 {
-  "generated_at_pt": "2026-09-19 ~09:45 AM PT",
-  "generated_at_utc": "2026-09-19T16:45Z",
-  "pass": "Trevor-directed morning pass (Cowork, cloud container + laptop VM). PUSH-CAPABLE via the laptop VM (device_bash back after the 09-08 outage; .rpc-git-cred store helper, dry-run exit 0). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 15:04Z at start.",
-  "shipped": 3,
+  "generated_at_pt": "2026-09-19 ~05:30 PM PT",
+  "generated_at_utc": "2026-09-20T00:30Z",
+  "pass": "Trevor-directed evening health pass (Cowork cloud + laptop VM). PUSH-CAPABLE via path A (laptop VM, .rpc-git-cred; d1c11a79c confirmed by ls-remote == HEAD). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 23:59Z at start.",
+  "shipped": 4,
   "reverted": 0,
-  "verdict": "HEALTHY-UNDER-LOAD in a daytime IO spell (io_wait 7-20 of 8-23 active backends all morning). Security 0 violations, secdef drift 0, stalled pipelines 0, 0 invalid indexes, 150/152 cron active, Atlas lanes restored. 63/63 public + 8/8 entity pages pass the rendered-DOM smoke from the sandbox; full vitest 1556 files / 17507 tests green; tsc clean. Vercel 24h: 50 error groups, all chronic read-timeout classes + the 09-18 DNS-outage <!DOCTYPE html> groups; none new. Sentry dark (SDK out of tree) - its zero is not health.",
+  "verdict": "HEALTHY SINCE NOON PT. The alert board's high/medium failure_rate rows are 2-day windows straddling the morning IO spell; split on the change point: cron.job_run_details 0 failures in 5 h (~405 runs/h) vs 30-108/h before noon; pipeline_runs 0.31% failing (11/3,589) vs 1.85% in the prior 12 h; ts-listings 161/161 ok. Security 0/0/0/0, stalled 0, Atlas lanes active. Sentry zero PAIRED with Vercel: 50 groups/24h, all chronic shapes, none new; the [pack-detail] 5 s read-timeout family still fires post-noon and is the next user-facing cost. Telegram pager channel was DARK 12:04-5:07 PM PT (a '<' in an ack note) and is repaired.",
   "health": {
-    "security_invariants": "clean (check_public_security_invariants 0 rows; check_secdef_anon_exec_drift [])",
+    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off [], secdef_anon [])",
     "detect_stalled_pipelines": 0,
-    "cron_jobs": "152 total / 150 active (baseline); 463/464/466 active on original schedules",
-    "io_state": "io_wait 14/15 @08:05, 7/8 @09:13, 20/23 @09:41 PT; jobid 303 refresh_wmc_fmv_changed at 150-390 s/run; mv_topshot_market_index_daily refresh ~500 s",
-    "engine": "writing (fmv_snapshots computed_at fresh, sales ingesting; sentinel 09:04 Sales Ingest read INCONCLUSIVE under saturation, not zero)",
-    "sentinel_0904": "CRITICAL -> one critical arm (Cadence Collapse, ack expired 09-13) + 11 warns (4 INCONCLUSIVE db-saturated, Dune configured stop, edge-fn-drift acked, pg_net #75, Wall Kills fmv-recalc 44.7%). Cadence Collapse re-acked to 2026-10-01 with mechanism (09-13 backstop fix halved wallet-backfill by design; baseline still pre-fix)."
+    "cron_jobs": "154 total / 152 active; 463/464/466 active on original schedules; jobid 506 now carries SET statement_timeout='300s'",
+    "io_state": "io_wait 0 / active 0 of 28 backends at 5:00 PM PT (quiet box)",
+    "trust_breaches": ["public_board_slow_count=2 (instrument lies; not chased)", "trust_precompute_max_age_hours=23.2 (jobid 324 next tick 5:48 PM PT)"],
+    "cross_collection_mats": "BOTH FRESH (cohort 5:13 PM PT, overlap 5:16 PM PT); check_cross_collection_mat_staleness() = []",
+    "sentinel_latest": "5:04 PM PT: email delivered, telegram-FAILED (repaired at 5:07 PM PT; next sweep is the verification)"
   },
   "shipped_items": [
-    {"what": "R101 v2 - atlas listing tick scans the open book once (slim _open24, no grants) + delta-first upserts", "migration": "20260919152824", "commit": "6ba6b3c", "instrument": "pgss queryid -3354316985779850203 blocks/call 927,297 -> ~145k-250k (n=7-16)", "revert": "re-apply 20260919021449 bodies; repoint pins"},
-    {"what": "R101 v2b - temp_buffers 48MB on the tick, work_mem 16MB on the three syncs", "migration": "20260919160033", "commit": "b2ae593", "instrument": "temp_blks_written/call 7,740 -> 2,899 (contract missed at -62%; residual measured to the _cl_want sort)", "revert": "RESET the four SETs"},
-    {"what": "R101 v2c - work_mem 32MB on sync_cached_listings_from_atlas only", "migration": "20260919162927", "commit": "2655dfe", "instrument": "temp_blks_written/call -> 0 (n=2)", "revert": "SET work_mem='16MB'"},
-    {"what": "Sentinel Cadence Collapse re-ack to 2026-10-01 (config row, not a threshold)", "revert": "restore the 09-13 ack text + 2026-09-13 19:00Z expiry (ledger entry)"}
+    {"what": "Sentinel Telegram: escape name/detail/change-line for parse_mode HTML; DB ack text '< 400' -> 'below 400'", "commit": "d1c11a79c", "instrument": "pipeline_runs sentinel notifications must read 'telegram' on the next sweep", "revert": "git revert d1c11a79c (no DB half)"},
+    {"what": "R109 decisive test: step1 25.0 s, step2 30.4 s, portfolio aggregate 5.2 s on a quiet box (relallvisible 1.000); both mats refreshed", "migration": "none (one-off pg_cron jobids 528/529, unscheduled)", "instrument": "check_cross_collection_mat_staleness() = []", "revert": "n/a"},
+    {"what": "R115+R116: confidence precompute 300 s budget prefix on jobid 506, derived collection list, Pinnacle from pinnacle_fmv_history, no coalesce('{}'), pipeline_runs row, ops-snapshot keys derived", "migration": "20260920001632", "instrument": "control run 50.4 s: 6 rows, candy 62.4%, pinnacle 28.0%", "revert": "header of the migration"},
+    {"what": "portfolios: REVOKE INSERT/UPDATE/DELETE FROM PUBLIC, anon, authenticated (dead residue)", "migration": "20260920001811", "instrument": "anon write-grant set = 4, all INSERT-only", "revert": "GRANT INSERT, UPDATE, DELETE ON public.portfolios TO anon, authenticated"}
   ],
-  "vercel_error_groups_24h": {"total": 50, "note": "all chronic (pack-detail/edition/player/popular-on-collection read timeouts) plus the 09-18 DNS-outage groups; none first-seen in 24h"},
+  "vercel_error_groups_24h": {"total": 50, "note": "all chronic; pack-detail 5 s read timeouts 1,421/24h on /[collection]/pack/dist/[distId], still firing post-noon; Telegram send non-OK 400 first seen 12:04 PM PT (fixed)"},
   "post_ship_watch": {
-    "R101_v2_series": "READ THE PGSS CONTRACTS, NOT DURATIONS: blocks/call and temp_blks_written/call for the tick queryid on wholly-post windows (change points 15:28:24Z / 16:00:33Z / 16:29:27Z; counters in the ledger). Falsifiers: v2 <40% down -> revert to 20260919021449; v2c temp_w >500/call at n>=10 -> another spill exists.",
-    "R108_index": "measured and controlled by the concurrent session (~176 GB/day, control flat) - closed",
-    "cadence_collapse_ack": "expires 2026-10-01 19:00Z; if still >=5 degraded with wallet-backfill baseline <400/day, a caller stopped - console first",
-    "match_topshot_players": "weekly full run 09-19 08:00Z died at the 120 s upstream timeout in the night spell; gate retries next Saturday"
+    "jobid_324_thp_leg": "5:48 PM PT tick: trust_precompute_max_age_hours must drop under 13; a 600 s kill on a quiet box means the leg's own cost moved",
+    "jobid_506_precompute": "6:35 PM PT tick succeeded under 300 s; nba_top_shot duration_ms < 200,000",
+    "step1_1002Z": "read relallvisible/relpages on wallet_moments_cache at ~3:00 AM PT first; then 3:02 AM PT tick must succeed",
+    "jobid_490_portfolio_snapshot": "4:17 AM PT tick writes a portfolio_snapshots row (second half of the portfolios exit)",
+    "sentinel_telegram": "next sweep notifications contain 'telegram'"
   },
-  "needs_trevor": ["#22 purge residue GC + rotate", "#55 both 2-hourly Routines disabled since 09-01", "#75 pg_net response store 10.2 GB (VACUUM FULL)", "jobid 303 refresh_wmc_fmv_changed is the #1 reader (411 MB physical/call, 17 wmc indexes) - FMV path, needs a decision", "Dune sunset tick 09-23 12:00Z single-tick loss risk"]
+  "needs_trevor": ["#22 purge residue GC + rotate", "#55 both 2-hourly Routines disabled since 09-01", "#75 pg_net response store 10.2 GB (VACUUM FULL)", "jobid 303 refresh_wmc_fmv_changed is the #1 reader - FMV path, needs a decision", "R107 edition_fmv_current reconcile (changes prices users read)", "retire portfolios + portfolio_moments outright (option b) now that the grant is gone"]
 }
