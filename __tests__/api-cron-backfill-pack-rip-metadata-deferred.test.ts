@@ -62,6 +62,43 @@ describe("/api/cron/backfill-pack-rip-metadata — deferred body", () => {
     expect(call?.[1]).toEqual({ p_limit: 500 })
   })
 
+  // ⚠ ADDED 2026-09-20 with the counters themselves. A count the route drops on
+  // the floor is not an instrument: migration 20260920203815's zero_repair and
+  // unpriced_retry legs return these three, and until this route forwarded them
+  // the ONLY externally visible signal of either drain was `value_resolved`,
+  // which the stale leg also moves. Both arms are asserted -- present when the
+  // RPC returns them, and NULL (never 0) when it does not, because a 0 would read
+  // as "the leg ran and found nothing" against an older function body.
+  it("forwards the zero-repair and newly-written counters into p_extra", async () => {
+    backfillImpl.fn = async () => ({
+      data: {
+        processed: 100, value_resolved: 40,
+        zero_cleared: 5, zero_repriced: 70, value_newly_written: 75,
+      },
+      error: null,
+    })
+    await drive()
+    const p = logParams()
+    expect(p.p_extra.zero_cleared).toBe(5)
+    expect(p.p_extra.zero_repriced).toBe(70)
+    expect(p.p_extra.value_newly_written).toBe(75)
+  })
+
+  it("a function body that does not return them logs NULL, never 0", async () => {
+    // The pre-20260920203815 shape. `?? 0` here would publish a clean reading of
+    // something never measured -- CLAUDE.md's fabricated-value shape, in the one
+    // field whose job is to report whether a repair leg is working.
+    backfillImpl.fn = async () => ({
+      data: { processed: 10, value_resolved: 4 },
+      error: null,
+    })
+    await drive()
+    const p = logParams()
+    expect(p.p_extra.zero_cleared).toBeNull()
+    expect(p.p_extra.zero_repriced).toBeNull()
+    expect(p.p_extra.value_newly_written).toBeNull()
+  })
+
   it("success → ok:true and the three dist states shape the log", async () => {
     backfillImpl.fn = async () => ({
       data: { processed: 10, value_resolved: 4, dist_newly_resolved: 3, dist_already_set: 6, dist_still_null: 1 },

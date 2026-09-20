@@ -82,6 +82,27 @@ async function run(request: NextRequest) {
           // re-prices All Day rows through the same source, so this reads
           // 135-217 while the net-new count is the repair leg's cap of 50.
           allday_resolved: data?.allday_resolved ?? null,
+          // 2026-09-20: the three counters the zero/unpriced repair legs added
+          // (migration 20260920203815, register #128 and #93). They are the ONLY
+          // way to watch those two drains from outside the database, and each
+          // means rows WRITTEN, not rows looked at:
+          //   zero_cleared        a fabricated `pull_value_usd = 0` that could
+          //                       not be priced now, set to NULL (honest unknown)
+          //   zero_repriced       a fabricated 0 that WAS priceable, replaced
+          //                       with the real value -- ~93 % of them at filing,
+          //                       so the fabrication was mostly MASKING a value
+          //                       we already had
+          //   value_newly_written any row that went NULL -> a value this tick
+          // ⚠ `zero_cleared + zero_repriced` falling to 0 while
+          // `pack_rips.pull_value_usd = 0` still has rows means the leg STOPPED
+          // reaching them, which is a different failure from the drain finishing
+          // -- and the two are indistinguishable in `value_resolved`, which is
+          // exactly the trap the `allday_resolved` note below this one records.
+          // ⛔ `?? null` and not `?? 0`: on an older function body these keys are
+          // ABSENT, and a 0 there would read as "the leg ran and found nothing".
+          zero_cleared: data?.zero_cleared ?? null,
+          zero_repriced: data?.zero_repriced ?? null,
+          value_newly_written: data?.value_newly_written ?? null,
           duration_ms: Date.now() - startedMs,
         },
       });
