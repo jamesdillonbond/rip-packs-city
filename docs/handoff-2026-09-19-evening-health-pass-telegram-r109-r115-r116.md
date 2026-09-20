@@ -57,9 +57,18 @@ Ledger entry (top of `docs/overnight/ledger.md`) carries revert paths for all fo
 - **pg_net 10.2 GB (#75)** — measured for the decision: heap 7 MB / TOAST 10 GB / 5,665 live rows; postgres holds MAINTAIN so `VACUUM FULL` is runnable, but it needs ~8 min of ACCESS EXCLUSIVE (pg_net blocked) and the R108 role-window recipe (no SET prefix possible). Trevor's go.
 - All `zz-%` one-off jobs unscheduled; migration guards green locally.
 
+## Fourth pass (7:00–7:20 PM PT) — decisions taken on "do what you think is best"
+
+- 💰 **R107 fixed.** `edition_fmv_current`'s full reconcile was unreachable (gated on an empty table); now `refresh_edition_fmv_current(p_full)` + daily `rpc-edition-fmv-current-full-reconcile` (cron_heavy, 2:36 AM PT) with a `pipeline_runs` row. First run 45 s: drift guard 1 → 0, orphan pairs 105 → 0, 15 prices corrected (net −$271, max −$1,349.55). Backup table kept 30 days. The "do not point more boards at this table" ban is lifted to "gate on the drift guard".
+- 🗄 **#75 done.** `VACUUM FULL net._http_response` ran in **7.7 s** (live tuples only — the 10 GB was dead TOAST): 10 GB → 469 MB, database 29.1 → 19.0 GB. Weekly from now (Sunday 2:43 AM PT). Memory corrected.
+- ⚡ `candy_special_serials_board` 42,070 → 3,516 buffers (index + a partition-pruning `sold_at` bound).
+- 🔍 All `parse_mode:"HTML"` Telegram senders now escape (alerts-send and detect-league-drift already did).
+- 📏 `pack_table_rows` measured (35 k buffers, CPU-bound, pinned view) — not changed.
+- Not taken: dropping `portfolios`/`portfolio_moments`; Golazos threshold; backfilling 09-12's snapshot.
+
 ## Needs Trevor (unchanged from the morning, plus one)
 
-#22 purge residue · #55 the two 2-hourly Routines · #75 pg_net response store 10.2 GB (VACUUM FULL) · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader · R107 (both fixes change prices users read) · **new:** whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · **new:** the #75 `VACUUM FULL net._http_response` window (~8 min pg_net pause) · **new:** the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.
+#22 purge residue · #55 the two 2-hourly Routines · #75 pg_net response store 10.2 GB (VACUUM FULL) · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader · **new:** whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · **new:** the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.
 
 ## Not done, deliberately
 

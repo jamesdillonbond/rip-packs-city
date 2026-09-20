@@ -1,8 +1,8 @@
 {
-  "generated_at_pt": "2026-09-19 ~06:55 PM PT",
-  "generated_at_utc": "2026-09-20T01:55Z",
+  "generated_at_pt": "2026-09-19 ~07:20 PM PT",
+  "generated_at_utc": "2026-09-20T02:20Z",
   "pass": "Trevor-directed evening health pass (Cowork cloud + laptop VM). PUSH-CAPABLE via path A (laptop VM, .rpc-git-cred; d1c11a79c confirmed by ls-remote == HEAD). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 23:59Z at start.",
-  "shipped": 10,
+  "shipped": 15,
   "reverted": 0,
   "verdict": "HEALTHY SINCE NOON PT. The alert board's high/medium failure_rate rows are 2-day windows straddling the morning IO spell; split on the change point: cron.job_run_details 0 failures in 5 h (~405 runs/h) vs 30-108/h before noon; pipeline_runs 0.31% failing (11/3,589) vs 1.85% in the prior 12 h; ts-listings 161/161 ok. Security 0/0/0/0, stalled 0, Atlas lanes active. Sentry zero PAIRED with Vercel: 50 groups/24h, all chronic shapes, none new; the [pack-detail] 5 s read-timeout family still fires post-noon and is the next user-facing cost. Telegram pager channel was DARK 12:04-5:07 PM PT (a '<' in an ack note) and is repaired.",
   "health": {
@@ -14,7 +14,8 @@
       "public_board_slow_count=2 (instrument lies; not chased)"
     ],
     "cross_collection_mats": "BOTH FRESH (cohort 5:13 PM PT, overlap 5:16 PM PT); check_cross_collection_mat_staleness() = []",
-    "sentinel_latest": "6:04 PM PT: telegram + email delivered (Telegram channel restored); CRITICAL on Pipeline Success Coverage only (24 h-window readings from the night spell)"
+    "sentinel_latest": "6:04 PM PT: telegram + email delivered (Telegram channel restored); CRITICAL on Pipeline Success Coverage only (24 h-window readings from the night spell)",
+    "db_size_mb": 18956
   },
   "shipped_items": [
     {
@@ -44,7 +45,7 @@
     {
       "what": "leg 324 rpc-thp-leg-impossible-parallel moved 48 -> 31 0,6,12,18 (collided with jobid 65's 47 */6 MV refresh; both died at 600 s on 5/6 shared ticks)",
       "migration": "20260920005312",
-      "instrument": "trust_precompute_max_age_hours 23.2 -> 5.09 h; 6:31 AM PT tick must read succeeded",
+      "instrument": "trust_precompute_max_age_hours 23.2 -> 5.09 h; 11:31 PM PT tonight then 5:31 AM PT tick must read succeeded",
       "revert": "header of the migration (cron.schedule back to 48 0,6,12,18 as cron_heavy)"
     },
     {
@@ -82,6 +83,24 @@
       "migration": "none",
       "instrument": "match_topshot_players_state.last_full_run_at = 6:45 PM PT; tomorrow's 08:00Z edge tick gated ok",
       "revert": "n/a"
+    },
+    {
+      "what": "R107: refresh_edition_fmv_current(p_full) callable; daily full reconcile as cron_heavy 09:36Z with pipeline_runs; first run 45 s, drift 1->0, orphan pairs 105->0, 15 prices corrected",
+      "migration": "20260920020102 + 020119 + 020523",
+      "instrument": "check_edition_fmv_current_source_drift(1) = [] after each 2:36 AM PT run",
+      "revert": "headers; data from audit_20260919_efc_full_reconcile_backup"
+    },
+    {
+      "what": "#75: VACUUM FULL net._http_response (7.7 s; 10 GB -> 469 MB; db 29,082 -> 18,956 MB) + weekly Sunday 09:43Z job",
+      "migration": "20260920020934",
+      "instrument": "pg_net Dispatch arm store size; Sunday tick succeeded",
+      "revert": "cron.unschedule('rpc-weekly-vacuum-full-pgnet-response')"
+    },
+    {
+      "what": "candy_special_serials_board bounds its last-sale LATERAL to sold_at >= 2026-01-01 (partition pruning): 42,070 -> 3,516 buffers",
+      "migration": "20260920021121",
+      "instrument": "public_board_liveness_state.elapsed_ms for the view",
+      "revert": "header"
     }
   ],
   "vercel_error_groups_24h": {
@@ -89,22 +108,21 @@
     "note": "all chronic; pack-detail 5 s read timeouts 1,421/24h on /[collection]/pack/dist/[distId], still firing post-noon; Telegram send non-OK 400 first seen 12:04 PM PT (fixed)"
   },
   "post_ship_watch": {
-    "jobid_324_thp_leg": "MOVED to 31 0,6,12,18 (20260920005312). 6:31 AM PT / 12:31 PM PT ticks must read succeeded; a 600 s kill at :31 with io_wait < 3 means the leg's own cost moved",
+    "jobid_324_thp_leg": "MOVED to 31 0,6,12,18 (20260920005312). 11:31 PM PT tonight, then 5:31 AM / 11:31 AM PT ticks must read succeeded (31 0,6,12,18 is UTC; PDT = UTC-7 — first draft of this line was an hour off); a 600 s kill at :31 with io_wait < 3 means the leg's own cost moved",
     "jobid_506_precompute": "6:35 PM PT tick succeeded under 300 s; nba_top_shot duration_ms < 200,000",
     "step1_1002Z": "read relallvisible/relpages on wallet_moments_cache at ~3:00 AM PT first; then 3:02 AM PT tick must succeed",
     "jobid_490_portfolio_snapshot": "4:17 AM PT tick must write a daily-portfolio-snapshot pipeline_runs row with extra.via=pg_cron (20260920014230); the 07:05Z route run stays R109's measurement",
     "sentinel_telegram": "VERIFIED 6:04 PM PT: notifications = [telegram, email, github-actions-native]",
     "backfill_pack_rip_metadata": "next IO spell: :53 runs should complete between 30 and 50 s; a failure at exactly 30.x s falsifies the proconfig lever",
-    "match_topshot_players": "09-20 08:00Z edge tick must log gated:true ok"
+    "match_topshot_players": "09-20 08:00Z edge tick must log gated:true ok",
+    "r107_daily_reconcile": "2:36 AM PT tick succeeded; check_edition_fmv_current_source_drift(1) = []",
+    "pgnet_weekly_vacuum": "Sunday 2:43 AM PT: succeeded under 120 s; store stays < 1 GB"
   },
   "needs_trevor": [
     "#22 purge residue GC + rotate",
     "#55 both 2-hourly Routines disabled since 09-01",
-    "#75 pg_net response store 10.2 GB (VACUUM FULL)",
     "jobid 303 refresh_wmc_fmv_changed is the #1 reader - FMV path, needs a decision",
-    "R107 edition_fmv_current reconcile (changes prices users read)",
     "retire portfolios + portfolio_moments outright (option b) now that the grant is gone",
-    "#75 VACUUM FULL net._http_response: heap 7 MB / TOAST 10 GB / 5,665 live rows; ~8 min ACCESS EXCLUSIVE (pg_net paused) via the R108 role-window recipe",
     "Golazos Sales Ingest >168h warn threshold vs a market with ~10-day gaps"
   ]
 }
