@@ -59,6 +59,22 @@ that reports **grep's** zero-match exit, which reads as a failure when the file 
 gating command in the FOREGROUND and capture `$?` immediately, or write the value to the log and parse it.
 
 
+## 🚨 THREE WRITERS, TWO IDENTITIES — `git log --format=%an` separates Cowork from this box, and NOTHING separates two sessions ON the box (2026-09-19, measured after it misfired twice in one evening)
+
+**Measured on `main` between 7:00 and 8:30 PM PT 2026-09-19: 17 commits authored `Claude (Cowork cloud) <noreply@anthropic.com>` and 13 authored `Trevor <tdillonbond@gmail.com>` — and those 13 came from TWO DIFFERENT Claude Code sessions on the Windows box.** A commit made from the box carries Trevor's git identity whichever session made it; the Cowork cloud pass carries its own.
+
+⭐ **SO HALF THE ATTRIBUTION PROBLEM IS FREE, AND THE OTHER HALF IS UNSOLVABLE FROM GIT ALONE:**
+- **Box or Cowork? → `git log -1 --format='%h %an <%ae>' <sha>`.** Decisive, costs nothing, and nobody ran it.
+- **WHICH box session? → GIT CANNOT TELL YOU.** Same name, same email, same working tree, same branch. Ask the peer, or match the commit subject to what you know you wrote.
+
+⛔ **BOTH FAILURE DIRECTIONS HAPPENED ~30 MINUTES APART, AND NEITHER SESSION CHECKED THE AUTHOR:**
+1. A live production change — `zz-vac-1..8`, eight unthrottled `VACUUM (ANALYZE)` pg_cron jobs that starved a real user request for 114 s — was filed as **"ownership UNRESOLVED"** after the two box sessions asked each other and both truthfully answered *not mine*. The owner was the Cowork pass, **visible in `git log` the entire time**.
+2. The mirror: one box session attributed two commits (the `pack_rips` autovacuum throttle) to the other box session, which had not written them. They are authored `Claude (Cowork cloud)` — again one field away.
+
+🚨 **THE RULE: "not mine" + "not mine" ESTABLISHES NOTHING.** The set of sessions you can MESSAGE is not the set of writers — a cloud pass writes this estate and cannot be enumerated from here. ⚠ **Read the author before attributing any production object or commit; and when it says `Trevor`, you have narrowed it to the BOX, not to a session.** Same shape as this repo's caller-discovery rule (eight sources, the last two invisible from a sandbox), pointed at OWNERSHIP instead of callers.
+
+⚠ **COROLLARY — a push range tells you what YOUR push MOVED THE REF PAST, not what you authored.** Commits that arrived by someone else's push sit inside `abc..def` and read as yours. A session claimed to have pushed a peer's commit on exactly this misreading; the peer's reflog settled it, because its own push records `update by push` while a ref moved by someone else arrives as `fetch: fast-forward`.
+
 ## Key env vars (displaced VERBATIM from CLAUDE.md 2026-08-25 to restore memory-file headroom)
 
 CLAUDE.md was at **39,996 of 40,000 characters — four characters of headroom** — which is one edit away from
