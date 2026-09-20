@@ -11,6 +11,45 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🔧 THE MOMENTS OWNERSHIP SWEEP NOW READS THE RIGHT POPULATION — a saved wallet is re-verified because a USER saved it, not because it happened to be a seeded demo wallet · Claude Code Windows box
+
+**Shipped: `app/api/seed-wallet-refresh/route.ts` gains a saved-wallet ownership sweep (cohort-hashed, staleness-gated, burst-capped) + `__tests__/seed-wallet-refresh-saved-sweep.test.ts` (20 arms). No DB change, no new schedule — it rides the four cron-job.org cohorts that already exist.**
+
+🚨 **THE DIAGNOSIS, RE-DERIVED BEFORE ACTING AND IT HELD.** `wallet_moments_cache` is re-verified only by a wallet re-scan, and the only thing that schedules re-scans is this route, whose cohorts are selected `seeded_wallets.id % N = K`. It never read `saved_wallets`. Re-measured 2026-09-20 across all 27 saved wallets / 135 (wallet, collection) pairs:
+
+| population | wallets | pairs | `last_scanned_at` age |
+|---|---|---|---|
+| saved **and** active-seeded → swept | 22 | 110 | 0.18 – 0.71 days |
+| saved, **not** seeded → never swept | 5 | 25 | 5.86 – 42.87 days |
+
+**The ranges do not overlap and 5 × 5 is exactly the stale set**, so membership of `seeded_wallets` FULLY determined whether a user's moments were re-verified. Worst case is a saved wallet holding **2,850 cached Top Shot moments** last walked 7.8 days ago. `check_wmc_ownership_freshness()` returned **47 rows / 35 wallets** (unchanged from the filing).
+
+⚠ **TWO CORRECTIONS TO THE FILING, both narrowing, neither refuting.** (1) The SAVED share of those 47 is **5 rows / 4 wallets**, not 25 — the function's threshold is **7 days** (`p_max_age_days DEFAULT 7`) and it counts only pairs that actually hold cached rows, so the 20 stale-but-empty pairs are correctly ignored. The other 42 rows are non-saved wallets, out of this task's scope. (2) **"Every genuinely new user arrives saved-but-not-seeded" is too strong**: `lib/allow-list/prewarm.ts` INSERTS an early-access signup into `seeded_wallets` as a side effect, which is why 22 of 27 are seeded. The growth claim survives in its true form — **a wallet reaching `saved_wallets` by the ordinary in-app save is never seeded and therefore never re-verified.**
+
+⭐ **THE FALSIFIER WAS RUN AND FAILED TO FIRE.** Writers of `last_scanned_at` are the five per-collection backfill children plus `golazos-discover-buyers`; their only orchestrator is `wallet-backfill-multicollection`, whose callers are this route plus the three on-demand ones (`profile/resolve-and-associate`, `public/queue-wallet`, `allow-list/prewarm`). **`cron.job` was queried, not assumed: NO pg_cron job dispatches a wallet backfill** (jobid 259/497 `reconcile_all_saved_wallet_stats` re-derives stats FROM the cache and cannot advance a scan stamp). Corroborating: the 5 unswept wallets carry `scan_count` **1–3**, against a herd walked twice daily.
+
+⭐ **A SECOND PREMISE CHECKED RATHER THAN ASSUMED, and it decided the dispatch mode.** A cheap `skip_cached=true` walk DOES prune departed moments — `deleteUnseenWmcRows` runs on every pass and `skipCached` suppresses only the re-WRITE of an already-cached id, never the on-chain enumeration. Had that been false, a re-scan would not have fixed stale ownership at all and the whole fix would have been the wrong shape. The sweep therefore dispatches `skip_cached=true` and pays no upsert cost to reach the same holdings.
+
+💰 **THE COST, SIZED BEFORE SHIPPING, AND THE CAP IS NOT THE COST.** The marginal load is `|saved \ active-seeded|` **only** — an already-seeded wallet is excluded because its own cohort walks it, so nothing is dispatched twice. Today that is **5 wallets × 5 collections**. Two knobs bound two different things and conflating them is what made this look like an open-ended spend commitment:
+- **`SEED_REFRESH_SAVED_STALE_HOURS` (24) bounds the STEADY-STATE rate.** A wallet is a candidate only once its newest walk ages past the threshold, so each swept wallet costs 5 walks per threshold period however many waves observe it: **~25 walks/day against the ~2,540/day the seeded herd already runs (254 active × 5 × 2 waves) — about +1%.**
+- **`SEED_REFRESH_SAVED_MAX_PER_WAVE` (10) bounds the BURST only.** It cannot raise the steady-state rate; it caps how much of a backlog one invocation may drain, so an import of 500 users degrades into a slower catch-up instead of an on-chain stampede.
+
+⚠ **IO position checked before shipping, per the "do not ship into a saturation spell" rule:** `pg_stat_activity` showed **zero backends in `DataFileRead`** at 11:05 AM PT (7 × `ClientRead`, otherwise idle workers). Not a spell.
+
+⛔ **COHORT ASSIGNMENT IS A STABLE HASH OF THE ADDRESS, mirroring `seeded_wallets.id % N`.** The four cohorts run in separate lambdas minutes apart, never see each other's picks, and the walks are async — so `last_scanned_at` has NOT moved when the next cohort reads. A shared candidate list would have fanned each wallet out **4×, not 1×**. The test asserts the partition property directly (every address in exactly one bucket, for N ∈ {2,3,4,8}), plus a not-vacuous spread arm so a constant function cannot pass it.
+
+⛔ **THE CHAIN GATE IS `isCadenceAddress` FROM `lib/address.ts`, NOT `startsWith("0x")`** — this route fans out to the five published FLOW collections, so a Candy (base58) or EVM (40-hex) saved wallet has nothing here to walk. It is **excluded AND COUNTED**, never silently dropped: *"this sweep does not cover that chain"* and *"that wallet is fresh"* are different facts and only one is true. ⭐ **The hex path is pinned as its own no-change arm** in the same test, because a stricter gate can pass every Solana assertion while silently dropping Flow.
+
+⛔ **HONESTY: A FAILED READ IS REPORTED, NEVER RENDERED AS AN EMPTY SWEEP.** The loader returns `error` set with an empty list on either read failure, and the terminal `pipeline_runs` row carries `saved_sweep_state` ∈ `{ok, disabled, read_failed}` with **every count NULL** unless a count was actually taken — a `0` there would be the fabricated-measurement shape, and *disabled*, *could not look* and *nothing was stale* would render identically. The `staleMs=0` kill switch leaves `freshSkipped` at 0 too, so the state field is the only discriminator — which is exactly why the counts are NULL. The `saved_wallets` read is a keyset walk with an explicit `truncated` flag rather than a `break` that returns a partial list nobody can distinguish from a complete one.
+
+✅ **Verified:** `tsc --noEmit` clean (`--max-old-space-size=3072`), `lint:ratchet` **712/712 at baseline** (3,087 files — it stated its count, it did not go silent), the four seed-wallet-refresh suites **36/36**, `unbounded-fetch-in-after-routes-ratchet` **9/9**.
+
+⚠ **`npm test` WAS NOT GREEN AND THE WRAPPER SAID IT WAS: `2 failed | 1568 passed (1570)` under `[exited with code 0]`** — the background-task exit code is the WRAPPER's, exactly the trap CLAUDE.md names, and reading it instead of the summary line would have shipped this as "suite green". The two are `component-CollectionTabClient` and `api-og-cards-render-sweep`, both **`Test timed out in 30000ms`** on a run whose wall clock was 476 s with 1,404 s of import time. **Re-run in isolation: 3 files / 186 tests PASS.** Neither imports `seed-wallet-refresh` (the readers of that route are the four suites above plus the after-fetch ratchet, `scripts/detect-duplicate-cron-pipelines.mjs` and the backstop workflow), so these are load-induced flakes, not this change. ⚠ **Recorded rather than waved off — a 30 s timeout that only appears at full-suite concurrency is worth a number next time someone sees it.**
+
+⏳ **NOT YET VERIFIED AND SAID PLAINLY: the backlog is still there.** The gate executes only UTC hours 0/1/12/13 and it is 11:17 AM PT (18:17 UTC), so the first wave to run this code lands **5:45 PM PT today**. `check_wmc_ownership_freshness()` still returns 47. The exit check is that **no row it returns is a `saved_wallets` wallet, and stays that way for a wallet absent from `seeded_wallets`** — re-run after the wave, do not assume.
+
+- **Revert:** `git revert <sha>` for the code. ⭐ **Or, without a deploy: set `SEED_REFRESH_SAVED_STALE_HOURS=0`** — the sweep then selects nothing and the route is behaviourally identical to its pre-2026-09-20 self. No DB object was created, so there is no SQL half to this revert path.
+
 ### 2026-09-20 · 📚 CLAUDE.md + reference docs updated for the pack-inventory work — one new cross-cutting rule, four displacements, net +118 chars · Claude Code cloud
 
 Session close-out. **CLAUDE.md 39,592 → 39,717 chars (headroom 408 → 283).** Measured with `node -e … .length`, never `wc -c` — which reads **40,263 BYTES** on this file and would have said "already over".
