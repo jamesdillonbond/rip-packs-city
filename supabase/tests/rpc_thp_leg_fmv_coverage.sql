@@ -331,24 +331,22 @@ SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute
   'breach threshold, so a failed leg pages instead of publishing a stale value as current');
 ROLLBACK TO SAVEPOINT before_generic_error;
 
--- ── ⚠ ...BUT IT CANNOT FIRE ON A STATEMENT TIMEOUT, WHICH IS THE ONLY FAILURE
---    THIS INSTANCE ACTUALLY PRODUCES ────────────────────────────────────────
+-- ── ✅ THE SENTINEL IS NOW REACHABLE ON A STATEMENT TIMEOUT (R118, 2026-09-20) ──
 -- PostgreSQL: "the special condition name OTHERS matches every error type except
--- QUERY_CANCELED and ASSERT_FAILURE". A statement_timeout raises query_canceled
--- (57014), so every one of these eight legs has an exception handler that is
--- STRUCTURALLY INCAPABLE of firing on its own real-world failure mode — live
--- `WHERE value = 999` has returned zero rows, ever.
+-- QUERY_CANCELED and ASSERT_FAILURE" — a statement_timeout raises query_canceled
+-- (57014), so until 2026-09-20 every leg's `WHEN OTHERS` handler was structurally
+-- blind to the one failure this instance produces, and `WHERE value = 999` had
+-- returned zero rows, ever. Catching the cancel was first shipped and reverted on
+-- 2026-08-15 (`255e7d24`) because the legs then ran INSIDE ONE orchestrator CALL:
+-- a caught cancel in leg N let legs N+1..8 run with the timer already spent. The
+-- 2026-08-16 8-way cron split removed that objection — each leg is its own
+-- top-level statement under run_thp_leg_logged, and after a caught cancel the only
+-- remaining work is this INSERT and one log_pipeline_run row. Re-derived and
+-- re-pointed 2026-09-20 (migration 20260920143959): `WHEN query_canceled OR OTHERS`.
+-- Live control the same morning: a leg killed under a 3 s prefix budget wrote its
+-- terminal thp-leg-* row ok=false '57014: …' (before: only the heartbeat row).
 --
--- ⚠ This is pinned as CURRENT BEHAVIOUR and is deliberately NOT "fixed" here.
--- Catching the cancel was shipped and reverted the same session (2026-08-15,
--- `255e7d24`): after a cancel is caught the timer is NOT re-armed, so every
--- remaining statement runs with no bound at all on the 2 GB instance whose
--- saturation caused the timeout — a bounded failure traded for an unbounded one.
--- The structural remedy was the 8-way cron split (shipped 2026-08-16), which
--- gives each leg its own top-level statement and its own budget.
---
--- If a future change makes the sentinel reachable on a timeout, THIS TEST MUST
--- FAIL — that is the point. Re-derive the trade-off before re-pointing it.
+-- If a future change makes the sentinel UNREACHABLE again, THIS TEST MUST FAIL.
 CREATE FUNCTION public._cancel() RETURNS TABLE(edition_id uuid, collection_id uuid,
                                                computed_at timestamptz, confidence text)
 LANGUAGE plpgsql AS $$
@@ -375,17 +373,16 @@ BEGIN
   EXCEPTION WHEN query_canceled THEN
     caught := true;
   END;
-  PERFORM _assert(caught,
-    'a statement timeout (57014) ESCAPES the leg entirely — WHEN OTHERS does not match '
-    'QUERY_CANCELED, so the handler never runs');
+  PERFORM _assert(NOT caught,
+    'a statement timeout (57014) is CAUGHT inside the leg (WHEN query_canceled OR OTHERS, '
+    'R118 2026-09-20) — the handler runs and nothing escapes');
 END $$;
 
-SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = 999), '0',
-  'and therefore NO 999 sentinel is written on the one failure mode this instance '
-  'actually produces — the arms keep their previous values and publish them as current');
-SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = -424242), '20',
-  'the arms are left EXACTLY as they were: a frozen value is indistinguishable from a '
-  'fresh one in v_rpc_trust_health, which has no per-metric age column');
+SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = 999), '20',
+  'and therefore ALL twenty arms get the 999 sentinel on the one failure mode this '
+  'instance actually produces — no arm keeps a frozen value and publishes it as current');
+SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = -424242), '0',
+  'no arm is left as it was: the marker is gone from every row the leg owns');
 ROLLBACK TO SAVEPOINT before_cancel;
 
 SELECT '✓ rpc_thp_leg_fmv_coverage invariants pass' AS result;

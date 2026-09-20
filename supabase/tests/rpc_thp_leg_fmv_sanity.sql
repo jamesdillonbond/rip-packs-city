@@ -80,18 +80,22 @@ SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute
 SELECT _assert((SELECT now() - computed_at FROM public.rpc_trust_health_precompute) < interval '1 minute',
   're-running refreshes computed_at');
 
--- ── ⚠ THE SENTINEL IS UNREACHABLE ON THE ONLY FAILURE THIS INSTANCE PRODUCES ──
--- Every leg carries an `EXCEPTION WHEN OTHERS` handler whose whole purpose is the
--- loud 999. PostgreSQL: "the special condition name OTHERS matches every error type
--- except QUERY_CANCELED and ASSERT_FAILURE" — and a statement_timeout raises
--- query_canceled (57014). Live `WHERE value = 999` has returned zero rows, ever.
+-- ── ✅ THE SENTINEL IS NOW REACHABLE ON A STATEMENT TIMEOUT (R118, 2026-09-20) ──
+-- PostgreSQL: "the special condition name OTHERS matches every error type except
+-- QUERY_CANCELED and ASSERT_FAILURE" — a statement_timeout raises query_canceled
+-- (57014), so until 2026-09-20 every leg's `WHEN OTHERS` handler was structurally
+-- blind to the one failure this instance produces, and `WHERE value = 999` had
+-- returned zero rows, ever. Catching the cancel was first shipped and reverted on
+-- 2026-08-15 (`255e7d24`) because the legs then ran INSIDE ONE orchestrator CALL:
+-- a caught cancel in leg N let legs N+1..8 run with the timer already spent. The
+-- 2026-08-16 8-way cron split removed that objection — each leg is its own
+-- top-level statement under run_thp_leg_logged, and after a caught cancel the only
+-- remaining work is this INSERT and one log_pipeline_run row. Re-derived and
+-- re-pointed 2026-09-20 (migration 20260920143959): `WHEN query_canceled OR OTHERS`.
+-- Live control the same morning: a leg killed under a 3 s prefix budget wrote its
+-- terminal thp-leg-* row ok=false '57014: …' (before: only the heartbeat row).
 --
--- Pinned as CURRENT BEHAVIOUR, deliberately NOT fixed here: catching the cancel was
--- shipped and reverted the same session (2026-08-15, `255e7d24`) because the timer is
--- not re-armed afterwards, so every remaining statement would run unbounded on the
--- 2 GB instance whose saturation caused the timeout. The structural remedy was the
--- 2026-08-16 8-way cron split. If a change makes the sentinel reachable, THIS FAILS.
-
+-- If a future change makes the sentinel UNREACHABLE again, THIS TEST MUST FAIL.
 DROP VIEW public.v_fmv_sanity_flags;
 CREATE FUNCTION public._cancel() RETURNS TABLE(id int)
 LANGUAGE plpgsql AS $c$
@@ -106,11 +110,11 @@ BEGIN
     PERFORM public.rpc_thp_leg_fmv_sanity();
   EXCEPTION WHEN query_canceled THEN caught := true;
   END;
-  PERFORM _assert(caught, 'a 57014 escapes the leg — WHEN OTHERS does not match QUERY_CANCELED');
+  PERFORM _assert(NOT caught, 'a 57014 is CAUGHT inside the leg (WHEN query_canceled OR OTHERS, R118) — it no longer escapes');
 END $cancel$;
-SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = 999), '0',
-  'no 999 is written on a timeout, so the arm keeps its previous value and publishes it as '
-  'current — and v_rpc_trust_health has no per-metric age column to expose that');
+SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = 999), '1',
+  'the 999 sentinel IS written on a timeout — the arm writes its loud failure value instead of '
+  'publishing a frozen number as current (v_rpc_trust_health has no per-metric age column)');
 
 SELECT '✓ rpc_thp_leg_fmv_sanity invariants pass' AS result;
 

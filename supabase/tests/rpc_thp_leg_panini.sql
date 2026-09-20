@@ -138,19 +138,23 @@ SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute
   'an ordinary error flips BOTH arms to 999, above the dry-days breach threshold of 3');
 ROLLBACK TO SAVEPOINT generic_err;
 
--- ── ⚠ THE SENTINEL IS UNREACHABLE ON THE ONLY FAILURE THIS INSTANCE PRODUCES ──
+-- ── ✅ THE SENTINEL IS NOW REACHABLE ON A STATEMENT TIMEOUT (R118, 2026-09-20) ──
 -- PostgreSQL: "the special condition name OTHERS matches every error type except
--- QUERY_CANCELED and ASSERT_FAILURE" — and a statement_timeout raises query_canceled
--- (57014). Live `WHERE value = 999` has returned zero rows, ever. Pinned as CURRENT
--- BEHAVIOUR: catching the cancel was shipped and reverted the same session
--- (2026-08-15, `255e7d24`) because the timer is not re-armed afterwards. If a change
--- makes the sentinel reachable, THIS FAILS.
+-- QUERY_CANCELED and ASSERT_FAILURE" — a statement_timeout raises query_canceled
+-- (57014), so until 2026-09-20 every leg's `WHEN OTHERS` handler was structurally
+-- blind to the one failure this instance produces, and `WHERE value = 999` had
+-- returned zero rows, ever. Catching the cancel was first shipped and reverted on
+-- 2026-08-15 (`255e7d24`) because the legs then ran INSIDE ONE orchestrator CALL:
+-- a caught cancel in leg N let legs N+1..8 run with the timer already spent. The
+-- 2026-08-16 8-way cron split removed that objection — each leg is its own
+-- top-level statement under run_thp_leg_logged, and after a caught cancel the only
+-- remaining work is this INSERT and one log_pipeline_run row. Re-derived and
+-- re-pointed 2026-09-20 (migration 20260920143959): `WHEN query_canceled OR OTHERS`.
+-- Live control the same morning: a leg killed under a 3 s prefix budget wrote its
+-- terminal thp-leg-* row ok=false '57014: …' (before: only the heartbeat row).
+--
+-- If a future change makes the sentinel UNREACHABLE again, THIS TEST MUST FAIL.
 DROP VIEW public.v_panini_serial_sale_field_supply;
--- ⚠ The stub's column set must match what the leg actually SELECTS. After the
--- 08-18 re-point onto column_last_sale_usd, a stub still declaring only the old
--- columns makes the leg fail with undefined_column (42703) — which WHEN OTHERS
--- DOES catch — so the 57014 never surfaced and this probe silently tested the
--- wrong error. Keep every column the leg reads listed here.
 CREATE FUNCTION public._cancel() RETURNS TABLE(capture_day date, raw_supplied_sale_price int,
                                                column_last_sale_usd int,
                                                mapping_shortfall numeric)
@@ -166,11 +170,11 @@ BEGIN
     PERFORM public.rpc_thp_leg_panini();
   EXCEPTION WHEN query_canceled THEN caught := true;
   END;
-  PERFORM _assert(caught, 'a 57014 escapes the leg — WHEN OTHERS does not match QUERY_CANCELED');
+  PERFORM _assert(NOT caught, 'a 57014 is CAUGHT inside the leg (WHEN query_canceled OR OTHERS, R118) — it no longer escapes');
 END $cancel$;
-SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = 999), '0',
-  'no 999 is written on a timeout, so both arms keep their previous values and publish '
-  'them as current — and v_rpc_trust_health has no per-metric age column to expose that');
+SELECT _assert_eq((SELECT count(*)::text FROM public.rpc_trust_health_precompute WHERE value = 999), '2',
+  'the 999 sentinel IS written on a timeout — both arms write their loud failure value instead of '
+  'publishing a frozen number as current (v_rpc_trust_health has no per-metric age column)');
 
 SELECT '✓ rpc_thp_leg_panini invariants pass' AS result;
 
