@@ -11,6 +11,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🚨 A PUBLIC BOARD HAS BEEN RENDERING CASE-DESTROYED SOLANA ADDRESSES AS WALLET IDENTITIES SINCE 09-19 — and the board's own "named parties" counter was counting them as resolved @handles · Claude Code cloud
+
+**Shipped: `lib/flowty-username.ts` + `lib/analytics/username-resolver.ts` (copy-paste twins, both fixed) + `__tests__/flowty-username-keys-are-chain-scoped.test.ts` (14 arms, planted-defect control: 4 red / 14 green). No DB change.**
+
+🚨 **CAUGHT LIVE IN PRODUCTION, NOT IN REVIEW.** `/api/public/insights/top-sales?collection=candy_mlb`, measured 11:37 AM PT, first three rows:
+
+    buyer_address  1Ttv9XYVPgHRJQwBX2Ccn5GUcgM5BsAWX13kH4gZEQV   (real)
+    buyer_name     1ttv9xyvpghrjqwbx2ccn5gucgm5bsawx13kh4gzeqv   (RENDERED)
+
+Six mangled addresses in three rows. `displayName()` folded its argument and then handed the **folded string** to `truncateAddress()` as the fallback — so what the board printed as the wallet's identity was an address that resolves to nothing on any chain. ⛔ **CLAUDE.md names this exact shape — "fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence" — and it still shipped**, because the Candy arm of `top-sales` was opened 09-19 without anyone asking what the name resolver does to a base58 key.
+
+⭐ **THE SECOND-ORDER DEFECT IS THE ONE THAT SHOULD SCARE US.** `TopSalesBoardClient` counts a row as having a resolved @handle with `!r.buyer_name.includes("…")`. `truncateAddress` returns `a` **unchanged** when it does not start with `0x` — so a folded 43-char base58 address came back whole, **with no ellipsis**, and the board's `named` counter scored it as a successfully resolved handle. **A fabricated value passed the very heuristic that exists to detect fabrication.** After the fix the fallback is `1Ttv9X…ZEQV`, which the same heuristic correctly reads as unnamed — one change repairs the render AND the metric.
+
+⚠ **BOTH TWINS FIXED IN ONE PASS.** `lib/flowty-username.ts` (server) and `lib/analytics/username-resolver.ts` (client) carry byte-level copies of the same two functions; only the server one showed the symptom. CLAUDE.md's rule — *grep for the EXPRESSION, not the file* — is what caught the second, and the test runs one battery against **both** so neither can drift alone. ⚠ The client's `normalize()` still admits Flow addresses ONLY and that stays: there is no Solana @handle source, so a Candy wallet is never asked about. **That is an honest absence — it just has to reach the renderer with its case intact.**
+
+⚠ **THE HEX PATH IS BYTE-IDENTICAL, fold included, and pinned as its own no-change arm** (CLAUDE.md: never narrow the incumbent chain while widening for a new one). Planted-defect control run in both directions: disabling the base58 branch reds **4 of 14**; restoring greens all 14.
+
+**Revert:** `git revert` the commit touching `lib/flowty-username.ts`. No DB half.
+
+
 ### 2026-09-20 · ⚖ CORRECTION TO MY OWN THREE ENTRIES TODAY — THE CHANGE POINT IS A COMPUTE RESIZE AT 10:39:57 AM PT, NOT "THE BOX CALMED DOWN"; thin-FMV re-measured 604 s → 11.23 s and the 57.9 h stale guard is cleared · Claude Code cloud
 
 **Shipped: one data mutation (`refresh_topshot_thin_fmv_editions()`, 7 → 11 rows). No code.**
