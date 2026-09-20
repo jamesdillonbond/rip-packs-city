@@ -1,8 +1,8 @@
 {
-  "generated_at_pt": "2026-09-19 ~10:10 PM PT",
-  "generated_at_utc": "2026-09-20T05:10Z",
+  "generated_at_pt": "2026-09-19 ~10:55 PM PT",
+  "generated_at_utc": "2026-09-20T05:55Z",
   "pass": "Trevor-directed evening health pass (Cowork cloud + laptop VM). PUSH-CAPABLE via path A (laptop VM, .rpc-git-cred; d1c11a79c confirmed by ls-remote == HEAD). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 23:59Z at start.",
-  "shipped": 28,
+  "shipped": 29,
   "reverted": 0,
   "verdict": "HEALTHY SINCE NOON PT. The alert board's high/medium failure_rate rows are 2-day windows straddling the morning IO spell; split on the change point: cron.job_run_details 0 failures in 5 h (~405 runs/h) vs 30-108/h before noon; pipeline_runs 0.31% failing (11/3,589) vs 1.85% in the prior 12 h; ts-listings 161/161 ok. Security 0/0/0/0, stalled 0, Atlas lanes active. Sentry zero PAIRED with Vercel: 50 groups/24h, all chronic shapes, none new; the [pack-detail] 5 s read-timeout family still fires post-noon and is the next user-facing cost. Telegram pager channel was DARK 12:04-5:07 PM PT (a '<' in an ack note) and is repaired. EVENING ADDENDUM 8:40 PM PT: ~30 lane failures between 8:07 and 8:33 PM PT were self-inflicted (manual VACUUM scans + an unthrottled pack_rips autovacuum), all self-clearing; filed in the ledger as such.",
   "health": {
@@ -173,6 +173,12 @@
       "commit": "fa8ca839c",
       "instrument": "[wallet-search] / [cache-refresh] fmv lookup err lines -> ~0; p90 wallet-search latency",
       "revert": "git revert fa8ca839c"
+    },
+    {
+      "what": "refresh_fmv_confidence_precompute drift note sampled 1/64 (full check was 146 s of a 204 s tick); efc_drift_sample_mod key",
+      "migration": "20260920054402",
+      "instrument": "control jobid 563: 46.8 s; next ticks 2:35/6:35 AM PT < 90 s with efc_drift_sample_mod=64",
+      "revert": "header (re-apply 20260920024430 body)"
     }
   ],
   "vercel_error_groups_24h": {
@@ -181,7 +187,7 @@
   },
   "post_ship_watch": {
     "jobid_324_thp_leg": "MOVED to 31 0,6,12,18 (20260920005312). 11:31 PM PT tonight, then 5:31 AM / 11:31 AM PT ticks must read succeeded (31 0,6,12,18 is UTC; PDT = UTC-7 — first draft of this line was an hour off); a 600 s kill at :31 with io_wait < 3 means the leg's own cost moved",
-    "jobid_506_precompute": "10:35 PM PT tick: nba_top_shot duration_ms < 2,000 (was 5,286 quiet / 100,800 in a spell), efc_drift_rows = 0, Candy ~62 %, Pinnacle ~28 %",
+    "jobid_506_precompute": "VERIFIED 10:35 PM PT: nba_top_shot 314 ms, source=edition_fmv_current, ok. Run was 204 s because of the full drift check -> sampled (20260920054402); next ticks 2:35 / 6:35 AM PT must read duration_ms < 90,000, efc_drift_sample_mod = 64; Pinnacle arm (~41-54 s under contention) is the remaining cost",
     "step1_1002Z": "read relallvisible/relpages on wallet_moments_cache at ~3:00 AM PT first; then 3:02 AM PT tick must succeed",
     "jobid_490_portfolio_snapshot": "4:17 AM PT tick must write a daily-portfolio-snapshot pipeline_runs row with extra.via=pg_cron (20260920014230); the 07:05Z route run stays R109's measurement",
     "sentinel_telegram": "VERIFIED 6:04 PM PT: notifications = [telegram, email, github-actions-native]",

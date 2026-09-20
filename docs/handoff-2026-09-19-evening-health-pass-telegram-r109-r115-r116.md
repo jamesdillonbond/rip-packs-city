@@ -109,6 +109,13 @@ Ledger entry (top of `docs/overnight/ledger.md`) carries revert paths for all fo
 - **Exit:** by 09-21 pgss shows the view's 5-col shape no longer accruing and the helper at a mean < 200 ms; `[wallet-search]` / `[cache-refresh] fmv lookup err` → ~0. **Falsifier:** a p90 wallet still > 5 s ⇒ chunk COUNT (60 parallel chunks of 50), raise `CHUNK` before blaming the helper.
 - **Revert:** `git revert fa8ca839c` (routes + fixtures + doc paragraph); `DROP FUNCTION public.get_editions_latest_fmv_wide(uuid[])` only after that.
 
+## Eleventh pass (10:35–10:55 PM PT) — the jobid 506 watch, and the note that cost more than the fix
+
+- ✅ **jobid 506, 10:35 PM PT tick:** R115's exit met — `nba_top_shot` 314 ms from `edition_fmv_current` (was 5,286 / 100,800 ms). Whole run 204 s though: arms 57.8 s (Pinnacle 54.2 s from its 256 k-row history under DataFileRead contention) and **~146 s in the full `check_edition_fmv_current_source_drift(1)` I added at 7:44 PM as a provenance note.** By hand it hit the 120 s timeout outright; the 1/64 sample takes 1.9 s.
+- 🔧 `20260920054402`: the note is now the 1/64 sample, `extra.efc_drift_sample_mod = 64` beside the sampled `efc_drift_rows`. Control (one-off jobid 563, unscheduled): **46.8 s**, drift 2 sampled, nba_top_shot 887 ms, Pinnacle 40.7 s. First live drift-rate reading: ≥ 50 editions (~0.6 %) drift between the 2:36 AM reconciles — the documented R107 mechanism, bounded daily.
+- 📝 Pinnacle's arm is now 87 % of the lane: R115's original shape (DISTINCT ON over all history) on a 35 MB table. A `pinnacle_fmv_current` cache keyed on `render_id` is the same fix; not needed tonight at 47 s × 4/day.
+- Health 8:58–9:44 PM PT: `rpc-ts-listings-atlas-sync` failed 18 ticks at its 120 s budget and `rpc-allday-unmapped-atlas-resolver` 7, with `job startup timeout` steps at 9:08/9:13/9:22/9:30 — the wmc autovacuum + reindex-wave tail already filed under R117. Both lanes have run clean since 9:46 PM, straight through my 40 s cold view scan at ~9:52 PM (a data point that the A/B itself did not fail anything). At 30–87 s per 2-minute tick and 68–119 s per 5-minute tick they sit inside the "two lanes over budget" finding from 09-18.
+
 ## Needs Trevor
 
 #22 purge residue · #55 the two 2-hourly Routines · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader (FMV path) · whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.
