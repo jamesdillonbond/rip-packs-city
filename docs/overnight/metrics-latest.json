@@ -10,32 +10,87 @@
     "structural_drift": "clean (function/procedure search_path drift [], txn-control pins [], backward_cursor_rewinds [], suppression_parked_claim_drift [])",
     "detect_stalled_pipelines": "1 (pinnacle-metadata-backfill invoked_but_never_logged, silent 223m, heartbeat 07:22Z firing - chronic cadence-only lane, medium, not new)",
     "trust_precompute_max_age_hours": 7.93,
-    "trust_breaches": ["public_board_slow_count=3 (planner-prune instrument that lies; Vercel shows no board 5xx storm)"],
+    "trust_breaches": [
+      "public_board_slow_count=3 (planner-prune instrument that lies; Vercel shows no board 5xx storm)"
+    ],
     "sentinel_ts_uuid_editions_48h": 0,
     "cross_collection_mat_staleness": "[]",
     "sentry_new_24h": 0,
     "vercel_error_groups_note": "top route /[collection]/pack/dist/[distId] 2100/24h - chronic 'read exceeded 5000ms' family logged at HTTP 200; genuine hard 5xx tiny (503x81, 500x19, 504x16, morning-spell)",
     "db_size_mb": 19046,
     "fmv_high_med_by_collection": {
-      "nba_top_shot": {"HIGH": 1341, "MEDIUM": 5900},
-      "nfl_all_day": {"HIGH": 61, "MEDIUM": 1573},
-      "disney_pinnacle": {"HIGH": 166, "MEDIUM": 549},
-      "candy_mlb": {"HIGH": 9, "MEDIUM": 69},
-      "laliga_golazos": {"HIGH": 0, "MEDIUM": 4},
-      "ufc_strike": {"HIGH": 0, "MEDIUM": 0}
+      "nba_top_shot": {
+        "HIGH": 1341,
+        "MEDIUM": 5900
+      },
+      "nfl_all_day": {
+        "HIGH": 61,
+        "MEDIUM": 1573
+      },
+      "disney_pinnacle": {
+        "HIGH": 166,
+        "MEDIUM": 549
+      },
+      "candy_mlb": {
+        "HIGH": 9,
+        "MEDIUM": 69
+      },
+      "laliga_golazos": {
+        "HIGH": 0,
+        "MEDIUM": 4
+      },
+      "ufc_strike": {
+        "HIGH": 0,
+        "MEDIUM": 0
+      }
     },
     "fmv_computed_at": "2026-09-20T05:46Z"
   },
   "issue_126_cron_busy_seconds": {
-    "busy_s_per_day": {"09-15": 23020, "09-16": 66422, "09-17": 122744, "09-18": 168859, "09-19": 233894, "09-20_partial_8h": 82387},
-    "busy_s_per_run": {"09-19": 24.6, "09-20_partial": 24.1},
+    "busy_s_per_day": {
+      "09-15": 23020,
+      "09-16": 66422,
+      "09-17": 122744,
+      "09-18": 168859,
+      "09-19": 233894,
+      "09-20_partial_8h": 82387
+    },
+    "busy_s_per_run": {
+      "09-19": 24.6,
+      "09-20_partial": 24.1
+    },
     "failed_run_share_of_busy_s": "~33%",
     "top_contributors_24h_busy_s": {
-      "rpc-ts-listings-atlas-sync": {"busy_s": 42589, "runs": 632, "failed": 239, "avg_s": 67.4},
-      "rpc-refresh-wmc-fmv-changed": {"busy_s": 28311, "runs": 144, "failed": 3, "avg_s": 196.6},
-      "rpc-allday-unmapped-atlas-resolver": {"busy_s": 20478, "runs": 282, "failed": 95, "avg_s": 72.6},
-      "rpc-atlas-market-drain": {"busy_s": 19414, "runs": 704, "failed": 30, "avg_s": 27.6},
-      "rpc-pack-nft-identity-lane": {"busy_s": 13401, "runs": 286, "failed": 25, "avg_s": 46.9}
+      "rpc-ts-listings-atlas-sync": {
+        "busy_s": 42589,
+        "runs": 632,
+        "failed": 239,
+        "avg_s": 67.4
+      },
+      "rpc-refresh-wmc-fmv-changed": {
+        "busy_s": 28311,
+        "runs": 144,
+        "failed": 3,
+        "avg_s": 196.6
+      },
+      "rpc-allday-unmapped-atlas-resolver": {
+        "busy_s": 20478,
+        "runs": 282,
+        "failed": 95,
+        "avg_s": 72.6
+      },
+      "rpc-atlas-market-drain": {
+        "busy_s": 19414,
+        "runs": 704,
+        "failed": 30,
+        "avg_s": 27.6
+      },
+      "rpc-pack-nft-identity-lane": {
+        "busy_s": 13401,
+        "runs": 286,
+        "failed": 25,
+        "avg_s": 46.9
+      }
     },
     "read": "atlas family ~87k s/day + jobid 303 wmc-fmv-changed 28.3k s/day dominate; R117 wmc autovacuum is one contributor, not the driver; all owned / Trevor / route-adjacent"
   },
@@ -43,9 +98,11 @@
     "jobid_324_thp_leg": "first :59 tick 11:59Z (4:59 AM PT) must succeed <200s, io_wait>=3 (a kill at io_wait<3 = the leg's own cost); 06:31Z 608s fail was the pre-move :31 tick",
     "jobid_506_precompute": "first post-sample tick 09:35Z (2:35 AM PT) must read duration_ms<90000, efc_drift_sample_mod=64; 05:35Z 203.8s was pre-fix",
     "r107_daily_reconcile": "09:36Z tick; check_edition_fmv_current_source_drift(1)=[]",
-    "jobid_560_pack_rips_autovacuum": "self-unschedules/re-enables 08:12Z; ~1:30 AM PT map>95%, no startup-timeout step",
-    "pack_detail_5s_timeouts": "expected to fall post ~1:30 AM PT (allday_pack_lifecycle heap-fetch reduction)",
-    "backfill_pack_rip_metadata": "lever verified (50.2s not 30.x); remaining fails are batch-size (route QUEUE)"
+    "jobid_560_pack_rips_autovacuum": "DONE 09:07Z (2:07 AM PT, 55 min at 50/50): count 3, map 98.1 %, dead 431; dist 5974 lifecycle read Heap Fetches 4128 -> 93, 5.6 s -> 1.3 s cold. COST: six whole-minute launcher blackouts during the index phase (32 job startup timeouts, 0 ok in those minutes, 2-3 jobs running) = disk saturation at the minute boundary, NOT slot exhaustion",
+    "pack_detail_5s_timeouts": "pass done 09:07Z; 363 errors in the 3 h before it. Read Vercel [pack-detail] allday_pack_lifecycle count for 09:10Z-12:00Z vs 06:00Z-09:00Z; exit = ~0",
+    "backfill_pack_rip_metadata": "lever verified (50.2s not 30.x); remaining fails are batch-size (route QUEUE)",
+    "portfolio_snapshot": "VERIFIED: jobid 546 06:46Z ok 132 ms already_snapshotted=27 (the 02Z probe wrote today); 07:05Z route ok 722 ms inserted 0. First real write = 09-21 06:46Z rows_written=27",
+    "matcher_pgcron": "VERIFIED: jobid 543 07:32Z ok 508 ms via=pg_cron gated:true; 08:00Z edge tick should read gated:true too"
   },
   "needs_trevor": [
     "#126: jobid 303 refresh_wmc_fmv_changed (28.3k s/day, #1 FMV reader) and atlas-sync family (~87k s/day) are the cron-fleet cost - both need a product/architecture decision, not an autonomous lever",
@@ -53,5 +110,6 @@
     "#55 both 2-hourly Routines disabled since 09-01",
     "retire portfolios + portfolio_moments outright (option b) now the grant is gone",
     "Golazos Sales Ingest >168h warn threshold vs a market with ~10-day gaps"
-  ]
+  ],
+  "evening_pass_addendum_0215pt": "Cowork evening session read four watches after this file was written; results folded into post_ship_watch_pending above. Ledger entry 2026-09-20 \"THE pack_rips QUIET-HOUR PASS COMPLETED\"."
 }
