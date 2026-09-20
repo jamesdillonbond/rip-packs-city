@@ -2599,7 +2599,9 @@ So a user's moments are re-verified **only if their wallet also happens to be a 
 
 ⛔ **This is strictly worse than a capacity ceiling and no amount of capacity fixes it.** The pack sweep was keyed to the right set and merely too small. This one is keyed to a **demo population**, and **every genuinely new user arrives saved-but-not-seeded** — so the unswept share grows toward 100 %. It is 19 % today only because most current saved wallets were seeded first.
 
-**Not fixed in that pass, deliberately:** the fix permanently widens a fan-out of on-chain Cadence walks, 5 collections per wallet, into an instance measured that day at **93 % of Supabase Small's 22 MB/s baseline**, on a backstop already measured **73.1 % killed (n=788)**. That is a cost decision, not a code change. **Falsifier:** if a saved-but-not-seeded wallet's `last_scanned_at` ever advances without someone visiting it (the three on-demand callers are `app/api/profile/resolve-and-associate`, `app/api/public/queue-wallet`, `lib/allow-list/prewarm.ts`), the population claim is wrong.
+✅ **RESOLVED the same day, by the session that owned the lane** — `defc1d55e` adds a saved-wallet sweep riding the four existing cron cohorts, excluding wallets an ACTIVE seeded row already walks, so the marginal load is `|saved \ seeded|` only (5 wallets) and `STALE_HOURS` bounds the steady-state rate to about **+1 %** of the ~2,540 walks/day the seeded herd already runs. **Verified by OUTCOME, not by merge:** `check_wmc_ownership_freshness()` saved-wallet stale pairs went **5 → 0** (worst was 42.9 days).
+
+⭐ **Filing it with a measurement rather than shipping it was the right call** — it was fixed properly, by the lane's owner, and sized to the exact population the measurement named. ⚠ **But the cost premise quoted below has since EXPIRED:** it was declined because the instance sat at **93 % of Supabase Small's 22 MB/s baseline**, on a backstop measured **73.1 % killed (n=788)** — and compute moved to **LARGE the same day** (79 MB/s / 3,600 IOPS). **Any pre-2026-09-20 finding whose reason-not-to-act is the 22 MB/s floor needs re-deriving, not re-reading.** **Falsifier:** if a saved-but-not-seeded wallet's `last_scanned_at` ever advances without someone visiting it (the three on-demand callers are `app/api/profile/resolve-and-associate`, `app/api/public/queue-wallet`, `lib/allow-list/prewarm.ts`), the population claim is wrong.
 
 ### The generalised rule
 
@@ -2607,7 +2609,7 @@ So a user's moments are re-verified **only if their wallet also happens to be a 
 
 ---
 
-## ⚠ A page-dedup guard that does not test IN-FLIGHT hangs the walk it protects (2026-09-20, FOUND NOT FIXED)
+## ⚠ A page-dedup guard that does not test IN-FLIGHT hangs the walk it protects (2026-09-20 — FIXED same day)
 
 `collect_pack_nft_identity` decides whether to dispatch a wallet's next page with:
 
@@ -2628,7 +2630,15 @@ ELSIF NOT EXISTS (SELECT 1 FROM pack_nft_identity_requests d
 
 **Severity is low and bounded:** it **self-heals** — `sweep_saved_wallet_pack_syncs` re-requests any wallet with `completed_at IS NULL AND requested_at < now() - interval '2 hours'` — and it corrupts nothing, because `last_clean_sync_at` is preserved across the re-dispatch, so the read guard keeps using the last clean walk (`no_floor = 0`, `check_wallet_pack_sync_floor_drift() = []` throughout). Cost is one wasted cycle and up to ~2 h extra staleness.
 
-**The one-line fix, when someone next touches that function:** add `AND d.collected_at IS NULL` to the guard. It still suppresses a genuinely in-flight page (the case the 09-19 fix exists for) and stops suppressing on an already-collected one, which can never complete the sync anyway — so it does **not** re-open the premature-completion hole. ⚠ Requires a full-body `CREATE OR REPLACE` of a 15.6 KB hot-lane function, and no committed copy is byte-identical to live (checked: the two 2026-09-19 migrations differ by 4–5 chars from `pg_get_functiondef`), so patch from a **freshly fetched live body with an md5 check**, never from the repo copy.
+✅ **FIXED the same day** — `20260920185051_audit_20260920_pack_page_dedup_tests_in_flight_not_merely_dispatched` adds `AND d.collected_at IS NULL`. It still suppresses a genuinely in-flight page (the case the 09-19 arm exists for) and stops suppressing on an already-collected one, which can never complete the sync anyway — so it does **not** re-open the premature-completion hole.
+
+🚨 **AND THE REASON THIS WAS DEFERRED FOR A DAY WAS ITSELF A MEASUREMENT ERROR — this is the part worth keeping.** The original note here read *"no committed copy is byte-identical to live (the two 2026-09-19 migrations differ by 4–5 chars from `pg_get_functiondef`), so patch from a freshly fetched live body"*. **That comparison was against the wrong object.** `pg_get_functiondef` **REFORMATS THE HEADER** — ` RETURNS jsonb`, ` LANGUAGE plpgsql` and the `SET` lines come back with leading spaces that the authored migration does not have — so diffing it against a migration FILE shows a handful of characters of pure formatting and reads as drift that is not there.
+
+⭐ **`prosrc` is stored VERBATIM.** The body of `20260919053000_*.sql` between its `$function$` tags is **byte-identical to live `prosrc`: 15,432 chars, md5 `d951ad91e2a1829d2b7bacefbb0c6dd0`.** That turned a "risky 15.6 KB hot-lane rewrite" into a two-minute patch from a cryptographically verified base. ⚠ **Compare `prosrc` to the migration's BODY, never `functiondef` to the file.**
+
+⭐ **Prove the DB holds exactly the committed file, not merely something equivalent:** apply that file to a throwaway local Postgres and compare `md5(prosrc)` with live. Here both read **`9217c411a9e17fc38e8508947f6bd362` / 15,849 chars** after apply.
+
+⚠ **THE FIRST VERIFICATION RUN WAS NOT A TEST, and it looked like one.** Re-syncing the wallet after the fix completed cleanly — but the colliding request had by then aged past 2 h, so **the bug could not have reproduced** and the run proved only "no regression". The real control **rebuilds the failing condition**: complete a sync (so a page-2 request is dispatched and then collected minutes ago), assert the precondition explicitly — `SELECT count(*) … page=2 AND dispatched_at > now()-interval '2 hours' AND collected_at IS NOT NULL` must be **1** — then force another sync. Page 2 dispatched (`pending_requests: 1`) where the old guard suppressed it, and the next tick returned **`wallets_done: 1`**. 27/27 wallets complete afterwards.
 
 ---
 

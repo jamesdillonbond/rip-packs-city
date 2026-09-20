@@ -73,7 +73,7 @@ Stack: Next.js 16 · React 19 · TS 5 · Tailwind 4 · Supabase (Pro, Small) · 
 
 ## Infrastructure IDs (required on every tool call)
 
-- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = LARGE** since 2026-09-20 — 8 GB RAM / 2 dedicated vCPU, `max_connections`=160, `shared_buffers`=2 GB, `work_mem`=12 MB). Sustained disk **79 MB/s / 3,600 IOPS**. ⚠ Pre-09-20 findings citing the **22 MB/s floor** are the OLD Small tier — re-measure. Tiers: database.md.
+- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = LARGE since 2026-09-20** — ⚠ any pre-09-20 finding citing the **22 MB/s floor** is the OLD Small tier, so RE-DERIVE it). Specs, IO budget and tier table: [database.md](docs/reference/database.md).
 - Vercel project ID: `prj_YBJ6Utl32GfyBOIzbsp3kbshJh96`
 - Vercel team ID: `team_YWGCVToPBJSS60NgVh8jiCFV`
 - GitHub repo ID: `1188272071`
@@ -187,7 +187,7 @@ Full canon + every instance: [docs/reference/key-files-and-honesty.md](docs/refe
 - ⚠ **A queue walk that starts at the top of what it resolves COMPOUNDS** (three in one day, 09-07) — page a BOUNDED slice of the INDEX behind a cursor. Wire a new pg_net lane into the 4xx arm in its creating migration. [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
 - ⛔ **`last_vacuum` AND `last_autovacuum` both NULL = NEVER vacuumed** — heap fetches 46,674 → 19. ⭐ **SIZE an index build (640 kB = ms; 300 MB+ = spell).**
 - ⚠ **Every `apply_migration` causes a ~10–20 s burst of user-facing `PGRST002` 500s** (schema-cache re-introspection) — batch them, prefer a low-traffic window, and `rpcWithRetry` does NOT save you (database.md).
-- ⛔ **`CREATE OR REPLACE` IS A FULL-BODY WRITE — RE-READ THE LIVE OBJECT IMMEDIATELY BEFORE ONE.** A draft off a 40-min-old dump would have reverted another session's guard silently — you rewrite its pin too, so nothing reds; `pg_get_functiondef` LENGTH caught it. ⚠ On a VIEW it also RESETS reloptions, stripping `security_invoker=on` (4×) and cannot rename/reorder columns (`42P16`). [database.md](docs/reference/database.md)
+- ⛔ **`CREATE OR REPLACE` IS A FULL-BODY WRITE — RE-READ THE LIVE OBJECT IMMEDIATELY BEFORE ONE.** A draft off a stale dump silently reverts another session's guard (nothing reds — you rewrite its pin too). ⭐ **Verify the base on `prosrc` (stored VERBATIM) against the migration's BODY — `pg_get_functiondef` REFORMATS THE HEADER, so diffing THAT against the file reads as drift that is not there.** ⚠ On a VIEW it also RESETS reloptions, stripping `security_invoker=on` and cannot rename/reorder columns (`42P16`). [database.md](docs/reference/database.md)
 
 - ⚠ **Displaced 09-20 to [database.md](docs/reference/database.md) (verbatim, end of file): REVOKE `FROM PUBLIC, anon, authenticated` in ONE statement, and it ORPHANS a pg_cron caller — GRANT in the same migration.**
 - ⚠ **`rows_written = 0` is a null instrument with three incompatible meanings; `ok = false` and `extra.<step>=0` are the same trap.** Read `extra` + `last_error`, pair every count with an `_error` field, and **measure the OUTCOME table, not the self-report**. [cron-and-schedulers.md](docs/reference/cron-and-schedulers.md)
@@ -212,8 +212,7 @@ Full detail: [docs/reference/database.md](docs/reference/database.md).
 
 Two vocabularies, not interchangeable — mixing them corrupts `flowty_*` writes.
 
-- **Long-form** (`sales`, `editions`, `collections.slug`): `nba_top_shot` · `nfl_all_day` · `laliga_golazos` · `disney_pinnacle` · `ufc_strike`
-- **Short-form** (`flowty_transactions`, `flowty_loans`, `flowty_loan_events`): `topshot` · `allday` · `golazos` · `pinnacle` · `ufc` · `unknown` — the CHECK whitelists exactly these six, NOT `other`
+**Long-form** (`sales`, `editions`, `collections.slug`) vs **short-form** (`flowty_*`, CHECK-whitelisted to six values, NOT `other`) — both lists: [schema-truth.md](docs/reference/schema-truth.md).
 
 ⚠ **That CHECK is on `flowty_transactions` ONLY** (verified live 08-22), so `'ufc_strike'` fails LOUDLY there and persists SILENTLY in the other two, where it never matches. Bridge: the `analytics_sales` view (long → short via CASE).
 
@@ -223,7 +222,7 @@ Flow/EVM: hex, `0x`-prefixed, case-INsensitive. Solana: **base58, un-prefixed, C
 
 - **Use [lib/address.ts](lib/address.ts) — never a bare `.toLowerCase()`, never a fresh helper** (a grep found TEN already). Which function for which job: [chain-strategy.md](docs/reference/chain-strategy.md).
 - ⛔ **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(k,"flow")` is **stricter** than the `startsWith("0x")` it resembles. **Pin the hex path as its own no-change arm**, or the Solana assertions pass against a function that changed every Flow label.
-- ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence** — 4 were **HREFs** on live pages, sending readers to an analyzer that resolved nothing. ⚠ **A sweep is only as wide as its PATH ARGUMENT**, and `tsc` is a REACHABILITY instrument: delete the variable to find its other readers.
+- ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence** (4 were live HREFs: chain-strategy.md). ⚠ **A sweep is only as wide as its PATH ARGUMENT**, and `tsc` is a REACHABILITY instrument: delete the variable to find its other readers.
 - ⚠ **A per-device identity key must be chain-scoped, and its sign-out / account-switch sweep by PREFIX** — an exact-name list left the other chain's key for the next collector.
 
 ### Collection UUIDs

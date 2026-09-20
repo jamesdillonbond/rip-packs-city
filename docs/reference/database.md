@@ -2741,3 +2741,30 @@ Needed when authoring a migration that changes function privileges; not before a
 ⚠ **A DAILY total could not have shown this** — 09-20 straddles two change points, so its daily figure belongs to neither band of #126's falsifier and means nothing. **Split on the change point at the resolution the change happened at.**
 
 ⛔ **Every figure elsewhere in this file citing the 22 MB/s floor, 512 MB `shared_buffers`, or a per-job multiple measured before 09-20 is a SMALL-tier sample. Re-derive; do not quote.**
+---
+
+## Verifying a base before `CREATE OR REPLACE`: compare `prosrc`, not `functiondef` (2026-09-20)
+
+CLAUDE.md's rule is *re-read the live object immediately before a `CREATE OR REPLACE`*. **How you compare matters, and getting it wrong costs a day.**
+
+- The 2026-08 case that put the rule there: a draft off a 40-minute-old dump would have reverted another session's guard silently — you rewrite its pin too, so nothing reds — and **`pg_get_functiondef` LENGTH caught it**. That is still a fine *drift alarm*.
+- ⛔ **But `pg_get_functiondef` is the WRONG thing to diff against a migration file.** It RECONSTRUCTS the header: ` RETURNS jsonb`, ` LANGUAGE plpgsql` and the `SET` lines come back with leading spaces the authored SQL never had. On `collect_pack_nft_identity` that showed a **4–5 character** difference against both committed copies, which read as "no committed copy is byte-identical to live" — and was used to defer a one-line fix as a risky 15.6 KB hot-lane rewrite.
+- ⭐ **`prosrc` is stored VERBATIM.** Extract the migration's body between its `$function$` tags and md5 it: on the same function that read **15,432 chars / `d951ad91e2a1829d2b7bacefbb0c6dd0`**, exactly equal to live `prosrc`. The base was verified all along.
+
+```bash
+# base check — body of the migration vs live prosrc
+node -e 'const fs=require("fs"),c=require("crypto");const s=fs.readFileSync(F,"utf8");
+const b=s.indexOf("AS $function$")+13, e=s.indexOf("\n$function$;",b);
+console.log(c.createHash("md5").update(s.slice(b,e+1)).digest("hex"))'
+# compare with: SELECT md5(prosrc) FROM pg_proc WHERE proname='…';
+```
+
+⭐ **And prove the RESULT, not just the input:** apply the migration to a throwaway local Postgres, read `md5(prosrc)` there, and compare it to live after apply. Equal md5 means the database holds *exactly the committed file*, not merely something equivalent — here `9217c411a9e17fc38e8508947f6bd362` / 15,849 chars on both.
+
+---
+
+## Displaced from CLAUDE.md — 2026-09-20 (compute tier specs, verbatim)
+
+Pure lookup data, moved to keep the memory file under its character limit. CLAUDE.md keeps the project ID, the tier name and the re-measure warning, and points here.
+
+- Supabase project ID: `bxcqstmqfzmuolpuynti` (Pro; **compute = LARGE** since 2026-09-20 — 8 GB RAM / 2 dedicated vCPU, `max_connections`=160, `shared_buffers`=2 GB, `work_mem`=12 MB). Sustained disk **79 MB/s / 3,600 IOPS**. ⚠ Pre-09-20 findings citing the **22 MB/s floor** are the OLD Small tier — re-measure. Tiers: database.md.

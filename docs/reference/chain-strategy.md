@@ -153,3 +153,11 @@ machinery, not a second resolver.
 **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(key, "flow")` demands exactly 16 hex — **stricter** than the `startsWith("0x")` it looks like a drop-in for. Adopting it on a Flow path is a regression smuggled in under a Solana fix; three component tests caught it on the `0xmine` fixture, and **the fixture was not edited to fit the code**. The same reasoning makes the `|| value.startsWith("0x")` in the search classifier load-bearing rather than redundant. **Pin the hex path as its own no-change arm in every test file that touches these helpers** — without it, the Solana assertions are satisfied by a function that has quietly changed every Flow label in the product.
 
 ⚠ **A grep before building found TEN existing truncation helpers.** The canonical pair lives in `lib/address.ts`; only the Candy-reachable call sites were repointed. **Rewriting Flow-only surfaces to fix a Solana bug is how a one-line fix becomes a regression surface.**
+
+---
+
+## Displaced from CLAUDE.md — 2026-09-20 (verbatim)
+
+Moved to keep the memory file under its character limit. CLAUDE.md keeps the rule and points here for the case.
+
+- ⛔ **Fold-and-prefix on a DISPLAYED address is a FABRICATION, not an absence** — 4 were **HREFs** on live pages, sending readers to an analyzer that resolved nothing. ⚠ **A sweep is only as wide as its PATH ARGUMENT**, and `tsc` is a REACHABILITY instrument: delete the variable to find its other readers.

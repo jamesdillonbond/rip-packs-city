@@ -283,3 +283,12 @@ SELECT
   (SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='editions') AS editions_cols,
   (SELECT array_agg(tablename ORDER BY tablename) FROM pg_tables WHERE schemaname='public' AND tablename ~ '^sales_[0-9]{4}$') AS sales_partitions;
 ```
+
+---
+
+## Displaced from CLAUDE.md — 2026-09-20 (the two collection vocabularies, verbatim)
+
+Pure lookup data, moved to keep the memory file under its character limit. **CLAUDE.md keeps the rule and the asymmetry — which is the judgement — and points here for the lists.** ⚠ Re-derive from `collections.slug` and the live CHECK constraint rather than quoting these.
+
+- **Long-form** (`sales`, `editions`, `collections.slug`): `nba_top_shot` · `nfl_all_day` · `laliga_golazos` · `disney_pinnacle` · `ufc_strike`
+- **Short-form** (`flowty_transactions`, `flowty_loans`, `flowty_loan_events`): `topshot` · `allday` · `golazos` · `pinnacle` · `ufc` · `unknown` — the CHECK whitelists exactly these six, NOT `other`
