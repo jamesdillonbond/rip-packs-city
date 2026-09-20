@@ -749,14 +749,57 @@ invisible to the next subsystem that needs it.**
   and cannot. ⓘ **No outcome impact** — the sibling `elapsed_ms > max_ms` path still counts slow
   boards — but it reads as a safety net that is not one.
 
-⛔ **DO NOT "FIX" IT BY WIDENING THE CLAUSE TO `WHEN query_canceled OR OTHERS`.** That was applied
-and reverted on 2026-08-15 on three measurements, the decisive one being that **after a cancel is
-caught the timer is NOT re-armed** (probe: first `pg_sleep(3)` cancelled and caught, second ran to
-completion unbounded). Catching the cancel buys a reachable handler at the price of running
-everything after it **with no bound at all**, holding a pooled connection on the instance whose
-saturation caused the timeout — **a bounded failure traded for an unbounded one.**
+🔄 **SUPERSEDED 2026-09-20 (R118) — this section used to read "⛔ DO NOT FIX IT BY WIDENING THE
+CLAUSE TO `WHEN query_canceled OR OTHERS`". That ban is now WRONG as stated, and a reader following
+it would revert 36 live functions.** The paragraph is rewritten rather than deleted, because the
+measurement under it is correct and still load-bearing — only the RULE drawn from it was too broad.
 
-➡ **The remedy is structural and it is the same one every time: give the fragile step its own
+**What shipped.** R118 rewrote **35 handlers** to `WHEN query_canceled OR OTHERS` in four migrations
+(`20260920140611` five pg_cron wrappers · `20260920143546` sixteen unpinned · `20260920143959`
+fourteen pinned, all 8 `rpc_thp_leg_*` legs among them · `20260920144120` the
+`check_when_others_timeout_blind()` instrument). The reason is the defect this whole section
+describes: a handler that promises a `pipeline_runs` row or a 999 sentinel and **cannot see the one
+failure it exists for** is not a safety net, and on the trust board it was actively dishonest — a
+killed 6-hourly leg left its metric frozen and `v_rpc_trust_health` republished it as current
+(no per-metric age column; its only staleness rule is `computed_at < now() - 24h → 999`).
+
+📏 **THE 2026-08-15 MECHANISM REPRODUCES — re-measured 2026-09-20 independently, not re-read.**
+After a cancel is caught the timer is **not** re-armed: with `statement_timeout` at 700 ms armed as
+its own statement *before* the block, a `pg_sleep(2)` placed **after** the catch **ran to
+completion**. The trade the revert named is real and permanent.
+
+⭐ **What changed is not the mechanism — it is the SIZE OF WHAT RUNS AFTERWARDS.** In 2026-08-15 the
+eight legs ran inside ONE orchestrator call, so a caught cancel in leg N let legs N+1..8 run with the
+timer spent: unbounded work measured in minutes. The **2026-08-16 8-way cron split** ended that. Each
+leg is now its own top-level statement, and everything after a catch is one `ON CONFLICT` upsert
+into a ~29-row table plus one `log_pipeline_run` row.
+
+👉 **THE RULE IS THEREFORE CONDITIONAL, AND THE CONDITION IS THE HANDLER BODY, NOT THE CLAUSE.**
+Widen to `WHEN query_canceled OR OTHERS` only where everything after the catch is **bounded by
+construction** — a fixed-size write, no loop, no unbounded scan, no onward call into a heavy path.
+⛔ **It binds FUTURE edits hardest: work ADDED to a handler that catches `query_canceled` runs with
+NO statement timeout at all.** A one-line addition to such a handler is how this comes back.
+⚠ **14 functions are deliberately still on bare `WHEN OTHERS`** (live count 2026-09-20; the
+batch-two header argues 12 of them) — mostly handlers inside LOOPs, where a caught cancel would let
+the remaining iterations run unbounded. **That is the rule working, not an unfinished sweep**: do not
+"complete" it without reading `20260920143546`'s header. The two instances named above
+(`refresh_series_detail_rollup`, `public_board_liveness_sweep`) are among them and remain as
+described.
+
+🔎 **Instrument:** `check_when_others_timeout_blind()` — `[]` when clean (verified `[]` 2026-09-20).
+⚠ **It does NOT answer the question this section now turns on.** It finds handlers blind to a kill;
+it cannot find handlers that do **unbounded work after catching one**, which is the failure mode the
+conditional rule above exists to prevent. That one is still read by eye.
+
+⚠ **PROBE-HARNESS TRAP — it produced a full false negative on 2026-09-20 before it was caught.**
+`SET LOCAL statement_timeout` *inside* the plpgsql block under test does **not** arm the timer for
+that block: the timeout is armed when the **top-level statement** starts. A probe that sets it inline
+watches `pg_sleep(3)` run to completion under a 700 ms budget and reads as *"no cancel fires"* —
+which looks like a clean negative result and is measuring nothing. **Arm it as its own statement
+before the block**, then `WHEN OTHERS` → handler never runs / cancel escapes, and
+`WHEN query_canceled OR OTHERS` → handler runs, with `1/0` still caught.
+
+➡ **The structural remedy still applies and is still FIRST choice: give the fragile step its own
 TOP-LEVEL statement** (a separate pg_cron entry), so it gets a fresh budget, its timeout cannot
 reach its neighbours, and `cron.job_run_details` names it directly. ⚠ Check `cron.job.username`
 first — a `cron_heavy`-owned job cannot be rescheduled from any session-reachable role.
