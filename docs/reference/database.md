@@ -2,6 +2,36 @@
 char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this file.
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
+## 🚨 AN UPSERT THAT CONFLICTS ON A NON-PK UNIQUE KEY **RE-ASSERTS THE PRIMARY KEY** — and an inbound FK with NO ACTION on update turns that into a whole-statement abort (2026-09-20, register R120)
+
+`.upsert(rows, { onConflict: "external_id,collection_id" })` becomes `INSERT … ON CONFLICT (external_id, collection_id) DO UPDATE SET <every supplied column> = excluded.*` — **and that includes `id`.** If the incoming `id` differs from the stored one, the statement tries to **change the primary key**. Postgres then consults every inbound FK:
+
+- `ON UPDATE CASCADE` (`confupdtype = 'c'`) → children follow, the write succeeds.
+- **`NO ACTION` / `RESTRICT` (`confupdtype = 'a'` / `'r'`) → REJECTED, and because the write is one multi-row `INSERT … ON CONFLICT`, the ENTIRE BATCH is lost, not just the offending row.**
+
+⚠ **This is silent when the id is normally stable.** `panini_editions.id` is upstream's serial-level `sku`, identical on almost every pass — so 5,071 of 5,074 rows re-asserted the same value and nothing happened. **Three hand-seeded rows carried a different id convention (`id = external_id`, no `__<span>_<cap>` suffix), and those three aborted their batch on every walk for 66 days.**
+
+### The estate-wide shape, measured — the precondition is TWO keys, not one
+
+The defect needs **both** (a) a text PK a writer re-asserts from upstream data, and (b) **another unique constraint the upsert can conflict on instead**. Exactly **two** tables in `public` have that shape:
+
+| table | text PK | other unique | inbound FKs | inbound FKs with NO ACTION |
+|---|---|---:|---:|---:|
+| `panini_editions` | `id` | 1 | 1 | **0 (fixed 2026-09-20)** |
+| `pinnacle_editions` | `id` | 1 | 1 | **1** |
+
+⭐ **`pinnacle_editions` has the SHAPE but NOT the DEFECT, and the reason is worth recording rather than re-deriving:** its second unique key is `UNIQUE (external_id)`, and **`external_id` is NULL on 539 of its 570 rows**, so it cannot serve as a conflict target for 94.6% of the table — the writer must key on the PK itself, and a PK conflict target never rewrites the PK.
+
+⛔ **Do NOT blanket-apply `ON UPDATE CASCADE` to `pinnacle_sales_edition_id_fkey` on the strength of the Panini fix.** For Panini the id rewrite is CORRECT (the id legitimately tracks upstream). Where a rewrite would be a BUG, `NO ACTION` failing loudly is the better behaviour, and cascading would silently propagate the bug to **198,024** child rows. **The constraint choice follows from whether the PK is derived or minted, not from a house style.**
+
+### How to tell which you have, before changing anything
+
+1. `SELECT conname, pg_get_constraintdef(oid), confupdtype FROM pg_constraint WHERE confrelid = '<parent>'::regclass AND contype='f';` — read `confupdtype`, not the printed clause alone (`ON DELETE CASCADE` prints; NO ACTION on update does **not**, so the definition text looks complete while the gap is invisible).
+2. Ask whether the PK is **derived from upstream data** (mutable) or **locally minted** (stable). Only the first needs CASCADE.
+3. ⭐ **The observable, needing no new instrument: a tick where one write count is 0 while a SIBLING count in the same run is not.** Here `editions: 0` beside `serials: 55` — 12 of 459 runs in 24 h.
+
+**Before/after is ONE TICK, not an aggregate:** the same tick that had written `editions: 0 / serials: 55` on every previous walk wrote `editions: 3 / serials: 55` immediately after the constraint change, healing two of the three rows inside it. Coverage: `editions_stale_45d` 3 → 1, p50 62.6 → 60.1 h, and zero aborted ticks since.
+
 ## ⭐⭐ A DIFFERENTIAL UPSERT WRITES THE DELTA BUT PROBES EVERY OFFERED ROW — pre-filter with a LEFT JOIN, and judge the fix on `pg_stat_statements` blocks/call, never on cron durations (2026-09-19, register R101 v2)
 
 **The shape.** `INSERT INTO target SELECT … FROM wanted ON CONFLICT (key) DO UPDATE SET … WHERE (target.a, target.b) IS DISTINCT FROM (EXCLUDED.a, EXCLUDED.b)` looks incremental — it *writes* only rows that changed. But `ON CONFLICT` has to find the conflicting row for **every** offered row (one unique-index probe + one heap fetch each) before the `WHERE` can decide to skip it. Offer 55k rows to write 60 and you pay 55k probes.

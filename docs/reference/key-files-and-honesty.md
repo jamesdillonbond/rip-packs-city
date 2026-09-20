@@ -3,6 +3,49 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## 🚨🚨 THE TWELFTH SHAPE (2026-09-20, register R120/R121): THE CLASS HAS A **WRITE** SIDE — a failed WRITE rendered as a successful RUN
+
+Every shape above is a failed READ published as a fact. This is its mirror, and the canon had no entry for it: **a write is rejected, and the pipeline's own record says the run succeeded.** It ran **66 days** in `app/api/cron/panini-ingest/route.ts` and was found only because an unrelated freshness metric disagreed with the row it named.
+
+**Four ingredients. All must be absent for a run record to be trustworthy:**
+
+1. **A swallowed error.** `const { data, error } = await supabaseAdmin.from(X).upsert(...); if (error) console.log(...); else written += data?.length ?? 0;` — the error reaches a log line nobody reads and never reaches `pipeline_runs`.
+2. **A hardcoded verdict.** `logRun(startedAt, found, written, true, null, {...})` — `ok` and `error` are *asserted*, not *derived*. No possible failure can move them.
+3. **A count that cannot go DOWN.** `fmv: fmvRows.length` publishes rows **CONSTRUCTED** under a key every reader takes for rows **WRITTEN**. ⛔ **This is the fabricated-value shape on the write side** — the number is real, it just measures the wrong noun.
+4. ⛔ **Worse than swallowing: `await supabase.from(X).insert(rows)` with NO DESTRUCTURING AT ALL.** The error is not ignored, it is **unreadable by construction** — no `error` binding exists, so no reviewer can ask whether it is checked and **no test can inject a failure**. ⭐ **The tell is the ABSENCE of `const { … } =`**, which greps differently from every other shape here.
+
+### Why it survived 66 days, and the reusable discriminator
+
+The write was a **batch** `INSERT … ON CONFLICT`, so one bad row aborted **the whole statement** — 5–12 editions per tick, twice per walk, **93 lost records a day, ~4.8% of writes**. ⚠ **Nothing degraded visibly.** The lane kept running, rows kept *mostly* landing, and the only external symptom was a freshness metric reading 3 stale editions that were in fact walked every four hours.
+
+⭐ **A PARTIAL write leaves an ASYMMETRY between sibling writes in the same tick.** Here `editions: 0` while `serials: 55` landed in the same run — the serials table's link column carries **no FK**, so it survived what aborted its sibling. **Query `pipeline_runs` for ticks where one count is 0 and a sibling count is not.** That found 12 of 459 runs with no new instrumentation at all.
+
+### The fix, as a contract
+
+- **DERIVE `ok`** from whether the writes landed. Never pass a literal `true`.
+- **PAIR every count with its own `_error`**, so a zero is readable: *0 + null error = nothing to write; 0 + error = the write was rejected.* Those are different facts and a bare `0` cannot tell them apart.
+- **Make a count mean what its name says.** Publish the batch size separately (`fmv` = written, `fmv_offered` = constructed) — **and their disagreement becomes an instrument.**
+- ⚠ **An ERROR is not a MISS.** A failed per-row `UPDATE` was counted in `sales_missed`, whose sibling test's own comment said *"a miss = a serial we have not walked yet, not an error"*. Give errors their own counter.
+
+### Two traps found while fixing it
+
+- ⚠ **A HARNESS THAT CANNOT EXPRESS A FAILURE IS A COVERAGE CLAIM WITH NO ASSERTION BEHIND IT.** The route's test mock had `insert: async () => ({ error: null })` — a literal. **No test could ever have injected an insert failure**, so the arm did not exist and its absence read as completeness. The mock had to be reworked before the test could be written.
+- ⚠ **TWO EXISTING TESTS PINNED THE DEFECT** — they asserted `p_ok === true` on a rejected upsert and `sales_missed === 1` on an errored update. **INVERTED, never deleted.** ⭐ **And a control arm was added so the new guard cannot be satisfied by "always fail"**: a genuinely empty batch must still read `ok=true` with null `_error`s.
+
+### ⚠ THE FIX IS A PAIR, NOT AN EDIT — and my own first pass was incomplete
+
+A fleet sweep (register **R121**) found this expression in **20+ writers**. Two structural facts from it:
+
+- **The clones are byte-level.** `allday-offers-indexer`/`golazos-offers-indexer`, `compute-allday-pack-ev`/`compute-golazos-pack-ev`, `special-serial-sweep`/`special-serial-delta`, `ingest-allday-pack-opens`/`ingest-topshot-pack-opens-history` are clones **including their comments**. Every fix is a pair.
+- ⭐ **THREE files already carry a long comment fixing this exact class on the READ path while the WRITE beside it stays swallowed** (`allday-offers-indexer:297`, `ingest-allday-pack-opens:243`, `candy-listings-indexer:571`). **A hardened read next to an un-hardened write, in the same function, is itself a grep-able signature.**
+- ⚠ **And the honest note: my own first pass on the origin file missed one.** I fixed editions, serials, fmv and sales, then the sweep found `panini_pack_state` still had shape 2 and `packs: packs.length` still had shape 4 — **in the very function I had just declared clean.** Sweep the file you fixed, with the same grep you use on the fleet.
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — the SERVER-SEEDED PROP bullet
+
+Replaced in CLAUDE.md by a one-line pointer to make room for the WRITE-side shape above. The full canon for that shape already lives in this file (`initialFailed` / `renderToString`); this is the CLAUDE.md wording itself, preserved:
+
+> - ⚠ **A SERVER-SEEDED PROP is a fifth layer the table does not cover:** `initial={rows}` arrives as `[]` with **no provenance**, so a component that distinguishes failure for its OWN fetch still concludes on the seed (7 by 08-24). Pass `initialFailed`, and **assert it by SSR (`renderToString`)** — a mount effect corrects the state before jsdom looks, so two OPPOSITE mutations pass every client test.
+
 ## ⭐ A TIMEOUT IS A CLAIM ABOUT WHAT YOU ARE WAITING ON, NOT ABOUT WHAT YOU CAN AFFORD (2026-09-12/13)
 
 The badge-art change gave the OG cards official platform artwork with an RPC glyph as the guaranteed

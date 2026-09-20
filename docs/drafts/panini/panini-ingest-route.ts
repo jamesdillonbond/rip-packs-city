@@ -1,3 +1,26 @@
+// ⛔⛔ STALE DRAFT — DO NOT COPY FROM THIS FILE. SUPERSEDED 2026-09-20 (register R120/R121).
+//
+// This is a snapshot of an EARLIER version of the live route and it carries FOUR defects that
+// were fixed in the live tree on 2026-09-20. It was identified as an actual COPY-PASTE SOURCE
+// for the swallowed-write class, which is the only reason it is still here rather than deleted:
+//
+//   1. `if (error) console.log(...)` on a batch upsert  — the error never reaches pipeline_runs.
+//   2. `await supabase.from(X).insert(rows)` with NO destructuring — the error is unreadable by
+//      construction (there is no `error` binding to check), on the fmv delete, the fmv insert
+//      and the pack-state upsert.
+//   3. `logRun(..., true, null, ...)` — `ok` and `error` are ASSERTED, not derived, so no write
+//      failure can ever move them.
+//   4. `fmv: fmvRows.length` / `packs: packs.length` — rows CONSTRUCTED, published under keys
+//      every reader takes for rows WRITTEN. A count that cannot go down is not a measurement.
+//
+// ⚠ The "RESOLVED" comment further down refers to the LIVE route, not to this file, and makes
+// this draft read as maintained. It is not maintained.
+//
+// ⚠ Its psku format is also wrong — the live route's own header says so.
+//
+// 👉 Read `app/api/cron/panini-ingest/route.ts` instead. Full canon for the defect class:
+//    docs/reference/key-files-and-honesty.md (the TWELFTH shape).
+//
 // app/api/cron/panini-ingest/route.ts  (DRAFT / not in the live tree)
 //
 // PUSH ingest for Panini Plane-A: receives batches captured by the residential runner
