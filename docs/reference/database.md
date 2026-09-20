@@ -2715,3 +2715,29 @@ Of the 36, two were red. Both turned out to be genuinely surfaced (`check_pipeli
 🚨 **`grep -rl <fn> app lib scripts .github` returned a count of 1 for `check_wmc_ownership_freshness`, which reads exactly like a reader. It is a COMMENT** (`app/api/wallet-backfill/route.ts:343`, *"with check_wmc_ownership_freshness() — set-returning, 0 rows = clean"*). **Grep the call, not the name** — `grep -rn` and look at the line, or check `pg_proc.prosrc` and `cron.job.command` for DB-side callers.
 
 **Dated clean snapshot (2026-09-20 ~10:55 PT)** — 15 clean, incl. every security and search-path invariant: `check_secdef_anon_exec_drift` · `check_secdef_anon_execute_violations` · `check_public_security_invariants` · `check_anon_write_surface` · `check_function_search_path_drift` · `check_procedure_search_path_unpinned_drift` · `check_procedure_transaction_control_pin_drift` · `check_when_others_timeout_blind` · `check_wallet_pack_sync_floor_drift` · `check_backward_cursor_rewind` · `check_cursor_stall_threshold_drift` · `check_suppression_parked_claim_drift` · `check_cron_heavy_job_exec_drift` · `check_edge_lane_observability` · `check_maintenance_load`. ⚠ Dated sample — re-run, do not quote.
+
+## Grants and REVOKE (displaced from CLAUDE.md 2026-09-20 — verbatim)
+
+Needed when authoring a migration that changes function privileges; not before a session knows its topic.
+
+- ⚠ **Revoke `FROM PUBLIC, anon, authenticated` in ONE statement** — either half alone leaves a grant (PUBLIC default AND `ALTER DEFAULT PRIVILEGES`). 🚨 **That REVOKE ORPHANS a pg_cron caller holding no explicit grant — `GRANT` to the job's role in the SAME migration (SECDEF is what it RUNS AS, not who may CALL it), and it fails as SILENCE: `cron.job_run_details` shows it, `pipeline_runs` never does.** Verify with `has_function_privilege`, never acl text; re-run `check_secdef_anon_exec_drift()` after creating ANY function.
+
+## The compute resize of 2026-09-20, and the instrument that dates one (verbatim context for every pre-09-20 number here)
+
+📏 **`pg_postmaster_start_time()` = 2026-09-20 10:39:57 AM PT** — `max_connections 160 · shared_buffers 2GB · work_mem 12MB`: the **Small → LARGE** resize (8 GB / 2 dedicated vCPU, sustained **79 MB/s / 3,600 IOPS** against Small's 22 MB/s).
+
+🚨 **A CALM box and the SAME box are different claims.** On 09-20 three ledger entries attributed a 17×–25× swing to ambient IO settling; the change point was a hardware resize 27 minutes earlier. **Read `pg_postmaster_start_time()` before attributing any fleet-wide performance change** — a resize restarts Postgres, so uptime dates it for free.
+
+⭐ **The two-change-point split that resolved #126**, recorded because the method is the reusable part. 09-20 busy-seconds per PT hour from `cron.job_run_details`, run counts flat throughout (so this is the COST of identical work):
+
+| PT hour | runs | busy-seconds | avg per job |
+|---|---|---|---|
+| 00–09 (after the pg_net `VACUUM FULL` of 09-19 19:09:34 PT **and** the 16 migrations of 09-19 17:16–19:44 PT) | ~406/h | ~14,500/h | **34.5 s** |
+| 10 (resize at :39) | 372 | 6,607 | 17.8 s |
+| 11 (fully post-resize) | 340 | **472** | **1.39 s** |
+
+⛔ **Ten clean hours after the reclaim show NO improvement; one hour after the resize shows a ~25× step.** That vindicates #75's refusal reason (dead pages nobody reads cost ≈ 0 IO) and moves the cause to instance capacity.
+
+⚠ **A DAILY total could not have shown this** — 09-20 straddles two change points, so its daily figure belongs to neither band of #126's falsifier and means nothing. **Split on the change point at the resolution the change happened at.**
+
+⛔ **Every figure elsewhere in this file citing the 22 MB/s floor, 512 MB `shared_buffers`, or a per-job multiple measured before 09-20 is a SMALL-tier sample. Re-derive; do not quote.**

@@ -2638,3 +2638,34 @@ Moved to keep the memory file under its character limit while the add-only-refre
 
 - ⚠ **A rate POOLED ACROSS A FIX measures the fix's ABSENCE and reads as its FAILURE** — a kill rate was 87.5% pre-deploy, 0% post, **56% pooled**. ⛔ **Under an IO spell a cron DURATION or completion rate measures the ESTATE, not your fix — judge per-call work on pgss blocks/call** (R101 v1: reverted on durations, exonerated 26 min later).
 - ⚠ **A window sitting ENTIRELY AFTER a change point cannot tell a STEP from a LEVEL** — 72 h read as "lower demand" what 24 days showed as a dated step onto a flat plateau, shipping a suppression RETRACTED 40 min later. ⚠ **Read the live alarm's OWN `detail`/ack text before building a fix for what it already covers.**
+
+## An alarm you just added is NOT armed — check its grace (2026-09-20)
+
+⭐ **`detect_stalled_pipelines()` carries a deliberate new-row grace**, added 2026-09-04:
+
+```sql
+AND w.created_at < now() - (w.max_silent_minutes * interval '1 minute')
+```
+
+So a watchlist row is **silent for its own `max_silent_minutes` after insertion** — for a daily lane at 1800, that is 30 hours. ⚠ **A row added in response to an incident is therefore NOT armed on that incident**, and a session that adds one and reports "now covered" is wrong for the first window.
+
+⛔ **Do NOT backdate `created_at` to win the first tick.** The function reads that column as *how long has this arm been armed*; faking it makes the instrument lie about itself. Record the go-live time instead and say the arm is dormant until then.
+
+⭐ **Ship the row with its POSITIVE CONTROL** — the arm's own predicate with only the grace clause removed. If that selects the lane today, the threshold is right and the silence is the grace. Run on 2026-09-20 for `refresh-conflated-editions`: `silent_minutes 4515` vs `max_silent_minutes 1800`, `classification 'invoked_but_never_logged'`, `grace_passed false` — every other condition already met.
+
+⚠ **FILED, NOT FIXED:** the grace clause uses the **ROW's** age as a proxy for the **PIPELINE's** age. It holds for a genuinely new pipeline and is wrong in exactly the case above — an old lane given a new row is graced as though it had never run. (CLAUDE.md: *a control's POPULATION must be the set the property is TRUE of, not a proxy that coincides today*.)
+
+## Four instruments, zero coverage — count them before believing a lane is watched (2026-09-20)
+
+`topshot_thin_fmv_editions` went **57.9 h stale** with both writers failing and nothing paging. The four that could have caught it and why each was blind:
+
+| instrument | why it could not see this lane |
+|---|---|
+| `v_pipeline_failure_rates` | `HAVING sum(runs) >= 5` over a **2-day** window — a **daily** lane can never reach the floor, in either direction |
+| `pipeline_cadence_watchlist` | **no row existed** |
+| the `check_*` invariants | none names the table (swept every `check\_%` body over `pg_get_functiondef`: zero hits) |
+| the pg_cron backstop's own failure | `cron.job_run_details` **only** — never `pipeline_runs` |
+
+⭐ **The reusable move: a lane with a pg_cron backstop is not doubly covered, it is doubly INVISIBLE** unless something correlates the two. Both writers here died the same two days — the route killed at its 120 s wall, the cron timing out at ~604 s — and no single instrument saw both.
+
+⚠ **And the cron half fails as SILENCE.** `SET statement_timeout` on a function is INERT on pg_cron: this one declared `'120s'` and pg_cron ran it **604 s** before killing it. Confirmed live 2026-09-20, not quoted.

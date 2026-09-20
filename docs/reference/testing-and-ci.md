@@ -3119,3 +3119,28 @@ load-bearing.
 3. **Pin behaviour from all three directions when the property has three states.** The suite now covers `fresh` → publishes real depth, `stale` → discloses the measured age and suppresses the count, `unknown` → distinct copy, suppresses the count. A fixture world where every arm is fresh passes a one-sided check — which is how the previous two versions of this test died.
 
 ⚠ **Unrelated but load-bearing: a red `npm test` is not automatically yours.** Two of three failures in a full run during this session were a concurrent session's in-flight migration files, and the guard passed in isolation minutes later. **Read the failing job, and re-run on a settled tree, before changing anything.**
+
+## "It MIRRORS X" is a claim with no test — diff the two implementations (2026-09-20)
+
+`lib/sentinel/wall-kills.ts` documents `check_wall_kills()` as mirroring `lib/pipeline/kill-rate.ts`, statement by statement. It had **diverged for a week**: a rule (`unverified` — a marker with no terminal writer anywhere in the window is unproven, not 100% killed) was added to the SQL side on 09-13 and never to the TS side.
+
+Read live on 09-20, same `pipeline_runs` rows, minutes apart:
+
+| instrument | `dead-lane-backstop` |
+|---|---|
+| `check_wall_kills()` | `unverified`, 8 heartbeats — not an offender |
+| `correlateRuns()` | `failing`, 15/15 = 100%, rank 0 |
+
+⛔ **The divergent one was the operator CLI**, whose exit is `records.some(verdict === 'failing') ? 1 : 0` — so `npm run pipelines:kills` exited 1 on **every** run, forever, on a GitHub-Actions liveness probe that by design never writes a terminal row. A permanently-red instrument is indistinguishable from a broken one.
+
+⭐ **Two implementations of one rule need a shared fixture or a diff, not a sentence.** Where they cannot share code (SQL vs TS here), the header that claims the mirror should name the last date the two were actually compared.
+
+## Mutate the fix BEFORE trusting arms you wrote for a bug you theorised (2026-09-20)
+
+While re-testing the fleet after a compute resize, an ad-hoc split-window script produced `p = 0` for a lane and I attributed it to a degenerate null in `classifyKillRecord` (a pooled rate of exactly 1.0 making `(1-r)**n` zero). I wrote a Laplace smoothing fix and five arms for it. **All five passed — and so did the suite with the fix removed.**
+
+⭐ **The arms were vacuous and the mutation test is the only thing that said so.** The degenerate case is **unreachable**: `killRate` is killed/total over the whole sequence, so `killRate === 1` implies `cleanTicks === 0`, and that branch returns `failing` before any p is computed. The `p = 0` came from **my own script**, which took the null from one window and the clean run from another.
+
+- ⛔ **A test written for a defect you have not reproduced in the code under test will usually pass for the wrong reason.** Reproduce it against the real function first.
+- ⛔ **Removing the fix must red the arms.** If it does not, the arms are describing something else.
+- ⚠ **The specific trap, now pinned:** if you want a before/after rate, hand the FULL sequence to `classifyKillRecord` and let it pool. Feeding it two windows and calling the output a p-value manufactures certainty — it briefly had a lane filed as `recovered` on two ticks.

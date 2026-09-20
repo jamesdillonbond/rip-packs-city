@@ -516,3 +516,55 @@ describe('correlateRuns — a marker with NO WRITER is unverified, not 100% kill
     expect(classifyKillRecord('x', allKilled, null, 3).verdict).toBe('failing')
   })
 })
+
+describe("classifyKillRecord — the null can never be degenerate (2026-09-20)", () => {
+  // ⚖ THIS BLOCK REPLACES AN ERROR OF MINE, kept as the reason it exists.
+  // Re-testing the fleet after the Small → Large compute resize, an ad-hoc script
+  // computed the null from the PRE-resize window (classify: 6 kills / 6 markers,
+  // r = 1.0) and the clean run from the POST window (2 ticks), got p = 0, and
+  // briefly had that lane filed as RECOVERED on two ticks. I attributed the flaw
+  // to `classifyKillRecord`. It is not there — it was in the split-window script.
+  //
+  // ⭐ The module pools both windows into ONE sequence, so the clean ticks are in
+  // the denominator and dilute the rate below 1 by construction. These arms pin
+  // that, because the next person to want a before/after rate will reach for the
+  // same shortcut.
+
+  /** n killed ticks, then m clean ones — ONE sequence, as the function expects. */
+  const run = (killed: number, clean: number): KillTick[] =>
+    seq("x".repeat(killed) + ".".repeat(clean))
+
+  it("an all-killed prefix plus clean ticks never yields p = 0", () => {
+    // 6 killed then 2 clean is r = 0.75, not 1.0 — the clean ticks count.
+    const r = classifyKillRecord("p", run(6, 2))
+    expect(r.killRatePct).toBe(75)
+    expect(r.chanceRunIsLuck).not.toBe(0)
+    expect(r.chanceRunIsLuck!).toBeGreaterThan(0)
+  })
+
+  it("wherever p is computed at all, the pooled rate is strictly below 1", () => {
+    // The invariant itself, over a spread of shapes rather than one example.
+    for (let killed = 1; killed <= 12; killed++) {
+      for (let clean = 1; clean <= 12; clean++) {
+        const r = classifyKillRecord("p", run(killed, clean), null, 1)
+        expect(r.chanceRunIsLuck, `killed=${killed} clean=${clean}`).not.toBe(0)
+        expect(r.killRatePct, `killed=${killed} clean=${clean}`).toBeLessThan(100)
+      }
+    }
+  })
+
+  it("a 100% rate is reachable ONLY with zero clean ticks, which returns before p", () => {
+    // The structural reason: killRate === 1 implies cleanTicks === 0, and that
+    // case is `failing` (or `unverified` with no writer), never a p-value.
+    const r = classifyKillRecord("p", run(6, 0), null, 3)
+    expect(r.killRatePct).toBe(100)
+    expect(r.verdict).toBe("failing")
+    expect(r.chanceRunIsLuck).toBeNull()
+  })
+
+  it("the real 2026-09-20 record, pooled correctly: classify is NOT recovered", () => {
+    const r = classifyKillRecord("classify-acquisitions-multicollection", run(6, 2))
+    expect(r.chanceRunIsLuck!).toBeGreaterThan(RECOVERY_P_THRESHOLD)
+    expect(r.verdict).toBe("intermittent")
+  })
+})

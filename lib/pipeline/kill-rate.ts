@@ -345,6 +345,21 @@ export function classifyKillRecord(
     }
   }
 
+  // ── WHY THIS CANNOT DIVIDE BY A DEGENERATE NULL (checked 2026-09-20) ───────
+  // A pooled rate of EXACTLY 1.0 would make `(1 - r) ** n` exactly 0 and hand a
+  // `recovered` verdict — the strongest possible claim — to a single clean tick.
+  // It cannot happen HERE, and the reason is structural rather than lucky:
+  // `killRate` is killed/total over the WHOLE sequence, so `killRate === 1`
+  // implies `cleanTicks === 0`, and that case already returned `failing` above.
+  // Reaching this line therefore guarantees 0 < killed < total.
+  //
+  // ⚠ Worth stating because the trap is real one level up: computing the null
+  // from one window (say, everything before a change point) and the clean run
+  // from ANOTHER does reach r = 1, and reads p = 0. An ad-hoc split-window script
+  // did exactly that on 2026-09-20 and briefly had `classify-acquisitions-
+  // multicollection` filed as recovered on two ticks. If you want a before/after
+  // rate, hand the FULL sequence to this function and let it pool — do not feed
+  // it two windows and call the result a p-value.
   const chanceRunIsLuck = Math.pow(1 - killRate, cleanTicks)
   const recovered = chanceRunIsLuck < RECOVERY_P_THRESHOLD
 

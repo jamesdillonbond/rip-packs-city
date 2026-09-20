@@ -1749,3 +1749,9 @@ Moved here whole to make room for R118 and the leg-324 hour-set rule; CLAUDE.md 
 Full detail: [docs/reference/tooling-gotchas.md](tooling-gotchas.md).
 
 
+
+## When push IS genuinely denied — the four routes (displaced from CLAUDE.md 2026-09-20 — verbatim)
+
+Reached only after `git push --dry-run origin main` has actually been tried and refused; the recipes for each follow elsewhere in this file.
+
+- **When push IS genuinely denied**, four proven routes (recipes: tooling-gotchas.md): repo-as-session-source · `/web-setup` (authorizes at CREATION — fixes the NEXT one) · desktop "Run this task" · `git format-patch` → VM `git am` + `.rpc-git-cred` (back 09-19; `am` rewrites the sha — the cloud clone then reads "unpushed") · the laptop `cowork-push` queue.

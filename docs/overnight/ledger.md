@@ -11,6 +11,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ #126 RESOLVED — TEN CLEAN HOURS AFTER THE pg_net RECLAIM SHOW NOTHING, ONE HOUR AFTER THE RESIZE SHOWS 25× · plus a CLAUDE.md rule earned the hard way and one correction to my own claim · Claude Code cloud
+
+**Shipped: `CLAUDE.md` (2 rules added, 2 bullets displaced verbatim) · `docs/reference/{database,cron-and-schedulers,testing-and-ci}.md` · `known-issues.md` #126 resolved + index regenerated · `deep-audit-register.md` R122 corrected · `lib/pipeline/kill-rate.ts` + 4 test arms.**
+
+⭐ **#126's central question is answered by a TWO-CHANGE-POINT natural experiment, at the resolution the change happened at.** 09-20 busy-seconds per PT hour, run counts flat (so this is the COST of identical work):
+
+| PT hour | runs | busy-s | avg/job |
+|---|---|---|---|
+| 00–09 — after the `VACUUM FULL` (09-19 **19:09:34 PT**) *and* the 16 migrations (09-19 17:16–19:44 PT) | ~406/h | ~14,500/h | **34.5 s** |
+| 10 — resize at **10:39:57 PT** | 372 | 6,607 | 17.8 s |
+| 11 — fully post-resize | 340 | **472** | **1.39 s** |
+
+⛔ **Ten clean hours after the reclaim show NO improvement; one hour after the resize shows a ~25× step.** So **#75's refusal reason is VINDICATED** — dead pages nobody reads did cost ≈ 0 IO, and the reclaim bought nothing. The cause was instance capacity. ⚠ **#126's daily falsifier bands are now unusable and are marked so rather than ticked**: 09-20 straddles two change points, so its daily total belongs to neither band and means nothing. Fleet correlate, same split: **61 wall-kills before → 0 after**, ~120 markers on 20 lanes. `net._http_response` is **711 MB / 2,793 rows**, so #75's parting question resolves too — the `pg_net Dispatch` ≥8 GiB arm is quiet, no longer permanently amber.
+
+⚖ **CORRECTION TO MY OWN CLAIM, made in R122 this morning and now fixed there.** I wrote that `classify` read p = 0 because of a **degenerate null in `classifyKillRecord`**. **Wrong — the module is fine.** `killRate` is killed/total over the WHOLE sequence, so r = 1 implies `cleanTicks = 0`, which returns `failing` before any p is computed; the degenerate case is **unreachable**. The p = 0 came from **my own split-window script** (null from the pre-resize window, clean run from the post). 🚨 **And the way I found out is the lesson: I shipped a Laplace-smoothing "fix" with five arms, all passing — then the mutation test showed the suite ALSO passed with the fix removed. It was unreachable dead code and the arms were vacuous.** Reverted; replaced with arms that pin the real invariant over 144 shapes. ⭐ **A test written for a defect you have not reproduced in the code under test will usually pass for the wrong reason — mutate the fix before trusting it.**
+
+📏 **CLAUDE.md, measured with `node .length` as its own header demands: 39,923 → 39,987 of 40,000.** Two rules added, each DISPLACING rather than spending:
+- 🚨 **"A CALM box and the SAME box are different claims — read `pg_postmaster_start_time()` before attributing any fleet-wide performance change."** Cost me three mis-attributed entries today.
+- ⛔ **"A header saying it MIRRORS another implementation is a CLAIM WITH NO TEST — diff them."** `check_wall_kills()` vs `correlateRuns()` diverged for a week.
+- **Displaced verbatim:** the REVOKE/`GRANT`-orphans-pg_cron bullet → `database.md`; the four push-denied routes → `tooling-gotchas.md`. Both are needed only once a session knows its topic, which is the file's own stated criterion.
+
+📌 **Also documented:** the watchlist **new-row grace** (an alarm you just added is NOT armed — and do not backdate `created_at` to win the first tick) and the **four-instruments-zero-coverage** table, both in `cron-and-schedulers.md`; the mirror-divergence and vacuous-arm lessons in `testing-and-ci.md`; the resize and the change-point method in `database.md`, with the standing warning that **every pre-09-20 figure in that file is a SMALL-tier sample**.
+
+- **Revert:** `git log --grep='#126 resolved'` → `git revert <sha>`. Docs + one test file; no DB, no schedule.
+
 ### 2026-09-20 · 🔧 THE FOLD SWEEP REACHES THE WRITE PATH — `/api/wallet/save` destroyed a base58 wallet AT THE MOMENT OF SAVING IT, and the seeder answered for a chain it cannot read · Claude Code cloud
 
 **Shipped: `app/api/wallet/save` · `app/api/wallet/seed` (now 400s an unsupported chain instead of returning rows of zeros) · `lib/profile/saved-wallet-quota` · `lib/profile/public-profile`. 9 new/re-pinned test arms across 3 files, planted-defect control 3 red / 35 green. No DB change.**
