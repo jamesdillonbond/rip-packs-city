@@ -19,6 +19,16 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 **Schema convention.** `chain` lives on `collections` only — column type is the `chain_type` enum, values `flow | ethereum | polygon | solana | flow_evm`. Expand via `ALTER TYPE chain_type ADD VALUE '<name>'` when a new target chain is approved. Every dependent row reaches chain via `collection_id` FK; no `chain` columns on dependent tables. The `collection_chains` view (`collection_id, chain, slug, name`) is the canonical join point — use it on any FK that points at `collections.id` to derive chain without repeating the join. Granted to `anon`, `authenticated`, `service_role`. All 5 published collections currently `chain='flow'`.
 
+⚠ **"Canonical" here means INTENDED, not USED — and reading it as "used" has already cost one wrong blast-radius call.** Measured 2026-09-20: `collection_chains` has **ZERO consumers** — 0 of **176** public views/matviews, 0 `pg_proc` bodies, 0 hits across `app/ lib/ components/ scripts/ workers/`. So does `collections.chain` itself. **Nothing in the estate derives a chain label from the DB**; every user-visible chain string comes from the hardcoded `dbChain` in [lib/collections.ts](../../lib/collections.ts). The 2026-09-19 Panini go-live doc inferred from the word *canonical* that a bridged row "would be labelled Ethereum on every surface" and pointed its fix at a migration — [the real one was in code](../strategy/panini-go-live-2026-09-19.md), and site-wide (`publishedChainsBadge()`). ⭐ **Count a view's callers before you size what changing it does; a name is not a caller.** ⚠ Re-derive the 0s before quoting them — a consumer added later is exactly what this note would stop being true for. The read:
+
+```sql
+select count(*) filter (where def ilike '%collection_chains%') as consumers, count(*) as inspected
+from (select pg_get_viewdef(c.oid) as def from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='public' and c.relkind in ('v','m')) d;
+```
+
+⛔ **Do NOT measure this through `information_schema.views`** — `view_definition` is NULL for views you do not own, so it returns a clean empty result that reads as "no consumers" while inspecting nothing. Always assert the `inspected` count alongside.
+
 **Strategy + plan docs:**
 - [docs/strategy/multi-chain-thesis-2026-05-30.md](../../docs/strategy/multi-chain-thesis-2026-05-30.md)
 - [docs/migrations/chain-abstraction-plan-2026-05-30.md](../../docs/migrations/chain-abstraction-plan-2026-05-30.md)

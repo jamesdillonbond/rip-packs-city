@@ -112,10 +112,25 @@ whole-group statistic used as a proxy for a per-slice property.
 
 ## 4. The corrected go-live order
 
-1. ⏳ **Prove the walk fix.** Next runner tick 21:00Z (14:00 PT). **Exit condition:**
-   `pct_editions_stale_45d` falls toward 0 and holds for a week. **Falsifier:** if it does not
-   fall, the walk fix did not work and everything below is premature. Read it with
-   `select edition_age_p50_h, pct_editions_stale_45d from panini_coverage_summary`.
+1. ✅ **The walk fix is proven on its falsifier — day 1 of the 7-day hold.** Measured 2026-09-20
+   ~8:2x AM PT, one day after the fix:
+
+   | reading | 09-19 | 09-20 | |
+   |---|---|---|---|
+   | editions 45+ days stale | **1,265 (24.9%)** | **3 (0.1%)** | ⬇ |
+   | edition age p50 | 276 h | **61.6 h** | ⬇ |
+   | edition age p90 | 1,384 h | **470.1 h** | ⬇ |
+   | walked ≤7 days | 1,671 (32.9%) | **3,182 (62.7%)** | ⬆ |
+
+   **The falsifier is discharged** — it said "if it does not fall, the walk fix did not work". It
+   fell by 99.8% of its value in one tick cycle. ⏳ **The HOLD is not: this is 1 of 7 days**, and
+   the week matters because the failure mode being ruled out is a walk that drains the backlog once
+   and then stops reaching the tail again. **Re-read daily** with
+   `select edition_age_p50_h, edition_age_p90_h, pct_editions_stale_45d, pct_editions_walked_7d from panini_coverage_summary`.
+   **Exit: `pct_editions_stale_45d` ≤ 1% every day through 2026-09-26.**
+
+   ⚠ **`pct_trustworthy` did NOT move (36.2% → 35.2%) and that is not a counter-result** — §1's
+   correction says exactly this: it bands on listing bias, not freshness. Do not read it either way.
 2. **Then the P1 bridge.** The mapping is settled and executable (§5). It is ~2 days of work, not
    1–2 weeks, now that the enum and null questions are measured.
 3. **Then the flips**, in the 09-06 audit's order: `published` → `proxy.ts` → `is_active` LAST.
@@ -139,11 +154,40 @@ this is exactly the case it was written for.
 
 ### Four pre-flip gaps, none of them papered over
 
-1. 🚨 **`collections.chain` for `panini_blockchain` reads `ethereum`.** That describes the OpenSea
-   bridge plane, which #64 did **not** choose; the WC Prizm plane is a private Sawtooth chain.
-   `collection_chains` is the canonical chain join, so **every bridged row would be labelled
-   Ethereum on every surface**. Fix the registry row in the same migration that writes the first
-   edition, or not at all. *Nothing in the 09-06 audit named this.*
+1. ⛔ **RETRACTED AND REPLACED 2026-09-20 — I had the mechanism wrong, and it pointed the fix at
+   the wrong file.** The original text read: *"`collections.chain` for `panini_blockchain` reads
+   `ethereum` … `collection_chains` is the canonical chain join, so every bridged row would be
+   labelled Ethereum on every surface. Fix the registry row in the same migration that writes the
+   first edition."*
+
+   **Measured instead of asserted (2026-09-20 ~8:1x AM PT): `collection_chains` has ZERO consumers,
+   and so does `collections.chain`.** 0 of **176** public views/matviews reference it
+   (`pg_get_viewdef` over `pg_class` — ⚠ `information_schema.views.view_definition` is NULL for
+   views you do not own, and my first pass through it returned a clean `[]` that measured *nothing*);
+   0 `pg_proc` bodies; 0 hits in `app/ lib/ components/ scripts/ workers/`. **A bridged row reaches
+   no chain label through the DB at all, so no migration fixes this and the DB row gates nothing.**
+   That half of the 2026-07-19 retraction (parity-assessment) was right and I re-broke it.
+
+   🚨 **But there IS a real Ethereum falsehood, in code, and it is WIDER than this doc claimed.**
+   The user-visible chain label comes from the hardcoded `dbChain` in **`lib/collections.ts`**, not
+   from the DB. `publishedChainsBadge()` renders the **site-wide** footer + default-OG provenance
+   claim from the `dbChain` of every `published` collection — so the flip in **step 3, not the
+   bridge in step 2**, was going to change *every page on the site* from `BUILT ON FLOW + SOLANA` to
+   **`BUILT ON FLOW + ETHEREUM + SOLANA`**. Measured by flipping the flag in a probe, not predicted.
+   RPC would have claimed Ethereum provenance on the strength of a bridge plane it holds **zero rows
+   from** and #64 deliberately never ingested.
+
+   ✅ **FIXED 2026-09-20:** `dbChain: "ethereum"` → `null` (the established "not established" value,
+   as on `rwa`), which corrects three consumers at once — badge skips Panini, the `CollectionBanner`
+   pill falls back to "Panini Chain", and `chainKindForDbChain(null)` stops Panini accepting a `0x`
+   wallet it has no concept of. **Zero user-visible change today** (Panini is unpublished; its static
+   route dirs mount no `CollectionBanner`). Pinned by
+   `__tests__/published-flip-cannot-widen-the-site-wide-chain-claim.test.ts` — a ban at zero, not an
+   allowlist, with a positive control and a three-way planted-defect check.
+
+   ⭐ **The lesson, and it is the one this file keeps re-learning: I inferred a blast radius from a
+   view's NAME ("canonical join point", per chain-strategy.md) instead of counting its callers.**
+   It has none. *Nothing in the 09-06 audit named any of this.*
 2. **No `sets` / `players` rows** exist for Panini's 62 sets and 657 players, so `set_id` /
    `player_id` stay NULL and shared set/player surfaces render empty — which reads as "no cards".
 3. **A nation is not a team.** `panini_editions.nation` is populated and `team_name` stays NULL
