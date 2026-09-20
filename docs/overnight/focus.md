@@ -10,18 +10,23 @@
 
 ⚠ **`zero_repriced + zero_cleared` reading 0 while `pack_rips.pull_value_usd = 0` still has rows means the leg STOPPED REACHING them** — a different failure from the drain finishing, and indistinguishable in `value_resolved`, which the stale leg also moves.
 
-## 🟡 THE ONE DECISION LEFT, and its measurement is already done — DO NOT re-derive it, decide it
+## ✅ THAT DECISION IS CLOSED — SHIPPED 2026-09-20 ~3:1x PM PT. `p_limit` is **2000**. Do not re-open it without a new measurement.
 
-👉 **Raise the route's `p_limit` from 500?** It would cut the 46 days to ~12 **and** the `null_drain`'s 2.98M-row backlog from ~300 days to ~75. Measured on the LARGE box (postmaster 10:39 AM PT), warm, minutes apart:
+⛔ **The measurement this section said was "already done" was NOT done, and the number it led with points the WRONG WAY.** The wall-clock pair (**5.8 s vs 7.4 s**) reads as *"4× the rows for 1.28× the time, rows are nearly free"*. **They are not.** Wall time is not work, and the pgss figure beside it (**449,416 blocks / 9.1 MB WAL per call**) was pooled over 657 calls **across both compute tiers and four same-day body changes** — the live per-call cost is ~**49k**, an order of magnitude below the pooled number.
 
-| p_limit | wall | zeros handled/tick |
-|---|---|---|
-| 500 | **5.8 s** of a 50 s budget | 75 |
-| 2000 | **7.4 s** | 300 |
+📏 **THE CLEAN PAIR, taken warm on LARGE 15:05–15:08 PT.** ⚠ `pg_stat_statements.track='top'` and **500/2000 jumble to the SAME queryid (`$1`)** — so it is not "the two normalized rows" this section asked for, it is **sequential before/after deltas on one row**. Run **500 → 2000 → 500** so the 500 arms straddle the comparison:
 
-⭐ **4× the rows for 1.28× the time — the tick is dominated by fixed per-leg scan cost, so rows are nearly free.**
+| p_limit | blks/call | disk reads/call | cache hit | zeros/tick | **blks per zero** |
+|---|---|---|---|---|---|
+| 500 (arm A) | 49,246 | — | — | 75 | 657 |
+| 500 (arm C) | 49,211 | 1,780 | 96.4 % | 75 | 656 |
+| **2000** | **~161,389** | **5,686** | **96.5 %** | **300** | **534** |
 
-⛔ **AND THAT IS NOT ENOUGH TO DECIDE IT, which is why it was left.** Wall time is not IO. `pg_stat_statements` shows this statement at **449,416 shared blocks and 9.1 MB of WAL per call** — but over **657 calls pooled across both compute tiers AND today's four body changes**, so per CLAUDE.md it is not a reading of "now". 👉 **What is owed is one clean per-call `blocks/call` pair at 500 vs 2000 on a stable tree** (reset nothing global — read the two normalized pgss rows before and after a handful of calls at each limit). ⚠ 2,000 rows/tick × 24 is 48,000 row-updates/day on a table carrying **11 indexes / 1.5 GB**, two of which INCLUDE `pull_value_usd`. #126 (the fleet-wide slowdown) was resolved hours before this was written — do not spend its recovery without that number.
+⭐ The two 500 arms agree to **0.07 %** (no order effect) and straddle an unrelated migration. **4× the rows for 3.26× the blocks — 19 % cheaper per zero, 20 % cheaper in real disk. Cache hit 96.5 % at BOTH limits ⇒ this lane is CACHE-bound, not IO-bound.** 👉 **The deciding frame is TOTAL, not per-day:** per day 2000 costs **3.3×**, but finishing costs **less** — ~42 M blocks over **~11 days** vs ~53 M over **~45**. Extra disk ≈ **750 MB/day**, ~0.01 % of the tier.
+
+⚠ **This spends headroom that is currently MASKING #126 — see the correction below — and that was accepted deliberately** because the lane is cache-bound and the dilution window is itself the harm (`realized_mean` understated on **162 of 295** TS dists with no surface saying so). ⛔ **If #126 resurfaces, this is the first thing to back out:** one constant in `app/api/cron/backfill-pack-rip-metadata/route.ts`.
+
+🚨 **AND CORRECT THE LINE ABOVE WHILE YOU ARE HERE: "#126 … was resolved hours before this was written" IS WRONG.** #126 was **not resolved — it was OUTRUN.** `pg_postmaster_start_time()` = **10:39:56 AM PT**: the instance restarted onto LARGE, and pg_cron failures/10-min at constant volume go **`10:30` 14 → `10:40` 0** and stay zero. The 10× busy-seconds cause remains **unestablished** (R117 unproven). ⛔ **Do not close #126 on that recovery, and expect it back as load grows into the new tier.**
 
 ## STEER — added 2026-09-19 ~10:1x PM PT (Claude Code, Windows box; session close — THREE falsifiers owed on the clock, and the steer below this one is SPENT)
 
