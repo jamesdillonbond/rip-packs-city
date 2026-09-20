@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🔎 R117 FILED — wmc autovacuum is ~3.4 h/day of full-index-pass IO, in #126's band, and its durations ARE recoverable from the logs (the 08-29 note said they were not); the reindex verify names the tier index again · Cowork cloud
+
+**Shipped: 1 migration (`20260920041743`, `run_wmc_reindex_verify()` sixth target → `idx_wmc_wallet_coll_ek_fmv_tier`, live body md5 = committed body md5 `b0f1531b…`), register row R117 (measurement only — no autovacuum lever moved, deliberately, after tonight's pack_rips episode).**
+
+🔎 **The instrument.** `20260829202017`'s table comment records that `log_autovacuum_min_duration = 600 s` makes every ≥ 10-minute autovacuum visible in `postgres_logs`, and then says *"DURATIONS ARE NOT RECOVERABLE — only completion time"*. **They are:** the logs API exposes `log_attributes['parsed.session_start_time']` (the worker's start) beside `parsed.timestamp` (completion). Nine `wallet_moments_cache` passes ≥ 600 s completed 05:04Z–17:55Z on 09-19 (10 PM PT 09-18 → 10:55 AM PT): **1,698 · 658 · 1,359 · 1,332 · 818 · 2,867 · 749 · 1,149 · 1,441 s = 12,071 s ≈ 3.35 h**, every one `index scans: 1` — a full pass over the table's **2.2 GB / 17 indexes** each time, whatever the dead-tuple count. Passes under 10 min are not logged, so this is a floor. ⚠ **That window is #126's "02–18Z slow-reads band" almost exactly**, and since ~9 PM PT tonight the routine wmc pass has sat in `pg_stat_progress_vacuum` at 236–242 s in `DataFileWrite` while the estate failed ~50 lanes (8:38–8:43, 9:00–9:14 PM PT) with nothing of mine running. Not a claim of cause — the 0.02 trigger is deliberate and R109's dated falsifier PASSED on it — but the cost side of that trade is now a number, and the register row carries the three candidate levers with the one that actually shrinks the pass (index count: 17 on a 939 MB heap) named first. **Exit/falsifier in the row.**
+
+🔧 **Verify in lockstep.** `run_wmc_reindex_verify()`'s own comment says its target array must match jobs 1–6; the 09-14 index drop broke that and tonight's 9:03 PM PT tick read `absent: [idx_wmc_wallet_coll_ek_fmv]`. One token changed, applied from the exact committed text (md5 checked both sides, per `20260908143656`'s rule). Tonight's `ok = false` stands on its other cause — `idx_wmc_lock_wallet_coll_cover` at **43.15 % leaf density** after its REINDEX died under my pack_rips pass — and clears when jobid 477 succeeds next Sunday (the 8:23 PM PT leg; watch it).
+
+- **Revert:** migration header. R117 is a filing; nothing to revert.
+
 ### 2026-09-19 · 🏀 THE FAST BREAK BADGE RENDERED A PULSING "LIVE" DOT FOR A RUN THAT ENDED FOUR MONTHS AGO — found by pulling #8's read path, which turned out to be honest · Claude Code (Windows box)
 
 **Shipped: 3 files (1 lib helper + 1 client + 1 route comment) + 1 test file. No DB change.** ⛔ **The DATA defect underneath is deliberately NOT touched — it is Trevor's call (see the last block).**
