@@ -45,9 +45,21 @@ Ledger entry (top of `docs/overnight/ledger.md`) carries revert paths for all fo
 - 🚫 `pg_visibility` cannot be installed (superuser only) — thread-close item 6 closes as unreachable.
 - Sentinel at 6:04 PM PT: **CRITICAL on one arm only** (`Pipeline Success Coverage`: daily-portfolio-snapshot / golazos-buyer-backfill / match-topshot-players — all 24 h-window readings from the night spell; the first two re-test at 4:17 AM PT and their own next ticks, the third retries Saturday). Warns: Alert Delivery (lagging), Detector Health (acked), Dune (configured stop), pg_net #75, Golazos 0 sales/7d (market), `public_board_slow_count=2` (instrument), Wall Kills, Zero-Yield.
 
+## Third pass (6:40–6:55 PM PT) — the sentinel arms one by one (Trevor: "address all you can from sentinel")
+
+- 🚨 **`daily-portfolio-snapshot` — the "permanent gap" never existed.** `portfolio_snapshots` has 27 rows for each of 09-16…09-19, written by pg_cron jobid 490's 11:17Z retry while the 07:05Z route died; the retry wrote no `pipeline_runs` row, so the arm and inbox 1745Z read the route's failure as the day's outcome. Only 09-12 is missing. `20260920014230`: the retry now logs under the route's name. R109's row corrected.
+- **`golazos-buyer-backfill`** read 164 MB of `sales_2025` daily to find zero null-buyer Golazos rows. Partial index `idx_sales_2025_null_buyer_coll_sold`: 21,474 → 471 buffers. (The 2026 twin was built, measured useless for the All Day ordered scan, and dropped.)
+- **`match-topshot-players`** — weekly full run hand-dispatched: **12.9 s** (the 08:00Z attempt died at the 125 s PostgREST gateway in the storm). Tomorrow's tick is a gated ok.
+- 🟠 **Pipeline alert `backfill-pack-rip-metadata`** — every failure was a 30 s service_role kill inside the spells; healthy 5–9 s. `20260920014006`: function-level `statement_timeout = 50s` (inside the route's 60 s wall). 6:53 PM tick: 5.3 s ok under it.
+- **`public_board_slow_count=2`** = `candy_special_serials_board` 5.2 s + `pack_table_rows` 4.5 s. Candy board: partial index `idx_sales_2026_candy_edition_serial_sold` → view 42,070 → 12,742 buffers. `pack_table_rows` untouched.
+- **Zero-Yield** — three correct zeros suppressed with re-check conditions (`20260920014558`): pinnacle-sales-history-backfill (spork floor), golazos-sales-indexer (live reader, empty market — the >168h Sales Ingest warn stays visible on purpose), sales-seller-recovery-dune (Dune stop; expires ~09-24).
+- **Wall Kills** — both lanes were storm kills, at 6–7 clean runs of the 10 the arm wants; clears on its own.
+- **pg_net 10.2 GB (#75)** — measured for the decision: heap 7 MB / TOAST 10 GB / 5,665 live rows; postgres holds MAINTAIN so `VACUUM FULL` is runnable, but it needs ~8 min of ACCESS EXCLUSIVE (pg_net blocked) and the R108 role-window recipe (no SET prefix possible). Trevor's go.
+- All `zz-%` one-off jobs unscheduled; migration guards green locally.
+
 ## Needs Trevor (unchanged from the morning, plus one)
 
-#22 purge residue · #55 the two 2-hourly Routines · #75 pg_net response store 10.2 GB (VACUUM FULL) · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader · R107 (both fixes change prices users read) · **new:** whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone.
+#22 purge residue · #55 the two 2-hourly Routines · #75 pg_net response store 10.2 GB (VACUUM FULL) · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader · R107 (both fixes change prices users read) · **new:** whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · **new:** the #75 `VACUUM FULL net._http_response` window (~8 min pg_net pause) · **new:** the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.
 
 ## Not done, deliberately
 

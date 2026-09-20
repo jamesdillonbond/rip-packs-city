@@ -1,8 +1,8 @@
 {
-  "generated_at_pt": "2026-09-19 ~06:10 PM PT",
-  "generated_at_utc": "2026-09-20T01:10Z",
+  "generated_at_pt": "2026-09-19 ~06:55 PM PT",
+  "generated_at_utc": "2026-09-20T01:55Z",
   "pass": "Trevor-directed evening health pass (Cowork cloud + laptop VM). PUSH-CAPABLE via path A (laptop VM, .rpc-git-cred; d1c11a79c confirmed by ls-remote == HEAD). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 23:59Z at start.",
-  "shipped": 6,
+  "shipped": 10,
   "reverted": 0,
   "verdict": "HEALTHY SINCE NOON PT. The alert board's high/medium failure_rate rows are 2-day windows straddling the morning IO spell; split on the change point: cron.job_run_details 0 failures in 5 h (~405 runs/h) vs 30-108/h before noon; pipeline_runs 0.31% failing (11/3,589) vs 1.85% in the prior 12 h; ts-listings 161/161 ok. Security 0/0/0/0, stalled 0, Atlas lanes active. Sentry zero PAIRED with Vercel: 50 groups/24h, all chronic shapes, none new; the [pack-detail] 5 s read-timeout family still fires post-noon and is the next user-facing cost. Telegram pager channel was DARK 12:04-5:07 PM PT (a '<' in an ack note) and is repaired.",
   "health": {
@@ -52,6 +52,36 @@
       "commit": "3b884ec23",
       "instrument": "__tests__/ops-alert-telegram-text-is-html-escaped.test.ts",
       "revert": "git revert 3b884ec23"
+    },
+    {
+      "what": "backfill_pack_rip_metadata gets a 50 s function-level statement_timeout (inside the route's 60 s wall) - the pipeline alert's failures were all 30 s service_role kills in the spells",
+      "migration": "20260920014006",
+      "instrument": "6:53 PM PT tick 5.3 s ok; falsifier = a post-apply failure at exactly 30.x s",
+      "revert": "ALTER FUNCTION ... RESET statement_timeout"
+    },
+    {
+      "what": "rpc-portfolio-snapshot-retry (jobid 490) now logs a daily-portfolio-snapshot pipeline_runs row (the 'permanent gap' never existed - the retry wrote 27 rows/day)",
+      "migration": "20260920014230",
+      "instrument": "4:17 AM PT tick writes a row with extra.via=pg_cron",
+      "revert": "header"
+    },
+    {
+      "what": "zero-yield suppressions for pinnacle-sales-history-backfill (spork floor), golazos-sales-indexer (live reader, empty market), sales-seller-recovery-dune (Dune stop, expires ~09-24)",
+      "migration": "20260920014558",
+      "instrument": "Zero-Yield arm no longer lists them; re-check conditions in the rows",
+      "revert": "DELETE the three rows"
+    },
+    {
+      "what": "partial indexes idx_sales_2025_null_buyer_coll_sold (golazos/allday buyer backfill candidate scan -98%) and idx_sales_2026_candy_edition_serial_sold (candy_special_serials_board -70%); the 2026 null-buyer twin built and dropped",
+      "migration": "20260920015138 (record-only)",
+      "instrument": "EXPLAIN before/after in the migration header",
+      "revert": "DROP INDEX CONCURRENTLY the two names"
+    },
+    {
+      "what": "match_topshot_players_run weekly full run hand-dispatched on the quiet box: 12.9 s (gateway-killed at 125 s in the storm)",
+      "migration": "none",
+      "instrument": "match_topshot_players_state.last_full_run_at = 6:45 PM PT; tomorrow's 08:00Z edge tick gated ok",
+      "revert": "n/a"
     }
   ],
   "vercel_error_groups_24h": {
@@ -62,8 +92,10 @@
     "jobid_324_thp_leg": "MOVED to 31 0,6,12,18 (20260920005312). 6:31 AM PT / 12:31 PM PT ticks must read succeeded; a 600 s kill at :31 with io_wait < 3 means the leg's own cost moved",
     "jobid_506_precompute": "6:35 PM PT tick succeeded under 300 s; nba_top_shot duration_ms < 200,000",
     "step1_1002Z": "read relallvisible/relpages on wallet_moments_cache at ~3:00 AM PT first; then 3:02 AM PT tick must succeed",
-    "jobid_490_portfolio_snapshot": "4:17 AM PT tick writes a portfolio_snapshots row (second half of the portfolios exit)",
-    "sentinel_telegram": "VERIFIED 6:04 PM PT: notifications = [telegram, email, github-actions-native]"
+    "jobid_490_portfolio_snapshot": "4:17 AM PT tick must write a daily-portfolio-snapshot pipeline_runs row with extra.via=pg_cron (20260920014230); the 07:05Z route run stays R109's measurement",
+    "sentinel_telegram": "VERIFIED 6:04 PM PT: notifications = [telegram, email, github-actions-native]",
+    "backfill_pack_rip_metadata": "next IO spell: :53 runs should complete between 30 and 50 s; a failure at exactly 30.x s falsifies the proconfig lever",
+    "match_topshot_players": "09-20 08:00Z edge tick must log gated:true ok"
   },
   "needs_trevor": [
     "#22 purge residue GC + rotate",
@@ -71,6 +103,8 @@
     "#75 pg_net response store 10.2 GB (VACUUM FULL)",
     "jobid 303 refresh_wmc_fmv_changed is the #1 reader - FMV path, needs a decision",
     "R107 edition_fmv_current reconcile (changes prices users read)",
-    "retire portfolios + portfolio_moments outright (option b) now that the grant is gone"
+    "retire portfolios + portfolio_moments outright (option b) now that the grant is gone",
+    "#75 VACUUM FULL net._http_response: heap 7 MB / TOAST 10 GB / 5,665 live rows; ~8 min ACCESS EXCLUSIVE (pg_net paused) via the R108 role-window recipe",
+    "Golazos Sales Ingest >168h warn threshold vs a market with ~10-day gaps"
   ]
 }
