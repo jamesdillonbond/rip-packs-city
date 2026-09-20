@@ -145,6 +145,26 @@ Rotation surfaces and which worker carries which secret: see the three-rotation-
 
 ## Windows / Git Bash patching rules (CRITICAL)
 
+### 🚨 A TWO-ANCHOR SLICE EDIT DELETES EVERYTHING BETWEEN ITS ENDPOINTS — AND IT PASSES THE OCCURRENCE-COUNT ASSERTION (2026-09-19)
+
+CLAUDE.md already says **assert the occurrence count before a scripted replace** (`n = s.count(old); assert n == 1`). ⛔ **That rule does NOT protect a slice.** The common repair shape is:
+
+    const start = s.indexOf(FIRST_ANCHOR);
+    const end   = s.indexOf(LAST_ANCHOR, start) + LAST_ANCHOR.length;
+    fs.writeFileSync(p, s.slice(0, start) + replacement + s.slice(end));   // ← silent
+
+**Both anchors can occur exactly once, both assertions pass, and every byte between them is destroyed** — including sections written by someone else, or by you an hour earlier and forgotten. **It reports success.**
+
+📏 **Observed the same evening it was written down:** a session repairing one bullet sliced between two anchors and silently removed a `--unidiff-zero` block that happened to live between them. **Caught only by grepping for `unidiff-zero` afterwards and getting `0`** — nothing in the operation's own output was wrong. A second session used the same pattern twice within the hour and survived purely because its anchors were adjacent (1 line deleted, verified after the fact), which is **adjacency luck, not method**.
+
+✅ **THE FIX, in order of preference:**
+1. **Prefer a single-anchor INSERT to a two-anchor slice** — `s.split(anchor).join(addition + anchor)` can only add. Most "replace this section" edits are really "insert before/after this heading".
+2. **When a slice is genuinely needed, name what must SURVIVE and grep each one AFTER writing** — by section name, not by diff size. `git diff --stat` showing few deletions proves nothing when the deleted lines were long.
+3. **Assert on the RESULT, not the operation.** The operation's exit code describes whether it ran, never whether it ran correctly.
+
+⭐ **This is the same shape as the other traps on this page — `git add -p` exiting 0 having staged nothing, `python` resolving but never executing, `$?` reporting a pipe's last command, an unanchored grep matching its own warning. In every case the operation reported success and only an INDEPENDENT CHECK OF THE RESULT disagreed.** ⚠ **Knowing the trap does not prevent it; three of these were walked into by sessions that had already documented them the same evening.** **Build the check so the output contradicts itself when wrong.**
+
+
 - Dev environment: Windows, Git Bash (MINGW64), VS Code.
 - CRLF line endings silently break Node.js string-replace patches — use `findIndex` on split line arrays, or sed line-number targeting.
 - Heredocs truncate on long files — use Claude file output tool + PowerShell `cp` or `Set-Content -Encoding UTF8`.
