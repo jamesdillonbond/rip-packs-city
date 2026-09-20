@@ -124,11 +124,29 @@ function plpgsqlBodies(src: string): { fn: string; body: string; at: number }[] 
  */
 function blindRegions(body: string): string[] {
   const sql = stripSqlComments(body)
-  if (!RECORDING.some((r) => r.test(sql))) return []
   const parts = sql.split(/\bEXCEPTION\b/i).slice(1)
   const bad: string[] = []
   for (const region of parts) {
-    const clauses = [...region.matchAll(/\bWHEN\b([\s\S]{0,200}?)\bTHEN\b/gi)].map((c) => c[1])
+    // ⚠ BOUND THE REGION AT ITS BLOCK TERMINATOR BEFORE ASKING WHETHER IT RECORDS.
+    // 🚨 THIS GUARD CRIED WOLF ON VALID SQL ON THE DAY IT SHIPPED (2026-09-20), and
+    // the comment two paragraphs down had already named that as the way a guard gets
+    // deleted. The `RECORDING` test used to run over the WHOLE function body, so one
+    // `log_pipeline_run` anywhere made EVERY handler in that function "recording" —
+    // and `collect_pack_nft_identity` (migration 20260920185051) was flagged for a
+    // three-line JSON-parse guard inside a LOOP:
+    //     BEGIN v_body := r.content::jsonb; EXCEPTION WHEN others THEN v_body := NULL; END;
+    // That handler records nothing and is precisely the bare loop handler CLAUDE.md
+    // says to leave alone; the `log_pipeline_run` it was convicted on sat ~200 lines
+    // away at the end of the function.
+    //
+    // ⭐ The defect class is "a handler that RECORDS A FAILURE cannot see a cancel",
+    // so the recording test belongs to the HANDLER, not its enclosing function.
+    // `\bEND\s*;` is the block terminator and does not match `END IF;` / `END LOOP;`
+    // / `END CASE;`, which legitimately appear inside a handler body.
+    const term = /\bEND\s*;/i.exec(region)
+    const scoped = term ? region.slice(0, term.index) : region
+    if (!RECORDING.some((r) => r.test(scoped))) continue
+    const clauses = [...scoped.matchAll(/\bWHEN\b([\s\S]{0,200}?)\bTHEN\b/gi)].map((c) => c[1])
     if (clauses.length === 0) continue
     const namesCancel = clauses.some((c) => /query_canceled/i.test(c))
     const others = clauses.find((c) => /\bOTHERS\b/i.test(c))
@@ -231,6 +249,54 @@ END;`
   it("IGNORES a handler that records nothing — the ban is narrow on purpose", () => {
     const quiet = BLIND.replace("PERFORM public.log_pipeline_run('probe', false);", "v := 0;")
     expect(blindRegions(plpgsqlBodies(wrap(quiet))[0].body)).toEqual([])
+  })
+
+  // ── THE FALSE POSITIVE THIS GUARD SHIPPED WITH, 2026-09-20 ────────────────
+  // The real shape, from `collect_pack_nft_identity` (migration 20260920185051):
+  // a three-line JSON-parse guard inside a LOOP that records NOTHING, in a
+  // function whose `log_pipeline_run` sits ~200 lines later at the end. The
+  // recording test was FUNCTION-scoped, so the tiny inner handler was convicted
+  // on a call it had nothing to do with — and a bare loop handler is exactly what
+  // CLAUDE.md says to leave alone.
+  const INNER_QUIET_OUTER_RECORDS = `
+DECLARE
+  v_body jsonb;
+BEGIN
+  FOR r IN SELECT * FROM public.pack_nft_identity_requests LOOP
+    BEGIN
+      v_body := CASE WHEN r.status_code = 200 THEN r.content::jsonb ELSE NULL END;
+    EXCEPTION WHEN others THEN
+      v_body := NULL;
+    END;
+    IF v_body IS NULL THEN CONTINUE; END IF;
+  END LOOP;
+  PERFORM public.log_pipeline_run('collect-pack-nft-identity', true);
+  RETURN jsonb_build_object('ok', true);
+END;`
+
+  it("🚨 REGRESSION: a non-recording INNER handler is not convicted by an OUTER log call", () => {
+    expect(blindRegions(plpgsqlBodies(wrap(INNER_QUIET_OUTER_RECORDS))[0].body)).toEqual([])
+  })
+
+  it("POSITIVE CONTROL: the same function IS flagged once that inner handler records", () => {
+    // ⛔ Proves the narrowing removed a false ALARM, not the detection. If the
+    // inner handler starts recording a failure, it is in the class again.
+    const recording = INNER_QUIET_OUTER_RECORDS.replace(
+      "      v_body := NULL;\n    END;",
+      "      v_body := NULL;\n      PERFORM public.log_pipeline_run('collect', false);\n    END;",
+    )
+    expect(recording).not.toBe(INNER_QUIET_OUTER_RECORDS) // the mutation really applied
+    expect(blindRegions(plpgsqlBodies(wrap(recording))[0].body)).toHaveLength(1)
+  })
+
+  it("an OUTER recording handler is still caught when an inner quiet one precedes it", () => {
+    // The ordering that would break a naive 'first END; wins' bound.
+    const both = INNER_QUIET_OUTER_RECORDS.replace(
+      "  PERFORM public.log_pipeline_run('collect-pack-nft-identity', true);\n  RETURN jsonb_build_object('ok', true);\nEND;",
+      "EXCEPTION WHEN OTHERS THEN\n  PERFORM public.log_pipeline_run('collect', false);\n  RETURN NULL;\nEND;",
+    )
+    expect(both).not.toBe(INNER_QUIET_OUTER_RECORDS)
+    expect(blindRegions(plpgsqlBodies(wrap(both))[0].body)).toHaveLength(1)
   })
 
   it("IGNORES a commented-out handler, so a migration's prior-version note is not a violation", () => {

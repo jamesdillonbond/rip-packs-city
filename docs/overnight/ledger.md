@@ -11,6 +11,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🚨 MY OWN R118 GUARD CRIED WOLF ON VALID SQL THE DAY IT SHIPPED AND LEFT `main` RED — the recording test was FUNCTION-scoped, so a loop's three-line JSON guard was convicted on a `log_pipeline_run` 200 lines away · Claude Code cloud
+
+**Shipped: `__tests__/new-plpgsql-recording-handlers-catch-query-canceled.test.ts` (scoping fix + 3 arms).**
+
+🚨 **The full suite came back `1 failed | 17,868 passed`, and the failure was MINE** — the forward-only guard added this morning, tripped by a concurrent session's migration `20260920185051`. ⚠ **Its own header already named this as the way a guard dies** (*"a guard that cries wolf on valid SQL gets deleted"*); it did it anyway, within hours.
+
+⛔ **The defect: the `RECORDING` test ran over the WHOLE function body.** So one `log_pipeline_run` anywhere made EVERY handler in that function count as "recording". `collect_pack_nft_identity` was flagged for this:
+
+```sql
+BEGIN v_body := r.content::jsonb;
+EXCEPTION WHEN others THEN v_body := NULL; END;
+```
+
+— a JSON-parse guard **inside a LOOP that records nothing**, i.e. precisely the bare loop handler CLAUDE.md says to leave alone. The `log_pipeline_run` it was convicted on sat ~200 lines later at the end of the function.
+
+⭐ **The fix is the class statement, not a suppression: the defect is "a handler that RECORDS A FAILURE cannot see a cancel", so the recording test belongs to the HANDLER.** Each region is now bounded at its block terminator (`\bEND\s*;`, which does not match `END IF;` / `END LOOP;` / `END CASE;`) before being asked whether it records. ⛔ **An exemption marker would have been the wrong fix — it would have left the next honest loop handler to be flagged too.**
+
+⚠ **And narrowing a guard is a claim that must be paid for.** Three arms added: the exact real-world shape as a **REGRESSION** arm; a **POSITIVE CONTROL** where that same inner handler starts recording and IS flagged again; and an ordering arm where a quiet inner handler precedes a recording outer one (the case a naive "first `END;` wins" bound would break). **Mutation-proven:** restoring function scope reds the real-tree arm AND the regression arm.
+
+⚠ **Process note worth keeping: the background-task notification said `exit code 0` while the suite said `1 failed` — the WRAPPER's code, exactly as CLAUDE.md warns. And my own `npm test | tail -6` threw away the failure detail, so the first read could not name the file.** Pipe to a log, then grep it.
+
+- **Revert:** `git log --grep='cried wolf'` → `git revert <sha>`. Test-only.
+
 ### 2026-09-20 · 📚 PROMOTED THE DAY'S LESSONS OUT OF THE LEDGER — four new faces of the fold class, and two tooling traps that each cost a wrong first attempt · Claude Code cloud
 
 **Shipped: `docs/reference/chain-strategy.md` (4 instances) + `docs/reference/tooling-gotchas.md` (2 sections). Docs only, no code, no DB.**
