@@ -239,7 +239,7 @@ BEGIN
   PERFORM public.log_pipeline_run('topshot-atlas-pack-ev', v_now, v_written, v_written, 0, true, NULL,
     'nba-top-shot', NULL, NULL, jsonb_build_object('rows', v_written));
   RETURN jsonb_build_object('ok', true, 'written', v_written, 'finished_at', now());
-EXCEPTION WHEN OTHERS THEN
+EXCEPTION WHEN query_canceled OR OTHERS THEN
   RETURN jsonb_build_object('ok', false, 'error', SQLERRM, 'written', v_written);
 END;
 $function$;

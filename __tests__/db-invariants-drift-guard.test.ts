@@ -445,7 +445,7 @@ const PINS = [
     fn: "run_topshot_onchain_rekey",
     test: "supabase/tests/run_topshot_onchain_rekey.sql",
     migration:
-      "supabase/migrations/20260902112507_audit_20260902_topshot_onchain_rekey_runs_where_it_has_more_than_120s.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
     // Added 2026-09-02 with the function. The pinned behaviour is the AMBIGUITY
@@ -1174,7 +1174,7 @@ const PINS = [
     // Re-pinned 2026-08-28 onto the R41 all-rows-denominator migration (the
     // canonical-only filter is gone; both TS metrics changed denominator).
     migration:
-      "supabase/migrations/20260910230812_audit_20260910_thp_fmv_coverage_publishes_sweep_completeness_so_a_leg_can_be_told_from_a_level.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
   // Parallel-only, known-circulation-only. Both filters asserted in both directions:
@@ -1182,7 +1182,7 @@ const PINS = [
     fn: "rpc_thp_leg_impossible_parallel",
     test: "supabase/tests/rpc_thp_leg_impossible_parallel.sql",
     migration:
-      "supabase/migrations/20260810230704_audit_20260810_precompute_split_m3a_widen_impossible_parallel_budget.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
   // ⚠ Two deliberate blind spots pinned because they look like health: a collection under
@@ -1191,7 +1191,7 @@ const PINS = [
     fn: "rpc_thp_leg_serial_supply",
     test: "supabase/tests/rpc_thp_leg_serial_supply.sql",
     migration:
-      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
   // The one leg whose sentinel is reachable WITHOUT an exception (empty history ->
@@ -1200,7 +1200,7 @@ const PINS = [
     fn: "rpc_thp_leg_pack_ev",
     test: "supabase/tests/rpc_thp_leg_pack_ev.sql",
     migration:
-      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
   // ⚠ THE MODEL FOR THE OTHERS: an incomplete sweep publishes 999 (INCONCLUSIVE), never
@@ -1209,7 +1209,7 @@ const PINS = [
     fn: "rpc_thp_leg_board_liveness",
     test: "supabase/tests/rpc_thp_leg_board_liveness.sql",
     migration:
-      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
   // Dry days is a CURRENT-STREAK counter (running bool_or from the newest day backwards),
@@ -1226,7 +1226,7 @@ const PINS = [
     fn: "rpc_thp_leg_panini",
     test: "supabase/tests/rpc_thp_leg_panini.sql",
     migration:
-      "supabase/migrations/20260818052724_audit_20260818_repoint_panini_dry_days_arm_to_live_last_sale_usd.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
   // Thin by design; pinned for the one thing it cannot express — an empty view and a view
@@ -1234,7 +1234,7 @@ const PINS = [
     fn: "rpc_thp_leg_fmv_sanity",
     test: "supabase/tests/rpc_thp_leg_fmv_sanity.sql",
     migration:
-      "supabase/migrations/20260810225549_audit_20260810_precompute_split_m1_leg_functions.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
   // Reads pinnacle_fmv_history, which is a TRIGGER-written copy of pinnacle_catalog rather
@@ -1242,7 +1242,7 @@ const PINS = [
     fn: "rpc_thp_leg_pinnacle_fmv_share",
     test: "supabase/tests/rpc_thp_leg_pinnacle_fmv_share.sql",
     migration:
-      "supabase/migrations/20260811012334_audit_20260811_precompute_leg_pinnacle_fmv_share_d34.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
   // ── Non-SECDEF scheduled writers (3) ──────────────────────────────────────
@@ -1606,7 +1606,7 @@ const PINS = [
     fn: "refresh_allday_badge_low_ask",
     test: "supabase/tests/refresh_allday_badge_low_ask.sql",
     migration:
-      "supabase/migrations/20260816020000_audit_20260816_snapshot_pinnacle_bridge_and_allday_badge_low_ask.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
     // pg_cron `10,40 * * * *`. The Golazos sibling of the above — and it is NOT
@@ -1628,7 +1628,7 @@ const PINS = [
     fn: "refresh_golazos_badge_low_ask",
     test: "supabase/tests/refresh_golazos_badge_low_ask.sql",
     migration:
-      "supabase/migrations/20260816030000_audit_20260816_snapshot_refresh_golazos_badge_low_ask.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
     // pg_cron jobid 64 `10 3 * * *`, called with 20000. INFERS which pack
@@ -1688,7 +1688,7 @@ const PINS = [
     fn: "refresh_atlas_pack_ev",
     test: "supabase/tests/refresh_atlas_pack_ev.sql",
     migration:
-      "supabase/migrations/20260908003056_audit_20260907_refresh_atlas_pack_ev_writes_real_supply_not_a_fabricated_zero.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
     // pg_cron `13 * * * *` — one of the three heavy jobs CLAUDE.md names as
@@ -1804,7 +1804,7 @@ const PINS = [
     fn: "refresh_insights_new_collectors",
     test: "supabase/tests/refresh_insights_new_collectors.sql",
     migration:
-      "supabase/migrations/20260816070000_audit_20260816_snapshot_last_four_scheduled_secdef_writers.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   // ── The scheduled MV-refresh wrappers (2026-08-16) ───────────────────────
   // Nine near-identical one-liners sharing ONE test file. Their bodies hold no
@@ -1975,7 +1975,7 @@ const PINS = [
     fn: "refresh_topshot_special_serial_owners_mv",
     test: "supabase/tests/refresh_topshot_special_serial_owners_mv.sql",
     migration:
-      "supabase/migrations/20260816080000_audit_20260816_snapshot_remaining_scheduled_mv_and_rollup_writers.sql",
+      "supabase/migrations/20260920143959_audit_20260920_r118_batch_three_fourteen_pinned_functions_catch_query_canceled_literal_ddl_from_their_pins.sql",
   },
   {
     // Added 2026-08-20, deleters-first. Over-deletion produces an ABSENCE rather

@@ -64,7 +64,7 @@ BEGIN
         v_empty := (v_board->>'empty_or_error')::numeric;
         v_slow  := (v_board->>'slow')::numeric;
       END IF;
-    EXCEPTION WHEN OTHERS THEN
+    EXCEPTION WHEN query_canceled OR OTHERS THEN
       v_empty := 999; v_slow := 999;
     END;
     INSERT INTO public.rpc_trust_health_precompute (metric, value, computed_at, duration_ms)
@@ -74,7 +74,7 @@ BEGIN
             round(EXTRACT(epoch FROM clock_timestamp() - t1) * 1000))
     ON CONFLICT (metric) DO UPDATE
       SET value = EXCLUDED.value, computed_at = EXCLUDED.computed_at, duration_ms = EXCLUDED.duration_ms;
-  EXCEPTION WHEN OTHERS THEN
+  EXCEPTION WHEN query_canceled OR OTHERS THEN
     INSERT INTO public.rpc_trust_health_precompute (metric, value, computed_at, duration_ms)
     SELECT m, 999, now(), round(EXTRACT(epoch FROM clock_timestamp() - t1) * 1000)
     FROM unnest(ARRAY['public_board_empty_count','public_board_slow_count']) AS m

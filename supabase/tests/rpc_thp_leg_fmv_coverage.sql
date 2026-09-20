@@ -164,7 +164,7 @@ BEGIN
     FROM resolved r
     ON CONFLICT (metric) DO UPDATE
       SET value = EXCLUDED.value, computed_at = EXCLUDED.computed_at, duration_ms = EXCLUDED.duration_ms;
-  EXCEPTION WHEN OTHERS THEN
+  EXCEPTION WHEN query_canceled OR OTHERS THEN
     -- The new families are listed here too. Omitting them would leave them holding a
     -- PREVIOUS value while their siblings read 999 -- a half-failed leg that looks
     -- partly healthy, which is the shape that makes an outage unmeasurable.

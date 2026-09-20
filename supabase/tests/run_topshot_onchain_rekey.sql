@@ -112,7 +112,7 @@ DECLARE
 BEGIN
   BEGIN
     v_res := public.remap_topshot_from_onchain_map();
-  EXCEPTION WHEN OTHERS THEN
+  EXCEPTION WHEN query_canceled OR OTHERS THEN
     v_err := SQLERRM;
     v_res := NULL;
   END;

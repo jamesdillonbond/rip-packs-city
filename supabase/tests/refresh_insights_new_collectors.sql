@@ -105,7 +105,7 @@ BEGIN
   INSERT INTO public.pipeline_runs (pipeline, collection_slug, started_at, finished_at, ok, rows_written, extra)
   VALUES ('refresh-new-collectors', 'nba_top_shot', v_start, clock_timestamp(), true, v_rows,
           jsonb_build_object('buyers', v_rows));
-EXCEPTION WHEN OTHERS THEN
+EXCEPTION WHEN query_canceled OR OTHERS THEN
   INSERT INTO public.pipeline_runs (pipeline, collection_slug, started_at, finished_at, ok, error)
   VALUES ('refresh-new-collectors', 'nba_top_shot', v_start, clock_timestamp(), false, SQLERRM);
 END;

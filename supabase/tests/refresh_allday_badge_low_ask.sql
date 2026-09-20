@@ -128,7 +128,7 @@ BEGIN
   VALUES ('allday-badge-low-ask-refresh', 'nfl_all_day', v_start, clock_timestamp(),
           v_updated + v_cleared, true,
           jsonb_build_object('updated', v_updated, 'cleared', v_cleared));
-EXCEPTION WHEN OTHERS THEN
+EXCEPTION WHEN query_canceled OR OTHERS THEN
   INSERT INTO pipeline_runs (pipeline, collection_slug, started_at, finished_at, ok, error)
   VALUES ('allday-badge-low-ask-refresh', 'nfl_all_day', v_start, clock_timestamp(), false, SQLERRM);
   RAISE;

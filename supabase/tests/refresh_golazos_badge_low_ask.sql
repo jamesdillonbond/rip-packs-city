@@ -180,7 +180,7 @@ BEGIN
           v_updated + v_cleared, true,
           jsonb_build_object('updated', v_updated, 'cleared', v_cleared,
                              'listing_edition_ids_resolved', v_resolved));
-EXCEPTION WHEN OTHERS THEN
+EXCEPTION WHEN query_canceled OR OTHERS THEN
   INSERT INTO public.pipeline_runs (pipeline, collection_slug, started_at, finished_at, ok, error)
   VALUES ('golazos-badge-low-ask-refresh', 'laliga_golazos', v_start, clock_timestamp(), false, SQLERRM);
   RAISE;

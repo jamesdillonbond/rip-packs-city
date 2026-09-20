@@ -77,7 +77,7 @@ BEGIN
             round(EXTRACT(epoch FROM clock_timestamp() - t1) * 1000))
     ON CONFLICT (metric) DO UPDATE
       SET value = EXCLUDED.value, computed_at = EXCLUDED.computed_at, duration_ms = EXCLUDED.duration_ms;
-  EXCEPTION WHEN OTHERS THEN
+  EXCEPTION WHEN query_canceled OR OTHERS THEN
     INSERT INTO public.rpc_trust_health_precompute (metric, value, computed_at, duration_ms)
     SELECT m, 999, now(), round(EXTRACT(epoch FROM clock_timestamp() - t1) * 1000)
     FROM unnest(ARRAY['panini_sale_field_mapping_shortfall','panini_sale_price_capture_dry_days']) AS m

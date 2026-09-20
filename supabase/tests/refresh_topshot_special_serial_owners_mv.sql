@@ -108,7 +108,7 @@ BEGIN
       'mvs', 'topshot+allday'
     )
   );
-EXCEPTION WHEN OTHERS THEN
+EXCEPTION WHEN query_canceled OR OTHERS THEN
   PERFORM public.log_pipeline_run(
     p_pipeline   => 'refresh-special-serial-owners-mv',
     p_started_at => v_started,
