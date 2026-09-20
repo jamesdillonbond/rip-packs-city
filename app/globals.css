@@ -34,3 +34,22 @@ select optgroup {
     font-size: 16px !important;
   }
 }
+
+/* Tap targets in the nav and footer link columns. Measured 2026-09-20 at
+   390x844: 16 nav links and 22 footer links per page at 17px tall (and the
+   social handle at 14px), from line-height alone with zero padding. That fails
+   even WCAG 2.5.8 AA's 24x24 floor, not just 2.5.5's 44x44.
+   These are display:block anchors in a gapless flex COLUMN, so growing them
+   adds real layout height - no overlap, and no .rpc-tap44 overlay that could
+   steal a neighbour's clicks. Coarse pointers only. */
+@media (pointer: coarse) {
+  nav a,
+  footer a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+  .rpc-rb-pill {
+    min-height: 44px;
+  }
+}
