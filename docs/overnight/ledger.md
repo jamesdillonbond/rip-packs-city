@@ -11,6 +11,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 📐 THE LIVE `public_board_slow_count` BREACH IS THE INSTANCE, PROVED BY A FREE CONTROL — and a concurrent session falsified the over-strong half of my conclusion within the hour · Claude Code (Windows box)
+
+**Shipped: 2 docs files. No code, no DB change.** `docs/reference/trust-board-and-safety.md` + the `client-failure-collapses-to-empty` ratchet header.
+
+⭐ **THE ONE LIVE TRUST BREACH WAS ALREADY CORRECTLY TRIAGED** — today's 21:06Z daytime filing calls `public_board_slow_count` *"load-correlated … not a fresh regression"*. **I did not re-open it; I took the control that turns that inference into a measurement, and it was free** because the three boards share a sweep timestamp.
+
+📏 **Marginals first (56 sweeps / 14 days):** `candy_player_board` p50 **1,364** ms vs budget 3,000 · `candy_special_serials_board` p50 **677** vs 4,100 · `pack_table_rows` p50 **1,055** vs 3,900 — **all comfortably inside**, with p90s of 23,371 / 8,302 / 8,790 and a max of **42,966**. ⭐⭐ **Then the joint distribution, which is the decisive part: `exactly 2 of 3 over` happened ZERO times in 56 sweeps against 6.35 expected under independence, while `all 3 over` happened 11 times against 0.59 — 18.6×.** Clean sweeps total 1,845–7,024 ms across all three; bad sweeps 14,121–60,582. **Three independently-slow queries cannot make that shape.** Same family as #68's *"the tell was EXACTLY zero violations"*.
+
+⛔ **AND THEN I WAS PARTLY WRONG, WHICH IS THE ENTRY'S POINT.** My first draft concluded *"do not optimise these three views"*. **Within the hour, commit `e7c8372a8` / migration `20260920021121` (concurrent session) bounded `candy_special_serials_board`'s last-sale LATERAL to the partitions Candy lives in — reported −92 %.** ⚠ **A reading taken while its subject changed is not a reading, and I caught it only because I diffed the incoming commits against my own file list before committing.** ⭐ **The reconciliation is better than either half: a buffer-heavy plan is not merely slow, it is more EXPOSED to contention — so the joint distribution proves the breach is not evidence about any INDIVIDUAL query, while saying nothing about whether that query is optimal.** Corrected in the doc rather than shipped as written. **Standing rule recorded: choose an optimisation target by BUFFERS warm-vs-warm, never by this arm; never raise `max_ms`.**
+
+⏳ **FALSIFIER LEFT ARMED for the prune:** the liveness state still holds the pre-prune 00:28Z sweep (5,193 ms / 4,100). **The 06:28Z sweep should drop that board out of the over-budget set; if it does not, the prune missed the path the probe exercises.**
+
+⚠ **RECORDED IN PASSING — the arm trails its own source by up to ~6 h BY DESIGN** and that is not R107 drift: sweep jobid **288** (`28 0,6,11,20`) fills the state, leg jobid **326** (`48 2,8,14,20`) reads it. At the time of writing the board published **2** while `public_board_liveness_state` already held **3**. ⚠ **`v_rpc_trust_health` only fails a precompute row to 999 at 24 h**, so a 6-hourly leg can be five cycles stale and publish as current — the precompute's age spread was **335 minutes** (board legs 20:48Z, FMV block 01:48Z). **Ask `computed_at` before reading any single arm as current.**
+
+✅ **A SECOND, SMALLER NEGATIVE, recorded where the next reader meets it (the ratchet header, not here):** a triage pass over `client-failure-collapses-to-empty`'s surviving **67** sites found **nothing to convert**. The four files carrying no explicit failure-state — `PublicAchievements`, `CollectionRecentSales`, `PositionTransfersCard`, `InsiderSignals` — are **all honest**, each via a route a `setErrored` grep cannot see (null-render on failure, or an explicit *"Could not load…"* branch with the empty copy inside the LOADED branch). ⚠ **So "has no error state" is not evidence of dishonesty: the honest shapes here are three, and only one is greppable.** Consistent with the ratchet's own *"most are NOT defects"* reasoning. **BUDGET unchanged at 67 and the no-slack assertion still green.**
+
+- **Revert:** `git revert <sha>` (`git log --grep="THE LIVE public_board_slow_count BREACH"`). **Docs only — no behaviour change, nothing to undo in the database.**
+
 ### 2026-09-19 · 🚪 R98 CLOSES — `/api/cache-refresh` gets the per-CLIENT bound its per-WALLET cooldown could not be, and the register cell that called the half "UNSHIPPED" was a day stale · Cowork cloud + laptop VM
 
 **Shipped: one route change + one test (mutation-proven), register R98 corrected. No DB change.**

@@ -144,6 +144,39 @@ const ROOTS = ["app", "components"]
  * a ratchet that does not move when you convert a site is measuring something
  * other than what you fixed.
  */
+/* ⭐ 2026-09-19 — A TRIAGE PASS OVER THE SURVIVING 67 FOUND NOTHING TO CONVERT,
+ * and the NEGATIVE is recorded here so the next reader does not re-derive it.
+ *
+ * Method: of the 36 files holding the 67 sites, the ones carrying NO explicit
+ * failure-state at all (no `setErrored` / `setFailed` / `unavailable` / degraded
+ * copy) were isolated as the likeliest to render an empty value as a CLAIM —
+ * four files: PublicAchievements, CollectionRecentSales, PositionTransfersCard,
+ * InsiderSignals. ⛔ ALL FOUR ARE HONEST, each by a route the absence-of-a-state-
+ * variable heuristic cannot see:
+ *
+ *   • InsiderSignals        `if (!resp || !resp.has_data) return null` — a failed
+ *                           read renders NOTHING. Its "No active alerts." is
+ *                           reachable only on a SUCCESSFUL read.
+ *   • PositionTransfersCard `!data` -> "Could not load position transfer data.";
+ *                           "No data." / "No transfers." are per-table empties
+ *                           INSIDE the loaded branch.
+ *   • PublicAchievements    failure -> [] -> `return null`; the section is
+ *                           omitted, never asserted.
+ *   • CollectionRecentSales failure -> [] -> `return null`; same.
+ *
+ * ⚠ SO THE HEURISTIC HAS A FALSE-POSITIVE DIRECTION WORTH KNOWING: a component
+ * that renders null on failure needs no error STATE, so "has no setErrored" is
+ * not evidence of dishonesty. The honest shapes in this tree are THREE, not one —
+ * an explicit error state, a null render, and a guarded parse — and only the
+ * first is greppable.
+ *
+ * ⭐ This is consistent with the "WHY A RATCHET AND NOT A BAN" reasoning above:
+ * degrading to an OMITTED SECTION understates, which is the safe direction. The
+ * remaining debt is mostly that safe kind. ⛔ Do not lower BUDGET by "converting"
+ * these four — there is nothing to convert, and a null-render is not a defect.
+ * The method that still works is sweeping the empty-state COPY of sites that DO
+ * render one, not the fetch code.
+ */
 const BUDGET = 67
 
 /**
