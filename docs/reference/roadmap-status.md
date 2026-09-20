@@ -106,6 +106,48 @@ WAU); its *measurements* were superseded five times over. **For any number, scro
 
 ---
 
+## ⭐ NEW 2026-09-20 — A REFRESH-ORDER CHANGE MOVES A CONFIDENCE SHARE WITHOUT ANY PRICING CHANGE (Panini, measured; a trap for every other collection)
+
+🚨 **The finding in one line: Panini's HIGH/MEDIUM share fell 83–93% → ~61% in one day, NO pricing
+code changed, and the drop is entirely COMPOSITION.** On 2026-09-19 the Panini walk stopped taking
+its refresh queue from the grid enumeration and started taking it from our own catalogue,
+stalest-first (`8e40e742d`, `878ec188e`). Daily `panini_fmv_snapshots` confidence, PT:
+
+| day | 09-04 → 09-18 | 09-19 | 09-20 |
+|---|---|---|---|
+| HIGH/MED share | **83 – 93%** (15 days) | **62.6%** | **60.7%** |
+| ASK_ONLY share | ~5 – 10% | 22.5% | 19.9% |
+
+⭐ **THE COHORT SPLIT IS THE CONTROL, AND IT IS WHAT MAKES THIS A MEASUREMENT RATHER THAN A STORY.**
+Measured over the 30 h to 2026-09-20 11:xx PT, splitting the editions priced by whether they had
+been priced at all in the prior 15 days:
+
+| cohort | editions | HIGH/MED | ASK_ONLY |
+|---|---|---|---|
+| **repeat** (already in rotation) | 509 | **83.3%** | 10.2% |
+| **newly reached** (unlocked by the fix) | 1,674 | **55.4%** | 25.1% |
+
+The repeat cohort is a **no-change arm the fix cannot move** and it sits exactly on the old plateau.
+**77% of what we now price is the illiquid tail that was never being priced before**, so the
+aggregate fell by mix alone. ⛔ **Do NOT read the pre-09-19 ~87.5% as a level to return to** — it was
+the share of the easy slice the walk kept re-pricing. The honest catalogue-wide number is ~61% and
+will drift further toward the tail's true rate as coverage completes.
+
+⚠ **THE GENERALIZABLE TRAP, which is the reason this block is in this file.** The same mechanism will
+fire on ANY collection whose refresh order is changed from "what the marketplace surfaces" to
+"stalest-first", and it will look exactly like an accuracy regression on M1/M2. **A confidence share
+is a property of the POPULATION SAMPLED, not only of the pricing model** — so before attributing any
+step in a `*_fmv_high_med_share_pct` to pricing, split the window into repeat-vs-newly-reached and
+check whether the repeat arm moved. If the repeat arm is flat, nothing regressed.
+
+⚠ **Panini is NOT in the headline table above, and that is a real instrumentation gap, not an
+omission from this block.** `rpc_trust_health_precompute` carries **no `panini_fmv_high_med_share_pct`
+metric at all** — verified live 2026-09-20, Panini's only two metrics there are
+`panini_sale_field_mapping_shortfall` and `panini_sale_price_capture_dry_days`. So this step was
+invisible to every standing instrument and was found only by the `panini-freshness-check` scheduled
+task. **Panini's confidence share has no owner in the trust-health precompute — that is the open
+item this block raises.** Nothing about M1/M2 changed; Panini never fed them.
+
 ## ⭐ HEADLINE METRIC — re-read live 2026-09-18 as a **27-LEG SERIES**, and **THE 09-10 BLOCK'S CENTRAL CLAIM HAS REVERSED** (supersedes the 09-10 22:34 PT block below)
 
 🚨 **READ THE SERIES, NOT THE LEG — and this block exists because the leg I first wrote it from was
