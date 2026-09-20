@@ -15,6 +15,7 @@
 // and never expose internal RPC errors to the caller.
 
 import { NextRequest, NextResponse } from "next/server";
+import { displayAddress } from "@/lib/address";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 
@@ -52,7 +53,15 @@ async function loadUserWallets(userId: string): Promise<{ wallets: string[]; raw
   const set = new Set<string>();
   for (const r of rows) {
     if (!r.wallet_addr) continue;
-    const w = r.wallet_addr.startsWith("0x") ? r.wallet_addr.toLowerCase() : "0x" + r.wallet_addr.toLowerCase();
+    // ⛔ WAS `startsWith("0x") ? lower : "0x" + lower` — the fold-and-prefix shape
+    // CLAUDE.md names as a FABRICATION. A base58 saved wallet came out of it as
+    // `0x12j1uh…enak`, an address that exists on no chain, and this set is not
+    // inert: POST defaults to `userWallets[0]` (so a key could be ISSUED against
+    // it) and GET echoes each entry back as `wallet_address` (so it is DISPLAYED).
+    // `displayAddress` is byte-identical on the hex path — lower, prefix if
+    // missing — and returns base58 verbatim.
+    const w = displayAddress(r.wallet_addr);
+    if (!w) continue;
     set.add(w);
   }
   return { wallets: Array.from(set), raw: rows };
@@ -116,7 +125,24 @@ export async function POST(req: NextRequest) {
     }
     wallet = requested;
   } else {
-    wallet = userWallets[0];
+    // ⚠ `normalizeAddr` already declares this surface Flow-only — it returns null
+    // for anything without a `0x` prefix — so the DEFAULT must honour the same
+    // rule. It used to take `userWallets[0]` unconditionally, which on a
+    // Candy-first account issued a key against a non-Flow address. Saying so is
+    // the third state: not "you have no saved wallets" (false), and not a key
+    // bound to an address this surface cannot serve.
+    const firstFlow = userWallets.find((w) => normalizeAddr(w) !== null);
+    if (!firstFlow) {
+      return NextResponse.json(
+        {
+          error: "no_flow_wallet_saved",
+          message:
+            "MCP API keys are issued against a Flow wallet, and none of your saved wallets is one. Save a Flow wallet on the dashboard, or pass wallet_address explicitly.",
+        },
+        { status: 400 }
+      );
+    }
+    wallet = firstFlow;
   }
 
   const label =

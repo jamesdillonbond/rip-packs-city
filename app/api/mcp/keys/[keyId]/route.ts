@@ -12,6 +12,7 @@
 //      enforces (wallet matches) as defense in depth.
 
 import { NextRequest, NextResponse } from "next/server";
+import { displayAddress } from "@/lib/address";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 
@@ -32,7 +33,15 @@ async function loadUserWalletSet(userId: string): Promise<Set<string>> {
   const set = new Set<string>();
   for (const r of rows) {
     if (!r.wallet_addr) continue;
-    const w = r.wallet_addr.startsWith("0x") ? r.wallet_addr.toLowerCase() : "0x" + r.wallet_addr.toLowerCase();
+    // ⛔ WAS `startsWith("0x") ? lower : "0x" + lower` — the fold-and-prefix shape
+    // CLAUDE.md names as a FABRICATION. A base58 saved wallet came out of it as
+    // `0x12j1uh…enak`, an address that exists on no chain, and this set is not
+    // inert: POST defaults to `userWallets[0]` (so a key could be ISSUED against
+    // it) and GET echoes each entry back as `wallet_address` (so it is DISPLAYED).
+    // `displayAddress` is byte-identical on the hex path — lower, prefix if
+    // missing — and returns base58 verbatim.
+    const w = displayAddress(r.wallet_addr);
+    if (!w) continue;
     set.add(w);
   }
   return set;
@@ -63,10 +72,9 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ keyId: 
   if (!keyRow) {
     return NextResponse.json({ error: "Key not found" }, { status: 404 });
   }
-  const keyWallet =
-    keyRow.wallet_address?.toLowerCase().startsWith("0x")
-      ? keyRow.wallet_address.toLowerCase()
-      : "0x" + (keyRow.wallet_address ?? "").toLowerCase();
+  // Same helper as the owned-wallet set above, so both sides of the membership
+  // test are derived identically. Hex behaviour is unchanged.
+  const keyWallet = displayAddress(keyRow.wallet_address) ?? "";
 
   let userWallets: Set<string>;
   try {

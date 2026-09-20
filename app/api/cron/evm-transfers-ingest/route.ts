@@ -143,6 +143,9 @@ function unauthorized() {
 
 function topicToAddress(topic: string): string {
   // 32-byte topic, address is the last 20 bytes (40 hex chars).
+  // base58-fold: intentional — `topic` is a 32-byte EVM log topic and this
+  // takes its LAST 40 CHARACTERS, so the value is hex by construction, not by
+  // convention. base58 cannot reach it: there is no address input here at all.
   return ("0x" + topic.slice(-40)).toLowerCase();
 }
 

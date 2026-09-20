@@ -34,6 +34,9 @@ const KNOWN = {
 
 function normHex(a: string | undefined | null): string | null {
   if (!a) return null;
+  // base58-fold: intentional — a Flow TRANSACTION's addresses, read off the
+  // Cadence event payload, are Cadence-shaped by construction (0x + 16 hex).
+  // This route decodes a Flow tx and has no path that can be handed base58.
   return "0x" + a.trim().toLowerCase().replace(/^0x/, "");
 }
 

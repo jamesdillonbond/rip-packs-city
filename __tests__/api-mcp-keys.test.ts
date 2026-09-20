@@ -210,3 +210,62 @@ describe("GET /api/mcp/keys — multi-wallet merge", () => {
     expect(rpcCalls.filter((c) => c.name === "mcp_list_keys")).toHaveLength(1)
   })
 })
+
+// ── The owned-wallet set does not fabricate an address (2026-09-20) ────────
+//
+// ⛔ `loadUserWallets` built each entry with
+//     r.wallet_addr.startsWith("0x") ? lower : "0x" + lower
+// — the fold-and-prefix shape CLAUDE.md names as a FABRICATION. A base58 saved
+// wallet came out as `0x12j1uh…enak`, an address that exists on no chain, and
+// this set is NOT inert: POST used to default to `userWallets[0]`, so a key
+// could be ISSUED against it, and GET echoes each entry back as
+// `wallet_address`, so it is DISPLAYED.
+//
+// ⚠ LATENT, not live: `saved_wallets` held 135 rows, 0 non-hex, when this was
+// found. It fires on the first Candy wallet saved.
+describe("/api/mcp/keys — a saved base58 wallet is never turned into 0x-garbage", () => {
+  const CANDY = "12J1uhKQcBYauomKvXDP2MA6msT3k8wx8oHHhV8gENAK"
+  const FLOW = "0xBD94CADE097E50AC"
+
+  it("POST refuses with a TRUE reason when no saved wallet is a Flow wallet", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: [{ wallet_addr: CANDY }], error: null }
+    const res = await POST(req({}))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe("no_flow_wallet_saved")
+    // THE ASSERTION IS THE ABSENCE OF THE FALSE CLAIM, twice over: it must not
+    // say the account has no saved wallets, and it must not have issued a key.
+    expect(body.error).not.toBe("no_saved_wallets")
+    expect(rpcCalls.some((c) => c.name === "mcp_issue_api_key")).toBe(false)
+  })
+
+  it("GET never hands a fabricated 0x+base58 address to mcp_list_keys", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: [{ wallet_addr: CANDY }], error: null }
+    await GET()
+    const listed = rpcCalls.filter((c) => c.name === "mcp_list_keys").map((c) => c.args.p_wallet_address)
+    expect(listed).not.toContain("0x" + CANDY.toLowerCase())
+    for (const w of listed) expect(w).not.toMatch(/^0x[0-9a-z]{40,}$/)
+    // The real address is what it uses, if it uses anything at all.
+    if (listed.length > 0) expect(listed).toEqual([CANDY])
+  })
+
+  it("hex no-change arm: a Flow wallet is still lower-cased and still defaults", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: [{ wallet_addr: FLOW }], error: null }
+    rpcState["mcp_issue_api_key"] = { data: { key_id: "k1", raw_key: "sk_x" }, error: null }
+    const res = await POST(req({}))
+    expect(res.status).toBe(200)
+    const issued = rpcCalls.find((c) => c.name === "mcp_issue_api_key")
+    expect(issued?.args.p_wallet_address).toBe("0xbd94cade097e50ac")
+  })
+
+  it("hex no-change arm: a Flow wallet still reaches mcp_list_keys folded", async () => {
+    auth.user = { id: "u1" }
+    rpcState["get_user_saved_wallets"] = { data: [{ wallet_addr: FLOW }], error: null }
+    await GET()
+    const listed = rpcCalls.filter((c) => c.name === "mcp_list_keys").map((c) => c.args.p_wallet_address)
+    expect(listed).toEqual(["0xbd94cade097e50ac"])
+  })
+})
