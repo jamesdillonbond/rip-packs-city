@@ -11,6 +11,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🚨 CORRECTION TO MY OWN ENTRY TWO HOURS OLD — the market-pulse fix reached ONE live surface, not three; the "fabricated $0" I made the headline is in a route with NO CALLER. Shape fixed anyway, framed as landmine removal · Claude Code cloud
+
+**Shipped: `app/api/overview-stats/route.ts` (4 non-answers → `null`) + 2 new test arms with a planted-defect control. No DB change.**
+
+🚨 **WHAT I GOT WRONG.** The 10:51 AM entry for migration `20260920175000` said Candy's absence from the market-pulse RPCs meant it was "missing from THREE surfaces at once: the homepage / overview 24 h stats (`/api/overview-stats`), the PUBLIC Market Pulse board, the email digest" — and made the `?? 0` fabricated-$0 in `getVolume24hFromPulse` the headline finding. **Re-derived by naming the callers:**
+
+| surface | claimed | actually |
+|---|---|---|
+| `/insights/market-pulse` board | affected | ✅ **REAL** — verified live, 6 rows, Candy 4th by 7-d volume |
+| `/api/overview-stats` | affected | ⛔ **NO CALLER** — nothing in `app/`, `lib/` or `components/` fetches it and production logged **ZERO requests in 72 h** |
+| `/api/send-digest` | affected | ⚠ **UNESTABLISHED** — no in-repo caller, no `pg_cron` row; could be on cron-job.org, which is invisible from this sandbox |
+
+⭐ **AND THE ANSWER WAS WRITTEN IN THE FILE I QUOTED FROM.** `app/api/overview-stats/route.ts` carries, thirty lines above `getVolume24hFromPulse`, the comment *"⚠ AND THIS ROUTE HAS NO CALLER. Nothing in app/, lib/ or components/ fetches it, and production logged ZERO requests to /api/overview-stats in 72h."* I read the function and not the file. **The migration is still correct and the board is still a real win — the BLAST RADIUS was over-claimed, which is the part a reader would have acted on.**
+
+📏 **THE FOURTH SELF-CORRECTION TODAY, ALL ONE ERROR.** Gap-1's mechanism (read a predicate, not the payload); the two-index-only-scans fix (read a plan, not the nullability); "excludes Pinnacle too" (read an IN-list, not the union arm below it); and now this (read a function, not its callers). ⭐ **CLAUDE.md already says "Name the caller before you touch the function" and "a filed FINDING is a hypothesis." The sharper version this session earned: I was applying both rules to OTHER people's findings and not to my own, in the same hour I corrected someone else's doc for exactly that.**
+
+✅ **THE FIX SHIPPED ANYWAY, AND THE FRAMING IS THE POINT.** `getVolume24hFromPulse` had **four** returns publishing a measured-looking `0`: no slug, a failed RPC, a thrown fetch, and an **ABSENT ROW** — plus a fifth at the caller (`volumeSettled` rejected → `0`). All five now yield `null`. ⚠ **The absent-row case is the one worth keeping in mind, because it is not an outage:** a hardcoded slug list that omits a collection makes `rows.find(...)` undefined, and `?? 0` turns *"not in the list"* into *"traded $0 in 24 h"*. The list is fixed; this makes the SHAPE safe for the next collection, which outlives the data fix. ⛔ **This is LANDMINE REMOVAL, not a user-facing win — do not quote it as one.** It is fixed rather than left because the next person to wire an overview panel inherits a `?? 0` that is already written and looks reviewed — **the identical reasoning this same file records for its `edition_fmv_current` swap.**
+
+🔬 **Control:** restoring `?? 0` turns the new assertion RED (`expected +0 to be null`). The two arms pin the absent-row case and the failed-read case separately, and each also asserts the edition + confidence counts still answer — the resilient fan-out's own promise.
+
+🧹 **ALSO TIDIED, because two sessions produced the same migration twice.** I applied the sets-note migration via MCP and committed it under a GUESSED version stamp (`…175800`); the concurrent session's `chore(db): recover MCP-applied migration files` then wrote the identical body under the stamp production actually RECORDED (`…175533`). **Two files, one migration** — bodies verified byte-equivalent before touching either. The recovered stamp is authoritative, so that file survives with my header moved into it, and the guessed-stamp duplicate is deleted. ⚠ **Worth knowing: `check-migration-parity` matches on NAME, so a duplicate NAME is AMBIGUOUS to it rather than loud** — it stayed green throughout. The lesson is small and practical: when an MCP-applied migration is committed by hand, the stamp is a guess, and the recovery job will later disagree with it.
+
+- **Revert:** `git revert <sha>`. ⚠ Reverting restores five paths that publish `$0` for a collection nobody measured — on a route that still has no caller, so the revert is as invisible as the fix.
+
 ### 2026-09-20 · 🔒 `drain-fmv-cold-tail` LOSES 35 % OF ITS TERMINAL ROWS BECAUSE THE ONE SLUG THE GUARD EXEMPTS IS THE ONE THAT KILLS THE TICK — and the route's own comment said this could not be fixed here · Claude Code cloud
 
 **Shipped: `app/api/admin/drain-fmv-cold-tail/route.ts` (per-slug `boundedRead` on the remaining budget + a `DRAIN_FMV_BUDGET_MS` test seam) + 2 arms. No DB change. Suite 1570 files / 17,781 tests, `tsc` clean, `lint:ratchet` 712/712.**
