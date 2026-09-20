@@ -11,6 +11,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🔒 `drain-fmv-cold-tail` LOSES 35 % OF ITS TERMINAL ROWS BECAUSE THE ONE SLUG THE GUARD EXEMPTS IS THE ONE THAT KILLS THE TICK — and the route's own comment said this could not be fixed here · Claude Code cloud
+
+**Shipped: `app/api/admin/drain-fmv-cold-tail/route.ts` (per-slug `boundedRead` on the remaining budget + a `DRAIN_FMV_BUDGET_MS` test seam) + 2 arms. No DB change. Suite 1570 files / 17,781 tests, `tsc` clean, `lint:ratchet` 712/712.**
+
+📏 **The pattern is structural, not load — which is what made it findable.** Over 24 h: **17 of 48 terminal rows lost (35 %)**. Over the last four hours it is a clean alternation — **:47 ok · :17 LOST · :47 ok · :17 LOST** — and load does not alternate on a 30-minute boundary. Corroborated by the platform: `Vercel Runtime Timeout Error: Task timed out after 60 seconds` on this route, **last at 10:17 PT**, matching a LOST tick exactly.
+
+🚨 **The mechanism is an exemption in the guard, stated in the guard's own comment.** The 2026-08-18 deadline guard skips a slug when `elapsed + estimate > budget` — but it is written `if (results.length > 0 && …)`, so **the FIRST slug is deliberately exempt** ("a tick can never do nothing at all"). That exemption is the hole: the route's header already records that *"a single slug can consume the whole 60 s budget"*, so one slow first slug runs **unbounded** past `maxDuration`, the lambda dies before the terminal insert, and the tick leaves only a heartbeat. ⭐ **An estimate guard between iterations cannot bound an iteration.**
+
+⚠ **AND THE ROUTE SAID IT COULD NOT BE FIXED HERE — that premise is refuted, not the measurement under it.** Verbatim: *"Only checked BETWEEN slugs — a single in-flight RPC cannot be bounded from here (a function-level `statement_timeout` is inert, and `service_role` has no binding one)."* Both clauses of the parenthesis are **true**; the conclusion does not follow. `boundedRead` (lib/api/bounded-read.ts, already used by 86+ routes) bounds it **CLIENT-side** by racing the promise and RESOLVING into the caller's existing `if (error)` branch. The comment is about SERVER-side cancellation and was reasoning from it to a client-side impossibility.
+
+✅ **The fix.** Each slug's RPC is wrapped in `boundedRead(…, max(1s, budget − elapsed))`, so the first slug is bounded by the same wall as the rest and an overrun is recorded like any other slug failure. ⛔ **What it does NOT do, said plainly: it does not cancel the query.** The abandoned statement keeps running and keeps consuming IO — but **the maxDuration kill did not cancel it either**, so the DB cost is unchanged and the only delta is that the tick now survives to write its row. The durable fix is still DB-side (scope that aggregate to the collection), exactly as the header says.
+
+🔬 **Mutation-tested both ways.** With the route reverted the new arm **hangs for 20 s and fails** — which IS the kill, reproduced in the harness; with the fix, 20/20. ⚠ **The CONTROL is load-bearing:** without it, "abandon everything" would satisfy the abandon arm while destroying the drain, so it pins a fast slug reporting `ok=true` with its real `rows_found`. Seam is `DRAIN_FMV_BUDGET_MS`, third use of that pattern after `CLASSIFY_WALL_MS` and `PINNACLE_BACKFILL_SYNC_BUDGET_MS`; production never sets it.
+
+📝 **The pre-existing arm that pins the OLD behaviour was kept, not inverted, and that is deliberate** — it models a kill arriving BEFORE the budget elapses, which is still possible and still leaves only a heartbeat. Both statements are true at once.
+
+⚠ **Not explained: WHY the loss alternates :17/:47 rather than tracking load.** The slug rotation is 4-long against a 30-minute cadence, so it cannot be the rotation either. Recorded as unexplained rather than papered over; the fix does not depend on the answer, and a terminal row on every tick is what will make it measurable.
+
+- **Revert:** `git revert <sha>` — restores the unbounded first slug and, with it, the 35 % loss.
+
 ### 2026-09-20 · ✅ THE CANDY `IN`-LIST SWEEP CLOSES — and TWO of the three exclusions I named this morning turned out NOT to be gaps, one of which would have been actively HARMFUL to "fix" · Claude Code cloud
 
 **Shipped: 1 migration (`20260920175800`, the `analytics_sets_summary` coverage note) + the corrected verdicts in `parity-assessment-panini-candy-2026-07-19.md` and `go-live-2026-09.md`. C1 is now CLOSED.**
