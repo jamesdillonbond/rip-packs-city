@@ -11,6 +11,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 📉 FOUR LANES STEPPED ON 09-17 AND THE TRIAGE BLAMES AN OUTAGE FROM THE NEXT DAY — plus the three-day clean control that proves it is not the tier's ceiling · Claude Code (Windows box)
+
+**Shipped: register item #126 + this entry. No code, no DB change — a measurement.**
+
+⛔ **TODAY'S 21:06Z FILING RATES FIVE FAILING LANES AS *"pooled over 2 days spanning the 2026-09-18 outage — saturation collateral"*. THAT WINDOW SITS ENTIRELY AFTER THE CHANGE POINT**, which is precisely what CLAUDE.md says cannot tell a STEP from a LEVEL. Split on the outage's end: **only `price-snapshots` behaves like collateral (56 % → 11 %)**; `fmv-backfill` 44 → 40, `run-insider-detectors` 32 → 31, `lock-check-batch` 32 → **38**, `backfill-pack-rip-metadata` 39 → **52**. **Four of five are the same or worse after the outage ended.**
+
+⚠ **I REPRODUCED THE SAME ERROR ONCE MYSELF AND IT IS IN THE ITEM:** that 52 % pools across the 50 s budget a concurrent session shipped for that lane at **01:40Z tonight**. Re-split on its own change point: **66 runs / 45 % / all `canceling statement due to statement timeout`** before, **one run, 0 fails** after. **One observation is a falsifier to read tomorrow, not a recovery.**
+
+⭐⭐ **THE CONTROL IS THE FINDING, and it needed the LONG baseline — `pipeline_runs` retains ~73 h, so only `pipeline_runs_daily` can see it.** Those four lanes read **ZERO failures 09-03→09-08**, elevated through the #73 spell, and then **09-15: `lock-check-batch` 48/48 · `run-insider-detectors` 24/24 · `fmv-backfill` 6/6 · `price-snapshots` 6/6 — FULL cadence, ZERO failures, all four, same day.** 09-16 near-identical. Then **09-17 33/27/50/21 %** and elevated every day since. ⛔ **So the current rate is not a fixed property of the SMALL tier — the instance ran a clean day at full cadence four days ago.**
+
+📏 **ONSET IS TIGHT AND TWO INDEPENDENT INSTRUMENTS AGREE ON IT.** First failure per lane: **16:52 · 17:08 · 18:26 · 20:12Z on 09-17**, inside 3.3 h after three quiet days. **And the fleet-wide median steps in the same hour**, which these four cannot cause: 02:00–15:00Z **748–1,351 ms** / p90 10–20 s / 0–4 fails per hour → **16:00Z 1,945 · 17:00Z 2,391 · 18:00Z 3,898 · 20:00Z 4,796**, p90 to **46,307**. **Instance-level, not four query regressions.**
+
+⛔ **THE 09-18 OUTAGE HAS ITS OWN, OPPOSITE SIGNATURE in the same series, and conflating them costs the diagnosis:** 09-18 13:00–18:00Z shows runs COLLAPSING to ~163/hour with 55–60 fails/hour at a LOW median (734–1,506 ms) — **reads failing fast**. The 09-17 episode is full run counts, high median, high p90 — **reads running slow**.
+
+⚠ **EPISODIC AND DIURNAL, NOT MONOTONIC — do not quote "50 % and climbing".** Bands run roughly 02:00–18:00Z; **09-19 19:00Z → 09-20 02:00Z is QUIET** (median 892–1,576 ms, 0–7 fails/hour) and the arm reads clean as this is written. **Any fix measured inside a quiet band will look like it worked.**
+
+⚠ **CAUSE IS NOT ESTABLISHED AND THE ITEM SAYS SO.** No migration between `20260916120000` and `20260918060000`. Retention means "the fleet was clean on 09-15" is **NOT shown** — only that these four lanes were. ⛔ **Not #73's signature either:** #73 was `job startup timeout` exhausting `max_worker_processes = 6`, which writes NO `pipeline_runs` row; these failures DO write rows, so the body ran and was cancelled.
+
+- **Revert:** `git revert <sha>` (`git log --grep="FOUR LANES STEPPED ON 09-17"`). **Docs only.** ⛔ Nothing was throttled, paused or re-tuned — deliberately, per the standing rule.
+
 ### 2026-09-19 · 📸 THE PORTFOLIO SNAPSHOT STOPS RE-AGGREGATING A DAY IT ALREADY WROTE — pg_cron becomes the primary at 11:46 PM PT, the 12:05 AM route becomes a millisecond retry, and every later caller reads 34 buffers instead of 45 s · Cowork cloud + laptop VM
 
 **Shipped: 1 migration (`20260920023318`), 1 function re-scoped, 1 wrapper generalised, 1 new pg_cron job (546), jobid 490 re-pointed in place. Probes unscheduled (`zz-%` reads 0).**
