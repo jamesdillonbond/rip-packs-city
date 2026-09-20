@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { boundedRead } from "@/lib/api/bounded-read"
 
 // Multi-collection acquisitions classification cron.
 //
@@ -18,6 +19,48 @@ const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const PIPELINE_NAME = "classify-acquisitions-multicollection"
 
 const PER_COLLECTION_LIMIT = 500
+
+// ── The loop needs a WALL, not just per-leg windows ────────────────────────
+//
+// 🚨 STILL BEING KILLED after the 2026-08-03 windowing. Confirmed live
+// 2026-09-20: `Vercel Runtime Timeout Error: Task timed out after 120 seconds`
+// at 15:06:20Z, matching this pipeline's heartbeat to the second, with
+// `detect_stalled_pipelines` reporting `invoked_but_never_logged`, 4
+// uncorrelated heartbeats, silent 299 minutes.
+//
+// ⭐ WHY THE WINDOWS WERE NOT ENOUGH, and it is not that they were wrong: the
+// three legs run SEQUENTIALLY and nothing bounded their TOTAL. Each RPC may run
+// to the function's own 90 s statement_timeout, so three legs can ask for 270 s
+// against a 120 s maxDuration — and a maxDuration kill runs neither the success
+// path nor a catch, so the tick dies before `log_pipeline_run` and leaves no
+// terminal row at all. ⚠ The per-leg numbers in the TARGETS comments below
+// (34.8 s / 3.5 s / 68.3 s) are a DATED SAMPLE from a quiet box on 2026-08-03;
+// under the IO pressure filed as #126 they no longer bound anything.
+//
+// So the loop now carries its own deadline and hands each leg only the time
+// that is actually left. `boundedRead` RESOLVES into the leg's existing
+// `if (error)` branch rather than rejecting, so an overrun is recorded like any
+// other failure and the loop continues to its terminal row.
+//
+// ⛔ This does NOT make the classifier faster and is not meant to. It converts
+// "the lambda died and the estate cannot tell you why" into a row that names
+// which leg overran and which legs never got to run.
+// Overridable for TESTS ONLY, so the budget path can be proven without burning
+// two real minutes per arm — the same seam and the same reason as
+// PINNACLE_BACKFILL_SYNC_BUDGET_MS. Production never sets it.
+const WALL_MS_DEFAULT = 120_000
+function wallMs(): number {
+  const raw = Number(process.env.CLASSIFY_WALL_MS ?? "")
+  return Number.isFinite(raw) && raw > 0 ? raw : WALL_MS_DEFAULT
+}
+// Room for the terminal log_pipeline_run after the last leg returns. The whole
+// point is that this call always happens, so it gets reserved time rather than
+// whatever is left over.
+const TERMINAL_RESERVE_MS = 10_000
+// Below this there is no point starting a leg: it would be abandoned almost
+// immediately and the abandoned query keeps running on the database anyway.
+// Better to record it as skipped, by name, than to spend the wall proving it.
+const MIN_LEG_MS = 5_000
 
 // Bounded candidate window for All Day. Cost is sharply non-linear, measured
 // end-to-end against prod 2026-08-03 (steady state, 0 candidates found):
@@ -98,25 +141,47 @@ export async function POST(req: NextRequest) {
   // cron-job.org's 30s client cap under DB saturation; auth stays sync, the
   // loop + log_pipeline_run move into after(), and we return immediately so the
   // entry can never be auto-disabled. pipeline_runs is the real success signal.
+  const wall = wallMs()
+  // The reserve and the minimum leg scale with an overridden wall so a test can
+  // shrink the budget without inverting the relationship between the three.
+  const reserve = Math.min(TERMINAL_RESERVE_MS, Math.floor(wall / 4))
+  const minLeg = Math.min(MIN_LEG_MS, Math.floor(wall / 8))
+  const deadlineMs = Date.parse(startedAtIso) + wall - reserve
+
   after(async () => {
     const perCollection: Record<string, unknown> = {}
     let totalFound = 0
     let totalWritten = 0
     let totalSkipped = 0
     let firstError: string | null = null
+    // Named, not counted. "2 legs skipped" is the empty-state-that-concludes
+    // shape one level down: the reader cannot tell WHICH collection went
+    // unclassified, and the legs are not interchangeable.
+    const skippedForBudget: string[] = []
 
     for (const t of TARGETS) {
+      const remainingMs = deadlineMs - Date.now()
+      if (remainingMs < minLeg) {
+        skippedForBudget.push(t.slug)
+        perCollection[t.slug] = { ok: false, skipped: "budget_exhausted", remaining_ms: remainingMs }
+        firstError = firstError ?? `${t.slug}: skipped, wall budget exhausted`
+        continue
+      }
       try {
-        const { data, error } = await (supabaseAdmin as any).rpc(
-          "backfill_acquisitions_for_collection",
-          {
-            p_collection_id: t.collection_id,
-            p_limit: t.limit ?? PER_COLLECTION_LIMIT,
-            p_since:
-              t.sinceDays == null
-                ? null
-                : new Date(Date.now() - t.sinceDays * 24 * 60 * 60 * 1000).toISOString(),
-          }
+        const { data, error } = await boundedRead(
+          (supabaseAdmin as any).rpc(
+            "backfill_acquisitions_for_collection",
+            {
+              p_collection_id: t.collection_id,
+              p_limit: t.limit ?? PER_COLLECTION_LIMIT,
+              p_since:
+                t.sinceDays == null
+                  ? null
+                  : new Date(Date.now() - t.sinceDays * 24 * 60 * 60 * 1000).toISOString(),
+            }
+          ),
+          `classify/${t.slug}`,
+          remainingMs,
         )
         if (error) {
           firstError = firstError ?? `${t.slug}: ${error.message}`
@@ -149,7 +214,17 @@ export async function POST(req: NextRequest) {
         p_collection_slug: null,
         p_cursor_before: null,
         p_cursor_after: null,
-        p_extra: { per_collection: perCollection },
+        p_extra: {
+          per_collection: perCollection,
+          // A tick that classified two of three collections is NOT a clean tick,
+          // and `rows_found` cannot say so — it is a sum, so a skipped leg and an
+          // empty leg both contribute 0. These two fields are what make a partial
+          // run falsifiable from the row alone.
+          skipped_for_budget: skippedForBudget,
+          legs_attempted: TARGETS.length - skippedForBudget.length,
+          legs_total: TARGETS.length,
+          wall_ms: Date.now() - Date.parse(startedAtIso),
+        },
       })
     } catch (e) {
       console.log(

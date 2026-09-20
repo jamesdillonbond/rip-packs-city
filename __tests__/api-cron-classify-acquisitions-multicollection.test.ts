@@ -271,3 +271,86 @@ describe("POST /api/cron/classify-acquisitions-multicollection — deferred clas
     await expect(cap.fn!()).resolves.toBeUndefined()
   })
 })
+
+// ── The WALL. Why these arms exist ─────────────────────────────────────────
+//
+// 🚨 CONFIRMED LIVE 2026-09-20: `Vercel Runtime Timeout Error: Task timed out
+// after 120 seconds` at 15:06:20Z, matching this pipeline's heartbeat to the
+// second, with detect_stalled_pipelines reporting `invoked_but_never_logged`,
+// 4 uncorrelated heartbeats, silent 299 minutes.
+//
+// The 2026-08-03 per-leg windows were real fixes and did not fix THIS: the legs
+// run sequentially and nothing bounded their TOTAL, so three legs may each run
+// to the function's 90 s statement_timeout — 270 s against a 120 s maxDuration.
+// A maxDuration kill runs neither the success path nor a catch, so the tick
+// dies before log_pipeline_run and leaves no terminal row at all.
+//
+// ⚠ These arms assert the HONEST PARTIAL, not merely "it finished": a tick that
+// classified one of three collections must say WHICH two did not run, because
+// p_rows_found is a sum and cannot distinguish a skipped leg from an empty one.
+describe("POST /api/cron/classify-acquisitions-multicollection — the wall budget", () => {
+  let POST: (req: any) => Promise<Response>
+
+  beforeAll(async () => {
+    vi.resetModules()
+    process.env.INGEST_SECRET_TOKEN = "loop-token"
+    // A wall small enough that the first hanging leg exhausts it. Production
+    // never sets this; it exists so the budget path costs milliseconds.
+    process.env.CLASSIFY_WALL_MS = "600"
+    const mod = await import("@/app/api/cron/classify-acquisitions-multicollection/route")
+    POST = mod.POST as any
+  })
+
+  beforeEach(() => {
+    cst.bySlug = {}
+    cst.runs = []
+    cst.hbRows = []
+    cst.calls = []
+    cst.logThrows = false
+    cap.fn = null
+  })
+
+  async function runTerminal() {
+    await POST(makeReq({ url, method: "POST", auth: "Bearer loop-token" }))
+    expect(cap.fn).toBeTypeOf("function")
+    await cap.fn!()
+    const terminal = cst.runs.filter((r) => r?.p_extra?.phase !== "invoked")
+    expect(terminal, "the tick must still reach its terminal row").toHaveLength(1)
+    return terminal[0]
+  }
+
+  it("a leg that HANGS is abandoned at the remaining budget and the tick still lands a terminal row", async () => {
+    // Never resolves — the shape a 90 s statement_timeout has from here. Before
+    // the wall this consumed the whole maxDuration and the lambda was killed.
+    cst.bySlug = { nfl_all_day: new Promise(() => {}) }
+    const r = await runTerminal()
+    expect(r.p_ok, "an abandoned leg is not a clean tick").toBe(false)
+    expect(String(r.p_error)).toContain("nfl_all_day")
+    expect(r.p_extra.per_collection.nfl_all_day.ok).toBe(false)
+  }, 20_000)
+
+  it("legs that never ran are NAMED, not counted — a sum cannot tell skipped from empty", async () => {
+    cst.bySlug = { nfl_all_day: new Promise(() => {}) }
+    const r = await runTerminal()
+    const skipped = r.p_extra.skipped_for_budget as string[]
+    expect(skipped, "the two legs after the hang must be named").toEqual([
+      "laliga_golazos",
+      "ufc_strike",
+    ])
+    expect(r.p_extra.legs_total).toBe(3)
+    expect(r.p_extra.legs_attempted).toBe(1)
+    // ⚠ The no-change control: the skipped legs were never CALLED, so a reader
+    // cannot mistake "we asked and got nothing" for "we never asked".
+    expect(cst.calls.map((c) => c.slug)).toEqual(["nfl_all_day"])
+  }, 20_000)
+
+  it("CONTROL: with every leg fast, nothing is skipped and the tick is clean", async () => {
+    // Without this arm the fix could be "skip everything", which would satisfy
+    // both arms above while destroying the pipeline.
+    const r = await runTerminal()
+    expect(r.p_extra.skipped_for_budget).toEqual([])
+    expect(r.p_extra.legs_attempted).toBe(3)
+    expect(r.p_ok).toBe(true)
+    expect(cst.calls.map((c) => c.slug)).toEqual(["nfl_all_day", "laliga_golazos", "ufc_strike"])
+  })
+})
