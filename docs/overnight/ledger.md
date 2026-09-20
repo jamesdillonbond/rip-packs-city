@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 📚 THREAD CLOSE — CLAUDE.md takes the R123 write-order rule (two clauses displaced verbatim), the canon gets the three write-side sub-shapes and their fixes, the deploy skill gets today's precondition and bundle facts, and the Pinnacle-mints 403 is filed as #130 · Cowork cloud
+
+**Shipped (docs only): `CLAUDE.md` (39,985 chars — the WRITE-side bullet gains *"a failed CURSOR/STATE write fails the RUN and reports the cursor where it IS; close a delete-then-insert window by ORDER"*; the pre-2026-08-03 revert note and the Git-Bash/PDT clause condensed, their text parked verbatim at the end of `tooling-gotchas.md`) · `docs/reference/key-files-and-honesty.md` (R123 section under the twelfth shape: the money/entitlement write → retryable status; the cursor/state write → fail the run, report the real cursor, throw on a failed read; the delete-then-insert window → order, PK-aware, delete only what you did not write; the run-row form; the harness facts; the five inverted pins) · `docs/cowork-skills/rpc-edge-fn-deploy` (§1: the 08-12 break repeated 39 days later on `ingest-pinnacle-mints` and the "prove the deployed build reads the env var and is answering its cron" precondition; §4 MCP: redacted drift check first, `_shared` bundle naming, the anonymous boot probe, `deno check` from npm in the sandbox) + bundle · `docs/reference/known-issues.md` #130 (the live 403, attributed, with the one-secret fix) + index · `metrics-latest.json`.**
+
+✅ **Skills:** Trevor saved all three cards from the earlier close (`rpc-migration`, `rpc-cron-ops`, `rpc-audit-drain` — installed == repo, verified by md5). Two cards go out with this close: `rpc-edge-fn-deploy` (above) and `rpc-nightly-autonomous-pass` (the R118 instrument in the health sweep). The Project's `trevor-queue` doc is re-cut around the one item that is now a live outage.
+
+🔒 **Verified the fix is not mine to make:** the laptop VM has no `SUPABASE_ACCESS_TOKEN` (`npx supabase secrets list` asks for a login) and the MCP has no secrets verb — the deploy skill already says dashboard-only; re-verified today.
+
+- **Revert:** `git revert <sha>` — docs only.
+
 ### 2026-09-20 · ⛔ SECOND CORRECTION, AND THIS ONE IS ME OVERSTATING: #126 IS NOT "MERELY OUTRUN" — ITS OWN ENTRY HAS THE BETTER EXPERIMENT AND IT SAYS CAPACITY WAS THE CAUSE · Claude Code, Windows box
 
 **Docs only.** Two entries up I corrected *"#126 cleared on its own"* to *"#126 is OUTRUN BY HARDWARE, not fixed."* **The first half was right. The second half was an overstatement I made without opening the item I was contradicting.**

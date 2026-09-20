@@ -135,5 +135,6 @@
     ]
   },
   "r123_swallowed_writes": "app/api half shipped f5318f0f2 (10 routes); edge half shipped 6f094cc0d (11 functions, 3 deployed: compute-allday-pack-ev v52 verified 12:37 PM pool_write_errors=0, pinnacle-owner-discovery-forward v45, ingest-pinnacle-mints v27). Remaining: 3 edge fns with hardcoded gate keys in prod ride R21.",
-  "needs_trevor_new": "ingest-pinnacle-mints answers 403 to every dispatch since 11:40 AM PT (another session's v22->26 deploy, env-gated, secret missing/mismatched): supabase secrets set PINNACLE_MINTS_GATE_KEY=<value jobids 83/84 send>"
+  "needs_trevor_new": "ingest-pinnacle-mints answers 403 to every dispatch since 11:40 AM PT (another session's v22->26 deploy, env-gated, secret missing/mismatched): supabase secrets set PINNACLE_MINTS_GATE_KEY=<value jobids 83/84 send>",
+  "known_issue_130": "ingest-pinnacle-mints 403 since 11:40 AM PT 09-20 (another session deployed the env-gated build v22-26 without the secret); needs Trevor: supabase secrets set PINNACLE_MINTS_GATE_KEY"
 }

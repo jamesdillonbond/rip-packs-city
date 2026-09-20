@@ -24,10 +24,23 @@ the secret unset the constant is `""` and the hardening correctly rejects everyt
 successful write 03:33:08Z; 403s on every tick for ~40h; nobody noticed because a 403'd
 edge function writes **no** `pipeline_runs` row.
 
+**It happened AGAIN 39 days later, and the tell was the same:** `ingest-pinnacle-mints` v22→v26
+deployed 11:30–11:40 AM PT 2026-09-20 (the env-gated repo build) while `PINNACLE_MINTS_GATE_KEY` did
+not match what jobids 83/84 send. `{"error":"forbidden"}` on every dispatch from 11:40; last
+`pipeline_runs` row 11:42; pg_cron logged `succeeded` throughout. The sentinel's `pg_net_http_403`
+row fired but says "WHICH ENDPOINT IS UNKNOWN" — **attribute it by TIMING against `cron.job`
+schedules (even minutes = the `*/2` job) or by `function_edge_logs` `version` changes**, never by
+reading the command. ⛔ **Before deploying ANY `?key=`-gated function, prove the deployed build
+already reads the env var and is currently answering its cron** (a `pipeline_runs` row in the last
+cadence) — if the deployed build still carries a hardcoded key, the secret is UNPROVEN and the
+deploy is not yours to make unattended.
+
 **Order, always:**
 1. **Set the secret first** — to the value cron already sends (see §2). Dashboard →
    Edge Functions → Secrets. ⚠ **The Supabase MCP has no secrets verb; this is
-   dashboard-only and can never be completed by an agent session.**
+   dashboard-only and can never be completed by an agent session.** (Re-verified 2026-09-20:
+   the laptop VM has no `SUPABASE_ACCESS_TOKEN` either — `npx supabase secrets list` asks for
+   a login.)
 2. Then deploy.
 3. Then verify **as the real caller** (§5).
 
@@ -154,6 +167,24 @@ re-litigating the credential path.
 ### MCP fallback (`deploy_edge_function`)
 Works when the CLI does not — different credential path.
 `verify_jwt:false`, `import_map_path:"deno.json"`, files `[{deno.json},{index.ts}]`.
+- ⭐ **Precondition, proven 2026-09-20 on eleven functions: a REDACTED drift check FIRST.** Spawn a
+  subagent that `get_edge_function`s each slug, writes the deployed source VERBATIM under
+  `/mnt/user-data/outputs/edge-drift-<date>/<slug>/` (the rollback artifact — never printed), and
+  reports only md5 / byte length / `verify_jwt` / bare-specifier + import-map facts / env-var NAMES /
+  credential-shaped literals as NAME + first 4 chars. Deploy only the slugs whose deployed md5 ==
+  repo (or differ in comments only). That check found 3 of 11 still carrying a hardcoded gate key in
+  production — deploying the repo copy over those is the §1 break.
+- ⚠ **`_shared`-importing functions are bundled from `supabase/`, not the function dir:** file names
+  `functions/<slug>/index.ts`, `functions/_shared/<x>.ts`, `functions/deno.json`;
+  `entrypoint_path:"functions/<slug>/index.ts"`, `import_map_path:"functions/deno.json"`. The
+  result's `entrypoint_path` then reads `…/source/functions/<slug>/index.ts` — that is the working
+  shape (`compute-allday-pack-ev` v52, `topshot-insider-detect-patterns`).
+- ✅ **Boot probe right after the deploy:** an anonymous `curl -X POST` to the function URL must
+  answer the HANDLER's own 401/403 (`Unauthorized` / `{"error":"forbidden"}`) — a `BOOT_ERROR` /
+  503 means the bundle did not resolve. Then the real caller's next `pipeline_runs` row (§5).
+- ⭐ **`deno check` runs in the cloud sandbox:** `npm install -g deno@2` (2.9.6 on 2026-09-20), then
+  `cd supabase/functions && deno check --config deno.json <slug>/index.ts` and `deno lint` — so a
+  type error is caught before CI's `Edge functions (deno check + lint)` job, not by it.
 - ⚠ Once a function carries an `import_map_path`, **every later deploy must resupply
   `deno.json`** or it fails with a mangled concatenated path.
 - ⚠ **Do NOT hand-transcribe large ingest functions.** The three `ingest-*` functions are

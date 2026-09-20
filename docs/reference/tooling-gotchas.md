@@ -1803,3 +1803,11 @@ Full detail: [docs/reference/tooling-gotchas.md](tooling-gotchas.md).
 Reached only after `git push --dry-run origin main` has actually been tried and refused; the recipes for each follow elsewhere in this file.
 
 - **When push IS genuinely denied**, four proven routes (recipes: tooling-gotchas.md): repo-as-session-source · `/web-setup` (authorizes at CREATION — fixes the NEXT one) · desktop "Run this task" · `git format-patch` → VM `git am` + `.rpc-git-cred` (back 09-19; `am` rewrites the sha — the cloud clone then reads "unpushed") · the laptop `cowork-push` queue.
+
+---
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — two clauses condensed to make room for the R123 write-order rule
+
+From the **Ledger** section: 🚨 **`git revert <sha>` paths recorded BEFORE 2026-08-03 no longer resolve** — that day's `filter-repo` rewrote every pre-purge sha; find the commit by MESSAGE (`git log --grep=`). The **DB half of every revert path is unaffected**. Purge residue: #22. (The ledger's own header carries the same warning with the 2026-08-03 measurement.)
+
+From **Timestamps**: ⚠ Git Bash lies BOTH ways and the **web sandbox is PDT, not UTC**, so "subtract 7h from `date -u`" lands a day early.
