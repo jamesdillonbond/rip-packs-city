@@ -369,3 +369,63 @@ describe("drain-fmv-cold-tail slug rotation (2026-08-18)", () => {
     expect(terminals()[0].extra.order).toEqual(["nba_top_shot"])
   })
 })
+
+// ── The per-slug BOUND (2026-09-20) ────────────────────────────────────────
+//
+// 🚨 The between-slugs estimate guard above could never protect the FIRST slug —
+// `results.length > 0` exempts it by design, so a tick "can never do nothing at
+// all". That exemption is exactly how the tick died: one slow first slug ran
+// unbounded past maxDuration and the lambda was killed before the terminal
+// insert, leaving only a heartbeat.
+//
+// 📏 Measured 2026-09-20: 17 of 48 terminal rows lost in 24 h (35 %), with a
+// clean alternation over the last four hours — :47 ok, :17 LOST — and
+// `Vercel Runtime Timeout Error: Task timed out after 60 seconds` on this route,
+// last at 10:17 PT, matching a LOST tick exactly.
+//
+// ⚠ The route's own comment asserted this could not be fixed here: "a single
+// in-flight RPC cannot be bounded from here (a function-level statement_timeout
+// is inert, and service_role has no binding one)". The first half is true; the
+// conclusion was not. `boundedRead` bounds it CLIENT-side and resolves into the
+// existing `if (error)` branch. It does NOT cancel the query — but neither did
+// the kill, so the DB cost is unchanged and the tick now survives to report.
+describe("drain-fmv-cold-tail per-slug bound", () => {
+  afterEach(() => {
+    delete process.env.DRAIN_FMV_BUDGET_MS
+  })
+
+  it("abandons a slug that outlives the budget and STILL writes its terminal row", async () => {
+    vi.useRealTimers()
+    process.env.DRAIN_FMV_BUDGET_MS = "150"
+    state.bySlug = { nba_top_shot: { processed: 5 } }
+    state.hangOn = "nba_top_shot"
+
+    await drain("https://t/api/admin/drain-fmv-cold-tail?collection=nba_top_shot")
+
+    const rows = terminals()
+    expect(rows, "a hung slug must no longer take the terminal row with it").toHaveLength(1)
+    const slugRow = (rows[0].extra.results as Array<{ slug: string; ok: boolean; error: string | null }>)
+      .find((r) => r.slug === "nba_top_shot")
+    expect(slugRow?.ok, "an abandoned slug is recorded as failed, not as success").toBe(false)
+    expect(String(slugRow?.error), "the row must say the read was abandoned, and name the slug").toContain(
+      "drain-fmv-cold-tail/nba_top_shot",
+    )
+    // ⚠ The heartbeat still stands beside it — the two are not alternatives.
+    expect(heartbeats()).toHaveLength(1)
+  }, 20_000)
+
+  it("CONTROL: a fast slug is untouched by the bound and still reports ok", async () => {
+    // Without this, "abandon everything" would satisfy the arm above while
+    // destroying the drain.
+    vi.useRealTimers()
+    process.env.DRAIN_FMV_BUDGET_MS = "10000"
+    state.bySlug = { nba_top_shot: { processed: 5 } }
+
+    await drain("https://t/api/admin/drain-fmv-cold-tail?collection=nba_top_shot")
+
+    const rows = terminals()
+    expect(rows).toHaveLength(1)
+    expect(rows[0].ok).toBe(true)
+    expect(rows[0].rows_found).toBe(5)
+  }, 20_000)
+})

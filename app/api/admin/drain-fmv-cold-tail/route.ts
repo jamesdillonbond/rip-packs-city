@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
+import { boundedRead } from "@/lib/api/bounded-read"
 import { supabaseAdmin } from "@/lib/supabase"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
 
@@ -43,11 +44,35 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 // Wall-clock budget for the drain loop, well inside maxDuration so the
-// pipeline_runs insert below always has room. Only checked BETWEEN slugs — a
+// pipeline_runs insert below always has room.
+//
+// 🚨 THIS COMMENT USED TO SAY the budget is "only checked BETWEEN slugs — a
 // single in-flight RPC cannot be bounded from here (a function-level
-// statement_timeout is inert, and service_role has no binding one), which is
-// exactly why the heartbeat is not optional.
-const DRAIN_BUDGET_MS = 45_000
+// statement_timeout is inert, and service_role has no binding one)". The first
+// half was true and the CONCLUSION was not: `boundedRead` (lib/api/bounded-read.ts)
+// bounds exactly this CLIENT-side, by racing the promise and RESOLVING into the
+// caller's `if (error)` branch. 86+ routes already use it. The between-slugs
+// estimate could never protect the FIRST slug — `results.length > 0` skips the
+// guard for it by design — and a single slow first slug is what killed the tick.
+//
+// 📏 Measured 2026-09-20: over 24 h this lane lost 17 of 48 terminal rows (35 %),
+// and the recent pattern was a clean alternation — :47 ticks ok, :17 ticks LOST,
+// four hours straight — with `Vercel Runtime Timeout Error: Task timed out after
+// 60 seconds` on the route, last at 10:17 PT, matching a LOST tick exactly.
+//
+// ⚠ WHAT BOUNDING DOES **NOT** DO, stated so nobody reads it as a cost fix:
+// abandoning the wait does NOT cancel the query — it keeps running and keeps
+// consuming IO. But the maxDuration kill did not cancel it either, so this is
+// strictly better: same DB cost, and the tick now survives to write its row.
+// The durable fix is still DB-side (scope that aggregate to the collection).
+// Overridable for TESTS ONLY so the abandon path can be proven in milliseconds
+// instead of 45 real seconds — same seam and same reason as CLASSIFY_WALL_MS and
+// PINNACLE_BACKFILL_SYNC_BUDGET_MS. Production never sets it.
+const DRAIN_BUDGET_MS_DEFAULT = 45_000
+function drainBudgetMs(): number {
+  const raw = Number(process.env.DRAIN_FMV_BUDGET_MS ?? "")
+  return Number.isFinite(raw) && raw > 0 ? raw : DRAIN_BUDGET_MS_DEFAULT
+}
 // Floor for "how long will the next slug take", so one fast slug cannot make
 // the estimate optimistic enough to start a slow one we cannot afford.
 const SLUG_ESTIMATE_FLOOR_MS = 8_000
@@ -176,7 +201,7 @@ export async function POST(req: NextRequest) {
         collection_filter: collection,
         limit,
         order,
-        budget_ms: DRAIN_BUDGET_MS,
+        budget_ms: drainBudgetMs(),
         max_duration_s: 60,
       },
     })
@@ -197,19 +222,30 @@ export async function POST(req: NextRequest) {
       // tick can never do nothing at all.
       const elapsed = Date.now() - startedAt
       const estimate = Math.max(longestSlugMs, SLUG_ESTIMATE_FLOOR_MS)
-      if (results.length > 0 && elapsed + estimate > DRAIN_BUDGET_MS) {
+      if (results.length > 0 && elapsed + estimate > drainBudgetMs()) {
         skipped.push(slug)
         continue
       }
 
       const slugStartedAt = Date.now()
       try {
-        const { data, error } = await (supabaseAdmin as any).rpc(
-          "drain_fmv_cold_tail",
-          {
-            p_collection_slug: slug,
-            p_limit: limit,
-          }
+        // Bounded to the budget that is actually LEFT, not to a fixed slice: the
+        // first slug is exempt from the estimate guard above, so this is the only
+        // thing standing between one slow collection and a maxDuration kill that
+        // writes no row at all. `boundedRead` resolves into the `error` branch
+        // below rather than rejecting, so an abandoned slug is recorded exactly
+        // like a failed one and the loop walks on to the terminal insert.
+        const remainingMs = Math.max(1_000, drainBudgetMs() - (Date.now() - startedAt))
+        const { data, error } = await boundedRead(
+          (supabaseAdmin as any).rpc(
+            "drain_fmv_cold_tail",
+            {
+              p_collection_slug: slug,
+              p_limit: limit,
+            }
+          ),
+          `drain-fmv-cold-tail/${slug}`,
+          remainingMs,
         )
         results.push({
           slug,
@@ -286,7 +322,7 @@ export async function POST(req: NextRequest) {
           order,
           skipped,
           deadline_hit: skipped.length > 0,
-          budget_ms: DRAIN_BUDGET_MS,
+          budget_ms: drainBudgetMs(),
           slugs_attempted: results.length,
           slugs_total: order.length,
           results,
