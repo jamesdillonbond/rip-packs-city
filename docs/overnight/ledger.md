@@ -11,6 +11,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · ✅↩ JOBID 506's FIRST REAL TICK PASSED R115's EXIT (nba_top_shot 314 ms) AND THEN SPENT 146 s ON THE PROVENANCE NOTE I ADDED — the full drift check is now a 1/64 sample; 204 s → 47 s, and Pinnacle is 87 % of what is left · Cowork cloud
+
+**Shipped: 1 migration (`20260920054402`): `refresh_fmv_confidence_precompute()` calls `check_edition_fmv_current_source_drift(64)` instead of `(1)`; `extra` gains `efc_drift_sample_mod: 64` beside the now-sampled `efc_drift_rows`. Body verbatim from the committed `20260920024430` text (live md5 `548036969d…` == committed before the edit; `59e0d82f30…` after, both sides). Control: one-off jobid 563 (unscheduled in-session).**
+
+✅ **The 10:35 PM PT tick (jobid 506):** `ok`, 6 arms, `nba_top_shot` **314 ms** from `edition_fmv_current` (was 5,286 ms quiet / 100,800 in a spell), Candy 1.3 s, All Day 1.7 s, Golazos 137 ms, UFC 85 ms, **Pinnacle 54.2 s** (`pinnacle_fmv_history`, 256 k rows / 35 MB through a DISTINCT ON under DataFileRead contention — 12 s at 6:35 PM on a quieter box). Arms sum 57.8 s; the run was **204 s**. ↩ The other ~146 s was `check_edition_fmv_current_source_drift(1)` — the full ~21k-row index join I added at 7:44 PM as a ban-at-zero provenance note. By hand at 10:40 PM it hit the 120 s statement_timeout outright; the 1/64 hash sample took **1.9 s** and returned 2 rows. A note that costs 70 % of the lane inside a 300 s budget is a note that will one day kill the lane in a spell; the sample answers the same question (is the cache drifting at all: yes) at 1/70th the cost, and the key name says it is a sample.
+
+📏 **Control (jobid 563, 10:46 PM PT): 46.8 s, `efc_drift_rows 2`, `efc_drift_sample_mod 64`, nba_top_shot 887 ms, Pinnacle 40.7 s.** Full-count reading from the 10:35 tick: `efc_drift_rows 50` = the function's LIMIT, so ≥ 50 editions (sample says ~128 of ~21k, 0.6 %) drift between the 2:36 AM PT reconciles — the documented R107 mechanism (delete-then-insert snapshot replacement keeping `computed_at`); the daily full reconcile bounds the hide time and this number is the first live measurement of the drift rate. **Exit:** 2:35 / 6:35 AM PT ticks < 90 s, nba_top_shot < 2 s, `efc_drift_sample_mod` present. **Falsifier:** a tick > 150 s with Pinnacle < 60 s ⇒ the cost was never the drift check.
+
+📝 **Next cost, not shipped:** Pinnacle's arm is R115's original shape (stream every history row through DISTINCT ON) on a 35 MB table — a `pinnacle_fmv_current`-style cache keyed on `render_id` is the same fix, ~2.5 k rows instead of 256 k. Filed in the handoff; 47 s × 4/day inside a 300 s budget does not need it tonight.
+
+- **Revert:** migration header (re-apply `20260920024430`'s body).
+
 ### 2026-09-19 · 📐 CLAUDE.md GAINS THE MULTI-WRITER RULE AND REAL HEADROOM — two topic-specific sections displaced VERBATIM, 8 chars of room becomes 120 · Claude Code (Windows box, session -52)
 
 **Shipped: CLAUDE.md + `docs/reference/database.md` + `docs/reference/tooling-gotchas.md`. Docs only, no code, no DB change. Authorised by Trevor ("update CLAUDE.md and any relevant documentation").**
