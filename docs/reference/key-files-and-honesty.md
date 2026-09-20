@@ -2253,6 +2253,84 @@ Same day, applying "grep for the SHAPE, not the file", the neighbour `wallet_mom
 
 > **Trust a cached ownership/holdings claim only at or after the walk that confirmed it. Keep that floor where a re-dispatch cannot clear it, fail OPEN when no clean walk exists, and project the provenance instead of asserting silently.**
 
+---
+
+## ⛔ A ROUTING TABLE IS A CLAIM ABOUT THE TABLES IT ROUTES TO — the twelfth shape, and it answered `0` for 159 days (2026-09-20)
+
+`/api/sets-db` is the generic Set Tracker backend: it maps a collection slug to a
+UUID and joins `editions` + `sets` on it. Its `COLLECTION_UUID_MAP` carried
+
+```ts
+"disney-pinnacle": "7dd9dd11-e8b6-45c4-ac99-71331f959714",
+```
+
+Measured live 2026-09-20: **Disney Pinnacle has 0 rows in `editions` and 0 rows in
+`sets`.** It is catalogued render-keyed in `pinnacle_catalog` — deliberately, and
+CLAUDE.md records that separation as a design decision, not as debt.
+
+So every call to `/api/sets-db?collection=disney-pinnacle&wallet=<anything>`
+returned, with a **200**, a `Cache-Control: public` header and no error anywhere:
+
+```json
+{ "totalSets": 0, "completeSets": 0, "sets": [] }
+```
+
+### Why this is a new shape and not just "a missing feature"
+
+Every previously catalogued instance is a **read that failed** being rendered as a
+fact. Here **every read succeeded.** The catalog query ran, the sets query ran, the
+wallet query ran; all three returned `[]` because the collection_id matched nothing,
+and the route did exactly what it was written to do with an empty result. There is
+no `error` to check, no `?? 0`, no swallowed catch, no timeout — none of the four
+layer-helpers in CLAUDE.md's table can see this, and neither can any of the
+fabricated-value greps, because the zero is **arithmetically correct** for the rows
+it was handed.
+
+⭐ **The defect is one line above the query: a registry entry asserting that a
+collection lives in a table it has never had a row in.** The claim is made by the
+ROUTING, and it is falsified only by counting rows in the target table.
+
+### Why nothing caught it
+
+- The page it backs was **gated off** for Pinnacle (`FeatureTabGate`), so no
+  surface rendered the zero — but the route is public and unauthenticated, and a
+  soft-gated UI is not a closed endpoint. ⚠ **A feature flag in front of a
+  surface is not a guard on the route behind it.**
+- Its own test (`api-sets-db.test.ts`) mocks the tables to `[]` and asserts
+  `totalSets === 0` **as the happy path**. The fixture makes the defect the
+  expected output.
+- `collection-registry-consistency.test.ts` pins that every collection rendering
+  entity links resolves through the slug facade — it asks whether the LINK
+  resolves, never whether the TABLE has rows.
+
+### The rule
+
+⛔ **A slug→id map is an assertion that the id has rows in the table the map is
+consulted for. Before adding a collection to one, COUNT — and when the count is
+zero, the honest entry is no entry** (an unknown slug here 400s, which is a true
+statement), **not a row that lets the join return empty.**
+
+⚠ **Generalise the population, do not fix the one file.** Grep for the SHAPE —
+a literal `Record<string, string>` of slugs to UUIDs consulted before a
+`.eq("collection_id", …)` — not for `sets-db`.
+
+ⓘ **Measured, not assumed:** after the removal, a grep for any other module
+mapping `disney-pinnacle` to `7dd9dd11-…` found **exactly one — `lib/collections.ts`
+itself**, and that one is correct: the UUID is real and the registry is where it
+belongs. ⭐ **That is the sharpest statement of this defect.** The id was never
+wrong. What was wrong was a SECOND module treating "this collection has a UUID" as
+"this collection has rows in MY table", and those are different facts. The entry
+dates to `2b4e03575` (2026-04-14, the multi-collection sets wiring) — 159 days.
+
+⭐ **The test that would have caught it is not a source-level one.** It is: *for
+every entry in the map, does that collection have a non-zero row count in the
+table this route reads?* That is a DB assertion, and it belongs with the
+DB-invariant suite, not with the route's unit tests — which is exactly why a
+green unit suite proved nothing here.
+
+**Fixed 2026-09-20** by removing the entry and shipping
+`/api/pinnacle-set-progress`, which reads the tables Pinnacle actually has.
+
 ## Displaced from CLAUDE.md 2026-09-20 (verbatim) — the DB fabricated-value tell and its PROVENANCE rule
 
 ⭐ **The DB form's tell is a PERFECT CORRELATION: `never_checked AND value=true` EXACTLY 0 means the value is the DEFAULT** (#112). ⛔ **A function projecting such a value must project its PROVENANCE too.**

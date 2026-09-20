@@ -35,11 +35,13 @@ The `[collection]` dynamic segment serves all 5 published collections: NBA Top S
 
 - **All 5 published:** `overview`, `collection`, `sniper`, `analytics`.
 - **`market` + `packs`:** all except UFC (Pinnacle gained both in the IA reorg).
-- **`sets`:** all except Pinnacle.
+- **`sets`:** ✅ **ALL FIVE since 2026-09-20** — Disney Pinnacle was the last gap and now ships the tab. ⚠ It is NOT served by `/api/sets-db` like Golazos: Pinnacle has **0 rows in `editions` and 0 in `sets`** (it is catalogued render-keyed in `pinnacle_catalog`), so `sets-db` answered every Pinnacle wallet `{ totalSets: 0 }` — a confident "no sets" out of a join that matched nothing. Its `disney-pinnacle` entry was REMOVED and the tab reads **`/api/pinnacle-set-progress`** (169 `set_render_id` checklists × `wallet_moments_cache.render_id`). ⛔ The set NAME is not the key — several carry leading/trailing whitespace and would split a set in two. ⚠ And Pinnacle set rows do **not** link to `/[collection]/set/<slug>`: `get_set_detail` returns NULL for every Pinnacle slug, so `setEntityHref()` (lib/entity-href.ts) returns `null` and the heading renders as text.
 - **`pack-sniper`:** Top Shot + AllDay only.
 - **`challenges` + `hot-floors` + `play`:** Top Shot only.
 
 **How the folded pages are reached (IA reorg conventions):** the **Moments | Packs sub-toggle** (`components/collection/PackSubNav.tsx`) mounts under the Collection / Market / Sniper tabs and is URL-param driven — `?section=packs`, NOT nested routes, so sub-views stay deep-linkable and the parent tab keeps highlighting (the market page already owns `?view=` for grid/table, which is why the toggle uses `?section=`). "Moments" is relabeled "Pins" for Pinnacle. Top Shot's `play` tab is the **Play hub** (`play/` route dir) fronting Challenges, Fast Break, and Road to the Ring. `components/collection/FeatureTabGate.tsx` (used by `market/layout.tsx` + `sets/layout.tsx`) gates those routes for collections that don't list the page.
+
+**Per-collection Set Tracker backends** (four now, one per data model — `CollectionSetsClient` dispatches on the slug): Top Shot `/api/sets`, All Day `/api/allday-set-progress`, UFC `/api/ufc-set-progress`, Pinnacle `/api/pinnacle-set-progress`, everything else (Golazos) the generic `/api/sets-db`. ⚠ Only the first two expose a per-set DETAIL endpoint (`?set=`); the other three carry their piece lists inline on the list response.
 
 **Market vs Sniper split (Trevor, 2026-07-18): Market is EDITION-level (one row per edition; AllDay via RPC `get_allday_market_editions`; Pinnacle via the render-keyed live-listings source reusing `computePinnacleSniperFeed`), Sniper is SERIAL-level (individual listings).** Market defaults to Price ascending.
 
