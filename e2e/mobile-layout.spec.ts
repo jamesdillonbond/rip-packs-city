@@ -352,3 +352,61 @@ test.describe("mobile layout (touch context)", () => {
       expect(result.under, "form controls under the 16px iOS zoom floor").toEqual([])
     })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 320px. This file has asserted since 2026-08-22 that its routes were "measured
+// clean at both 390px and 320px", but the loop above only ever ran 390 — the
+// 320 half was a COMMENT, not a test, for four weeks.
+//
+// Measured for real on 2026-09-20 with scripts/qa/mobile-sweep.mjs's new
+// `narrow` mode over all 56 swept pages: overflow 0, no content loss against
+// the 390 run, no broken art, and nothing 390 did not already show. 320 is the
+// floor a responsive layout is expected to survive and the width where a fixed
+// width, a min-width on a table cell or a long unbroken string shows up FIRST.
+// Pinned only after that measurement, on the deployed build.
+// ─────────────────────────────────────────────────────────────────────────────
+const NARROW = { width: 320, height: 568 }
+
+test.describe("mobile layout at 320px", () => {
+  test.use({ viewport: NARROW })
+
+  for (const path of ROUTES) {
+    test(`${path} does not scroll horizontally at ${NARROW.width}px`, async ({ page }) => {
+      await page.goto(path, { waitUntil: "domcontentloaded" })
+      await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
+      await page.waitForTimeout(1500)
+
+      const { overflow, widest } = await page.evaluate((vw) => {
+        const de = document.documentElement
+        const contained = (el: Element) => {
+          for (let p = el.parentElement; p; p = p.parentElement) {
+            const ox = getComputedStyle(p).overflowX
+            if (ox === "auto" || ox === "scroll" || ox === "hidden" || ox === "clip") return true
+          }
+          return false
+        }
+        let widest: { tag: string; cls: string; right: number } | null = null
+        for (const el of Array.from(document.querySelectorAll("body *"))) {
+          const b = el.getBoundingClientRect()
+          if (b.width === 0 || b.height === 0) continue
+          if (b.right <= vw + 1) continue
+          if (contained(el)) continue
+          if (!widest || b.right > widest.right) {
+            widest = {
+              tag: el.tagName.toLowerCase(),
+              cls: String((el as HTMLElement).className || "").slice(0, 60),
+              right: Math.round(b.right),
+            }
+          }
+        }
+        return { overflow: de.scrollWidth - de.clientWidth, widest }
+      }, NARROW.width)
+
+      expect(
+        overflow,
+        `${path} overflows by ${overflow}px at 320` +
+          (widest ? ` — widest uncontained box: <${widest.tag} class="${widest.cls}"> ends at ${widest.right}px` : ""),
+      ).toBe(0)
+    })
+  }
+})
