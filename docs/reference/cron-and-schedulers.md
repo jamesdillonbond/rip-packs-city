@@ -2737,3 +2737,5 @@ Of the 42 rows still flagged, **41 belong to wallets that are neither saved nor 
 Moved to make room for the marginal-cost / cap-is-not-a-rate rule. Content is VERBATIM; CLAUDE.md keeps the rule and points here for the cases.
 
 - ⚠ **Re-TEST a stated exit condition, never re-read it** — a "once cleared" 114 was 5. ⚠ **RE-TEST it BEFORE acting** — a 36 % kill rate was 100 % by ship.
+
+- ⚠ **A freshness STAMP is not a RATE, and a candidate its own NO-CHANGE CONTROL outperforms is not shown to work** — a stale `max(ingested_at)` read as “zero output” shipped a cadence change reverted 6 h later.
