@@ -11,6 +11,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ⚠ A ROLLBACK LEAVES THE ALIAS FIELD LYING, AND I NEARLY CONCLUDED A SHIPPED FIX WAS NOT LIVE · Claude Code cloud
+
+**Shipped: docs only. Operational note from verifying the variant-grain fix after this afternoon's rollback.**
+
+🚨 **THE TRAP, in the order it presented.** After rolling production back earlier today, I pushed the variant-grain fix, the deploy went **READY**, and then:
+- `get_deployment(...).alias` listed **only** the two `*.vercel.app` names — **no `www.rippackscity.com`, no `rippackscity.com`.**
+- `get_project(...)` showed `live: false` and a `domains` array with the apex and www **absent**.
+
+⭐ **Read together those say "the fix is not serving users."** They were wrong. A REQUEST to `https://www.rippackscity.com/api/pinnacle-set-progress?wallet=0x8bc1c…` returned **`completeSets: 107`, 918 slots, `totalPrintings` present** — the NEW build. The old one answers **82**, so the probe discriminates in one number.
+
+⛔ **THIS IS CLAUDE.md'S OWN RULE ARRIVING FROM A THIRD DIRECTION** — *verify platform STATE by a REQUEST, never a status field; `get_project.live:false` reads IDENTICALLY on a healthy estate.* The file already records a false P0 and a false "still down" from exactly this. Add the alias list to the set of fields that lie: **`deployment.alias` omitting the production domain does NOT mean the domain is elsewhere.**
+
+⚠ **AND I CANNOT CLEANLY ATTRIBUTE THE FIX.** I called `request_promote` between the two readings, so I do not know whether the promote moved anything or whether the fields were simply lagging the whole time. ⭐ **Recording the ambiguity rather than a tidy causal story** — a "the promote fixed it" note here would be a plausible mechanism, not a measurement, and the next session would trust it. **What IS established: after a rollback, do not trust the alias/domain fields; probe the public domain with a request whose answer differs between the two builds.**
+
+ⓘ **The discriminating probe is worth keeping**: pick a value the old and new builds disagree on (here `completeSets` 82 vs 107) rather than a 200, a title, or a deploy id — a byte-identical response is as much a cache hit as a fix.
+
+✅ **Verified live on `www.rippackscity.com`:** `/api/pinnacle-set-progress` 169 sets · **107 complete** · 20 in progress · 42 not started · **918 slots** · **2,600 printings** — matching the SQL ground truth exactly; and `/disney-pinnacle/sets` 200 with the Set Tracker h1, no gate copy, all six tabs.
+
+- **Revert:** docs only — `git revert <sha>`.
+
 ### 2026-09-20 · 🚨 THE SET TRACKER I SHIPPED THIS MORNING HID 45% OF EVERY REAL COMPLETION — a Pinnacle `variant` is a Top Shot `::subID` parallel, and the checklist slot is the CHARACTER, not the printing · Claude Code cloud
 
 **Shipped: `/api/pinnacle-set-progress` re-keyed from `render_id` to `shape_render_id`, the printing axis surfaced as its own number, 6 new test arms, client gains a secondary "N / M VARIANTS" line. No DB change.**
