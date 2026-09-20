@@ -87,6 +87,13 @@ Ledger entry (top of `docs/overnight/ledger.md`) carries revert paths for all fo
 - ⏸ **`pack_rips` autovacuum paused** (`20260920033248`); a self-unscheduling pg_cron job (jobid 560) re-enables it at **1:12 AM PT**, the measured quietest hour, throttled at 50/50. If that pass still steps startup timeouts, the lever is `pack_rips`' 11 indexes (1.28 GB on 764 MB), not pacing — open a register item.
 - Estate at 8:37 PM PT: 0 failures in the 29 cron / 38 pipeline runs since the pause; the box's own routine load (wmc autovacuum, jobids 303/215) had the IO after that.
 
+## Eighth pass (8:40–9:00 PM PT) — the cron console from Chrome, #32, and the second author of the spells
+
+- 🗓 **cron-job.org swept read-only from your Chrome** (guard-safe: titles/status only): 88 entries, 71 active, **17 inactive — the same deliberate 17 as at noon; nothing was auto-disabled by tonight's spells.** `RPC Pinnacle NFT Resolver` failed 5 of 50 executions, all inside 8:16–8:41 PM, healthy at 7–11 s otherwise. No console writes were needed.
+- 🔁 **#32's premise is stale**: the installed `rpc-cron-ops` skill is already the 09-13 text (secret rule present). The real defect was two-way divergence with the repo source (each had lessons the other lacked) plus a false "~2 runs of history" claim. Merged into one text, bundle re-packed, **a skill-update card is waiting for you in this session — saving it closes #32.**
+- 🔁 **The evening spells had a second author.** The weekly wmc REINDEX wave (jobids 438–441, 477, 478) runs **Saturday 7:03–8:43 PM PT** — inside the band every 7-day average called quiet. My pack_rips pass and its 399 MB leg (-5) collided at 8:23–8:33 PM; the REINDEX died at 600 s and left an invalid `_ccnew` (dropped, 1.8 s). **-6 (jobid 478) had pointed at an index dropped on 09-14 and failed for the first time tonight — re-pointed at its successor** (`20260920035444`). The 8:38–8:43 failures after that were the box's own routine wmc autovacuum + jobids 303/215.
+- Watches added: Sunday 8:43 PM PT jobids 477/478 both succeed and the 9:03 PM verify reads `invalid_left = 0`.
+
 ## Needs Trevor
 
 #22 purge residue · #55 the two 2-hourly Routines · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader (FMV path) · whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.

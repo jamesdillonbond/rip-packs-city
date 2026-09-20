@@ -1,8 +1,8 @@
 {
-  "generated_at_pt": "2026-09-19 ~08:40 PM PT",
-  "generated_at_utc": "2026-09-20T03:40Z",
+  "generated_at_pt": "2026-09-19 ~09:00 PM PT",
+  "generated_at_utc": "2026-09-20T04:00Z",
   "pass": "Trevor-directed evening health pass (Cowork cloud + laptop VM). PUSH-CAPABLE via path A (laptop VM, .rpc-git-cred; d1c11a79c confirmed by ls-remote == HEAD). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 23:59Z at start.",
-  "shipped": 23,
+  "shipped": 25,
   "reverted": 0,
   "verdict": "HEALTHY SINCE NOON PT. The alert board's high/medium failure_rate rows are 2-day windows straddling the morning IO spell; split on the change point: cron.job_run_details 0 failures in 5 h (~405 runs/h) vs 30-108/h before noon; pipeline_runs 0.31% failing (11/3,589) vs 1.85% in the prior 12 h; ts-listings 161/161 ok. Security 0/0/0/0, stalled 0, Atlas lanes active. Sentry zero PAIRED with Vercel: 50 groups/24h, all chronic shapes, none new; the [pack-detail] 5 s read-timeout family still fires post-noon and is the next user-facing cost. Telegram pager channel was DARK 12:04-5:07 PM PT (a '<' in an ack note) and is repaired. EVENING ADDENDUM 8:40 PM PT: ~30 lane failures between 8:07 and 8:33 PM PT were self-inflicted (manual VACUUM scans + an unthrottled pack_rips autovacuum), all self-clearing; filed in the ledger as such.",
   "health": {
@@ -143,6 +143,18 @@
       "migration": "20260920033248",
       "instrument": "~1:30 AM PT: autovacuum_count 3, map > 95 %, no rpc-oneoff row left, 08-09Z failures within 3-4/day",
       "revert": "header"
+    },
+    {
+      "what": "rpc-cron-ops skill: repo source merged with the installed 09-13 text + 09-19 console lessons + list-sweep recipe; bundle re-packed; update card offered (closes #32 when saved)",
+      "commit": "34f692e57",
+      "instrument": "skills:bundles:check green; installed copy == repo source after Trevor saves",
+      "revert": "git revert 34f692e57"
+    },
+    {
+      "what": "rpc-weekly-wmc-reindex-6 (jobid 478) re-pointed at idx_wmc_wallet_coll_ek_fmv_tier (target dropped 09-14); killed reindex-5's invalid _ccnew dropped",
+      "migration": "20260920035444",
+      "instrument": "Sunday 09-27 8:43 PM PT: 477 + 478 succeeded; verify invalid_left = 0",
+      "revert": "header"
     }
   ],
   "vercel_error_groups_24h": {
@@ -164,7 +176,9 @@
     "cache_refresh_429": "Vercel runtime logs: no 429 from /api/cache-refresh for a real visitor (only enumeration shapes); none expected",
     "pgnet_toast_and_the_09_17_band": "#126 candidate: if the 02-18Z slow-reads band does NOT return on 09-20 after the 10 GB dead-TOAST reclaim, that was the mechanism; if it returns, it was not",
     "pack_rips_quiet_hour_pass": "1:12-1:30 AM PT 09-20: pack_rips autovacuum_count 2 -> 3, map 66.7 % -> > 95 %, no startup-timeout step; if a step: open a register item on its 11 indexes",
-    "visibility_maps_day_after": "09-20 evening: the nine maps still > 95 %; topshot_pack_sales_history is the churn control (13.6 k dead 8 min after its vacuum)"
+    "visibility_maps_day_after": "09-20 evening: the nine maps still > 95 %; topshot_pack_sales_history is the churn control (13.6 k dead 8 min after its vacuum)",
+    "weekly_wmc_reindex": "Sunday 8:23/8:43 PM PT: jobids 477 and 478 succeeded (REINDEX), 9:03 PM verify invalid_left = 0; the wave is 7:03-8:43 PM PT Saturday - schedule nothing heavy into it",
+    "cron_console": "cron-job.org: 88 entries / 17 inactive baseline; an 18th inactive row is an auto-disable"
   },
   "needs_trevor": [
     "#22 purge residue GC + rotate",
