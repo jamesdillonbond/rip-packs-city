@@ -177,12 +177,19 @@ async function readBody(req: Request): Promise<Record<string, any>> {
   }
 }
 
+// R123 (2026-09-20): a failed state READ used to fall through as cursor=1 — a
+// walk re-seeded from the start (the 31.4M-block class) — and a failed state
+// WRITE was console.logged while the response reported the new cursor as if it
+// had landed. supabase-js RETURNS errors. The read now throws (the handler
+// answers 500 with the message); the write returns its error and the response
+// reports `ok:false` with the cursor where it really is.
 async function loadState(stateId: string): Promise<{ cursor: number; totalIngested: number; notes: string | null }> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("backfill_state")
     .select("cursor, total_ingested, notes")
     .eq("id", stateId)
     .maybeSingle();
+  if (error) throw new Error(`state_read ${stateId}: ${error.message}`);
   return {
     cursor: data?.cursor ? parseInt(String(data.cursor)) : 1,
     totalIngested: data?.total_ingested ?? 0,
@@ -190,7 +197,7 @@ async function loadState(stateId: string): Promise<{ cursor: number; totalIngest
   };
 }
 
-async function saveState(stateId: string, cursor: number, totalIngested: number, status: string, notes: string | null) {
+async function saveState(stateId: string, cursor: number, totalIngested: number, status: string, notes: string | null): Promise<string | null> {
   const { error } = await supabase
     .from("backfill_state")
     .upsert({
@@ -201,7 +208,11 @@ async function saveState(stateId: string, cursor: number, totalIngested: number,
       status,
       notes,
     });
-  if (error) console.log(`[pds-seed] saveState err: ${error.message}`);
+  if (error) {
+    console.log(`[pds-seed] saveState err: ${error.message}`);
+    return `state_write ${stateId}: ${error.message}`;
+  }
+  return null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -233,7 +244,16 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Batch seeder / scanner ───────────────────────────────────────────
-  const state = await loadState(target.stateId);
+  let state: Awaited<ReturnType<typeof loadState>>;
+  try {
+    state = await loadState(target.stateId);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.log(`[pds-seed] ${msg} — aborting before any scan (a failed read is not cursor=1)`);
+    return new Response(JSON.stringify({ ok: false, target: target.key, error: msg }, null, 2), {
+      status: 500, headers: { "Content-Type": "application/json" },
+    });
+  }
   const startIdOverride = url.searchParams.get("startId") ?? body.startId;
   const batchSizeParam = url.searchParams.get("batchSize") ?? body.batchSize;
   const resetParam = url.searchParams.get("reset") ?? body.reset;
@@ -335,11 +355,18 @@ Deno.serve(async (req: Request) => {
   }
 
   const newTotal = state.totalIngested + stats.upserted;
+  let saveError: string | null = null;
   if (startIdOverride == null) {
     // Only persist state when using state-driven progression (not manual override).
-    await saveState(target.stateId, newCursor, newTotal, newStatus, newNotes);
+    saveError = await saveState(target.stateId, newCursor, newTotal, newStatus, newNotes);
   }
 
-  console.log(`${target.logPrefix} scanned=${stats.scanned} target=${target.key} hits=${hitsForTarget} allday=${stats.allday} golazos=${stats.golazos} topshot=${stats.topshot} other=${stats.other} nulls=${stats.nulls} upserted=${stats.upserted} cursor=${startId}->${newCursor} status=${newStatus} elapsed=${elapsed}ms`);
-  return respond({ ok: true, target: target.key, ...stats, startId, endId, nextStart, cursor: newCursor, status: newStatus, empty_runs: noteEmpty, elapsed });
+  console.log(`${target.logPrefix} scanned=${stats.scanned} target=${target.key} hits=${hitsForTarget} allday=${stats.allday} golazos=${stats.golazos} topshot=${stats.topshot} other=${stats.other} nulls=${stats.nulls} upserted=${stats.upserted} cursor=${startId}->${saveError ? state.cursor : newCursor} status=${newStatus} elapsed=${elapsed}ms${saveError ? ` SAVE FAILED: ${saveError}` : ""}`);
+  return respond({
+    ok: saveError === null, target: target.key, ...stats, startId, endId, nextStart,
+    // A cursor that did not persist is reported where it really is; the next run
+    // re-walks this batch (upserts are keyed).
+    cursor: saveError ? state.cursor : newCursor, cursor_not_saved: saveError ? newCursor : undefined,
+    status: newStatus, empty_runs: noteEmpty, elapsed, ...(saveError ? { error: saveError } : {}),
+  });
 });

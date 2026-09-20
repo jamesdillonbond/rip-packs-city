@@ -194,7 +194,10 @@ async function upsertHolder(t: TrackedRow, result: OwnershipResult) {
       last_verified_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: "edition_id,badge_type,serial_number" });
-  if (error) console.log(`[delta] upsert err ${error.message} edition=${t.edition_id} serial=${t.serial_number}`);
+  // R123 (2026-09-20): a rejected upsert was console.logged and the caller then
+  // counted it as `upserted += 1`. Throw, so the per-target catch counts it as
+  // `failed` — the only counter the operator can read.
+  if (error) { console.log(`[delta] upsert err ${error.message} edition=${t.edition_id} serial=${t.serial_number}`); throw new Error(`upsert: ${error.message}`) }
 }
 
 Deno.serve(async (req: Request) => {

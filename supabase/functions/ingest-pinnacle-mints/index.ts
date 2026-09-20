@@ -255,12 +255,19 @@ async function scanWindow(windowStart: number, windowEnd: number): Promise<{ fou
   return { found: eventsFound, written: inserted, skipped }
 }
 
+// R123 (2026-09-20): a failed cursor READ used to fall through as h=0 — a walk
+// re-seeded from genesis — and a failed cursor WRITE was console.logged while the
+// run row said ok=true with `cursorAfter` advanced (the next tick re-scanned the
+// same window forever). supabase-js RETURNS errors; both now throw, and the outer
+// catch in the handler logs ok:false. The window's inserts are keyed, so the
+// re-scan after a failed save is a cost, not a corruption.
 async function readCursor(id: string): Promise<{ h: number; found: number; ins: number; skip: number }> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("flow_backfill_progress")
     .select("last_processed_height, total_events_found, total_inserted, total_skipped")
     .eq("id", id)
     .maybeSingle()
+  if (error) throw new Error(`cursor_read ${id}: ${error.message}`)
   return {
     h: Number(data?.last_processed_height ?? 0),
     found: Number(data?.total_events_found ?? 0),
@@ -280,7 +287,7 @@ async function saveCursor(id: string, h: number, addFound: number, addIns: numbe
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
-  if (error) console.log(`[ingest-pinnacle-mints] save cursor ${id} err: ${error.message}`)
+  if (error) throw new Error(`cursor_write ${id}: ${error.message}`)
 }
 
 async function runForward(startedAtIso: string, started: number) {

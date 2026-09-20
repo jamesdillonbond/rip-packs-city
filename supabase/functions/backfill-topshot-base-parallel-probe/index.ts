@@ -162,18 +162,26 @@ async function logPipelineRun(args: {
   }
 }
 
+// R123 (2026-09-20): both cursor accessors used to drop their error. A failed
+// READ returned 0 — which RE-SEEDS the walk from the beginning (the exact shape
+// the AllDay backfill lost 31.4M blocks to on 2026-07-25) — and a failed WRITE
+// let the run report `cursor_after` as advanced while the next tick re-walked
+// the same targets. supabase-js RETURNS errors; nothing here could throw. Both
+// now throw, and `run()` records the failure as ok:false with the cursor unmoved.
 async function readCursor(): Promise<number> {
-  const { data } = await supabase.from("event_cursor")
+  const { data, error } = await supabase.from("event_cursor")
     .select("last_processed_block").eq("id", CURSOR_KEY).maybeSingle();
+  if (error) throw new Error(`cursor_read ${CURSOR_KEY}: ${error.message}`);
   const v = (data as { last_processed_block?: number | string } | null)?.last_processed_block;
   return v ? Number(v) : 0;
 }
 
 async function writeCursor(value: number): Promise<void> {
-  await supabase.from("event_cursor").upsert(
+  const { error } = await supabase.from("event_cursor").upsert(
     { id: CURSOR_KEY, last_processed_block: value, updated_at: new Date().toISOString() },
     { onConflict: "id" },
   );
+  if (error) throw new Error(`cursor_write ${CURSOR_KEY}: ${error.message}`);
 }
 
 async function run(batchSize: number, startedAt: string): Promise<Summary> {
@@ -280,8 +288,26 @@ async function run(batchSize: number, startedAt: string): Promise<Summary> {
     const lastGoodChunk = chunks[firstFail - 1];
     cursorAfter = lastGoodChunk[lastGoodChunk.length - 1].seq;
   }
+  if (cursorAfter > cursorBefore) {
+    try {
+      await writeCursor(cursorAfter);
+    } catch (err) {
+      // The rows landed; the cursor did not. Report the cursor where it really is
+      // (the next tick re-walks these targets — the inserts are keyed, so that is
+      // a cost, not a corruption) and fail the run so it is visible.
+      summary.fatal = err instanceof Error ? err.message : String(err);
+      cursorAfter = cursorBefore;
+      summary.cursor_after = cursorBefore;
+      await logPipelineRun({
+        startedAt, rowsFound: targets.length, rowsWritten: summary.inserted,
+        rowsSkipped: Math.max(0, targets.length - summary.ids_resolved),
+        ok: false, error: summary.fatal, cursorBefore, cursorAfter: cursorBefore,
+        extra: { ...summary, cursor: cursorBefore } as unknown as Record<string, unknown>,
+      });
+      return summary;
+    }
+  }
   summary.cursor_after = cursorAfter;
-  if (cursorAfter > cursorBefore) await writeCursor(cursorAfter);
 
   await logPipelineRun({
     startedAt, rowsFound: targets.length, rowsWritten: summary.inserted,

@@ -246,8 +246,16 @@ async function getCursor(id: string): Promise<CursorRead> {
   if (error) return { ok: false, error: `cursor_read ${id}: ${error.message}` }
   return { ok: true, value: data ? Number(data.last_processed_block) : null }
 }
-async function setCursor(id: string, height: number) {
-  await supabase.from("event_cursor").upsert({ id, last_processed_block: height, updated_at: new Date().toISOString() }, { onConflict: "id" })
+// R123 (2026-09-20): this write sat six lines below the comment that documents
+// the READ-side fix for this exact class ("that is how the AllDay backfill lost
+// 31.4M blocks") and dropped its own error — a rejected cursor write let the run
+// row report the new cursor while the next tick re-walked the same range. It now
+// returns the error; every call site reports the cursor where it really is and
+// marks the run ok:false.
+async function setCursor(id: string, height: number): Promise<string | null> {
+  const { error } = await supabase.from("event_cursor").upsert({ id, last_processed_block: height, updated_at: new Date().toISOString() }, { onConflict: "id" })
+  if (error) { console.log(`[pack-opens] cursor_write ${id} err: ${error.message}`); return `cursor_write ${id}: ${error.message}` }
+  return null
 }
 
 type Open = { pack_nft_id: string; tx_hash: string; block_height: number; sealed_at: string | null }
@@ -531,10 +539,11 @@ Deno.serve(async (req) => {
       const { opens, queries, err } = await scanOpens(start, end)
       const { rips, fetched, err: rerr } = await resolveOpens(opens, MAX_TX)
       const { ripsWritten, pullsWritten, ripsAlreadyPresent, pullsAlreadyPresent } = await writeRips(rips)
-      const after = err || rerr ? start - 1 : end // don't advance past a failed window
-      if (after >= start) await setCursor(CUR_FWD, after)
-      const fatal = (err || rerr) && opens.length === 0
-      await logRun("allday-pack-opens-forward", startMs, !fatal, opens.length, ripsWritten + pullsWritten, cur, after, { queries, tx_fetched: fetched, rips_written: ripsWritten, pulls_written: pullsWritten, rips_already_present: ripsAlreadyPresent, pulls_already_present: pullsAlreadyPresent, scan_err: err, resolve_err: rerr, start, end }, fatal ? (err || rerr) : null)
+      let after = err || rerr ? start - 1 : end // don't advance past a failed window
+      let cursorWriteErr: string | null = null
+      if (after >= start) { cursorWriteErr = await setCursor(CUR_FWD, after); if (cursorWriteErr) after = cur }
+      const fatal = ((err || rerr) && opens.length === 0) || !!cursorWriteErr
+      await logRun("allday-pack-opens-forward", startMs, !fatal, opens.length, ripsWritten + pullsWritten, cur, after, { queries, tx_fetched: fetched, rips_written: ripsWritten, pulls_written: pullsWritten, rips_already_present: ripsAlreadyPresent, pulls_already_present: pullsAlreadyPresent, scan_err: err, resolve_err: rerr, cursor_write_err: cursorWriteErr, start, end }, fatal ? (cursorWriteErr || err || rerr) : null)
       return new Response(JSON.stringify({ mode, start, end, opens: opens.length, rips_written: ripsWritten, pulls_written: pullsWritten, cursor_after: after, queries, tx_fetched: fetched, scan_err: err, resolve_err: rerr }), { headers: { "content-type": "application/json" } })
     }
 
@@ -566,24 +575,25 @@ Deno.serve(async (req) => {
       if (exhausted) after = Math.max(after, resolvedFloor ?? cur)
       after = Math.min(after, cur)   // never walk back up
       after = Math.max(after, floor) // never below the reachable floor
-      if (after < cur) await setCursor(CUR_BACK, after)
+      let cursorWriteErr: string | null = null
+      if (after < cur) { cursorWriteErr = await setCursor(CUR_BACK, after); if (cursorWriteErr) after = cur }
       const progressed = after < cur
       // A checkpointed run that ADVANCED did its job even if a later chunk
       // failed (error preserved in extra.scan_err + extra.partial); only a
       // zero-progress run is a real wedge and stays ok=false.
-      const ok = progressed || !(!!err || !!rerr)
+      const ok = progressed || !(!!err || !!rerr || !!cursorWriteErr)
       // rows_written counts rips AND pulls. Reporting only rips made this
       // pipeline look dead: over 3 days to 2026-07-27 it logged rows_written 0
       // on 425 runs while allday_pack_pull actually grew by 61,179 rows.
       await logRun("allday-pack-opens-backfill", startMs, ok, opens.length, ripsWritten + pullsWritten, cur, after,
         { queries, tx_fetched: fetched, rips_written: ripsWritten, pulls_written: pullsWritten,
           rips_already_present: ripsAlreadyPresent, pulls_already_present: pullsAlreadyPresent,
-          scan_err: err, resolve_err: rerr,
+          scan_err: err, resolve_err: rerr, cursor_write_err: cursorWriteErr,
           partial: (!!err || !!rerr) && progressed, progress_blocks: cur - after,
           scanned_floor: scannedFloor, resolved_floor: resolvedFloor, resolve_exhausted: exhausted,
           transient: anyTransient, skipped_permanent: skippedPermanent, start, end, floor,
           spork_available: SPORK_AVAILABLE, routed: end < CURRENT_SPORK_MIN ? "spork" : "rest" },
-        ok ? null : (err || rerr))
+        ok ? null : (cursorWriteErr || err || rerr))
       return new Response(JSON.stringify({ mode, start, end, opens: opens.length, rips_written: ripsWritten, pulls_written: pullsWritten, cursor_after: after, queries, tx_fetched: fetched, scan_err: err, resolve_err: rerr, transient: anyTransient, skipped_permanent: skippedPermanent, spork_available: SPORK_AVAILABLE, routed: end < CURRENT_SPORK_MIN ? "spork" : "rest" }), { headers: { "content-type": "application/json" } })
     }
 

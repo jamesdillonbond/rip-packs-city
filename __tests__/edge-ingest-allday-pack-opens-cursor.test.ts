@@ -68,16 +68,27 @@ describe("getCursor discriminated-union — a read error must NOT re-seed the cu
 
 describe("forward-mode — never advance the cursor past a failed window", () => {
   it("computes the next cursor as start-1 when the scan or resolve failed", () => {
+    // `let`, not `const`, since 2026-09-20 (R123): a rejected cursor WRITE now
+    // resets `after` to `cur` so the run row reports the cursor where it is.
     expect(FLAT, "forward hold-on-failure decision drifted").toContain(
-      "const after = err || rerr ? start - 1 : end",
+      "let after = err || rerr ? start - 1 : end",
     )
   })
 
-  it("only persists the cursor when it actually moved forward (after >= start)", () => {
+  it("only persists the cursor when it actually moved forward (after >= start), and READS the write's error", () => {
     // A failed window yields after = start-1 < start, so this gate skips the
     // write entirely — the next tick re-scans the same window. A regression that
-    // wrote unconditionally would advance past the un-ingested range.
-    expect(FLAT, "forward setCursor gate drifted").toContain("if (after >= start) await setCursor(CUR_FWD, after)")
+    // wrote unconditionally would advance past the un-ingested range. R123: the
+    // write's result is bound and a failure pulls `after` back to `cur`.
+    expect(FLAT, "forward setCursor gate drifted").toContain(
+      "if (after >= start) { cursorWriteErr = await setCursor(CUR_FWD, after); if (cursorWriteErr) after = cur }",
+    )
+  })
+
+  it("R123: setCursor returns its error instead of swallowing it, and the forward run row fails on it", () => {
+    expect(FLAT).toContain("async function setCursor(id: string, height: number): Promise<string | null>")
+    expect(FLAT).not.toContain("async function setCursor(id: string, height: number) { await supabase")
+    expect(FLAT).toContain("const fatal = ((err || rerr) && opens.length === 0) || !!cursorWriteErr")
   })
 
   it("guard is not a no-op: the reverted unconditional-advance shape would fail the pin", () => {

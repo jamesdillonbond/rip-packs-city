@@ -233,7 +233,24 @@ async function runBackgroundScan(startedAtIso: string, started: number) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", SCAN_STATE_ID)
-    if (saveErr) console.log(`[pinnacle-owner-discovery-forward] save err: ${saveErr.message}`)
+    // R123 (2026-09-20): a rejected state save used to be console.logged while the
+    // run row said ok=true with `cursorAfter` advanced — the read above already
+    // throws on failure (`load state:`); the write beside it did not. A failed save
+    // now fails the run and reports the cursor where it really is; the window's
+    // inserts are keyed, so the re-scan next tick is a cost, not a corruption.
+    if (saveErr) {
+      await logPipelineRun({
+        startedAt: startedAtIso, rowsFound: eventsFound, rowsWritten: inserted, rowsSkipped: skipped,
+        ok: false, error: `save state: ${saveErr.message}`,
+        cursorBefore: String(lastProcessed), cursorAfter: String(lastProcessed),
+        extra: {
+          window_start: windowStart, window_end: windowEnd, sealed_height: sealedHeight,
+          blocks_scanned: nextCursor - lastProcessed, cursor_not_saved: nextCursor,
+          elapsed_ms: Date.now() - started, function_version: 2,
+        },
+      })
+      return
+    }
 
     const elapsed = Date.now() - started
     await logPipelineRun({

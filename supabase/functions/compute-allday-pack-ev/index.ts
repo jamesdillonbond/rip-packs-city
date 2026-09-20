@@ -218,7 +218,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     // === Phase 2: build pool rows per eligible distribution ===
     const counters = {
       nodes_processed: 0, nodes_no_editions: 0, nodes_no_fmv_coverage: 0,
-      pool_rows_written: 0, ev_rows_written: 0, single_edition_packs: 0,
+      pool_rows_written: 0, pool_write_errors: 0, ev_rows_written: 0, single_edition_packs: 0,
       rpc_not_ok: 0, rpc_errors: 0, weighted_count: 0,
     }
     const poolRowsByDist: Record<string, Array<Record<string, unknown>>> = {}
@@ -269,15 +269,33 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
 
     // === Phase 3: delete-then-insert pool rows per distribution ===
     // Must complete before RPC calls since the weighted EV RPC reads pack_drop_pool.
+    // R123 (2026-09-20): this was DELETE the distribution's pool, then INSERT with
+    // the error discarded (`if (!ie)`) and the delete's error never read — a
+    // rejected insert left the distribution with NO pool (the weighted EV RPC then
+    // read nothing) on a run row that said ok=true. Now: UPSERT on the PK
+    // (collection_id, dist_id, edition_id, slot_name) first, then PRUNE the rows
+    // of that distribution this run did not write. A rejected upsert leaves the
+    // old pool intact and skips the prune; every error is counted and fails the
+    // run at the terminal row.
+    const poolWriteErrors: string[] = []
     for (const [distId, rows] of Object.entries(poolRowsByDist)) {
-      await supabase.from("pack_drop_pool").delete()
-        .eq("collection_id", ALLDAY_COLLECTION_ID).eq("dist_id", distId)
+      let distFailed = false
       for (let i = 0; i < rows.length; i += 500) {
         const chunk = rows.slice(i, i + 500)
-        const { error: ie } = await supabase.from("pack_drop_pool").insert(chunk)
-        if (!ie) counters.pool_rows_written += chunk.length
+        const { error: ie } = await supabase.from("pack_drop_pool")
+          .upsert(chunk, { onConflict: "collection_id,dist_id,edition_id,slot_name" })
+        if (ie) { distFailed = true; poolWriteErrors.push(`pool upsert ${distId}: ${ie.message}`); break }
+        counters.pool_rows_written += chunk.length
       }
+      if (distFailed) continue
+      const keep = rows.map(r => `"${String(r.edition_id)}"`).join(",")
+      let prune = supabase.from("pack_drop_pool").delete()
+        .eq("collection_id", ALLDAY_COLLECTION_ID).eq("dist_id", distId)
+      if (keep) prune = prune.not("edition_id", "in", `(${keep})`)
+      const { error: de } = await prune
+      if (de) poolWriteErrors.push(`pool prune ${distId}: ${de.message}`)
     }
+    counters.pool_write_errors = poolWriteErrors.length
 
     // === Phase 4: compute supply-weighted EV per distribution via RPC ===
     const evRows: Array<Record<string, unknown>> = []
@@ -349,7 +367,8 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       rowsFound: nodes.length,
       rowsWritten: counters.ev_rows_written,
       rowsSkipped: counters.nodes_no_editions + counters.nodes_no_fmv_coverage + counters.rpc_not_ok + counters.rpc_errors,
-      ok: true,
+      ok: poolWriteErrors.length === 0,
+      error: poolWriteErrors.length ? `${poolWriteErrors.length} pool write error(s): ${poolWriteErrors.slice(0, 3).join(" | ")}`.slice(0, 500) : null,
       extra: {
         ...counters,
         editions_resolved: editionByExternalId.size,

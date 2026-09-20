@@ -117,7 +117,7 @@ async function insertAlert(args: {
   summary: string
   evidence: string[]
   severity: number
-}) {
+}): Promise<string | null> {
   const expiresAt = new Date(Date.now() + ALERT_TTL_HOURS * 60 * 60 * 1000).toISOString()
   // deno-lint-ignore no-explicit-any
   const { error } = await (supabase as any)
@@ -130,7 +130,14 @@ async function insertAlert(args: {
       severity: args.severity,
       expires_at: expiresAt,
     })
-  if (error) console.log(`[${PIPELINE}] insertAlert err: ${error.message}`)
+  // R123 (2026-09-20): a rejected alert insert used to be console.logged, the
+  // caller's `alertsGenerated++` ran anyway, and the run row said ok=true — an
+  // ALERT lane (CLAUDE.md's named worst sub-class) reporting alerts it never wrote.
+  if (error) {
+    console.log(`[${PIPELINE}] insertAlert err: ${error.message}`)
+    return `insert ${args.alert_type}: ${error.message}`
+  }
+  return null
 }
 
 async function logRun(args: {
@@ -186,20 +193,25 @@ async function runWork(startedAtIso: string, started: number) {
   )
 
   let alertsGenerated = 0
+  const alertWriteErrors: string[] = []
   for (const alert of alerts) {
-    await insertAlert(alert)
-    alertsGenerated++
+    const err = await insertAlert(alert)
+    if (err) alertWriteErrors.push(err)
+    else alertsGenerated++
   }
 
   await logRun({
     startedAt: startedAtIso,
     rowsFound: buybacks.length,
     rowsWritten: alertsGenerated,
-    ok: true,
+    ok: alertWriteErrors.length === 0,
+    error: alertWriteErrors.length ? `${alertWriteErrors.length} alert(s) not written: ${alertWriteErrors.slice(0, 3).join(" | ")}`.slice(0, 500) : null,
     extra: {
       function_version: FUNCTION_VERSION,
       buybacks_analyzed: buybacks.length,
       alerts_generated: alertsGenerated,
+      alerts_detected: alerts.length,
+      alert_write_errors: alertWriteErrors.length,
       players_with_buybacks: playersWithBuybacks,
       sets_with_buybacks: setsWithBuybacks,
       elapsed_ms: Date.now() - started,

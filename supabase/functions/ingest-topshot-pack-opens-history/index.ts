@@ -214,8 +214,16 @@ async function getCursor(id: string): Promise<CursorRead> {
   if (error) return { ok: false, error: `cursor_read ${id}: ${error.message}` }
   return { ok: true, value: data ? Number(data.last_processed_block) : null }
 }
-async function setCursor(id: string, height: number) {
-  await supabase.from("event_cursor").upsert({ id, last_processed_block: height, updated_at: new Date().toISOString() }, { onConflict: "id" })
+// R123 (2026-09-20): this write sat six lines below the comment that documents
+// the READ-side fix for this exact class ("that is how the AllDay backfill lost
+// 31.4M blocks") and dropped its own error — a rejected cursor write let the run
+// row report the new cursor while the next tick re-walked the same range. It now
+// returns the error; every call site reports the cursor where it really is and
+// marks the run ok:false.
+async function setCursor(id: string, height: number): Promise<string | null> {
+  const { error } = await supabase.from("event_cursor").upsert({ id, last_processed_block: height, updated_at: new Date().toISOString() }, { onConflict: "id" })
+  if (error) { console.log(`[pack-opens] cursor_write ${id} err: ${error.message}`); return `cursor_write ${id}: ${error.message}` }
+  return null
 }
 
 type Open = { pack_nft_id: string; tx_hash: string; block_height: number; sealed_at: string | null }
@@ -397,10 +405,11 @@ Deno.serve(async (req) => {
       if (exhausted) after = Math.max(after, resolvedFloor ?? cur)
       after = Math.min(after, cur)   // never walk back up
       after = Math.max(after, floor) // never below the reachable floor
-      if (after < cur) await setCursor(CUR_BACK, after)
+      let cursorWriteErr: string | null = null
+      if (after < cur) { cursorWriteErr = await setCursor(CUR_BACK, after); if (cursorWriteErr) after = cur }
 
       const progressed = after < cur
-      const anyErr = !!err || !!rerr
+      const anyErr = !!err || !!rerr || !!cursorWriteErr
       // A checkpointed run that ADVANCED did its job even if the flaky spork
       // failed a later chunk; the failure stays visible in extra.scan_err +
       // extra.partial. Only a run that moved NOTHING is a real wedge — that is
@@ -408,7 +417,7 @@ Deno.serve(async (req) => {
       const ok = progressed || !anyErr
       const rowsSkipped = candidates - ripsWritten
       await logRun("topshot-pack-opens-history-backfill", startMs, ok, opens.length, ripsWritten, rowsSkipped, cur, after,
-        { queries, tx_fetched: fetched, scan_err: err, resolve_err: rerr, transient: anyTransient,
+        { queries, tx_fetched: fetched, scan_err: err, resolve_err: rerr, cursor_write_err: cursorWriteErr, transient: anyTransient,
           skipped_permanent: skippedPermanent, partial: anyErr && progressed, progress_blocks: cur - after,
           scanned_floor: scannedFloor, resolved_floor: resolvedFloor, resolve_exhausted: exhausted,
           rows_deduped: rowsSkipped, start, end, floor, spork_available: SPORK_AVAILABLE,
