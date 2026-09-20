@@ -1,8 +1,8 @@
 {
-  "generated_at_pt": "2026-09-19 ~10:55 PM PT",
-  "generated_at_utc": "2026-09-20T05:55Z",
+  "generated_at_pt": "2026-09-20 ~12:05 AM PT",
+  "generated_at_utc": "2026-09-20T07:05Z",
   "pass": "Trevor-directed evening health pass (Cowork cloud + laptop VM). PUSH-CAPABLE via path A (laptop VM, .rpc-git-cred; d1c11a79c confirmed by ls-remote == HEAD). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 23:59Z at start.",
-  "shipped": 29,
+  "shipped": 30,
   "reverted": 0,
   "verdict": "HEALTHY SINCE NOON PT. The alert board's high/medium failure_rate rows are 2-day windows straddling the morning IO spell; split on the change point: cron.job_run_details 0 failures in 5 h (~405 runs/h) vs 30-108/h before noon; pipeline_runs 0.31% failing (11/3,589) vs 1.85% in the prior 12 h; ts-listings 161/161 ok. Security 0/0/0/0, stalled 0, Atlas lanes active. Sentry zero PAIRED with Vercel: 50 groups/24h, all chronic shapes, none new; the [pack-detail] 5 s read-timeout family still fires post-noon and is the next user-facing cost. Telegram pager channel was DARK 12:04-5:07 PM PT (a '<' in an ack note) and is repaired. EVENING ADDENDUM 8:40 PM PT: ~30 lane failures between 8:07 and 8:33 PM PT were self-inflicted (manual VACUUM scans + an unthrottled pack_rips autovacuum), all self-clearing; filed in the ledger as such.",
   "health": {
@@ -179,6 +179,12 @@
       "migration": "20260920054402",
       "instrument": "control jobid 563: 46.8 s; next ticks 2:35/6:35 AM PT < 90 s with efc_drift_sample_mod=64",
       "revert": "header (re-apply 20260920024430 body)"
+    },
+    {
+      "what": "jobid 324 rpc-thp-leg-impossible-parallel moved 31 0,6,12,18 -> 59 23,5,11,17 (first :31 tick died at 608 s, io_wait 20; :59 was the schedule doc's own next candidate by 300 s overlap)",
+      "migration": "20260920064608 (superseded) + 20260920064646",
+      "instrument": "09-20 4:59 AM / 10:59 AM PT ticks succeeded < 200 s; trust_precompute_max_age_hours < 13",
+      "revert": "headers (back to 31 0,6,12,18)"
     }
   ],
   "vercel_error_groups_24h": {
@@ -186,7 +192,7 @@
     "note": "all chronic; pack-detail 5 s read timeouts 1,421/24h on /[collection]/pack/dist/[distId], still firing post-noon; Telegram send non-OK 400 first seen 12:04 PM PT (fixed)"
   },
   "post_ship_watch": {
-    "jobid_324_thp_leg": "MOVED to 31 0,6,12,18 (20260920005312). 11:31 PM PT tonight, then 5:31 AM / 11:31 AM PT ticks must read succeeded (31 0,6,12,18 is UTC; PDT = UTC-7 — first draft of this line was an hour off); a 600 s kill at :31 with io_wait < 3 means the leg's own cost moved",
+    "jobid_324_thp_leg": "FAILED at the :31 slot on its first tick (09-19 11:31:30 PM PT, 608 s, io_wait 20 - the 06Z pile, not the leg). NOW 59 23,5,11,17 (20260920064646): 09-20 4:59 AM PT (11:59Z) and 10:59 AM PT must read succeeded < 200 s; trust_precompute_max_age_hours must stay < 13 (5:48 PM success ages out ~6:50 AM PT). Falsifier: a kill at :59 with io_wait < 3 = the leg's own cost.",
     "jobid_506_precompute": "VERIFIED 10:35 PM PT: nba_top_shot 314 ms, source=edition_fmv_current, ok. Run was 204 s because of the full drift check -> sampled (20260920054402); next ticks 2:35 / 6:35 AM PT must read duration_ms < 90,000, efc_drift_sample_mod = 64; Pinnacle arm (~41-54 s under contention) is the remaining cost",
     "step1_1002Z": "read relallvisible/relpages on wallet_moments_cache at ~3:00 AM PT first; then 3:02 AM PT tick must succeed",
     "jobid_490_portfolio_snapshot": "4:17 AM PT tick must write a daily-portfolio-snapshot pipeline_runs row with extra.via=pg_cron (20260920014230); the 07:05Z route run stays R109's measurement",

@@ -116,6 +116,12 @@ Ledger entry (top of `docs/overnight/ledger.md`) carries revert paths for all fo
 - 📝 Pinnacle's arm is now 87 % of the lane: R115's original shape (DISTINCT ON over all history) on a 35 MB table. A `pinnacle_fmv_current` cache keyed on `render_id` is the same fix; not needed tonight at 47 s × 4/day.
 - Health 8:58–9:44 PM PT: `rpc-ts-listings-atlas-sync` failed 18 ticks at its 120 s budget and `rpc-allday-unmapped-atlas-resolver` 7, with `job startup timeout` steps at 9:08/9:13/9:22/9:30 — the wmc autovacuum + reindex-wave tail already filed under R117. Both lanes have run clean since 9:46 PM, straight through my 40 s cold view scan at ~9:52 PM (a data point that the A/B itself did not fail anything). At 30–87 s per 2-minute tick and 68–119 s per 5-minute tick they sit inside the "two lanes over budget" finding from 09-18.
 
+## Twelfth pass (11:30 PM–12:05 AM PT) — the leg-324 watch failed, and the slot was the reason
+
+- ↩ **jobid 324 at its new :31 slot died at 608 s on the first tick** (io_wait 20, no vacuum) — the 06Z half-hour is a pile of 250–600 s jobs (grail-metrics MV, remap-misattributed, candy scarcity, liveness sweep, pack-reality-stats on every even hour, mv-pack-ev-latest, allday-pack-realized). The 5:53 PM free set scored *arrivals* per minute; the schedule doc's 6:45 PM re-measure had already scored *overlap* and named :59. Moved to `59 23,5,11,17` (`20260920064646`; a :16 apply was superseded 38 s later — it runs into the :19 pinnacle-mint backfill). **Watch: 4:59 AM PT succeeded < 200 s, trust age < 13 h.**
+- 🔧 CI on `41239adb6` was red on `Memory-doc links` + one vitest shard for a self-link in `docs/reference/tooling-gotchas.md` introduced by `7c3ea2cdf` (the 10:09 PM CLAUDE.md displacement, another session). Fixed forward in `cd30c3e32` (in-file anchor).
+- Health 11:22–11:42 PM PT: both atlas lanes failed every tick at 120 s; `rpc-refresh-wmc-fmv-changed` 373 s failed at :27; `rpc-wmc-parallel-rekey` and `rpc-pack-nft-identity-lane` 122 s failed at :38 — the 06Z band, not anything of mine (my last DB write before it was the 10:46 PM control run).
+
 ## Needs Trevor
 
 #22 purge residue · #55 the two 2-hourly Routines · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader (FMV path) · whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.
