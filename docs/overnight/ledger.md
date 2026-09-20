@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🗓 CRON CONSOLE SWEPT FROM CHROME — 88 entries, 17 inactive and all deliberate, nothing auto-disabled by tonight's spells; and #32's premise turned out stale (the installed skill IS the 09-13 text) — the real defect was two-way divergence, merged and re-proposed · Cowork cloud + Claude in Chrome
+
+**Shipped: `docs/cowork-skills/rpc-cron-ops/SKILL.md` merged (+ bundle re-packed, guard green), known-issues #32 re-derived, a skill-update card offered to Trevor. No console writes — a read-only sweep.**
+
+🗓 **Console (console.cron-job.org, logged in, Trevor's Chrome), 8:45 PM PT, read with a guard-safe list sweep (titles/status only, URLs and `?` stripped):** **88 entries, 71 active, 17 inactive** — the same 17 the noon read listed as deliberate (the 08-30 dead-host pause ×7, Offers Sweep 09-07, two retired, seven long-standing). **No entry was auto-disabled by tonight's IO spells.** Three rows flagged: `RPC V1-Dapper Recovery` (inactive since 08-02, deliberate), `RPC Smoke Concierge Daily` (failed its 2:08 AM PT tick at the 30 s cap — the known night-spell case, n=3 now), and **`RPC Pinnacle NFT Resolver`** (5-minute lane) whose `/history` page shows **50 executions: healthy at 7–11 s, 5 failures ALL inside 8:16–8:41 PM PT** — my spells, not the lane; back to 22 s at 8:36 PM. Nothing to change on the console.
+
+🔁 **#32 re-derived — its premise is stale.** The item says the INSTALLED `rpc-cron-ops` is the pre-06-19 export missing the secret rule. **Read tonight from the synced skill store: the installed copy is the 2026-09-13 text** (the `.value`/broad-read rule, Clone recipe, CRON-30S section, `Test run` dialog, `form_input` no-op) — the 09-13 proposal was accepted. The actual defect was **two-way divergence**: installed lacked the 09-19 lessons the repo had (query-string-via-clone, `DETAILS` control, Delete dialog, the `javascript_tool` block); the repo lacked the 09-13 additions the installed copy had; and the installed copy claimed *"cron-job.org keeps only ~2 runs of history per job"* — **false, `/jobs/<id>/history` holds ~50** (53 rows read tonight). One merged text now: repo source = proposal, plus tonight's sweep recipe and the 88/17 baseline. **Closes when Trevor saves the card.** ⚠ Process note against myself: a `git reset --hard origin/main` reflex mid-edit discarded the first copy of these changes; they were rebuilt from the scratchpad. Never reset with a dirty tree.
+
+- **Revert:** `git revert` this commit (docs + bundle only). The skill card is Trevor's to accept or dismiss.
+
 ### 2026-09-19 · ⏸ pack_rips AUTOVACUUM PAUSED UNTIL 1:12 AM PT — the paced pass still coincided with startup timeouts, so it moves to the measured quietest hour and re-enables itself · Cowork cloud + laptop VM
 
 **Shipped: 1 migration (`20260920033248`): `autovacuum_enabled = false` on `pack_rips` now; one-off pg_cron `rpc-oneoff-pack-rips-autovacuum-reenable` (jobid 560, postgres, `12 8 * * *` = 1:12 AM PT) flips it back and unschedules itself in the same command.**
