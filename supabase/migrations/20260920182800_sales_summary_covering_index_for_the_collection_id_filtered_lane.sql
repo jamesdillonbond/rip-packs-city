@@ -68,6 +68,15 @@
 -- longer true for `execute_sql`: all four statements below ran through MCP
 -- `execute_sql` on 2026-09-20, each returning within the cap, each verified
 -- `indisvalid = true` immediately afterwards. `apply_migration` still cannot run them
+--
+-- 🚨 CORRECTION TO THE PARAGRAPH ABOVE, same day, ~90 minutes later. Those four
+-- CIC statements ran on the LARGE tier: `pg_postmaster_start_time()` is
+-- 2026-09-20 10:39:57 AM PT, a Small -> Large resize (max_connections 90 -> 160,
+-- shared_buffers 2 GB, sustained disk 22 -> 79 MB/s). 2026-08-28 s finding was
+-- made on SMALL. A faster box finishing inside the cap says NOTHING about the box
+-- that could not, so treat "CIC is reachable via execute_sql" as established for
+-- LARGE only, and re-derive it before relying on it anywhere else. Every buffer
+-- count in this file is unaffected -- pages touched is not IO throughput.
 -- (it wraps its body in a transaction). No `schema_migrations` row was recorded, on
 -- purpose: `check-migration-parity` reads prod -> repo, so a committed file with no
 -- prod row is not drift, and an `apply_migration` here would have bought one bookkeeping
