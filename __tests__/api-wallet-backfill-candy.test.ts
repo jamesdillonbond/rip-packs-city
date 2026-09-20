@@ -169,14 +169,19 @@ describe("POST /api/wallet-backfill-candy — deferred DAS walk", () => {
     expect(upserted[0].wallet_address).toBe(VALID_SOL) // not STALE_OWNER
   })
 
-  it("tolerates a wmc upsert error (written stays 0, run still ok)", async () => {
+  // INVERTED 2026-09-20 (R123): was "run still ok" — it pinned the swallowed-write
+  // defect. The walk survives a rejected chunk; the run row must not call it a
+  // success. Mutation-checked: restoring the hardcoded `true, null` reds p_ok.
+  it("a rejected wmc upsert is non-fatal to the walk but FAILS the run row (written stays 0)", async () => {
     state.pages = [[asset()]]
     state.upsert = { data: null, error: { message: "wmc down" } }
     await accept()
     await state.captured!()
     const run = state.runs.at(-1)
-    expect(run.p_ok).toBe(true)
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toContain("wallet_moments_cache: wmc down")
     expect(run.p_rows_written).toBe(0)
+    expect(run.p_extra.write_errors).toBe(1)
   })
 
   it("logs ok:false when the DAS walk throws", async () => {

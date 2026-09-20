@@ -18,6 +18,11 @@ const h = vi.hoisted(() => ({
   proUsersRow: null as any, // what select().eq().maybeSingle() returns
   writes: [] as any[], // recorded upsert/update ops against pro_users
   logInserts: [] as any[], // recorded stripe_payment_log inserts
+  // 2026-09-20 (R123): what every pro_users WRITE returns as its error, and what
+  // the customer-id LOOKUP returns as its error. supabase-js returns errors, it
+  // never throws — so a handler that does not read `error` cannot see these.
+  writeError: null as any,
+  lookupError: null as any,
 }))
 
 vi.mock("@/lib/stripe", () => ({
@@ -44,16 +49,18 @@ vi.mock("@supabase/supabase-js", () => ({
     from: (table: string) => ({
       upsert: async (row: any, opts: any) => {
         h.writes.push({ op: "upsert", table, row, opts })
-        return { error: null }
+        return { error: h.writeError }
       },
       update: (patch: any) => ({
         eq: async (col: string, val: any) => {
           h.writes.push({ op: "update", table, patch, col, val })
-          return { error: null }
+          return { error: h.writeError }
         },
       }),
       select: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: h.proUsersRow, error: null }) }),
+        eq: () => ({
+          maybeSingle: async () => (h.lookupError ? { data: null, error: h.lookupError } : { data: h.proUsersRow, error: null }),
+        }),
       }),
     }),
   }),
@@ -79,6 +86,8 @@ beforeEach(() => {
   h.proUsersRow = null
   h.writes = []
   h.logInserts = []
+  h.writeError = null
+  h.lookupError = null
 })
 
 describe("invoice.payment_succeeded branches", () => {
@@ -187,5 +196,65 @@ describe("customer.subscription.deleted branch", () => {
     expect(upd).toBeDefined()
     expect(upd.col).toBe("stripe_customer_id")
     expect(upd.val).toBe("cus_7")
+  })
+})
+
+// ── R123 (2026-09-20): a rejected pro_users write must NOT answer 200 ──────────
+// Before this, every direct write below was awaited with no error binding and the
+// handler returned { received: true } regardless — the customer paid, was not
+// granted Pro, and Stripe (which keys retries on the STATUS) never re-delivered.
+// The contract now: a failed write or lookup answers the invoice path's 503.
+// Each arm was mutation-checked by reverting the route's `if (…Error) return`
+// line: the arm goes red on `status` (200 ≠ 503), not on a message string.
+describe("R123: a rejected pro_users write answers 503 so Stripe retries", () => {
+  it("checkout.session.completed — upsert error → 503, not 200", async () => {
+    h.writeError = { message: "permission denied for table pro_users" }
+    h.event = {
+      id: "evt_r123_a",
+      type: "checkout.session.completed",
+      data: { object: { subscription: "sub_a", customer: "cus_a", metadata: { wallet_address: "0xabc" } } },
+    }
+    const res = await POST(post())
+    expect(res.status).toBe(503)
+    expect(h.writes.filter((w) => w.op === "upsert")).toHaveLength(1) // the write was attempted, and its failure was READ
+  })
+
+  it("customer.subscription.updated — a FAILED lookup is not \"no row\": 503, no update attempted", async () => {
+    h.lookupError = { message: "canceling statement due to statement timeout" }
+    h.proUsersRow = { wallet_address: "0xwallet" }
+    h.event = {
+      id: "evt_r123_b",
+      type: "customer.subscription.updated",
+      data: { object: { customer: "cus_b", status: "canceled", current_period_end: 1_900_000_000 } },
+    }
+    const res = await POST(post())
+    expect(res.status).toBe(503)
+    expect(h.writes.filter((w) => w.op === "update")).toHaveLength(0)
+  })
+
+  it("customer.subscription.updated — expiry update error → 503", async () => {
+    h.writeError = { message: "row is locked" }
+    h.proUsersRow = { wallet_address: "0xwallet" }
+    h.event = {
+      id: "evt_r123_c",
+      type: "customer.subscription.updated",
+      data: { object: { customer: "cus_c", status: "active", current_period_end: 1_900_000_000 } },
+    }
+    const res = await POST(post())
+    expect(res.status).toBe(503)
+  })
+
+  it("customer.subscription.deleted — cancel update error → 503", async () => {
+    h.writeError = { message: "connection reset" }
+    h.event = { id: "evt_r123_d", type: "customer.subscription.deleted", data: { object: { customer: "cus_d" } } }
+    const res = await POST(post())
+    expect(res.status).toBe(503)
+  })
+
+  it("positive control: with no write error every branch still answers 200 { received: true }", async () => {
+    h.event = { id: "evt_r123_e", type: "customer.subscription.deleted", data: { object: { customer: "cus_e" } } }
+    const res = await POST(post())
+    expect(res.status).toBe(200)
+    expect((await res.json()).received).toBe(true)
   })
 })

@@ -211,6 +211,45 @@ describe("topshot-offers-indexer — OfferAvailable keying", () => {
     })
   })
 
+  // R123 (2026-09-20): a rejected offers upsert used to be console.logged and the
+  // cursor advanced anyway — the offers in that range were never indexed while the
+  // run row said ok=true, and rows_found was the same number as rows_written. Now
+  // the write throws (the rule the lookups already follow), the cursor stays, and
+  // rows_found is what the range PRODUCED. Mutation-checked: restoring the
+  // console.log reds this arm on `ok` and the cursor update.
+  it("a rejected offers upsert aborts the tick: ok=false, cursor NOT advanced, rows_found still counts the offer", async () => {
+    const tx1 = "a".repeat(64)
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        avail: [
+          eventBlock({
+            height: 1100,
+            txId: tx1,
+            eventType: OFFER_AVAILABLE,
+            payload: offerAvailPayload({
+              offerId: "501",
+              amount: "55.50000000",
+              params: { _type: "TopShotEdition", setId: "8", playId: "133" },
+            }),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      editions: { data: [{ external_id: "8:133", id: "uuid-8133" }], error: null },
+      offers: { data: null, error: { message: "offers upsert boom" } },
+    })
+
+    const res = await POST(req())
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: false, offersWritten: 0, cursorBefore: "1000", cursorAfter: null })
+    expect(String(body.error)).toContain("offers upsert failed: offers upsert boom")
+    expect(spy.writes.event_cursor?.find((w) => w.method === "update")).toBeUndefined()
+    const log = terminalLog(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: false, p_rows_found: 1, p_rows_written: 0 })
+  })
+
   it("TopShotSubedition keying (the 2026-07-07 fix): cataloged ::subId wins, uncataloged falls back to base, subId 0 sentinel -> base", async () => {
     const tx1 = "b".repeat(64)
     fetchMock = installFetchMock(

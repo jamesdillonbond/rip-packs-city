@@ -205,10 +205,14 @@ async function persistFloorToSnapshot(
     const editionKeys = results.filter(r => r.crossMarketFloor !== null).map(r => r.editionKey);
     if (!editionKeys.length) return;
 
-    const { data: editionRows } = await supabase
+    const { data: editionRows, error: editionsError } = await supabase
       .from("editions")
       .select("id, collection_id, external_id, tier")
       .in("external_id", editionKeys);
+    if (editionsError) {
+      console.error(`[edition-floor] persist aborted before any write: editions read failed: ${editionsError.message}`);
+      return;
+    }
 
     if (!editionRows?.length) return;
 
@@ -223,12 +227,19 @@ async function persistFloorToSnapshot(
     // Use the post-ULTIMATE-skip set so we never read/delete ultimate-v1 rows.
     const editionIds = [...extToRow.values()].map((r) => r.id);
 
-    // Fetch latest snapshots
-    const { data: existing } = await supabase
+    // Fetch latest snapshots. 2026-09-20 (R123): a FAILED read here used to fall
+    // through as "no prior row" — the re-insert was then built without `confidence`
+    // (NOT NULL), rejected AFTER today's rows had been deleted, and the catch
+    // below labelled it "non-fatal". Abort before any write instead.
+    const { data: existing, error: existingError } = await supabase
       .from("fmv_snapshots")
       .select("*")
       .in("edition_id", editionIds)
       .order("computed_at", { ascending: false });
+    if (existingError) {
+      console.error(`[edition-floor] persist aborted before any write: latest-snapshot read failed: ${existingError.message}`);
+      return;
+    }
 
     const latestByEdition = new Map<string, Record<string, unknown>>();
     for (const row of (existing ?? []) as Record<string, unknown>[]) {
@@ -236,16 +247,7 @@ async function persistFloorToSnapshot(
       if (!latestByEdition.has(eid)) latestByEdition.set(eid, row);
     }
 
-    // Delete only TODAY's snapshots so historical rows accumulate.
-    const todayStart = new Date();
-    todayStart.setUTCHours(0, 0, 0, 0);
-    await supabase
-      .from("fmv_snapshots")
-      .delete()
-      .in("edition_id", editionIds)
-      .gte("computed_at", todayStart.toISOString());
-
-    // Re-insert with floor data
+    // Build the replacement rows FIRST — see the write order below.
     const insertRows = results
       .filter(r => r.crossMarketFloor !== null)
       .map(r => {
@@ -265,12 +267,50 @@ async function persistFloorToSnapshot(
       })
       .filter(Boolean);
 
-    if (insertRows.length) {
-      await supabase.from("fmv_snapshots").insert(insertRows);
-      console.log(`[edition-floor] persisted floor data for ${insertRows.length} editions`);
+    // Nothing to write ⇒ nothing to replace. (Before R123 today's rows were
+    // deleted here regardless of whether anything followed.)
+    if (!insertRows.length) return;
+
+    // 2026-09-20 (R123): INSERT FIRST, THEN delete the rows it replaces. The old
+    // order — delete today's rows, then insert with the error discarded — was a
+    // real data-loss window: the delete had committed, the insert's `error` was
+    // never read (supabase-js RETURNS it; the try/catch around this function
+    // could not fire), and this path has destroyed pricing data once already
+    // (R2). The PK is (id, computed_at) with a fresh id per row, so inserting
+    // beside today's existing rows cannot collide; readers take the newest
+    // `computed_at`, so the moment of overlap is invisible to them.
+    const { data: insertedIds, error: insertError } = await supabase
+      .from("fmv_snapshots")
+      .insert(insertRows)
+      .select("id");
+    if (insertError) {
+      console.error(`[edition-floor] persist FAILED: re-insert rejected (${insertError.message}); nothing was deleted`);
+      return;
     }
+    const keep = ((insertedIds ?? []) as Array<{ id: string }>).map((r) => r.id);
+
+    // Delete only TODAY's snapshots (minus the rows just written) so historical
+    // rows accumulate.
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    let del = supabase
+      .from("fmv_snapshots")
+      .delete()
+      .in("edition_id", editionIds)
+      .gte("computed_at", todayStart.toISOString());
+    if (keep.length) del = del.not("id", "in", `(${keep.join(",")})`);
+    const { error: deleteError } = await del;
+    if (deleteError) {
+      // The new rows are in place; a leftover older row for today loses to them
+      // on `computed_at`. Loud, because the next persist will carry two rows.
+      console.error(`[edition-floor] persist wrote ${insertRows.length} rows but the replace-delete failed: ${deleteError.message}`);
+      return;
+    }
+    console.log(`[edition-floor] persisted floor data for ${insertRows.length} editions`);
   } catch (err) {
-    console.warn("[edition-floor] persist failed (non-fatal):", err);
+    // Only a THROW lands here (a client that could not be built, a network
+    // failure inside supabase-js). Rejected writes are handled above.
+    console.error("[edition-floor] persist threw:", err);
   }
 }
 
@@ -283,7 +323,9 @@ async function persistFloorToSnapshot(
 // could destroy live pricing data — and if the re-insert then failed (the
 // re-insert is built from the prior row, `confidence` is NOT NULL, and the
 // read it depends on is 1000-row capped) the delete had already committed,
-// inside a catch that logs "persist failed (non-fatal)".
+// inside a catch that logs "persist failed (non-fatal)". (That second half —
+// the write ORDER and the unread insert error — is fixed as of 2026-09-20,
+// R123: insert first, delete the replaced rows after, every error read.)
 //
 // ⚠ `check_anon_write_surface()` is blind to this BY CONSTRUCTION: it tests the
 // anon DB ROLE, and this route holds the service-role key. The guard-scope

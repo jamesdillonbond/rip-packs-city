@@ -274,7 +274,12 @@ export async function POST(req: NextRequest) {
       const { error } = await (supabaseAdmin as any)
         .from("golazos_open_offers")
         .upsert(batch, { onConflict: "offer_id" })
-      if (error) console.log(`[${PIPELINE_NAME}] open_offers upsert error:`, error.message)
+      // R123 (2026-09-20): a rejected write here used to be console.logged and the
+      // cursor then advanced past the range — the offers in it were never indexed
+      // and the run row said ok=true. Same rule as the reads below: throw, so the
+      // outer catch marks the run ok:false and the cursor stays; the upsert is
+      // keyed on offer_id, so the re-scan is idempotent.
+      if (error) throw new Error(`open_offers upsert failed: ${error.message}`)
     }
 
     const completedArr = Array.from(completedIds)
@@ -295,7 +300,7 @@ export async function POST(req: NextRequest) {
         .from("golazos_open_offers")
         .delete()
         .in("offer_id", chunk)
-      if (error) console.log(`[${PIPELINE_NAME}] open_offers delete error:`, error.message)
+      if (error) throw new Error(`open_offers delete failed: ${error.message}`) // R123: never advance past a failed write
     }
 
     const touchedArr = Array.from(touched)
@@ -328,8 +333,8 @@ export async function POST(req: NextRequest) {
       const { error } = await (supabaseAdmin as any)
         .from("edition_offers")
         .upsert(batch, { onConflict: "collection_id,external_id" })
-      if (error) console.log(`[${PIPELINE_NAME}] edition_offers upsert error:`, error.message)
-      else editionsWritten += batch.length
+      if (error) throw new Error(`edition_offers upsert failed: ${error.message}`) // R123: never advance past a failed write
+      editionsWritten += batch.length
     }
 
     const clearedEditions = touchedArr.filter((eid) => !maxByEdition.has(eid))
@@ -340,8 +345,8 @@ export async function POST(req: NextRequest) {
         .delete()
         .eq("collection_id", GOLAZOS_COLLECTION_ID)
         .in("external_id", chunk)
-      if (error) console.log(`[${PIPELINE_NAME}] edition_offers clear error:`, error.message)
-      else editionsCleared += chunk.length
+      if (error) throw new Error(`edition_offers clear failed: ${error.message}`) // R123: never advance past a failed write
+      editionsCleared += chunk.length
     }
 
     const { error: cursorWriteErr } = await (supabaseAdmin as any)

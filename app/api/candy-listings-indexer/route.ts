@@ -298,6 +298,10 @@ async function handleSweep(req: NextRequest) {
     let skipped = 0
     let deactivated = 0
     let packWritten = 0
+    // R123 (2026-09-20): every rejected write below is collected here and fails
+    // the run row; the sweep itself carries on (a rejected batch is not a reason
+    // to skip the deactivations that follow).
+    const writeErrors: string[] = []
     let packDeactivated = 0
     let sweepComplete = false
     try {
@@ -515,8 +519,10 @@ async function handleSweep(req: NextRequest) {
         const { error } = await (supabaseAdmin as any)
           .from("candy_pack_listings")
           .upsert(batch, { onConflict: "pda_address" })
-        if (error) console.log(`[${PIPELINE_NAME}] pack upsert err: ${error.message}`)
-        else packWritten += batch.length
+        if (error) {
+          console.log(`[${PIPELINE_NAME}] pack upsert err: ${error.message}`)
+          writeErrors.push(`candy_pack_listings upsert: ${error.message}`)
+        } else packWritten += batch.length
       }
 
       // Upsert active listings.
@@ -527,6 +533,7 @@ async function handleSweep(req: NextRequest) {
           .upsert(batch, { onConflict: "pda_address" })
         if (error) {
           console.log(`[${PIPELINE_NAME}] upsert err: ${error.message}`)
+          writeErrors.push(`candy_listings upsert: ${error.message}`)
           skipped += batch.length
         } else {
           written += batch.length
@@ -587,33 +594,41 @@ async function handleSweep(req: NextRequest) {
       const endedList = [...endedMints]
       for (let i = 0; i < endedList.length; i += 200) {
         const slice = endedList.slice(i, i + 200)
-        const { data: gone } = await (supabaseAdmin as any)
+        // R123 (2026-09-20): these three deactivations were destructured as
+        // `{ data }` only — a FAILED update read as `[]`, i.e. "nothing to
+        // deactivate", published as `deactivated: 0` on an ok=true run row, and
+        // the dead listing stayed on the board. Same shape as the `?? 0` count
+        // above; this was its un-swept twin.
+        const { data: gone, error: goneErr } = await (supabaseAdmin as any)
           .from("candy_listings")
           .update({ is_active: false })
           .eq("is_active", true)
           .in("token_mint", slice)
           .lt("last_seen_at", startedAtIso)
           .select("pda_address")
-        deactivated += (gone ?? []).length
-        const { data: packGone } = await (supabaseAdmin as any)
+        if (goneErr) writeErrors.push(`candy_listings deactivate: ${goneErr.message}`)
+        else deactivated += (gone ?? []).length
+        const { data: packGone, error: packGoneErr } = await (supabaseAdmin as any)
           .from("candy_pack_listings")
           .update({ is_active: false })
           .eq("is_active", true)
           .in("token_mint", slice)
           .lt("last_seen_at", startedAtIso)
           .select("pda_address")
-        packDeactivated += (packGone ?? []).length
+        if (packGoneErr) writeErrors.push(`candy_pack_listings deactivate: ${packGoneErr.message}`)
+        else packDeactivated += (packGone ?? []).length
       }
 
       // Expired listings are dead regardless of what the feed said.
       const nowIso = new Date().toISOString()
-      const { data: expired } = await (supabaseAdmin as any)
+      const { data: expired, error: expiredErr } = await (supabaseAdmin as any)
         .from("candy_listings")
         .update({ is_active: false })
         .eq("is_active", true)
         .lt("expiry", nowIso)
         .select("pda_address")
-      deactivated += (expired ?? []).length
+      if (expiredErr) writeErrors.push(`candy_listings expire: ${expiredErr.message}`)
+      else deactivated += (expired ?? []).length
 
       // A short listings answer is no longer dangerous — it just refreshes
       // fewer prices — so it is reported as a metric, not a failure.
@@ -621,7 +636,15 @@ async function handleSweep(req: NextRequest) {
       // is a claim about the feed that a missing baseline cannot support.
       const feedLooksTruncated: boolean | null = before == null ? null : before >= 20 && rawSeen < before * 0.5
 
-      await logRun(startedAtIso, found, written, skipped, true, null, {
+      await logRun(
+        startedAtIso,
+        found,
+        written,
+        skipped,
+        writeErrors.length === 0,
+        writeErrors.length ? `${writeErrors.length} rejected write(s): ${writeErrors.slice(0, 3).join(" | ")}`.slice(0, 500) : null,
+        {
+        write_errors: writeErrors.length,
         listings_found: found,
         listings_upserted: written,
         raw_listings_seen: rawSeen,
@@ -644,7 +667,8 @@ async function handleSweep(req: NextRequest) {
         me_key_present: Boolean(process.env.MAGIC_EDEN_API_KEY),
         sol_usd: rate,
         duration_ms: Date.now() - startedMs,
-      })
+        },
+      )
     } catch (e) {
       await logRun(startedAtIso, found, written, skipped, false, e instanceof Error ? e.message : String(e), {
         listings_found: found,

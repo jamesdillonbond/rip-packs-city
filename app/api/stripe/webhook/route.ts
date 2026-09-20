@@ -23,6 +23,17 @@ const supabase: any = createClient(
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || ""
 
+// 2026-09-20 (R123): every direct pro_users write below used to be awaited with
+// NO error binding, and the handler returned 200 to Stripe either way — a
+// rejected entitlement write meant the customer paid, was not granted Pro, and
+// Stripe never retried (supabase-js RETURNS errors; nothing here could throw).
+// A failed write or lookup now answers the same retryable 503 the invoice path
+// already uses, so Stripe's exponential backoff re-delivers the event.
+function retryable(step: string, eventId: string, message: string) {
+  console.log(`[stripe/webhook] ${step} failed for ${eventId}: ${message} — 503 so Stripe retries`)
+  return NextResponse.json({ error: `${step} failed — Stripe will retry` }, { status: 503 })
+}
+
 export async function POST(req: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY || !endpointSecret) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 503 })
@@ -143,7 +154,7 @@ export async function POST(req: NextRequest) {
       const sub = await getStripe().subscriptions.retrieve(subscriptionId)
       const periodEnd = new Date((sub as any).current_period_end * 1000).toISOString()
 
-      await supabase.from("pro_users").upsert(
+      const { error: upsertError } = await supabase.from("pro_users").upsert(
         {
           wallet_address: wallet,
           plan: "monthly",
@@ -154,6 +165,7 @@ export async function POST(req: NextRequest) {
         },
         { onConflict: "wallet_address" },
       )
+      if (upsertError) return retryable("pro_users upsert", event.id as string, upsertError.message)
       console.log(`[stripe/webhook] Pro activated for ${wallet}`)
       break
     }
@@ -162,22 +174,26 @@ export async function POST(req: NextRequest) {
       const sub = event.data.object as any
       const customerId = sub.customer as string
 
-      // Find wallet by customer ID
-      const { data: row } = await supabase
+      // Find wallet by customer ID. A FAILED lookup is not "no row" — it used
+      // to fall into the no-op branch and 200, which would have let an expiry
+      // change silently not land.
+      const { data: row, error: lookupError } = await supabase
         .from("pro_users")
         .select("wallet_address")
         .eq("stripe_customer_id", customerId)
         .maybeSingle()
+      if (lookupError) return retryable("pro_users lookup", event.id as string, lookupError.message)
 
       if (row) {
         const periodEnd = new Date(sub.current_period_end * 1000).toISOString()
         const active = sub.status === "active" || sub.status === "trialing"
-        await supabase
+        const { error: updateError } = await supabase
           .from("pro_users")
           .update({
             expires_at: active ? periodEnd : new Date().toISOString(),
           })
           .eq("wallet_address", row.wallet_address)
+        if (updateError) return retryable("pro_users expiry update", event.id as string, updateError.message)
       }
       break
     }
@@ -186,10 +202,11 @@ export async function POST(req: NextRequest) {
       const sub = event.data.object as any
       const customerId = sub.customer as string
 
-      await supabase
+      const { error: cancelError } = await supabase
         .from("pro_users")
         .update({ expires_at: new Date().toISOString() })
         .eq("stripe_customer_id", customerId)
+      if (cancelError) return retryable("pro_users cancel update", event.id as string, cancelError.message)
       console.log(`[stripe/webhook] Pro cancelled for customer ${customerId}`)
       break
     }

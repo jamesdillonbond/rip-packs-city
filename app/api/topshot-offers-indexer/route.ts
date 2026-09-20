@@ -206,6 +206,7 @@ export async function POST(req: NextRequest) {
   let cursorBefore: string | null = null
   let cursorAfter: string | null = null
   let pages = 0
+  let offersSeen = 0 // R123: rows_found is what the range PRODUCED, not what landed
   let offersWritten = 0
   let offersFilled = 0
   let offersCancelled = 0
@@ -369,11 +370,16 @@ export async function POST(req: NextRequest) {
         created_at: o.blockTs,
       })
     }
+    offersSeen = rows.length
     for (let i = 0; i < rows.length; i += UPSERT_BATCH) {
       const batch = rows.slice(i, i + UPSERT_BATCH)
       const { error } = await (supabaseAdmin as any).from("offers").upsert(batch, { onConflict: "offer_id" })
-      if (error) console.log(`[${PIPELINE_NAME}] offers upsert error:`, error.message)
-      else offersWritten += batch.length
+      // R123 (2026-09-20): a rejected batch used to be console.logged and the cursor
+      // then advanced past the range — those offers were never indexed and the run
+      // row said ok=true. Throw (the rule the lookups above already follow): the
+      // outer catch logs ok:false and the cursor stays for an idempotent re-scan.
+      if (error) throw new Error(`offers upsert failed: ${error.message}`)
+      offersWritten += batch.length
     }
 
     // 4. resolve completions: flip status on existing rows (no-op if we never
@@ -388,8 +394,10 @@ export async function POST(req: NextRequest) {
           .eq("collection_id", TS_COLLECTION_ID)
           .eq("status", "open")
           .in("offer_id", chunk)
-        if (error) console.log(`[${PIPELINE_NAME}] status=${status} update error:`, error.message)
-        else if (status === "filled") offersFilled += count ?? 0
+        // R123: a rejected flip leaves a filled/cancelled offer "open" forever once
+        // the cursor passes its completion event. Abort before the advance.
+        if (error) throw new Error(`status=${status} update failed: ${error.message}`)
+        if (status === "filled") offersFilled += count ?? 0
         else offersCancelled += count ?? 0
       }
     }
@@ -458,7 +466,7 @@ export async function POST(req: NextRequest) {
     console.log(`[${PIPELINE_NAME}] best_offer_at sync failed (non-fatal):`, bidAgeError)
   }
 
-  await logRun(startTime, offersWritten, offersWritten, fetchError === null, fetchError, cursorBefore, cursorAfter, {
+  await logRun(startTime, offersSeen, offersWritten, fetchError === null, fetchError, cursorBefore, cursorAfter, {
     // Paired count + error, so a 0 here cannot be read as "nothing to do" when it
     // was actually "the call failed" — the null-instrument shape this repo keeps
     // finding in `rows_written`.

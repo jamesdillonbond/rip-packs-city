@@ -194,6 +194,11 @@ async function handleIngest(req: NextRequest) {
     let burntSkipped = 0
     let packsSkipped = 0
     let packRowsWritten = 0
+    // R123 (2026-09-20): every rejected upsert below used to be console.logged and
+    // then the run row claimed ok=true with a hardcoded `true, null`. A rejected
+    // write is non-fatal to the WALK (later chunks and tables still run) but it
+    // is not a success — the run row now says so, naming the table.
+    const writeErrors: string[] = []
     // DISTINCT catalog counts. editionsWritten/serialsWritten below are
     // upsert ROWS TOUCHED across DAS page-chunks — the same 125 editions are
     // re-upserted on every page, so that counter read 3,108 for a 125-edition
@@ -248,6 +253,7 @@ async function handleIngest(req: NextRequest) {
               .select("token_mint")
             if (error) {
               console.log(`[${PIPELINE_NAME}] candy_packs upsert err: ${error.message}`)
+              writeErrors.push(`candy_packs: ${error.message}`)
             } else {
               packRowsWritten += data?.length ?? chunk.length
               for (const r of chunk) distinctPackMints.add(r.token_mint)
@@ -277,6 +283,7 @@ async function handleIngest(req: NextRequest) {
             .select("id")
           if (error) {
             console.log(`[${PIPELINE_NAME}] editions upsert err: ${error.message}`)
+            writeErrors.push(`editions: ${error.message}`)
           } else {
             editionsWritten += data?.length ?? chunk.length
           }
@@ -301,6 +308,7 @@ async function handleIngest(req: NextRequest) {
             .select("moment_id")
           if (error) {
             console.log(`[${PIPELINE_NAME}] wmc upsert err: ${error.message}`)
+            writeErrors.push(`wallet_moments_cache: ${error.message}`)
           } else {
             serialsWritten += data?.length ?? chunk.length
           }
@@ -339,7 +347,14 @@ async function handleIngest(req: NextRequest) {
         }
       })
 
-      await logRun(startedAtIso, assetsSeen, editionsWritten + serialsWritten, true, null, {
+      await logRun(
+        startedAtIso,
+        assetsSeen,
+        editionsWritten + serialsWritten,
+        writeErrors.length === 0,
+        writeErrors.length ? `${writeErrors.length} rejected write(s): ${writeErrors.slice(0, 3).join(" | ")}`.slice(0, 500) : null,
+        {
+        write_errors: writeErrors.length,
         assets_seen: assetsSeen,
         edition_rows_touched: editionsWritten,
         serial_rows_touched: serialsWritten,
@@ -351,7 +366,8 @@ async function handleIngest(req: NextRequest) {
         packs_distinct: distinctPackMints.size,
         jerseys_distinct: distinctJerseys.size,
         duration_ms: Date.now() - startedMs,
-      })
+        },
+      )
     } catch (e) {
       await logRun(
         startedAtIso,

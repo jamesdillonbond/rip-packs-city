@@ -32,6 +32,8 @@ const st = vi.hoisted(() => ({
   plcDelete: { error: null as any },
   upsert: { error: null as any },
   upsertThrows: false,
+  deletes: 0,
+  deleteNotIn: null as string | null,
   editionsThrows: false,
   rpcResult: { data: null as any, error: null as any },
   rpcThrows: false,
@@ -66,7 +68,8 @@ vi.mock("@supabase/supabase-js", () => ({
         // __tests__/paginated-range-requires-order-ratchet.test.ts.
         order: () => b,
         range: () => b,
-        delete: () => { b.__mode = "delete"; return b },
+        delete: () => { b.__mode = "delete"; st.deletes += 1; return b },
+        not: (_c: string, _op: string, v: string) => { st.deleteNotIn = v; return b },
         upsert: (chunk: any[]) => {
           b.__mode = "upsert"
           if (st.upsertThrows) throw new Error("upsert transport exploded")
@@ -135,6 +138,8 @@ beforeEach(() => {
   st.rpcThrows = false
   st.rpcCalls = []
   st.upserted = []
+  st.deletes = 0
+  st.deleteNotIn = null
 })
 
 describe("allday-pack-listings — the fatal-catch around after()", () => {
@@ -219,7 +224,13 @@ describe("allday-pack-listings — early aborts that used to be silent", () => {
 })
 
 describe("allday-pack-listings — partial writes are now reportable", () => {
-  it("an upsert ERROR leaves rows_written < rows_found and counts the gap in rows_skipped", async () => {
+  // INVERTED 2026-09-20 (R123): this asserted `p_ok: true // the sweep completed;
+  // it just wrote nothing` — after a DELETE of every All Day row. A sweep that
+  // emptied the board and could not refill it is not a completed sweep. Now the
+  // upsert runs FIRST, a rejected chunk fails the run row, and the stale-row
+  // delete is skipped so the previous board survives. Mutation-checked: restoring
+  // `ok: true` reds this arm.
+  it("an upsert ERROR fails the run row, skips the delete (stale board beats an empty one), and counts the gap in rows_skipped", async () => {
     st.editions = { data: [edition()], error: null }
     st.listings = { data: [listing()], error: null }
     st.upsert = { error: { message: "upsert rejected" } }
@@ -228,7 +239,10 @@ describe("allday-pack-listings — partial writes are now reportable", () => {
     await capturedPromise
 
     const l = logs()
-    expect(l[0].p_ok).toBe(true) // the sweep completed; it just wrote nothing
+    expect(l[0].p_ok).toBe(false)
+    expect(String(l[0].p_error)).toContain("upsert rejected")
+    expect(l[0].p_extra.delete_skipped).toBe(true)
+    expect(st.deletes).toBe(0)
     expect(l[0].p_extra.phase).toBe("complete")
     expect(l[0].p_rows_found).toBeGreaterThan(0)
     expect(l[0].p_rows_written).toBe(0)
@@ -261,6 +275,20 @@ describe("allday-pack-listings — partial writes are now reportable", () => {
 
     const l = logs()
     expect(l[0].p_extra.delete_error).toBe("delete blocked")
+  })
+
+  it("a clean sweep upserts FIRST and then deletes only the rows it did not write", async () => {
+    st.editions = { data: [edition()], error: null }
+    st.listings = { data: [listing()], error: null }
+
+    await POST(post())
+    await capturedPromise
+
+    expect(st.deletes).toBe(1)
+    expect(st.upserted.length).toBeGreaterThan(0)
+    // The delete excludes every id this sweep wrote, quoted for PostgREST.
+    for (const r of st.upserted) expect(st.deleteNotIn).toContain(`"${r.id}"`)
+    expect(logs()[0].p_extra.delete_skipped).toBe(false)
   })
 
   it("a clean sweep reports delete_error null and rows_written === rows_found", async () => {

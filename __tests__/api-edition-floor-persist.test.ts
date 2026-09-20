@@ -35,6 +35,13 @@ const state = vi.hoisted(() => ({
   deletes: [] as Array<{ ins: unknown; gte: [string, string] | null }>,
   selects: [] as string[],
   throwOn: null as string | null,
+  // R123 (2026-09-20): rejected-but-returned errors, per operation. supabase-js
+  // RETURNS these; nothing in the route can catch them as a throw.
+  existingReadError: null as any,
+  insertError: null as any,
+  deleteError: null as any,
+  ops: [] as string[], // the write ORDER actually taken: "insert" / "delete"
+  deleteNotIn: null as string | null, // the `.not("id","in", …)` the delete carried
 }))
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -46,16 +53,32 @@ vi.mock("@supabase/supabase-js", () => ({
       const b: Record<string, unknown> = {}
       const self = () => b
       b.select = (cols: string) => { state.selects.push(cols); mode = "select"; return self() }
-      b.delete = () => { mode = "delete"; state.deletes.push(del); return self() }
-      b.insert = (rows: unknown[]) => { mode = "insert"; state.inserted.push(rows); return Promise.resolve({ error: null }) }
+      b.delete = () => { mode = "delete"; state.deletes.push(del); state.ops.push("delete"); return self() }
+      b.insert = (rows: unknown[]) => {
+        mode = "insert"
+        state.inserted.push(rows)
+        state.ops.push("insert")
+        // `.insert(rows).select("id")` — the route reads the new ids back.
+        const result = state.insertError
+          ? { data: null, error: state.insertError }
+          : { data: rows.map((_, i) => ({ id: `new-${state.inserted.length}-${i}` })), error: null }
+        const p: any = Promise.resolve(result)
+        p.select = () => Promise.resolve(result)
+        return p
+      }
       b.in = (_c: string, v: unknown) => { if (mode === "delete") del.ins = v; return self() }
       b.gte = (c: string, v: string) => { if (mode === "delete") del.gte = [c, v]; return self() }
+      b.not = (_c: string, _op: string, v: string) => { if (mode === "delete") state.deleteNotIn = v; return self() }
       b.order = () => self()
       ;(b as { then: unknown }).then = (res: (v: unknown) => unknown) =>
         Promise.resolve(
-          table === "editions"
-            ? { data: state.editionRows, error: null }
-            : { data: state.existingSnapshots, error: null },
+          mode === "delete"
+            ? { data: null, error: state.deleteError }
+            : table === "editions"
+              ? { data: state.editionRows, error: null }
+              : state.existingReadError
+                ? { data: null, error: state.existingReadError }
+                : { data: state.existingSnapshots, error: null },
         ).then(res)
       return b
     },
@@ -99,6 +122,11 @@ beforeEach(() => {
   state.deletes = []
   state.selects = []
   state.throwOn = null
+  state.existingReadError = null
+  state.insertError = null
+  state.deleteError = null
+  state.ops = []
+  state.deleteNotIn = null
 })
 afterEach(() => {
   harness?.restore()
@@ -144,9 +172,10 @@ describe("edition-floor persist — the write path", () => {
     await flush()
 
     expect(insertedRows()).toHaveLength(0)
-    // And it is excluded from the DELETE set too, so an ultimate-v1 row is never
-    // even read or removed.
-    expect(state.deletes[0]?.ins).toEqual([])
+    // And nothing is deleted either: with no replacement row there is nothing to
+    // replace (before R123 a delete of an EMPTY edition set still ran here), so an
+    // ultimate-v1 row is never read or removed.
+    expect(state.deletes).toHaveLength(0)
   })
 
   it("deletes only TODAY's snapshots so historical rows accumulate", async () => {
@@ -246,5 +275,57 @@ describe("edition-floor POST — batch persist + body guards", () => {
     expect(body.results).toHaveLength(2)
     // Both editions are keyed off the SAME stubbed venue floor, so both persist.
     expect(insertedRows().map((r) => r.edition_id).sort()).toEqual(["ed-a", "ed-b"])
+  })
+})
+
+// ── R123 (2026-09-20): the delete-then-insert window is closed ────────────────
+// The old order was DELETE today's rows → INSERT with the error discarded, inside
+// a try/catch that could not fire (supabase-js returns errors). A rejected insert
+// left the edition with NO row for today and a log line saying "non-fatal". Now:
+// insert first, then delete today's rows EXCEPT the ones just written; every
+// operation's error is read; a failed read aborts before any write.
+// Mutation-checked: restoring the old order (delete before insert) reds the
+// order arm; dropping the `if (insertError) return` reds the insert arm.
+describe("R123: insert-then-delete, every error read", () => {
+  const ed = [{ id: "ed-uuid", collection_id: "c", external_id: "1:2", tier: "COMMON" }]
+
+  it("writes the new rows BEFORE deleting the rows they replace, and excludes the new ids from the delete", async () => {
+    state.editionRows = ed
+    stubVenues(12)
+    await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1", { headers: OPERATOR_HEADERS }))
+    await flush()
+    expect(state.ops).toEqual(["insert", "delete"])
+    expect(state.deleteNotIn).toBe("(new-1-0)")
+  })
+
+  it("a rejected insert deletes NOTHING", async () => {
+    state.editionRows = ed
+    state.insertError = { message: 'null value in column "confidence" violates not-null constraint' }
+    stubVenues(12)
+    const res = await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1", { headers: OPERATOR_HEADERS }))
+    expect(res.status).toBe(200) // still fire-and-forget for the caller
+    await flush()
+    expect(state.inserted).toHaveLength(1)
+    expect(state.deletes).toHaveLength(0)
+  })
+
+  it("a FAILED latest-snapshot read aborts before any write (it is not \"no prior row\")", async () => {
+    state.editionRows = ed
+    state.existingReadError = { message: "canceling statement due to statement timeout" }
+    stubVenues(12)
+    await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1", { headers: OPERATOR_HEADERS }))
+    await flush()
+    expect(state.inserted).toHaveLength(0)
+    expect(state.deletes).toHaveLength(0)
+  })
+
+  it("a failed replace-delete leaves the new rows in place (positive control: the insert landed)", async () => {
+    state.editionRows = ed
+    state.deleteError = { message: "row is locked" }
+    stubVenues(12)
+    await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1", { headers: OPERATOR_HEADERS }))
+    await flush()
+    expect(state.inserted).toHaveLength(1)
+    expect(state.deletes).toHaveLength(1)
   })
 })

@@ -530,3 +530,52 @@ describe("GET /api/check-alerts — FMV leg edge branches", () => {
     expect(log).toMatchObject({ p_ok: true, p_rows_written: 3 })
   })
 })
+
+// ── R123 (2026-09-20): the debounce marker's failures are READ ────────────────
+// `alert_notifications_sent` is queried twice per hot tick: the debounce READ
+// (maybeSingle) then the marker UPSERT. Both used to drop their error. A rejected
+// upsert meant the same alert set re-sent every tick for an hour while the run
+// row said ok=true; a failed read fell through as "never sent". Sequence fixtures
+// drive each in turn (read first, write second). Mutation-checked by restoring
+// the un-destructured upsert: the write arm reds on p_ok / p_error.
+describe("R123: the debounce marker's own failures reach the run row", () => {
+  it("a rejected marker WRITE still sends (no silence) but fails the run and names the write", async () => {
+    const { rpcCalls, writes } = install({
+      "rpc:get_pipeline_alerts": { data: HOT_ALERTS, error: null },
+      alert_notifications_sent: [
+        { data: null, error: null }, // read: nothing in the window
+        { data: null, error: { message: "permission denied for table alert_notifications_sent" } }, // upsert rejected
+      ],
+      ...NO_FMV_TRIGGERS,
+    })
+    const f = stubFetch([telegramOk, resendOk])
+    await GET(reqAuthed())
+    await runDeferred()
+
+    expect(f.calls.some((c) => c.url.includes("api.telegram.org"))).toBe(true) // the alert went out
+    expect(writes.alert_notifications_sent?.some((w) => w.method === "upsert")).toBe(true) // the write was attempted
+    const log = terminalLog(rpcCalls) as Record<string, any>
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toContain("debounce marker write")
+    expect(log.p_extra.pipeline_alerts.debounce_error).toContain("permission denied")
+  })
+
+  it("a failed debounce READ is not \"never sent\": it sends, and the run row carries the read error (run still ok)", async () => {
+    const { rpcCalls } = install({
+      "rpc:get_pipeline_alerts": { data: HOT_ALERTS, error: null },
+      alert_notifications_sent: [
+        { data: null, error: { message: "canceling statement due to statement timeout" } }, // read failed
+        { data: null, error: null }, // upsert ok
+      ],
+      ...NO_FMV_TRIGGERS,
+    })
+    const f = stubFetch([telegramOk, resendOk])
+    await GET(reqAuthed())
+    await runDeferred()
+
+    expect(f.calls.some((c) => c.url.includes("api.telegram.org"))).toBe(true)
+    const log = terminalLog(rpcCalls) as Record<string, any>
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra.pipeline_alerts.debounce_error).toContain("debounce read")
+  })
+})

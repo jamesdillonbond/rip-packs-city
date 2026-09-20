@@ -110,6 +110,9 @@ export async function POST(req: NextRequest) {
   after(async () => {
     let found = 0
     let written = 0
+    // R123 (2026-09-20): a rejected chunk was console.logged and the run row
+    // still claimed ok=true. Non-fatal to the walk; not a success.
+    const writeErrors: string[] = []
     try {
       await paginateOwner(wallet, async (items) => {
         const now = new Date().toISOString()
@@ -134,6 +137,7 @@ export async function POST(req: NextRequest) {
             .select("moment_id")
           if (error) {
             console.log(`[${PIPELINE_NAME}] wmc upsert err: ${error.message}`)
+            writeErrors.push(`wallet_moments_cache: ${error.message}`)
           } else {
             written += data?.length ?? chunk.length
           }
@@ -172,12 +176,21 @@ export async function POST(req: NextRequest) {
         }
       })
 
-      await logRun(startedAtIso, wallet, found, written, true, null, {
-        force,
-        rows_found: found,
-        rows_written: written,
-        duration_ms: Date.now() - startedMs,
-      })
+      await logRun(
+        startedAtIso,
+        wallet,
+        found,
+        written,
+        writeErrors.length === 0,
+        writeErrors.length ? `${writeErrors.length} rejected write(s): ${writeErrors.slice(0, 3).join(" | ")}`.slice(0, 500) : null,
+        {
+          force,
+          rows_found: found,
+          rows_written: written,
+          write_errors: writeErrors.length,
+          duration_ms: Date.now() - startedMs,
+        },
+      )
     } catch (e) {
       await logRun(startedAtIso, wallet, found, written, false, e instanceof Error ? e.message : String(e), {
         force,

@@ -182,13 +182,20 @@ describe("candy-editions — the after() DAS walk", () => {
     expect(run.p_extra.packs_distinct).toBe(1)
   })
 
-  it("drops serials with a null wallet/moment and tolerates upsert errors", async () => {
+  // INVERTED 2026-09-20 (R123): this case used to assert `p_ok: true` after a
+  // rejected editions upsert — it pinned the swallowed-write defect it was named
+  // to tolerate. A rejected write is still non-fatal to the WALK, but the run row
+  // must not claim success. Mutation-checked: restoring the hardcoded `true, null`
+  // reds this arm on p_ok.
+  it("drops serials with a null wallet/moment; a rejected upsert is non-fatal to the walk but FAILS the run row", async () => {
     st.pages = [[{ kind: "icon", ed: "ed1", w: null, m: null }]] // serial dropped
     st.edUpsert = { data: null, error: { message: "ed err" } } // edition upsert error branch
     await accept()
     await st.captured!()
     const run = terminal()
-    expect(run.p_ok).toBe(true)
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toContain("editions: ed err")
+    expect(run.p_extra.write_errors).toBe(1)
     expect(run.p_extra.edition_rows_touched).toBe(0)
     expect(run.p_extra.serial_rows_touched).toBe(0)
     // The edition WAS seen (distinct counts the payload, not the write), the
@@ -232,14 +239,18 @@ describe("candy-editions — sealed-pack inventory", () => {
     expect(run.p_extra.serials_distinct).toBe(0)
   })
 
-  it("a candy_packs upsert error is non-fatal and leaves the run ok", async () => {
+  // INVERTED 2026-09-20 (R123): was "non-fatal and leaves the run ok". The walk
+  // continues past a rejected candy_packs upsert (the editions/serials tables are
+  // still written), but the run row reports the rejection.
+  it("a candy_packs upsert error is non-fatal to the walk but FAILS the run row, naming the table", async () => {
     vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
     st.pages = [[{ kind: "pack", m: "p1" }]]
     st.packUpsert = { data: null, error: { message: "pack err" } }
     await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
     await st.captured!()
     const run = terminal()
-    expect(run.p_ok).toBe(true)
+    expect(run.p_ok).toBe(false)
+    expect(String(run.p_error)).toContain("candy_packs: pack err")
     expect(run.p_extra.pack_rows_touched).toBe(0)
     expect(run.p_extra.packs_distinct).toBe(0)
   })
@@ -292,7 +303,7 @@ describe("candy-editions — jersey numbers", () => {
     await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
     await st.captured!()
     const run = terminal()
-    expect(run.p_ok).toBe(true)
+    expect(run.p_ok).toBe(false) // R123: a rejected editions upsert is no longer a success (was true)
     expect(run.p_extra.edition_rows_touched).toBe(0)
   })
 })

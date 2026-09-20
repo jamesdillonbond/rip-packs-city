@@ -488,7 +488,15 @@ describe("golazos-offers-indexer — cursor + control flow", () => {
 })
 
 describe("golazos-offers-indexer — decode edges + write-error isolation", () => {
-  it("all four write errors (open upsert/delete, edition upsert/clear) are swallowed: ok=true, nothing tallied", async () => {
+  // ⚠ INVERTED 2026-09-20 (R123), not deleted. This case pinned the defect as the
+  // contract: four rejected writes, `ok: true`, cursor advanced to 1250. A tick
+  // that could not persist its offers and then moved the cursor past them lost
+  // that block range for good, and the run row called it a success. Every write
+  // now follows the rule the READS in this file already had: throw, so the outer
+  // catch logs ok:false and the cursor stays put for a re-scan (the upserts are
+  // keyed, so the re-scan is idempotent). Mutation-checked: restoring the
+  // console.log on the 3a upsert reds this arm on `ok` and `cursorAfter`.
+  it("the FIRST rejected write (3a open_offers upsert) aborts the tick: ok=false, cursor NOT advanced, error names the write", async () => {
     const tx1 = "1".repeat(64)
     fetchMock = installFetchMock(
       flowRestStubs({
@@ -513,29 +521,62 @@ describe("golazos-offers-indexer — decode edges + write-error isolation", () =
     const spy = install({
       event_cursor: { data: { last_processed_block: 1000 }, error: null },
       golazos_open_offers: [
-        { data: null, error: { message: "up boom" } }, // upsert error
-        { data: [{ edition_id: "777" }], error: null }, // pre-delete capture
-        { data: null, error: { message: "del boom" } }, // delete error
-        { data: [{ edition_id: "123", amount: 9 }], error: null }, // recompute
-      ],
-      edition_offers: [
-        { data: null, error: { message: "ed up boom" } }, // upsert error → editionsWritten stays 0
-        { data: null, error: { message: "ed clear boom" } }, // clear error → editionsCleared stays 0
+        { data: null, error: { message: "up boom" } }, // 3a upsert error -> throws here
       ],
     })
 
     const res = await POST(req())
     const body = await res.json()
-    expect(body).toMatchObject({
-      ok: true,
-      offersSeen: 1,
-      offersCompleted: 1,
-      editionsWritten: 0,
-      editionsCleared: 0,
-      cursorAfter: "1250",
+    expect(body).toMatchObject({ ok: false, cursorBefore: "1000", cursorAfter: null })
+    expect(String(body.error)).toContain("open_offers upsert failed: up boom")
+    expect(spy.writes.event_cursor?.find((w) => w.method === "update")).toBeUndefined()
+    const log = terminalLog(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("open_offers upsert failed")
+  })
+
+  it("the LAST rejected write (edition_offers clear) also aborts before the cursor advance", async () => {
+    const tx1 = "1".repeat(64)
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        avail: [
+          eventBlock({
+            height: 1100,
+            txId: tx1,
+            eventType: OFFER_AVAILABLE,
+            payload: offerPayload({ eventType: OFFER_AVAILABLE, offerId: "11", amount: "9.00000000", editionId: "123" }),
+          }),
+        ],
+        compl: [
+          eventBlock({
+            height: 1101,
+            txId: tx1,
+            eventType: OFFER_COMPLETED,
+            payload: offerPayload({ eventType: OFFER_COMPLETED, offerId: "99", amount: "1.00000000", editionId: "777" }),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      golazos_open_offers: [
+        { data: null, error: null }, // 3a upsert ok
+        { data: [{ edition_id: "777" }], error: null }, // 3b pre-delete capture
+        { data: null, error: null }, // 3b delete ok
+        { data: [{ edition_id: "123", amount: 9 }], error: null }, // 3c recompute: 123 still open, 777 cleared
+      ],
+      edition_offers: [
+        { data: null, error: null }, // 3c upsert ok
+        { data: null, error: { message: "ed clear boom" } }, // 3c clear error -> throws
+      ],
     })
-    expect(spy.writes.event_cursor?.find((w) => w.method === "update")).toBeTruthy()
-    expect(terminalLog(spy.rpcCalls)?.p_ok).toBe(true)
+
+    const res = await POST(req())
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: false, cursorAfter: null, editionsWritten: 1, editionsCleared: 0 })
+    expect(String(body.error)).toContain("edition_offers clear failed: ed clear boom")
+    expect(spy.writes.event_cursor?.find((w) => w.method === "update")).toBeUndefined()
+    expect(terminalLog(spy.rpcCalls)?.p_ok).toBe(false)
   })
 
   it("filters a missing offerId, a missing amount (NaN), and a completion with no offerId; a string-staticType nftType still parses (Optional/Array decode)", async () => {

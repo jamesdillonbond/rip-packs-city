@@ -269,21 +269,43 @@ async function runPackListings(startedAtIso: string) {
 
   console.log('[allday-packs] groups:', rows.slice(0, 5).map(g => ({ id: g.id, pack_name: g.pack_name, tier: g.tier })))
 
-  const del = await supabase
-    .from("pack_listings_cache")
-    .delete()
-    .eq("collection_id", ALLDAY_COLLECTION_ID)
-  if (del.error) console.log(`[allday-pack-listings] delete error: ${del.error.message}`)
-
+  // 2026-09-20 (R123): this used to DELETE every All Day row and THEN upsert,
+  // with a rejected chunk console.logged and the run row saying ok=true — a
+  // rejected upsert after the delete left the pack board EMPTY, reported as a
+  // completed sweep. Now: upsert first (rows are keyed on `id`, so a re-run is
+  // idempotent), then delete only the rows this sweep did NOT write (stale
+  // groups). A rejected upsert skips the delete — a stale board beats an empty
+  // one — and fails the run row, naming the chunk.
   let inserted = 0
+  const writeErrors: string[] = []
   for (let i = 0; i < rows.length; i += 100) {
     const chunk = rows.slice(i, i + 100)
     try {
       const { error } = await supabase.from("pack_listings_cache").upsert(chunk, { onConflict: "id" })
-      if (error) console.log(`[allday-packs] insert error:`, error)
-      else inserted += chunk.length
+      if (error) {
+        console.log(`[allday-packs] insert error:`, error)
+        writeErrors.push(`pack_listings_cache chunk ${i / 100}: ${error.message ?? String(error)}`)
+      } else inserted += chunk.length
     } catch (err) {
       console.log(`[allday-packs] insert error:`, err)
+      writeErrors.push(`pack_listings_cache chunk ${i / 100} threw: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  let deleteError: string | null = null
+  let deleteSkipped = false
+  if (writeErrors.length) {
+    deleteSkipped = true
+  } else {
+    let del = supabase
+      .from("pack_listings_cache")
+      .delete()
+      .eq("collection_id", ALLDAY_COLLECTION_ID)
+    if (rows.length) del = del.not("id", "in", `(${rows.map((r) => `"${r.id}"`).join(",")})`)
+    const { error } = await del
+    if (error) {
+      console.log(`[allday-pack-listings] delete error: ${error.message}`)
+      deleteError = error.message
     }
   }
 
@@ -292,7 +314,10 @@ async function runPackListings(startedAtIso: string) {
   // which is exactly the silent partial-write this route could not report.
   await logPipelineRun({
     startedAtIso,
-    ok: true,
+    ok: writeErrors.length === 0,
+    errorMsg: writeErrors.length
+      ? `${writeErrors.length} rejected write(s), stale-row delete skipped: ${writeErrors.slice(0, 3).join(" | ")}`.slice(0, 500)
+      : null,
     rowsFound: rows.length,
     rowsWritten: inserted,
     rowsSkipped: rows.length - inserted,
@@ -302,7 +327,9 @@ async function runPackListings(startedAtIso: string) {
       groups_with_listings: groupsWithListings,
       editions_loaded: editionRows.length,
       listings_loaded: listingRows.length,
-      delete_error: del.error?.message ?? null,
+      write_errors: writeErrors.length,
+      delete_error: deleteError,
+      delete_skipped: deleteSkipped,
       elapsed_ms: Date.now() - started,
     },
   })

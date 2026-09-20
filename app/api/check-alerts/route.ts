@@ -210,6 +210,10 @@ async function processPipelineAlerts(): Promise<{
   debounced: boolean;
   error?: string;
   channel_errors?: { email?: string; telegram?: string };
+  // R123 (2026-09-20): the debounce marker's own failures. Neither one silences
+  // the alert (a missed ops alert is worse than a duplicate), but both are
+  // reported, and a failed WRITE fails the run — the next tick WILL re-send.
+  debounce_error?: string;
 }> {
   const { data, error } = await (supabaseAdmin as any).rpc("get_pipeline_alerts");
   if (error) {
@@ -263,12 +267,17 @@ async function processPipelineAlerts(): Promise<{
   const alertHash = crypto.createHash("sha256").update(hashInput).digest("hex");
 
   const cutoff = new Date(Date.now() - PIPELINE_ALERT_DEBOUNCE_MIN * 60 * 1000).toISOString();
-  const { data: existing } = await (supabaseAdmin as any)
+  const { data: existing, error: debounceReadError } = await (supabaseAdmin as any)
     .from("alert_notifications_sent")
     .select("alert_hash, sent_at")
     .eq("alert_hash", alertHash)
     .gte("sent_at", cutoff)
     .maybeSingle();
+  if (debounceReadError) {
+    // A failed read is not "never sent". Send anyway (fail toward the duplicate,
+    // never toward silence) and say so in the run row.
+    console.log(`[check-alerts] debounce read failed (${debounceReadError.message}) — sending without the debounce`);
+  }
 
   if (existing) {
     console.log(`[check-alerts] pipeline alerts debounced (hash=${alertHash.slice(0, 10)}, last sent ${existing.sent_at})`);
@@ -303,7 +312,10 @@ async function processPipelineAlerts(): Promise<{
     };
   }
 
-  await (supabaseAdmin as any).from("alert_notifications_sent").upsert({
+  // R123: this write used to be awaited with no error binding — a rejected
+  // marker meant the SAME alert set went out again every tick for an hour, and
+  // the run row said ok=true.
+  const { error: debounceWriteError } = await (supabaseAdmin as any).from("alert_notifications_sent").upsert({
     alert_hash: alertHash,
     sent_at: new Date().toISOString(),
     severity: hot.some((a) => a.severity === "critical") ? "critical" : "high",
@@ -313,6 +325,15 @@ async function processPipelineAlerts(): Promise<{
       .join(" • ")
       .slice(0, 500),
   });
+  if (debounceWriteError) {
+    console.log(`[check-alerts] debounce marker write failed (${debounceWriteError.message}) — the next tick will re-send this set`);
+  }
+  const debounce_error =
+    debounceWriteError
+      ? `debounce marker write: ${debounceWriteError.message}`
+      : debounceReadError
+        ? `debounce read: ${debounceReadError.message}`
+        : undefined;
 
   console.log(
     `[check-alerts] pipeline notify — ${hot.length} alerts (hash=${alertHash.slice(0, 10)}) email=${emailRes.ok ? "ok" : "fail"} telegram=${telegramRes.ok ? "ok" : "fail"}`
@@ -325,6 +346,10 @@ async function processPipelineAlerts(): Promise<{
     telegrams_sent: telegramRes.ok ? 1 : 0,
     debounced: false,
     ...(Object.keys(channel_errors).length > 0 ? { channel_errors } : {}),
+    ...(debounce_error ? { debounce_error } : {}),
+    // A failed marker WRITE fails the run: the alerts went out, but the debounce
+    // that stops them going out again did not land.
+    ...(debounceWriteError ? { error: debounce_error } : {}),
   };
 }
 

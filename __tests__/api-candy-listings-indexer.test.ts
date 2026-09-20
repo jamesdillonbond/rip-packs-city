@@ -168,6 +168,52 @@ describe("candy-listings-indexer — sweep ladder", () => {
     expect((log?.p_extra as Record<string, unknown>).sol_usd).toBe(150)
   })
 
+  // R123 (2026-09-20): rejected writes used to be console.logged (the upserts) or
+  // read as "[] = nothing to deactivate" (the three deactivation updates were
+  // destructured as `{ data }` only), and the run row said ok=true either way.
+  // Mutation-checked: restoring the hardcoded `true, null` reds both arms on p_ok.
+  it("R123: a rejected candy_listings upsert fails the run row and names the table (the sweep still completes)", async () => {
+    const listings: MeListing[] = [
+      { pdaAddress: "pda1", tokenMint: "mint1", price: 0.5, seller: "0xsell", auctionHouse: "ah", tokenSize: 1, expiry: 0 },
+    ]
+    fetchMock = installFetchMock([jsonRoute("/listings", listings), jsonRoute("/activities", [])])
+    const spy = install({
+      wallet_moments_cache: { data: [{ moment_id: "mint1", edition_key: "candy-mlb:trout" }], error: null },
+      editions: { data: [{ id: "ed-trout", external_id: "candy-mlb:trout" }], error: null },
+      // upsert REJECTED -> deactivation update (data []) -> expiry update (data []).
+      candy_listings: [{ data: null, error: { message: "upsert boom" } }, { data: [] }, { data: [] }],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: false, p_rows_written: 0, p_rows_skipped: 1 })
+    expect(String(log?.p_error)).toContain("candy_listings upsert: upsert boom")
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.write_errors).toBe(1)
+    expect(extra.sweep_complete).toBe(true) // the sweep ran to the end; the WRITE failed
+  })
+
+  it("R123: a rejected expiry deactivation is not \"nothing expired\": deactivated stays 0 and the run fails", async () => {
+    const listings: MeListing[] = [
+      { pdaAddress: "pda1", tokenMint: "mint1", price: 0.5, seller: "0xsell", auctionHouse: "ah", tokenSize: 1, expiry: 0 },
+    ]
+    fetchMock = installFetchMock([jsonRoute("/listings", listings), jsonRoute("/activities", [])])
+    const spy = install({
+      wallet_moments_cache: { data: [{ moment_id: "mint1", edition_key: "candy-mlb:trout" }], error: null },
+      editions: { data: [{ id: "ed-trout", external_id: "candy-mlb:trout" }], error: null },
+      // upsert ok -> (no ended mints, so no per-slice deactivation) -> expiry update REJECTED.
+      candy_listings: [{ error: null }, { data: null, error: { message: "expire boom" } }],
+    })
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: false, p_rows_written: 1 })
+    expect(String(log?.p_error)).toContain("candy_listings expire: expire boom")
+    expect((log?.p_extra as Record<string, unknown>).deactivated).toBe(0)
+  })
+
   it("drops a non-Candy mint (wmc miss) — nothing found or upserted", async () => {
     const listings: MeListing[] = [
       { pdaAddress: "pdaX", tokenMint: "mintX", price: 1.2 },

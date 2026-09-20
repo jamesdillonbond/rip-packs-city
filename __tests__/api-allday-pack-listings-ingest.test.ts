@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // leaves runPackListings' grouping/upsert math uncovered. Here we CAPTURE the
 // after() callback and run it, exercising the deferred ingest body: pagination,
 // the set_name::tier grouping with lowest-ask + listed-count, the blank-set and
-// non-positive-ask skips, the delete-then-chunked-upsert, and the editions-error
+// non-positive-ask skips, the chunked-upsert-then-stale-delete (R123, 2026-09-20), and the editions-error
 // early abort. Plus GET's rpc-error → 500 (the shaping success lives in the
 // sibling file).
 
@@ -27,7 +27,7 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     from(table: string) {
       const b: any = {
-        select: () => b, eq: () => b, order: () => b, range: () => b, delete: () => b,
+        select: () => b, eq: () => b, order: () => b, range: () => b, delete: () => b, not: () => b,
         upsert: (chunk: any[]) => { st.upserts.push(...chunk); return b },
         then: (resolve: any) => {
           if (table === "editions") return resolve(st.editions)
