@@ -202,16 +202,40 @@ export async function GET(req: NextRequest) {
   const staleRow = (rankerStaleRes.data?.[0] ?? null) as {
     qualifying_ignoring_freshness?: number | null;
     newest_qualifying_snapshot?: string | null;
+    candidates_considered?: number | null;
+    candidates_adjudicated?: number | null;
   } | null;
   if (rankerStaleRes.error) {
     console.error("[public/insights/pack-reality] v_topshot_pack_reality_ranker_staleness", rankerStaleRes.error);
   }
+  // 2026-09-20 (#118): `stale_count` is now ADJUDICATED, not assumed — the view
+  // recomputes each candidate's EV live and requires the pack to be listed right
+  // now, so "N packs would otherwise qualify" is a measurement. Measured the day
+  // it shipped: 3 candidates, only 2 still qualifying (dist 7812 had moved from
+  // +7.73 to -1.68 since its August snapshot), so the old count overstated by one
+  // in the direction that flatters a buy.
+  //
+  // ⚠ `verdict_complete` is the half a caller would otherwise have no way to see.
+  // The view caps its live recomputation at 60 candidates because each one costs a
+  // compute_pack_ev_per_edition_weighted call; past that, `stale_count` is a LOWER
+  // BOUND. A partial count that cannot be told from a complete one is the exact
+  // defect this whole panel exists to prevent, so the cap travels with the number.
+  // ⛔ Do not collapse this to a bare boolean derived elsewhere — it must come from
+  // the same row as the count it qualifies.
   const rankerStaleness =
     staleRow == null
       ? null
       : {
           stale_count: Number(staleRow.qualifying_ignoring_freshness ?? 0),
           newest_qualifying_snapshot: staleRow.newest_qualifying_snapshot ?? null,
+          candidates_considered:
+            staleRow.candidates_considered == null ? null : Number(staleRow.candidates_considered),
+          candidates_adjudicated:
+            staleRow.candidates_adjudicated == null ? null : Number(staleRow.candidates_adjudicated),
+          verdict_complete:
+            staleRow.candidates_considered == null || staleRow.candidates_adjudicated == null
+              ? null
+              : Number(staleRow.candidates_considered) === Number(staleRow.candidates_adjudicated),
         };
 
   const elapsedMs = Date.now() - startedAt;

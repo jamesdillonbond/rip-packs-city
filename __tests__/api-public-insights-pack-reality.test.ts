@@ -42,6 +42,76 @@ describe("GET /api/public/insights/pack-reality", () => {
     expect(body.model_vs_reality.qualifying_dists).toBe(0)
   })
 
+  // ── ranker_staleness (#118), added 2026-09-20 with the adjudication ─────────
+  // This leg had NO test at all, which is how "N packs would otherwise qualify"
+  // stayed an unchecked counterfactual: the view counted rows passing the stored
+  // filters and the copy asserted they would qualify if only our data were fresh.
+  // Measured the day this shipped: 3 candidates, 2 still qualifying — dist 7812
+  // had moved +7.73 -> -1.68 since August, so the board overstated by one in the
+  // direction that flatters a buy.
+  it("carries the adjudicated count AND whether the verdict was complete", async () => {
+    tables.v_topshot_pack_reality_ranker_staleness = {
+      data: [{
+        qualifying_ignoring_freshness: 2,
+        newest_qualifying_snapshot: "2026-08-28T10:07:13.756Z",
+        candidates_considered: 3,
+        candidates_adjudicated: 3,
+      }],
+      error: null,
+    }
+    const res = await GET(req(base))
+    const body = await res.json()
+    const s = body.meta.ranker_staleness
+    expect(s.stale_count).toBe(2)
+    expect(s.candidates_considered).toBe(3)
+    expect(s.candidates_adjudicated).toBe(3)
+    expect(s.verdict_complete).toBe(true)
+  })
+
+  it("reports verdict_complete false when the view hit its recomputation cap", async () => {
+    // considered > adjudicated: the live re-check stopped at the cap, so the count
+    // is a LOWER BOUND. A caller with no way to tell this from a complete verdict
+    // would publish a floor as a total.
+    tables.v_topshot_pack_reality_ranker_staleness = {
+      data: [{
+        qualifying_ignoring_freshness: 60,
+        newest_qualifying_snapshot: "2026-09-20T00:00:00.000Z",
+        candidates_considered: 214,
+        candidates_adjudicated: 60,
+      }],
+      error: null,
+    }
+    const res = await GET(req(base))
+    const body = await res.json()
+    expect(body.meta.ranker_staleness.verdict_complete).toBe(false)
+  })
+
+  // ⚠ THE ABSENCE ARM, and it is the one that matters. Against a view that has
+  // not been migrated yet the two columns are missing, and `verdict_complete`
+  // must be NULL — "unknown" — never `true`. A missing field defaulting to the
+  // reassuring value is this panel's entire defect class.
+  it("a pre-migration view shape yields verdict_complete null, never true", async () => {
+    tables.v_topshot_pack_reality_ranker_staleness = {
+      data: [{ qualifying_ignoring_freshness: 3, newest_qualifying_snapshot: "2026-08-28T10:07:13.756Z" }],
+      error: null,
+    }
+    const res = await GET(req(base))
+    const body = await res.json()
+    const s = body.meta.ranker_staleness
+    expect(s.stale_count).toBe(3)
+    expect(s.verdict_complete).toBeNull()
+    expect(s.candidates_considered).toBeNull()
+  })
+
+  // A failed read must not become a zero: null, so the client keeps the old copy.
+  it("a failed staleness read leaves ranker_staleness null rather than a 0 count", async () => {
+    tables.v_topshot_pack_reality_ranker_staleness = { data: null, error: { message: "boom" } }
+    const res = await GET(req(base))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.meta.ranker_staleness).toBeNull()
+  })
+
   it("classifies realized model-vs-reality buckets (non-fossil guard)", async () => {
     tables.topshot_pack_reality_stats = { data: [{ pct_zero_pulls: 51 }], error: null }
     tables.topshot_pack_reality_dist = { data: [{ bucket: "0", n: 100 }], error: null }

@@ -316,6 +316,76 @@ describe("PackRealityPage — board formatting + degraded states", () => {
     expect(text).not.toMatch(/null|NaN/)
   })
 
+  // ── The staleness third state (#118), added 2026-09-20 ─────────────────────
+  // This branch renders a CLAIM ABOUT OUR OWN DATA on a buy/no-buy board, and it
+  // had no test. Its old copy said N packs "would otherwise qualify" — an
+  // unchecked counterfactual. The view now adjudicates it (live EV recompute +
+  // the pack must be listed right now), so the copy states a re-check.
+  it("says the packs still qualify on a LIVE re-check, not that they 'would otherwise' qualify", async () => {
+    vi.stubGlobal("fetch", jsonOnce(boardPayload({
+      top_ev: [],
+      meta: {
+        ranker_staleness: {
+          stale_count: 2,
+          newest_qualifying_snapshot: new Date(Date.now() - 23 * 24 * 3_600_000).toISOString(),
+          candidates_considered: 3,
+          candidates_adjudicated: 3,
+          verdict_complete: true,
+        },
+      },
+    })))
+    render(<PackRealityPage />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/still qualify/i))
+    const text = document.body.textContent ?? ""
+    // The counterfactual phrasing is the defect. Assert its ABSENCE, not merely
+    // the presence of the new wording — both could coexist after a bad edit.
+    expect(text).not.toMatch(/would otherwise qualify/i)
+    expect(text).toMatch(/2 packs still qualify/i)
+    // A complete verdict must NOT be hedged as a floor.
+    expect(text).not.toMatch(/at least 2 packs/i)
+    // And it must still not read as a claim about the market.
+    expect(text).not.toMatch(/No \+EV packs right now/i)
+  })
+
+  it("hedges the count as a floor when the live re-check hit its cap", async () => {
+    vi.stubGlobal("fetch", jsonOnce(boardPayload({
+      top_ev: [],
+      meta: {
+        ranker_staleness: {
+          stale_count: 60,
+          newest_qualifying_snapshot: new Date(Date.now() - 3 * 24 * 3_600_000).toISOString(),
+          candidates_considered: 214,
+          candidates_adjudicated: 60,
+          verdict_complete: false,
+        },
+      },
+    })))
+    render(<PackRealityPage />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/at least 60 packs/i))
+  })
+
+  // ⚠ The reassuring-default arm. Against a route that has not been redeployed
+  // the field is absent, and `undefined` must NOT be read as "complete" — that
+  // would publish a floor as an exact count, which is the same shape as the
+  // defect the whole panel exists to prevent.
+  it("an absent verdict_complete is not treated as a complete verdict", async () => {
+    vi.stubGlobal("fetch", jsonOnce(boardPayload({
+      top_ev: [],
+      meta: {
+        ranker_staleness: {
+          stale_count: 3,
+          newest_qualifying_snapshot: new Date(Date.now() - 23 * 24 * 3_600_000).toISOString(),
+        },
+      },
+    })))
+    render(<PackRealityPage />)
+    await waitFor(() => expect(document.body.textContent).toMatch(/still qualify/i))
+    // Unknown completeness renders unhedged today (the status quo), but the
+    // assertion that matters is that the OLD counterfactual copy is gone for
+    // good — no payload shape can bring it back.
+    expect(document.body.textContent ?? "").not.toMatch(/would otherwise qualify/i)
+  })
+
   it("renders the empty state when no packs qualify", async () => {
     vi.stubGlobal("fetch", jsonOnce(boardPayload({ top_ev: [], distribution: [] })))
     render(<PackRealityPage />)

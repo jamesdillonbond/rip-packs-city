@@ -88,7 +88,15 @@ type ApiResponse = {
     errors?: SourceError[]
     // Why an empty ranker is empty. `stale_count` = packs passing every ranker
     // filter EXCEPT the 48h freshness one. null when the route could not read it.
-    ranker_staleness?: { stale_count: number; newest_qualifying_snapshot: string | null } | null
+    ranker_staleness?: {
+      stale_count: number
+      newest_qualifying_snapshot: string | null
+      // 2026-09-20 (#118). `stale_count` is adjudicated live by the view, but its
+      // recomputation is capped at 60 candidates, so it can be a LOWER BOUND.
+      candidates_considered?: number | null
+      candidates_adjudicated?: number | null
+      verdict_complete?: boolean | null
+    } | null
   }
   stats: Stats
   distribution: DistRow[]
@@ -219,7 +227,14 @@ export default function PackRealityPage() {
       hours < 48
         ? `${hours} hour${hours === 1 ? "" : "s"} ago`
         : `${Math.floor(hours / 24)} days ago`
-    return { count: s.stale_count, agoLabel }
+    // ⚠ 2026-09-20 (#118): `verdict_complete === false` means the view hit its
+    // 60-candidate recomputation cap, so `stale_count` is a floor rather than a
+    // count. `undefined` is the OLD payload shape (a deploy where the route has
+    // not caught up), and it must read as "unknown", not as "complete" — a
+    // missing field defaulting to the reassuring value is how this panel's whole
+    // defect class works.
+    const atLeast = s.verdict_complete === false
+    return { count: s.stale_count, agoLabel, atLeast }
   }, [data, loadFailed, loading])
 
   const tweetIntent = useMemo(() => {
@@ -345,7 +360,7 @@ export default function PackRealityPage() {
               : loading
                 ? "Loading…"
                 : rankerStale
-                  ? `Our Top Shot pack prices are stale, so the ranker has nothing fresh enough to show — ${rankerStale.count} pack${rankerStale.count === 1 ? "" : "s"} would otherwise qualify, last priced ${rankerStale.agoLabel}. This is our data being behind, not a reading of the market.`
+                  ? `Our Top Shot pack prices are stale, so the ranker has nothing fresh enough to show — ${rankerStale.atLeast ? "at least " : ""}${rankerStale.count} pack${rankerStale.count === 1 ? "" : "s"} still qualif${rankerStale.count === 1 ? "ies" : "y"} on a live re-check, last priced ${rankerStale.agoLabel}. This is our data being behind, not a reading of the market.`
                   : "No +EV packs right now."}
           </div>
         ) : (
