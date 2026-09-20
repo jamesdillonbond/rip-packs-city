@@ -145,6 +145,17 @@ Rotation surfaces and which worker carries which secret: see the three-rotation-
 
 ## Windows / Git Bash patching rules (CRITICAL)
 
+### 🚨 BEFORE INTERPRETING ANY BEFORE/AFTER ON THIS ESTATE, LIST THE MIGRATIONS INSIDE YOUR WINDOW — one query, and it would have caught THREE confounds in one evening (2026-09-19)
+
+CLAUDE.md already says *"a reading taken while its SUBJECT CHANGED is not a reading — freeze the tree, then measure."* ⛔ **On this estate you cannot freeze the tree: two or three sessions ship concurrently, and none of them announces a migration to the others.** So the rule needs an instrument rather than a resolution:
+
+    SELECT version, name FROM supabase_migrations.schema_migrations
+    WHERE version >= '<YYYYMMDDHHMMSS of your window start>' ORDER BY version;
+
+📏 **Three separate readings on 2026-09-19 spanned an intervention their author did not know had landed:** a pack-rip 52 % figure · a `pg_net` `VACUUM FULL` window · an autovacuum-worker series where samples at 04:18Z and 04:21Z were pre-change and 04:37Z was post, because `20260920042528` landed at **04:25:28Z**. ⭐ **All three are one query away from being caught, and the query costs nothing.**
+
+⚠ **THE PRACTICAL COROLLARY, stated because it is stricter than it sounds: while a concurrent session is shipping, the safe measurement window is MINUTES, NOT HOURS.** A 30-minute before/after on this estate is not a controlled comparison, it is a hope. ⭐ **And the salvage is usually available: when a window IS contaminated, check whether the samples on ONE SIDE of the change point still answer a narrower question** — the autovacuum series above kept its finding (the fall had already begun) precisely because two samples sat entirely before the migration.
+
 ### 🚨 A TWO-ANCHOR SLICE EDIT DELETES EVERYTHING BETWEEN ITS ENDPOINTS — AND IT PASSES THE OCCURRENCE-COUNT ASSERTION (2026-09-19)
 
 CLAUDE.md already says **assert the occurrence count before a scripted replace** (`n = s.count(old); assert n == 1`). ⛔ **That rule does NOT protect a slice.** The common repair shape is:
@@ -161,6 +172,8 @@ CLAUDE.md already says **assert the occurrence count before a scripted replace**
 1. **Prefer a single-anchor INSERT to a two-anchor slice** — `s.split(anchor).join(addition + anchor)` can only add. Most "replace this section" edits are really "insert before/after this heading".
 2. **When a slice is genuinely needed, name what must SURVIVE and grep each one AFTER writing** — by section name, not by diff size. `git diff --stat` showing few deletions proves nothing when the deleted lines were long.
 3. **Assert on the RESULT, not the operation.** The operation's exit code describes whether it ran, never whether it ran correctly.
+
+🚨 **AND THE SURVIVAL CHECK ITSELF FAILS IN THE DANGEROUS DIRECTION — A FALSE NEGATIVE READS EXACTLY LIKE DESTRUCTION.** Observed the same evening: a session ran its six post-write greps, one returned **0**, and it briefly believed it had destroyed a section. **The section was intact — the search string had dropped a backtick.** ⛔ **The reflex a zero provokes is "restore it", and restoring a section that was never lost DUPLICATES it** — the recovery is worse than the imagined damage. ⚠ **Grep the REAL text, copied out of the file, never your memory of it; and CONFIRM a zero before acting on it.** ⭐ **Same family as the unanchored conflict-marker check on this page, pointed the other way: that one fires when everything is FINE, this one fires when nothing is WRONG. An integrity check needs its own positive control.** 📏 **Demonstrated twice within ten minutes — the insert that added this very paragraph first failed its own anchor assertion for exactly this reason: the retyped anchor ended `page**` where the file reads `page — …`.**
 
 ⭐ **This is the same shape as the other traps on this page — `git add -p` exiting 0 having staged nothing, `python` resolving but never executing, `$?` reporting a pipe's last command, an unanchored grep matching its own warning. In every case the operation reported success and only an INDEPENDENT CHECK OF THE RESULT disagreed.** ⚠ **Knowing the trap does not prevent it; three of these were walked into by sessions that had already documented them the same evening.** **Build the check so the output contradicts itself when wrong.**
 
