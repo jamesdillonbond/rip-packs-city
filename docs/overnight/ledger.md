@@ -11,6 +11,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🚨 THE KILL-RATE CLI AND THE SENTINEL ARM IT SAYS IT MIRRORS GAVE OPPOSITE VERDICTS ON THE SAME LANE — `npm run pipelines:kills` was pinned at exit 1 by a workflow that is working exactly as designed · Claude Code cloud
+
+**Shipped: `lib/pipeline/kill-rate.ts` (new `unverified` verdict) + `scripts/analysis/killed-after-routes.mjs` (output + exit-code doc) + 7 new test arms, 2 re-pinned.**
+
+🚨 **Read live, minutes apart, against the same `pipeline_runs` rows:**
+
+| instrument | `dead-lane-backstop` |
+|---|---|
+| `check_wall_kills()` (SQL) | **`unverified`**, 8 heartbeats — not an offender |
+| `correlateRuns()` (the CLI) | **`failing`, 15/15 = 100%, rank 0** |
+
+`lib/sentinel/wall-kills.ts` says the SQL arm *mirrors* `lib/pipeline/kill-rate.ts` and has carried the rule since **09-13**. The TS module never got it. The divergent one is the operator-facing CLI, and its exit is `records.some(verdict === 'failing') ? 1 : 0` — so `npm run pipelines:kills` **exited 1 on every run, forever**, on a lane with nothing to fix: `.github/workflows/dead-lane-backstop.yml` is a GHA scheduler-liveness probe that POSTs a heartbeat and **by design never writes a terminal row**.
+
+⭐ **The defect is the honesty one, not a verdict name.** What the correlation OBSERVED is *no terminal row*. That has two incompatible meanings — the tick was killed, or this lane has no terminal writer at all — and `failing` published one of them as a fact ("the most recent tick was KILLED (15/15 = 100%)"). It is also CLAUDE.md's *permanently-red instrument is indistinguishable from a broken one*, which is how it survived a week.
+
+⚠ **The discriminator is the DATA, never a name allowlist** — the same rule this file already followed for `-dispatch` markers and never applied to `-heartbeat`. A writer is proven by a terminal row for that base existing **anywhere** in the window, so a lane genuinely killed on every tick still reads `failing` as long as one terminal row proves the writer runs. **Mutation-proven in both directions:** forcing `writerProven = true` reds 6 arms, forcing it to ignore the count reds 3 — including the negative control that stops the rule excusing a real corpse.
+
+⚠ **The price, written down rather than discovered later:** a lane whose first kill precedes its first success, and a lane killed for the whole ~73 h window, now read `unverified` instead of `failing`. That is alarm → **warning, not silence** — `unverified` is a verdict, sorts **above** `recovered`/`healthy`, and the CLI prints it in its own named block. (For `-dispatch` the same trade is currently a full **drop-out**.) The lane that never produces output is the **silence/zero-yield arms'** job, not this one's.
+
+📏 **Also re-derived while here** (48 h, `pipeline_runs`): the kill ladder is `dead-lane-backstop` 100% (not a kill) · `pinnacle-metadata-backfill` 46.8% · `classify-acquisitions-multicollection` 41.7% · `fmv-recalc` 36.5% · `drain-fmv-cold-tail` 31.9%, then a cliff to `allday-lock-refresh` 10.6%. The top five are exactly the lanes already fixed or diagnosed this morning — **no sixth target exists at this threshold**, which is why nothing was swept into the other 61 `after()` routes.
+
+- **Revert:** `git log --grep='unverified verdict' ` → `git revert <sha>`. No DB or schedule change.
+
 ### 2026-09-20 · 🧹 R120 SWEPT — the swallowed-write class is FLEET-WIDE (20+ writers), my OWN fix was incomplete, and the copy-paste SOURCE was a stale draft reading as maintained · Claude Code Windows box
 
 **Shipped: `app/api/cron/panini-ingest/route.ts` (the pack-state write, missed on my first pass) + 2 more test arms + a STALE banner on `docs/drafts/panini/panini-ingest-route.ts` + CLAUDE.md gains the WRITE-side rule (one bullet DISPLACED to make room) + the full canon into `key-files-and-honesty.md` and `database.md`. Register row for the fleet population. No DB change.**
