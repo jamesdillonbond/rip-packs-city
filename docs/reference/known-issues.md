@@ -2191,6 +2191,26 @@ date stamp, and this file's standing rule that every recorded status has a shelf
     ⚠ **THE POOL-EXHAUSTION STEP IS INFERRED, NOT MEASURED, and must stay labelled that way: there is no instrument on this database for FREE bgworker slots.** The occupancy count is real (it comes from `cron.job_run_details` overlap); "therefore the pool was exhausted" is the reasonable reading of a starved start, not an observation. ⛔ **Do not upgrade this to a measurement without an instrument, and do not raise `cron.max_running_jobs` on the strength of it** — 32 is already 5× the worker pool, so the setting is not the binding constraint.
 
     ⚠ **A MEASUREMENT TRAP INSIDE THIS ONE, recorded because my own first read got it wrong: EXCLUDING FAILED RUNS FROM AN OCCUPANCY COUNT UNDERCOUNTS IT.** My first query filtered `status <> 'failed'` and returned **2** mid-flight, which would have made the whole argument collapse (2 of 6 leaves 4 free and would not explain 7 starving). **A run that later times out held a worker for its entire duration** — jobid 64 occupied a slot for 601.5 s and is recorded as `failed`. The correct predicate is overlap (`start < T AND end > T`) regardless of final status, excluding only the starved starts themselves, which never got a worker. **Filtering an occupancy question by OUTCOME is the same family as counting a queue by its successes.**
+    ⭐ **THE WEEKLY WMC REINDEX WAVE IS NOT THIS ITEM'S CAUSE — MEASURED, after `rip-packs-city-52` named it as "the spells' second author" (`8ce3511be`).** All seven jobs (438–442, 477, 478) are `* * 0` — **Sunday UTC**, 02:03–04:03Z, i.e. **Saturday evening PT**. Labelling the busy-seconds series by weekday settles it:
+
+| day | weekday (UTC) | wave day | busy-seconds | of which REINDEX |
+|---|---|---|---|---|
+| 09-13 | Sun | **yes** | 149,247 | **221** |
+| 09-14 | Mon | no | 82,543 | 0 |
+| **09-15** | Tue | no | **34,236** | **0** |
+| 09-16 | Wed | no | 66,422 | 0 |
+| 09-17 | Thu | no | 122,744 | 0 |
+| 09-18 | Fri | no | 168,859 | 0 |
+| **09-19** | Sat | no | **233,894** | **0** |
+| 09-20 | Sun | **yes** | 26,779 (partial) | **849** |
+
+    ⛔ **THE ENTIRE 09-15 → 09-19 RAMP CONTAINS ZERO REINDEX SECONDS, so the wave cannot be its cause** — and the clean control this item rests on (**09-15**) is a Tuesday, well away from the wave. ✅ **That is the useful negative.**
+
+    ⚠ **BUT DO NOT READ "221 SECONDS" AS "NEGLIGIBLE" — busy-seconds is the WRONG INSTRUMENT for a `REINDEX CONCURRENTLY`.** Its own duration is a poor proxy for its blast radius: it is IO-heavy and the cost lands on *everything else*, not on its own job row. **So this measurement shows the wave is not in the RAMP; it does NOT show the wave is harmless on the days it runs** — and the session that named it has the direct evidence for those days. ⭐ **Two different questions, and only one of them busy-seconds can answer.**
+
+    🚩 **TWO DATED READINGS ARE THEREFORE CONFOUNDED AND SHOULD NOT BE USED AS BASELINES: 09-13 and 09-20 (tonight).** Both are wave days. ⚠ **09-13's 149,247 sits in this item's own table above and is the second-highest figure in it** — a reader taking it as a quiet-day baseline would understate the ramp. **Use 09-15/09-16 (Tue/Wed, no wave) for that.**
+
+    ⓘ **Incidentally this identifies an observation made earlier in this item's investigation:** a `REINDEX INDEX CONCURRENTLY public.wallet_moments_cache_wallet_collection_moment_key` caught running at ~02:5xZ on 09-20, with its `_ccnew` stub at 148 MB and `indisvalid=false`, was **jobid 440 on its scheduled weekly tick** (`43 2 * * 0`) — not an ad-hoc operation, and not drift.
     👉 **EXIT, cheapest first: (1)** read tomorrow whether `backfill-pack-rip-metadata`'s 50 s budget held past a single run; **(2)** ask what changed between 09-16 and 09-17 ~16:00Z — a data-volume step, a new/rescheduled lane, or a retired index are all consistent and none is excluded; **(3)** measure the three named statements' BUFFERS warm-vs-warm (never durations — the whole point of this item is that durations here measure the estate, R101). ⛔ **Do NOT throttle or pause an ingest lane on account of this** — the standing rule, and a pause creates real data gaps. ⛔ **Do not "fix" it by raising a timeout**: #73's neighbour `20260919...` already shows a budget rise failing against an IO-bound scan.
 
 
