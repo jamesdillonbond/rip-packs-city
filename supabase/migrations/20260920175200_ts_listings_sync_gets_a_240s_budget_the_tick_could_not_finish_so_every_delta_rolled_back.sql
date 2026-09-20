@@ -1,0 +1,53 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- jobid 466: 120 s budget → 240 s. The lane had stopped writing ENTIRELY.
+--
+-- ── WHAT WAS ACTUALLY HAPPENING (found 2026-09-20 10:23 PT) ─────────────────
+-- `ts_listings.max(ingested_at)` was frozen at 09:01 PT — 82 minutes — while
+-- the upstream was perfectly healthy: `topshot_atlas_market_events` for open
+-- nba listings had `max(last_seen_at)` = 10:21, two minutes old, 59,181 rows.
+-- So the firehose was fine and the SYNC was not propagating.
+--
+-- Every tick from 09:34 onward is `ok=false` at 120 s. The post-10:00 ones show
+-- the sync step COMPLETING and computing a real delta — 576 inserted, 118
+-- updated, 1,840 deleted — and then the TICK dying in a later step. The whole
+-- tick is one transaction, so **that delta rolled back every single time**. The
+-- lane was burning 120 s a tick to write exactly nothing.
+--
+-- ⚠ AND IT IS DEGENERATE. The delta is computed against `ts_listings`, which is
+-- frozen. Every minute it stays frozen the delta grows, so the sync step gets
+-- slower — measured 6.7 s at 09:02, then 75 s, 95 s, 101 s, 107 s — which makes
+-- the next kill more certain. It cannot recover on its own; it gets worse.
+--
+-- ── MY OWN CHANGE IS PARTLY IMPLICATED, STATED PLAINLY ──────────────────────
+-- The break began ~09:04, BEFORE 20260920164900 moved this job to */5 at 09:49,
+-- so the cadence did not cause it. But */5 gives the lane 12 recovery attempts
+-- an hour instead of 30, and with a feedback loop like this, attempts are what
+-- break the cycle. Cutting them made recovery slower. The cadence change was
+-- argued on a 36 % kill rate that is now 100 %, which is a different regime.
+--
+-- ── WHY A BUDGET AND NOT A REVERT ───────────────────────────────────────────
+-- The tick needs more than 120 s now: sync alone is 75–107 s, and
+-- cached_listings + edition_offers + the two verify dispatches follow it. No
+-- cadence fixes a tick that cannot finish. 240 s fits inside the */5 spacing
+-- (300 s), so ticks still cannot overlap — which is exactly why the budget and
+-- the cadence had to move together rather than either one alone.
+--
+-- ⚠ The prefix form is required: `SET statement_timeout` INSIDE a function is
+-- INERT under pg_cron. This follows the established pattern (jobid 506,
+-- 2026-09-20 00:16). jobid is preserved by scheduling under the same name.
+--
+-- EXIT: a tick completes `ok=true`, and `ts_listings.max(ingested_at)` starts
+--       tracking within minutes of `topshot_atlas_market_events`' own max.
+--       Once it commits once, the delta collapses back to ~100 rows/tick and
+--       the sync step should return to single-digit seconds.
+-- FALSIFIER: if ticks still die at 240 s, the sync's cost is not delta size and
+--       the open-book rebuild itself needs bounding (materialise `_open24`
+--       across ticks, or narrow the 24 h window) — do NOT keep raising this.
+-- REVERT: select cron.schedule('rpc-ts-listings-atlas-sync', '*/5 * * * *',
+--                              'SELECT public.atlas_listing_verify_tick(2)');
+-- ─────────────────────────────────────────────────────────────────────────────
+SELECT cron.schedule(
+  'rpc-ts-listings-atlas-sync',
+  '*/5 * * * *',
+  'SET statement_timeout = ''240s''; SELECT public.atlas_listing_verify_tick(2)'
+);

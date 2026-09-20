@@ -11,6 +11,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🚨 jobid 466 HAD STOPPED WRITING ENTIRELY — the tick could not finish, so a real delta rolled back every time; degenerate, and my own cadence change made recovery slower · Claude Code Windows box
+
+**Found at 10:23 PT while verifying something else.** `ts_listings.max(ingested_at)` was frozen at **09:01 PT (82 minutes)** while the upstream was healthy — `topshot_atlas_market_events` open nba listings had `max(last_seen_at)` = **10:21, two minutes old, 59,181 rows**. Firehose fine; the SYNC was not propagating.
+
+**Every tick from 09:34 on is `ok=false` at 120 s.** The post-10:00 records show the sync step COMPLETING and computing a real delta — **576 inserted, 118 updated, 1,840 deleted** — and the tick then dying in a later step. The whole tick is one transaction, so **that delta rolled back every single time**. The lane burned 120 s a tick to write nothing.
+
+⚠ **And it is DEGENERATE, which is why it could not self-heal.** The delta is computed against a frozen `ts_listings`, so every minute frozen makes the delta bigger and the sync slower — measured **6.7 s at 09:02, then 75 s → 95 s → 101 s → 107 s**. Each step makes the next kill more certain. This shape does not recover by waiting; it accelerates away.
+
+**↩ My own change is partly implicated, stated plainly.** The break began ~09:04, **before** `20260920164900` moved the job to `*/5` at 09:49, so the cadence did not cause it. But `*/5` gives 12 recovery attempts an hour instead of 30, and against a feedback loop attempts are exactly what breaks the cycle — so I made recovery slower. The cadence was argued on a **36 %** kill rate; the regime when I shipped it was already **100 %**, and I did not re-check that the measurement still described the lane. ⚠ **Re-test a stated premise immediately before acting on it, not just when it was filed.**
+
+**`20260920175200`: budget 120 s → 240 s** (prefix form — `SET statement_timeout` inside a function is INERT under pg_cron; follows jobid 506's pattern from 00:16). No cadence fixes a tick that cannot finish: sync alone is 75–107 s and four more steps follow it. 240 s fits inside the `*/5` spacing (300 s) so ticks still cannot overlap — **the budget and the cadence had to move together**, which is the lesson. jobid preserved.
+
+**Exit:** a tick completes `ok=true` and `max(ingested_at)` tracks the events table within minutes; once it commits once the delta collapses to ~100 rows and the sync returns to single-digit seconds. **Falsifier:** still dying at 240 s ⇒ the cost is the open-book rebuild itself, not delta size — bound it (materialise `_open24` across ticks, or narrow the 24 h window) and do NOT keep raising the budget.
+
+⭐ **The honesty work shipped this morning behaved correctly throughout.** The Order Book card's new gate reads the book's own `age_hours`, so at 82 minutes it still published depth (under the 6 h window) and would have flipped to "this feed is behind — not rebuilt for N hours" on its own had this run longer. **A stale feed now degrades into a measurement instead of a false claim** — which is the whole point, and it is also how the staleness got noticed at all.
+
 ### 2026-09-20 · ✅ WALLET PACK INVENTORY WAS SHOWING PACKS THE WALLET NO LONGER OWNS — 23 phantom "unopened packs", 23 of 23 Sealed, on 5 of 27 saved wallets · Claude Code cloud
 
 **Asked:** make sure pack transaction history is up to date for every registered wallet, so users see their unopened packs and their pack sales history. **The sync was already healthy; the READER was not.**
