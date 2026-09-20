@@ -2258,6 +2258,17 @@ date stamp, and this file's standing rule that every recorded status has a shelf
     📏 **AND THE SAME THREE RUNS ARE THIS ITEM'S THESIS IN MINIATURE: 5.3 s · 6.5 s · >50 s ON IDENTICAL WORK, an ~9× swing inside two hours** — the bimodal quiet-vs-contended shape, in one lane, with the cause of the third run's contention external to it.
 
     📏 **VACUUM SATURATION IS TRENDING DOWN, which is the early read on R117's falsifier (formally a post-06:00Z series, so these are datapoints and not the answer):** `pg_stat_progress_vacuum` read **3 of 3** at 9:18 PM PT (`rip-packs-city-52`), **2** at 04:21:25Z, and **0** at 04:37:07Z, with `io_wait` 5 / `active` 3 at the last sample. **Three falling samples are consistent with CATCH-UP rather than steady-state saturation** — which is the outcome that would retire that paragraph. ⚠ **Still owed: the post-06:00Z series, and `pack_rips` is excluded until its self-unscheduling job re-enables it at 08:12Z, so a sample before then is not the full set.**
+    🚨 **CORRECTION TO THE VACUUM DATAPOINTS DIRECTLY ABOVE — THEY ARE POOLED ACROSS A FIX AND I DID NOT KNOW IT WHEN I WROTE THEM.** Migration **`20260920042528`** (*"the two pack sales history churn tables back off to 0.1 after seven passes in seventy minutes"*) landed at **04:25:28Z**, i.e. **between my second and third samples**:
+
+    | sample | vacuums running | vs the 04:25:28Z back-off |
+    |---|---|---|
+    | 04:18Z | 3 | **before** |
+    | 04:21Z | 2 | **before** |
+    | 04:37Z | **0** | **after** |
+
+    ⛔ **So "three falling samples are consistent with catch-up" DOES NOT FOLLOW** — the only post-fix reading is the 0, and it cannot be separated from the back-off. ✅ **What DOES survive, and it is `rip-packs-city-52`'s reading: the fall had already STARTED before the fix could bite (3 → 2 while both samples were pre-change), so that part is not the back-off.** Everything after 04:25Z is confounded.
+
+    ⚠⚠ **THIRD TIME IN ONE NIGHT THAT A READING OF MINE SPANNED AN INTERVENTION I WAS UNAWARE OF** — the pack-rip 52 %, the pg_net VACUUM FULL window, and now this. ⭐ **The generalisable rule this earns: while a concurrent session is shipping, the safe measurement window is MINUTES, not hours.** 👉 **Before interpreting ANY before/after on this estate, run `SELECT version, name FROM supabase_migrations.schema_migrations WHERE version >= '<window start>'` and read what landed inside your own window.** It is one query, it is decisive, and it would have caught all three.
     👉 **EXIT, cheapest first: (1)** read tomorrow whether `backfill-pack-rip-metadata`'s 50 s budget held past a single run; **(2)** ask what changed between 09-16 and 09-17 ~16:00Z — a data-volume step, a new/rescheduled lane, or a retired index are all consistent and none is excluded; **(3)** measure the three named statements' BUFFERS warm-vs-warm (never durations — the whole point of this item is that durations here measure the estate, R101). ⛔ **Do NOT throttle or pause an ingest lane on account of this** — the standing rule, and a pause creates real data gaps. ⛔ **Do not "fix" it by raising a timeout**: #73's neighbour `20260919...` already shows a budget rise failing against an IO-bound scan.
 
 
