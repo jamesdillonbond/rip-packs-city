@@ -11,6 +11,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🚨 THE SET TRACKER I SHIPPED THIS MORNING HID 45% OF EVERY REAL COMPLETION — a Pinnacle `variant` is a Top Shot `::subID` parallel, and the checklist slot is the CHARACTER, not the printing · Claude Code cloud
+
+**Shipped: `/api/pinnacle-set-progress` re-keyed from `render_id` to `shape_render_id`, the printing axis surfaced as its own number, 6 new test arms, client gains a secondary "N / M VARIANTS" line. No DB change.**
+
+🚨 **THE BUG, in one sentence: a Pinnacle set is 9 characters × 6 variants, and I counted 54 checklist slots where Top Shot's rule gives 9.** A collector holding all nine Toy Story characters in Standard was told **9/54 = 17%** when the house rule says **100%**.
+
+⭐ **THE HOUSE RULE IS NOT A PREFERENCE — I read it out of the live function.** `get_topshot_set_progress` computes `COUNT(DISTINCT play_id_onchain)` for BOTH `total_plays` and `owned_plays`. A Top Shot parallel is `setID:playID::subID` — a different EDITION of the SAME play — so every parallel collapses into one slot and owning any printing fills it. A 100-play set is 100 slots however many parallels exist. `parallels-variants-data-model.md` already records Pinnacle's `variant` as the exact analogue of that axis; I had read that doc and still keyed on the printing.
+
+📊 **MEASURED BEFORE FIXING, because "looks wrong" is not a size.** Across all **144** Pinnacle wallets: **981** genuinely complete sets at character grain vs **536** reported at printing grain — **445 completions hidden, on 57 of 144 wallets (40% of holders).** On the deep wallet `0x8bc1c…`: 107 complete / 20 in progress (67.9% overall) vs the 82 / 45 (58.7%) it was showing. ⛔ **This is the account-level false claim this repo calls the worst sub-class: telling someone they have not finished something they finished.**
+
+⭐ **`shape_render_id` is the `play_id_onchain` analogue and it is clean** — verified live: **918 distinct shapes, 0 carrying more than one character name, 0 rows missing it, 0 spanning two sets.** So it can neither merge two characters nor leak a slot across sets. A `??` fallback to `render_id` covers a future NULL, because that failure mode is silent.
+
+⭐ **A missing character is priced at its CHEAPEST printing** — that is what filling the slot actually costs, and it names the variant a buyer would take. With nothing in the slot listed it falls back to the lowest mint so the row still names a real variant, and still quotes no price. An owned character is represented by the **rarest printing held**.
+
+⭐ **THE VARIANT AXIS IS KEPT, NOT DISCARDED — as its own number.** `totalPrintings` / `ownedPrintings` ride beside completion and are never folded in, rendered as a secondary "N / M VARIANTS" line only when a set actually has parallels. Completion answers *have you finished the set*; depth answers *how deep do you go* — and with Pinnacle's ~13× Standard→premium spread a completionist wants both. ⛔ **They must never be mixed**, which is exactly the mistake the first version made.
+
+🔬 **SEPARATELY — THE 308 STALE/NO_DATA RENDERS ARE HONESTLY LABELLED. Hypothesis REFUTED, recorded so nobody re-chases it.** I suspected a coverage gap after seeing STALE renders with a sale dated **today**. Re-derived: of 154 STALE, exactly **1** sold in the last 30 days, and that sale landed **11:01Z today — after the last FMV recompute at 22:37Z yesterday**, so it re-grades tonight. Stated vs actual days-since-sale: **57 vs 58**. NO_DATA: 105 of 154 have sold at some point, newest **2026-06-21**; 49 never sold. And the missing asks are real — `pinnacle_catalog_set_floor_asks()` is a **full-replace from the live on-chain walk** (`p_map ? render_id ELSE NULL`), so a NULL floor means *not listed at the last walk*, not *not indexed*. ⭐ **Pinnacle's 28.0% HIGH/MED share is market thinness, not a fixable coverage bug** — 1,252 of 2,600 renders have zero sales in 30 days. Same shape as UFC, where the canon already says the label IS the correct product answer.
+
+ⓘ **Incidental, already known, no action:** `pinnacle_listings_direct` is **0 rows** and `pinnacle_cached_listings` newest is **2026-06-08**. Both are dead-Flowty residue and **no live surface reads either** — the only references in the tree are comments saying so.
+
+✅ **Verified:** `npm test` **1,575 files / 17,924 tests green** (18 on this route, 6 of them new and written as the absence of the false claim), `tsc --noEmit` clean, `lint:ratchet` 712/712.
+
+- **Revert:** `git log --grep='HID 45% OF EVERY REAL COMPLETION'` → `git revert <sha>`. ⚠ Reverting restores the printing-grain checklist and with it the hidden completions. No DB half.
+
 ### 2026-09-20 · ✅ THE NINE PACK DISTS READING "REALIZED USD 0.00" ARE CLEARED — 365 rips, done by the shipped leg rather than a second copy of its logic, and one of them was publishing zero for a pack averaging USD 80.19 of pulls · register #128 · Claude Code cloud
 
 📏 **Why these nine and not the whole 82,534.** `mv_topshot_pack_realized_ev` gates on `n_opens >= 10`, and these dists are SMALL (10–136 attributed opens, 365 rips total) — so their whole attributed set was fabricated zeros and `realized_mean` came out exactly 0.00. The rest of the population is diluted, not zeroed; **365 rows is the entire user-visible USD 0.00 symptom.**
