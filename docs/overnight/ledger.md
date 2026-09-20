@@ -11,6 +11,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ THE PINNACLE SET TRACKER'S SET NAMES LEAD SOMEWHERE AGAIN — "SHOP THIS SET" into the Market filter that only started working an hour ago · Claude Code cloud
+
+**Shipped: `CollectionSetsClient` renders a Market deep-link where a collection has no set DETAIL page. Client only. No API or DB change.**
+
+⭐ **THIS CLOSES THE LOOP THAT FOUND #129.** The Pinnacle Set Tracker suppressed its set links because `get_set_detail` returns NULL for every Pinnacle slug — a dead link is worse than none. Reaching for the Market tab as the replacement is what turned up that **`?set=` was silently ignored on four of five collections**. With that fixed at the source, the destination is now real: `/disney-pinnacle/market?set=<name>` returns **53 listed renders** for Toy Story Vol.1, verified on production.
+
+⚠ **THE LABEL IS "SHOP THIS SET", NEVER "VIEW FULL SET PAGE", and the distinction is honesty not copywriting.** The Market arm surfaces only renders with a floor refreshed inside 3 days — what is LISTED, not the set's checklist. A set page and a shopping view answer different questions, and a reader who clicks "VIEW FULL SET PAGE" and lands on 53 of 54 renders has been told something false.
+
+⛔ **The affordance is gated on the collection actually having a `market` page**, not on "is this Pinnacle" — a hardcoded slug check here is how the next collection inherits a link to a tab it does not expose.
+
+✅ **Verified:** `npm test` **1,576 files / 17,933 tests green**, `tsc --noEmit` clean, `lint:ratchet` 712/712. Production control re-run alongside the fix: unfiltered Pinnacle market still returns **1,000 rows across many sets**, so the filter narrows only when asked.
+
+- **Revert:** `git log --grep='SET NAMES LEAD SOMEWHERE AGAIN'` → `git revert <sha>`. Client only; reverting restores plain-text set headings. No DB half.
+
 ### 2026-09-20 · ✅ THE #128 DRAIN GOES 500 → 2000 — decided on BLOCKS/CALL, and the wall-clock number the decision had been resting on was the misleading one · focus.md's one open decision, now closed · Claude Code, Windows box
 
 **Shipped: `app/api/cron/backfill-pack-rip-metadata/route.ts` `p_limit` 500 → 2000, plus its re-pinned guard.** focus.md had this as *"THE ONE DECISION LEFT, and its measurement is already done"* — it was **not** done. What existed was wall-clock (**5.8 s vs 7.4 s**, read as *"4× the rows for 1.28× the time, rows are nearly free"*) plus a pgss figure of **449,416 blocks / 9.1 MB WAL per call** pooled over 657 calls **across both compute tiers AND four body changes the same day**. ⛔ **Neither is a reading of now, and the wall-clock one points the wrong way.**
