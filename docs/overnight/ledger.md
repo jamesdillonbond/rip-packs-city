@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · ⏸ pack_rips AUTOVACUUM PAUSED UNTIL 1:12 AM PT — the paced pass still coincided with startup timeouts, so it moves to the measured quietest hour and re-enables itself · Cowork cloud + laptop VM
+
+**Shipped: 1 migration (`20260920033248`): `autovacuum_enabled = false` on `pack_rips` now; one-off pg_cron `rpc-oneoff-pack-rips-autovacuum-reenable` (jobid 560, postgres, `12 8 * * *` = 1:12 AM PT) flips it back and unschedules itself in the same command.**
+
+⏸ Even at 50 credits / 50 ms the pass coincided with seven `job startup timeout` rows at 8:30 PM PT (IO-waiting 10 of 12 active). Attribution is shared — the tail of the two earlier spells and a routine `cached_listings` autovacuum were in the same minute — but the honest reading is that a 1.28 GB index pass on this tier is the cost whatever the pace. **The 66.7 % map is a week-old status quo, not an incident**; ten more minutes of failed lanes to fix it on a Saturday evening is the wrong trade for users. Paused at 8:33 PM PT (the ALTER cancels the running pass — the SHARE UPDATE EXCLUSIVE rule from the entry below); **0 failures in the 29 cron runs / 38 pipeline runs from 8:34 to 8:37 PM PT** with the box back at active 3 / IO 2 before the routine 8:37 PM wmc autovacuum + jobid 303 + jobid 215 window began (theirs, not mine). 📏 Quietest hour from 7 days of `cron.job_run_details` busy-seconds: **09Z 3,085 s/day, 08Z 3,140, 10Z 3,227** (3–4 failures/day in that band) vs 3,500–7,000+ elsewhere — so 08:12Z, after the 08:00Z matcher tick and before the 09:35Z/09:36Z jobs. The throttle and the 0.02 trigger stay; the pass runs paced, once, in the quiet hour; after that the passes are incremental.
+
+**Exit:** ~1:30 AM PT 09-20 — `pack_rips` `autovacuum_count` = 3, map > 95 %, no `rpc-oneoff-…` row left in `cron.job`, 08Z–09Z failures within the 3–4/day band. **Falsifier:** a startup-timeout step at 1:13–1:30 AM PT anyway ⇒ the 11-index shape is the cost at any pace — open a register item on `pack_rips` index count (1.28 GB of indexes on 764 MB of heap, the wmc shape).
+
+- **Revert:** `ALTER TABLE public.pack_rips RESET (autovacuum_enabled); SELECT cron.unschedule('rpc-oneoff-pack-rips-autovacuum-reenable');`
+
 ### 2026-09-19 · 🐢 THE pack_rips AUTOVACUUM WAS THE NEXT SPELL — the 0.02 trigger fired unthrottled into a 1.28 GB index pass (ten `job startup timeout` rows at 8:18 PM PT), and the throttle took two tries because PG14 charges 2 per page miss, not 10 · Cowork cloud + laptop VM
 
 **Shipped: 2 migrations (`20260920032225`, `032539`) — per-table `autovacuum_vacuum_cost_delay/limit` on `pack_rips`, final value 50 ms / 50 credits.**
