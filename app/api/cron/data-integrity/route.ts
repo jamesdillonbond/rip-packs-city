@@ -59,6 +59,11 @@ export const maxDuration = 30;
 //      the call site: the last two numbers in this comment were both dated
 //      samples that went wrong in opposite directions.
 //   3. badge data freshness (>72h).
+//   4. wallet-pack ownership floor — saved wallets whose pack sync completed
+//      cleanly but carry no last_clean_sync_at, i.e. the stamping trigger has
+//      stopped (check_wallet_pack_sync_floor_drift()). Added 2026-09-20: the
+//      guard it watches disarms SILENTLY, and its own SQL pin cannot see the
+//      writer because that test sets the column by hand.
 // Orphan counts are reported as informational stats only (no flag). Real
 // orphan-regression detection would need stored baselines — a separate feature.
 export async function GET(request: NextRequest) {
@@ -73,12 +78,33 @@ export async function GET(request: NextRequest) {
   try {
     // 1. Security invariants — flag any RLS-off or anon-writable PUBLIC base table.
     //    Clean baseline = 0 rows. Degrades safely: on error, reported null, never flagged.
-    const { data: secViolations, error: secErr } = await rpcWithRetry<any[]>(
-      supabaseAdmin,
-      "check_public_security_invariants",
-      {},
-      { timeoutMs: SECURITY_RPC_TIMEOUT_MS }
-    );
+    //
+    // ⚠ CONCURRENT WITH THE FLOOR-DRIFT LEG, AND THAT IS LOAD-BEARING, NOT
+    // TIDINESS. Every leg in this handler is bounded, but the bounds are SERIAL,
+    // so the route's worst case is their SUM — 6 + 8 + 3 + 3 + 3 = 23s against
+    // the 30s maxDuration it already died at twice in production. Adding the
+    // floor-drift check as a sixth serial leg took that to 29s: still "passing",
+    // one second from the wall, and the budget pin caught it. Two cheap check_*
+    // RPCs in one Promise.all cost max(6, 6), not 6 + 6, so the worst case is
+    // unchanged at 23s. Anything added here later must do the same or raise the
+    // budget deliberately.
+    const [
+      { data: secViolations, error: secErr },
+      { data: floorDrift, error: floorErr },
+    ] = await Promise.all([
+      rpcWithRetry<any[]>(
+        supabaseAdmin,
+        "check_public_security_invariants",
+        {},
+        { timeoutMs: SECURITY_RPC_TIMEOUT_MS }
+      ),
+      rpcWithRetry<any>(
+        supabaseAdmin,
+        "check_wallet_pack_sync_floor_drift",
+        {},
+        { timeoutMs: SECURITY_RPC_TIMEOUT_MS }
+      ),
+    ]);
     const secCount = secErr ? null : Array.isArray(secViolations) ? secViolations.length : 0;
     stats.security_invariant_violations = secCount;
     if (secCount && secCount > 0) {
@@ -90,6 +116,27 @@ export async function GET(request: NextRequest) {
         ? [...new Set(secViolations.map((v: any) => String(v?.kind ?? "unknown")))].sort().join(", ")
         : "unknown";
       issues.push(`${secCount} security invariant violation(s) — ${kinds}`);
+    }
+
+    // 4. The wallet-pack ownership floor (2026-09-20).
+    //    get_wallet_pack_history trusts an index ownership claim only at or
+    //    after pack_wallet_sync.last_clean_sync_at, which a BEFORE trigger
+    //    stamps on every clean walk. That guard fails SILENTLY and in the
+    //    comfortable direction: stop stamping and every floor reads NULL, the
+    //    guard switches off for every wallet, and packs the user has already
+    //    parted with go back to rendering as unopened packs in their inventory.
+    //    Nothing throws, and the SQL pin cannot see it — that test sets the
+    //    column by hand. This is the only thing watching the writer.
+    //    [] = clean. Read the LENGTH; count(*) on a jsonb-array check is 1
+    //    either way. Null on error, never a measured zero.
+    const floorCount = floorErr ? null : Array.isArray(floorDrift) ? floorDrift.length : 0;
+    stats.wallet_pack_sync_floor_drift = floorCount;
+    if (floorCount && floorCount > 0) {
+      issues.push(
+        `${floorCount} saved wallet(s) completed a clean pack sync with no ownership floor — ` +
+          `pack_wallet_sync_stamp_clean_floor_trg is not stamping, so wallet inventories ` +
+          `can show packs the wallet no longer holds`
+      );
     }
 
     // 2. FMV coverage — overall % of active-collection editions with an FMV snapshot.

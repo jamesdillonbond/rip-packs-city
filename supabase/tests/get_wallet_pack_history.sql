@@ -20,9 +20,25 @@
 --   5. (v6) A pack the index says the wallet HOLDS with no buy of ours is HELD
 --      (buy NULL, never 0); one it says the wallet OPENED with no rip of ours is
 --      RIPPED with pull value NULL. A sale we hold out-ranks a stale identity.
+--   6. (v7, 2026-09-20) AN OWNERSHIP CLAIM IS ONLY AS GOOD AS THE WALK THAT
+--      CONFIRMED IT. A pack that LEAVES the wallet is never returned by a later
+--      walk, so its index row keeps owner_address = that wallet for ever --
+--      pack_nft_identity_queue only re-checks packs carrying a purchase or a rip
+--      row, so an OPENED pack that leaves is refreshed through its new owner's
+--      purchase while a SEALED one that leaves by transfer has no re-check path
+--      at all. Measured across the 27 saved wallets on 2026-09-20: 23 such rows
+--      on 5 wallets, and 23 OF 23 WERE SEALED -- every one of them rendered to
+--      its owner as an unopened pack they still held. So a row older than
+--      pack_wallet_sync.last_clean_sync_at is NOT a holding: index-only, it
+--      leaves the list entirely; with a buy of ours it is TRANSFERRED, never
+--      HELD; and current_owner goes NULL rather than repeat a name known wrong.
+--      ⚠ The guard is OFF when there is no clean walk to measure against --
+--      never synced, in flight, errored, page-capped -- because suppressing on a
+--      PARTIAL walk is the same defect pointing the other way. P19 is the
+--      no-change control for that, and the fix cannot move it.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260919041500_audit_20260918_wallet_pack_holdings_synced_from_dapper_index_the_unopened_tab_was_a_quarter_of_the_truth.sql).
+-- (supabase/migrations/20260920163137_audit_20260920_wallet_pack_inventory_stops_claiming_packs_the_wallet_no_longer_holds.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -57,7 +73,7 @@ CREATE TABLE public.pack_nft_identity (
   acquired_at timestamptz,
   PRIMARY KEY (collection_id, pack_nft_id)
 );
-CREATE TABLE public.pack_wallet_sync (wallet text PRIMARY KEY, requested_at timestamptz, completed_at timestamptz, pages int, packs int, last_error text);
+CREATE TABLE public.pack_wallet_sync (wallet text PRIMARY KEY, requested_at timestamptz, completed_at timestamptz, pages int, packs int, last_error text, last_clean_sync_at timestamptz);
 
 -- >>> BEGIN verbatim get_wallet_pack_history (body byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_pack_history(p_wallet text, p_collection_slug text DEFAULT NULL::text, p_status text DEFAULT NULL::text, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0)
@@ -76,6 +92,16 @@ DECLARE
   v_total int;
   v_packs jsonb;
   v_sync jsonb;
+  -- Start of this wallet's most recent CLEAN full walk
+  -- (pack_wallet_sync.last_clean_sync_at). Every pack that walk returned was
+  -- stamped checked_at = now() as it was collected, i.e. at or after this
+  -- instant -- so a row still naming this wallet with an OLDER checked_at is a
+  -- pack the walk no longer found here: one the wallet has parted with.
+  -- NULL when no clean walk has ever finished (never synced, one in flight,
+  -- errored, or the 60-page cap hit). The guards below then trust the index
+  -- as-is, because suppressing on a PARTIAL walk would read every page it
+  -- never reached as a mass departure -- the same defect pointing the other way.
+  v_sync_floor timestamptz;
 BEGIN
   IF v_wallet = '' THEN
     RETURN jsonb_build_object('error', 'wallet required');
@@ -85,8 +111,10 @@ BEGIN
   SELECT id INTO v_ad FROM public.collections WHERE slug = 'nfl_all_day';
 
   SELECT jsonb_build_object('requested_at', s.requested_at, 'completed_at', s.completed_at,
-                            'pages', s.pages, 'packs', s.packs, 'last_error', s.last_error)
-    INTO v_sync
+                            'pages', s.pages, 'packs', s.packs, 'last_error', s.last_error,
+                            'last_clean_sync_at', s.last_clean_sync_at),
+         s.last_clean_sync_at
+    INTO v_sync, v_sync_floor
     FROM public.pack_wallet_sync s WHERE s.wallet = v_wallet;
 
   WITH buy_src AS (
@@ -172,6 +200,15 @@ BEGIN
            CASE WHEN status = 'Opened' THEN 'idx_open' ELSE 'idx_hold' END AS role
     FROM public.pack_nft_identity
     WHERE owner_address = v_wallet AND status IN ('Sealed', 'Opened')
+      -- ... and this wallet's own last clean walk still found it here. Without
+      -- this arm a pack that LEFT keeps owner_address = this wallet for ever --
+      -- pack_nft_identity_queue only ever enqueues a pack carrying a purchase or
+      -- a rip row, so an OPENED pack that leaves is re-checked through its new
+      -- owner's purchase while a SEALED one that leaves by transfer has no
+      -- re-check path at all -- and the reader publishes it to the user as an
+      -- unopened pack they still own. Measured 2026-09-20 across the 27 saved
+      -- wallets: 23 such rows on 5 wallets, and 23 of 23 were Sealed.
+      AND (v_sync_floor IS NULL OR checked_at >= v_sync_floor)
   ),
   events AS (
     SELECT collection_id, pack_nft_id, bought_at AS event_at, 'buy'::text AS role FROM latest_buys
@@ -203,7 +240,20 @@ BEGIN
       wr.id AS rip_id, wr.sealed_at AS ripped_at, wr.moments_pulled, wr.pull_value_usd,
       -- Dapper's own index of the pack (pack_nft_identity, filled by the
       -- pack-nft-identity lane): current owner + Sealed/Opened, as of checked_at.
-      pi.owner_address AS current_owner,
+      -- TRUE when the index still names this wallet but the wallet's last clean
+      -- walk did not return the pack: it has left. NULL when we cannot tell --
+      -- no identity row, or no clean walk to measure against -- so every arm
+      -- below reads it through coalesce(..., false) and never lets "unknown"
+      -- decide anything.
+      CASE WHEN pi.pack_nft_id IS NULL OR v_sync_floor IS NULL THEN NULL
+           ELSE (pi.owner_address = v_wallet AND pi.checked_at < v_sync_floor)
+      END AS index_departed,
+      -- Once it has left, the index's owner_address is a name we KNOW to be
+      -- wrong, so this says unknown rather than repeating it back.
+      CASE WHEN v_sync_floor IS NOT NULL AND pi.owner_address = v_wallet
+                AND pi.checked_at < v_sync_floor THEN NULL
+           ELSE pi.owner_address
+      END AS current_owner,
       pi.status        AS identity_status,
       pi.checked_at    AS identity_checked_at,
       -- distribution: rip > the wallet's own rows > any marketplace row > the index
@@ -269,7 +319,12 @@ BEGIN
         -- bought, never sold or opened by this wallet, and Dapper's index says a
         -- DIFFERENT wallet holds it now: it left by transfer, or by a sale the
         -- marketplace walker has not reached. Never HELD.
-        WHEN has_buy AND current_owner IS NOT NULL AND current_owner <> v_wallet
+        -- ... or the index no longer places it here at all. Same outcome, we
+        -- just cannot name who holds it now -- and this arm is the only one that
+        -- can catch it, because a stale row still says the owner IS us, which
+        -- made the test above pass it straight through to HELD.
+        WHEN has_buy AND ((current_owner IS NOT NULL AND current_owner <> v_wallet)
+                          OR coalesce(index_departed, false))
                                                                 THEN 'transferred'
         WHEN has_buy                                            THEN 'held'
         -- the index alone: opened by this wallet (no rip row of ours) or held
@@ -349,6 +404,11 @@ BEGIN
         'dist_total_sealed', dist_total_sealed, 'dist_total_opened', dist_total_opened,
         'current_owner', current_owner, 'identity_status', identity_status,
         'identity_checked_at', identity_checked_at,
+        -- Provenance for the two fields above. true = the index still names this
+        -- wallet but its last clean walk did not return the pack, so
+        -- identity_status is a LAST-SEEN and not a now; false = that walk
+        -- confirmed it; null = no identity row, or no clean walk to judge by.
+        'identity_departed', index_departed,
         'rip_id', rip_id, 'ripped_at', ripped_at,
         'moments_pulled', moments_pulled,
         'pull_value_usd', CASE WHEN pull_value_usd IS NULL THEN NULL ELSE ROUND(pull_value_usd::numeric, 2) END,
@@ -385,7 +445,7 @@ BEGIN
     'coverage', jsonb_build_object(
       'onchain', 'pack_purchases: Top Shot + All Day, block-indexed from 2026-04; primary drops carry no price on chain',
       'marketplace', 'topshot_pack_sales_history / allday_pack_sales_history: Dapper marketplace secondary sales (seller = storefront_address), Top Shot from 2023-09, All Day from 2022-12; ingest is bursty and can lag days',
-      'identity', 'pack_nft_identity: Dapper searchPackNft index (dist_id, Sealed/Opened, current owner, acquired_at) filled by the pack-nft-identity lane and the per-wallet sync; identity_sync says when this wallet''s holdings were last confirmed (NULL completed_at = not yet, the list is what we hold so far)'
+      'identity', 'pack_nft_identity: Dapper searchPackNft index (dist_id, Sealed/Opened, current owner, acquired_at) filled by the pack-nft-identity lane and the per-wallet sync; identity_sync says when this wallet''s holdings were last confirmed (NULL completed_at = not yet, the list is what we hold so far). An ownership claim is trusted only at or after identity_sync.last_clean_sync_at, the start of the last clean full walk: a row older than that names a pack the wallet no longer holds, is excluded from the held/ripped counts, and carries identity_departed = true'
     ),
     'computed_at', now()
   );
@@ -468,7 +528,31 @@ INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63b
 INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P16', 'D1', 'Sealed', '0xwallet', '2026-09-01', '2025-03-01');
 INSERT INTO public.topshot_pack_sales_history VALUES
   ('tx-p16', 'P16', 22, true, '0xother', '0xwallet', 'D1', '2026-09-10');
-INSERT INTO public.pack_wallet_sync VALUES ('0xwallet', '2026-09-18 00:00', '2026-09-18 00:05', 4, 375, NULL);
+-- The wallet's last CLEAN walk started 2026-09-18 00:00, so every identity row
+-- above with checked_at >= that instant (P12..P15) is CONFIRMED and keeps its
+-- v5/v6 verdict unchanged. P16's row is older -- it is genuinely stale, as its
+-- own comment says -- and is now flagged as such, though the sale still wins.
+INSERT INTO public.pack_wallet_sync VALUES ('0xwallet', '2026-09-18 00:00', '2026-09-18 00:05', 4, 375, NULL, '2026-09-18 00:00');
+-- P17: index-only SEALED, still naming this wallet, but the clean walk did not
+-- return it -> the wallet has parted with it. It must leave the list entirely:
+-- before v7 this was a phantom UNOPENED PACK in the user's own inventory, and
+-- it is the exact shape of all 23 rows measured in production.
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P17', 'D1', 'Sealed', '0xwallet', '2026-09-01', '2025-06-01');
+-- P18: the same departure, but this one we BOUGHT. The v5 'transferred' arm
+-- could not catch it -- that arm tests current_owner <> wallet, and a stale row
+-- still says the owner IS us -- so it fell through to HELD. Now transferred,
+-- with current_owner NULL because we cannot name who holds it instead.
+INSERT INTO public.pack_purchases (collection_id, pack_nft_id, buyer_address, seller_address, sale_price, sale_currency, sealed_at, is_primary_drop, event_kind, pack_dist_id)
+VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P18', '0xwallet', '0xother', 12, 'DUC', '2026-08-01', false, 'secondary_sale', 'D1');
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P18', 'D1', 'Sealed', '0xwallet', '2026-09-01', '2026-08-01');
+-- P19: THE NO-CHANGE CONTROL, and the arm the fix must NOT be able to move.
+-- Same stale shape as P17 -- Sealed, owner = the wallet, checked_at long before
+-- anything -- but on a wallet with NO pack_wallet_sync row at all, so there is
+-- no clean walk to judge by. It must still read HELD. A guard that suppressed
+-- here would turn "we have not looked yet" into "you no longer own it", which
+-- is the same lie in the other direction, and is what a partial or in-flight
+-- walk looks like from inside the reader.
+INSERT INTO public.pack_nft_identity VALUES ('95f28a17-224a-4025-96ad-adf8a4c63bfd', 'P19', 'D1', 'Sealed', '0xnosync', '2026-09-01', '2025-06-01');
 -- A cancelled listing (purchased=false) must count as nothing.
 INSERT INTO public.topshot_pack_sales_history VALUES
   ('tx-p8', 'P8', 99, false, '0xother', '0xwallet', 'D1', '2026-08-20');
@@ -485,7 +569,11 @@ DECLARE
   sold jsonb;
 BEGIN
   r := public.get_wallet_pack_history('0xWALLET', NULL, NULL, 50, 0);
-  PERFORM _assert_eq(r->>'total_count', '14', 'P1..P7 + P10..P16 = 14 packs; the cancelled listing P8 is nothing');
+  -- 15, not 14: P18 joins (bought, then departed -> transferred). P17 does NOT
+  -- -- it is index-only and the walk says it is gone, so there is nothing left
+  -- to report. P19 belongs to another wallet. RE-PINNED for v7, not inverted:
+  -- the premise changed, the claim did not.
+  PERFORM _assert_eq(r->>'total_count', '15', 'P1..P7 + P10..P16 + P18 = 15; P8 cancelled, P17 departed index-only');
   PERFORM _assert_eq(r->'identity_sync'->>'packs', '375', 'identity_sync carried from pack_wallet_sync');
 
   -- 1. sold packs come from the marketplace history
@@ -560,7 +648,14 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P13';
   PERFORM _assert_eq(row_->>'status', 'held', 'P13 held');
   PERFORM _assert(row_->>'dist_id' IS NULL AND row_->>'dist_source' IS NULL, 'P13: the index''s dist "0" is not a distribution');
-  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'transferred', 50, 0))->>'total_count', '1', 'transferred filter = P11');
+  -- RE-PINNED for v7: v7 adds a SECOND way to be transferred (P18), so a bare
+  -- count of 1 no longer states the v5 property. Assert P11's MEMBERSHIP
+  -- instead -- that keeps this arm exercised and immune to later additions,
+  -- where a count would just be re-bumped each time and stop meaning anything.
+  PERFORM _assert(EXISTS (
+    SELECT 1 FROM jsonb_array_elements((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'transferred', 50, 0))->'packs') p
+     WHERE p->>'pack_nft_id' = 'P11'
+  ), 'transferred filter still contains P11 -- the index naming ANOTHER owner is its own route to transferred');
   PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'sold_any', 50, 0))->>'total_count', '4', 'a transferred pack is NOT a sale; P16 IS');
 
   -- v6: the index as a holdings source
@@ -577,8 +672,32 @@ BEGIN
   SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P16';
   PERFORM _assert_eq(row_->>'status', 'sold', 'P16 stale identity loses to the sale we hold');
 
+  -- v7: an ownership claim is only as good as the walk that confirmed it
+  PERFORM _assert(NOT EXISTS (SELECT 1 FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P17'),
+    'P17: index-only SEALED row the clean walk did not return -> gone from the list, NOT an unopened pack in inventory');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P18';
+  PERFORM _assert_eq(row_->>'status', 'transferred', 'P18: bought, then departed per the clean walk -> transferred, never held');
+  PERFORM _assert(row_->>'current_owner' IS NULL, 'P18: current_owner NULL -- the index name is known wrong, and we cannot supply the right one');
+  PERFORM _assert_eq(row_->>'identity_departed', 'true', 'P18 carries its own provenance');
+  PERFORM _assert_eq(row_->>'identity_status', 'Sealed', 'P18 keeps the LAST-SEEN status; identity_departed is what says it is not a now');
+  SELECT p INTO row_ FROM jsonb_array_elements(r->'packs') p WHERE p->>'pack_nft_id' = 'P12';
+  PERFORM _assert_eq(row_->>'identity_departed', 'false', 'P12 was confirmed by the same walk -- the guard discriminates, it does not blanket-suppress');
+  PERFORM _assert_eq(r->'identity_sync'->>'last_clean_sync_at', '2026-09-18T00:00:00+00:00', 'the floor is published, so a reader can see what the claim rests on');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'transferred', 50, 0))->>'total_count', '2', 'transferred = P11 (index names another wallet) + P18 (index names us, and is stale)');
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'sold_any', 50, 0))->>'total_count', '4', 'a departed pack is still NOT a sale');
+
+  -- ... and the control: no clean walk, no suppression.
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xnosync', NULL, 'held', 50, 0))->>'total_count', '1',
+    'P19: same stale shape on a wallet with NO completed walk -> still HELD. Suppressing here would read "we have not looked yet" as "you no longer own it"');
+  SELECT p INTO row_ FROM jsonb_array_elements((public.get_wallet_pack_history('0xnosync', NULL, NULL, 50, 0))->'packs') p WHERE p->>'pack_nft_id' = 'P19';
+  PERFORM _assert(row_->>'identity_departed' IS NULL, 'P19: with no floor to measure against, departure is UNKNOWN -- not false, and not true');
+  PERFORM _assert_eq(row_->>'current_owner', '0xnosync', 'P19: unconfirmed is not disproved -- the index owner still stands');
+
   -- filters + paging still hold
-  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 2, 0))->>'total_count', '7', 'held = P3, P4, P6, P7, P12, P13, P14');
+  -- STILL 7, and that is the assertion the whole v7 change exists to keep: P17
+  -- and P18 would have made it 9 before the floor guard, both of them packs the
+  -- wallet had already parted with.
+  PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 2, 0))->>'total_count', '7', 'held = P3, P4, P6, P7, P12, P13, P14 -- P17/P18 departed');
   PERFORM _assert_eq(jsonb_array_length((public.get_wallet_pack_history('0xwallet', 'nba_top_shot', 'held', 2, 0))->'packs')::text, '2', 'limit honoured');
   PERFORM _assert_eq((public.get_wallet_pack_history('0xwallet', 'nfl_all_day', NULL, 50, 0))->>'total_count', '0', 'collection filter');
   PERFORM _assert_eq((public.get_wallet_pack_history('0xnobody', NULL, NULL, 50, 0))->>'total_count', '0', 'unknown wallet -> empty, not error');

@@ -30,8 +30,12 @@ const PINS = [
     // a dist source of last resort.
     // v6 (same night): the index as a holdings source -- packs the wallet holds
     // or opened that no buy/rip of ours ever saw.
+    // v7 (2026-09-20): an ownership claim is only trusted at or after the
+    // wallet's last CLEAN walk. A departed pack is never re-walked, so its row
+    // kept naming the old owner -- 23 rows on 5 of 27 saved wallets, 23 of 23
+    // Sealed, each rendered as an unopened pack still in that user's inventory.
     migration:
-      "supabase/migrations/20260919041500_audit_20260918_wallet_pack_holdings_synced_from_dapper_index_the_unopened_tab_was_a_quarter_of_the_truth.sql",
+      "supabase/migrations/20260920163137_audit_20260920_wallet_pack_inventory_stops_claiming_packs_the_wallet_no_longer_holds.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,

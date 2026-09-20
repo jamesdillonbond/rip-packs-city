@@ -22,6 +22,9 @@ const cfg = vi.hoisted(() => ({
     error: null as any,
   },
   badge: { data: { updated_at: new Date().toISOString() } as any, error: null as any },
+  // check_wallet_pack_sync_floor_drift: saved wallets whose clean pack sync left
+  // no ownership floor, i.e. the stamping trigger has stopped. [] = healthy.
+  floorDrift: { data: [] as any[] | null, error: null as any },
   counts: [] as Array<{ count: number | null }>,
   countIdx: 0,
   throwSingle: false,
@@ -50,6 +53,13 @@ const sb = vi.hoisted(() => {
       if (cfg.hangCoverage) return new Promise(() => {}) // never settles
       return { data: cfg.coverage.data, error: cfg.coverage.error }
     }
+    if (name === "check_wallet_pack_sync_floor_drift") {
+      return { data: cfg.floorDrift.data, error: cfg.floorDrift.error }
+    }
+    // ⚠ Named branches, not a fallthrough. This mock USED to return the security
+    // array for every unrecognised rpc name, so the floor-drift leg added on
+    // 2026-09-20 silently inherited the security fixture and three tests failed
+    // with issue counts that had nothing to do with what they were pinning.
     // check_public_security_invariants
     return { data: cfg.security.data, error: cfg.security.error }
   }
@@ -73,6 +83,7 @@ function resetCfg() {
     error: null,
   }
   cfg.badge = { data: { updated_at: new Date().toISOString() }, error: null }
+  cfg.floorDrift = { data: [], error: null }
   cfg.counts = []
   cfg.countIdx = 0
   cfg.throwSingle = false
@@ -228,6 +239,43 @@ describe("GET /api/cron/data-integrity — degrade + flag branches", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // 2026-09-20. The leg watches a guard that disarms SILENTLY: if the trigger
+  // stamping pack_wallet_sync.last_clean_sync_at stops, every floor reads NULL,
+  // get_wallet_pack_history stops suppressing departed packs, and users see
+  // packs they no longer own back in their inventory as unopened. Nothing
+  // throws, so this alert is the only thing that would ever say so.
+  it("flags saved wallets whose clean pack sync left no ownership floor", async () => {
+    cfg.floorDrift = {
+      data: [
+        { wallet: "0xaaaa", requested_at: "2026-09-20T00:00:00Z", completed_at: "2026-09-20T00:05:00Z", last_clean_sync_at: null },
+        { wallet: "0xbbbb", requested_at: "2026-09-20T00:00:00Z", completed_at: "2026-09-20T00:05:00Z", last_clean_sync_at: null },
+      ],
+      error: null,
+    }
+    const res = await GET(authedReq())
+    const body = await res.json()
+    expect(body.stats.wallet_pack_sync_floor_drift).toBe(2)
+    expect(body.issues.join(" ")).toMatch(/no ownership floor/)
+  })
+
+  it("reports the floor-drift leg as UNKNOWN on error, never a measured zero", async () => {
+    // ⚠ The distinction this file exists for: `0` here would claim we checked
+    // and every wallet was fine. We did not check.
+    cfg.floorDrift = { data: null, error: new Error("boom") }
+    const res = await GET(authedReq())
+    const body = await res.json()
+    expect(body.stats.wallet_pack_sync_floor_drift).toBeNull()
+    expect(body.issues).toEqual([])
+  })
+
+  it("a healthy floor reads 0 and flags nothing", async () => {
+    // The satisfiable-at-zero control: the guard must not punish its own success.
+    const res = await GET(authedReq())
+    const body = await res.json()
+    expect(body.stats.wallet_pack_sync_floor_drift).toBe(0)
+    expect(body.issues).toEqual([])
   })
 
   it("flags a broad FMV coverage regression (< 95%)", async () => {
