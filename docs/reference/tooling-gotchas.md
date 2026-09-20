@@ -175,6 +175,23 @@ CLAUDE.md already says **assert the occurrence count before a scripted replace**
 
 🚨 **AND THE SURVIVAL CHECK ITSELF FAILS IN THE DANGEROUS DIRECTION — A FALSE NEGATIVE READS EXACTLY LIKE DESTRUCTION.** Observed the same evening: a session ran its six post-write greps, one returned **0**, and it briefly believed it had destroyed a section. **The section was intact — the search string had dropped a backtick.** ⛔ **The reflex a zero provokes is "restore it", and restoring a section that was never lost DUPLICATES it** — the recovery is worse than the imagined damage. ⚠ **Grep the REAL text, copied out of the file, never your memory of it; and CONFIRM a zero before acting on it.** ⭐ **Same family as the unanchored conflict-marker check on this page, pointed the other way: that one fires when everything is FINE, this one fires when nothing is WRONG. An integrity check needs its own positive control.** 📏 **Demonstrated twice within ten minutes — the insert that added this very paragraph first failed its own anchor assertion for exactly this reason: the retyped anchor ended `page**` where the file reads `page — …`.**
 
+✅ **THE POSITIVE CONTROL IS ONE EXTRA LINE: RUN EVERY SURVIVAL GREP *BEFORE* THE EDIT AS WELL AS AFTER.**
+
+    before=1, after=1  ->  the string works AND the section survived
+    before=0           ->  your SEARCH STRING is broken, not the file. ABORT; do not edit.
+
+⭐ **That single reading separates the two failures a bare post-edit grep cannot tell apart — "I destroyed it" from "I cannot spell it".** 📏 **Mutation-proved in both directions against this very file (2026-09-19):** `A FALSE NEGATIVE READS EXACTLY LIKE DESTRUCTION` → 1, the same phrase retyped without `EXACTLY` → **0**; `LIST THE MIGRATIONS INSIDE YOUR WINDOW` → 1, with `INSIDE` shortened to `IN` → **0**. **Both broken variants are indistinguishable from a deleted section after the fact, and trivially distinguishable before it.**
+
+⭐⭐ **BETTER STILL — REMOVE THE FAILURE INSTEAD OF DETECTING IT: never write the anchor down.** Lift it out of the file at runtime and the mistyping cannot occur:
+
+    const line = s.split("\n").find(l => l.includes("<short distinctive fragment>"));
+    if (!line || s.split(line).length - 1 !== 1) throw new Error("anchor not found or not unique");
+    fs.writeFileSync(p, s.split(line).join(addition + "\n" + line));   // insert-only
+
+⚠ **Use a SHORT fragment for the `.includes()` probe** — a long one reintroduces the retyping risk it exists to avoid.
+
+⚠ **ASSERT PRESENCE (`>= 1`), NOT AN UNCHANGED COUNT (`== 1`) — the third way this check misfires, hit while writing the paragraph above.** Adding that mutation-proof QUOTED two of the strings it was checking, so their counts went **1 → 2** and an `== before` assertion would have failed a correct edit. ⇒ **Three distinct misfires now recorded for one check: FALSE POSITIVE (unanchored pattern matching its own warning), FALSE NEGATIVE (string retyped from memory), and COUNT DRIFT (the edit legitimately quotes the string).** ⭐ **The survivable form is `after >= 1 && before >= 1`; reach for an exact count only when you know the edit does not mention the string.**
+
 ⭐ **This is the same shape as the other traps on this page — `git add -p` exiting 0 having staged nothing, `python` resolving but never executing, `$?` reporting a pipe's last command, an unanchored grep matching its own warning. In every case the operation reported success and only an INDEPENDENT CHECK OF THE RESULT disagreed.** ⚠ **Knowing the trap does not prevent it; three of these were walked into by sessions that had already documented them the same evening.** **Build the check so the output contradicts itself when wrong.**
 
 
