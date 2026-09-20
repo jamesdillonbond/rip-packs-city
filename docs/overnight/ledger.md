@@ -11,6 +11,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ⚾ CANDY JOINS THE MARKET PULSE — it was missing from the public board, the homepage 24h stats AND the email digest, and its absence was being rendered as a measured **$0** · Claude Code cloud
+
+**Shipped: 1 migration (`20260920175000`). `get_market_pulse_all` + `get_market_pulse_windows` gain `candy_mlb`. No repo code changed — the board needed none.**
+
+🚨 **THE ABSENCE WAS NOT RENDERED AS AN ABSENCE, which is what makes this more than a missing row.** `getVolume24hFromPulse` (`app/api/overview-stats/route.ts`) does `rows.find(r => r.slug === dbSlug)` then `Number(hit?.volume_24h ?? 0)` — **a MISSING ROW becomes a measured-looking $0.** That is the `?? 0` fabricated-value shape CLAUDE.md bans, pointed at a collection that traded **129 times in the last 24 hours**. Fixing the RPCs fixes it at the source. ⚠ **The `?? 0` itself is still latent** for any future collection absent from the pulse — a route change, deliberately not bundled here.
+
+📏 **THREE SURFACES AT ONCE, from two hardcoded lists:** both functions carry a four-slug `IN`-list, and `get_market_pulse_windows` additionally carries a hardcoded five-row `cols(slug, collection_name)` VALUES list. Candy was in neither, so it was missing from the homepage/overview 24 h stats, the **PUBLIC** `/insights/market-pulse` board, and the email digest.
+
+🚨 **CORRECTION TO MY OWN REGISTER ROW, SAME DAY.** R121 and an earlier note of mine said these functions "also exclude Pinnacle". **They do not.** Both give Pinnacle its OWN union arm off `pinnacle_sales`, because its sales are not in `sales` at all. **Only Candy was missing.** Re-derived from the live bodies before writing the migration rather than trusting the note I had written two hours earlier — the same shelf-life rule that caught the parity doc this morning, applied to myself twice in one session now.
+
+⭐ **WHY A GATED STRING REPLACEMENT AND NOT TWO TRANSCRIBED BODIES:** 1.3 kB and 4.8 kB of SQL whose only change is one list member each. Re-typing is pure transcription risk for no benefit. The migration gates on each live md5, **asserts the occurrence count is EXACTLY 1 before each replace** (a silent no-op replace is the failure mode CLAUDE.md names), applies, then re-reads the catalog to confirm both functions name `candy_mlb` and that the windows function carries the display name — **all four checks inside the same transaction as the write.**
+
+✅ **VERIFIED THROUGH THE PRODUCTION CALLER, 10:50 AM PT.** `/api/public/insights/market-pulse` now returns **six** rows; Candy: **129 sales / $181.47 in 24 h, 270 / $1,235.54 in 7 d, 1,554 / $7,048.93 in 30 d**, top sales **$19.31 / $103.01 / $203.72**, `collection_name` "Candy MLB", **ranked 4th of 6 by 7-day volume** (between All Day and Golazos). **No-change control:** all five original slugs still present with their own figures — Top Shot 1,590/24 h, Pinnacle 135, All Day 429, Golazos 0, UFC 0. The edit is additive by construction, which is what the occurrence-count assertions pin.
+
+⭐ **NO FRONTEND CHANGE WAS NEEDED, and that is the derived-not-listed pattern paying off in the same session it was introduced:** `MarketPulseClient.tsx` already resolves its slug through the REGISTRY (`fromDbSlug(r.slug)`), so the sixth row renders with the correct link and label on its own. Contrast the six copied label maps fixed two entries above, which had to be found by hand.
+
+- **Revert:** re-apply each body with the four-slug `IN`-list and the five-row cols VALUES list. Prior md5s: `get_market_pulse_all` `a9922969074d59a2abf4a9ef2a6832c9`, `get_market_pulse_windows` `5940a45f2a820d77d276e4b70358e2bd`. ⚠ Reverting drops Candy from the public board **and restores the fabricated $0 on its overview**.
+
 ### 2026-09-20 · 📌 FOUND, NOT FIXED — the MOMENTS ownership sweep is keyed to `seeded_wallets`, so a real user's wallet is never re-verified on a schedule · Claude Code cloud
 
 Found by applying CLAUDE.md's own rule to the pack-inventory fix shipped above — **grep for the SHAPE, not the file.** The pack defect was "a cached ownership row treated as current". The obvious neighbour is `wallet_moments_cache`, which backs a far bigger surface.
