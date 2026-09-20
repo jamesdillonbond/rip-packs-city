@@ -11,6 +11,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · ✅ THE CANDY `IN`-LIST SWEEP CLOSES — and TWO of the three exclusions I named this morning turned out NOT to be gaps, one of which would have been actively HARMFUL to "fix" · Claude Code cloud
+
+**Shipped: 1 migration (`20260920175800`, the `analytics_sets_summary` coverage note) + the corrected verdicts in `parity-assessment-panini-candy-2026-07-19.md` and `go-live-2026-09.md`. C1 is now CLOSED.**
+
+📌 **THIS MORNING I LISTED FOUR FUNCTIONS AS "genuine Candy exclusions, OPEN". I had named them from a static grep. Checking each against its CALLERS and its DATA leaves exactly ONE that was real.**
+
+✅ **REAL, and fixed (earlier entry):** `get_market_pulse_all` + `get_market_pulse_windows`.
+
+⛔ **NOT A GAP — `capture_institutional_wallet_snapshot` is DORMANT.** No `cron.job` row, no route, no edge caller. The function that actually writes `wallet_holdings_snapshot` is the edge fn `snapshot-institutional-wallets`, and **it is already collection-agnostic**: it aggregates `wallet_moments_cache` by `collection_id` with no slug filter — its `COLLECTION_SLUG = "nba_top_shot"` is a `log_pipeline_run` LABEL, not a data predicate. 🚨 **AND "FIXING" IT WOULD HAVE BEEN WORSE THAN LEAVING IT.** Its first line is `lower(trim(p_wallet_address))`. Lower-casing a CASE-SENSITIVE base58 key matches zero `wallet_moments_cache` rows, so adding `candy_mlb` to its slug list would have made it INSERT a snapshot reading **`moment_count 0, total_fmv_usd 0`** for a wallet that demonstrably holds Candy. **A fabricated zero written to a table beats an honest absence only in the sense of being worse.** ⭐ This is CLAUDE.md's chain-two footgun and its "never narrow the incumbent chain while widening for a new one" rule meeting in one line of SQL — and the guard against it was reading the function body before editing the list.
+
+⛔ **NOT A GAP — `claim_sales_counterparty_batch` excludes Candy CORRECTLY.** It exists to recover counterparties that are **NULL**, by decoding **Flow** transactions (`workers/sales-counterparty-backfill/decode.ts`). 📏 Measured: Candy's **1,554 sales in 30 days carry 0 NULL buyers and 0 NULL sellers** — the Magic Eden indexer writes both at ingest. There is nothing to recover, and a Flow decoder could not read a Solana signature anyway. (It does also exclude Golazos and Pinnacle; that is a question about those two, not about Candy.)
+
+🔧 **ONE MORE HONESTY FIX WHILE THERE.** `analytics_sets_summary` emits a `note` reading *"Set-level metrics cover Top Shot, All Day, Golazos, UFC Strike, and Disney Pinnacle"* — while the SAME RESPONSE returns `{"candy_mlb": {"set_count": 1, "edition_count": 125, "tier_breakdown": {"common": 100, "legendary": 25}}}`. **The coverage sentence is contradicted by the body it describes.** ⚠ `SetsDashboard` never renders `note`, which is exactly why it rotted — but this is a PUBLIC JSON endpoint, so the only consumer that reads the field reads it as authoritative. Note corrected, with Candy's tier vocabulary MEASURED (`common`/`legendary`) rather than assumed.
+
+⚠ **THE METHOD NOTE, because this is the third time today I have had to correct my own recorded claim** (the parity doc's Gap-1 mechanism, the "excludes Pinnacle too" parenthetical, and now two phantom TODOs). **All three came from reading a predicate instead of reading the caller, the payload, or the data.** CLAUDE.md already says a filed finding is a hypothesis; the sharper version this session earned is: ⭐ **a list of candidates produced by grep is not a list of findings, and publishing it as one manufactures work for whoever reads it next.** Each of the four took under ten minutes to settle against live state.
+
+- **Revert:** `git revert <sha>` for the docs. DB half: replace the `analytics_sets_summary` note back (prior md5 `3e707d0339d982a716a9a3647bf68a83`, 3,193 chars) — which restores a payload that denies covering a collection it returns.
+
 ### 2026-09-20 · 📋 SWEPT ALL 36 `check_*` INVARIANTS AND READ EACH VERDICT — 2 are red, and the one nothing reads has a lane that has NEVER drained · Claude Code cloud
 
 Generalising what the moments finding above taught: **the guard existed, was red, and nothing was reading it.** So: enumerate every `check_*` in `public`, read each one's verdict, and ask of each *what runs it*. Read-only, no writes.
