@@ -19,3 +19,33 @@ select optgroup {
   background-color: #18181b;
   color: #f4f4f5;
 }
+
+/* iOS Safari ZOOMS the page when a form control under 16px takes focus, and it
+   does not zoom back out — the user is left on a horizontally-panned page with
+   the rest of the UI off-screen. Chromium will not reproduce it at any
+   viewport, which is why no gate in this repo has ever seen it.
+
+   Measured 2026-09-20 by scripts/qa/mobile-sweep.mjs across 56 live pages: 53
+   carried at least one control under the floor — text inputs at 14px, the
+   catalog search and every native select at 12px, number inputs at 11px,
+   including the email field on the early-access signup path.
+
+   Scoped to coarse pointers so desktop density is untouched, and to the types
+   that can hold focus and a caret — a checkbox or radio has no text to zoom to
+   and sizing one here would change its box.
+
+   MEASURED, NOT ASSUMED: the first draft of this rule had no !important and was
+   a SILENT NO-OP. These controls carry their font-size in an INLINE style
+   attribute (the /login email field ships style="… font-size: 14px …"), and an
+   inline declaration outranks every stylesheet rule that is not !important. The
+   probe that caught it injected the rule into the live DOM and re-counted
+   sub-16px controls: 2 before, 2 after. Same class as the WalletSearchBand
+   defect — an inline style is the one declaration a media query cannot
+   override. Do not drop !important without re-running that probe. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

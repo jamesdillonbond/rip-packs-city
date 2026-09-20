@@ -93,6 +93,10 @@ async function one(sitePath) {
   try {
     const r = await page.goto(BASE + sitePath, { waitUntil: "domcontentloaded", timeout: 60000 });
     rec.status = r ? r.status() : null;
+    // Read BEFORE the settle. preLen small + textLen large = the page streamed in
+    // normally; preLen small + textLen small = it never arrived. Without this the
+    // two are the same record, and the repo has twice filed the first as the second.
+    rec.preLen = await page.evaluate(() => ((document.querySelector("main") || document.body).innerText || "").length).catch(() => null);
     const heavy = /collection\?|sniper|market/.test(sitePath);
     await page.waitForTimeout(heavy ? Math.max(SETTLE, 20000) : SETTLE);
     for (let i = 0; i < 3; i++) { await page.mouse.wheel(0, 1500); await page.waitForTimeout(700); }
@@ -131,6 +135,57 @@ async function one(sitePath) {
           cards: document.querySelectorAll("[class*=card]").length,
           errCopy: (t.match(/unavailable|couldn.t load|try again|something went wrong|degraded/gi) || []).slice(0, 4),
           scanning: t.includes("SCANNING"),
+          // ── added 2026-09-20: the three mobile properties the sweep could not see ──
+          // A CENSUS, not an assertion. e2e/mobile-layout.spec.ts pins only what is
+          // currently true; 86 controls were measured under the floor on 2026-08-22
+          // and asserting them would make that monitor permanently red. This counts
+          // them per page so the backlog can be drained route by route.
+          tapSmall: (() => {
+            const out = [];
+            for (const el of document.querySelectorAll("a,button,input,select,textarea,[role=button],[role=tab],[role=link]")) {
+              const b = el.getBoundingClientRect();
+              if (b.width === 0 || b.height === 0) continue;
+              // .rpc-tap44 grows the hit box with an invisible ::after — the
+              // effective box is the union, same rule the spec uses.
+              const af = getComputedStyle(el, "::after");
+              const w = Math.max(b.width, parseFloat(af.width) || 0);
+              const h = Math.max(b.height, parseFloat(af.height) || 0);
+              if (w < 44 || h < 44) {
+                const label = (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 24) || el.getAttribute("aria-label") || el.tagName;
+                out.push(label + " " + Math.round(w) + "x" + Math.round(h));
+              }
+            }
+            return { n: out.length, sample: out.slice(0, 8) };
+          })(),
+          // iOS Safari ZOOMS THE PAGE when a control under 16px takes focus, and
+          // never zooms back out. Chromium will not reproduce it, so measure the
+          // cause rather than the symptom.
+          zoomInputs: (() => {
+            const out = [];
+            for (const el of document.querySelectorAll("input,select,textarea")) {
+              const b = el.getBoundingClientRect();
+              if (b.width === 0 || b.height === 0) continue;
+              const fs = parseFloat(getComputedStyle(el).fontSize) || 0;
+              if (fs && fs < 16) out.push(el.tagName.toLowerCase() + (el.type ? "[" + el.type + "]" : "") + " " + fs + "px");
+            }
+            return { n: out.length, sample: out.slice(0, 6) };
+          })(),
+          // 100vh is not the visible height on mobile Safari — the address bar
+          // overlays it. WARNING: v1 of this scanned stylesheet TEXT and matched
+          // Tailwind's @layer utilities blob (the .h-screen DEFINITION) on all 56
+          // pages — a 100% hit rate that measured nothing. Measure USED values on
+          // rendered elements instead: an element whose box equals the viewport.
+          vh100: (() => {
+            const sample = []; let n = 0;
+            for (const el of document.querySelectorAll("body *")) {
+              const b = el.getBoundingClientRect();
+              if (b.height < innerHeight - 1 || b.height > innerHeight + 1) continue;
+              if (getComputedStyle(el).position === "fixed") continue;
+              n++;
+              if (sample.length < 4) sample.push(el.tagName.toLowerCase() + "." + String(el.className || "").slice(0, 50));
+            }
+            return { n: n, sample: sample };
+          })(),
           snippet: t.replace(/\s+/g, " ").slice(0, 500),
         };
       }),
@@ -162,5 +217,8 @@ const tally = {
   withConsoleErrors: mine.filter((r) => r.console.length).length,
   withBrokenImgs: mine.filter((r) => r.broken && r.broken.length).length,
   withErrCopy: mine.filter((r) => r.errCopy && r.errCopy.length).length,
+  tapTargetsUnder44: mine.reduce((a, r) => a + ((r.tapSmall && r.tapSmall.n) || 0), 0),
+  withZoomInputs: mine.filter((r) => r.zoomInputs && r.zoomInputs.n).length,
+  withVh100: mine.filter((r) => r.vh100 && r.vh100.n).length,
 };
 console.log(JSON.stringify(tally));
