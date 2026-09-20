@@ -83,3 +83,41 @@ byte-identical to the previous build, nothing shipped.
 
 Behaviour on prod is the real gate either way — `_to_delete/verify44.mjs` and
 `verify16.mjs` measure it.
+
+## Signed-in sweeps
+
+`mobile-sweep.mjs` has always accepted `RPC_QA_STATE`, but nothing produced that
+file, so dashboard / trophy case / wallet flows have never been measured at
+390px — an anonymous run measures the LOGIN page, not the page named.
+
+`qa-session.mjs` produces it.
+
+```bash
+# one-off: a DEDICATED qa account with a password, then in .env.local (gitignored)
+#   RPC_QA_EMAIL=...
+#   RPC_QA_PASSWORD=...
+node scripts/qa/qa-session.mjs                      # -> _to_delete/qa-state.json
+RPC_QA_STATE=_to_delete/qa-state.json \
+  node scripts/qa/mobile-sweep.mjs paths.txt out.jsonl shots mobile
+```
+
+### Two routes that are closed, so nobody re-tries them
+
+- **Reading the session out of a signed-in Chrome.** The browser extension
+  blocks auth-shaped localStorage keys outright — they come back as
+  `[BLOCKED: Sensitive key]`. By design; not a bug to work around.
+- **Driving the login UI headlessly.** Sign-in is magic-link only
+  (`sendMagicLink` → `/api/auth/request-magic-link`), so there is no password
+  field to fill.
+
+The password GRANT is enabled on the project even though the UI does not expose
+it — probed 2026-09-20, a bogus credential returns `invalid_credentials` rather
+than a disabled-provider error. That is the route `qa-session.mjs` uses.
+
+⚠ It does **not** hand-write the session cookie. RPC uses `@supabase/ssr`'s
+`createBrowserClient`, whose session lives in chunked base64 cookies that are an
+internal detail of that package. The script calls the package with a capturing
+cookie jar and saves whatever it writes, and **fails loudly if it writes
+nothing** rather than falling back to a guess.
+
+Delete `_to_delete/qa-state.json` when the pass closes.
