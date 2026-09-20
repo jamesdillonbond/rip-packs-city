@@ -130,6 +130,13 @@ Ledger entry (top of `docs/overnight/ledger.md`) carries revert paths for all fo
 - ⚠ **Cost:** the index phase (1,284 MB) produced six whole-minute pg_cron launcher blackouts (1:14, 1:31, 1:38, 1:39, 1:42, 1:45 — 32 `job startup timeout`, 0 ok in those minutes, only 2–3 jobs running, 42/90 backends). That is disk saturation at a minute boundary stopping the background worker from starting, not slot exhaustion — the estate's "startup timeout" bursts have been misfiled. Also: Sunday 1:08 AM PT is `rpc-allday-dedup-full-weekly` (`8 8 * * 0`); the hour was already loaded before the pass.
 - ⏱ Times in the twelfth-pass heading and the 12:05 AM metrics stamp were ~15 min fast (I read bash UTC as PT once); the DB `now()` readings in the ledger are correct.
 
+## Fourteenth pass (2:35–3:05 AM PT) — the reconcile watch failed, and two of my own jobs collided
+
+- ✅ **jobid 506 2:35 AM:** ok 69 s (was 204), `efc_drift_sample_mod 64`, drift 0, nba_top_shot 7 ms. Pinnacle 57 s is now the lane.
+- ↩ **jobid 539 R107 full reconcile, 2:36 AM: died at 600 s** — the streaming DISTINCT ON over ~1.2 M snapshots is 600+ s on a cold cache (the 45 s control was warm). `20260920095145`: full branch → per-edition index probe (74.7 s cold measured, control 51 s, 21,423 upserted, sampled drift 0). ⚠ The wrapper wrote NO `pipeline_runs` row for the 57014 — its "killed run still lands a row" claim is unproven; test with a 1 s budget before trusting it.
+- ↩ **jobid 542 weekly pg_net VACUUM FULL, 2:43 AM Sunday: 117 s of its 120 s** inside the reconcile's window, holding ACCESS EXCLUSIVE on `net._http_response` — every pg_net lane blocked for two minutes. Moved to `16 9 * * 0` (`20260920095221`). Both jobs were mine from the same evening; I never checked them against each other.
+- **Watches:** 09-21 2:36 AM PT reconcile ok < 200 s · 09-27 2:16 AM PT VACUUM FULL < 30 s · 4:17 AM jobid 490 · 4:59 AM leg 324 at :59.
+
 ## Needs Trevor
 
 #22 purge residue · #55 the two 2-hourly Routines · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader (FMV path) · whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.
