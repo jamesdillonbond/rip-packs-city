@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🎯 THE `[pack-detail]` 5 s TIMEOUTS ARE THE pack_rips VISIBILITY MAP — 4,128 heap fetches on a 5,919-row Index Only Scan, 1,368 disk reads, 5.6 s for one All Day pack page; the 1:12 AM PT autovacuum now has a user-facing exit condition · Cowork cloud
+
+**Shipped: nothing new — a measurement that re-prices a decision already taken tonight (`20260920033248`: pack_rips autovacuum paused until 08:12Z).**
+
+🎯 Vercel runtime errors, last 3 h at 9:20 PM PT: **186 on `/[collection]/pack/dist/[distId]`, the top error route by 6×**, and — correcting the earlier "mostly the smoke fixture measuring itself" — **93 distinct dist paths, nearly all `/nfl-all-day/pack/dist/*`, one every ~10 s, every one `cache=MISS`** (a crawler walking All Day pack pages; the fixture dist 5048 is 15 of 186). The line is always the same: `[pack-detail] allday_pack_lifecycle error … read exceeded 5000ms`. **EXPLAIN of that read for dist 5974 (`v_allday_pack_lifecycle` → `pack_rips` via `idx_pack_rips_dist_agg_v2`, predicate pushed down correctly): Index Only Scan, 5,919 rows, `Heap Fetches: 4128`, 1,368 buffers read from disk, 5,610 ms.** The index is right; the visibility map (66.7 % all-visible, last autovacuumed 09-12) is why an Index Only Scan touches the heap 70 % of the time and a 5 s budget dies on a cold page. This is R109's mechanism on a user-facing surface, and it is the table I paused autovacuum on two hours ago because its unthrottled pass was a spell.
+
+**What changes:** nothing tonight — the pause stands (the pass is the right fix, in the quiet hour, throttled). **What it adds:** an exit condition a user would feel. After the 08:12Z re-enable and the pass (throttled ~4 MB/s over ~2 GB ≈ 9 min), `[pack-detail] allday_pack_lifecycle … exceeded 5000ms` on `/nfl-all-day/pack/dist/*` should drop from ~60/h to ~0 and the same EXPLAIN should read `Heap Fetches` near 0. **Falsifier:** the map at > 95 % and the errors continuing ⇒ the cost is elsewhere in the page (the lifecycle read is one of several bounded reads); re-EXPLAIN before touching the 5 s budget. ⚠ If the pass fails to complete at 4 MB/s inside the quiet hour, the trade (one throttled pass vs ~1,400 degraded All Day pack renders a day) argues for finishing it, not for pausing again.
+
+- **Revert:** n/a (measurement).
+
 ### 2026-09-19 · 🔎 R117 FILED — wmc autovacuum is ~3.4 h/day of full-index-pass IO, in #126's band, and its durations ARE recoverable from the logs (the 08-29 note said they were not); the reindex verify names the tier index again · Cowork cloud
 
 **Shipped: 1 migration (`20260920041743`, `run_wmc_reindex_verify()` sixth target → `idx_wmc_wallet_coll_ek_fmv_tier`, live body md5 = committed body md5 `b0f1531b…`), register row R117 (measurement only — no autovacuum lever moved, deliberately, after tonight's pack_rips episode).**

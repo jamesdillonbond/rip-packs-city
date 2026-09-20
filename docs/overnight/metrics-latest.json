@@ -1,8 +1,8 @@
 {
-  "generated_at_pt": "2026-09-19 ~09:00 PM PT",
-  "generated_at_utc": "2026-09-20T04:00Z",
+  "generated_at_pt": "2026-09-19 ~09:35 PM PT",
+  "generated_at_utc": "2026-09-20T04:35Z",
   "pass": "Trevor-directed evening health pass (Cowork cloud + laptop VM). PUSH-CAPABLE via path A (laptop VM, .rpc-git-cred; d1c11a79c confirmed by ls-remote == HEAD). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 23:59Z at start.",
-  "shipped": 25,
+  "shipped": 26,
   "reverted": 0,
   "verdict": "HEALTHY SINCE NOON PT. The alert board's high/medium failure_rate rows are 2-day windows straddling the morning IO spell; split on the change point: cron.job_run_details 0 failures in 5 h (~405 runs/h) vs 30-108/h before noon; pipeline_runs 0.31% failing (11/3,589) vs 1.85% in the prior 12 h; ts-listings 161/161 ok. Security 0/0/0/0, stalled 0, Atlas lanes active. Sentry zero PAIRED with Vercel: 50 groups/24h, all chronic shapes, none new; the [pack-detail] 5 s read-timeout family still fires post-noon and is the next user-facing cost. Telegram pager channel was DARK 12:04-5:07 PM PT (a '<' in an ack note) and is repaired. EVENING ADDENDUM 8:40 PM PT: ~30 lane failures between 8:07 and 8:33 PM PT were self-inflicted (manual VACUUM scans + an unthrottled pack_rips autovacuum), all self-clearing; filed in the ledger as such.",
   "health": {
@@ -155,6 +155,12 @@
       "migration": "20260920035444",
       "instrument": "Sunday 09-27 8:43 PM PT: 477 + 478 succeeded; verify invalid_left = 0",
       "revert": "header"
+    },
+    {
+      "what": "run_wmc_reindex_verify() sixth target -> idx_wmc_wallet_coll_ek_fmv_tier (lockstep with jobid 478); R117 filed (wmc autovacuum ~3.4 h/day, durations recoverable from postgres_logs)",
+      "migration": "20260920041743",
+      "instrument": "Sunday 09-27 9:03 PM PT verify: absent=[], invalid_left=[]",
+      "revert": "header"
     }
   ],
   "vercel_error_groups_24h": {
@@ -175,10 +181,11 @@
     "portfolio_primary": "09-20 11:46 PM PT jobid 546 succeeded with 27 rows; 12:05 AM PT route logs ok in < 1 s with already_snapshotted=27; 4:17 AM PT jobid 490 0 inserted",
     "cache_refresh_429": "Vercel runtime logs: no 429 from /api/cache-refresh for a real visitor (only enumeration shapes); none expected",
     "pgnet_toast_and_the_09_17_band": "#126 candidate: if the 02-18Z slow-reads band does NOT return on 09-20 after the 10 GB dead-TOAST reclaim, that was the mechanism; if it returns, it was not",
-    "pack_rips_quiet_hour_pass": "1:12-1:30 AM PT 09-20: pack_rips autovacuum_count 2 -> 3, map 66.7 % -> > 95 %, no startup-timeout step; if a step: open a register item on its 11 indexes",
+    "pack_rips_quiet_hour_pass": "1:12-1:30 AM PT 09-20: pack_rips autovacuum_count 2 -> 3, map 66.7 % -> > 95 %, no startup-timeout step; USER-FACING EXIT: [pack-detail] allday_pack_lifecycle \"exceeded 5000ms\" on /nfl-all-day/pack/dist/* drops from ~60/h to ~0 (EXPLAIN dist 5974: Heap Fetches 4128 -> ~0)",
     "visibility_maps_day_after": "09-20 evening: the nine maps still > 95 %; topshot_pack_sales_history is the churn control (13.6 k dead 8 min after its vacuum)",
     "weekly_wmc_reindex": "Sunday 8:23/8:43 PM PT: jobids 477 and 478 succeeded (REINDEX), 9:03 PM verify invalid_left = 0; the wave is 7:03-8:43 PM PT Saturday - schedule nothing heavy into it",
-    "cron_console": "cron-job.org: 88 entries / 17 inactive baseline; an 18th inactive row is an auto-disable"
+    "cron_console": "cron-job.org: 88 entries / 17 inactive baseline; an 18th inactive row is an auto-disable",
+    "r117_wmc_autovacuum": "query postgres_logs for \"automatic vacuum of table \\\"postgres.public.wallet_moments_cache\\\"\" and sum dateDiff(session_start_time, timestamp): ~12,000 s/day on 09-19; a lever is only shipped with the idx_tame_open_by_edition heap-fetch falsifier attached"
   },
   "needs_trevor": [
     "#22 purge residue GC + rotate",

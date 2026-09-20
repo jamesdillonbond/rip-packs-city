@@ -94,6 +94,12 @@ Ledger entry (top of `docs/overnight/ledger.md`) carries revert paths for all fo
 - 🔁 **The evening spells had a second author.** The weekly wmc REINDEX wave (jobids 438–441, 477, 478) runs **Saturday 7:03–8:43 PM PT** — inside the band every 7-day average called quiet. My pack_rips pass and its 399 MB leg (-5) collided at 8:23–8:33 PM; the REINDEX died at 600 s and left an invalid `_ccnew` (dropped, 1.8 s). **-6 (jobid 478) had pointed at an index dropped on 09-14 and failed for the first time tonight — re-pointed at its successor** (`20260920035444`). The 8:38–8:43 failures after that were the box's own routine wmc autovacuum + jobids 303/215.
 - Watches added: Sunday 8:43 PM PT jobids 477/478 both succeed and the 9:03 PM verify reads `invalid_left = 0`.
 
+## Ninth pass (9:00–9:35 PM PT) — R117 and the pack-detail timeouts explained
+
+- 🔎 **R117 filed:** `wallet_moments_cache` autovacuum ran nine passes ≥ 10 min on 09-19 totalling **~3.4 h**, each a full pass over its 2.2 GB of indexes, in #126's slow-reads band. Durations ARE recoverable from `postgres_logs` (`parsed.session_start_time` vs `parsed.timestamp`) — the 08-29 note said they were not. No lever moved; all 19 wmc indexes are read, two prefix-redundant siblings are ~9 % of the total, so pass count is the lever (with the heap-fetch falsifier).
+- 🔧 `run_wmc_reindex_verify()` now names `idx_wmc_wallet_coll_ek_fmv_tier` in lockstep with jobid 478 (`20260920041743`, md5-parity checked). Tonight's verify `ok=false` is the 43 % leaf density on `idx_wmc_lock_wallet_coll_cover` (its REINDEX died under my pass) — clears next Sunday if jobid 477 succeeds.
+- 🎯 **The `[pack-detail]` 5 s timeouts (186 errors / 3 h, top route by 6×) are the pack_rips visibility map:** the All Day lifecycle read is an Index Only Scan with 4,128 heap fetches on 5,919 rows, 1,368 disk reads, 5.6 s. A crawler is walking ~93 distinct All Day pack pages at one per 10 s, each a cold ISR miss. The 1:12 AM PT throttled autovacuum is the fix and now has a user-facing exit: those errors drop from ~60/h to ~0.
+
 ## Needs Trevor
 
 #22 purge residue · #55 the two 2-hourly Routines · jobid 303 `refresh_wmc_fmv_changed` as the #1 reader (FMV path) · whether to retire `portfolios` + `portfolio_moments` outright (option b), now that the grant is gone · the Golazos `>168h` sales-ingest threshold vs a market that sells every ~10 days.
