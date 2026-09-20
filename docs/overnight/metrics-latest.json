@@ -1,8 +1,8 @@
 {
-  "generated_at_pt": "2026-09-19 ~09:35 PM PT",
-  "generated_at_utc": "2026-09-20T04:35Z",
+  "generated_at_pt": "2026-09-19 ~10:10 PM PT",
+  "generated_at_utc": "2026-09-20T05:10Z",
   "pass": "Trevor-directed evening health pass (Cowork cloud + laptop VM). PUSH-CAPABLE via path A (laptop VM, .rpc-git-cred; d1c11a79c confirmed by ls-remote == HEAD). Cloud container itself repo-set 403 (not repo-attached). Real time from DB: now() 23:59Z at start.",
-  "shipped": 26,
+  "shipped": 28,
   "reverted": 0,
   "verdict": "HEALTHY SINCE NOON PT. The alert board's high/medium failure_rate rows are 2-day windows straddling the morning IO spell; split on the change point: cron.job_run_details 0 failures in 5 h (~405 runs/h) vs 30-108/h before noon; pipeline_runs 0.31% failing (11/3,589) vs 1.85% in the prior 12 h; ts-listings 161/161 ok. Security 0/0/0/0, stalled 0, Atlas lanes active. Sentry zero PAIRED with Vercel: 50 groups/24h, all chronic shapes, none new; the [pack-detail] 5 s read-timeout family still fires post-noon and is the next user-facing cost. Telegram pager channel was DARK 12:04-5:07 PM PT (a '<' in an ack note) and is repaired. EVENING ADDENDUM 8:40 PM PT: ~30 lane failures between 8:07 and 8:33 PM PT were self-inflicted (manual VACUUM scans + an unthrottled pack_rips autovacuum), all self-clearing; filed in the ledger as such.",
   "health": {
@@ -161,6 +161,18 @@
       "migration": "20260920041743",
       "instrument": "Sunday 09-27 9:03 PM PT verify: absent=[], invalid_left=[]",
       "revert": "header"
+    },
+    {
+      "what": "get_editions_latest_fmv_wide(uuid[]): all 15 fmv_current columns via the per-id probe, service_role only; A/B on 100 ids: view 40.9 s cold / 22.6 s warm vs helper 40 ms, set-diff 0",
+      "migration": "20260920044216",
+      "instrument": "pgss: the fmv_current 5-col id-list shape stops accruing; helper mean < 200 ms",
+      "revert": "DROP FUNCTION public.get_editions_latest_fmv_wide(uuid[])"
+    },
+    {
+      "what": "wallet-search x2 + cache-refresh read get_editions_latest_fmv_wide; 5 fixture files on the rpc: key (mutation-checked)",
+      "commit": "fa8ca839c",
+      "instrument": "[wallet-search] / [cache-refresh] fmv lookup err lines -> ~0; p90 wallet-search latency",
+      "revert": "git revert fa8ca839c"
     }
   ],
   "vercel_error_groups_24h": {
@@ -185,7 +197,8 @@
     "visibility_maps_day_after": "09-20 evening: the nine maps still > 95 %; topshot_pack_sales_history is the churn control (13.6 k dead 8 min after its vacuum)",
     "weekly_wmc_reindex": "Sunday 8:23/8:43 PM PT: jobids 477 and 478 succeeded (REINDEX), 9:03 PM verify invalid_left = 0; the wave is 7:03-8:43 PM PT Saturday - schedule nothing heavy into it",
     "cron_console": "cron-job.org: 88 entries / 17 inactive baseline; an 18th inactive row is an auto-disable",
-    "r117_wmc_autovacuum": "query postgres_logs for \"automatic vacuum of table \\\"postgres.public.wallet_moments_cache\\\"\" and sum dateDiff(session_start_time, timestamp): ~12,000 s/day on 09-19; a lever is only shipped with the idx_tame_open_by_edition heap-fetch falsifier attached"
+    "r117_wmc_autovacuum": "query postgres_logs for \"automatic vacuum of table \\\"postgres.public.wallet_moments_cache\\\"\" and sum dateDiff(session_start_time, timestamp): ~12,000 s/day on 09-19; a lever is only shipped with the idx_tame_open_by_edition heap-fetch falsifier attached",
+    "fmv_wide_helper": "09-21: pg_stat_statements - the fmv_current 5-col id-list read stops accruing calls; get_editions_latest_fmv_wide mean < 200 ms at 50-100 id chunks; falsifier: wallet-search p90 still > 5 s => chunk count, raise CHUNK to 200"
   },
   "needs_trevor": [
     "#22 purge residue GC + rotate",
