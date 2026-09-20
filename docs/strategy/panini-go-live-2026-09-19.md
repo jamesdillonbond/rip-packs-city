@@ -133,7 +133,32 @@ whole-group statistic used as a proxy for a per-slice property.
    correction says exactly this: it bands on listing bias, not freshness. Do not read it either way.
 2. **Then the P1 bridge.** The mapping is settled and executable (§5). It is ~2 days of work, not
    1–2 weeks, now that the enum and null questions are measured.
+
+   ⭐ **UPDATE 2026-09-20 — the executable already existed, and reading it found two defects this
+   document did not know about.** `sync_panini_editions_to_shared(p_dry_run boolean)` has been
+   shipped-but-inert since 2026-07-19. **(a) Its accuracy gate was a `note` STRING, not a gate** —
+   the only `blocked` condition was slug collisions, so a live call on 09-19 would have written all
+   1,265 stale editions into the shared plane, precisely what the ⛔ below forbids. **(b) It mapped
+   `panini_editions.nation` into `team_name`**, contradicting gap 3 — and that column holds host
+   cities ("Dallas", "Vancouver", "San Francisco Bay Area"), "FIFA" and doubled values
+   ("Brazil | Brazil"), so it would have minted team pages for a city and for FIFA. ⭐ **Gap 3 was
+   written about the read-only candidate VIEW and never checked the function that actually writes.**
+
+   ✅ Both fixed in migration `20260920155903`: the threshold is enforced (and **fails closed** on
+   an unreadable coverage row), and `team_name` is NULL. Live dry run after the fix:
+   `would_insert_editions` 5,074 · `would_upsert_sets` 62 · `would_upsert_players` 552 ·
+   collisions 0/0 · `blocked` **false**.
+
+   ⛔ **`blocked: false` IS NOT A GO.** The gate answers staleness only. **Two things still stand
+   between here and a live run**, and neither is code: the **7-day hold** (step 1), and the
+   **2026-07-19 parity assessment's editorial objection** — bridging makes a listing-gated index
+   (`pct_trustworthy` **35.2%**) a full citizen of shared surfaces that have nowhere to disclose
+   partial coverage. ⚠ **That objection is NOT addressed anywhere in this document's ordering**, and
+   it is the one that needs Trevor, not a threshold.
 3. **Then the flips**, in the 09-06 audit's order: `published` → `proxy.ts` → `is_active` LAST.
+   ⚠ **The `published` flip is not cosmetic** — measured 2026-09-20, it rewrites the site-wide
+   provenance badge. That specific defect is fixed (§5 gap 1) and pinned, but re-read the pin before
+   flipping.
 
 ⛔ **Do not reorder 1 and 2.** Bridging today writes 1,265 month-and-a-half-old prices into
 `editions` / `fmv_snapshots`, where every cross-collection rollup renders them indistinguishable
