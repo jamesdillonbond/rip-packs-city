@@ -2481,3 +2481,84 @@ that resolves on 10-01, replacing a VISIBLE ack with a silent `ok`, and masking 
 wallet-backfill collapse in between. The mechanism is kept and now sits at a **population of
 zero**, which its tests prove is safe (migrations `20260919202050`/`202105`/`202147`,
 retraction `20260919210201`).
+
+---
+
+## Displaced from CLAUDE.md — 2026-09-20 (verbatim)
+
+Moved here to make room for cross-cutting rules under the 40,000-character memory-file limit. **Nothing was edited — these are the exact CLAUDE.md lines.**
+
+- ⛔ **A DISCOVERY mechanism must never double as the REFRESH list.** Panini's scroll was also its refresh list: **1,265 of 5,072 editions went 45+ days unwalked under 2,103 runs, 0 fails.** Refresh reads your OWN catalogue: [panini](../strategy/panini-go-live-2026-09-19.md).
+- ⚠ **An ELIGIBILITY count is not a GAIN count** — they differ by the share ALREADY in the target state: a lever sized at 173 rows moved **54** — 119 were already MEDIUM (+2.8 pts → +0.9). **Ask what would CHANGE, not what the rule would fire on.** ⚠ **A shed schedule (6/day for 72) is a defect only if the lane is BACKLOG-BOUND — measure `rows_written × deliveries` against the backlog first** (#124).
+
+---
+
+## Cadence, budget and the launcher minute — jobid 466, worked end to end (2026-09-20)
+
+**Three separate things had to be right, and fixing them one at a time each looked like a failure.** Recording the whole sequence because each step on its own is a misleading data point.
+
+### The starting measurement (and how it went stale under me)
+
+`rpc-ts-listings-atlas-sync` (jobid 466, `atlas_listing_verify_tick(2)`) measured over 24 h:
+- 717 ticks, 453 ok, **261 killed at the 120 s statement timeout (36 %)**
+- **12.5 DB-hours/day** burned across this lane and the All Day resolver on ticks that hit the wall and **rolled back writing nothing**
+- **longest stretch with no successful tick: 99 minutes**, on a lane scheduled every 2 minutes
+
+⚠ **`p_max=2` was never the lever.** It bounds ONE of the tick's SIX steps (`atlas_listing_verify_dispatch`); `atlas_edition_verify_settle`, `sync_ts_listings_from_atlas`, `sync_cached_listings_from_atlas`, `sync_edition_offers_from_atlas` and `atlas_edition_verify_dispatch(4)` are all unbounded by it.
+
+⚠ **Two wrong leads, recorded so nobody re-chases them:** it is NOT a differential-upsert probe (both sync functions already carry the R101 v2 delta-first rewrite), and `sync_cached_listings_from_atlas` is NOT "18× cheaper than its sibling" — it **reuses the `_open24` temp table** the sibling just built.
+
+🚨 **By the time the cadence fix shipped, the 36 % was 100 %.** The lane had entered a different regime at ~09:04 and I did not re-check. **Re-test a premise immediately before acting on it, not when it was filed.**
+
+### Failure 1 — a tick that cannot FINISH
+
+Every tick from 09:34 was `ok=false` at 120 s. The records showed the sync step **completing and computing a real delta** — 576 inserted, 118 updated, 1,840 deleted — and the tick then dying in a later step. **The whole tick is one transaction, so that delta rolled back every single time.** `ts_listings.max(ingested_at)` sat frozen at 09:01 PT for 92 minutes while the upstream was two minutes fresh (59,181 open rows in `topshot_atlas_market_events`).
+
+⛔ **AND IT IS DEGENERATE.** The delta is computed against the frozen table, so every minute frozen makes the delta bigger and the sync slower — measured **6.7 s → 75 s → 95 s → 101 s → 107 s**. It accelerates away; it does not recover by waiting.
+
+**⚠ CADENCE AND BUDGET ARE ONE DECISION. No cadence fixes a tick that cannot finish.** Fix: 120 s → **240 s** (`20260920175200`), which fits inside the `*/5` spacing (300 s) so ticks still cannot overlap. The prefix form is required — `SET statement_timeout` INSIDE a function is inert under pg_cron.
+
+### Failure 2 — the launcher minute
+
+The first two ticks under the new budget were **both lost to `job startup timeout`**, so the budget fix was not even exercised. Whole minutes where nothing starts:
+
+```
+10:25  4 startup timeouts, 1 ok
+10:26  8 startup timeouts, 0 ok
+10:30  8 startup timeouts, 0 ok
+```
+
+**`*/5` had put the job on minutes 0,5,10,…,55 — every one a multiple of five, where the most jobs fire at once.** Measured over 12 h, all jobs, by minute mod 5:
+
+| minute mod 5 | runs | startup timeouts | blackout rate |
+|---|---|---|---|
+| **0** | 863 | 79 | **9.15 %** ← where `*/5` puts you |
+| **1** | 926 | 53 | **5.72 %** ← best |
+| 2 | 1226 | 109 | 8.89 % |
+| 3 | 946 | 61 | 6.45 % |
+| 4 | 958 | 61 | 6.37 % |
+
+⭐ **A one-minute shift buys a 37 % reduction in blackout probability, free.** This is the minute-level analogue of the hour rule (hours divisible by 6 carry ~2× the load).
+
+⚠ **`≡1 mod 5` was also the ONLY offset that kept the job's diagnostic alive.** The tick samples its two ~400k-row diagnostic counts on `minute % 30 < 2` → minutes 0, 1, 30, 31. `1-56/5` fires on 1, 6, …, 56, hitting 1 and 31. **`2-57/5` or `3-58/5` would have silently killed the sampling forever**, and the tick would have published `unmapped: null` on every run with nothing to say why. **Check what a slot move does to any clock-derived sampling INSIDE the job before moving it.**
+
+### Outcome
+
+`20260920180500` → `1-56/5`, 240 s budget, jobid preserved. First tick at **10:36 PT: `ok=true`, 147 s** (would have died at 120 s), committing **598 inserted / 118 updated / 2,435 deleted**. `ts_listings` un-froze: **92 minutes stale → 7 minutes**, 58,513 rows.
+
+---
+
+## jobid 464 — run the #124 test BEFORE choosing a direction (2026-09-20)
+
+`rpc-allday-unmapped-atlas-resolver` was killing 37 % of ticks. The instinct is to shed the schedule or cut items. **Both would have been backwards**, and the function's own log said so:
+
+- `open_unresolved` **17,529 → 16,842 over 13 h = −53/h**, i.e. ~13 days to clear ⇒ **backlog-bound**
+- only **65 of ~168 expected ticks logged (39 %)** — it logs unconditionally on success, so the missing 61 % were wall-kills
+
+**Where the budget went — not the probes.** The final `open_unresolved` count is **purely diagnostic** and measured **33,105 ms / 31,413 buffers**, scanning 74,219 rows to keep 16,800. 33 s of a 120 s budget, ~12× an hour, for a stock that moves by tens per hour. Fixed by SAMPLING it (`minute % 30 < 5` → minutes 4 and 34), publishing **NULL never 0**, with `diag_sampled` stating which — the precedent `sync_ts_listings_from_atlas` already set.
+
+⚠ **That prediction was WRONG and its own falsifier caught it**: the next two unsampled ticks (`diag_sampled: false`) still died at 120 s.
+
+⭐ **What found the real cause was the R118 handler shipped in the SAME migration.** The killed ticks began recording `mapped_from_events: 10, probes_dispatched: 0` — leg 1 completes, leg 2 dies. Before it, they logged nothing at all. **A recording fix pays for itself even when the performance fix beside it is wrong; ship them together.**
+
+Real causes, both in leg 2's candidate query (see database.md for the plan detail): an unindexed `NOT EXISTS` on a computed key, and a table that had **never been vacuumed**. After both: the 10:19 PT tick **succeeded in 73.9 s with 10 probes dispatched**, against three consecutive 120 s kills immediately before.

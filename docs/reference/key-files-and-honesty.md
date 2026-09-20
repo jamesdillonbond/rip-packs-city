@@ -1970,3 +1970,50 @@ Screenshot-verified in production, directly beneath the board's own banner sayin
 ### A DONE stamp in an ELSE that cannot tell "in flight" from "finished" (2026-09-18, #123)
 
 The wallet holdings sync pages Dapper's `searchPackNft` and stamps `pack_wallet_sync.completed_at` when a page reports no next page. A concurrency guard was added so a collector never re-dispatches a cursor another collector already dispatched — and that guard's skip landed in the same `ELSE` as "no next page", so six wallets read **"Holdings confirmed with the Dapper pack index (700 packs)"** while page 6 was still on the wire. The shape: a status write sits in the fall-through branch of a condition that mixes *"nothing more to do"* with *"someone else is doing it"*. Fix: enumerate the outcomes (done · capped · dispatch next · already in flight) and let only the first two write the terminal state; reset and recount the rows already stamped. Tell: a `completed_at` (or `ok`, or `done`) written from an `ELSE`. Same family as the sweep whose `ok` means it completed; one level down, per page. Live incident and recount: ledger 2026-09-18 "THE UNOPENED TAB WAS A QUARTER OF THE TRUTH".
+
+---
+
+## The MIRROR, fully worked: a SUPPRESSION that outlived its premise (2026-09-20)
+
+**This is the #80 mirror at full scale, and the most instructive instance so far, because every guard involved was GREEN for the whole 13 days.**
+
+`ts_listings` was genuinely retired on 2026-05-26 — one row, written 2026-05-15. Deep-audit D12 → D12b correctly built a disclosure so the per-collection analytics tab would stop publishing "ORDER BOOK DEPTH · 1 listings · MEDIAN ASK $5.0k" over that single stale row. That work was right.
+
+**On 2026-09-07 the table was rewired to the Atlas firehose.** It is now a full snapshot of the open Top Shot book, rebuilt every ~2 minutes. Measured 2026-09-20 09:25 PT: **60,350 rows across 2,377 editions, oldest row 09-19, median ask $1.00, p90 $14.00, $5.0M total ask.**
+
+Nobody revisited the disclosure. So for 13 days the public tab **suppressed a real 60k-row order book in order to tell anonymous visitors that the feed's last row was written on 2026-05-15**, and `lib/analytics/methodology.ts` published the same false sentence twice more ("no Top Shot orderbook depth is published anywhere on the site").
+
+### Why nothing caught it
+
+`__tests__/retired-orderbook-source-not-rendered-ratchet.test.ts` passed every run, and its own header said why:
+
+> ⚠ WHAT THIS DOES NOT CLAIM. It asserts the disclosure module is REFERENCED, not that the rendered sentence is true — no static check can see that.
+
+That is an honest boundary statement, and it is exactly the hole. **The guard could only ever check that SOMETHING was said, never that the something was still true.**
+
+### The fix shape — and why correcting the date would have been wrong
+
+The date constants **were** the failure mode. A constant cannot notice its own premise expired, and shipping a corrected date re-arms the identical trap facing the other way, because a feed can go dark again.
+
+So the block now publishes **its own provenance** and the surface derives the verdict:
+
+- `analytics_listings_summary()` Section 2 emits `newest_ingested_at` + `age_hours` (migration `20260920163320`).
+- `age_hours` is computed **server-side** — the client must not read a clock during render (React #418 hydration), so the freshness decision arrives as a prop.
+- It is **NULL when the filtered set is empty** — an unknown age is published as NULL, never 0, so an empty book cannot read as a fresh one.
+- `lib/analytics/ts-orderbook-freshness.ts` classifies **three states**: `fresh` / `stale` / `unknown`, against a 6 h gate matching the site's existing % Listed window.
+- The ratchet now additionally **bans any date literal in the provenance module's live code** (comments keep the case history). Mutation-proven: re-adding `TS_LISTINGS_LAST_ROW_ON = "2026-05-15"` reds it.
+
+### ⭐ The control case, same codebase, same feed, same day
+
+`get_edition_market_bundle`'s Top Shot arm feeds edition-page **% Listed** from the SAME table and gates on `max(ingested_at) > now() - interval '6 hours'` — a **derived** test. It resumed working on 2026-09-07 **by itself**, with nobody touching it. Verified live 09-20: edition `51:1997` renders **"0.1% · 73 of 60,000 listed"**.
+
+**Two surfaces, one feed, one day. The derived gate self-healed; the hardcoded date published a falsehood for 13 days.** That is the whole argument for the pattern, and it was already in the codebase.
+
+⚠ **I initially reported the opposite** — that % Listed was still broken because the bundle only read `cached_listings_v2` — and wrote it into a code comment, the ledger and the memory store before checking. **Read the function before describing what it reads.**
+
+### Rules taken from this
+
+1. **A suppression is a CLAIM.** When a surface hides data because a source is "dead / retired / disabled", re-derive that the source is still dead before trusting the suppression — the same way a filed finding is a hypothesis. Cheapest probe: `count(*)` + `max(<ingest ts>)`.
+2. **Never gate user-facing copy on a hardcoded feed-state date.** Gate on the data's own published age.
+3. **A test pinning the SPELLING of such a disclosure is a re-pin when the premise changes, not an inversion** — the code was fine when written.
+4. **Check the re-pin is still EXERCISED.** One assertion here had gone vacuous, searching for "sampler was switched off", a string no longer present anywhere in the tree — it would have passed against a gate leaking to every collection.

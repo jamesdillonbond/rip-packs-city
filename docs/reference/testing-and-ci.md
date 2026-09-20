@@ -3099,3 +3099,23 @@ not match a changed function body fails there rather than here — on 2026-09-19
 function body read a THIRD table and the pin could not even run. It also makes the pin's
 assertions mutation-testable locally, which is the only way to know a new assertion is
 load-bearing.
+
+---
+
+## A guard that is honest about its own boundary can still be the hole (2026-09-20)
+
+`__tests__/retired-orderbook-source-not-rendered-ratchet.test.ts` is a well-built guard: it walks the tree instead of naming files, it is satisfiable at a population of zero, and it carries a positive control for its own comment stripper. It also stated its boundary plainly:
+
+> ⚠ WHAT THIS DOES NOT CLAIM. It asserts the disclosure module is REFERENCED, not that the rendered sentence is true — no static check can see that.
+
+**It was GREEN for the 13 days the site published a false claim to anonymous visitors.** The boundary statement was accurate and the guard was still the hole. *"Ask what a passing guard is structurally SILENT about"* is not satisfied by the guard having written its silence down — someone has to act on it.
+
+**What actually closed it** was moving the thing the guard could not see into data the guard *can* see: the RPC now publishes `age_hours`, the module derives its verdict from that, and the ratchet gained a rule it can enforce — **a ban at zero on any date literal in the provenance module's live code** (comments keep the case history). Mutation-proven: re-adding `TS_LISTINGS_LAST_ROW_ON = "2026-05-15"` reds it with the intended message.
+
+### Three re-usable rules
+
+1. **A test pinning the SPELLING of a disclosure is a RE-PIN when the premise changes, not an inversion.** The code was fine when written. `component-CollectionAnalyticsClient` asserted `/sampler was switched off on 2026-05-26/` — correct on the day it shipped, false 13 days later. Re-point it; do not delete it.
+2. ⛔ **Re-pinning the row is not enough — check the property is still EXERCISED.** One assertion in that suite had gone **vacuous**: it asserted `queryByText(/sampler was switched off/)` was null, on a collection where the gate must not fire. After the rename that string existed **nowhere in the tree**, so the assertion would have passed against a gate leaking to every collection. It now runs against a deliberately STALE fixture so the Top-Shot-only property is genuinely tested.
+3. **Pin behaviour from all three directions when the property has three states.** The suite now covers `fresh` → publishes real depth, `stale` → discloses the measured age and suppresses the count, `unknown` → distinct copy, suppresses the count. A fixture world where every arm is fresh passes a one-sided check — which is how the previous two versions of this test died.
+
+⚠ **Unrelated but load-bearing: a red `npm test` is not automatically yours.** Two of three failures in a full run during this session were a concurrent session's in-flight migration files, and the guard passed in isolation minutes later. **Read the failing job, and re-run on a settled tree, before changing anything.**

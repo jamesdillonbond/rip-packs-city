@@ -2581,3 +2581,54 @@ re-derive before quoting.
 `0 = S1` · `2 = S2` · `3 = Summer 2021` · `4 = S3` · `5 = S4` · `6 = 2023-24` · `7 = 2024-25` · `8 = 2025-26`. **There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".** ⚠ **These are the REPO's names; the live `collection_series.display_label` reads `Series 5/6/7` for 6/7/8 (re-verified 08-24) and drives the Collection tab filter via `/api/collection-series`** — check which convention your surface parses. `series-param.ts` resolves BOTH; which label WINS is open.
 
 ⚠ **This 0↔1 collision is TOP-SHOT-SPECIFIC — NEVER blanket-remap `1 → 0` across collections.** `wmc.series_number` is ON-CHAIN; `editions.series` is DISPLAY. All Day / Golazos / Pinnacle use `1` legitimately and **`ufc_strike` has BOTH 0 and 1**, so a blanket remap corrupts four collections — a 2026-08-05 incident dropped 385,734 TS rows. Check `collection_series` before touching any series logic.
+
+---
+
+## Displaced from CLAUDE.md — 2026-09-20 (verbatim)
+
+Moved here to make room for cross-cutting rules under the 40,000-character memory-file limit (headroom was 142). **Nothing was edited — these are the exact CLAUDE.md lines.** They are subsystem-specific: a session needs them once it is writing a `check_*` function, a partitioned index, or reading `pipeline_runs`, not before it knows its topic.
+
+- ⚠ **`check_*` return shapes are MIXED: a jsonb-array one reads CLEAN as `count(*) = 1` (read the LENGTH), a SETOF one as ZERO rows. Check the return type before interpreting a count** (which is which: database.md).
+- ⛔ **A UNIQUE INDEX ON A PARTITIONED TABLE MUST CONTAIN THE PARTITION KEY — one that omits it is IMPOSSIBLE at the parent, so index the PARTITIONS.** ⭐ **The tell was EXACTLY zero violations** (#68: see the partitioned-index section above).
+- **`pipeline_runs` retains ~73h** — a missing record is usually a RETENTION ARTIFACT; `pipeline_runs_daily` is indefinite but **six-hourly**: never for RECENCY, the only long BASELINE. ⭐ **`rows_found` vs `rows_written` there splits *writer broke* from *upstream gives less*** (#70).
+
+---
+
+## Two free catalog checks that unblocked a lane (2026-09-20)
+
+Both were found on jobid 464's leg-2 candidate query, which exceeded the 120 s gateway when run by hand and ended at **9.8 s**. Neither needed a schema redesign.
+
+### 1. A `NOT EXISTS` on a COMPUTED key needs its own index, and nothing warns you
+
+```sql
+NOT EXISTS (SELECT 1 FROM topshot_atlas_market_requests q
+             WHERE q.error = '__nft__' || us.nft_id AND q.drained_at IS NULL)
+```
+
+`topshot_atlas_market_requests` carried only a pkey on `request_id` and a partial on `dispatched_at` — **no index on `error`** — so this re-scanned the table for every candidate row across a ~16,800-row backlog.
+
+Fix: `CREATE INDEX idx_tamr_error_open ON topshot_atlas_market_requests (error) WHERE drained_at IS NULL;` — matching the subquery's predicate exactly keeps it a few kB no matter how the table's history grows (only **2** rows were open).
+
+⭐ **SIZE AN INDEX BUILD; DO NOT REFUSE ONE.** The 2026-09-20 01:14–01:45 launcher blackouts were builds on ~300 MB+ tables, and the lesson taken from them is often over-generalised into "never build in-hours". This table is **640 kB / 4,614 rows**, so a plain `CREATE INDEX` held ACCESS EXCLUSIVE for milliseconds. Check `pg_relation_size` first. (`CONCURRENTLY` is not available inside a migration transaction anyway, and at this size buys nothing.)
+
+### 2. ⛔ Check `last_vacuum` AND `last_autovacuum` for NULL — not just the visibility percentage
+
+`nft_edition_map` had **both NULL — it had never been vacuumed, ever** — at 78.1 % visible. That turned its Index Only Scan into **46,674 heap fetches on 66,544 rows / 43,736 buffers**.
+
+One `VACUUM (ANALYZE)` (19 MB, seconds): **78.1 % → 100.0 % visible, dead tuples 3,992 → 64, heap fetches 46,674 → 19, that node's buffers 43,736 → 907.**
+
+```sql
+select c.relname, c.relpages, c.relallvisible,
+       round(100.0*c.relallvisible/nullif(c.relpages,0),1) as pct_visible,
+       s.n_dead_tup, s.last_vacuum, s.last_autovacuum
+from pg_class c join pg_stat_user_tables s on s.relid = c.oid
+where c.relname in (...);
+```
+
+**The tell inside a plan is `Heap Fetches` large relative to rows on an Index Only Scan.**
+
+### Whole-query effect, with the caveat stated
+
+**>120 s (timeout) → 34.2 s (index) → 9.8 s (vacuum)**; total buffers **100,428 → 62,639**, read 6,298 → 422.
+
+⚠ **The 34 s and 9.8 s runs are both WARM and the planner launched 1 worker then 0, so the TIMES are not a clean A/B.** Quote the **buffer and heap-fetch counts**, which are structural. And verify with the **production caller** — here, the cron tick that then succeeded in 73.9 s with 10 probes dispatched, not the hand-run query.
