@@ -99,11 +99,14 @@ gating command in the FOREGROUND and capture `$?` immediately, or write the valu
     # 2. NARROW THE WINDOW — edit, verify, commit in the same turn.
     #    Every sweep tonight happened in a gap of 90 s to a few minutes.
 
-    # 3. TRUE PARTIAL STAGE, non-interactively, when the file IS shared:
-    git diff -- <file> > /tmp/mine.patch    # then edit /tmp/mine.patch down to your hunks
-    git checkout -- <file> && git apply /tmp/mine.patch   # ⚠ only with their copy saved first
+    # 3. TRUE PARTIAL STAGE, non-interactively — VERIFIED END TO END by both sessions,
+    #    2026-09-19. Touches the INDEX ONLY; the other session's edit stays in the
+    #    working tree, unstaged and unharmed.
+    git diff -U1 -- <file> > all.patch      # split on /^@@ /, keep only YOUR hunks,
+                                            # re-attach the diff header, write mine.patch
+    git apply --cached mine.patch           # rc=0; nothing else is disturbed
 
-⚠ **Step 3's `git checkout --` DESTROYS uncommitted work** (see the entry on that below) — copy the file first. ⭐ **In practice step 1 plus step 2 is the whole fix: the sweeps were not subtle, and one `git diff` before `git add` would have shown a stranger's prose every time.** ⚠ **And if you do sweep one, say so in the message rather than re-committing over it** — the content is not lost, but the next reader needs to know the commit is not what its subject claims.
+⭐ **Step 3 is the one to reach for when the file genuinely holds both sessions' work and neither can wait.** Measured on a throwaway repo with two edits far apart in one file: after `git apply --cached`, `git diff --cached` showed **only** the author's hunk, `git diff` showed **only** the other session's, and the working tree still contained both. ⚠ **It emits the usual `LF will be replaced by CRLF` warnings on this box and works anyway** — do not read those as failure. ⛔ **An earlier draft of this section proposed `git checkout -- <file> && git apply …` instead. DO NOT USE IT: `git checkout --` destroys the working-tree copy, which on a shared tree means destroying the OTHER session's unstaged edit — the exact loss this whole section exists to prevent.** `--cached` never touches the working tree, which is why it is the right verb here. ⭐ **In practice step 1 plus step 2 is the whole fix: the sweeps were not subtle, and one `git diff` before `git add` would have shown a stranger's prose every time.** ⚠ **And if you do sweep one, say so in the message rather than re-committing over it** — the content is not lost, but the next reader needs to know the commit is not what its subject claims.
 
 ## Key env vars (displaced VERBATIM from CLAUDE.md 2026-08-25 to restore memory-file headroom)
 
