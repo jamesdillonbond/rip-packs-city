@@ -49,7 +49,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ⚠ **Day-one caveat, so a future reader does not treat it as a step:** the first row was written at **~8:0x PM PT** (a probe), whereas every scheduled row lands at **5:19 PM PT** (`19 0 * * *` UTC). The store grows through the week, so 09-20's size is sampled ~3 h later in its day than the rest of the series will be.
 
-- **Revert:** `select cron.unschedule('ops-instance-load-series'); drop function if exists public.record_instance_load_series();` then `git revert <sha>` (`git log --grep="GETS THE INSTRUMENT"`). ⛔ Nothing throttled, paused or re-tuned; no existing object altered.
+- **Revert:** `select cron.unschedule('ops-instance-load-series'); drop function if exists public.record_instance_load_series();` then delete `supabase/migrations/20260920025836_*.sql`. ⛔ Nothing throttled, paused or re-tuned; no existing object altered.
+
+⚠ **THE REVERT PATH ABOVE WAS CORRECTED, AND THE REASON IS A CONCURRENCY TRAP WORTH THE LINE.** It first read `git revert <sha>` (`git log --grep="GETS THE INSTRUMENT"`). **That grep resolves to NOTHING.** A concurrent session on this box committed at **8:02:56 PM PT** (`fa795a146` / `f2c57d3e4`, edge-fn drift pins) and its `git add docs/overnight/ledger.md` **swept up this entry**, which had been spliced ~90 seconds earlier — so this entry is committed inside a commit whose message is about something else entirely, and the code half landed separately. ⭐ **The ledger splice discipline protects the FILE (both entries are intact; swallowed=3, future-dated=0), but it does not protect a revert path that keys on THIS entry having its own commit.** 👉 **Key a ledger revert path on the MIGRATION FILENAME or the DB object — both are stable — never on a grep of your own commit message, which a concurrent `git add` can silently reassign.
 
 ### 2026-09-19 · 🔬 #126 ADVANCED: THE WHOLE FLEET IS ~10× SLOWER AT CONSTANT WORK SINCE 09-15 — and tonight's sixteen migrations make the obvious falsifier unusable · Claude Code (Windows box)
 
