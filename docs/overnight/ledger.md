@@ -11,6 +11,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 📌 FOUND, NOT FIXED — the MOMENTS ownership sweep is keyed to `seeded_wallets`, so a real user's wallet is never re-verified on a schedule · Claude Code cloud
+
+Found by applying CLAUDE.md's own rule to the pack-inventory fix shipped above — **grep for the SHAPE, not the file.** The pack defect was "a cached ownership row treated as current". The obvious neighbour is `wallet_moments_cache`, which backs a far bigger surface.
+
+⭐ **The machinery already exists and is well built.** `check_wmc_ownership_freshness(p_max_age_days default 7)` is a SETOF (0 rows = clean), and its own comment is careful about the trap: it reads `wallet_backfill_state.last_scanned_at`, the per-wallet VERIFICATION stamp, **not** `wallet_moments_cache.last_seen_at`, which is a content-change watermark that decays even while ownership is being re-verified. `prune_stale_wmc()` runs weekly (jobid 199, succeeded today 03:20 PT, 127 s). So this is not a missing guard — it is a guard that is **red and unread**.
+
+**It returns 47 rows, not 0:** 35 wallets, worst 66.1 days, mean 18.1. Of those, **5 pairs on 4 wallets are SAVED wallets — a real user's own inventory** — worst **42.9 days**, including one with **2,850 cached Top Shot moments** last ownership-verified 7.9 days ago.
+
+🚨 **The cause is a POPULATION, not a capacity limit, and the split is exact.** `/api/seed-wallet-refresh` — the only thing that re-scans wallets, fired by 4 cron-job.org cohorts every 6 h with the GHA `wallet-backfill-backstop` behind it — selects its cohorts from **`seeded_wallets`** (`seeded_wallets.id % N = K`). It never reads `saved_wallets`. Measured across all 27 saved wallets, 135 (wallet, collection) pairs:
+
+| population | wallets | pairs | last_scanned_at age |
+|---|---|---|---|
+| saved **and** seeded → swept | 22 | 110 | **0.2 – 0.7 days** |
+| saved, **not** seeded → never swept | 5 | 25 | **5.9 – 42.9 days** |
+
+⭐ **The ranges do not overlap at all, and 5 wallets × 5 collections = exactly the 25 stale pairs.** There is no third explanation left: membership of `seeded_wallets` fully determines whether a user's moments are re-verified.
+
+⛔ **This is worse than a capacity ceiling and no amount of capacity fixes it.** The pack sweep above was keyed to the right set and merely too small (30-wallet ceiling, raised to 45). This one is keyed to the WRONG set — a demo/benchmark population. **Every genuinely new user arrives saved-but-not-seeded**, so the unswept share grows toward 100 % as the product acquires users; it is 5/27 = 19 % today only because most current saved wallets were seeded first.
+
+⚠ **Consequence is the same class the pack fix just closed:** a moments inventory that lists moments the wallet has sold or transferred, with no staleness disclosed. Unlike packs, there is no read-side confirmation floor on this path.
+
+**NOT FIXED HERE, deliberately, and this is a judgement not an omission.** The fix is to widen the cohort selection to `saved_wallets ∪ seeded_wallets` (or add a saved-wallet sweep mirroring `sweep_saved_wallet_pack_syncs`). That permanently widens a fan-out of **on-chain Cadence walks, 5 collections per wallet**, into an instance measured today at **93 % of Small's 22 MB/s baseline**, on a backstop already measured **73.1 % killed (n=788)**. Widening an on-chain fan-out during a saturation spell is the worst possible moment to judge it, and it is route code well outside the pack-history ask. **Trevor's call on cost, not mine.**
+
+⭐ **Cheap interim available without touching the fan-out:** 5 wallets × 5 collections is ~25 walks — a single manual `/api/seed-wallet-refresh` style dispatch for just those 5 clears today's backlog without changing the steady-state population.
+
+**Falsifier for the diagnosis:** if a saved-but-not-seeded wallet's `last_scanned_at` ever advances without someone visiting it (profile resolve, queue-wallet or allow-list prewarm — the three on-demand callers), then something else does sweep it and the population claim above is wrong.
+
+**No revert path — nothing was changed.**
+
 ### 2026-09-20 · ⚾ CANDY GETS ITS CHIP ON THREE CROSS-COLLECTION DASHBOARDS — and the six copied five-entry label maps that would have printed `candy_mlb` at a reader collapse into ONE registry-derived resolver · Claude Code cloud
 
 **Shipped: 11 files, no migration. Chips on `SalesDashboard` / `ListingsDashboard` / `PulseDashboard`; `collectionLabel()` in `lib/analytics/format.ts` replacing the local maps in `BiggestSales`, `RecentWhaleTrades` and `analytics-pulse-dashboard-compute`; Magic Eden added to the marketplace label + colour maps and to BiggestSales' badge map; Candy's accent added to `VolumeChart` with an own-property guard; one inverted test; plus the missing anon-exec marker on ANOTHER session's migration, which had main red.**
