@@ -55,11 +55,17 @@ describe("/api/cron/backfill-pack-rip-metadata — deferred body", () => {
     expect(capturedAfter).toBeNull()
   })
 
-  it("the backfill RPC is called with p_limit: 500", async () => {
+  // ⚠ RE-PINNED 2026-09-20, 500 -> 2000: the PREMISE changed, the property did
+  // not. What this arm holds is that the route passes a DELIBERATE drain rate
+  // rather than falling through to the function default -- so the number is
+  // load-bearing and a silent change to it should redden here. The new value was
+  // chosen on blocks/call (534 per zero at 2000 vs 656 at 500, 96.5% cache hit at
+  // both), NOT on wall time; the route carries the full measurement.
+  it("the backfill RPC is called with a deliberate p_limit of 2000", async () => {
     backfillImpl.fn = async () => ({ data: { processed: 1 }, error: null })
     await drive()
     const call = rpc.mock.calls.find((c) => c[0] === "backfill_pack_rip_metadata")
-    expect(call?.[1]).toEqual({ p_limit: 500 })
+    expect(call?.[1]).toEqual({ p_limit: 2000 })
   })
 
   // ⚠ ADDED 2026-09-20 with the counters themselves. A count the route drops on

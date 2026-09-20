@@ -34,8 +34,24 @@ async function run(request: NextRequest) {
     let errMsg: string | null = null;
     let data: any = null;
     try {
+      // 2026-09-20: 500 -> 2000. #128's zero drain had ~80k rows left at 75/tick
+      // (~45 days), and mv_topshot_pack_realized_ev.realized_mean stays understated
+      // on 162 of 295 Top Shot dists for that whole window with no surface saying
+      // so. The limit was NOT raised on the wall-clock reading (5.8s vs 7.4s),
+      // which flatters rows as "nearly free"; it was raised on blocks/call, warm,
+      // measured on LARGE 2026-09-20 15:05-15:08 PT as three batches 500/2000/500
+      // so the two 500 arms straddle the comparison (49,246 and 49,211 -- 0.07%
+      // apart, so no order effect, and they also straddle an unrelated migration):
+      //   p_limit  500: 49,229 blks/call,  1,780 disk reads,  75 zeros/tick
+      //   p_limit 2000: 161,389 blks/call, 5,686 disk reads, 300 zeros/tick
+      // 4x the rows for 3.26x the blocks => 534 blocks per zero vs 656, and 19.0
+      // disk blocks per zero vs 23.7. Cache hit is 96.5% at BOTH limits, so this
+      // lane is cache-bound, not IO-bound. Total cost to finish the drain is
+      // therefore LOWER at 2000 (~42M blocks over ~11 days vs ~53M over ~45),
+      // while the per-DAY cost is ~3.3x. ~750 MB/day extra disk reads against the
+      // Large tier is negligible. Revert = restore 500; nothing else depends on it.
       const res = await supabaseAdmin.rpc("backfill_pack_rip_metadata", {
-        p_limit: 500,
+        p_limit: 2000,
       });
       if (res.error) {
         ok = false;
