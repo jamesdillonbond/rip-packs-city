@@ -78,6 +78,8 @@ export const PINNACLE_FLOOR_MAP_STALE_HOURS = 48
 
 interface CatalogRow {
   render_id: string
+  /** The CHARACTER-grain key: every variant/printing of one pin shares it. */
+  shape_render_id: string | null
   set_render_id: string | null
   set_name: string | null
   character_name: string | null
@@ -146,7 +148,7 @@ export async function GET(req: NextRequest) {
           (supabaseAdmin as any)
             .from("pinnacle_catalog")
             .select(
-              "render_id, set_render_id, set_name, character_name, variant, total_minted, thumbnail_url, floor_ask, floor_ask_updated_at, fmv_usd, fmv_confidence, series_name",
+              "render_id, shape_render_id, set_render_id, set_name, character_name, variant, total_minted, thumbnail_url, floor_ask, floor_ask_updated_at, fmv_usd, fmv_confidence, series_name",
             )
             .not("set_render_id", "is", null)
             .order("render_id", { ascending: true })
@@ -229,43 +231,94 @@ export async function GET(req: NextRequest) {
       newestAskStamp !== null &&
       Date.now() - newestAskStamp <= PINNACLE_FLOOR_MAP_STALE_HOURS * 3_600_000
 
-    // 3. Group the checklist by set.
-    const bySet = new Map<string, CatalogRow[]>()
+    // 3. Group the checklist by set, then by CHARACTER within the set.
+    //
+    // 🚨 THE SLOT IS THE CHARACTER (`shape_render_id`), NOT THE PRINTING
+    // (`render_id`) — corrected 2026-09-20, hours after this route shipped with
+    // the wrong one.
+    //
+    // ── WHY, AND IT IS THE HOUSE RULE NOT A PREFERENCE ────────────────────────
+    // `get_topshot_set_progress` counts `COUNT(DISTINCT play_id_onchain)` for
+    // both `total_plays` and `owned_plays`. A Top Shot parallel is
+    // `setID:playID::subID` — a different EDITION of the SAME play — so every
+    // parallel collapses into ONE checklist slot and owning any printing fills
+    // it. A 100-play set is 100 slots no matter how many parallels exist.
+    // `docs/reference/parallels-variants-data-model.md` records Pinnacle's
+    // `variant` as the exact analogue of that parallel axis.
+    //
+    // Shipping it at render grain made a Pinnacle set of 9 characters × 6
+    // variants read as 54 slots, so a collector holding all 9 characters in
+    // Standard was told 9/54 = 17% when Top Shot's rule says 100%.
+    //
+    // ⛔ MEASURED BEFORE FIXING, because "it looks wrong" is not a size:
+    // across all 144 Pinnacle wallets, **445 set completions were being shown
+    // as unfinished, on 57 wallets** — 981 genuinely complete sets reported as
+    // 536. The bug hid **45% of every real completion**. That is the
+    // account-level false claim this repo treats as the worst sub-class: telling
+    // someone they have not finished something they finished.
+    //
+    // ⭐ `shape_render_id` is a clean character key, verified live the same day:
+    // 918 distinct shapes, **0 carrying more than one character name**, 0 rows
+    // missing it, and **0 spanning two sets** — so it cannot merge two
+    // characters or leak a slot across sets.
+    const bySet = new Map<string, Map<string, CatalogRow[]>>()
     for (const c of catalog.rows) {
-      const key = c.set_render_id
-      if (!key) continue
-      const list = bySet.get(key) ?? []
+      const setKey = c.set_render_id
+      // ⚠ Fall back to the render when a shape key is ever absent: a NULL shape
+      // must not collapse every such pin in a set into one slot. Measured 0
+      // today, but the failure mode is silent and the guard is one `??`.
+      const shapeKey = c.shape_render_id ?? c.render_id
+      if (!setKey) continue
+      const shapes = bySet.get(setKey) ?? new Map<string, CatalogRow[]>()
+      const list = shapes.get(shapeKey) ?? []
       list.push(c)
-      bySet.set(key, list)
+      shapes.set(shapeKey, list)
+      bySet.set(setKey, shapes)
     }
 
     const sets = []
-    for (const [setId, rows] of bySet) {
-      const setName = rows.find((r) => r.set_name?.trim())?.set_name?.trim() ?? setId
-      const ownedRows = rows.filter((r) => ownedByRender.has(r.render_id))
-      const missingRows = rows.filter((r) => !ownedByRender.has(r.render_id))
-      const totalEditions = rows.length
-      const ownedCount = ownedRows.length
-      const missingCount = missingRows.length
+    for (const [setId, shapes] of bySet) {
+      const allRows = [...shapes.values()].flat()
+      const setName = allRows.find((r) => r.set_name?.trim())?.set_name?.trim() ?? setId
+
+      // Per character: is ANY printing of it held, and which row represents it.
+      const ownedShapes: { row: CatalogRow; serial: number | null; locked: boolean }[] = []
+      const missingShapes: CatalogRow[] = []
+      for (const printings of shapes.values()) {
+        const held = printings.filter((r) => ownedByRender.has(r.render_id))
+        if (held.length > 0) {
+          // Represent the slot with the printing they actually hold; with more
+          // than one, the rarest (lowest mint) is the one worth showing.
+          const best = held.slice().sort(
+            (a, b) => (a.total_minted ?? Number.MAX_SAFE_INTEGER) - (b.total_minted ?? Number.MAX_SAFE_INTEGER),
+          )[0]
+          const own = ownedByRender.get(best.render_id)!
+          ownedShapes.push({ row: best, serial: own.serial, locked: own.locked })
+        } else {
+          // Represent a missing slot by the CHEAPEST printing — that is what it
+          // actually costs to fill it, and which variant a buyer would take.
+          missingShapes.push(cheapestPrinting(printings))
+        }
+      }
+
+      const totalEditions = shapes.size
+      const ownedCount = ownedShapes.length
+      const missingCount = missingShapes.length
       const completionPct =
         totalEditions > 0 ? Math.round((ownedCount / totalEditions) * 100) : 0
 
-      const lockedOwnedCount = ownedRows.filter(
-        (r) => ownedByRender.get(r.render_id)?.locked,
-      ).length
+      const lockedOwnedCount = ownedShapes.filter((o) => o.locked).length
       const tradeableOwnedCount = ownedCount - lockedOwnedCount
       const tradeableCompletionPct =
         totalEditions > 0
           ? Math.round((tradeableOwnedCount / totalEditions) * 100)
           : 0
 
-      // Cost to finish, from the render-grain floor map. `null` asks are
-      // "nobody is selling one", NOT "free" — they are excluded from the total
-      // and they are what makes `allPriced` false.
-      const missingAsks = missingRows.map((r) =>
-        r.floor_ask === null ? null : Number(r.floor_ask),
-      )
-      const priced = missingAsks.filter((a): a is number => a !== null && a > 0)
+      // Cost to finish = cheapest printing of each missing character. A `null`
+      // ask is "nobody is selling one", NOT free.
+      const priced = missingShapes
+        .map((r) => (r.floor_ask === null ? null : Number(r.floor_ask)))
+        .filter((a): a is number => a !== null && a > 0)
       const listedCount = priced.length
       const allPriced = missingCount > 0 && priced.length === missingCount
       const totalMissingCost =
@@ -275,13 +328,12 @@ export async function GET(req: NextRequest) {
       const lowestSingleAsk =
         asksEnriched && priced.length > 0 ? Math.min(...priced) : null
 
-      // Bottleneck: the priciest missing piece, when it carries most of the bill.
       let bottleneckPrice: number | null = null
       let bottleneckPlayerName: string | null = null
       if (asksEnriched && totalMissingCost !== null && priced.length > 1) {
         let worst: CatalogRow | null = null
         let worstAsk = 0
-        for (const r of missingRows) {
+        for (const r of missingShapes) {
           const a = r.floor_ask === null ? 0 : Number(r.floor_ask)
           if (a > worstAsk) {
             worstAsk = a
@@ -306,9 +358,7 @@ export async function GET(req: NextRequest) {
       sets.push({
         setId,
         setName,
-        // Pinnacle series are calendar years as text ("2023"…"2026"); the client
-        // renders this as a number, so only emit one when it parses.
-        series: seriesNumber(rows),
+        series: seriesNumber(allRows),
         setTier: null,
         totalEditions,
         ownedCount,
@@ -320,8 +370,12 @@ export async function GET(req: NextRequest) {
         bottleneckPrice,
         bottleneckPlayerName,
         tier,
-        owned: ownedRows.slice(0, MAX_PIECES_PER_SET).map((r) => toPiece(r, ownedByRender)),
-        missing: sortMissing(missingRows).slice(0, MAX_PIECES_PER_SET).map((r) => toPiece(r, ownedByRender)),
+        owned: ownedShapes
+          .slice(0, MAX_PIECES_PER_SET)
+          .map((o) => toPiece(o.row, ownedByRender)),
+        missing: sortMissing(missingShapes)
+          .slice(0, MAX_PIECES_PER_SET)
+          .map((r) => toPiece(r, ownedByRender)),
         asksEnriched,
         costConfidence: (!asksEnriched ? "low" : allPriced ? "high" : "mixed") as
           | "high"
@@ -330,6 +384,13 @@ export async function GET(req: NextRequest) {
         lockedOwnedCount,
         tradeableOwnedCount,
         tradeableCompletionPct,
+        // ⭐ THE VARIANT AXIS, kept as its own number rather than folded into the
+        // headline. Completion matches Top Shot's rule (characters), and a
+        // collector who chases printings still gets the depth Pinnacle's 13x
+        // Standard→premium spread makes worth chasing. Never mix the two: one
+        // is "have you finished the set", the other is "how deep do you go".
+        totalPrintings: allRows.length,
+        ownedPrintings: allRows.filter((r) => ownedByRender.has(r.render_id)).length,
       })
     }
 
@@ -354,6 +415,27 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     return apiErrorResponse(err, "api/pinnacle-set-progress", "Failed to load sets.")
   }
+}
+
+/** The printing a buyer would actually take to fill a slot: the cheapest live
+ *  ask, falling back to the lowest mint when nothing in the slot is listed (so
+ *  the row still names a real variant rather than an arbitrary one). */
+function cheapestPrinting(printings: CatalogRow[]): CatalogRow {
+  let best = printings[0]
+  let bestAsk = Number.POSITIVE_INFINITY
+  for (const r of printings) {
+    const a = r.floor_ask === null ? Number.POSITIVE_INFINITY : Number(r.floor_ask)
+    if (a < bestAsk) {
+      bestAsk = a
+      best = r
+    }
+  }
+  if (bestAsk === Number.POSITIVE_INFINITY) {
+    best = printings
+      .slice()
+      .sort((a, b) => (a.total_minted ?? Number.MAX_SAFE_INTEGER) - (b.total_minted ?? Number.MAX_SAFE_INTEGER))[0]
+  }
+  return best
 }
 
 /** Cheapest-first, then by name — a shopping list, not physical row order. */

@@ -60,6 +60,12 @@ interface SetProgress {
   lockedOwnedCount?: number;
   tradeableOwnedCount?: number;
   tradeableCompletionPct?: number;
+  /** The PARALLEL axis, reported beside completion and never folded into it.
+   *  A checklist slot is one subject (a Top Shot play, a Pinnacle character);
+   *  these count the printings of it — `::subID` parallels, Pinnacle variants.
+   *  Only the Pinnacle backend sends them today. */
+  totalPrintings?: number;
+  ownedPrintings?: number;
 }
 
 interface SetsResponse {
@@ -163,6 +169,10 @@ export default function CollectionSetsClient({ collection }: { collection: strin
   // Pinnacle's collectibles are PINS, not moments — the same relabel
   // components/collection/PackSubNav.tsx already makes on the sub-nav.
   const pieceNoun = isPinnacle ? "pins" : "moments";
+  // Each collection's word for a second printing of the same subject. Top Shot
+  // calls them parallels (`setID:playID::subID`), Pinnacle calls them variants;
+  // both are the same axis (docs/reference/parallels-variants-data-model.md).
+  const printingNoun = isPinnacle ? "variants" : "parallels";
   const PieceNoun = isPinnacle ? "Pin" : "Moment";
   const [wallet, setWallet] = useState<string | null>(null);
   const [data, setData] = useState<SetsResponse | null>(null);
@@ -492,6 +502,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
                   wallet={wallet ?? ""}
                   accent={accent}
                   onView={() => setOpenSet(set)}
+                  printingNoun={printingNoun}
                 />
               ))}
             </div>
@@ -698,18 +709,29 @@ function SetCard({
   wallet,
   accent,
   onView,
+  printingNoun = "printings",
 }: {
   set: SetProgress;
   collectionSlug: string;
   wallet: string;
   accent: string;
   onView: () => void;
+  /** "variants" for Pinnacle, "parallels" for a Top Shot-shaped collection. */
+  printingNoun?: string;
 }) {
   const c = makeColors(accent);
   const router = useRouter();
   // null for a collection whose sets have no detail page (Pinnacle) — the card
   // then stops being a link AND stops being click-to-navigate.
   const setHref = setEntityHref(collectionSlug, set.setName);
+  // Only when the backend sends the axis AND the set actually has parallels —
+  // "12 / 12 PRINTINGS" on a set with one printing each is noise.
+  const printingDepth =
+    set.totalPrintings != null &&
+    set.ownedPrintings != null &&
+    set.totalPrintings > set.totalEditions
+      ? `${set.ownedPrintings} / ${set.totalPrintings} ${printingNoun.toUpperCase()}`
+      : null;
   const isComplete = set.completionPct === 100;
   const inProgress = set.completionPct > 0 && set.completionPct < 100;
   const stripeColor = tierStripeColor(set.setTier);
@@ -800,7 +822,7 @@ function SetCard({
           </span>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: printingDepth ? 4 : 12 }}>
           <span style={{ fontFamily: monoFont, fontSize: 11, color: c.muted, letterSpacing: "0.04em" }}>
             {set.ownedCount} / {set.totalEditions} OWNED
           </span>
@@ -808,6 +830,16 @@ function SetCard({
             {fmt$(set.totalMissingCost)}
           </span>
         </div>
+
+        {/* The parallel/variant axis, secondary by design. Completion answers
+            "have you finished the set"; this answers "how deep do you go" — a
+            Pinnacle Standard and its Golden differ ~13x in price, so a
+            completionist wants both numbers and must never see them mixed. */}
+        {printingDepth && (
+          <div style={{ fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.06em", marginBottom: 12 }}>
+            {printingDepth}
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 8 }}>
           <button

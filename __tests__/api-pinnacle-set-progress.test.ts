@@ -57,6 +57,9 @@ const STALE = new Date(
 function render(renderId: string, over: Row = {}): Row {
   return {
     render_id: renderId,
+    // Default: one character per render. Tests that exercise the variant axis
+    // pass an explicit shape_render_id shared across printings.
+    shape_render_id: renderId,
     set_render_id: "OEV1-TOYS",
     set_name: "Pixar Animation Studios • Toy Story Vol.1",
     character_name: renderId,
@@ -93,6 +96,120 @@ describe("GET /api/pinnacle-set-progress", () => {
     const res = await GET(req("https://t/api/pinnacle-set-progress"))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe("wallet required")
+  })
+
+  // ══ THE VARIANT AXIS ══════════════════════════════════════════════════════
+  // 🚨 These are the arms that would have caught the grain bug this route
+  // shipped with. A Pinnacle `variant` is the analogue of a Top Shot `::subID`
+  // parallel, and `get_topshot_set_progress` counts DISTINCT play_id_onchain —
+  // so every printing of one character is ONE checklist slot and owning any of
+  // them fills it. Shipped at render grain, a 9-character × 6-variant set read
+  // as 54 slots and hid 445 real completions across 57 wallets.
+
+  it("counts one slot per CHARACTER, not per printing (Top Shot's parallel rule)", async () => {
+    // One character, three variants. Top Shot would call this a 1-play set.
+    state.catalogPages = [
+      page([
+        render("BUZZ-STD", { shape_render_id: "SHAPE-BUZZ", variant: "Standard" }),
+        render("BUZZ-GLD", { shape_render_id: "SHAPE-BUZZ", variant: "Golden" }),
+        render("BUZZ-LUX", { shape_render_id: "SHAPE-BUZZ", variant: "Luxe Marble" }),
+      ]),
+    ]
+    state.ownedPages = [page([])]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    expect(s.totalEditions).toBe(1)
+    expect(s.missingCount).toBe(1)
+    // …and the printing axis is reported separately, never folded in.
+    expect(s.totalPrintings).toBe(3)
+  })
+
+  it("OWNING ANY ONE PRINTING COMPLETES THE SLOT — the 445-completion bug, stated as the absence of the false claim", async () => {
+    state.catalogPages = [
+      page([
+        render("BUZZ-STD", { shape_render_id: "SHAPE-BUZZ", variant: "Standard" }),
+        render("BUZZ-GLD", { shape_render_id: "SHAPE-BUZZ", variant: "Golden" }),
+        render("WOODY-STD", { shape_render_id: "SHAPE-WOODY", variant: "Standard" }),
+        render("WOODY-GLD", { shape_render_id: "SHAPE-WOODY", variant: "Golden" }),
+      ]),
+    ]
+    // Holds BOTH characters, in Standard only.
+    state.ownedPages = [
+      page([
+        { id: "1", render_id: "BUZZ-STD", serial_number: 5, is_locked: false },
+        { id: "2", render_id: "WOODY-STD", serial_number: 9, is_locked: false },
+      ]),
+    ]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    expect(s.ownedCount).toBe(2)
+    expect(s.missingCount).toBe(0)
+    expect(s.completionPct).toBe(100)
+    expect(s.tier).toBe("complete")
+    // ⛔ The false claim: at render grain this read 2/4 = 50% and "incomplete".
+    expect(s.completionPct).not.toBe(50)
+    // The depth is still visible — 2 of 4 printings held.
+    expect(s.ownedPrintings).toBe(2)
+    expect(s.totalPrintings).toBe(4)
+  })
+
+  it("prices a missing character at its CHEAPEST printing — what filling the slot costs", async () => {
+    state.catalogPages = [
+      page([
+        render("BUZZ-STD", { shape_render_id: "SHAPE-BUZZ", variant: "Standard", floor_ask: 12 }),
+        render("BUZZ-GLD", { shape_render_id: "SHAPE-BUZZ", variant: "Golden", floor_ask: 400 }),
+      ]),
+    ]
+    state.ownedPages = [page([])]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    expect(s.totalMissingCost).toBe(12)
+    expect(s.lowestSingleAsk).toBe(12)
+    // …and the row names the variant a buyer would actually take.
+    expect(s.missing[0].tier).toBe("STANDARD")
+    expect(s.missing[0].playId).toBe("BUZZ-STD")
+  })
+
+  it("falls back to the lowest mint when NO printing of a missing character is listed", async () => {
+    state.catalogPages = [
+      page([
+        render("BUZZ-STD", { shape_render_id: "SHAPE-BUZZ", variant: "Standard", floor_ask: null, total_minted: 900 }),
+        render("BUZZ-GLD", { shape_render_id: "SHAPE-BUZZ", variant: "Golden", floor_ask: null, total_minted: 40 }),
+      ]),
+    ]
+    state.ownedPages = [page([])]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    // A real variant, not an arbitrary one — and still no fabricated price.
+    expect(s.missing[0].playId).toBe("BUZZ-GLD")
+    expect(s.totalMissingCost).toBeNull()
+  })
+
+  it("represents an owned character by the RAREST printing held", async () => {
+    state.catalogPages = [
+      page([
+        render("BUZZ-STD", { shape_render_id: "SHAPE-BUZZ", variant: "Standard", total_minted: 900 }),
+        render("BUZZ-GLD", { shape_render_id: "SHAPE-BUZZ", variant: "Golden", total_minted: 40 }),
+      ]),
+    ]
+    state.ownedPages = [
+      page([
+        { id: "1", render_id: "BUZZ-STD", serial_number: 5, is_locked: false },
+        { id: "2", render_id: "BUZZ-GLD", serial_number: 3, is_locked: false },
+      ]),
+    ]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    expect(s.ownedCount).toBe(1)
+    expect(s.owned[0].playId).toBe("BUZZ-GLD")
+    expect(s.ownedPrintings).toBe(2)
+  })
+
+  it("does not merge two characters that share nothing — a NULL shape key falls back to the render", async () => {
+    state.catalogPages = [
+      page([
+        render("A", { shape_render_id: null }),
+        render("B", { shape_render_id: null }),
+      ]),
+    ]
+    state.ownedPages = [page([])]
+    const s = (await (await GET(req("https://t/api/pinnacle-set-progress?wallet=0xabc"))).json()).sets[0]
+    expect(s.totalEditions).toBe(2)
   })
 
   it("counts owned / missing per set and prices the remainder from the floor map", async () => {
