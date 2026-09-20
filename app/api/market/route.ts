@@ -243,7 +243,27 @@ const CANDY_COLLECTION_ID_FOR_DISPATCH = "209ade70-32c5-4470-bc7c-4793d660f713"
 // /disney-pinnacle/edition/<render_id> route redirects to /pinnacle/moment/<id>).
 async function fetchPinnacleModernListings(
   collectionId: string,
-  filters: { tier: string; maxPrice: number; sortBy: string },
+  filters: {
+    tier: string
+    maxPrice: number
+    sortBy: string
+    // 🚨 ADDED 2026-09-20. These four were parsed from the query string and then
+    // applied ONLY in the legacy `cached_listings` fall-through below — which a
+    // modern arm never reaches. So Set / Series / Character / Min-price were
+    // silently DROPPED here while the UI showed them as active filters.
+    //
+    // Measured on production before fixing: asking Pinnacle for
+    // `set=Pixar Animation Studios • Toy Story Vol.1` returned rows from Beauty
+    // and the Beast, Star Wars Alphabet, The Jungle Book and Cats & Dogs — not
+    // one row from the requested set, `diagnostics.source: "modern"`.
+    // ⚠ The same probe on Top Shot (`set=Base Set`) returned "WNBA Base Set" and
+    // "Archive Set 2014-19", so this is NOT Pinnacle-specific; the Top Shot and
+    // All Day arms are RPCs and need their own fix (known-issues).
+    sets: string[]
+    seriesList: string[]
+    player: string
+    minPrice: number
+  },
 ): Promise<any[]> {
   try {
     let q = (supabaseAdmin as any)
@@ -255,6 +275,22 @@ async function fetchPinnacleModernListings(
       // whose listing has since been pulled shouldn't render as a live market row.
       .gte("floor_ask_updated_at", new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
     if (filters.maxPrice > 0) q = q.lte("floor_ask", filters.maxPrice)
+    if (filters.minPrice > 0) q = q.gte("floor_ask", filters.minPrice)
+    // ⚠ `ilike %name%` and NOT `.in("set_name", …)`. `pinnacle_catalog.set_name`
+    // carries stray leading/trailing whitespace on 22 of its 169 distinct names
+    // (" Lucasfilm Ltd. • Star Wars Alphabet Vol.1", "… Mandalorian Vol.1 "),
+    // while the row this API returns — and therefore the value the UI sends
+    // back as a filter — is TRIMMED. An equality filter would silently match
+    // nothing for those 22 and render as "no listings in this set".
+    //
+    // ⛔ A substring pattern can over-match ("Vol.1" inside a future "Vol.10"),
+    // so the DB filter only NARROWS and the exact trim-equality pass below
+    // decides. Measured today: 169 trimmed names, 0 substring collisions — but
+    // that is a dated sample, and the in-memory pass is what makes it safe
+    // regardless.
+    if (filters.sets.length === 1) q = q.ilike("set_name", `%${filters.sets[0]}%`)
+    if (filters.seriesList.length > 0) q = q.in("series_name", filters.seriesList)
+    if (filters.player) q = q.ilike("character_name", `%${filters.player}%`)
     // PostgREST hard-caps reads at 1,000 rows, so order the fetch by the SAME
     // dimension the UI sort leads with — otherwise a fixed cheapest-first window
     // would hide the expensive renders under "Price ↓" / "FMV ↓". Final ordering
@@ -272,7 +308,15 @@ async function fetchPinnacleModernListings(
       console.log("[/api/market] pinnacle catalog fetch err:", error.message)
       return []
     }
-    return (data ?? []).map((r: any) => ({
+    // EXACT pass. The DB filters above narrow; these decide, on the same
+    // trimmed value the caller sent. Multi-select sets are handled here rather
+    // than in the query because PostgREST cannot express "trim(col) IN (…)".
+    let rows: any[] = data ?? []
+    if (filters.sets.length > 0) {
+      const want = new Set(filters.sets.map((x) => x.trim()))
+      rows = rows.filter((r: any) => want.has(String(r.set_name ?? "").trim()))
+    }
+    return rows.map((r: any) => ({
       id: `pinnacle:${r.render_id}`,
       flow_id: null,                 // edition-grain row — no single on-chain moment
       moment_id: null,
@@ -451,7 +495,15 @@ async function fetchCandyMarketListings(
 
 async function fetchModernListings(
   collectionId: string,
-  filters: { tier: string; team: string; maxPrice: number; minDiscount: number; sortBy: string; limit: number }
+  filters: {
+    tier: string; team: string; maxPrice: number; minDiscount: number; sortBy: string; limit: number
+    // ⚠ Carried for the arms that can honour them. The Top Shot and All Day
+    // arms are RPCs and still drop these — see known-issues; do NOT "fix" those
+    // by filtering their rows in memory, which would apply a filter to an
+    // already-truncated window and turn "filter ignored" into a confident
+    // "no listings in this set".
+    sets: string[]; seriesList: string[]; player: string; minPrice: number
+  }
 ): Promise<any[] | null> {
   if (collectionId === CANDY_COLLECTION_ID_FOR_DISPATCH) {
     return fetchCandyMarketListings({
@@ -459,7 +511,10 @@ async function fetchModernListings(
     })
   }
   if (collectionId === PINNACLE_COLLECTION_ID_FOR_DISPATCH) {
-    return fetchPinnacleModernListings(collectionId, { tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy })
+    return fetchPinnacleModernListings(collectionId, {
+      tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy,
+      sets: filters.sets, seriesList: filters.seriesList, player: filters.player, minPrice: filters.minPrice,
+    })
   }
   // AllDay Market is edition-level (Trevor, 2026-07-18): one row per edition via
   // get_allday_market_editions (SQL aggregate over 80k+ active listings), NOT the
@@ -609,6 +664,10 @@ export async function GET(req: NextRequest) {
       minDiscount: Number.isFinite(minDiscount) ? minDiscount : 0,
       sortBy: sort,
       limit,
+      sets,
+      seriesList,
+      player,
+      minPrice: Number.isFinite(minPrice) ? minPrice : 0,
     })
     // Fall through to the legacy cached_listings query when modern returns
     // empty. The sniper RPCs inner-join FMV, so collections with sparse FMV
