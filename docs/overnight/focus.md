@@ -4,6 +4,25 @@
 
 **Rewrite rule for whoever edits this next: a focus file STEERS the next night, it is not an archive.** If a section is describing something that shipped more than ~a week ago and is not still a live trap, move it to the ledger and delete it here. A stale steer is worse than no steer.
 
+## STEER — added 2026-09-20 ~2:3x PM PT (Claude Code cloud; the pack-rip zero drain is running, and ONE decision is left with its numbers already taken)
+
+⭐ **`pack_rips.pull_value_usd` no longer fabricates zero (register #128), and 82,534 existing zeros are draining at ~75/tick, ~1,800/day → ~46 DAYS.** Until then `mv_topshot_pack_realized_ev.realized_mean` is understated on 162 of 295 Top Shot dists and **exactly USD 0.00 on nine** (`7738, 7185, 8431, 5270, 8612, 8753, 7730, 1765, 6150`), and **no surface says so**. Watch `pipeline_runs.extra.zero_repriced + zero_cleared` on `backfill-pack-rip-metadata` — those keys were shipped in the same pass and are the ONLY external view of the drain.
+
+⚠ **`zero_repriced + zero_cleared` reading 0 while `pack_rips.pull_value_usd = 0` still has rows means the leg STOPPED REACHING them** — a different failure from the drain finishing, and indistinguishable in `value_resolved`, which the stale leg also moves.
+
+## 🟡 THE ONE DECISION LEFT, and its measurement is already done — DO NOT re-derive it, decide it
+
+👉 **Raise the route's `p_limit` from 500?** It would cut the 46 days to ~12 **and** the `null_drain`'s 2.98M-row backlog from ~300 days to ~75. Measured on the LARGE box (postmaster 10:39 AM PT), warm, minutes apart:
+
+| p_limit | wall | zeros handled/tick |
+|---|---|---|
+| 500 | **5.8 s** of a 50 s budget | 75 |
+| 2000 | **7.4 s** | 300 |
+
+⭐ **4× the rows for 1.28× the time — the tick is dominated by fixed per-leg scan cost, so rows are nearly free.**
+
+⛔ **AND THAT IS NOT ENOUGH TO DECIDE IT, which is why it was left.** Wall time is not IO. `pg_stat_statements` shows this statement at **449,416 shared blocks and 9.1 MB of WAL per call** — but over **657 calls pooled across both compute tiers AND today's four body changes**, so per CLAUDE.md it is not a reading of "now". 👉 **What is owed is one clean per-call `blocks/call` pair at 500 vs 2000 on a stable tree** (reset nothing global — read the two normalized pgss rows before and after a handful of calls at each limit). ⚠ 2,000 rows/tick × 24 is 48,000 row-updates/day on a table carrying **11 indexes / 1.5 GB**, two of which INCLUDE `pull_value_usd`. #126 (the fleet-wide slowdown) was resolved hours before this was written — do not spend its recovery without that number.
+
 ## STEER — added 2026-09-19 ~10:1x PM PT (Claude Code, Windows box; session close — THREE falsifiers owed on the clock, and the steer below this one is SPENT)
 
 ⛔ **THE 2026-09-18 STEER DIRECTLY BELOW IS SPENT — DO NOT ACT ON IT.** Its subject is the platform outage, and **#122 was RESOLVED 2026-09-18 12:0x PM PT**. Everything it says about probing `/auth/v1/health`, the 522s and the owed `pg_stat_activity` read is history. ⚠ Its one durable line is worth keeping in mind and nothing else: **ISR masks a dead database from a browser — probe the API routes, never a page.**
