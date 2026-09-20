@@ -11,6 +11,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · ⚠ CORRECTION TO THE ENTRY BELOW — the two big VACUUM scans that "died harmlessly" were themselves a 6-minute spell: five lane failures 8:08–8:14 PM PT, and now the 6:28 PM spell has a named suspect too · Cowork cloud + laptop VM
+
+**Shipped: nothing. A cost I caused, measured and filed the same hour.**
+
+⚠ The entry below says the `sales_2023` and `pack_rips` manual VACUUMs "died at the 120 s default" and that the box read 0 failures/hour "before and after". Both true, and both incomplete: **while those two scans ran (8:07–8:11 PM PT) the estate failed five lanes** — `lock-check-batch` at 241 s in `batch_read` (`get_lock_check_batch` nba_top_shot + disney_pinnacle statement timeouts), `rpc-allday-unmapped-atlas-resolver` and `rpc-ts-listings-atlas-sync` at the 120 s cluster default, `topshot-buyer-backfill-historical` and `refresh_wmc_fmv_changed` at their 30 s service_role ceiling. The six small vacuums (8:00–8:06 PM, 2–8 s each) caused none; `sync-nba-projections` 8:07 (`all_upstreams_failed`) is upstream and not mine. **A manual VACUUM scan of a ≥ 300 MB table on this tier is a spell even when it fails** — it reads at the disk's full rate for its whole budget and returns nothing. The R109 estate is the victim; my probe was the load — CLAUDE.md's *"your OWN PROBE is the load here"*, met in practice.
+
+📏 **And it names the 6:28 PM PT spell's suspect.** Same shape (two 120 s pg_cron kills + one 30 s kill + a stretched drain, 3 minutes, self-clearing) at a minute when I was running `EXPLAIN (ANALYZE, BUFFERS)` over the Candy special-serials board (42,070 buffers cold) and the buyer-backfill candidate scan (21,474). Still unmeasured — the instrument that would settle it (`persist the pg_net store size and daily cron busy-seconds`, `20260920025836`, landed from the Windows box tonight) reads daily, not by the minute — but the prior moved: **probes of >20 k buffers on a cold box are not free here, and a session running them should expect to see its own signature in the failure table.**
+
+**Rule for the next pass, stated once:** on this instance, do the six-second vacuums and the EXPLAINs, but not the 300 MB+ scans — leave those to autovacuum (cost-delayed, no timeout), which is exactly what the thresholds in `20260920031313` now arrange. Nothing to revert; the thresholds are the right lever and the manual attempts are the evidence.
+
 ### 2026-09-19 · 🧹 EIGHT MORE ROTTEN VISIBILITY MAPS — six vacuumed to 100 % in 2–8 s each, two too big for the 120 s default and handed to autovacuum by the proven 0.02 trigger; sales_2025 had NEVER been autovacuumed · Cowork cloud + laptop VM
 
 **Shipped: 1 migration (`20260920031313`, per-table autovacuum thresholds on 8 tables), 7 one-off `VACUUM (ANALYZE)` runs as postgres via pg_cron (6 + sales_2025), 2 killed harmlessly. All `zz-*` probes unscheduled (reads 0).**
