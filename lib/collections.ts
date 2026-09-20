@@ -232,12 +232,37 @@ export const COLLECTIONS: Collection[] = [
     shortLabel: "Panini",
     sport: "Multi-Sport",
     chain: "panini",
-    // Core platform is a private Hyperledger Sawtooth chain (not indexable);
-    // the only public-indexable surface is the OpenSea Ethereum bridge, which
-    // currently carries only Toikido "Bad Eggs" (non-sports) — sports cards are
-    // not yet bridged. dbChain reflects that bridge. Monitor-only until a
-    // public-chain remint or sports content getting bridged.
-    dbChain: "ethereum",
+    // 2026-09-20 — dbChain "ethereum" → null. This is a CORRECTION, and the
+    // reason is measured, not stylistic.
+    //
+    // Two planes carry the Panini name. The OpenSea Ethereum BRIDGE (contract
+    // 0x23ae7a05…, opened 2026-03-30) carries only Toikido "Bad Eggs"; RPC holds
+    // ZERO rows from it. The WC Prizm plane on nft.paniniamerica.net is the one
+    // we actually ingest (5,074 editions / 58k FMV rows), and #64 decided on
+    // 2026-09-06 that IT is the collection. Its chain identity is a private
+    // permissioned platform (our 06-08 and 06-25 research read it as Hyperledger
+    // Sawtooth) — no public RPC, no wallet concept, and NOT a chain_type value.
+    //
+    // Leaving dbChain at "ethereum" made the registry name the plane we do not
+    // hold, and that leaks off this entry. `publishedChainsBadge()` renders the
+    // SITE-WIDE footer + default OG provenance claim from the dbChain of every
+    // published collection, so the pending `published` flip would have changed
+    // every page on the site from "BUILT ON FLOW + SOLANA" to
+    // "BUILT ON FLOW + ETHEREUM + SOLANA" — measured, not predicted, by flipping
+    // the flag in a probe. RPC would have claimed an Ethereum provenance on the
+    // strength of a bridge it deliberately never ingested.
+    //
+    // null is the established "chain identity not established" value (see `rwa`
+    // below) and it makes all three consumers right at once: the badge skips
+    // Panini, the CollectionBanner pill falls back to the roadmap tag
+    // ("Panini Chain"), and chainKindForDbChain(null) gives Panini no wallet
+    // address shape — correct, since its owners are usernames, not addresses.
+    // Zero user-visible change today: Panini is unpublished (so it is outside
+    // the badge) and its static route dirs mount no CollectionBanner.
+    //
+    // Restore "ethereum" ONLY if the bridge plane itself becomes the product.
+    // Monitor-only until a public-chain remint or sports content getting bridged.
+    dbChain: null,
     partner: "Panini America",
     accent: "#C084FC",
     icon: "\u{1F0CF}",

@@ -109,14 +109,28 @@ describe("CollectionBanner — chain label mapping", () => {
   // 2026-09-06: the pill reads the REAL network (`dbChain`) when the registry
   // names one, and only falls back to the roadmap tag. "candy" once rendered
   // "Root Network" — a chain the registry itself records as dead.
-  it("renders the real network from dbChain — Panini's bridge plane is Ethereum, Candy is Solana", () => {
-    const { container } = render(<CollectionBanner collection={PANINI} />)
-    expect(container.textContent).toContain("Ethereum") // dbChain "ethereum" wins over chain "panini"
-    expect(container.textContent).not.toContain("Panini Chain")
+  it("renders the real network from dbChain when the registry names one — Candy is Solana, not Root Network", () => {
     const candy = { ...TOPSHOT, id: "candy-mlb", chain: "candy", dbChain: "solana" } as any as Collection
     const { container: c2 } = render(<CollectionBanner collection={candy} />)
     expect(c2.textContent).toContain("Solana")
     expect(c2.textContent).not.toContain("Root Network")
+  })
+
+  // RE-PINNED 2026-09-20 (premise change, not an inversion — the pill is fine).
+  // This row used to assert Panini renders "Ethereum", pinning `dbChain` beating
+  // the roadmap tag. That premise died when the registry's Panini entry dropped
+  // to `dbChain: null`: #64 made the WC Prizm plane the collection, and RPC holds
+  // zero rows from the Ethereum bridge the old value named. The dbChain-wins
+  // property is NOT orphaned — Candy exercises it in the row above, with a live
+  // disagreement between its tag ("candy") and its chain ("solana"). Panini now
+  // exercises the OTHER arm, and it is the arm that must stay honest: a
+  // collection whose chain identity is unestablished falls back to the roadmap
+  // tag and must never name a network we cannot back.
+  it("Panini falls back to the roadmap tag — it must not claim a network RPC holds no rows from", () => {
+    const { container } = render(<CollectionBanner collection={PANINI} />)
+    expect(PANINI.dbChain ?? null).toBeNull()
+    expect(container.textContent).toContain("Panini Chain")
+    expect(container.textContent).not.toContain("Ethereum")
   })
 
   it("falls back to the roadmap tag, then the raw string, when no dbChain is set", () => {

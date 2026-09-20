@@ -44,10 +44,13 @@ describe("dbChain registry invariant", () => {
 
   it("pins the authoritative dispatch chain for the non-Flow collections", () => {
     // These are the roadmap/label `chain` vs the DB dispatch `dbChain` split —
-    // Candy's partner label is "candy" but it dispatches as Solana; Panini's is
-    // "panini" but it dispatches as its Ethereum/OpenSea bridge.
+    // Candy's partner label is "candy" but it dispatches as Solana.
     expect(getCollection("candy-mlb")?.dbChain).toBe("solana")
-    expect(getCollection("panini-blockchain")?.dbChain).toBe("ethereum")
+    // RE-PINNED 2026-09-20: Panini was "ethereum", naming the OpenSea bridge.
+    // #64 made the WC Prizm plane the collection and RPC holds zero bridge rows,
+    // so the authoritative answer is "not established" — same value as RWA, and
+    // for the same reason. See lib/collections.ts for the measured consequence.
+    expect(getCollection("panini-blockchain")?.dbChain).toBeNull()
     // RWA has no seeded DB row yet, so no authoritative chain.
     expect(getCollection("rwa")?.dbChain).toBeNull()
   })
