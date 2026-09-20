@@ -11,6 +11,39 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🧾 SESSION WRAP — what shipped, the THREE falsifiers still owed with their clock times, and the two calls that are Trevor's · Claude Code (Windows box)
+
+**Closing entry for the 2026-09-19 evening session. No new code in this entry — it is the handoff.**
+
+## ✅ SHIPPED (all verified ARRIVED on `origin/main`, 20/20, not merely committed)
+
+| what | where |
+|---|---|
+| **#115 arm C** — `check_procedure_search_path_unpinned_drift()`, the procedure that MAY be pinned and is not; exclusion is a measured property, not a name list | `20260920014812` |
+| **The edge drift-guard extractor** — **7 of 47 pins compared RETURN TYPES, not bodies**, incl. both on `compute-topshot-pack-ev`; fixing it found real divergence in 2 | `__tests__/edge-inline-copy-drift-guard.test.ts` |
+| **Fast Break badge** — a run that ENDED 2026-05-19 rendered a pulsing LIVE dot and "Ends May 19" to a September visitor | `lib/fast-break-client-compute.ts` + client + route comment |
+| **hybrid-custody probe decoders** mirrored, unit-tested (16 cases), pinned; reachable-tests budget **10 → 9** | `_shared/hybrid-custody-probe-decode.ts` |
+| eslint ratchet re-baselined **715 → 712** | `eslint-ratchet.json` |
+
+**Register:** **#115 CLOSED** · **#75 CLOSED** (its subject gone, by another session's action, not its own decision) · **#126 FILED and advanced six times** · the joint-distribution control added to `trust-board-and-safety.md` · a recorded NEGATIVE on the client-failure-collapse ratchet (all 4 no-error-state sites are honest; **budget unchanged at 67 — do not re-check them**).
+
+## ⏳ THREE FALSIFIERS STILL OWED — each is time-gated, none is a judgement call
+
+1. **R115 is UNMEASURED and looks measured.** jobid **506**'s last run (01:35Z) **succeeded in 12.3 s** against 124.1 s / 120.4 s failures before it — but that run **PREDATES R115 by 69 minutes** (applied 02:44Z). ⛔ **Do not read the 12.3 s as R115's result**; it is the 00:16Z budget/derive change. **First genuine post-R115 tick: 05:35Z** (`35 1,5,9,13`).
+2. **The `candy_special_serials_board` prune (−92 %) is unverified.** `public_board_liveness_state` still holds the **pre-prune 00:28Z** sweep — 5,193 ms against a 4,100 ms budget. **Next sweep 06:28Z** (jobid 288, `28 0,6,11,20`). **If the prune holds, that board leaves the over-budget set on its own; if it does not, the prune missed the path the probe exercises.**
+3. **The vacuum-saturation falsifier needs its post-06:00Z series.** Readings so far: **3** (04:18Z) · **2** (04:21Z) · **0** (04:37Z) · **0** (05:03Z, io_wait 7). ⚠ **Only the last two are after the 04:25:28Z churn-table back-off**, so the early fall is not attributable to it. **Persistently 3 ⇒ the 0.02 thresholds on 41 tables want sizing against a 22 MB/s budget; 0–1 ⇒ catch-up and the paragraph is spent.** ⚠ `pack_rips` is excluded until its self-unscheduling job re-enables it at **08:12Z**, so a sample before then is not the full set.
+
+## 🟡 TWO CALLS THAT ARE TREVOR'S, DELIBERATELY NOT MADE HERE
+
+- **`fast_break_runs.is_active` sits on the OLDER of two long-finished runs** ("Playoffs Run 1", ended 2026-05-19) while the newer reads `false`. In the offseason arguably neither should be active. ⛔ **Flipping a production flag is a product decision, not a cleanup** — and the surface is now honest either way, so this is no longer urgent.
+- **`CLAUDE.md` headroom.** ⚠ **Measure it with Node `.length` and nothing else** — on tonight's file `wc -c` reads **40,641** (would declare it 641 OVER) and Python `len()` reads **39,987** (would claim 5 more than exists); the 5-char gap is exactly 5 non-BMP characters, all 🚨. The two wrong tools fail in OPPOSITE directions on the real file.
+
+## 📌 COORDINATION, recorded because it nearly cost a collision
+
+⛔ **Trevor asked this session to update `CLAUDE.md`; `rip-packs-city-52` already had it modified in the shared working tree.** I stood down rather than duplicate — **their version covers every rule I had staged and compresses better.** ⭐ **My script computed the post-edit length and ABORTED at 40,055 (55 over) without writing**, then I reverted the one file it had already touched: **net effect on the repo from my attempt is zero.** **The abort was loud because the check ran BEFORE the write, not after.**
+
+- **Revert:** nothing to revert — this entry ships no code. Each shipped item above carries its own revert path in its own entry.
+
 ### 2026-09-19 · ↩ THE ROUTE HALF SHIPPED AFTER ALL — `wallet-search` ×2 and `cache-refresh` now read `get_editions_latest_fmv_wide`; the fixture surgery was a key rename, not a re-shape, and it is mutation-checked · Cowork cloud
 
 **Shipped: 2 routes (`app/api/wallet-search/route.ts` two sites, `app/api/cache-refresh/route.ts` one site) → `.rpc("get_editions_latest_fmv_wide", { p_edition_ids: chunk })`; 5 test files' `fmv_current` fixture keys → `"rpc:get_editions_latest_fmv_wide"`; database.md's "not worth a migration" section carries the 09-19 re-litigation. No DB change.**
