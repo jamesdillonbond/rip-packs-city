@@ -11,6 +11,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🔭 SWEPT THE FOLD CLASS PAST THE ONE THAT BLED — three more base58-destroying sites, all LATENT, and the measurement that says so is the point · Claude Code cloud
+
+**Shipped: `app/dashboard/DashboardClient.tsx` (8 key sites) + `lib/wallet/verified-wallets.ts` + `lib/dashboard/aggregate.ts`, all onto `normalizeAddress`. 7 new test arms across 2 existing files, planted-defect control 3 red / 28 green. No DB change.**
+
+⭐ **THE HONEST HEADLINE IS THAT NONE OF THESE THREE IS LIVE, AND I CHECKED RATHER THAN ASSUMED.** `saved_wallets` holds **135 rows, 0 non-hex, 0 with any uppercase** (measured 11:50 AM PT) — **no Candy wallet has ever been saved**, so every one of these fires on the FIRST one and not before. ⚠ **That distinction is the whole value of the measurement: the top-sales defect fixed an hour earlier WAS live and shipped 24h before anyone looked, and writing these up in the same breath as "another live bug" would make this ledger worse at telling the two apart.**
+
+**What each would do on that first save:** `verified-wallets` is the worst — its folded key is **STORED as `wallet_addr`** and is what the selector on /dashboard/history and /dashboard/packs then queries with, so the wallet is destroyed at its source and the pages cannot tell that from a wallet holding nothing. `DashboardClient` sends the folded address to `/api/profile/collection-stats?wallet_addr=` — and that route DOES normalize chain-aware, so the case was already gone before it could help; the miss then renders through `?? []`, which the totals sum as a **real zero**. `aggregate`'s is the mildest: a grouping key only, and `addr` kept the original string, so two Candy wallets differing in case would merge into one card.
+
+⚠ **EVERY ARM IS PAIRED WITH A HEX NO-CHANGE CONTROL, and one of them earns its keep:** `groupWalletsByAddress` MUST still merge `0xBD94…`/`0xbd94…` into one card, so "stop folding" is not the fix — "fold the chain that is case-insensitive, and only that one" is.
+
+⚠ **THE POPULATION, STATED SO THE NEXT SESSION DOES NOT RE-DERIVE IT.** A tree walk of `app`/`components`/`lib`/`workers` for an address-shaped receiver folded to lower case returns **48 sites** (comment-stripped, via `scripts/lib/strip-comments.mjs`). Most are legitimately Flow- or EVM-only — EVM hex is case-insensitive, and several fold BOTH sides of an equality, which is harmless. **A ban at zero over all 48 would be an allowlist wearing a guard's clothes**, which CLAUDE.md warns against by name. The tractable ban is the narrow one — `.toLowerCase()` on `wallet_addr` specifically, the single column where base58 is now stored — and that population is **~8 after these fixes**, each needing its own triage. Not attempted this pass; recorded rather than half-done.
+
+**Revert:** `git revert` the commit touching `lib/wallet/verified-wallets.ts`. No DB half.
+
+
 ### 2026-09-20 · ✅ R122 RE-TESTED AND RESOLVED — 61 fleet kills before the 10:39:57 resize, 0 after; its falsifier did NOT fire, so `DEFAULT_LIMIT` stays, and its stated EXIT was itself a pooling trap · Claude Code cloud
 
 **Shipped: `docs/audits/deep-audit-register.md` (R122 row). No code, no DB.**
