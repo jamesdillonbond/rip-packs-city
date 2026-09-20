@@ -11,6 +11,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 📗 CLAUDE.md + THE FOUR REFERENCE DOCS TAKE THE DAY'S RULES — three additions, each DISPLACING rather than spending · Claude Code cloud
+
+**Shipped: CLAUDE.md (3 rules in, 3 passages out verbatim) + `key-files-and-honesty.md` · `testing-and-ci.md` · `chain-strategy.md` · `cron-and-schedulers.md` · `database.md`. Docs only. 39,963 / 40,000 chars, counted with `node .length` as the header requires; all four memory guards green.**
+
+**INTO CLAUDE.md, three rules the file did not have:**
+- ⛔ **SUBSTITUTION — the honesty face where NOTHING FAILS.** A fallback that swaps the **SUBJECT** rather than the **DEPTH**: `?collection=candy_mlb` answered with Top Shot's buyers, and every helper in the four-layer table was satisfied because nothing went wrong. **Refuse — no rows, no subject name in the body.** An ABSENT param may still default.
+- ⛔ **A stale JUSTIFICATION can be INVERTED, not merely out of date** — the thing it named may now be the **WEAKEST member of the set it excluded**. ⭐ **The tell is a reason citing a SHIP DATE rather than a re-runnable probe.**
+- ⛔ **A SUPPRESSION IS A CLAIM that the guard is right and the CODE is wrong** — when the GUARD is wrong it buys silence and leaves the next honest instance flagged, **and one can FAKE ANOTHER INSTRUMENT'S SIGNAL.** Plus: 🚨 **prove a guard with a PLANTED DEFECT, never by reading it.**
+
+**DISPLACED VERBATIM to make room** (CLAUDE.md's own rule — a new rule displaces, never merely spends): the MARGINAL-set / CAP-IS-NOT-A-RATE clause → `cron-and-schedulers.md` · the `LATERAL`-vs-`DISTINCT ON` numbers → `database.md` · the DB fabricated-value tell + its PROVENANCE rule → `key-files-and-honesty.md`. Two more were compressed in place with their detail already living in a reference doc.
+
+**INTO THE REFERENCE DOCS, in full:** `key-files-and-honesty.md` gains **the FOURTEENTH shape** (substitution, the inverted-justification sibling finding, and the 30-day coverage table that inverted it) · `testing-and-ci.md` gains **the vacuous-guard trap** (`\b` in a JS template literal is U+0008, renders as nothing, and the only tell was a control that did not fire) **and the two suppression lessons** · `chain-strategy.md` gains the **mcp/keys** face, the **substitution** face and the **ban-at-zero's scope table**.
+
+⚠ **Every figure carried over is stamped as a dated sample**, because three of them are exactly the kind that inverted today.
+
+**Revert:** `git revert` the commit touching `CLAUDE.md`.
+
+
 ### 2026-09-20 · 📈 TOP ACCUMULATORS SHIPS ON FOUR MORE COLLECTIONS — the gate's stated reason was not stale, it was INVERTED, and the route was substituting one collection's buyers for another's · Claude Code cloud
 
 **Shipped: `app/api/analytics/top-buyers` (widened + stops substituting) · the `CollectionAnalyticsClient` gate · 1 inverted test + 8 new arms. Planted-defect controls both ways. No DB change.**

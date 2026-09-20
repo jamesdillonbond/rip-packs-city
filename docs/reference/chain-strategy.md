@@ -148,6 +148,33 @@ machinery, not a second resolver.
 - ⛔ **A CADENCE-ONLY WORKER MUST REFUSE, NOT ANSWER.** `/api/wallet/seed` is four hardcoded Cadence scripts taking `address: Address`. Handed base58 it still RAN, failed all four, and returned **`ok: true` with a row per collection** — counts of 0 a caller reads as a measured empty wallet. It now 400s `unsupported_chain_for_seeder` **with no `results` array at all**, so there is no zero for anything downstream to find. ⭐ **Assert the ABSENCE of the field, not the presence of an error string.**
 - ⚠ **`rpc_last_wallet` is NOT chain-scoped, deliberately** — it holds the raw last input, which may be a USERNAME, and a username has no chain. The guard is at the point of USE: a seed belonging to another chain is not auto-searched, and a non-address seed is only searched where a username can be resolved.
 
+- 🔑 **THE FOURTEENTH FACE, AND THE ONE WITH A WRITE BEHIND IT (2026-09-20, found while building the ban below).** `/api/mcp/keys` built its owned-wallet set with the literal fold-and-prefix expression, so a base58 saved wallet became `0x12j1uh…enak`. ⚠ **That set is not inert:** POST defaulted to `userWallets[0]`, so an API key could be **ISSUED** against the fabricated address, and GET echoes every entry back to the user as `wallet_address`. Fixed with `displayAddress` (byte-identical on hex). ⭐ **And the default-wallet path is now honest too:** `normalizeAddr` already declares that surface Flow-only, so a Candy-only account gets `no_flow_wallet_saved` — not "you have no saved wallets" (false) and not a key bound to nothing.
+- ⛔ **SUBSTITUTION, the face where NOTHING FAILS.** `/api/analytics/top-buyers` fell back to `nba_top_shot` for any collection it did not recognise, so `?collection=candy_mlb` returned **Top Shot's buyers** under a Candy heading. No error, no empty state, no degraded flag — every honesty helper satisfied, because nothing went wrong. Full write-up incl. the inverted test: [key-files-and-honesty.md](key-files-and-honesty.md), the FOURTEENTH shape.
+
+### ⭐ The ban at zero (2026-09-20) — `__tests__/addresses-are-never-folded-and-prefixed.test.ts`
+
+The class now has a guard, and its scope is deliberately narrow. A tree walk for an address-shaped
+receiver folded to lower case returns **~26** sites, most legitimately Flow/EVM-only or folding BOTH
+sides of a comparison — **a ban over all of them would be an allowlist wearing a guard's clothes.**
+`"0x" + x.toLowerCase()` is the sub-shape that **fabricates** rather than merely mismatching, and its
+population is **four**, each hex-by-construction and each carrying an inline reason:
+
+| site | why it cannot be base58 |
+|---|---|
+| `app/api/cron/evm-transfers-ingest` | the last 40 chars of a 32-byte EVM log topic |
+| `supabase/functions/_shared/pack-opens-rip-parse.ts` | a Cadence `owner` off a PackNFT event |
+| `supabase/functions/backfill-pack-opens-api` | byte-level twin of the above |
+| `app/api/admin/decode-tx` | decodes a Flow transaction; no address input |
+
+⚠ **`supabase/functions` is EXCLUDED and the exclusion is CHECKED** — an arm re-derives that zero of
+41 edge functions mention candy/solana/base58/magic_eden and reds the day one does. The second reason
+is subtler and is written up in [testing-and-ci.md](testing-and-ci.md): an in-file marker there would
+demote the function one rung on `check-edge-fn-drift`'s dialect ladder and **fake that instrument's
+decay signal**.
+
+⚠ **Escape-hatch discipline:** `// base58-fold: intentional — <why>`, and **"this collection is Flow
+today" is NOT a reason** — `lib/address.ts` exists for exactly that case.
+
 ### ⛔ The rule that governs every one of these fixes
 
 **NEVER NARROW THE INCUMBENT CHAIN WHILE WIDENING FOR A NEW ONE.** `isValidAddressForChain(key, "flow")` demands exactly 16 hex — **stricter** than the `startsWith("0x")` it looks like a drop-in for. Adopting it on a Flow path is a regression smuggled in under a Solana fix; three component tests caught it on the `0xmine` fixture, and **the fixture was not edited to fit the code**. The same reasoning makes the `|| value.startsWith("0x")` in the search classifier load-bearing rather than redundant. **Pin the hex path as its own no-change arm in every test file that touches these helpers** — without it, the Solana assertions are satisfied by a function that has quietly changed every Flow label in the product.

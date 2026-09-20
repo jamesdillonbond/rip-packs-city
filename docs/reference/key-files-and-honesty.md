@@ -3,6 +3,65 @@ char limit. Content is VERBATIM; CLAUDE.md carries a one-line pointer to this fi
 Same rules apply: every number here is a dated sample - re-measure before quoting. -->
 
 
+## ⭐ THE FOURTEENTH SHAPE (2026-09-20): SUBSTITUTION — answering for a subject nobody asked about
+
+A read that fails and renders as a fact is the class everyone here knows. **This is the variant where
+nothing fails at all:** the request names a subject the surface cannot serve, so the surface quietly
+answers for a DIFFERENT one, and the answer is true — about something else.
+
+```ts
+// app/api/analytics/top-buyers — before
+const collection = ALLOWED_COLLECTIONS.has(raw) ? raw : "nba_top_shot"
+```
+
+`?collection=candy_mlb` returned **Top Shot's buyers**, and the caller rendered them under a heading
+naming Candy. No error, no empty state, no degraded flag — every honesty helper in the table was
+satisfied, because nothing went wrong. ⚠ **A fallback is a substitution whenever the fallback is a
+DIFFERENT SUBJECT rather than a different DEPTH of the same one.** A default page size is leniency; a
+default *collection*, *wallet* or *window* is an answer to a question nobody asked.
+
+⭐ **THE DISCRIMINATOR, and it is cheap: does the response still name what it answered FOR?** Here it
+did (`{ collection, days, rows }`) and it made no difference, because the caller had already decided
+what it asked for and never re-read it. **Refuse instead.** The fix returns `400 unsupported_collection`
+with **no `rows` and no `collection` key at all**, so there is nothing for a caller to mistake for an
+answer — and the arm asserts that ABSENCE, not the presence of an error string.
+
+⚠ **AN ABSENT PARAMETER STILL DEFAULTS, and keeping that distinction is the point.** "No collection
+given" genuinely has a sensible answer. "A collection I cannot serve" does not.
+
+🚨 **ITS OWN TEST PINNED THE DEFECT AS THE CONTRACT** — `expect(body.collection).toBe("nba_top_shot")
+// unknown → fallback`, with the file header stating *"No guards (unknown collection falls back to
+nba_top_shot)"*. **Inverted, never deleted**: a passing test asserting a promise is what holds that
+promise in place. ⭐ **When you fix a defect, grep the test tree for it before you grep anything else —
+if a test asserts the old behaviour, the behaviour was someone's intent, and the inversion is the part
+that keeps it from coming back.**
+
+### ⛔ The sibling finding: a justification can be INVERTED, not merely stale
+
+The same panel was gated `short === "topshot"` on a comment reading *"it's the only collection with
+resolved `buyer_address` coverage (the 2026-06-09 buyer-resolution ship)"*. Re-measured 2026-09-20
+over 30 days:
+
+| collection | sales 30d | buyer_address coverage |
+|---|---|---|
+| `nba_top_shot` | 79,941 | **95.2 %** |
+| `nfl_all_day` | 11,775 | 99.8 % |
+| `laliga_golazos` | 65 | 100 % |
+| `candy_mlb` | 1,549 | 100 % |
+| Pinnacle (own table) | 4,361 | 100 % |
+
+**The collection the comment named is now the WEAKEST member of the set it excluded.** ⭐ A stale
+justification is usually imagined as decaying toward "no longer quite true"; this one crossed over and
+became the opposite of true, while reading as a careful, dated, sourced reason the whole time. ⚠ **The
+tell is that the reason is a MEASUREMENT with no re-measurement attached** — it cites a ship date, not
+a probe you can re-run. **Cite the probe.**
+
+⛔ **AND ONE EXCLUSION IN THAT SET WAS REAL, which is why "delete the gate" was the wrong fix.**
+Pinnacle's sales live in `pinnacle_sales`, which `get_top_accumulators` does not read, so serving it
+would return zero rows and render **"no buyer-resolved accumulation"** about a collection with 240
+distinct buyers. The route refuses it and a component arm asserts the panel is absent — **two
+instruments that have to agree, each stating the reason.**
+
 ## ⭐ THE THIRTEENTH SHAPE (2026-09-20): A DISCLOSURE THAT DOES NOT SHARE ITS KPI'S DENOMINATOR — the honesty note itself carried the false claim
 
 ⭐ **The defect was INSIDE the fix for an earlier one.** `/insights/panini-squeeze` headlines
@@ -2193,3 +2252,7 @@ Same day, applying "grep for the SHAPE, not the file", the neighbour `wallet_mom
 ### The generalised rule
 
 > **Trust a cached ownership/holdings claim only at or after the walk that confirmed it. Keep that floor where a re-dispatch cannot clear it, fail OPEN when no clean walk exists, and project the provenance instead of asserting silently.**
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — the DB fabricated-value tell and its PROVENANCE rule
+
+⭐ **The DB form's tell is a PERFECT CORRELATION: `never_checked AND value=true` EXACTLY 0 means the value is the DEFAULT** (#112). ⛔ **A function projecting such a value must project its PROVENANCE too.**

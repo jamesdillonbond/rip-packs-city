@@ -2739,3 +2739,7 @@ Moved to make room for the marginal-cost / cap-is-not-a-rate rule. Content is VE
 - ⚠ **Re-TEST a stated exit condition, never re-read it** — a "once cleared" 114 was 5. ⚠ **RE-TEST it BEFORE acting** — a 36 % kill rate was 100 % by ship.
 
 - ⚠ **A freshness STAMP is not a RATE, and a candidate its own NO-CHANGE CONTROL outperforms is not shown to work** — a stale `max(ingested_at)` read as “zero output” shipped a cadence change reverted 6 h later.
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — PUT THE NUMBER ON IT / a CAP is not a RATE
+
+⭐ **PUT THE NUMBER ON IT: size the MARGINAL set (`target \ already-covered`); a CAP IS NOT A RATE — a threshold bounds the RATE, a per-tick cap only the BURST** (+1 %, quoted as 16x).

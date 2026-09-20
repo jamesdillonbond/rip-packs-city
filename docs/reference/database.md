@@ -2777,3 +2777,7 @@ Moved to make room for the marginal-cost / cap-is-not-a-rate rule while keeping 
 
 - Same shape: `prosrc ILIKE '%lower(%'` said a function folded its wallet; the matching LINES showed `player_name` and `tier`. **Print the lines, not the predicate.**
 - `/api/wallet/edition-counts` was repaired and **verified live (0 → 5)** while the client that renders it still returned early on `!ownerKey.startsWith("0x")` — the column stayed empty all day and **no route-level test could have caught it**.
+
+## Displaced from CLAUDE.md 2026-09-20 (verbatim) — LATERAL per key vs a streaming DISTINCT ON
+
+⭐ **For an id list, one `LATERAL … ORDER BY ts DESC LIMIT 1` probe per key beats a table-streaming `DISTINCT ON` (5 instances; 40 ms vs 22–41 s) — and only a COLD A/B shows it. ⛔ ONLY IF THE INDEX CARRIES THE AGGREGATED COLUMN** — else it heap-fetches per key and **LOSES** (15,814 vs 22,095 buffers, 4× slower; database.md).
