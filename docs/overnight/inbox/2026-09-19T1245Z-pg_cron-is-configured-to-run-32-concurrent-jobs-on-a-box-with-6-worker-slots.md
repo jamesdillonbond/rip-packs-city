@@ -52,3 +52,34 @@ A `job startup timeout` means pg_cron could not obtain a worker slot. ⛔ **The 
 1. Re-run the `pg_settings` query — if `cron.max_running_jobs` is no longer 32, this filing is stale.
 2. Re-run the minute-of-hour histogram over a fresh 30 h. If the `:10` spike is gone without anyone staggering anything, the clustering was an artifact of that window and the lever dissolves.
 3. Split the two classes with `return_message ilike '%startup timeout%'` vs `'%statement timeout%'` — **never report a single `failed` count for this instrument**, since the two have opposite causes and opposite fixes.
+
+---
+
+## 🔬 FALSIFIERS RE-RUN 2026-09-20T03:2xZ (8:2x PM PT 09-19) — Claude Code, Windows box
+
+*All three of this filing's own falsifiers, answered 15 h later. **One fires: the stagger lever dissolves.** Nothing was staggered, tuned or shipped in between — the only schedule changes tonight were jobid 324 (`48` → `31 0,6,12,18`) and four new jobs, none on the minutes below.*
+
+**1. `pg_settings` — filing NOT stale.** `cron.max_running_jobs` = **32** (`default`), `max_worker_processes` = **6** (configuration file), `max_parallel_workers` = **2**. Unchanged. The 5× overcommit stands.
+
+**2. 🚨 THE MINUTE-OF-HOUR HISTOGRAM — THIS FALSIFIER FIRES.** Fresh 24 h to 03:20Z, `return_message like 'job startup timeout%'`:
+
+| minute | starved | distinct jobs | | minute | starved | distinct jobs |
+|---|---:|---:|---|---|---:|---:|
+| :30 | 16 | 8 | | :42 | 9 | 9 |
+| :51 | 15 | 6 | | :39 | 9 | 7 |
+| :50 | 15 | 7 | | :52 | 9 | 9 |
+| :10 | **14** | 7 | | :12 | 8 | 8 |
+| :18 | 14 | 7 | | :29 | 8 | 4 |
+| :09 | 12 | 8 | | :17 | 7 | 7 |
+
+⛔ **`:10` is no longer a spike — it is FOURTH, at 14 against a flat 7–16 across at least twelve minutes, and nobody staggered anything.** This filing's own condition is met verbatim: *"the clustering was an artifact of that window and the lever dissolves."* ⛔ **LEVER 1 (STAGGER) SHOULD NOT BE SHIPPED** — it was sized against a concentration that no longer exists, and moving jobs off five minutes cannot help a loss spread across twelve. ⭐ **Corroborating, and cheap: of ACTIVE hourly jobs the most crowded minute-field carries FOUR jobs (`*/2`), then three (`47`) — the schedule is not densely collided to begin with.**
+
+**3. The two classes, split as instructed** (never one `failed` count): in the 03:05–03:20Z window, **10 startup timeouts vs 4 statement timeouts**. ⚠ **Note the ratio INVERTED versus this filing's 6 h sample of 18 : 95** — one window, not a trend, but it means "the smaller problem" is not reliably the smaller one.
+
+### ⭐ What replaces the stagger hypothesis: OCCUPANCY, not COLLISION
+
+📏 **Measured at the 03:18:00.001158Z instant, where SEVEN jobs failed to start in the same microsecond: only FOUR cron jobs were mid-flight.** Four running against six total worker processes — which are shared with parallel query workers (`max_parallel_workers` = 2) — leaves ~0–2 slots, so **seven arrivals starve without any two of them having to collide with each other.** ⇒ **The binding term is how many LONG-RUNNING jobs are already holding workers, not how many jobs share a round minute.** That is why the distribution flattened: under #126 (fleet busy-seconds 34,236 on 09-15 → 233,894 on 09-19 at flat run counts) every job holds its worker ~10× longer, so occupancy is high at *every* minute rather than spiking at a few.
+
+👉 **THE LEVER FOLLOWS THE MECHANISM: reduce job DURATION or job COUNT (i.e. #126), or raise the worker pool — not minute placement.** ⚠ **And the second lever this filing describes gets stronger, not weaker:** with occupancy dominant, lowering `cron.max_running_jobs` toward the real slot count converts a silent starve into an honest decline — still a restart-class change, still not a sandbox action.
+
+⚠ **MEASURED vs INFERRED, kept apart.** Measured: the settings, the 24 h histogram, the four-mid-flight/seven-refused instant, the class split. **Inferred and NOT directly observed: that the worker pool was actually exhausted at that instant** — there is no instrument here that reports free bgworker slots, so the pool-exhaustion step is read off the config plus the concurrency count, not seen. ⛔ **A future session should not upgrade that to "measured" without an instrument that shows the slots.**
