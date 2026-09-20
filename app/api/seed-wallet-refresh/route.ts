@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { writeInvocationHeartbeat } from "@/lib/pipeline/heartbeat"
+import { isCadenceAddress } from "@/lib/address"
 
 // 800s ceiling (Vercel Pro Lambda hard cap — see the maxDuration note in
 // wallet-backfill-multicollection). The orchestrator returns 202 in <5s per
@@ -347,6 +348,288 @@ function isLowPriority(priority: number | null): boolean {
   return priority != null && priority >= LOW_PRIORITY_MIN
 }
 
+// ── Saved-wallet ownership sweep (2026-09-20) ────────────────────────────────
+// 🚨 THE POPULATION THIS ROUTE SWEEPS WAS THE WRONG SET, AND IT WAS A
+// USER-FACING FALSE CLAIM, NOT A FRESHNESS NICETY.
+//
+// `wallet_moments_cache` is re-verified only by a wallet re-scan, and a re-scan
+// happens only when something dispatches /api/wallet-backfill-multicollection.
+// Every recurring dispatcher is this route, and every cohort above is selected
+// from `seeded_wallets` — so a wallet a real user SAVED was re-verified only if
+// it also happened to be a seeded demo/benchmark wallet. A departed moment is
+// pruned by `deleteUnseenWmcRows` on every walk (skip_cached skips re-WRITING a
+// cached id, never the on-chain enumeration), so the cache is correct exactly as
+// often as the wallet is walked — and never walked means a portfolio that still
+// lists moments the wallet sold, with no staleness disclosed.
+//
+// MEASURED 2026-09-20 (PT), all 27 saved wallets, 135 (wallet, collection) pairs:
+//   saved AND seeded  -> 22 wallets / 110 pairs, last_scanned_at 0.18-0.71 days
+//   saved, NOT seeded ->  5 wallets /  25 pairs, last_scanned_at 5.86-42.87 days
+// The ranges do not overlap and 5x5 is exactly the stale set, so membership of
+// `seeded_wallets` FULLY determined whether a user's moments were re-verified.
+// `check_wmc_ownership_freshness()` (7-day threshold, counts only pairs that
+// actually hold cached rows) flagged 5 rows / 4 wallets from that group.
+//
+// ⚠ IT IS NOT "19% OF USERS" IN STEADY STATE. 22 of 27 are seeded only because
+// `lib/allow-list/prewarm.ts` INSERTS an early-access signup into seeded_wallets
+// as a side effect. A wallet that reaches `saved_wallets` by any other path — the
+// ordinary in-app save — is never seeded and therefore never re-verified, so the
+// unswept share grows with every non-allow-list user. Keying on the seeded table
+// was never a capacity ceiling; no amount of capacity fixes the wrong set.
+//
+// ── WHY THIS SHAPE, AND WHAT IT COSTS ───────────────────────────────────────
+// The marginal cost is |saved \ active-seeded| ONLY — a saved wallet that is also
+// seeded is already walked by its own cohort and is excluded here, so it is never
+// dispatched twice. Today that marginal set is 5 wallets x 5 collections.
+//
+// Two independent knobs, because they bound two different things:
+//   * STALE_HOURS bounds the STEADY-STATE rate. A wallet is a candidate only once
+//     its newest walk ages past the threshold, so each swept wallet costs 5 walks
+//     per threshold period regardless of how many waves observe it. At 5 wallets
+//     and 24h that is ~25 walks/day against the ~2,540/day the seeded herd
+//     already runs (254 active x 5 x 2 waves) — about +1%.
+//   * MAX_PER_WAVE bounds the BURST. It cannot raise the steady-state rate; it
+//     only caps how much of a backlog one invocation may drain, so an import of
+//     500 users degrades into a slower catch-up instead of an on-chain stampede.
+// ⚠ Judge them separately — reading the cap as the cost is the mistake that makes
+// this look like an open-ended spend commitment when it is a bounded +1%.
+//
+// Cohort assignment is by a stable hash of the ADDRESS, mirroring the
+// `seeded_wallets.id % N` split above: a saved-only wallet belongs to exactly one
+// cohort, so the four cron entries cannot each dispatch the same wallet before any
+// of them has stamped `last_scanned_at` (the walks are async — a shared candidate
+// list would fan out 4x, not 1x).
+//
+// REVERT WITHOUT A DEPLOY: set SEED_REFRESH_SAVED_STALE_HOURS=0. The sweep then
+// selects nothing and this route is byte-identical to its pre-2026-09-20 behaviour.
+//   SEED_REFRESH_SAVED_STALE_HOURS  (default 24) — 0 disables the sweep entirely
+//   SEED_REFRESH_SAVED_MAX_PER_WAVE (default 10) — burst cap per invocation
+const SAVED_SWEEP_STALE_HOURS = Number(
+  process.env.SEED_REFRESH_SAVED_STALE_HOURS ?? 24
+)
+const SAVED_SWEEP_STALE_MS =
+  (Number.isFinite(SAVED_SWEEP_STALE_HOURS) ? Math.max(0, SAVED_SWEEP_STALE_HOURS) : 24) *
+  60 *
+  60 *
+  1000
+const SAVED_SWEEP_MAX_PER_WAVE = Number(
+  process.env.SEED_REFRESH_SAVED_MAX_PER_WAVE ?? 10
+)
+
+/**
+ * Stable 32-bit FNV-1a over the address, used to assign a saved-only wallet to
+ * exactly one cohort.
+ *
+ * ⛔ IT MUST NOT BE `Math.random`, a row id, or anything that moves between
+ * invocations: the four cron cohorts run in separate lambdas minutes apart and
+ * never see each other's picks, so the ONLY thing preventing a 4x fan-out of the
+ * same wallet is that all four compute the same bucket from the same string.
+ */
+export function cohortOfAddress(address: string, cohortN: number): number {
+  if (!Number.isInteger(cohortN) || cohortN <= 1) return 0
+  let h = 0x811c9dc5
+  for (let i = 0; i < address.length; i++) {
+    h ^= address.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h % cohortN
+}
+
+export type SavedSweepCandidate = {
+  wallet: string
+  /** Newest `wallet_backfill_state.last_scanned_at` in ms; NaN when never scanned. */
+  lastScannedAtMs: number
+}
+
+export type SavedSweepPlan = {
+  picked: SavedSweepCandidate[]
+  freshSkipped: number
+  cappedOut: number
+  nonCadenceSkipped: number
+}
+
+/**
+ * Decide which saved-only wallets this invocation re-verifies.
+ *
+ * Extracted as a pure function for the same reason `dispatchPlan` above is: the
+ * property that matters is the SELECTION, and selection that lives inline inside
+ * an `after()` that dispatches real HTTP is asserted by nothing. The route test
+ * stubs `after()`, so anything left in there is literally unreachable from a test.
+ *
+ * ⚠ `staleMs <= 0` disables the sweep and returns an EMPTY plan with zero
+ * counters — that is the operator kill switch, and a caller must report it as
+ * "disabled", never as "nothing was stale".
+ *
+ * ⛔ The chain gate is `isCadenceAddress`, not `startsWith("0x")`. This route
+ * fans out to the five PUBLISHED FLOW collections, so a Candy (base58) or EVM
+ * (40-hex) saved wallet has nothing for it to walk — but it is EXCLUDED and
+ * COUNTED, never silently dropped, because "this sweep does not cover that chain"
+ * and "that wallet is fresh" are different facts and only one of them is true.
+ */
+export function planSavedWalletSweep(opts: {
+  candidates: SavedSweepCandidate[]
+  nowMs: number
+  staleMs: number
+  maxPerWave: number
+}): SavedSweepPlan {
+  const { candidates, nowMs, staleMs, maxPerWave } = opts
+  if (!(staleMs > 0)) {
+    return { picked: [], freshSkipped: 0, cappedOut: 0, nonCadenceSkipped: 0 }
+  }
+
+  let freshSkipped = 0
+  let nonCadenceSkipped = 0
+  const stale: SavedSweepCandidate[] = []
+
+  for (const candidate of candidates) {
+    if (!isCadenceAddress(candidate.wallet)) {
+      nonCadenceSkipped++
+      continue
+    }
+    const scanned = candidate.lastScannedAtMs
+    // A NEVER-SCANNED wallet (NaN) is the most stale thing there is, not a
+    // freshness unknown to be skipped — it falls through to `stale` on purpose.
+    if (Number.isFinite(scanned) && nowMs - scanned >= 0 && nowMs - scanned < staleMs) {
+      freshSkipped++
+      continue
+    }
+    stale.push(candidate)
+  }
+
+  // Oldest first, never-scanned ahead of everything, address as the tiebreak so
+  // the order is total and a capped wave is reproducible rather than arbitrary.
+  stale.sort((a, b) => {
+    const av = Number.isFinite(a.lastScannedAtMs) ? a.lastScannedAtMs : -Infinity
+    const bv = Number.isFinite(b.lastScannedAtMs) ? b.lastScannedAtMs : -Infinity
+    if (av !== bv) return av - bv
+    return a.wallet < b.wallet ? -1 : a.wallet > b.wallet ? 1 : 0
+  })
+
+  const cap = Number.isFinite(maxPerWave) ? Math.max(0, Math.floor(maxPerWave)) : 0
+  const picked = stale.slice(0, cap)
+  return {
+    picked,
+    freshSkipped,
+    cappedOut: stale.length - picked.length,
+    nonCadenceSkipped,
+  }
+}
+
+type SavedSweepLoad = {
+  candidates: SavedSweepCandidate[]
+  /** Non-null when a read FAILED. A caller must not publish counts alongside it. */
+  error: string | null
+  /** True when a read hit its page ceiling, so the candidate set is PARTIAL. */
+  truncated: boolean
+}
+
+// PostgREST caps a read at 1000 rows and CLAMPS an explicit larger `.limit()`,
+// so 1000 is the real page size, not a number we chose.
+const PAGE_CAP = 1000
+
+/**
+ * Load this cohort's saved-but-not-actively-seeded wallets with the newest
+ * ownership-verification stamp each one carries.
+ *
+ * ⚠ `last_scanned_at` is the right column and `wallet_moments_cache.last_seen_at`
+ * is not: the latter is a content-change watermark that decays while ownership is
+ * still being re-verified. `check_wmc_ownership_freshness()` reads the same
+ * column, which is what makes the "Done looks like" check and this selector agree
+ * instead of measuring two different things.
+ *
+ * ⛔ A FAILED READ IS REPORTED, NEVER RENDERED AS AN EMPTY SWEEP. Both exits
+ * return `error` set and an empty candidate list, and the caller logs the error
+ * beside a NULL count — "the sweep found nothing stale" and "the sweep could not
+ * look" are the two states this repo keeps confusing, and an empty list is the
+ * honest shape for neither.
+ */
+export async function loadSavedOnlyCandidates(
+  supabase: any,
+  seededActive: Set<string>,
+  cohortK: number,
+  cohortN: number
+): Promise<SavedSweepLoad> {
+  // Keyset walk over DISTINCT wallet_addr values. `wallet_addr` is not unique in
+  // saved_wallets (135 rows / 27 wallets on 2026-09-20 — one row per collection),
+  // and that is fine here precisely BECAUSE we want distinct values: `.gt(cursor)`
+  // steps past the rest of a duplicate group whose value we already captured.
+  const addresses: string[] = []
+  let cursor: string | null = null
+  let truncated = true
+  for (let page = 0; page < 10; page++) {
+    let q = supabase
+      .from("saved_wallets")
+      .select("wallet_addr")
+      .not("wallet_addr", "is", null)
+      .order("wallet_addr", { ascending: true })
+      .limit(PAGE_CAP)
+    if (cursor) q = q.gt("wallet_addr", cursor)
+    const { data, error } = await q
+    if (error) {
+      return { candidates: [], error: `saved_wallets: ${error.message}`, truncated: false }
+    }
+    const rows = (data ?? []) as Array<{ wallet_addr: string | null }>
+    for (const row of rows) if (row.wallet_addr) addresses.push(row.wallet_addr)
+    if (rows.length < PAGE_CAP) {
+      truncated = false
+      break
+    }
+    cursor = rows[rows.length - 1]?.wallet_addr ?? null
+    if (!cursor) {
+      truncated = false
+      break
+    }
+  }
+
+  // Exclude wallets an ACTIVE seeded row already covers — those are walked by
+  // their own cohort above, and dispatching them here would double the work
+  // rather than add any freshness. An INACTIVE seeded row is not a sweeper, so a
+  // wallet that only appears there correctly stays a candidate.
+  const mine = Array.from(new Set(addresses))
+    .filter((w) => !seededActive.has(w))
+    .filter((w) => cohortOfAddress(w, cohortN) === cohortK)
+
+  if (mine.length === 0) return { candidates: [], error: null, truncated }
+
+  // Chunked so no single `.in()` can reach the 1000-row clamp: 100 wallets x at
+  // most a handful of collections each stays well inside one page.
+  const newest = new Map<string, number>()
+  for (const batch of chunk(mine, 100)) {
+    const { data, error } = await supabase
+      .from("wallet_backfill_state")
+      .select("wallet_address,last_scanned_at")
+      .in("wallet_address", batch)
+      .limit(PAGE_CAP)
+    if (error) {
+      return {
+        candidates: [],
+        error: `wallet_backfill_state: ${error.message}`,
+        truncated,
+      }
+    }
+    const rows = (data ?? []) as Array<{
+      wallet_address: string
+      last_scanned_at: string | null
+    }>
+    if (rows.length >= PAGE_CAP) truncated = true
+    for (const row of rows) {
+      const t = row.last_scanned_at ? Date.parse(row.last_scanned_at) : NaN
+      if (!Number.isFinite(t)) continue
+      const prev = newest.get(row.wallet_address)
+      if (prev === undefined || t > prev) newest.set(row.wallet_address, t)
+    }
+  }
+
+  return {
+    candidates: mine.map((wallet) => ({
+      wallet,
+      lastScannedAtMs: newest.get(wallet) ?? NaN,
+    })),
+    error: null,
+    truncated,
+  }
+}
+
 export async function GET(req: NextRequest) {
   // Support both ?token= query param and Authorization: Bearer header
   const queryToken = req.nextUrl.searchParams.get("token")
@@ -637,6 +920,59 @@ export async function GET(req: NextRequest) {
       })
     }
 
+    // ── Saved-wallet ownership sweep ─────────────────────────────────────
+    // Appended to the SAME task list, so these ride the existing paced
+    // dispatcher rather than arriving as an unpaced burst beside it.
+    const seededActive = new Set(
+      rows.map((r) => r.wallet_address).filter((w): w is string => !!w)
+    )
+    const savedLoad = await loadSavedOnlyCandidates(
+      supabase,
+      seededActive,
+      cohortK,
+      cohortN
+    )
+    const savedPlan = planSavedWalletSweep({
+      candidates: savedLoad.candidates,
+      nowMs,
+      staleMs: SAVED_SWEEP_STALE_MS,
+      maxPerWave: SAVED_SWEEP_MAX_PER_WAVE,
+    })
+    let savedFired = 0
+    for (const candidate of savedPlan.picked) {
+      tasks.push(async () => {
+        try {
+          // skip_cached=true is the CORRECT mode for a re-verification pass and
+          // not a cheaper approximation of one: the child always enumerates the
+          // full on-chain id set and always runs deleteUnseenWmcRows, so a
+          // departed moment is pruned either way. skip_cached only suppresses
+          // re-WRITING an id already in the cache. A full walk here would pay
+          // the entire upsert cost to reach the same holdings.
+          const ok = await refreshViaWalletBackfill(
+            origin,
+            candidate.wallet,
+            ingestToken,
+            false
+          )
+          if (ok) {
+            savedFired++
+            console.log(
+              `[seed-wallet-refresh] saved-sweep fired ${candidate.wallet} last_scanned=${
+                Number.isFinite(candidate.lastScannedAtMs)
+                  ? new Date(candidate.lastScannedAtMs).toISOString()
+                  : "never"
+              }`
+            )
+          } else {
+            errors.push(`saved-sweep backfill failed for ${candidate.wallet}`)
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          errors.push(`saved-sweep ${candidate.wallet}: ${msg}`)
+        }
+      })
+    }
+
     for (const row of walletsWithoutAddress) {
       tasks.push(async () => {
         try {
@@ -678,6 +1014,38 @@ export async function GET(req: NextRequest) {
 
     await dispatchPaced(tasks)
 
+    // ⛔ COUNTS ONLY WHERE A COUNT WAS ACTUALLY TAKEN. When the sweep is disabled
+    // or its read failed, every candidate/fresh/capped field is NULL and the state
+    // says which — a 0 here would be the fabricated-measurement shape this repo
+    // bans, and "disabled", "could not read" and "nothing was stale" are three
+    // different facts that a single 0 renders identically.
+    const savedSweepState = savedLoad.error
+      ? "read_failed"
+      : SAVED_SWEEP_STALE_MS <= 0
+        ? "disabled"
+        : "ok"
+    const savedSweepMeasured = savedSweepState === "ok"
+    const savedSweepExtra = {
+      saved_sweep_state: savedSweepState,
+      saved_sweep_error: savedLoad.error,
+      saved_sweep_truncated: savedLoad.error ? null : savedLoad.truncated,
+      saved_sweep_stale_hours: SAVED_SWEEP_STALE_HOURS,
+      saved_sweep_max_per_wave: SAVED_SWEEP_MAX_PER_WAVE,
+      saved_sweep_candidates: savedSweepMeasured ? savedLoad.candidates.length : null,
+      saved_sweep_picked: savedSweepMeasured ? savedPlan.picked.length : null,
+      saved_sweep_fired: savedSweepMeasured ? savedFired : null,
+      saved_sweep_fresh_skipped: savedSweepMeasured ? savedPlan.freshSkipped : null,
+      saved_sweep_capped_out: savedSweepMeasured ? savedPlan.cappedOut : null,
+      saved_sweep_non_cadence: savedSweepMeasured ? savedPlan.nonCadenceSkipped : null,
+    }
+
+    console.log(
+      `[seed-wallet-refresh] saved-sweep state=${savedSweepState}` +
+        (savedLoad.error
+          ? ` error=${savedLoad.error}`
+          : ` candidates=${savedLoad.candidates.length} picked=${savedPlan.picked.length} fired=${savedFired} fresh_skipped=${savedPlan.freshSkipped} capped_out=${savedPlan.cappedOut} non_cadence=${savedPlan.nonCadenceSkipped} truncated=${savedLoad.truncated}`)
+    )
+
     console.log(
       `[seed-wallet-refresh] done — cohort=${cohortK}/${cohortN} processed=${
         walletsWithAddress.length + walletsWithoutAddress.length
@@ -695,6 +1063,7 @@ export async function GET(req: NextRequest) {
       low_priority_skipped: lowPrioritySkipped,
       backstop_fresh_skipped: backstopFreshSkipped,
       errors: errors.length,
+      ...savedSweepExtra,
     }, new Date().toISOString())
   })
 
