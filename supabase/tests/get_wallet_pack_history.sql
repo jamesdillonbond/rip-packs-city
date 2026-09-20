@@ -38,7 +38,7 @@
 --      no-change control for that, and the fix cannot move it.
 --
 -- The function DDL below is VERBATIM from the committed migration
--- (supabase/migrations/20260920163137_audit_20260920_wallet_pack_inventory_stops_claiming_packs_the_wallet_no_longer_holds.sql).
+-- (supabase/migrations/20260920171011_audit_20260920_wallet_pack_history_trusts_ownership_only_at_or_after_the_last_clean_walk.sql).
 -- __tests__/db-invariants-drift-guard.test.ts fails CI on drift.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.

@@ -35,7 +35,7 @@ const PINS = [
     // kept naming the old owner -- 23 rows on 5 of 27 saved wallets, 23 of 23
     // Sealed, each rendered as an unopened pack still in that user's inventory.
     migration:
-      "supabase/migrations/20260920163137_audit_20260920_wallet_pack_inventory_stops_claiming_packs_the_wallet_no_longer_holds.sql",
+      "supabase/migrations/20260920171011_audit_20260920_wallet_pack_history_trusts_ownership_only_at_or_after_the_last_clean_walk.sql",
   },
   {
     // Added 2026-09-18 with the sibling above: the hero totals (packs_sold,
