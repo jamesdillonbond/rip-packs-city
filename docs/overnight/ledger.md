@@ -11,6 +11,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🚨 THE MARKET TAB'S Set / Series / Player / Min-price FILTERS DO NOTHING ON FOUR OF FIVE COLLECTIONS, AND THE UI COUNTS THEM AS ACTIVE — found chasing a Pinnacle parity item · Claude Code cloud
+
+**Shipped: `/api/market` Pinnacle arm now honours all four at the SOURCE; 6 new arms (mutation-proved); **#129** filed for Top Shot + All Day + Candy, which need a migration. No DB change.**
+
+🚨 **THE DEFECT.** All four filters are parsed from the query string and then applied **only** inside the legacy `cached_listings` fall-through (`q.in("set_name", sets)` at line ~824). Every collection served by a *modern* arm — **Top Shot, All Day, Pinnacle, Candy** — returns before reaching it. `countActiveFilters` still counts the chip, so the reader is told a filter is applied that never ran. ⓘ Golazos has no modern arm and falls through, so its filters work — **which is exactly why this never looked broken everywhere at once.**
+
+📊 **MEASURED ON PRODUCTION, not read from source** — and the read came first, so this is the re-derivation CLAUDE.md asks for before acting:
+- Pinnacle, `set=Pixar Animation Studios • Toy Story Vol.1` → rows from **Beauty and the Beast, Star Wars Alphabet, The Emperor's New Groove, The Jungle Book, Cats & Dogs**. Not one row from the requested set. `source: "modern"`, `postFilterCount: 1000`.
+- Top Shot, `set=Base Set` → **"WNBA Base Set"**, **"Archive Set 2014-19"**.
+
+⭐ **HOW IT WAS FOUND IS THE TRANSFERABLE PART.** I was looking for a cheap replacement for the Pinnacle Set Tracker's suppressed set links — "link the set name to the Market filtered to that set" — and went to check the filter worked before using it. **It didn't.** The parity item was worth little; the check on the way to it found a live false claim on the busiest filter UI on the site. ⚠ **Verify the affordance you are about to reuse, not just the one you are building.**
+
+✅ **PINNACLE FIXED AT THE SOURCE.** ⛔ **NOT in memory, and that distinction IS the fix.** The modern arms fetch a **capped, sort-ordered window** (1,000 rows, `windowTruncated: true`). Filtering that window after the fact applies the filter to an already-truncated set, so a set whose listings sit outside the window answers **empty** — turning *"filter ignored"* into a confident *"no listings in this set"*. **That is strictly worse than the bug**, and it is why #129 tells the next session not to "finish the job" that way on the RPC arms.
+
+⚠ **THE SET FILTER IS `ilike %name%`, NOT `.in("set_name", …)`, and the reason is load-bearing.** 22 of `pinnacle_catalog`'s 169 distinct set names carry stray leading/trailing whitespace while the row the API returns is **trimmed** — so equality would match **nothing** for those 22 and render as "no listings in this set". ⛔ A substring pattern can over-match (`Vol.1` inside a future `Vol.10`), so **the DB filter only NARROWS and an exact trim-equality pass decides.** Measured today: 169 trimmed names, **0 substring collisions** — a dated sample, which is precisely why the in-memory exactness pass exists rather than a comment saying it is fine.
+
+✅ **Mutation-proved:** deleting the exact pass reds **3 of 6** arms (substring over-match, whitespace name, multi-select); restored, 6/6.
+
+📋 **#129 filed** with the production evidence, the do-not-do-this warning, and the note that **Candy is a table query** (`candy_market_board`, carries `set_name` + `player_name`) so it can be fixed the Pinnacle way without a migration — its price/series column names **were not verified**, stated as unchecked rather than assumed.
+
+✅ **Verified:** `npm test` **1,576 files / 17,933 tests green**, `tsc --noEmit` clean, `lint:ratchet` 712/712, known-issues index **126 → 127** (asserted the count ROSE, not that the check passed).
+
+- **Revert:** `git log --grep='FILTERS DO NOTHING ON FOUR OF FIVE'` → `git revert <sha>`. ⚠ Reverting restores the silently-ignored filters on Pinnacle. No DB half.
+
 ### 2026-09-20 · ✅ THE DAYTIME MONITOR'S 11:12 AM HIGH WAS ALREADY FIXED 11 MINUTES AFTER THE FAILURE IT CITED — and for a WEEKLY job `latest_status=failed` cannot say "still broken" · Claude Code, Windows box
 
 **Shipped: docs only — no code, no schema, no data mutation.** Session opened on a clone **66 commits behind `origin/main`** with **0 local commits** and a **stale 0-byte `.git/index.lock`** (3 h 15 m old, no git process, no `MERGE_HEAD`/rebase dir) blocking the fast-forward. Cleared it and fast-forwarded. ⚠ **Origin moved again mid-session** (two more commits, one of them a `ledger.md` write), so this entry was **re-spliced into the refreshed file** rather than written back over a copy read earlier.
