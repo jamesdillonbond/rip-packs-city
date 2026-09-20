@@ -953,3 +953,63 @@ describe("CollectionAnalyticsClient — per-collection slugs", () => {
     })
   }
 })
+
+// ── The Top Accumulators panel is no longer Top-Shot-only (2026-09-20) ─────
+//
+// ⛔ The gate read `short === "topshot"`, justified in a comment as "it's the
+// only collection with resolved buyer_address coverage (the 2026-06-09
+// buyer-resolution ship)". Re-measured 2026-09-20 over 30d, that reason is not
+// merely stale — it is INVERTED. Top Shot has the WORST coverage of any
+// collection: 95.2%, against nfl_all_day 99.8%, laliga_golazos 100% and
+// candy_mlb 100% (1,549 sales / 95 buyers).
+//
+// ⚠ Pinnacle is the one real exclusion and it is asserted here rather than
+// assumed: its sales live in `pinnacle_sales`, which `get_top_accumulators`
+// does not read, so the panel would render 240 real buyers as "no buyer-resolved
+// accumulation". `/api/analytics/top-buyers` refuses it with a 400 for the same
+// reason — this arm and that one have to stay in agreement.
+describe("CollectionAnalyticsClient — Top Accumulators gate", () => {
+  const shows: Array<[string, string]> = [
+    ["nba-top-shot", "nba_top_shot"],
+    ["candy-mlb", "candy_mlb"],
+    ["nfl-all-day", "nfl_all_day"],
+  ]
+
+  for (const [slug, dbSlug] of shows) {
+    it(`renders Top Accumulators for ${slug}, scoped to ${dbSlug}`, async () => {
+      PARAMS.collection = slug
+      try {
+        render(<CollectionAnalyticsClient />)
+        await waitFor(() => {
+          expect(screen.getByText("Top Accumulators")).toBeTruthy()
+        })
+        // It must ask for THIS collection — not the hardcoded nba_top_shot the
+        // call site used to pass regardless of which page it was on.
+        await waitFor(() => {
+          const urls = fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("/api/analytics/top-buyers"))
+          expect(urls.length).toBeGreaterThan(0)
+          expect(urls.every((u) => u.includes(`collection=${dbSlug}`))).toBe(true)
+        })
+      } finally {
+        PARAMS.collection = "nba-top-shot"
+      }
+    })
+  }
+
+  it("does NOT render it for disney-pinnacle, whose sales the RPC cannot see", async () => {
+    PARAMS.collection = "disney-pinnacle"
+    try {
+      render(<CollectionAnalyticsClient />)
+      // Wait for the page to settle on something else before asserting absence,
+      // so this is not just a race against the first paint.
+      await waitFor(() => {
+        expect(fetchMock.mock.calls.length).toBeGreaterThan(0)
+      })
+      expect(screen.queryByText("Top Accumulators")).toBeNull()
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u.includes("/api/analytics/top-buyers"))).toBe(false)
+    } finally {
+      PARAMS.collection = "nba-top-shot"
+    }
+  })
+})

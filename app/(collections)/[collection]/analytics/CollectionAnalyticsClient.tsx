@@ -9,7 +9,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   AreaChart, Area, BarChart, Bar,
 } from "recharts"
-import { getCollection } from "@/lib/collections"
+import { getCollection, toDbSlug } from "@/lib/collections"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { seriesLabel } from "@/lib/series-label"
 import { pivotDailyTier, pivotDailySeries } from "@/lib/analytics-pivot"
@@ -920,6 +920,10 @@ function AnalyticsInner() {
   const searchParams = useSearchParams()
   const collection = (params?.collection as string) || ""
   const short = shortSlug(collection)
+  // The long-form collections.slug — what the analytics RPCs key on. Derived
+  // from the registry, never a second hardcoded map (CLAUDE.md: a hardcoded
+  // allowlist beside a registry goes stale silently).
+  const dbSlug = toDbSlug(collection)
   const urlWallet = searchParams.get("wallet") || ""
   const urlTab = (searchParams.get("tab") || "market").toLowerCase() === "portfolio" ? "portfolio" : "market"
 
@@ -1215,12 +1219,19 @@ function AnalyticsInner() {
             <WhaleLeaderboard short={short} />
           </div>
 
-          {/* Buyer-side accumulation — who is sweeping what. Top Shot only for
-              now: it's the only collection with resolved buyer_address coverage
-              (the 2026-06-09 buyer-resolution ship). */}
-          {short === "topshot" && (
+          {/* Buyer-side accumulation — who is sweeping what.
+              ⛔ THIS WAS GATED `short === "topshot"` on the claim that Top Shot was
+              "the only collection with resolved buyer_address coverage (the
+              2026-06-09 buyer-resolution ship)". Re-measured 2026-09-20 over 30d,
+              that reason is not merely stale — it is INVERTED: Top Shot has the
+              WORST coverage of any collection (95.2%), against nfl_all_day 99.8%,
+              laliga_golazos 100% and candy_mlb 100% (1,549 sales / 95 buyers).
+              ⚠ Pinnacle stays out, and for a reason the route states and enforces:
+              its sales are in `pinnacle_sales`, which `get_top_accumulators` does
+              not read, so it would render 240 real buyers as "no accumulation". */}
+          {short !== "pinnacle" && dbSlug && (
             <div className="mb-6">
-              <TopBuyers collection="nba_top_shot" />
+              <TopBuyers collection={dbSlug} />
             </div>
           )}
 

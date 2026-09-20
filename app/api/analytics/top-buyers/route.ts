@@ -38,14 +38,27 @@ interface AccumulatorRow {
   top_edition_buys: number
 }
 
-// Long-form collection slugs (collections.slug) the RPC understands. Anything
-// else falls back to nba_top_shot, which is where buyer coverage exists today.
+// Long-form collection slugs (collections.slug) `get_top_accumulators` can
+// serve. It reads `sales` JOIN `collections`, so a collection is in this set
+// exactly when its sales live in `sales`.
+//
+// ⛔ `disney_pinnacle` IS DELIBERATELY ABSENT and that is not an oversight:
+// Pinnacle's sales are in `pinnacle_sales`, a separate table this RPC does not
+// read (which is why `analytics_sales_summary` carries its own union arm for it).
+// Asking for it would return zero rows, and the caller renders zero rows as
+// "no buyer-resolved accumulation" — a FALSE claim about a collection with 240
+// distinct buyers in 30d. Serving it needs a Pinnacle arm in the RPC, not an
+// entry here.
+//
+// ⚠ `candy_mlb` added 2026-09-20. Measured that day, buyer_address coverage over
+// 30d: candy_mlb 100% (1,549 sales / 95 buyers) · laliga_golazos 100% · 
+// nfl_all_day 99.8% · nba_top_shot 95.2%. **Every figure here is a dated sample.**
 const ALLOWED_COLLECTIONS = new Set([
   "nba_top_shot",
   "nfl_all_day",
   "laliga_golazos",
-  "disney_pinnacle",
   "ufc_strike",
+  "candy_mlb",
 ])
 
 function parseDays(raw: string | null): number {
@@ -63,7 +76,20 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url)
     const collectionRaw = (url.searchParams.get("collection") || "nba_top_shot").toLowerCase()
-    const collection = ALLOWED_COLLECTIONS.has(collectionRaw) ? collectionRaw : "nba_top_shot"
+    // ⛔ WAS a silent fallback to nba_top_shot. Asking for one collection and
+    // being handed another's buyers — under a heading naming the one you asked
+    // for — is the honesty defect, not a lenient default. An ABSENT param still
+    // defaults (that is a real default); an UNRECOGNISED one now says so.
+    if (!ALLOWED_COLLECTIONS.has(collectionRaw)) {
+      return NextResponse.json(
+        {
+          error: "unsupported_collection",
+          message: `top-buyers has no buyer data for "${collectionRaw}". Supported: ${[...ALLOWED_COLLECTIONS].join(", ")}.`,
+        },
+        { status: 400 }
+      )
+    }
+    const collection = collectionRaw
     const days = parseDays(url.searchParams.get("days"))
     const limit = parseLimit(url.searchParams.get("limit"))
 
