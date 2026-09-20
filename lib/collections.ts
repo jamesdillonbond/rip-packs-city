@@ -151,7 +151,11 @@ export const COLLECTIONS: Collection[] = [
     accent: "#A855F7",
     accentSoft: "#C084FC",
     icon: "✨",
-    pages: ["overview", "collection", "packs", "market", "sniper", "analytics"],
+    // `sets` added 2026-09-20: Pinnacle's Set Tracker is backed by
+    // /api/pinnacle-set-progress (pinnacle_catalog's 169 set_render_ids joined
+    // to wallet_moments_cache.render_id), not the editions/sets tables it has
+    // zero rows in. It was the last per-collection gap on this tab.
+    pages: ["overview", "collection", "packs", "market", "sniper", "sets", "analytics"],
     published: true,
     flowContractName: "Pinnacle",
     contractAddress: "0xedf9df96c92f4595",

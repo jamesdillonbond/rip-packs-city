@@ -9,11 +9,18 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { classifySetTier } from "@/lib/set-completion-tier"
 import { safeApiError, statusForSafeError } from "@/lib/api-error"
 
+// 🚨 `disney-pinnacle` was REMOVED 2026-09-20 and must not come back. This route
+// joins `editions` + `sets` on `collection_id`, and Pinnacle has **0 rows in
+// both** (measured live that day) — it is catalogued render-keyed in
+// `pinnacle_catalog` by design. So the entry did not give Pinnacle partial
+// support: it answered every wallet `{ totalSets: 0, sets: [] }`, publishing
+// "this collection has no sets" out of a join that matched nothing, at an
+// endpoint anyone can call. Pinnacle is served by /api/pinnacle-set-progress;
+// an unknown slug here now returns 400, which is the honest answer.
 const COLLECTION_UUID_MAP: Record<string, string> = {
   "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
   "nfl-all-day": "dee28451-5d62-409e-a1ad-a83f763ac070",
   "laliga-golazos": "06248cc4-b85f-47cd-af67-1855d14acd75",
-  "disney-pinnacle": "7dd9dd11-e8b6-45c4-ac99-71331f959714",
 }
 
 type EditionRow = {
@@ -231,8 +238,11 @@ export async function GET(req: NextRequest) {
     )
   } catch (err) {
     // Same leak as /api/sets (deep-audit D3): the sets page renders `body.error`
-    // verbatim, and this route backs the AllDay / Golazos / Pinnacle / UFC Set
-    // Trackers. Returning err.message put raw Postgres text on a public page.
+    // verbatim, and this route backs the Golazos Set Tracker. Returning
+    // err.message put raw Postgres text on a public page.
+    // ⚠ The list this used to name (AllDay / Pinnacle / UFC) was already stale:
+    // AllDay and UFC have had their own routes for months and Pinnacle got one
+    // 2026-09-20. The leak argument is unchanged — only the roll call was wrong.
     console.error("[/api/sets-db] error:", err)
     const safe = safeApiError(err, "Failed to load sets.")
     return NextResponse.json(safe, {

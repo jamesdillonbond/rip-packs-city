@@ -72,3 +72,42 @@ export function momentSubjectName(
   if (s) return s
   return "—"
 }
+
+/**
+ * The canonical page for one Disney Pinnacle render.
+ *
+ * ⚠ `/disney-pinnacle/edition/<render_id>` is NOT it — that route
+ * `permanentRedirect`s here (app/(collections)/[collection]/edition/[slug]/page.tsx),
+ * so an internal link built with `editionHref` costs the reader a hop and hands
+ * the crawler a duplicate URL. The sitemap already publishes this spelling
+ * (lib/sitemap-data.ts), which is what makes it the canonical one.
+ */
+export function pinnacleRenderHref(renderId: string): string {
+  return `/pinnacle/moment/${encodeURIComponent(renderId)}`
+}
+
+/**
+ * The set-detail page for a set NAME, or `null` when this collection has none.
+ *
+ * 🚨 RETURNING `null` IS THE POINT. `/[collection]/set/[slug]` renders from
+ * `get_set_detail(collection_id, set_slug)`, which reads `sets` + `editions`.
+ * Measured live 2026-09-20: Disney Pinnacle has **0 rows in both** — it is
+ * catalogued render-keyed in `pinnacle_catalog` instead — and the RPC returns
+ * NULL for every Pinnacle slug, so the page 404s. Building the href anyway is
+ * how the 54 dead Market links shipped (see
+ * `collection-registry-consistency.test.ts`): a link that is *formed* correctly
+ * and *resolves* to nothing. The caller renders plain text instead.
+ *
+ * ⛔ Do NOT "fix" this by seeding `sets`/`editions` for Pinnacle — its FMV,
+ * pricing and every public surface key on `render_id`, and CLAUDE.md records
+ * that separation as deliberate, not as debt.
+ */
+export function setEntityHref(
+  collectionUrlSlug: string,
+  setName: string | null | undefined,
+): string | null {
+  const name = setName?.trim()
+  if (!name) return null
+  if (collectionUrlSlug === "disney-pinnacle" || collectionUrlSlug === "pinnacle") return null
+  return `/${collectionUrlSlug}/set/${encodeURIComponent(slugifyName(name))}`
+}

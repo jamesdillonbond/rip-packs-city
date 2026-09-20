@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getCollection } from "@/lib/collections";
 import { filterAndSortSets, tierStripeColor, computeSetSummary } from "@/lib/sets/display";
 import { getOwnerKey } from "@/lib/owner-key";
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection";
-import { slugifyName } from "@/lib/entity-labels";
+import { setEntityHref } from "@/lib/entity-href";
 import MomentMedia from "@/components/MomentMedia";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
 
@@ -124,6 +124,18 @@ async function fetchSetDetail(wallet: string, setId: string, collectionSlug: str
 const displayFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
 
+// The set-card heading's look, shared by its link and its plain-text form so
+// suppressing a dead link cannot also change the card's appearance.
+function setTitleStyle(c: ReturnType<typeof makeColors>): CSSProperties {
+  return {
+    fontFamily: displayFont, fontWeight: 800, fontSize: 16, color: c.text,
+    textTransform: "uppercase", letterSpacing: "0.02em", lineHeight: 1.15,
+    textDecoration: "none", flex: 1, minWidth: 0, overflow: "hidden",
+    textOverflow: "ellipsis", display: "-webkit-box",
+    WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+  } as CSSProperties;
+}
+
 function makeColors(accent: string) {
   return {
     bg: "#080808",
@@ -147,6 +159,11 @@ export default function CollectionSetsClient({ collection }: { collection: strin
   const colors = makeColors(accent);
   const isAllDay = collectionSlug === "nfl-all-day";
   const isUfc = collectionSlug === "ufc";
+  const isPinnacle = collectionSlug === "disney-pinnacle";
+  // Pinnacle's collectibles are PINS, not moments — the same relabel
+  // components/collection/PackSubNav.tsx already makes on the sub-nav.
+  const pieceNoun = isPinnacle ? "pins" : "moments";
+  const PieceNoun = isPinnacle ? "Pin" : "Moment";
   const [wallet, setWallet] = useState<string | null>(null);
   const [data, setData] = useState<SetsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -202,6 +219,10 @@ export default function CollectionSetsClient({ collection }: { collection: strin
           isAllDay ? "/api/allday-set-progress"
           : isUfc ? "/api/ufc-set-progress"
           : isTopShot ? "/api/sets"
+          // Pinnacle is catalogued render-keyed in pinnacle_catalog and has ZERO
+          // rows in `editions`/`sets`, so /api/sets-db answered every wallet with
+          // a confident "0 sets". It has its own route (2026-09-20).
+          : isPinnacle ? "/api/pinnacle-set-progress"
           : `/api/sets-db?collection=${encodeURIComponent(collectionSlug)}&`;
         const url = endpoint.includes("?")
           ? endpoint + "wallet=" + encodeURIComponent(w)
@@ -234,7 +255,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
     }
     go();
     return () => { cancelled = true; };
-  }, [wallet, collectionSlug, isAllDay, isUfc, reloadKey]);
+  }, [wallet, collectionSlug, isAllDay, isUfc, isPinnacle, reloadKey]);
 
   // Modal a11y: escape-to-close + focus trap (Set audit V5).
   useEffect(() => {
@@ -409,7 +430,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
               NO SETS FOUND
             </div>
             <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted }}>
-              {`No ${collectionObj?.label ?? "this collection"} moments found in this wallet`}
+              {`No ${collectionObj?.label ?? "this collection"} ${pieceNoun} found in this wallet`}
             </div>
           </div>
         )}
@@ -488,6 +509,7 @@ export default function CollectionSetsClient({ collection }: { collection: strin
         const modalSet = openSetDetail ?? openSet;
         const mOwned = modalSet.owned ?? [];
         const mMissing = modalSet.missing ?? [];
+        const openSetHref = setEntityHref(collectionSlug, openSet.setName);
         return (
         <div
           onClick={() => setOpenSet(null)}
@@ -517,17 +539,23 @@ export default function CollectionSetsClient({ collection }: { collection: strin
             <div style={{ fontFamily: monoFont, fontSize: 11, color: colors.muted, marginBottom: 14, letterSpacing: "0.05em", textTransform: "uppercase" }}>
               {openSet.ownedCount} / {openSet.totalEditions} OWNED · {openSet.completionPct}%
             </div>
-            <Link
-              href={`/${collectionSlug}/set/${slugifyName(openSet.setName)}`}
-              style={{ display: "inline-block", fontFamily: monoFont, fontSize: 11, color: accent, textDecoration: "none", border: `1px solid ${accent}4D`, padding: "6px 14px", borderRadius: 4, marginBottom: 14, letterSpacing: "0.08em" }}
-            >
-              VIEW FULL SET PAGE →
-            </Link>
+            {/* ⚠ Only where the set actually HAS a page. setEntityHref returns
+                null for Pinnacle, whose sets live in pinnacle_catalog and have
+                no `sets`/`editions` rows for get_set_detail to find — the link
+                would 404 (lib/entity-href.ts). */}
+            {openSetHref && (
+              <Link
+                href={openSetHref}
+                style={{ display: "inline-block", fontFamily: monoFont, fontSize: 11, color: accent, textDecoration: "none", border: `1px solid ${accent}4D`, padding: "6px 14px", borderRadius: 4, marginBottom: 14, letterSpacing: "0.08em" }}
+              >
+                VIEW FULL SET PAGE →
+              </Link>
+            )}
             {mOwned.length === 0 && mMissing.length === 0 ? (
               <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted, padding: "20px 0", textAlign: "center" }}>
                 {openSet.ownedCount > 0
-                  ? "Moment-level detail isn't available for this set yet"
-                  : "No moments owned in this set yet"}
+                  ? `${PieceNoun}-level detail isn't available for this set yet`
+                  : `No ${pieceNoun} owned in this set yet`}
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -679,6 +707,9 @@ function SetCard({
 }) {
   const c = makeColors(accent);
   const router = useRouter();
+  // null for a collection whose sets have no detail page (Pinnacle) — the card
+  // then stops being a link AND stops being click-to-navigate.
+  const setHref = setEntityHref(collectionSlug, set.setName);
   const isComplete = set.completionPct === 100;
   const inProgress = set.completionPct > 0 && set.completionPct < 100;
   const stripeColor = tierStripeColor(set.setTier);
@@ -720,7 +751,7 @@ function SetCard({
 
   return (
     <div
-      onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; router.push(`/${collectionSlug}/set/${slugifyName(set.setName)}`); }}
+      onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; if (setHref) router.push(setHref); }}
       style={{
         position: "relative",
         background: c.card,
@@ -735,19 +766,19 @@ function SetCard({
 
       <div style={{ padding: "16px 18px 14px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-          <Link
-            href={`/${collectionSlug}/set/${slugifyName(set.setName)}`}
-            prefetch={false}
-            style={{
-              fontFamily: displayFont, fontWeight: 800, fontSize: 16, color: c.text,
-              textTransform: "uppercase", letterSpacing: "0.02em", lineHeight: 1.15,
-              textDecoration: "none", flex: 1, minWidth: 0, overflow: "hidden",
-              textOverflow: "ellipsis", display: "-webkit-box",
-              WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-            }}
-          >
-            {set.setName}
-          </Link>
+          {setHref ? (
+            <Link
+              href={setHref}
+              prefetch={false}
+              style={setTitleStyle(c)}
+            >
+              {set.setName}
+            </Link>
+          ) : (
+            // No set page for this collection — render the heading as text
+            // rather than a link that resolves to a 404.
+            <span style={setTitleStyle(c)}>{set.setName}</span>
+          )}
           {set.series != null && (
             <span style={{
               fontFamily: monoFont, fontSize: 9, color: c.muted, letterSpacing: "0.08em",

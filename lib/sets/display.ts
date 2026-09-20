@@ -21,6 +21,28 @@ export const TIER_STRIPE: Record<string, string> = {
   CHALLENGER: "var(--tier-challenger)",
   CONTENDER: "var(--tier-contender)",
   CHAMPION: "var(--tier-champion)",
+  // Disney Pinnacle expresses scarcity as a VARIANT, not a tier
+  // (lib/collection-tiers.ts records that deliberately), and the Set Tracker
+  // puts the variant in the tier slot so the card's chip says something. The
+  // fifteen below are the live `pinnacle_catalog.variant` vocabulary measured
+  // 2026-09-20 (2,600 rows, no other value); ordered rarest-last. Without them
+  // every Pinnacle stripe fell back to COMMON grey, which is not wrong so much
+  // as silent.
+  STANDARD: "#9ca3af",
+  "BRUSHED SILVER": "#c0c4cc",
+  "SILVER SPARKLE": "#d4d8e0",
+  "DIGITAL DISPLAY": "#60a5fa",
+  "COLOR SPLASH": "#38bdf8",
+  "COLORED ENAMEL": "#34d399",
+  "EMBELLISHED ENAMEL": "#14b8a6",
+  "LUXE MARBLE": "#a855f7",
+  "RADIANT CHROME": "#e879f9",
+  GOLDEN: "#fbbf24",
+  APEX: "#f97316",
+  XENITH: "#fb7185",
+  QUARTIS: "#f43f5e",
+  QUINOVA: "#ec4899",
+  GENESIS: "#facc15",
 }
 
 export function tierStripeColor(tier: string | null | undefined): string {

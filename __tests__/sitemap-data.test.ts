@@ -134,7 +134,15 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     // key nothing on, and analytics_listings_summary read only `cached_listings`,
     // where Candy has zero rows. proxy.ts's Candy anon rule gained a third member
     // in the same commit and `analytics` left THIN_COLLECTION_MISSING_TABS.
-    expect(s).toHaveLength(76)
+    // 76 → 77 on 2026-09-20: Disney Pinnacle gained its Sets tab — the last
+    // per-collection gap on that tab (routes-and-surfaces.md had recorded
+    // "`sets`: all except Pinnacle" since the IA reorg). Same derived coupling
+    // as the three Candy entries above: `pages` grew and /disney-pinnacle/sets
+    // entered segment 0 by itself, so this number is the RECORD, not the cause.
+    // The tab shipped with its own backend (/api/pinnacle-set-progress) because
+    // Pinnacle has ZERO rows in `editions`/`sets` and the generic /api/sets-db
+    // answered every wallet "0 sets" out of a join that matched nothing.
+    expect(s).toHaveLength(77)
     expect(s.find((x) => x.url === `${BASE}/pricing`)).toBeUndefined()
     expect(s.find((x) => x.url === `${BASE}/ufc/sniper`)).toBeUndefined()
     // ⚠ PRESENCE, not just the count — a bare length pin is satisfied by ANY
@@ -144,6 +152,9 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     expect(s.find((x) => x.url === `${BASE}/candy-mlb/analytics`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/candy-mlb/market`)).toBeTruthy()
     expect(s.find((x) => x.url === `${BASE}/candy-mlb/collection`)).toBeTruthy()
+    expect(s.find((x) => x.url === `${BASE}/disney-pinnacle/sets`)).toBeTruthy()
+    // …and the pages Pinnacle still does NOT expose stay out.
+    expect(s.find((x) => x.url === `${BASE}/disney-pinnacle/play`)).toBeUndefined()
     // …and the tabs Candy does NOT have stay out (the complement proxy.ts
     // redirects). A sitemap entry for one is a login redirect handed to a crawler.
     expect(s.find((x) => x.url === `${BASE}/candy-mlb/sniper`)).toBeUndefined()
