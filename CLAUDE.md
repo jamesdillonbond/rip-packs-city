@@ -202,9 +202,9 @@ Full detail: [docs/reference/database.md](docs/reference/database.md).
 
 - **A docs-only TIP can NEVER force a rebuild** — `ignoreCommand` diffs `HEAD^..HEAD`; ⚠ the v13 POST does NOT override it. Touch a non-docs file.
 - **Pro Lambda `maxDuration` hard cap is 800s.** Higher sends the deploy to ERROR *invisibly*.
-- 🚨 **A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMANTICS** — `DYNAMIC_SERVER_USAGE` is invisible to `tsc`/vitest/lint and 500'd every Pinnacle edition URL (09-20). **Verify a `revalidate`/`connection()`/`dynamic` change on a PREVIEW deploy first**; a guard pinning the CALL cannot see it.
+- 🚨 **A GREEN SUITE IS NOT A DEPLOY GATE FOR SEGMENT SEMANTICS** — `DYNAMIC_SERVER_USAGE` lives only in a real render, so `tsc`/vitest/lint and even a guard pinning the CALL are blind to it; it 500'd a live route (09-20). **Verify a `revalidate`/`connection()`/`dynamic` change on a PREVIEW deploy.**
 - ⚠ **`get_deployment.state` LAGS** — corroborate with `ready` vs `buildingAt`, `lambdaRuntimeStats`; **check state PER COMMIT** (an ERRORed deploy is superseded by the next push). 🚨 **After a ROLLBACK the alias fields LIE** — probe the public domain on a value the two builds DISAGREE on.
-- ⚠ **Displaced 09-20 to [tooling-gotchas.md](docs/reference/tooling-gotchas.md) (verbatim, end): a disk-IO spell can FAIL THE PRODUCTION BUILD.**
+- ⚠ **A disk-IO spell can FAIL THE PRODUCTION BUILD** — displaced 09-20, verbatim: [tooling-gotchas.md](docs/reference/tooling-gotchas.md).
 
 ---
 
