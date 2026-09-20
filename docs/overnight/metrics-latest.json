@@ -95,7 +95,7 @@
     "read": "atlas family ~87k s/day + jobid 303 wmc-fmv-changed 28.3k s/day dominate; R117 wmc autovacuum is one contributor, not the driver; all owned / Trevor / route-adjacent"
   },
   "post_ship_watch_pending": {
-    "jobid_324_thp_leg": "RE-SHAPED 15:19Z (8:19 AM PT), migrations 20260920150414/151857/152137: stored per-month baseline (rpc_impossible_parallel_baseline, jobid 575 rotate 22 19 * * * cron_heavy, soft 420 s) + live-month probe. Control 8:21 AM PT 61.5 s, value 0, arm computed_at refreshed. Rotation control: 61 months / 320.6 s (budget 300); 19 months left for the scheduled runs. Exit: 19:52Z (12:52 PM PT) succeeded < 120 s; 19:22Z rotation ok=true months_refreshed >= 7. Falsifier: kill with io_wait < 3 => split the live month by week.",
+    "jobid_324_thp_leg": "VERIFIED 12:52 PM PT: succeeded in 1.2 s (was 600 s x4), arm 0 computed_at 12:52; rotation 12:22 PM: 80 months / 21.5 s ok=true. Both exits met (the 10:39:57 AM Small->Large resize is the other half).",
     "jobid_506_precompute": "VERIFIED 09:35Z: 69 s (was 204), efc_drift_sample_mod=64, drift 0, nba_top_shot 7 ms; Pinnacle arm 57 s is the lane now",
     "r107_daily_reconcile": "FAILED 09:36Z at 600 s (cold streaming DISTINCT ON). Fixed 20260920095145 (per-edition probe, 74.7 s cold, control 51 s). NEXT: 09-21 09:36Z succeeded, pipeline_runs ok=true wall_ms<200000; NOTE the wrapper wrote no row for the 57014 - its killed-run-still-logs claim is unproven",
     "jobid_560_pack_rips_autovacuum": "DONE 09:07Z (2:07 AM PT, 55 min at 50/50): count 3, map 98.1 %, dead 431; dist 5974 lifecycle read Heap Fetches 4128 -> 93, 5.6 s -> 1.3 s cold. COST: six whole-minute launcher blackouts during the index phase (32 job startup timeouts, 0 ok in those minutes, 2-3 jobs running) = disk saturation at the minute boundary, NOT slot exhaustion",
@@ -133,5 +133,7 @@
       "leg 324 control 61.5 s value 0",
       "rotation control 61 months ok=true"
     ]
-  }
+  },
+  "r123_swallowed_writes": "app/api half shipped f5318f0f2 (10 routes); edge half shipped 6f094cc0d (11 functions, 3 deployed: compute-allday-pack-ev v52 verified 12:37 PM pool_write_errors=0, pinnacle-owner-discovery-forward v45, ingest-pinnacle-mints v27). Remaining: 3 edge fns with hardcoded gate keys in prod ride R21.",
+  "needs_trevor_new": "ingest-pinnacle-mints answers 403 to every dispatch since 11:40 AM PT (another session's v22->26 deploy, env-gated, secret missing/mismatched): supabase secrets set PINNACLE_MINTS_GATE_KEY=<value jobids 83/84 send>"
 }
