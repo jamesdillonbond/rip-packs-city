@@ -11,6 +11,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-19 · 🐢 THE pack_rips AUTOVACUUM WAS THE NEXT SPELL — the 0.02 trigger fired unthrottled into a 1.28 GB index pass (ten `job startup timeout` rows at 8:18 PM PT), and the throttle took two tries because PG14 charges 2 per page miss, not 10 · Cowork cloud + laptop VM
+
+**Shipped: 2 migrations (`20260920032225`, `032539`) — per-table `autovacuum_vacuum_cost_delay/limit` on `pack_rips`, final value 50 ms / 50 credits.**
+
+🐢 **What happened, in order.** Two entries down, `20260920031313` set `pack_rips` to 0.02; with 128 k dead against a 73.8 k threshold the worker started within the minute (8:14 PM PT), scanned the 764 MB heap in ~4 min at the disk's full rate, and began the 1.28 GB index pass. **8:16–8:19 PM PT: `rpc-ts-listings-atlas-sync` killed at 127 s and 120 s, then TEN `job startup timeout` rows in two minutes** (worker slots squatted by lanes waiting on IO — the #73 shape, produced this time by autovacuum). `sales_2023`'s pass finished cleanly at 8:23 PM (→ 100 %). ⛔ **An autovacuum worker cannot be cancelled from `postgres`** (`Only roles with the SUPERUSER attribute may cancel queries of roles with the SUPERUSER attribute`) — but ⭐ **`ALTER TABLE … SET (reloptions)` takes SHARE UPDATE EXCLUSIVE, which autovacuum yields to, so the ALTER itself cancels the pass**; the trigger re-fires at the next naptime with the new settings, and the heap re-scan is cached and cheap. That is the operator's cancel button on this instance, and it is now written down.
+
+📏 **The first throttle (20 ms / 200) did not throttle.** Sized on the pre-PG14 cost model; with `vacuum_cost_page_miss = 2`, 200 credits per 20 ms is ~5,000 misses/s ≈ 40 MB/s — above the tier's ~22 MB/s disk. Measured: the restarted pass (8:22:57 PM) re-scanned the heap in 2 min and the box read **active 21 / IO-waiting 16** at 8:25 PM. **`032539`: 50 credits / 50 ms = ~500 misses/s ≈ 4 MB/s** — the restarted pass (8:25:55 PM) is scanning at ~600 cached blocks/s (the limit binding), and **0 pg_cron failures in the 17 runs since 8:26 PM** while it runs. The index pass at that pace is ~5–6 min at a fifth of the disk.
+
+⚠ **Cost of the whole visibility-map episode tonight, added up honestly:** ~16 lane failures across two self-inflicted spells (8:07–8:14 manual scans; 8:16–8:25 unthrottled autovacuum), all self-clearing, no data lost, every lane back on its cadence. What it bought: nine tables' maps at 99–100 % (two still in progress: `pack_rips` finishing now) and thresholds that keep them there. **Rule stated once for the register:** on this tier, a per-table 0.02 trigger on a table with > 500 MB of indexes MUST ship with a per-table cost throttle in the same migration, sized on `vacuum_cost_page_miss = 2`. **Exit:** `pack_rips` `autovacuum_count` = 3, map > 95 %, no startup-timeout step during the pass. **Falsifier:** a step anyway ⇒ pacing is not the lever; the 11-index shape is.
+
+- **Revert:** `ALTER TABLE public.pack_rips RESET (autovacuum_vacuum_cost_delay, autovacuum_vacuum_cost_limit);`
+
 ### 2026-09-19 · 🔍 THE `zz-vac-1..8` SWEEP AT 8:00 PM PT — the clock SPLITS the attribution rather than settling it: the two big scans did cause a spell, the 8:06:23 PM cluster predates them, and the post-8:12 rise is neither · Claude Code (Windows box, session -52)
 
 **Shipped: nothing — no code, no DB change, nothing unscheduled by me. A measurement, a half-retraction of my own first call, an instrument trap, and one correction to tonight's handoff.**
