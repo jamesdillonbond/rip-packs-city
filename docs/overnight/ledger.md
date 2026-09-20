@@ -11,6 +11,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🚨 A DEAL-BOARD HONESTY GUARD WENT 57.9 HOURS STALE WITH BOTH ITS WRITERS DOWN AND FOUR INSTRUMENTS BLIND — and when the route DID finish it published the outage as `thin_fmv_flagged: 0` · Claude Code cloud
+
+**Shipped: 1 migration (`20260920182954`, a `pipeline_cadence_watchlist` row) + `app/api/cron/refresh-conflated-editions/route.ts` + 6 test arms INVERTED, 5 added.**
+
+📏 **Measured ~11:25 AM PT, not inferred.** `topshot_thin_fmv_editions` — the deal board's "thin data" caveat set, which alerts also suppress on — held **7 rows, every one stamped 2026-09-18 01:30 PT: 57.9 hours stale.** Both writers were down at once:
+
+| writer | 09-19 | 09-20 |
+|---|---|---|
+| `/api/cron/refresh-conflated-editions` (120 s wall) | killed — heartbeat, no terminal row | killed |
+| pg_cron job 63 `rpc-refresh-thin-fmv-guard` | **failed**, statement timeout @ 601 s | **failed** @ 604 s |
+
+⚠ **A documented trap confirmed live rather than quoted:** the function declares `SET statement_timeout TO '120s'` and pg_cron ran it **604 s** anyway. `SET statement_timeout` on a function IS inert on pg_cron.
+
+🚨 **FOUR INSTRUMENTS, ZERO COVERAGE — that is the whole reason it was silent:** `v_pipeline_failure_rates` is `HAVING sum(runs) >= 5` over 2 days and this lane is **daily**, so it can never reach the floor · `pipeline_cadence_watchlist` had **no row** · **no** `check_*` invariant names `thin_fmv` (swept every `check\_%` body: zero hits) · and the pg_cron failure shows only in `cron.job_run_details`, never `pipeline_runs`.
+
+⛔ **AND THE ROUTE REPORTED THE OUTAGE AS A MEASURED ZERO.** All three non-fatal sweeps swallowed their error into a `console.log` while the counter sat on its `0` initialiser, so `extra.thin_fmv_flagged: 0` with `p_ok: true` read exactly like *refreshed fine, nothing was thin*. Now every non-fatal counter starts **`null` (unknown)**, each lane records `lane_errors`, the two remap legs are summed **only when both succeeded** (a partial sum is a partial read published as fact), and **`p_ok` means the LANES worked**, not that the body reached its end.
+
+⚖ **The inverted tests had a stated reason, and it was measurably wrong.** Six arms pinned `p_ok: true` / `thin_fmv_flagged: 0`, on the argument that reddening "would page on a benign miss". **That page cannot happen** — the failure-rate view's 5-run floor over 2 days is unreachable for a daily lane, so `p_ok` here has never been able to page anything. The cost it traded for did happen. Arms inverted, never deleted; the all-green control and a **genuine-zero** arm (0 = measured-none, null = did-not-report) keep the opposite failure mode pinned. Mutation-proven both halves.
+
+⭐ **The watchlist row ships with its POSITIVE CONTROL, not an assumption.** `detect_stalled_pipelines()` has a deliberate new-row grace (`created_at < now() - max_silent_minutes`), so the row **cannot fire until ~09-21 17:30 PT** — it is not armed on the stall that motivated it. Running its predicate with only that clause removed selects the lane **today**: `silent_minutes 4515` vs 1800, classification **`invoked_but_never_logged`** — the function's own name for a route killed before logging — `grace_passed false` the only unmet condition. ⛔ **`created_at` left TRUTHFUL rather than backdated**: the function reads it as "how long has this arm been armed", and faking it to win one tick makes the instrument lie about itself.
+
+⚠ **Filed, not fixed:** that grace clause uses the ROW's age as a proxy for the PIPELINE's age. It holds for a new pipeline and is wrong in exactly this case — an old lane given a new row is graced as though it had never run.
+
+👉 **Deliberately NOT done: the performance.** Both writers are dying on duration under the live IO pressure (#126), and tuning a page size or a wall against a moving subject is the thing this file keeps recording as a mistake. The guard now reports; the speed is a separate, measured decision.
+
+- **Revert:** `git log --grep='swallowed lane'` → `git revert <sha>`; DB half `DELETE FROM public.pipeline_cadence_watchlist WHERE pipeline = 'refresh-conflated-editions';`
+
 ### 2026-09-20 · 🔧 THE MOMENTS OWNERSHIP SWEEP NOW READS THE RIGHT POPULATION — a saved wallet is re-verified because a USER saved it, not because it happened to be a seeded demo wallet · Claude Code Windows box
 
 **Shipped: `app/api/seed-wallet-refresh/route.ts` gains a saved-wallet ownership sweep (cohort-hashed, staleness-gated, burst-capped) + `__tests__/seed-wallet-refresh-saved-sweep.test.ts` (20 arms). No DB change, no new schedule — it rides the four cron-job.org cohorts that already exist.**
