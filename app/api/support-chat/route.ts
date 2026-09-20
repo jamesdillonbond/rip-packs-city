@@ -3235,7 +3235,29 @@ async function executeTool(
               // accepted — so an over-long issue turned a real emergency into an
               // honest non-delivery. Truncating with a visible notice actually pages.
               text: fitTelegramText(`\u{1F6A8} RPC Support Escalation (HIGH)\nCategory: ${category}\nSession: ${ctx.sessionId}\nUser: ${ctx.ownerKey ?? "(anon)"}\n\nIssue: ${reason}`),
-              parse_mode: "HTML",
+              // 🚨 `parse_mode: "HTML"` REMOVED 2026-09-20. This message carries no
+              // markup of its own — it is four labelled plain-text lines — so HTML
+              // parsing bought nothing here and added a failure mode: Telegram HARD
+              // REJECTS a bare `<` that does not open a tag it recognises (HTTP 400,
+              // "can't parse entities"), and `reason` is model-written from a user
+              // conversation, with `category` model-supplied too. A user writing
+              // "price < FMV" or pasting any markup 400'd the send.
+              //
+              // ⭐ Why that was the worst possible place for it: `pageDelivered` is
+              // set ONLY when the send is accepted, precisely so we never tell a user
+              // they were paged when nobody was. So the defect did not announce
+              // itself — it converted a real HIGH-urgency escalation into an honest
+              // non-delivery. The user is correctly told they were not paged, and
+              // nobody is paged. The output is silence.
+              //
+              // Same class as the 5-hour sentinel outage on 2026-09-19 (a `<` in an
+              // ack reason) and the 09-11 length rejection: a property of the CONTENT
+              // decides whether the alarm is heard. Escaping the values would also
+              // work; dropping the parse mode removes the failure mode instead of
+              // guarding it, and leaves this sender out of the guard's population.
+              // Pinned by __tests__/telegram-html-senders-escape-their-values.test.ts.
+              // ⚠ If markup is ever wanted here, escapeTelegramHtml() EVERY value
+              // first — do not re-add parse_mode alone.
             }),
             // 10s cap. `fetch()` has NO default timeout and this runs inside
             // `after()` under maxDuration 60, where a kill runs neither the
