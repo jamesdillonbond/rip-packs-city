@@ -11,6 +11,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🚨🚨 I TOOK PRODUCTION DOWN ON THE 11th BUSIEST ROUTE — `await connection()` inside an ISR segment raised `DYNAMIC_SERVER_USAGE`, every `/disney-pinnacle/edition/<render_id>` answered **500**, and 17,927 green tests could not see it · Claude Code cloud
+
+**Shipped: alias ROLLED BACK to `dpl_q9kZF3Q2P3MfDBotQTgCsnyrqTXU` (225c531a8) and verified serving 200; `main` reverted (`caf39685d`) so nothing can redeploy the break. The namespace move is OUT of production and out of `main`.**
+
+🚨 **THE BREAK.** `e266b1be1` moved Pinnacle's per-pin page onto the shared edition route and added `await connection()` in the Pinnacle branch to keep it rendering per request. That segment exports `revalidate = 600` and ships a `loading.tsx`, so Next had already committed to a prerender when `connection()` fired — **`digest: 'DYNAMIC_SERVER_USAGE'`**, a hard 500, on every Pinnacle edition URL. ⚠ **Real traffic hit it**: `OEV3-TOYS-JESS-S4B` 500'd at **21:14:55 PT**, which was not one of my probes.
+
+⛔ **THE LESSON IS NOT "connection() IS TRICKY".** It is that I shipped a **RENDERING-MODE CHANGE** straight to an auto-deploying `main` on the strength of a green suite — and **no test in this repo can see `DYNAMIC_SERVER_USAGE`.** It is not a type error, not a lint error, not a unit-test failure; it exists only in a real Next render. 🚨 **`tsc` + 17,927 tests + a ratchet at baseline is NOT a deploy gate for a change to route segment semantics.** I even wrote a source-level guard *pinning the call that broke it*, which is the sharpest possible statement of the gap: **the guard pinned that the line was PRESENT, never that the page still RENDERED.**
+
+⭐ **WHAT I ACTUALLY HAD AND DID NOT USE: a preview deployment.** Vercel builds one for any branch. CLAUDE.md's "never create feature branches" carries its own exception — *"if a branch must be created for a risky refactor"* — and a URL migration touching a route's rendering mode is exactly that. **The redo verifies on a preview URL BEFORE the production alias, and that is now the rule for any segment-config change.**
+
+⚠ **AND THE IRONY IS THE POINT: `connection()` was there to PREVENT a regression.** Without it the page inherits `revalidate = 600`, so a transient read failure would cache "this pin didn't load" for ten minutes. I was right that the hazard exists and wrong that this was the way to avoid it — **a mitigation that 500s the page is worse than the thing it mitigates, by a wide margin.** ⭐ **Cost the hazard AGAINST the mitigation's own failure mode, not against zero.**
+
+📋 **The redo (not yet shipped), decided:** drop `connection()` and let the Pinnacle arm inherit the segment's ISR, which is **exactly what the other four collections already do on this same route** — so the failed-read-cached hazard is pre-existing and site-wide, not something the move invents. ⚠ **If that hazard is worth fixing it must be fixed for all five at the segment level**, and it is a separate, measured change.
+
+✅ **Verified after rollback:** `www.rippackscity.com` alias back on 225c531a8; `/pinnacle/moment/OEV1-TOYS-BUZZ-S4B` returns **200** with `<h1>Buzz Lightyear</h1>` and the correct canonical; `main` at `caf39685d` with `tsc` clean and the five affected test files green.
+
+- **Revert:** nothing to revert — this entry RECORDS a revert. `caf39685d` restores `225c531a8`'s behaviour. ⛔ **Do not re-apply `e266b1be1` as-is**; it is the broken commit.
+
 ### 2026-09-20 · 🔄 PINNACLE'S PER-PIN PAGE MOVES INTO THE COLLECTION NAMESPACE — `/pinnacle/moment/<render_id>` → `/disney-pinnacle/edition/<render_id>`, the last place Pinnacle was shaped like nothing else on the site · Claude Code cloud
 
 **Shipped: the page body moved to `PinnacleEditionDetail.tsx` beside the shared edition route (which now renders it), the old route became a permanent redirect, `next.config.ts` reverse hop re-pointed, sitemap + every internal href re-pointed, 1 new guard, 6 test files re-pinned, `routes-and-surfaces.md`. No DB change.**
