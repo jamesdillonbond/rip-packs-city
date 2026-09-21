@@ -3236,3 +3236,39 @@ if (isMarkerSuppressed(rawLines, line, MARKER, LOOKBACK)) continue
 ```
 
 ⛔ **So the marker belongs in the migration HEADER, outside the function body — and putting it inside the body is actively harmful**, because a comment there is part of `prosrc`: a documentation-only edit becomes a schema change, and the file stops matching the deployed function until a second migration re-applies it. That nearly cost a redundant migration on 2026-09-20 before the marker moved to the header and the body reverted byte-identical to production. Also: a reason longer than the lookback window pushes the marker out of it — put the prose first, the marker line last.
+
+---
+
+## A live instance of the POPULATION rule, from verifying a fix rather than writing a guard (2026-09-20)
+
+CLAUDE.md's *"a control's POPULATION must be the set the property is TRUE of, not a proxy that
+coincides today"* is usually read as advice about writing a guard. It bites just as hard when
+**re-checking a filed claim**, and it nearly produced a false refutation of a correct record.
+
+Register #128 (c) states *"`still_zero` is now 0 on all nine"* for the nine Top Shot distributions
+whose `mv_topshot_pack_realized_ev.realized_mean` had been publishing exactly USD 0.00. Verifying it,
+the obvious query is *count `pack_rips` rows per `dist_id`*:
+
+| dist | rows at zero, ALL rips | rows at zero, MV population |
+|---|---|---|
+| `1765` | 31 | **0** |
+| `7738` | 1,066 | **0** |
+| `8431` | 1,313 | **0** |
+| `8612` | 10 | **0** |
+
+The left column reads as *the record is false on eight of nine*. It is not. `mv_topshot_pack_rip_values`
+is `topshot_pack_rip_attribution ⋈ pack_rips WHERE pull_value_usd IS NOT NULL`, so the **attributed**
+set is the population the claim is about — the dists also contain tens of thousands of un-attributed
+rips (`1765` alone has 13,155) that the board never averages and the repair leg never had to touch.
+Over the right population the count is **0 on all nine**, with means USD 0.24 → 80.19 exactly as filed.
+
+⭐ **The tell was available before the query ran:** the filing quoted *365 rips* and *`n_opens >= 10`*.
+A 13,155-row dist cannot be the subject of a 365-row claim. **When a re-check disagrees with a filing
+by two orders of magnitude, suspect the population before the filing.**
+
+⚠ **And read the view definition, not the view's name** — `mv_topshot_pack_rip_values` sounds like
+"every rip's value" and is not. The `WHERE pull_value_usd IS NOT NULL` is what makes an honest NULL
+disappear from the average instead of dragging it down, which is the whole point of #128's fix, and it
+is also what makes `7730` sit at exactly `n_opens = 10`: **one more row going NULL drops that dist off
+the board entirely.** A fix that replaces fabricated zeros with NULLs moves rows *out* of a population
+gated on NOT NULL, so check the gate's floor after any such repair.
