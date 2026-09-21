@@ -2830,3 +2830,25 @@ Still binding; CLAUDE.md carries a pointer.
 
 - ⚠ **CADENCE AND BUDGET ARE ONE DECISION** — nothing fixes a tick that cannot FINISH; its killed delta rolls back, then GROWS against the frozen table. ⚠ **≡0 mod 5 minutes blackout worst (9.15/5.72%); a slot move can kill in-job clock SAMPLING.**
 - ⛔ **A 600 s pg_cron reader wants an HOUR-SET before a minute, and the READ is the lever, not the slot** (leg 324: cron-and-schedulers.md).
+
+## R124 — an alarm's own window can straddle a change point, and then it publishes the dead world (2026-09-20, PT)
+
+⭐ **CLAUDE.md carries the one-line rule; this is the case, and it is the converse of the rule above it.** A window sitting ENTIRELY AFTER a change point cannot tell a STEP from a LEVEL. A window that STRADDLES one is worse, because it keeps reporting the world that ended — **for the full width of the window, with no signal that anything happened.**
+
+📏 **The instance.** `get_pipeline_alerts()`'s `failure_rate` arm read `v_pipeline_failure_rates`, whose window is a FIXED `day >= CURRENT_DATE - 2` (three calendar days, not the "2 days" its own detail string claimed — `20260901183010` established the width and never corrected the wording). The instance restarted at **10:39:56 AM PT on 2026-09-20** for the Small → Large resize. Split at that restart, the five lanes #126 was filed about measured **109 / 228 runs failed before it and 0 / 34 after** (`backfill-pack-rip-metadata` 29/42 → 0/6 · `lock-check-batch` 42/81 → 0/12 · `run-insider-detectors` 24/41 → 0/6 · `price-snapshots` 8/52 → 0/8 · `fmv-backfill` 6/12 → 0/2). 0 of 34 against a 47.8 % base rate is **p ≈ 2.5e-10**, and `lock-check-batch` clears on its own sample alone (12/12, p ≈ 1.5e-4).
+
+🚨 **What the alarm was saying at the same moment (4:38 PM PT): `backfill-pack-rip-metadata` 61.0 % high · `run-insider-detectors` 52.6 % high · `lock-check-batch` 44.4 % · `fmv-backfill` 47.1 % · `daily-portfolio-snapshot` 28.6 %** — every number dominated by hours that no longer existed, and it would have gone on saying it until ~09-22 10:40 AM PT. ⛔ **A live alarm row is not evidence of a live problem.** The row is evidence that *the arm's window contains* a problem, which is a different claim whenever a change point sits inside it.
+
+⚠ **The second-order trap, which is the one that actually costs an hour:** the arm quoted `run-insider-detectors`' last error as `nba_top_shot: upstream request timeout`. That string reads as a live upstream outage and is **pre-restart**; the lane had answered 6 of 6 since. **An error string carried by a straddling window inherits the window's dishonesty.**
+
+✅ **FIXED IN THE INSTRUMENT, `20260921004921`.** The view gained a post-restart slice from `pipeline_runs` (run grain — the pooled half stays on `pipeline_runs_daily`, which is day grain and cannot be split mid-day), and the arm now branches on `pg_postmaster_start_time()`:
+
+- restart inside the window **and** ≥ 10 post-restart runs → severity and headline come from the post-restart slice; a row the split clears is emitted at **`info`** with BOTH halves spelled out, never dropped (*remove the failure mode; do not soften the detector*), and a `last_error` with no failure after the restart is labelled **PRE-RESTART**.
+- restart inside the window, fewer than 10 post-restart runs → **nothing changes** except a straddle warning naming the restart and the counts so far. The arm deliberately stays loud.
+- no restart in the window → exactly as before.
+
+⚠ **The 10-run floor is a JUDGEMENT, not a measurement:** 0 failures in 10 runs against the view's own 25 % trigger is p = 0.75¹⁰ = 5.6 %, about the conventional threshold. ⚠ **`restart_in_window` can only be true for a restart inside `CURRENT_DATE - 2` (≤ 72 h) and `pipeline_runs` retains ~73 h**, so the post slice is never truncated by retention; if it ever were, the count would be LOWER and the arm would stay on the pooled rate — the conservative direction.
+
+⛔ **WHAT THIS DOES NOT COVER, stated so nobody reads it as more than it is: `pg_postmaster_start_time()` sees INSTANCE RESTARTS ONLY.** A deploy, a migration, an index build or an upstream change is just as much a change point and this arm is still blind to all of them. The general discipline — list what landed in your window before quoting a rate across it — is not replaced by this fix.
+
+📌 **Verified live at 5:52 PM PT on the real function, not a probe:** `lock-check-batch` → `info`, *"0/14 runs failed (0.0%) SINCE THE INSTANCE RESTART at Sep 20 10:39 PT — CLEARED BY THE SPLIT… The pooled figure is 42/94 (44.7%)… and it STRADDLES that restart, so it describes a box that no longer exists. Last error (PRE-RESTART — nothing has failed since)"*; `backfill-pack-rip-metadata` still **high** on 7 post-restart runs, carrying the straddle warning. **The detector got a truthful denominator; it did not get quieter.**
