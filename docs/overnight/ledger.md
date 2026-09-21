@@ -11,6 +11,90 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-20 · 🔐 THE GATE-KEY ROTATION FINALLY COMPLETES — all six de-hardcoded functions deployed, three lanes rotated onto keys that were NEVER public, and the procedure's own leak vector is removed · Cowork cloud (Trevor set the secrets; all deploys/rotations from here)
+
+**The residual open since 2026-08-22 is closed.** Six functions carried the secret-reading + `_OLD`
+dual-accept shape in the repo since `e66884f79` (08-12) and had **never been deployed**, so their
+secrets were inert and 10 of 14 gate-keyed crons still sent the keys burned in git history. All six
+are now deployed; three lanes are genuinely rotated.
+
+#### What shipped
+
+| function | jobs | deployed | cron rotated | key now |
+|---|---|---|---|---|
+| `ingest-pinnacle-mints` | 83, 84 | v34 (incl. R123) | ✅ | fresh, never public |
+| `ingest-topshot-pack-opens-history` | 56 | v32 (incl. R123) | ✅ | fresh, never public |
+| `ingest-allday-pack-opens` | 20 | v37 (incl. R123) | ✅ | fresh, never public |
+| `compute-golazos-pack-ev` | 44 | v33 (incl. R123) | — | ⚠ still the old 26-char burned key |
+| `backfill-pack-opens-api` | none | v37 | n/a | fresh |
+| `backfill-allday-pack-supply` | none | v29 | n/a | fresh |
+
+All six boot and gate correctly (403 `{"error":"forbidden"}`; Golazos 401 by its own design).
+Verified green by real cron ticks: Pinnacle 18:20 / 18:30 (4–5 rows, 7.0 s), topshot-history 19:26.
+
+#### ⭐ THE PROCEDURE'S LEAK VECTOR IS NOW REMOVED, NOT JUST DOCUMENTED
+
+The recorded rotation step 2 was *"SELECT the key OUT of `cron.job` and paste it into the dashboard
+secret"* — by construction the one moment a live key exists in a console, a clipboard and whatever
+transcript is recording it. That is how **nine keys leaked at once on 2026-08-18**.
+
+`20260921004437` adds **`rotate_cron_gate_key(p_jobids int[], p_new_key text)`** (SECDEF,
+service_role only). A token-gated edge probe reads its OWN secret and hands it straight to that
+function, which rewrites only the `?key=` of the named jobs. **The value never reaches a human, a
+console or a transcript**; the caller gets back a SHA-256 prefix to verify with. The operator now
+only ever WRITES a fresh secret — never reads an existing one.
+
+⛔ **The format guard is load-bearing and it fired on the first real use.** Three placeholder strings
+were pasted unsubstituted into `cron.job` during the 08-15 repair and the 403s stopped, so it *looked*
+correct. Today the guard rejected a 41-char key outright — see below.
+
+#### 🚨 THE DEFECT THE GUARD CAUGHT: password-manager keys are not URL-safe
+
+Three of the six secrets were first set to **40–41 char values containing characters outside
+`[A-Za-z0-9_-]`** — the signature of a password-manager generator. These keys live in a URL as
+`?key=...`, so a `&` ends the parameter and a `#` truncates it. Had the guard not refused, cron would
+have been left broken in a new and far subtler way than the 403 it was fixing.
+⭐ **A gate key must be generated as `rpc_pls_` + 32 hex** (`"rpc_pls_" + [guid]::NewGuid().ToString("N")`),
+never by a password manager. Diagnosed without reading any key, by a structural probe reporting only
+set/length/charset/SHA-256 prefix per secret and comparing against `sha256` of what cron sends.
+
+#### ⚠ THE INSTRUMENT TRAP THAT COST 6 HOURS, AND THE DISCIPLINE THAT FIXES IT
+
+`ingest-pinnacle-mints` was deployed at 11:43 against a secret that did not match, and 403'd for
+**6 h 38 m** (11:42 → 18:20). No data was lost — the cursor holds by design and resumed at the exact
+block — but the lane was down.
+⛔ **A 403'd edge function writes NO `pipeline_runs` row, and `cron.job_run_details` still says
+`succeeded`.** The only instrument that showed it was `net._http_response.status_code` + `content`.
+Two re-sets of the secret and a redeploy all failed before the structural probe named the real cause.
+📌 **Deploy the lane with the FASTEST tick first** (jobid 84 is `*/2`): the feedback loop is the whole
+cost of being wrong.
+
+#### ⛔ A DEPLOY MUST RE-READ ITS SOURCE IMMEDIATELY BEFORE SHIPPING
+
+R123 (`6f094cc0d`, today) touched eleven edge functions — **four of these six** — after their sources
+had been read for this pass. The first Pinnacle deploy therefore shipped a **pre-R123 build over a
+fixed one**, caught only by a file-size mismatch and corrected in v34. Every subsequent deploy in this
+pass re-read the file first. ⭐ *A source read is stale the moment a concurrent session commits; the
+repo moved four times during this pass.*
+
+📝 **Still owed on R123: eleven functions were fixed, only three were deployed by its own session.**
+The four in this table are now deployed as a side effect. The rest are not, and nobody has claimed them.
+
+#### Open / not done
+
+- ⚠ **`compute-golazos-pack-ev` is staged, not rotated.** Its secret correctly matches cron — but that
+  value is the old 26-char key from git history. Finishing it needs one fresh secret from the operator,
+  then `rotate_cron_gate_key([44], …)`. It is the last of the six on a burned key.
+- ⚠ **10 → 7 of 14 gate-keyed crons still carry original short keys** (22–28 chars): jobs 22, 25, 27,
+  29, 44 and the 15/16 + 42 + 26 set already rotated. Each is the same two-step now.
+- 🧹 `zz-gate-diag` (token-gated structural probe + rotate path) is deployed. **Tombstone it when the
+  remaining rotations are done** — it reports lengths and digests, never values.
+
+**Revert.** Each function: redeploy its previous version from the repo at the prior commit. Each cron:
+`rotate_cron_gate_key('{<jobids>}', '<the other key>')` — but note the outgoing keys were never read,
+by design, so rollback is forward: set the secret, then rotate. The `_OLD` dual-accept slot exists on
+all six for a zero-window change.
+
 ### 2026-09-20 · ✅ THE SAVED-WALLET SWEEP IS VERIFIED ON AN UNFORCED WAVE — and my own CLAUDE.md rule had been displaced WITHOUT the pointer that makes displacement safe · Claude Code Windows box
 
 **Shipped: docs only — CLAUDE.md regains a one-line pointer to the displaced marginal-cost rule; `cron-and-schedulers.md` replaces its `⏳ NOT verified on an UNFORCED wave` block with the measurement. No code, no DB change.**
