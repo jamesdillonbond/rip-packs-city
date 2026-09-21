@@ -1811,3 +1811,63 @@ Reached only after `git push --dry-run origin main` has actually been tried and 
 From the **Ledger** section: 🚨 **`git revert <sha>` paths recorded BEFORE 2026-08-03 no longer resolve** — that day's `filter-repo` rewrote every pre-purge sha; find the commit by MESSAGE (`git log --grep=`). The **DB half of every revert path is unaffected**. Purge residue: #22. (The ledger's own header carries the same warning with the 2026-08-03 measurement.)
 
 From **Timestamps**: ⚠ Git Bash lies BOTH ways and the **web sandbox is PDT, not UTC**, so "subtract 7h from `date -u`" lands a day early.
+
+---
+
+## Stray agent worktrees, and the stale `index.lock` (2026-09-20)
+
+Three git hazards from one session on the Windows box, all of them from agent tooling rather than from git itself.
+
+### 1 · `isolation: "worktree"` leaves a full second checkout behind, and nothing cleans it up
+
+An agent run with `isolation: "worktree"` checks the repo out again under `.claude/worktrees/<name>/`. That directory is **not gitignored** (only three files under `.claude/` are tracked — `hooks/*`, `settings.json`), so it is invisible to `git status` while being a complete second copy of the tree on disk.
+
+⭐ **`git worktree list` is the ONLY thing in the repo that names one.** Neither `git status`, nor a `find` for untracked files, nor the ratchet's own error output mentions it.
+
+```
+$ git worktree list
+C:/Users/TDill/rip-packs-city                                      5cd1130d1 [main]
+C:/Users/TDill/rip-packs-city/.claude/worktrees/cool-gould-f682a2  f196b9899 [claude/cool-gould-f682a2]
+```
+
+**Before removing one, establish it holds nothing** — three checks, all cheap:
+
+```bash
+cd .claude/worktrees/<name> && git status --porcelain | wc -l     # 0 = nothing uncommitted
+git log --oneline main..claude/<name>                             # empty = no unique commits
+git merge-base --is-ancestor <its HEAD> main && echo contained    # fully in main
+```
+
+Then `git worktree remove <path>` and `git branch -D claude/<name>`.
+
+⚠ **ON WINDOWS THE DIRECTORY REMOVAL USUALLY FAILS WHILE THE ADMIN REMOVAL SUCCEEDS** — `error: failed to delete '…': Permission denied`, and afterwards `git worktree list` is clean but the folder is still there. It is emptied (0 files) and harmless; `rmdir` then reports `Device or resource busy` because a process holds a handle on it (a shell whose CWD was ever inside it — *including this session's own persistent Bash shell*). ⛔ **Do not chase it**: it is untracked and empty, so it dirties nothing, and it clears when the holding process exits. Avoid `cd`-ing into a worktree you intend to remove.
+
+🚨 **THE REMOVAL IS NOT THE FIX — the eslint ratchet read 6,208 files instead of 3,119 and reported all 19 rules doubling.** The durable fix is that `.claude/**` can no longer contribute to any instrument (`eslint.config.mjs` `globalIgnores`). Full case: [testing-and-ci.md](testing-and-ci.md).
+
+### 2 · A stale, zero-byte `.git/index.lock` from a crashed agent git process
+
+Twice in one evening, `git add` failed with:
+
+```
+fatal: Unable to create '…/.git/index.lock': File exists.
+Another git process seems to be running in this repository, or the lock file may be stale
+```
+
+⚠ **Both were stale, and the discriminators are cheap — check them, do not just delete.** A live `git add` holds the lock for milliseconds:
+
+- **age** — `ls -l --time-style=full-iso .git/index.lock` against `date -u`. 29 minutes and 5 minutes here.
+- **size** — 0 bytes. A working git process has written into it.
+- **process** — `Get-Process -Name git` in PowerShell returned **0**.
+
+With all three, `rm -f .git/index.lock` is safe. ⛔ **With a live git process it is NOT** — deleting the lock under a running write corrupts the index. ⚠ And this is a real multi-writer repo (see the concurrent-sessions rules in CLAUDE.md), so "no git process on THIS box" does not mean no writer anywhere; it only means nothing here holds this lock.
+
+### 3 · `git push` refusing because you are BEHIND reads exactly like a permissions refusal
+
+Already in CLAUDE.md as *diagnose from the ERROR STRING, not from the fact that it failed* — recorded here because it fired twice in one session, both times because another clone had pushed in between:
+
+```
+error: failed to push some refs to 'https://github.com/…'
+hint: Updates were rejected because the tip of your current branch is behind
+```
+
+That is `(non-fast-forward)`, i.e. **rebase and retry**, not a credential problem. The push capability on this box is fine — `git push --dry-run origin main` is the one-command test, and its output distinguishes the two cases in the first line.

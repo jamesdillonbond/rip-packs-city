@@ -2858,3 +2858,11 @@ Still binding; CLAUDE.md carries a pointer.
 ⛔ **WHAT THIS DOES NOT COVER, stated so nobody reads it as more than it is: `pg_postmaster_start_time()` sees INSTANCE RESTARTS ONLY.** A deploy, a migration, an index build or an upstream change is just as much a change point and this arm is still blind to all of them. The general discipline — list what landed in your window before quoting a rate across it — is not replaced by this fix.
 
 📌 **Verified live at 5:52 PM PT on the real function, not a probe:** `lock-check-batch` → `info`, *"0/14 runs failed (0.0%) SINCE THE INSTANCE RESTART at Sep 20 10:39 PT — CLEARED BY THE SPLIT… The pooled figure is 42/94 (44.7%)… and it STRADDLES that restart, so it describes a box that no longer exists. Last error (PRE-RESTART — nothing has failed since)"*; `backfill-pack-rip-metadata` still **high** on 7 post-restart runs, carrying the straddle warning. **The detector got a truthful denominator; it did not get quieter.**
+
+---
+
+## Displaced from CLAUDE.md 2026-09-20 PT, fourth pass (verbatim) — the "a filed X is a hypothesis" pile
+
+Condensed in CLAUDE.md to make room for the stray-worktree / regenerator-as-deleter rules. Every clause below is still binding; the CLAUDE.md line now carries the lead and points here.
+
+- ⚠ **A filed FINDING is a hypothesis — re-derive what it measured before acting** (several refuted). ⚠ **So is a filed DECISION NOT TO ACT, and that is the one nobody re-checks — the tell is a cost stated with no number in it.** ⚠ **A WEAK reason CROWDS OUT the strong one and becomes PERMISSION when it dissolves.** ⛔ **A stale JUSTIFICATION can be INVERTED — what it named may now be the WEAKEST member of the set it excluded, and the tell is a reason citing a SHIP DATE.** ⚠ **A freshness STAMP is not a RATE, and a candidate its own NO-CHANGE CONTROL outperforms is not shown to work**. ⚠ **Re-TEST a stated exit condition, never re-read it, and BEFORE acting** (both cases: cron-and-schedulers.md). ⚠ **So is a filed CORRECTION, and one I nearly propagated was WITHDRAWN a commit later — read to the END of the thread, OPEN the dated item before contradicting it, and know that a CONFOUND found does not license the OPPOSITE attribution** (09-20, four cases). ⛔ **Read the ITEM, never an excerpt: a grep of #118’s first paragraph cost a change it twice FORBIDS.**
