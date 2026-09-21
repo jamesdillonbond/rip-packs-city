@@ -199,6 +199,8 @@ date stamp, and this file's standing rule that every recorded status has a shelf
 | **#129** | 🟡 open | PINNACLE + CANDY FIXED 2026-09-20 (PT); TOP SHOT + ALL DAY NEED RPC PARAMS  |
 | **#130** | 🟡 open | OPEN, NEW 2026-09-20 (PT)  |
 | **#131** | 🟡 open | VIEW HALF FIXED 2026-09-20 (PT), INGEST HALF OPEN  |
+| **#132** | 🟡 open | OPEN, NEW 2026-09-21 (PT) — TREVOR'S CALL, NOT A DEFECT: ~3,900 tap targets under 44px remain after the nav/footer/pill fixes, and they are ONE SHAPE — full-width board row links (`a.rpc-rb-prow` 348×38, 500 on rookie-board; `a.rpc-ss-trophy-link` 78×25, 200 on set-squeeze). They CLEAR the 24×24 floor and miss 44×44 by 6–19px, so growing them is a product trade: +6px × hundreds of rows adds thousands of px of scroll per board. Measured by `scripts/qa/mobile-sweep.mjs` (`tapSmall`) over 56 pages; the total fell 5,113 → 3,925 when nav/footer/pills were fixed. ⛔ Do NOT "drain" this autonomously.  |
+| **#133** | 🟡 open | OPEN, NEW 2026-09-21 (PT) — UNDIAGNOSED AND PRE-EXISTING: on `/insights/set-squeeze` and `/insights/offer-spread`, TWO filter pills each report that the point at their own CENTRE hit-tests to some other element — identical before and after the 2026-09-20 tap-target fixes, so nothing about those fixes caused it. Something covers two controls on those two boards. ⚠ The same check reads 0 on every other page swept, so it is not an instrument artefact. Probe: `_to_delete/probepill.mjs`'s `stolen` count, or `document.elementFromPoint` at each pill's centre.  |
 
 <!-- END:ITEM-INDEX -->
 

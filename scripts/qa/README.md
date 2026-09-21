@@ -121,3 +121,33 @@ cookie jar and saves whatever it writes, and **fails loudly if it writes
 nothing** rather than falling back to a guess.
 
 Delete `_to_delete/qa-state.json` when the pass closes.
+
+## 320px — the `narrow` mode
+
+```bash
+node scripts/qa/mobile-sweep.mjs paths.txt out.jsonl shots narrow   # 320 x 568
+```
+
+Same touch/mobile emulation as the 390 run, so a difference between the two runs
+is **width and nothing else**. 320 is the floor a responsive layout is expected
+to survive and the width where a fixed width, a `min-width` on a table cell or a
+long unbroken string shows up **first** — 390 can hide all three.
+
+⚠ `e2e/mobile-layout.spec.ts` claimed from 2026-08-22 that its routes were
+"measured clean at both 390px and 320px" while its loop ran **390 only**, for
+four weeks. Measured for real 2026-09-20 over all 56 swept pages: overflow 0, no
+content loss against the 390 run, no broken art, nothing 390 had not shown. It
+is pinned now — a `mobile layout at 320px` describe block, so the claim and the
+test cannot drift apart again.
+
+## What the sweep measures that nothing else does
+
+`tapSmall` (44px floor, effective box incl. the `.rpc-tap44` ::after overlay) ·
+`zoomInputs` (controls under 16px — iOS zooms on focus and never zooms back;
+Chromium reproduces it at NO viewport) · `vh100` (elements whose box equals the
+viewport) · `preLen` (innerText read **before** the settle, so "streamed in late"
+and "never arrived" stop being the same record).
+
+⚠ `vh100` **v1 was wrong** — it scanned stylesheet TEXT and matched Tailwind's
+`@layer utilities` blob (the `.h-screen` *definition*) on 56 of 56 pages: a 100%
+hit rate that measured nothing. Quote no v1 number.

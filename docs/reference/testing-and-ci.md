@@ -3272,3 +3272,14 @@ disappear from the average instead of dragging it down, which is the whole point
 is also what makes `7730` sit at exactly `n_opens = 10`: **one more row going NULL drops that dist off
 the board entirely.** A fix that replaces fabricated zeros with NULLs moves rows *out* of a population
 gated on NOT NULL, so check the gate's floor after any such repair.
+
+## Displaced from CLAUDE.md 2026-09-21 (headroom was 99 chars)
+
+Verbatim, so nothing is lost — all three were full bullets under *Guards, tests
+and instruments* and are now one-line pointers there.
+
+- ⛔ **A header saying it MIRRORS another implementation is a CLAIM WITH NO TEST — diff them.** `check_wall_kills()` and `correlateRuns()` read the same rows and gave OPPOSITE verdicts for a week (one rule added to the SQL side only); the divergent one was the CLI, pinned at exit 1 forever on a healthy lane.
+
+- ⛔ **A HARDCODED ALLOWLIST BESIDE A REGISTRY GOES STALE SILENTLY** — a four-slug map 400'd UFC and Candy from a button the reader can see. Resolve through the registry, and **pin the narrowing gate too**, or the swap widens to unpublished collections.
+
+- ⚠ **A not-vacuous check must be satisfiable at a population of ZERO**, or the guard punishes its own success. Same for a guard that NAMES its instances — three have died on a rename. ⚠ **Strip comments before grepping source — with `scripts/lib/strip-comments.mjs`, NEVER a fresh copy.** **Still prefer a check that does not NEED it right** (`copyOf`).
