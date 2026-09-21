@@ -84,12 +84,26 @@ function editionHref(r: ScoredEdition): string | null {
   // the exact external_id (name-matched, not nft-resolved), so the player page
   // is the honest target.
   if (!r.player) return null
-  // ⚠ This used to hand-roll the slug, and a hand-rolled slug turns every
-  // diacritic into a separator: "Marine Johannès" became `marine-johann-s`,
-  // which 404s, while slugifyPlayerName strips combining marks first and
-  // yields `marine-johannes`, which resolves. lib/entity-labels.ts is the one
-  // place that knows the player resolver also matches unaccent(p.name) - do
-  // not re-inline this.
+  // ⚠ This used to hand-roll the slug. Use slugifyPlayerName instead —
+  // lib/entity-labels.ts is the one place that knows what get_player_detail
+  // actually matches, and that rule is not obvious.
+  //
+  // ⛔ CORRECTION (measured 2026-09-20, against the claim this comment itself
+  // carried from the moment it shipped): a hand-rolled slug does NOT 404 on its own. The
+  // resolver matches TWO expressions — the raw name slugified AND
+  // unaccent(p.name) slugified (migration audit_20260906_player_slugs_
+  // resolve_unaccented…) — so `marine-johann-s` and `marine-johannes` both
+  // reach the same page, byte-identical, and all 5 accented names on the live
+  // board resolve BOTH ways. The 404 was the UNDECODED ESCAPE
+  // (`marine-johann-u-e8-s`), which neither arm can produce; that is fixed at
+  // ingest in lib/pack-drops-board.ts, not here.
+  //
+  // What slugifyPlayerName is actually for is the OTHER half: the raw arm only
+  // matches when the name we slugify is spelled the same way the `players` row
+  // spells it. Where the two tables disagree on diacritics, only the
+  // unaccented form resolves — the measured 09-06 case of 4 of 1,413 Top Shot
+  // player URLs 404ing in the sitemap. The Vaultopolis name is a THIRD
+  // spelling of the same player, so it is exactly that risk. Do not re-inline.
   const slug = slugifyPlayerName(r.player).replace(/^-+|-+$/g, "")
   if (!slug) return null
   return `/nba-top-shot/player/${slug}`

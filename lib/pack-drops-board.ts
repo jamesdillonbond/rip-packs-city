@@ -208,12 +208,22 @@ function num(v: number | string | null | undefined): number | null {
 
 // Vaultopolis ships some names with the unicode escape UNDECODED — the literal
 // twelve characters `Johann\u{e8}s`, not `Johannès`. Measured on the live board
-// 2026-09-20: 4 names across 6 rows (\u{e8}, \u{fc}, \u{e1}, \u{107} x2), and it
-// broke three things at once — the board PRINTED the escape to users, the
-// player drill-down slugified to a 404, and the FMV match is a player_name
-// ILIKE that an escaped name can never satisfy, so those rows priced off the
-// name alone. Decoding once at ingest fixes all three; decoding at render
-// would fix only the first.
+// 2026-09-20: FIVE names across 6 board rows — 4 distinct codepoints, with
+// U+0107 carrying two of them. (An earlier revision of this comment said "4
+// names"; it was counting CODEPOINTS.) Re-derived the same day straight from
+// the upstream feed: 13 asset rows across all 8 drops, so the BOARD is the
+// narrower population, not the wider one.
+//
+// It broke two things at once — the board PRINTED the escape to users, and the
+// FMV match is a player_name ILIKE that an escaped name can never satisfy, so
+// those rows priced off the name alone. Decoding once at ingest fixes both;
+// decoding at render would fix only the first.
+//
+// — A THIRD consequence was claimed here and is REFUTED: the drill-down did
+// 404, but on the ESCAPED slug, which neither arm of the player resolver can
+// produce. A HAND-ROLLED slug was never the cause and resolved for all five.
+// The correction, with the resolver behaviour that settles it, is in
+// PackDropsBoardClient.editionHref.
 //
 // Same class as the JSON-argument deploys that decode escapes in transit.
 export function decodeUnicodeEscapes(v: string | null): string | null {

@@ -21,7 +21,8 @@
 //   shotdir     optional; a PNG per page lands here (put it under
 //               _to_delete/qa-shots-<date>/ so the tree stays clean and a Cowork
 //               session can stage the PNGs and view them with Read)
-//   mode        mobile (default) or desktop (1280 × 900)
+//   mode        mobile (default, 390 × 844) · narrow (320 × 568, same touch
+//               emulation — the width a responsive layout must survive) · desktop
 //
 // ENV
 //   RPC_QA_BASE      base URL (default https://www.rippackscity.com)
@@ -57,10 +58,21 @@ import path from "node:path";
 
 const [, , file, out, shotdir, modeArg] = process.argv;
 if (!file || !out) {
-  console.error("usage: node scripts/qa/mobile-sweep.mjs <paths.txt> <out.jsonl> [shotdir] [mobile|desktop]");
+  console.error("usage: node scripts/qa/mobile-sweep.mjs <paths.txt> <out.jsonl> [shotdir] [mobile|narrow|desktop]");
   process.exit(2);
 }
-const mode = modeArg === "desktop" ? "desktop" : "mobile";
+// narrow = 320x568 with touch. 320 is the floor a responsive layout is
+// expected to survive, and it is where a fixed-width element, a min-width on a
+// table cell or a long unbroken string shows up FIRST — 390 can hide all three.
+//
+// ⓘ This mode is the instrument behind e2e/mobile-layout.spec.ts's 320px loop
+// (shipped 064930d5f, 2026-09-20). That spec pins SIX public routes; this sweeps
+// the whole path list, so it is the WIDER measurement the pin was taken from —
+// and the one to re-run before adding a route to that pin. Until 09-20 the spec
+// only CLAIMED 320 in a comment while its loop ran 390 alone; shipping the loop
+// without the instrument that measured it would leave the same gap one level
+// down, which is why this lands even though the pin already has.
+const mode = modeArg === "desktop" ? "desktop" : modeArg === "narrow" ? "narrow" : "mobile";
 const BASE = (process.env.RPC_QA_BASE || "https://www.rippackscity.com").replace(/\/$/, "");
 const CONC = Math.max(1, Number(process.env.RPC_QA_CONC) || 3);
 const SETTLE = Math.max(0, Number(process.env.RPC_QA_SETTLE_MS) || 8000);
@@ -69,7 +81,13 @@ if (shotdir) fs.mkdirSync(shotdir, { recursive: true });
 
 const browser = await chromium.launch({ args: ["--no-sandbox"] });
 const ctx = await browser.newContext({
-  ...(mode === "mobile" ? devices["iPhone 13"] : { viewport: { width: 1280, height: 900 } }),
+  ...(mode === "mobile"
+    ? devices["iPhone 13"]
+    : mode === "narrow"
+      // Same touch/mobile emulation as iPhone 13 — only the box is smaller, so a
+      // difference between the two runs is WIDTH and nothing else.
+      ? { ...devices["iPhone 13"], viewport: { width: 320, height: 568 } }
+      : { viewport: { width: 1280, height: 900 } }),
   locale: "en-US",
   timezoneId: "America/Los_Angeles",
   ...(process.env.RPC_QA_STATE ? { storageState: process.env.RPC_QA_STATE } : {}),

@@ -16,8 +16,19 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: (fn: () => Promise<void>) => { capturedAfter = fn } }
 })
 
-const backfillImpl = vi.hoisted(() => ({ fn: async (_params?: any): Promise<any> => ({ data: null, error: null }) }))
-const logImpl = vi.hoisted(() => ({ fn: async (_params?: any): Promise<any> => ({ data: null, error: null }) }))
+// ⓘ The `params` argument lives in the TYPE, not in the default impl. The rpc
+// stub below calls `backfillImpl.fn(params)`, so the property has to accept one;
+// every reassignment in this file is zero-arg, so binding it here only produced
+// an unused variable — which is a ratcheted rule (`@typescript-eslint/
+// no-unused-vars` has no `argsIgnorePattern` in eslint.config.mjs, so a leading
+// underscore does NOT exempt it, and these two reddened `npm run lint:ratchet`
+// while `npm test` and `tsc` stayed green).
+const backfillImpl = vi.hoisted((): { fn: (params?: any) => Promise<any> } => ({
+  fn: async () => ({ data: null, error: null }),
+}))
+const logImpl = vi.hoisted((): { fn: (params?: any) => Promise<any> } => ({
+  fn: async () => ({ data: null, error: null }),
+}))
 const rpc = vi.hoisted(() => vi.fn(async (name: string, params?: any) => {
   if (name === "backfill_pack_rip_metadata") return backfillImpl.fn(params)
   if (name === "log_pipeline_run") return logImpl.fn(params)
