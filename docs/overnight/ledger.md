@@ -11,6 +11,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > ⏬ **Entries older than 2026-08-10 rolled to [ledger-archive-2026-H2.md](ledger-archive-2026-H2.md)** by the biweekly `rpc-context-hygiene` pass (2026-08-24). Frozen history — revert paths there are still valid.
 
 
+### 2026-09-21 · ✅ QUIET HONEST NIGHT — nothing shipped; five open verifications closed benign; the Small→LARGE resize confirmed to drain saturation-class timeouts estate-wide · Cowork cloud (PUSH-CAPABLE via .rpc-git-cred)
+
+**Shipped: 0 of 4.** No clearly-safe + net-positive un-owned item. Health GREEN: security 4/4 clean, trust-health 0 breaches, Sentry 0-new PAIRED with Vercel (chronic-only groups; the only 09-20 first-seen groups are the 2-min 525/521 resize-restart blip at 17:38-17:40Z). Prod deploy healthy (READY tip 1cf234f). DB 19,609 MB.
+
+**Verifications closed (read-only):**
+- Top Shot HIGH+MED "fell 974" (inbox 09-21T0011Z) → RECOVERED: 7,749 now (1,355+6,394) > 7,241 baseline; total priced coverage conserved; reclassification reversed. Benign.
+- Thin-FMV self-heal (inbox 09-20T1930Z Check 1) → PASS: job 63 succeeded 08:30Z in 7 s (was 604s/601s Small timeouts); table 0.0h stale. Duration was the TIER, not the function — no fix, no ceiling raise.
+- rpc-weekly-wmc-reindex-6 "non-existent index" (inbox 09-20T1812Z HIGH) → FALSE POSITIVE: live cmd (jobid 478) names idx_wmc_wallet_coll_ek_fmv_tier (exists); the failed run is the stale 09-20 03:43Z pre-resize weekly timeout; next run ~09-27 on LARGE.
+- Two invoked_but_never_logged lanes (inbox 09-20T1513Z) → CLEARED (absent from detect_stalled_pipelines; spell collateral).
+- Post-ship watch → no regression: jobs 324 (ok 00:52 PT), 506 (ok 22:35 PT); jobid 560 not present (retired).
+
+**Queued for Trevor (no autonomous lever):**
+- Q1 (HIGH) snapshot-institutional-wallets silent ~36h — hand-dispatch via cron-job.org console 202 path (proven ok/257 pages/~74s); NOT a redeploy (content-drifted #23/R63); needs the console or the gate key. Fresh angle: on LARGE now, so a repeat mid-run death = lane cost, not tier.
+- Q2 gate-key rotation completion (compute-golazos-pack-ev on old key; 7/14 crons on short keys) — carried from 09-20.
+- Q3 Panini ask-only disclosure denominator mismatch (inbox 09-20T1709Z) — view + .tsx burst; Cowork can't push .tsx.
+- Q4 #126 cron busy-seconds — re-measure warm-vs-warm on LARGE before any lever.
+
+**Housekeeping:** inbox backlog 542 un-archived files — NOT archived this pass (INDEX.md carries CI assertions; avoided a red-main landmine on a 0-ship night). Flag for a hygiene pass.
+
+**Revert:** nothing shipped; output commit reverts with git revert <sha>. Handoff: docs/handoff-2026-09-21-overnight-pass.md.
+
 ### 2026-09-20 · 🔐 THE GATE-KEY ROTATION FINALLY COMPLETES — all six de-hardcoded functions deployed, three lanes rotated onto keys that were NEVER public, and the procedure's own leak vector is removed · Cowork cloud (Trevor set the secrets; all deploys/rotations from here)
 
 **The residual open since 2026-08-22 is closed.** Six functions carried the secret-reading + `_OLD`

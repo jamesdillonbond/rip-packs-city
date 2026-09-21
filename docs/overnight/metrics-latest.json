@@ -1,140 +1,54 @@
 {
-  "generated_at_pt": "2026-09-20 ~01:10 AM PT",
-  "generated_at_utc": "2026-09-20T08:10Z",
-  "pass": "rpc-nightly-autonomous-pass (Cowork cloud). PUSH-CAPABLE via .rpc-git-cred credential store (dry-run exit 0). Real time from DB now() 08:03Z at start; genuine overnight, no clock skew.",
-  "shipped": 4,
+  "generated_at_pt": "2026-09-21 ~01:33 AM PT",
+  "generated_at_utc": "2026-09-21T08:33Z",
+  "pass": "rpc-nightly-autonomous-pass (Cowork cloud). PUSH-CAPABLE via .rpc-git-cred credential store (dry-run exit 0; pushurl absent on mount). Real time from DB now() 08:02:57Z == shell 08:02:08Z, no clock skew, genuine overnight.",
+  "shipped": 0,
   "reverted": 0,
-  "verdict": "HEALTHY, NO REGRESSION. Security 4/4 clean, all structural drift arms []. Nothing clearly-safe + net-positive was un-owned to ship. Last night's 30 ships verified landing where clocks allowed; five items pending their tick clocks. #126 (cron fleet 10x busy-seconds since 09-15) re-measured PERSISTS and decomposed to the atlas family + jobid 303 wmc-fmv-changed; no autonomous lever. Sentry 0-new PAIRED with Vercel = all chronic shapes, no new error class.",
+  "verdict": "HEALTHY, NO REGRESSION, NOTHING SHIPPED. Security 4/4 clean, trust-health 0 breaches, all structural-drift arms []. Sentry 0-new PAIRED with Vercel (chronic-only groups; only 09-20 first-seen groups are the 2-min 525/521 resize-restart blip 17:38-17:40Z). Five open verifications closed benign (TS HIGH+MED recovered to 7749; thin-fmv job 63 self-heals on LARGE in 7s; reindex-6 false-positive; two invoked_but_never_logged lanes cleared; post-ship watch clean). The 09-20 Small->LARGE resize drained saturation-class timeouts estate-wide. Queued for Trevor: Q1 institutional-wallet hand-dispatch (HIGH, needs console/gate key), Q2 gate-key rotation completion, Q3 Panini disclosure (.tsx), Q4 #126 re-measure on LARGE.",
   "health": {
     "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
     "structural_drift": "clean (function/procedure search_path drift [], txn-control pins [], backward_cursor_rewinds [], suppression_parked_claim_drift [])",
-    "detect_stalled_pipelines": "1 (pinnacle-metadata-backfill invoked_but_never_logged, silent 223m, heartbeat 07:22Z firing - chronic cadence-only lane, medium, not new)",
-    "trust_precompute_max_age_hours": 7.93,
-    "trust_breaches": [
-      "public_board_slow_count=3 (planner-prune instrument that lies; Vercel shows no board 5xx storm)"
-    ],
+    "detect_stalled_pipelines": "1 (snapshot-institutional-wallets, no_marker, silent 2160m/36h, HIGH - chronic cron-job.org lane, hand-dispatch class, QUEUED Q1)",
+    "trust_precompute_max_age_hours": 5.26,
+    "trust_breaches": [],
     "sentinel_ts_uuid_editions_48h": 0,
-    "cross_collection_mat_staleness": "[]",
+    "cross_collection_mat_staleness": "2 stale 31.8h (cap 26h) - both ccm rebuild jobs missed one daily tick during pre-resize saturation; self-heal at next scheduled tick on LARGE; watch-only",
     "sentry_new_24h": 0,
-    "vercel_error_groups_note": "top route /[collection]/pack/dist/[distId] 2100/24h - chronic 'read exceeded 5000ms' family logged at HTTP 200; genuine hard 5xx tiny (503x81, 500x19, 504x16, morning-spell)",
-    "db_size_mb": 19046,
-    "fmv_high_med_by_collection": {
-      "nba_top_shot": {
-        "HIGH": 1341,
-        "MEDIUM": 5900
-      },
-      "nfl_all_day": {
-        "HIGH": 61,
-        "MEDIUM": 1573
-      },
-      "disney_pinnacle": {
-        "HIGH": 166,
-        "MEDIUM": 549
-      },
-      "candy_mlb": {
-        "HIGH": 9,
-        "MEDIUM": 69
-      },
-      "laliga_golazos": {
-        "HIGH": 0,
-        "MEDIUM": 4
-      },
-      "ufc_strike": {
-        "HIGH": 0,
-        "MEDIUM": 0
-      }
+    "vercel_error_groups_note": "50 groups, ALL chronic (first-seen Jun-Aug); saturation collateral drained by ~21:06Z 09-20; only 09-20 first-seen groups = 2-min Cloudflare 525/521 resize-restart blip 17:38-17:40Z; top ongoing = /[collection]/pack/dist/[distId] read>5000ms family (HTTP 200, honest degrade)",
+    "prod_deploy": "READY tip commit 1cf234f (dpl_2rM5); newer commits docs-only CANCELED; no ERROR",
+    "db_size_mb": 19609,
+    "fmv_by_collection": {
+      "nba_top_shot": {"HIGH": 1355, "MEDIUM": 6394, "LOW": 3173, "ASK_ONLY": 2491, "STALE": 274, "NO_DATA": 325, "SALES_ONLY": 4},
+      "nfl_all_day": {"HIGH": 67, "MEDIUM": 1830, "LOW": 1421, "ASK_ONLY": 1288, "STALE": 773, "NO_DATA": 804, "SALES_ONLY": 7},
+      "disney_pinnacle": {"HIGH": 168, "MEDIUM": 537, "LOW": 632, "ASK_ONLY": 1047, "STALE": 166},
+      "candy_mlb": {"HIGH": 2, "MEDIUM": 49, "LOW": 73, "STALE": 1},
+      "laliga_golazos": {"HIGH": 0, "MEDIUM": 4, "LOW": 37, "ASK_ONLY": 159, "NO_DATA": 73, "STALE": 302},
+      "ufc_strike": {"STALE": 381, "NO_DATA": 137}
     },
-    "fmv_computed_at": "2026-09-20T05:46Z"
+    "fmv_high_med_by_collection_summary": {
+      "nba_top_shot": 7749,
+      "nfl_all_day": 1897,
+      "disney_pinnacle": 705,
+      "candy_mlb": 51,
+      "laliga_golazos": 4,
+      "ufc_strike": 0
+    },
+    "fmv_computed_at": "2026-09-21T05:35Z",
+    "editions_by_collection": {"candy_mlb": 125, "ufc_strike": 518, "nfl_all_day": 6190, "nba_top_shot": 14016, "laliga_golazos": 575}
   },
-  "issue_126_cron_busy_seconds": {
-    "busy_s_per_day": {
-      "09-15": 23020,
-      "09-16": 66422,
-      "09-17": 122744,
-      "09-18": 168859,
-      "09-19": 233894,
-      "09-20_partial_8h": 82387
-    },
-    "busy_s_per_run": {
-      "09-19": 24.6,
-      "09-20_partial": 24.1
-    },
-    "failed_run_share_of_busy_s": "~33%",
-    "top_contributors_24h_busy_s": {
-      "rpc-ts-listings-atlas-sync": {
-        "busy_s": 42589,
-        "runs": 632,
-        "failed": 239,
-        "avg_s": 67.4
-      },
-      "rpc-refresh-wmc-fmv-changed": {
-        "busy_s": 28311,
-        "runs": 144,
-        "failed": 3,
-        "avg_s": 196.6
-      },
-      "rpc-allday-unmapped-atlas-resolver": {
-        "busy_s": 20478,
-        "runs": 282,
-        "failed": 95,
-        "avg_s": 72.6
-      },
-      "rpc-atlas-market-drain": {
-        "busy_s": 19414,
-        "runs": 704,
-        "failed": 30,
-        "avg_s": 27.6
-      },
-      "rpc-pack-nft-identity-lane": {
-        "busy_s": 13401,
-        "runs": 286,
-        "failed": 25,
-        "avg_s": 46.9
-      }
-    },
-    "read": "atlas family ~87k s/day + jobid 303 wmc-fmv-changed 28.3k s/day dominate; R117 wmc autovacuum is one contributor, not the driver; all owned / Trevor / route-adjacent"
-  },
-  "post_ship_watch_pending": {
-    "jobid_324_thp_leg": "VERIFIED 12:52 PM PT: succeeded in 1.2 s (was 600 s x4), arm 0 computed_at 12:52; rotation 12:22 PM: 80 months / 21.5 s ok=true. Both exits met (the 10:39:57 AM Small->Large resize is the other half).",
-    "jobid_506_precompute": "VERIFIED 09:35Z: 69 s (was 204), efc_drift_sample_mod=64, drift 0, nba_top_shot 7 ms; Pinnacle arm 57 s is the lane now",
-    "r107_daily_reconcile": "FAILED 09:36Z at 600 s (cold streaming DISTINCT ON). Fixed 20260920095145 (per-edition probe, 74.7 s cold, control 51 s). NEXT: 09-21 09:36Z succeeded, pipeline_runs ok=true wall_ms<200000; NOTE the wrapper wrote no row for the 57014 - its killed-run-still-logs claim is unproven",
-    "jobid_560_pack_rips_autovacuum": "DONE 09:07Z (2:07 AM PT, 55 min at 50/50): count 3, map 98.1 %, dead 431; dist 5974 lifecycle read Heap Fetches 4128 -> 93, 5.6 s -> 1.3 s cold. COST: six whole-minute launcher blackouts during the index phase (32 job startup timeouts, 0 ok in those minutes, 2-3 jobs running) = disk saturation at the minute boundary, NOT slot exhaustion",
-    "pack_detail_5s_timeouts": "VERIFIED: 0 allday_pack_lifecycle errors 09:10Z-12:15Z (363 in 06:00-09:00Z); 839 x 200 on /nfl-all-day/pack/dist/* in the window",
-    "backfill_pack_rip_metadata": "lever verified (50.2s not 30.x); remaining fails are batch-size (route QUEUE)",
-    "portfolio_snapshot": "VERIFIED: jobid 546 06:46Z ok 132 ms already_snapshotted=27 (the 02Z probe wrote today); 07:05Z route ok 722 ms inserted 0. First real write = 09-21 06:46Z rows_written=27",
-    "matcher_pgcron": "VERIFIED: jobid 543 07:32Z ok 508 ms via=pg_cron gated:true; 08:00Z edge tick should read gated:true too",
-    "pgnet_weekly_vacuum_full": "09:43Z Sunday took 117 s of 120 s inside the reconcile window, ACCESS EXCLUSIVE blocked every pg_net lane ~2 min. Moved to 16 9 * * 0 (20260920095221). NEXT: 09-27 09:16Z < 30 s",
-    "jobid_490_portfolio_retry": "VERIFIED 11:17Z: ok 526 ms via=pg_cron already_snapshotted=27",
-    "r118_when_others": "NEW P1: EXCEPTION WHEN OTHERS does not catch query_canceled; five pg_cron wrappers fixed 14:06Z (20260920140611) with a positive control (killed leg now logs ok=false 57014). OWED: 8 pinned legs + 34 functions + a repo guard. EXIT: next real 600 s kill of any leg writes a terminal thp-leg-* row ok=false",
-    "r118_sweep": "COMPLETE 09-20 ~8:10 AM PT: 35 handlers catch query_canceled (20260920140611/143546/143959), 12 loop handlers left bare, check_when_others_timeout_blind() = [] (instrument 20260920144120), leg pins assert the 999 IS reachable, repo guard new-plpgsql-recording-handlers-catch-query-canceled shipped by the concurrent Claude Code session. Exit: instrument stays []; the next real 600 s leg kill writes 999 + its terminal row."
+  "post_ship_watch": {
+    "jobid_324_thp_leg": "ok 00:52 PT (1s)",
+    "jobid_506_fmv_confidence_precompute": "ok 22:35 PT (2s)",
+    "jobid_63_thin_fmv_guard": "SELF-HEAL VERIFIED: succeeded 08:30Z in 7s (was 604s/601s Small timeouts) - closes inbox 09-20T1930Z Check 1",
+    "jobid_560": "not present in cron.job (retired/renumbered) - not re-chased",
+    "reindex_6_jobid_478": "false-positive confirmed: cmd names idx_wmc_wallet_coll_ek_fmv_tier (exists); failed run is stale pre-resize weekly timeout"
   },
   "needs_trevor": [
-    "#126: jobid 303 refresh_wmc_fmv_changed (28.3k s/day, #1 FMV reader) and atlas-sync family (~87k s/day) are the cron-fleet cost - both need a product/architecture decision, not an autonomous lever",
-    "#22 purge residue GC + rotate",
-    "#55 both 2-hourly Routines disabled since 09-01",
-    "retire portfolios + portfolio_moments outright (option b) now the grant is gone",
-    "Golazos Sales Ingest >168h warn threshold vs a market with ~10-day gaps"
+    "Q1 (HIGH): hand-dispatch snapshot-institutional-wallets via cron-job.org console 202 path (proven ok/257 pages/~74s); NOT a redeploy (content-drifted #23/R63); needs console or gate key; on LARGE now so a repeat death = lane cost not tier",
+    "Q2: gate-key rotation completion - compute-golazos-pack-ev on old 26-char key; 7/14 crons on short keys (carried 09-20)",
+    "Q3: Panini ask-only disclosure denominator mismatch (inbox 09-20T1709Z) - view + .tsx burst",
+    "Q4 (#126): cron busy-seconds atlas family ~87k s/day + jobid 303 wmc-fmv-changed 28.3k s/day - RE-MEASURE warm-vs-warm on LARGE before any lever",
+    "#22 purge residue GC + rotate; #55 both 2-hourly Routines disabled since 09-01; #130 ingest-pinnacle-mints gate key if unset"
   ],
-  "evening_pass_addendum_0215pt": "Cowork evening session read four watches after this file was written; results folded into post_ship_watch_pending above. Ledger entry 2026-09-20 \"THE pack_rips QUIET-HOUR PASS COMPLETED\".",
-  "evening_pass_addendum_0305pt": "Cowork evening session: jobid 539 reconcile re-shaped (20260920095145) and jobid 542 moved (20260920095221) after both failed/collided on their first scheduled Sunday ticks; ledger entry 2026-09-20 \"R107 DAILY FULL RECONCILE DIED AT 600 s\".",
-  "evening_pass_addendum_0835pt": {
-    "shipped": [
-      "20260920143546 R118 batch two",
-      "20260920143959 R118 batch three (pinned)",
-      "20260920144120 check_when_others_timeout_blind()",
-      "20260920150414/151857/152137 leg 324 month-grain baseline + jobid 575",
-      "29ea0e4d9 /api/fmv + fetchFmvBatch on get_editions_latest_fmv_wide",
-      "skills rpc-migration/rpc-cron-ops/rpc-audit-drain/rpc-nightly-autonomous-pass extended + re-packed",
-      "CLAUDE.md R118 + hour-set + probe-shape rules (Windows/Git Bash section displaced verbatim)"
-    ],
-    "verified": [
-      "rpc-cron-ops installed md5 == repo (Trevor's save)",
-      "zz-* probes 0",
-      "leg 324 control 61.5 s value 0",
-      "rotation control 61 months ok=true"
-    ]
-  },
-  "r123_swallowed_writes": "app/api half shipped f5318f0f2 (10 routes); edge half shipped 6f094cc0d (11 functions, 3 deployed: compute-allday-pack-ev v52 verified 12:37 PM pool_write_errors=0, pinnacle-owner-discovery-forward v45, ingest-pinnacle-mints v27). Remaining: 3 edge fns with hardcoded gate keys in prod ride R21.",
-  "needs_trevor_new": "ingest-pinnacle-mints answers 403 to every dispatch since 11:40 AM PT (another session's v22->26 deploy, env-gated, secret missing/mismatched): supabase secrets set PINNACLE_MINTS_GATE_KEY=<value jobids 83/84 send>",
-  "known_issue_130": "ingest-pinnacle-mints 403 since 11:40 AM PT 09-20 (another session deployed the env-gated build v22-26 without the secret); needs Trevor: supabase secrets set PINNACLE_MINTS_GATE_KEY"
+  "housekeeping": "inbox backlog 542 un-archived files (docs/overnight/inbox/, back to 2026-08-09); NOT archived this pass (INDEX.md carries CI assertions - avoided red-main landmine on a 0-ship night); flag for a deliberate hygiene pass"
 }
