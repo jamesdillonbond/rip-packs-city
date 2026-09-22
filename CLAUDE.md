@@ -63,7 +63,7 @@ Shared state in `docs/overnight/`: `ledger.md` (**"Declined — do not re-sugges
 
 Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles intelligence platform: analytics, deal-finding, sniper tools, FMV pricing and badge tracking across the 5 published Flow collections (NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike). Trevor (founder) holds an official Portland Trail Blazers Team Captain designation on NBA Top Shot — ⛔ **IYKYK: never lead copy or outreach with it** (09-06).
 
-Stack: Next.js 16 · React 19 · TS 5 · Tailwind 4 · Supabase (Pro, Small) · Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public).
+Stack: Next.js 16 · React 19 · TS 5 · Tailwind 4 · Supabase (Pro, Large) · Vercel Pro. Live: https://www.rippackscity.com · Repo: github.com/jamesdillonbond/rip-packs-city (public).
 
 **Repo map** (re-derive; never quote a count): [routes-and-surfaces.md](docs/reference/routes-and-surfaces.md).
 

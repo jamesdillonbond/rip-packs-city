@@ -215,6 +215,12 @@ Works when the CLI does not — different credential path.
   type error is caught before CI's `Edge functions (deno check + lint)` job, not by it.
 - ⚠ Once a function carries an `import_map_path`, **every later deploy must resupply
   `deno.json`** or it fails with a mangled concatenated path.
+- ⛔ **Commit the deployed source in the SAME turn you deploy** — prod ahead of `main` is drift another
+  session will "reconcile" or, worse, overwrite with an older build (09-22: a concurrent Claude Code session
+  had to pull a Cowork deploy back into the repo). Deploy from the repo file, round-trip the deployed
+  `index.ts` md5 against it, then push the commit through whichever push path is up.
+- ⚠ **PostgREST clamps a set-returning RPC's result at 1000 rows silently** — any edge function passing an
+  id list to one (e.g. `get_fmv_for_editions`) must slice it (≤500); the tell is a counter at exactly 1000.
 - ⚠ **Do NOT hand-transcribe large ingest functions.** The three `ingest-*` functions are
   370–514 lines of block-height constants (`SPORK_MAX_HEIGHTS`, `SPORK_FLOOR`) and cursor
   checkpoint arithmetic whose own comments say *"Getting this backwards is silent data loss,

@@ -51,6 +51,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Post-ship, AllDay (the live proof of the class):** first v10 run 11:37 PT — ok=true, editions_with_fmv **1,000 → 1,463**, EV rows **18 → 23**, pool_write_errors **1 → 0**. Golazos' next tick is 12:37 PT (`37 */6`).
 
+⭐ **A THIRD consequence, found post-ship (12:55 PM PT): the failed runs never advanced the page cursor.** Every failing run started at `cursor_before = null` and ended at the same `cursor_after`, so for ~37 h (since the 09-20 9:37 PM PT break) AllDay pack EV re-walked the SAME first page of 40 distributions every 30 min and **every other AllDay distribution's EV aged untouched**. Since v10 the cursor advances every run (null → `MWRj…` → `ODMw…` → `Yzk2…`) and distinct dists written per hour went 18 → 23 → 48.
+
 **Revert:** Golazos — redeploy v34 (= repo at `4af9ca9d9`); code — `git revert` this commit. No DB change.
 
 ### 2026-09-21 · ✅ SMALL→LARGE VERDICT: EXIT MET — the compute tier was the floor; HOLD at Large · Cowork (scheduled verdict task, 11:00 AM PT) — spliced into the repo 09-22 from the Project copy

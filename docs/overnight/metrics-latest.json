@@ -1,54 +1,35 @@
 {
-  "generated_at_pt": "2026-09-21 ~01:33 AM PT",
-  "generated_at_utc": "2026-09-21T08:33Z",
-  "pass": "rpc-nightly-autonomous-pass (Cowork cloud). PUSH-CAPABLE via .rpc-git-cred credential store (dry-run exit 0; pushurl absent on mount). Real time from DB now() 08:02:57Z == shell 08:02:08Z, no clock skew, genuine overnight.",
-  "shipped": 0,
+  "generated_at_pt": "2026-09-22 ~1:05 PM PT",
+  "generated_at_utc": "2026-09-22T20:05Z",
+  "pass": "daytime autonomous pass (Cowork cloud build/test + laptop-VM push via .rpc-git-cred). Cloud container itself cannot push (repo not in session's authorized set).",
+  "shipped": 6,
   "reverted": 0,
-  "verdict": "HEALTHY, NO REGRESSION, NOTHING SHIPPED. Security 4/4 clean, trust-health 0 breaches, all structural-drift arms []. Sentry 0-new PAIRED with Vercel (chronic-only groups; only 09-20 first-seen groups are the 2-min 525/521 resize-restart blip 17:38-17:40Z). Five open verifications closed benign (TS HIGH+MED recovered to 7749; thin-fmv job 63 self-heals on LARGE in 7s; reindex-6 false-positive; two invoked_but_never_logged lanes cleared; post-ship watch clean). The 09-20 Small->LARGE resize drained saturation-class timeouts estate-wide. Queued for Trevor: Q1 institutional-wallet hand-dispatch (HIGH, needs console/gate key), Q2 gate-key rotation completion, Q3 Panini disclosure (.tsx), Q4 #126 re-measure on LARGE.",
+  "verdict": "GREEN. One real defect found and fixed: AllDay pack EV ran on a PostgREST-truncated price list (1,000 of ~1,460 FMVs) and its R123 prune 400'd every run for ~37h, freezing the page cursor on page 1. Fixed (v10), class closed at 4 call sites + guard. #35 write amplification removed by a suppress-redundant-updates trigger. Two zero-yield lanes suppressed with on-chain positive controls. Skills/CLAUDE.md refreshed.",
   "health": {
-    "security_invariants": "clean (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [])",
-    "structural_drift": "clean (function/procedure search_path drift [], txn-control pins [], backward_cursor_rewinds [], suppression_parked_claim_drift [])",
-    "detect_stalled_pipelines": "1 (snapshot-institutional-wallets, no_marker, silent 2160m/36h, HIGH - chronic cron-job.org lane, hand-dispatch class, QUEUED Q1)",
-    "trust_precompute_max_age_hours": 5.26,
-    "trust_breaches": [],
-    "sentinel_ts_uuid_editions_48h": 0,
-    "cross_collection_mat_staleness": "2 stale 31.8h (cap 26h) - both ccm rebuild jobs missed one daily tick during pre-resize saturation; self-heal at next scheduled tick on LARGE; watch-only",
-    "sentry_new_24h": 0,
-    "vercel_error_groups_note": "50 groups, ALL chronic (first-seen Jun-Aug); saturation collateral drained by ~21:06Z 09-20; only 09-20 first-seen groups = 2-min Cloudflare 525/521 resize-restart blip 17:38-17:40Z; top ongoing = /[collection]/pack/dist/[distId] read>5000ms family (HTTP 200, honest degrade)",
-    "prod_deploy": "READY tip commit 1cf234f (dpl_2rM5); newer commits docs-only CANCELED; no ERROR",
-    "db_size_mb": 19609,
-    "fmv_by_collection": {
-      "nba_top_shot": {"HIGH": 1355, "MEDIUM": 6394, "LOW": 3173, "ASK_ONLY": 2491, "STALE": 274, "NO_DATA": 325, "SALES_ONLY": 4},
-      "nfl_all_day": {"HIGH": 67, "MEDIUM": 1830, "LOW": 1421, "ASK_ONLY": 1288, "STALE": 773, "NO_DATA": 804, "SALES_ONLY": 7},
-      "disney_pinnacle": {"HIGH": 168, "MEDIUM": 537, "LOW": 632, "ASK_ONLY": 1047, "STALE": 166},
-      "candy_mlb": {"HIGH": 2, "MEDIUM": 49, "LOW": 73, "STALE": 1},
-      "laliga_golazos": {"HIGH": 0, "MEDIUM": 4, "LOW": 37, "ASK_ONLY": 159, "NO_DATA": 73, "STALE": 302},
-      "ufc_strike": {"STALE": 381, "NO_DATA": 137}
-    },
-    "fmv_high_med_by_collection_summary": {
-      "nba_top_shot": 7749,
-      "nfl_all_day": 1897,
-      "disney_pinnacle": 705,
-      "candy_mlb": 51,
-      "laliga_golazos": 4,
-      "ufc_strike": 0
-    },
-    "fmv_computed_at": "2026-09-21T05:35Z",
-    "editions_by_collection": {"candy_mlb": 125, "ufc_strike": 518, "nfl_all_day": 6190, "nba_top_shot": 14016, "laliga_golazos": 575}
+    "cron_24h": "9,481/9,481 succeeded, 0 startup timeouts (LARGE)",
+    "security_invariants": "clean (0 rows; anon write 0; secdef/search_path drift [])",
+    "r118_blind_handlers": 0,
+    "detect_stalled_pipelines": "1 medium (topshot-active-listings-ingest; laptop asleep; resumed 11:16 AM PT ok)",
+    "zero_yield_offenders": [
+      "alerts-send",
+      "alerts-dispatch"
+    ],
+    "vercel_24h_error_groups": 19,
+    "db_size": "21 GB",
+    "io_last_12h": "5.5-8.8 MB/s, cache hit 93-95%"
   },
   "post_ship_watch": {
-    "jobid_324_thp_leg": "ok 00:52 PT (1s)",
-    "jobid_506_fmv_confidence_precompute": "ok 22:35 PT (2s)",
-    "jobid_63_thin_fmv_guard": "SELF-HEAL VERIFIED: succeeded 08:30Z in 7s (was 604s/601s Small timeouts) - closes inbox 09-20T1930Z Check 1",
-    "jobid_560": "not present in cron.job (retired/renumbered) - not re-chased",
-    "reindex_6_jobid_478": "false-positive confirmed: cmd names idx_wmc_wallet_coll_ek_fmv_tier (exists); failed run is stale pre-resize weekly timeout"
+    "allday_pack_ev": "v10 runs ok; editions_with_fmv 1000->1463; cursor advancing; distinct dists/h 18->48",
+    "golazos_pack_ev": "v3 ok at 11:37 AM PT",
+    "pack_sales_history_updates": "n_tup_upd +0 on both tables for 20+ min post-trigger (pre ~1,000-1,400/min)",
+    "exits_owed": "W1 24h trigger exit; W2 get_pack_sales_history 195ms/141 blks baseline; W3 pg_net DNS hangs; W4 AllDay cursor"
   },
   "needs_trevor": [
-    "Q1 (HIGH): hand-dispatch snapshot-institutional-wallets via cron-job.org console 202 path (proven ok/257 pages/~74s); NOT a redeploy (content-drifted #23/R63); needs console or gate key; on LARGE now so a repeat death = lane cost not tier",
-    "Q2: gate-key rotation completion - compute-golazos-pack-ev on old 26-char key; 7/14 crons on short keys (carried 09-20)",
-    "Q3: Panini ask-only disclosure denominator mismatch (inbox 09-20T1709Z) - view + .tsx burst",
-    "Q4 (#126): cron busy-seconds atlas family ~87k s/day + jobid 303 wmc-fmv-changed 28.3k s/day - RE-MEASURE warm-vs-warm on LARGE before any lever",
-    "#22 purge residue GC + rotate; #55 both 2-hourly Routines disabled since 09-01; #130 ingest-pinnacle-mints gate key if unset"
+    "Deal alerts: only 11% of Top Shot asks are confirmed within the 12h alert gate (median age 126h) — widen confirmation or accept",
+    "Candy MLB HIGH+MED fell 78->27 via the dispersion gate while sales rose — check edition population mixing",
+    "Delete or re-enable the two disabled 2h Routines (#55); recreate the nightly with push capability",
+    "Consolidate/migrate the 11 legacy desktop dashboards",
+    "Jobs 22/25/27/29 literal gate keys (25+29 share one)"
   ],
-  "housekeeping": "inbox backlog 542 un-archived files (docs/overnight/inbox/, back to 2026-08-09); NOT archived this pass (INDEX.md carries CI assertions - avoided red-main landmine on a 0-ship night); flag for a deliberate hygiene pass"
+  "housekeeping": "Ledger backfilled with the 09-21 verdict and 09-20 job-44 rotation; stale index.lock left by a VM git status renamed; credential-reminder task prompt corrected; inbox backlog (543) still unarchived — INDEX.md CI conflict unresolved."
 }
