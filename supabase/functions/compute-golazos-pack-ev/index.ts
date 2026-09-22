@@ -44,6 +44,7 @@ function gateKeyOk(k: string | null): boolean {
 const GOLAZOS_COLLECTION_ID = "06248cc4-b85f-47cd-af67-1855d14acd75"
 const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
 const EXTERNAL_ID_CHUNK = 500
+const FMV_ID_CHUNK = 500 // get_fmv_for_editions: one row per id, so 500 ids can never reach PostgREST max-rows (1000)
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -155,7 +156,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: false, error: `gql: ${gqlRes.error}`,
-        extra: { elapsed_ms: Date.now() - started, function_version: 2 },
+        extra: { elapsed_ms: Date.now() - started, function_version: 3 },
         cursorBefore: cursor,
       })
       return
@@ -174,7 +175,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { message: "empty page", elapsed_ms: Date.now() - started, function_version: 2, has_next_page: false },
+        extra: { message: "empty page", elapsed_ms: Date.now() - started, function_version: 3, has_next_page: false },
         cursorBefore: cursor, cursorAfter: endCursor,
       })
       return
@@ -202,10 +203,13 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
 
     const editionUuids = Array.from(editionByExternalId.values()).map(v => v.id)
     const fmvByEditionId = new Map<string, number>()
-    if (editionUuids.length > 0) {
+    // 2026-09-22 (v3): CHUNKED — PostgREST clamps every RPC result to max-rows =
+    // 1000, and the AllDay twin of this call silently returned exactly 1,000 of
+    // 1,488 rows. Golazos peaks near 320 today; the chunk keeps it correct at any size.
+    for (let i = 0; i < editionUuids.length; i += FMV_ID_CHUNK) {
       const { data: fmvRows, error: fmvErr } = await supabase.rpc("get_fmv_for_editions", {
         p_collection_id: GOLAZOS_COLLECTION_ID,
-        p_edition_ids: editionUuids,
+        p_edition_ids: editionUuids.slice(i, i + FMV_ID_CHUNK),
       })
       if (fmvErr) throw new Error(`get_fmv_for_editions: ${fmvErr.message}`)
       // deno-lint-ignore no-explicit-any
@@ -220,6 +224,8 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       pool_rows_written: 0, pool_write_errors: 0, ev_rows_written: 0, single_edition_packs: 0,
       rpc_not_ok: 0, rpc_errors: 0, weighted_count: 0,
     }
+    // One stamp for every pool row this run writes — the Phase 3 prune keys on it.
+    const runStamp = new Date().toISOString()
     const poolRowsByDist: Record<string, Array<Record<string, unknown>>> = {}
     const distMeta: Record<string, { node: DistNode; editionsWithFmv: number; editionCount: number }> = {}
 
@@ -258,7 +264,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
           edition_id: p.edition_id,
           edition_flow_id: p.external_id,
           drop_weight: w, orig_drop_weight: w, slot_name: "default", pool_source: "gql",
-          last_refreshed_at: new Date().toISOString(),
+          last_refreshed_at: runStamp,
         }
       })
     }
@@ -283,11 +289,12 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         counters.pool_rows_written += chunk.length
       }
       if (distFailed) continue
-      const keep = rows.map(r => `"${String(r.edition_id)}"`).join(",")
-      let prune = supabase.from("pack_drop_pool").delete()
+      // 2026-09-22 (v3): prune by the RUN STAMP, not a NOT IN (<every kept id>) list
+      // riding in the URL — that list 400'd ("Bad Request") on a 779-edition AllDay
+      // pool. Every row written this run carries last_refreshed_at = runStamp.
+      const { error: de } = await supabase.from("pack_drop_pool").delete()
         .eq("collection_id", GOLAZOS_COLLECTION_ID).eq("dist_id", distId)
-      if (keep) prune = prune.not("edition_id", "in", `(${keep})`)
-      const { error: de } = await prune
+        .lt("last_refreshed_at", runStamp)
       if (de) poolWriteErrors.push(`pool prune ${distId}: ${de.message}`)
     }
     counters.pool_write_errors = poolWriteErrors.length
@@ -349,7 +356,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         await logPipelineRun({
           startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: 0, rowsSkipped: nodes.length,
           ok: false, error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - started, function_version: 2 },
+          extra: { counters, elapsed_ms: Date.now() - started, function_version: 3 },
           cursorBefore: cursor, cursorAfter: endCursor,
         })
         return
@@ -370,7 +377,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         editions_with_fmv: fmvByEditionId.size,
         editions_requested: allExternalIds.size,
         elapsed_ms: elapsed,
-        function_version: 2,
+        function_version: 3,
         ev_method: "circulation_weighted",
         has_next_page: hasNextPage,
       },
@@ -382,7 +389,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { elapsed_ms: Date.now() - started, function_version: 2 },
+      extra: { elapsed_ms: Date.now() - started, function_version: 3 },
       cursorBefore: cursor,
     })
   }

@@ -1282,10 +1282,12 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
 
     const editionUuids = Array.from(editionByExternalId.values()).map(v => v.id)
     const fmvByEditionId = new Map<string, number>()
-    if (editionUuids.length > 0) {
+    // 2026-09-22: CHUNKED — PostgREST clamps every RPC result to max-rows = 1000
+    // (the AllDay twin of this call silently returned 1,000 of 1,488 rows).
+    for (let i = 0; i < editionUuids.length; i += 500) {
       const { data: fmvRows, error: fmvErr } = await supabase.rpc("get_fmv_for_editions", {
         p_collection_id: TOPSHOT_COLLECTION_ID,
-        p_edition_ids: editionUuids,
+        p_edition_ids: editionUuids.slice(i, i + 500),
       })
       if (fmvErr) throw new Error(`get_fmv_for_editions: ${fmvErr.message}`)
       // deno-lint-ignore no-explicit-any

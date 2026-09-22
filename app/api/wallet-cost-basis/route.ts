@@ -143,10 +143,14 @@ export async function GET(req: NextRequest) {
     // ── 5. Most-recent fmv_snapshot per edition_id ───────────────────────────
     const editionUuids = Array.from(new Set(Array.from(editionMeta.values()).map((e) => e.id)))
     const fmvByEdition = new Map<string, number>()
-    if (editionUuids.length > 0) {
+    // CHUNKED (2026-09-22): get_fmv_for_editions is a set-returning RPC and PostgREST
+    // clamps every RPC result to max-rows = 1000, so a wallet spanning more than 1,000
+    // editions silently lost the FMV of the rest (measured on the AllDay pack-EV twin
+    // of this call: 1,000 of 1,488). One row per id, so 500 ids can never hit the cap.
+    for (let i = 0; i < editionUuids.length; i += 500) {
       const { data, error } = await boundedRead((supabaseAdmin as any).rpc("get_fmv_for_editions", {
         p_collection_id: TOPSHOT_UUID,
-        p_edition_ids: editionUuids,
+        p_edition_ids: editionUuids.slice(i, i + 500),
       }), "api/wallet-cost-basis/get_fmv_for_editions")
       if (error) throw new Error(error.message)
       for (const row of (data ?? []) as Array<{ edition_id: string; fmv_usd: number | string }>) {
