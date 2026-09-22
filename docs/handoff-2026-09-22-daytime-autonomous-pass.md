@@ -40,6 +40,7 @@
 3. **Scheduled tasks.** The two disabled every-2-hours passes (`trig_018Ay…`, `trig_01AZz…`, disabled since 09-01, #55) should be deleted or re-enabled. They're dead weight as they are. The nightly pass is still running cloud-only without the repo attached: the 09-22 overnight flags only reached `main` because you landed them by hand. Recreating it device-bound, or with the repo attached, would let it push.
 4. **Eleven legacy desktop-only Cowork dashboards** (the KPI ones `rpc-tracked-fmv-confidence` and `rpc-traction`, plus `rpc-live-health`, `rpc-qa-scorecard` and seven others last touched June–August). They can't be updated from a cloud session. The offer: consolidate them into one published "RPC Gate Board" (accuracy KPI + WAU + health) and retire the rest.
 5. Still open from 09-21: jobs 22 / 25 / 27 / 29 hold literal keys (25 and 29 share one), and they need the de-literalise path.
+6. **Top Shot pack sales reach the DB ~8 h late** (mechanism measured, see the W1 note). The fix is a head-first page in `backfill-topshot-pack-sales` / `backfill-allday-pack-sales`. That is an edge-function change on the two literal-key jobs from item 5, so it should ride with the de-literalise work rather than ship ahead of it.
 
 ## All Day before/after
 
@@ -53,12 +54,22 @@ Measured at 2:25 PM PT, about 25 min after the fix, from `fmv_snapshots`. `editi
 | FMV below ALL of the last 7 sales | **59** of 83 | **6** of 83 |
 | FMV above ALL of the last 7 sales | 0 | 2 |
 
+**Re-measured at 3:40 PM PT with more of the walk done:** **n = 177** of the 521-edition population, ratio **0.650 → 1.030**, below-all **121 → 10**, above-all **0 → 3**. HIGH+MEDIUM **129 → 128** on these well-traded editions. So on editions with ≥7 recent sales the confidence cost is about nil, and the demotions below fall on thinner editions.
+
 The Top Shot control on the same instrument sits at 1.000. All Day now looks the same: centred, with errors on both sides. Across those 83 editions FMV rose $9.63 in total (these are cheap commons).
 
 ⚠ **The price of that accuracy is confidence, and you should know it.** Across all 336 All Day editions re-priced so far, **42 went MEDIUM → LOW and 20 went LOW → MEDIUM, a net loss of 22 HIGH/MEDIUM editions.** In the two pre-fix hours the same measurement showed 11 down and 12 up, so the loss comes from the fix and is not normal churn. The mechanism: All Day ask-corroboration (09-09, `lib/fmv-confidence.ts` `escalateConfidence`) lifts LOW → MEDIUM when a live ask agrees with the sales median. The ghost floors "agreed" because FMV had been capped *to* them. So those MEDIUMs rested on a listing that could not be bought, and LOW is the honest reading. Expect the All Day HIGH+MEDIUM count to drift down as the walk completes. **That is the KPI getting more truthful, not less accurate.** Separately, 162 editions had only ghost listings, so they now have no floor: 50 of them are MEDIUM, 58 LOW and **54 ASK_ONLY**. Those 54 were priced from a dead listing (floor × 0.90), and what fmv-recalc does with them on its next pass is worth one look.
 
 ## Watch items for the next pass
 
+- **W1 note (checked 3:40–4:15 PM PT). Top Shot pack sales lag ~8 h by design; the trigger is not the cause.** `n_tup_ins` on both pack-sales tables was flat all afternoon, and the newest Top Shot pack sale ingested at 8:40 AM PT. The trigger shipped ~12:35 PM, after that, and it only suppresses no-op UPDATEs. The cause is the walker's cycle, observed end to end:
+  - Job 29 pages the entire 594k-row history at 4,000 rows per 3 min (`total_api` 42,624 → 2,621).
+  - It hit `hasNext:false` at 3:58 PM and then answers `{"done":true}`.
+  - `pack-sales-cursor-unlatch` reports it `was_latched:true` and resets it after `latched_minutes:30`, so the next reset is the ~4:33 PM run.
+  - The walk then restarts from the head, where new sales land.
+  - So a new Top Shot pack sale waits for the whole sweep (~7.5 h) plus 30 min before ingest.
+  
+  **Falsifier for the next pass:** rows with `ingested_at` after ~4:35 PM PT and `block_time` after 8:10 AM PT. This is the open "pack-sales head-check" filing, now with the mechanism measured. A head-first page on every run, before the sweep page, would cut the lag to about 3 min.
 - **W1 (24 h exit of #3):** maps were reset to **100 %** at 1:06–1:07 PM PT by two one-off `VACUUM (ANALYZE)` jobs (5.6 s / 6.0 s, unscheduled after). Then: `n_tup_upd` on both pack-sales tables < 10 % of pre-ship; `n_tup_ins` keeps pace; `relallvisible/relpages` > 80 % after the next autovacuum. Falsifier: inserts stall ⇒ drop the triggers.
 - **W2:** `get_pack_sales_history` baseline is **mean 195 ms, 141 blocks/call** (pgss, cumulative). Re-read after the visibility maps recover. The pack-detail 5 s timeouts may ease with them.
 - **W3:** pg_net shows 55 s **DNS-resolution hangs** at 2–6 an hour since ~8 AM PT (the #122 class, low rate).

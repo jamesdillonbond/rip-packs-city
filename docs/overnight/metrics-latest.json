@@ -1,6 +1,6 @@
 {
-  "generated_at_pt": "2026-09-22 ~2:30 PM PT",
-  "generated_at_utc": "2026-09-22T21:30Z",
+  "generated_at_pt": "2026-09-22 ~4:20 PM PT",
+  "generated_at_utc": "2026-09-22T23:20Z",
   "pass": "daytime autonomous pass (Cowork cloud build/test + laptop-VM push via .rpc-git-cred). Cloud container itself cannot push (repo not in session's authorized set).",
   "shipped": 9,
   "reverted": 0,
@@ -21,9 +21,9 @@
   "post_ship_watch": {
     "allday_pack_ev": "v10 runs ok; editions_with_fmv 1000->1463; cursor advancing; distinct dists/h 18->48",
     "golazos_pack_ev": "v3 ok at 11:37 AM PT",
-    "pack_sales_history_updates": "n_tup_upd +0 on both tables for 20+ min post-trigger (pre ~1,000-1,400/min)",
+    "pack_sales_history_updates": "n_tup_upd flat since trigger; n_tup_ins flat is the walker cycle (full 594k sweep ~7.5h + 30min latch), not the trigger — Top Shot pack sales ingest ~8h late; reset expected ~4:33 PM PT",
     "exits_owed": "W1 24h trigger exit; W2 get_pack_sales_history 195ms/141 blks baseline; W3 pg_net DNS hangs; W4 AllDay cursor; W5 ghost-set job + full-walk FMV ratio + honest HIGH/MED drop",
-    "allday_ghost_floor_fix": "paired n=83: ratio 0.667->1.017, below-all 59->6; confidence MED->LOW 42 vs LOW->MED 20 on 336 re-priced (control 11/12) — ghost asks had been corroborating; job 596 manual 330-465ms after 20260922214635 (cron runs were 18-25s, 757k blk/call before it); positive control 5/5; 0 organic new ghosts so far (set 17,578)"
+    "allday_ghost_floor_fix": "paired n=177 (3:40 PM PT): ratio 0.650->1.030, below-all 121->10, above-all 0->3, HIGH/MED 129->128 on >=7-sale editions; thinner editions lose ghost-corroborated MEDIUM (42 down/20 up on first 336). Job 596 cron 0.61s after 20260922214635 (was 18-25s); positive control 5/5."
   },
   "needs_trevor": [
     "All Day HIGH+MED will drift DOWN after the ghost-floor fix (ghost asks were corroborating LOW->MED) — honest, but it moves the headline KPI",
@@ -31,7 +31,8 @@
     "Candy MLB HIGH+MED fell 78->27 via the dispersion gate while sales rose — check edition population mixing",
     "Delete or re-enable the two disabled 2h Routines (#55); recreate the nightly with push capability",
     "Consolidate/migrate the 11 legacy desktop dashboards",
-    "Jobs 22/25/27/29 literal gate keys (25+29 share one)"
+    "Jobs 22/25/27/29 literal gate keys (25+29 share one)",
+    "Top Shot pack sales ingest ~8h late (walker sweeps full history before returning to head) — head-first page, ship with jobs 25/29 de-literalise"
   ],
   "housekeeping": "Ledger backfilled with the 09-21 verdict and 09-20 job-44 rotation; stale index.lock left by a VM git status renamed; credential-reminder task prompt corrected; inbox backlog (543) still unarchived — INDEX.md CI conflict unresolved."
 }
